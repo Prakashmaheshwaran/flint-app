@@ -12,6 +12,8 @@ import com.flint.peakfocus.core.model.OpenLimitDecision
  * [OpenCountState]; it answers (a) does this transition count as an "open", and (b) is the
  * app over today's quota. Counts roll over at local midnight (callers derive `epochDay` via
  * [epochDay] with the device's UTC offset) and persist via core-datastore's `FocusStateStore`.
+ * Rollover is **forward-only** ([rolledOver]) — a clock set backward never re-grants consumed
+ * opens; detected forward jumps/timezone hops are handled by [ClockChangeGuard].
  *
  * Spec nuance, honestly interpreted: Opal counts *intentional* opens ("accidental taps
  * don't"). Mechanically we approximate that in [countsAsOpen]: transitions bounced through
@@ -47,11 +49,20 @@ class OpenLimitPolicy {
     }
 
     /**
-     * Roll [state] to [epochDay]: same day → unchanged; new (or uninitialized) day → fresh,
-     * empty counts. Persist the result whenever it differs.
+     * Roll [state] to [epochDay] — **forward only** (anti-bypass, fail closed): same day →
+     * unchanged; a later (or first-ever) day → fresh, empty counts; an *earlier* day — the
+     * clock was set back past local midnight, or a westward timezone hop re-crossed it —
+     * keeps the consumed counts, so already-spent opens are never re-granted. The kept state
+     * stays keyed to the later day: when the clock returns to real time that day is simply
+     * "today" again, consumption intact. (Accepted cost: a genuine westward traveler waits
+     * up to the offset difference longer for the next reset — the conservative side of the
+     * trade.) Persist the result whenever it differs.
      */
-    fun rolledOver(state: OpenCountState, epochDay: Long): OpenCountState =
-        if (state.epochDay == epochDay) state else OpenCountState(epochDay = epochDay)
+    fun rolledOver(state: OpenCountState, epochDay: Long): OpenCountState = when {
+        state.epochDay == OpenCountState.DAY_UNINITIALIZED -> OpenCountState(epochDay = epochDay)
+        epochDay <= state.epochDay -> state
+        else -> OpenCountState(epochDay = epochDay)
+    }
 
     /** Record one open of [packageName] on [epochDay] (rolling the day over first). */
     fun recordOpen(state: OpenCountState, packageName: String, epochDay: Long): OpenCountState {
