@@ -28,5 +28,25 @@
                 <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
+
+        <!--
+          Anti-bypass time-change guard: moving the clock or hopping timezones must not dodge
+          schedules, daily limits, or the weekly Emergency Pass. Same system-sender /
+          exported="false" pattern as BootReceiver. TIME_SET and TIMEZONE_CHANGED are on the
+          implicit-broadcast exceptions list, so this manifest receiver still gets them on
+          API 26+ even while the process is dead. DATE_CHANGED is NOT on that list (manifest
+          delivery only below API 26) — kept for legacy coverage; a manual date edit moves the
+          wall clock and therefore fires TIME_SET anyway. Delivery is best-effort by design:
+          the forward-only rollovers inside blocking-engine's policies are the backstop.
+        -->
+        <receiver
+            android:name=".TimeChangeReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

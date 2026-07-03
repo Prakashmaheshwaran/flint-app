@@ -91,6 +91,16 @@ class EmergencyPassPolicyTest {
         assertEquals(EmergencyPassState(20633L, null), policy.refreshed(lastWeek, noonOf(20637L)))
     }
 
+    @Test
+    fun clockSetBackAWeekDoesNotRegrantASpentPass() {
+        // Forward-only refresh (time-change guard, always-on half — see ClockChangeGuard).
+        val spent = policy.consume(EmergencyPassState(), noonOf(20637L))!! // used Friday
+        val lastWeek = noonOf(20630L) // the clock now lies a week back
+        assertEquals(spent, policy.refreshed(spent, lastWeek)) // kept, nothing to persist
+        assertFalse(policy.isAvailable(spent, lastWeek))
+        assertNull(policy.consume(spent, lastWeek))
+    }
+
     private companion object {
         const val DAY_MS = 86_400_000L
         const val HOUR_MS = 3_600_000L

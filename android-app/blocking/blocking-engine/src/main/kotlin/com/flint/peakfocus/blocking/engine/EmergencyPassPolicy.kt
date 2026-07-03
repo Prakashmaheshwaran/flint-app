@@ -24,9 +24,12 @@ class EmergencyPassPolicy {
         DayMath.weekStartEpochDay(nowEpochMs, utcOffsetMs)
 
     /**
-     * Roll [state] into the current week: if the stored week is stale (or uninitialized),
-     * returns a fresh state for this week with the pass available; otherwise returns [state]
-     * unchanged. Persist the result whenever it differs.
+     * Roll [state] into the current week — **forward only** (anti-bypass, fail closed): if
+     * the stored week is older (or uninitialized), returns a fresh state for this week with
+     * the pass available; the same week returns [state] unchanged. A *future* stored week —
+     * the clock was set back — is also kept unchanged, so a spent pass stays spent until the
+     * clock genuinely reaches a later week (detected forward jumps are re-keyed
+     * conservatively by [ClockChangeGuard]). Persist the result whenever it differs.
      */
     fun refreshed(
         state: EmergencyPassState,
@@ -34,7 +37,12 @@ class EmergencyPassPolicy {
         utcOffsetMs: Long = 0L,
     ): EmergencyPassState {
         val currentWeek = weekStartEpochDay(nowEpochMs, utcOffsetMs)
-        return if (state.weekStartEpochDay == currentWeek) state else EmergencyPassState(currentWeek, null)
+        return when {
+            state.weekStartEpochDay == EmergencyPassState.WEEK_UNINITIALIZED ->
+                EmergencyPassState(currentWeek, null)
+            currentWeek <= state.weekStartEpochDay -> state
+            else -> EmergencyPassState(currentWeek, null)
+        }
     }
 
     /** True if this week's pass has not been spent yet (after rolling into the current week). */

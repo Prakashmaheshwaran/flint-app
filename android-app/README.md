@@ -60,6 +60,22 @@ What it wired, verified by inspection only:
   otherwise; re-checked on every app resume and from the boot re-arm hook `FlintApplication`
   registers with `BootReceiver`.
 
+**Time-change guard (`feat/android-time-change-guard`) — implemented; CI-verified build/tests;
+emulator re-run pending.** Changing the device clock, date, or timezone no longer resets what
+was already consumed: `TimeChangeReceiver` (blocking-resilience) catches
+TIME_SET / TIMEZONE_CHANGED / DATE_CHANGED, re-warms the rules cache, runs the same re-arm
+hooks as `BootReceiver`, and applies the pure `ClockChangeGuard` (blocking-engine, JVM-tested)
+to the persisted focus state. Fail-closed semantics: day/week keys only roll *forward*
+(enforced unconditionally inside `OpenLimitPolicy.rolledOver` / `EmergencyPassPolicy.refreshed`
+on every evaluation, so a clock set back never re-grants consumed opens or a spent Emergency
+Pass — even if the broadcast never arrives); detected forward jumps and timezone hops carry
+consumed state into the new day/week instead of resetting it; a pending HARDER friction wait
+keeps the same real length under any wall-clock jump. Honest limits: schedule windows and
+Path-A Time Limits read the OS clock / UsageStats daily buckets, so a changed clock still
+moves them (the receiver forces immediate re-evaluation; it cannot veto the OS clock), and a
+clock set back during an *already granted* break stretches that break's exemption window —
+HARDCORE is unaffected (it never grants breaks).
+
 ## Known gaps (found in the integration audit)
 
 1. **Weekday convention bug — Path A schedules are wrong on Sundays/Fridays.** `core-model`'s
@@ -96,11 +112,11 @@ Device-only proof (OEM kill behavior, real-world resilience) stays in the board'
 | `core:core-common` | android-lib | `FlintTheme` (brand tokens → Material3), `OemUtil` |
 | `core:core-data` | android-lib | Legacy synchronous stores: `BlocklistStore`, `LimitStore`, `UsageQuery` |
 | `core:core-datastore` | android-lib | Preferences DataStore: `BlockRulesStore`, `LimitsStore`, `FocusStateStore` + codecs (unit-tested) |
-| `blocking:blocking-engine` | kotlin-jvm | `BlockDecisionEngine` + break/pass/open-limit policies + `DayMath` (unit-tested) |
+| `blocking:blocking-engine` | kotlin-jvm | `BlockDecisionEngine` + break/pass/open-limit policies + `ClockChangeGuard` (fail-closed time-change policy) + `DayMath` (unit-tested) |
 | `blocking:blocking-accessibility` | android-lib | `FlintAccessibilityService` — Path A detector + a11y-overlay enforcement (no `isAccessibilityTool`) |
 | `blocking:blocking-usagestats` | android-lib | `UsageStatsForegroundService` (poll loop → Path B handoff), `UsagePoller`, `DailyLimitTracker` |
 | `blocking:blocking-overlay` | android-lib | `BlockScreenCoordinator` (shared seam), `PathBBlockHandoff`, `OverlayController`, `BlockActivity` |
-| `blocking:blocking-resilience` | android-lib | `BootReceiver` (+ re-arm hooks), `ExitReasonReporter`, `PermissionHealthChecker` |
+| `blocking:blocking-resilience` | android-lib | `BootReceiver` (+ re-arm hooks), `TimeChangeReceiver` (clock/timezone-change guard), `ExitReasonReporter`, `PermissionHealthChecker` |
 | `permissions:permissions-special` | android-lib | `UsageAccess`, `OverlayPermission`, `AccessibilityPermission`, `BatteryOptimization` |
 | `feature:feature-onboarding` | android-lib | `AccessibilityConsentScreen` — **prominent-disclosure consent (Play gate, ADR-007)** |
 | `feature:feature-blocklist` | android-lib | Rule/limit editors, app picker, domain input (draft logic unit-tested) |
