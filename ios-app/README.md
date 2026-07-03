@@ -98,6 +98,19 @@ Verticals implemented:
 - **App-PIN anti-bypass** — optional app-open PIN (salted SHA-256, never stored plaintext) gates
   Flint; the **Settings** tab surfaces the system Screen Time passcode as the real anti-uninstall
   guarantee.
+- **Hardcore uninstall guard** — while a Hardcore (Deep Focus) session runs, Flint sets
+  `denyAppRemoval` on the session's `ManagedSettingsStore`, so deleting the app — otherwise the
+  one-tap escape from a "non-bypassable" block — is refused by iOS. Armed on every Hardcore
+  start (Block Now, Shortcuts/Siri, Focus Filter) and re-asserted by the monitor extension and
+  on app launch; released on **every** end path — allowed stops, the monitor's interval end,
+  the Emergency Pass, launch reconciliation — because it lives on the same store as the session
+  shield (`clearAllSettings()` drops both together). Honest scope: Apple's setting blocks app
+  deletion **device-wide** while armed (it isn't per-app), and Hardcore *schedule rules* are
+  deliberately exempt (they can be toggled off in-app, so a deletion lock there would be
+  friction, not a lock). Pure "should the guard be on?" logic is unit-tested
+  (`FlintUninstallGuard`); **compile verification is pending on the macOS CI toolchain**, and
+  enforcement is device-gated like all Screen Time settings — the Simulator can't deny app
+  removal.
 - **Safari restrictions + Private-Browsing lockdown** — Settings → *Web & Safari*: while a
   session runs, Safari follows either the adult-content filter (plus custom block/allow domains)
   or an allowed-sites-only list, with an optional explicit-media toggle. iOS ties Private
@@ -138,8 +151,8 @@ Verticals implemented:
 1. **On-device validation** of everything enforcement-shaped — shields, schedules, time limits,
    open-limit grants, web restrictions, Focus filters, sleep windows. The Simulator cannot prove
    any of it; tracked as `H-IOS-DEVICE` (human + hardware), evidence goes in `docs/verification/`.
-2. **macOS compile pass over the Open-Limits config UI + arming** — that layer closes the last
-   product gap on paper but was built toolchain-blind; `xcodegen generate` + `xcodebuild`
-   build/test must go green before the blanket "all targets build" claim covers it.
+2. **macOS compile pass over the Open-Limits config UI + arming, and the Hardcore uninstall
+   guard** — those layers were built toolchain-blind; `xcodegen generate` + `xcodebuild`
+   build/test must go green before the blanket "all targets build" claim covers them.
 
 Build order: strategy doc §8.

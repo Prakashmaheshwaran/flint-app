@@ -37,6 +37,10 @@ struct RootView: View {
                 // Schedules/Time Limits re-arm in their tab view models; Open Limits' screen sits
                 // a level deeper, so its view model may never init in a given run.
                 FlintOpenLimitsController().reload()
+                // Reconcile the Hardcore uninstall guard with reality on every launch:
+                // re-assert it while a Hardcore session is still running, drop it if the
+                // session ended while Flint was dead (e.g. the monitor never got to fire).
+                FlintSessionController().reconcileUninstallGuard()
             }
         }
     }
