@@ -4,11 +4,22 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    groups:
+      # One combined PR for all action bumps instead of one PR each.
+      actions:
+        applies-to: version-updates
+        update-types: ["major", "minor", "patch"]
 
   - package-ecosystem: gradle
     directory: /android-app
     schedule:
       interval: monthly
+    groups:
+      # One combined PR per month for routine library bumps. Majors stay individual
+      # so risky jumps get their own CI verdict and review.
+      android-minor-and-patch:
+        applies-to: version-updates
+        update-types: ["minor", "patch"]
     ignore:
       # Deliberate-migration dependencies: auto-bumps broke the build on launch day
       # (PRs #5, #7, #9 — Compose BOM, Lifecycle, Kotlin). These move together and need
