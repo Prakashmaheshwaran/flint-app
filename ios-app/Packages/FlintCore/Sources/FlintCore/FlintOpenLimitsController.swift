@@ -59,8 +59,9 @@ public final class FlintOpenLimitsController {
     /// activity. Idempotent; call on launch and after edits.
     public func reload() {
         let all = FlintOpenLimitRule.loadAll()
-        // Never hand stopMonitoring an empty list — that overload stops *every* Flint activity
-        // (sessions, schedules, time limits), not none of them.
+        // `FlintScheduling.stopMonitoring([])` is a documented no-op (stop-everything now takes
+        // the explicit `stopAllMonitoring()`), but keep the local guard as belt-and-braces —
+        // this call site must never even flirt with the framework's stop-all overload.
         let names = all.map { $0.activityName }
         if !names.isEmpty {
             FlintScheduling.stopMonitoring(names)
