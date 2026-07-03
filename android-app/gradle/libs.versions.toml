@@ -1,7 +1,7 @@
 # Version catalog — single source of truth for dependency + plugin versions.
 [versions]
 agp = "8.7.3"
-kotlin = "2.1.0"
+kotlin = "2.4.0"
 coreKtx = "1.15.0"
 lifecycle = "2.8.7"
 activityCompose = "1.9.3"
