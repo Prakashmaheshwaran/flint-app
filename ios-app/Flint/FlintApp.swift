@@ -31,6 +31,13 @@ struct RootView: View {
                     .tabItem { Label("Settings", systemImage: "gearshape.fill") }
             }
             .tint(FlintBrand.spark)
+            .task {
+                // Re-arm Open-Limit shields (+ their day-boundary activities) on every launch —
+                // that's what puts tokens released by yesterday's grants back behind the shield.
+                // Schedules/Time Limits re-arm in their tab view models; Open Limits' screen sits
+                // a level deeper, so its view model may never init in a given run.
+                FlintOpenLimitsController().reload()
+            }
         }
     }
 }

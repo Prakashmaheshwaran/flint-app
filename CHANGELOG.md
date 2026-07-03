@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+### iOS
+- **Open Limits are now user-reachable end-to-end (in code):** a config screen (Limits tab →
+  *Open Limits*) to create/edit/toggle launch-count caps, host-app shield arming on launch and
+  rule edits (`FlintOpenLimitsController`), a day-boundary re-arm via the monitor extension, and
+  an open-aware block screen ("Use app (N left)" / opens-spent). Compile verification is pending
+  on the macOS CI toolchain; shield enforcement itself remains device-gated, like all shields.
+
 ## [0.1.0] — Initial public release
 
 First public snapshot of both native apps.

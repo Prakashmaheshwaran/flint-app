@@ -16,9 +16,9 @@ import FlintCore
 ///  - otherwise → plain hard block (Session / Schedule / Time Limit): the original
 ///                "Stay focused" behavior, and no open is ever charged.
 ///
-/// Note for the ShieldConfiguration owner: the block screen still labels the primary button
-/// "Stay focused" for every token. Open-limited tokens should read "Use app (N left)" — the same
-/// rule lookup, but that extension is a different vertical's scope.
+/// The block screen side lives in `FlintShieldConfiguration`: open-limited tokens label the
+/// primary button "Use app (N left)" via the same `FlintOpenLimitEnforcer` lookup, so the label
+/// and this handler's behavior stay in step.
 final class FlintShieldAction: ShieldActionDelegate {
 
     override func handle(

@@ -13,6 +13,8 @@ import FlintCore
 ///  - `flint.rule.<id>`  — a recurring schedule rule (its own store + embedded selection).
 ///  - `flint.limit.<id>` — a daily Time Limit (all-day window; its event shields on threshold,
 ///                         and the day boundary resets it).
+///  - `flint.openLimit.<id>` — a daily Open Limit (all-day window; the boundary re-applies the
+///                         rule's shield, re-arming tokens released by yesterday's grants).
 final class FlintMonitor: DeviceActivityMonitor {
 
     private let sessionStore = ManagedSettingsStore(named: ManagedSettingsStore.Name("flint"))
@@ -23,6 +25,8 @@ final class FlintMonitor: DeviceActivityMonitor {
             clearLimitShield(limit) // new day → fresh budget
         } else if let rule = rule(for: activity) {
             applyRule(rule)
+        } else if let openLimit = openLimit(for: activity) {
+            applyOpenLimitShield(openLimit) // new day → re-arm tokens released by yesterday's grants
         } else {
             applyShieldFromSavedSelection()
         }
@@ -34,6 +38,8 @@ final class FlintMonitor: DeviceActivityMonitor {
             clearLimitShield(limit)
         } else if let rule = rule(for: activity) {
             ManagedSettingsStore(named: ManagedSettingsStore.Name(rule.storeName)).clearAllSettings()
+        } else if let openLimit = openLimit(for: activity) {
+            applyOpenLimitShield(openLimit) // open limits stay shielded across the day roll-over
         } else {
             sessionStore.clearAllSettings()
             FlintGroupStore()?.clearActiveSession()
@@ -64,6 +70,10 @@ final class FlintMonitor: DeviceActivityMonitor {
 
     private func limit(forEvent event: DeviceActivityEvent.Name) -> FlintLimitRule? {
         FlintGroupStore()?.loadLimits().first { $0.eventName == event.rawValue }
+    }
+
+    private func openLimit(for activity: DeviceActivityName) -> FlintOpenLimitRule? {
+        FlintOpenLimitRule.loadAll().first { $0.activityName == activity.rawValue }
     }
 
     // MARK: Shielding
@@ -98,6 +108,11 @@ final class FlintMonitor: DeviceActivityMonitor {
 
     private func clearLimitShield(_ limit: FlintLimitRule) {
         ManagedSettingsStore(named: ManagedSettingsStore.Name(limit.storeName)).clearAllSettings()
+    }
+
+    private func applyOpenLimitShield(_ rule: FlintOpenLimitRule) {
+        guard rule.enabled else { return } // stale registration for a disabled rule → leave it clear
+        FlintOpenLimitEnforcer.applyShield(for: rule)
     }
 
     private func applyShieldFromSavedSelection() {
