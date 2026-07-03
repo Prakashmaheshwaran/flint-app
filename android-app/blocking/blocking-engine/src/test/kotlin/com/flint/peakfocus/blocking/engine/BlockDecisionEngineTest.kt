@@ -96,6 +96,40 @@ class BlockDecisionEngineTest {
     }
 
     @Test
+    fun overnightTailIsGatedOnThePreviousDay() {
+        // Mon 22:00–06:00, Mondays only. The post-midnight tail is Monday's window spilling
+        // into Tuesday — it must block Tue 00:30 and must NOT block Mon 00:30 (that morning
+        // belongs to Sunday's window, which isn't scheduled).
+        val monNight = Schedule(daysOfWeek = setOf(1), startMinuteOfDay = 1320, endMinuteOfDay = 360)
+        assertTrue(engine.scheduleActive(monNight, 1380, 1))  // Mon 23:00 — head, scheduled day
+        assertTrue(engine.scheduleActive(monNight, 30, 2))    // Tue 00:30 — Monday's tail
+        assertFalse(engine.scheduleActive(monNight, 30, 1))   // Mon 00:30 — Sunday's tail, off-day
+        assertFalse(engine.scheduleActive(monNight, 390, 2))  // Tue 06:30 — past the tail
+        assertFalse(engine.scheduleActive(monNight, 1380, 2)) // Tue 23:00 — head on an off-day
+        assertTrue(engine.scheduleActive(monNight, 30, -1))   // unknown weekday → time-only gate
+    }
+
+    @Test
+    fun overnightTailWrapsAcrossTheIsoWeekBoundary() {
+        // Sun 23:00–01:00, Sundays only: Monday 00:30's previous ISO day wraps 1 → 7. Pure
+        // minutes+ISO-day arithmetic — no Calendar/TimeZone involved, so timezone-agnostic.
+        val sunNight = Schedule(daysOfWeek = setOf(7), startMinuteOfDay = 1380, endMinuteOfDay = 60)
+        assertTrue(engine.scheduleActive(sunNight, 30, 1))  // Mon 00:30 — Sunday's tail
+        assertFalse(engine.scheduleActive(sunNight, 30, 7)) // Sun 00:30 — Saturday's tail, off-day
+    }
+
+    @Test
+    fun decideBlocksTheMorningTailOfAnOvernightRule() {
+        val rule = BlockRule(
+            id = "night", name = "sleep",
+            targets = BlockTargets(apps = setOf(AppRef("com.x"))),
+            schedule = Schedule(daysOfWeek = setOf(1), startMinuteOfDay = 1320, endMinuteOfDay = 360),
+        )
+        assertTrue(engine.decide("com.x", null, listOf(rule), self, 30, 2) is Verdict.Block) // Tue 00:30
+        assertEquals(Verdict.Allow, engine.decide("com.x", null, listOf(rule), self, 30, 1)) // Mon 00:30
+    }
+
+    @Test
     fun decideRespectsSchedule() {
         val rule = BlockRule(
             id = "r", name = "work",
