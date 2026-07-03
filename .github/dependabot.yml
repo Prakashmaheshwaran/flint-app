@@ -17,5 +17,9 @@ updates:
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "androidx.lifecycle:*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
-      - dependency-name: "org.jetbrains.kotlin*"
+      # Kotlin toolchain only — deliberately NOT "org.jetbrains.kotlin*", which would
+      # also sweep org.jetbrains.kotlinx (coroutines etc.) that update fine.
+      - dependency-name: "org.jetbrains.kotlin:*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "org.jetbrains.kotlin.*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
