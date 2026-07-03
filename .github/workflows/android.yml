@@ -10,6 +10,9 @@ on:
     paths: ['android-app/**', '.github/workflows/android.yml']
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -27,9 +30,12 @@ jobs:
         working-directory: android-app
         run: ./gradlew assembleDebug
 
+      # `test` (not `testDebugUnitTest`): the pure-Kotlin modules (blocking-engine,
+      # core-model) are kotlin.jvm projects whose test task is `test` — the old task name
+      # silently skipped them, making the engine-test gate a false one (review P0-1).
       - name: Unit tests
         working-directory: android-app
-        run: ./gradlew testDebugUnitTest
+        run: ./gradlew test
 
       - name: Upload test reports on failure
         if: failure()
