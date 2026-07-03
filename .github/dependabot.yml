@@ -28,6 +28,12 @@ updates:
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "androidx.lifecycle:*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # core-ktx 1.19.x and activity-compose 1.13.x require a newer compileSdk than 35
+      # (individual PRs #11/#14 and grouped PR #18 all failed CI) — same migration bucket.
+      - dependency-name: "androidx.core:*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "androidx.activity:*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       # Kotlin toolchain only — deliberately NOT "org.jetbrains.kotlin*", which would
       # also sweep org.jetbrains.kotlinx (coroutines etc.) that update fine.
       - dependency-name: "org.jetbrains.kotlin:*"
