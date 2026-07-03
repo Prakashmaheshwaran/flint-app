@@ -23,7 +23,12 @@ final class FlintShieldConfiguration: ShieldConfigurationDataSource {
             subtitle = "Open-limited — \(left) intentional \(left == 1 ? "open" : "opens") left today."
             primaryButton = "Use \(unit) (\(left) left)"
         case .some:
-            subtitle = "Open-limited — today's opens are spent. It unlocks tomorrow."
+            // Zero also covers the enforcer's fail-closed path (App Group unreadable reports 0
+            // remaining) — only promise a tomorrow reset when the counter is actually readable;
+            // fail-closed has no daily reset to promise.
+            subtitle = FlintGroupStore() != nil
+                ? "Open-limited — today's opens are spent. It unlocks tomorrow."
+                : "Open-limited — opens are unavailable right now."
             primaryButton = "Stay focused"
         case .none:
             subtitle = name.map { "“\($0)” is off-limits during your focus session." }
