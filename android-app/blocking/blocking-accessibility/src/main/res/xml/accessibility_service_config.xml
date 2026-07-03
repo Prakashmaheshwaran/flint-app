@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Intentionally NO android:isAccessibilityTool="true": a focus/blocker is a "monitoring app"
+  and is not eligible (Play AccessibilityService API policy). android:description is shown by
+  the OS on the enable screen and must accurately describe the use.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"
+    android:canRetrieveWindowContent="true"
+    android:description="@string/flint_a11y_description"
+    android:notificationTimeout="100" />

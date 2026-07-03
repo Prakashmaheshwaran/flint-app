@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The app picker enumerates launchable apps, which on Android 11+ requires package visibility.
+  The app module already declares this same <queries> block; declaring it here too keeps the
+  library self-contained (the manifest merger de-duplicates). Deliberately NOT
+  QUERY_ALL_PACKAGES — the launcher-intent query is the Play-friendly form (ADR-007 spirit).
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
+</manifest>

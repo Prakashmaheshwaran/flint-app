@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!-- Full-screen block screen (path B fallback). Launched with FLAG_ACTIVITY_NEW_TASK
+             from the a11y service or an active foreground service (never from the background). -->
+        <activity
+            android:name=".BlockActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.Flint.Block" />
+    </application>
+</manifest>

@@ -1,0 +1,7 @@
+<resources>
+    <!-- Self-contained so this module doesn't depend on app resources. No palette values
+         here: brand colors are single-sourced in FlintTheme (design tokens), and
+         BlockActivity sets the window background from the theme at runtime. The system dark
+         Material background may show for one frame before Compose draws — accepted. -->
+    <style name="Theme.Flint.Block" parent="@android:style/Theme.Material.NoActionBar" />
+</resources>

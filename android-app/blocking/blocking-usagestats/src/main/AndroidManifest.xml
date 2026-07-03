@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!--
+          The enforcement liveness service + UsageStats poll loop (fallback detection and the
+          sole source of daily time budgets). foregroundServiceType=specialUse requires a
+          Play Console justification at submission (Android 14+).
+        -->
+        <service
+            android:name=".UsageStatsForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Enforces user-configured app and website focus blocks in real time." />
+        </service>
+    </application>
+</manifest>

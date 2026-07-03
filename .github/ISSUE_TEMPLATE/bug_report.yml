@@ -1,0 +1,39 @@
+name: Bug report
+description: Something doesn't work — blocking, schedules, limits, UI
+labels: [bug]
+body:
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - iOS
+        - Android
+        - Repo / build tooling
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device & OS version
+      placeholder: "e.g. Pixel 8 / Android 15 · iPhone 15 / iOS 18 · Emulator / Simulator"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Steps to reproduce, expected vs. actual. For blocking bugs, say whether the block ever applied and how you set it up.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots (optional)
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I'm on the latest `main` or release
+        - label: "iOS shield/enforcement bugs: I tested on a physical device (the Simulator cannot apply shields — documented limitation)"

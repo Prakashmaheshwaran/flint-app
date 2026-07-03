@@ -1,0 +1,41 @@
+# iOS CI — generate the project (XcodeGen), build app + 4 extensions for the Simulator
+# (no signing), then run unit tests on the first available iPhone simulator.
+# Reality check (matches the repo's honest-docs rule): CI verifies build + logic only;
+# Screen Time shield enforcement can only be proven on a physical device.
+# NOTE: written before first publish; expect a shakedown run on the first push.
+name: iOS
+
+on:
+  push:
+    branches: [main]
+    paths: ['ios-app/**', '.github/workflows/ios.yml']
+  pull_request:
+    paths: ['ios-app/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ios-app
+        run: xcodegen generate
+
+      - name: Build (Simulator, no signing)
+        run: |
+          xcodebuild -project ios-app/Flint.xcodeproj -scheme Flint \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+
+      - name: Unit tests (first available iPhone simulator)
+        run: |
+          DEVICE=$(xcrun simctl list devices available | grep -oE 'iPhone [^(]+' | head -1 | sed 's/ *$//')
+          echo "Using simulator: $DEVICE"
+          xcodebuild test -project ios-app/Flint.xcodeproj -scheme Flint \
+            -destination "platform=iOS Simulator,name=$DEVICE" \
+            CODE_SIGNING_ALLOWED=NO

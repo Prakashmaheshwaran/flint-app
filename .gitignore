@@ -1,0 +1,47 @@
+# ── macOS ───────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.rustdesk_*
+
+# ── iOS / Xcode / Swift ─────────────────────────────────
+# The Xcode project is GENERATED from ios-app/project.yml via XcodeGen (see ADR-005).
+ios-app/*.xcodeproj/
+ios-app/*.xcworkspace/
+ios-app/build/
+ios-app/DerivedData/
+**/xcuserdata/
+**/*.xcuserstate
+.swiftpm/
+ios-app/.build/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# ── Android / Gradle / Kotlin ───────────────────────────
+android-app/.gradle/
+android-app/build/
+android-app/**/build/
+android-app/local.properties
+android-app/captures/
+*.iml
+.idea/
+.kotlin/
+android-app/.cxx/
+*.apk
+*.aab
+*.keystore
+!debug.keystore
+
+# ── Editors / misc ──────────────────────────────────────
+.vscode/
+*.log
+.env
+.env.local
+
+# ── Harness / session scratch (Claude worktrees, etc.) ──
+.claude/
+
+# ── Fleet coordination ledger (atomic claims; lives in the main checkout) ──
+.flint-fleet/

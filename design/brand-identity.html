@@ -1,0 +1,177 @@
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font-sans); }
+  .section { margin-bottom: 2rem; }
+  .label { font-size: 11px; font-weight: 500; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 10px; }
+  .divider { border: none; border-top: 0.5px solid var(--color-border-tertiary); margin: 1.5rem 0; }
+
+  .hero { background: var(--color-background-secondary); border-radius: var(--border-radius-lg); padding: 2rem; display: flex; align-items: center; gap: 20px; margin-bottom: 12px; }
+  .logo-mark { width: 56px; height: 56px; flex-shrink: 0; }
+  .hero-text-name { font-size: 32px; font-weight: 500; color: var(--color-text-primary); letter-spacing: -1px; line-height: 1; }
+  .hero-text-tag { font-size: 13px; color: var(--color-text-secondary); letter-spacing: 0.12em; text-transform: uppercase; margin-top: 5px; }
+
+  .palette-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .swatch { border-radius: var(--border-radius-md); padding: 12px 14px; flex: 1; min-width: 90px; }
+  .swatch-name { font-size: 12px; font-weight: 500; margin-bottom: 2px; }
+  .swatch-hex { font-size: 11px; font-family: var(--font-mono); opacity: 0.8; }
+
+  .tagline-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .tl-card { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); padding: 1rem 1.2rem; cursor: pointer; transition: border-color 0.15s; }
+  .tl-card:hover { border-color: var(--color-border-primary); }
+  .tl-card.pick { border: 2px solid #BA7517; }
+  .tl-main { font-size: 16px; font-weight: 500; color: var(--color-text-primary); margin-bottom: 4px; }
+  .tl-note { font-size: 12px; color: var(--color-text-secondary); }
+
+  .icon-row { display: flex; gap: 12px; align-items: flex-end; }
+  .icon-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .icon-label { font-size: 11px; color: var(--color-text-tertiary); }
+
+  .trait-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .trait { background: var(--color-background-secondary); border: 0.5px solid var(--color-border-tertiary); border-radius: 20px; padding: 5px 14px; font-size: 13px; color: var(--color-text-secondary); }
+
+  .comp-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .comp-card { border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); padding: 1rem 1.2rem; }
+  .comp-title { font-size: 13px; font-weight: 500; color: var(--color-text-primary); margin-bottom: 6px; }
+  .comp-val { font-size: 13px; color: var(--color-text-secondary); }
+</style>
+
+<h2 class="sr-only">Flint — Peak Focus brand identity</h2>
+
+<div class="section">
+  <div class="label">Wordmark + logo</div>
+  <div class="hero">
+    <svg class="logo-mark" viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="14,44 28,8 36,26 44,18 30,48" fill="#2C2C2A" />
+      <polygon points="36,26 44,18 42,30" fill="#EF9F27" />
+      <polygon points="30,48 42,30 44,40" fill="#BA7517" />
+    </svg>
+    <div>
+      <div class="hero-text-name">Flint</div>
+      <div class="hero-text-tag">Peak Focus</div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div class="section">
+  <div class="label">Color palette</div>
+  <div class="palette-row">
+    <div class="swatch" style="background:#2C2C2A;">
+      <div class="swatch-name" style="color:#F1EFE8;">Flint</div>
+      <div class="swatch-hex" style="color:#B4B2A9;">#2C2C2A</div>
+    </div>
+    <div class="swatch" style="background:#5F5E5A;">
+      <div class="swatch-name" style="color:#F1EFE8;">Graphite</div>
+      <div class="swatch-hex" style="color:#D3D1C7;">#5F5E5A</div>
+    </div>
+    <div class="swatch" style="background:#EF9F27;">
+      <div class="swatch-name" style="color:#412402;">Spark</div>
+      <div class="swatch-hex" style="color:#633806;">#EF9F27</div>
+    </div>
+    <div class="swatch" style="background:#FAC775;">
+      <div class="swatch-name" style="color:#412402;">Ember</div>
+      <div class="swatch-hex" style="color:#633806;">#FAC775</div>
+    </div>
+    <div class="swatch" style="background:#F1EFE8; border: 0.5px solid #D3D1C7;">
+      <div class="swatch-name" style="color:#2C2C2A;">Stone</div>
+      <div class="swatch-hex" style="color:#888780;">#F1EFE8</div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div class="section">
+  <div class="label">Tagline options</div>
+  <div class="tagline-grid">
+    <div class="tl-card pick">
+      <div class="tl-main">Flint — Peak Focus.</div>
+      <div class="tl-note">Wordmark + tagline lockup (your pick)</div>
+    </div>
+    <div class="tl-card">
+      <div class="tl-main">Flint. Strike deep work.</div>
+      <div class="tl-note">More active, references the stone metaphor</div>
+    </div>
+    <div class="tl-card">
+      <div class="tl-main">Flint. Free focus, forever.</div>
+      <div class="tl-note">Hammers the open-source angle</div>
+    </div>
+    <div class="tl-card">
+      <div class="tl-main">Flint. Spark the session.</div>
+      <div class="tl-note">Action-oriented, pairs with onboarding UX</div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div class="section">
+  <div class="label">Logo mark — size variants</div>
+  <div class="icon-row">
+    <div class="icon-wrap">
+      <svg width="64" height="64" viewBox="0 0 56 56"><polygon points="14,44 28,8 36,26 44,18 30,48" fill="#2C2C2A"/><polygon points="36,26 44,18 42,30" fill="#EF9F27"/><polygon points="30,48 42,30 44,40" fill="#BA7517"/></svg>
+      <span class="icon-label">64px</span>
+    </div>
+    <div class="icon-wrap">
+      <svg width="44" height="44" viewBox="0 0 56 56"><polygon points="14,44 28,8 36,26 44,18 30,48" fill="#2C2C2A"/><polygon points="36,26 44,18 42,30" fill="#EF9F27"/><polygon points="30,48 42,30 44,40" fill="#BA7517"/></svg>
+      <span class="icon-label">44px</span>
+    </div>
+    <div class="icon-wrap">
+      <svg width="28" height="28" viewBox="0 0 56 56"><polygon points="14,44 28,8 36,26 44,18 30,48" fill="#2C2C2A"/><polygon points="36,26 44,18 42,30" fill="#EF9F27"/><polygon points="30,48 42,30 44,40" fill="#BA7517"/></svg>
+      <span class="icon-label">28px</span>
+    </div>
+    <div class="icon-wrap">
+      <div style="width:48px;height:48px;background:#2C2C2A;border-radius:12px;display:flex;align-items:center;justify-content:center;">
+        <svg width="30" height="30" viewBox="0 0 56 56"><polygon points="14,44 28,8 36,26 44,18 30,48" fill="#F1EFE8"/><polygon points="36,26 44,18 42,30" fill="#EF9F27"/><polygon points="30,48 42,30 44,40" fill="#FAC775"/></svg>
+      </div>
+      <span class="icon-label">App icon</span>
+    </div>
+    <div class="icon-wrap">
+      <div style="width:48px;height:48px;background:#EF9F27;border-radius:12px;display:flex;align-items:center;justify-content:center;">
+        <svg width="30" height="30" viewBox="0 0 56 56"><polygon points="14,44 28,8 36,26 44,18 30,48" fill="#2C2C2A"/><polygon points="36,26 44,18 42,30" fill="#F1EFE8"/><polygon points="30,48 42,30 44,40" fill="#D3D1C7"/></svg>
+      </div>
+      <span class="icon-label">Alt icon</span>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div class="section">
+  <div class="label">Brand personality</div>
+  <div class="trait-row">
+    <span class="trait">Raw and honest</span>
+    <span class="trait">No paywall, ever</span>
+    <span class="trait">Built in the open</span>
+    <span class="trait">Anti-corporate</span>
+    <span class="trait">Community-first</span>
+    <span class="trait">No dark patterns</span>
+    <span class="trait">Hard and sharp</span>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div class="section">
+  <div class="label">Naming + branding logistics</div>
+  <div class="comp-row">
+    <div class="comp-card">
+      <div class="comp-title">GitHub repo</div>
+      <div class="comp-val">flint-app / flintfocus</div>
+    </div>
+    <div class="comp-card">
+      <div class="comp-title">Domain targets</div>
+      <div class="comp-val">useflint.app · flintfocus.app</div>
+    </div>
+    <div class="comp-card">
+      <div class="comp-title">Tagline on hero</div>
+      <div class="comp-val">"Peak focus. Free forever."</div>
+    </div>
+    <div class="comp-card">
+      <div class="comp-title">Opal comparison hook</div>
+      <div class="comp-val">"Everything Opal does. Zero cost."</div>
+    </div>
+  </div>
+</div>

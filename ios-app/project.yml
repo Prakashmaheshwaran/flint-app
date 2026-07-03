@@ -1,0 +1,132 @@
+# XcodeGen spec — the source of truth for Flint's Xcode project.
+# Generate with `xcodegen generate` (or `make ios`). The .xcodeproj is git-ignored.
+#
+# 5 targets: the host app + 4 Screen Time system extensions, each with its own bundle ID and
+# its own family-controls + App Group entitlements. All share the FlintCore Swift package.
+#
+# App Intents live in the HOST APP, not a separate target. The Focus Filter
+# (SetFocusFilterIntent) and the Shortcuts/Siri actions (Start Session, Start Pomodoro, Stop)
+# are App Intents, which iOS auto-discovers from the app binary — no AppIntents extension is
+# required. The Wave-1 verticals that add them (Flint/Features/FocusFilter, Flint/Features/
+# Shortcuts) live under Flint/ and are already compiled into the app, and ADR-005/006 fix the
+# target count at 5 (each extra target = another per-Bundle-ID distribution entitlement request,
+# §4). The shared model shapes those intents build on live in FlintCore (FlintModel.swift).
+name: Flint
+
+options:
+  bundleIdPrefix: com.flint.peakfocus
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    CODE_SIGN_STYLE: Automatic
+    # Set your Apple Developer Team here (or in Xcode) before building on device.
+    DEVELOPMENT_TEAM: ""
+    TARGETED_DEVICE_FAMILY: "1,2" # iPhone + iPad
+
+packages:
+  FlintCore:
+    path: Packages/FlintCore
+
+targets:
+  # ── Host app ────────────────────────────────────────────────
+  Flint:
+    type: application
+    platform: iOS
+    sources:
+      # Recursively globs Flint/Features/* — the Wave-1 verticals (FocusFilter, Shortcuts, Sleep,
+      # Settings/Privacy) drop their App Intents / screens here and are picked up automatically.
+      - Flint
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus
+        CODE_SIGN_ENTITLEMENTS: Flint/Flint.entitlements
+        GENERATE_INFOPLIST_FILE: "YES"
+        INFOPLIST_KEY_CFBundleDisplayName: Flint
+        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: "YES"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait"
+    dependencies:
+      - package: FlintCore
+      - target: DeviceActivityMonitorExtension
+      - target: ShieldConfigurationExtension
+      - target: ShieldActionExtension
+      - target: DeviceActivityReportExtension
+    scheme:
+      testTargets:
+        - FlintTests
+
+  # ── DeviceActivityMonitor: applies/clears shields on schedule boundaries ──
+  DeviceActivityMonitorExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Extensions/DeviceActivityMonitorExtension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.monitor
+        CODE_SIGN_ENTITLEMENTS: Extensions/DeviceActivityMonitorExtension/Monitor.entitlements
+        INFOPLIST_FILE: Extensions/DeviceActivityMonitorExtension/Info.plist
+    dependencies:
+      - package: FlintCore
+
+  # ── ShieldConfiguration: the branded "Peak Focus" block screen ──
+  ShieldConfigurationExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Extensions/ShieldConfigurationExtension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.shield-config
+        CODE_SIGN_ENTITLEMENTS: Extensions/ShieldConfigurationExtension/ShieldConfig.entitlements
+        INFOPLIST_FILE: Extensions/ShieldConfigurationExtension/Info.plist
+    dependencies:
+      - package: FlintCore
+
+  # ── ShieldAction: handles block-screen button taps (unlock / go back) ──
+  ShieldActionExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Extensions/ShieldActionExtension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.shield-action
+        CODE_SIGN_ENTITLEMENTS: Extensions/ShieldActionExtension/ShieldAction.entitlements
+        INFOPLIST_FILE: Extensions/ShieldActionExtension/Info.plist
+    dependencies:
+      - package: FlintCore
+
+  # ── DeviceActivityReport: the ONLY legal source of per-app usage stats UI ──
+  DeviceActivityReportExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Extensions/DeviceActivityReportExtension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.report
+        CODE_SIGN_ENTITLEMENTS: Extensions/DeviceActivityReportExtension/Report.entitlements
+        INFOPLIST_FILE: Extensions/DeviceActivityReportExtension/Info.plist
+    dependencies:
+      - package: FlintCore
+
+  # ── Unit tests (FlintCore logic) ──
+  FlintTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.tests
+        GENERATE_INFOPLIST_FILE: "YES"
+    dependencies:
+      - package: FlintCore

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Boot re-arm is best-effort (some OEM power managers strip boot receivers from
+         "optimized" apps). Also declared in the app manifest; the manifest merger dedupes. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application>
+        <!--
+          Refreshes Flint's app-side enforcement state after a reboot. The OS itself rebinds an
+          enabled AccessibilityService on boot (see android-app/README.md) — this receiver only
+          warms the rules cache and runs app-registered re-arm hooks; it never opens Settings
+          (ADR-007: re-enable prompts belong to feature-settings, behind the consent flow).
+
+          exported="false" is safe with these actions: boot broadcasts are sent by the system,
+          which may deliver to non-exported receivers (same pattern as WorkManager's
+          RescheduleReceiver); other apps cannot invoke it. The QUICKBOOT_POWERON variants cover
+          OEM "fast boot" paths (HTC and some others) that skip the standard broadcast.
+          LOCKED_BOOT_COMPLETED is deliberately absent: the blocklist lives in
+          credential-encrypted storage, unreadable before first unlock.
+        -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
