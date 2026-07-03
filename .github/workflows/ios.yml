@@ -13,6 +13,9 @@ on:
     paths: ['ios-app/**', '.github/workflows/ios.yml']
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: macos-latest
