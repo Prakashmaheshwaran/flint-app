@@ -61,6 +61,13 @@ public final class FlintSessionController {
             webDomains: selection.webDomainTokens
         )
 
+        // Uninstall guard: a Hardcore block also denies app removal (deleting Flint is
+        // otherwise the one-tap escape). Same store as the shield, so every teardown path —
+        // stop(), the Emergency Pass, the monitor's intervalDidEnd — drops both together via
+        // clearAllSettings(). Non-Hardcore starts assert nil, so replacing a Hardcore session
+        // can't leave the guard dangling.
+        shield.setDenyAppRemoval(breakLevel == .hardcore)
+
         let now = Date()
         let endsAt = duration > 0 ? now.addingTimeInterval(duration) : nil
         let session = FlintActiveSession(
@@ -100,7 +107,8 @@ public final class FlintSessionController {
         }
     }
 
-    /// Tear down the active session: clear shields, stop monitoring, forget the session.
+    /// Tear down the active session: clear shields — which also drops the Hardcore uninstall
+    /// guard living on the same store — stop monitoring, forget the session.
     public func stop() {
         shield.clear()
         if let session = FlintGroupStore()?.loadActiveSession() {
@@ -113,6 +121,16 @@ public final class FlintSessionController {
     public func finishIfExpired() {
         guard let session = activeSession, session.isExpired else { return }
         stop()
+    }
+
+    /// Launch-time reconciliation for the uninstall guard: finish an expired session first
+    /// (full teardown), then make `denyAppRemoval` match reality — re-asserted while a
+    /// Hardcore session is still running, dropped otherwise. Belt-and-braces for the one
+    /// end path the app can't see happen: the monitor's `intervalDidEnd` failing to fire
+    /// (e.g. the device was powered off across the boundary).
+    public func reconcileUninstallGuard() {
+        finishIfExpired()
+        shield.setDenyAppRemoval(FlintUninstallGuard.shouldDeny(for: activeSession))
     }
 
     // MARK: Emergency pass (free, one per week)

@@ -11,6 +11,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
   rule edits (`FlintOpenLimitsController`), a day-boundary re-arm via the monitor extension, and
   an open-aware block screen ("Use app (N left)" / opens-spent). Compile verification is pending
   on the macOS CI toolchain; shield enforcement itself remains device-gated, like all shields.
+- **Hardcore uninstall guard:** while a Hardcore (Deep Focus) session is active, Flint sets
+  `denyAppRemoval` on the session's `ManagedSettingsStore`, so deleting the app — the one-tap
+  escape from a "non-bypassable" block — is refused by iOS (device-wide, per Apple's setting).
+  Armed on every Hardcore start (Block Now, Shortcuts/Siri, Focus Filter) and re-asserted by the
+  monitor + on launch; released on every end path (allowed stop, the monitor's interval end,
+  Emergency Pass, launch reconciliation) because it shares the session shield's store. The
+  session UI says so while it applies. Compile verification is pending on the macOS CI
+  toolchain; enforcement is device-gated like all Screen Time settings.
 
 ### Fixed
 - **iOS:** reloading Schedules or Time Limits with zero rules no longer cancels *all* of

@@ -103,6 +103,30 @@ class OpenLimitPolicyTest {
         assertEquals(1, recorded.opensFor(insta))
     }
 
+    // MARK: forward-only rollover (time-change guard, always-on half — see ClockChangeGuard)
+
+    @Test
+    fun clockSetBackADayDoesNotRegrantConsumedOpens() {
+        var state = OpenCountState(today)
+        repeat(3) { state = policy.recordOpen(state, insta, today) }
+
+        val yesterday = today - 1 // the clock now lies
+        assertEquals(state, policy.rolledOver(state, yesterday)) // no reset, nothing to persist
+        assertEquals(3, policy.opensUsed(state, insta, yesterday))
+        assertTrue(policy.decide(insta, state, limits(3), yesterday) is OpenLimitDecision.Blocked)
+        // …and the state is intact once the clock returns to the real day.
+        assertTrue(policy.decide(insta, state, limits(3), today) is OpenLimitDecision.Blocked)
+    }
+
+    @Test
+    fun opensRecordedDuringAClockSetBackAccrueAgainstTheKeptDay() {
+        var state = OpenCountState(today)
+        state = policy.recordOpen(state, insta, today)
+        state = policy.recordOpen(state, insta, today - 1) // opened while the clock lies
+        assertEquals(today, state.epochDay)
+        assertEquals(2, policy.opensUsed(state, insta, today))
+    }
+
     // MARK: what counts as an "open"
 
     @Test

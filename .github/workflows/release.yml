@@ -21,7 +21,11 @@ jobs:
   android-apk:
     runs-on: ubuntu-latest
     steps:
+      # Check out the TAG being released (review P1-1): without `ref`, manual dispatch
+      # built default-branch HEAD but labeled the APK with the tag — mislabeled artifact.
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
 
       - uses: actions/setup-java@v5
         with:
