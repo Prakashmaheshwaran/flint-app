@@ -21,6 +21,24 @@ app & website blocking, unlimited schedules, hardcore Deep Focus, time & open li
 
 ---
 
+## Get Flint
+
+[![Download the Android APK](https://img.shields.io/badge/Android%20APK-download-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Prakashmaheshwaran/flint-app/releases/latest)
+[![Google Play — coming soon](https://img.shields.io/badge/Google%20Play-coming%20soon-555555?style=for-the-badge&logo=googleplay&logoColor=white)](https://github.com/Prakashmaheshwaran/flint-app/releases/latest)
+[![App Store — coming soon](https://img.shields.io/badge/App%20Store-coming%20soon-0D96F6?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Prakashmaheshwaran/flint-app/releases/latest)
+
+- **Android — download now:** grab `flint-*-android-debug.apk` from the
+  [latest release](https://github.com/Prakashmaheshwaran/flint-app/releases/latest) and allow
+  "install unknown apps" when Android asks. It's a **debug-signed preview build** (proper store
+  signing arrives with the Play release), so expect rough edges — and upgrading between preview
+  builds may require an uninstall first.
+- **Google Play:** coming soon.
+- **App Store (iOS):** coming soon — iOS can't be meaningfully sideloaded (Screen Time
+  entitlements are granted per developer), so until then iOS folks build from source
+  (see [Building](#building)).
+
+---
+
 ## Why Flint
 
 Opal gates the features that actually make blocking *stick* behind "Opal Pro" — recurring
