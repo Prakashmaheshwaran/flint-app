@@ -14,6 +14,8 @@ app & website blocking, unlimited schedules, hardcore Deep Focus, time & open li
 ![license](https://img.shields.io/badge/license-MIT-2C2C2A?style=flat-square)
 ![ios](https://img.shields.io/badge/iOS-16%2B-2C2C2A?style=flat-square)
 ![android](https://img.shields.io/badge/Android-6%2B-2C2C2A?style=flat-square)
+[![iOS CI](https://github.com/Prakashmaheshwaran/flint-app/actions/workflows/ios.yml/badge.svg)](https://github.com/Prakashmaheshwaran/flint-app/actions/workflows/ios.yml)
+[![Android CI](https://github.com/Prakashmaheshwaran/flint-app/actions/workflows/android.yml/badge.svg)](https://github.com/Prakashmaheshwaran/flint-app/actions/workflows/android.yml)
 
 </div>
 
@@ -45,7 +47,7 @@ what this project is.
 | Anti-bypass suite | Free | **Free** |
 | **Emergency Pass** | 💰 Pro | **Free, weekly** |
 | Accounts required | — | **None** |
-| Telemetry / ads | — | **None, ever** |
+| Telemetry / ads | — | **None** 
 
 Full feature parity map: [`docs/research/01-opal-feature-inventory.md`](docs/research/01-opal-feature-inventory.md).
 
