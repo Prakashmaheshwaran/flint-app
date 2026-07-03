@@ -81,25 +81,35 @@ class BlockDecisionEngine {
     /**
      * Whether a rule's schedule is active now. A null schedule = always active. A negative
      * [nowMinutesOfDay] means "no time supplied" → treat as active (the always-on blocklist case).
-     * Handles overnight windows (start > end, e.g. 22:00–06:00). [weekday] uses ISO numbering
-     * (1=Mon…7=Sun) — the same contract as `Schedule.daysOfWeek` in core-model; callers holding
-     * a `Calendar.DAY_OF_WEEK` (1=Sun…7=Sat) must convert via `((day + 5) % 7) + 1`. Empty
-     * daysOfWeek = every day.
+     * Handles overnight windows (start > end, e.g. 22:00–06:00): the pre-midnight head belongs
+     * to the current day, but the post-midnight tail is the *previous* day's window spilling
+     * over — so its day-of-week gate tests the previous ISO day ("Mon 22:00–06:00, Mondays"
+     * blocks Tue 00:30, not Mon 00:30). [weekday] uses ISO numbering (1=Mon…7=Sun) — the same
+     * contract as `Schedule.daysOfWeek` in core-model; callers holding a `Calendar.DAY_OF_WEEK`
+     * (1=Sun…7=Sat) must convert via `((day + 5) % 7) + 1`. Empty daysOfWeek = every day.
      */
     internal fun scheduleActive(schedule: Schedule?, nowMinutesOfDay: Int, weekday: Int): Boolean {
         schedule ?: return true
         if (nowMinutesOfDay < 0) return true
-        if (schedule.daysOfWeek.isNotEmpty() && weekday > 0 && weekday !in schedule.daysOfWeek) {
-            return false
-        }
         val start = schedule.startMinuteOfDay
         val end = schedule.endMinuteOfDay
-        return if (start <= end) {
-            nowMinutesOfDay in start until end
-        } else {
-            nowMinutesOfDay >= start || nowMinutesOfDay < end // overnight
+        if (start <= end) {
+            return dayAllowed(schedule, weekday) && nowMinutesOfDay in start until end
+        }
+        return when { // overnight
+            nowMinutesOfDay >= start -> dayAllowed(schedule, weekday) // head: today's window
+            nowMinutesOfDay < end -> dayAllowed(schedule, previousWeekday(weekday)) // tail: yesterday's
+            else -> false
         }
     }
+
+    /** Day-of-week gate: empty [Schedule.daysOfWeek] = every day; [weekday] <= 0 = unknown → don't gate. */
+    private fun dayAllowed(schedule: Schedule, weekday: Int): Boolean =
+        schedule.daysOfWeek.isEmpty() || weekday <= 0 || weekday in schedule.daysOfWeek
+
+    /** Previous ISO day, preserving the "unknown" sentinel (<= 0) unchanged. */
+    private fun previousWeekday(weekday: Int): Int =
+        if (weekday <= 0) weekday else DayMath.previousIsoDay(weekday)
 
     private companion object {
         /** Never shield core system surfaces (mirrors iOS's silently-ignored system apps). */

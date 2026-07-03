@@ -136,9 +136,12 @@ Verticals implemented:
   *intentional* opens at the shield: the apps stay shielded and the block screen's action button
   spends one of the day's allowed opens. `FlintOpenLimitEnforcer` matches the tapped token back
   to its saved rule (extensions can't tell an open-limit token from a hard-block one —
-  FB14237883), releases the token on a grant, keeps the shield once the cap is spent, never
-  charges an open that another layer (Session/Schedule/Time Limit) would still block, and fails
-  **closed** if the App Group is unreadable. Unit-tested; wired into `ShieldActionExtension`.
+  FB14237883), releases the token on a grant, keeps the shield once the cap is spent, avoids
+  charging an open that another layer (Session/Schedule/Time Limit) would still block, and fails
+  **closed** if the App Group is unreadable. One exception to that no-double-charge check: an
+  app another layer blocks via a *category* rule can't be detected (category membership is
+  opaque token-side), so a tap there still charges an open even though the grant won't get the
+  user in. Unit-tested; wired into `ShieldActionExtension`.
   The user-facing end is implemented too: a config screen (Limits tab → *Open Limits*:
   create/edit/toggle rules — opens-per-day, app/site picker, break level), host-app arming via
   `FlintOpenLimitsController` (on launch and rule edits), a day-boundary re-arm through the

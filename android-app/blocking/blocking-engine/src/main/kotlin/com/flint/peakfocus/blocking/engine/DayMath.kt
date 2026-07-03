@@ -21,6 +21,9 @@ internal object DayMath {
     /** ISO day of week for an epoch-day: 1 = Monday … 7 = Sunday (1970-01-01 was a Thursday). */
     fun isoDayOfWeek(epochDay: Long): Int = (floorMod(epochDay + 3L, 7L) + 1L).toInt()
 
+    /** The ISO day (1 = Monday … 7 = Sunday) immediately before [isoDay]: Mon → Sun, Tue → Mon. */
+    fun previousIsoDay(isoDay: Int): Int = ((isoDay + 5) % 7) + 1
+
     /** Epoch-day of the Monday starting the ISO week that contains [nowEpochMs]. */
     fun weekStartEpochDay(nowEpochMs: Long, utcOffsetMs: Long = 0L): Long {
         val day = epochDay(nowEpochMs, utcOffsetMs)

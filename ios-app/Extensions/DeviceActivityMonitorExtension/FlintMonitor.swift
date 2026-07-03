@@ -15,6 +15,9 @@ import FlintCore
 ///                         and the day boundary resets it).
 ///  - `flint.openLimit.<id>` — a daily Open Limit (all-day window; the boundary re-applies the
 ///                         rule's shield, re-arming tokens released by yesterday's grants).
+///
+/// Anything else is a stale registration (e.g. a rule deleted while the App Group was
+/// unreadable): it is deregistered and otherwise ignored — never treated as the session.
 final class FlintMonitor: DeviceActivityMonitor {
 
     private let sessionStore = ManagedSettingsStore(named: ManagedSettingsStore.Name("flint"))
@@ -27,8 +30,10 @@ final class FlintMonitor: DeviceActivityMonitor {
             applyRule(rule)
         } else if let openLimit = openLimit(for: activity) {
             applyOpenLimitShield(openLimit) // new day → re-arm tokens released by yesterday's grants
-        } else {
+        } else if activity.rawValue == FlintSessionController.monitorName {
             applyShieldFromSavedSelection()
+        } else {
+            stopStaleActivity(activity)
         }
     }
 
@@ -40,11 +45,13 @@ final class FlintMonitor: DeviceActivityMonitor {
             ManagedSettingsStore(named: ManagedSettingsStore.Name(rule.storeName)).clearAllSettings()
         } else if let openLimit = openLimit(for: activity) {
             applyOpenLimitShield(openLimit) // open limits stay shielded across the day roll-over
-        } else {
+        } else if activity.rawValue == FlintSessionController.monitorName {
             // Session over (natural expiry with the app closed/killed): clearing the store
             // drops the shield AND the Hardcore uninstall guard, which lives on the same store.
             sessionStore.clearAllSettings()
             FlintGroupStore()?.clearActiveSession()
+        } else {
+            stopStaleActivity(activity)
         }
     }
 
@@ -53,11 +60,10 @@ final class FlintMonitor: DeviceActivityMonitor {
         activity: DeviceActivityName
     ) {
         super.eventDidReachThreshold(event, activity: activity)
-        if let limit = limit(forEvent: event) {
-            applyLimitShield(limit) // daily budget hit → shield until the day resets
-        } else {
-            applyShieldFromSavedSelection()
-        }
+        // Only Time Limits register events (the session and the other layers never do), so an
+        // unmatched event is stale — a no-op, never a cue to shield the session's selection.
+        guard let limit = limit(forEvent: event) else { return }
+        applyLimitShield(limit) // daily budget hit → shield until the day resets
     }
 
     // MARK: Lookups
@@ -76,6 +82,14 @@ final class FlintMonitor: DeviceActivityMonitor {
 
     private func openLimit(for activity: DeviceActivityName) -> FlintOpenLimitRule? {
         FlintOpenLimitRule.loadAll().first { $0.activityName == activity.rawValue }
+    }
+
+    /// A boundary fired for a name matching no schedule/limit/open-limit and not the session
+    /// (`flint.session`): a stale registration. It used to fall through to the session branch —
+    /// applying the saved-selection shield or, worse, tearing down a *live* session's store and
+    /// state. Deregister it so it never fires again; touch nothing else.
+    private func stopStaleActivity(_ activity: DeviceActivityName) {
+        FlintScheduling.stopMonitoring([activity.rawValue])
     }
 
     // MARK: Shielding

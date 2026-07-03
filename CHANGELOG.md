@@ -20,6 +20,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
   session UI says so while it applies. Compile verification is pending on the macOS CI
   toolchain; enforcement is device-gated like all Screen Time settings.
 
+### Fixed
+- **iOS:** reloading Schedules or Time Limits with zero rules no longer cancels *all* of
+  Flint's DeviceActivity monitoring at launch (it hit the stop-everything overload via an
+  empty list, killing the active session's auto-clear). Empty-list `stopMonitoring` is now a
+  no-op; deliberate stop-everything moved to `stopAllMonitoring()`.
+- **iOS:** the monitor extension no longer treats unrecognized activity names (stale
+  registrations) as the Block Now session — they could re-shield the saved selection or tear
+  down a live session; they are now deregistered and ignored.
+- **iOS:** the block screen's opens-spent copy no longer promises "It unlocks tomorrow" when
+  open-limit state is unreadable (fail-closed) — it now says opens are unavailable.
+- **Android:** day-restricted overnight windows now block the correct morning: the
+  post-midnight tail is gated on the day the window started ("Mon 22:00–06:00, Mondays"
+  blocks Tue 00:30, not Mon 00:30).
+- **Docs:** the Open-Limits "never charges an open another layer would block" claim now
+  carries its real exception — category-rule blocks are undetectable (opaque tokens), so
+  those taps still charge an open.
+
 ## [0.1.0] — Initial public release
 
 First public snapshot of both native apps.
