@@ -72,6 +72,42 @@ final class FlintCoreTests: XCTestCase {
         XCTAssertTrue(controller.canStop(easy), "Easy can always be stopped")
     }
 
+    func testUninstallGuardDeniesRemovalOnlyWhileHardcoreRuns() {
+        let now = Date()
+
+        let hardcore = FlintActiveSession(
+            name: "h", startedAt: now, endsAt: now.addingTimeInterval(300),
+            breakLevel: .hardcore, monitorName: "m"
+        )
+        XCTAssertTrue(
+            FlintUninstallGuard.shouldDeny(for: hardcore, now: now),
+            "A running Hardcore session must deny app removal"
+        )
+        XCTAssertFalse(
+            FlintUninstallGuard.shouldDeny(for: hardcore, now: now.addingTimeInterval(300)),
+            "The guard releases at expiry (same boundary as FlintActiveSession.isExpired)"
+        )
+
+        let openEnded = FlintActiveSession(
+            name: "o", startedAt: now, endsAt: nil, breakLevel: .hardcore, monitorName: "m"
+        )
+        XCTAssertTrue(
+            FlintUninstallGuard.shouldDeny(for: openEnded, now: now.addingTimeInterval(9999)),
+            "Open-ended Hardcore (e.g. a Focus-Filter block) denies until it's stopped"
+        )
+
+        let easy = FlintActiveSession(
+            name: "e", startedAt: now, endsAt: now.addingTimeInterval(300),
+            breakLevel: .easy, monitorName: "m"
+        )
+        let harder = FlintActiveSession(
+            name: "r", startedAt: now, endsAt: nil, breakLevel: .harder, monitorName: "m"
+        )
+        XCTAssertFalse(FlintUninstallGuard.shouldDeny(for: easy, now: now), "Easy never denies removal")
+        XCTAssertFalse(FlintUninstallGuard.shouldDeny(for: harder, now: now), "Harder never denies removal")
+        XCTAssertFalse(FlintUninstallGuard.shouldDeny(for: nil, now: now), "No session → no guard")
+    }
+
     func testScheduleRuleDayGate() {
         let cal = Calendar(identifier: .gregorian)
         let monday = DateComponents(calendar: cal, year: 2024, month: 1, day: 1).date! // Mon

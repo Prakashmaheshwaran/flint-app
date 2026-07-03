@@ -129,7 +129,7 @@ struct ContentView: View {
                 }
                 .pickerStyle(.segmented)
                 Text(vm.breakLevel == .hardcore
-                     ? "Hardcore (Deep Focus): can't be stopped until it ends. Free in Flint."
+                     ? "Hardcore (Deep Focus): can't be stopped until it ends, and Flint can't be deleted while it's active. Free in Flint."
                      : "You can stop early.")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -174,6 +174,12 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                         .foregroundStyle(.secondary)
+                    if active.breakLevel == .hardcore {
+                        Text("Flint can't be deleted while Hardcore is active.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
                     if vm.emergencyPassAvailable {
                         Button { vm.useEmergencyPass() } label: {
                             Label("Use Emergency Pass (1/week)", systemImage: "key.fill")

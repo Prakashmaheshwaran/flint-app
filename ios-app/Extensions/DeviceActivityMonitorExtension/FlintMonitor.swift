@@ -41,6 +41,8 @@ final class FlintMonitor: DeviceActivityMonitor {
         } else if let openLimit = openLimit(for: activity) {
             applyOpenLimitShield(openLimit) // open limits stay shielded across the day roll-over
         } else {
+            // Session over (natural expiry with the app closed/killed): clearing the store
+            // drops the shield AND the Hardcore uninstall guard, which lives on the same store.
             sessionStore.clearAllSettings()
             FlintGroupStore()?.clearActiveSession()
         }
@@ -123,5 +125,11 @@ final class FlintMonitor: DeviceActivityMonitor {
             selection.categoryTokens.isEmpty ? nil : .specific(selection.categoryTokens)
         sessionStore.shield.webDomains =
             selection.webDomainTokens.isEmpty ? nil : selection.webDomainTokens
+        // Uninstall guard: deny app removal while a Hardcore session runs. The OS-driven
+        // (re)apply mirrors the app-side arm in FlintSessionController, so the guard holds even
+        // if the host process died right after starting; a stale/non-Hardcore session asserts
+        // nil, and intervalDidEnd's clearAllSettings() releases it with the shield.
+        sessionStore.application.denyAppRemoval =
+            FlintUninstallGuard.shouldDeny(for: FlintGroupStore()?.loadActiveSession()) ? true : nil
     }
 }
