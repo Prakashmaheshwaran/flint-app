@@ -4,7 +4,18 @@ updates:
     directory: /
     schedule:
       interval: monthly
+
   - package-ecosystem: gradle
     directory: /android-app
     schedule:
       interval: monthly
+    ignore:
+      # Deliberate-migration dependencies: auto-bumps broke the build on launch day
+      # (PRs #5, #7, #9 — Compose BOM, Lifecycle, Kotlin). These move together and need
+      # an emulator-verified migration pass, not a blind bump. Patch updates still flow.
+      - dependency-name: "androidx.compose:compose-bom"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "androidx.lifecycle:*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "org.jetbrains.kotlin*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
