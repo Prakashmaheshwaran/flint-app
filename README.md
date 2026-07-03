@@ -121,12 +121,12 @@ await a compile pass.** Verified earlier (builds, `FlintCore` unit tests, Simula
 Now, unlimited Schedules, Time Limits, free Hardcore + free weekly Emergency Pass, website
 blocking, app groups/presets + Allow List, app-open PIN, embedded usage report. Merged since,
 **compile verification still pending on a macOS toolchain**: Safari/Private-Browsing restrictions,
-Focus Filter integration, Siri & Shortcuts intents, Sleep Mode + Morning Assist, and Open-Limits
-enforcement (engine-side complete; the config UI and shield arming are a known gap, so it is not
-user-reachable end-to-end yet). And the standing Apple caveat: Screen Time **shield enforcement
-can only be proven on a physical device** (the Simulator can't grant Family Controls or apply
-shields) — an on-device hardware pass is still pending for everything enforcement-shaped. See
-[`ios-app/README.md`](ios-app/README.md).
+Focus Filter integration, Siri & Shortcuts intents, Sleep Mode + Morning Assist, and Open Limits
+(the enforcement engine, and now also the config UI + shield arming + day-boundary re-arm, so the
+feature is user-reachable end-to-end in code — pending that same compile pass). And the standing
+Apple caveat: Screen Time **shield enforcement can only be proven on a physical device** (the
+Simulator can't grant Family Controls or apply shields) — an on-device hardware pass is still
+pending for everything enforcement-shaped. See [`ios-app/README.md`](ios-app/README.md).
 
 ## Building
 
@@ -150,13 +150,13 @@ make android-install  # build + install on a connected device/emulator
 
 **Implemented:** core blocking loop, unlimited schedules, Time Limits, break levels incl. **free
 Hardcore**, free weekly Emergency Pass, website blocking, app groups + Allow List, app-PIN, usage
-report, Focus Filter, Siri/Shortcuts intents, Sleep Mode + Morning Assist, Open-Limits enforcement
-engine (iOS); engine parity — break levels, Open Limits, weekly Emergency Pass — plus persistence,
-rule/schedule/limit authoring, stats, branded block screen, resilience layer, four-tab app
-(Android). **Verification debt (the honest part):** the newest iOS merges need a macOS compile
-pass; iOS enforcement needs an on-device hardware pass; the integrated Android app needs an
-emulator re-run. **Next:** iOS Open-Limits config UI + arming (the enforcement engine is in, but
-unreachable without them), the verification passes above, deeper anti-bypass (uninstall /
+report, Focus Filter, Siri/Shortcuts intents, Sleep Mode + Morning Assist, Open Limits — the
+enforcement engine plus the config UI + arming (iOS); engine parity — break levels, Open Limits,
+weekly Emergency Pass — plus persistence, rule/schedule/limit authoring, stats, branded block
+screen, resilience layer, four-tab app (Android). **Verification debt (the honest part):** the
+newest iOS merges (Open-Limits config UI + arming among them) need a macOS compile pass; iOS
+enforcement needs an on-device hardware pass; the integrated Android app needs an emulator
+re-run. **Next:** the verification passes above, deeper anti-bypass (uninstall /
 time-change guards), a preset routine library, then optional opt-in cross-device sync. Details:
 [`docs/research/01-opal-feature-inventory.md` → "Minimum-Viable Flint v1"](docs/research/01-opal-feature-inventory.md).
 

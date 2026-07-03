@@ -172,7 +172,7 @@ Opal is a screen-time / focus app for iOS (mature) and Android (early, in-develo
 | **Opal tier** | free (hardcore no-reset tier is Pro) |
 | **Platform** | iOS (Opal — "coming soon" on Android) |
 | **Flint plan** | **FREE, including the no-reset tier.** iOS: `DeviceActivityEvent` counting app-open events vs. a count threshold → shield. Android: count launch transitions via AccessibilityService foreground-app changes → overlay block. Flint can ship Open Limits on Android (Opal hasn't). |
-| **Flint status** | **Partial (iOS); implemented (Android) — verification pending.** iOS enforcement is engine-side complete (intentional opens counted at the shield; fails closed if state is unreadable) but there is **no config UI and the app does not yet arm the shields** — not user-reachable end-to-end. Android open-limit models, engine policy, persistence, and editor UI are merged (emulator re-run pending). |
+| **Flint status** | **Implemented on both — verification pending.** iOS is user-reachable end-to-end in code: the enforcement engine (intentional opens counted at the shield; fails closed if state is unreadable) plus the config UI (Limits tab → Open Limits), host-app arming + day-boundary re-arm, and the "Use app (N left)" block-screen label — the config-UI/arming layer awaits the macOS compile pass, and grants enforce on a real device only. Android open-limit models, engine policy, persistence, and editor UI are merged (emulator re-run pending). |
 
 ### 2.3 Blocking strength / protection levels (break difficulty)
 

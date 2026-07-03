@@ -119,25 +119,27 @@ Verticals implemented:
   the same monitor path as Schedules. Blocking-only by design (no soundscapes/sleep stories);
   Slow Uplift stores the choice but arms no shield — the screen says so. Device-gated like all
   shields.
-- **Open Limits (launch-count caps) — enforcement only, no UI yet** — Screen Time has no
-  launch-count event, so Flint counts *intentional* opens at the shield: the apps stay shielded
-  and the block screen's action button spends one of the day's allowed opens.
-  `FlintOpenLimitEnforcer` matches the tapped token back to its saved rule (extensions can't
-  tell an open-limit token from a hard-block one — FB14237883), releases the token on a grant,
-  keeps the shield once the cap is spent, never charges an open that another layer
-  (Session/Schedule/Time Limit) would still block, and fails **closed** if the App Group is
-  unreadable. Unit-tested; wired into `ShieldActionExtension`. **Known product gap:** there is
-  no user-facing screen to create/edit `FlintOpenLimitRule`s, and the host app never calls the
-  arming seam (`FlintOpenLimitEnforcer.applyShield(for:)`) on launch / rule edits / day
-  boundary — so today the enforcement path is unreachable end-to-end. The block screen also
-  still labels the button "Stay focused" instead of "Use app (N left)" for open-limited tokens.
+- **Open Limits (launch-count caps)** — Screen Time has no launch-count event, so Flint counts
+  *intentional* opens at the shield: the apps stay shielded and the block screen's action button
+  spends one of the day's allowed opens. `FlintOpenLimitEnforcer` matches the tapped token back
+  to its saved rule (extensions can't tell an open-limit token from a hard-block one —
+  FB14237883), releases the token on a grant, keeps the shield once the cap is spent, never
+  charges an open that another layer (Session/Schedule/Time Limit) would still block, and fails
+  **closed** if the App Group is unreadable. Unit-tested; wired into `ShieldActionExtension`.
+  The user-facing end is implemented too: a config screen (Limits tab → *Open Limits*:
+  create/edit/toggle rules — opens-per-day, app/site picker, break level), host-app arming via
+  `FlintOpenLimitsController` (on launch and rule edits), a day-boundary re-arm through the
+  monitor extension (each rule registers an all-day activity), and the "Use app (N left)" /
+  opens-spent labels on the block screen. **Compile verification of the config-UI + arming
+  layer is pending on the macOS CI toolchain** (it was written without a local Xcode), and
+  grants enforce on a real device only, like every shield.
 
 **Next:**
 1. **On-device validation** of everything enforcement-shaped — shields, schedules, time limits,
    open-limit grants, web restrictions, Focus filters, sleep windows. The Simulator cannot prove
    any of it; tracked as `H-IOS-DEVICE` (human + hardware), evidence goes in `docs/verification/`.
-2. **Close the Open-Limits product gap** — a config screen to create/edit rules, host-app arming
-   + day-boundary re-arm of their shields (the `applyShield(for:)` seam above), and the
-   "Use app (N left)" button label in `ShieldConfigurationExtension`.
+2. **macOS compile pass over the Open-Limits config UI + arming** — that layer closes the last
+   product gap on paper but was built toolchain-blind; `xcodegen generate` + `xcodebuild`
+   build/test must go green before the blanket "all targets build" claim covers it.
 
 Build order: strategy doc §8.

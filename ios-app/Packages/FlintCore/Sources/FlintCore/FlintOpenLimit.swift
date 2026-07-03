@@ -170,6 +170,11 @@ public struct FlintOpenLimitRule: Codable, Identifiable, Equatable {
     /// The `ManagedSettingsStore` this limit shields into ("O" for open limit — cf. "flintL." for
     /// time limits and "flint." for schedule rules).
     public var storeName: String { "flintO.\(id)" }
+
+    /// The all-day `DeviceActivityName` whose day boundary re-arms this rule's shield (cf.
+    /// `FlintLimitRule.activityName`). Registered by `FlintOpenLimitsController`; the monitor
+    /// extension re-applies the shield when it fires.
+    public var activityName: String { "flint.openLimit.\(id)" }
 }
 
 private enum FlintOpenLimitStoreKey {
@@ -204,9 +209,10 @@ extension FlintOpenLimitRule {
 /// the shield instead.
 ///
 /// **Who re-arms after a grant:** the extension can't schedule its own re-shield (no
-/// DeviceActivity here — the monitor is a separate vertical), so a granted token stays released
-/// until the host app calls `applyShield(for:)` again (on launch, rule edits, and at the day
-/// boundary). The daily counter itself resets automatically via `FlintOpenLimitState.dayStart`.
+/// DeviceActivity here), so a granted token stays released until `applyShield(for:)` runs again —
+/// `FlintOpenLimitsController` calls it on app launch and rule edits, and the monitor extension
+/// calls it at the boundaries of each rule's all-day activity (`FlintOpenLimitRule.activityName`).
+/// The daily counter itself resets automatically via `FlintOpenLimitState.dayStart`.
 public enum FlintOpenLimitEnforcer {
 
     /// What the shield's action button should do for a tapped token.
@@ -261,7 +267,30 @@ public enum FlintOpenLimitEnforcer {
         )
     }
 
-    // MARK: Host-app seam (navigation/UI wiring belongs to the integrator, not this vertical)
+    // MARK: Shield-label lookup (called by the ShieldConfiguration extension)
+
+    /// Opens left today for a shielded application token, or `nil` when a tap wouldn't grant one
+    /// (no enabled rule covers it, or another layer hard-blocks it) — drives the block screen's
+    /// "Use app (N left)" button label. The same lookup `handleOpenRequest` uses, but it spends
+    /// nothing; an unreadable App Group reads as 0 left (fail closed, like the action handler).
+    public static func remainingOpens(application token: ApplicationToken) -> Int? {
+        remainingOpens(
+            key: FlintOpenLimit.key(for: token),
+            rules: coveringRules { $0.selection.applicationTokens.contains(token) },
+            isHardBlocked: isHardBlocked(application: token)
+        )
+    }
+
+    /// Web-domain flavor of `remainingOpens(application:)`.
+    public static func remainingOpens(webDomain token: WebDomainToken) -> Int? {
+        remainingOpens(
+            key: FlintOpenLimit.key(for: token),
+            rules: coveringRules { $0.selection.webDomainTokens.contains(token) },
+            isHardBlocked: isHardBlocked(webDomain: token)
+        )
+    }
+
+    // MARK: Host-app seam (armed by FlintOpenLimitsController; day boundary by the monitor)
 
     /// Shield a rule's full selection into its own store. Call when a rule is created or
     /// enabled, on app launch, and at the day boundary — that last call re-arms tokens released
@@ -323,6 +352,19 @@ public enum FlintOpenLimitEnforcer {
             }
             return .exhausted
         }
+    }
+
+    /// The shared read-only tally behind `remainingOpens(application:)` / `(webDomain:)` —
+    /// `handleOpenRequest` with the spending taken out.
+    private static func remainingOpens(
+        key: String,
+        rules: [FlintOpenLimitRule],
+        isHardBlocked: @autoclosure () -> Bool
+    ) -> Int? {
+        guard !rules.isEmpty, !isHardBlocked() else { return nil }
+        guard let group = FlintGroupStore() else { return 0 } // no counter → show the spent state
+        let cap = rules.map(\.opensAllowed).min() ?? 0
+        return FlintOpenLimit.remainingOpens(key, opensAllowed: cap, in: group.loadOpenLimitState())
     }
 
     /// True if a non-open-limit layer also shields this token right now. Purely a UX-honesty

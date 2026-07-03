@@ -25,11 +25,16 @@ struct LimitsView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
+            List {
                 if vm.limits.isEmpty {
-                    emptyState
+                    Section {
+                        emptyState
+                            .frame(maxWidth: .infinity)
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                    }
                 } else {
-                    List {
+                    Section("Daily time budgets") {
                         ForEach(vm.limits) { limit in
                             Button { editing = limit } label: { row(limit) }
                                 .buttonStyle(.plain)
@@ -37,8 +42,19 @@ struct LimitsView: View {
                         .onDelete { set in set.map { vm.limits[$0].id }.forEach(vm.delete) }
                     }
                 }
+
+                Section {
+                    NavigationLink {
+                        OpenLimitsView()
+                    } label: {
+                        Label("Open Limits", systemImage: "hand.tap")
+                    }
+                } footer: {
+                    Text("Cap opens per day instead of minutes — e.g. 3 opens of social. "
+                         + "The block screen's button spends one open to let you through.")
+                }
             }
-            .navigationTitle("Time Limits")
+            .navigationTitle("Limits")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button { showAdd = true } label: { Image(systemName: "plus") }
