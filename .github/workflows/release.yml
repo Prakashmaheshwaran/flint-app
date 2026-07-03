@@ -1,0 +1,44 @@
+# Attaches a downloadable Android APK to GitHub Releases.
+# Runs when a release is published, or manually (workflow_dispatch) for an existing tag.
+# HONESTY NOTE: the APK is debug-signed — an installable preview build, not the
+# Play Store build (store signing lands with the Play release).
+name: Release artifacts
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to attach artifacts to"
+        required: true
+        default: "v0.1.0"
+
+permissions:
+  contents: write
+
+jobs:
+  android-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Assemble debug APK
+        working-directory: android-app
+        run: ./gradlew assembleDebug
+
+      - name: Attach APK to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          APK=$(ls android-app/app/build/outputs/apk/debug/*.apk | head -1)
+          cp "$APK" "flint-${TAG}-android-debug.apk"
+          gh release upload "$TAG" "flint-${TAG}-android-debug.apk" --clobber
