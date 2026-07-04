@@ -8,6 +8,8 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
+import com.flint.peakfocus.blocking.engine.ForegroundSurface
+import com.flint.peakfocus.blocking.engine.UninstallGuard
 import com.flint.peakfocus.blocking.overlay.BlockScreenCoordinator
 import com.flint.peakfocus.blocking.overlay.openLimitBlockCause
 import com.flint.peakfocus.blocking.overlay.ruleBlockCause
@@ -38,6 +40,9 @@ import kotlinx.coroutines.cancel
  *
  * Decision order per foreground change (existing checks preserved, new ones layered in):
  *  0. active break/pass exemption → stand down;
+ *  0.5. [UninstallGuard] (anti-bypass): while a HARDCORE window is active, shield the system
+ *       surfaces that uninstall Flint, force-stop it, or disable this service — the exemption
+ *       check above keeps the Emergency Pass working as the sanctioned exit;
  *  1. daily Time Limit (legacy synchronous LimitStore + UsageQuery — unchanged);
  *  2. rule verdict from [BlockDecisionEngine] (sessions/schedules/allow-list/websites — unchanged);
  *  3. only if allowed: Open Limits (counts the open, blocks past the quota).
@@ -48,6 +53,7 @@ import kotlinx.coroutines.cancel
 class FlintAccessibilityService : AccessibilityService() {
 
     private val engine = BlockDecisionEngine()
+    private val uninstallGuard = UninstallGuard()
     private var serviceScope: CoroutineScope? = null
     private var coordinator: BlockScreenCoordinator? = null
 
@@ -76,7 +82,7 @@ class FlintAccessibilityService : AccessibilityService() {
         val previous = lastForegroundPackage
         lastForegroundPackage = pkg
         if (pkg == packageName) return // our own overlay/UI
-        evaluateForeground(previous, pkg)
+        evaluateForeground(previous, pkg, event.className?.toString())
     }
 
     /** Re-run the decision pipeline for whatever is in front (used after exemption expiry). */
@@ -86,18 +92,48 @@ class FlintAccessibilityService : AccessibilityService() {
             ?: return
         if (pkg == packageName) return
         // previous == pkg on purpose: a re-check is not a new "open" of the app.
-        evaluateForeground(previousPackage = pkg, pkg = pkg)
+        // No window event here, so no trustworthy class name — the guard's text gate still works.
+        evaluateForeground(previousPackage = pkg, pkg = pkg, windowClassName = null)
     }
 
-    private fun evaluateForeground(previousPackage: String?, pkg: String) {
+    private fun evaluateForeground(previousPackage: String?, pkg: String, windowClassName: String? = null) {
         val coordinator = coordinator ?: return // events never precede onServiceConnected
         val now = System.currentTimeMillis()
         val utcOffset = TimeZone.getDefault().getOffset(now).toLong()
+        val cal = Calendar.getInstance()
+        val nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+        // Schedule.daysOfWeek is ISO-numbered (1=Mon…7=Sun — core-model's documented contract);
+        // Calendar.DAY_OF_WEEK is 1=Sun…7=Sat. Convert before handing to the engine.
+        val weekday = ((cal.get(Calendar.DAY_OF_WEEK) + 5) % 7) + 1
 
         // 0) An active break / Emergency Pass window: enforcement stands down until it ends.
+        //    Checked before the uninstall guard on purpose: a spent Emergency Pass is the
+        //    sanctioned exit from HARDCORE, and it must open these surfaces too.
         if (coordinator.isExempt(pkg)) {
             coordinator.hideIfShown()
             return
+        }
+
+        // 0.5) Uninstall guard (anti-bypass): while a HARDCORE window is active, the surfaces
+        //      that uninstall Flint / force-stop it / disable this service are shielded. The
+        //      block cause is the arming rule's own, so the screen shows the real session.
+        if (uninstallGuard.isCandidateSurface(pkg)) {
+            val surface = ForegroundSurface(
+                packageName = pkg,
+                className = windowClassName,
+                visibleText = if (uninstallGuard.needsWindowText(pkg)) {
+                    collectVisibleText(rootInActiveWindow)
+                } else {
+                    emptyList()
+                },
+            )
+            val armingRule = uninstallGuard.judge(
+                surface, packageName, labelFor(packageName), ActiveRulesHolder.rules, nowMin, weekday,
+            )
+            if (armingRule != null) {
+                coordinator.showBlocked(pkg, labelFor(pkg), ruleBlockCause(armingRule, now, utcOffset))
+                return
+            }
         }
 
         // 1) Time Limit: blocked once today's foreground time reaches the app's daily budget.
@@ -115,11 +151,6 @@ class FlintAccessibilityService : AccessibilityService() {
 
         // 2) Rule verdict (manual sessions, schedules, allow-list mode, websites) — unchanged.
         val url = if (pkg in BROWSER_PACKAGES) readUrl(rootInActiveWindow) else null
-        val cal = Calendar.getInstance()
-        val nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
-        // Schedule.daysOfWeek is ISO-numbered (1=Mon…7=Sun — core-model's documented contract);
-        // Calendar.DAY_OF_WEEK is 1=Sun…7=Sat. Convert before handing to the engine.
-        val weekday = ((cal.get(Calendar.DAY_OF_WEEK) + 5) % 7) + 1
         when (val verdict = engine.decide(pkg, url, ActiveRulesHolder.rules, packageName, nowMin, weekday)) {
             is Verdict.Block -> {
                 val rule = ActiveRulesHolder.rules.firstOrNull { it.id == verdict.ruleId }
@@ -171,6 +202,35 @@ class FlintAccessibilityService : AccessibilityService() {
         pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
     }.getOrDefault(pkg)
 
+    // MARK: window text reading (uninstall guard)
+
+    /**
+     * Visible text + content descriptions in the active window, breadth-first and bounded
+     * ([MAX_TEXT_NODES]) so the guard can never turn a window event into an unbounded tree
+     * walk. Only called for [UninstallGuard.needsWindowText] surfaces. A node that throws
+     * (recycled mid-walk) just ends the sweep — the guard fails toward the text collected so
+     * far, and the next window event retries.
+     */
+    private fun collectVisibleText(root: AccessibilityNodeInfo?): List<String> {
+        root ?: return emptyList()
+        val out = ArrayList<String>()
+        runCatching {
+            val queue = ArrayDeque<AccessibilityNodeInfo>()
+            queue.addLast(root)
+            var visited = 0
+            while (queue.isNotEmpty() && visited < MAX_TEXT_NODES) {
+                val node = queue.removeFirst()
+                visited++
+                node.text?.toString()?.takeIf { it.isNotBlank() }?.let(out::add)
+                node.contentDescription?.toString()?.takeIf { it.isNotBlank() }?.let(out::add)
+                for (i in 0 until node.childCount) {
+                    node.getChild(i)?.let(queue::addLast)
+                }
+            }
+        }
+        return out
+    }
+
     // MARK: URL reading
 
     private fun readUrl(root: AccessibilityNodeInfo?): String? {
@@ -198,6 +258,9 @@ class FlintAccessibilityService : AccessibilityService() {
     }
 
     private companion object {
+        /** Node budget for [collectVisibleText] — plenty for a Settings page, bounded for anything. */
+        const val MAX_TEXT_NODES = 120
+
         val BROWSER_PACKAGES = setOf(
             "com.android.chrome",
             "org.mozilla.firefox",

@@ -156,12 +156,14 @@ report, Focus Filter, Siri/Shortcuts intents, Sleep Mode + Morning Assist, Open 
 enforcement engine plus the config UI + arming — and a Hardcore uninstall guard (iOS); engine
 parity — break levels, Open Limits,
 weekly Emergency Pass — plus persistence, rule/schedule/limit authoring, stats, branded block
-screen, resilience layer, four-tab app (Android). **Verification debt (the honest part):** the
+screen, resilience layer, four-tab app, and anti-bypass guards — time/timezone-change and a
+Hardcore uninstall guard (Android). **Verification debt (the honest part):** the
 newest iOS merges (Open-Limits config UI + arming and the uninstall guard among them) need a
 macOS compile pass; iOS
-enforcement needs an on-device hardware pass; the integrated Android app needs an emulator
-re-run. **Next:** the verification passes above, deeper anti-bypass (Android uninstall guard,
-time-change guards), a preset routine library, then optional opt-in cross-device sync. Details:
+enforcement needs an on-device hardware pass; the integrated Android app (the uninstall guard
+among the newest merges) needs an emulator
+re-run. **Next:** the verification passes above, a preset routine library, then optional
+opt-in cross-device sync. Details:
 [`docs/research/01-opal-feature-inventory.md` → "Minimum-Viable Flint v1"](docs/research/01-opal-feature-inventory.md).
 
 ---

@@ -76,6 +76,23 @@ moves them (the receiver forces immediate re-evaluation; it cannot veto the OS c
 clock set back during an *already granted* break stretches that break's exemption window —
 HARDCORE is unaffected (it never grants breaks).
 
+**Uninstall guard (`feat/android-uninstall-guard`) — implemented; JVM-tested decision logic;
+emulator pass pending.** While any enabled HARDCORE rule's window is active, Path A shields
+the system surfaces that end a "non-bypassable" block in seconds: the system uninstaller
+(blocked outright, mirroring iOS `denyAppRemoval`'s device-wide semantics), and Settings
+screens *about Flint* — App-info (Uninstall / Force stop / Clear data) and Accessibility
+(service toggle) — gated on the window both mentioning Flint and looking dangerous
+(class-name hints, else visible danger phrases), so ordinary Settings use stays free during a
+block. The decision half is the pure `UninstallGuard` (blocking-engine, JVM-tested incl.
+overnight/weekday window arming); `FlintAccessibilityService` measures the window (event
+class + bounded node-text sweep) and reuses the arming rule's own block cause, so the block
+screen shows the real session. Honest limits: Path A only (the UsageStats path can't read
+window content — disabling the a11y service first re-opens Settings; the health checker
+surfaces that degradation), danger phrases are English (class hints and the uninstaller
+check are locale-independent), OEM package/class lists are best-effort, and the weekly
+Emergency Pass still works — it's checked first, so the sanctioned exit stays open. Like the
+iOS guard, this stops impulse, not determination (safe mode and adb exist).
+
 ## Known gaps (found in the integration audit)
 
 1. **Weekday convention bug — Path A schedules are wrong on Sundays/Fridays.** `core-model`'s
@@ -112,7 +129,7 @@ Device-only proof (OEM kill behavior, real-world resilience) stays in the board'
 | `core:core-common` | android-lib | `FlintTheme` (brand tokens → Material3), `OemUtil` |
 | `core:core-data` | android-lib | Legacy synchronous stores: `BlocklistStore`, `LimitStore`, `UsageQuery` |
 | `core:core-datastore` | android-lib | Preferences DataStore: `BlockRulesStore`, `LimitsStore`, `FocusStateStore` + codecs (unit-tested) |
-| `blocking:blocking-engine` | kotlin-jvm | `BlockDecisionEngine` + break/pass/open-limit policies + `ClockChangeGuard` (fail-closed time-change policy) + `DayMath` (unit-tested) |
+| `blocking:blocking-engine` | kotlin-jvm | `BlockDecisionEngine` + break/pass/open-limit policies + `ClockChangeGuard` (fail-closed time-change policy) + `UninstallGuard` (Hardcore anti-uninstall surface policy) + `DayMath` (unit-tested) |
 | `blocking:blocking-accessibility` | android-lib | `FlintAccessibilityService` — Path A detector + a11y-overlay enforcement (no `isAccessibilityTool`) |
 | `blocking:blocking-usagestats` | android-lib | `UsageStatsForegroundService` (poll loop → Path B handoff), `UsagePoller`, `DailyLimitTracker` |
 | `blocking:blocking-overlay` | android-lib | `BlockScreenCoordinator` (shared seam), `PathBBlockHandoff`, `OverlayController`, `BlockActivity` |
