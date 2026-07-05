@@ -50,6 +50,9 @@ private sealed interface BlocklistDestination {
     /** [ruleId] null = author a new rule. */
     data class EditRule(val ruleId: String?) : BlocklistDestination
 
+    /** Author a new rule prefilled from a [RoutinePresets] entry. */
+    data class NewRuleFromPreset(val presetId: String) : BlocklistDestination
+
     /** [packageName] null = pick the app first. */
     data class EditLimit(val packageName: String?) : BlocklistDestination
 }
@@ -90,6 +93,9 @@ fun BlocklistScreen(modifier: Modifier = Modifier) {
                 rulesState = rulesState,
                 limitsState = limitsState,
                 onNewRule = { destination = BlocklistDestination.EditRule(null) },
+                onNewRuleFromPreset = {
+                    destination = BlocklistDestination.NewRuleFromPreset(it)
+                },
                 onEditRule = { destination = BlocklistDestination.EditRule(it) },
                 onToggleRule = blocklistViewModel::setRuleEnabled,
                 onNewLimit = { destination = BlocklistDestination.EditLimit(null) },
@@ -118,6 +124,20 @@ fun BlocklistScreen(modifier: Modifier = Modifier) {
                 )
             }
 
+            is BlocklistDestination.NewRuleFromPreset -> RuleEditorScreen(
+                // An unknown id can't come from our own chips, but fall back to a blank
+                // draft rather than crash — same defensive posture as saveRule's gate.
+                initialDraft = RoutinePresets.byId(dest.presetId)?.let(::presetDraft)
+                    ?: newRuleDraft(defaultBreakLevel),
+                appsState = appsState,
+                onSave = { draft ->
+                    blocklistViewModel.saveRule(draft)
+                    destination = BlocklistDestination.Overview
+                },
+                onDelete = null,
+                onClose = { destination = BlocklistDestination.Overview },
+            )
+
             is BlocklistDestination.EditLimit -> LimitEditorFlow(
                 packageName = dest.packageName,
                 appsState = appsState,
@@ -142,6 +162,7 @@ private fun BlocklistOverview(
     rulesState: RulesUiState,
     limitsState: LimitsUiState,
     onNewRule: () -> Unit,
+    onNewRuleFromPreset: (String) -> Unit,
     onEditRule: (String) -> Unit,
     onToggleRule: (String, Boolean) -> Unit,
     onNewLimit: () -> Unit,
@@ -192,6 +213,14 @@ private fun BlocklistOverview(
         }
         Spacer(Modifier.height(24.dp))
 
+        SectionLabel("Start from a preset")
+        Spacer(Modifier.height(8.dp))
+        RoutinePresets.ALL.forEach { preset ->
+            PresetCard(preset = preset, onClick = { onNewRuleFromPreset(preset.id) })
+            Spacer(Modifier.height(8.dp))
+        }
+        Spacer(Modifier.height(16.dp))
+
         SectionLabel("Daily app limits")
         Spacer(Modifier.height(8.dp))
         when (limitsState) {
@@ -238,6 +267,53 @@ private fun EmptyCard(message: String) {
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/**
+ * One tappable preset routine: name, tagline, and the schedule line it would prefill —
+ * built with the same [scheduleSummary] the rule cards use, so the wording stays identical.
+ */
+@Composable
+private fun PresetCard(preset: RoutinePreset, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surface,
+    ) {
+        Column(
+            modifier = Modifier
+                .clickable(onClick = onClick)
+                .fillMaxWidth()
+                .padding(16.dp),
+        ) {
+            Text(
+                text = preset.name,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = preset.tagline,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = scheduleSummary(
+                    Schedule(
+                        daysOfWeek = preset.days,
+                        startMinuteOfDay = preset.startMinuteOfDay,
+                        endMinuteOfDay = preset.endMinuteOfDay,
+                    ),
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(6.dp))
+            BreakLevelBadge(preset.breakLevel)
+        }
     }
 }
 
@@ -400,6 +476,7 @@ private fun BlocklistOverviewPreview() {
                     ),
                 ),
                 onNewRule = {},
+                onNewRuleFromPreset = {},
                 onEditRule = {},
                 onToggleRule = { _, _ -> },
                 onNewLimit = {},
@@ -418,6 +495,7 @@ private fun BlocklistOverviewEmptyPreview() {
                 rulesState = RulesUiState.Ready(emptyList()),
                 limitsState = LimitsUiState.Ready(emptyList()),
                 onNewRule = {},
+                onNewRuleFromPreset = {},
                 onEditRule = {},
                 onToggleRule = { _, _ -> },
                 onNewLimit = {},

@@ -39,6 +39,17 @@ a11y service) were verified the same way. Those runs predate the feature merges 
 (`feature-blockscreen`), breaks/Emergency Pass/Open Limits policies (engine + overlay), DataStore
 persistence (`core-datastore`), and the resilience layer (`blocking-resilience`).
 
+**Preset routine library (`feat/android-preset-routines`) — implemented; JVM-tested draft
+logic; CI compile is the build gate; emulator pass pending.** The Blocklist overview now
+offers the five Opal-mirroring templates the feature inventory names (Laser Focus,
+Rise and Shine 6–9 AM, Reading Time, Gym Time, Weekend Limit) as one-tap cards. A preset
+prefills only the routine's *shape* — name, days, window, curated break level — and opens the
+normal rule editor; apps/sites stay empty on purpose (no catalog knows which apps derail this
+user), so the editor's existing NO_TARGETS validation walks the user to the picker before
+anything saves. No preset defaults to HARDCORE (a one-tap template must not arm a
+cannot-stop-early block); raising it is one tap in the editor. Catalog + draft mapping are
+pure Kotlin (`RoutinePresets`, JVM-tested); iOS has no preset library yet.
+
 **This integration pass (A-VERIFY) — NOT compiled: this session's environment has no Android
 toolchain; `make android` / `make android-test` on the Mac are the outstanding gates.**
 What it wired, verified by inspection only:
@@ -119,7 +130,7 @@ Device-only proof (OEM kill behavior, real-world resilience) stays in the board'
 | `blocking:blocking-resilience` | android-lib | `BootReceiver` (+ re-arm hooks), `TimeChangeReceiver` (clock/timezone-change guard), `ExitReasonReporter`, `PermissionHealthChecker` |
 | `permissions:permissions-special` | android-lib | `UsageAccess`, `OverlayPermission`, `AccessibilityPermission`, `BatteryOptimization` |
 | `feature:feature-onboarding` | android-lib | `AccessibilityConsentScreen` — **prominent-disclosure consent (Play gate, ADR-007)** |
-| `feature:feature-blocklist` | android-lib | Rule/limit editors, app picker, domain input (draft logic unit-tested) |
+| `feature:feature-blocklist` | android-lib | Rule/limit editors, app picker, domain input, preset routine library (draft + preset logic unit-tested) |
 | `feature:feature-stats` | android-lib | 7-day screen-time report from `UsageStatsManager` (aggregation unit-tested) |
 | `feature:feature-blockscreen` | android-lib | The shared branded "blocked" UI (hosted by overlay window or `BlockActivity`) |
 | `feature:feature-settings` | android-lib | Blocking-health rows, battery exemption, OEM auto-start guidance, exit diagnostics |

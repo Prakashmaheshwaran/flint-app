@@ -80,7 +80,7 @@ Opal is a screen-time / focus app for iOS (mature) and Android (early, in-develo
 | **Opal tier** | **paid** (free capped at ~3 recurring per official FAQ; some sources say 1) |
 | **Platform** | both |
 | **Flint plan** | **FREE and UNLIMITED — this is a headline anti-paywall win.** iOS: repeating `DeviceActivitySchedule` entries, one per recurring rule, no count cap. Android: recurring `AlarmManager`/`WorkManager` triggers. Ship a free preset routine library mirroring Opal's. |
-| **Flint status** | **Implemented — unlimited recurring rules on both platforms** (no count cap); same verification state as 1.3. The Opal-style preset *routine* library is **not yet** built (saved app groups exist on iOS — see 1.10). |
+| **Flint status** | **Implemented — unlimited recurring rules on both platforms** (no count cap); same verification state as 1.3. The Opal-style preset *routine* library: **Android implemented** — the five templates above as one-tap prefilled drafts in the Blocklist overview (schedule + break level prefilled, user picks their own apps; JVM-tested, emulator pass pending); **iOS not yet** (saved app groups exist — see 1.10). |
 
 ### 1.5 Advance scheduling (>24 hours ahead)
 
@@ -146,7 +146,7 @@ Opal is a screen-time / focus app for iOS (mature) and Android (early, in-develo
 | **Opal tier** | free |
 | **Platform** | both |
 | **Flint plan** | **FREE.** iOS: persist saved sets of Screen Time tokens; auto-switch by binding to system Focus Modes via Focus Filters (see 3.1). Android: persisted package-name sets. Backend syncs group definitions across devices. |
-| **Flint status** | **Implemented (iOS) — verified earlier:** named reusable picker selections applied in one tap; saved groups also surface as a preset parameter in the Shortcuts intents (3.2). Preset routine template library: **not yet**. Android named groups: **not yet** (rules persist individually). Cross-device sync: not in v1. |
+| **Flint status** | **Implemented (iOS) — verified earlier:** named reusable picker selections applied in one tap; saved groups also surface as a preset parameter in the Shortcuts intents (3.2). Preset routine template library: **Android implemented** (see 1.4; one-tap prefilled rule drafts), **iOS not yet**. Android named groups: **not yet** (rules persist individually). Cross-device sync: not in v1. |
 
 ---
 
