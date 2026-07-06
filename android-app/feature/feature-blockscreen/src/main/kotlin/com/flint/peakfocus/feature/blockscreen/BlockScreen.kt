@@ -16,7 +16,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -31,6 +33,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -105,7 +113,10 @@ fun BlockScreen(
             )
             if (state.remainingMillis != null) {
                 Spacer(Modifier.height(20.dp))
-                InfoPill(text = "Unblocks in ${formatDuration(state.remainingMillis)}")
+                InfoPill(
+                    text = "Unblocks in ${formatDuration(state.remainingMillis)}",
+                    spokenText = unblockCountdownA11y(state.remainingMillis),
+                )
             }
             Spacer(Modifier.height(20.dp))
             Text(
@@ -158,10 +169,28 @@ private fun BreakActions(
             modifier = modifier.fillMaxWidth(),
         )
 
-        is BreakAffordance.WaitBeforeBreak -> InfoPill(
-            text = "Break available in ${formatDuration(affordance.remainingMillis)}",
+        is BreakAffordance.WaitBeforeBreak -> Column(
             modifier = modifier,
-        )
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (affordance.progress != null) {
+                // Determinate: fills as the wait elapses. Decorative — the pill below carries
+                // the same information as text, so the ring is hidden from screen readers.
+                CircularProgressIndicator(
+                    progress = { affordance.progress },
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clearAndSetSemantics {},
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                )
+            }
+            InfoPill(
+                text = "Break available in ${formatDuration(affordance.remainingMillis)}",
+                spokenText = waitNoticeA11y(affordance.remainingMillis),
+            )
+        }
 
         BreakAffordance.EmergencyPassOnly -> Column(
             modifier = modifier.fillMaxWidth(),
@@ -187,6 +216,11 @@ private fun BreakActions(
  * HARDER-level friction: press and hold for [holdMillis] to fire [onHoldCompleted]. The fill
  * animation is driven purely by the press gesture (no free-running timer); releasing early
  * drains it back to zero.
+ *
+ * Accessibility: a bare pointerInput surface is invisible to TalkBack — without the semantics
+ * below, a screen-reader user on a HARDER block has no way to request a break at all. The
+ * semantic click action fires the same request the completed hold would (see
+ * [HOLD_BREAK_A11Y_DESCRIPTION] for why that trade is honest).
  */
 @Composable
 private fun HoldToRequestBreakButton(
@@ -216,6 +250,14 @@ private fun HoldToRequestBreakButton(
             .height(48.dp)
             .clip(shape)
             .border(width = 1.dp, color = MaterialTheme.colorScheme.primary, shape = shape)
+            .semantics(mergeDescendants = true) {
+                role = Role.Button
+                contentDescription = HOLD_BREAK_A11Y_DESCRIPTION
+                onClick(label = HOLD_BREAK_A11Y_LABEL) {
+                    onHoldCompleted()
+                    true
+                }
+            }
             .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = {
@@ -242,11 +284,19 @@ private fun HoldToRequestBreakButton(
     }
 }
 
-/** A calm rounded pill for passive info (countdowns, wait notices). */
+/**
+ * A calm rounded pill for passive info (countdowns, wait notices). [spokenText], when given,
+ * replaces the visual text for screen readers — TalkBack reads "4m 32s" as a letter salad,
+ * so countdown pills hand it the words instead.
+ */
 @Composable
-private fun InfoPill(text: String, modifier: Modifier = Modifier) {
+private fun InfoPill(text: String, modifier: Modifier = Modifier, spokenText: String? = null) {
     Surface(
-        modifier = modifier,
+        modifier = if (spokenText != null) {
+            modifier.clearAndSetSemantics { contentDescription = spokenText }
+        } else {
+            modifier
+        },
         shape = RoundedCornerShape(percent = 50),
         color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
@@ -312,6 +362,7 @@ private fun BlockScreenHarderWaitPreview() {
                 reason = BlockScreenReason.TIME_LIMIT,
                 breakLevel = BreakLevel.HARDER,
                 breakWaitRemainingMillis = 272_000L, // 4m 32s
+                breakWaitTotalMillis = 600_000L, // 10m wait — ring ≈ 55% elapsed
             ),
             onDismiss = {},
             onOpenFlint = {},

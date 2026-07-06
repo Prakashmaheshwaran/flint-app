@@ -47,6 +47,12 @@ data class BlockScreenState(
      * and HARDCORE (no breaks at all).
      */
     val breakWaitRemainingMillis: Long? = null,
+    /**
+     * HARDER only: the full length of that cooldown, so the wait notice can show determinate
+     * progress. Null (or ≤ 0) hides the ring and keeps the text-only notice — older hosts
+     * that never learned this field render exactly as before.
+     */
+    val breakWaitTotalMillis: Long? = null,
 )
 
 /** How long the HARDER-level control must be held before `onBreakRequested` fires. */
@@ -60,8 +66,15 @@ internal sealed interface BreakAffordance {
     /** HARDER, no pending cooldown: press-and-hold friction before the request fires. */
     data class HoldToRequest(val holdMillis: Long) : BreakAffordance
 
-    /** HARDER, host says a cooldown is pending: no control, just a wait notice. */
-    data class WaitBeforeBreak(val remainingMillis: Long) : BreakAffordance
+    /**
+     * HARDER, host says a cooldown is pending: no control, just a wait notice.
+     * [progress] is the elapsed fraction of the full wait (0f..1f) for a determinate ring,
+     * or null when the host didn't supply the total (text-only notice).
+     */
+    data class WaitBeforeBreak(
+        val remainingMillis: Long,
+        val progress: Float? = null,
+    ) : BreakAffordance
 
     /** HARDCORE: no bypass affordance — only the Emergency Pass CTA. */
     data object EmergencyPassOnly : BreakAffordance
@@ -83,7 +96,11 @@ internal fun blockScreenContent(state: BlockScreenState): BlockScreenContent {
         headline = "$name can wait",
         reasonLine = reasonLineFor(state.reason),
         encouragement = encouragementFor(state.packageName),
-        breakAffordance = breakAffordanceFor(state.breakLevel, state.breakWaitRemainingMillis),
+        breakAffordance = breakAffordanceFor(
+            state.breakLevel,
+            state.breakWaitRemainingMillis,
+            state.breakWaitTotalMillis,
+        ),
     )
 }
 
@@ -101,15 +118,30 @@ internal fun reasonLineFor(reason: BlockScreenReason): String = when (reason) {
 internal fun breakAffordanceFor(
     level: BreakLevel,
     breakWaitRemainingMillis: Long?,
+    breakWaitTotalMillis: Long? = null,
 ): BreakAffordance = when (level) {
     BreakLevel.EASY -> BreakAffordance.TakeABreak
     BreakLevel.HARDER ->
         if (breakWaitRemainingMillis != null && breakWaitRemainingMillis > 0) {
-            BreakAffordance.WaitBeforeBreak(breakWaitRemainingMillis)
+            BreakAffordance.WaitBeforeBreak(
+                remainingMillis = breakWaitRemainingMillis,
+                progress = waitProgress(breakWaitTotalMillis, breakWaitRemainingMillis),
+            )
         } else {
             BreakAffordance.HoldToRequest(BREAK_HOLD_MILLIS)
         }
     BreakLevel.HARDCORE -> BreakAffordance.EmergencyPassOnly
+}
+
+/**
+ * Elapsed fraction of the HARDER wait for the determinate ring: 0f at the moment the wait
+ * started, 1f when it's over. Null (no ring) when the host didn't supply a usable total.
+ * Clamped so host clock skew (remaining > total, negative remaining) can't paint an
+ * out-of-range ring.
+ */
+internal fun waitProgress(totalMillis: Long?, remainingMillis: Long): Float? {
+    if (totalMillis == null || totalMillis <= 0) return null
+    return ((totalMillis - remainingMillis).toFloat() / totalMillis.toFloat()).coerceIn(0f, 1f)
 }
 
 private val ENCOURAGEMENTS = listOf(
@@ -136,3 +168,41 @@ internal fun formatDuration(millis: Long): String {
         else -> "${seconds}s"
     }
 }
+
+/**
+ * The same countdown in words for screen readers — TalkBack reads "4m 32s" as a letter salad.
+ * Mirrors [formatDuration]'s unit choices exactly so eyes and ears get the same information.
+ */
+internal fun formatDurationSpoken(millis: Long): String {
+    val totalSeconds = (millis / 1000).coerceAtLeast(0)
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    fun unit(value: Long, singular: String) = "$value $singular" + if (value == 1L) "" else "s"
+    return when {
+        hours > 0 -> "${unit(hours, "hour")} ${unit(minutes, "minute")}"
+        minutes > 0 -> "${unit(minutes, "minute")} ${unit(seconds, "second")}"
+        else -> unit(seconds, "second")
+    }
+}
+
+// ---- Accessibility copy (pure, so tests can hold it to the same honesty bar as visible copy) ----
+
+/**
+ * TalkBack action + description for the HARDER hold-to-request control. The visual control is
+ * a press-and-hold with no click semantics, which a screen reader cannot operate; the semantic
+ * click action is the accessible equivalent. The hold friction is deterrence, not security —
+ * for a screen-reader user, navigating to the control and double-tapping is already a
+ * deliberate act, so the action fires the same request the completed hold would.
+ */
+internal const val HOLD_BREAK_A11Y_LABEL = "Request a break"
+internal const val HOLD_BREAK_A11Y_DESCRIPTION =
+    "Request a break. Hold to fill, or double-tap to request."
+
+/** Spoken form of the HARDER wait notice. */
+internal fun waitNoticeA11y(remainingMillis: Long): String =
+    "Break available in ${formatDurationSpoken(remainingMillis)}"
+
+/** Spoken form of the "Unblocks in …" countdown pill. */
+internal fun unblockCountdownA11y(remainingMillis: Long): String =
+    "Unblocks in ${formatDurationSpoken(remainingMillis)}"

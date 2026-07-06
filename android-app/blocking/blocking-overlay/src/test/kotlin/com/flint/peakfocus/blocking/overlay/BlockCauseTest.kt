@@ -161,6 +161,32 @@ class BlockCauseTest {
     }
 
     @Test
+    fun `pending harder request carries the full friction length for the wait ring`() {
+        val session = BreakSessionState(
+            breaksTaken = 1,
+            pending = BreakRequestState(requestedAtEpochMs = 100_000L, effectiveAtEpochMs = 160_000L),
+        )
+        val waiting = blockScreenState("com.x", null, cause, session, nowEpochMs = 130_000L)
+        assertEquals(60_000L, waiting.breakWaitTotalMillis)
+
+        // No pending cooldown → no total either (screen shows hold-to-request, not the ring).
+        val elapsed = blockScreenState("com.x", null, cause, session, nowEpochMs = 160_000L)
+        assertNull(elapsed.breakWaitTotalMillis)
+    }
+
+    @Test
+    fun `degenerate friction lengths stay text-only rather than painting a broken ring`() {
+        val session = BreakSessionState(
+            pending = BreakRequestState(requestedAtEpochMs = 160_000L, effectiveAtEpochMs = 160_000L),
+        )
+        // effective == requested can't happen via BreakPolicy, but a corrupt persisted state
+        // must degrade to the text notice, not divide by zero downstream.
+        val state = blockScreenState("com.x", null, cause, session, nowEpochMs = 130_000L)
+        assertEquals(30_000L, state.breakWaitRemainingMillis)
+        assertNull(state.breakWaitTotalMillis)
+    }
+
+    @Test
     fun `cooldown projection only applies to the harder tier`() {
         val session = BreakSessionState(
             pending = BreakRequestState(requestedAtEpochMs = 0L, effectiveAtEpochMs = 999_000L),

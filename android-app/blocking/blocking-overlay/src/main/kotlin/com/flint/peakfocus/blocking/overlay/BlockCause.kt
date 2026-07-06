@@ -102,6 +102,13 @@ fun blockScreenState(
         breakLevel = cause.breakLevel,
         remainingMillis = cause.endsAtEpochMs?.let { (it - nowEpochMs).coerceAtLeast(0L) },
         breakWaitRemainingMillis = breakWait,
+        // The full friction length drives the screen's determinate wait ring; a degenerate
+        // request (effective ≤ requested) sends null and the screen stays text-only.
+        breakWaitTotalMillis = if (breakWait != null && pending != null) {
+            (pending.effectiveAtEpochMs - pending.requestedAtEpochMs).takeIf { it > 0 }
+        } else {
+            null
+        },
     )
 }
 

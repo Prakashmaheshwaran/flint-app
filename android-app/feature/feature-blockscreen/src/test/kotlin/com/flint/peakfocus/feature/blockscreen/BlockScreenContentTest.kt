@@ -18,6 +18,7 @@ class BlockScreenContentTest {
         appLabel: String? = "Instagram",
         remainingMillis: Long? = null,
         breakWaitRemainingMillis: Long? = null,
+        breakWaitTotalMillis: Long? = null,
     ) = BlockScreenState(
         packageName = packageName,
         appLabel = appLabel,
@@ -25,6 +26,7 @@ class BlockScreenContentTest {
         breakLevel = breakLevel,
         remainingMillis = remainingMillis,
         breakWaitRemainingMillis = breakWaitRemainingMillis,
+        breakWaitTotalMillis = breakWaitTotalMillis,
     )
 
     // ---- Break-level → affordance mapping ----
@@ -63,6 +65,44 @@ class BlockScreenContentTest {
             state(breakLevel = BreakLevel.HARDER, breakWaitRemainingMillis = 272_000L),
         )
         assertEquals(BreakAffordance.WaitBeforeBreak(272_000L), content.breakAffordance)
+    }
+
+    @Test
+    fun `harder wait carries determinate progress when the host supplies the total`() {
+        val content = blockScreenContent(
+            state(
+                breakLevel = BreakLevel.HARDER,
+                breakWaitRemainingMillis = 150_000L,
+                breakWaitTotalMillis = 600_000L,
+            ),
+        )
+        assertEquals(
+            BreakAffordance.WaitBeforeBreak(remainingMillis = 150_000L, progress = 0.75f),
+            content.breakAffordance,
+        )
+    }
+
+    // ---- Wait-ring progress math ----
+
+    @Test
+    fun `wait progress is the elapsed fraction`() {
+        assertEquals(0.5f, waitProgress(totalMillis = 600_000L, remainingMillis = 300_000L))
+        assertEquals(0f, waitProgress(totalMillis = 600_000L, remainingMillis = 600_000L))
+    }
+
+    @Test
+    fun `wait progress is null without a usable total - text-only notice`() {
+        assertEquals(null, waitProgress(totalMillis = null, remainingMillis = 300_000L))
+        assertEquals(null, waitProgress(totalMillis = 0L, remainingMillis = 300_000L))
+        assertEquals(null, waitProgress(totalMillis = -600_000L, remainingMillis = 300_000L))
+    }
+
+    @Test
+    fun `wait progress clamps host clock skew into range`() {
+        // remaining > total (clock set back): never below 0.
+        assertEquals(0f, waitProgress(totalMillis = 600_000L, remainingMillis = 900_000L))
+        // negative remaining (host rendered late): never above 1.
+        assertEquals(1f, waitProgress(totalMillis = 600_000L, remainingMillis = -5_000L))
     }
 
     @Test
@@ -160,5 +200,35 @@ class BlockScreenContentTest {
     fun `clamps zero and negative to zero seconds`() {
         assertEquals("0s", formatDuration(0L))
         assertEquals("0s", formatDuration(-5_000L))
+    }
+
+    // ---- Spoken countdowns + accessibility copy ----
+
+    @Test
+    fun `spoken form mirrors the visual unit choices in words`() {
+        assertEquals("42 seconds", formatDurationSpoken(42_000L))
+        assertEquals("4 minutes 32 seconds", formatDurationSpoken(272_000L))
+        assertEquals("1 hour 24 minutes", formatDurationSpoken(5_040_000L))
+        assertEquals("0 seconds", formatDurationSpoken(-5_000L))
+    }
+
+    @Test
+    fun `spoken form uses singular units where the value is one`() {
+        assertEquals("1 minute 1 second", formatDurationSpoken(61_000L))
+        assertEquals("1 hour 0 minutes", formatDurationSpoken(3_600_000L))
+    }
+
+    @Test
+    fun `wait and unblock announcements carry the spoken countdown`() {
+        assertEquals("Break available in 4 minutes 32 seconds", waitNoticeA11y(272_000L))
+        assertEquals("Unblocks in 42 seconds", unblockCountdownA11y(42_000L))
+    }
+
+    @Test
+    fun `hold control accessibility copy is honest about both ways to operate it`() {
+        // The action label is what TalkBack appends after "double-tap to…".
+        assertTrue(HOLD_BREAK_A11Y_LABEL.isNotBlank())
+        assertTrue(HOLD_BREAK_A11Y_DESCRIPTION.contains("hold", ignoreCase = true))
+        assertTrue(HOLD_BREAK_A11Y_DESCRIPTION.contains("double-tap", ignoreCase = true))
     }
 }

@@ -27,6 +27,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
   Settings hand-off on tap (ADR-007), honest about being visibility-only: it never moves the
   health level, and the degraded banner names the hidden notification only when the fallback
   path is the one actually enforcing. JVM-tested (`HealthStatusTest`, `BlockingHealthUiTest`).
+- **Block screen is now screen-reader operable, and the HARDER wait shows progress:** the
+  hold-to-request break control was a bare gesture surface — invisible to TalkBack, so a
+  screen-reader user on a HARDER block had no way to request a break at all. It now carries
+  button semantics with a custom "Request a break" action (the hold friction is deterrence,
+  not security; for a TalkBack user the explicit action is the equivalent deliberate act).
+  Countdown pills speak words ("4 minutes 32 seconds", not "4m 32s"), and the HARDER
+  break-cooldown notice gained a determinate progress ring driven by the pending request's
+  real friction length (text-only fallback when the total is unknown). JVM-tested
+  (`BlockScreenContentTest`, `BlockCauseTest`).
 
 ### Fixed
 - **iOS:** reloading Schedules or Time Limits with zero rules no longer cancels *all* of
