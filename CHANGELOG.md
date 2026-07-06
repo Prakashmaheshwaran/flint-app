@@ -44,6 +44,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
   exemption → Time Limit → rule verdict → Open Limits — and the same store-wide default
   break level on the TIME_LIMIT block screen. Honest limit: on this fallback path a spent
   budget can block up to 15 seconds late.
+- **Home tab: the app list is searchable.** A filter box above "Block these apps" matches
+  the label or the package name (both are shown on the row), trims stray spaces, clears with
+  one tap, and shows an honest "No apps match" state instead of a silently empty list. The
+  filter is pure and JVM-tested (`AppSearchTest` — the app module's first unit tests).
 
 ### Fixed
 - **iOS:** reloading Schedules or Time Limits with zero rules no longer cancels *all* of

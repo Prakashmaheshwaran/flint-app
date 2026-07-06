@@ -17,15 +17,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -42,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -149,6 +154,7 @@ private fun HomeScreen(modifier: Modifier = Modifier, onEnableBlocking: () -> Un
     var accessibilityOn by remember { mutableStateOf(false) }
     var blocked by remember { mutableStateOf(store.blockedPackages) }
     var apps by remember { mutableStateOf(listOf<AppEntry>()) }
+    var query by rememberSaveable { mutableStateOf("") }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -180,9 +186,23 @@ private fun HomeScreen(modifier: Modifier = Modifier, onEnableBlocking: () -> Un
             Spacer(Modifier.height(16.dp))
             Text("Block these apps", style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onBackground)
+            Spacer(Modifier.height(8.dp))
+            AppSearchField(query = query, onQueryChange = { query = it })
         }
+        val shown = filterApps(apps, query)
         LazyColumn(Modifier.weight(1f)) {
-            items(apps, key = { it.packageName }) { app ->
+            if (shown.isEmpty() && apps.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "No apps match “${query.trim()}”",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(20.dp),
+                    )
+                }
+            }
+            items(shown, key = { it.packageName }) { app ->
                 AppRow(app, app.packageName in blocked) {
                     store.toggle(app.packageName)
                     blocked = store.blockedPackages
@@ -190,6 +210,26 @@ private fun HomeScreen(modifier: Modifier = Modifier, onEnableBlocking: () -> Un
             }
         }
     }
+}
+
+/** Filter box for the app list. The list is long; scrolling to Signal shouldn't be a chore. */
+@Composable
+private fun AppSearchField(query: String, onQueryChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = Modifier.fillMaxWidth(),
+        placeholder = { Text("Search apps") },
+        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(Icons.Filled.Clear, contentDescription = "Clear search")
+                }
+            }
+        },
+        singleLine = true,
+    )
 }
 
 @Composable
