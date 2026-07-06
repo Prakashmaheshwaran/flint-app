@@ -49,14 +49,37 @@ class BlockingHealthUiTest {
     }
 
     @Test
-    fun onlyTheBatteryExemptionIsOptionalForEnforcement() {
-        BlockingHealthUi.rows(status()).forEach { row ->
+    fun onlyBatteryExemptionAndNotificationsAreOptionalForEnforcement() {
+        val optional = setOf(PermissionKind.BATTERY_EXEMPTION, PermissionKind.NOTIFICATIONS)
+        BlockingHealthUi.rows(status().copy(notificationsRequired = true)).forEach { row ->
             assertEquals(
                 "affectsEnforcement for ${row.kind}",
-                row.kind != PermissionKind.BATTERY_EXEMPTION,
+                row.kind !in optional,
                 row.affectsEnforcement,
             )
         }
+    }
+
+    @Test
+    fun notificationsRowExistsOnlyWhereTheGrantExists() {
+        // Pre-13: no grant to manage, no row.
+        assertFalse(BlockingHealthUi.rows(status()).any { it.kind == PermissionKind.NOTIFICATIONS })
+        // 13+: the row appends after the four blocking grants.
+        val rows = BlockingHealthUi.rows(status().copy(notificationsRequired = true))
+        assertEquals(PermissionKind.NOTIFICATIONS, rows.last().kind)
+        assertEquals(5, rows.size)
+    }
+
+    @Test
+    fun notificationsRowMirrorsTheGrantAndStaysHonest() {
+        val row = BlockingHealthUi.rows(
+            status().copy(notificationsRequired = true, notificationsGranted = false),
+        ).first { it.kind == PermissionKind.NOTIFICATIONS }
+        assertFalse(row.granted)
+        assertFalse(row.affectsEnforcement)
+        assertTrue(row.role.contains("Recommended", ignoreCase = true))
+        assertTrue(row.disclosure.contains("blocking itself is unaffected", ignoreCase = true))
+        assertTrue(row.disclosure.contains("no other notifications", ignoreCase = true))
     }
 
     @Test
@@ -74,7 +97,10 @@ class BlockingHealthUiTest {
 
     @Test
     fun everyRowHasSubstantialDisclosureAndAnHonestFixLabel() {
-        BlockingHealthUi.rows(status(accessibility = false, usage = false, overlay = false, battery = false))
+        BlockingHealthUi.rows(
+            status(accessibility = false, usage = false, overlay = false, battery = false)
+                .copy(notificationsRequired = true, notificationsGranted = false),
+        )
             .forEach { row ->
                 assertTrue("disclosure for ${row.kind}", row.disclosure.length > 40)
                 assertTrue("fix label for ${row.kind}", row.fixLabel.isNotBlank())
@@ -156,13 +182,38 @@ class BlockingHealthUiTest {
             }
     }
 
-    /** All 16 grant combinations. */
-    private fun allStatuses(): List<HealthStatus> = (0 until 16).map { bits ->
-        status(
+    @Test
+    fun degradedBannerNamesTheHiddenNotificationOnlyWhenTheFallbackPathIsEnforcing() {
+        // Path B is what's blocking (a11y off, fallback complete) and the notification is
+        // hidden on 13+ — the banner says so.
+        val pathB = status(accessibility = false)
+            .copy(notificationsRequired = true, notificationsGranted = false)
+        assertEquals(HealthLevel.DEGRADED, pathB.level)
+        assertTrue(
+            BlockingHealthUi.banner(pathB).body.contains("notification", ignoreCase = true),
+        )
+        // Path A is blocking (a11y on; degraded only for battery) — the hidden notification is
+        // irrelevant (the Path B service isn't running) and must not be named.
+        val pathA = status(battery = false)
+            .copy(notificationsRequired = true, notificationsGranted = false)
+        assertEquals(HealthLevel.DEGRADED, pathA.level)
+        assertFalse(
+            BlockingHealthUi.banner(pathA).body.contains("notification", ignoreCase = true),
+        )
+    }
+
+    /** All 16 grant combinations × 3 notification variants (pre-13, 13+ granted, 13+ denied). */
+    private fun allStatuses(): List<HealthStatus> = (0 until 16).flatMap { bits ->
+        val base = status(
             accessibility = bits and 1 != 0,
             usage = bits and 2 != 0,
             overlay = bits and 4 != 0,
             battery = bits and 8 != 0,
+        )
+        listOf(
+            base,
+            base.copy(notificationsRequired = true, notificationsGranted = true),
+            base.copy(notificationsRequired = true, notificationsGranted = false),
         )
     }
 }

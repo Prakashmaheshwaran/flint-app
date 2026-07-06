@@ -124,6 +124,10 @@ cannot end a Hardcore session early nor a set-back stretch one. Honest limit: a 
 anchor cannot measure (clock changed across a reboot/power-off) leaves expiry at face value —
 same class of limitation the guard already documents for schedule windows.
 
+Android 13+'s `POST_NOTIFICATIONS` permission also surfaces as its own blocking-health row
+in Settings. It is visibility-only, so it never changes the enforcement health level; the
+degraded banner names the hidden notification only when Path B is actively enforcing.
+
 **Sleep Mode, preset routines & named groups — implemented; JVM-tested; emulator run pending.**
 Sleep Mode: bedtime→wake windows on chosen nights (post-midnight bedtimes day-shift correctly),
 Wind Down / free Full Assist materialized as allow-list rules on the schedules engine (the same

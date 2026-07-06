@@ -13,8 +13,12 @@ import com.flint.peakfocus.blocking.resilience.HealthStatus
  * as "mandatory".
  */
 
-/** The four grants blocking depends on — one settings row each. */
-enum class PermissionKind { ACCESSIBILITY, USAGE_ACCESS, OVERLAY, BATTERY_EXEMPTION }
+/**
+ * The grants blocking depends on — one settings row each. NOTIFICATIONS is the odd one out:
+ * it never affects enforcement (the Path B service runs either way) and its row only exists
+ * on Android 13+, where the grant gates whether that service's notification is visible.
+ */
+enum class PermissionKind { ACCESSIBILITY, USAGE_ACCESS, OVERLAY, BATTERY_EXEMPTION, NOTIFICATIONS }
 
 /**
  * One "keep blocking alive" row.
@@ -45,8 +49,12 @@ data class BannerUi(
 
 object BlockingHealthUi {
 
-    /** Stable order: detection paths first (primary, then fallback pieces), then survival. */
-    fun rows(status: HealthStatus): List<PermissionRowUi> = listOf(
+    /**
+     * Stable order: detection paths first (primary, then fallback pieces), then survival,
+     * then visibility (the 13+-only notifications row appends last — it is the only row whose
+     * presence depends on the device).
+     */
+    fun rows(status: HealthStatus): List<PermissionRowUi> = listOfNotNull(
         PermissionRowUi(
             kind = PermissionKind.ACCESSIBILITY,
             granted = status.accessibilityEnabled,
@@ -94,6 +102,22 @@ object BlockingHealthUi {
                 "only makes it more reliable. Android will ask you to confirm.",
             fixLabel = "Request battery exemption",
         ),
+        if (status.notificationsRequired) {
+            PermissionRowUi(
+                kind = PermissionKind.NOTIFICATIONS,
+                granted = status.notificationsGranted,
+                affectsEnforcement = false,
+                title = "Notifications",
+                role = "Recommended — shows when backup blocking is running",
+                disclosure = "When the accessibility service is off, Flint blocks through a " +
+                    "background service that shows an ongoing notification. Without the " +
+                    "notification permission that status stays hidden — blocking itself is " +
+                    "unaffected. Flint sends no other notifications.",
+                fixLabel = "Open notification settings",
+            )
+        } else {
+            null
+        },
     )
 
     fun banner(status: HealthStatus): BannerUi = when (status.level) {
@@ -132,6 +156,12 @@ object BlockingHealthUi {
         if (!status.batteryExemptionGranted) {
             parts += "Flint is not exempt from battery optimization, so some phones will kill " +
                 "blocking in the background."
+        }
+        if (!status.accessibilityEnabled && status.fallbackPathAvailable &&
+            !status.serviceNotificationVisible
+        ) {
+            parts += "Android is hiding the backup service's status notification, so there is " +
+                "no visible sign that blocking is running."
         }
         return parts.joinToString(" ")
     }

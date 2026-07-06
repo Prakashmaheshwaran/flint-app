@@ -60,6 +60,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
   shield, HOME stand-down, over-quota re-shield, Easy break, and persisted counts after process
   death. That run also measured the last allowed open being shielded ~1.8 s after launch; it was
   recorded as a pending product decision and is now fixed (see *Fixed* below).
+- **Notifications join the blocking-health rows (Android 13+):** `POST_NOTIFICATIONS` was
+  declared but never requested, so the Path B backup-blocking service ran with its status
+  notification invisible. Settings now shows a "Notifications" row on 13+ — disclosure first,
+  Settings hand-off on tap (ADR-007), honest about being visibility-only: it never moves the
+  health level, and the degraded banner names the hidden notification only when the fallback
+  path is the one actually enforcing. JVM-tested (`HealthStatusTest`, `BlockingHealthUiTest`).
 
 ### Fixed
 - **Android:** the last allowed open of an Open Limit is usable again. The quota was re-decided

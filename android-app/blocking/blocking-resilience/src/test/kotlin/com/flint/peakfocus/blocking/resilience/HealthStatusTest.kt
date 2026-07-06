@@ -79,4 +79,37 @@ class HealthStatusTest {
         assertTrue(s.canEnforce)
         assertEquals(HealthLevel.DEGRADED, s.level)
     }
+
+    @Test
+    fun notificationDefaultsMeanNothingIsGated() {
+        // Pre-13 devices (and pre-notification construction sites): nothing gated, always visible.
+        val s = status(a11y = true, usage = true, overlay = true, battery = true)
+        assertFalse(s.notificationsRequired)
+        assertTrue(s.serviceNotificationVisible)
+        assertEquals(HealthLevel.HEALTHY, s.level)
+    }
+
+    @Test
+    fun serviceNotificationVisibilityIsGatedOnlyWhereTheGrantExists() {
+        val base = status()
+        assertTrue(base.copy(notificationsRequired = false, notificationsGranted = false).serviceNotificationVisible)
+        assertFalse(base.copy(notificationsRequired = true, notificationsGranted = false).serviceNotificationVisible)
+        assertTrue(base.copy(notificationsRequired = true, notificationsGranted = true).serviceNotificationVisible)
+    }
+
+    @Test
+    fun deniedNotificationsNeverMoveTheLevel() {
+        // Visibility, not enforcement: for every grant combination the triage level is
+        // identical with and without the 13+ notification grant.
+        (0 until 16).forEach { bits ->
+            val base = status(
+                a11y = bits and 1 != 0,
+                usage = bits and 2 != 0,
+                overlay = bits and 4 != 0,
+                battery = bits and 8 != 0,
+            )
+            val denied = base.copy(notificationsRequired = true, notificationsGranted = false)
+            assertEquals("level for grant combination $bits", base.level, denied.level)
+        }
+    }
 }
