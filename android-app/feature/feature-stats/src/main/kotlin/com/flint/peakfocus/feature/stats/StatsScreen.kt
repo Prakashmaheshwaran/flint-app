@@ -36,6 +36,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.flint.peakfocus.core.common.theme.FlintTheme
 import com.flint.peakfocus.core.model.UsageStat
 import com.flint.peakfocus.permissions.UsageAccess
+import kotlin.math.roundToInt
 
 private val ChartHeight = 120.dp
 
@@ -149,16 +150,20 @@ private fun StatsReport(report: UsageReport) {
             color = MaterialTheme.colorScheme.primary,
         )
         Spacer(Modifier.height(16.dp))
-        TodayCard(report.todayTotalMillis)
+        TodayCard(report.todayTotalMillis, report.todayShareOfTypical)
         Spacer(Modifier.height(16.dp))
         WeekChartCard(report)
+        if (report.weekTotalMillis > 0L) {
+            Spacer(Modifier.height(16.dp))
+            InsightsCard(report)
+        }
         Spacer(Modifier.height(16.dp))
         TopAppsCard(report.topAppsToday)
     }
 }
 
 @Composable
-private fun TodayCard(todayTotalMillis: Long) {
+private fun TodayCard(todayTotalMillis: Long, shareOfTypical: Float?) {
     Surface(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
             Text(
@@ -177,7 +182,61 @@ private fun TodayCard(todayTotalMillis: Long) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (shareOfTypical != null) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "${(shareOfTypical * 100).roundToInt()}% of a typical day so far",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
+    }
+}
+
+/**
+ * "Week in review" — two honest, at-a-glance facts derived from the 7-day window: the average
+ * of a *completed* day (so the partial today doesn't understate it) and the heaviest single day.
+ * Only shown when there's usage to summarize (guarded by the caller).
+ */
+@Composable
+private fun InsightsCard(report: UsageReport) {
+    Surface(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium) {
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Text(
+                text = "Week in review",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            if (report.completedDays.isNotEmpty()) {
+                Spacer(Modifier.height(12.dp))
+                InsightRow("Typical day", DurationFormat.format(report.typicalDayMillis))
+            }
+            report.busiestDay?.let { busiest ->
+                Spacer(Modifier.height(12.dp))
+                InsightRow(
+                    label = "Busiest day",
+                    value = "${busiest.label} · ${DurationFormat.format(busiest.totalMillis)}",
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun InsightRow(label: String, value: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
     }
 }
 

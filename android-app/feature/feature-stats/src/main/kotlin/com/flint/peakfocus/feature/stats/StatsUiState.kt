@@ -20,6 +20,37 @@ data class UsageReport(
 ) {
     val dailyAverageMillis: Long
         get() = if (days.isEmpty()) 0L else weekTotalMillis / days.size
+
+    /** Days already complete — everything but the partial, still-running today. */
+    val completedDays: List<DaySummary>
+        get() = days.filter { !it.isToday }
+
+    /**
+     * Average screen time on a *completed* day — the honest "typical day" baseline. Excludes the
+     * partial today, which would otherwise drag the figure down (unlike [dailyAverageMillis],
+     * which divides the whole week — today included — by the day count). Zero-usage days still
+     * count, so a quiet day pulls the typical down. Zero when no full day has elapsed yet.
+     */
+    val typicalDayMillis: Long
+        get() {
+            val completed = completedDays
+            return if (completed.isEmpty()) 0L else completed.sumOf { it.totalMillis } / completed.size
+        }
+
+    /**
+     * The heaviest day in the window, or `null` when nothing was recorded. Ties resolve to the
+     * earlier day (days are oldest → today), keeping the pick deterministic.
+     */
+    val busiestDay: DaySummary?
+        get() = days.filter { it.totalMillis > 0L }.maxByOrNull { it.totalMillis }
+
+    /**
+     * How much of a typical day today already accounts for — e.g. `0.44` renders as "44% of a
+     * typical day so far". `null` when there's no completed-day baseline yet, so the UI stays
+     * honest rather than comparing today against nothing.
+     */
+    val todayShareOfTypical: Float?
+        get() = typicalDayMillis.takeIf { it > 0L }?.let { todayTotalMillis.toFloat() / it }
 }
 
 /** UI state exposed by [StatsViewModel]. */
