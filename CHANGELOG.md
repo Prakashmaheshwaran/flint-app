@@ -36,6 +36,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
   break-cooldown notice gained a determinate progress ring driven by the pending request's
   real friction length (text-only fallback when the total is unknown). JVM-tested
   (`BlockScreenContentTest`, `BlockCauseTest`).
+- **Daily Time Limits now enforce on Path B too:** the usage-stats fallback path polled rules
+  but never budgets — `DailyLimitTracker` had no caller, so with the accessibility service
+  off, a spent daily limit didn't block. A new JVM-tested `PathBTimeLimitGate` (decision +
+  caching: UsageStats re-queried at most every 15s, immediately on package change or a
+  backwards clock) feeds the poll loop's handoff, which applies Path A's exact precedence —
+  exemption → Time Limit → rule verdict → Open Limits — and the same store-wide default
+  break level on the TIME_LIMIT block screen. Honest limit: on this fallback path a spent
+  budget can block up to 15 seconds late.
 
 ### Fixed
 - **iOS:** reloading Schedules or Time Limits with zero rules no longer cancels *all* of

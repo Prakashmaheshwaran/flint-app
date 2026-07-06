@@ -16,10 +16,13 @@ android {
 
 dependencies {
     implementation(project(":core:core-model"))
+    // Daily Time Limits on Path B read the same legacy stores Path A enforces from.
+    implementation(project(":core:core-data"))
     implementation(project(":blocking:blocking-engine"))
     // Path B enforcement handoff: every poll observation routes through PathBBlockHandoff
     // (shared coordinator → overlay / BlockActivity), same decision glue as Path A.
     implementation(project(":blocking:blocking-overlay"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
+    testImplementation(libs.junit)
 }

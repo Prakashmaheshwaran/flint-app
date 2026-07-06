@@ -78,9 +78,7 @@ HARDCORE is unaffected (it never grants breaks).
 
 ## Known gaps (found in the integration audit)
 
-1. **`DailyLimitTracker` has no caller.** Path B daily time budgets are not enforced yet; Time
-   Limits enforce on Path A only (`LimitStore` + `UsageQuery` in the a11y service).
-2. **Not re-verified end-to-end since the merges.** Every claim in "merged since" is
+1. **Not re-verified end-to-end since the merges.** Every claim in "merged since" is
    compile/unit-test-gated per task, but the integrated app (this nav shell + bridge + Path B
    handoff) has not been built or run anywhere yet.
 
@@ -91,7 +89,12 @@ each writer replaces only its own contribution, so `BlocklistStore.load()`/sette
 longer drop DataStore-authored rules out of enforcement; JVM-tested in `core-model`); and
 the **hidden Path B notification** (Android 13+'s `POST_NOTIFICATIONS` now surfaces as its
 own blocking-health row in Settings — visibility-only, so it never moves the health level;
-the degraded banner names it only when Path B is the path actually enforcing).
+the degraded banner names it only when Path B is the path actually enforcing); and
+**`DailyLimitTracker` having no caller** (Path B now enforces daily Time Limits:
+`PathBTimeLimitGate` — JVM-tested decision + caching over `LimitStore`/`DailyLimitTracker`,
+re-querying UsageStats at most every 15s, so a spent budget can block up to 15s late on this
+fallback path — feeds `PathBBlockHandoff`, which applies Path A's exact precedence:
+exemption → Time Limit → rules → Open Limits).
 
 Emulator-verifiable next: build, then re-run the MVP script above; Path B is emulator-verifiable
 too (grant usage access, keep a11y off, launch a blocked app → overlay/BlockActivity).

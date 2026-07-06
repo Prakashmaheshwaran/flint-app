@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.IBinder
 import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
 import com.flint.peakfocus.blocking.overlay.PathBBlockHandoff
+import com.flint.peakfocus.core.data.LimitStore
 import com.flint.peakfocus.core.model.ActiveRulesHolder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,11 +36,17 @@ class UsageStatsForegroundService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val engine = BlockDecisionEngine()
     private lateinit var poller: UsagePoller
+    private lateinit var timeLimitGate: PathBTimeLimitGate
     private var loop: Job? = null
 
     override fun onCreate() {
         super.onCreate()
         poller = UsagePoller(this)
+        val limitTracker = DailyLimitTracker(this)
+        timeLimitGate = PathBTimeLimitGate(
+            limitMinutesFor = { pkg -> LimitStore(this).limitMinutes(pkg) },
+            foregroundMillisToday = limitTracker::foregroundMillisToday,
+        )
         startAsForeground()
     }
 
@@ -56,7 +63,8 @@ class UsageStatsForegroundService : Service() {
     }
 
     private fun tick() {
-        val pkg = poller.currentForegroundPackage(System.currentTimeMillis()) ?: return
+        val now = System.currentTimeMillis()
+        val pkg = poller.currentForegroundPackage(now) ?: return
         val cal = java.util.Calendar.getInstance()
         val nowMin = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
         // Schedule.daysOfWeek is ISO-numbered (1=Mon…7=Sun — core-model's documented contract,
@@ -65,8 +73,15 @@ class UsageStatsForegroundService : Service() {
         val weekday = isoWeekday(cal.get(java.util.Calendar.DAY_OF_WEEK))
         val verdict = engine.decide(pkg, null, ActiveRulesHolder.rules, packageName, nowMin, weekday)
         // Path B enforcement handoff — every tick, Allow included: open-limit counting and
-        // overlay stand-down happen behind this call, not just Block rendering.
-        PathBBlockHandoff.onForegroundPolled(this, pkg, verdict)
+        // overlay stand-down happen behind this call, not just Block rendering. The gate's
+        // cached daily-budget fact rides along so Time Limits enforce on this path too, with
+        // Path A's precedence (exemption → Time Limit → rules → Open Limits).
+        PathBBlockHandoff.onForegroundPolled(
+            this,
+            pkg,
+            verdict,
+            timeLimitSpent = timeLimitGate.isSpent(pkg, now),
+        )
     }
 
     /** java.util.Calendar day-of-week (1=Sun…7=Sat) → ISO day-of-week (1=Mon…7=Sun). */

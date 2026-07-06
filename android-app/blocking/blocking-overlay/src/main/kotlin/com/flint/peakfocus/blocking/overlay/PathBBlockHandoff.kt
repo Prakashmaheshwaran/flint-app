@@ -16,17 +16,18 @@ import kotlinx.coroutines.SupervisorJob
  * every detection, so poll-driven blocking flows through the exact same decision glue
  * ([BlockScreenCoordinator] → policies → shared `BlockScreen` UI) as the accessibility path.
  *
- * Wiring (owned by the integrator — `blocking-usagestats` is outside this task's scope):
- * in `UsageStatsForegroundService.tick()`, replace the `if (verdict is Verdict.Block) { TODO }`
- * stub with the one-liner
+ * Wiring: `UsageStatsForegroundService.tick()` calls
  *
  * ```kotlin
- * PathBBlockHandoff.onForegroundPolled(this, pkg, verdict)
+ * PathBBlockHandoff.onForegroundPolled(this, pkg, verdict, timeLimitSpent)
  * ```
  *
- * and add `implementation(project(":blocking:blocking-overlay"))` to that module. Passing
- * *every* tick (Allow included) matters: it's how Open Limits count opens, how the overlay
- * comes down when the user leaves the app, and how break exemptions stand enforcement down.
+ * every poll (Allow included) — that's how Open Limits count opens, how the overlay comes
+ * down when the user leaves the app, and how break exemptions stand enforcement down.
+ * [timeLimitSpent] is the service's cached "daily budget spent" fact (`PathBTimeLimitGate`
+ * over `LimitStore` + `DailyLimitTracker` in blocking-usagestats — this module deliberately
+ * doesn't read usage stats itself). The decision order below mirrors Path A exactly:
+ * exemption → Time Limit → rule verdict → Open Limits.
  *
  * Enforcement surface: the `TYPE_APPLICATION_OVERLAY` window ([OverlayController]) when the
  * SYSTEM_ALERT_WINDOW grant is present; otherwise the full-screen [BlockActivity] fallback
@@ -52,9 +53,17 @@ object PathBBlockHandoff {
 
     /**
      * Feed one poll observation through the shared decision flow. Cheap when nothing changed;
-     * callable from any thread (UI work is marshalled internally).
+     * callable from any thread (UI work is marshalled internally). [timeLimitSpent] = the
+     * caller's fact that this app's daily time budget is used up; it blocks with the
+     * TIME_LIMIT cause before rules are consulted — the same precedence Path A applies —
+     * but never overrides an active break/pass exemption.
      */
-    fun onForegroundPolled(context: Context, packageName: String, verdict: Verdict) {
+    fun onForegroundPolled(
+        context: Context,
+        packageName: String,
+        verdict: Verdict,
+        timeLimitSpent: Boolean = false,
+    ) {
         val appContext = context.applicationContext
         val c = coordinator(appContext)
         val previous = lastForegroundPackage
@@ -68,6 +77,16 @@ object PathBBlockHandoff {
 
         val now = System.currentTimeMillis()
         val utcOffset = TimeZone.getDefault().getOffset(now).toLong()
+        if (timeLimitSpent) {
+            // Same tier source as Path A: TimeLimit carries no per-limit tier, so the
+            // store-wide default break level applies.
+            c.showBlocked(
+                packageName,
+                labelFor(appContext, packageName),
+                timeLimitBlockCause(c.currentDefaultBreakLevel(), now, utcOffset),
+            )
+            return
+        }
         when (verdict) {
             is Verdict.Block -> {
                 val rule = ActiveRulesHolder.rules.firstOrNull { it.id == verdict.ruleId }
