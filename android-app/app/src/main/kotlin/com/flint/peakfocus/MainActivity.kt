@@ -86,13 +86,12 @@ private fun FlintApp() {
     val context = LocalContext.current
     var showConsent by rememberSaveable { mutableStateOf(false) }
 
-    // On every return to the app: re-sync the engine's rule list (legacy writers may have
-    // clobbered it) and reconcile the Path B fallback service with the current grants.
+    // On every return to the app: reconcile the Path B fallback service with the current
+    // grants. (Rule publishing needs no resume hook — each writer owns its own holder lane.)
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                ActiveRulesBridge.republish(context)
                 PathBServiceGate.sync(context)
             }
         }
@@ -165,7 +164,6 @@ private fun HomeScreen(modifier: Modifier = Modifier, onEnableBlocking: () -> Un
 
     LaunchedEffect(Unit) {
         store.load()
-        ActiveRulesBridge.republish(context) // load() clobbers the holder — restore DataStore rules
         apps = withContext(Dispatchers.IO) { loadLaunchableApps(context) }
     }
 
@@ -188,7 +186,6 @@ private fun HomeScreen(modifier: Modifier = Modifier, onEnableBlocking: () -> Un
                 AppRow(app, app.packageName in blocked) {
                     store.toggle(app.packageName)
                     blocked = store.blockedPackages
-                    ActiveRulesBridge.republish(context)
                 }
             }
         }
@@ -260,7 +257,6 @@ private fun ScheduleCard(store: BlocklistStore) {
                 }
                 Switch(checked = enabled, onCheckedChange = {
                     enabled = it; store.scheduleEnabled = it
-                    ActiveRulesBridge.republish(context)
                 })
             }
             if (enabled) {
@@ -271,13 +267,11 @@ private fun ScheduleCard(store: BlocklistStore) {
                     Button(onClick = {
                         pickTime(context, startMin) {
                             startMin = it; store.scheduleStartMin = it
-                            ActiveRulesBridge.republish(context)
                         }
                     }) { Text("Start ${formatMinutes(startMin)}") }
                     Button(onClick = {
                         pickTime(context, endMin) {
                             endMin = it; store.scheduleEndMin = it
-                            ActiveRulesBridge.republish(context)
                         }
                     }) { Text("End ${formatMinutes(endMin)}") }
                 }

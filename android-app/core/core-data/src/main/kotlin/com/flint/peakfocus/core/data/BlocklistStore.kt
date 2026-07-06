@@ -9,9 +9,11 @@ import com.flint.peakfocus.core.model.Schedule
 
 /**
  * Persists the set of blocked app package names and projects them into the in-memory
- * [ActiveRulesHolder] that both detection paths read. SharedPreferences (not DataStore) so the
- * AccessibilityService can read synchronously on connect. This is the MVP store; richer rules
- * (schedules, limits, allow-list) layer on top later.
+ * [ActiveRulesHolder] that both detection paths read — into the holder's dedicated
+ * legacy-blocklist lane, so reloading here never disturbs the DataStore-authored rules the
+ * app-side bridge publishes. SharedPreferences (not DataStore) so the AccessibilityService can
+ * read synchronously on connect. This is the MVP store; richer rules (schedules, limits,
+ * allow-list) layer on top later.
  */
 class BlocklistStore(context: Context) {
 
@@ -51,7 +53,7 @@ class BlocklistStore(context: Context) {
 
     private fun syncToHolder(packages: Set<String>) {
         if (packages.isEmpty()) {
-            ActiveRulesHolder.rules = emptyList()
+            ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_LEGACY_BLOCKLIST, emptyList())
             return
         }
         val schedule = if (scheduleEnabled) {
@@ -63,12 +65,15 @@ class BlocklistStore(context: Context) {
         } else {
             null
         }
-        ActiveRulesHolder.rules = listOf(
-            BlockRule(
-                id = "blocklist",
-                name = "Blocklist",
-                targets = BlockTargets(apps = packages.map { AppRef(it) }.toSet()),
-                schedule = schedule,
+        ActiveRulesHolder.publish(
+            ActiveRulesHolder.SOURCE_LEGACY_BLOCKLIST,
+            listOf(
+                BlockRule(
+                    id = "blocklist",
+                    name = "Blocklist",
+                    targets = BlockTargets(apps = packages.map { AppRef(it) }.toSet()),
+                    schedule = schedule,
+                ),
             ),
         )
     }

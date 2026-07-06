@@ -78,26 +78,19 @@ HARDCORE is unaffected (it never grants breaks).
 
 ## Known gaps (found in the integration audit)
 
-1. **Weekday convention bug — Path A schedules are wrong on Sundays/Fridays.** `core-model`'s
-   `Schedule.daysOfWeek` is documented ISO (1=Mon…7=Sun) and `feature-blocklist` writes ISO days,
-   but `FlintAccessibilityService.kt:120` feeds `Calendar.DAY_OF_WEEK` (1=Sun…7=Sat) into
-   `BlockDecisionEngine.decide` — so a "Weekdays" rule blocks Sunday and skips Friday on Path A.
-   Path B (`UsageStatsForegroundService`) converts to ISO as of this pass. Needs a coordinator
-   hotfix (out of A-VERIFY scope): the same one-line conversion in `blocking-accessibility`, plus
-   re-stating `BlockDecisionEngine.scheduleActive`'s KDoc (lines 84–85) and the
-   `BlockDecisionEngineTest.scheduleGatingDayAndWindow` fixture (line 81) in ISO terms — the
-   engine itself is convention-agnostic (pure membership test), so only callers + docs move.
-2. **Legacy-writer clobber window.** `BlocklistStore.load()`/setters (a11y-service connect, boot
-   warm-up, debug receiver) overwrite `ActiveRulesHolder` with the legacy projection alone;
-   DataStore-authored rules drop out of enforcement until the next rule change or app resume
-   republishes the combined list. Clean fix belongs in core-data/blocking-accessibility.
-3. **`DailyLimitTracker` has no caller.** Path B daily time budgets are not enforced yet; Time
+1. **`DailyLimitTracker` has no caller.** Path B daily time budgets are not enforced yet; Time
    Limits enforce on Path A only (`LimitStore` + `UsageQuery` in the a11y service).
-4. **`POST_NOTIFICATIONS` is declared but never requested at runtime**, so on Android 13+ the
+2. **`POST_NOTIFICATIONS` is declared but never requested at runtime**, so on Android 13+ the
    Path B foreground-service notification is invisible (the service still runs).
-5. **Not re-verified end-to-end since the merges.** Every claim in "merged since" is
+3. **Not re-verified end-to-end since the merges.** Every claim in "merged since" is
    compile/unit-test-gated per task, but the integrated app (this nav shell + bridge + Path B
    handoff) has not been built or run anywhere yet.
+
+Closed since the audit: the **weekday convention bug** (Path A now converts
+`Calendar.DAY_OF_WEEK` to ISO before calling the engine; KDoc + fixtures restated in ISO
+terms) and the **legacy-writer clobber window** (`ActiveRulesHolder` is now lane-based —
+each writer replaces only its own contribution, so `BlocklistStore.load()`/setters can no
+longer drop DataStore-authored rules out of enforcement; JVM-tested in `core-model`).
 
 Emulator-verifiable next: build, then re-run the MVP script above; Path B is emulator-verifiable
 too (grant usage access, keep a11y off, launch a blocked app → overlay/BlockActivity).

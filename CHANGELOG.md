@@ -33,6 +33,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 - **Android:** day-restricted overnight windows now block the correct morning: the
   post-midnight tail is gated on the day the window started ("Mon 22:00–06:00, Mondays"
   blocks Tue 00:30, not Mon 00:30).
+- **Android:** rules created in the Blocklist tab no longer silently drop out of enforcement
+  when the legacy quick-blocklist reloads (a11y-service connect, boot warm-up, Home-tab
+  edits). `ActiveRulesHolder` is now lane-based: each writer replaces only its own
+  contribution and the engine reads the merged snapshot, so the old clobber window — and the
+  resume-time "republish" workaround papering over it — are gone. JVM-tested in `core-model`.
 - **Docs:** the Open-Limits "never charges an open another layer would block" claim now
   carries its real exception — category-rule blocks are undetectable (opaque tokens), so
   those taps still charge an open.
