@@ -80,17 +80,18 @@ HARDCORE is unaffected (it never grants breaks).
 
 1. **`DailyLimitTracker` has no caller.** Path B daily time budgets are not enforced yet; Time
    Limits enforce on Path A only (`LimitStore` + `UsageQuery` in the a11y service).
-2. **`POST_NOTIFICATIONS` is declared but never requested at runtime**, so on Android 13+ the
-   Path B foreground-service notification is invisible (the service still runs).
-3. **Not re-verified end-to-end since the merges.** Every claim in "merged since" is
+2. **Not re-verified end-to-end since the merges.** Every claim in "merged since" is
    compile/unit-test-gated per task, but the integrated app (this nav shell + bridge + Path B
    handoff) has not been built or run anywhere yet.
 
 Closed since the audit: the **weekday convention bug** (Path A now converts
 `Calendar.DAY_OF_WEEK` to ISO before calling the engine; KDoc + fixtures restated in ISO
-terms) and the **legacy-writer clobber window** (`ActiveRulesHolder` is now lane-based —
+terms); the **legacy-writer clobber window** (`ActiveRulesHolder` is now lane-based —
 each writer replaces only its own contribution, so `BlocklistStore.load()`/setters can no
-longer drop DataStore-authored rules out of enforcement; JVM-tested in `core-model`).
+longer drop DataStore-authored rules out of enforcement; JVM-tested in `core-model`); and
+the **hidden Path B notification** (Android 13+'s `POST_NOTIFICATIONS` now surfaces as its
+own blocking-health row in Settings — visibility-only, so it never moves the health level;
+the degraded banner names it only when Path B is the path actually enforcing).
 
 Emulator-verifiable next: build, then re-run the MVP script above; Path B is emulator-verifiable
 too (grant usage access, keep a11y off, launch a blocked app → overlay/BlockActivity).

@@ -44,6 +44,7 @@ import com.flint.peakfocus.core.common.OemUtil
 import com.flint.peakfocus.core.common.theme.FlintTheme
 import com.flint.peakfocus.permissions.AccessibilityPermission
 import com.flint.peakfocus.permissions.BatteryOptimization
+import com.flint.peakfocus.permissions.NotificationPermission
 import com.flint.peakfocus.permissions.OverlayPermission
 import com.flint.peakfocus.permissions.UsageAccess
 
@@ -91,6 +92,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 PermissionKind.USAGE_ACCESS -> UsageAccess.settingsIntent()
                 PermissionKind.OVERLAY -> OverlayPermission.settingsIntent(context)
                 PermissionKind.BATTERY_EXEMPTION -> BatteryOptimization.requestIntent(context)
+                PermissionKind.NOTIFICATIONS -> NotificationPermission.settingsIntent(context)
             }
             context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         },

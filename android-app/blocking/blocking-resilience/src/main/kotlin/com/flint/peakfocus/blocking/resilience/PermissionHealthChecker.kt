@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.provider.Settings
 import com.flint.peakfocus.permissions.BatteryOptimization
+import com.flint.peakfocus.permissions.NotificationPermission
 import com.flint.peakfocus.permissions.OverlayPermission
 import com.flint.peakfocus.permissions.UsageAccess
 
@@ -39,13 +40,25 @@ enum class HealthLevel {
  * @property overlayGranted SYSTEM_ALERT_WINDOW is granted (path B enforcement overlay)
  * @property batteryExemptionGranted Flint is exempt from battery optimizations (not required to
  *   enforce, but without it OEM power managers are far more likely to kill enforcement)
+ * @property notificationsRequired the device gates notifications behind the POST_NOTIFICATIONS
+ *   runtime grant (Android 13+); false on older versions where nothing is gated
+ * @property notificationsGranted notifications may be shown. Visibility of the Path B
+ *   foreground-service notification only — never enforcement — so it does not move [level];
+ *   the settings screen surfaces it as its own row, and the degraded banner names it when
+ *   Path B is the path actually enforcing. Defaults keep pre-notification callers meaning
+ *   what they always meant.
  */
 data class HealthStatus(
     val accessibilityEnabled: Boolean,
     val usageAccessGranted: Boolean,
     val overlayGranted: Boolean,
     val batteryExemptionGranted: Boolean,
+    val notificationsRequired: Boolean = false,
+    val notificationsGranted: Boolean = true,
 ) {
+    /** The Path B service notification can show when Path B runs (nothing gated, or granted). */
+    val serviceNotificationVisible: Boolean get() = !notificationsRequired || notificationsGranted
+
     /** Path A (AccessibilityService) is available — sufficient on its own. */
     val primaryPathAvailable: Boolean get() = accessibilityEnabled
 
@@ -77,6 +90,8 @@ object PermissionHealthChecker {
         usageAccessGranted = UsageAccess.isGranted(context),
         overlayGranted = OverlayPermission.isGranted(context),
         batteryExemptionGranted = BatteryOptimization.isIgnoring(context),
+        notificationsRequired = NotificationPermission.isRequired(),
+        notificationsGranted = NotificationPermission.isGranted(context),
     )
 
     /**
