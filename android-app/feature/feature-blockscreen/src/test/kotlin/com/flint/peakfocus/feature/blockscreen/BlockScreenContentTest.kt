@@ -135,6 +135,46 @@ class BlockScreenContentTest {
         assertTrue(line.isNotBlank())
     }
 
+    // ---- Countdown label (reason-aware verb) ----
+
+    @Test
+    fun `open-ended block has no countdown label`() {
+        assertEquals(null, blockScreenContent(state(remainingMillis = null)).countdownLabel)
+        assertEquals(null, countdownLabelFor(BlockScreenReason.TIME_LIMIT, null))
+    }
+
+    @Test
+    fun `daily limits count down to a reset`() {
+        // A spent time/open limit clears at the next local midnight — it "resets", it isn't a
+        // session quietly winding down.
+        assertEquals("Resets in 3h 20m", countdownLabelFor(BlockScreenReason.TIME_LIMIT, 12_000_000L))
+        assertEquals("Resets in 3h 20m", countdownLabelFor(BlockScreenReason.OPEN_LIMIT, 12_000_000L))
+    }
+
+    @Test
+    fun `sessions schedules and deep focus unblock when their own timer ends`() {
+        assertEquals("Unblocks in 24m 0s", countdownLabelFor(BlockScreenReason.MANUAL_SESSION, 1_440_000L))
+        assertEquals("Unblocks in 24m 0s", countdownLabelFor(BlockScreenReason.SCHEDULE, 1_440_000L))
+        assertEquals("Unblocks in 24m 0s", countdownLabelFor(BlockScreenReason.DEEP_FOCUS, 1_440_000L))
+    }
+
+    @Test
+    fun `content threads the label through for a time-limit block`() {
+        val content = blockScreenContent(
+            state(reason = BlockScreenReason.TIME_LIMIT, remainingMillis = 12_000_000L),
+        )
+        assertEquals("Resets in 3h 20m", content.countdownLabel)
+    }
+
+    @Test
+    fun `every reason produces a non-blank countdown label when time remains`() {
+        BlockScreenReason.entries.forEach { reason ->
+            val label = countdownLabelFor(reason, 60_000L)
+            assertTrue("null label for $reason", label != null)
+            assertTrue("blank label for $reason", label!!.isNotBlank())
+        }
+    }
+
     // ---- Countdown formatting ----
 
     @Test

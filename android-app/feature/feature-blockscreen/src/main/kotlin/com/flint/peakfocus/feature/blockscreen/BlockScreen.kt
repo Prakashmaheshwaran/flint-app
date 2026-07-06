@@ -103,9 +103,9 @@ fun BlockScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
-            if (state.remainingMillis != null) {
+            if (content.countdownLabel != null) {
                 Spacer(Modifier.height(20.dp))
-                InfoPill(text = "Unblocks in ${formatDuration(state.remainingMillis)}")
+                InfoPill(text = content.countdownLabel)
             }
             Spacer(Modifier.height(20.dp))
             Text(

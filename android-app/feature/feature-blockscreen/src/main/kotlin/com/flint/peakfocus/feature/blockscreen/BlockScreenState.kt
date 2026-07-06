@@ -72,6 +72,8 @@ internal data class BlockScreenContent(
     val displayName: String,
     val headline: String,
     val reasonLine: String,
+    /** The countdown pill text, or null when the block is open-ended (no [remainingMillis]). */
+    val countdownLabel: String?,
     val encouragement: String,
     val breakAffordance: BreakAffordance,
 )
@@ -82,6 +84,7 @@ internal fun blockScreenContent(state: BlockScreenState): BlockScreenContent {
         displayName = name,
         headline = "$name can wait",
         reasonLine = reasonLineFor(state.reason),
+        countdownLabel = countdownLabelFor(state.reason, state.remainingMillis),
         encouragement = encouragementFor(state.packageName),
         breakAffordance = breakAffordanceFor(state.breakLevel, state.breakWaitRemainingMillis),
     )
@@ -96,6 +99,27 @@ internal fun reasonLineFor(reason: BlockScreenReason): String = when (reason) {
     BlockScreenReason.TIME_LIMIT -> "You’ve used today’s time for this app."
     BlockScreenReason.OPEN_LIMIT -> "You’ve used today’s opens for this app."
     BlockScreenReason.DEEP_FOCUS -> "Deep Focus is on until the session ends."
+}
+
+/**
+ * The countdown pill text for a block that has a knowable end, or null when open-ended.
+ *
+ * The verb is reason-aware: a daily [TIME_LIMIT]/[OPEN_LIMIT][BlockScreenReason.OPEN_LIMIT]
+ * counts down to the next local midnight, when the day's budget refreshes — so "Resets in …"
+ * is the honest framing (the app is out for the rest of today, not merely paused). A manual
+ * session, schedule window or Deep Focus block genuinely lifts when its own timer runs out, so
+ * those read "Unblocks in …".
+ */
+internal fun countdownLabelFor(reason: BlockScreenReason, remainingMillis: Long?): String? {
+    if (remainingMillis == null) return null
+    val duration = formatDuration(remainingMillis)
+    return when (reason) {
+        BlockScreenReason.TIME_LIMIT, BlockScreenReason.OPEN_LIMIT -> "Resets in $duration"
+        BlockScreenReason.MANUAL_SESSION,
+        BlockScreenReason.SCHEDULE,
+        BlockScreenReason.DEEP_FOCUS,
+        -> "Unblocks in $duration"
+    }
 }
 
 internal fun breakAffordanceFor(
