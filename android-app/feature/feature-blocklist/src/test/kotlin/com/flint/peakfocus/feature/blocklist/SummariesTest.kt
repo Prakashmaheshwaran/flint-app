@@ -38,6 +38,30 @@ class SummariesTest {
         assertEquals("Mon", daysSummary(setOf(0, 1, 8)))
     }
 
+    @Test
+    fun `three or more consecutive days collapse into a range`() {
+        assertEquals("Mon–Thu", daysSummary(setOf(1, 2, 3, 4)))
+        assertEquals("Tue–Sat", daysSummary(setOf(2, 3, 4, 5, 6)))
+        assertEquals("Mon–Sat", daysSummary(setOf(1, 2, 3, 4, 5, 6)))
+    }
+
+    @Test
+    fun `a two-day run stays listed rather than hyphenated`() {
+        assertEquals("Mon, Tue", daysSummary(setOf(1, 2)))
+    }
+
+    @Test
+    fun `a range and a stray day combine`() {
+        assertEquals("Mon–Thu, Sat", daysSummary(setOf(1, 2, 3, 4, 6)))
+        assertEquals("Wed, Fri–Sun", daysSummary(setOf(3, 5, 6, 7)))
+    }
+
+    @Test
+    fun `consecutive days are not wrapped across the week boundary`() {
+        // Sun(7) then Mon(1) are numerically far apart — no "Sun–Mon".
+        assertEquals("Mon, Sun", daysSummary(setOf(7, 1)))
+    }
+
     // ---- Schedule ----
 
     @Test
