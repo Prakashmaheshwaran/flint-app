@@ -30,8 +30,9 @@ public struct FlintScheduleArmFailure: Equatable, Sendable {
 }
 
 /// Manages recurring/scheduled block rules. Registers one repeating `DeviceActivitySchedule`
-/// per enabled rule (unlimited count, no advance cap). The monitor extension applies each
-/// rule's selection into the rule's own store on `intervalDidStart`, gated by day-of-week.
+/// per enabled rule — one OS activity slot each, and iOS caps those (`FlintArmingHealth`), so
+/// every registration outcome is recorded rather than assumed. The monitor extension applies
+/// each rule's selection into the rule's own store on `intervalDidStart`, gated by day-of-week.
 public final class FlintSchedulesController {
 
     public init() {}
@@ -108,18 +109,29 @@ public final class FlintSchedulesController {
 
         let plan = Self.armPlan(for: all)
         var failures = plan.failures
+        var armingFailures: [FlintArmingHealth.Failure] = []
+        var attempted = 0
         for rule in plan.arm {
             let schedule = DeviceActivitySchedule(
                 intervalStart: DateComponents(hour: rule.schedule.startHour, minute: rule.schedule.startMinute),
                 intervalEnd: DateComponents(hour: rule.schedule.endHour, minute: rule.schedule.endMinute),
                 repeats: true
             )
+            attempted += 1
             do {
                 try FlintScheduling.startMonitoring(rule.monitorName, during: schedule)
             } catch {
                 failures.append(FlintScheduleArmFailure(ruleID: rule.id, ruleName: rule.name, issue: nil))
+                armingFailures.append(FlintArmingHealth.Failure(
+                    activityName: rule.monitorName, reason: String(describing: error)))
             }
         }
+        FlintArmingHealth.record(
+            domain: "schedules",
+            attempted: attempted,
+            failures: armingFailures,
+            in: group
+        )
         return failures
     }
 }
