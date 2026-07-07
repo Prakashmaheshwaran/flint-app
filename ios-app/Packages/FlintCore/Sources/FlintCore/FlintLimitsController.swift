@@ -49,13 +49,17 @@ public final class FlintLimitsController {
         reload()
     }
 
-    /// Re-register all enabled limits. Idempotent; call on launch and after edits.
+    /// Re-register all enabled limits. Idempotent; call on launch and after edits. Outcomes
+    /// are recorded in `FlintArmingHealth` — each limit holds an OS activity slot, and a
+    /// rejected registration is a budget that never trips.
     public func reload() {
         guard let group = FlintGroupStore() else { return }
         let all = group.loadLimits()
         FlintScheduling.stopMonitoring(all.map { $0.activityName })
 
         let center = DeviceActivityCenter()
+        var attempted = 0
+        var failures: [FlintArmingHealth.Failure] = []
         for limit in all where limit.enabled {
             let schedule = DeviceActivitySchedule(
                 intervalStart: DateComponents(hour: 0, minute: 0),
@@ -68,12 +72,19 @@ public final class FlintLimitsController {
                 webDomains: limit.selection.webDomainTokens,
                 threshold: DateComponents(minute: limit.thresholdMinutes)
             )
-            try? center.startMonitoring(
-                DeviceActivityName(limit.activityName),
-                during: schedule,
-                events: [DeviceActivityEvent.Name(limit.eventName): event]
-            )
+            attempted += 1
+            do {
+                try center.startMonitoring(
+                    DeviceActivityName(limit.activityName),
+                    during: schedule,
+                    events: [DeviceActivityEvent.Name(limit.eventName): event]
+                )
+            } catch {
+                failures.append(FlintArmingHealth.Failure(
+                    activityName: limit.activityName, reason: String(describing: error)))
+            }
         }
+        FlintArmingHealth.record(domain: "limits", attempted: attempted, failures: failures, in: group)
     }
 }
 #endif

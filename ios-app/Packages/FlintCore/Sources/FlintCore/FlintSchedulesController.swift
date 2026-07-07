@@ -5,8 +5,9 @@ import ManagedSettings
 import DeviceActivity
 
 /// Manages recurring/scheduled block rules. Registers one repeating `DeviceActivitySchedule`
-/// per enabled rule (unlimited count, no advance cap). The monitor extension applies each
-/// rule's selection into the rule's own store on `intervalDidStart`, gated by day-of-week.
+/// per enabled rule — one OS activity slot each, and iOS caps those (`FlintArmingHealth`), so
+/// every registration outcome is recorded rather than assumed. The monitor extension applies
+/// each rule's selection into the rule's own store on `intervalDidStart`, gated by day-of-week.
 public final class FlintSchedulesController {
 
     public init() {}
@@ -51,18 +52,29 @@ public final class FlintSchedulesController {
     }
 
     /// Re-register monitoring for all enabled rules. Idempotent; call on launch and after edits.
+    /// Every outcome lands in `FlintArmingHealth` — a swallowed `startMonitoring` error is a
+    /// rule that silently never fires (the OS activity cap makes that a real path, not a nit).
     public func reload() {
         guard let group = FlintGroupStore() else { return }
         let all = group.loadRules()
         FlintScheduling.stopMonitoring(all.map { $0.monitorName })
+        var attempted = 0
+        var failures: [FlintArmingHealth.Failure] = []
         for rule in all where rule.enabled {
             let schedule = DeviceActivitySchedule(
                 intervalStart: DateComponents(hour: rule.schedule.startHour, minute: rule.schedule.startMinute),
                 intervalEnd: DateComponents(hour: rule.schedule.endHour, minute: rule.schedule.endMinute),
                 repeats: true
             )
-            try? FlintScheduling.startMonitoring(rule.monitorName, during: schedule)
+            attempted += 1
+            do {
+                try FlintScheduling.startMonitoring(rule.monitorName, during: schedule)
+            } catch {
+                failures.append(FlintArmingHealth.Failure(
+                    activityName: rule.monitorName, reason: String(describing: error)))
+            }
         }
+        FlintArmingHealth.record(domain: "schedules", attempted: attempted, failures: failures, in: group)
     }
 }
 #endif
