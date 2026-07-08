@@ -25,7 +25,8 @@ import com.flint.peakfocus.core.common.theme.FlintTheme
  *
  * This is a compliance gate, not a UX nicety. It must be shown in-app during normal use,
  * describe the data the AccessibilityService accesses and how it is used/shared, and require an
- * explicit accept BEFORE the user is sent to enable the service. Do not weaken this copy.
+ * explicit accept BEFORE the user is sent to enable the service. Every word lives in
+ * [ConsentCopy], where ConsentCopyTest pins the policy-required elements — do not weaken it.
  */
 @Composable
 fun AccessibilityConsentScreen(
@@ -42,40 +43,35 @@ fun AccessibilityConsentScreen(
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                text = "Before Flint can block apps",
+                text = ConsentCopy.HEADLINE,
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Spacer(Modifier.height(16.dp))
             Text(
-                text = "To block apps in real time, Flint uses Android's Accessibility service to " +
-                    "detect which app is in the foreground and — for website blocking — to read " +
-                    "the web address shown in your browser.",
+                text = ConsentCopy.WHAT_IT_READS,
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "Flint uses this only to enforce the blocks you set up. This data stays on " +
-                    "your device. It is never sent off your device, shared, or sold. Flint has no " +
-                    "account and no analytics.",
+                text = ConsentCopy.WHERE_IT_GOES,
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "On the next screen, enable “Flint app blocking” under Accessibility. You can " +
-                    "turn it off any time in Settings.",
+                text = ConsentCopy.NEXT_STEP,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(28.dp))
             Button(onClick = onAccept, modifier = Modifier.fillMaxWidth()) {
-                Text("Accept & continue")
+                Text(ConsentCopy.ACCEPT_LABEL)
             }
             Spacer(Modifier.height(8.dp))
             TextButton(onClick = onDecline, modifier = Modifier.fillMaxWidth()) {
-                Text("Not now")
+                Text(ConsentCopy.DECLINE_LABEL)
             }
         }
     }
