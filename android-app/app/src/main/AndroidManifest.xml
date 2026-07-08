@@ -29,11 +29,13 @@
     <application
         android:name=".FlintApplication"
         android:allowBackup="false"
-        android:icon="@drawable/ic_flint"
+        android:enableOnBackInvokedCallback="true"
+        android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Flint"
-        tools:targetApi="31">
+        tools:targetApi="33">
 
         <activity
             android:name=".MainActivity"
@@ -44,5 +46,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Predictive back stays OFF for the block screen: its swallow-Back enforcement is
+             an onBackPressed override, which the back-invoked path bypasses on 33+. Merges
+             onto the <activity> declared in blocking-overlay's manifest. -->
+        <activity
+            android:name="com.flint.peakfocus.blocking.overlay.BlockActivity"
+            android:enableOnBackInvokedCallback="false"
+            tools:node="merge" />
     </application>
 </manifest>

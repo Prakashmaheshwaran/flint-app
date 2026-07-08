@@ -27,3 +27,8 @@ Produced by a multi-agent, adversarially-verified research pass.
 ## Design
 
 - [`../design/`](../design) — brand tokens, palette, logo. Single source of truth for theming.
+
+## Verification
+
+- [`verification/`](verification/) — dated build/test and device/emulator evidence for claims
+  that need runtime proof.

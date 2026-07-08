@@ -1,5 +1,6 @@
 package com.flint.peakfocus.core.datastore
 
+import com.flint.peakfocus.core.model.AppGroup
 import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BlockTargets
@@ -70,6 +71,18 @@ class PrefsCodecTest {
     }
 
     @Test
+    fun sessionExpiryRoundTripsAndPreExpiryLinesStillDecode() {
+        val session = fullRule.copy(id = "session-9", schedule = null, expiresAtEpochMs = 1_234_567L)
+        assertEquals(listOf(session), PrefsCodec.decodeRules(PrefsCodec.encodeRules(listOf(session))))
+
+        // A 10-field line written before the expiresAt field existed must keep decoding
+        // (escaped atoms contain no live '|', so trimming the last field is delimiter-safe).
+        val legacyLine = PrefsCodec.encodeRules(listOf(fullRule))
+            .split("|").take(10).joinToString("|")
+        assertEquals(listOf(fullRule), PrefsCodec.decodeRules(legacyLine))
+    }
+
+    @Test
     fun ruleWithoutScheduleRoundTripsToNullSchedule() {
         val rule = fullRule.copy(schedule = null)
         val decoded = PrefsCodec.decodeRules(PrefsCodec.encodeRules(listOf(rule)))
@@ -111,6 +124,32 @@ class PrefsCodecTest {
         val line = "r1|Focus|true|SUPERHARD|false||||-1|-1"
         val decoded = PrefsCodec.decodeRules(line)
         assertEquals(BreakLevel.EASY, decoded.single().breakLevel)
+    }
+
+    // MARK: groups
+
+    @Test
+    fun groupsRoundTripIncludingHostileNames() {
+        val groups = listOf(
+            AppGroup(
+                id = "g-1",
+                name = "Social | media, very~sticky 100%\napps",
+                apps = setOf(
+                    AppRef("com.instagram.android", label = "Insta|gram, the~app"),
+                    AppRef("com.tiktok.android", label = null),
+                ),
+                domains = setOf(DomainRef("reddit.com"), DomainRef("news.ycombinator.com")),
+            ),
+            AppGroup(id = "g-2", name = "Empty group"),
+        )
+        assertEquals(groups, PrefsCodec.decodeGroups(PrefsCodec.encodeGroups(groups)))
+    }
+
+    @Test
+    fun malformedGroupLinesAreDroppedNotCrashed() {
+        assertTrue(PrefsCodec.decodeGroups("").isEmpty())
+        assertTrue(PrefsCodec.decodeGroups("only|three|fields").isEmpty())
+        assertTrue(PrefsCodec.decodeGroups("|nameless||").isEmpty()) // empty id
     }
 
     // MARK: limits

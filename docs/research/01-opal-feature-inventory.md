@@ -47,7 +47,7 @@ Opal is a screen-time / focus app for iOS (mature) and Android (early, in-develo
 | **Opal tier** | free |
 | **Platform** | both |
 | **Flint plan** | **FREE.** iOS: `ManagedSettings` shields + `DeviceActivity` schedule, app/site list from `FamilyActivityPicker` (opaque tokens). Android: AccessibilityService monitors foreground app and overlays a block screen. Sessions are an independent layer that stacks with Time Limits / Open Limits. |
-| **Flint status** | **Implemented on both.** iOS Block Now + Schedules verified earlier (Simulator + unit tests; on-device enforcement pass pending). Android core block + schedule gating emulator-verified earlier; the integrated app (new engine + authoring UI) awaits an emulator re-run. |
+| **Flint status** | **Implemented on both.** iOS Block Now + Schedules verified earlier (Simulator + unit tests; on-device enforcement pass pending). Android core block + schedule gating emulator-verified earlier; the integrated app (new engine + authoring UI) was rebuilt/tested and partially emulator-verified (2026-07-06 core flows + Block Now; 2026-07-08 Path B fallback) — remaining gaps in 3.5. |
 
 ### 1.2 Block Now (instant focus timer / Pomodoro)
 
@@ -58,7 +58,7 @@ Opal is a screen-time / focus app for iOS (mature) and Android (early, in-develo
 | **Opal tier** | free |
 | **Platform** | both |
 | **Flint plan** | **FREE.** iOS: immediate `ManagedSettings` shield + local timer; expose an App Intent ("Start Flint Session") for Shortcuts/Siri parity. Android: AccessibilityService + foreground service timer. |
-| **Flint status** | **Implemented (iOS) — verified earlier:** timed shield, live countdown, stop gated by break level; a "Start Pomodoro" intent ships via 3.2 (device pass pending). Android: **partial** — unscheduled manual rules act as immediate blocks in the engine, but a dedicated one-tap timed-session UI is not built yet. |
+| **Flint status** | **Implemented (iOS) — verified earlier:** timed shield, live countdown, stop gated by break level; a "Start Pomodoro" intent ships via 3.2 (device pass pending). Android: **implemented — emulator-verified 2026-07-06:** one-tap Block Now on Home (duration + difficulty chips over the quick blocklist) creating a one-shot session rule whose expiry the **engine itself** checks (can never outlive its timer or re-fire; expired sessions swept lazily); live countdown + tier-gated early stop; JVM-tested and verified live end-to-end on the 2026-07-06 emulator run. |
 
 ### 1.3 Scheduled Sessions (single, up to 24h ahead)
 
@@ -80,7 +80,7 @@ Opal is a screen-time / focus app for iOS (mature) and Android (early, in-develo
 | **Opal tier** | **paid** (free capped at ~3 recurring per official FAQ; some sources say 1) |
 | **Platform** | both |
 | **Flint plan** | **FREE and UNLIMITED — this is a headline anti-paywall win.** iOS: repeating `DeviceActivitySchedule` entries, one per recurring rule, no count cap. Android: recurring `AlarmManager`/`WorkManager` triggers. Ship a free preset routine library mirroring Opal's. |
-| **Flint status** | **Implemented — unlimited recurring rules on both platforms** (no count cap); same verification state as 1.3. The Opal-style preset *routine* library is **not yet** built (saved app groups exist on iOS — see 1.10). |
+| **Flint status** | **Implemented — unlimited recurring rules on both platforms** (no count cap); same verification state as 1.3. The Opal-style preset *routine* library now ships on both platforms (see 1.10 for the per-platform verification state). |
 
 ### 1.5 Advance scheduling (>24 hours ahead)
 
@@ -146,7 +146,7 @@ Opal is a screen-time / focus app for iOS (mature) and Android (early, in-develo
 | **Opal tier** | free |
 | **Platform** | both |
 | **Flint plan** | **FREE.** iOS: persist saved sets of Screen Time tokens; auto-switch by binding to system Focus Modes via Focus Filters (see 3.1). Android: persisted package-name sets. Backend syncs group definitions across devices. |
-| **Flint status** | **Implemented (iOS) — verified earlier:** named reusable picker selections applied in one tap; saved groups also surface as a preset parameter in the Shortcuts intents (3.2). Preset routine template library: **not yet**. Android named groups: **not yet** (rules persist individually). Cross-device sync: not in v1. |
+| **Flint status** | **Implemented (iOS) — verified earlier:** named reusable picker selections applied in one tap; saved groups also surface as a preset parameter in the Shortcuts intents (3.2). Preset routine template library: **implemented on both platforms — verification pending** (the same four honest presets prefill rule drafts; targets stay the user's to pick). iOS specifics: presets prefill the new-schedule editor; "always on" adapts to a daily 00:00–23:59 window (`FlintScheduleRule` requires one); authored without a local Xcode, so the compile + simulator-test passes are outstanding and the drafted rules enforce on device only. Android named groups: **implemented — verification pending** (DataStore-persisted, applied into rule drafts in one tap, name-upsert + delete affordance). Cross-device sync: not in v1. |
 
 ---
 
@@ -161,7 +161,7 @@ Opal is a screen-time / focus app for iOS (mature) and Android (early, in-develo
 | **Opal tier** | free |
 | **Platform** | both |
 | **Flint plan** | **FREE.** iOS: `DeviceActivity` usage thresholds (`DeviceActivityEvent` with a time threshold) trigger the shield. Android: aggregate foreground time via `UsageStatsManager` / `queryUsageStats`, trigger overlay block at threshold. Independent stacking layer. Hardcore reset tier free in Flint. |
-| **Flint status** | **Implemented on both.** iOS daily budgets via threshold events, incl. the free hard-reset tier — verified earlier (device pass pending). Android per-app daily limits emulator-verified earlier on the AccessibilityService path; the limit-authoring UI is merged (re-run pending); budgets on the usage-poll fallback path are **not yet** enforced. |
+| **Flint status** | **Implemented on both.** iOS daily budgets via threshold events, incl. the free hard-reset tier — verified earlier (device pass pending). Android per-app daily limits were emulator-verified earlier on the AccessibilityService path; the limit-authoring UI is merged; budgets now enforce on the usage-poll fallback path too (same thresholds as Path A, stricter of the legacy + Limit-editor stores — which previously had no enforcement reader at all), with the Path B `0` minute fallback block verified on the 2026-07-08 emulator run. |
 
 ### 2.2 Open Limits (launch-count limit)
 
@@ -172,7 +172,7 @@ Opal is a screen-time / focus app for iOS (mature) and Android (early, in-develo
 | **Opal tier** | free (hardcore no-reset tier is Pro) |
 | **Platform** | iOS (Opal — "coming soon" on Android) |
 | **Flint plan** | **FREE, including the no-reset tier.** iOS: `DeviceActivityEvent` counting app-open events vs. a count threshold → shield. Android: count launch transitions via AccessibilityService foreground-app changes → overlay block. Flint can ship Open Limits on Android (Opal hasn't). |
-| **Flint status** | **Implemented on both — verification pending.** iOS is user-reachable end-to-end in code: the enforcement engine (intentional opens counted at the shield; fails closed if state is unreadable) plus the config UI (Limits tab → Open Limits), host-app arming + day-boundary re-arm, and the "Use app (N left)" block-screen label — the config-UI/arming layer awaits the macOS compile pass, and grants enforce on a real device only. Known limit: apps blocked by another layer's *category* rule are undetectable to the open-limit layer (opaque tokens), so a tap there still charges an open. Android open-limit models, engine policy, persistence, and editor UI are merged (emulator re-run pending). |
+| **Flint status** | **Implemented on both.** iOS is user-reachable end-to-end in code: the enforcement engine (intentional opens counted at the shield; fails closed if state is unreadable) plus the config UI (Limits tab → Open Limits), host-app arming + day-boundary re-arm, and the "Use app (N left)" block-screen label — the config-UI/arming layer awaits the macOS compile pass, and grants enforce on a real device only. Known limit: apps blocked by another layer's *category* rule are undetectable to the open-limit layer (opaque tokens), so a tap there still charges an open. Android open-limit models, engine policy, persistence, and editor UI are merged; Path B was emulator-verified on 2026-07-08 through the real UI (2 opens/day Easy, at-quota `OPEN LIMIT` shield, stand-down/re-shield, Easy break, persistence after process death). Remaining Android gap: Path A open counting. Known product nuance: the last allowed open is shielded ~1.8 s after launch under the current policy. |
 
 ### 2.3 Blocking strength / protection levels (break difficulty)
 
@@ -183,7 +183,7 @@ Opal is a screen-time / focus app for iOS (mature) and Android (early, in-develo
 | **Opal tier** | tiers 1–2 free; **tier 3 (hardcore) paid** |
 | **Platform** | both |
 | **Flint plan** | **ALL THREE FREE.** Enforced in Flint's own session-state logic on top of the OS shield (iOS Screen Time shield / Android overlay). The hardcore tier — the core accountability value — is free in Flint, including the friction delays and reset-gating. |
-| **Flint status** | **Implemented on both — all three tiers free.** iOS verified earlier (Simulator + tests; device pass pending). Android Easy/Harder/Hardcore live in the pure-Kotlin engine with a break-level-aware block screen on both enforcement paths — merged, emulator re-run pending. |
+| **Flint status** | **Implemented on both — all three tiers free.** iOS verified earlier (Simulator + tests; device pass pending). Android Easy/Harder/Hardcore live in the pure-Kotlin engine with a break-level-aware block screen on both enforcement paths — merged; partially emulator-verified (2026-07-06: Hardcore block screen + tier-gated stop; 2026-07-08: Easy break exemption); a full-tier emulator pass is pending. |
 
 ### 2.4 Deep Focus (maximum / non-bypassable protection)
 
@@ -205,7 +205,7 @@ Opal is a screen-time / focus app for iOS (mature) and Android (early, in-develo
 | **Opal tier** | free (except hardcore difficulty, which is Pro) |
 | **Platform** | both |
 | **Flint plan** | **FREE (all five, including the underlying hardcore difficulty).** iOS: rely on Apple's Screen Time passcode + `ManagedSettings` restrictions (`denyAppRemoval`, restrict Screen Time settings access, prevent date/time change) for the session window; app-level PIN in Flint. Android: use `UsageStatsManager` + AccessibilityService to detect/redirect Settings access attempts and guard uninstall flows (device-admin optional). |
-| **Flint status** | **Partial.** Shipped: iOS app-open PIN (salted hash, never stored plaintext — verified earlier) and a Settings screen surfacing the system Screen Time passcode as the real anti-uninstall guarantee; Android permission-health checks + exit diagnostics (merged, re-run pending). **Not yet:** session-scoped uninstall / date-time-change restrictions and Settings-redirect guards. |
+| **Flint status** | **Partial.** Shipped: iOS app-open PIN (salted hash, never stored plaintext — verified earlier) and a Settings screen surfacing the system Screen Time passcode as the real anti-uninstall guarantee; Android permission-health checks + exit diagnostics (merged, re-run pending). Since shipped: date/time/timezone-change guards on Android (`ClockChangeGuard` + `TimeChangeReceiver`; fail-closed day/week keys), the iOS session-scoped uninstall guard (`denyAppRemoval`), and the Android uninstall guard — while a Hardcore window is active the system uninstaller is shielded outright and Settings pages *about Flint* (App-info / Accessibility toggle) are mention- and danger-gated, fail-closed when the window text is unreadable; guard shields deliberately offer no break/pass exit (JVM-tested; emulator re-run pending). **Not yet:** an iOS clock-change guard — Apple gives third parties no way to veto clock changes, and the wall-clock weekly Emergency Pass is clock-sensitive; the system Screen Time passcode is the practical mitigation there. Beyond that, remaining hardening is OEM-specific package coverage and on-device validation. |
 
 ### 2.6 Emergency Pass
 
@@ -253,7 +253,7 @@ Opal is a screen-time / focus app for iOS (mature) and Android (early, in-develo
 | **Opal tier** | unknown (Full Assist relies on Pro Emergency Pass to exit, implying effective Pro dependency) |
 | **Platform** | iOS |
 | **Flint plan** | **FREE (including Full Assist + the free Emergency Pass to exit).** iOS: bedtime/wake `DeviceActivitySchedule` + Allow List shield (Flint's free Allow List, 1.7) for Full Assist; reuse the free Emergency Pass (2.6) as the exit. Usage insights from `DeviceActivityReport`. Android: scheduled overlay block via AccessibilityService. **Defer** the bundled soundscapes/sleep-stories/meditations content for v1 (content production, not a blocking control). |
-| **Flint status** | **Implemented (iOS, blocking-only) — merged, verification pending.** Bedtime→wake windows on chosen nights; Sleep Assist Off / Wind Down / **free Full Assist**; optional enforced morning window; one saved app group allowed overnight — materialized as rules on the Schedules engine. Soundscapes/meditations deferred by design (Slow Uplift stores the choice but arms no shield, and says so). Compile + device passes pending. Android: **not yet**. |
+| **Flint status** | **Implemented (iOS, blocking-only) — merged, verification pending.** Bedtime→wake windows on chosen nights; Sleep Assist Off / Wind Down / **free Full Assist**; optional enforced morning window; one saved app group allowed overnight — materialized as rules on the Schedules engine. Soundscapes/meditations deferred by design (Slow Uplift stores the choice but arms no shield, and says so). Compile + device passes pending. Android: **implemented — verification pending:** bedtime→wake windows on chosen nights (post-midnight bedtimes day-shift correctly), Wind Down / free Full Assist as allow-list rules materialized on the schedules engine (same approach as iOS), optional Morning Assist, allowed-overnight app set, atomic on/off; the engine's telephony safety floor + runtime launcher/dialer exemption keep emergency calling and Home reachable; JVM-tested, emulator re-run pending. |
 
 ### 3.4 Cross-device / desktop blocking (Focus Rules across phone + desktop)
 
@@ -275,7 +275,7 @@ Opal is a screen-time / focus app for iOS (mature) and Android (early, in-develo
 | **Opal tier** | unknown |
 | **Platform** | Android |
 | **Flint plan** | **FREE, and target full parity — a key differentiator.** Android: `AccessibilityService` (foreground-app detection + overlay block) + `UsageStatsManager` (time/launch counting) + `AlarmManager`/`WorkManager` (scheduling) + `Geofence` (location triggers). Flint should ship Open Limits, Allow List, and Emergency Pass on Android where Opal does not. Support below Android 14 best-effort. |
-| **Flint status** | **Substantially implemented — verification pending.** The Android engine now carries break levels, Open Limits, the weekly Emergency Pass, allow-list mode, and typed-domain targets — several of which Opal's Android build lacks — plus DataStore persistence, an OEM/battery resilience layer (boot re-arm, exit diagnostics, permission health), rule/schedule/limit authoring, screen-time stats, a shared branded block screen across both detection paths, and a unified ISO weekday convention. Core blocking was emulator-verified earlier; the integrated app awaits an emulator re-run. `minSdk 23` (best-effort below Android 14, as planned). Sleep Mode / Focus-style automation: **not yet**. |
+| **Flint status** | **Substantially implemented — partially emulator-verified.** The Android engine now carries break levels, Open Limits, the weekly Emergency Pass, allow-list mode, and typed-domain targets — several of which Opal's Android build lacks — plus DataStore persistence, an OEM/battery resilience layer (boot re-arm, exit diagnostics, permission health), rule/schedule/limit authoring, screen-time stats, a shared branded block screen across both detection paths, and a unified ISO weekday convention. Core Path A blocking was emulator-verified earlier; the 2026-07-08 runs rebuilt/tested the integrated app and verified Path B fallback lifecycle, blocklist overlay, self stand-down/re-shield, Easy break, daily Time Limit fallback, and Open Limits on Path B. `minSdk 23` (best-effort below Android 14, as planned). Remaining emulator gaps: Path A open counting, sleep windows, boot re-arm, the time-change-guard broadcast path, and Path A uninstall-guard shielding. |
 
 ---
 
@@ -302,12 +302,21 @@ These are platform limits both Opal and Flint must live with on iOS — document
 Build the core blocking loop and the highest-value anti-paywall wins first, iOS-first via Screen Time / Family Controls. Everything below is **free** in Flint.
 
 > **Progress (July 2026):** items 1–7, 9, and 11 are implemented — with the caveat that 7's iOS
-> enforcement engine still lacks its config UI and shield arming (see 2.2). Items 8 and 10 are
-> partial (app PIN shipped; uninstall/time-change guards and the preset routine library are not).
+> config-UI/arming layer still awaits the macOS compile pass (see 2.2). Item 8 is now
+> substantially implemented (app PIN; the Android date/time/timezone-change guard — iOS has no
+> equivalent yet, see 2.5; uninstall guards on both — iOS `denyAppRemoval`, Android's
+> Hardcore-window shield — verification pending). Item 10
+> is now implemented apart from cross-device sync (out of v1 scope): iOS saved groups shipped
+> and verified earlier; Android named groups and the preset routine library on **both**
+> platforms are implemented — verification pending (see 1.10). Android Block Now (item 1) is
+> now implemented (one-shot session rules, engine-checked expiry) and was emulator-verified
+> live on the 2026-07-06 run.
 > Items 12–14 are implemented in the most recent merges. Verification is the honest caveat
 > throughout: the newest iOS merges await a macOS compile pass, all iOS enforcement awaits an
-> on-device pass, and the integrated Android app awaits an emulator re-run. Item 15 (Android
-> parity) is substantially implemented pending that re-run; 16–17 remain open.
+> on-device pass, and Android still needs emulator coverage for Path A open counting, sleep
+> windows, boot re-arm, the time-change-guard broadcast path, and Path A uninstall-guard shielding.
+> Item 15 (Android parity) is substantially
+> implemented with partial emulator verification; 16–17 remain open.
 
 ### v1 — Must ship (the core loop + anti-paywall wins)
 

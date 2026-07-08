@@ -1,0 +1,41 @@
+=== Flint Open Limits verification — 2026-07-08T07:03:05Z ===
+device: emulator-5554  out: /tmp/flint-openlimits-agent/evidence
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb wait-for-device
+fingerprint: google/sdk_gphone64_arm64/emu64a:15/AE3A.240806.043/12960925:userdebug/dev-keys
+apk: sha256 611691910512fcde…  mtime Jul  8 02:04:55 2026
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb install -r -t /Users/prakash/Desktop/open-source/flint/android-app/app/build/outputs/apk/debug/app-debug.apk
+Performing Streamed Install
+Success
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell pm clear com.flint.peakfocus
+Success
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell appops set com.flint.peakfocus android:get_usage_stats allow
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell appops set com.flint.peakfocus SYSTEM_ALERT_WINDOW allow
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell am start -n com.flint.peakfocus/.MainActivity
+Starting: Intent { cmp=com.flint.peakfocus/.MainActivity }
+PASS 0: UsageStatsForegroundService is running as a foreground service (a11y off)
+tap "Blocklist" (maxy) @ 403 2274
+tap "New app limit" (first) @ 540 2008
+tap "Clock" (first) @ 266 1017
+tap "Daily open limit" (first) @ 248 1021
+tap "Opens per day" (first) @ 279 1264
+tap "Save limits" (first) @ 540 1861
+PASS 1: Open Limit authored via UI — overview row shows Clock · 2 opens/day (Easy)
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell input keyevent KEYCODE_HOME
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell am start -n com.google.android.deskclock/com.android.deskclock.DeskClock
+Starting: Intent { cmp=com.google.android.deskclock/com.android.deskclock.DeskClock }
+Warning: Activity not started, its current task has been brought to the front
+PASS 2: open #1 allowed — Clock stayed unshielded for ~5s (5 poll ticks)
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell input keyevent KEYCODE_HOME
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell am start -n com.google.android.deskclock/com.android.deskclock.DeskClock
+Starting: Intent { cmp=com.google.android.deskclock/com.android.deskclock.DeskClock }
+Warning: Activity not started, its current task has been brought to the front
+PASS 3: open #2 hit the quota — Flint overlay up with the 'Open limit' cause
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell input keyevent KEYCODE_HOME
+PASS 4: shield stands down on the launcher
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell am start -n com.google.android.deskclock/com.android.deskclock.DeskClock
+Starting: Intent { cmp=com.google.android.deskclock/com.android.deskclock.DeskClock }
+Warning: Activity not started, its current task has been brought to the front
+PASS 5: over-quota reopen re-shields
+tap "Take a break" (first) @ 540 2032
+PASS 6: EASY break granted from the Open-limit shield — Clock usable (5-min exemption)
+DONE — all Open Limits checks passed

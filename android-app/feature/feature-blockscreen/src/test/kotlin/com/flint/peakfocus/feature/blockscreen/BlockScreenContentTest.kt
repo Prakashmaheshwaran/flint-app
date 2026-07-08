@@ -2,6 +2,7 @@ package com.flint.peakfocus.feature.blockscreen
 
 import com.flint.peakfocus.core.model.BreakLevel
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -18,6 +19,7 @@ class BlockScreenContentTest {
         appLabel: String? = "Instagram",
         remainingMillis: Long? = null,
         breakWaitRemainingMillis: Long? = null,
+        emergencyPassAvailable: Boolean = true,
     ) = BlockScreenState(
         packageName = packageName,
         appLabel = appLabel,
@@ -25,6 +27,7 @@ class BlockScreenContentTest {
         breakLevel = breakLevel,
         remainingMillis = remainingMillis,
         breakWaitRemainingMillis = breakWaitRemainingMillis,
+        emergencyPassAvailable = emergencyPassAvailable,
     )
 
     // ---- Break-level → affordance mapping ----
@@ -50,6 +53,18 @@ class BlockScreenContentTest {
     }
 
     @Test
+    fun `uninstall guard offers no affordance at any tier`() {
+        // The guard re-shields regardless of exemptions, so any offered exit — especially
+        // the weekly Emergency Pass — would be spent for nothing (review regression).
+        for (level in BreakLevel.entries) {
+            val content = blockScreenContent(
+                state(breakLevel = level, reason = BlockScreenReason.UNINSTALL_GUARD),
+            )
+            assertEquals(BreakAffordance.None, content.breakAffordance)
+        }
+    }
+
+    @Test
     fun `harder with zero cooldown offers hold-to-request`() {
         val content = blockScreenContent(
             state(breakLevel = BreakLevel.HARDER, breakWaitRemainingMillis = 0L),
@@ -68,7 +83,7 @@ class BlockScreenContentTest {
     @Test
     fun `hardcore offers no bypass - emergency pass only`() {
         val content = blockScreenContent(state(breakLevel = BreakLevel.HARDCORE))
-        assertEquals(BreakAffordance.EmergencyPassOnly, content.breakAffordance)
+        assertEquals(BreakAffordance.EmergencyPassOnly(passAvailable = true), content.breakAffordance)
     }
 
     @Test
@@ -76,7 +91,17 @@ class BlockScreenContentTest {
         val content = blockScreenContent(
             state(breakLevel = BreakLevel.HARDCORE, breakWaitRemainingMillis = 5_000L),
         )
-        assertEquals(BreakAffordance.EmergencyPassOnly, content.breakAffordance)
+        assertEquals(BreakAffordance.EmergencyPassOnly(passAvailable = true), content.breakAffordance)
+    }
+
+    @Test
+    fun `hardcore with a spent weekly pass surfaces the unavailable state`() {
+        // The host says the pass is gone: the CTA must not render as a live button whose
+        // tap silently no-ops — the affordance carries the availability for the UI to show.
+        val content = blockScreenContent(
+            state(breakLevel = BreakLevel.HARDCORE, emergencyPassAvailable = false),
+        )
+        assertEquals(BreakAffordance.EmergencyPassOnly(passAvailable = false), content.breakAffordance)
     }
 
     // ---- Display name + headline ----
@@ -115,6 +140,48 @@ class BlockScreenContentTest {
     @Test
     fun `deep focus copy names deep focus`() {
         assertTrue(reasonLineFor(BlockScreenReason.DEEP_FOCUS).contains("Deep Focus"))
+    }
+
+    // ---- Cause badge ----
+
+    @Test
+    fun `every reason maps to a distinct non-blank badge`() {
+        val texts = BlockScreenReason.entries.map { badgeFor(it, BreakLevel.EASY).text }
+        assertTrue(texts.all { it.isNotBlank() })
+        assertEquals(texts.size, texts.toSet().size)
+    }
+
+    @Test
+    fun `badge is emphasized at hardcore whatever the reason`() {
+        for (reason in BlockScreenReason.entries) {
+            assertTrue(badgeFor(reason, BreakLevel.HARDCORE).emphasized)
+        }
+    }
+
+    @Test
+    fun `badge is emphasized for the uninstall guard at every tier`() {
+        for (level in BreakLevel.entries) {
+            assertTrue(badgeFor(BlockScreenReason.UNINSTALL_GUARD, level).emphasized)
+        }
+    }
+
+    @Test
+    fun `badge stays quiet for easy and harder app blocks`() {
+        // Emphasis is reserved for the unbreakable shapes; everything else keeps the
+        // matte badge so the one ember accent doesn't cheapen.
+        for (level in listOf(BreakLevel.EASY, BreakLevel.HARDER)) {
+            for (reason in BlockScreenReason.entries - BlockScreenReason.UNINSTALL_GUARD) {
+                assertFalse(badgeFor(reason, level).emphasized)
+            }
+        }
+    }
+
+    @Test
+    fun `content carries the badge for its state`() {
+        val content = blockScreenContent(
+            state(breakLevel = BreakLevel.HARDCORE, reason = BlockScreenReason.DEEP_FOCUS),
+        )
+        assertEquals(BlockScreenBadge("Deep Focus", emphasized = true), content.badge)
     }
 
     // ---- Encouragement ----

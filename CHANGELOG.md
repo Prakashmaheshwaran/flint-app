@@ -20,6 +20,36 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
   session UI says so while it applies. Compile verification is pending on the macOS CI
   toolchain; enforcement is device-gated like all Screen Time settings.
 
+### Android
+- **Time-change guard:** changing the device clock, date, or timezone no longer resets what was
+  already consumed. `TimeChangeReceiver` re-warms rules and runs the boot re-arm hooks; the pure
+  `ClockChangeGuard` applies fail-closed semantics — day/week keys only roll forward, so a clock
+  set back never re-grants consumed opens or a spent Emergency Pass. JVM-tested; the
+  broadcast → re-arm path still awaits an emulator pass.
+- **Block Now sessions:** one-tap timed focus sessions from Home (duration + difficulty chips);
+  expiry is checked by the engine itself so a session can never outlive its timer, with a live
+  countdown card and tier-gated early stop. Emulator-verified end-to-end (2026-07-06).
+- **Hardcore uninstall guard (Path A):** while a Hardcore window is active, the system
+  uninstaller and Settings pages about Flint are shielded (mention- and danger-gated,
+  fail-closed on unreadable windows); the guard's shield offers no break/pass exit by design.
+  JVM-tested; the emulator shield pass is pending.
+- **Sleep Mode, preset routines & named groups:** bedtime→wake windows with Wind Down / free
+  Full Assist and an optional Morning Assist window, the four-preset routine library, and
+  DataStore-persisted named app groups. JVM-tested; emulator pass pending.
+- **Premium UI overhaul:** one design direction ("warm charcoal, one ember") across all screens,
+  driven by extended `design/tokens.json` roles through `FlintTheme` and a shared component kit;
+  the ADR-007 consent disclosure text is byte-identical. Emulator-verified (2026-07-06).
+- **Stats "Week in review":** typical completed day, busiest day, and a today-vs-typical line
+  derived from `UsageReport` (JVM-tested).
+- **Path B emulator verification (2026-07-08):** foreground-service lifecycle, blocklist
+  overlay, self stand-down/re-shield, Easy break, and the daily Time Limit fallback verified
+  live — evidence in `docs/verification/android-pathb-2026-07-08/`.
+- **Open Limits Path B emulator verification (2026-07-08):** a 2-opens/day Easy limit authored
+  through the real UI was verified end-to-end — first open allowed, at-quota `OPEN LIMIT`
+  shield, HOME stand-down, over-quota re-shield, Easy break, and persisted counts after process
+  death. The evidence records the current product nuance: the last allowed open is shielded
+  ~1.8 s after launch.
+
 ### Fixed
 - **iOS:** reloading Schedules or Time Limits with zero rules no longer cancels *all* of
   Flint's DeviceActivity monitoring at launch (it hit the stop-everything overload via an
@@ -33,6 +63,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 - **Android:** day-restricted overnight windows now block the correct morning: the
   post-midnight tail is gated on the day the window started ("Mon 22:00–06:00, Mondays"
   blocks Tue 00:30, not Mon 00:30).
+- **Android:** Limit-editor (DataStore) Time Limits now actually enforce — they previously had
+  zero enforcement readers; both detection paths take the stricter of the legacy and
+  Limit-editor stores, and Path A re-checks mid-session so the block lands when the budget
+  crosses, not on the next app switch.
+- **Android:** the Path B foreground-service notification re-posts on every service start, so a
+  post-hoc POST_NOTIFICATIONS grant takes effect; the app shell asks for the permission once,
+  and only when Path B is actually in play.
+- **Android:** the HARDCORE block screen reflects a spent weekly Emergency Pass with an inert
+  "used" notice instead of a button whose tap silently did nothing; the HARDER hold-to-request
+  control exposes a TalkBack action; schedule day pills have 48dp touch targets; the block
+  screen self-insets.
 - **Docs:** the Open-Limits "never charges an open another layer would block" claim now
   carries its real exception — category-rule blocks are undetectable (opaque tokens), so
   those taps still charge an open.

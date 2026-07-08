@@ -18,6 +18,7 @@ import com.flint.peakfocus.core.model.EmergencyPassState
 import com.flint.peakfocus.core.model.OpenCountState
 import com.flint.peakfocus.core.model.OpenLimit
 import com.flint.peakfocus.core.model.OpenLimitDecision
+import com.flint.peakfocus.core.model.TimeLimit
 import java.util.TimeZone
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -98,6 +99,7 @@ class BlockScreenCoordinator(
     @Volatile private var emergencyPass = EmergencyPassState()
     @Volatile private var openCounts = OpenCountState()
     @Volatile private var openLimits: List<OpenLimit> = emptyList()
+    @Volatile private var timeLimits: List<TimeLimit> = emptyList()
     @Volatile private var defaultBreakLevel = BreakLevel.EASY
 
     // The currently mounted surface. Mutated on the main thread only.
@@ -113,13 +115,29 @@ class BlockScreenCoordinator(
         scope.launch { focusStore.openCounts.collect { openCounts = it } }
         scope.launch { focusStore.defaultBreakLevel.collect { defaultBreakLevel = it } }
         scope.launch { limitsStore.openLimits.collect { openLimits = it } }
+        scope.launch { limitsStore.timeLimits.collect { timeLimits = it } }
     }
 
     /** Store-wide default break level — the tier for Time Limit blocks (no per-limit tier yet). */
     fun currentDefaultBreakLevel(): BreakLevel = defaultBreakLevel
 
+    /**
+     * The Limit editor's daily Time Limit for [packageName] (minutes), or null. Synchronous
+     * snapshot read — safe on the a11y event hot path, same contract as the other snapshots.
+     * Detectors take the stricter of this and the legacy `LimitStore` budget; before this
+     * lookup existed, DataStore-authored Time Limits were persisted but never enforced.
+     */
+    fun timeLimitMinutes(packageName: String): Int? =
+        timeLimits.firstOrNull { it.packageName == packageName }?.dailyMinutes
+
     /** Snapshot of the HARDER break bookkeeping (BlockActivity rebuilds its state from this). */
     fun currentBreakSession(): BreakSessionState = breakSession
+
+    /** True while this week's Emergency Pass is unspent — drives the HARDCORE CTA's state. */
+    fun isEmergencyPassAvailable(): Boolean {
+        val now = nowEpochMs()
+        return passPolicy.isAvailable(emergencyPass, now, utcOffsetMs(now))
+    }
 
     /** True while [packageName] is inside a granted break / Emergency Pass window. */
     fun isExempt(packageName: String): Boolean =
@@ -173,7 +191,7 @@ class BlockScreenCoordinator(
             // Same app, refreshed cause (e.g. new tick, or a different rule took over).
             shownCause = cause
             shownLabel = appLabel
-            existing.render(blockScreenState(packageName, appLabel, cause, breakSession, now))
+            existing.render(blockScreenState(packageName, appLabel, cause, breakSession, now, isEmergencyPassAvailable()))
             return@runOnMain
         }
         if (existing != null) hideLocked() // swapping to another app's block surface
@@ -187,7 +205,7 @@ class BlockScreenCoordinator(
             onBreakRequested = ::handleBreakRequested,
             onEmergencyPassRequested = ::handleEmergencyPassRequested,
         )
-        view.render(blockScreenState(packageName, appLabel, cause, breakSession, now))
+        view.render(blockScreenState(packageName, appLabel, cause, breakSession, now, isEmergencyPassAvailable()))
         if (surfaceHost.attach(view)) {
             shownView = view
             visiblePackage = packageName
@@ -309,7 +327,7 @@ class BlockScreenCoordinator(
     private fun rerenderNow() = runOnMain {
         val pkg = visiblePackage ?: return@runOnMain
         val cause = shownCause ?: return@runOnMain
-        shownView?.render(blockScreenState(pkg, shownLabel, cause, breakSession, nowEpochMs()))
+        shownView?.render(blockScreenState(pkg, shownLabel, cause, breakSession, nowEpochMs(), isEmergencyPassAvailable()))
     }
 
     /**
@@ -333,7 +351,7 @@ class BlockScreenCoordinator(
                     hideLocked() // a break/pass was granted meanwhile (possibly by the Activity)
                     break
                 }
-                shownView?.render(blockScreenState(pkg, shownLabel, cause, breakSession, now))
+                shownView?.render(blockScreenState(pkg, shownLabel, cause, breakSession, now, isEmergencyPassAvailable()))
             }
         }
     }

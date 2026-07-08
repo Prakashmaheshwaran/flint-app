@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.flint.peakfocus.core.model.AppGroup
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.model.BreakSessionState
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.map
 
 internal object PrefsKeys {
     val BLOCK_RULES = stringPreferencesKey("block_rules_v1")
+    val APP_GROUPS = stringPreferencesKey("app_groups_v1")
     val TIME_LIMITS = stringPreferencesKey("time_limits_v1")
     val OPEN_LIMITS = stringPreferencesKey("open_limits_v1")
     val DEFAULT_BREAK_LEVEL = stringPreferencesKey("default_break_level_v1")
@@ -59,12 +61,37 @@ class DataStoreBlockRulesStore(
     override suspend fun setEnabled(ruleId: String, enabled: Boolean) =
         mutate { current -> current.map { if (it.id == ruleId) it.copy(enabled = enabled) else it } }
 
+    override suspend fun setEnabled(ruleIds: Set<String>, enabled: Boolean) =
+        mutate { current -> current.map { if (it.id in ruleIds) it.copy(enabled = enabled) else it } }
+
     override suspend fun replaceAll(rules: List<BlockRule>) = mutate { rules }
 
     private suspend fun mutate(transform: (List<BlockRule>) -> List<BlockRule>) {
         dataStore.edit { prefs ->
             val current = PrefsCodec.decodeRules(prefs[PrefsKeys.BLOCK_RULES].orEmpty())
             prefs[PrefsKeys.BLOCK_RULES] = PrefsCodec.encodeRules(transform(current))
+        }
+    }
+}
+
+class DataStoreGroupsStore(
+    private val dataStore: DataStore<Preferences>,
+) : GroupsStore {
+
+    override val groups: Flow<List<AppGroup>> = dataStore.safeData().map { prefs ->
+        PrefsCodec.decodeGroups(prefs[PrefsKeys.APP_GROUPS].orEmpty())
+    }
+
+    override suspend fun upsert(group: AppGroup) =
+        mutate { current -> current.filterNot { it.id == group.id } + group }
+
+    override suspend fun delete(groupId: String) =
+        mutate { current -> current.filterNot { it.id == groupId } }
+
+    private suspend fun mutate(transform: (List<AppGroup>) -> List<AppGroup>) {
+        dataStore.edit { prefs ->
+            val current = PrefsCodec.decodeGroups(prefs[PrefsKeys.APP_GROUPS].orEmpty())
+            prefs[PrefsKeys.APP_GROUPS] = PrefsCodec.encodeGroups(transform(current))
         }
     }
 }

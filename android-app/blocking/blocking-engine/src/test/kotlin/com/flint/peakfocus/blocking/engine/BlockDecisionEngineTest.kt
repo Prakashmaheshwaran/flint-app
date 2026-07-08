@@ -3,6 +3,7 @@ package com.flint.peakfocus.blocking.engine
 import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BlockTargets
+import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.model.DomainRef
 import com.flint.peakfocus.core.model.Schedule
 import com.flint.peakfocus.core.model.Verdict
@@ -53,6 +54,64 @@ class BlockDecisionEngineTest {
         val rules = listOf(rule(allowList = true, apps = setOf("com.android.dialer")))
         assertTrue(engine.decide("com.instagram.android", null, rules, self) is Verdict.Block)
         assertEquals(Verdict.Allow, engine.decide("com.android.dialer", null, rules, self))
+    }
+
+    // MARK: overlapping rules — strictest match wins, never first match
+
+    @Test
+    fun strictestOverlappingRuleWinsRegardlessOfOrder() {
+        // The regression: the legacy quick-blocklist projects the same targets a HARDCORE
+        // Block Now session freezes; first-match returned the EASY rule, whose free break
+        // exemption stood down ALL enforcement — Deep Focus was bypassable every 5 minutes.
+        val easyLegacy = rule(apps = setOf("com.instagram.android")).copy(id = "blocklist")
+        val hardcoreSession = rule(apps = setOf("com.instagram.android"))
+            .copy(id = "session-1", breakLevel = BreakLevel.HARDCORE, expiresAtEpochMs = 10_000L)
+        for (rules in listOf(listOf(easyLegacy, hardcoreSession), listOf(hardcoreSession, easyLegacy))) {
+            val v = engine.decide("com.instagram.android", null, rules, self, nowEpochMs = 1_000L)
+            assertEquals("session-1", (v as Verdict.Block).ruleId)
+        }
+    }
+
+    @Test
+    fun equalTierTieBreaksTowardTheTimedSession() {
+        // So the block screen counts down to the session's real end, not an open-ended rule.
+        val openEnded = rule(apps = setOf("com.x")).copy(id = "permanent")
+        val timed = rule(apps = setOf("com.x")).copy(id = "session-1", expiresAtEpochMs = 10_000L)
+        val v = engine.decide("com.x", null, listOf(openEnded, timed), self, nowEpochMs = 1_000L)
+        assertEquals("session-1", (v as Verdict.Block).ruleId)
+    }
+
+    // MARK: telephony safety floor — emergency calling is never blockable
+
+    @Test
+    fun dialerAndEmergencyAreNeverBlockedEvenInAllowListMode() {
+        val brickPhone = listOf(rule(allowList = true, apps = emptySet()))
+        for (pkg in listOf("com.android.dialer", "com.google.android.dialer", "com.android.emergency")) {
+            assertEquals(Verdict.Allow, engine.decide(pkg, null, brickPhone, self))
+        }
+    }
+
+    // MARK: one-shot session expiry (Block Now) — engine-checked, never cleanup-dependent
+
+    @Test
+    fun sessionRuleEnforcesUntilItsExpiryInstantAndNotAfter() {
+        val session = rule(apps = setOf("com.instagram.android"))
+            .copy(id = "session-1", expiresAtEpochMs = 1_000_000L)
+        val rules = listOf(session)
+        assertTrue(
+            engine.decide("com.instagram.android", null, rules, self, nowEpochMs = 999_999L) is Verdict.Block,
+        )
+        assertEquals(
+            Verdict.Allow,
+            engine.decide("com.instagram.android", null, rules, self, nowEpochMs = 1_000_000L),
+        )
+    }
+
+    @Test
+    fun noClockSentinelLeavesSessionRulesEnforcing() {
+        // Callers that pass no wall clock (legacy/tests) must not silently drop sessions.
+        val session = rule(apps = setOf("com.instagram.android")).copy(expiresAtEpochMs = 1L)
+        assertTrue(engine.decide("com.instagram.android", null, listOf(session), self) is Verdict.Block)
     }
 
     @Test

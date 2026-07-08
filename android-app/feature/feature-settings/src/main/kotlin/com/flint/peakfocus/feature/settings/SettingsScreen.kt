@@ -2,7 +2,14 @@ package com.flint.peakfocus.feature.settings
 
 import android.content.Intent
 import android.os.Build
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,10 +19,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,7 +39,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -41,7 +50,15 @@ import com.flint.peakfocus.blocking.resilience.HealthStatus
 import com.flint.peakfocus.blocking.resilience.PermissionHealthChecker
 import com.flint.peakfocus.core.common.Oem
 import com.flint.peakfocus.core.common.OemUtil
+import com.flint.peakfocus.core.common.theme.FlintMotion
+import com.flint.peakfocus.core.common.theme.FlintNumerals
+import com.flint.peakfocus.core.common.theme.FlintSpacing
 import com.flint.peakfocus.core.common.theme.FlintTheme
+import com.flint.peakfocus.core.common.ui.FlintBadge
+import com.flint.peakfocus.core.common.ui.FlintCard
+import com.flint.peakfocus.core.common.ui.FlintScreenHeader
+import com.flint.peakfocus.core.common.ui.FlintSectionLabel
+import com.flint.peakfocus.core.common.ui.FlintStatusDot
 import com.flint.peakfocus.permissions.AccessibilityPermission
 import com.flint.peakfocus.permissions.BatteryOptimization
 import com.flint.peakfocus.permissions.OverlayPermission
@@ -114,33 +131,27 @@ internal fun SettingsContent(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(20.dp),
+                .padding(FlintSpacing.gutter),
         ) {
-            Text(
-                text = "Settings",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Text(
-                text = "KEEP BLOCKING ALIVE",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Spacer(Modifier.height(16.dp))
+            FlintScreenHeader(title = "Settings", eyebrow = "Keep blocking alive")
+            Spacer(Modifier.height(FlintSpacing.md))
             HealthBannerCard(BlockingHealthUi.banner(health))
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(FlintSpacing.md))
             BlockingHealthUi.rows(health).forEach { row ->
                 PermissionCard(row = row, onFix = { onFix(row.kind) })
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(FlintSpacing.cardGap))
             }
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(FlintSpacing.sm))
+            FlintSectionLabel("Troubleshooting")
+            Spacer(Modifier.height(FlintSpacing.sm))
             OemGuidanceCard(oemGuidance)
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(FlintSpacing.cardGap))
             ExitDiagnosticsCard(
                 exits = exits,
                 supported = exitsSupported,
                 nowMillis = nowMillis,
             )
+            Spacer(Modifier.height(FlintSpacing.lg))
         }
     }
 }
@@ -148,33 +159,46 @@ internal fun SettingsContent(
 @Composable
 private fun HealthBannerCard(banner: BannerUi) {
     val container = when (banner.level) {
-        HealthLevel.HEALTHY -> MaterialTheme.colorScheme.surface
-        HealthLevel.DEGRADED -> MaterialTheme.colorScheme.surfaceVariant
+        HealthLevel.HEALTHY -> MaterialTheme.colorScheme.surfaceContainerLow
+        HealthLevel.DEGRADED -> MaterialTheme.colorScheme.surfaceContainerHigh
         HealthLevel.BROKEN -> MaterialTheme.colorScheme.errorContainer
     }
-    val onContainer = when (banner.level) {
-        HealthLevel.HEALTHY -> MaterialTheme.colorScheme.onSurface
-        HealthLevel.DEGRADED -> MaterialTheme.colorScheme.onSurfaceVariant
+    val headlineColor = when (banner.level) {
         HealthLevel.BROKEN -> MaterialTheme.colorScheme.onErrorContainer
+        else -> MaterialTheme.colorScheme.onSurface
     }
-    Surface(color = container, shape = MaterialTheme.shapes.medium) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+    val bodyColor = when (banner.level) {
+        HealthLevel.BROKEN -> MaterialTheme.colorScheme.onErrorContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    FlintCard(containerColor = container, contentColor = headlineColor) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            when (banner.level) {
+                HealthLevel.HEALTHY -> FlintStatusDot(MaterialTheme.colorScheme.primary)
+                HealthLevel.DEGRADED -> Icon(
+                    imageVector = Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                HealthLevel.BROKEN -> Icon(
+                    imageVector = Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                )
+            }
+            Spacer(Modifier.width(FlintSpacing.sm))
             Text(
                 text = banner.headline,
                 style = MaterialTheme.typography.titleMedium,
-                color = if (banner.level == HealthLevel.HEALTHY) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    onContainer
-                },
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = banner.body,
-                style = MaterialTheme.typography.bodyMedium,
-                color = onContainer,
+                color = headlineColor,
             )
         }
+        Spacer(Modifier.height(FlintSpacing.xs))
+        Text(
+            text = banner.body,
+            style = MaterialTheme.typography.bodyMedium,
+            color = bodyColor,
+        )
     }
 }
 
@@ -184,34 +208,48 @@ private fun HealthBannerCard(banner: BannerUi) {
  */
 @Composable
 private fun PermissionCard(row: PermissionRowUi, onFix: () -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = row.title,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = row.role,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Spacer(Modifier.width(12.dp))
-                StatusChip(granted = row.granted, affectsEnforcement = row.affectsEnforcement)
-            }
-            if (!row.granted) {
-                Spacer(Modifier.height(10.dp))
+    FlintCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // Dot vocabulary: primary = granted, error = enforcement at risk, muted = the
+            // merely-recommended grant missing (never dressed as mandatory).
+            FlintStatusDot(
+                color = when {
+                    row.granted -> MaterialTheme.colorScheme.primary
+                    row.affectsEnforcement -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+            Spacer(Modifier.width(FlintSpacing.sm))
+            Column(Modifier.weight(1f)) {
                 Text(
-                    text = row.disclosure,
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = row.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(FlintSpacing.xs))
+                Text(
+                    text = row.role,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.height(12.dp))
+            }
+            Spacer(Modifier.width(FlintSpacing.cardGap))
+            FlintBadge(text = if (row.granted) "On" else "Off")
+        }
+        if (!row.granted) {
+            Spacer(Modifier.height(FlintSpacing.sm))
+            Text(
+                text = row.disclosure,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(FlintSpacing.cardGap))
+            if (row.affectsEnforcement) {
                 Button(onClick = onFix, modifier = Modifier.fillMaxWidth()) {
+                    Text(row.fixLabel)
+                }
+            } else {
+                OutlinedButton(onClick = onFix, modifier = Modifier.fillMaxWidth()) {
                     Text(row.fixLabel)
                 }
             }
@@ -219,72 +257,67 @@ private fun PermissionCard(row: PermissionRowUi, onFix: () -> Unit) {
     }
 }
 
-@Composable
-private fun StatusChip(granted: Boolean, affectsEnforcement: Boolean) {
-    val label = if (granted) "On" else "Off"
-    val labelColor = when {
-        granted -> MaterialTheme.colorScheme.primary
-        affectsEnforcement -> MaterialTheme.colorScheme.error
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(50)) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = labelColor,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-        )
-    }
-}
+private fun expandTransition(): EnterTransition =
+    expandVertically(
+        animationSpec = tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized),
+    ) + fadeIn(
+        animationSpec = tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized),
+    )
+
+private fun collapseTransition(): ExitTransition =
+    shrinkVertically(
+        animationSpec = tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized),
+    ) + fadeOut(
+        animationSpec = tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard),
+    )
 
 /** Static, local, per-manufacturer survival steps — expandable, no deep links, no network. */
 @Composable
 private fun OemGuidanceCard(guidance: OemGuidance) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    Surface(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .clickable { expanded = !expanded }
-                .padding(16.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = "Keep Flint running on ${guidance.displayName}",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = "Manufacturer battery settings that can stop blocking",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Spacer(Modifier.width(12.dp))
+    FlintCard(onClick = { expanded = !expanded }) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
                 Text(
-                    text = if (expanded) "Hide" else "Show",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
+                    text = "Keep Flint running on ${guidance.displayName}",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(FlintSpacing.xs))
+                Text(
+                    text = "Manufacturer battery settings that can stop blocking",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (expanded) {
-                Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.width(FlintSpacing.cardGap))
+            Text(
+                text = if (expanded) "Hide" else "Show",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandTransition(),
+            exit = collapseTransition(),
+        ) {
+            Column {
+                Spacer(Modifier.height(FlintSpacing.sm))
                 Text(
                     text = guidance.summary,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(FlintSpacing.sm))
                 guidance.steps.forEachIndexed { index, step ->
-                    Row(Modifier.padding(vertical = 4.dp)) {
+                    Row(Modifier.padding(vertical = FlintSpacing.xs)) {
                         Text(
                             text = "${index + 1}.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.bodyMedium.merge(FlintNumerals),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Spacer(Modifier.width(8.dp))
+                        Spacer(Modifier.width(FlintSpacing.sm))
                         Text(
                             text = step,
                             style = MaterialTheme.typography.bodyMedium,
@@ -292,7 +325,7 @@ private fun OemGuidanceCard(guidance: OemGuidance) {
                         )
                     }
                 }
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(FlintSpacing.sm))
                 Text(
                     text = "Exact menu names vary by Android version — these are the usual " +
                         "paths. If they don't match your phone, dontkillmyapp.com documents " +
@@ -313,36 +346,35 @@ private fun ExitDiagnosticsCard(
     nowMillis: Long,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    Surface(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .clickable { expanded = !expanded }
-                .padding(16.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = "Why did blocking stop?",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = "Recent times Android ended Flint's process",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Spacer(Modifier.width(12.dp))
+    FlintCard(onClick = { expanded = !expanded }) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
                 Text(
-                    text = if (expanded) "Hide" else "Show",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
+                    text = "Why did blocking stop?",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(FlintSpacing.xs))
+                Text(
+                    text = "Recent times Android ended Flint's process",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (expanded) {
-                Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.width(FlintSpacing.cardGap))
+            Text(
+                text = if (expanded) "Hide" else "Show",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandTransition(),
+            exit = collapseTransition(),
+        ) {
+            Column {
+                Spacer(Modifier.height(FlintSpacing.sm))
                 when {
                     !supported -> Text(
                         text = "Your Android version doesn't keep exit records (Android 11 or " +
@@ -358,7 +390,7 @@ private fun ExitDiagnosticsCard(
                     )
                     else -> exits.forEach { diagnostic ->
                         val explanation = ExitDiagnosticsText.explain(diagnostic.category)
-                        Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(vertical = FlintSpacing.xs)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     text = explanation.headline,
@@ -371,11 +403,12 @@ private fun ExitDiagnosticsCard(
                                         diagnostic.timestampMillis,
                                         nowMillis,
                                     ),
-                                    style = MaterialTheme.typography.bodySmall,
+                                    style = MaterialTheme.typography.bodySmall
+                                        .merge(FlintNumerals),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
-                            Spacer(Modifier.height(2.dp))
+                            Spacer(Modifier.height(FlintSpacing.xs))
                             Text(
                                 text = explanation.detail,
                                 style = MaterialTheme.typography.bodySmall,
@@ -384,7 +417,7 @@ private fun ExitDiagnosticsCard(
                         }
                     }
                 }
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(FlintSpacing.sm))
                 Text(
                     text = "Read on demand from Android's own records. Stays on this device.",
                     style = MaterialTheme.typography.labelSmall,
@@ -449,6 +482,26 @@ private fun SettingsHealthyPreview() {
             ),
             exits = emptyList(),
             oemGuidance = OemGuidanceCatalog.forOem(Oem.OTHER),
+            exitsSupported = true,
+            nowMillis = PREVIEW_NOW,
+            onFix = {},
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun SettingsBrokenDarkPreview() {
+    FlintTheme(darkTheme = true) {
+        SettingsContent(
+            health = HealthStatus(
+                accessibilityEnabled = false,
+                usageAccessGranted = false,
+                overlayGranted = false,
+                batteryExemptionGranted = false,
+            ),
+            exits = previewExits(),
+            oemGuidance = OemGuidanceCatalog.forOem(Oem.SAMSUNG),
             exitsSupported = true,
             nowMillis = PREVIEW_NOW,
             onFix = {},

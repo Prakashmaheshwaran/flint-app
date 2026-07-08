@@ -1,0 +1,23 @@
+=== Open Limits timing + persistence measurements — 2026-07-08T07:06:06Z ===
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell pm clear com.flint.peakfocus
+Success
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell appops set com.flint.peakfocus android:get_usage_stats allow
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell appops set com.flint.peakfocus SYSTEM_ALERT_WINDOW allow
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell am start -n com.flint.peakfocus/.MainActivity
+Starting: Intent { cmp=com.flint.peakfocus/.MainActivity }
+tap "Blocklist" @ 403 2274
+tap "New app limit" @ 540 2008
+tap "Clock" @ 266 1017
+tap "Daily open limit" @ 248 1021
+tap "Opens per day" @ 279 1264
+tap "Save limits" @ 540 1861
+limit authored: Clock · 2 opens/day (EASY)
+MEASURE open#1 time-to-shield: nones (expected: none within 8s)
+MEASURE open#2 time-to-shield: 1.83s (expected: ~1-2.5s — at-quota re-check truncates the last allowed open)
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell am force-stop com.flint.peakfocus
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell am start -n com.flint.peakfocus/.MainActivity
+Starting: Intent { cmp=com.flint.peakfocus/.MainActivity }
+service back up after force-stop (gate re-armed on resume)
+MEASURE reopen-after-force-stop time-to-shield: 0.77s (expected: immediate — counts persisted)
+cause after restart is still OPEN LIMIT
+DONE measurements: open1=none open2=1.83s post-force-stop=0.77s

@@ -1,0 +1,21 @@
+<!-- Legacy round icon (API 25 launchers that read roundIcon): circular charcoal plate. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M54,4 A50,50 0 0 1 104,54 A50,50 0 0 1 54,104 A50,50 0 0 1 4,54 A50,50 0 0 1 54,4 Z"
+        android:fillColor="@color/flint_charcoal" />
+    <group
+        android:pivotX="28"
+        android:pivotY="28"
+        android:scaleX="1.125"
+        android:scaleY="1.125"
+        android:translateX="26"
+        android:translateY="26">
+        <path android:pathData="M14,44 L28,8 L36,26 L44,18 L30,48 Z" android:fillColor="@color/flint_stone" />
+        <path android:pathData="M36,26 L44,18 L42,30 Z" android:fillColor="@color/flint_spark" />
+        <path android:pathData="M30,48 L42,30 L44,40 Z" android:fillColor="@color/flint_ember" />
+    </group>
+</vector>

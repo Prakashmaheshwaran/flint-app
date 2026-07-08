@@ -20,6 +20,8 @@ class BlockDecisionEngine {
      * @param foregroundUrl browser URL if known (AccessibilityService node read), else null.
      * @param activeRules rules whose schedule is currently active (or manual Block Now sessions).
      * @param selfPackage Flint's own package — we never block ourselves (escape hatch lives in app).
+     * @param nowEpochMs wall-clock instant for one-shot session expiry ([BlockRule.expiresAtEpochMs]);
+     *   negative = "no clock supplied" → expiry not checked (same sentinel style as the others).
      */
     fun decide(
         foregroundPackage: String,
@@ -28,32 +30,55 @@ class BlockDecisionEngine {
         selfPackage: String,
         nowMinutesOfDay: Int = -1,
         weekday: Int = -1,
+        nowEpochMs: Long = -1L,
     ): Verdict {
         if (foregroundPackage.isBlank()) return Verdict.Allow
         if (foregroundPackage == selfPackage) return Verdict.Allow
         if (foregroundPackage in SYSTEM_ALLOWLIST) return Verdict.Allow
 
+        // Strictest match wins, not first match: overlapping rules are normal (the legacy
+        // quick blocklist projects the same targets a Block Now session freezes), and taking
+        // the first would let an EASY rule shadow a HARDCORE session — its free break would
+        // then stand down *all* enforcement for the exemption window. Ties break toward a
+        // rule with a session expiry so the block screen counts down to the real end.
+        var strictest: BlockRule? = null
+        var strictestReason = ""
         for (rule in activeRules) {
             if (!rule.enabled) continue
+            if (rule.isExpired(nowEpochMs)) continue // one-shot session whose timer ran out
             if (!scheduleActive(rule.schedule, nowMinutesOfDay, weekday)) continue
             val targets = rule.targets
 
-            if (targets.allowListMode) {
-                val allowed = targets.apps.any { it.packageName == foregroundPackage }
-                if (!allowed) {
-                    return Verdict.Block(rule.id, "allow-list mode: $foregroundPackage is not allowed")
-                }
-                continue
-            }
+            val reason = when {
+                targets.allowListMode ->
+                    if (targets.apps.none { it.packageName == foregroundPackage }) {
+                        "allow-list mode: $foregroundPackage is not allowed"
+                    } else {
+                        null
+                    }
+                targets.apps.any { it.packageName == foregroundPackage } ->
+                    "blocked app: $foregroundPackage"
+                foregroundUrl != null && targets.domains.any { domainMatches(foregroundUrl, it.domain) } ->
+                    "blocked website: $foregroundUrl"
+                else -> null
+            } ?: continue
 
-            if (targets.apps.any { it.packageName == foregroundPackage }) {
-                return Verdict.Block(rule.id, "blocked app: $foregroundPackage")
-            }
-            if (foregroundUrl != null && targets.domains.any { domainMatches(foregroundUrl, it.domain) }) {
-                return Verdict.Block(rule.id, "blocked website: $foregroundUrl")
+            if (stricterThan(rule, strictest)) {
+                strictest = rule
+                strictestReason = reason
             }
         }
-        return Verdict.Allow
+        return strictest?.let { Verdict.Block(it.id, strictestReason) } ?: Verdict.Allow
+    }
+
+    /** Rule ordering for overlapping blocks: higher tier wins; at equal tier, a timed session
+     *  (defined expiry) beats an open-ended rule so countdowns render the real end. */
+    private fun stricterThan(candidate: BlockRule, incumbent: BlockRule?): Boolean {
+        incumbent ?: return true
+        if (candidate.breakLevel != incumbent.breakLevel) {
+            return candidate.breakLevel.ordinal > incumbent.breakLevel.ordinal
+        }
+        return candidate.expiresAtEpochMs != null && incumbent.expiresAtEpochMs == null
     }
 
     /** True if [url]'s host equals [domain] or is a subdomain of it. */

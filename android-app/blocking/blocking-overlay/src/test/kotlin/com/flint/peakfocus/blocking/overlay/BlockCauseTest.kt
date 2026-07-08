@@ -170,4 +170,44 @@ class BlockCauseTest {
         assertNull(blockScreenState("com.x", null, easy, session, 10L).breakWaitRemainingMillis)
         assertNull(blockScreenState("com.x", null, hardcore, session, 10L).breakWaitRemainingMillis)
     }
+
+    @Test
+    fun `a one-shot session's expiry is the block's end and beats any schedule window`() {
+        val session = rule(BreakLevel.HARDCORE).copy(id = "session-1", expiresAtEpochMs = 5_000L)
+        val guardCause = ruleBlockCause(session, nowEpochMs = 1_000L, utcOffsetMs = 0L)
+        assertEquals(BlockScreenReason.DEEP_FOCUS, guardCause.reason)
+        assertEquals(5_000L, guardCause.endsAtEpochMs)
+
+        val scheduled = rule(BreakLevel.EASY, Schedule(startMinuteOfDay = 0, endMinuteOfDay = 600))
+            .copy(expiresAtEpochMs = 5_000L)
+        assertEquals(5_000L, ruleBlockCause(scheduled, baseMidnight, utcOffsetMs = 0L).endsAtEpochMs)
+    }
+
+    // MARK: uninstallGuardBlockCause
+
+    @Test
+    fun `guard cause carries the uninstall-guard reason and stays open-ended for manual hardcore`() {
+        val guardCause = uninstallGuardBlockCause(rule(BreakLevel.HARDCORE), nowEpochMs = 1_000L, utcOffsetMs = 0L)
+        assertEquals(BlockScreenReason.UNINSTALL_GUARD, guardCause.reason)
+        assertEquals(BreakLevel.HARDCORE, guardCause.breakLevel)
+        assertNull(guardCause.endsAtEpochMs)
+        assertFalse(guardCause.spendsOpenOnBreak)
+    }
+
+    @Test
+    fun `guard cause armed by a Block Now session counts down to the session's expiry`() {
+        // Without this the guard shield over Settings would outlive the session forever —
+        // its ticker only auto-hides causes with a known end, and guard causes grant no
+        // exemptions that could hide it otherwise.
+        val session = rule(BreakLevel.HARDCORE).copy(id = "session-1", expiresAtEpochMs = 9_000L)
+        assertEquals(9_000L, uninstallGuardBlockCause(session, nowEpochMs = 1_000L, utcOffsetMs = 0L).endsAtEpochMs)
+    }
+
+    @Test
+    fun `scheduled guard cause counts down to the hardcore window's end`() {
+        val nineToFive = Schedule(startMinuteOfDay = 9 * 60, endMinuteOfDay = 17 * 60)
+        val noon = baseMidnight + 12 * hour
+        val guardCause = uninstallGuardBlockCause(rule(BreakLevel.HARDCORE, nineToFive), noon, utcOffsetMs = 0L)
+        assertEquals(noon + 5 * hour, guardCause.endsAtEpochMs)
+    }
 }

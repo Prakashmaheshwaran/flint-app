@@ -51,6 +51,31 @@ object PathBBlockHandoff {
     }
 
     /**
+     * Poll-loop entry for a daily Time Limit hit — Path B's mirror of the a11y service's
+     * step 2. Mirrors Path A's order exactly: an active break/pass still stands enforcement
+     * down (its step 1), and a time-limit-blocked app records no Open-Limit open (the user
+     * never actually got into it — same reason rule blocks skip open counting). TimeLimit
+     * carries no tier, so the store-wide default break level applies, as on Path A.
+     */
+    fun onTimeLimitExceeded(context: Context, packageName: String) {
+        val appContext = context.applicationContext
+        val c = coordinator(appContext)
+        lastForegroundPackage = packageName
+        if (packageName == appContext.packageName) return
+        if (c.isExempt(packageName)) {
+            c.hideIfShown()
+            return
+        }
+        val now = System.currentTimeMillis()
+        val utcOffset = TimeZone.getDefault().getOffset(now).toLong()
+        c.showBlocked(
+            packageName,
+            labelFor(appContext, packageName),
+            timeLimitBlockCause(c.currentDefaultBreakLevel(), now, utcOffset),
+        )
+    }
+
+    /**
      * Feed one poll observation through the shared decision flow. Cheap when nothing changed;
      * callable from any thread (UI work is marshalled internally).
      */

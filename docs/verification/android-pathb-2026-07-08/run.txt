@@ -1,0 +1,38 @@
+Path B verification output: docs/verification/android-pathb-2026-07-08
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb wait-for-device
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb install -r -t /Users/prakash/Desktop/open-source/flint/android-app/app/build/outputs/apk/debug/app-debug.apk
+Performing Streamed Install
+Success
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell pm clear com.flint.peakfocus
+Success
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell appops set com.flint.peakfocus android:get_usage_stats allow
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell appops set com.flint.peakfocus SYSTEM_ALERT_WINDOW allow
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell am start -n com.flint.peakfocus/.MainActivity
+Starting: Intent { cmp=com.flint.peakfocus/.MainActivity }
+PASS service starts as foreground when usage access is allowed and a11y is off
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell am broadcast -n com.flint.peakfocus/.SetBlocklistReceiver --es package com.google.android.deskclock
+Broadcasting: Intent { flg=0x400000 cmp=com.flint.peakfocus/.SetBlocklistReceiver (has extras) }
+Broadcast completed: result=0
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell am start -n com.google.android.deskclock/com.android.deskclock.DeskClock
+Starting: Intent { cmp=com.google.android.deskclock/com.android.deskclock.DeskClock }
+Warning: Activity not started, its current task has been brought to the front
+PASS Path B blocks a debug-seeded blocklist app
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell input tap 540 2190
+PASS Open Flint CTA stands the Path B overlay down
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell am start -n com.google.android.deskclock/com.android.deskclock.DeskClock
+Starting: Intent { cmp=com.google.android.deskclock/com.android.deskclock.DeskClock }
+Warning: Activity not started, its current task has been brought to the front
+PASS blocked app re-shields after leaving Flint
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell input tap 540 2032
+PASS EASY break grants and suppresses the shield
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell am broadcast -n com.flint.peakfocus/.SetBlocklistReceiver --ez clear true
+Broadcasting: Intent { flg=0x400000 cmp=com.flint.peakfocus/.SetBlocklistReceiver (has extras) }
+Broadcast completed: result=0
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell am broadcast -n com.flint.peakfocus/.SetBlocklistReceiver --es limitPkg com.google.android.contacts --ei limitMin 0
+Broadcasting: Intent { flg=0x400000 cmp=com.flint.peakfocus/.SetBlocklistReceiver (has extras) }
+Broadcast completed: result=0
+$ /opt/homebrew/share/android-commandlinetools/platform-tools/adb shell am start -n com.google.android.contacts/com.android.contacts.activities.PeopleActivity
+Starting: Intent { cmp=com.google.android.contacts/com.android.contacts.activities.PeopleActivity }
+Warning: Activity not started, its current task has been brought to the front
+PASS Path B enforces a 0-minute daily Time Limit
+DONE Path B emulator verification passed

@@ -42,8 +42,11 @@ android: ## Assemble the Android debug APK
 android-install: ## Build + install the debug APK on a connected device/emulator
 	cd $(ANDROID_DIR) && JAVA_HOME="$(JAVA_HOME)" ./gradlew installDebug
 
+# `test` (not `testDebugUnitTest`) — matches CI: the pure-Kotlin modules (blocking-engine,
+# core-model) are kotlin.jvm projects whose test task is `test`; the old task name silently
+# skipped them, so the engine tests never ran under this target.
 android-test: ## Run Android unit tests
-	cd $(ANDROID_DIR) && JAVA_HOME="$(JAVA_HOME)" ./gradlew testDebugUnitTest
+	cd $(ANDROID_DIR) && JAVA_HOME="$(JAVA_HOME)" ./gradlew test
 
 clean: ## Remove build artifacts on both platforms
 	rm -rf $(IOS_DIR)/build $(IOS_DIR)/DerivedData $(IOS_DIR)/Flint.xcodeproj

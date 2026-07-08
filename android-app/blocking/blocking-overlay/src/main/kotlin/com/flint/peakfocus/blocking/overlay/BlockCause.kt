@@ -40,6 +40,9 @@ data class BlockCause(
  * Reason mapping: a scheduled rule → [BlockScreenReason.SCHEDULE]; a manual (schedule-less)
  * rule at [BreakLevel.HARDCORE] is a Deep Focus session → [BlockScreenReason.DEEP_FOCUS];
  * any other manual rule → [BlockScreenReason.MANUAL_SESSION].
+ *
+ * A one-shot session's [BlockRule.expiresAtEpochMs] is the block's true end — it wins over
+ * any schedule-derived end, so the countdown ticks to the session timer, not to a window.
  */
 fun ruleBlockCause(rule: BlockRule?, nowEpochMs: Long, utcOffsetMs: Long): BlockCause {
     val level = rule?.breakLevel ?: BreakLevel.EASY
@@ -49,8 +52,30 @@ fun ruleBlockCause(rule: BlockRule?, nowEpochMs: Long, utcOffsetMs: Long): Block
         level == BreakLevel.HARDCORE -> BlockScreenReason.DEEP_FOCUS
         else -> BlockScreenReason.MANUAL_SESSION
     }
-    val endsAt = schedule?.let { nowEpochMs + millisUntilScheduleEnd(it, nowEpochMs, utcOffsetMs) }
+    val endsAt = rule?.expiresAtEpochMs
+        ?: schedule?.let { nowEpochMs + millisUntilScheduleEnd(it, nowEpochMs, utcOffsetMs) }
     return BlockCause(reason = reason, breakLevel = level, endsAtEpochMs = endsAt)
+}
+
+/**
+ * Cause for an `UninstallGuard`-shielded system surface (the uninstaller, Settings pages about
+ * Flint) while a Hardcore window is active. Maps to [BlockScreenReason.UNINSTALL_GUARD], which
+ * the screen renders with NO break/pass affordance: the guard re-shields on every window event
+ * regardless of exemptions, so offering the weekly Emergency Pass here would burn it for
+ * nothing. The honest way out is inside Flint's own UI — disable the Hardcore rule there
+ * (deliberate, on-screen friction, per the guard's documented threat model).
+ */
+fun uninstallGuardBlockCause(rule: BlockRule, nowEpochMs: Long, utcOffsetMs: Long): BlockCause {
+    // Same end-derivation as ruleBlockCause: a session's expiry wins, else the schedule —
+    // without it a guard shield armed by a Block Now session would never auto-hide (its
+    // ticker only dismisses causes with a known end, and guard causes grant no exemptions).
+    val endsAt = rule.expiresAtEpochMs
+        ?: rule.schedule?.let { nowEpochMs + millisUntilScheduleEnd(it, nowEpochMs, utcOffsetMs) }
+    return BlockCause(
+        reason = BlockScreenReason.UNINSTALL_GUARD,
+        breakLevel = rule.breakLevel,
+        endsAtEpochMs = endsAt,
+    )
 }
 
 /** Cause for an exhausted Open Limit: blocks until the next local midnight, tier from the limit. */
@@ -87,6 +112,7 @@ fun blockScreenState(
     cause: BlockCause,
     breakSession: BreakSessionState,
     nowEpochMs: Long,
+    emergencyPassAvailable: Boolean = true,
 ): BlockScreenState {
     val pending = breakSession.pending
     val breakWait =
@@ -102,6 +128,7 @@ fun blockScreenState(
         breakLevel = cause.breakLevel,
         remainingMillis = cause.endsAtEpochMs?.let { (it - nowEpochMs).coerceAtLeast(0L) },
         breakWaitRemainingMillis = breakWait,
+        emergencyPassAvailable = emergencyPassAvailable,
     )
 }
 

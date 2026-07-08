@@ -22,6 +22,12 @@ enum class BlockScreenReason {
 
     /** A hardcore Deep Focus session is running. */
     DEEP_FOCUS,
+
+    /**
+     * A protected system surface (the uninstaller, Settings pages about Flint) while a
+     * Hardcore window is active — the anti-bypass shield, not an app block.
+     */
+    UNINSTALL_GUARD,
 }
 
 /**
@@ -47,6 +53,12 @@ data class BlockScreenState(
      * and HARDCORE (no breaks at all).
      */
     val breakWaitRemainingMillis: Long? = null,
+    /**
+     * HARDCORE only: whether this week's Emergency Pass is still unspent (host-supplied from
+     * its pass accounting). False renders the CTA as an inert "already used" notice instead
+     * of a button whose tap would silently no-op.
+     */
+    val emergencyPassAvailable: Boolean = true,
 )
 
 /** How long the HARDER-level control must be held before `onBreakRequested` fires. */
@@ -63,8 +75,16 @@ internal sealed interface BreakAffordance {
     /** HARDER, host says a cooldown is pending: no control, just a wait notice. */
     data class WaitBeforeBreak(val remainingMillis: Long) : BreakAffordance
 
-    /** HARDCORE: no bypass affordance — only the Emergency Pass CTA. */
-    data object EmergencyPassOnly : BreakAffordance
+    /** HARDCORE: no bypass affordance — only the Emergency Pass CTA, and only while this
+     *  week's pass is unspent ([passAvailable] false shows an inert "already used" notice). */
+    data class EmergencyPassOnly(val passAvailable: Boolean) : BreakAffordance
+
+    /**
+     * Uninstall guard: no affordance at all. The guard re-shields its surfaces on every
+     * window event regardless of exemptions, so offering the weekly Emergency Pass here
+     * would burn it for nothing — the shield must never sell an exit it won't honor.
+     */
+    data object None : BreakAffordance
 }
 
 /** Fully resolved copy + affordance for one render of the screen. Pure and unit-tested. */
@@ -72,8 +92,19 @@ internal data class BlockScreenContent(
     val displayName: String,
     val headline: String,
     val reasonLine: String,
+    val badge: BlockScreenBadge,
     val encouragement: String,
     val breakAffordance: BreakAffordance,
+)
+
+/**
+ * The cause badge above the countdown (rendered uppercase by the badge component).
+ * [emphasized] is the spark-filled treatment, reserved for the two unbreakable shapes:
+ * a HARDCORE tier and the uninstall guard.
+ */
+internal data class BlockScreenBadge(
+    val text: String,
+    val emphasized: Boolean,
 )
 
 internal fun blockScreenContent(state: BlockScreenState): BlockScreenContent {
@@ -82,8 +113,14 @@ internal fun blockScreenContent(state: BlockScreenState): BlockScreenContent {
         displayName = name,
         headline = "$name can wait",
         reasonLine = reasonLineFor(state.reason),
+        badge = badgeFor(state.reason, state.breakLevel),
         encouragement = encouragementFor(state.packageName),
-        breakAffordance = breakAffordanceFor(state.breakLevel, state.breakWaitRemainingMillis),
+        breakAffordance = breakAffordanceFor(
+            state.reason,
+            state.breakLevel,
+            state.breakWaitRemainingMillis,
+            state.emergencyPassAvailable,
+        ),
     )
 }
 
@@ -96,20 +133,38 @@ internal fun reasonLineFor(reason: BlockScreenReason): String = when (reason) {
     BlockScreenReason.TIME_LIMIT -> "You’ve used today’s time for this app."
     BlockScreenReason.OPEN_LIMIT -> "You’ve used today’s opens for this app."
     BlockScreenReason.DEEP_FOCUS -> "Deep Focus is on until the session ends."
+    BlockScreenReason.UNINSTALL_GUARD -> "This screen is protected while Deep Focus is on."
 }
 
+internal fun badgeFor(reason: BlockScreenReason, level: BreakLevel): BlockScreenBadge =
+    BlockScreenBadge(
+        text = when (reason) {
+            BlockScreenReason.MANUAL_SESSION -> "Focus session"
+            BlockScreenReason.SCHEDULE -> "Schedule"
+            BlockScreenReason.TIME_LIMIT -> "Time limit"
+            BlockScreenReason.OPEN_LIMIT -> "Open limit"
+            BlockScreenReason.DEEP_FOCUS -> "Deep Focus"
+            BlockScreenReason.UNINSTALL_GUARD -> "Protected"
+        },
+        emphasized = level == BreakLevel.HARDCORE || reason == BlockScreenReason.UNINSTALL_GUARD,
+    )
+
 internal fun breakAffordanceFor(
+    reason: BlockScreenReason,
     level: BreakLevel,
     breakWaitRemainingMillis: Long?,
-): BreakAffordance = when (level) {
-    BreakLevel.EASY -> BreakAffordance.TakeABreak
-    BreakLevel.HARDER ->
+    emergencyPassAvailable: Boolean = true,
+): BreakAffordance = when {
+    // Guard shields offer no exit whatever the tier — see [BreakAffordance.None]'s contract.
+    reason == BlockScreenReason.UNINSTALL_GUARD -> BreakAffordance.None
+    level == BreakLevel.EASY -> BreakAffordance.TakeABreak
+    level == BreakLevel.HARDER ->
         if (breakWaitRemainingMillis != null && breakWaitRemainingMillis > 0) {
             BreakAffordance.WaitBeforeBreak(breakWaitRemainingMillis)
         } else {
             BreakAffordance.HoldToRequest(BREAK_HOLD_MILLIS)
         }
-    BreakLevel.HARDCORE -> BreakAffordance.EmergencyPassOnly
+    else -> BreakAffordance.EmergencyPassOnly(passAvailable = emergencyPassAvailable)
 }
 
 private val ENCOURAGEMENTS = listOf(

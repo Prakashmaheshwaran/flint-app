@@ -1,0 +1,22 @@
+<!--
+    Themed-icon layer (Android 13+): the three facets as one union-silhouette path (three
+    same-winding subpaths, nonZero fill), white alpha-only — the launcher supplies the tint.
+    Same safe-zone transform as ic_flint_foreground.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:pivotX="28"
+        android:pivotY="28"
+        android:scaleX="0.8571"
+        android:scaleY="0.8571"
+        android:translateX="26"
+        android:translateY="26">
+        <path
+            android:pathData="M14,44 L28,8 L36,26 L44,18 L30,48 Z M36,26 L44,18 L42,30 Z M30,48 L42,30 L44,40 Z"
+            android:fillColor="#FFFFFFFF" />
+    </group>
+</vector>

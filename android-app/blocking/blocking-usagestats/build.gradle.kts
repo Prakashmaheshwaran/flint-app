@@ -16,6 +16,9 @@ android {
 
 dependencies {
     implementation(project(":core:core-model"))
+    // Daily Time Limit thresholds — the same legacy synchronous store Path A reads, so the
+    // two detection paths can never disagree about an app's budget.
+    implementation(project(":core:core-data"))
     implementation(project(":blocking:blocking-engine"))
     // Path B enforcement handoff: every poll observation routes through PathBBlockHandoff
     // (shared coordinator → overlay / BlockActivity), same decision glue as Path A.

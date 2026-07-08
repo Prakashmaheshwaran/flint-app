@@ -7,7 +7,7 @@ only sanctioned way a third party can block apps/websites. Strategy & rationale:
 ## Generate & build
 
 The `.xcodeproj` is **generated** from [`project.yml`](project.yml) with
-[XcodeGen](https://github.com/yonghuang-hub/XcodeGen) — never hand-edited, never committed.
+[XcodeGen](https://github.com/yonaskolb/XcodeGen) — never hand-edited, never committed.
 
 ```bash
 # from repo root
@@ -49,7 +49,8 @@ Swift package (`Packages/FlintCore`) so the app and every extension reuse one im
 | `FlintScheduling` | `DeviceActivityCenter` / schedule / event builders |
 | `FlintTokens` | Opaque/rotating-token helpers, shield-cap checks |
 
-Tests in `Packages/FlintCore/Tests` (run via the Xcode test action on a simulator).
+Tests live in `Tests/` at the ios-app root (the `FlintTests` target in `project.yml`; run via
+the Xcode test action on a simulator — the SwiftPM package declares no test target of its own).
 
 ## The entitlement reality (read before planning a release)
 
@@ -86,6 +87,18 @@ Verticals implemented:
 - **Schedules** — unlimited recurring/daily rules (**no count cap, no 24h-advance cap**). Each
   rule carries its own selection + break level + day-of-week gate + allow-list, and gets its own
   `DeviceActivity` registration + `ManagedSettingsStore` (so schedules can overlap cleanly).
+  **Routine templates** — the Schedules tab ships the same four-preset library as Android
+  (`FlintRoutinePreset`: Work hours, Evenings offline, Social detox, Weekend mornings); one tap
+  opens the new-schedule editor prefilled with name, window, and break level, and targets always
+  stay the user's to pick (FamilyControls tokens are opaque — a preset *couldn't* guess apps,
+  and Save stays disabled until the user picks). Two honest divergences from Android: "always
+  on" (Social detox) becomes a daily 00:00–23:59 window because `FlintScheduleRule` requires
+  one — the last minute of each day is genuinely uncovered — and the template copy makes no
+  break-level promises, because iOS schedule shields are plain hard blocks whose in-app toggle
+  the strictness tiers don't gate. Preset → rule mapping is unit-tested
+  (`FlintRoutinePresetsTests`); the pure preset data type-checks on this machine, but **the
+  compile + simulator-test pass is pending on the macOS CI toolchain** (authored without a
+  local Xcode), and the drafted rules enforce on a real device only, like every schedule.
 - **Break levels + Emergency Pass** — Easy/Harder/**free Hardcore** everywhere; a free **weekly
   Emergency Pass** ends a running Hardcore session early (Opal paywalls this).
 - **Time Limits** — daily usage budgets via `DeviceActivityEvent` thresholds; the monitor shields
@@ -154,8 +167,11 @@ Verticals implemented:
 1. **On-device validation** of everything enforcement-shaped — shields, schedules, time limits,
    open-limit grants, web restrictions, Focus filters, sleep windows. The Simulator cannot prove
    any of it; tracked as `H-IOS-DEVICE` (human + hardware), evidence goes in `docs/verification/`.
-2. **macOS compile pass over the Open-Limits config UI + arming, and the Hardcore uninstall
-   guard** — those layers were built toolchain-blind; `xcodegen generate` + `xcodebuild`
-   build/test must go green before the blanket "all targets build" claim covers them.
+2. **macOS compile pass over the Open-Limits config UI + arming, the Hardcore uninstall
+   guard, and the routine-template library (presets + Schedules UI + tests)** — those layers
+   were built toolchain-blind. `xcodegen generate` has since gone green on a Mac without
+   Xcode (project.yml valid; the new preset/test/view files confirmed in their targets'
+   build phases), so what remains is exactly `xcodebuild` build/test on a Mac with full
+   Xcode before the blanket "all targets build" claim covers them.
 
 Build order: strategy doc §8.

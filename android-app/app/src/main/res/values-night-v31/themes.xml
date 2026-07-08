@@ -1,0 +1,11 @@
+<resources>
+    <!-- Night + API 31+: same charcoal splash stage, charcoal post-splash frame. -->
+    <style name="Theme.Flint" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/flint_charcoal</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowSplashScreenBackground">@color/flint_charcoal</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_flint_splash</item>
+    </style>
+</resources>
