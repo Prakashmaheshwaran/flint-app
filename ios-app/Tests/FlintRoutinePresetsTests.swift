@@ -21,24 +21,11 @@ final class FlintRoutinePresetsTests: XCTestCase {
     }
 
     func testEveryPresetDraftsAValidScheduleRule() {
+        // `FlintSchedule.issues` is the one definition of "a window DeviceActivity will register"
+        // (endpoints, length, weekday numbering) — the same gate the editor and `armPlan` use.
         for preset in FlintRoutinePreset.library {
             let rule = preset.draftRule()
-            let s = rule.schedule
-            XCTAssertTrue((0...23).contains(s.startHour), preset.name)
-            XCTAssertTrue((0...59).contains(s.startMinute), preset.name)
-            XCTAssertTrue((0...23).contains(s.endHour), preset.name)
-            XCTAssertTrue((0...59).contains(s.endMinute), preset.name)
-            XCTAssertTrue(
-                s.daysOfWeek.allSatisfy { (1...7).contains($0) },
-                "\(preset.name): daysOfWeek must stay in Calendar's 1...7 range"
-            )
-            // DeviceActivitySchedule requires at least 15 minutes between start and end.
-            let start = s.startHour * 60 + s.startMinute
-            let end = s.endHour * 60 + s.endMinute
-            XCTAssertGreaterThanOrEqual(
-                end - start, 15,
-                "\(preset.name): window must be a registrable DeviceActivitySchedule"
-            )
+            XCTAssertEqual(rule.schedule.issues, [], preset.name)
             XCTAssertTrue(rule.enabled, preset.name)
         }
     }

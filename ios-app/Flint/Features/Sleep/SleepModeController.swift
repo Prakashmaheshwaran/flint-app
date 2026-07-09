@@ -31,12 +31,8 @@ struct SleepModeController {
     static let nightRuleID = "sleep.night"
     static let morningRuleID = "sleep.morning"
 
-    /// `DeviceActivitySchedule` rejects intervals shorter than 15 minutes.
-    static let minimumWindowMinutes = 15
     /// Defensive ceiling for the morning wind-up (the UI offers 15…180; the model default is 60).
     static let maximumMorningMinutes = 720
-
-    private static let minutesPerDay = 24 * 60
 
     private let schedules = FlintSchedulesController()
 
@@ -87,22 +83,27 @@ struct SleepModeController {
     // MARK: Window math (pure — shared by apply() and the view's status/summary rows)
 
     /// The bedtime window to enforce, or nil when Sleep Mode / Sleep Assist is off or the window
-    /// is too short to register.
+    /// isn't one `DeviceActivityCenter` will register (see `FlintSchedule.issues`).
     static func nightWindow(for config: FlintSleepConfig) -> FlintSchedule? {
-        guard config.enabled,
-              config.sleepAssist != .off,
-              windowMinutes(config.schedule) >= minimumWindowMinutes else { return nil }
+        guard config.enabled, config.sleepAssist != .off, config.schedule.isValid else { return nil }
         return config.schedule
     }
 
     /// The post-wake wind-up window to enforce, or nil when Morning Assist isn't Full Assist.
     /// Independent of the night window: Morning Full Assist is meaningful even with Sleep Assist
-    /// off (block the first hour of the day, nothing overnight).
+    /// off (block the first hour of the day, nothing overnight). Derived by clock arithmetic from
+    /// the wake time, so a config decoded with an out-of-range wake time arms nothing rather than
+    /// producing a window with an hour of 30 for DeviceActivity to reject.
     static func morningWindow(for config: FlintSleepConfig) -> FlintSchedule? {
-        guard config.enabled, config.morningAssist == .fullAssist else { return nil }
-        let minutes = min(max(config.morningAssistMinutes, minimumWindowMinutes), maximumMorningMinutes)
-        let wake = config.schedule.endHour * 60 + config.schedule.endMinute
-        let end = (wake + minutes) % minutesPerDay
+        guard config.enabled,
+              config.morningAssist == .fullAssist,
+              config.schedule.hasValidEndpoints else { return nil }
+        let minutes = min(
+            max(config.morningAssistMinutes, FlintSchedule.minimumWindowMinutes),
+            maximumMorningMinutes
+        )
+        let wake = config.schedule.endMinuteOfDay
+        let end = (wake + minutes) % FlintSchedule.minutesPerDay
         return FlintSchedule(
             daysOfWeek: morningDays(for: config.schedule),
             startHour: wake / 60,
@@ -112,22 +113,16 @@ struct SleepModeController {
         )
     }
 
-    /// Window length in minutes, treating start ≥ end as crossing midnight (0 = degenerate).
-    static func windowMinutes(_ schedule: FlintSchedule) -> Int {
-        let start = schedule.startHour * 60 + schedule.startMinute
-        let end = schedule.endHour * 60 + schedule.endMinute
-        return (end - start + minutesPerDay) % minutesPerDay
-    }
-
     /// The monitor gates a rule by the weekday its interval *starts* on. The night rule starts on
     /// the bedtime day; when the night window crosses midnight, the morning window starts the day
     /// after — so Sun–Thu nights guard Mon–Fri mornings (weekdays 1 = Sunday … 7 = Saturday,
     /// wrapping). A same-evening window (start < end) keeps the same days. Empty = every day.
     static func morningDays(for nightSchedule: FlintSchedule) -> Set<Int> {
         guard !nightSchedule.daysOfWeek.isEmpty else { return [] }
-        let start = nightSchedule.startHour * 60 + nightSchedule.startMinute
-        let end = nightSchedule.endHour * 60 + nightSchedule.endMinute
-        guard start >= end else { return nightSchedule.daysOfWeek } // wind-down ends the same day
+        // Wind-down that ends the same evening keeps its days; only a midnight crossing shifts them.
+        guard nightSchedule.endMinuteOfDay <= nightSchedule.startMinuteOfDay else {
+            return nightSchedule.daysOfWeek
+        }
         return Set(nightSchedule.daysOfWeek.map { $0 % 7 + 1 })
     }
 
@@ -139,8 +134,8 @@ struct SleepModeController {
         at date: Date = Date(),
         calendar: Calendar = .current
     ) -> Bool {
-        let start = schedule.startHour * 60 + schedule.startMinute
-        let end = schedule.endHour * 60 + schedule.endMinute
+        let start = schedule.startMinuteOfDay
+        let end = schedule.endMinuteOfDay
         guard start != end else { return false }
         let now = calendar.component(.hour, from: date) * 60 + calendar.component(.minute, from: date)
         let weekday = calendar.component(.weekday, from: date)

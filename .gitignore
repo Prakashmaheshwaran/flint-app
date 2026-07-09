@@ -14,7 +14,9 @@ ios-app/DerivedData/
 **/xcuserdata/
 **/*.xcuserstate
 .swiftpm/
-ios-app/.build/
+# `swift build` writes .build/ next to the Package.swift it is run from, so cover the
+# FlintCore package too — not just ios-app/.
+ios-app/**/.build/
 *.ipa
 *.dSYM.zip
 *.dSYM
