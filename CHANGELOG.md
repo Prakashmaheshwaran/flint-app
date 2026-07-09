@@ -20,7 +20,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
   session UI says so while it applies. Compile verification is pending on the macOS CI
   toolchain; enforcement is device-gated like all Screen Time settings.
 
+### Android
+- **The Home status card now tells the truth about blocking, and asks for one thing at a
+  time:** a new `SetupGuidance` (feature-onboarding, pure Kotlin) turns blocking-resilience's
+  `HealthStatus` into the card's headline, body, and single next step. It reports blocking as
+  on whenever *either* path can enforce, names what is missing, and orders the remaining grants
+  cheapest-route-to-blocking first — so when usage access is already granted, the overlay grant
+  leads (one tap restores Path B) instead of the consent-gated accessibility flow. Home also
+  re-checks every grant on resume, not just the accessibility one. The accessibility hand-off
+  stays behind the prominent-disclosure consent screen (ADR-007): the app-side hand-off table
+  has no direct route to Accessibility settings at all.
+
 ### Fixed
+- **Android:** the Home status card no longer claims "Blocking is OFF" while Flint is actively
+  blocking through the Path B fallback (usage access + overlay, accessibility service off). It
+  read a single boolean — is the AccessibilityService on — so it both mis-reported protected
+  users and pushed them at a permission they did not need. It now reads the full grant snapshot.
 - **iOS:** reloading Schedules or Time Limits with zero rules no longer cancels *all* of
   Flint's DeviceActivity monitoring at launch (it hit the stop-everything overload via an
   empty list, killing the active session's auto-clear). Empty-list `stopMonitoring` is now a

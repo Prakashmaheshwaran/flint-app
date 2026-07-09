@@ -46,13 +46,20 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.flint.peakfocus.blocking.resilience.PermissionHealthChecker
 import com.flint.peakfocus.core.common.theme.FlintTheme
 import com.flint.peakfocus.core.data.BlocklistStore
 import com.flint.peakfocus.feature.blocklist.BlocklistScreen
 import com.flint.peakfocus.feature.onboarding.AccessibilityConsentScreen
+import com.flint.peakfocus.feature.onboarding.SetupGuidance
+import com.flint.peakfocus.feature.onboarding.SetupPlan
+import com.flint.peakfocus.feature.onboarding.SetupStep
 import com.flint.peakfocus.feature.settings.SettingsScreen
 import com.flint.peakfocus.feature.stats.StatsScreen
 import com.flint.peakfocus.permissions.AccessibilityPermission
+import com.flint.peakfocus.permissions.BatteryOptimization
+import com.flint.peakfocus.permissions.OverlayPermission
+import com.flint.peakfocus.permissions.UsageAccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -135,7 +142,17 @@ private fun FlintApp() {
     ) { innerPadding ->
         val contentModifier = Modifier.fillMaxSize().padding(innerPadding)
         when (tab) {
-            FlintTab.Home -> HomeScreen(contentModifier, onEnableBlocking = { showConsent = true })
+            FlintTab.Home -> HomeScreen(
+                contentModifier,
+                onSetupStep = { step ->
+                    val handOff = settingsHandOff(context, step)
+                    if (handOff == null) {
+                        showConsent = true
+                    } else {
+                        context.startActivity(handOff.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    }
+                },
+            )
             FlintTab.Blocklist -> BlocklistScreen(contentModifier)
             FlintTab.Stats -> StatsScreen(contentModifier)
             FlintTab.Settings -> SettingsScreen(contentModifier)
@@ -143,11 +160,24 @@ private fun FlintApp() {
     }
 }
 
+/**
+ * Settings hand-off for a setup step, or null when the step may not be handed off directly.
+ * [SetupStep.ENABLE_ACCESSIBILITY] is that case: the prominent-disclosure consent screen owns
+ * the route to Accessibility settings (Play policy, ADR-007), so there is deliberately no
+ * second one here. Only ever called from the status card's button — Flint never auto-redirects.
+ */
+private fun settingsHandOff(context: Context, step: SetupStep): Intent? = when (step) {
+    SetupStep.ENABLE_ACCESSIBILITY -> null
+    SetupStep.GRANT_USAGE_ACCESS -> UsageAccess.settingsIntent()
+    SetupStep.GRANT_OVERLAY -> OverlayPermission.settingsIntent(context)
+    SetupStep.REQUEST_BATTERY_EXEMPTION -> BatteryOptimization.requestIntent(context)
+}
+
 @Composable
-private fun HomeScreen(modifier: Modifier = Modifier, onEnableBlocking: () -> Unit) {
+private fun HomeScreen(modifier: Modifier = Modifier, onSetupStep: (SetupStep) -> Unit) {
     val context = LocalContext.current
     val store = remember { BlocklistStore(context) }
-    var accessibilityOn by remember { mutableStateOf(false) }
+    var health by remember { mutableStateOf(PermissionHealthChecker.check(context)) }
     var blocked by remember { mutableStateOf(store.blockedPackages) }
     var apps by remember { mutableStateOf(listOf<AppEntry>()) }
 
@@ -155,7 +185,9 @@ private fun HomeScreen(modifier: Modifier = Modifier, onEnableBlocking: () -> Un
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                accessibilityOn = AccessibilityPermission.isEnabled(context, A11Y_SERVICE_CLASS)
+                // Re-check every grant, not just the accessibility one: the user may be back
+                // from any of the hand-offs the card offers, and OEMs revoke grants silently.
+                health = PermissionHealthChecker.check(context)
                 blocked = store.blockedPackages
             }
         }
@@ -176,7 +208,7 @@ private fun HomeScreen(modifier: Modifier = Modifier, onEnableBlocking: () -> Un
             Text("PEAK FOCUS", style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(16.dp))
-            StatusCard(accessibilityOn, onEnable = onEnableBlocking)
+            StatusCard(remember(health) { SetupGuidance.plan(health) }, onSetupStep)
             Spacer(Modifier.height(16.dp))
             ScheduleCard(store)
             Spacer(Modifier.height(16.dp))
@@ -195,30 +227,32 @@ private fun HomeScreen(modifier: Modifier = Modifier, onEnableBlocking: () -> Un
     }
 }
 
+/**
+ * Blocking health, straight from [SetupGuidance] — every word, and whether there is anything
+ * left to ask for. It reports "on" whenever *either* path can enforce, so a user running on the
+ * Path B fallback is no longer told blocking is off and pushed at a grant they don't need.
+ */
 @Composable
-private fun StatusCard(accessibilityOn: Boolean, onEnable: () -> Unit) {
+private fun StatusCard(plan: SetupPlan, onSetupStep: (SetupStep) -> Unit) {
     Surface(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium) {
-        Row(
-            Modifier.fillMaxWidth().padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    if (accessibilityOn) "Blocking is ON" else "Blocking is OFF",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (accessibilityOn) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    if (accessibilityOn) "Flint blocks the apps you switch on below."
-                    else "Turn on the Flint accessibility service to start blocking.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (!accessibilityOn) {
-                Button(onClick = onEnable) { Text("Enable") }
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Text(
+                plan.headline,
+                style = MaterialTheme.typography.titleMedium,
+                color = if (plan.enforcingNow) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                plan.body,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            plan.nextStep?.let { step ->
+                Spacer(Modifier.height(12.dp))
+                Button(onClick = { onSetupStep(step) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(step.ctaLabel)
+                }
             }
         }
     }
