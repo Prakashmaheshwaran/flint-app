@@ -15,6 +15,7 @@
 
 - [ ] iOS: `make ios-build` green (plus `xcodebuild test` if logic changed)
 - [ ] Android: `make android` and `make android-test` green
+- [ ] `scripts/` or `Makefile` touched: `make selftest` green (no device or toolchain needed)
 - [ ] Docs updated if behavior changed
 - [ ] No telemetry, analytics, network calls, or accounts introduced (hard rule)
 - [ ] No hard-coded palette/brand values — design tokens only (`design/`)

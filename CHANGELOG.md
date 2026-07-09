@@ -77,6 +77,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 - **Docs:** the Open-Limits "never charges an open another layer would block" claim now
   carries its real exception — category-rule blocks are undetectable (opaque tokens), so
   those taps still charge an open.
+- **Tooling:** `scripts/check-release-version.sh` now catches a release tag whose compiled
+  app versions were not bumped. Tagging `v0.2.0` while Android still declares `versionName =
+  "0.1.0"` would publish a file named for `v0.2.0` that still installs as `0.1.0`; leaving
+  `versionCode` unchanged also makes Android refuse the upgrade (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`).
+  Run `make release-check TAG=v0.2.0` before cutting the tag.
+- **Tooling:** `make selftest` now covers both the Android emulator verification harness and
+  the release-version checker without an emulator, Gradle, Xcode, or an Android SDK.
 
 ## [0.1.0] — Initial public release
 
