@@ -6,6 +6,7 @@ import com.flint.peakfocus.core.model.OpenLimit
 import com.flint.peakfocus.core.model.OpenLimitDecision
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -14,10 +15,49 @@ class OpenLimitPolicyTest {
     private val policy = OpenLimitPolicy()
     private val self = "com.flint.peakfocus"
     private val insta = "com.instagram.android"
+    private val spotify = "com.spotify.music"
+    private val shade = "com.android.systemui"
+    private val launcher = "com.google.android.apps.nexuslauncher"
     private val today = 20637L // Fri 2026-07-03
 
     private fun limits(dailyOpens: Int, level: BreakLevel = BreakLevel.EASY) =
         listOf(OpenLimit(packageName = insta, dailyOpens = dailyOpens, breakLevel = level))
+
+    private fun session(openLimits: List<OpenLimit>, day: Long = today) =
+        Session(policy, openLimits, self, day)
+
+    /**
+     * Drives [OpenLimitPolicy.onForegroundTransition] the way a detector does: counts and grant
+     * carried from one transition to the next, `previous` advancing on every observed package.
+     *
+     * [goTo] is the coordinator entry point. [passThrough] is the seam where a detector sees a
+     * package but short-circuits before the coordinator — Flint's own windows (both paths) and
+     * the resolved launcher/dialer (Path A's `neverBlock`) — so `previous` moves but no
+     * transition is folded.
+     */
+    private class Session(
+        private val policy: OpenLimitPolicy,
+        private val limits: List<OpenLimit>,
+        private val self: String,
+        private val day: Long,
+    ) {
+        var counts = OpenCountState(day)
+        var granted: String? = null
+        private var previous: String? = null
+
+        fun goTo(packageName: String): OpenLimitDecision {
+            val transition =
+                policy.onForegroundTransition(previous, packageName, self, counts, granted, limits, day)
+            counts = transition.counts
+            granted = transition.granted
+            previous = packageName
+            return transition.decision
+        }
+
+        fun passThrough(packageName: String) {
+            previous = packageName
+        }
+    }
 
     // MARK: decide
 
@@ -163,5 +203,139 @@ class OpenLimitPolicyTest {
         assertEquals(today, policy.epochDay(today * 86_400_000L + 12 * 3_600_000L))
         // just before UTC midnight with a +1h offset already belongs to the next local day
         assertEquals(today, policy.epochDay(today * 86_400_000L - 1L, utcOffsetMs = 3_600_000L))
+    }
+
+    // MARK: foreground transitions — decide once per open, never re-block a granted one
+
+    @Test
+    fun theOpenJustGrantedIsNotReblockedWhileTheAppHoldsTheForeground() {
+        val s = session(limits(1)) // "open Instagram once a day": that one open must be usable
+        assertTrue(s.goTo(insta) is OpenLimitDecision.Allowed)
+        assertEquals(1, policy.opensUsed(s.counts, insta, today)) // quota now spent…
+
+        // …but the app is still in front. Path B re-evaluates a second later; Path A on the
+        // next in-app window event. Both must leave the user inside the open they paid for.
+        repeat(3) { assertTrue(s.goTo(insta) is OpenLimitDecision.Allowed) }
+        assertEquals(1, policy.opensUsed(s.counts, insta, today)) // and never re-count it
+    }
+
+    @Test
+    fun reopeningTheAppOnceTheQuotaIsSpentBlocks() {
+        val s = session(limits(1))
+        assertTrue(s.goTo(insta) is OpenLimitDecision.Allowed)
+        assertTrue(s.goTo(spotify) is OpenLimitDecision.Allowed) // left for another real app
+        assertTrue(s.goTo(insta) is OpenLimitDecision.Blocked) // a second open, over budget
+        assertNull(s.granted)
+        assertEquals(1, policy.opensUsed(s.counts, insta, today)) // a blocked open is not recorded
+    }
+
+    @Test
+    fun aShadeDipDoesNotEndTheGrantedOpen() {
+        val s = session(limits(1))
+        assertTrue(s.goTo(insta) is OpenLimitDecision.Allowed)
+        assertTrue(s.goTo(shade) is OpenLimitDecision.Allowed) // notification shade
+        assertTrue(s.goTo(insta) is OpenLimitDecision.Allowed) // same open, resumed
+        assertEquals(insta, s.granted)
+        assertEquals(1, policy.opensUsed(s.counts, insta, today))
+    }
+
+    @Test
+    fun bouncingThroughTheShadeIntoAnotherAppEndsTheGrantedOpen() {
+        val s = session(limits(1))
+        assertTrue(s.goTo(insta) is OpenLimitDecision.Allowed)
+        assertTrue(s.goTo(shade) is OpenLimitDecision.Allowed)
+        assertTrue(s.goTo(spotify) is OpenLimitDecision.Allowed) // a real app: the open is over
+        assertNull(s.granted)
+        assertTrue(s.goTo(shade) is OpenLimitDecision.Allowed)
+        assertTrue(s.goTo(insta) is OpenLimitDecision.Blocked) // …so coming back is a new open
+    }
+
+    @Test
+    fun returningFromFlintDuringAGrantedOpenStaysAllowed() {
+        val s = session(limits(1))
+        assertTrue(s.goTo(insta) is OpenLimitDecision.Allowed)
+        s.passThrough(self) // a deliberate visit to Flint's own UI
+        assertTrue(s.goTo(insta) is OpenLimitDecision.Allowed)
+        assertEquals(1, policy.opensUsed(s.counts, insta, today))
+    }
+
+    @Test
+    fun returningFromFlintToABlockedAppStaysBlocked() {
+        val s = session(limits(1))
+        assertTrue(s.goTo(insta) is OpenLimitDecision.Allowed)
+        s.passThrough(launcher)
+        assertTrue(s.goTo(insta) is OpenLimitDecision.Blocked)
+        s.passThrough(self) // the block screen's "Open Flint", then back to the shielded app
+        assertTrue(s.goTo(insta) is OpenLimitDecision.Blocked)
+    }
+
+    @Test
+    fun aLauncherRoundTripIsANewOpenEvenWhileAGrantNamesTheApp() {
+        // Path A never routes the launcher through the coordinator, so the grant still reads
+        // `insta` when the user comes back — the entry check must win over it.
+        val s = session(limits(1))
+        assertTrue(s.goTo(insta) is OpenLimitDecision.Allowed)
+        assertEquals(insta, s.granted)
+        s.passThrough(launcher)
+        assertTrue(s.goTo(insta) is OpenLimitDecision.Blocked)
+    }
+
+    @Test
+    fun aUseAnywayBreakReblocksOnceItsExemptionEnds() {
+        val s = session(limits(1))
+        assertTrue(s.goTo(insta) is OpenLimitDecision.Allowed)
+        s.passThrough(launcher)
+        assertTrue(s.goTo(insta) is OpenLimitDecision.Blocked)
+        // "Use anyway" spends one more open (BlockScreenCoordinator.requestBreak) without
+        // granting it: the break's exemption window is what lifts the shield, so the re-check
+        // when that window ends must block again.
+        s.counts = policy.recordOpen(s.counts, insta, today)
+        assertTrue(s.goTo(insta) is OpenLimitDecision.Blocked)
+        assertEquals(2, policy.opensUsed(s.counts, insta, today))
+    }
+
+    @Test
+    fun remainingOpensCountsDownTheOpenItJustRecorded() {
+        val s = session(limits(3))
+        assertEquals(OpenLimitDecision.Allowed(2), s.goTo(insta))
+        assertEquals(OpenLimitDecision.Allowed(2), s.goTo(insta)) // same open, same remainder
+        s.passThrough(launcher)
+        assertEquals(OpenLimitDecision.Allowed(1), s.goTo(insta))
+        s.passThrough(launcher)
+        assertEquals(OpenLimitDecision.Allowed(0), s.goTo(insta)) // the third and last
+        s.passThrough(launcher)
+        assertTrue(s.goTo(insta) is OpenLimitDecision.Blocked) // the fourth
+    }
+
+    @Test
+    fun appsWithoutALimitAreAlwaysAllowedAndReportNoRemainder() {
+        val s = session(limits(1))
+        assertEquals(OpenLimitDecision.Allowed(null), s.goTo(spotify))
+        assertEquals(OpenLimitDecision.Allowed(null), s.goTo(spotify))
+    }
+
+    @Test
+    fun aGrantedOpenSurvivesMidnightAndTheFreshDayRestoresTheQuota() {
+        val s = session(limits(1))
+        assertTrue(s.goTo(insta) is OpenLimitDecision.Allowed)
+        // Parked in the app when the local day rolls over: the re-check rolls the counts and
+        // hands back a fresh quota — the day's opens are gone, not the user's current session.
+        val rolled =
+            policy.onForegroundTransition(insta, insta, self, s.counts, s.granted, limits(1), today + 1)
+        assertEquals(OpenLimitDecision.Allowed(1), rolled.decision)
+        assertEquals(today + 1, rolled.counts.epochDay)
+        assertEquals(0, policy.opensUsed(rolled.counts, insta, today + 1))
+    }
+
+    @Test
+    fun enteringAnotherAppEndsTheGrantEvenWhenThatAppIsItselfBlocked() {
+        val both = limits(1) + OpenLimit(packageName = spotify, dailyOpens = 1)
+        val s = session(both)
+        assertTrue(s.goTo(spotify) is OpenLimitDecision.Allowed) // spends Spotify's only open
+        assertTrue(s.goTo(insta) is OpenLimitDecision.Allowed) // spends Instagram's only open
+        assertEquals(insta, s.granted)
+        assertTrue(s.goTo(spotify) is OpenLimitDecision.Blocked) // Spotify is over budget
+        assertNull(s.granted) // a block always clears the grant…
+        assertTrue(s.goTo(insta) is OpenLimitDecision.Blocked) // …so Instagram is a fresh open
     }
 }

@@ -102,6 +102,13 @@ class BlockScreenCoordinator(
     @Volatile private var timeLimits: List<TimeLimit> = emptyList()
     @Volatile private var defaultBreakLevel = BreakLevel.EASY
 
+    /**
+     * The package whose current open the Open-Limit machine already granted (see
+     * [OpenLimitPolicy.onForegroundTransition]). Deliberately in-memory, like [BlockExemptions]:
+     * a dead process forgets the grant and re-decides, so enforcement fails strict.
+     */
+    @Volatile private var openGrantedPackage: String? = null
+
     // The currently mounted surface. Mutated on the main thread only.
     private var shownView: BlockScreenHostView? = null
     private var shownCause: BlockCause? = null
@@ -150,28 +157,32 @@ class BlockScreenCoordinator(
             ?.let { it.effectiveAtEpochMs - atEpochMs }
 
     /**
-     * Open Limits, on every foreground transition: rolls the day over, checks the quota, and
-     * — only when the app is (still) allowed — records the open when [OpenLimitPolicy] says
-     * the transition is a real open (shield bounces, system surfaces and same-app changes
-     * aren't). Callers block on [OpenLimitDecision.Blocked]. Synchronous; persistence is
+     * Open Limits, on every foreground transition: rolls the day over, decides once per real
+     * open, and records the opens it allows (shield bounces, system surfaces and same-app
+     * changes aren't opens). An open that was allowed stays allowed while the app holds the
+     * foreground — [OpenLimitPolicy.onForegroundTransition] carries that grant across
+     * re-evaluations, so the app the user just spent their last open on is not shielded a poll
+     * tick later. Callers block on [OpenLimitDecision.Blocked]. Synchronous; persistence is
      * fired asynchronously on [scope].
      */
     fun onForegroundChanged(previousPackage: String?, foregroundPackage: String): OpenLimitDecision {
         val now = nowEpochMs()
         val day = openLimitPolicy.epochDay(now, utcOffsetMs(now))
-        val rolled = openLimitPolicy.rolledOver(openCounts, day)
-        val decision = openLimitPolicy.decide(foregroundPackage, rolled, openLimits, day)
-        var next = rolled
-        if (decision is OpenLimitDecision.Allowed &&
-            openLimitPolicy.countsAsOpen(previousPackage, foregroundPackage, appContext.packageName)
-        ) {
-            next = openLimitPolicy.recordOpen(rolled, foregroundPackage, day)
+        val transition = openLimitPolicy.onForegroundTransition(
+            previousPackage = previousPackage,
+            foregroundPackage = foregroundPackage,
+            selfPackage = appContext.packageName,
+            state = openCounts,
+            granted = openGrantedPackage,
+            limits = openLimits,
+            epochDay = day,
+        )
+        openGrantedPackage = transition.granted
+        if (transition.counts != openCounts) {
+            openCounts = transition.counts
+            persist { focusStore.setOpenCounts(transition.counts) }
         }
-        if (next != openCounts) {
-            openCounts = next
-            persist { focusStore.setOpenCounts(next) }
-        }
-        return decision
+        return transition.decision
     }
 
     /**
@@ -237,6 +248,9 @@ class BlockScreenCoordinator(
                 BlockExemptions.grant(packageName, until)
                 scheduleExemptionExpiry(packageName, until)
                 if (cause.spendsOpenOnBreak) {
+                    // The extra open is recorded but never granted: what lifts the shield here
+                    // is the break's exemption window, so the block returns when that window
+                    // ends — the same contract every other tier gets.
                     val day = openLimitPolicy.epochDay(now, utcOffsetMs(now))
                     val next = openLimitPolicy.recordOpen(openCounts, packageName, day)
                     openCounts = next

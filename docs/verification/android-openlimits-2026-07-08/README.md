@@ -64,7 +64,7 @@ Measurements (`measure.sh`, fresh `pm clear`, limit re-authored through the UI):
   `PathBServiceGate` re-armed the foreground service on resume
   (`evidence-measure/m2-service-after-forcestop.txt`).
 
-## Finding — the last allowed open is truncated after ~1.8 s (product decision pending)
+## Finding — the last allowed open is truncated after ~1.8 s (FIXED 2026-07-09)
 
 "Opens per day: 2" in practice gives **one full open plus one ~2-second open** on Path B.
 Cause: `BlockScreenCoordinator.onForegroundChanged` re-decides on **every** 1 s poll tick
@@ -78,6 +78,27 @@ its event-driven cadence, just less deterministically than the 1 s poll. If the 
 is unwanted, the fix belongs in the coordinator/policy seam (e.g. only surface `Blocked`
 on transitions that `countsAsOpen`, treating the in-progress granted open as exempt until
 the user leaves) — minding re-entry semantics after breaks.
+
+### Resolution (2026-07-09)
+
+The behavior was unwanted: "N opens per day" now means N *usable* opens. The fix landed at
+the seam this finding predicted — `OpenLimitPolicy.onForegroundTransition` decides the quota
+once, at entry, and carries the granted open across re-evaluations until a different real app
+takes the foreground (shade dips and Flint's own windows do not end it). Re-entering an
+exhausted app still blocks, and a "use anyway" break still re-blocks when its exemption ends.
+Covered by `OpenLimitPolicyTest`'s foreground-transition cases.
+
+**Everything above and below this section describes the pre-fix build** (APK sha256
+`6116919…`, built 2026-07-08) and is left intact as the dated record. Two consequences for
+anyone re-running the archived scripts against a current build:
+
+- `measure.sh`'s open-#2 assertion (`[[ "$t2" != "none" ]]`) encodes the *old* behavior and is
+  now expected to fail — post-fix, open #2 should measure `none` within its 10 s window.
+- `drive.sh`'s "open #2 hits the quota" step now needs a *third* launch to reach the shield;
+  its `07-open2-blocked` step will not shield on the second open.
+
+Both scripts are left as archived, so they still reproduce the run whose transcripts and
+screenshots sit beside them. A fresh emulator pass against the fixed build has not been run.
 
 Also noted: the shield badge text is uppercased by the component (`BlockScreenState` maps
 the reason to "Open limit", `FlintBadge` renders `.uppercase()`), so scripted assertions
