@@ -33,6 +33,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 - **Android:** day-restricted overnight windows now block the correct morning: the
   post-midnight tail is gated on the day the window started ("Mon 22:00–06:00, Mondays"
   blocks Tue 00:30, not Mon 00:30).
+- **Android:** a website rule can no longer be walked past by re-spelling the host. The
+  address bar is canonicalized before matching, so a blocked site still blocks when its URL
+  carries a second URL in the query. Chrome elides the scheme, so the omnibox text
+  `reddit.com/submit?url=https://example.com` was split on the *query's* `://` and read as a
+  visit to `example.com`. Also fixed: hosts qualified with a root dot (`reddit.com.`),
+  preceded by credentials (`evil.com@reddit.com`), or spelled with backslashes, tabs, or
+  mixed case. The same change retires the mirror-image false positive — searching for a
+  blocked URL (`google.com/search?q=https://reddit.com`) no longer shields the search engine.
+- **Android:** Microsoft Edge and Opera were listed as browsers but had no address-bar view
+  id, so website rules silently never fired in them. Browser → address-bar ids now live in one
+  unit-tested table, which additionally covers Chrome Beta/Dev/Canary, Brave and Vivaldi
+  channels, Kiwi, Firefox Beta/Nightly/Focus, Opera Mini/GX, and DuckDuckGo.
 - **Docs:** the Open-Limits "never charges an open another layer would block" claim now
   carries its real exception — category-rule blocks are undetectable (opaque tokens), so
   those taps still charge an open.

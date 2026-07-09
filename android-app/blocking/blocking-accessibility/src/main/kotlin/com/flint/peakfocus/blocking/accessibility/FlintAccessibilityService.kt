@@ -8,6 +8,7 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
+import com.flint.peakfocus.blocking.engine.BrowserAddressBars
 import com.flint.peakfocus.blocking.overlay.BlockScreenCoordinator
 import com.flint.peakfocus.blocking.overlay.openLimitBlockCause
 import com.flint.peakfocus.blocking.overlay.ruleBlockCause
@@ -114,7 +115,7 @@ class FlintAccessibilityService : AccessibilityService() {
         }
 
         // 2) Rule verdict (manual sessions, schedules, allow-list mode, websites) — unchanged.
-        val url = if (pkg in BROWSER_PACKAGES) readUrl(rootInActiveWindow) else null
+        val url = if (BrowserAddressBars.isBrowser(pkg)) readUrl(rootInActiveWindow, pkg) else null
         val cal = Calendar.getInstance()
         val nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
         // Schedule.daysOfWeek is ISO-numbered (1=Mon…7=Sun — core-model's documented contract);
@@ -173,10 +174,17 @@ class FlintAccessibilityService : AccessibilityService() {
 
     // MARK: URL reading
 
-    private fun readUrl(root: AccessibilityNodeInfo?): String? {
+    /**
+     * Address-bar text for [pkg], or null when this browser exposes none. Only [pkg]'s own ids
+     * are tried — a Chrome id can never resolve inside Firefox. Node lookups run against a
+     * window that may go stale mid-read, so they are allowed to fail rather than kill the service.
+     */
+    private fun readUrl(root: AccessibilityNodeInfo?, pkg: String): String? {
         root ?: return null
-        for (id in URL_BAR_IDS) {
-            val text = root.findAccessibilityNodeInfosByViewId(id)?.firstOrNull()?.text?.toString()
+        for (id in BrowserAddressBars.urlBarViewIds(pkg)) {
+            val text = runCatching {
+                root.findAccessibilityNodeInfosByViewId(id)?.firstOrNull()?.text?.toString()
+            }.getOrNull()
             if (!text.isNullOrBlank()) return text
         }
         return null
@@ -195,22 +203,5 @@ class FlintAccessibilityService : AccessibilityService() {
         serviceScope = null
         coordinator = null
         super.onDestroy()
-    }
-
-    private companion object {
-        val BROWSER_PACKAGES = setOf(
-            "com.android.chrome",
-            "org.mozilla.firefox",
-            "com.brave.browser",
-            "com.opera.browser",
-            "com.microsoft.emmx",
-            "com.sec.android.app.sbrowser",
-        )
-        val URL_BAR_IDS = listOf(
-            "com.android.chrome:id/url_bar",
-            "com.sec.android.app.sbrowser:id/location_bar_edit_text",
-            "org.mozilla.firefox:id/mozac_browser_toolbar_url_view",
-            "com.brave.browser:id/url_bar",
-        )
     }
 }
