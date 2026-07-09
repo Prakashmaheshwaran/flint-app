@@ -9,6 +9,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
 import com.flint.peakfocus.blocking.engine.ForegroundSurface
+import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.blocking.engine.UninstallGuard
 import com.flint.peakfocus.blocking.overlay.BlockScreenCoordinator
 import com.flint.peakfocus.blocking.overlay.NeverBlockSurfaces
@@ -146,7 +147,7 @@ class FlintAccessibilityService : AccessibilityService() {
         val nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
         // Schedule.daysOfWeek is ISO-numbered (1=Mon…7=Sun — core-model's documented contract);
         // Calendar.DAY_OF_WEEK is 1=Sun…7=Sat. Convert before handing to the engine/guard.
-        val weekday = ((cal.get(Calendar.DAY_OF_WEEK) + 5) % 7) + 1
+        val weekday = IsoWeekday.fromCalendar(cal.get(Calendar.DAY_OF_WEEK))
 
         // 0) Uninstall guard — checked ahead of the break/pass stand-down so an exemption
         //    granted on some other rule can never open the uninstall window (see class KDoc).
