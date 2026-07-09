@@ -86,7 +86,7 @@ class BlockDecisionEngine {
      * over — so its day-of-week gate tests the previous ISO day ("Mon 22:00–06:00, Mondays"
      * blocks Tue 00:30, not Mon 00:30). [weekday] uses ISO numbering (1=Mon…7=Sun) — the same
      * contract as `Schedule.daysOfWeek` in core-model; callers holding a `Calendar.DAY_OF_WEEK`
-     * (1=Sun…7=Sat) must convert via `((day + 5) % 7) + 1`. Empty daysOfWeek = every day.
+     * (1=Sun…7=Sat) must convert via [IsoWeekday.fromCalendar]. Empty daysOfWeek = every day.
      */
     internal fun scheduleActive(schedule: Schedule?, nowMinutesOfDay: Int, weekday: Int): Boolean {
         schedule ?: return true

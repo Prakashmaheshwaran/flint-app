@@ -10,6 +10,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
+import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.blocking.overlay.PathBBlockHandoff
 import com.flint.peakfocus.core.model.ActiveRulesHolder
 import kotlinx.coroutines.CoroutineScope
@@ -59,18 +60,14 @@ class UsageStatsForegroundService : Service() {
         val pkg = poller.currentForegroundPackage(System.currentTimeMillis()) ?: return
         val cal = java.util.Calendar.getInstance()
         val nowMin = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
-        // Schedule.daysOfWeek is ISO-numbered (1=Mon…7=Sun — core-model's documented contract,
-        // and what feature-blocklist persists); Calendar.DAY_OF_WEEK is 1=Sun…7=Sat. Convert
-        // before asking the engine, or "Weekdays" rules block Sunday and skip Friday.
-        val weekday = isoWeekday(cal.get(java.util.Calendar.DAY_OF_WEEK))
+        // Calendar.DAY_OF_WEEK (1=Sun…7=Sat) → the engine's ISO numbering (1=Mon…7=Sun) via the
+        // one shared, tested converter — the same one Path A uses, so both paths gate identically.
+        val weekday = IsoWeekday.fromCalendar(cal.get(java.util.Calendar.DAY_OF_WEEK))
         val verdict = engine.decide(pkg, null, ActiveRulesHolder.rules, packageName, nowMin, weekday)
         // Path B enforcement handoff — every tick, Allow included: open-limit counting and
         // overlay stand-down happen behind this call, not just Block rendering.
         PathBBlockHandoff.onForegroundPolled(this, pkg, verdict)
     }
-
-    /** java.util.Calendar day-of-week (1=Sun…7=Sat) → ISO day-of-week (1=Mon…7=Sun). */
-    private fun isoWeekday(calendarDay: Int): Int = ((calendarDay + 5) % 7) + 1
 
     private fun startAsForeground() {
         val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager

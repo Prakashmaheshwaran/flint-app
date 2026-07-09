@@ -8,6 +8,7 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
+import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.blocking.overlay.BlockScreenCoordinator
 import com.flint.peakfocus.blocking.overlay.openLimitBlockCause
 import com.flint.peakfocus.blocking.overlay.ruleBlockCause
@@ -117,9 +118,9 @@ class FlintAccessibilityService : AccessibilityService() {
         val url = if (pkg in BROWSER_PACKAGES) readUrl(rootInActiveWindow) else null
         val cal = Calendar.getInstance()
         val nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
-        // Schedule.daysOfWeek is ISO-numbered (1=Mon…7=Sun — core-model's documented contract);
-        // Calendar.DAY_OF_WEEK is 1=Sun…7=Sat. Convert before handing to the engine.
-        val weekday = ((cal.get(Calendar.DAY_OF_WEEK) + 5) % 7) + 1
+        // Calendar.DAY_OF_WEEK (1=Sun…7=Sat) → the engine's ISO numbering (1=Mon…7=Sun) via the
+        // one shared, tested converter — otherwise a "Weekdays" rule blocks Sunday and skips Friday.
+        val weekday = IsoWeekday.fromCalendar(cal.get(Calendar.DAY_OF_WEEK))
         when (val verdict = engine.decide(pkg, url, ActiveRulesHolder.rules, packageName, nowMin, weekday)) {
             is Verdict.Block -> {
                 val rule = ActiveRulesHolder.rules.firstOrNull { it.id == verdict.ruleId }
