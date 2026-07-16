@@ -51,4 +51,27 @@ The source is MIT — fork and ship freely. But the *shipping identity* is not t
 
 - Branch from `main`, keep PRs focused, describe the user-facing change.
 - iOS: build cleanly via `make ios-gen` + Xcode. Android: `make android` and `make android-test` pass.
+- Touching `scripts/` or the `Makefile`: `make selftest` passes. It needs no emulator, Gradle,
+  Xcode, or Android SDK.
 - Be kind. See [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
+
+## Cutting a release
+
+[`release.yml`](.github/workflows/release.yml) names the published APK after the git tag, but
+Gradle stamps the APK itself from `versionName` / `versionCode`. Nothing keeps those two in step
+on its own — so check the tree *before* you create the tag:
+
+```bash
+make release-check TAG=v0.2.0
+```
+
+It verifies that:
+
+- `android-app/app/build.gradle.kts` → `versionName` equals the tag minus its leading `v`
+- `ios-app/project.yml` → `MARKETING_VERSION` equals the tag's `X.Y.Z`
+- `versionCode` is strictly greater than the previous release tag's — an unchanged `versionCode`
+  makes the new APK refuse to install over the last one (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`)
+- `CHANGELOG.md` has a `## [X.Y.Z]` section
+
+Green means safe to tag. Run this before publishing the tag so version mistakes are caught while
+they are still just a working-tree edit.

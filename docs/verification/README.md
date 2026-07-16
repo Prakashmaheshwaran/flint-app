@@ -4,6 +4,15 @@ This folder holds dated build/test and device/emulator evidence for claims that 
 static review. Keep entries honest: say exactly what hardware or emulator was used, what
 commands ran, what passed, and what remains unproven.
 
+## Harness
+
+The emulator drivers share [`scripts/lib/android-verify.sh`](../../scripts/lib/android-verify.sh).
+Its contracts — viewport-only waits, uppercase badge matching, logged input verbs, immutable
+evidence dirs — are pinned by [`scripts/android-verify-selftest.sh`](../../scripts/android-verify-selftest.sh),
+which drives the library against a stub `adb` and canned uiautomator dumps. No device, no SDK.
+Locally it is covered by `make selftest`. Evidence is only ever as trustworthy as the harness
+that produced it.
+
 ## Android
 
 - [`android-pathb-2026-07-08/`](android-pathb-2026-07-08/) — API 35 `flint-test`

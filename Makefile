@@ -48,8 +48,18 @@ android-install: ## Build + install the debug APK on a connected device/emulator
 android-test: ## Run Android unit tests
 	cd $(ANDROID_DIR) && JAVA_HOME="$(JAVA_HOME)" ./gradlew test
 
+selftest: ## Run the device-free script selftests (no emulator, Gradle, or Xcode needed)
+	@bash scripts/android-verify-selftest.sh
+	@bash scripts/check-release-version-selftest.sh
+
+# Run this BEFORE you cut the tag, while version mistakes are still a working-tree edit.
+release-check: ## Check the tree is consistent with a release tag: make release-check TAG=v0.2.0
+	@[ -n "$(TAG)" ] || { echo "usage: make release-check TAG=v0.2.0" >&2; exit 2; }
+	@bash scripts/check-release-version.sh "$(TAG)"
+
 clean: ## Remove build artifacts on both platforms
 	rm -rf $(IOS_DIR)/build $(IOS_DIR)/DerivedData $(IOS_DIR)/Flint.xcodeproj
 	cd $(ANDROID_DIR) && [ -x ./gradlew ] && JAVA_HOME="$(JAVA_HOME)" ./gradlew clean || true
 
-.PHONY: help doctor ios-gen ios ios-build android android-install android-test clean
+.PHONY: help doctor ios-gen ios ios-build android android-install android-test \
+	selftest release-check clean
