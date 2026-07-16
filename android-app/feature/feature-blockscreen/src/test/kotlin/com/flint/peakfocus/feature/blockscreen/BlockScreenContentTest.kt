@@ -19,6 +19,7 @@ class BlockScreenContentTest {
         appLabel: String? = "Instagram",
         remainingMillis: Long? = null,
         breakWaitRemainingMillis: Long? = null,
+        breakWaitTotalMillis: Long? = null,
         emergencyPassAvailable: Boolean = true,
     ) = BlockScreenState(
         packageName = packageName,
@@ -27,6 +28,7 @@ class BlockScreenContentTest {
         breakLevel = breakLevel,
         remainingMillis = remainingMillis,
         breakWaitRemainingMillis = breakWaitRemainingMillis,
+        breakWaitTotalMillis = breakWaitTotalMillis,
         emergencyPassAvailable = emergencyPassAvailable,
     )
 
@@ -230,6 +232,34 @@ class BlockScreenContentTest {
             state(reason = BlockScreenReason.TIME_LIMIT, remainingMillis = 12_000_000L),
         )
         assertEquals("Resets in 3h 20m", content.countdownLabel)
+    }
+
+    @Test
+    fun `harder wait carries determinate elapsed progress`() {
+        val content = blockScreenContent(
+            state(
+                breakLevel = BreakLevel.HARDER,
+                breakWaitRemainingMillis = 300_000L,
+                breakWaitTotalMillis = 600_000L,
+            ),
+        )
+        assertEquals(BreakAffordance.WaitBeforeBreak(300_000L, 0.5f), content.breakAffordance)
+    }
+
+    @Test
+    fun `wait progress degrades safely and clamps clock skew`() {
+        assertEquals(null, waitProgress(null, 10L))
+        assertEquals(null, waitProgress(0L, 10L))
+        assertEquals(0f, waitProgress(100L, 150L))
+        assertEquals(1f, waitProgress(100L, -10L))
+    }
+
+    @Test
+    fun `spoken countdown uses words and honest reason verb`() {
+        assertEquals("4 minutes 32 seconds", formatDurationSpoken(272_000L))
+        assertEquals("Resets in 1 hour 0 minutes", countdownA11y(BlockScreenReason.TIME_LIMIT, 3_600_000L))
+        assertEquals("Unblocks in 1 minute 1 second", countdownA11y(BlockScreenReason.SCHEDULE, 61_000L))
+        assertTrue(HOLD_BREAK_A11Y_DESCRIPTION.contains("double-tap"))
     }
 
     // ---- Countdown formatting ----

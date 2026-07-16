@@ -43,6 +43,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.flint.peakfocus.core.common.theme.FlintMotion
@@ -229,14 +231,18 @@ fun FlintBadge(text: String, emphasized: Boolean = false, modifier: Modifier = M
     }
 }
 
-/** Pill for live values (countdowns, quotas) — tabular numerals so digits never jitter. */
+/** Pill for live values; [spokenText] can replace abbreviated visual copy for screen readers. */
 @Composable
-fun FlintInfoPill(text: String, modifier: Modifier = Modifier) {
+fun FlintInfoPill(text: String, modifier: Modifier = Modifier, spokenText: String? = null) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         contentColor = MaterialTheme.colorScheme.onSurface,
         shape = RoundedCornerShape(percent = 50),
-        modifier = modifier,
+        modifier = if (spokenText != null) {
+            modifier.clearAndSetSemantics { contentDescription = spokenText }
+        } else {
+            modifier
+        },
     ) {
         Text(
             text = text,

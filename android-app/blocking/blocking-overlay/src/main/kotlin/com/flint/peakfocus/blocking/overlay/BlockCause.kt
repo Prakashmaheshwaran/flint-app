@@ -121,6 +121,12 @@ fun blockScreenState(
         } else {
             null
         }
+    val breakWaitTotal =
+        if (breakWait != null && pending != null) {
+            (pending.effectiveAtEpochMs - pending.requestedAtEpochMs).takeIf { it > 0L }
+        } else {
+            null
+        }
     return BlockScreenState(
         packageName = packageName,
         appLabel = appLabel,
@@ -128,6 +134,7 @@ fun blockScreenState(
         breakLevel = cause.breakLevel,
         remainingMillis = cause.endsAtEpochMs?.let { (it - nowEpochMs).coerceAtLeast(0L) },
         breakWaitRemainingMillis = breakWait,
+        breakWaitTotalMillis = breakWaitTotal,
         emergencyPassAvailable = emergencyPassAvailable,
     )
 }
