@@ -245,11 +245,12 @@ heuristic (JVM-tested only).
   which does not exist on the pure-Kotlin modules — the engine/core-model tests were silently
   skipped locally. The target now runs `./gradlew test`, matching CI.
 - *`DailyLimitTracker` had no caller (was gap 1 of this list):* Path B now enforces daily Time
-  Limits — `UsageStatsForegroundService.tick()` checks the same legacy `LimitStore` thresholds
-  Path A reads (so the paths can never disagree) against `DailyLimitTracker`'s consumption
-  measure, ahead of the rule verdict, and routes hits through the new
+  Limits — `UsageStatsForegroundService.tick()` checks the stricter of the legacy `LimitStore`
+  and DataStore-authored thresholds against `DailyLimitTracker`'s consumption measure, ahead
+  of the rule verdict, and routes hits through
   `PathBBlockHandoff.onTimeLimitExceeded` (break/pass stand-down still wins; no Open-Limit
-  open is recorded — Path A's exact order).
+  open is recorded — Path A's exact order). UsageStats verdicts cache for 15 seconds so the
+  one-second poll loop does not issue an expensive system query every tick.
 - *`POST_NOTIFICATIONS` never requested (was gap 2):* the app shell now asks **once**, on
   resume, and only when Path B is actually in play (usage access granted, a11y off — the
   same condition the service gate starts it under); a decline is respected, never re-prompted.

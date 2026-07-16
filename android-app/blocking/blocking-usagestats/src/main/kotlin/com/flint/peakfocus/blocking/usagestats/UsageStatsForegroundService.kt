@@ -39,16 +39,24 @@ class UsageStatsForegroundService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val engine = BlockDecisionEngine()
     private lateinit var poller: UsagePoller
-    private lateinit var limitTracker: DailyLimitTracker
-    private lateinit var limitStore: LimitStore
+    private lateinit var timeLimitGate: PathBTimeLimitGate
     private var neverBlock: Set<String> = emptySet()
     private var loop: Job? = null
 
     override fun onCreate() {
         super.onCreate()
         poller = UsagePoller(this)
-        limitTracker = DailyLimitTracker(this)
-        limitStore = LimitStore(this)
+        val limitTracker = DailyLimitTracker(this)
+        val limitStore = LimitStore(this)
+        timeLimitGate = PathBTimeLimitGate(
+            limitMinutesFor = { pkg ->
+                listOfNotNull(
+                    limitStore.limitMinutes(pkg),
+                    PathBBlockHandoff.coordinator(this).timeLimitMinutes(pkg),
+                ).minOrNull()
+            },
+            foregroundMillisToday = limitTracker::foregroundMillisToday,
+        )
         neverBlock = NeverBlockSurfaces.resolve(this)
         startAsForeground()
     }
@@ -85,11 +93,7 @@ class UsageStatsForegroundService : Service() {
         // editor's DataStore limits via the shared coordinator snapshot, stricter wins), so
         // the two paths can never disagree about a budget. [DailyLimitTracker] measures
         // consumption; its buckets are coarse/delayed — fine for daily budgets.
-        val limitMin = listOfNotNull(
-            limitStore.limitMinutes(pkg),
-            PathBBlockHandoff.coordinator(this).timeLimitMinutes(pkg),
-        ).minOrNull()
-        if (limitMin != null && limitTracker.foregroundMillisToday(pkg, now) >= limitMin * 60_000L) {
+        if (timeLimitGate.isSpent(pkg, now)) {
             PathBBlockHandoff.onTimeLimitExceeded(this, pkg)
             return
         }
