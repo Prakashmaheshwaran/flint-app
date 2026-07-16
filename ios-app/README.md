@@ -87,11 +87,12 @@ Verticals implemented:
 - **Schedules** — unlimited recurring/daily rules (**no count cap, no 24h-advance cap**). Each
   rule carries its own selection + break level + day-of-week gate + allow-list, and gets its own
   `DeviceActivity` registration + `ManagedSettingsStore` (so schedules can overlap cleanly).
-  **Routine templates** — the Schedules tab ships the same four-preset library as Android
+  **Routine templates** — the Schedules tab ships four platform-adapted presets
   (`FlintRoutinePreset`: Work hours, Evenings offline, Social detox, Weekend mornings); one tap
   opens the new-schedule editor prefilled with name, window, and break level, and targets always
   stay the user's to pick (FamilyControls tokens are opaque — a preset *couldn't* guess apps,
-  and Save stays disabled until the user picks). Two honest divergences from Android: "always
+  and Save stays disabled until the user picks). Android separately mirrors Opal's five named
+  inventory templates and never defaults a preset to Hardcore. Two further iOS divergences: "always
   on" (Social detox) becomes a daily 00:00–23:59 window because `FlintScheduleRule` requires
   one — the last minute of each day is genuinely uncovered — and the template copy makes no
   break-level promises, because iOS schedule shields are plain hard blocks whose in-app toggle

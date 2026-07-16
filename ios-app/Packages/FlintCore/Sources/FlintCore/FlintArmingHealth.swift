@@ -39,9 +39,10 @@ public struct FlintArmingHealth: Codable, Equatable {
         }
     }
 
-    /// Observed DeviceActivity registration cap. Used only to *warn* — Flint never silently
-    /// drops a registration to stay under it; the OS refusal itself is what gets recorded.
-    public static let osActivityCap = 20
+    /// Empirical warning threshold, not an Apple contract. DeviceActivity refusals have been
+    /// observed around this count, but the OS may vary it. Flint never drops registrations to
+    /// stay under the threshold; actual refusals are recorded separately.
+    public static let observedActivityThreshold = 20
 
     /// Slots kept free before `isNearCap` warns: the active session's one-shot auto-clear and
     /// Sleep Mode's windows occupy slots that aren't counted in the rule domains below.
@@ -71,7 +72,7 @@ public struct FlintArmingHealth: Codable, Equatable {
     /// True when registrations are close enough to the OS cap that the next few rules are at
     /// risk — the UI warns while there is still room to consolidate.
     public var isNearCap: Bool {
-        attemptedTotal >= Self.osActivityCap - Self.capHeadroom
+        attemptedTotal >= Self.observedActivityThreshold - Self.capHeadroom
     }
 
     // MARK: Recording

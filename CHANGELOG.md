@@ -45,7 +45,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
   fail-closed on unreadable windows); the guard's shield offers no break/pass exit by design.
   JVM-tested; the emulator shield pass is pending.
 - **Sleep Mode, preset routines & named groups:** bedtime→wake windows with Wind Down / free
-  Full Assist and an optional Morning Assist window, the four-preset routine library, and
+  Full Assist and an optional Morning Assist window, the five-preset Android routine library, and
   DataStore-persisted named app groups. JVM-tested; emulator pass pending.
 - **Premium UI overhaul:** one design direction ("warm charcoal, one ember") across all screens,
   driven by extended `design/tokens.json` roles through `FlintTheme` and a shared component kit;

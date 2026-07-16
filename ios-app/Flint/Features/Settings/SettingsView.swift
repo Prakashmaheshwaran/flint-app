@@ -78,10 +78,11 @@ struct SettingsView: View {
                                 .foregroundStyle(.green)
                         }
                         if armingHealth.isNearCap {
-                            Text("You're using \(armingHealth.attemptedTotal) of roughly "
-                                 + "\(FlintArmingHealth.osActivityCap) background-activity slots iOS "
-                                 + "gives Flint. Past the cap, iOS rejects new rules — consider "
-                                 + "merging schedules or removing unused rules.")
+                            Text("Flint last attempted \(armingHealth.attemptedTotal) background "
+                                 + "registrations. iOS does not publish a fixed limit; refusals "
+                                 + "have been observed around "
+                                 + "\(FlintArmingHealth.observedActivityThreshold). Consider "
+                                 + "merging schedules or removing unused rules before adding more.")
                                 .font(.footnote)
                                 .foregroundStyle(.orange)
                         }

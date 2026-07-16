@@ -41,7 +41,8 @@ ios-build: ios-gen ## Compile the iOS app (app + 4 extensions) for the simulator
 # error, so name the real problem instead.
 ios-test: ios-gen ## Run the iOS unit tests on the first available iPhone simulator
 	@set -e; \
-	DEVICE=$$(xcrun simctl list devices available | grep -oE 'iPhone [^(]+' | head -1 | sed 's/ *$$//'); \
+	DEVICE=$$(DEVELOPER_DIR="$(XCODE_DEV)" xcrun simctl list devices available | \
+		grep -oE 'iPhone [^(]+' | head -1 | sed 's/ *$$//'); \
 	if [ -z "$$DEVICE" ]; then \
 		echo "No iPhone simulator available (Xcode > Settings > Platforms)." >&2; \
 		exit 1; \
