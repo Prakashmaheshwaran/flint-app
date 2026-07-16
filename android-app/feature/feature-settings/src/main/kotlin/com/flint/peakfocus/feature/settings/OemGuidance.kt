@@ -118,6 +118,30 @@ object OemGuidanceCatalog {
                 "Lock Flint's card in the recent-apps screen so cleanup skips it.",
             ),
         )
+        Oem.MOTOROLA -> OemGuidance(
+            oem = oem,
+            displayName = "Motorola (near-stock Android)",
+            summary = "Motorola runs close to stock Android and usually respects the battery " +
+                "exemption, but its per-app \"Background restriction\" can still stop blocking.",
+            steps = listOf(
+                "Grant the battery optimization exemption above.",
+                "In Settings > Apps > Flint > App battery usage, make sure \"Background " +
+                    "restriction\" is off and the setting is \"Unrestricted\".",
+                "Avoid swiping Flint away in the recent-apps screen — some builds treat that " +
+                    "as a stop.",
+            ),
+        )
+        Oem.NOTHING -> OemGuidance(
+            oem = oem,
+            displayName = "Nothing (Nothing OS)",
+            summary = "Nothing OS stays close to stock Android, so the battery exemption is " +
+                "usually enough — just confirm background activity isn't restricted.",
+            steps = listOf(
+                "Grant the battery optimization exemption above.",
+                "In Settings > Apps > Flint > App battery usage, choose \"Unrestricted\".",
+                "Avoid swiping Flint away in the recent-apps screen so it isn't force-stopped.",
+            ),
+        )
         Oem.OTHER -> OemGuidance(
             oem = oem,
             displayName = "your phone",
