@@ -93,6 +93,8 @@ internal data class BlockScreenContent(
     val headline: String,
     val reasonLine: String,
     val badge: BlockScreenBadge,
+    /** Reason-aware countdown text, or null when the block has no known end. */
+    val countdownLabel: String?,
     val encouragement: String,
     val breakAffordance: BreakAffordance,
 )
@@ -114,6 +116,7 @@ internal fun blockScreenContent(state: BlockScreenState): BlockScreenContent {
         headline = "$name can wait",
         reasonLine = reasonLineFor(state.reason),
         badge = badgeFor(state.reason, state.breakLevel),
+        countdownLabel = countdownLabelFor(state.reason, state.remainingMillis),
         encouragement = encouragementFor(state.packageName),
         breakAffordance = breakAffordanceFor(
             state.reason,
@@ -148,6 +151,23 @@ internal fun badgeFor(reason: BlockScreenReason, level: BreakLevel): BlockScreen
         },
         emphasized = level == BreakLevel.HARDCORE || reason == BlockScreenReason.UNINSTALL_GUARD,
     )
+
+/**
+ * Frames daily budgets as resetting at midnight and timed blocks as unblocking when they end.
+ * Open-ended blocks have no countdown label.
+ */
+internal fun countdownLabelFor(reason: BlockScreenReason, remainingMillis: Long?): String? {
+    if (remainingMillis == null) return null
+    val verb = when (reason) {
+        BlockScreenReason.TIME_LIMIT, BlockScreenReason.OPEN_LIMIT -> "Resets"
+        BlockScreenReason.MANUAL_SESSION,
+        BlockScreenReason.SCHEDULE,
+        BlockScreenReason.DEEP_FOCUS,
+        BlockScreenReason.UNINSTALL_GUARD,
+        -> "Unblocks"
+    }
+    return "$verb in ${formatDuration(remainingMillis)}"
+}
 
 internal fun breakAffordanceFor(
     reason: BlockScreenReason,

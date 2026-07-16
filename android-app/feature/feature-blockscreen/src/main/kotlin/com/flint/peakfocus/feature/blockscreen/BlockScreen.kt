@@ -385,7 +385,7 @@ private fun BlockWords(
             // Presence is independent of the entrance: the pill collapses away when the end
             // becomes unknown and expands back when a countdown starts.
             AnimatedVisibility(
-                visible = state.remainingMillis != null,
+                visible = content.countdownLabel != null,
                 enter = expandVertically(
                     animationSpec = tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized),
                 ) + fadeIn(
@@ -400,7 +400,10 @@ private fun BlockWords(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Spacer(Modifier.height(FlintSpacing.lg))
                     // "0s" during the exit collapse is honest — the block just ended.
-                    FlintInfoPill(text = "Unblocks in ${formatDuration(state.remainingMillis ?: 0L)}")
+                    FlintInfoPill(
+                        text = content.countdownLabel
+                            ?: requireNotNull(countdownLabelFor(state.reason, 0L)),
+                    )
                 }
             }
         }
