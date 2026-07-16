@@ -97,6 +97,7 @@ import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.flint.peakfocus.blocking.resilience.PermissionHealthChecker
 import com.flint.peakfocus.core.common.theme.FlintIcons
 import com.flint.peakfocus.core.common.theme.FlintMotion
 import com.flint.peakfocus.core.common.theme.FlintNumerals
@@ -121,9 +122,14 @@ import com.flint.peakfocus.core.model.BlockTargets
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.feature.blocklist.BlocklistScreen
 import com.flint.peakfocus.feature.onboarding.AccessibilityConsentScreen
+import com.flint.peakfocus.feature.onboarding.SetupGuidance
+import com.flint.peakfocus.feature.onboarding.SetupPlan
+import com.flint.peakfocus.feature.onboarding.SetupStep
 import com.flint.peakfocus.feature.settings.SettingsScreen
 import com.flint.peakfocus.feature.stats.StatsScreen
 import com.flint.peakfocus.permissions.AccessibilityPermission
+import com.flint.peakfocus.permissions.BatteryOptimization
+import com.flint.peakfocus.permissions.OverlayPermission
 import com.flint.peakfocus.permissions.UsageAccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -298,7 +304,16 @@ private fun FlintApp() {
                                 contentModifier,
                                 innerPadding = innerPadding,
                                 apps = apps,
-                                onEnableBlocking = { showConsent = true },
+                                onSetupStep = { step ->
+                                    val handOff = settingsHandOff(context, step)
+                                    if (handOff == null) {
+                                        showConsent = true
+                                    } else {
+                                        context.startActivity(
+                                            handOff.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                        )
+                                    }
+                                },
                             )
                             FlintTab.Blocklist -> BlocklistScreen(contentModifier.padding(innerPadding))
                             FlintTab.Stats -> StatsScreen(contentModifier.padding(innerPadding))
@@ -311,16 +326,27 @@ private fun FlintApp() {
     }
 }
 
+/**
+ * Direct Settings hand-off for a Home setup step. Accessibility deliberately returns null:
+ * its only route is the prominent-disclosure consent screen in [FlintApp] (ADR-007).
+ */
+private fun settingsHandOff(context: Context, step: SetupStep): Intent? = when (step) {
+    SetupStep.ENABLE_ACCESSIBILITY -> null
+    SetupStep.GRANT_USAGE_ACCESS -> UsageAccess.settingsIntent()
+    SetupStep.GRANT_OVERLAY -> OverlayPermission.settingsIntent(context)
+    SetupStep.REQUEST_BATTERY_EXEMPTION -> BatteryOptimization.requestIntent(context)
+}
+
 @Composable
 private fun HomeScreen(
     modifier: Modifier = Modifier,
     innerPadding: PaddingValues = PaddingValues(0.dp),
     apps: List<AppEntry>? = null, // null = still loading; owned by FlintApp
-    onEnableBlocking: () -> Unit,
+    onSetupStep: (SetupStep) -> Unit,
 ) {
     val context = LocalContext.current
     val store = remember { BlocklistStore(context) }
-    var accessibilityOn by remember { mutableStateOf(false) }
+    var health by remember { mutableStateOf(PermissionHealthChecker.check(context)) }
     var blocked by remember { mutableStateOf(store.blockedPackages) }
     var appQuery by rememberSaveable { mutableStateOf("") }
 
@@ -345,7 +371,9 @@ private fun HomeScreen(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                accessibilityOn = AccessibilityPermission.isEnabled(context, A11Y_SERVICE_CLASS)
+                // The card may have sent the user to any of three Settings surfaces, and OEMs
+                // may revoke grants silently. Re-read the complete truth on every return.
+                health = PermissionHealthChecker.check(context)
                 blocked = store.blockedPackages
             }
         }
@@ -373,7 +401,10 @@ private fun HomeScreen(
             Spacer(Modifier.height(FlintSpacing.md))
         }
         item(key = "status") {
-            StatusCard(accessibilityOn, onEnable = onEnableBlocking)
+            StatusCard(
+                plan = remember(health) { SetupGuidance.plan(health) },
+                onSetupStep = onSetupStep,
+            )
             Spacer(Modifier.height(FlintSpacing.cardGap))
         }
         item(key = "focus-session") {
@@ -698,18 +729,19 @@ private fun EmptyAppsState() {
 }
 
 @Composable
-private fun StatusCard(accessibilityOn: Boolean, onEnable: () -> Unit) {
-    // The ON/OFF flip animates instead of snapping: colors tween, the brand mark and the
-    // Enable button trade places with a fade + expand.
+private fun StatusCard(plan: SetupPlan, onSetupStep: (SetupStep) -> Unit) {
+    // The enforcement truth animates instead of snapping: Path A and Path B both light the
+    // card, while the CTA expands below the explanation whenever one setup step remains.
+    val haptics = rememberFlintHaptics()
     val statusColorSpec = tween<Color>(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard)
     val titleColor by animateColorAsState(
-        targetValue = if (accessibilityOn) MaterialTheme.colorScheme.primary
+        targetValue = if (plan.enforcingNow) MaterialTheme.colorScheme.primary
         else MaterialTheme.colorScheme.onSurface,
         animationSpec = statusColorSpec,
         label = "statusTitleColor",
     )
     val dotColor by animateColorAsState(
-        targetValue = if (accessibilityOn) MaterialTheme.colorScheme.primary
+        targetValue = if (plan.enforcingNow) MaterialTheme.colorScheme.primary
         else MaterialTheme.colorScheme.onSurfaceVariant,
         animationSpec = statusColorSpec,
         label = "statusDotColor",
@@ -720,7 +752,7 @@ private fun StatusCard(accessibilityOn: Boolean, onEnable: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(FlintSpacing.cardGap),
         ) {
             AnimatedVisibility(
-                visible = accessibilityOn,
+                visible = plan.enforcingNow,
                 enter = fadeIn(tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard)) +
                     expandHorizontally(tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized)),
                 exit = fadeOut(tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard)) +
@@ -739,28 +771,41 @@ private fun StatusCard(accessibilityOn: Boolean, onEnable: () -> Unit) {
                     horizontalArrangement = Arrangement.spacedBy(FlintSpacing.sm),
                 ) {
                     // Pulsing only while blocking is live — the screen's one quiet ember.
-                    FlintStatusDot(color = dotColor, pulsing = accessibilityOn)
+                    FlintStatusDot(color = dotColor, pulsing = plan.enforcingNow)
                     Text(
-                        if (accessibilityOn) "Blocking is ON" else "Blocking is OFF",
+                        plan.headline,
                         style = MaterialTheme.typography.titleMedium,
                         color = titleColor,
                     )
                 }
                 Text(
-                    if (accessibilityOn) "Flint blocks the apps you switch on below."
-                    else "Turn on the Flint accessibility service to start blocking.",
+                    plan.body,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            AnimatedVisibility(
-                visible = !accessibilityOn,
-                enter = fadeIn(tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard)) +
-                    expandHorizontally(tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized)),
-                exit = fadeOut(tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard)) +
-                    shrinkHorizontally(tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized)),
-            ) {
-                Button(onClick = onEnable) { Text("Enable") }
+        }
+        val nextStep = plan.nextStep
+        AnimatedVisibility(
+            visible = nextStep != null,
+            enter = fadeIn(tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard)) +
+                expandVertically(tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized)),
+            exit = fadeOut(tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard)) +
+                shrinkVertically(tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized)),
+        ) {
+            if (nextStep != null) {
+                Column {
+                    Spacer(Modifier.height(FlintSpacing.md))
+                    Button(
+                        onClick = {
+                            haptics.tick()
+                            onSetupStep(nextStep)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(nextStep.ctaLabel)
+                    }
+                }
             }
         }
     }

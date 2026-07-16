@@ -72,6 +72,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
   avoiding a system query on every one-second foreground poll.
 - **Home app search:** the quick blocklist filters by app label or package name, preserves list
   order, and shows an explicit no-match state.
+- **Honest Home setup guidance:** the status card now reports blocking as on whenever either
+  enforcement path is healthy, re-checks the complete permission state on every return, and
+  offers the cheapest next setup step. Accessibility remains behind its disclosure screen;
+  usage access, overlay, and battery exemption use explicit Settings hand-offs. A denied
+  Android 13+ notification grant is described as visibility-only when Path B is active.
 
 ### Fixed
 - **Android:** the last allowed open of an Open Limit is usable again. The quota was re-decided
