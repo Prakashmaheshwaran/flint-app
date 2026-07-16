@@ -66,6 +66,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
   Settings hand-off on tap (ADR-007), honest about being visibility-only: it never moves the
   health level, and the degraded banner names the hidden notification only when the fallback
   path is the one actually enforcing. JVM-tested (`HealthStatusTest`, `BlockingHealthUiTest`).
+- **Block-screen accessibility:** TalkBack can activate the HARDER break control, abbreviated
+  countdowns have word-based spoken copy, and pending HARDER waits show determinate progress.
+- **Path B Time Limits:** daily-budget checks now use a JVM-tested 15-second UsageStats cache,
+  avoiding a system query on every one-second foreground poll.
+- **Home app search:** the quick blocklist filters by app label or package name, preserves list
+  order, and shows an explicit no-match state.
 
 ### Fixed
 - **Android:** the last allowed open of an Open Limit is usable again. The quota was re-decided

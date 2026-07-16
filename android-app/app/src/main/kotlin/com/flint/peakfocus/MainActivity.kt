@@ -47,8 +47,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Lock
@@ -57,11 +59,13 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -87,6 +91,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.Lifecycle
@@ -317,6 +322,7 @@ private fun HomeScreen(
     val store = remember { BlocklistStore(context) }
     var accessibilityOn by remember { mutableStateOf(false) }
     var blocked by remember { mutableStateOf(store.blockedPackages) }
+    var appQuery by rememberSaveable { mutableStateOf("") }
 
     // Block Now sessions live in the DataStore rules under the session id prefix; the engine
     // stops enforcing them at expiry on its own, so this state is purely presentational.
@@ -400,6 +406,8 @@ private fun HomeScreen(
         item(key = "apps-label") {
             FlintSectionLabel("Block these apps")
             Spacer(Modifier.height(FlintSpacing.sm))
+            AppSearchField(query = appQuery, onQueryChange = { appQuery = it })
+            Spacer(Modifier.height(FlintSpacing.sm))
         }
         when (val list = apps) {
             null -> items(count = 6, key = { "skeleton-$it" }) {
@@ -409,19 +417,51 @@ private fun HomeScreen(
                 if (list.isEmpty()) {
                     item(key = "empty-apps") { EmptyAppsState() }
                 } else {
-                    items(list, key = { it.packageName }) { app ->
-                        AppRow(
-                            app,
-                            app.packageName in blocked,
-                            modifier = Modifier.animateItem(),
-                        ) {
-                            store.toggle(app.packageName)
-                            blocked = store.blockedPackages
+                    val shown = filterApps(list, appQuery)
+                    if (shown.isEmpty()) {
+                        item(key = "no-app-matches") {
+                            Text(
+                                text = "No apps match “${appQuery.trim()}”",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth().padding(FlintSpacing.lg),
+                            )
+                        }
+                    } else {
+                        items(shown, key = { it.packageName }) { app ->
+                            AppRow(
+                                app,
+                                app.packageName in blocked,
+                                modifier = Modifier.animateItem(),
+                            ) {
+                                store.toggle(app.packageName)
+                                blocked = store.blockedPackages
+                            }
                         }
                     }
                 }
         }
     }
+}
+
+@Composable
+private fun AppSearchField(query: String, onQueryChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = Modifier.fillMaxWidth(),
+        placeholder = { Text("Search apps") },
+        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(Icons.Filled.Clear, contentDescription = "Clear search")
+                }
+            }
+        },
+        singleLine = true,
+    )
 }
 
 /**
