@@ -12,7 +12,8 @@ import Foundation
 /// failed (keyed by domain, each controller owning its own slice), Settings shows the result, and
 /// a near-cap warning fires *before* rules start silently dying. Pure Foundation — all
 /// DeviceActivity calls stay in the controllers. The active session's auto-clear and the
-/// Sleep-Mode windows also hold slots outside these domains; `capHeadroom` leaves room for them.
+/// The active session's auto-clear holds a slot outside these domains; `capHeadroom` also keeps a
+/// small safety margin because Apple does not publish or promise a stable registration limit.
 public struct FlintArmingHealth: Codable, Equatable {
 
     /// One enabled activity that failed validation or registration, and the reason.
@@ -87,8 +88,9 @@ public struct FlintArmingHealth: Codable, Equatable {
     /// stay under the threshold; actual refusals are recorded separately.
     public static let observedActivityThreshold = 20
 
-    /// Slots kept free before `isNearCap` warns: the active session's one-shot auto-clear and
-    /// Sleep Mode's windows occupy slots that aren't counted in the rule domains below.
+    /// Slots kept free before `isNearCap` warns: one for the active session's untracked one-shot
+    /// auto-clear, plus two as safety margin around an empirical and potentially variable limit.
+    /// Sleep Mode is already represented by ordinary schedule rules and is counted above.
     public static let capHeadroom = 3
 
     /// Reports keyed by domain ("schedules", "limits", "openLimits").

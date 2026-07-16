@@ -57,8 +57,8 @@ final class FlintArmingHealthTests: XCTestCase {
     }
 
     func testNearCapWarnsWithHeadroomBeforeTheObservedCap() {
-        // Warn at cap − headroom (20 − 3 = 17), not before — the session's auto-clear and
-        // Sleep windows hold slots outside the recorded domains.
+        // Warn at cap − headroom (20 − 3 = 17), not before: one slot covers the session's
+        // untracked auto-clear and two provide margin around the empirical OS threshold.
         let below = FlintArmingHealth().replacing(
             "schedules", with: .init(enabled: 16, attempted: 16, armed: 16, failures: []))
         XCTAssertFalse(below.isNearCap)
