@@ -13,5 +13,7 @@ commands ran, what passed, and what remains unproven.
   emulator pass for Open Limits on Path B: a 2-opens/day limit authored through the real
   UI (Blocklist → editor → DataStore), first open allowed, at-quota `OPEN LIMIT` shield
   with the midnight countdown, stand-down/re-shield, Easy break, and open counts surviving
-  process death. Known nuance recorded there: the last allowed open is shielded ~1.8 s
-  after launch (at-quota re-check on every poll tick).
+  process death. The run also caught the last allowed open being shielded ~1.8 s after
+  launch (at-quota re-check on every poll tick); that was fixed on 2026-07-09, so the
+  archived scripts' open-#2 assertions no longer hold against a current build — see the
+  *Resolution* section there.

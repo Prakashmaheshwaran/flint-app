@@ -58,10 +58,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 - **Open Limits Path B emulator verification (2026-07-08):** a 2-opens/day Easy limit authored
   through the real UI was verified end-to-end — first open allowed, at-quota `OPEN LIMIT`
   shield, HOME stand-down, over-quota re-shield, Easy break, and persisted counts after process
-  death. The evidence records the current product nuance: the last allowed open is shielded
-  ~1.8 s after launch.
+  death. That run also measured the last allowed open being shielded ~1.8 s after launch; it was
+  recorded as a pending product decision and is now fixed (see *Fixed* below).
 
 ### Fixed
+- **Android:** the last allowed open of an Open Limit is usable again. The quota was re-decided
+  on *every* evaluation of the foreground app, not just on entry — recording the Nth open pushes
+  `used` to the quota, so the next Path B poll tick (~1 s) or Path A window event shielded the
+  open the user had just been granted, and the shield then stood until local midnight. "N opens
+  per day" was worth N-1 usable opens; a limit of 1 was worth none. Measured live at 1.83 s in
+  `docs/verification/android-openlimits-2026-07-08/`. Both detection paths now fold transitions
+  through `OpenLimitPolicy.onForegroundTransition`, which decides once per open, carries the
+  grant through shade dips and Flint's own windows, and releases it when another app takes the
+  foreground — so re-entering an exhausted app still blocks, and a "use anyway" break still
+  re-blocks when its 5-minute exemption ends. JVM-tested; emulator re-run pending.
 - **iOS:** reloading Schedules or Time Limits with zero rules no longer cancels *all* of
   Flint's DeviceActivity monitoring at launch (it hit the stop-everything overload via an
   empty list, killing the active session's auto-clear). Empty-list `stopMonitoring` is now a
