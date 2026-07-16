@@ -134,7 +134,7 @@ Wind Down / free Full Assist materialized as allow-list rules on the schedules e
 approach as iOS), an optional enforced Morning Assist window, and one saved app group allowed
 overnight (`SleepRules` + `SleepEditorScreen`); the engine's telephony safety floor and a
 runtime launcher/dialer exemption keep emergency calling and Home reachable. Preset routines:
-the same four honest presets as iOS prefill rule drafts — targets stay the user's to pick
+five free Opal-style templates prefill rule drafts — targets stay the user's to pick
 (`RoutinePresets`). Named groups: DataStore-persisted app groups (`GroupsStore`) applied into
 rule drafts in one tap, with name-upsert and delete.
 
