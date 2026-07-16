@@ -30,8 +30,9 @@ public struct FlintScheduleArmFailure: Equatable, Sendable {
 }
 
 /// Manages recurring/scheduled block rules. Registers one repeating `DeviceActivitySchedule`
-/// per enabled rule (unlimited count, no advance cap). The monitor extension applies each
-/// rule's selection into the rule's own store on `intervalDidStart`, gated by day-of-week.
+/// per enabled rule — one OS activity slot each, and iOS caps those (`FlintArmingHealth`), so
+/// every registration outcome is recorded rather than assumed. The monitor extension applies
+/// each rule's selection into the rule's own store on `intervalDidStart`, gated by day-of-week.
 public final class FlintSchedulesController {
 
     public init() {}
@@ -96,6 +97,29 @@ public final class FlintSchedulesController {
         return (arm, failures)
     }
 
+    /// Builds the health slice for a schedules reload. Kept pure so a locally invalid rule is
+    /// regression-tested as an enabled-but-not-attempted failure rather than a false green.
+    static func armingHealthReport(
+        enabled: Int,
+        attempted: Int,
+        armed: Int,
+        validationFailures: [FlintScheduleArmFailure],
+        registrationFailures: [FlintArmingHealth.Failure]
+    ) -> FlintArmingHealth.DomainReport {
+        let failures = validationFailures.map { failure in
+            FlintArmingHealth.Failure(
+                activityName: "flint.rule.\(failure.ruleID)",
+                reason: failure.message
+            )
+        } + registrationFailures
+        return FlintArmingHealth.DomainReport(
+            enabled: enabled,
+            attempted: attempted,
+            armed: armed,
+            failures: failures
+        )
+    }
+
     /// Re-register monitoring for every enabled rule with a registrable window. Idempotent; call on
     /// launch and after edits. Returns the enabled rules that are **not** enforcing, so the UI can
     /// say so: a window `DeviceActivityCenter` would reject is skipped rather than pushed through a
@@ -108,18 +132,40 @@ public final class FlintSchedulesController {
 
         let plan = Self.armPlan(for: all)
         var failures = plan.failures
+        var registrationFailures: [FlintArmingHealth.Failure] = []
+        var attempted = 0
+        var armed = 0
         for rule in plan.arm {
             let schedule = DeviceActivitySchedule(
                 intervalStart: DateComponents(hour: rule.schedule.startHour, minute: rule.schedule.startMinute),
                 intervalEnd: DateComponents(hour: rule.schedule.endHour, minute: rule.schedule.endMinute),
                 repeats: true
             )
+            attempted += 1
             do {
                 try FlintScheduling.startMonitoring(rule.monitorName, during: schedule)
+                armed += 1
             } catch {
                 failures.append(FlintScheduleArmFailure(ruleID: rule.id, ruleName: rule.name, issue: nil))
+                registrationFailures.append(FlintArmingHealth.Failure(
+                    activityName: rule.monitorName, reason: String(describing: error)))
             }
         }
+        let healthReport = Self.armingHealthReport(
+            enabled: plan.arm.count + plan.failures.count,
+            attempted: attempted,
+            armed: armed,
+            validationFailures: plan.failures,
+            registrationFailures: registrationFailures
+        )
+        FlintArmingHealth.record(
+            domain: "schedules",
+            enabled: healthReport.enabled,
+            attempted: healthReport.attempted,
+            armed: healthReport.armed,
+            failures: healthReport.failures,
+            in: group
+        )
         return failures
     }
 }

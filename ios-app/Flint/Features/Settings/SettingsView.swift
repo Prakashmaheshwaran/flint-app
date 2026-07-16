@@ -5,6 +5,7 @@ struct SettingsView: View {
     @State private var pinIsSet = FlintPIN.isSet(FlintGroupStore())
     @State private var showSetPIN = false
     @State private var newPIN = ""
+    @State private var armingHealth = FlintGroupStore()?.loadArmingHealth() ?? FlintArmingHealth()
 
     var body: some View {
         NavigationStack {
@@ -60,6 +61,44 @@ struct SettingsView: View {
                          + "stops with it.")
                 }
 
+                if armingHealth.enabledTotal > 0 || !armingHealth.isHealthy {
+                    Section {
+                        if !armingHealth.isHealthy {
+                            Label("\(armingHealth.armedTotal) of \(armingHealth.enabledTotal) enabled "
+                                  + "\(armingHealth.enabledTotal == 1 ? "rule" : "rules") armed",
+                                  systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.red)
+                            ForEach(armingHealth.failures, id: \.activityName) { failure in
+                                Text("\(failure.activityName) — \(failure.reason)")
+                                    .font(.caption2.monospaced())
+                                    .foregroundStyle(.secondary)
+                            }
+                        } else {
+                            Label("All \(armingHealth.armedTotal) enabled \(armingHealth.armedTotal == 1 ? "rule" : "rules") armed with iOS",
+                                  systemImage: "checkmark.shield.fill")
+                                .foregroundStyle(.green)
+                        }
+                        if armingHealth.isNearCap {
+                            Text("Flint last armed \(armingHealth.armedTotal) background "
+                                 + "registrations. iOS does not publish a fixed limit; refusals "
+                                 + "have been observed around "
+                                 + "\(FlintArmingHealth.observedActivityThreshold). Consider "
+                                 + "merging schedules or removing unused rules before adding more.")
+                                .font(.footnote)
+                                .foregroundStyle(.orange)
+                        }
+                    } header: {
+                        Text("Blocking health")
+                    } footer: {
+                        Text("Whether every enabled schedule, Time Limit, and Open Limit passed "
+                             + "Flint's checks and was accepted by iOS at the last re-arm. iOS "
+                             + "provides a finite, undocumented registration pool shared by "
+                             + "Flint's monitors; "
+                             + "Flint surfaces a refused registration instead of letting the rule "
+                             + "die silently.")
+                    }
+                }
+
                 Section("Stronger protection") {
                     Text("For true anti-uninstall protection, set a **system Screen Time passcode** "
                          + "(Settings → Screen Time). It prevents deleting Flint or turning blocking "
@@ -75,6 +114,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .onAppear { armingHealth = FlintGroupStore()?.loadArmingHealth() ?? FlintArmingHealth() }
             .alert("Set a 4–6 digit PIN", isPresented: $showSetPIN) {
                 TextField("PIN", text: $newPIN)
                 Button("Save") {

@@ -21,6 +21,7 @@ public final class FlintGroupStore {
         static let pinHash = "flint.pin.hash"
         static let pinSalt = "flint.pin.salt"
         static let openLimitState = "flint.openLimit.state"
+        static let armingHealth = "flint.armingHealth"
     }
 
     private let defaults: UserDefaults
@@ -95,6 +96,17 @@ public final class FlintGroupStore {
 
     public func saveOpenLimitState(_ state: FlintOpenLimitState) {
         defaults.set(try? JSONEncoder().encode(state), forKey: Key.openLimitState)
+    }
+
+    // MARK: Arming health (what DeviceActivity actually accepted)
+
+    public func saveArmingHealth(_ health: FlintArmingHealth) {
+        defaults.set(try? JSONEncoder().encode(health), forKey: Key.armingHealth)
+    }
+
+    public func loadArmingHealth() -> FlintArmingHealth {
+        guard let data = defaults.data(forKey: Key.armingHealth) else { return FlintArmingHealth() }
+        return (try? JSONDecoder().decode(FlintArmingHealth.self, from: data)) ?? FlintArmingHealth()
     }
 
     // MARK: Selection (opaque tokens)

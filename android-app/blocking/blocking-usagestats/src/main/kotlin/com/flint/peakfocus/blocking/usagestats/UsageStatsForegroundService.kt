@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.content.ContextCompat
 import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
+import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.blocking.overlay.NeverBlockSurfaces
 import com.flint.peakfocus.blocking.overlay.PathBBlockHandoff
 import com.flint.peakfocus.core.data.LimitStore
@@ -39,16 +40,24 @@ class UsageStatsForegroundService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val engine = BlockDecisionEngine()
     private lateinit var poller: UsagePoller
-    private lateinit var limitTracker: DailyLimitTracker
-    private lateinit var limitStore: LimitStore
+    private lateinit var timeLimitGate: PathBTimeLimitGate
     private var neverBlock: Set<String> = emptySet()
     private var loop: Job? = null
 
     override fun onCreate() {
         super.onCreate()
         poller = UsagePoller(this)
-        limitTracker = DailyLimitTracker(this)
-        limitStore = LimitStore(this)
+        val limitTracker = DailyLimitTracker(this)
+        val limitStore = LimitStore(this)
+        timeLimitGate = PathBTimeLimitGate(
+            limitMinutesFor = { pkg ->
+                listOfNotNull(
+                    limitStore.limitMinutes(pkg),
+                    PathBBlockHandoff.coordinator(this).timeLimitMinutes(pkg),
+                ).minOrNull()
+            },
+            foregroundMillisToday = limitTracker::foregroundMillisToday,
+        )
         neverBlock = NeverBlockSurfaces.resolve(this)
         startAsForeground()
     }
@@ -85,11 +94,7 @@ class UsageStatsForegroundService : Service() {
         // editor's DataStore limits via the shared coordinator snapshot, stricter wins), so
         // the two paths can never disagree about a budget. [DailyLimitTracker] measures
         // consumption; its buckets are coarse/delayed — fine for daily budgets.
-        val limitMin = listOfNotNull(
-            limitStore.limitMinutes(pkg),
-            PathBBlockHandoff.coordinator(this).timeLimitMinutes(pkg),
-        ).minOrNull()
-        if (limitMin != null && limitTracker.foregroundMillisToday(pkg, now) >= limitMin * 60_000L) {
+        if (timeLimitGate.isSpent(pkg, now)) {
             PathBBlockHandoff.onTimeLimitExceeded(this, pkg)
             return
         }
@@ -99,15 +104,12 @@ class UsageStatsForegroundService : Service() {
         // Schedule.daysOfWeek is ISO-numbered (1=Mon…7=Sun — core-model's documented contract,
         // and what feature-blocklist persists); Calendar.DAY_OF_WEEK is 1=Sun…7=Sat. Convert
         // before asking the engine, or "Weekdays" rules block Sunday and skip Friday.
-        val weekday = isoWeekday(cal.get(java.util.Calendar.DAY_OF_WEEK))
+        val weekday = IsoWeekday.fromCalendar(cal.get(java.util.Calendar.DAY_OF_WEEK))
         val verdict = engine.decide(pkg, null, ActiveRulesHolder.rules, packageName, nowMin, weekday, now)
         // Path B enforcement handoff — every tick, Allow included: open-limit counting and
         // overlay stand-down happen behind this call, not just Block rendering.
         PathBBlockHandoff.onForegroundPolled(this, pkg, verdict)
     }
-
-    /** java.util.Calendar day-of-week (1=Sun…7=Sat) → ISO day-of-week (1=Mon…7=Sun). */
-    private fun isoWeekday(calendarDay: Int): Int = ((calendarDay + 5) % 7) + 1
 
     private fun startAsForeground() {
         val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager

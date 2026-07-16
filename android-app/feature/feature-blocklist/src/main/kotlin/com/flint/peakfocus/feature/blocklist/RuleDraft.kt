@@ -11,12 +11,12 @@ import com.flint.peakfocus.core.model.Schedule
  * Day-of-week constants for [Schedule.daysOfWeek], following core-model's documented contract:
  * ISO numbering, 1 = Monday … 7 = Sunday; the empty set means every day.
  *
- * HONEST NOTE for the service-integration task: the enforcement services currently pass
- * `Calendar.DAY_OF_WEEK` (1 = Sunday … 7 = Saturday) straight into `BlockDecisionEngine.decide`,
- * which compares it to this set as-is. This module follows the *model's* documented ISO contract;
- * whoever bridges BlockRulesStore into the live engine must reconcile the two numberings
- * (map Calendar→ISO at the call site, or fix the engine doc). Flagged rather than silently
- * matched, because the model KDoc — not one caller — is the shared contract.
+ * Both enforcement services (Path A's AccessibilityService, Path B's UsageStats poll) read the
+ * live weekday from `java.util.Calendar` (1 = Sunday … 7 = Saturday) and convert it to this ISO
+ * numbering through the engine's shared `IsoWeekday.fromCalendar` before calling
+ * `BlockDecisionEngine.decide`, so a rule's `daysOfWeek` gate here matches what actually fires.
+ * That conversion is defined and unit-tested once in blocking-engine — not per caller — because
+ * the model KDoc, not any one detector, is the shared contract.
  */
 internal object IsoDays {
 

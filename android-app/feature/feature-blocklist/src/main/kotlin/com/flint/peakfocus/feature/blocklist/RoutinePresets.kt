@@ -18,39 +18,46 @@ internal data class RoutinePreset(
 
 internal val ROUTINE_PRESETS: List<RoutinePreset> = listOf(
     RoutinePreset(
-        name = "Work hours",
+        name = "Laser Focus",
         schedule = Schedule(
             daysOfWeek = IsoDays.WEEKDAYS,
             startMinuteOfDay = 9 * 60,
-            endMinuteOfDay = 17 * 60,
-        ),
-        breakLevel = BreakLevel.HARDER,
-        description = "Deep work on weekdays, 9 to 5. Breaks take friction.",
-    ),
-    RoutinePreset(
-        name = "Evenings offline",
-        schedule = Schedule(startMinuteOfDay = 20 * 60, endMinuteOfDay = 23 * 60),
-        breakLevel = BreakLevel.EASY,
-        description = "Wind down every evening, 8 to 11. Easy to break when life happens.",
-    ),
-    RoutinePreset(
-        name = "Social detox",
-        // No schedule = the model's "always on while enabled" — cleaner than a 00:00–23:59
-        // window, which would leave a dead final minute every day.
-        schedule = null,
-        breakLevel = BreakLevel.HARDCORE,
-        description = "Around the clock, hardcore: no breaks, no early stop — " +
-            "only the weekly Emergency Pass.",
-    ),
-    RoutinePreset(
-        name = "Weekend mornings",
-        schedule = Schedule(
-            daysOfWeek = IsoDays.WEEKEND,
-            startMinuteOfDay = 8 * 60,
             endMinuteOfDay = 12 * 60,
         ),
+        breakLevel = BreakLevel.HARDER,
+        description = "Deep-work mornings on weekdays. Breaks take friction.",
+    ),
+    RoutinePreset(
+        name = "Rise and Shine",
+        schedule = Schedule(startMinuteOfDay = 6 * 60, endMinuteOfDay = 9 * 60),
         breakLevel = BreakLevel.EASY,
-        description = "Slow Saturday and Sunday mornings, 8 to noon.",
+        description = "Own the morning before the feed does, 6 to 9.",
+    ),
+    RoutinePreset(
+        name = "Reading Time",
+        schedule = Schedule(startMinuteOfDay = 20 * 60, endMinuteOfDay = 21 * 60),
+        breakLevel = BreakLevel.EASY,
+        description = "An evening hour of pages, not pixels.",
+    ),
+    RoutinePreset(
+        name = "Gym Time",
+        schedule = Schedule(
+            daysOfWeek = setOf(1, 3, 5),
+            startMinuteOfDay = 17 * 60 + 30,
+            endMinuteOfDay = 19 * 60,
+        ),
+        breakLevel = BreakLevel.HARDER,
+        description = "Lift weights, not your phone — Monday, Wednesday, Friday.",
+    ),
+    RoutinePreset(
+        name = "Weekend Limit",
+        schedule = Schedule(
+            daysOfWeek = IsoDays.WEEKEND,
+            startMinuteOfDay = 10 * 60,
+            endMinuteOfDay = 18 * 60,
+        ),
+        breakLevel = BreakLevel.EASY,
+        description = "Keep weekend daytime off the timeline.",
     ),
 )
 

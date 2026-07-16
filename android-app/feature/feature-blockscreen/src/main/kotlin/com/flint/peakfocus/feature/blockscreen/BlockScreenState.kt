@@ -53,6 +53,8 @@ data class BlockScreenState(
      * and HARDCORE (no breaks at all).
      */
     val breakWaitRemainingMillis: Long? = null,
+    /** Full HARDER cooldown length; enables determinate progress when positive. */
+    val breakWaitTotalMillis: Long? = null,
     /**
      * HARDCORE only: whether this week's Emergency Pass is still unspent (host-supplied from
      * its pass accounting). False renders the CTA as an inert "already used" notice instead
@@ -73,7 +75,10 @@ internal sealed interface BreakAffordance {
     data class HoldToRequest(val holdMillis: Long) : BreakAffordance
 
     /** HARDER, host says a cooldown is pending: no control, just a wait notice. */
-    data class WaitBeforeBreak(val remainingMillis: Long) : BreakAffordance
+    data class WaitBeforeBreak(
+        val remainingMillis: Long,
+        val progress: Float? = null,
+    ) : BreakAffordance
 
     /** HARDCORE: no bypass affordance — only the Emergency Pass CTA, and only while this
      *  week's pass is unspent ([passAvailable] false shows an inert "already used" notice). */
@@ -93,6 +98,8 @@ internal data class BlockScreenContent(
     val headline: String,
     val reasonLine: String,
     val badge: BlockScreenBadge,
+    /** Reason-aware countdown text, or null when the block has no known end. */
+    val countdownLabel: String?,
     val encouragement: String,
     val breakAffordance: BreakAffordance,
 )
@@ -114,11 +121,13 @@ internal fun blockScreenContent(state: BlockScreenState): BlockScreenContent {
         headline = "$name can wait",
         reasonLine = reasonLineFor(state.reason),
         badge = badgeFor(state.reason, state.breakLevel),
+        countdownLabel = countdownLabelFor(state.reason, state.remainingMillis),
         encouragement = encouragementFor(state.packageName),
         breakAffordance = breakAffordanceFor(
             state.reason,
             state.breakLevel,
             state.breakWaitRemainingMillis,
+            state.breakWaitTotalMillis,
             state.emergencyPassAvailable,
         ),
     )
@@ -149,10 +158,30 @@ internal fun badgeFor(reason: BlockScreenReason, level: BreakLevel): BlockScreen
         emphasized = level == BreakLevel.HARDCORE || reason == BlockScreenReason.UNINSTALL_GUARD,
     )
 
+/**
+ * Frames daily budgets as resetting at midnight and timed blocks as unblocking when they end.
+ * Open-ended blocks have no countdown label.
+ */
+internal fun countdownLabelFor(reason: BlockScreenReason, remainingMillis: Long?): String? {
+    if (remainingMillis == null) return null
+    return "${countdownVerbFor(reason)} in ${formatDuration(remainingMillis)}"
+}
+
+/** One exhaustive reason classifier shared by visual and TalkBack countdown copy. */
+internal fun countdownVerbFor(reason: BlockScreenReason): String = when (reason) {
+    BlockScreenReason.TIME_LIMIT, BlockScreenReason.OPEN_LIMIT -> "Resets"
+    BlockScreenReason.MANUAL_SESSION,
+    BlockScreenReason.SCHEDULE,
+    BlockScreenReason.DEEP_FOCUS,
+    BlockScreenReason.UNINSTALL_GUARD,
+    -> "Unblocks"
+}
+
 internal fun breakAffordanceFor(
     reason: BlockScreenReason,
     level: BreakLevel,
     breakWaitRemainingMillis: Long?,
+    breakWaitTotalMillis: Long? = null,
     emergencyPassAvailable: Boolean = true,
 ): BreakAffordance = when {
     // Guard shields offer no exit whatever the tier — see [BreakAffordance.None]'s contract.
@@ -160,11 +189,20 @@ internal fun breakAffordanceFor(
     level == BreakLevel.EASY -> BreakAffordance.TakeABreak
     level == BreakLevel.HARDER ->
         if (breakWaitRemainingMillis != null && breakWaitRemainingMillis > 0) {
-            BreakAffordance.WaitBeforeBreak(breakWaitRemainingMillis)
+            BreakAffordance.WaitBeforeBreak(
+                remainingMillis = breakWaitRemainingMillis,
+                progress = waitProgress(breakWaitTotalMillis, breakWaitRemainingMillis),
+            )
         } else {
             BreakAffordance.HoldToRequest(BREAK_HOLD_MILLIS)
         }
     else -> BreakAffordance.EmergencyPassOnly(passAvailable = emergencyPassAvailable)
+}
+
+/** Elapsed fraction of a HARDER cooldown, clamped against host clock skew. */
+internal fun waitProgress(totalMillis: Long?, remainingMillis: Long): Float? {
+    if (totalMillis == null || totalMillis <= 0L) return null
+    return ((totalMillis - remainingMillis).toFloat() / totalMillis.toFloat()).coerceIn(0f, 1f)
 }
 
 private val ENCOURAGEMENTS = listOf(
@@ -190,4 +228,29 @@ internal fun formatDuration(millis: Long): String {
         minutes > 0 -> "${minutes}m ${seconds}s"
         else -> "${seconds}s"
     }
+}
+
+/** Word-based duration for screen readers, matching [formatDuration]'s unit choices. */
+internal fun formatDurationSpoken(millis: Long): String {
+    val totalSeconds = (millis / 1000).coerceAtLeast(0)
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    fun unit(value: Long, singular: String) = "$value $singular" + if (value == 1L) "" else "s"
+    return when {
+        hours > 0 -> "${unit(hours, "hour")} ${unit(minutes, "minute")}"
+        minutes > 0 -> "${unit(minutes, "minute")} ${unit(seconds, "second")}"
+        else -> unit(seconds, "second")
+    }
+}
+
+internal const val HOLD_BREAK_A11Y_LABEL = "Request a break"
+internal const val HOLD_BREAK_A11Y_DESCRIPTION =
+    "Request a break. Hold to fill, or double-tap to request."
+
+internal fun waitNoticeA11y(remainingMillis: Long): String =
+    "Break available in ${formatDurationSpoken(remainingMillis)}"
+
+internal fun countdownA11y(reason: BlockScreenReason, remainingMillis: Long): String {
+    return "${countdownVerbFor(reason)} in ${formatDurationSpoken(remainingMillis)}"
 }

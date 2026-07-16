@@ -36,6 +36,21 @@ ios-build: ios-gen ## Compile the iOS app (app + 4 extensions) for the simulator
 		-sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
 		CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
 
+# Mirrors the `Unit tests` step in .github/workflows/ios.yml, including the simulator pick.
+# An empty DEVICE would reach xcodebuild as `name=` and fail with an opaque destination
+# error, so name the real problem instead.
+ios-test: ios-gen ## Run the iOS unit tests on the first available iPhone simulator
+	@set -e; \
+	DEVICE=$$(DEVELOPER_DIR="$(XCODE_DEV)" xcrun simctl list devices available | \
+		grep -oE 'iPhone [^(]+' | head -1 | sed 's/ *$$//'); \
+	if [ -z "$$DEVICE" ]; then \
+		echo "No iPhone simulator available (Xcode > Settings > Platforms)." >&2; \
+		exit 1; \
+	fi; \
+	echo "Using simulator: $$DEVICE"; \
+	DEVELOPER_DIR="$(XCODE_DEV)" xcodebuild test -project $(IOS_DIR)/Flint.xcodeproj -scheme Flint \
+		-destination "platform=iOS Simulator,name=$$DEVICE" CODE_SIGNING_ALLOWED=NO
+
 android: ## Assemble the Android debug APK
 	cd $(ANDROID_DIR) && JAVA_HOME="$(JAVA_HOME)" ./gradlew assembleDebug
 
@@ -47,6 +62,15 @@ android-install: ## Build + install the debug APK on a connected device/emulator
 # skipped them, so the engine tests never ran under this target.
 android-test: ## Run Android unit tests
 	cd $(ANDROID_DIR) && JAVA_HOME="$(JAVA_HOME)" ./gradlew test
+
+verify-android: android android-test ## Run the Android CI gate locally
+	@echo "Android gate passed."
+
+verify-ios: ios-build ios-test ## Run the iOS CI gate locally
+	@echo "iOS gate passed."
+
+verify: verify-android verify-ios ## Run both platform gates
+	@echo "All gates passed."
 
 selftest: ## Run the device-free script selftests (no emulator, Gradle, or Xcode needed)
 	@bash scripts/android-verify-selftest.sh
@@ -61,5 +85,5 @@ clean: ## Remove build artifacts on both platforms
 	rm -rf $(IOS_DIR)/build $(IOS_DIR)/DerivedData $(IOS_DIR)/Flint.xcodeproj
 	cd $(ANDROID_DIR) && [ -x ./gradlew ] && JAVA_HOME="$(JAVA_HOME)" ./gradlew clean || true
 
-.PHONY: help doctor ios-gen ios ios-build android android-install android-test \
-	selftest release-check clean
+.PHONY: help doctor ios-gen ios ios-build ios-test android android-install android-test \
+	verify verify-ios verify-android selftest release-check clean

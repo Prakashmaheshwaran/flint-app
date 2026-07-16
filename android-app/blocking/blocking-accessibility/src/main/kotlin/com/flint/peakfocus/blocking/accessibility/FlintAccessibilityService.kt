@@ -8,7 +8,9 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
+import com.flint.peakfocus.blocking.engine.BrowserAddressBars
 import com.flint.peakfocus.blocking.engine.ForegroundSurface
+import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.blocking.engine.UninstallGuard
 import com.flint.peakfocus.blocking.overlay.BlockScreenCoordinator
 import com.flint.peakfocus.blocking.overlay.NeverBlockSurfaces
@@ -146,7 +148,7 @@ class FlintAccessibilityService : AccessibilityService() {
         val nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
         // Schedule.daysOfWeek is ISO-numbered (1=Mon…7=Sun — core-model's documented contract);
         // Calendar.DAY_OF_WEEK is 1=Sun…7=Sat. Convert before handing to the engine/guard.
-        val weekday = ((cal.get(Calendar.DAY_OF_WEEK) + 5) % 7) + 1
+        val weekday = IsoWeekday.fromCalendar(cal.get(Calendar.DAY_OF_WEEK))
 
         // 0) Uninstall guard — checked ahead of the break/pass stand-down so an exemption
         //    granted on some other rule can never open the uninstall window (see class KDoc).
@@ -192,7 +194,7 @@ class FlintAccessibilityService : AccessibilityService() {
         }
 
         // 3) Rule verdict (manual sessions, schedules, allow-list mode, websites) — unchanged.
-        val url = if (pkg in BROWSER_PACKAGES) readUrl(rootInActiveWindow) else null
+        val url = if (BrowserAddressBars.isBrowser(pkg)) readUrl(rootInActiveWindow, pkg) else null
         when (val verdict = engine.decide(pkg, url, ActiveRulesHolder.rules, packageName, nowMin, weekday, now)) {
             is Verdict.Block -> {
                 val rule = ActiveRulesHolder.rules.firstOrNull { it.id == verdict.ruleId }
@@ -296,10 +298,17 @@ class FlintAccessibilityService : AccessibilityService() {
 
     // MARK: URL reading
 
-    private fun readUrl(root: AccessibilityNodeInfo?): String? {
+    /**
+     * Address-bar text for [pkg], or null when this browser exposes none. Only [pkg]'s own ids
+     * are tried — a Chrome id can never resolve inside Firefox. Node lookups run against a
+     * window that may go stale mid-read, so they are allowed to fail rather than kill the service.
+     */
+    private fun readUrl(root: AccessibilityNodeInfo?, pkg: String): String? {
         root ?: return null
-        for (id in URL_BAR_IDS) {
-            val text = root.findAccessibilityNodeInfosByViewId(id)?.firstOrNull()?.text?.toString()
+        for (id in BrowserAddressBars.urlBarViewIds(pkg)) {
+            val text = runCatching {
+                root.findAccessibilityNodeInfosByViewId(id)?.firstOrNull()?.text?.toString()
+            }.getOrNull()
             if (!text.isNullOrBlank()) return text
         }
         return null
@@ -328,20 +337,5 @@ class FlintAccessibilityService : AccessibilityService() {
 
         /** Slack past the computed budget expiry — UsageStats buckets update coarsely. */
         const val RECHECK_SLACK_MS = 5_000L
-
-        val BROWSER_PACKAGES = setOf(
-            "com.android.chrome",
-            "org.mozilla.firefox",
-            "com.brave.browser",
-            "com.opera.browser",
-            "com.microsoft.emmx",
-            "com.sec.android.app.sbrowser",
-        )
-        val URL_BAR_IDS = listOf(
-            "com.android.chrome:id/url_bar",
-            "com.sec.android.app.sbrowser:id/location_bar_edit_text",
-            "org.mozilla.firefox:id/mozac_browser_toolbar_url_view",
-            "com.brave.browser:id/url_bar",
-        )
     }
 }

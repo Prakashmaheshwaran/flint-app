@@ -9,8 +9,8 @@ import FamilyControls
 /// editor's Save gate keeps a target-less rule unsaveable. Pure data; `draftRule()` is the only
 /// glue.
 ///
-/// Mirrors Android's `RoutinePresets.kt` (same four routines, same windows, same break levels)
-/// with two honest divergences:
+/// The iOS library predates Android's five Opal-inventory templates and intentionally keeps four
+/// platform-adapted routines. It also has two implementation-specific divergences:
 ///  - **Always-on:** Android models "always on while enabled" as a schedule-less rule; every
 ///    `FlintScheduleRule` requires a window (each maps 1:1 onto a repeating
 ///    `DeviceActivitySchedule`, which has no "always" form), so `draftRule()` adapts a `nil`
@@ -46,7 +46,7 @@ public struct FlintRoutinePreset: Identifiable, Equatable, Sendable {
         self.description = description
     }
 
-    /// The built-in template library — the same four routines as Android's `ROUTINE_PRESETS`.
+    /// The four built-in, iOS-specific templates.
     public static let library: [FlintRoutinePreset] = [
         FlintRoutinePreset(
             name: "Work hours",

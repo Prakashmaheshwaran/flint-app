@@ -62,8 +62,8 @@ import com.flint.peakfocus.core.common.ui.rememberFlintHaptics
  *
  * This is a compliance gate, not a UX nicety. It must be shown in-app during normal use,
  * describe the data the AccessibilityService accesses and how it is used/shared, and require an
- * explicit accept BEFORE the user is sent to enable the service. Do not weaken this copy.
- * Containers/icons may be restyled; the disclosure sentences stay verbatim.
+ * explicit accept BEFORE the user is sent to enable the service. The verbatim sentences live
+ * in [ConsentCopy], where JVM tests pin every policy-required element.
  */
 @Composable
 fun AccessibilityConsentScreen(
@@ -103,7 +103,7 @@ fun AccessibilityConsentScreen(
                     Spacer(Modifier.height(FlintSpacing.md))
                     EntranceStep(step = 1) {
                         FlintScreenHeader(
-                            title = "Before Flint can block apps",
+                            title = ConsentCopy.HEADLINE,
                             eyebrow = "One-time setup",
                         )
                     }
@@ -113,10 +113,7 @@ fun AccessibilityConsentScreen(
                             DisclosureRow(
                                 icon = Icons.Filled.Search,
                                 heading = "What Flint sees",
-                                body = "To block apps in real time, Flint uses Android's " +
-                                    "Accessibility service to detect which app is in the " +
-                                    "foreground and — for website blocking — to read the web " +
-                                    "address shown in your browser.",
+                                body = ConsentCopy.WHAT_IT_READS,
                                 bodyStyle = MaterialTheme.typography.bodyLarge,
                             )
                             HorizontalDivider(
@@ -126,10 +123,7 @@ fun AccessibilityConsentScreen(
                             DisclosureRow(
                                 icon = Icons.Filled.Lock,
                                 heading = "Stays on your device",
-                                body = "Flint uses this only to enforce the blocks you set up. " +
-                                    "This data stays on your device. It is never sent off your " +
-                                    "device, shared, or sold. Flint has no account and no " +
-                                    "analytics.",
+                                body = ConsentCopy.WHERE_IT_GOES,
                                 bodyStyle = MaterialTheme.typography.bodyLarge,
                             )
                             HorizontalDivider(
@@ -139,8 +133,7 @@ fun AccessibilityConsentScreen(
                             DisclosureRow(
                                 icon = Icons.Filled.Settings,
                                 heading = "Reversible any time",
-                                body = "On the next screen, enable “Flint app blocking” under " +
-                                    "Accessibility. You can turn it off any time in Settings.",
+                                body = ConsentCopy.NEXT_STEP,
                                 bodyStyle = MaterialTheme.typography.bodyMedium,
                             )
                         }
@@ -159,7 +152,7 @@ fun AccessibilityConsentScreen(
                             .fillMaxWidth()
                             .heightIn(min = 48.dp),
                     ) {
-                        Text("Accept & continue")
+                        Text(ConsentCopy.ACCEPT_LABEL)
                     }
                     Spacer(Modifier.height(FlintSpacing.sm))
                     TextButton(
@@ -168,7 +161,7 @@ fun AccessibilityConsentScreen(
                             .fillMaxWidth()
                             .heightIn(min = 48.dp),
                     ) {
-                        Text("Not now")
+                        Text(ConsentCopy.DECLINE_LABEL)
                     }
                     Spacer(Modifier.height(FlintSpacing.sm))
                     Text(

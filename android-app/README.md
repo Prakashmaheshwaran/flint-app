@@ -124,13 +124,17 @@ cannot end a Hardcore session early nor a set-back stretch one. Honest limit: a 
 anchor cannot measure (clock changed across a reboot/power-off) leaves expiry at face value —
 same class of limitation the guard already documents for schedule windows.
 
+Android 13+'s `POST_NOTIFICATIONS` permission also surfaces as its own blocking-health row
+in Settings. It is visibility-only, so it never changes the enforcement health level; the
+degraded banner names the hidden notification only when Path B is actively enforcing.
+
 **Sleep Mode, preset routines & named groups — implemented; JVM-tested; emulator run pending.**
 Sleep Mode: bedtime→wake windows on chosen nights (post-midnight bedtimes day-shift correctly),
 Wind Down / free Full Assist materialized as allow-list rules on the schedules engine (the same
 approach as iOS), an optional enforced Morning Assist window, and one saved app group allowed
 overnight (`SleepRules` + `SleepEditorScreen`); the engine's telephony safety floor and a
 runtime launcher/dialer exemption keep emergency calling and Home reachable. Preset routines:
-the same four honest presets as iOS prefill rule drafts — targets stay the user's to pick
+five free Opal-style templates prefill rule drafts — targets stay the user's to pick
 (`RoutinePresets`). Named groups: DataStore-persisted app groups (`GroupsStore`) applied into
 rule drafts in one tap, with name-upsert and delete.
 
@@ -241,11 +245,12 @@ heuristic (JVM-tested only).
   which does not exist on the pure-Kotlin modules — the engine/core-model tests were silently
   skipped locally. The target now runs `./gradlew test`, matching CI.
 - *`DailyLimitTracker` had no caller (was gap 1 of this list):* Path B now enforces daily Time
-  Limits — `UsageStatsForegroundService.tick()` checks the same legacy `LimitStore` thresholds
-  Path A reads (so the paths can never disagree) against `DailyLimitTracker`'s consumption
-  measure, ahead of the rule verdict, and routes hits through the new
+  Limits — `UsageStatsForegroundService.tick()` checks the stricter of the legacy `LimitStore`
+  and DataStore-authored thresholds against `DailyLimitTracker`'s consumption measure, ahead
+  of the rule verdict, and routes hits through
   `PathBBlockHandoff.onTimeLimitExceeded` (break/pass stand-down still wins; no Open-Limit
-  open is recorded — Path A's exact order).
+  open is recorded — Path A's exact order). UsageStats verdicts cache for 15 seconds so the
+  one-second poll loop does not issue an expensive system query every tick.
 - *`POST_NOTIFICATIONS` never requested (was gap 2):* the app shell now asks **once**, on
   resume, and only when Path B is actually in play (usage access granted, a11y off — the
   same condition the service gate starts it under); a decline is respected, never re-prompted.

@@ -155,9 +155,11 @@ class BlockCauseTest {
         )
         val waiting = blockScreenState("com.x", null, cause, session, nowEpochMs = 130_000L)
         assertEquals(30_000L, waiting.breakWaitRemainingMillis)
+        assertEquals(60_000L, waiting.breakWaitTotalMillis)
 
         val elapsed = blockScreenState("com.x", null, cause, session, nowEpochMs = 160_000L)
         assertNull(elapsed.breakWaitRemainingMillis) // hold-to-request comes back
+        assertNull(elapsed.breakWaitTotalMillis)
     }
 
     @Test

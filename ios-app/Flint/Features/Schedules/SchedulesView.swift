@@ -112,7 +112,8 @@ struct SchedulesView: View {
                 .foregroundStyle(FlintBrand.spark)
             Text("No schedules yet")
                 .font(.headline)
-            Text("Recurring blocks — work hours, bedtime, study time. Unlimited and free.")
+            Text("Recurring blocks — work hours, bedtime, study time. Free with no Flint cap; "
+                 + "iOS's shared background-registration pool still applies.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

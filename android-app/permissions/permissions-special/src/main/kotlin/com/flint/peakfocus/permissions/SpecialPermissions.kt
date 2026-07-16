@@ -59,6 +59,37 @@ object AccessibilityPermission {
     fun settingsIntent(): Intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
 }
 
+/**
+ * POST_NOTIFICATIONS (Android 13+). A runtime permission: declared in the manifest but hidden
+ * until granted, so the Path B foreground-service notification is invisible on 13+ without it
+ * (the service still runs — this grant affects visibility, never enforcement). Below 13 there
+ * is nothing to grant.
+ *
+ * [sdkInt] is injectable because `Build.VERSION.SDK_INT` reads as 0 in JVM unit tests.
+ */
+object NotificationPermission {
+    fun isRequired(sdkInt: Int = Build.VERSION.SDK_INT): Boolean =
+        sdkInt >= Build.VERSION_CODES.TIRAMISU
+
+    fun isGranted(context: Context, sdkInt: Int = Build.VERSION.SDK_INT): Boolean =
+        !isRequired(sdkInt) ||
+            context.checkSelfPermission(POST_NOTIFICATIONS_PERMISSION) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    /**
+     * The app's notification settings page. A Settings hand-off (not the one-shot runtime
+     * dialog) keeps the row consistent with every other fix action here — explicit tap,
+     * disclosure first (ADR-007) — and still works after the user has hard-denied the dialog.
+     */
+    fun settingsIntent(context: Context): Intent =
+        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+
+    // Manifest.permission.POST_NOTIFICATIONS needs compileSdk 33+; spelled out so this file
+    // stays readable at a glance.
+    private const val POST_NOTIFICATIONS_PERMISSION = "android.permission.POST_NOTIFICATIONS"
+}
+
 /** Battery-optimization exemption (OEM survival). */
 object BatteryOptimization {
     fun isIgnoring(context: Context): Boolean {

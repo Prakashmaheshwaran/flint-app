@@ -36,6 +36,10 @@ class BlockDecisionEngine {
         if (foregroundPackage == selfPackage) return Verdict.Allow
         if (foregroundPackage in SYSTEM_ALLOWLIST) return Verdict.Allow
 
+        // Canonicalize once: this runs on every foreground change, against every domain of
+        // every active rule, and the address bar does not change between those comparisons.
+        val foregroundHost = foregroundUrl?.let(HostCanonicalizer::canonicalize)
+
         // Strictest match wins, not first match: overlapping rules are normal (the legacy
         // quick blocklist projects the same targets a Block Now session freezes), and taking
         // the first would let an EASY rule shadow a HARDCORE session — its free break would
@@ -58,7 +62,7 @@ class BlockDecisionEngine {
                     }
                 targets.apps.any { it.packageName == foregroundPackage } ->
                     "blocked app: $foregroundPackage"
-                foregroundUrl != null && targets.domains.any { domainMatches(foregroundUrl, it.domain) } ->
+                foregroundHost != null && targets.domains.any { hostMatches(foregroundHost, it.domain) } ->
                     "blocked website: $foregroundUrl"
                 else -> null
             } ?: continue
@@ -84,24 +88,23 @@ class BlockDecisionEngine {
     /** True if [url]'s host equals [domain] or is a subdomain of it. */
     internal fun domainMatches(url: String, domain: String): Boolean {
         val host = extractHost(url) ?: return false
-        val d = domain.trim().removePrefix("www.").lowercase()
-        if (d.isEmpty()) return false
+        return hostMatches(host, domain)
+    }
+
+    /**
+     * Equality-or-subdomain, with [host] already canonical.
+     *
+     * [domain] is canonicalized on each call rather than at save time because rules reach us
+     * from DataStore and from older builds that never ran the website field's `normalizeDomain`
+     * — a rule stored as `WWW.Reddit.com` still has to shield Reddit.
+     */
+    private fun hostMatches(host: String, domain: String): Boolean {
+        val d = HostCanonicalizer.canonicalize(domain) ?: return false
         return host == d || host.endsWith(".$d")
     }
 
-    /** Best-effort host extraction without java.net.URI (keeps this module pure/portable). */
-    internal fun extractHost(url: String): String? {
-        val afterScheme = if ("://" in url) url.substringAfter("://") else url
-        val host = afterScheme
-            .substringBefore('/')
-            .substringBefore('?')
-            .substringBefore('#')
-            .substringBefore(':')
-            .removePrefix("www.")
-            .lowercase()
-            .trim()
-        return host.ifBlank { null }
-    }
+    /** Host of a browser address bar, in the same shape rule domains are stored in. */
+    internal fun extractHost(url: String): String? = HostCanonicalizer.canonicalize(url)
 
     /**
      * Whether a rule's schedule is active now. A null schedule = always active. A negative
@@ -111,7 +114,7 @@ class BlockDecisionEngine {
      * over — so its day-of-week gate tests the previous ISO day ("Mon 22:00–06:00, Mondays"
      * blocks Tue 00:30, not Mon 00:30). [weekday] uses ISO numbering (1=Mon…7=Sun) — the same
      * contract as `Schedule.daysOfWeek` in core-model; callers holding a `Calendar.DAY_OF_WEEK`
-     * (1=Sun…7=Sat) must convert via `((day + 5) % 7) + 1`. Empty daysOfWeek = every day.
+     * (1=Sun…7=Sat) must convert via [IsoWeekday.fromCalendar]. Empty daysOfWeek = every day.
      */
     internal fun scheduleActive(schedule: Schedule?, nowMinutesOfDay: Int, weekday: Int): Boolean {
         schedule ?: return true

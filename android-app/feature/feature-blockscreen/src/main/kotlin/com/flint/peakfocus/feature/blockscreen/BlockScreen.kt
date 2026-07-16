@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -64,6 +65,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -385,7 +388,7 @@ private fun BlockWords(
             // Presence is independent of the entrance: the pill collapses away when the end
             // becomes unknown and expands back when a countdown starts.
             AnimatedVisibility(
-                visible = state.remainingMillis != null,
+                visible = content.countdownLabel != null,
                 enter = expandVertically(
                     animationSpec = tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized),
                 ) + fadeIn(
@@ -400,7 +403,11 @@ private fun BlockWords(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Spacer(Modifier.height(FlintSpacing.lg))
                     // "0s" during the exit collapse is honest — the block just ended.
-                    FlintInfoPill(text = "Unblocks in ${formatDuration(state.remainingMillis ?: 0L)}")
+                    FlintInfoPill(
+                        text = content.countdownLabel
+                            ?: requireNotNull(countdownLabelFor(state.reason, 0L)),
+                        spokenText = countdownA11y(state.reason, state.remainingMillis ?: 0L),
+                    )
                 }
             }
         }
@@ -510,10 +517,26 @@ private fun BreakActions(
             modifier = modifier.fillMaxWidth(),
         )
 
-        is BreakAffordance.WaitBeforeBreak -> FlintInfoPill(
-            text = "Break available in ${formatDuration(affordance.remainingMillis)}",
+        is BreakAffordance.WaitBeforeBreak -> Column(
             modifier = modifier,
-        )
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(FlintSpacing.sm),
+        ) {
+            if (affordance.progress != null) {
+                CircularProgressIndicator(
+                    progress = { affordance.progress },
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clearAndSetSemantics {},
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                )
+            }
+            FlintInfoPill(
+                text = "Break available in ${formatDuration(affordance.remainingMillis)}",
+                spokenText = waitNoticeA11y(affordance.remainingMillis),
+            )
+        }
 
         is BreakAffordance.EmergencyPassOnly -> Column(
             modifier = modifier.fillMaxWidth(),
@@ -591,7 +614,8 @@ private fun HoldToRequestBreakButton(
             // hold friction below (the gesture path is unchanged).
             .semantics(mergeDescendants = true) {
                 role = Role.Button
-                onClick(label = "Request a break") {
+                contentDescription = HOLD_BREAK_A11Y_DESCRIPTION
+                onClick(label = HOLD_BREAK_A11Y_LABEL) {
                     onHoldCompleted()
                     true
                 }
@@ -684,6 +708,7 @@ private fun BlockScreenHarderWaitPreview() {
                 reason = BlockScreenReason.TIME_LIMIT,
                 breakLevel = BreakLevel.HARDER,
                 breakWaitRemainingMillis = 272_000L, // 4m 32s
+                breakWaitTotalMillis = 600_000L,
             ),
             onDismiss = {},
             onOpenFlint = {},

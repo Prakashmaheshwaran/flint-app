@@ -19,9 +19,12 @@ android {
 dependencies {
     implementation(project(":core:core-common"))
     implementation(project(":permissions:permissions-special"))
+    // Public because HealthStatus is the parameter type of SetupGuidance.plan().
+    api(project(":blocking:blocking-resilience"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    testImplementation(libs.junit)
     debugImplementation(libs.androidx.ui.tooling)
 }

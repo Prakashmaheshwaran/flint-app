@@ -6,6 +6,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 ## [Unreleased]
 
 ### iOS
+- **Blocking Health now reports the whole enabled → attempted → armed funnel.** Schedule rules
+  rejected by Flint's window validation now enter the same health ledger as registrations iOS
+  refuses, so Settings cannot show green when an enabled rule was skipped before
+  `startMonitoring`. Time Limits and Open Limits record the same three counts. The near-cap
+  warning uses successfully armed registrations; its around-20 threshold remains an empirical
+  observation, not an Apple-published number, because `DeviceActivity` exposes only a finite,
+  undocumented pool shared by these monitors. Existing persisted health reports decode into the
+  richer model without being discarded.
 - **Schedules can no longer silently fail to block.** `DeviceActivityCenter.startMonitoring`
   throws on a window it won't take (zero-length, or under its 15-minute floor) and the schedules
   controller armed with `try?` — so such a rule saved, showed an ON toggle, and shielded nothing.
@@ -45,7 +53,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
   fail-closed on unreadable windows); the guard's shield offers no break/pass exit by design.
   JVM-tested; the emulator shield pass is pending.
 - **Sleep Mode, preset routines & named groups:** bedtime→wake windows with Wind Down / free
-  Full Assist and an optional Morning Assist window, the four-preset routine library, and
+  Full Assist and an optional Morning Assist window, the five-preset Android routine library, and
   DataStore-persisted named app groups. JVM-tested; emulator pass pending.
 - **Premium UI overhaul:** one design direction ("warm charcoal, one ember") across all screens,
   driven by extended `design/tokens.json` roles through `FlintTheme` and a shared component kit;
@@ -60,6 +68,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
   shield, HOME stand-down, over-quota re-shield, Easy break, and persisted counts after process
   death. That run also measured the last allowed open being shielded ~1.8 s after launch; it was
   recorded as a pending product decision and is now fixed (see *Fixed* below).
+- **Notifications join the blocking-health rows (Android 13+):** `POST_NOTIFICATIONS` was
+  declared but never requested, so the Path B backup-blocking service ran with its status
+  notification invisible. Settings now shows a "Notifications" row on 13+ — disclosure first,
+  Settings hand-off on tap (ADR-007), honest about being visibility-only: it never moves the
+  health level, and the degraded banner names the hidden notification only when the fallback
+  path is the one actually enforcing. JVM-tested (`HealthStatusTest`, `BlockingHealthUiTest`).
+- **Block-screen accessibility:** TalkBack can activate the HARDER break control, abbreviated
+  countdowns have word-based spoken copy, and pending HARDER waits show determinate progress.
+- **Path B Time Limits:** daily-budget checks now use a JVM-tested 15-second UsageStats cache,
+  avoiding a system query on every one-second foreground poll.
+- **Home app search:** the quick blocklist filters by app label or package name, preserves list
+  order, and shows an explicit no-match state.
+- **Honest Home setup guidance:** the status card now reports blocking as on whenever either
+  enforcement path is healthy, re-checks the complete permission state on every return, and
+  offers the cheapest next setup step. Accessibility remains behind its disclosure screen;
+  usage access, overlay, and battery exemption use explicit Settings hand-offs. A denied
+  Android 13+ notification grant is described as visibility-only when Path B is active.
 
 ### Fixed
 - **Android:** the last allowed open of an Open Limit is usable again. The quota was re-decided
@@ -111,7 +136,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 First public snapshot of both native apps.
 
 ### iOS (Swift / SwiftUI, Screen Time API)
-- Block Now, unlimited schedules, Time Limits, break levels incl. free Hardcore,
+- Block Now, schedules with no Flint-imposed count cap, Time Limits, break levels incl. free Hardcore,
   free weekly Emergency Pass, website blocking, embedded usage report,
   Sleep Mode + Morning Assist, Open Limits, Focus Filters, Siri/Shortcuts intents.
 - Built and unit-tested against the Simulator. **Shield enforcement requires a physical

@@ -25,4 +25,5 @@ dependencies {
     implementation(project(":blocking:blocking-overlay"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
+    testImplementation(libs.junit)
 }

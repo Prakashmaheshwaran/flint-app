@@ -19,6 +19,7 @@ class BlockScreenContentTest {
         appLabel: String? = "Instagram",
         remainingMillis: Long? = null,
         breakWaitRemainingMillis: Long? = null,
+        breakWaitTotalMillis: Long? = null,
         emergencyPassAvailable: Boolean = true,
     ) = BlockScreenState(
         packageName = packageName,
@@ -27,6 +28,7 @@ class BlockScreenContentTest {
         breakLevel = breakLevel,
         remainingMillis = remainingMillis,
         breakWaitRemainingMillis = breakWaitRemainingMillis,
+        breakWaitTotalMillis = breakWaitTotalMillis,
         emergencyPassAvailable = emergencyPassAvailable,
     )
 
@@ -200,6 +202,84 @@ class BlockScreenContentTest {
         // the floored mod must always land in range.
         val line = encouragementFor("polygenelubricants") // classic Int.MIN_VALUE hashCode string
         assertTrue(line.isNotBlank())
+    }
+
+    // ---- Countdown label ----
+
+    @Test
+    fun `open-ended block has no countdown label`() {
+        assertEquals(null, countdownLabelFor(BlockScreenReason.TIME_LIMIT, null))
+        assertEquals(null, blockScreenContent(state(remainingMillis = null)).countdownLabel)
+    }
+
+    @Test
+    fun `daily limits count down to a reset`() {
+        assertEquals("Resets in 3h 20m", countdownLabelFor(BlockScreenReason.TIME_LIMIT, 12_000_000L))
+        assertEquals("Resets in 3h 20m", countdownLabelFor(BlockScreenReason.OPEN_LIMIT, 12_000_000L))
+    }
+
+    @Test
+    fun `timed blocks count down to unblocking`() {
+        assertEquals("Unblocks in 24m 0s", countdownLabelFor(BlockScreenReason.MANUAL_SESSION, 1_440_000L))
+        assertEquals("Unblocks in 24m 0s", countdownLabelFor(BlockScreenReason.SCHEDULE, 1_440_000L))
+        assertEquals("Unblocks in 24m 0s", countdownLabelFor(BlockScreenReason.DEEP_FOCUS, 1_440_000L))
+        assertEquals("Unblocks in 24m 0s", countdownLabelFor(BlockScreenReason.UNINSTALL_GUARD, 1_440_000L))
+    }
+
+    @Test
+    fun `content carries the reason-aware countdown`() {
+        val content = blockScreenContent(
+            state(reason = BlockScreenReason.TIME_LIMIT, remainingMillis = 12_000_000L),
+        )
+        assertEquals("Resets in 3h 20m", content.countdownLabel)
+    }
+
+    @Test
+    fun `harder wait carries determinate elapsed progress`() {
+        val content = blockScreenContent(
+            state(
+                breakLevel = BreakLevel.HARDER,
+                breakWaitRemainingMillis = 300_000L,
+                breakWaitTotalMillis = 600_000L,
+            ),
+        )
+        assertEquals(BreakAffordance.WaitBeforeBreak(300_000L, 0.5f), content.breakAffordance)
+    }
+
+    @Test
+    fun `wait progress degrades safely and clamps clock skew`() {
+        assertEquals(null, waitProgress(null, 10L))
+        assertEquals(null, waitProgress(0L, 10L))
+        assertEquals(0f, waitProgress(100L, 150L))
+        assertEquals(1f, waitProgress(100L, -10L))
+    }
+
+    @Test
+    fun `spoken countdown uses words and honest reason verb`() {
+        assertEquals("4 minutes 32 seconds", formatDurationSpoken(272_000L))
+        assertEquals("Resets in 1 hour 0 minutes", countdownA11y(BlockScreenReason.TIME_LIMIT, 3_600_000L))
+        assertEquals("Unblocks in 1 minute 1 second", countdownA11y(BlockScreenReason.SCHEDULE, 61_000L))
+        assertTrue(HOLD_BREAK_A11Y_DESCRIPTION.contains("double-tap"))
+    }
+
+    @Test
+    fun `visual and TalkBack countdowns classify every reason identically`() {
+        val expected = mapOf(
+            BlockScreenReason.MANUAL_SESSION to "Unblocks",
+            BlockScreenReason.SCHEDULE to "Unblocks",
+            BlockScreenReason.TIME_LIMIT to "Resets",
+            BlockScreenReason.OPEN_LIMIT to "Resets",
+            BlockScreenReason.DEEP_FOCUS to "Unblocks",
+            BlockScreenReason.UNINSTALL_GUARD to "Unblocks",
+        )
+
+        assertEquals(BlockScreenReason.entries.toSet(), expected.keys)
+        for (reason in BlockScreenReason.entries) {
+            val verb = expected.getValue(reason)
+            assertEquals(verb, countdownVerbFor(reason))
+            assertTrue(countdownLabelFor(reason, 61_000L)!!.startsWith("$verb in "))
+            assertTrue(countdownA11y(reason, 61_000L).startsWith("$verb in "))
+        }
     }
 
     // ---- Countdown formatting ----

@@ -7,7 +7,8 @@
 **Everything Opal does. Zero cost. Forever.**
 
 A free, open-source alternative to [Opal](https://www.opal.so). The whole focus engine —
-app & website blocking, unlimited schedules, hardcore Deep Focus, time & open limits — with
+app & website blocking, schedules without a Flint-imposed count cap, hardcore Deep Focus,
+time & open limits — with
 **no paywall, no accounts, no telemetry**. Local-first. Built in the open.
 
 ![status](https://img.shields.io/badge/status-early%20development-EF9F27?style=flat-square)
@@ -55,8 +56,8 @@ what this project is.
 | Feature | Opal | **Flint** |
 |---|:---:|:---:|
 | Block Now / focus timer | Free | **Free** |
-| Scheduled sessions | Free (≤ 24h ahead) | **Free, no cap** |
-| Recurring / Smart Schedules | 💰 Pro (capped free) | **Free, unlimited** |
+| Scheduled sessions | Free (≤ 24h ahead) | **Free, no 24h advance cap** |
+| Recurring / Smart Schedules | 💰 Pro (capped free) | **Free, no Flint-imposed count cap¹** |
 | Block List | Free | **Free** |
 | **Allow List** (brick-phone mode) | 💰 Pro | **Free** |
 | **Deep Focus / Hardcore** (non-bypassable) | 💰 Pro | **Free** |
@@ -66,6 +67,10 @@ what this project is.
 | **Emergency Pass** | 💰 Pro | **Free, weekly** |
 | Accounts required | — | **None** |
 | Telemetry / ads | — | **None** 
+
+¹ iOS still has a finite, undocumented `DeviceActivity` registration pool shared by schedules,
+Time Limits, Open Limits, and other monitors. Flint records and surfaces actual refusals; the
+near-cap warning around 20 registrations is empirical, not an Apple-published limit.
 
 Full feature parity map: [`docs/research/01-opal-feature-inventory.md`](docs/research/01-opal-feature-inventory.md).
 
@@ -133,7 +138,8 @@ time-change-guard broadcast path, and Path A uninstall-guard shielding. See
 
 **iOS — comprehensive; earlier verticals verified in the Simulator + unit tests, the newest merges
 await a compile pass.** Verified earlier (builds, `FlintCore` unit tests, Simulator runs): Block
-Now, unlimited Schedules, Time Limits, free Hardcore + free weekly Emergency Pass, website
+Now, Schedules with no Flint-imposed count cap, Time Limits, free Hardcore + free weekly
+Emergency Pass, website
 blocking, app groups/presets + Allow List, app-open PIN, embedded usage report. Merged since,
 **compile verification still pending on a macOS toolchain**: Safari/Private-Browsing restrictions,
 Focus Filter integration, Siri & Shortcuts intents, Sleep Mode + Morning Assist, a preset
@@ -166,7 +172,8 @@ make android-install  # build + install on a connected device/emulator
 
 ## Roadmap (v1)
 
-**Implemented:** core blocking loop, unlimited schedules, Time Limits, break levels incl. **free
+**Implemented:** core blocking loop, schedules with no Flint-imposed count cap, Time Limits,
+break levels incl. **free
 Hardcore**, free weekly Emergency Pass, website blocking, app groups + Allow List, a preset
 routine library, app-PIN, usage
 report, Focus Filter, Siri/Shortcuts intents, Sleep Mode + Morning Assist, Open Limits — the

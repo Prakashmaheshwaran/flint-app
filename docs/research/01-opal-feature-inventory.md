@@ -79,8 +79,8 @@ Opal is a screen-time / focus app for iOS (mature) and Android (early, in-develo
 | **Description** | Sessions that recur weekly and start more than 24h ahead — daily working hours, sleep, morning routine, gym, study blocks. Ships with a preset routine library ("Laser Focus", "Rise and Shine" 6–9 AM, Reading Time, Gym Time, Weekend Limit). Configured via "Create Schedule" with day-of-week ("On these days") + a time window. |
 | **Opal tier** | **paid** (free capped at ~3 recurring per official FAQ; some sources say 1) |
 | **Platform** | both |
-| **Flint plan** | **FREE and UNLIMITED — this is a headline anti-paywall win.** iOS: repeating `DeviceActivitySchedule` entries, one per recurring rule, no count cap. Android: recurring `AlarmManager`/`WorkManager` triggers. Ship a free preset routine library mirroring Opal's. |
-| **Flint status** | **Implemented — unlimited recurring rules on both platforms** (no count cap); same verification state as 1.3. The Opal-style preset *routine* library now ships on both platforms (see 1.10 for the per-platform verification state). |
+| **Flint plan** | **FREE, with no Flint-imposed count cap — this is a headline anti-paywall win.** iOS: one repeating `DeviceActivitySchedule` per recurring rule. Apple's finite registration pool is undocumented and shared with Time Limits, Open Limits, and other monitors, so Flint cannot honestly promise infinite active registrations; it surfaces validation failures and OS refusals instead. Android: recurring `AlarmManager`/`WorkManager` triggers. Ship a free preset routine library mirroring Opal's. |
+| **Flint status** | **Implemented — no Flint-imposed recurring-rule cap on either platform; platform resource limits still apply.** iOS Blocking Health records enabled → attempted → armed counts and warns near an empirically observed threshold without claiming Apple publishes a fixed number; same verification state as 1.3. The Opal-style preset *routine* library now ships on both platforms (see 1.10 for the per-platform verification state). |
 
 ### 1.5 Advance scheduling (>24 hours ahead)
 
@@ -146,7 +146,7 @@ Opal is a screen-time / focus app for iOS (mature) and Android (early, in-develo
 | **Opal tier** | free |
 | **Platform** | both |
 | **Flint plan** | **FREE.** iOS: persist saved sets of Screen Time tokens; auto-switch by binding to system Focus Modes via Focus Filters (see 3.1). Android: persisted package-name sets. Backend syncs group definitions across devices. |
-| **Flint status** | **Implemented (iOS) — verified earlier:** named reusable picker selections applied in one tap; saved groups also surface as a preset parameter in the Shortcuts intents (3.2). Preset routine template library: **implemented on both platforms — verification pending** (the same four honest presets prefill rule drafts; targets stay the user's to pick). iOS specifics: presets prefill the new-schedule editor; "always on" adapts to a daily 00:00–23:59 window (`FlintScheduleRule` requires one); authored without a local Xcode, so the compile + simulator-test passes are outstanding and the drafted rules enforce on device only. Android named groups: **implemented — verification pending** (DataStore-persisted, applied into rule drafts in one tap, name-upsert + delete affordance). Cross-device sync: not in v1. |
+| **Flint status** | **Implemented (iOS) — verified earlier:** named reusable picker selections applied in one tap; saved groups also surface as a preset parameter in the Shortcuts intents (3.2). Preset routine template library: **implemented on both platforms — verification pending**. Android mirrors Opal's five named templates (Laser Focus, Rise and Shine, Reading Time, Gym Time, Weekend Limit), never defaults one to Hardcore, and leaves targets for the user to pick. iOS currently ships four platform-adapted templates; they prefill the new-schedule editor, and "always on" adapts to a daily 00:00–23:59 window (`FlintScheduleRule` requires one). The iOS compile + simulator-test passes are outstanding and drafted rules enforce on device only. Android named groups are DataStore-persisted, apply into rule drafts in one tap, and support name-upsert + delete. Cross-device sync: not in v1. |
 
 ---
 
@@ -321,7 +321,7 @@ Build the core blocking loop and the highest-value anti-paywall wins first, iOS-
 ### v1 — Must ship (the core loop + anti-paywall wins)
 
 1. **Sessions — Block Now** (1.2) — immediate focus timer; the simplest end-to-end vertical slice. *(iOS: ManagedSettings shield + timer.)*
-2. **Sessions — Schedule, single + recurring, UNLIMITED, no 24h cap** (1.3–1.5) — removes Opal's two biggest scheduling paywalls at once. *(iOS: DeviceActivitySchedule.)*
+2. **Sessions — Schedule, single + recurring, no Flint-imposed count or 24h-advance cap** (1.3–1.5) — removes Opal's two scheduling paywalls while surfacing iOS's real, undocumented `DeviceActivity` registration refusals. *(iOS: DeviceActivitySchedule.)*
 3. **Block List** (1.6) — `FamilyActivityPicker` token selection.
 4. **Allow List / brick-phone mode** (1.7) — Opal Pro-only; **free in Flint.** *(iOS: shield-all + allow set.)*
 5. **All three break-difficulty levels, including HARDCORE / Deep Focus** (2.3, 2.4) — the flagship paywall removal and the reason users switch. *(App-state logic on top of the shield.)*

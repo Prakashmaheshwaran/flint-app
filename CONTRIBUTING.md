@@ -28,6 +28,8 @@ Run `make doctor` to see what you're missing.
 - **Android:** Kotlin + Compose, multi-module. The block decision logic is pure Kotlin in
   `blocking-engine` (no Android deps, unit-tested). Detection paths and enforcement live in
   separate modules so the app degrades gracefully when AccessibilityService is unavailable.
+  Unit tests run via Gradle's `test`, never `testDebugUnitTest` — the pure-Kotlin modules have no
+  Android build variants, so the variant-specific task skips them without failing.
 - Keep design values in sync with [`design/tokens.json`](design/tokens.json).
 - No telemetry, no analytics SDKs, no required accounts. This is a hard rule (see brand ethos).
 
@@ -50,7 +52,8 @@ The source is MIT — fork and ship freely. But the *shipping identity* is not t
 ## Pull requests
 
 - Branch from `main`, keep PRs focused, describe the user-facing change.
-- iOS: build cleanly via `make ios-gen` + Xcode. Android: `make android` and `make android-test` pass.
+- Run the gate for the side you touched: `make verify-ios` or `make verify-android` (`make verify`
+  runs both). Each mirrors that platform's CI workflow.
 - Touching `scripts/` or the `Makefile`: `make selftest` passes. It needs no emulator, Gradle,
   Xcode, or Android SDK.
 - Be kind. See [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
