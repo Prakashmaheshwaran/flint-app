@@ -164,15 +164,17 @@ internal fun badgeFor(reason: BlockScreenReason, level: BreakLevel): BlockScreen
  */
 internal fun countdownLabelFor(reason: BlockScreenReason, remainingMillis: Long?): String? {
     if (remainingMillis == null) return null
-    val verb = when (reason) {
-        BlockScreenReason.TIME_LIMIT, BlockScreenReason.OPEN_LIMIT -> "Resets"
-        BlockScreenReason.MANUAL_SESSION,
-        BlockScreenReason.SCHEDULE,
-        BlockScreenReason.DEEP_FOCUS,
-        BlockScreenReason.UNINSTALL_GUARD,
-        -> "Unblocks"
-    }
-    return "$verb in ${formatDuration(remainingMillis)}"
+    return "${countdownVerbFor(reason)} in ${formatDuration(remainingMillis)}"
+}
+
+/** One exhaustive reason classifier shared by visual and TalkBack countdown copy. */
+internal fun countdownVerbFor(reason: BlockScreenReason): String = when (reason) {
+    BlockScreenReason.TIME_LIMIT, BlockScreenReason.OPEN_LIMIT -> "Resets"
+    BlockScreenReason.MANUAL_SESSION,
+    BlockScreenReason.SCHEDULE,
+    BlockScreenReason.DEEP_FOCUS,
+    BlockScreenReason.UNINSTALL_GUARD,
+    -> "Unblocks"
 }
 
 internal fun breakAffordanceFor(
@@ -250,9 +252,5 @@ internal fun waitNoticeA11y(remainingMillis: Long): String =
     "Break available in ${formatDurationSpoken(remainingMillis)}"
 
 internal fun countdownA11y(reason: BlockScreenReason, remainingMillis: Long): String {
-    val verb = when (reason) {
-        BlockScreenReason.TIME_LIMIT, BlockScreenReason.OPEN_LIMIT -> "Resets"
-        else -> "Unblocks"
-    }
-    return "$verb in ${formatDurationSpoken(remainingMillis)}"
+    return "${countdownVerbFor(reason)} in ${formatDurationSpoken(remainingMillis)}"
 }

@@ -59,6 +59,7 @@ public final class FlintLimitsController {
 
         let center = DeviceActivityCenter()
         var attempted = 0
+        var armed = 0
         var failures: [FlintArmingHealth.Failure] = []
         for limit in all where limit.enabled {
             let schedule = DeviceActivitySchedule(
@@ -79,12 +80,20 @@ public final class FlintLimitsController {
                     during: schedule,
                     events: [DeviceActivityEvent.Name(limit.eventName): event]
                 )
+                armed += 1
             } catch {
                 failures.append(FlintArmingHealth.Failure(
                     activityName: limit.activityName, reason: String(describing: error)))
             }
         }
-        FlintArmingHealth.record(domain: "limits", attempted: attempted, failures: failures, in: group)
+        FlintArmingHealth.record(
+            domain: "limits",
+            enabled: all.lazy.filter(\.enabled).count,
+            attempted: attempted,
+            armed: armed,
+            failures: failures,
+            in: group
+        )
     }
 }
 #endif

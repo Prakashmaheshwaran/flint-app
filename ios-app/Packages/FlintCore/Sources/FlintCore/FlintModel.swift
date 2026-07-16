@@ -33,8 +33,9 @@ public struct FlintSchedule: Codable, Equatable, Sendable {
 }
 
 /// A configured block. `schedule == nil` means a manual "Block Now" session. Flint imposes no
-/// count cap and no 24h-advance cap (both are Opal paywalls). The selected app/site tokens are
-/// stored separately in the App Group (see `FlintGroupStore`) because tokens are opaque.
+/// product/paywall count cap or 24h-advance cap, but iOS has a finite, undocumented
+/// `DeviceActivity` registration pool shared by Flint's monitors. The selected app/site tokens
+/// are stored separately in the App Group (see `FlintGroupStore`) because tokens are opaque.
 public struct FlintSession: Codable, Identifiable, Equatable, Sendable {
     public var id: String
     public var name: String

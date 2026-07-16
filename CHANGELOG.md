@@ -6,6 +6,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 ## [Unreleased]
 
 ### iOS
+- **Blocking Health now reports the whole enabled → attempted → armed funnel.** Schedule rules
+  rejected by Flint's window validation now enter the same health ledger as registrations iOS
+  refuses, so Settings cannot show green when an enabled rule was skipped before
+  `startMonitoring`. Time Limits and Open Limits record the same three counts. The near-cap
+  warning uses successfully armed registrations; its around-20 threshold remains an empirical
+  observation, not an Apple-published number, because `DeviceActivity` exposes only a finite,
+  undocumented pool shared by these monitors. Existing persisted health reports decode into the
+  richer model without being discarded.
 - **Schedules can no longer silently fail to block.** `DeviceActivityCenter.startMonitoring`
   throws on a window it won't take (zero-length, or under its 15-minute floor) and the schedules
   controller armed with `try?` — so such a rule saved, showed an ON toggle, and shielded nothing.
@@ -128,7 +136,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 First public snapshot of both native apps.
 
 ### iOS (Swift / SwiftUI, Screen Time API)
-- Block Now, unlimited schedules, Time Limits, break levels incl. free Hardcore,
+- Block Now, schedules with no Flint-imposed count cap, Time Limits, break levels incl. free Hardcore,
   free weekly Emergency Pass, website blocking, embedded usage report,
   Sleep Mode + Morning Assist, Open Limits, Focus Filters, Siri/Shortcuts intents.
 - Built and unit-tested against the Simulator. **Shield enforcement requires a physical

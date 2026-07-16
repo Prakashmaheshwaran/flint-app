@@ -61,10 +61,11 @@ struct SettingsView: View {
                          + "stops with it.")
                 }
 
-                if armingHealth.attemptedTotal > 0 || !armingHealth.isHealthy {
+                if armingHealth.enabledTotal > 0 || !armingHealth.isHealthy {
                     Section {
                         if !armingHealth.isHealthy {
-                            Label("\(armingHealth.failures.count) \(armingHealth.failures.count == 1 ? "rule" : "rules") failed to arm",
+                            Label("\(armingHealth.armedTotal) of \(armingHealth.enabledTotal) enabled "
+                                  + "\(armingHealth.enabledTotal == 1 ? "rule" : "rules") armed",
                                   systemImage: "exclamationmark.triangle.fill")
                                 .foregroundStyle(.red)
                             ForEach(armingHealth.failures, id: \.activityName) { failure in
@@ -73,12 +74,12 @@ struct SettingsView: View {
                                     .foregroundStyle(.secondary)
                             }
                         } else {
-                            Label("All \(armingHealth.attemptedTotal) \(armingHealth.attemptedTotal == 1 ? "rule" : "rules") armed with iOS",
+                            Label("All \(armingHealth.armedTotal) enabled \(armingHealth.armedTotal == 1 ? "rule" : "rules") armed with iOS",
                                   systemImage: "checkmark.shield.fill")
                                 .foregroundStyle(.green)
                         }
                         if armingHealth.isNearCap {
-                            Text("Flint last attempted \(armingHealth.attemptedTotal) background "
+                            Text("Flint last armed \(armingHealth.armedTotal) background "
                                  + "registrations. iOS does not publish a fixed limit; refusals "
                                  + "have been observed around "
                                  + "\(FlintArmingHealth.observedActivityThreshold). Consider "
@@ -89,8 +90,10 @@ struct SettingsView: View {
                     } header: {
                         Text("Blocking health")
                     } footer: {
-                        Text("Whether iOS accepted every schedule, Time Limit, and Open Limit at "
-                             + "the last re-arm. iOS quietly caps concurrent registrations per app; "
+                        Text("Whether every enabled schedule, Time Limit, and Open Limit passed "
+                             + "Flint's checks and was accepted by iOS at the last re-arm. iOS "
+                             + "provides a finite, undocumented registration pool shared by "
+                             + "Flint's monitors; "
                              + "Flint surfaces a refused registration instead of letting the rule "
                              + "die silently.")
                     }

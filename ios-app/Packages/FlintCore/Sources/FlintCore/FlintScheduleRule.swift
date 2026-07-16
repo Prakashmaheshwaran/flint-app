@@ -2,10 +2,12 @@ import Foundation
 #if canImport(FamilyControls)
 import FamilyControls
 
-/// A recurring (or daily) scheduled block. Unlike Opal, Flint imposes **no count cap and no
-/// 24h-advance cap**. Each rule carries its own app/site selection and break level, and gets its
-/// own `DeviceActivity` registration + `ManagedSettingsStore`, so multiple schedules can overlap
-/// without clobbering each other (iOS 16 allows up to 50 named stores).
+/// A recurring (or daily) scheduled block. Unlike Opal, Flint imposes **no product/paywall count
+/// cap or 24h-advance cap**. Every enabled rule still consumes one slot in iOS's finite,
+/// undocumented `DeviceActivity` registration pool shared by Flint's monitors. Each rule carries
+/// its own app/site selection and break level, and gets its own registration +
+/// `ManagedSettingsStore`, so multiple schedules can overlap without clobbering each other
+/// (iOS 16 allows up to 50 named stores).
 public struct FlintScheduleRule: Codable, Identifiable, Equatable {
     public var id: String
     public var name: String

@@ -262,6 +262,26 @@ class BlockScreenContentTest {
         assertTrue(HOLD_BREAK_A11Y_DESCRIPTION.contains("double-tap"))
     }
 
+    @Test
+    fun `visual and TalkBack countdowns classify every reason identically`() {
+        val expected = mapOf(
+            BlockScreenReason.MANUAL_SESSION to "Unblocks",
+            BlockScreenReason.SCHEDULE to "Unblocks",
+            BlockScreenReason.TIME_LIMIT to "Resets",
+            BlockScreenReason.OPEN_LIMIT to "Resets",
+            BlockScreenReason.DEEP_FOCUS to "Unblocks",
+            BlockScreenReason.UNINSTALL_GUARD to "Unblocks",
+        )
+
+        assertEquals(BlockScreenReason.entries.toSet(), expected.keys)
+        for (reason in BlockScreenReason.entries) {
+            val verb = expected.getValue(reason)
+            assertEquals(verb, countdownVerbFor(reason))
+            assertTrue(countdownLabelFor(reason, 61_000L)!!.startsWith("$verb in "))
+            assertTrue(countdownA11y(reason, 61_000L).startsWith("$verb in "))
+        }
+    }
+
     // ---- Countdown formatting ----
 
     @Test

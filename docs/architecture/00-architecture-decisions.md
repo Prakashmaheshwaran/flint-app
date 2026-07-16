@@ -205,8 +205,10 @@ may want to override on values grounds.)*
 
 ## Scope for v1 (from the feature inventory)
 
-iOS-first. Ship the **core blocking loop** (Block Now + unlimited scheduled/recurring sessions,
-no 24h cap), **Block List + Allow List**, **all three break-difficulty levels including
+iOS-first. Ship the **core blocking loop** (Block Now + scheduled/recurring sessions with no
+Flint-imposed count cap or 24h-advance cap; iOS's finite, undocumented `DeviceActivity`
+registration pool is shared by Flint's monitors and still applies), **Block List + Allow List**,
+**all three break-difficulty levels including
 Hardcore/Deep Focus for free**, **Time Limits + Open Limits**, the **anti-bypass suite**, and a
 **free weekly Emergency Pass** — every one of these is something Opal paywalls or omits. Defer
 gamification, bundled audio content, desktop/cross-device, and full Android parity to later

@@ -1,6 +1,6 @@
 import XCTest
 import FamilyControls
-import FlintCore
+@testable import FlintCore
 
 /// `DeviceActivityCenter.startMonitoring` throws on a window it won't accept, and Flint arms with
 /// `try?` — so an unregistrable window used to save, show an ON toggle, and block nothing. These
@@ -129,6 +129,37 @@ final class FlintScheduleValidationTests: XCTestCase {
         XCTAssertEqual(plan.failures, [
             FlintScheduleArmFailure(ruleID: "bad", ruleName: "Broken", issue: .zeroLengthWindow),
         ])
+    }
+
+    func testValidationAndRegistrationFailuresStayVisibleInGlobalHealth() {
+        let first = FlintScheduleRule(
+            id: "first", name: "First", schedule: FlintSchedule(startHour: 9, endHour: 17))
+        let second = FlintScheduleRule(
+            id: "second", name: "Second", schedule: FlintSchedule(startHour: 10, endHour: 18))
+        let invalid = FlintScheduleRule(
+            id: "invalid", name: "Invalid", schedule: FlintSchedule(startHour: 9, endHour: 9))
+        let plan = FlintSchedulesController.armPlan(for: [first, second, invalid])
+
+        let report = FlintSchedulesController.armingHealthReport(
+            enabled: plan.arm.count + plan.failures.count,
+            attempted: 2,
+            armed: 1,
+            validationFailures: plan.failures,
+            registrationFailures: [
+                .init(activityName: second.monitorName, reason: "excessiveActivities"),
+            ]
+        )
+        let health = FlintArmingHealth().replacing("schedules", with: report)
+
+        XCTAssertEqual(report.enabled, 3)
+        XCTAssertEqual(report.attempted, 2)
+        XCTAssertEqual(report.armed, 1)
+        XCTAssertEqual(report.failures.map(\.activityName), [invalid.monitorName, second.monitorName])
+        XCTAssertTrue(report.failures[0].reason.contains("same"))
+        XCTAssertFalse(health.isHealthy, "a validation failure must not leave Settings green")
+        XCTAssertEqual(health.enabledTotal, 3)
+        XCTAssertEqual(health.attemptedTotal, 2)
+        XCTAssertEqual(health.armedTotal, 1)
     }
 
     func testArmPlanIgnoresDisabledRulesEvenWhenTheirWindowIsInvalid() {

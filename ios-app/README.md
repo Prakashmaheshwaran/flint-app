@@ -84,9 +84,13 @@ proof is a separate, human task (`H-IOS-DEVICE`) — nothing below claims it.
 Verticals implemented:
 - **Block Now** — authorize → pick apps → timed shield + `DeviceActivity` auto-clear → live
   countdown → stop gated by break level (incl. **free Hardcore**).
-- **Schedules** — unlimited recurring/daily rules (**no count cap, no 24h-advance cap**). Each
-  rule carries its own selection + break level + day-of-week gate + allow-list, and gets its own
-  `DeviceActivity` registration + `ManagedSettingsStore` (so schedules can overlap cleanly).
+- **Schedules** — recurring/daily rules with **no Flint-imposed count cap or 24h-advance cap**.
+  Each rule carries its own selection + break level + day-of-week gate + allow-list, and gets its
+  own `DeviceActivity` registration + `ManagedSettingsStore` (so schedules can overlap cleanly).
+  iOS nevertheless has a finite, undocumented registration pool shared with Time Limits, Open
+  Limits, and Flint's other monitors. Blocking Health records enabled → attempted → armed counts,
+  surfaces both local validation failures and actual OS refusals, and uses an empirical warning
+  near 20 registrations rather than presenting that observation as an Apple contract.
   **Routine templates** — the Schedules tab ships four platform-adapted presets
   (`FlintRoutinePreset`: Work hours, Evenings offline, Social detox, Weekend mornings); one tap
   opens the new-schedule editor prefilled with name, window, and break level, and targets always

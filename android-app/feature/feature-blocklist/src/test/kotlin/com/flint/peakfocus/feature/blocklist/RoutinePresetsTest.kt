@@ -1,6 +1,7 @@
 package com.flint.peakfocus.feature.blocklist
 
 import com.flint.peakfocus.core.model.AppRef
+import com.flint.peakfocus.core.model.BlockTargets
 import com.flint.peakfocus.core.model.BreakLevel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -42,6 +43,42 @@ class RoutinePresetsTest {
         assertEquals(setOf(1, 3, 5), gym.days)
         assertEquals(17 * 60 + 30, gym.startMinuteOfDay)
         assertEquals(19 * 60, gym.endMinuteOfDay)
+    }
+
+    @Test
+    fun exactFivePresetContractKeepsNamesOrderAndKeyWindows() {
+        assertEquals(
+            listOf("Laser Focus", "Rise and Shine", "Reading Time", "Gym Time", "Weekend Limit"),
+            ROUTINE_PRESETS.map { it.name },
+        )
+
+        val rise = ROUTINE_PRESETS[1]
+        assertEquals(emptySet<Int>(), rise.schedule!!.daysOfWeek)
+        assertEquals(6 * 60, rise.schedule.startMinuteOfDay)
+        assertEquals(9 * 60, rise.schedule.endMinuteOfDay)
+
+        val weekend = ROUTINE_PRESETS[4]
+        assertEquals(IsoDays.WEEKEND, weekend.schedule!!.daysOfWeek)
+    }
+
+    @Test
+    fun everyPresetRoundTripsThroughTheSavedRuleModel() {
+        val app = AppRef("com.example.app", "Example")
+        for ((index, preset) in ROUTINE_PRESETS.withIndex()) {
+            val rule = draftFrom(preset)
+                .copy(apps = setOf(app))
+                .toRule(id = "preset-$index")
+
+            assertEquals("preset-$index", rule.id)
+            assertEquals(preset.name, rule.name)
+            assertEquals(
+                BlockTargets(apps = setOf(app), allowListMode = preset.allowListMode),
+                rule.targets,
+            )
+            assertEquals(preset.schedule, rule.schedule)
+            assertEquals(preset.breakLevel, rule.breakLevel)
+            assertTrue(rule.enabled)
+        }
     }
 
     @Test

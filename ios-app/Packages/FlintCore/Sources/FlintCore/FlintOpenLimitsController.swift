@@ -67,6 +67,7 @@ public final class FlintOpenLimitsController {
             FlintScheduling.stopMonitoring(names)
         }
         var attempted = 0
+        var armed = 0
         var failures: [FlintArmingHealth.Failure] = []
         for rule in all where rule.enabled {
             FlintOpenLimitEnforcer.applyShield(for: rule)
@@ -78,6 +79,7 @@ public final class FlintOpenLimitsController {
             attempted += 1
             do {
                 try FlintScheduling.startMonitoring(rule.activityName, during: schedule)
+                armed += 1
             } catch {
                 // The shield half above still applied — the day-boundary re-arm is what's
                 // missing. Record it: without the activity, released tokens stay released.
@@ -85,7 +87,13 @@ public final class FlintOpenLimitsController {
                     activityName: rule.activityName, reason: String(describing: error)))
             }
         }
-        FlintArmingHealth.record(domain: "openLimits", attempted: attempted, failures: failures)
+        FlintArmingHealth.record(
+            domain: "openLimits",
+            enabled: all.lazy.filter(\.enabled).count,
+            attempted: attempted,
+            armed: armed,
+            failures: failures
+        )
     }
 }
 #endif
