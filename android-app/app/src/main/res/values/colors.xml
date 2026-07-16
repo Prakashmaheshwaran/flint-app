@@ -1,4 +1,5 @@
 <resources>
+    <!-- Brand palette — mirrors design/tokens.json (the single source; keep in sync). -->
     <color name="flint_charcoal">#2C2C2A</color>
     <color name="flint_graphite">#5F5E5A</color>
     <color name="flint_spark">#EF9F27</color>

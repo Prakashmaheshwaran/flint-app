@@ -1,8 +1,10 @@
 <resources>
-    <!-- Window chrome shown before Compose composes. Compose owns the real UI/theme. -->
+    <!-- Window chrome shown before Compose composes — the day cold-start frame (values-night
+         mirrors it in charcoal). Compose owns the real UI/theme. -->
     <style name="Theme.Flint" parent="@android:style/Theme.Material.NoActionBar">
-        <item name="android:windowBackground">@color/flint_charcoal</item>
+        <item name="android:windowBackground">@color/flint_stone</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
     </style>
 </resources>

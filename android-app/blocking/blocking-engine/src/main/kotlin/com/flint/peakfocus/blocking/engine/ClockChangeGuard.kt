@@ -1,5 +1,6 @@
 package com.flint.peakfocus.blocking.engine
 
+import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BreakRequestState
 import com.flint.peakfocus.core.model.BreakSessionState
 import com.flint.peakfocus.core.model.EmergencyPassState
@@ -141,5 +142,22 @@ class ClockChangeGuard {
                 effectiveAtEpochMs = pending.effectiveAtEpochMs + delta,
             ),
         )
+    }
+
+    /**
+     * Keep one-shot session rules ([BlockRule.expiresAtEpochMs]) the same *real* length
+     * across [shift]: expiry timestamps move with the injected wall delta — the same policy
+     * as [guardedBreakSession] — so setting the clock forward cannot end a Block Now session
+     * early (the Deep Focus escape this closes) and setting it back cannot stretch one. Pure
+     * timezone hops and unmeasured shifts (delta 0) are no-ops. Returns only the rules that
+     * changed; callers persist exactly those (an upsert also self-heals a session the lazy
+     * expiry sweep deleted in the race window between the jump and this guard landing).
+     */
+    fun guardedSessionRules(rules: List<BlockRule>, shift: ClockShift): List<BlockRule> {
+        val delta = shift.wallDeltaMs
+        if (delta == 0L) return emptyList()
+        return rules.mapNotNull { rule ->
+            rule.expiresAtEpochMs?.let { rule.copy(expiresAtEpochMs = it + delta) }
+        }
     }
 }

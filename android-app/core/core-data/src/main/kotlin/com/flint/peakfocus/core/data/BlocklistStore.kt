@@ -51,7 +51,9 @@ class BlocklistStore(context: Context) {
 
     private fun syncToHolder(packages: Set<String>) {
         if (packages.isEmpty()) {
-            ActiveRulesHolder.rules = emptyList()
+            // Publishing empty clears only THIS source's contribution — DataStore-authored
+            // rules (published under their own key) are untouched.
+            ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_LEGACY, emptyList())
             return
         }
         val schedule = if (scheduleEnabled) {
@@ -63,12 +65,15 @@ class BlocklistStore(context: Context) {
         } else {
             null
         }
-        ActiveRulesHolder.rules = listOf(
-            BlockRule(
-                id = "blocklist",
-                name = "Blocklist",
-                targets = BlockTargets(apps = packages.map { AppRef(it) }.toSet()),
-                schedule = schedule,
+        ActiveRulesHolder.publish(
+            ActiveRulesHolder.SOURCE_LEGACY,
+            listOf(
+                BlockRule(
+                    id = "blocklist",
+                    name = "Blocklist",
+                    targets = BlockTargets(apps = packages.map { AppRef(it) }.toSet()),
+                    schedule = schedule,
+                ),
             ),
         )
     }

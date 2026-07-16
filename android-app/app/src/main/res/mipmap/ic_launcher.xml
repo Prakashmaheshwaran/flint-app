@@ -1,0 +1,26 @@
+<!--
+    Legacy launcher icon, API 23–25 only (mipmap-anydpi-v26 wins on 26+): design/app-icon.svg
+    hand-scaled onto a 108 viewport — charcoal 23-radius plate, stone strike mark at 1.125x.
+    Vector-in-mipmap keeps the repo raster-free; the platform inflates vectors from API 21,
+    so pre-26 launchers rasterize this at draw time. Colors mirror design/tokens.json.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M27,4 L81,4 A23,23 0 0 1 104,27 L104,81 A23,23 0 0 1 81,104 L27,104 A23,23 0 0 1 4,81 L4,27 A23,23 0 0 1 27,4 Z"
+        android:fillColor="@color/flint_charcoal" />
+    <group
+        android:pivotX="28"
+        android:pivotY="28"
+        android:scaleX="1.125"
+        android:scaleY="1.125"
+        android:translateX="26"
+        android:translateY="26">
+        <path android:pathData="M14,44 L28,8 L36,26 L44,18 L30,48 Z" android:fillColor="@color/flint_stone" />
+        <path android:pathData="M36,26 L44,18 L42,30 Z" android:fillColor="@color/flint_spark" />
+        <path android:pathData="M30,48 L42,30 L44,40 Z" android:fillColor="@color/flint_ember" />
+    </group>
+</vector>

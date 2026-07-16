@@ -1,0 +1,6 @@
+<!-- Adaptive icon (round mask variant) — same layers; the launcher applies its mask. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/flint_charcoal" />
+    <foreground android:drawable="@drawable/ic_flint_foreground" />
+    <monochrome android:drawable="@drawable/ic_flint_monochrome" />
+</adaptive-icon>

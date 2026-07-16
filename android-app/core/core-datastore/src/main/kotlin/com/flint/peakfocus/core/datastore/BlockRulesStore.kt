@@ -27,6 +27,13 @@ interface BlockRulesStore {
     /** Flip a single rule on/off without touching the rest of it. */
     suspend fun setEnabled(ruleId: String, enabled: Boolean)
 
+    /**
+     * Flip several rules in ONE transaction — rule pairs that must move together (the two
+     * sleep rules) would otherwise desync if the process dies between separate writes.
+     * Missing ids are no-ops, same as [setEnabled].
+     */
+    suspend fun setEnabled(ruleIds: Set<String>, enabled: Boolean)
+
     /** Replace the whole rule set (bulk import/migration from the legacy BlocklistStore). */
     suspend fun replaceAll(rules: List<BlockRule>)
 }

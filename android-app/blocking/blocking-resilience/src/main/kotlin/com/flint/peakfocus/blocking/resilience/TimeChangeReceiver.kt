@@ -121,6 +121,13 @@ class TimeChangeReceiver : BroadcastReceiver() {
                 guard.guardedBreakSession(session, shift)
                     .takeIf { it != session }
                     ?.let { store.setBreakSession(it) }
+                // One-shot Block Now sessions measure DURATION, not a wall deadline: shift
+                // their expiry with the injected jump so a set-forward clock can't end a
+                // Hardcore session early (nor a set-back stretch one). Upserting also
+                // restores a session the lazy expiry sweep raced to delete after the jump.
+                val rulesStore = FlintPreferences.blockRules(appContext)
+                guard.guardedSessionRules(rulesStore.rules.first(), shift)
+                    .forEach { rulesStore.upsert(it) }
             } catch (_: Exception) {
                 // Swallowed on purpose (see KDoc above): fail toward existing state, no crash
                 // loop from a broadcast. No telemetry — nothing leaves the device (ADR-002).

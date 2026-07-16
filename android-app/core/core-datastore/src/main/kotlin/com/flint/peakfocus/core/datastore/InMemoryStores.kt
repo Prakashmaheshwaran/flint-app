@@ -1,5 +1,6 @@
 package com.flint.peakfocus.core.datastore
 
+import com.flint.peakfocus.core.model.AppGroup
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.model.BreakSessionState
@@ -36,8 +37,27 @@ class InMemoryBlockRulesStore(initial: List<BlockRule> = emptyList()) : BlockRul
         state.update { current -> current.map { if (it.id == ruleId) it.copy(enabled = enabled) else it } }
     }
 
+    override suspend fun setEnabled(ruleIds: Set<String>, enabled: Boolean) {
+        state.update { current -> current.map { if (it.id in ruleIds) it.copy(enabled = enabled) else it } }
+    }
+
     override suspend fun replaceAll(rules: List<BlockRule>) {
         state.value = rules
+    }
+}
+
+class InMemoryGroupsStore(initial: List<AppGroup> = emptyList()) : GroupsStore {
+
+    private val state = MutableStateFlow(initial)
+
+    override val groups: Flow<List<AppGroup>> = state.asStateFlow()
+
+    override suspend fun upsert(group: AppGroup) {
+        state.update { current -> current.filterNot { it.id == group.id } + group }
+    }
+
+    override suspend fun delete(groupId: String) {
+        state.update { current -> current.filterNot { it.id == groupId } }
     }
 }
 

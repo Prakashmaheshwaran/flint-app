@@ -37,6 +37,18 @@ data class BlockTargets(
 )
 
 /**
+ * A named, reusable saved selection of targets — Opal's App Groups, free in Flint. Applied
+ * into rule drafts in one tap (additive merge); groups are a convenience layer only, never
+ * consulted by the engine.
+ */
+data class AppGroup(
+    val id: String,
+    val name: String,
+    val apps: Set<AppRef> = emptySet(),
+    val domains: Set<DomainRef> = emptySet(),
+)
+
+/**
  * A schedule window. [daysOfWeek] uses ISO numbering (1 = Monday … 7 = Sunday);
  * empty means every day.
  */
@@ -50,6 +62,11 @@ data class Schedule(
  * A configured block rule: what to block, when, and how hard to break.
  * [schedule] = null means a manual "Block Now" rule. Flint imposes no count cap and no
  * 24h-advance cap (both are Opal paywalls).
+ *
+ * [expiresAtEpochMs] makes a rule a **one-shot timed session** (Block Now): the engine stops
+ * enforcing it at that instant — deliberately engine-checked, not cleanup-dependent, so a
+ * session can never outlive its timer or re-fire weekly the way a same-day schedule would.
+ * The app layer garbage-collects expired session rules lazily. Null = permanent rule.
  */
 data class BlockRule(
     val id: String,
@@ -58,16 +75,20 @@ data class BlockRule(
     val schedule: Schedule? = null,
     val breakLevel: BreakLevel = BreakLevel.EASY,
     val enabled: Boolean = true,
-)
+    val expiresAtEpochMs: Long? = null,
+) {
+    /**
+     * True once a one-shot session's timer has run out. A negative [nowEpochMs] means "no
+     * clock supplied" → not expired (mirrors the engine's other time sentinels).
+     */
+    fun isExpired(nowEpochMs: Long): Boolean =
+        expiresAtEpochMs != null && nowEpochMs >= 0 && nowEpochMs >= expiresAtEpochMs
 
-/** A live session derived from a rule (manual or schedule-triggered). */
-data class ActiveSession(
-    val ruleId: String,
-    val startedAtEpochMs: Long,
-    /** null = open-ended until manually stopped. */
-    val endsAtEpochMs: Long? = null,
-    val breakLevel: BreakLevel,
-)
+    companion object {
+        /** Id prefix for one-shot Block Now session rules — transient, hidden from authoring UI. */
+        const val SESSION_ID_PREFIX = "session-"
+    }
+}
 
 /** The decision the engine returns for the current foreground context. */
 sealed interface Verdict {

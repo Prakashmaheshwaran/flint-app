@@ -1,0 +1,13 @@
+<resources>
+    <!-- API 31+ adds the system splash: charcoal stage + the mark (inset to survive the icon
+         mask). Config-qualified styles replace — never merge — so the base window items are
+         restated here; values-night-v31 must exist too (night outranks v31 in matching). -->
+    <style name="Theme.Flint" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/flint_stone</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowSplashScreenBackground">@color/flint_charcoal</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_flint_splash</item>
+    </style>
+</resources>

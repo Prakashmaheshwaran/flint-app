@@ -3,12 +3,14 @@ package com.flint.peakfocus.core.datastore
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
+import com.flint.peakfocus.core.model.AppGroup
 import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BlockTargets
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.model.BreakRequestState
 import com.flint.peakfocus.core.model.BreakSessionState
+import com.flint.peakfocus.core.model.DomainRef
 import com.flint.peakfocus.core.model.EmergencyPassState
 import com.flint.peakfocus.core.model.OpenCountState
 import com.flint.peakfocus.core.model.OpenLimit
@@ -96,12 +98,69 @@ class FlintStoresTest {
     }
 
     @Test
+    fun batchSetEnabledFlipsAllNamedRulesInOneWriteAndIgnoresMissingIds() {
+        runBlocking {
+            val store = DataStoreBlockRulesStore(FakePreferencesDataStore())
+            store.replaceAll(listOf(ruleA, ruleB))
+            store.setEnabled(setOf("a", "b", "missing"), enabled = false)
+            assertEquals(
+                listOf(ruleA.copy(enabled = false), ruleB.copy(enabled = false)),
+                store.rules.first(),
+            )
+            // The in-memory double honors the same contract (previews/tests swap it in).
+            val inMemory = InMemoryBlockRulesStore(listOf(ruleA, ruleB))
+            inMemory.setEnabled(setOf("b"), enabled = false)
+            assertEquals(listOf(ruleA, ruleB.copy(enabled = false)), inMemory.rules.first())
+        }
+    }
+
+    @Test
     fun rulesSurviveAcrossStoreInstancesOnTheSameDataStore() {
         runBlocking {
             val dataStore = FakePreferencesDataStore()
             DataStoreBlockRulesStore(dataStore).upsert(ruleA)
             // A fresh store over the same DataStore sees the persisted encoding, not memory.
             assertEquals(listOf(ruleA), DataStoreBlockRulesStore(dataStore).rules.first())
+        }
+    }
+
+    // MARK: GroupsStore (DataStore-backed + in-memory contract)
+
+    @Test
+    fun groupsUpsertReplaceDeleteAndSurviveAcrossInstances() {
+        runBlocking {
+            val dataStore = FakePreferencesDataStore()
+            val store = DataStoreGroupsStore(dataStore)
+            assertEquals(emptyList<AppGroup>(), store.groups.first())
+
+            val social = AppGroup("g-1", "Social", apps = setOf(AppRef("com.instagram.android")))
+            val news = AppGroup("g-2", "News", domains = setOf(DomainRef("news.ycombinator.com")))
+            store.upsert(social)
+            store.upsert(news)
+            assertEquals(listOf(social, news), store.groups.first())
+
+            val renamed = social.copy(name = "Distractions")
+            store.upsert(renamed)
+            assertEquals(listOf(news, renamed), store.groups.first())
+
+            store.delete("g-2")
+            store.delete("missing") // no-op, no throw
+            assertEquals(listOf(renamed), store.groups.first())
+
+            // A fresh store over the same DataStore sees the persisted encoding, not memory.
+            assertEquals(listOf(renamed), DataStoreGroupsStore(dataStore).groups.first())
+        }
+    }
+
+    @Test
+    fun inMemoryGroupsStoreMatchesContract() {
+        runBlocking {
+            val store = InMemoryGroupsStore()
+            val group = AppGroup("g", "Focus", apps = setOf(AppRef("com.x")))
+            store.upsert(group)
+            assertEquals(listOf(group), store.groups.first())
+            store.delete("g")
+            assertEquals(emptyList<AppGroup>(), store.groups.first())
         }
     }
 

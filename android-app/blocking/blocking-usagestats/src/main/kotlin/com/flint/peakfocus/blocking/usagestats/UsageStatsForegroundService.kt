@@ -9,9 +9,13 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import androidx.core.content.ContextCompat
 import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
+import com.flint.peakfocus.blocking.overlay.NeverBlockSurfaces
 import com.flint.peakfocus.blocking.overlay.PathBBlockHandoff
+import com.flint.peakfocus.core.data.LimitStore
 import com.flint.peakfocus.core.model.ActiveRulesHolder
+import com.flint.peakfocus.core.model.Verdict
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -35,15 +39,25 @@ class UsageStatsForegroundService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val engine = BlockDecisionEngine()
     private lateinit var poller: UsagePoller
+    private lateinit var limitTracker: DailyLimitTracker
+    private lateinit var limitStore: LimitStore
+    private var neverBlock: Set<String> = emptySet()
     private var loop: Job? = null
 
     override fun onCreate() {
         super.onCreate()
         poller = UsagePoller(this)
+        limitTracker = DailyLimitTracker(this)
+        limitStore = LimitStore(this)
+        neverBlock = NeverBlockSurfaces.resolve(this)
         startAsForeground()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Re-post the FGS notification on every start: a POST_NOTIFICATIONS grant that lands
+        // after onCreate (the Android 13+ runtime ask) never resurrects a dropped notification
+        // on its own — the next PathBServiceGate.sync() on app resume routes here and fixes it.
+        startAsForeground()
         if (loop?.isActive != true) {
             loop = scope.launch {
                 while (isActive) {
@@ -56,14 +70,37 @@ class UsageStatsForegroundService : Service() {
     }
 
     private fun tick() {
-        val pkg = poller.currentForegroundPackage(System.currentTimeMillis()) ?: return
+        val now = System.currentTimeMillis()
+        val pkg = poller.currentForegroundPackage(now) ?: return
+
+        // Default launcher/dialer are never shielded; route as Allow so the overlay stands
+        // down and open-limit transition bookkeeping stays intact (launcher→app IS an open).
+        if (pkg in neverBlock) {
+            PathBBlockHandoff.onForegroundPolled(this, pkg, Verdict.Allow)
+            return
+        }
+
+        // Daily Time Limit — Path B's mirror of the a11y service's check, same order (ahead
+        // of the rule verdict) and same threshold sources (legacy LimitStore + the Limit
+        // editor's DataStore limits via the shared coordinator snapshot, stricter wins), so
+        // the two paths can never disagree about a budget. [DailyLimitTracker] measures
+        // consumption; its buckets are coarse/delayed — fine for daily budgets.
+        val limitMin = listOfNotNull(
+            limitStore.limitMinutes(pkg),
+            PathBBlockHandoff.coordinator(this).timeLimitMinutes(pkg),
+        ).minOrNull()
+        if (limitMin != null && limitTracker.foregroundMillisToday(pkg, now) >= limitMin * 60_000L) {
+            PathBBlockHandoff.onTimeLimitExceeded(this, pkg)
+            return
+        }
+
         val cal = java.util.Calendar.getInstance()
         val nowMin = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
         // Schedule.daysOfWeek is ISO-numbered (1=Mon…7=Sun — core-model's documented contract,
         // and what feature-blocklist persists); Calendar.DAY_OF_WEEK is 1=Sun…7=Sat. Convert
         // before asking the engine, or "Weekdays" rules block Sunday and skip Friday.
         val weekday = isoWeekday(cal.get(java.util.Calendar.DAY_OF_WEEK))
-        val verdict = engine.decide(pkg, null, ActiveRulesHolder.rules, packageName, nowMin, weekday)
+        val verdict = engine.decide(pkg, null, ActiveRulesHolder.rules, packageName, nowMin, weekday, now)
         // Path B enforcement handoff — every tick, Allow included: open-limit counting and
         // overlay stand-down happen behind this call, not just Block rendering.
         PathBBlockHandoff.onForegroundPolled(this, pkg, verdict)
@@ -79,10 +116,19 @@ class UsageStatsForegroundService : Service() {
                 NotificationChannel(CHANNEL_ID, "Focus enforcement", NotificationManager.IMPORTANCE_LOW),
             )
         }
-        val notification: Notification = Notification.Builder(this, CHANNEL_ID)
+        // The channel-id constructor is API 26+; below O channels don't exist yet.
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+        }
+        // Brand strike silhouette (alpha-only) + spark accent, not a stock system glyph.
+        val notification: Notification = builder
             .setContentTitle("Flint is keeping you focused")
             .setContentText("Enforcing your active blocks.")
-            .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
+            .setSmallIcon(R.drawable.ic_stat_flint)
+            .setColor(ContextCompat.getColor(this, R.color.flint_spark))
             .setOngoing(true)
             .build()
 

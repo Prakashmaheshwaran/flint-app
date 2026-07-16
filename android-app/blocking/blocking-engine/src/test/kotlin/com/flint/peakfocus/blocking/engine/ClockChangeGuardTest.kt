@@ -1,5 +1,7 @@
 package com.flint.peakfocus.blocking.engine
 
+import com.flint.peakfocus.core.model.BlockRule
+import com.flint.peakfocus.core.model.BlockTargets
 import com.flint.peakfocus.core.model.BreakRequestState
 import com.flint.peakfocus.core.model.BreakSessionState
 import com.flint.peakfocus.core.model.EmergencyPassState
@@ -210,6 +212,36 @@ class ClockChangeGuardTest {
         assertEquals(0L, measured.wallDeltaMs)
         assertEquals(2_000_000L, measured.newEpochMs)
         assertEquals(HOUR_MS, measured.oldUtcOffsetMs) // offsets still carried for the day math
+    }
+
+    // MARK: one-shot session rules — expiry is duration-anchored across clock edits
+
+    @Test
+    fun sessionExpiryMovesWithTheInjectedJumpInBothDirections() {
+        val session = BlockRule(
+            id = "session-1",
+            name = "Focus session",
+            targets = BlockTargets(),
+            expiresAtEpochMs = 1_000_000L + HOUR_MS,
+        )
+        // Set forward 3h: the session keeps its remaining hour instead of ending instantly.
+        val forward = guard.guardedSessionRules(listOf(session), shift(1_000_000L, 1_000_000L + 3 * HOUR_MS))
+        assertEquals(1_000_000L + 4 * HOUR_MS, forward.single().expiresAtEpochMs)
+        // Set back 2h: the session is not stretched by the setback.
+        val backward = guard.guardedSessionRules(listOf(session), shift(1_000_000L, 1_000_000L - 2 * HOUR_MS))
+        assertEquals(1_000_000L - HOUR_MS, backward.single().expiresAtEpochMs)
+    }
+
+    @Test
+    fun permanentRulesAndZeroDeltaShiftsAreUntouched() {
+        val permanent = BlockRule(id = "r1", name = "Rule", targets = BlockTargets())
+        val session = permanent.copy(id = "session-1", expiresAtEpochMs = 5_000L)
+        // Permanent rules never shift; pure zone hops / unmeasured shifts change nothing.
+        assertEquals(emptyList<BlockRule>(), guard.guardedSessionRules(listOf(permanent), shift(0L, HOUR_MS)))
+        assertEquals(
+            emptyList<BlockRule>(),
+            guard.guardedSessionRules(listOf(session, permanent), shift(1_000L, 1_000L, 0L, HOUR_MS)),
+        )
     }
 
     private companion object {

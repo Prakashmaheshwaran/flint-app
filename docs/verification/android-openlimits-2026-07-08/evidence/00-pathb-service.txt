@@ -1,0 +1,53 @@
+ACTIVITY MANAGER SERVICES (dumpsys activity services)
+  User 0 active services:
+  * ServiceRecord{1e740e4 u0 com.flint.peakfocus/.blocking.usagestats.UsageStatsForegroundService c:com.flint.peakfocus}
+    intent={cmp=com.flint.peakfocus/.blocking.usagestats.UsageStatsForegroundService}
+    packageName=com.flint.peakfocus
+    processName=com.flint.peakfocus
+    targetSdkVersion=35
+    baseDir=/data/app/~~xKEKIKbxI-gqtzrTjRGnoQ==/com.flint.peakfocus-Ns_vJfSkD0tfAGRUISadDA==/base.apk
+    dataDir=/data/user/0/com.flint.peakfocus
+    app=ProcessRecord{eece2a8 8771:com.flint.peakfocus/u0a207}
+    useNewWiuLogic_forCapabilities()=true
+    useNewWiuLogic_forStart()=true
+    useNewBfslLogic()=true
+    mAllowWiu_noBinding=PROC_STATE_TOP
+    mAllowWiu_inBindService=DENIED
+    mAllowWiu_byBindings=DENIED
+    getFgsAllowWiu_legacy=PROC_STATE_TOP
+    getFgsAllowWiu_new=PROC_STATE_TOP
+    getFgsAllowWiu_forStart=PROC_STATE_TOP
+    getFgsAllowWiu_forCapabilities=PROC_STATE_TOP
+    allowUiJobScheduling=true
+    recentCallingPackage=com.flint.peakfocus
+    recentCallingUid=10207
+    mAllowStart_noBinding=PROC_STATE_TOP
+    mAllowStart_inBindService=DENIED
+    mAllowStart_byBindings=DENIED
+    getFgsAllowStart_legacy=PROC_STATE_TOP
+    getFgsAllowStart_new=PROC_STATE_TOP
+    getFgsAllowStart=PROC_STATE_TOP
+    startForegroundCount=1
+    infoAllowStartForeground=[callingPackage: com.flint.peakfocus; callingUid: 10207; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { cmp=com.flint.peakfocus/.blocking.usagestats.UsageStatsForegroundService }; code:PROC_STATE_TOP; tempAllowListReason:<null>; targetSdkVersion:35; callerTargetSdkVersion:35; startForegroundCount:0; bindFromPackage:null: isBindService:false]
+    isForeground=true foregroundId=1001 types=0x40000000 foregroundNoti=Notification(channel=flint_enforcement shortcut=null contentView=null vibrate=null sound=null defaults=0 flags=ONGOING_EVENT|NO_CLEAR|FOREGROUND_SERVICE color=0xffef9f27 vis=PRIVATE)
+    createTime=-3s207ms startingBgTimeout=--
+    lastActivity=-3s206ms restartTime=-3s206ms createdFromFg=true
+    startRequested=true delayedStop=false stopIfKilled=false callStart=true lastStartId=1
+ startCommandResult=1
+
+  Connection bindings to services:
+  * ConnectionRecord{ecac07d u0 CR FGSA CAPS DEAD com.flint.peakfocus/.blocking.accessibility.FlintAccessibilityService:@17d56d4 flags=0x2101001}
+    binding=AppBindRecord{fbf0f73 com.flint.peakfocus/.blocking.accessibility.FlintAccessibilityService:system}
+    conn=android.app.LoadedApk$ServiceDispatcher$InnerConnection@17d56d4 flags=0x2101001
+  * ConnectionRecord{7707a4a u0 CR FGSA CAPS DEAD com.flint.peakfocus/.blocking.accessibility.FlintAccessibilityService:@793d3b5 flags=0x2101001}
+    binding=AppBindRecord{100ce30 com.flint.peakfocus/.blocking.accessibility.FlintAccessibilityService:system}
+    conn=android.app.LoadedApk$ServiceDispatcher$InnerConnection@793d3b5 flags=0x2101001
+  * ConnectionRecord{bdf9d24 u0 CR FGSA CAPS DEAD com.flint.peakfocus/.blocking.accessibility.FlintAccessibilityService:@7f4b1b7 flags=0x2101001}
+    binding=AppBindRecord{54a9aa9 com.flint.peakfocus/.blocking.accessibility.FlintAccessibilityService:system}
+    conn=android.app.LoadedApk$ServiceDispatcher$InnerConnection@7f4b1b7 flags=0x2101001
+  * ConnectionRecord{382c7e2 u0 CR FGSA CAPS DEAD com.flint.peakfocus/.blocking.accessibility.FlintAccessibilityService:@adef8ad flags=0x2101001}
+    binding=AppBindRecord{399882e com.flint.peakfocus/.blocking.accessibility.FlintAccessibilityService:system}
+    conn=android.app.LoadedApk$ServiceDispatcher$InnerConnection@adef8ad flags=0x2101001
+  * ConnectionRecord{192ee48 u0 CR FGSA CAPS DEAD com.flint.peakfocus/.blocking.accessibility.FlintAccessibilityService:@e33c0eb flags=0x2101001}
+    binding=AppBindRecord{1712fcf com.flint.peakfocus/.blocking.accessibility.FlintAccessibilityService:system}
+    conn=android.app.LoadedApk$ServiceDispatcher$InnerConnection@e33c0eb flags=0x2101001

@@ -1,5 +1,6 @@
 package com.flint.peakfocus.core.datastore
 
+import com.flint.peakfocus.core.model.AppGroup
 import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BlockTargets
@@ -32,6 +33,9 @@ internal object PrefsCodec {
     /** Sentinel for "no schedule" in the start/end minute fields. */
     private const val NO_SCHEDULE = -1
 
+    /** Sentinel for "no expiry" (permanent rule) in the expiresAt field. */
+    private const val NO_EXPIRY = -1L
+
     // MARK: atoms
 
     /** Escape one atom. `%` must be first so later codes never double-encode. */
@@ -50,7 +54,8 @@ internal object PrefsCodec {
         .replace("%7C", FIELD)
         .replace("%25", "%")
 
-    // MARK: BlockRule — id|name|enabled|breakLevel|allowListMode|apps|domains|days|start|end
+    // MARK: BlockRule — id|name|enabled|breakLevel|allowListMode|apps|domains|days|start|end[|expiresAt]
+    // (expiresAt appended later for one-shot sessions; decode accepts 10-field legacy lines)
 
     fun encodeRules(rules: List<BlockRule>): String =
         rules.joinToString(RECORD) { encodeRule(it) }
@@ -75,12 +80,13 @@ internal object PrefsCodec {
             days,
             (rule.schedule?.startMinuteOfDay ?: NO_SCHEDULE).toString(),
             (rule.schedule?.endMinuteOfDay ?: NO_SCHEDULE).toString(),
+            (rule.expiresAtEpochMs ?: NO_EXPIRY).toString(),
         ).joinToString(FIELD)
     }
 
     private fun decodeRule(line: String): BlockRule? {
         val f = line.split(FIELD)
-        if (f.size != 10) return null
+        if (f.size != 10 && f.size != 11) return null
         val id = unescape(f[0])
         if (id.isEmpty()) return null
 
@@ -117,8 +123,38 @@ internal object PrefsCodec {
             schedule = schedule,
             breakLevel = decodeBreakLevel(f[3]),
             enabled = f[2].toBooleanStrictOrNull() ?: true,
+            expiresAtEpochMs = f.getOrNull(10)?.toLongOrNull()?.takeIf { it != NO_EXPIRY },
         )
     }
+
+    // MARK: AppGroup — id|name|apps|domains (same item encodings as rules)
+
+    fun encodeGroups(groups: List<AppGroup>): String =
+        groups.joinToString(RECORD) { group ->
+            val apps = group.apps.joinToString(ITEM) { app ->
+                escape(app.packageName) + SUB + escape(app.label.orEmpty())
+            }
+            val domains = group.domains.joinToString(ITEM) { escape(it.domain) }
+            listOf(escape(group.id), escape(group.name), apps, domains).joinToString(FIELD)
+        }
+
+    fun decodeGroups(encoded: String): List<AppGroup> =
+        encoded.split(RECORD).filter { it.isNotBlank() }.mapNotNull { line ->
+            val f = line.split(FIELD)
+            if (f.size != 4) return@mapNotNull null
+            val id = unescape(f[0])
+            if (id.isEmpty()) return@mapNotNull null
+            val apps = f[2].split(ITEM).filter { it.isNotEmpty() }.map { item ->
+                val sub = item.split(SUB)
+                AppRef(
+                    packageName = unescape(sub[0]),
+                    label = sub.getOrNull(1)?.let(::unescape)?.takeIf { it.isNotEmpty() },
+                )
+            }.toSet()
+            val domains = f[3].split(ITEM).filter { it.isNotEmpty() }
+                .map { DomainRef(unescape(it)) }.toSet()
+            AppGroup(id = id, name = unescape(f[1]), apps = apps, domains = domains)
+        }
 
     // MARK: limits — one record per package
 

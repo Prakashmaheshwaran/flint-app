@@ -96,32 +96,48 @@ flint/
 ├── design/         Brand tokens, palette, logo — single source of truth
 ├── docs/
 │   ├── research/       Opal feature inventory + per-platform technical strategy + OSS landscape
-│   └── architecture/   Architecture Decision Record
+│   ├── architecture/   Architecture Decision Record
+│   └── verification/   Dated build/test + emulator evidence bundles
+├── scripts/        Verification/dev scripts (e.g. the Path B emulator drive)
 ├── Makefile        make ios / make android / make clean …
-└── LICENSE  CONTRIBUTING.md  CODE_OF_CONDUCT.md
+└── LICENSE  CONTRIBUTING.md  CODE_OF_CONDUCT.md  CHANGELOG.md  SECURITY.md
 ```
 
 ---
 
 ## Status
 
-**Android — core blocking verified on an emulator; a large batch of newer work is merged and
-awaits re-verification.** Verified end-to-end earlier (screenshots + logs): pick apps → enable the
+**Android — core blocking and key integrated flows verified on an emulator; deeper flow coverage
+is still pending.** Verified end-to-end earlier (screenshots + logs): pick apps → enable the
 service (behind the consent screen) → blocked apps get a full-screen block screen, plus
 **schedule-gated** blocking and **Time Limits**. Merged since then: engine parity with iOS (all
 three break levels incl. free Hardcore, Open Limits, free weekly Emergency Pass), DataStore
 persistence, a blocklist/schedule/limit-authoring UI, screen-time stats, a branded
 break-level-aware block screen on both enforcement paths, an OEM/battery resilience layer (boot
-re-arm, exit diagnostics, permission health), a four-tab app shell, and a unified (ISO) weekday
-convention across both detection paths. The integrated app has **not been rebuilt or re-run
-since** — emulator validation is pending a re-run. See [`android-app/README.md`](android-app/README.md).
+re-arm, exit diagnostics, permission health), a four-tab app shell, a unified (ISO) weekday
+convention across both detection paths, a fail-closed date/time/timezone-change guard, a
+Hardcore uninstall guard, one-tap Block Now sessions, Sleep Mode, preset routines + named
+groups, a premium UI overhaul, and Limit-editor Time Limits that now actually enforce (they
+previously had no enforcement reader). A 2026-07-08 emulator pass rebuilt/tested the integrated
+app and verified the Path B UsageStats fallback: foreground-service lifecycle, blocklist overlay,
+self stand-down/re-shield, Easy break, and daily Time Limit fallback. A second same-day pass
+verified **Open Limits** end-to-end on Path B — authored through the real UI (Blocklist →
+editor → DataStore), first open allowed, at-quota `OPEN LIMIT` shield, stand-down/re-shield,
+Easy break, and open counts surviving process death. One documented nuance: the last allowed
+open is shielded ~1.8 s after launch (at-quota re-check on every poll tick — see the Android
+README). Remaining emulator gaps: Path A open counting, sleep windows, boot re-arm, the
+time-change-guard broadcast path, and Path A uninstall-guard shielding. See
+[`android-app/README.md`](android-app/README.md),
+[`docs/verification/android-pathb-2026-07-08/`](docs/verification/android-pathb-2026-07-08/), and
+[`docs/verification/android-openlimits-2026-07-08/`](docs/verification/android-openlimits-2026-07-08/).
 
 **iOS — comprehensive; earlier verticals verified in the Simulator + unit tests, the newest merges
 await a compile pass.** Verified earlier (builds, `FlintCore` unit tests, Simulator runs): Block
 Now, unlimited Schedules, Time Limits, free Hardcore + free weekly Emergency Pass, website
 blocking, app groups/presets + Allow List, app-open PIN, embedded usage report. Merged since,
 **compile verification still pending on a macOS toolchain**: Safari/Private-Browsing restrictions,
-Focus Filter integration, Siri & Shortcuts intents, Sleep Mode + Morning Assist, Open Limits
+Focus Filter integration, Siri & Shortcuts intents, Sleep Mode + Morning Assist, a preset
+routine-template library, Open Limits
 (the enforcement engine, and now also the config UI + shield arming + day-boundary re-arm, so the
 feature is user-reachable end-to-end in code), and a **Hardcore uninstall guard**
 (`denyAppRemoval` while a Hardcore session runs, so deleting Flint can't end a "non-bypassable"
@@ -151,17 +167,22 @@ make android-install  # build + install on a connected device/emulator
 ## Roadmap (v1)
 
 **Implemented:** core blocking loop, unlimited schedules, Time Limits, break levels incl. **free
-Hardcore**, free weekly Emergency Pass, website blocking, app groups + Allow List, app-PIN, usage
+Hardcore**, free weekly Emergency Pass, website blocking, app groups + Allow List, a preset
+routine library, app-PIN, usage
 report, Focus Filter, Siri/Shortcuts intents, Sleep Mode + Morning Assist, Open Limits — the
 enforcement engine plus the config UI + arming — and a Hardcore uninstall guard (iOS); engine
 parity — break levels, Open Limits,
-weekly Emergency Pass — plus persistence, rule/schedule/limit authoring, stats, branded block
-screen, resilience layer, four-tab app (Android). **Verification debt (the honest part):** the
+weekly Emergency Pass — plus persistence, rule/schedule/limit authoring, Block Now sessions,
+Sleep Mode, preset routines + named groups, time-change + uninstall guards, stats, branded block
+screen, resilience layer, four-tab app with a premium UI pass (Android). **Verification debt
+(the honest part):** the
 newest iOS merges (Open-Limits config UI + arming and the uninstall guard among them) need a
 macOS compile pass; iOS
-enforcement needs an on-device hardware pass; the integrated Android app needs an emulator
-re-run. **Next:** the verification passes above, deeper anti-bypass (Android uninstall guard,
-time-change guards), a preset routine library, then optional opt-in cross-device sync. Details:
+enforcement needs an on-device hardware pass; Android still needs emulator coverage for Path A
+open counting, sleep windows, boot re-arm, the time-change-guard broadcast path, and Path A
+uninstall-guard shielding. **Next:** the verification passes above, OEM-specific
+uninstall-guard package coverage, on-device hardening validation, then optional opt-in
+cross-device sync. Details:
 [`docs/research/01-opal-feature-inventory.md` → "Minimum-Viable Flint v1"](docs/research/01-opal-feature-inventory.md).
 
 ---

@@ -22,14 +22,20 @@ struct SchedulesView: View {
     @StateObject private var vm = SchedulesViewModel()
     @State private var showAdd = false
     @State private var editing: FlintScheduleRule?
+    @State private var startingTemplate: FlintRoutinePreset?
 
     var body: some View {
         NavigationStack {
-            Group {
+            List {
                 if vm.rules.isEmpty {
-                    emptyState
+                    Section {
+                        emptyState
+                            .frame(maxWidth: .infinity)
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                    }
                 } else {
-                    List {
+                    Section {
                         ForEach(vm.rules) { rule in
                             Button { editing = rule } label: { row(rule) }
                                 .buttonStyle(.plain)
@@ -37,6 +43,13 @@ struct SchedulesView: View {
                         .onDelete { indexSet in
                             indexSet.map { vm.rules[$0].id }.forEach(vm.delete)
                         }
+                    }
+                }
+
+                Section("Start from a template") {
+                    ForEach(FlintRoutinePreset.library) { preset in
+                        Button { startingTemplate = preset } label: { templateRow(preset) }
+                            .buttonStyle(.plain)
                     }
                 }
             }
@@ -51,6 +64,9 @@ struct SchedulesView: View {
             }
             .sheet(item: $editing) { rule in
                 ScheduleEditor(rule: rule) { vm.save($0) }
+            }
+            .sheet(item: $startingTemplate) { preset in
+                ScheduleEditor(rule: preset.draftRule(), asNew: true) { vm.save($0) }
             }
             .onAppear { vm.refresh() }
         }
@@ -89,6 +105,16 @@ struct SchedulesView: View {
         .padding(.vertical, 4)
     }
 
+    /// One routine template: tapping opens the new-schedule editor prefilled from the preset.
+    /// Targets stay the user's to pick — the editor's Save keeps its selection gate.
+    private func templateRow(_ preset: FlintRoutinePreset) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(preset.name).font(.body.weight(.medium))
+            Text(preset.description).font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+
     private func timeRange(_ s: FlintSchedule) -> String {
         String(format: "%02d:%02d–%02d:%02d", s.startHour, s.startMinute, s.endHour, s.endMinute)
     }
@@ -100,7 +126,9 @@ struct SchedulesView: View {
     }
 }
 
-/// Add / edit a schedule rule.
+/// Add / edit a schedule rule. `asNew: true` treats `rule` as a prefilled draft (a routine
+/// template): the editor titles itself "New schedule" and mints a fresh id on save instead of
+/// overwriting the draft's throwaway id.
 struct ScheduleEditor: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -117,8 +145,8 @@ struct ScheduleEditor: View {
     @State private var selection: FamilyActivitySelection
     @State private var showPicker = false
 
-    init(rule: FlintScheduleRule?, onSave: @escaping (FlintScheduleRule) -> Void) {
-        self.existingID = rule?.id
+    init(rule: FlintScheduleRule?, asNew: Bool = false, onSave: @escaping (FlintScheduleRule) -> Void) {
+        self.existingID = asNew ? nil : rule?.id
         self.existingEnabled = rule?.enabled ?? true
         self.onSave = onSave
         _name = State(initialValue: rule?.name ?? "")

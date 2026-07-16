@@ -1,0 +1,4 @@
+<resources>
+    <!-- Mirrors design/tokens.json (spark) — the notification accent; keep in sync. -->
+    <color name="flint_spark">#EF9F27</color>
+</resources>

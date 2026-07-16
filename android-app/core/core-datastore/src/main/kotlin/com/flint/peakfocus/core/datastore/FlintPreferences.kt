@@ -22,6 +22,9 @@ object FlintPreferences {
     fun blockRules(context: Context): BlockRulesStore =
         DataStoreBlockRulesStore(context.applicationContext.flintPreferencesDataStore)
 
+    fun groups(context: Context): GroupsStore =
+        DataStoreGroupsStore(context.applicationContext.flintPreferencesDataStore)
+
     fun limits(context: Context): LimitsStore =
         DataStoreLimitsStore(context.applicationContext.flintPreferencesDataStore)
 
