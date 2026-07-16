@@ -6,6 +6,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 ## [Unreleased]
 
 ### iOS
+- **Schedules can no longer silently fail to block.** `DeviceActivityCenter.startMonitoring`
+  throws on a window it won't take (zero-length, or under its 15-minute floor) and the schedules
+  controller armed with `try?` — so such a rule saved, showed an ON toggle, and shielded nothing.
+  The window contract now lives in FlintCore (`FlintSchedule.issues`, one definition shared by the
+  editor, `armPlan`, Sleep Mode, and the preset tests): the editor refuses to save an
+  unregistrable window and names the reason, `reload()` skips rules iOS would reject rather than
+  swallowing the throw, and any enabled-but-unarmed rule is listed at the top of the Schedules
+  screen instead of lying to the user. Overnight windows (22:00–07:00) are measured across
+  midnight, not as negative time. Also fixes an out-of-range weekday crashing the schedule row and
+  a rule with such a day being uneditable. Logic verified off-device; Xcode build/test gated on
+  the CI toolchain, and shield enforcement stays device-gated like all shields.
 - **Open Limits are now user-reachable end-to-end (in code):** a config screen (Limits tab →
   *Open Limits*) to create/edit/toggle launch-count caps, host-app shield arming on launch and
   rule edits (`FlintOpenLimitsController`), a day-boundary re-arm via the monitor extension, and

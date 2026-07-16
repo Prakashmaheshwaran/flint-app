@@ -110,7 +110,7 @@ struct SleepModeView: View {
     private var nightsFooter: String {
         guard vm.windowIsUsable else {
             return "Bedtime and wake-up are too close — the window needs at least "
-                + "\(SleepModeController.minimumWindowMinutes) minutes, so the bedtime shield "
+                + "\(FlintSchedule.minimumWindowMinutes) minutes, so the bedtime shield "
                 + "won't arm until it's longer."
         }
         return "\(daysSummary(vm.config.schedule)) · \(timeSummary(vm.config.schedule)). "
@@ -159,7 +159,7 @@ struct SleepModeView: View {
                 Stepper(
                     "\(vm.config.morningAssistMinutes) minutes after wake-up",
                     value: $vm.config.morningAssistMinutes,
-                    in: SleepModeController.minimumWindowMinutes...180,
+                    in: FlintSchedule.minimumWindowMinutes...180,
                     step: 15
                 )
             }
@@ -309,7 +309,7 @@ final class SleepModeViewModel: ObservableObject {
     }
 
     var windowIsUsable: Bool {
-        SleepModeController.windowMinutes(config.schedule) >= SleepModeController.minimumWindowMinutes
+        config.schedule.windowMinutes >= FlintSchedule.minimumWindowMinutes
     }
 
     // MARK: Date bridging for the hour/minute pickers

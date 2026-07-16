@@ -5,17 +5,24 @@ import FlintCore
 @MainActor
 final class SchedulesViewModel: ObservableObject {
     @Published private(set) var rules: [FlintScheduleRule] = []
+    /// Enabled rules iOS would not register — shown, never swallowed. See `armFailuresSection`.
+    @Published private(set) var armFailures: [FlintScheduleArmFailure] = []
     private let controller = FlintSchedulesController()
 
     init() {
-        controller.reload() // re-arm monitoring on launch
-        refresh()
+        refresh(armFailures: controller.reload()) // re-arm monitoring on launch
     }
 
-    func refresh() { rules = controller.rules() }
-    func save(_ rule: FlintScheduleRule) { controller.upsert(rule); refresh() }
-    func delete(_ id: String) { controller.delete(id); refresh() }
-    func toggle(_ rule: FlintScheduleRule) { controller.setEnabled(rule.id, !rule.enabled); refresh() }
+    func refresh(armFailures: [FlintScheduleArmFailure]? = nil) {
+        rules = controller.rules()
+        if let armFailures { self.armFailures = armFailures }
+    }
+
+    func save(_ rule: FlintScheduleRule) { refresh(armFailures: controller.upsert(rule)) }
+    func delete(_ id: String) { refresh(armFailures: controller.delete(id)) }
+    func toggle(_ rule: FlintScheduleRule) {
+        refresh(armFailures: controller.setEnabled(rule.id, !rule.enabled))
+    }
 }
 
 struct SchedulesView: View {
@@ -27,6 +34,8 @@ struct SchedulesView: View {
     var body: some View {
         NavigationStack {
             List {
+                if !vm.armFailures.isEmpty { armFailuresSection }
+
                 if vm.rules.isEmpty {
                     Section {
                         emptyState
@@ -69,6 +78,30 @@ struct SchedulesView: View {
                 ScheduleEditor(rule: preset.draftRule(), asNew: true) { vm.save($0) }
             }
             .onAppear { vm.refresh() }
+        }
+    }
+
+    /// An enabled rule whose window iOS refuses is a shield the user believes in and doesn't have.
+    /// Say so out loud, above the toggle that claims otherwise, and open the editor on a tap.
+    private var armFailuresSection: some View {
+        Section {
+            ForEach(vm.armFailures, id: \.ruleID) { failure in
+                Button {
+                    editing = vm.rules.first { $0.id == failure.ruleID }
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(failure.ruleName).font(.body.weight(.medium))
+                        Text(failure.message).font(.caption).foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+            }
+        } header: {
+            Label("Not blocking anything", systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+        } footer: {
+            Text("These schedules are switched on but iOS never armed them. Tap one to fix its window.")
         }
     }
 
@@ -119,10 +152,15 @@ struct SchedulesView: View {
         String(format: "%02d:%02d–%02d:%02d", s.startHour, s.startMinute, s.endHour, s.endMinute)
     }
 
+    /// Weekday numbering is `Calendar`'s (1 = Sunday … 7 = Saturday), but the rules are decoded
+    /// from the App Group, so an out-of-range day is possible and must not index off the end.
     private func daysSummary(_ s: FlintSchedule) -> String {
         if s.daysOfWeek.isEmpty { return "Every day" }
-        let names = ["", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-        return s.daysOfWeek.sorted().map { names[$0] }.joined(separator: " ")
+        let names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        let labels = s.daysOfWeek.sorted().compactMap { weekday in
+            names.indices.contains(weekday - 1) ? names[weekday - 1] : nil
+        }
+        return labels.isEmpty ? "No valid days" : labels.joined(separator: " ")
     }
 }
 
@@ -150,7 +188,10 @@ struct ScheduleEditor: View {
         self.existingEnabled = rule?.enabled ?? true
         self.onSave = onSave
         _name = State(initialValue: rule?.name ?? "")
-        _days = State(initialValue: rule?.schedule.daysOfWeek ?? [])
+        // Drop days the chips below can't represent (they toggle 1…7 only). A rule decoded from
+        // the App Group with a weekday of 8 would otherwise fail validation with no way to fix it:
+        // Save stays disabled and no chip can clear the offending day. Mirrors Android's ruleDraftOf.
+        _days = State(initialValue: (rule?.schedule.daysOfWeek ?? []).filter(FlintSchedule.weekdayRange.contains))
         _breakLevel = State(initialValue: rule?.breakLevel ?? .easy)
         _allowList = State(initialValue: rule?.allowListMode ?? false)
         _selection = State(initialValue: rule?.selection ?? FamilyActivitySelection())
@@ -187,9 +228,17 @@ struct ScheduleEditor: View {
                     }
                 }
 
-                Section("Time") {
+                Section {
                     DatePicker("Start", selection: $start, displayedComponents: .hourAndMinute)
                     DatePicker("End", selection: $end, displayedComponents: .hourAndMinute)
+                } header: {
+                    Text("Time")
+                } footer: {
+                    if let issue = draftSchedule.issues.first {
+                        Text(issue.message).foregroundStyle(.red)
+                    } else if draftSchedule.isOvernight {
+                        Text("Runs overnight, ending the next morning.")
+                    }
                 }
 
                 Section("Apps & sites") {
@@ -217,7 +266,7 @@ struct ScheduleEditor: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }.disabled(!allowList && selectionCount == 0)
+                    Button("Save") { save() }.disabled(!canSave)
                 }
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -231,19 +280,29 @@ struct ScheduleEditor: View {
         selection.applicationTokens.count + selection.categoryTokens.count + selection.webDomainTokens.count
     }
 
-    private func save() {
+    /// The window the pickers currently describe. The two `DatePicker`s only ever yield real
+    /// times, so in practice the reachable issues are a zero-length window and one under
+    /// DeviceActivity's 15-minute floor — both of which used to save, toggle on, and block nothing.
+    private var draftSchedule: FlintSchedule {
         let cal = Calendar.current
-        let schedule = FlintSchedule(
+        return FlintSchedule(
             daysOfWeek: days,
             startHour: cal.component(.hour, from: start),
             startMinute: cal.component(.minute, from: start),
             endHour: cal.component(.hour, from: end),
             endMinute: cal.component(.minute, from: end)
         )
+    }
+
+    private var canSave: Bool {
+        (allowList || selectionCount > 0) && draftSchedule.isValid
+    }
+
+    private func save() {
         let rule = FlintScheduleRule(
             id: existingID ?? String(UUID().uuidString.prefix(8)),
             name: name.isEmpty ? "Schedule" : name,
-            schedule: schedule,
+            schedule: draftSchedule,
             breakLevel: breakLevel,
             selection: selection,
             allowListMode: allowList,
