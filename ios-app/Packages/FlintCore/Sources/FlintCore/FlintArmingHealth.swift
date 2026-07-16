@@ -11,9 +11,9 @@ import Foundation
 /// Every controller `reload()` now records the full enabled → attempted → armed funnel and what
 /// failed (keyed by domain, each controller owning its own slice), Settings shows the result, and
 /// a near-cap warning fires *before* rules start silently dying. Pure Foundation — all
-/// DeviceActivity calls stay in the controllers. The active session's auto-clear and the
-/// The active session's auto-clear holds a slot outside these domains; `capHeadroom` also keeps a
-/// small safety margin because Apple does not publish or promise a stable registration limit.
+/// DeviceActivity calls stay in the controllers. The active session's auto-clear holds a slot
+/// outside these domains; `capHeadroom` also keeps a small safety margin because Apple does not
+/// publish or promise a stable registration limit.
 public struct FlintArmingHealth: Codable, Equatable {
 
     /// One enabled activity that failed validation or registration, and the reason.
