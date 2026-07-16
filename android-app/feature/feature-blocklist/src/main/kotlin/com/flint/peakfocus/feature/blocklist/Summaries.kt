@@ -13,15 +13,49 @@ import com.flint.peakfocus.core.model.TimeLimit
  * allow-list inversion) — is JVM-testable.
  */
 
-/** "Every day", "Weekdays", "Weekends", or "Mon, Wed, Fri". Empty/full sets mean every day. */
+/**
+ * "Every day", "Weekdays", "Weekends", or a comma list that collapses runs of consecutive days
+ * into ranges — e.g. {Mon,Tue,Wed,Thu} → "Mon–Thu", {Mon,Tue,Wed,Thu,Sat} → "Mon–Thu, Sat".
+ * Empty/full sets mean every day.
+ */
 internal fun daysSummary(days: Set<Int>): String {
     val valid = days.filter { it in 1..7 }.distinct().sorted()
     return when {
         valid.isEmpty() || valid.size == 7 -> "Every day"
         valid.toSet() == IsoDays.WEEKDAYS -> "Weekdays"
         valid.toSet() == IsoDays.WEEKEND -> "Weekends"
-        else -> valid.joinToString(", ") { IsoDays.shortLabel(it) }
+        else -> collapseDayRuns(valid)
     }
+}
+
+/**
+ * Renders an ascending, deduped day list as comma-separated groups, collapsing a run of three or
+ * more consecutive days into a "Mon–Thu" range (a two-day hyphen saves nothing, so short runs
+ * stay listed). Days are treated linearly Mon(1)…Sun(7) with no week-wrap, so {Sun, Mon} reads
+ * "Mon, Sun" rather than a confusing "Sun–Mon".
+ */
+private fun collapseDayRuns(sortedDays: List<Int>): String {
+    val groups = mutableListOf<String>()
+    var runStart = sortedDays.first()
+    var runEnd = sortedDays.first()
+    fun flush() {
+        groups += if (runEnd - runStart + 1 >= 3) {
+            "${IsoDays.shortLabel(runStart)}–${IsoDays.shortLabel(runEnd)}"
+        } else {
+            (runStart..runEnd).joinToString(", ") { IsoDays.shortLabel(it) }
+        }
+    }
+    for (day in sortedDays.drop(1)) {
+        if (day == runEnd + 1) {
+            runEnd = day
+        } else {
+            flush()
+            runStart = day
+            runEnd = day
+        }
+    }
+    flush()
+    return groups.joinToString(", ")
 }
 
 /**
