@@ -1,0 +1,29 @@
+Opal auth diagnostics collected 2026-10-11T06:01:27.481919+00:00
+Only emulator-5556; no auth submission/retry performed by diagnostic agent.
+deviceUTC: 2026-10-11T06:01:28Z
+emulator: 1
+auto_time: 1
+auto_time_zone: 1
+hostUTC: 2026-10-11T06:01:28Z
+Connectivity capability observations:
+WIFI, INTERNET, VALIDATED, NOT_SUSPENDED
+CELLULAR, INTERNET, VALIDATED, NOT_SUSPENDED
+CELLULAR, INTERNET, VALIDATED
+Active package com.google.android.gms:
+versionCode=263768035 minSdk=35 targetSdk=37
+versionName=26.37.68 (260400-995428298)
+installed=true hidden=false suspended=false stopped=false enabled=0
+Active package com.android.vending:
+versionCode=85343440 minSdk=34 targetSdk=37
+versionName=53.4.34-34 [0] [PR] 991240293
+installed=true hidden=false suspended=false stopped=false enabled=1
+Active package com.withopal.opal:
+versionCode=4014000 minSdk=29 targetSdk=36
+versionName=4.14.0
+Narrow auth/integrity error and callback lines (redacted):
+10-11 01:56:23.252 11127 11127 I PlayCore: UID: [10210]  PID: [11127] IntegrityService : ServiceConnectionImpl.onServiceConnected(ComponentInfo{com.android.vending/com.google.android.finsky.integrityservice.IntegrityService})
+10-11 01:56:25.408 11127 11139 I PlayCore: UID: [10210]  PID: [11127] OnRequestIntegrityTokenCallback : onRequestIntegrityToken
+10-11 01:56:27.322 11127 11127 E RecaptchaCallWrapper: Initial task failed for action RecaptchaAction(action=signUpPassword)with exception - An internal error has occurred. [ Firebase App Check token is invalid. ]
+10-11 01:56:59.730 12348 12348 I PlayCore: UID: [10210]  PID: [12348] IntegrityService : ServiceConnectionImpl.onServiceConnected(ComponentInfo{com.android.vending/com.google.android.finsky.integrityservice.IntegrityService})
+10-11 01:58:07.194 12348 12367 E FirebaseAuth: [SmsRetrieverHelper] SMS verification code request failed: unknown status code: 17499 Firebase App Check token is invalid.
+10-11 01:58:07.350 12348 12348 D FirebaseAuth: Invoking original failure callbacks after reCAPTCHA Enterprise + phone verification failure for [PHONE], error - An internal error has occurred. [ Firebase App Check token is invalid. ]

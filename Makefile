@@ -54,6 +54,10 @@ ios-test: ios-gen ## Run the iOS unit tests on the first available iPhone simula
 android: ## Assemble the Android debug APK
 	cd $(ANDROID_DIR) && JAVA_HOME="$(JAVA_HOME)" ./gradlew assembleDebug
 
+android-release: ## Build and verify the account-free, development-signed release APK
+	cd $(ANDROID_DIR) && JAVA_HOME="$(JAVA_HOME)" ./gradlew :app:assembleRelease
+	python3 scripts/verify_local_first_apk.py $(ANDROID_DIR)/app/build/outputs/apk/release/app-release.apk
+
 android-install: ## Build + install the debug APK on a connected device/emulator
 	cd $(ANDROID_DIR) && JAVA_HOME="$(JAVA_HOME)" ./gradlew installDebug
 
@@ -63,7 +67,7 @@ android-install: ## Build + install the debug APK on a connected device/emulator
 android-test: ## Run Android unit tests
 	cd $(ANDROID_DIR) && JAVA_HOME="$(JAVA_HOME)" ./gradlew test
 
-verify-android: android android-test ## Run the Android CI gate locally
+verify-android: android android-release android-test ## Run the Android CI gate locally
 	@echo "Android gate passed."
 
 verify-ios: ios-build ios-test ## Run the iOS CI gate locally
@@ -75,6 +79,7 @@ verify: verify-android verify-ios ## Run both platform gates
 selftest: ## Run the device-free script selftests (no emulator, Gradle, or Xcode needed)
 	@bash scripts/android-verify-selftest.sh
 	@bash scripts/check-release-version-selftest.sh
+	@python3 -m unittest discover -s scripts -p 'test_*.py'
 
 # Run this BEFORE you cut the tag, while version mistakes are still a working-tree edit.
 release-check: ## Check the tree is consistent with a release tag: make release-check TAG=v0.2.0
@@ -85,5 +90,5 @@ clean: ## Remove build artifacts on both platforms
 	rm -rf $(IOS_DIR)/build $(IOS_DIR)/DerivedData $(IOS_DIR)/Flint.xcodeproj
 	cd $(ANDROID_DIR) && [ -x ./gradlew ] && JAVA_HOME="$(JAVA_HOME)" ./gradlew clean || true
 
-.PHONY: help doctor ios-gen ios ios-build ios-test android android-install android-test \
+.PHONY: help doctor ios-gen ios ios-build ios-test android android-release android-install android-test \
 	verify verify-ios verify-android selftest release-check clean

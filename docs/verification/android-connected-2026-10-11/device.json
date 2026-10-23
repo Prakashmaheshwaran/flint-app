@@ -1,0 +1,10 @@
+{
+  "serial": "emulator-5554",
+  "api": "35",
+  "release": "15",
+  "resolution": "Physical size: 1080x2400",
+  "density": "Physical density: 420",
+  "fontScale": "1.0",
+  "installedApkSha256": "c1f1a3443254d6809d03b036559b2ea713c6dca22578966f1b0105b757afdfc8",
+  "matchesBuiltApk": true
+}

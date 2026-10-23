@@ -5,6 +5,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+- **Android:** native finite-session Timer with persisted restoration, explicit hold-to-leave,
+  and preservation of overlapping restrictions; selected-day and weekly usage rankings.
+- **Android:** strongest-cause arbitration prevents ordinary breaks bypassing overlapping
+  Hardcore restrictions. Versioned access and managed-authority foundations remain dormant.
+- **Development:** preserve the local account/group/managed-policy sandbox as a debug-only
+  module with Auth/Firestore integration tests. Release APKs exclude its client, Firebase
+  account SDK and network permissions; managed policies do not activate device blocking.
+- **CI:** run script selftests, validate release versions before upload, and verify the actual
+  release APK's local-first boundary. Public previews use release code with development signing.
+
 ### iOS
 - **Blocking Health now reports the whole enabled → attempted → armed funnel.** Schedule rules
   rejected by Flint's window validation now enter the same health ledger as registrations iOS

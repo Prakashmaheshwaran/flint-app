@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "complete": true,
+  "revision": 4,
+  "serverTime": "2026-10-11T07:11:11.252Z",
+  "rules": [
+    {
+      "name": "Study APK evidence updated",
+      "ruleType": "session",
+      "scope": {
+        "kind": "member",
+        "userId": "Tv33SCgrOcV3DMlItQKy7zZ1ZwUs"
+      },
+      "zoneId": "America/New_York",
+      "enabled": true,
+      "config": {
+        "blockScope": {
+          "type": "distracting_apps",
+          "apps": [
+            "com.android.chrome"
+          ],
+          "domains": []
+        },
+        "unblocks": {
+          "allowed": false
+        },
+        "startTime": "2026-10-11T07:09:00.000Z",
+        "endTime": "2026-10-11T08:09:00.000Z"
+      },
+      "id": "a2e4b859-c3da-48b4-ba86-b6f15e313f09",
+      "targetGroupId": "dd3119c0-5de9-4e17-ae9d-157d7e5f733a",
+      "revision": 4,
+      "createdAt": "2026-10-11T07:08:48.177Z",
+      "updatedAt": "2026-10-11T07:10:13.657Z"
+    }
+  ],
+  "tombstones": [
+    {
+      "id": "c6cf8004-e2cf-43ae-b29c-30213f6dac29",
+      "targetGroupId": "dd3119c0-5de9-4e17-ae9d-157d7e5f733a",
+      "revision": 2,
+      "deletedAt": "2026-10-11T06:26:59.105Z"
+    }
+  ],
+  "membershipCount": 1,
+  "roles": [
+    "member"
+  ]
+}

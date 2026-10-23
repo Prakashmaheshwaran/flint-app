@@ -1,0 +1,45 @@
+Sanitized backend integration result — 2026-10-11
+Runtime: Node 24.21.0
+Project: demo-flint
+Services: real Firebase Auth and Firestore emulators, isolated ephemeral fixtures
+Command: node scripts/test.mjs using the pinned Node runtime
+
+PASS configuration rejects cloud projects, non-loopback emulators, credentials, and production mode
+PASS health declares emulator-only mode, and protected requests require valid sessions
+PASS profile writes are scoped to the signed-in user and enforce fields and size
+PASS group creation assigns owner authority and rejects foreign group access
+PASS owner creates a hashed one-use invite; authenticated preview and acceptance are explicit
+PASS members can read membership but cannot issue invitations or leak account emails
+PASS concurrent invite consumers commit exactly one membership
+PASS expired invites fail without consuming or joining; invalid payloads cannot escalate
+PASS leaving removes member authority and a consumed code cannot restore access
+PASS Firestore rules reject direct authenticated reads and writes
+PASS expired, disabled, deleted, and revoked sessions are rejected before authorization
+PASS malformed JSON, unsupported query parameters, and unbounded requests are rejected
+PASS managed snapshots are complete, actor-bound and authenticated without invented bypass state
+PASS owner authors canonical sessions and recurring rules; members receive only their authority
+PASS rule input rejects scope escalation, unknown fields, invalid dates, zones, targets and bounds
+PASS optimistic concurrent updates commit once and preserve creation identity
+PASS delete writes scoped tombstones and same-revision retry does not mutate again
+PASS retargeting removes rules from previous member snapshots without leaking other member rules
+PASS leave and rejoin advance revision and regenerate membership identity; retries preserve it
+PASS legacy memberships migrate once atomically, and corrupt indexes never produce an empty success
+PASS live rule capacity is enforced and deleted entries release capacity
+PASS bounded tombstone retention cannot resurrect deleted rules in complete snapshots
+PASS managed data is denied to direct Firestore clients and revoked sessions
+PASS API process recreation retains managed revisions, rules and membership identities
+
+tests 24
+pass 24
+fail 0
+cancelled 0
+skipped 0
+todo 0
+duration_ms 11574.840459
+script exit 0
+
+Syntax check: PASS
+make selftest: 47 Android harness checks passed; 39 release-checker checks passed
+
+Persistence verification was performed separately; see backend-managed-tests.md for the initial shutdown failure, explicitly authorized recovery, launcher correction, and subsequent clean restart evidence.
+No bearer tokens, password-reset links, invitation codes, or fixture passwords are included in this log.

@@ -103,9 +103,8 @@ Verticals implemented:
   one — the last minute of each day is genuinely uncovered — and the template copy makes no
   break-level promises, because iOS schedule shields are plain hard blocks whose in-app toggle
   the strictness tiers don't gate. Preset → rule mapping is unit-tested
-  (`FlintRoutinePresetsTests`); the pure preset data type-checks on this machine, but **the
-  compile + simulator-test pass is pending on the macOS CI toolchain** (authored without a
-  local Xcode), and the drafted rules enforce on a real device only, like every schedule.
+  (`FlintRoutinePresetsTests`); the integrated compile and simulator tests passed in the
+  2026-10-23 audit. Drafted rules enforce on a real device only, like every schedule.
 - **Break levels + Emergency Pass** — Easy/Harder/**free Hardcore** everywhere; a free **weekly
   Emergency Pass** ends a running Hardcore session early (Opal paywalls this).
 - **Time Limits** — daily usage budgets via `DeviceActivityEvent` thresholds; the monitor shields
@@ -128,7 +127,7 @@ Verticals implemented:
   deletion **device-wide** while armed (it isn't per-app), and Hardcore *schedule rules* are
   deliberately exempt (they can be toggled off in-app, so a deletion lock there would be
   friction, not a lock). Pure "should the guard be on?" logic is unit-tested
-  (`FlintUninstallGuard`); **compile verification is pending on the macOS CI toolchain**, and
+  (`FlintUninstallGuard`); the integrated simulator build passed on 2026-10-23, and
   enforcement is device-gated like all Screen Time settings — the Simulator can't deny app
   removal.
 - **Safari restrictions + Private-Browsing lockdown** — Settings → *Web & Safari*: while a

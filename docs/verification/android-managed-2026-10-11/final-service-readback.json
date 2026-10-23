@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "complete": true,
+  "revision": 5,
+  "serverTime": "2026-10-11T07:27:40.755Z",
+  "rules": [],
+  "tombstones": [
+    {
+      "id": "a2e4b859-c3da-48b4-ba86-b6f15e313f09",
+      "targetGroupId": "dd3119c0-5de9-4e17-ae9d-157d7e5f733a",
+      "revision": 5,
+      "deletedAt": "2026-10-11T07:22:36.343Z"
+    },
+    {
+      "id": "c6cf8004-e2cf-43ae-b29c-30213f6dac29",
+      "targetGroupId": "dd3119c0-5de9-4e17-ae9d-157d7e5f733a",
+      "revision": 2,
+      "deletedAt": "2026-10-11T06:26:59.105Z"
+    }
+  ],
+  "membershipCount": 1,
+  "roles": [
+    "member"
+  ]
+}

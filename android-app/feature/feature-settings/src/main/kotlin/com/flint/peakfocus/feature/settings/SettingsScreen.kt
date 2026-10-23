@@ -77,7 +77,7 @@ import com.flint.peakfocus.permissions.UsageAccess
  * first accessibility enable) lives in feature-onboarding.
  */
 @Composable
-fun SettingsScreen(modifier: Modifier = Modifier) {
+fun SettingsScreen(modifier: Modifier = Modifier, onAccount: (() -> Unit)? = null) {
     val context = LocalContext.current
     var health by remember { mutableStateOf(PermissionHealthChecker.check(context)) }
     var exits by remember { mutableStateOf(ExitReasonReporter.lastExits(context)) }
@@ -102,6 +102,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         oemGuidance = OemGuidanceCatalog.forOem(OemUtil.current),
         exitsSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R,
         nowMillis = System.currentTimeMillis(),
+        onAccount = onAccount,
         onFix = { kind ->
             // User-initiated only (ADR-007): reached exclusively via the row's fix button.
             val intent = when (kind) {
@@ -127,6 +128,7 @@ internal fun SettingsContent(
     nowMillis: Long,
     onFix: (PermissionKind) -> Unit,
     modifier: Modifier = Modifier,
+    onAccount: (() -> Unit)? = null,
 ) {
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
@@ -137,6 +139,12 @@ internal fun SettingsContent(
         ) {
             FlintScreenHeader(title = "Settings", eyebrow = "Keep blocking alive")
             Spacer(Modifier.height(FlintSpacing.md))
+            if (onAccount != null) {
+                OutlinedButton(onClick = onAccount, modifier = Modifier.fillMaxWidth()) {
+                    Text("Connected sandbox (debug)")
+                }
+                Spacer(Modifier.height(FlintSpacing.md))
+            }
             HealthBannerCard(BlockingHealthUi.banner(health))
             Spacer(Modifier.height(FlintSpacing.md))
             BlockingHealthUi.rows(health).forEach { row ->

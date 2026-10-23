@@ -1,0 +1,9 @@
+{
+  "baselineChain": "chain:disabled",
+  "baselineApp": "com.flint.peakfocus:allow",
+  "duringChain": "chain:enabled",
+  "duringApp": "com.flint.peakfocus:deny",
+  "visiblePolicyRetained": true,
+  "restoredChain": "chain:disabled",
+  "restoredApp": "com.flint.peakfocus:allow"
+}

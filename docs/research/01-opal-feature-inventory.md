@@ -1,5 +1,11 @@
 # Opal Feature Inventory — Product Spec Source of Truth
 
+> **Android evidence update (2026-10-11):** this document retains the earlier planning snapshot.
+> The supplied Opal Android 4.14.0 package contains Open Limits, an emergency pass, managed
+> rules, and other capabilities that contradict some Android absence claims below. See the
+> [dated APKM investigation](05-opal-4.14.0-apkm-analysis.md) for version-bound evidence and
+> explicit static/runtime limitations. Earlier pricing and platform claims are not refreshed here.
+
 > Research doc for **Flint — Peak Focus**, a 100% free, open-source alternative to Opal (opal.so / opalapp.com).
 >
 > **Mission constraint:** *Everything Opal paywalls behind "Opal Pro" must be free in Flint.* This document is the exhaustive inventory of Opal's feature surface, the source of truth for the Flint product spec. Every feature lists Opal's tier, platform, and a **Flint plan** describing how Flint delivers it for free and the technical mechanism (iOS Screen Time / Family Controls API, Android Accessibility + UsageStats, or backend).

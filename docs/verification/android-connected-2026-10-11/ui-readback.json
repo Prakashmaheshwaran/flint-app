@@ -1,0 +1,15 @@
+{
+  "group": "Parity Family",
+  "memberCount": 2,
+  "actorRole": "member",
+  "members": [
+    {
+      "displayName": "Android Owner",
+      "role": "owner"
+    },
+    {
+      "displayName": "Android Member",
+      "role": "member"
+    }
+  ]
+}

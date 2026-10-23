@@ -1,0 +1,7 @@
+make verify-android: PASS
+assembleDebug: BUILD SUCCESSFUL in 1m 1s
+all configured unit variants: BUILD SUCCESSFUL in 34s
+Kotlin metadata rewriting/parsing warnings: 0
+Resolved kotlinx-coroutines-core: 1.10.2
+Resolved kotlin-stdlib: 2.1.21
+make selftest: 47 + 39 cases passed

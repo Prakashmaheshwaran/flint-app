@@ -1,0 +1,48 @@
+{
+  "revision": 3,
+  "rules": [
+    {
+      "name": "Study APK evidence",
+      "ruleType": "recurring_schedule",
+      "scope": {
+        "kind": "group"
+      },
+      "zoneId": "America/New_York",
+      "enabled": true,
+      "config": {
+        "blockScope": {
+          "type": "distracting_apps",
+          "apps": [
+            "com.android.chrome"
+          ],
+          "domains": []
+        },
+        "unblocks": {
+          "allowed": false
+        },
+        "startTime": "09:00",
+        "endTime": "15:00",
+        "weekdays": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      "id": "a2e4b859-c3da-48b4-ba86-b6f15e313f09",
+      "targetGroupId": "dd3119c0-5de9-4e17-ae9d-157d7e5f733a",
+      "revision": 3,
+      "createdAt": "2026-10-11T07:08:48.177Z",
+      "updatedAt": "2026-10-11T07:08:48.177Z"
+    }
+  ],
+  "tombstones": [
+    {
+      "id": "c6cf8004-e2cf-43ae-b29c-30213f6dac29",
+      "targetGroupId": "dd3119c0-5de9-4e17-ae9d-157d7e5f733a",
+      "revision": 2,
+      "deletedAt": "2026-10-11T06:26:59.105Z"
+    }
+  ]
+}

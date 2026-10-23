@@ -59,6 +59,8 @@ The source is MIT — fork and ship freely. But the *shipping identity* is not t
 - Repository CI runs these selftests for script, Makefile and workflow changes; Makefile
   changes also trigger both platform gates. Release CI validates the tag's versions before
   building or uploading an artifact and fetches full history for the previous-version check.
+- `make verify-android` also builds the development-signed release variant and checks its APK
+  for account code and network permissions. Connected emulator tools belong to debug only.
 - Be kind. See [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 
 ## Cutting a release
