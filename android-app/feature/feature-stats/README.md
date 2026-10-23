@@ -2,7 +2,16 @@
 
 Compose UI for Flint's screen-time report (the free counterpart of Opal's usage insights):
 **today's total**, a **7-day day-by-day bar comparison** (plain Compose boxes — no chart
-library), and **today's top apps** by foreground time, rendered as `core-model.UsageStat` rows.
+library), and **top apps for Today, any selected day, or the Last 7 days**, rendered as
+`core-model.UsageStat` rows.
+
+Tap a chart day to inspect that date's apps; the Today and Last 7 days chips select relative
+periods. Rankings show the eight heaviest apps. Percentages use all recorded usage in the
+selected period, including apps outside those eight. Whole-week rankings aggregate every app
+before truncation, so an app can rank for the week even if it never appears in a daily top eight.
+Selected dates use full localized labels and accessibility descriptions. A selected date survives
+report refreshes and day rollover while it remains in the window; otherwise the view returns to
+Today. Today and Last 7 days always follow the current report window.
 
 ## Entry point
 
@@ -10,8 +19,8 @@ library), and **today's top apps** by foreground time, rendered as `core-model.U
 com.flint.peakfocus.feature.stats.StatsScreen(modifier: Modifier = Modifier)
 ```
 
-Self-contained (owns its ViewModel via `StatsViewModel.factory`); the A-VERIFY integrator wires
-it into MainActivity navigation — this module does not touch the nav graph.
+Self-contained (owns its ViewModel via `StatsViewModel.factory`); MainActivity renders it in
+the Stats tab. This module does not own the nav graph.
 
 ## How it works
 
@@ -24,7 +33,8 @@ UsageStatsManager.queryEvents(last 7 local days)          android edge
           single-foreground-app interval pairing; implicit close when
           another app resumes; open interval closed at `now`; sessions
           split at midnight so they count toward both days
-            └─ UsageReport → StatsViewModel (StateFlow<StatsUiState>) → StatsScreen
+            └─ buildUsageReport — date labels, daily and whole-week rankings
+               └─ UsageReport → StatsViewModel (StateFlow<StatsUiState>) → StatsScreen
 ```
 
 - **Why events, not `queryUsageStats(INTERVAL_DAILY)`:** daily `UsageStats` buckets are
@@ -43,7 +53,9 @@ UsageStatsManager.queryEvents(last 7 local days)          android edge
 ## Known limits (honest)
 
 - Some OEMs retain usage events for only a few days — the oldest bars can read low/zero even
-  though the phone was used. Stock Android retains events well past 7 days.
+  though the phone was used. An empty day means no records were returned; it does not prove
+  the phone was unused. Empty states surface this limitation. Flint does not create a new
+  persistent usage archive or request additional permissions for historical insights.
 - `ACTIVITY_RESUMED`/`ACTIVITY_PAUSED` (API 29 names) are numeric aliases of the legacy
   `MOVE_TO_FOREGROUND`/`MOVE_TO_BACKGROUND` (values 1/2, API 21+) — compile-time inlined,
   safe at `minSdk 23`; same pattern as `blocking-usagestats.UsagePoller`.
@@ -52,10 +64,13 @@ UsageStatsManager.queryEvents(last 7 local days)          android edge
 
 ## Verification status (honest)
 
-- Pure-JVM unit tests cover the aggregation (midnight splits, implicit closes, clamping,
-  ordering) and formatting: `UsageAggregatorTest`, `DurationFormatTest`, `UsageReportTest` —
-  they run under `make android-test` (`gradlew testDebugUnitTest`).
-- **Written in a fleet worktree without an Android toolchain — not yet compiled or run here.**
-  `make android` (the A-STATS verify gate) and `make android-test` must pass at merge time.
-- Real usage numbers need the Usage Access grant on a device/emulator; the permission-prompt
-  and report states are emulator-verifiable once A-VERIFY wires the screen into navigation.
+- Pure-JVM unit tests cover aggregation (midnight splits, implicit closes, clamping,
+  ordering), formatting, period selection, ranking, percentage denominators, and refresh/rollover
+  behavior: `UsageAggregatorTest`, `DurationFormatTest`, `UsageReportTest`, and
+  `HistoricalInsightsTest`. They run under `make android-test` (`gradlew test`).
+- On 2026-10-11, the historical insights module passed 45 debug unit tests (10 new), and
+  `make verify-android` passed. An API 35 emulator pass verified selecting a past day, retaining
+  that date after background/resume, and showing weekly app rankings with period percentages.
+  [Screenshots, logs, and limits](../../../docs/verification/android-historical-insights-2026-10-11/README.md).
+- Real usage numbers require Usage Access. The selected historical day had no emulator records;
+  populated historical-day math and rollover are unit-tested, not physical-device verified.

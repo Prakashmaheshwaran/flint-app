@@ -1,0 +1,6 @@
+Command: make verify-android
+cd android-app && JAVA_HOME="/opt/homebrew/opt/openjdk@21" ./gradlew assembleDebug
+BUILD SUCCESSFUL in 4s
+cd android-app && JAVA_HOME="/opt/homebrew/opt/openjdk@21" ./gradlew test
+BUILD SUCCESSFUL in 5s
+Android gate passed.

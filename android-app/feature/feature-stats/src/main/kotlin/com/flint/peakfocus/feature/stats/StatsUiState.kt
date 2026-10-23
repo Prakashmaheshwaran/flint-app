@@ -8,6 +8,11 @@ data class DaySummary(
     val label: String,
     val totalMillis: Long,
     val isToday: Boolean,
+    /** Local midnight identifies the date even when new usage arrives or the week rolls over. */
+    val startMillis: Long = 0L,
+    /** Full localized date for the selected-day readout and accessibility. */
+    val dateLabel: String = label,
+    val topApps: List<UsageStat> = emptyList(),
 )
 
 /** Everything [StatsScreen] renders once Usage Access is granted. */
@@ -17,7 +22,28 @@ data class UsageReport(
     val weekTotalMillis: Long,
     /** Today's heaviest apps, highest first (rendered as core-model [UsageStat] rows). */
     val topAppsToday: List<UsageStat>,
+    val topAppsWeek: List<UsageStat> = emptyList(),
 ) {
+    /** A date falling out of the available window returns to Today, never to a different date. */
+    fun resolvePeriod(period: UsagePeriod): UsagePeriod = when (period) {
+        is UsagePeriod.Day -> if (days.any { it.startMillis == period.startMillis }) period else UsagePeriod.Today
+        else -> period
+    }
+
+    fun appInsights(requestedPeriod: UsagePeriod): AppInsights {
+        val period = resolvePeriod(requestedPeriod)
+        val day = when (period) {
+            UsagePeriod.Today -> days.lastOrNull { it.isToday }
+            is UsagePeriod.Day -> days.firstOrNull { it.startMillis == period.startMillis }
+            UsagePeriod.Week -> null
+        }
+        return when (period) {
+            UsagePeriod.Week -> AppInsights("Last 7 days", weekTotalMillis, topAppsWeek, "this period")
+            UsagePeriod.Today -> AppInsights("Today", todayTotalMillis, topAppsToday, "today")
+            is UsagePeriod.Day -> AppInsights(day!!.dateLabel, day.totalMillis, day.topApps, "this day")
+        }
+    }
+
     val dailyAverageMillis: Long
         get() = if (days.isEmpty()) 0L else weekTotalMillis / days.size
 
@@ -53,6 +79,20 @@ data class UsageReport(
         get() = typicalDayMillis.takeIf { it > 0L }?.let { todayTotalMillis.toFloat() / it }
 }
 
+/** Today follows the clock; a selected day remains anchored to its actual date on refresh. */
+sealed interface UsagePeriod {
+    data object Today : UsagePeriod
+    data object Week : UsagePeriod
+    data class Day(val startMillis: Long) : UsagePeriod
+}
+
+data class AppInsights(
+    val label: String,
+    val totalMillis: Long,
+    val topApps: List<UsageStat>,
+    val shareLabel: String,
+)
+
 /**
  * Fraction of today's total that one app accounts for — e.g. `0.31` renders as "31% of today".
  * `null` when today has no recorded time yet, keeping the caption honest (hidden, never faked)
@@ -60,9 +100,14 @@ data class UsageReport(
  * package nose past the day total by a rounding sliver, and >100% would read as a lie.
  */
 fun shareOfToday(packageMillis: Long, todayTotalMillis: Long): Float? {
-    if (todayTotalMillis <= 0L) return null
-    return (packageMillis.toFloat() / todayTotalMillis).coerceIn(0f, 1f)
+    return shareOfPeriod(packageMillis, todayTotalMillis)
 }
+
+/** Uses the complete period total, including apps outside the visible top-app ranking. */
+fun shareOfPeriod(packageMillis: Long, periodTotalMillis: Long): Float? =
+    periodTotalMillis.takeIf { it > 0L }?.let {
+        (packageMillis.toFloat() / it).coerceIn(0f, 1f)
+    }
 
 /** UI state exposed by [StatsViewModel]. */
 sealed interface StatsUiState {

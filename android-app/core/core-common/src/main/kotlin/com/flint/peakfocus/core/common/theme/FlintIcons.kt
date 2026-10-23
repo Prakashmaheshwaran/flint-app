@@ -17,6 +17,23 @@ import androidx.compose.ui.unit.dp
  */
 object FlintIcons {
 
+    fun timer(): ImageVector = ImageVector.Builder(
+        name = "FlintTimer", defaultWidth = 24.dp, defaultHeight = 24.dp,
+        viewportWidth = 24f, viewportHeight = 24f,
+    ).apply {
+        path(stroke = SolidColor(Color.Black), strokeLineWidth = 1.8f, strokeLineJoin = StrokeJoin.Round) {
+            moveTo(9f, 2f); lineTo(15f, 2f)
+            moveTo(12f, 2f); lineTo(12f, 5f)
+            moveTo(19f, 5f); lineTo(21f, 7f)
+            moveTo(12f, 5f)
+            curveTo(7.6f, 5f, 4f, 8.6f, 4f, 13f)
+            curveTo(4f, 17.4f, 7.6f, 21f, 12f, 21f)
+            curveTo(16.4f, 21f, 20f, 17.4f, 20f, 13f)
+            curveTo(20f, 8.6f, 16.4f, 5f, 12f, 5f)
+            moveTo(12f, 8f); lineTo(12f, 13f); lineTo(15f, 15f)
+        }
+    }.build()
+
     /** The tri-color mark. Draw with `Icon(..., tint = Color.Unspecified)` to keep the facets. */
     fun mark(body: Color, spark: Color, deep: Color): ImageVector =
         ImageVector.Builder(
