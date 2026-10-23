@@ -4,9 +4,9 @@ name: Android
 on:
   push:
     branches: [main]
-    paths: ['android-app/**', 'Makefile', '.github/workflows/android.yml']
+    paths: ['android-app/**', 'Makefile', 'scripts/verify_local_first_apk.py', '.github/workflows/android.yml']
   pull_request:
-    paths: ['android-app/**', 'Makefile', '.github/workflows/android.yml']
+    paths: ['android-app/**', 'Makefile', 'scripts/verify_local_first_apk.py', '.github/workflows/android.yml']
   workflow_dispatch:
 
 permissions:
@@ -25,9 +25,12 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
-      - name: Assemble debug APK
+      - name: Assemble debug and local-first release APKs
         working-directory: android-app
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleDebug :app:assembleRelease
+
+      - name: Verify release excludes accounts and network permissions
+        run: python3 scripts/verify_local_first_apk.py android-app/app/build/outputs/apk/release/app-release.apk
 
       # `test` (not `testDebugUnitTest`): the pure-Kotlin modules (blocking-engine,
       # core-model) are kotlin.jvm projects whose test task is `test` — the old task name
