@@ -1,13 +1,12 @@
 # Android CI — assemble debug APK + run JVM unit tests (pure-Kotlin engine included).
-# NOTE: written before first publish; expect a shakedown run on the first push.
 name: Android
 
 on:
   push:
     branches: [main]
-    paths: ['android-app/**', '.github/workflows/android.yml']
+    paths: ['android-app/**', 'Makefile', '.github/workflows/android.yml']
   pull_request:
-    paths: ['android-app/**', '.github/workflows/android.yml']
+    paths: ['android-app/**', 'Makefile', '.github/workflows/android.yml']
   workflow_dispatch:
 
 permissions:

@@ -26,6 +26,12 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.release.tag_name || inputs.tag }}
+          fetch-depth: 0
+
+      - name: Validate release versions before building or uploading
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: make release-check TAG="$RELEASE_TAG"
 
       - uses: actions/setup-java@v5
         with:

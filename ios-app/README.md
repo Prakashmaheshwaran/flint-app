@@ -81,6 +81,8 @@ DEVELOPER_DIR="$(ls -d /Applications/Xcode*.app | tail -1)/Contents/Developer" \
 **Done & verified:** all 5 targets build (`make ios-build` — the fleet merge gate re-runs it as
 each change lands); app runs in the Simulator; `FlintCore` unit tests pass. On-device enforcement
 proof is a separate, human task (`H-IOS-DEVICE`) — nothing below claims it.
+The 2026-10-23 audit ran `make verify-ios` on the integrated tree with Xcode 27.0:
+the simulator build and all 60 tests passed, including schedule validation and arming health.
 Verticals implemented:
 - **Block Now** — authorize → pick apps → timed shield + `DeviceActivity` auto-clear → live
   countdown → stop gated by break level (incl. **free Hardcore**).
