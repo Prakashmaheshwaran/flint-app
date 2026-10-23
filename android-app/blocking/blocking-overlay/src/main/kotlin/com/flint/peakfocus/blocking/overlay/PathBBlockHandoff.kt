@@ -3,9 +3,11 @@ package com.flint.peakfocus.blocking.overlay
 import android.content.Context
 import android.content.Intent
 import android.view.View
+import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
+import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.core.model.ActiveRulesHolder
-import com.flint.peakfocus.core.model.OpenLimitDecision
 import com.flint.peakfocus.core.model.Verdict
+import java.util.Calendar
 import java.util.TimeZone
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -51,62 +53,51 @@ object PathBBlockHandoff {
     }
 
     /**
-     * Poll-loop entry for a daily Time Limit hit — Path B's mirror of the a11y service's
-     * step 2. Mirrors Path A's order exactly: an active break/pass still stands enforcement
-     * down (its step 1), and a time-limit-blocked app records no Open-Limit open (the user
-     * never actually got into it — same reason rule blocks skip open counting). TimeLimit
-     * carries no tier, so the store-wide default break level applies, as on Path A.
+     * Compatibility entry for a daily Time Limit hit. Also evaluate current rules, so callers
+     * using this entry cannot accidentally shadow a Hardcore session with an EASY budget.
      */
     fun onTimeLimitExceeded(context: Context, packageName: String) {
         val appContext = context.applicationContext
-        val c = coordinator(appContext)
-        lastForegroundPackage = packageName
-        if (packageName == appContext.packageName) return
-        if (c.isExempt(packageName)) {
-            c.hideIfShown()
-            return
-        }
         val now = System.currentTimeMillis()
-        val utcOffset = TimeZone.getDefault().getOffset(now).toLong()
-        c.showBlocked(
+        val cal = Calendar.getInstance().apply { timeInMillis = now }
+        val verdict = BlockDecisionEngine().decide(
             packageName,
-            labelFor(appContext, packageName),
-            timeLimitBlockCause(c.currentDefaultBreakLevel(), now, utcOffset),
+            null,
+            ActiveRulesHolder.rules,
+            appContext.packageName,
+            cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE),
+            IsoWeekday.fromCalendar(cal.get(Calendar.DAY_OF_WEEK)),
+            now,
         )
+        onForegroundPolled(appContext, packageName, verdict, timeLimitSpent = true)
     }
 
     /**
      * Feed one poll observation through the shared decision flow. Cheap when nothing changed;
      * callable from any thread (UI work is marshalled internally).
      */
-    fun onForegroundPolled(context: Context, packageName: String, verdict: Verdict) {
+    fun onForegroundPolled(
+        context: Context,
+        packageName: String,
+        verdict: Verdict,
+        timeLimitSpent: Boolean = false,
+    ) {
         val appContext = context.applicationContext
         val c = coordinator(appContext)
         val previous = lastForegroundPackage
         lastForegroundPackage = packageName
 
         if (packageName == appContext.packageName) return // Flint itself (incl. our block UI)
-        if (c.isExempt(packageName)) {
-            c.hideIfShown() // an active break / Emergency Pass window: stand down
-            return
-        }
-
         val now = System.currentTimeMillis()
         val utcOffset = TimeZone.getDefault().getOffset(now).toLong()
-        when (verdict) {
-            is Verdict.Block -> {
-                val rule = ActiveRulesHolder.rules.firstOrNull { it.id == verdict.ruleId }
-                c.showBlocked(packageName, labelFor(appContext, packageName), ruleBlockCause(rule, now, utcOffset))
-            }
-            Verdict.Allow -> {
-                // Not rule-blocked: count/check Open Limits. Order matters — an app the rules
-                // already shield never records an open (you never actually got into it).
-                when (val decision = c.onForegroundChanged(previous, packageName)) {
-                    is OpenLimitDecision.Blocked ->
-                        c.showBlocked(packageName, labelFor(appContext, packageName), openLimitBlockCause(decision.limit, now, utcOffset))
-                    is OpenLimitDecision.Allowed -> c.hideIfShown()
-                }
-            }
+        val ruleCause = (verdict as? Verdict.Block)?.let {
+            ruleBlockCause(ActiveRulesHolder.rules.firstOrNull { rule -> rule.id == it.ruleId }, now, utcOffset)
+        }
+        val cause = c.evaluateBlockCause(previous, packageName, ruleCause, timeLimitSpent)
+        if (cause != null) {
+            c.showBlocked(packageName, labelFor(appContext, packageName), cause)
+        } else {
+            c.hideIfShown()
         }
     }
 

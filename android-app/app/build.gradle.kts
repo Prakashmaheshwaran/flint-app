@@ -29,14 +29,19 @@ android {
     }
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 }
 
 dependencies {
+    coreLibraryDesugaring(libs.android.desugar.jdk)
     implementation(project(":core:core-model"))
     implementation(project(":core:core-common"))
     implementation(project(":core:core-data"))

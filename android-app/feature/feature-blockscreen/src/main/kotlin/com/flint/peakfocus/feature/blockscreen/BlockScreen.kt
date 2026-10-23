@@ -544,7 +544,7 @@ private fun BreakActions(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                text = "Hardcore session — no breaks, no early stop.",
+                text = "Hardcore protection is active. Ordinary breaks are unavailable.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,

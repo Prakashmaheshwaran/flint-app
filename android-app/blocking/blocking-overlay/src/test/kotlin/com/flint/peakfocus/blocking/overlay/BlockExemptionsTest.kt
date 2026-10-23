@@ -1,5 +1,6 @@
 package com.flint.peakfocus.blocking.overlay
 
+import com.flint.peakfocus.core.model.BreakLevel
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -60,5 +61,22 @@ class BlockExemptionsTest {
         // And a fresh grant after expiry works normally.
         BlockExemptions.grant("com.x", untilEpochMs = 3_000L)
         assertTrue(BlockExemptions.isExempt("com.x", nowEpochMs = 2_000L))
+    }
+
+    @Test
+    fun `ordinary global grant cannot stand down hardcore`() {
+        BlockExemptions.grant(BlockExemptions.GLOBAL_PACKAGE, 2_000L)
+        assertTrue(BlockExemptions.isExempt("com.x", 1_000L, BreakLevel.HARDER))
+        assertFalse(BlockExemptions.isExempt("com.x", 1_000L, BreakLevel.HARDCORE))
+    }
+
+    @Test
+    fun `emergency capability expires independently of overlapping ordinary access`() {
+        BlockExemptions.grant("com.x", 5_000L)
+        BlockExemptions.grantEmergency("com.x", 2_000L)
+        assertTrue(BlockExemptions.isExempt("com.x", 1_999L, BreakLevel.HARDCORE))
+        assertFalse(BlockExemptions.isExempt("com.x", 2_000L, BreakLevel.HARDCORE))
+        assertTrue(BlockExemptions.isExempt("com.x", 2_000L, BreakLevel.EASY))
+        assertFalse(BlockExemptions.isExempt("com.y", 1_999L, BreakLevel.HARDCORE))
     }
 }

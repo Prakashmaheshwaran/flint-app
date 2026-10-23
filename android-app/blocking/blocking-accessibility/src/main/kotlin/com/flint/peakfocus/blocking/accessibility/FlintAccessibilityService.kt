@@ -14,15 +14,12 @@ import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.blocking.engine.UninstallGuard
 import com.flint.peakfocus.blocking.overlay.BlockScreenCoordinator
 import com.flint.peakfocus.blocking.overlay.NeverBlockSurfaces
-import com.flint.peakfocus.blocking.overlay.openLimitBlockCause
 import com.flint.peakfocus.blocking.overlay.ruleBlockCause
-import com.flint.peakfocus.blocking.overlay.timeLimitBlockCause
 import com.flint.peakfocus.blocking.overlay.uninstallGuardBlockCause
 import com.flint.peakfocus.core.data.BlocklistStore
 import com.flint.peakfocus.core.data.LimitStore
 import com.flint.peakfocus.core.data.UsageQuery
 import com.flint.peakfocus.core.model.ActiveRulesHolder
-import com.flint.peakfocus.core.model.OpenLimitDecision
 import com.flint.peakfocus.core.model.Verdict
 import java.util.Calendar
 import java.util.TimeZone
@@ -50,10 +47,10 @@ import kotlinx.coroutines.launch
  *     Settings-pages-about-Flint are shielded (anti-bypass). Deliberately ahead of the
  *     break/pass stand-down: an exemption granted on some *other* rule must not open the
  *     uninstall window, and Hardcore itself never grants breaks;
- *  1. active break/pass exemption → stand down;
- *  2. daily Time Limit (legacy synchronous LimitStore + UsageQuery — unchanged);
- *  3. rule verdict from [BlockDecisionEngine] (sessions/schedules/allow-list/websites — unchanged);
- *  4. only if allowed: Open Limits (counts the open, blocks past the quota).
+ *  1. Gather daily Time Limit, rule and Open Limit candidates;
+ *  2. the shared coordinator selects the strongest protection, then applies exemptions;
+ *     ordinary breaks never bypass a currently applicable Hardcore restriction;
+ *  3. count a permitted open only when no other restriction/exemption controls access.
  *
  * Compliance: NOT an accessibility tool; the in-app consent flow (feature-onboarding) must run
  * before the user enables this. On connect it loads the persisted blocklist.
@@ -170,13 +167,7 @@ class FlintAccessibilityService : AccessibilityService() {
             }
         }
 
-        // 1) An active break / Emergency Pass window: enforcement stands down until it ends.
-        if (coordinator.isExempt(pkg)) {
-            coordinator.hideIfShown()
-            return
-        }
-
-        // 2) Time Limit: blocked once today's foreground time reaches the app's daily budget —
+        // Time Limit: blocked once today's foreground time reaches the app's daily budget —
         //    the stricter of the legacy store and the Limit editor's DataStore limits (read via
         //    the coordinator's snapshot; they were authored-but-never-enforced before that).
         //    TimeLimit carries no tier, so the store-wide default break level applies.
@@ -184,37 +175,20 @@ class FlintAccessibilityService : AccessibilityService() {
             LimitStore(this).limitMinutes(pkg),
             coordinator.timeLimitMinutes(pkg),
         ).minOrNull()
-        if (limitMin != null && UsageQuery.dailyForegroundMillis(this, pkg) >= limitMin * 60_000L) {
-            coordinator.showBlocked(
-                pkg,
-                labelFor(pkg),
-                timeLimitBlockCause(coordinator.currentDefaultBreakLevel(), now, utcOffset),
-            )
-            return
-        }
+        val timeLimitSpent = limitMin != null && UsageQuery.dailyForegroundMillis(this, pkg) >= limitMin * 60_000L
 
-        // 3) Rule verdict (manual sessions, schedules, allow-list mode, websites) — unchanged.
+        // Inspect rules even when a weaker time limit or an old ordinary break applies.
         val url = if (BrowserAddressBars.isBrowser(pkg)) readUrl(rootInActiveWindow, pkg) else null
-        when (val verdict = engine.decide(pkg, url, ActiveRulesHolder.rules, packageName, nowMin, weekday, now)) {
-            is Verdict.Block -> {
-                val rule = ActiveRulesHolder.rules.firstOrNull { it.id == verdict.ruleId }
-                coordinator.showBlocked(pkg, labelFor(pkg), ruleBlockCause(rule, now, utcOffset))
-            }
-            Verdict.Allow -> {
-                // 4) Open Limits — only for apps the rules let through, so a shielded app
-                //    never records an open you didn't actually get.
-                when (val decision = coordinator.onForegroundChanged(previousPackage, pkg)) {
-                    is OpenLimitDecision.Blocked -> coordinator.showBlocked(
-                        pkg,
-                        labelFor(pkg),
-                        openLimitBlockCause(decision.limit, now, utcOffset),
-                    )
-                    is OpenLimitDecision.Allowed -> {
-                        coordinator.hideIfShown()
-                        if (limitMin != null) armTimeLimitRecheck(pkg, limitMin)
-                    }
-                }
-            }
+        val verdict = engine.decide(pkg, url, ActiveRulesHolder.rules, packageName, nowMin, weekday, now)
+        val ruleCause = (verdict as? Verdict.Block)?.let {
+            ruleBlockCause(ActiveRulesHolder.rules.firstOrNull { rule -> rule.id == it.ruleId }, now, utcOffset)
+        }
+        val cause = coordinator.evaluateBlockCause(previousPackage, pkg, ruleCause, timeLimitSpent, url)
+        if (cause != null) {
+            coordinator.showBlocked(pkg, labelFor(pkg), cause)
+        } else {
+            coordinator.hideIfShown()
+            if (limitMin != null && !timeLimitSpent) armTimeLimitRecheck(pkg, limitMin)
         }
     }
 

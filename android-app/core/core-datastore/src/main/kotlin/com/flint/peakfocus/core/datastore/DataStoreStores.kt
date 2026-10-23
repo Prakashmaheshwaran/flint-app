@@ -48,6 +48,10 @@ class DataStoreBlockRulesStore(
     private val dataStore: DataStore<Preferences>,
 ) : BlockRulesStore {
 
+    override val rulesOrError: Flow<List<BlockRule>> = dataStore.data.map { prefs ->
+        PrefsCodec.decodeRules(prefs[PrefsKeys.BLOCK_RULES].orEmpty())
+    }
+
     override val rules: Flow<List<BlockRule>> = dataStore.safeData().map { prefs ->
         PrefsCodec.decodeRules(prefs[PrefsKeys.BLOCK_RULES].orEmpty())
     }
@@ -55,8 +59,39 @@ class DataStoreBlockRulesStore(
     override suspend fun upsert(rule: BlockRule) =
         mutate { current -> current.filterNot { it.id == rule.id } + rule }
 
+    override suspend fun startSessionIfIdle(rule: BlockRule, nowEpochMs: Long): Boolean {
+        requireFiniteSession(rule, nowEpochMs)
+        var started = false
+        dataStore.edit { prefs ->
+            val current = PrefsCodec.decodeRules(prefs[PrefsKeys.BLOCK_RULES].orEmpty())
+            started = current.canStartSession(rule.id, nowEpochMs)
+            if (started) prefs[PrefsKeys.BLOCK_RULES] = PrefsCodec.encodeRules(current + rule)
+        }
+        return started
+    }
+
+    override suspend fun cancelEasySession(ruleId: String, nowEpochMs: Long): Boolean {
+        var cancelled = false
+        dataStore.edit { prefs ->
+            val current = PrefsCodec.decodeRules(prefs[PrefsKeys.BLOCK_RULES].orEmpty())
+            cancelled = current.canCancelEasySession(ruleId, nowEpochMs)
+            if (cancelled) prefs[PrefsKeys.BLOCK_RULES] = PrefsCodec.encodeRules(current.filterNot { it.id == ruleId })
+        }
+        return cancelled
+    }
+
     override suspend fun delete(ruleId: String) =
         mutate { current -> current.filterNot { it.id == ruleId } }
+
+    override suspend fun endTimerSession(expected: BlockRule, nowEpochMs: Long): Boolean {
+        var ended = false
+        dataStore.edit { prefs ->
+            val current = PrefsCodec.decodeRules(prefs[PrefsKeys.BLOCK_RULES].orEmpty())
+            ended = current.canEndTimerSession(expected, nowEpochMs)
+            if (ended) prefs[PrefsKeys.BLOCK_RULES] = PrefsCodec.encodeRules(current.filterNot { it.id == expected.id })
+        }
+        return ended
+    }
 
     override suspend fun setEnabled(ruleId: String, enabled: Boolean) =
         mutate { current -> current.map { if (it.id == ruleId) it.copy(enabled = enabled) else it } }
