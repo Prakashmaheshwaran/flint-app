@@ -1,0 +1,11 @@
+{
+  "emulator": "flint-test",
+  "serial": "emulator-5554",
+  "api": "35",
+  "abi": "arm64-v8a",
+  "model": "sdk_gphone64_arm64",
+  "package": "com.flint.peakfocus",
+  "installed_apk_sha256": "a59be4e90ee190ecd7842794204e6ad0ca377bbf9e984f211e3773d3fc3d4159",
+  "matches_verified_build": true,
+  "usage_access": "GET_USAGE_STATS: allow; time=+161ms ago"
+}

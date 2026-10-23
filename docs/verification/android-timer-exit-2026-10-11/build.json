@@ -1,0 +1,13 @@
+{
+  "apkSha256": "ced55cd1bb06e0a56d34a0ff6a0feaffbcdfc55c55c292f0376956fca8dbdcfa",
+  "retainedApkPath": "/Users/prakash/Desktop/open-source/flint/android-app/build/opal-parity-baseline/flint-timer-exit-debug.apk",
+  "device": "flint-test / emulator-5554",
+  "api": 35,
+  "abi": "arm64-v8a",
+  "width": 1080,
+  "height": 2400,
+  "densityDpi": 420,
+  "fontScale": 1.0,
+  "coroutines": "1.10.2",
+  "installedApkSha256": "ced55cd1bb06e0a56d34a0ff6a0feaffbcdfc55c55c292f0376956fca8dbdcfa"
+}

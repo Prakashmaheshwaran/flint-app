@@ -1,0 +1,8 @@
+Command: make verify-android
+BUILD SUCCESSFUL in 6s
+434 actionable tasks: 7 executed, 427 up-to-date
+BUILD SUCCESSFUL in 3s
+571 actionable tasks: 11 executed, 560 up-to-date
+Android gate passed.
+Tests: 1166 variant executions, 681 unique cases, zero failures/errors/skips.
+No script or Makefile change in this follow-up. Earlier make selftest: 47 tooling + 39 release cases.

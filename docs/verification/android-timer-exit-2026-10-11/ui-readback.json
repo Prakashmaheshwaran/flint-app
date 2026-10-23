@@ -1,0 +1,20 @@
+{
+  "shortHoldDurationMs": 1000,
+  "completedHoldDurationMs": 2200,
+  "deadlineUnchangedAfterReleaseAndRestart": true,
+  "deadlineText": "Ends 10/11/26 4:09 AM",
+  "shortReleaseReturnedToIdleConfirmation": true,
+  "hardcoreBlockedBeforeEnding": true,
+  "nativeTimerEnded": true,
+  "separateEasyRuleStillBlocks": true,
+  "namedOverlapRulePreserved": true,
+  "temporaryOverlapRuleRemoved": true,
+  "chromeAccessibleAfterCleanup": true,
+  "finalHomeHasNoActiveTimer": true,
+  "sourceConfigHashesMatch": 234,
+  "apiHealth": {
+    "status": "ok",
+    "mode": "emulator-only",
+    "projectId": "demo-flint"
+  }
+}

@@ -13,6 +13,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -38,9 +40,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -106,8 +109,24 @@ private val TypicalDash = 4.dp
 private const val BarStaggerStepMillis = FlintMotion.DurationShort / 3
 private const val CardStaggerStepMillis = FlintMotion.DurationShort / 2
 
+private val UsagePeriodSaver = Saver<UsagePeriod, String>(
+    save = { period ->
+        when (period) {
+            UsagePeriod.Today -> "today"
+            UsagePeriod.Week -> "week"
+            is UsagePeriod.Day -> period.startMillis.toString()
+        }
+    },
+    restore = { key ->
+        when (key) {
+            "week" -> UsagePeriod.Week
+            else -> key.toLongOrNull()?.let(UsagePeriod::Day) ?: UsagePeriod.Today
+        }
+    },
+)
+
 /**
- * Screen-time reports: today's total, a 7-day bar comparison, and today's top apps by
+ * Screen-time reports: today's total, a 7-day bar comparison, and selectable-period top apps by
  * foreground time. Public entry point for the A-VERIFY integrator to wire into MainActivity
  * navigation — this module does not touch the nav graph itself.
  *
@@ -261,6 +280,11 @@ private fun Modifier.cardEntrance(revealed: Boolean, cardIndex: Int): Modifier {
 
 @Composable
 private fun StatsReport(report: UsageReport) {
+    var requestedPeriod by rememberSaveable(stateSaver = UsagePeriodSaver) {
+        mutableStateOf<UsagePeriod>(UsagePeriod.Today)
+    }
+    val period = report.resolvePeriod(requestedPeriod)
+    LaunchedEffect(period) { requestedPeriod = period }
     // Reveal gate keyed on report identity: the composed entrance (cards → bars → meters)
     // replays only when the data actually changes, not on every ON_RESUME refresh that
     // yields an equal report.
@@ -285,15 +309,19 @@ private fun StatsReport(report: UsageReport) {
             modifier = Modifier.cardEntrance(revealed, 1),
         )
         Spacer(Modifier.height(FlintSpacing.cardGap))
-        WeekChartCard(report, modifier = Modifier.cardEntrance(revealed, 2))
+        WeekChartCard(
+            report = report,
+            period = period,
+            onSelectPeriod = { requestedPeriod = it },
+            modifier = Modifier.cardEntrance(revealed, 2),
+        )
         if (report.weekTotalMillis > 0L) {
             Spacer(Modifier.height(FlintSpacing.cardGap))
             InsightsCard(report, modifier = Modifier.cardEntrance(revealed, 3))
         }
         Spacer(Modifier.height(FlintSpacing.cardGap))
         TopAppsCard(
-            topApps = report.topAppsToday,
-            todayTotalMillis = report.todayTotalMillis,
+            insights = report.appInsights(period),
             modifier = Modifier.cardEntrance(revealed, 4),
         )
     }
@@ -382,13 +410,17 @@ private fun InsightRow(label: String, value: String) {
 
 /** Day-by-day comparison: plain Compose boxes scaled against the busiest day — no chart library. */
 @Composable
-private fun WeekChartCard(report: UsageReport, modifier: Modifier = Modifier) {
+private fun WeekChartCard(
+    report: UsageReport,
+    period: UsagePeriod,
+    onSelectPeriod: (UsagePeriod) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val haptics = rememberFlintHaptics()
-    // Today preselected; a tap moves the accent — one ember, following the selection.
-    var selectedIndex by remember(report.days) {
-        mutableIntStateOf(
-            report.days.indexOfFirst { it.isToday }.takeIf { it >= 0 } ?: report.days.lastIndex,
-        )
+    val selectedIndex = when (period) {
+        UsagePeriod.Today -> report.days.indexOfLast { it.isToday }
+        UsagePeriod.Week -> -1
+        is UsagePeriod.Day -> report.days.indexOfFirst { it.startMillis == period.startMillis }
     }
     FlintCard(modifier = modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -399,21 +431,45 @@ private fun WeekChartCard(report: UsageReport, modifier: Modifier = Modifier) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        Spacer(Modifier.height(FlintSpacing.sm))
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(FlintSpacing.sm),
+        ) {
+            FilterChip(
+                selected = period == UsagePeriod.Today,
+                onClick = { onSelectPeriod(UsagePeriod.Today) },
+                label = { Text("Today") },
+            )
+            FilterChip(
+                selected = period == UsagePeriod.Week,
+                onClick = { onSelectPeriod(UsagePeriod.Week) },
+                label = { Text("Last 7 days") },
+            )
+        }
+        Text(
+            text = "Tap a day to see its apps below.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Spacer(Modifier.height(FlintSpacing.md))
         if (report.weekTotalMillis == 0L) {
             Text(
-                text = "No usage recorded yet. Use your phone for a bit, then check back.",
+                text = "No usage recorded in this period. Older records may be unavailable on your device.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        } else {
+            Spacer(Modifier.height(FlintSpacing.md))
+        }
+        if (report.days.isNotEmpty()) {
             WeekChart(
                 days = report.days,
                 typicalDayMillis = report.typicalDayMillis,
                 selectedIndex = selectedIndex,
                 onSelect = { index ->
                     if (index != selectedIndex) {
-                        selectedIndex = index
+                        val day = report.days[index]
+                        onSelectPeriod(if (day.isToday) UsagePeriod.Today else UsagePeriod.Day(day.startMillis))
                         haptics.tick()
                     }
                 },
@@ -430,6 +486,7 @@ private fun WeekChartCard(report: UsageReport, modifier: Modifier = Modifier) {
                     )
                     AnimatedContent(
                         targetState = selected,
+                        modifier = Modifier.weight(2f),
                         transitionSpec = {
                             (fadeIn(
                                 tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard),
@@ -443,7 +500,7 @@ private fun WeekChartCard(report: UsageReport, modifier: Modifier = Modifier) {
                         label = "dayReadout",
                     ) { day ->
                         Text(
-                            text = "${day.label} · ${DurationFormat.format(day.totalMillis)}",
+                            text = "${day.dateLabel} · ${DurationFormat.format(day.totalMillis)}",
                             style = MaterialTheme.typography.bodySmall.merge(FlintNumerals),
                             color = MaterialTheme.colorScheme.onSurface,
                         )
@@ -596,7 +653,7 @@ private fun DayBar(
             listOf(MaterialTheme.colorScheme.secondary, MaterialTheme.colorScheme.primary),
         )
     }
-    val description = "${day.label}, ${DurationFormat.format(day.totalMillis)}"
+    val description = "${day.dateLabel}, ${DurationFormat.format(day.totalMillis)}, show app usage"
     // The whole column cell — bar plus its gap, full chart height — is the tap target, so the
     // hit area stays finger-sized even though the visible bar is narrower.
     Box(
@@ -618,16 +675,23 @@ private fun DayBar(
 
 @Composable
 private fun TopAppsCard(
-    topApps: List<UsageStat>,
-    todayTotalMillis: Long,
+    insights: AppInsights,
     modifier: Modifier = Modifier,
 ) {
+    val topApps = insights.topApps
     FlintCard(modifier = modifier) {
-        FlintSectionLabel("Top apps today")
+        FlintSectionLabel("Top apps · ${insights.label}")
+        Spacer(Modifier.height(FlintSpacing.xs))
+        Text(
+            text = "${DurationFormat.format(insights.totalMillis)} total screen time",
+            style = MaterialTheme.typography.bodySmall.merge(FlintNumerals),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Spacer(Modifier.height(FlintSpacing.cardGap))
         if (topApps.isEmpty()) {
             Text(
-                text = "Nothing recorded yet today.",
+                text = "No app usage recorded for this period. " +
+                    "Your device may not retain older usage records.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -641,7 +705,8 @@ private fun TopAppsCard(
                         stat = stat,
                         index = index,
                         maxMillis = maxMillis,
-                        todayTotalMillis = todayTotalMillis,
+                        periodTotalMillis = insights.totalMillis,
+                        shareLabel = insights.shareLabel,
                         grown = grown,
                     )
                 }
@@ -655,7 +720,8 @@ private fun TopAppRow(
     stat: UsageStat,
     index: Int,
     maxMillis: Long,
-    todayTotalMillis: Long,
+    periodTotalMillis: Long,
+    shareLabel: String,
     grown: Boolean,
 ) {
     // FlintMeterBar owns its grow-in tween, so the top→bottom cascade delays each row's gate
@@ -679,10 +745,10 @@ private fun TopAppRow(
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
-                val share = shareOfToday(stat.foregroundMillis, todayTotalMillis)
+                val share = shareOfPeriod(stat.foregroundMillis, periodTotalMillis)
                 if (share != null) {
                     Text(
-                        text = "${(share * 100).roundToInt()}% of today",
+                        text = "${(share * 100).roundToInt()}% of $shareLabel",
                         style = MaterialTheme.typography.bodySmall.merge(FlintNumerals),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -755,24 +821,24 @@ private fun Drawable.toIconBitmap(sizePx: Int): ImageBitmap {
 private fun previewReport(): UsageReport {
     val hour = 3_600_000L
     val minute = 60_000L
-    return UsageReport(
-        days = listOf(
-            DaySummary("Fri", 4 * hour + 12 * minute, isToday = false),
-            DaySummary("Sat", 6 * hour + 40 * minute, isToday = false),
-            DaySummary("Sun", 5 * hour + 5 * minute, isToday = false),
-            DaySummary("Mon", 3 * hour + 30 * minute, isToday = false),
-            DaySummary("Tue", 2 * hour + 55 * minute, isToday = false),
-            DaySummary("Wed", 4 * hour, isToday = false),
-            DaySummary("Thu", 1 * hour + 47 * minute, isToday = true),
-        ),
-        todayTotalMillis = 1 * hour + 47 * minute,
-        weekTotalMillis = 28 * hour + 9 * minute,
-        topAppsToday = listOf(
-            UsageStat("com.instagram.android", "Instagram", 42 * minute),
-            UsageStat("com.google.android.youtube", "YouTube", 31 * minute),
-            UsageStat("com.android.chrome", "Chrome", 18 * minute),
-            UsageStat("org.thoughtcrime.securesms", null, 9 * minute),
-        ),
+    val start = 1_791_504_000_000L // October 9, 2026, UTC; preview data only.
+    val windows = List(7) { index ->
+        DayWindow(start + index * 24 * hour, start + (index + 1) * 24 * hour)
+    }
+    val names = mapOf(
+        "com.instagram.android" to "Instagram",
+        "com.google.android.youtube" to "YouTube",
+        "com.android.chrome" to "Chrome",
+    )
+    return buildUsageReport(
+        DayBuckets(windows, mapOf(
+            "com.instagram.android" to longArrayOf(60, 90, 75, 30, 20, 60, 42).map { it * minute }.toLongArray(),
+            "com.google.android.youtube" to longArrayOf(80, 120, 100, 60, 45, 80, 31).map { it * minute }.toLongArray(),
+            "com.android.chrome" to longArrayOf(90, 160, 120, 100, 100, 80, 18).map { it * minute }.toLongArray(),
+            "org.thoughtcrime.securesms" to longArrayOf(22, 30, 10, 20, 10, 20, 9).map { it * minute }.toLongArray(),
+        )),
+        appLabel = names::get,
+        timeZone = java.util.TimeZone.getTimeZone("UTC"),
     )
 }
 

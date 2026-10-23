@@ -1,0 +1,500 @@
+{
+  "tests": 830,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "note": "XML totals include debug and release variants; same tests may run twice. Gradle uses its incremental/cache rules.",
+  "apk_sha256": "a59be4e90ee190ecd7842794204e6ad0ca377bbf9e984f211e3773d3fc3d4159",
+  "suites": [
+    {
+      "path": "android-app/app/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.AppSearchTest.xml",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/app/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.AppSearchTest.xml",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-onboarding/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.feature.onboarding.ConsentCopyTest.xml",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-onboarding/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.feature.onboarding.SetupGuidanceTest.xml",
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-onboarding/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.feature.onboarding.ConsentCopyTest.xml",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-onboarding/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.feature.onboarding.SetupGuidanceTest.xml",
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-blockscreen/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.feature.blockscreen.BlockScreenContentTest.xml",
+      "tests": 34,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-blockscreen/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.feature.blockscreen.BlockScreenContentTest.xml",
+      "tests": 34,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-stats/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.feature.stats.DurationFormatTest.xml",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-stats/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.feature.stats.UsageReportTest.xml",
+      "tests": 14,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-stats/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.feature.stats.UsageAggregatorTest.xml",
+      "tests": 14,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-stats/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.feature.stats.HistoricalInsightsTest.xml",
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-stats/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.feature.stats.DurationFormatTest.xml",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-stats/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.feature.stats.UsageReportTest.xml",
+      "tests": 14,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-stats/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.feature.stats.UsageAggregatorTest.xml",
+      "tests": 14,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-stats/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.feature.stats.HistoricalInsightsTest.xml",
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-settings/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.feature.settings.BlockingHealthUiTest.xml",
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-settings/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.feature.settings.ExitDiagnosticsTextTest.xml",
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-settings/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.feature.settings.OemGuidanceTest.xml",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-settings/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.feature.settings.BlockingHealthUiTest.xml",
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-settings/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.feature.settings.ExitDiagnosticsTextTest.xml",
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-settings/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.feature.settings.OemGuidanceTest.xml",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-blocklist/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.feature.blocklist.EditorWidgetsTest.xml",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-blocklist/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.feature.blocklist.SummariesTest.xml",
+      "tests": 23,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-blocklist/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.feature.blocklist.RuleLiveStatusTest.xml",
+      "tests": 15,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-blocklist/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.feature.blocklist.DomainInputTest.xml",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-blocklist/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.feature.blocklist.LimitDraftTest.xml",
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-blocklist/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.feature.blocklist.TimeTextTest.xml",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-blocklist/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.feature.blocklist.RoutinePresetsTest.xml",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-blocklist/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.feature.blocklist.SleepRulesTest.xml",
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-blocklist/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.feature.blocklist.RuleDraftTest.xml",
+      "tests": 20,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-blocklist/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.feature.blocklist.EditorWidgetsTest.xml",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-blocklist/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.feature.blocklist.SummariesTest.xml",
+      "tests": 23,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-blocklist/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.feature.blocklist.RuleLiveStatusTest.xml",
+      "tests": 15,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-blocklist/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.feature.blocklist.DomainInputTest.xml",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-blocklist/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.feature.blocklist.LimitDraftTest.xml",
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-blocklist/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.feature.blocklist.TimeTextTest.xml",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-blocklist/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.feature.blocklist.RoutinePresetsTest.xml",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-blocklist/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.feature.blocklist.SleepRulesTest.xml",
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/feature/feature-blocklist/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.feature.blocklist.RuleDraftTest.xml",
+      "tests": 20,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/blocking/blocking-usagestats/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.blocking.usagestats.PathBTimeLimitGateTest.xml",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/blocking/blocking-usagestats/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.blocking.usagestats.PathBTimeLimitGateTest.xml",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/blocking/blocking-overlay/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.blocking.overlay.BlockCauseTest.xml",
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/blocking/blocking-overlay/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.blocking.overlay.BlockExemptionsTest.xml",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/blocking/blocking-overlay/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.blocking.overlay.BlockCauseTest.xml",
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/blocking/blocking-overlay/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.blocking.overlay.BlockExemptionsTest.xml",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/blocking/blocking-resilience/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.blocking.resilience.HealthStatusTest.xml",
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/blocking/blocking-resilience/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.blocking.resilience.ExitCategoryMappingTest.xml",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/blocking/blocking-resilience/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.blocking.resilience.TimeChangeReceiverTest.xml",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/blocking/blocking-resilience/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.blocking.resilience.BootReceiverTest.xml",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/blocking/blocking-resilience/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.blocking.resilience.HealthStatusTest.xml",
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/blocking/blocking-resilience/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.blocking.resilience.ExitCategoryMappingTest.xml",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/blocking/blocking-resilience/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.blocking.resilience.TimeChangeReceiverTest.xml",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/blocking/blocking-resilience/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.blocking.resilience.BootReceiverTest.xml",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/blocking/blocking-engine/build/test-results/test/TEST-com.flint.peakfocus.blocking.engine.BreakPolicyTest.xml",
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/blocking/blocking-engine/build/test-results/test/TEST-com.flint.peakfocus.blocking.engine.ClockChangeGuardTest.xml",
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/blocking/blocking-engine/build/test-results/test/TEST-com.flint.peakfocus.blocking.engine.WebsiteMatchingTest.xml",
+      "tests": 23,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/blocking/blocking-engine/build/test-results/test/TEST-com.flint.peakfocus.blocking.engine.UninstallGuardTest.xml",
+      "tests": 25,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/blocking/blocking-engine/build/test-results/test/TEST-com.flint.peakfocus.blocking.engine.OpenLimitPolicyTest.xml",
+      "tests": 28,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/blocking/blocking-engine/build/test-results/test/TEST-com.flint.peakfocus.blocking.engine.EmergencyPassPolicyTest.xml",
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/blocking/blocking-engine/build/test-results/test/TEST-com.flint.peakfocus.blocking.engine.IsoWeekdayTest.xml",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/blocking/blocking-engine/build/test-results/test/TEST-com.flint.peakfocus.blocking.engine.BlockDecisionEngineTest.xml",
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/blocking/blocking-engine/build/test-results/test/TEST-com.flint.peakfocus.blocking.engine.BrowserAddressBarsTest.xml",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/core/core-common/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.core.common.OemUtilTest.xml",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/core/core-common/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.core.common.OemUtilTest.xml",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/core/core-model/build/test-results/test/TEST-com.flint.peakfocus.core.model.ActiveRulesHolderTest.xml",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/core/core-datastore/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.core.datastore.PrefsCodecTest.xml",
+      "tests": 19,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/core/core-datastore/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.core.datastore.FlintStoresTest.xml",
+      "tests": 14,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/core/core-datastore/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.core.datastore.PrefsCodecTest.xml",
+      "tests": 19,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "android-app/core/core-datastore/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.core.datastore.FlintStoresTest.xml",
+      "tests": 14,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ]
+}

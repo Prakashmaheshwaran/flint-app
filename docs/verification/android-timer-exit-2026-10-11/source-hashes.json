@@ -1,0 +1,938 @@
+[
+  {
+    "path": "android-app/app/build.gradle.kts",
+    "sha256": "383e0969ebc56240d78411b4f4d33ca3b038cbb98b70a755ec594d895ed6ae0c"
+  },
+  {
+    "path": "android-app/app/src/debug/AndroidManifest.xml",
+    "sha256": "41e9e826ad4bb9836b42821540f75acc8a17ce7d551b51517b6ba327c9352a55"
+  },
+  {
+    "path": "android-app/app/src/debug/kotlin/com/flint/peakfocus/SetBlocklistReceiver.kt",
+    "sha256": "9f6304866ed1db1aea1ce0d125cdfe3dc31e7de7b1f75a3d25b3244651f50d0e"
+  },
+  {
+    "path": "android-app/app/src/debug/res/xml/flint_debug_network_security.xml",
+    "sha256": "d54bda7c7d558b5390dedef17f71ebd29ac31d87fb6b135fa21e7176dbb17c7d"
+  },
+  {
+    "path": "android-app/app/src/main/AndroidManifest.xml",
+    "sha256": "376de65e5bd7b19df20c7c1fc2eacc81e2ac7c352bc8a3dce5b45fdf786e9bfe"
+  },
+  {
+    "path": "android-app/app/src/main/kotlin/com/flint/peakfocus/ActiveRulesBridge.kt",
+    "sha256": "7d73676b96a5901cd0c03efc864e43280c846a0581adb60e1df36796aba9f771"
+  },
+  {
+    "path": "android-app/app/src/main/kotlin/com/flint/peakfocus/AppSearch.kt",
+    "sha256": "744ca734949ac38f117233f61f5cfa5df2aeb580ebcd7b4858a37b274ee54375"
+  },
+  {
+    "path": "android-app/app/src/main/kotlin/com/flint/peakfocus/EnforcementServices.kt",
+    "sha256": "eabcbe12c4fbe78d446256cdc165e339978c56e8d572231d7e744564c560d5f3"
+  },
+  {
+    "path": "android-app/app/src/main/kotlin/com/flint/peakfocus/FlintApplication.kt",
+    "sha256": "159203518dc7368d6dc8df21be936a7788b86b664eda51c43a53afff586bd52e"
+  },
+  {
+    "path": "android-app/app/src/main/kotlin/com/flint/peakfocus/MainActivity.kt",
+    "sha256": "4c95624467f91b712c16984a0cc805b6e2342deb3a6b0b3cfe32e85a04f04de5"
+  },
+  {
+    "path": "android-app/app/src/main/res/drawable/ic_flint_foreground.xml",
+    "sha256": "e41fa7a58df32e8f3bc19c6e063bbc813b3ed500e83511248e02506e795c1bd0"
+  },
+  {
+    "path": "android-app/app/src/main/res/drawable/ic_flint_monochrome.xml",
+    "sha256": "11b4bab6e4a615bc88ffb5aab09585c7c589fd378c57880aff14dd0b2341d016"
+  },
+  {
+    "path": "android-app/app/src/main/res/drawable/ic_flint_splash.xml",
+    "sha256": "7d291945e7a7137dca9bece222b38de3fb92afee34e0886239bab54e1a1e5695"
+  },
+  {
+    "path": "android-app/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml",
+    "sha256": "fdc4e460f7d4fa743378f9e5ce39450dbddf6b5573e8e7c731de9138d1119915"
+  },
+  {
+    "path": "android-app/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml",
+    "sha256": "463fadfb7abc29d99ae2f38b0396cb77f9441df3aca899c70a8db54506e670f6"
+  },
+  {
+    "path": "android-app/app/src/main/res/mipmap/ic_launcher.xml",
+    "sha256": "d0a930a4bb6daf81de9f6774f939634b94f3505b3e805cf8759597aa32519839"
+  },
+  {
+    "path": "android-app/app/src/main/res/mipmap/ic_launcher_round.xml",
+    "sha256": "10d80d7ece7d5605189e896b5657f9e11e93a6b2f0bfae76c9ded725a6260084"
+  },
+  {
+    "path": "android-app/app/src/main/res/values-night-v31/themes.xml",
+    "sha256": "01e3014f9078e94ba630f707f2dea5aa27c3783440f85a1d3c71386474a9e9a2"
+  },
+  {
+    "path": "android-app/app/src/main/res/values-night/themes.xml",
+    "sha256": "62845a59b0777e5bbc32f2f2cdc2f4178e257e4db9db2ab377a623e32e38a006"
+  },
+  {
+    "path": "android-app/app/src/main/res/values-v31/themes.xml",
+    "sha256": "a29860d4f5412f339a15579ed22857ac05968b47628e7b5feb6af5b4b9b5fe91"
+  },
+  {
+    "path": "android-app/app/src/main/res/values/colors.xml",
+    "sha256": "b0190bccc4622204ec8cba0dfc8605a04fb2df7ef05e8e70dee3978f6a8f2992"
+  },
+  {
+    "path": "android-app/app/src/main/res/values/strings.xml",
+    "sha256": "fb3f3850f21a507777c3f508fe194114ef681bdfc87a932ab45ebd282fef3790"
+  },
+  {
+    "path": "android-app/app/src/main/res/values/themes.xml",
+    "sha256": "97ebd2b3cb81ea2155153b764fba1ccc21ffbf404c913520a757b5fba0ac0df8"
+  },
+  {
+    "path": "android-app/app/src/test/kotlin/com/flint/peakfocus/AppSearchTest.kt",
+    "sha256": "7f7b779932e9ec4c7d317ec23a7de77f2c6ceec608eab05588c0b89d4b996192"
+  },
+  {
+    "path": "android-app/blocking/blocking-accessibility/build.gradle.kts",
+    "sha256": "7dfb84b471bf9edc0195af35b9bee53cca56b9f7f768535fe249f7565404cf96"
+  },
+  {
+    "path": "android-app/blocking/blocking-accessibility/src/main/AndroidManifest.xml",
+    "sha256": "bf9a43b165aa98f6a2f7dba9c4271dc5f5599e056e0634222496c5058b580598"
+  },
+  {
+    "path": "android-app/blocking/blocking-accessibility/src/main/kotlin/com/flint/peakfocus/blocking/accessibility/FlintAccessibilityService.kt",
+    "sha256": "f45d25cf7c0a079eaccdf3156d18bd5a718647cd1484f0a4dce0fce82e330367"
+  },
+  {
+    "path": "android-app/blocking/blocking-accessibility/src/main/res/values/strings.xml",
+    "sha256": "d60000e3e67498a7fa17c24186768e9b866237fef28bb6c53f491fa43c58e703"
+  },
+  {
+    "path": "android-app/blocking/blocking-accessibility/src/main/res/xml/accessibility_service_config.xml",
+    "sha256": "45391223c482403a510a71c92ab3375c052b07be9a1fcbe7402e864977462a7d"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/build.gradle.kts",
+    "sha256": "6df61d25701e80e53d8a1fbd915849d6001712edfe92b47c629c3d466b57d40d"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/main/kotlin/com/flint/peakfocus/blocking/engine/BlockDecisionEngine.kt",
+    "sha256": "9d8674435b934c02f0a6e0e44837ffb2bab9386f4811cf6b37992e2e654089e8"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/main/kotlin/com/flint/peakfocus/blocking/engine/BreakPolicy.kt",
+    "sha256": "ba8d1140f29da96dfe7e3fa55dea3c8313e43ccb948a785a157360322b504c60"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/main/kotlin/com/flint/peakfocus/blocking/engine/BrowserAddressBars.kt",
+    "sha256": "e7193ba10a7420cb28d43caa59de88430f088b09dbb02bca7c4554282f6e5a6c"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/main/kotlin/com/flint/peakfocus/blocking/engine/ClockChangeGuard.kt",
+    "sha256": "0d9b4a84706fefabad8cb99fd1642f1a484f2bb3dd3db41a3703854969e8771d"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/main/kotlin/com/flint/peakfocus/blocking/engine/DayMath.kt",
+    "sha256": "2220697801a0768c0db4698546323b1b79e23c7cc944a520bf99e149763b09c0"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/main/kotlin/com/flint/peakfocus/blocking/engine/EmergencyPassPolicy.kt",
+    "sha256": "1846a39d9805c9bb06f2520fcd02e9bf4488be5f108326b663e671999add855d"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/main/kotlin/com/flint/peakfocus/blocking/engine/HostCanonicalizer.kt",
+    "sha256": "d960bf912d1c281696f991ea6ad1c388408e662fd4da352827e95bfd28fdef8c"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/main/kotlin/com/flint/peakfocus/blocking/engine/IsoWeekday.kt",
+    "sha256": "8bb00b314994951a795f2e1c34f3b96c50e5fa4fab3d678404d96283a805bd8e"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/main/kotlin/com/flint/peakfocus/blocking/engine/ManagedRulePolicy.kt",
+    "sha256": "41558937c5fc32b62feadb3cf14c56add4f64026afab38ade60742e047c46b15"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/main/kotlin/com/flint/peakfocus/blocking/engine/OpenLimitPolicy.kt",
+    "sha256": "c0ed289b12eb64447071da68d9300e2806cb9b8ea6bc5941998408c27b1d70d8"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/main/kotlin/com/flint/peakfocus/blocking/engine/SystemSurfaces.kt",
+    "sha256": "c20de46994914ae034137b9f38c186e9396ed056756b5bb53a158169a272a7b1"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/main/kotlin/com/flint/peakfocus/blocking/engine/TemporaryAccessPolicy.kt",
+    "sha256": "45b50058f40375ed2dae4b1496a1e7cec146eaa2bdf029f2d4e63f558af6a69c"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/main/kotlin/com/flint/peakfocus/blocking/engine/UninstallGuard.kt",
+    "sha256": "5c5ae2fc6df9701f14e8576f8623b1ca16d23d755ebe3f443d4a2f1b1da4786c"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/test/kotlin/com/flint/peakfocus/blocking/engine/BlockDecisionEngineTest.kt",
+    "sha256": "74eb96d941ab5178d1248647c6c67ca54354f0ba4804941b03cd7afbe0b9bbd3"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/test/kotlin/com/flint/peakfocus/blocking/engine/BreakPolicyTest.kt",
+    "sha256": "dbfaed1612305a6f0ea6f3ce46067b4a68f5ca7cc8388daa464460547a5867b2"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/test/kotlin/com/flint/peakfocus/blocking/engine/BrowserAddressBarsTest.kt",
+    "sha256": "9e29b99d3fb8c982cd90cddea268df4e4b692f1cf15bd0aa07389eb9f22191e0"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/test/kotlin/com/flint/peakfocus/blocking/engine/ClockChangeGuardTest.kt",
+    "sha256": "2cf7ae1608791e319fa2cc2e72d03f52c628089021848944fbcab8d6f5ec5770"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/test/kotlin/com/flint/peakfocus/blocking/engine/EmergencyPassPolicyTest.kt",
+    "sha256": "deec3a62f05d5f75c6bde71b11ce9abe20202ea1283601a307ceec3971dfd45f"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/test/kotlin/com/flint/peakfocus/blocking/engine/IsoWeekdayTest.kt",
+    "sha256": "76a89c0c8dfb3284e04923958163dbca854b73fa53ebc467fb9d90eea9fc20ed"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/test/kotlin/com/flint/peakfocus/blocking/engine/ManagedRulePolicyTest.kt",
+    "sha256": "397c68ec8789ddd023e406175cf8ea1a9b4663e479f6c5dc9da8e6329a49f569"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/test/kotlin/com/flint/peakfocus/blocking/engine/OpenLimitPolicyTest.kt",
+    "sha256": "f3def7632c02a1c2c98dd2a4aab516711cb696ae9a61e31d1a4d19447e80eec1"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/test/kotlin/com/flint/peakfocus/blocking/engine/TemporaryAccessPolicyTest.kt",
+    "sha256": "31cdcd217a45ba34076cc028ed458e4dea534f416da39748a113ce5da1e726a6"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/test/kotlin/com/flint/peakfocus/blocking/engine/UninstallGuardTest.kt",
+    "sha256": "433ab64506d906d3bbc71961a65f12d40b92e6401327408ccf8b0d56e1f20bf4"
+  },
+  {
+    "path": "android-app/blocking/blocking-engine/src/test/kotlin/com/flint/peakfocus/blocking/engine/WebsiteMatchingTest.kt",
+    "sha256": "04c0ad49904eacf2292cb0ff2ca68222228f5a2e83dedfd6a9fd4566e4c6e602"
+  },
+  {
+    "path": "android-app/blocking/blocking-overlay/build.gradle.kts",
+    "sha256": "875a34c67ca7a0c890132b7378d33416aa83a223e940011fbba8872db1654466"
+  },
+  {
+    "path": "android-app/blocking/blocking-overlay/src/main/AndroidManifest.xml",
+    "sha256": "60fc418c4f8ffb6c99defe89ee40c5084b48344c24b9496459a510fb4f1d4c8d"
+  },
+  {
+    "path": "android-app/blocking/blocking-overlay/src/main/kotlin/com/flint/peakfocus/blocking/overlay/BlockActivity.kt",
+    "sha256": "2c389f307335695f658d052af7d651beb23893f82e8d963c8065a82c2a1b034f"
+  },
+  {
+    "path": "android-app/blocking/blocking-overlay/src/main/kotlin/com/flint/peakfocus/blocking/overlay/BlockCause.kt",
+    "sha256": "bbb1327f0f5575bdc7aa4d846370c74c5a43e57f6c1b5bc4ad36b60b319bfc9b"
+  },
+  {
+    "path": "android-app/blocking/blocking-overlay/src/main/kotlin/com/flint/peakfocus/blocking/overlay/BlockExemptions.kt",
+    "sha256": "e8c9a138a10edad0e0032168013cbdda332fd89d86096315e34ef87791a135fd"
+  },
+  {
+    "path": "android-app/blocking/blocking-overlay/src/main/kotlin/com/flint/peakfocus/blocking/overlay/BlockOverlapPolicy.kt",
+    "sha256": "9771c6c90ac470a3131ae6859ef0bf8ecb1a0c41c78abb135d427483f7f5c72b"
+  },
+  {
+    "path": "android-app/blocking/blocking-overlay/src/main/kotlin/com/flint/peakfocus/blocking/overlay/BlockScreenCoordinator.kt",
+    "sha256": "eafa645810ce5db33cd1573a5238e42917473969286ec2c5a64fe323cfff50d6"
+  },
+  {
+    "path": "android-app/blocking/blocking-overlay/src/main/kotlin/com/flint/peakfocus/blocking/overlay/BlockScreenHostView.kt",
+    "sha256": "71162ddb503f8ec7420725b16c5061c76ac843fea99269afaf6652327a603cd6"
+  },
+  {
+    "path": "android-app/blocking/blocking-overlay/src/main/kotlin/com/flint/peakfocus/blocking/overlay/NeverBlockSurfaces.kt",
+    "sha256": "d24f797cd857d16cc84d2cd1742e562adb651c95407bb48b301b3ed41ac54577"
+  },
+  {
+    "path": "android-app/blocking/blocking-overlay/src/main/kotlin/com/flint/peakfocus/blocking/overlay/OverlayController.kt",
+    "sha256": "9be147a5bd2b67fb109f1eb827507ab270eb2740d25ec4b4ab5b59215325d51f"
+  },
+  {
+    "path": "android-app/blocking/blocking-overlay/src/main/kotlin/com/flint/peakfocus/blocking/overlay/PathBBlockHandoff.kt",
+    "sha256": "22b0ab285d6763d57d17cc0ea84abd2f0f22c9b7209438b391ccd8ec3a6cf76f"
+  },
+  {
+    "path": "android-app/blocking/blocking-overlay/src/main/res/values/themes.xml",
+    "sha256": "c094db73b4392ea7ae3b2442a64856e9fc136eab4a63447ade565f523734d7bd"
+  },
+  {
+    "path": "android-app/blocking/blocking-overlay/src/test/kotlin/com/flint/peakfocus/blocking/overlay/BlockCauseTest.kt",
+    "sha256": "7f58d04b5320f82d3da2a99da41bb96b7c3f14e697eb452a42ee0a43d2d5d190"
+  },
+  {
+    "path": "android-app/blocking/blocking-overlay/src/test/kotlin/com/flint/peakfocus/blocking/overlay/BlockExemptionsTest.kt",
+    "sha256": "872b8de0243a674436d28b97c9bd8ff7a847771476831545aae76f812da07932"
+  },
+  {
+    "path": "android-app/blocking/blocking-overlay/src/test/kotlin/com/flint/peakfocus/blocking/overlay/BlockOverlapPolicyTest.kt",
+    "sha256": "61f19259628351ce94dac8d3502a89042924d74890c8d83d9a17bb0f2d1182d8"
+  },
+  {
+    "path": "android-app/blocking/blocking-resilience/build.gradle.kts",
+    "sha256": "b34b716273b15266d3798b767e592566529a7bed2ccea35873f90a65192c540d"
+  },
+  {
+    "path": "android-app/blocking/blocking-resilience/src/main/AndroidManifest.xml",
+    "sha256": "10d163b28b1dcceaf7c575a5d17d28e074a4560cc3959b6fa7ad2b1625cfbff6"
+  },
+  {
+    "path": "android-app/blocking/blocking-resilience/src/main/kotlin/com/flint/peakfocus/blocking/resilience/BootReceiver.kt",
+    "sha256": "45e3550ff17dc8a4faea15ccfae8b94fe867e4fc3c1cb471d1ad54e3bd6c3c16"
+  },
+  {
+    "path": "android-app/blocking/blocking-resilience/src/main/kotlin/com/flint/peakfocus/blocking/resilience/ExitReasonReporter.kt",
+    "sha256": "db6674c37ae8c8d1d45cb5a5d5d3547cd5e46a3313b1c9c998b391a013360c4a"
+  },
+  {
+    "path": "android-app/blocking/blocking-resilience/src/main/kotlin/com/flint/peakfocus/blocking/resilience/PermissionHealthChecker.kt",
+    "sha256": "7d80088c47496c7bd7d14072dea0799c6eb61a6d24f88ce15d9c1b0db162424d"
+  },
+  {
+    "path": "android-app/blocking/blocking-resilience/src/main/kotlin/com/flint/peakfocus/blocking/resilience/TimeChangeReceiver.kt",
+    "sha256": "489c912d13d51756bd580a6cf384f2b69f200ae5d753a83f53a53dd46e4bcb93"
+  },
+  {
+    "path": "android-app/blocking/blocking-resilience/src/test/kotlin/com/flint/peakfocus/blocking/resilience/BootReceiverTest.kt",
+    "sha256": "ae91f906473bac46551fdc7185f0a783045551b93d7b423611b34061b1ea8d91"
+  },
+  {
+    "path": "android-app/blocking/blocking-resilience/src/test/kotlin/com/flint/peakfocus/blocking/resilience/ExitCategoryMappingTest.kt",
+    "sha256": "4da06d5ed7b40895a2ce7063008be42c4b6faaafdb9bc97ccdeeae62126e7aea"
+  },
+  {
+    "path": "android-app/blocking/blocking-resilience/src/test/kotlin/com/flint/peakfocus/blocking/resilience/HealthStatusTest.kt",
+    "sha256": "97ed630653e9e0d6e913d81abe1bc654d2afcc10bac395afe8ca02543394fe45"
+  },
+  {
+    "path": "android-app/blocking/blocking-resilience/src/test/kotlin/com/flint/peakfocus/blocking/resilience/TimeChangeReceiverTest.kt",
+    "sha256": "8d01e58c476843cb22aa6d412e32bdb84ec50927e0e9950eb81b6ea10d017f57"
+  },
+  {
+    "path": "android-app/blocking/blocking-usagestats/build.gradle.kts",
+    "sha256": "7e863da7790684398ffe04f5a499c6a7d27491817ef483ce7761f9aa80c5df41"
+  },
+  {
+    "path": "android-app/blocking/blocking-usagestats/src/main/AndroidManifest.xml",
+    "sha256": "894ff01fa8c555638b43ef6f9a225685e126dce100a08e415d907b21aaf58c3a"
+  },
+  {
+    "path": "android-app/blocking/blocking-usagestats/src/main/kotlin/com/flint/peakfocus/blocking/usagestats/DailyLimitTracker.kt",
+    "sha256": "ea8e0973123b7f9e2518b7995d8f9f1de56c4e2d181227c3479472ea1c98b601"
+  },
+  {
+    "path": "android-app/blocking/blocking-usagestats/src/main/kotlin/com/flint/peakfocus/blocking/usagestats/PathBTimeLimitGate.kt",
+    "sha256": "82613f0db8feb8d138ce88fdd518d2fbbbc5d0f5743fada90207ce3204c4a04a"
+  },
+  {
+    "path": "android-app/blocking/blocking-usagestats/src/main/kotlin/com/flint/peakfocus/blocking/usagestats/UsagePoller.kt",
+    "sha256": "71759b9a2973a0cfc63e0105b2fdd0a0d3daf8bd07e608320cd2538ddfeff440"
+  },
+  {
+    "path": "android-app/blocking/blocking-usagestats/src/main/kotlin/com/flint/peakfocus/blocking/usagestats/UsageStatsForegroundService.kt",
+    "sha256": "cb5d21d20bd2c1d5ae835ff9624a5ffb20e5d5b7a02876b2f3a573e57f89b6bf"
+  },
+  {
+    "path": "android-app/blocking/blocking-usagestats/src/main/res/drawable/ic_stat_flint.xml",
+    "sha256": "13142b9c349b2b04f8d855282d530f4a8e6f43dee6211c985cbf1a1863f5de65"
+  },
+  {
+    "path": "android-app/blocking/blocking-usagestats/src/main/res/values/colors.xml",
+    "sha256": "b8a7fb18e36dd1e3288a026deb9b06dd0b7a55009d8ee175829998fcae1a94d1"
+  },
+  {
+    "path": "android-app/blocking/blocking-usagestats/src/test/kotlin/com/flint/peakfocus/blocking/usagestats/PathBTimeLimitGateTest.kt",
+    "sha256": "9c9ecbfd91cc03d27f8668955241411932f5112b93b22a7045343440d66d7166"
+  },
+  {
+    "path": "android-app/build.gradle.kts",
+    "sha256": "bd4c105675412dcbe4027372fc3706e280cbc4c760f61ec6ec0ac93840d172bd"
+  },
+  {
+    "path": "android-app/core/core-common/build.gradle.kts",
+    "sha256": "72fc27736c186963a0b2219e30606678ba9c5cb5ba3d514e143288e5600ef152"
+  },
+  {
+    "path": "android-app/core/core-common/src/main/kotlin/com/flint/peakfocus/core/common/OemUtil.kt",
+    "sha256": "1b204790eac2041488e445837ee049144b45f7099169d465e67762516ea5a308"
+  },
+  {
+    "path": "android-app/core/core-common/src/main/kotlin/com/flint/peakfocus/core/common/theme/FlintIcons.kt",
+    "sha256": "1121736c424c9edd0e8549a20844d42add52dc8d501dd30f2a4d0eb312f6d8df"
+  },
+  {
+    "path": "android-app/core/core-common/src/main/kotlin/com/flint/peakfocus/core/common/theme/FlintTheme.kt",
+    "sha256": "769ced21275e4c885823eb247e9d1ecd5aa8a606635b59a9036a11c6734efc4f"
+  },
+  {
+    "path": "android-app/core/core-common/src/main/kotlin/com/flint/peakfocus/core/common/ui/FlintHaptics.kt",
+    "sha256": "c11f3f24af539e3febfdd0923af17972d1140d5a60193cbb6dd10d735ac9e2b7"
+  },
+  {
+    "path": "android-app/core/core-common/src/main/kotlin/com/flint/peakfocus/core/common/ui/FlintKit.kt",
+    "sha256": "ab9ed036bfdb44ab5ea4f115798af42fc8bf461cf34c5f4077739e2e356c3d26"
+  },
+  {
+    "path": "android-app/core/core-common/src/test/kotlin/com/flint/peakfocus/core/common/OemUtilTest.kt",
+    "sha256": "82f34a83598716362207431e35399228c205dcad04ea7cb48d9b24dc7763c782"
+  },
+  {
+    "path": "android-app/core/core-data/build.gradle.kts",
+    "sha256": "061c51e3fdd561606e1ede7902e20676a315ff2f2504b615a2ce14c80c2a773e"
+  },
+  {
+    "path": "android-app/core/core-data/src/main/kotlin/com/flint/peakfocus/core/data/BlocklistStore.kt",
+    "sha256": "ce862b3a28a4d94f45f2cf3a9d94f8c4951b7a7f3a9b5e49bab3c34f3a13881a"
+  },
+  {
+    "path": "android-app/core/core-data/src/main/kotlin/com/flint/peakfocus/core/data/LimitStore.kt",
+    "sha256": "4d9007acfb6950e85de94c34b3e5078b202108c1b681c0994878aa52b1adeeed"
+  },
+  {
+    "path": "android-app/core/core-data/src/main/kotlin/com/flint/peakfocus/core/data/UsageQuery.kt",
+    "sha256": "8f30f391a0e25f2c112492e59eb549954491616d38b0905612d5f37e6dac658b"
+  },
+  {
+    "path": "android-app/core/core-datastore/build.gradle.kts",
+    "sha256": "ae6c294008e3f55d92855a6a03c59c135055019eee039c146998cf99cb71b1d1"
+  },
+  {
+    "path": "android-app/core/core-datastore/src/main/kotlin/com/flint/peakfocus/core/datastore/AccessDataStores.kt",
+    "sha256": "f7c66bc6b61c93d1a170edc587a83e4b35c018d29179f241d1f34b0d232eb77a"
+  },
+  {
+    "path": "android-app/core/core-datastore/src/main/kotlin/com/flint/peakfocus/core/datastore/AccessLedgerCodec.kt",
+    "sha256": "82960238f8b88134b16e0b77890a707665956a5683313d8d1683f425c698f9f4"
+  },
+  {
+    "path": "android-app/core/core-datastore/src/main/kotlin/com/flint/peakfocus/core/datastore/AccessStateStore.kt",
+    "sha256": "92e0a232003ec6cd6da68e3d493c3eb5dc57c316c7ca452bce00df624504be61"
+  },
+  {
+    "path": "android-app/core/core-datastore/src/main/kotlin/com/flint/peakfocus/core/datastore/BlockRulesStore.kt",
+    "sha256": "fb2f443d8efcf6df821549f3a965913ef7742f5968b949e6a88087e43c255324"
+  },
+  {
+    "path": "android-app/core/core-datastore/src/main/kotlin/com/flint/peakfocus/core/datastore/DataStoreStores.kt",
+    "sha256": "9897897ba1aad104450c60b56f6765cc3e947058dc6c8437a657479ba28debc4"
+  },
+  {
+    "path": "android-app/core/core-datastore/src/main/kotlin/com/flint/peakfocus/core/datastore/FlintPreferences.kt",
+    "sha256": "02e4ef1a6ae6dbe599968697542a062d5d13f98cee50ffc739b980aeefc61ab3"
+  },
+  {
+    "path": "android-app/core/core-datastore/src/main/kotlin/com/flint/peakfocus/core/datastore/FocusStateStore.kt",
+    "sha256": "d595ef4f64d12f138ed48b5661f489034a1895c322bfc554abe15d35620d3635"
+  },
+  {
+    "path": "android-app/core/core-datastore/src/main/kotlin/com/flint/peakfocus/core/datastore/GroupsStore.kt",
+    "sha256": "a413b1942e412592f49c5f0b2202b6f082d80464103d8083b7a9989e4f9ed1ec"
+  },
+  {
+    "path": "android-app/core/core-datastore/src/main/kotlin/com/flint/peakfocus/core/datastore/InMemoryStores.kt",
+    "sha256": "7edcfe2ebbfc234de7d355e75d081c66b0a60001b2c3338df9bfcdaea5b2d9db"
+  },
+  {
+    "path": "android-app/core/core-datastore/src/main/kotlin/com/flint/peakfocus/core/datastore/LimitsStore.kt",
+    "sha256": "c31a200aa120e024f66456f31fe483ac895dd6ec5c33138206399e7c7d48e8cd"
+  },
+  {
+    "path": "android-app/core/core-datastore/src/main/kotlin/com/flint/peakfocus/core/datastore/ManagedCacheStore.kt",
+    "sha256": "7d8467953e624f21a7aa4e469dea8e1a62518602be832f0b633e2833701b321c"
+  },
+  {
+    "path": "android-app/core/core-datastore/src/main/kotlin/com/flint/peakfocus/core/datastore/PrefsCodec.kt",
+    "sha256": "6a5e015d13b3b1e3f66a18430bd8bc8df0917d366f24b2937a8c677b83c357cd"
+  },
+  {
+    "path": "android-app/core/core-datastore/src/test/kotlin/com/flint/peakfocus/core/datastore/AccessLedgerCodecTest.kt",
+    "sha256": "cdb631dab9523903688f37bac89a6b29a06d0bf04c792b7bb5fecf663744162f"
+  },
+  {
+    "path": "android-app/core/core-datastore/src/test/kotlin/com/flint/peakfocus/core/datastore/AccessStateStoreTest.kt",
+    "sha256": "c9d0b83440989487a07044fee52b0d02fce9a518e0585f5596d641238b8527b0"
+  },
+  {
+    "path": "android-app/core/core-datastore/src/test/kotlin/com/flint/peakfocus/core/datastore/FlintStoresTest.kt",
+    "sha256": "f5d67354d3c3b50afb55ec8485baa12b9b9e7c7650bb05bdd610be3307173983"
+  },
+  {
+    "path": "android-app/core/core-datastore/src/test/kotlin/com/flint/peakfocus/core/datastore/ManagedCacheStoreTest.kt",
+    "sha256": "09ac9a4bce007a7ae2a781d1b952b0c9d409e182539e71bd95b8a4c97d699671"
+  },
+  {
+    "path": "android-app/core/core-datastore/src/test/kotlin/com/flint/peakfocus/core/datastore/PrefsCodecTest.kt",
+    "sha256": "74fb00f0b86eff65e966a7d9dc83ece63dabb63147af4150cea44f4134b1c196"
+  },
+  {
+    "path": "android-app/core/core-model/build.gradle.kts",
+    "sha256": "0e7822560acecaa8c18c7118a0e10b3b45e7868ccee0c673effd054027c0f1a5"
+  },
+  {
+    "path": "android-app/core/core-model/src/main/kotlin/com/flint/peakfocus/core/model/ActiveRulesHolder.kt",
+    "sha256": "efbde8617eaf4545286ba85260325b9758a9d6cfc04c101e5c985366054bc72d"
+  },
+  {
+    "path": "android-app/core/core-model/src/main/kotlin/com/flint/peakfocus/core/model/Models.kt",
+    "sha256": "8969c7abec054380f401998f855d34cd84d063d90965e7ba979783a88c0a74a0"
+  },
+  {
+    "path": "android-app/core/core-model/src/main/kotlin/com/flint/peakfocus/core/model/TimeLimit.kt",
+    "sha256": "75f10f664d588496873b731e2a9fbc04f8cea27dd9de4e58c55fe89f7914b8fd"
+  },
+  {
+    "path": "android-app/core/core-model/src/main/kotlin/com/flint/peakfocus/core/model/UsageStat.kt",
+    "sha256": "2cda27491d987c748a2fd4f0ad6b0e6c03a85d92240aa5733b5a99b345878a7d"
+  },
+  {
+    "path": "android-app/core/core-model/src/main/kotlin/com/flint/peakfocus/core/model/access/AccessModels.kt",
+    "sha256": "6e9cb4ab1e57104dca2cc2c412ae65c45b2ec55b6f72aed761e5d539aecfa0b0"
+  },
+  {
+    "path": "android-app/core/core-model/src/main/kotlin/com/flint/peakfocus/core/model/break/BreakModels.kt",
+    "sha256": "0514d70f4db1d5e15432224f7ec572e41585c59c174fa1e24ec5ef6572644db8"
+  },
+  {
+    "path": "android-app/core/core-model/src/main/kotlin/com/flint/peakfocus/core/model/break/OpenLimitModels.kt",
+    "sha256": "275e52479e9544165b982b8d30d7c186bcff00a7bbd25239cf6bb76c3dfd8b69"
+  },
+  {
+    "path": "android-app/core/core-model/src/main/kotlin/com/flint/peakfocus/core/model/managed/ManagedModels.kt",
+    "sha256": "2e0d5edd351e82efd8b64b82991ebc36fc95c953859ff130eea0ceeffc254765"
+  },
+  {
+    "path": "android-app/core/core-model/src/test/kotlin/com/flint/peakfocus/core/model/ActiveRulesHolderTest.kt",
+    "sha256": "c64976af50ba2a3f8ca583ee8446a9ea646e33859ae378be50a618464595f451"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/build.gradle.kts",
+    "sha256": "1b827c5ff75a6e490c6b4d27f618145c32f793051f1f65ecef39b090447953e6"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/main/AndroidManifest.xml",
+    "sha256": "0b2f6c3c44d6d4ff3514068703e2c17dcb68ac372b960cbfda12f70cef0b3195"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/main/kotlin/com/flint/peakfocus/feature/blocklist/AppPickerScreen.kt",
+    "sha256": "db081b42281932b35de7d7e5b96ed516d04195c8943d209700da77846fa91f41"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/main/kotlin/com/flint/peakfocus/feature/blocklist/BlocklistScreen.kt",
+    "sha256": "7922d11a9b594029c6d5cdc0b79bbbec74d8bd6cb8b3b2da180f645608f91667"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/main/kotlin/com/flint/peakfocus/feature/blocklist/BlocklistViewModel.kt",
+    "sha256": "b535d5c76fe96f5f94e1e13618949a4070c4b7f68a3685b69f0236f63acf6484"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/main/kotlin/com/flint/peakfocus/feature/blocklist/DomainInput.kt",
+    "sha256": "5aaa4b6fc0570bd3e548fc00281a9efc72f3131abc0b2ac5ca6cc85b0ea11055"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/main/kotlin/com/flint/peakfocus/feature/blocklist/EditorWidgets.kt",
+    "sha256": "9be6e1ffbb7ebf9d00eb73817e11d9f8b7fcf3c508fa9f5d48d181fc55b53f9b"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/main/kotlin/com/flint/peakfocus/feature/blocklist/InstalledApps.kt",
+    "sha256": "52a0329c0aef9308a96447b36187958bcb9cf042ad34ca4bdb56efef32d38327"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/main/kotlin/com/flint/peakfocus/feature/blocklist/LimitDraft.kt",
+    "sha256": "0166c74881ede04c13aa4878b29a19637eda77c62c137e7853afc1ef628234d0"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/main/kotlin/com/flint/peakfocus/feature/blocklist/LimitEditorScreen.kt",
+    "sha256": "dede43753553499798e7818adc1b941e2fae1469f6c177c3ea172d201fcded29"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/main/kotlin/com/flint/peakfocus/feature/blocklist/RoutinePresets.kt",
+    "sha256": "eb58821587e2863b8b0d15c57f05d2be4cffef2f750b7af5207c4d9003597937"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/main/kotlin/com/flint/peakfocus/feature/blocklist/RuleDraft.kt",
+    "sha256": "80e9a54ab0ed7efcb0893915b441f98931f22d3b093722689af772f5c6888e73"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/main/kotlin/com/flint/peakfocus/feature/blocklist/RuleEditorScreen.kt",
+    "sha256": "66c5c102791375df79d3e100064250b1b3503f1d9032166b2b2c6714e33e8d84"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/main/kotlin/com/flint/peakfocus/feature/blocklist/SleepEditorScreen.kt",
+    "sha256": "7366e3156997033e81a7ee3e80d1164d744ca9fff8ae23b268d0cb06ca97b218"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/main/kotlin/com/flint/peakfocus/feature/blocklist/SleepRules.kt",
+    "sha256": "f70d7fb327b6e3f63981e780c8df492fe9719d6e5ecb67778d1657c65538ea6e"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/main/kotlin/com/flint/peakfocus/feature/blocklist/Summaries.kt",
+    "sha256": "eb82a4f107c7bdb6eeafee4264d7afe25e514a63c915619ccaa5450c9d355beb"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/main/kotlin/com/flint/peakfocus/feature/blocklist/TimeText.kt",
+    "sha256": "ac6cf8663d4d8c4723be1e62dbe72c13e96391a89498fda6c4c43b0822d8d974"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/main/kotlin/com/flint/peakfocus/feature/blocklist/TimerExitDialog.kt",
+    "sha256": "2137a7151d4a663dfd76ef06db8086bdeac4d72dfe51d2301c7bf551bb21fc72"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/main/kotlin/com/flint/peakfocus/feature/blocklist/TimerModels.kt",
+    "sha256": "5e86f58b6e574993deeac719043b5df75d505f84c32d843974e92c968757e963"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/main/kotlin/com/flint/peakfocus/feature/blocklist/TimerScreen.kt",
+    "sha256": "bdc5efe646b14a02ec996d45472151b775e021f8836d86965752c466d4b0f3d0"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/main/kotlin/com/flint/peakfocus/feature/blocklist/TimerViewModel.kt",
+    "sha256": "395072af304e7d1cb7cfa886f1b4cf7a93c6e0aa6eb071d2d5e8bf8013439076"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/test/kotlin/com/flint/peakfocus/feature/blocklist/DomainInputTest.kt",
+    "sha256": "0a36ef3cdaf1697d2501cb615a484b02887947517d01f8e58076bc827827c311"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/test/kotlin/com/flint/peakfocus/feature/blocklist/EditorWidgetsTest.kt",
+    "sha256": "1dda1fc1fb0430de7d76d1647df55bccf945a862690bb1c539a0ba2e39307b87"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/test/kotlin/com/flint/peakfocus/feature/blocklist/LimitDraftTest.kt",
+    "sha256": "8b1507dc84f2245032704be74b71b7781582c31e98fc7c39f6a398f069d5325a"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/test/kotlin/com/flint/peakfocus/feature/blocklist/RoutinePresetsTest.kt",
+    "sha256": "6ef06489a3f4ed00eaa6ea7a5833ff35e410e3198a5178303da6a4c89150d9ff"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/test/kotlin/com/flint/peakfocus/feature/blocklist/RuleDraftTest.kt",
+    "sha256": "03f807c83ca180b45119ef571d4d07aa2fba34ed1dcab8d6cbd59c65dc321de1"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/test/kotlin/com/flint/peakfocus/feature/blocklist/RuleLiveStatusTest.kt",
+    "sha256": "924e594696bac6673b39365eb71ce28639194cd7a9985f77a6d502528e02f824"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/test/kotlin/com/flint/peakfocus/feature/blocklist/SleepRulesTest.kt",
+    "sha256": "f4ab8efd28a58df9c182333335b3e3642f74af1620a863be587be65c9a0cf2ac"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/test/kotlin/com/flint/peakfocus/feature/blocklist/SummariesTest.kt",
+    "sha256": "4c2bdd7f78a50afb131fdb65b9514286a6f1b383a3d05775eb9a71d57754ce61"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/test/kotlin/com/flint/peakfocus/feature/blocklist/TimeTextTest.kt",
+    "sha256": "44ea865a1dc19a1f735ab9f134beab6892082b9d31a46b82038a706f5f92e953"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/test/kotlin/com/flint/peakfocus/feature/blocklist/TimerModelsTest.kt",
+    "sha256": "f2927c0b6e5677daaa29f5fcd00bcc0e6e3fbcbf8d7d3e4254ba4dfdcef7421e"
+  },
+  {
+    "path": "android-app/feature/feature-blocklist/src/test/kotlin/com/flint/peakfocus/feature/blocklist/TimerViewModelTest.kt",
+    "sha256": "1a37a420aab1afef6bc1deaf7964b0d36fd8d50162f971a25b725df1bdf51180"
+  },
+  {
+    "path": "android-app/feature/feature-blockscreen/build.gradle.kts",
+    "sha256": "62a4508dc892ba1b80580abf6457219198d60f7430e46658536ccc0f21054947"
+  },
+  {
+    "path": "android-app/feature/feature-blockscreen/src/main/kotlin/com/flint/peakfocus/feature/blockscreen/BlockScreen.kt",
+    "sha256": "7920638bb1a59575822e6e3628dbc38efe2117468d6e44efc2ceaa0a5c07f1cd"
+  },
+  {
+    "path": "android-app/feature/feature-blockscreen/src/main/kotlin/com/flint/peakfocus/feature/blockscreen/BlockScreenState.kt",
+    "sha256": "0abedb221f9e78f17ad86aa14a0ff5fc04228ea1036941da84495fd03b1f9f67"
+  },
+  {
+    "path": "android-app/feature/feature-blockscreen/src/test/kotlin/com/flint/peakfocus/feature/blockscreen/BlockScreenContentTest.kt",
+    "sha256": "7d194021b28f0cc7a72f9c50c7a8b914180554ac5796630d6c80cf4a6b0ed6f5"
+  },
+  {
+    "path": "android-app/feature/feature-connected/build.gradle.kts",
+    "sha256": "a9ce08867c9b65b1c42b812fa0e9966ea811b23200c0c54fbf4ef90ec6bfd14f"
+  },
+  {
+    "path": "android-app/feature/feature-connected/src/main/AndroidManifest.xml",
+    "sha256": "4ec698c1582d49f016e6d9355399e068b752baf42c1da4f0c775b2155b8f579d"
+  },
+  {
+    "path": "android-app/feature/feature-connected/src/main/kotlin/com/flint/peakfocus/feature/connected/ConnectedIdentitySession.kt",
+    "sha256": "cf37cec8920d4be0205c6c2ac4d9d39bdf1e15937626b3e712204e65e39f57b0"
+  },
+  {
+    "path": "android-app/feature/feature-connected/src/main/kotlin/com/flint/peakfocus/feature/connected/ConnectedModels.kt",
+    "sha256": "82fc658104c6309cbfc8953e0310482334d3bee5838bca26fedf525e73768913"
+  },
+  {
+    "path": "android-app/feature/feature-connected/src/main/kotlin/com/flint/peakfocus/feature/connected/ConnectedRepository.kt",
+    "sha256": "8fbd3685647fd3c0cdb10824e4570525ee4a01ab3d7428e2313710daf3ef56cf"
+  },
+  {
+    "path": "android-app/feature/feature-connected/src/main/kotlin/com/flint/peakfocus/feature/connected/ConnectedRuntime.kt",
+    "sha256": "fe3fdef9fad6f6469b67be402723833a214e2b58842505bb085bbaa5a34c0441"
+  },
+  {
+    "path": "android-app/feature/feature-connected/src/main/kotlin/com/flint/peakfocus/feature/connected/ConnectedScreen.kt",
+    "sha256": "9d306695e7f68c7daa7f217bd89ccfd6969c923b968c53690da59c04b7389064"
+  },
+  {
+    "path": "android-app/feature/feature-connected/src/main/kotlin/com/flint/peakfocus/feature/connected/ConnectedTransport.kt",
+    "sha256": "53c56e5f317c64549cafd63039efe2e031247255e288ce7977167e9681b1dad3"
+  },
+  {
+    "path": "android-app/feature/feature-connected/src/main/kotlin/com/flint/peakfocus/feature/connected/ConnectedViewModel.kt",
+    "sha256": "0bf13fc36ccd5cc1fd11f1a410f74ee15537db239f61d421d43412292f0f4a2d"
+  },
+  {
+    "path": "android-app/feature/feature-connected/src/main/kotlin/com/flint/peakfocus/feature/connected/ManagedPolicyDraft.kt",
+    "sha256": "1bf7f0366c62c2bcaeacbd1e16c1e471133baea64cc4f07043ba4e2232506df4"
+  },
+  {
+    "path": "android-app/feature/feature-connected/src/main/kotlin/com/flint/peakfocus/feature/connected/ManagedPolicyRepository.kt",
+    "sha256": "095458f886f2f35c85b6a50f94ed7460d98ca27cb78acff9019d58436633c87e"
+  },
+  {
+    "path": "android-app/feature/feature-connected/src/main/kotlin/com/flint/peakfocus/feature/connected/ManagedPolicyScreen.kt",
+    "sha256": "67de34c787e6e6f1dc08353c8ff5aadf75fc14be41ad87cf0910f0c9bab433c9"
+  },
+  {
+    "path": "android-app/feature/feature-connected/src/main/kotlin/com/flint/peakfocus/feature/connected/ManagedPolicyViewModel.kt",
+    "sha256": "7b863d04d69726ef2a97b9096eee011022b6e8587823297553fa97cf371df742"
+  },
+  {
+    "path": "android-app/feature/feature-connected/src/main/kotlin/com/flint/peakfocus/feature/connected/ManagedRepositoryModels.kt",
+    "sha256": "7f2ded12e9a99db63ad7c07eb59e155085bd55f1a672d7d1534e2a8c02a144f0"
+  },
+  {
+    "path": "android-app/feature/feature-connected/src/main/kotlin/com/flint/peakfocus/feature/connected/ManagedWireCodec.kt",
+    "sha256": "50a0cb19a8d5008fa3bcbb29777362d16dba5bd83eac78ecda47af359922097c"
+  },
+  {
+    "path": "android-app/feature/feature-connected/src/test/kotlin/com/flint/peakfocus/feature/connected/ConnectedIdentitySessionTest.kt",
+    "sha256": "1a8059451202a01a9d475f36f4a4d9feac55b6c1f3b0bfc61e1b388d7cd2ee7c"
+  },
+  {
+    "path": "android-app/feature/feature-connected/src/test/kotlin/com/flint/peakfocus/feature/connected/ConnectedInputTest.kt",
+    "sha256": "2e34f1166329a2529ac6fb0057126289fdfb41084d4bab5c10f86a9f64bdb403"
+  },
+  {
+    "path": "android-app/feature/feature-connected/src/test/kotlin/com/flint/peakfocus/feature/connected/ConnectedStateTest.kt",
+    "sha256": "6fc64499e7465eb46dd8113833dc467d4be5c101e144f886c41185a9b67b14d3"
+  },
+  {
+    "path": "android-app/feature/feature-connected/src/test/kotlin/com/flint/peakfocus/feature/connected/ConnectedTransportTest.kt",
+    "sha256": "8d59bf4532af2978963644b28859edb92cb0e6312e1bdef1240d41f02db99aab"
+  },
+  {
+    "path": "android-app/feature/feature-connected/src/test/kotlin/com/flint/peakfocus/feature/connected/ManagedPolicyDraftTest.kt",
+    "sha256": "817a446e1c071df6bb6709acc5ee641c53728d7c3302763f381fede1297ae6e0"
+  },
+  {
+    "path": "android-app/feature/feature-connected/src/test/kotlin/com/flint/peakfocus/feature/connected/ManagedPolicyRepositoryTest.kt",
+    "sha256": "14c51918c4e4fb7894bed1aea22fbc19c3b5d62213825b0b6253f55900417190"
+  },
+  {
+    "path": "android-app/feature/feature-connected/src/test/kotlin/com/flint/peakfocus/feature/connected/ManagedPolicyViewModelTest.kt",
+    "sha256": "0c4d5c2c9dda4ee159d3e5bf4ffda076d6f529e6a4e4541a6fe00280a5cedc5e"
+  },
+  {
+    "path": "android-app/feature/feature-connected/src/test/kotlin/com/flint/peakfocus/feature/connected/ManagedTestFixtures.kt",
+    "sha256": "d54567b00b0f00642a3e8c81321d2f703692254f175aa8592668d54d73ed8d2c"
+  },
+  {
+    "path": "android-app/feature/feature-connected/src/test/kotlin/com/flint/peakfocus/feature/connected/ManagedWireCodecTest.kt",
+    "sha256": "dd283fd9c1740405a7d7ba712cd3c3fcaa7811f3587429d613bd8904a9b95693"
+  },
+  {
+    "path": "android-app/feature/feature-onboarding/build.gradle.kts",
+    "sha256": "e7dacd89f316ef5efce95b14276edf1b162adccf6e47e985bcdd5ffbb9d5ddb8"
+  },
+  {
+    "path": "android-app/feature/feature-onboarding/src/main/kotlin/com/flint/peakfocus/feature/onboarding/AccessibilityConsentScreen.kt",
+    "sha256": "2af254d7a65c8b206d458814b992aef087a1a8f0c032882e2cf1f673a6c1f5a4"
+  },
+  {
+    "path": "android-app/feature/feature-onboarding/src/main/kotlin/com/flint/peakfocus/feature/onboarding/ConsentCopy.kt",
+    "sha256": "87f638ea342f5523e9b0592d17d46b8b444a27edda4620564ff3ea2458853596"
+  },
+  {
+    "path": "android-app/feature/feature-onboarding/src/main/kotlin/com/flint/peakfocus/feature/onboarding/SetupGuidance.kt",
+    "sha256": "e062660f7a2ea29948bc5aaa37918926717528a3fbea7570773915f999a5109f"
+  },
+  {
+    "path": "android-app/feature/feature-onboarding/src/test/kotlin/com/flint/peakfocus/feature/onboarding/ConsentCopyTest.kt",
+    "sha256": "6c193159e78dedf060ec5a75f585227aededa06a6b9084856275d23db85b8151"
+  },
+  {
+    "path": "android-app/feature/feature-onboarding/src/test/kotlin/com/flint/peakfocus/feature/onboarding/SetupGuidanceTest.kt",
+    "sha256": "aa5a8c78a5f5f712180e347bd11585f05045c817b11d65b4ed7e1db8d63e0e8a"
+  },
+  {
+    "path": "android-app/feature/feature-settings/build.gradle.kts",
+    "sha256": "541c4931e88f35abba261091742d904c10e7ee7036eee26ed855d2a37fa7a51f"
+  },
+  {
+    "path": "android-app/feature/feature-settings/src/main/kotlin/com/flint/peakfocus/feature/settings/BlockingHealthUi.kt",
+    "sha256": "983828e547769f2d01305f5c3d10a6745c8d431410ba27e933165c35a7962a52"
+  },
+  {
+    "path": "android-app/feature/feature-settings/src/main/kotlin/com/flint/peakfocus/feature/settings/ExitDiagnosticsText.kt",
+    "sha256": "b5d55b78e1d922905814f1b3163dc760abf35974ce24d32cc1fcaa905fb9364d"
+  },
+  {
+    "path": "android-app/feature/feature-settings/src/main/kotlin/com/flint/peakfocus/feature/settings/OemGuidance.kt",
+    "sha256": "446a77571ff4caec2c4a15ca6a64bf59afc6bf6f50a56882d1f31935109dd3a5"
+  },
+  {
+    "path": "android-app/feature/feature-settings/src/main/kotlin/com/flint/peakfocus/feature/settings/SettingsScreen.kt",
+    "sha256": "f9a43f54f95b2dc43edabc886f39d185b7c8d937c6072d3d42819c156b1ccb74"
+  },
+  {
+    "path": "android-app/feature/feature-settings/src/test/kotlin/com/flint/peakfocus/feature/settings/BlockingHealthUiTest.kt",
+    "sha256": "3e53589521b5a8e69f83a9a010f1a7ca85256abb164d821ac949989f87b8ce77"
+  },
+  {
+    "path": "android-app/feature/feature-settings/src/test/kotlin/com/flint/peakfocus/feature/settings/ExitDiagnosticsTextTest.kt",
+    "sha256": "6316ff4992f00dbab2aac893d87e255aa1347552d22761b50c88eeea13105808"
+  },
+  {
+    "path": "android-app/feature/feature-settings/src/test/kotlin/com/flint/peakfocus/feature/settings/OemGuidanceTest.kt",
+    "sha256": "38c9c499ae487d1234c12d8f30ce88343eea5ea67728e4487178552da30384ff"
+  },
+  {
+    "path": "android-app/feature/feature-stats/build.gradle.kts",
+    "sha256": "8411c202565a063db55753eb9509abf56af983242663ddd7507e075432dafcda"
+  },
+  {
+    "path": "android-app/feature/feature-stats/src/main/kotlin/com/flint/peakfocus/feature/stats/DurationFormat.kt",
+    "sha256": "d65009109d7c1a00ce50a0d71a28cbb4d41e677ce0d833983459f74e88024fbf"
+  },
+  {
+    "path": "android-app/feature/feature-stats/src/main/kotlin/com/flint/peakfocus/feature/stats/StatsScreen.kt",
+    "sha256": "837c0d5a6c139814a48f010fcc60d292198a7f54153b646dc7f1bf95e23eee87"
+  },
+  {
+    "path": "android-app/feature/feature-stats/src/main/kotlin/com/flint/peakfocus/feature/stats/StatsUiState.kt",
+    "sha256": "85f112c97c030a2b479b2ded25f170ab0c634232641fefab11f245f5fac557da"
+  },
+  {
+    "path": "android-app/feature/feature-stats/src/main/kotlin/com/flint/peakfocus/feature/stats/StatsViewModel.kt",
+    "sha256": "08423ca5243d2bc9adb8af79c48c7a6cd6e774b796e712fedb3cdf451db7b466"
+  },
+  {
+    "path": "android-app/feature/feature-stats/src/main/kotlin/com/flint/peakfocus/feature/stats/UsageAggregation.kt",
+    "sha256": "3df73003f27ad41ce0ee01e53534598bee4b12f37cbd8e580634a7b4cd848f43"
+  },
+  {
+    "path": "android-app/feature/feature-stats/src/main/kotlin/com/flint/peakfocus/feature/stats/UsageReports.kt",
+    "sha256": "ab7e38ff81353adb3f532f7847b9e8fdbe0e1587d4040aa02392ccb6a11fc412"
+  },
+  {
+    "path": "android-app/feature/feature-stats/src/main/kotlin/com/flint/peakfocus/feature/stats/UsageStatsSource.kt",
+    "sha256": "3e1006173b4417697181366d9c8ff043844f837926f6ac7eebff3062c838d32f"
+  },
+  {
+    "path": "android-app/feature/feature-stats/src/test/kotlin/com/flint/peakfocus/feature/stats/DurationFormatTest.kt",
+    "sha256": "69b7026f025f6dae1cc85c4316fb66a214a4499eda280b00007ca1884492ddf4"
+  },
+  {
+    "path": "android-app/feature/feature-stats/src/test/kotlin/com/flint/peakfocus/feature/stats/HistoricalInsightsTest.kt",
+    "sha256": "e0992bc69e69058e2a0367f2723341ae57bc6012b941c06cf53e9e8000b457a9"
+  },
+  {
+    "path": "android-app/feature/feature-stats/src/test/kotlin/com/flint/peakfocus/feature/stats/UsageAggregatorTest.kt",
+    "sha256": "3b70b7e73b472a5afd38e13b627fa0089c8d73da89f1a15cf4d0e5b730c7a73b"
+  },
+  {
+    "path": "android-app/feature/feature-stats/src/test/kotlin/com/flint/peakfocus/feature/stats/UsageReportTest.kt",
+    "sha256": "7e94f62e2d48c70de51bc7141893d5fb35541f5cb423d136e76e2238d7f56b62"
+  },
+  {
+    "path": "android-app/gradle.properties",
+    "sha256": "e434107351023eef6ceae093d2fd9aea84e41567237da7aa1734846d6b5c9695"
+  },
+  {
+    "path": "android-app/gradle/libs.versions.toml",
+    "sha256": "e42af34b915a1dd62f83ec20227868b45723005209264a936b9efbecbd8e0d98"
+  },
+  {
+    "path": "android-app/gradle/wrapper/gradle-wrapper.properties",
+    "sha256": "c94d41b634a5e0ff8a2f812023697b1337eebac18e9962610356a1793f72896d"
+  },
+  {
+    "path": "android-app/permissions/permissions-special/build.gradle.kts",
+    "sha256": "2ab1f106d87a4cb6bc685eb55aeb07f1e8b4e0972860c6043612bf2d2742e139"
+  },
+  {
+    "path": "android-app/permissions/permissions-special/src/main/kotlin/com/flint/peakfocus/permissions/SpecialPermissions.kt",
+    "sha256": "721d72be5e27ec7f6ae7b9909a84e0d9296498421921f8ac38eb05dde9156d7f"
+  },
+  {
+    "path": "android-app/settings.gradle.kts",
+    "sha256": "7f97b13dffbd3dee652e606d00a23475e4669f816aa7d3ca1c318c1c0494eadf"
+  },
+  {
+    "path": "connected-services/firebase.json",
+    "sha256": "0ba82537dbf4bbda4eaae5ecde75183b554fec442f84db1db3a10a7521d9aa06"
+  },
+  {
+    "path": "connected-services/firestore.rules",
+    "sha256": "7bff2de50c73415a3b12a6783f42ff621b1b04803ffc4e2634e6ba68e5d655f9"
+  },
+  {
+    "path": "connected-services/package-lock.json",
+    "sha256": "ba08ca7233fb3cf1100cda340650f4a049e2fcffea2dcbb868f2fce0150cd3fa"
+  },
+  {
+    "path": "connected-services/package.json",
+    "sha256": "f9a3a8e76cb7c457ac88b0ad9bc43da86c71d2955233c7ce74d3e4cad35fdef9"
+  },
+  {
+    "path": "connected-services/scripts/local.mjs",
+    "sha256": "3fa4d99281aa9abc2e6c9b49f9967d72f3e98a14b5a4458a3ac2869ecd346b94"
+  },
+  {
+    "path": "connected-services/scripts/runner.mjs",
+    "sha256": "cc1b4a565fbb720df7d0bfad4cac8af10e8b082a5e876446b2e9d03c44089234"
+  },
+  {
+    "path": "connected-services/scripts/test.mjs",
+    "sha256": "fd04cb10affe8337da0df934ac98f43ca4b7ef950f14e7c64dccb24443b8da60"
+  },
+  {
+    "path": "connected-services/src/config.mjs",
+    "sha256": "43549bfdc7d4c04cdf48575cee6c59099703027131c3a01aadd2faa890a60fb3"
+  },
+  {
+    "path": "connected-services/src/errors.mjs",
+    "sha256": "ec31152401d464b90f3d57bc7d23705327d179c9ed51adeee70761cbca478d51"
+  },
+  {
+    "path": "connected-services/src/managed.mjs",
+    "sha256": "ac0de8821365ce7136a8cab75d748c1609386123eb8ac3400f5651a9ce51c8e8"
+  },
+  {
+    "path": "connected-services/src/server.mjs",
+    "sha256": "5930f6420a48616a3412c74f908ac61743a4f03c5192cee46ba8ee7c96554c42"
+  },
+  {
+    "path": "connected-services/src/service.mjs",
+    "sha256": "7d468e4c74f90e84d593c61ad199e1af8dc6b6a95f8cbdab6a31209387640658"
+  },
+  {
+    "path": "connected-services/test/integration.test.mjs",
+    "sha256": "5e8e56ecc081e099dd7664a55c74efae55be43a3b643c17aa96594b959c0a1ef"
+  },
+  {
+    "path": "connected-services/test/managed.test.mjs",
+    "sha256": "fe1a7fa727907c46a60833dbe9a050814a63cd697eb6a8069441786799cbf81d"
+  }
+]

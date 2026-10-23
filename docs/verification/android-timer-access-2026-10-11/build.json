@@ -1,0 +1,12 @@
+{
+  "apkSha256": "e71c72d3c94a66a209c8c140b17cc461e8c11734006e166f78b9d12d31cd67a9",
+  "device": "emulator-5554",
+  "api": 35,
+  "abi": "arm64-v8a",
+  "width": 1080,
+  "height": 2400,
+  "density": 420,
+  "fontScale": 1.0,
+  "installedApkSha256": "e71c72d3c94a66a209c8c140b17cc461e8c11734006e166f78b9d12d31cd67a9",
+  "retainedApkPath": "android-app/build/opal-parity-baseline/flint-timer-debug.apk"
+}

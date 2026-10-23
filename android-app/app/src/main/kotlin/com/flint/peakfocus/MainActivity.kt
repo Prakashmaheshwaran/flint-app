@@ -15,7 +15,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandHorizontally
@@ -30,7 +29,6 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,19 +42,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -70,6 +64,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -77,7 +72,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
@@ -105,7 +99,6 @@ import com.flint.peakfocus.core.common.theme.FlintSpacing
 import com.flint.peakfocus.core.common.theme.FlintTheme
 import com.flint.peakfocus.core.common.theme.rememberFlintMark
 import com.flint.peakfocus.core.common.ui.FlintCard
-import com.flint.peakfocus.core.common.ui.FlintMeterBar
 import com.flint.peakfocus.core.common.ui.FlintScreenHeader
 import com.flint.peakfocus.core.common.ui.FlintSectionLabel
 import com.flint.peakfocus.core.common.ui.FlintSkeletonRow
@@ -116,11 +109,9 @@ import com.flint.peakfocus.core.common.ui.parseMinuteOfDayText
 import com.flint.peakfocus.core.common.ui.rememberFlintHaptics
 import com.flint.peakfocus.core.data.BlocklistStore
 import com.flint.peakfocus.core.datastore.FlintPreferences
-import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
-import com.flint.peakfocus.core.model.BlockTargets
-import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.feature.blocklist.BlocklistScreen
+import com.flint.peakfocus.feature.blocklist.TimerScreen
 import com.flint.peakfocus.feature.onboarding.AccessibilityConsentScreen
 import com.flint.peakfocus.feature.onboarding.SetupGuidance
 import com.flint.peakfocus.feature.onboarding.SetupPlan
@@ -134,26 +125,23 @@ import com.flint.peakfocus.permissions.UsageAccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** One launchable app for the Home quick-blocklist: identity plus a small pre-decoded icon. */
 data class AppEntry(val packageName: String, val label: String, val icon: ImageBitmap? = null)
 
-/** The app's four top-level destinations. State-switched — same pattern the shell already
- *  used for the consent flow; no navigation library in the version catalog (A-SCAFFOLD-owned). */
+/** APK-backed hub order. Insights and profile/settings remain reachable from Home. */
 private enum class FlintTab(
     val label: String,
     val iconSelected: ImageVector,
     val iconUnselected: ImageVector,
 ) {
     Home("Home", Icons.Filled.Home, Icons.Outlined.Home),
-    Blocklist("Blocklist", Icons.Filled.Lock, Icons.Outlined.Lock),
-    // material-icons-core ships no bar chart; the Stats glyph is Flint's own. Enum-constant
-    // initialization builds each ImageVector exactly once per process.
-    Stats("Stats", FlintIcons.statsBars(filled = true), FlintIcons.statsBars(filled = false)),
-    Settings("Settings", Icons.Filled.Settings, Icons.Outlined.Settings),
+    MyApps("My Apps", Icons.Filled.Lock, Icons.Outlined.Lock),
+    Timer("Timer", FlintIcons.timer(), FlintIcons.timer()),
 }
+
+private enum class HomePage { Overview, Stats, Settings }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -174,6 +162,7 @@ private fun FlintApp() {
     val context = LocalContext.current
     val haptics = rememberFlintHaptics()
     var showConsent by rememberSaveable { mutableStateOf(false) }
+    var homePage by rememberSaveable { mutableStateOf(HomePage.Overview) }
 
     // Result is deliberately unused: the FGS runs with or without the grant — the permission
     // only controls whether its ongoing notification is visible on Android 13+.
@@ -207,7 +196,11 @@ private fun FlintApp() {
     val stateHolder = rememberSaveableStateHolder()
     // Back walks to Home before leaving the app. Feature-level handlers (rule editors,
     // pickers) compose later, so they win whenever they are enabled.
-    BackHandler(enabled = !showConsent && tab != FlintTab.Home) { tab = FlintTab.Home }
+    BackHandler(enabled = !showConsent &&
+        (tab != FlintTab.Home || homePage != HomePage.Overview)) {
+        tab = FlintTab.Home
+        homePage = HomePage.Overview
+    }
 
     val consentSlidePx = with(LocalDensity.current) { FlintSpacing.lg.roundToPx() }
     AnimatedContent(
@@ -251,6 +244,7 @@ private fun FlintApp() {
                                 NavigationBarItem(
                                     selected = selected,
                                     onClick = {
+                                        if (destination == FlintTab.Home) homePage = HomePage.Overview
                                         if (tab != destination) {
                                             haptics.tick()
                                             tab = destination
@@ -275,24 +269,10 @@ private fun FlintApp() {
                     }
                 },
             ) { innerPadding ->
-                AnimatedContent(
-                    targetState = tab,
-                    modifier = Modifier.fillMaxSize(),
-                    transitionSpec = {
-                        // Shared-axis X: content slides toward its position on the tab bar,
-                        // and the exit mirrors the entry so both panes travel together.
-                        val forward = targetState.ordinal > initialState.ordinal
-                        (slideInHorizontally(
-                            tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized),
-                        ) { if (forward) it / 12 else -it / 12 } +
-                            fadeIn(tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized))) togetherWith
-                            (slideOutHorizontally(
-                                tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard),
-                            ) { if (forward) -it / 12 else it / 12 } +
-                                fadeOut(tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard)))
-                    },
-                    label = "tab",
-                ) { destination ->
+                // Compose only the selected tab. Keeping an outgoing feature alive during
+                // animation also keeps its picker/account BackHandler active over the next tab.
+                Box(Modifier.fillMaxSize()) {
+                    val destination = tab
                     // One saveable slot per tab: LazyColumn scroll positions and
                     // rememberSaveable state survive tab switches.
                     stateHolder.SaveableStateProvider(destination) {
@@ -300,29 +280,59 @@ private fun FlintApp() {
                         when (destination) {
                             // Home draws edge-to-edge; the scaffold insets merge into its
                             // LazyColumn contentPadding instead of clipping the container.
-                            FlintTab.Home -> HomeScreen(
-                                contentModifier,
-                                innerPadding = innerPadding,
-                                apps = apps,
-                                onSetupStep = { step ->
-                                    val handOff = settingsHandOff(context, step)
-                                    if (handOff == null) {
-                                        showConsent = true
-                                    } else {
-                                        context.startActivity(
-                                            handOff.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                                        )
+                            FlintTab.Home -> stateHolder.SaveableStateProvider(homePage) {
+                                when (homePage) {
+                                    HomePage.Overview -> HomeScreen(
+                                        contentModifier,
+                                        innerPadding = innerPadding,
+                                        apps = apps,
+                                        onTimer = { tab = FlintTab.Timer },
+                                        onStats = { homePage = HomePage.Stats },
+                                        onProfile = { homePage = HomePage.Settings },
+                                        onSetupStep = { step ->
+                                            val handOff = settingsHandOff(context, step)
+                                            if (handOff == null) {
+                                                showConsent = true
+                                            } else {
+                                                context.startActivity(
+                                                    handOff.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                                )
+                                            }
+                                        },
+                                    )
+                                    HomePage.Stats -> HomeDetail(
+                                        contentModifier.padding(innerPadding),
+                                        onBack = { homePage = HomePage.Overview },
+                                    ) { detailModifier -> StatsScreen(detailModifier) }
+                                    HomePage.Settings -> HomeDetail(
+                                        contentModifier.padding(innerPadding),
+                                        onBack = { homePage = HomePage.Overview },
+                                    ) { detailModifier ->
+                                        SettingsScreen(detailModifier)
                                     }
-                                },
-                            )
-                            FlintTab.Blocklist -> BlocklistScreen(contentModifier.padding(innerPadding))
-                            FlintTab.Stats -> StatsScreen(contentModifier.padding(innerPadding))
-                            FlintTab.Settings -> SettingsScreen(contentModifier.padding(innerPadding))
+                                }
+                            }
+                            FlintTab.MyApps -> BlocklistScreen(contentModifier.padding(innerPadding))
+                            FlintTab.Timer -> TimerScreen(contentModifier.padding(innerPadding))
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun HomeDetail(
+    modifier: Modifier,
+    onBack: () -> Unit,
+    content: @Composable (Modifier) -> Unit,
+) {
+    Column(modifier) {
+        TextButton(onClick = onBack, modifier = Modifier.padding(horizontal = FlintSpacing.sm)) {
+            Text("Back to Home")
+        }
+        content(Modifier.fillMaxWidth().weight(1f))
     }
 }
 
@@ -343,6 +353,9 @@ private fun HomeScreen(
     innerPadding: PaddingValues = PaddingValues(0.dp),
     apps: List<AppEntry>? = null, // null = still loading; owned by FlintApp
     onSetupStep: (SetupStep) -> Unit,
+    onTimer: () -> Unit,
+    onStats: () -> Unit,
+    onProfile: () -> Unit,
 ) {
     val context = LocalContext.current
     val store = remember { BlocklistStore(context) }
@@ -365,7 +378,6 @@ private fun HomeScreen(
             sessionNow = System.currentTimeMillis()
         }
     }
-    val scope = rememberCoroutineScope()
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -375,6 +387,7 @@ private fun HomeScreen(
                 // may revoke grants silently. Re-read the complete truth on every return.
                 health = PermissionHealthChecker.check(context)
                 blocked = store.blockedPackages
+                sessionNow = System.currentTimeMillis()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -398,6 +411,10 @@ private fun HomeScreen(
     ) {
         item(key = "header") {
             FlintScreenHeader("Flint", eyebrow = "Peak Focus")
+            Row(horizontalArrangement = Arrangement.spacedBy(FlintSpacing.sm)) {
+                OutlinedButton(onClick = onStats, modifier = Modifier.weight(1f)) { Text("Insights") }
+                OutlinedButton(onClick = onProfile, modifier = Modifier.weight(1f)) { Text("Profile & settings") }
+            }
             Spacer(Modifier.height(FlintSpacing.md))
         }
         item(key = "status") {
@@ -411,22 +428,7 @@ private fun HomeScreen(
             FocusSessionCard(
                 session = activeSession,
                 nowEpochMs = sessionNow,
-                blockedCount = blocked.size,
-                onStart = { durationMin, level ->
-                    val nowMs = System.currentTimeMillis()
-                    val rule = BlockRule(
-                        id = BlockRule.SESSION_ID_PREFIX + nowMs,
-                        name = "Focus session",
-                        // Targets freeze at start: mid-session blocklist edits are a
-                        // different rule's business, not a running session's.
-                        targets = BlockTargets(apps = blocked.map { AppRef(it) }.toSet()),
-                        breakLevel = level,
-                        expiresAtEpochMs = nowMs + durationMin * 60_000L,
-                    )
-                    sessionNow = nowMs
-                    scope.launch { rulesStore.upsert(rule) }
-                },
-                onStop = { ruleId -> scope.launch { rulesStore.delete(ruleId) } },
+                onOpenTimer = onTimer,
             )
             Spacer(Modifier.height(FlintSpacing.cardGap))
         }
@@ -495,204 +497,33 @@ private fun AppSearchField(query: String, onQueryChange: (String) -> Unit) {
     )
 }
 
-/**
- * Block Now (v1 item 1): one tap starts a timed session over the quick blocklist. Idle state
- * offers duration + difficulty; a running session shows the live countdown, and early stop is
- * tier-gated — EASY may end it, HARDER/HARDCORE get honest copy instead of a dead button.
- */
+/** Home summarizes the persisted session; Timer owns creation and cancellation. */
 @Composable
 private fun FocusSessionCard(
     session: BlockRule?,
     nowEpochMs: Long,
-    blockedCount: Int,
-    onStart: (durationMinutes: Int, level: BreakLevel) -> Unit,
-    onStop: (ruleId: String) -> Unit,
+    onOpenTimer: () -> Unit,
 ) {
-    val haptics = rememberFlintHaptics()
-    // Latched so the outgoing running pane keeps its content while it animates away after the
-    // session ends — mid-transition `session` is already null.
-    var latchedSession by remember { mutableStateOf(session) }
-    if (session != null && session !== latchedSession) latchedSession = session
-
     FlintCard {
-        FlintSectionLabel("Focus session")
+        FlintSectionLabel("Focus timer")
         Spacer(Modifier.height(FlintSpacing.sm))
-        AnimatedContent(
-            targetState = session != null,
-            transitionSpec = {
-                (fadeIn(tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized)) +
-                    expandVertically(tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized))) togetherWith
-                    fadeOut(tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard)) using
-                    SizeTransform(clip = false)
-            },
-            label = "focusSession",
-        ) { running ->
-            if (running) {
-                SessionRunningPane(
-                    session = session ?: latchedSession,
-                    nowEpochMs = nowEpochMs,
-                    onStop = { ruleId ->
-                        haptics.tick()
-                        onStop(ruleId)
-                    },
-                )
-            } else {
-                SessionIdlePane(
-                    blockedCount = blockedCount,
-                    onStart = { durationMin, level ->
-                        haptics.confirm()
-                        onStart(durationMin, level)
-                    },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SessionRunningPane(
-    session: BlockRule?,
-    nowEpochMs: Long,
-    onStop: (ruleId: String) -> Unit,
-) {
-    if (session == null) return
-    Column {
-        // Each countdown step rises in gently; FlintNumerals keeps the digit widths stable.
-        AnimatedContent(
-            targetState = formatCountdown((session.expiresAtEpochMs ?: nowEpochMs) - nowEpochMs),
-            transitionSpec = {
-                (slideInVertically(
-                    tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard),
-                ) { it / 8 } +
-                    fadeIn(tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard))) togetherWith
-                    fadeOut(tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard))
-            },
-            label = "countdown",
-        ) { text ->
+        if (session != null) {
             Text(
-                text = text,
+                session.expiresAtEpochMs?.let { formatCountdown(it - nowEpochMs) } ?: "Session active",
                 style = MaterialTheme.typography.displaySmall.merge(FlintNumerals),
                 color = MaterialTheme.colorScheme.primary,
             )
-        }
-        // The session id embeds the start timestamp (SESSION_ID_PREFIX + startEpochMs) —
-        // that is the meter's denominator; an unparseable id simply hides the meter.
-        val startEpochMs = session.id.removePrefix(BlockRule.SESSION_ID_PREFIX).toLongOrNull()
-        val expiresAtEpochMs = session.expiresAtEpochMs
-        if (startEpochMs != null && expiresAtEpochMs != null && expiresAtEpochMs > startEpochMs) {
-            Spacer(Modifier.height(FlintSpacing.sm))
-            FlintMeterBar(
-                fraction = (expiresAtEpochMs - nowEpochMs).toFloat() /
-                    (expiresAtEpochMs - startEpochMs).toFloat(),
-            )
-            Spacer(Modifier.height(FlintSpacing.sm))
-        }
-        Text(
-            text = when (session.breakLevel) {
-                BreakLevel.EASY -> "Easy session — you can end it any time."
-                BreakLevel.HARDER -> "Harder session — no early stop; breaks come with friction."
-                BreakLevel.HARDCORE -> "Deep Focus — the weekly Emergency Pass is the only exit."
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        if (session.breakLevel == BreakLevel.EASY) {
-            Spacer(Modifier.height(FlintSpacing.cardGap))
-            OutlinedButton(
-                onClick = { onStop(session.id) },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("End session")
-            }
-        }
-    }
-}
-
-@Composable
-private fun SessionIdlePane(
-    blockedCount: Int,
-    onStart: (durationMinutes: Int, level: BreakLevel) -> Unit,
-) {
-    var durationMin by rememberSaveable { mutableStateOf(30) }
-    var level by rememberSaveable { mutableStateOf(BreakLevel.EASY) }
-    Column {
-        // Scrollable rails: at large font scales the chips outgrow narrow screens, and a
-        // clipped "Hardcore"/"2h" chip would be silently unselectable.
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(FlintSpacing.sm),
-        ) {
-            SESSION_DURATIONS_MIN.forEach { minutes ->
-                FilterChip(
-                    selected = durationMin == minutes,
-                    onClick = { durationMin = minutes },
-                    label = { Text(formatSessionDuration(minutes)) },
-                )
-            }
-        }
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(FlintSpacing.sm),
-        ) {
-            BreakLevel.entries.forEach { tier ->
-                FilterChip(
-                    selected = level == tier,
-                    onClick = { level = tier },
-                    label = {
-                        Text(
-                            when (tier) {
-                                BreakLevel.EASY -> "Easy"
-                                BreakLevel.HARDER -> "Harder"
-                                BreakLevel.HARDCORE -> "Hardcore"
-                            },
-                        )
-                    },
-                )
-            }
-        }
-        // Pre-commitment disclosure, same standard as the rule editor: the user learns
-        // what Hardcore means BEFORE the session starts, not from the block screen.
-        AnimatedVisibility(
-            visible = level == BreakLevel.HARDCORE,
-            enter = expandVertically(sessionRevealSpec()) + fadeIn(sessionRevealSpec()),
-            exit = shrinkVertically(sessionRevealSpec()) + fadeOut(sessionRevealSpec()),
-        ) {
-            Column {
-                Spacer(Modifier.height(FlintSpacing.sm))
-                Text(
-                    text = "Hardcore means it: no breaks, no early stop. Your " +
-                        "weekly Emergency Pass is the only exit.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
+            Text(session.name, style = MaterialTheme.typography.bodyMedium)
+        } else {
+            Text("Choose apps and a duration for your next focus session.",
+                style = MaterialTheme.typography.bodyMedium)
         }
         Spacer(Modifier.height(FlintSpacing.cardGap))
-        Button(
-            onClick = { onStart(durationMin, level) },
-            enabled = blockedCount > 0,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Block now")
-        }
-        if (blockedCount == 0) {
-            Spacer(Modifier.height(FlintSpacing.xs))
-            Text(
-                "Switch on the apps to block below first.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        Button(onClick = onOpenTimer, modifier = Modifier.fillMaxWidth()) {
+            Text(if (session == null) "Set a timer" else "View timer")
         }
     }
 }
-
-private val SESSION_DURATIONS_MIN = listOf(15, 30, 60, 120)
-
-private fun <T> sessionRevealSpec() =
-    tween<T>(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard)
-
-private fun formatSessionDuration(minutes: Int): String =
-    if (minutes < 60) "${minutes}m" else "${minutes / 60}h"
 
 /** "1h 24m" / "12m 30s" / "42s"; negatives clamp to "0s". */
 private fun formatCountdown(millis: Long): String {

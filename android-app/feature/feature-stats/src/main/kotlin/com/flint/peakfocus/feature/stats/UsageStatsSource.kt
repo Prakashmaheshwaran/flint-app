@@ -4,14 +4,9 @@ import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.pm.PackageManager
-import com.flint.peakfocus.core.model.UsageStat
-import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Date
-import java.util.Locale
 
 private const val DAY_COUNT = 7
-private const val TOP_APP_COUNT = 8
 
 /**
  * Reads the last [DAY_COUNT] local days of foreground usage from
@@ -38,29 +33,7 @@ class UsageStatsSource(private val context: Context) {
         val events = readEvents(windows.first().startMillis, nowMillis)
         val buckets = UsageAggregator.bucketIntoDays(events, windows, nowMillis)
 
-        val todayIndex = windows.lastIndex
-        val dayFormat = SimpleDateFormat("EEE", Locale.getDefault())
-        val days = windows.mapIndexed { i, window ->
-            DaySummary(
-                label = dayFormat.format(Date(window.startMillis)),
-                totalMillis = buckets.dayTotalMillis(i),
-                isToday = i == todayIndex,
-            )
-        }
-        val topAppsToday = UsageAggregator.topApps(buckets.appTotalsForDay(todayIndex), TOP_APP_COUNT)
-            .map { (packageName, millis) ->
-                UsageStat(
-                    packageName = packageName,
-                    label = appLabel(packageName),
-                    foregroundMillis = millis,
-                )
-            }
-        return UsageReport(
-            days = days,
-            todayTotalMillis = buckets.dayTotalMillis(todayIndex),
-            weekTotalMillis = buckets.rangeTotalMillis(),
-            topAppsToday = topAppsToday,
-        )
+        return buildUsageReport(buckets, appLabel = ::appLabel)
     }
 
     private fun readEvents(startMillis: Long, endMillis: Long): List<ForegroundEvent> {
