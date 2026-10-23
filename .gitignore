@@ -33,6 +33,8 @@ android-app/captures/
 android-app/.cxx/
 *.apk
 *.aab
+# Reference-app archives are local research inputs, not Flint source or release assets.
+*.apkm
 *.keystore
 !debug.keystore
 

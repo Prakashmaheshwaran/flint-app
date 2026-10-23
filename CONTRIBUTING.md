@@ -56,6 +56,9 @@ The source is MIT — fork and ship freely. But the *shipping identity* is not t
   runs both). Each mirrors that platform's CI workflow.
 - Touching `scripts/` or the `Makefile`: `make selftest` passes. It needs no emulator, Gradle,
   Xcode, or Android SDK.
+- Repository CI runs these selftests for script, Makefile and workflow changes; Makefile
+  changes also trigger both platform gates. Release CI validates the tag's versions before
+  building or uploading an artifact and fetches full history for the previous-version check.
 - Be kind. See [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 
 ## Cutting a release

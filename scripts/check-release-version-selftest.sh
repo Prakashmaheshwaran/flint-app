@@ -138,6 +138,16 @@ check "$D" v0.2.0
 t "bumped versionCode exits 0"                  test "$RC" -eq 0
 t "logs the comparison it made"                 has "android versionCode 2 > 1 at v0.1.0"
 
+# Full CI tag history can include releases newer than the tag checked out for a rebuild.
+# Those descendants must not become the baseline for the older release.
+D="$WORK/older-release"; fixture "$D" "0.1.0" 1 "0.1.0" "0.1.0"; git_tag_here "$D" v0.1.0
+fixture "$D" "0.2.0" 2 "0.2.0" "0.2.0"; git_tag_here "$D" v0.2.0
+fixture "$D" "0.3.0" 3 "0.3.0" "0.3.0"; git_tag_here "$D" v0.3.0
+git -C "$D" checkout -q v0.2.0
+check "$D" v0.2.0
+t "older release ignores descendant tags"       test "$RC" -eq 0
+t "older release compares its own ancestor"     has "android versionCode 2 > 1 at v0.1.0"
+
 D="$WORK/code-back"; fixture "$D" "0.2.0" 5 "0.2.0" "0.2.0"; git_tag_here "$D" v0.2.0
 fixture "$D" "0.3.0" 3 "0.3.0" "0.3.0"          # went backwards
 check "$D" v0.3.0

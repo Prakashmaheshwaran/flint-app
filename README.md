@@ -128,26 +128,28 @@ app and verified the Path B UsageStats fallback: foreground-service lifecycle, b
 self stand-down/re-shield, Easy break, and daily Time Limit fallback. A second same-day pass
 verified **Open Limits** end-to-end on Path B — authored through the real UI (Blocklist →
 editor → DataStore), first open allowed, at-quota `OPEN LIMIT` shield, stand-down/re-shield,
-Easy break, and open counts surviving process death. One documented nuance: the last allowed
-open is shielded ~1.8 s after launch (at-quota re-check on every poll tick — see the Android
-README). Remaining emulator gaps: Path A open counting, sleep windows, boot re-arm, the
+Easy break, and open counts surviving process death. The earlier final-open shielding defect
+was fixed in #43: the last allowed foreground launch remains usable until another app takes
+foreground. That fix has policy/coordinator coverage; a fresh device pass remains pending.
+Remaining emulator gaps: Path A open counting, sleep windows, boot re-arm, the
 time-change-guard broadcast path, and Path A uninstall-guard shielding. See
 [`android-app/README.md`](android-app/README.md),
 [`docs/verification/android-pathb-2026-07-08/`](docs/verification/android-pathb-2026-07-08/), and
 [`docs/verification/android-openlimits-2026-07-08/`](docs/verification/android-openlimits-2026-07-08/).
 
-**iOS — comprehensive; earlier verticals verified in the Simulator + unit tests, the newest merges
-await a compile pass.** Verified earlier (builds, `FlintCore` unit tests, Simulator runs): Block
+**iOS — simulator build and 60 unit tests passed on 2026-10-23 with Xcode 27.0.**
+This verifies the current app and all four extensions, including the previously uncompiled
+merges. Verified earlier (builds, `FlintCore` unit tests, Simulator runs): Block
 Now, Schedules with no Flint-imposed count cap, Time Limits, free Hardcore + free weekly
 Emergency Pass, website
-blocking, app groups/presets + Allow List, app-open PIN, embedded usage report. Merged since,
-**compile verification still pending on a macOS toolchain**: Safari/Private-Browsing restrictions,
+blocking, app groups/presets + Allow List, app-open PIN, embedded usage report. Also compiled:
+Safari/Private-Browsing restrictions,
 Focus Filter integration, Siri & Shortcuts intents, Sleep Mode + Morning Assist, a preset
 routine-template library, Open Limits
 (the enforcement engine, and now also the config UI + shield arming + day-boundary re-arm, so the
 feature is user-reachable end-to-end in code), and a **Hardcore uninstall guard**
 (`denyAppRemoval` while a Hardcore session runs, so deleting Flint can't end a "non-bypassable"
-block — pending that same compile pass). And the standing
+block). And the standing
 Apple caveat: Screen Time **shield enforcement can only be proven on a physical device** (the
 Simulator can't grant Family Controls or apply shields) — an on-device hardware pass is still
 pending for everything enforcement-shaped. See [`ios-app/README.md`](ios-app/README.md).
