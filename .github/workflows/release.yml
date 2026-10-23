@@ -1,7 +1,7 @@
 # Attaches a downloadable Android APK to GitHub Releases.
 # Runs when a release is published, or manually (workflow_dispatch) for an existing tag.
-# HONESTY NOTE: the APK is debug-signed — an installable preview build, not the
-# Play Store build (store signing lands with the Play release).
+# HONESTY NOTE: the APK uses release code with development signing — an installable
+# preview, not a Play Store build. Debug-only emulator tools are excluded.
 name: Release artifacts
 
 on:
@@ -40,15 +40,19 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
-      - name: Assemble debug APK
+      # Development signing is retained, but release code excludes emulator account tools.
+      - name: Assemble local-first preview APK
         working-directory: android-app
-        run: ./gradlew assembleDebug
+        run: ./gradlew :app:assembleRelease
+
+      - name: Verify the packaged local-first boundary
+        run: python3 scripts/verify_local_first_apk.py android-app/app/build/outputs/apk/release/app-release.apk
 
       - name: Attach APK to the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
-          APK=$(ls android-app/app/build/outputs/apk/debug/*.apk | head -1)
+          APK=$(ls android-app/app/build/outputs/apk/release/*.apk | head -1)
           cp "$APK" "flint-${TAG}-android-debug.apk"
           gh release upload "$TAG" "flint-${TAG}-android-debug.apk" --clobber
