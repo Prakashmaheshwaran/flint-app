@@ -1,0 +1,34 @@
+name: Connected development services
+
+on:
+  push:
+    branches: [main]
+    paths: ['connected-services/**', '.github/workflows/connected-services.yml']
+  pull_request:
+    paths: ['connected-services/**', '.github/workflows/connected-services.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  emulator-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: connected-services
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: connected-services/.node-version
+          cache: npm
+          cache-dependency-path: connected-services/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm test

@@ -43,6 +43,8 @@ android-app/.cxx/
 *.log
 .env
 .env.local
+__pycache__/
+*.py[cod]
 
 # ── Harness / session scratch (Claude worktrees, etc.) ──
 .claude/

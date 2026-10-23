@@ -1,0 +1,21 @@
+{
+  "buildSha256": "b69e91667a23fe236dee45d8e417cb6ffad214f862cd3b5032f0caa5f8defe81",
+  "ownerCreateRevision": 3,
+  "ownerUpdateRevision": 4,
+  "memberDeletionRevision": 5,
+  "nativeOwnerCrud": true,
+  "nativeMemberReadOnly": true,
+  "failedRefreshRetainedPolicy": true,
+  "firebaseSessionRestoredAfterProcessRestart": true,
+  "memberDeletionObserved": true,
+  "signedOutAtEnd": true,
+  "timerStartedThroughUi": true,
+  "timerDeadlineSurvivedForceStop": true,
+  "blockingSurfaceDismissedAtNaturalExpiryWithoutAppSwitch": true,
+  "activeTestTimersAtEnd": 0,
+  "liveManagedTestRulesAtEnd": 0,
+  "managedEnforcementActivated": false,
+  "personalV2LedgerActivated": false,
+  "finalNetworkChain": "disabled",
+  "finalAppNetworkRule": "allow"
+}

@@ -20,6 +20,9 @@ android {
 
     buildTypes {
         release {
+            // Public previews use release code with the existing development signing key.
+            // Debug-only emulator tools and dependencies must never enter those APKs.
+            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -56,6 +59,7 @@ dependencies {
     implementation(project(":feature:feature-blocklist"))
     implementation(project(":feature:feature-stats"))
     implementation(project(":feature:feature-settings"))
+    debugImplementation(project(":feature:feature-connected"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

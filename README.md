@@ -4,12 +4,17 @@
 
 # Flint — Peak Focus
 
-**Everything Opal does. Zero cost. Forever.**
+**Native focus tools, built in the open.**
 
 A free, open-source alternative to [Opal](https://www.opal.so). The whole focus engine —
 app & website blocking, schedules without a Flint-imposed count cap, hardcore Deep Focus,
 time & open limits — with
-**no paywall, no accounts, no telemetry**. Local-first. Built in the open.
+**no accounts in release builds and no analytics SDK**. Local-first. Built in the open.
+
+**Android development sandbox:** Debug builds include optional account/profile/group tools
+and managed-policy authoring against a local test service. The connected client and Firebase
+account SDK are excluded from release APKs. Managed school/family blocking, production accounts
+and billing are not active. See the [evidence and completion ledger](docs/research/06-opal-android-parity.md).
 
 ![status](https://img.shields.io/badge/status-early%20development-EF9F27?style=flat-square)
 ![license](https://img.shields.io/badge/license-MIT-2C2C2A?style=flat-square)
@@ -33,6 +38,8 @@ time & open limits — with
   "install unknown apps" when Android asks. It's a **debug-signed preview build** (proper store
   signing arrives with the Play release), so expect rough edges — and upgrading between preview
   builds may require an uninstall first.
+  Future preview artifacts use the release code variant with development signing, so the
+  debug-only connected sandbox is excluded from downloads despite the retained filename.
 - **Google Play:** coming soon.
 - **App Store (iOS):** coming soon — iOS can't be meaningfully sideloaded (Screen Time
   entitlements are granted per developer), so until then iOS folks build from source
@@ -46,10 +53,11 @@ Opal gates the features that actually make blocking *stick* behind "Opal Pro" �
 schedules, the non-bypassable **Deep Focus / Hardcore** mode, the **Allow List** brick-phone
 mode, and the **Emergency Pass**. Flint's wedge is simple: **ship the entire engine for free.**
 
-Flint takes nothing from you in return. No sign-up. No analytics. No cloud. Your blocklists
-and usage data never leave your device. The hard part was never the paywall (we just remove
-it) — it's faithfully reimplementing the OS-level enforcement that makes a block real. That's
-what this project is.
+Local blocking works without sign-up. Personal blocklists and usage history remain on the device.
+The optional Android connected flow sends test account, profile and membership data to the local
+service. Saving a managed policy also sends its explicitly chosen app packages, domains, schedule
+and member scope. It does not upload personal blocklists, usage history or an installed-app
+inventory. Full connected parity is tracked separately from the existing enforcement engine.
 
 ### What's free here that Opal charges for
 
@@ -111,6 +119,11 @@ flint/
 ---
 
 ## Status
+
+The native Android Timer supports finite sessions, duration presets, restoration and an
+explicit hold-to-leave flow at every Timer tier. Ending that Timer removes only its exact
+saved rule; other overlapping restrictions remain enforced. Ordinary Hardcore breaks are
+still unavailable. Historical usage views support individual days and weekly app rankings.
 
 **Android — core blocking and key integrated flows verified on an emulator; deeper flow coverage
 is still pending.** Verified end-to-end earlier (screenshots + logs): pick apps → enable the

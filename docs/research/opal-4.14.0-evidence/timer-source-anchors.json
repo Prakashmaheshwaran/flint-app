@@ -1,0 +1,45 @@
+{
+  "baseApkSha256": "9b4348953e5da3e6a01e87ff3e76e9e059f5d3909e69a95b4d29c3d56b10710a",
+  "files": [
+    {
+      "path": "android-app/build/opal-analysis/timer-start.smali",
+      "sha256": "c17f176c384b77b7060212dd2a328b6a05ff38164356ad0fb9e3ce8ed83cffca"
+    },
+    {
+      "path": "android-app/build/opal-analysis/timer-create.smali",
+      "sha256": "35e8fbd2e6b8203680994c0daf32cb435fdf85dae749cde7abdbf83f54de28b2"
+    },
+    {
+      "path": "android-app/build/opal-analysis/decompiled/sources/tk/s.java",
+      "sha256": "2eb4a4873f1f57f7f4c2e268033eed50c592576f5f6c067a3188097a8dff686b"
+    },
+    {
+      "path": "android-app/build/opal-analysis/decompiled/sources/d1/p6.java",
+      "sha256": "3156d5433aefea3662afb980fe8e921d7ca5ec5a79701e17bffb921cbd1c74fe"
+    },
+    {
+      "path": "android-app/build/opal-analysis/decompiled/sources/h20/d.java",
+      "sha256": "effb6ca1bc6d670ce96b14895169e9f599276547d198bf3fba075b84ba92d386"
+    },
+    {
+      "path": "android-app/build/opal-analysis/decompiled/sources/yr/w.java",
+      "sha256": "8474e1777de4ebb3b2408af3624082193080b870ea57ff972d5c225500c2d93c"
+    },
+    {
+      "path": "android-app/build/opal-analysis/decompiled/sources/j20/i0.java",
+      "sha256": "600b9bf8da0c7a3bc1f3b411120b384ea834d537e827cd2265d540513325a5c6"
+    },
+    {
+      "path": "android-app/build/opal-analysis/decompiled/sources/j20/f0.java",
+      "sha256": "dbaf9e8a12dea2724f6028cee1bc3bb7b0548ed0b76490c67e4e6cd76039dde0"
+    },
+    {
+      "path": "android-app/build/opal-analysis/decompiled/sources/n20/a.java",
+      "sha256": "656d168f611b1e3a6898fa69e2948d43b432a34cf5be0e13c22f66bd4400a429"
+    },
+    {
+      "path": "android-app/build/opal-analysis/decompiled/sources/zp/a1.java",
+      "sha256": "a47fbbe9578cf04c91c650c6a0bc10e7a0e869be5888af32426b9b3064be49e5"
+    }
+  ]
+}

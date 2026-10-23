@@ -141,7 +141,7 @@ private enum class FlintTab(
     Timer("Timer", FlintIcons.timer(), FlintIcons.timer()),
 }
 
-private enum class HomePage { Overview, Stats, Settings }
+private enum class HomePage { Overview, Stats, Settings, Account }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -197,6 +197,7 @@ private fun FlintApp() {
     // Back walks to Home before leaving the app. Feature-level handlers (rule editors,
     // pickers) compose later, so they win whenever they are enabled.
     BackHandler(enabled = !showConsent &&
+        !(homePage == HomePage.Account && tab == FlintTab.Home) &&
         (tab != FlintTab.Home || homePage != HomePage.Overview)) {
         tab = FlintTab.Home
         homePage = HomePage.Overview
@@ -304,11 +305,20 @@ private fun FlintApp() {
                                         contentModifier.padding(innerPadding),
                                         onBack = { homePage = HomePage.Overview },
                                     ) { detailModifier -> StatsScreen(detailModifier) }
+                                    HomePage.Account -> ConnectedDevelopmentScreen(
+                                        onBack = { homePage = HomePage.Settings },
+                                        modifier = contentModifier.padding(innerPadding),
+                                    )
                                     HomePage.Settings -> HomeDetail(
                                         contentModifier.padding(innerPadding),
                                         onBack = { homePage = HomePage.Overview },
                                     ) { detailModifier ->
-                                        SettingsScreen(detailModifier)
+                                        SettingsScreen(
+                                            detailModifier,
+                                            onAccount = if (BuildConfig.DEBUG) {
+                                                { homePage = HomePage.Account }
+                                            } else null,
+                                        )
                                     }
                                 }
                             }

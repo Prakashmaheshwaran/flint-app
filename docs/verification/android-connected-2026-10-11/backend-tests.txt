@@ -1,0 +1,30 @@
+Sanitized final real-emulator integration results, 2026-10-11
+Command: npm exec --yes --package=node@24.21.0 -- node scripts/test.mjs
+Project: demo-flint
+Services: Firebase Auth emulator and Firestore emulator
+
+PASS configuration rejects cloud projects, non-loopback emulators, credentials, and production mode
+PASS health declares emulator-only mode, and protected requests require valid sessions
+PASS profile writes are scoped to the signed-in user and enforce fields and size
+PASS group creation assigns owner authority and rejects foreign group access
+PASS owner creates a hashed one-use invite; authenticated preview and acceptance are explicit
+PASS members can read membership but cannot issue invitations or leak account emails
+PASS concurrent invite consumers commit exactly one membership
+PASS expired invites fail without consuming or joining; invalid payloads cannot escalate
+PASS leaving removes member authority and a consumed code cannot restore access
+PASS Firestore rules reject direct authenticated reads and writes
+PASS expired, disabled, deleted, and revoked sessions are rejected before authorization
+PASS malformed JSON, unsupported query parameters, and unbounded requests are rejected
+
+Tests: 12
+Passed: 12
+Failed: 0
+Skipped: 0
+Script exit code: 0
+
+Separate manual local restart check:
+PASS account sign-in after clean export/import
+PASS saved profile readback after clean export/import
+PASS exact saved group readback after clean export/import
+PASS exact synthetic fixture cleanup
+PASS clean shutdown with one successful export and owned-process cleanup

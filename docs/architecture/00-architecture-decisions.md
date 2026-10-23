@@ -61,6 +61,10 @@ Compose/KMP-shared UI for the core product.
 
 ## ADR-002 — Local-first; no backend, no accounts, no telemetry (v1)
 
+**Scope update (2026-10-11):** The user explicitly expanded the Android Opal parity task to
+all features including connected services. ADR-010 below records that extension; the original
+v1 decision remains here as history, not a prohibition on this authorized work.
+
 **Decision.** v1 ships with **no server, no sign-up, no analytics**. All state lives
 on-device: iOS in the shared **App Group** container; Android in **Room** + **DataStore**.
 
@@ -205,6 +209,8 @@ may want to override on values grounds.)*
 
 ## Scope for v1 (from the feature inventory)
 
+This section describes the original v1; the Android parity extension is recorded in ADR-010.
+
 iOS-first. Ship the **core blocking loop** (Block Now + scheduled/recurring sessions with no
 Flint-imposed count cap or 24h-advance cap; iOS's finite, undocumented `DeviceActivity`
 registration pool is shared by Flint's monitors and still applies), **Block List + Allow List**,
@@ -213,6 +219,76 @@ Hardcore/Deep Focus for free**, **Time Limits + Open Limits**, the **anti-bypass
 **free weekly Emergency Pass** — every one of these is something Opal paywalls or omits. Defer
 gamification, bundled audio content, desktop/cross-device, and full Android parity to later
 milestones. Full list: [`01-opal-feature-inventory.md`](../research/01-opal-feature-inventory.md).
+
+---
+
+## ADR-010 — Optional connected Android services for the expanded Opal scope
+
+**Decision (2026-10-11).** Implement Flint-owned account, membership, managed-policy,
+sync-related, reward and subscription capabilities as part of the user's explicit request
+to match all Opal Android features including connected services. Local enforcement remains
+native and usable without signing in. This extends ADR-002 for the new scope.
+
+**Shipping boundary (2026-10-23).** Preserve this work as a debug-only, emulator-backed
+development sandbox. Release builds exclude `feature-connected` and its Firebase account SDK,
+expose no account navigation, and retain the local-first, no-account, no-analytics product.
+Public preview artifacts use the release code variant with development signing. Activating
+production accounts or managed enforcement requires its own explicit product decision.
+
+**First implementation boundary.** A separate `connected-services/` owns authenticated
+profile and group/invitation APIs, Firebase Auth and Firestore emulators, server authorization,
+and integration tests. `feature-connected` owns the optional Android client. Debug builds use
+the `demo-flint` local environment; release builds exclude the connected client entirely.
+The app does not initialize the account client until that surface is opened. No analytics
+SDK or personal usage upload is introduced by this milestone.
+
+**Authority.** Service identity comes from verified Firebase ID tokens. Membership and invite
+state are server-owned and transactional. Remote group memberships are distinct from saved
+local app selections. Future managed rules must have separate authority/revision/cache state;
+they must not be smuggled into the ordinary personal-rule editor. Billing and reward state
+must come from verified provider or server responses, not client switches.
+
+**Evidence and limits.** [The parity ledger](../research/06-opal-android-parity.md) records
+what is recovered, implemented, unobserved and still required. A working local account/group
+flow does not establish school enforcement, production availability, payment processing or
+complete Opal parity. Provider setup/deployment and any paid or external communication action
+remain separate, concrete execution decisions.
+
+---
+
+## ADR-011 — Separate personal access grants and managed authority
+
+**Decision (2026-10-11).** Add versioned access state without rewriting existing v1 rules,
+limits, break counts or emergency-pass records. Grant creation and its counter consumption
+must commit in one DataStore transaction before enforcement can honor the grant. Read failures,
+corrupt values and unsupported versions are unavailable state, not empty defaults.
+
+**Personal foundation.** `temporary_access_v2` stores exact cause scopes, policy revisions,
+pending waits and grants. Standard/Increasing are separate from EASY/HARDER/HARDCORE.
+Elapsed time plus a boot identity governs durations; wall time is display/audit data.
+This foundation is tested but dormant until live detectors and block surfaces provide
+complete cause identity, period adapters, clock readiness and commit-before-unblock handling.
+
+**Managed boundary.** Managed records have their own account, authentication-session,
+group, membership and revision identities. They never enter the personal rule store.
+Owner CRUD data is separate from the complete member snapshot. Snapshot acceptance must
+replace atomically, reject obsolete identities/revisions, and retain last-good state on
+fetch failure. Sign-out removes published authority before asynchronous cleanup. Local
+ordinary or emergency grants cannot authorize managed access.
+
+**Current slice.** The local backend implements versioned managed CRUD and snapshots.
+Android authoring/cache/inspection and a pure evaluator are implemented and tested separately
+from enforcement activation; see [the integration evidence](../verification/android-managed-2026-10-11/README.md).
+A cached snapshot with an unconfirmed post-reboot clock does
+not silently acquire a trusted time or a made-up server lease. Offline/reboot enforcement
+and all-cause arbitration must be explicit before activation is claimed.
+
+**Time compatibility.** Managed recurrence uses IANA zones and explicit DST interval rules.
+The Android app enables core-library desugaring with `desugar_jdk_libs` 2.1.5 so supported
+`java.time` APIs can be packaged for its existing minimum SDK. This follows the
+[Android setup documentation](https://developer.android.com/studio/write/java8-support)
+and [Google library changelog](https://github.com/google/desugar_jdk_libs/blob/master/CHANGELOG.md).
+An API 35 emulator run is not evidence of execution on API 23.
 
 ---
 

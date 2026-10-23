@@ -46,3 +46,4 @@ include(":feature:feature-blocklist")         // pick apps/sites, schedules, lim
 include(":feature:feature-stats")             // screen-time reports from UsageStatsManager
 include(":feature:feature-blockscreen")       // shared branded "blocked" lock UI
 include(":feature:feature-settings")          // battery exemption, OEM auto-start, re-enable prompts
+include(":feature:feature-connected")         // optional account and group service client

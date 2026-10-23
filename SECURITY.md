@@ -1,9 +1,17 @@
 # Security Policy
 
-Flint is local-first: no accounts, no backend, no telemetry — your blocklists and usage data
-never leave the device. That keeps the attack surface small, but a blocker holds privileged OS
-capabilities (Screen Time on iOS; AccessibilityService + overlay on Android), so security
-reports are taken seriously.
+Flint's local blocking engine keeps blocklists and usage data on the device. The optional
+Android connected-service development milestone adds local test accounts, profiles, groups,
+invitations and managed-policy authoring. Those operations send account/membership data and
+explicitly authored managed targets/schedules to the configured local Firebase emulators and
+Flint API; no production service is configured yet. Personal blocklists, usage history and
+installed-app inventories are not uploaded. The client includes no analytics SDK. Connected
+tooling is a debug-only dependency; release APKs contain no connected client or Firebase
+account SDK, and their Settings screen has no account entry.
+
+A blocker holds privileged OS capabilities (Screen Time on iOS; AccessibilityService + overlay
+on Android), and the account service introduces authentication/authorization boundaries.
+Security reports are taken seriously.
 
 ## Reporting a vulnerability
 
@@ -16,8 +24,10 @@ Especially in scope:
 
 - Bypasses of enforcement Flint claims is non-bypassable (Deep Focus / Hardcore, anti-bypass PIN)
 - Abuse or escalation via the Android AccessibilityService or overlay layer
-- Anything that sends user data off the device — Flint makes **no network calls at all**, so
-  any network traffic you find is a bug by definition
+- Unrequested transmission of usage, app selections, credentials or account data
+- Missing account/group authorization, reusable or leaked invitation credentials, session
+  mix-ups, or direct database access outside the authenticated service
+- A debug emulator endpoint or unsigned emulator token accepted in a production environment
 
 Out of scope: OS-level limitations already documented honestly in the repo (e.g. iOS
 Open-Limits enforcement constraints, Simulator shield limitations).

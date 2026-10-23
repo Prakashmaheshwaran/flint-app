@@ -1,0 +1,13 @@
+{
+  "apkSha256": "b69e91667a23fe236dee45d8e417cb6ffad214f862cd3b5032f0caa5f8defe81",
+  "retainedApkPath": "/Users/prakash/Desktop/open-source/flint/android-app/build/opal-parity-baseline/flint-managed-debug.apk",
+  "device": "flint-test / emulator-5554",
+  "api": 35,
+  "abi": "arm64-v8a",
+  "width": 1080,
+  "height": 2400,
+  "densityDpi": 420,
+  "fontScale": 1.0,
+  "coroutines": "1.10.2",
+  "installedApkSha256": "b69e91667a23fe236dee45d8e417cb6ffad214f862cd3b5032f0caa5f8defe81"
+}

@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-10-11T07:26:33.149Z",
+  "projectId": "demo-flint",
+  "mode": "local-emulators-only",
+  "cleanShutdownAndExport": true,
+  "exportAfterBaseline": true,
+  "exportRootPermissions": "0700",
+  "restartImportedExistingState": true,
+  "originalSyntheticAccountSignIns": 2,
+  "originalUidMatches": true,
+  "sameGroupAndMembershipIds": true,
+  "membershipIdentityDigest": "fb259de5e6222fdb52ed02323d73af7e108c0a05a604ce980c92799779e1811a",
+  "memberCount": 2,
+  "snapshotRevision": 5,
+  "ownerListingRevision": 5,
+  "liveManagedRules": 0,
+  "finalDeletionTombstone": {
+    "id": "a2e4b859-c3da-48b4-ba86-b6f15e313f09",
+    "revision": 5
+  },
+  "apiHealthyAfterRestart": true,
+  "apiBase": "http://127.0.0.1:8787",
+  "authPort": 9099,
+  "firestorePort": 8085,
+  "noUsersResetOrCreated": true,
+  "noInvitesCreated": true,
+  "noPolicyMutations": true,
+  "serviceLeftRunning": true
+}

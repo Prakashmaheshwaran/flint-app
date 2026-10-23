@@ -1,0 +1,215 @@
+{
+  "source_sha256": "843ac7e340639632b4843cbd8c4a08c2aaf9116a7b8a5ebe9ed1ec9afdeb69d9",
+  "members": [
+    {
+      "path": "META-INF/MANIFEST.MF",
+      "size": 2871,
+      "sha256": "46f6a2fa97c64dc793f0f6ff0b542be631d3632fc213298a298689693f9392e8"
+    },
+    {
+      "path": "META-INF/APKMIRRO.SF",
+      "size": 2992,
+      "sha256": "441051c7dac21b3925f01d15ef5d5dc97f1bd4d43aef6cace5983cad53cad0f6"
+    },
+    {
+      "path": "META-INF/APKMIRRO.RSA",
+      "size": 1597,
+      "sha256": "b82d311ac16ab8010aa0333d4855f5571a9822d2c48c8af63520c9836284957b"
+    },
+    {
+      "path": "info.json",
+      "size": 1141,
+      "sha256": "d3c7d009f1702af4c153fd43e8ccd4beae61bff9a23602bd2d4dcfc2250bc63d"
+    },
+    {
+      "path": "icon.png",
+      "size": 10084,
+      "sha256": "a1796c0bb572d44f775452df60d907ad308a90729be0f069d7e7918ae125bbb9"
+    },
+    {
+      "path": "base.apk",
+      "size": 33314617,
+      "sha256": "9b4348953e5da3e6a01e87ff3e76e9e059f5d3909e69a95b4d29c3d56b10710a"
+    },
+    {
+      "path": "split_config.hdpi.apk",
+      "size": 696782,
+      "sha256": "19e31f431447294d22abda44f516a4d805105356967b8da8e8760ca4a778e3e7"
+    },
+    {
+      "path": "split_config.ar.apk",
+      "size": 41369,
+      "sha256": "3cc6904f9d3cc61647e58834ea7fd13588e6adb248fae5dea48336e96ba82a25"
+    },
+    {
+      "path": "split_config.arm64_v8a.apk",
+      "size": 3322608,
+      "sha256": "721a269a009e7c92dd1c53c224df0c4c274349097278f7ea0f9912c19f88d6dd"
+    },
+    {
+      "path": "split_config.de.apk",
+      "size": 41369,
+      "sha256": "a36f01f266e1a131ac651539499910f92f4a5ac8f60d5b1074c3deb165c03503"
+    },
+    {
+      "path": "split_config.en.apk",
+      "size": 94617,
+      "sha256": "53fad33b36927410e15d5b2f6fb4587715fe36ca4a6e2b9e8303512ed9df83bf"
+    },
+    {
+      "path": "split_config.es.apk",
+      "size": 139673,
+      "sha256": "6cfad4751b8c86bb810212ce38ace9305e856aca12f612088dbdbf7b8aa3d6eb"
+    },
+    {
+      "path": "split_config.et.apk",
+      "size": 41369,
+      "sha256": "9b4e9b979215e774a23bc00d6a54ef201e922f11e73dc648cbe74f363702fe52"
+    },
+    {
+      "path": "split_config.fi.apk",
+      "size": 41369,
+      "sha256": "6308c7d33abb60f5886386c6c5e1819b6819c5b082dc78353991684f42c95506"
+    },
+    {
+      "path": "split_config.fr.apk",
+      "size": 135577,
+      "sha256": "146937366d2aafb1f030b47d6a377fd75b49f6dbdc3c5dd1dce34dcd303761b3"
+    },
+    {
+      "path": "split_config.hi.apk",
+      "size": 45465,
+      "sha256": "814008e5d3795ceee43bb8eb8225fc8c61dfbb42d5b239aea68a13fe26d4a082"
+    },
+    {
+      "path": "split_config.hu.apk",
+      "size": 41369,
+      "sha256": "2194e589a9cfbb181ac3cb422133ffa3081eddc93a2b9397ee3d9cc666f0f9ac"
+    },
+    {
+      "path": "split_config.in.apk",
+      "size": 41369,
+      "sha256": "48178aefe5d6d520edf1d5ea7519752e3aed395ee25de6de459dc83da9cb0984"
+    },
+    {
+      "path": "split_config.it.apk",
+      "size": 41369,
+      "sha256": "ca1cd58e049df514ba010ef7f38ed637f74c5715f40f6ec9e3de6e94556d3726"
+    },
+    {
+      "path": "split_config.ja.apk",
+      "size": 41369,
+      "sha256": "60727b029582926a13e031ea3517042189e42a4624c4cf4450439c662ec13964"
+    },
+    {
+      "path": "split_config.ko.apk",
+      "size": 41369,
+      "sha256": "2ee8619024ed4f238d47ab9d3c55cb2bd2c8ec3c29e5e184837c3850907dbbf9"
+    },
+    {
+      "path": "split_config.ms.apk",
+      "size": 41369,
+      "sha256": "3a2548fafed7c13f558aedf3af89cc061b656621638c1153619dfc5ab91819b1"
+    },
+    {
+      "path": "split_config.nl.apk",
+      "size": 41369,
+      "sha256": "3daec291850d7475f89405763d9c4839c9c72945f8081e85b4767dfc187b869e"
+    },
+    {
+      "path": "split_config.pl.apk",
+      "size": 41369,
+      "sha256": "c1056dd7efd60a2d8004b9d0889626ceb5115e06da1ac771d3a4a9a3803ff771"
+    },
+    {
+      "path": "split_config.pt.apk",
+      "size": 143769,
+      "sha256": "2c1ea303dc20a0940b6e79cfcf07c7d5bd7e0d1cbafd90ca75e1f8cb0ffcc283"
+    },
+    {
+      "path": "split_config.ru.apk",
+      "size": 41369,
+      "sha256": "b31724ecf46662c2471f6ff023b8a984c77b442c610c921bb24e3bb9160c61f2"
+    },
+    {
+      "path": "split_config.sv.apk",
+      "size": 41369,
+      "sha256": "d22f744ef6e06adefe6c0e3d0220853f079adb0ffb2f6efe06d789fceb371af0"
+    },
+    {
+      "path": "split_config.th.apk",
+      "size": 45465,
+      "sha256": "f2307bcd867df6116b013b647002eaaae935e4026ea9d0e5011f25bc7e5f96a6"
+    },
+    {
+      "path": "split_config.armeabi_v7a.apk",
+      "size": 2466554,
+      "sha256": "5e189c5078084d5d38f2229d67927d3289e4dcfdf9823a8d022c3cd79dea793d"
+    },
+    {
+      "path": "split_config.tr.apk",
+      "size": 41369,
+      "sha256": "d702ee81f196357272b0d425441f7befb24d41ac7651c8522460c06258d52dd5"
+    },
+    {
+      "path": "split_config.xhdpi.apk",
+      "size": 1122847,
+      "sha256": "65d8470421c81834e1d808b0b218ae6e543c79f05652343212ef32737196a8fc"
+    },
+    {
+      "path": "split_config.uk.apk",
+      "size": 41369,
+      "sha256": "13e1434b3707b4ba3d3f55b6e4176e837ab9e22074dd39bfe4f5f27d6a94cb4f"
+    },
+    {
+      "path": "split_config.vi.apk",
+      "size": 41369,
+      "sha256": "2217767acb4113a9de8fb95bfac2b044bd76d595923cec8003da6a07c40a6d1a"
+    },
+    {
+      "path": "split_config.xxhdpi.apk",
+      "size": 2277994,
+      "sha256": "6c09edc35eaafefad0a77bb0b9bc5f30f7e830812ed90cdbc428abc20ac1b8af"
+    },
+    {
+      "path": "split_config.zh.apk",
+      "size": 61849,
+      "sha256": "96e53ab18b399c4374981c0dc3e23e9395f840bd9b24eeb590f5671de4083dbf"
+    },
+    {
+      "path": "split_config.x86_64.apk",
+      "size": 3465953,
+      "sha256": "5de55ee5ab1424cf3c4e9d55f5a333fc6a0719a4cdc5d5bcdeb755d8f42727e4"
+    },
+    {
+      "path": "split_config.tvdpi.apk",
+      "size": 792400,
+      "sha256": "47c750b5868d4dc0eb764126e3774d5f15e1c855a0155ee380a562a480f660f2"
+    },
+    {
+      "path": "split_config.mdpi.apk",
+      "size": 643534,
+      "sha256": "94696889f9662cb7726e29b29d425a6e338e198c2e303b5fe4503e33c7375f79"
+    },
+    {
+      "path": "split_config.x86.apk",
+      "size": 3330770,
+      "sha256": "922c4ca371345db6fea482723e1c3eb8978e6467cf216d613bea6149911d2532"
+    },
+    {
+      "path": "split_config.xxxhdpi.apk",
+      "size": 5133410,
+      "sha256": "4cc714fd3ce2b4d4cc01452e2622d8ef8875efe6692db84f8e1b1badf0268896"
+    },
+    {
+      "path": "split_config.ldpi.apk",
+      "size": 656404,
+      "sha256": "e720c73d417e7c73c0e8473b05cf639ef806a35d619d7e850fbbbffef9e4133d"
+    },
+    {
+      "path": "APKM_installer.url",
+      "size": 58,
+      "sha256": "59b706c92cf23da65a07f58abf8bbbdc5a47bec34c040e6c87f2ff5348125cae"
+    }
+  ]
+}

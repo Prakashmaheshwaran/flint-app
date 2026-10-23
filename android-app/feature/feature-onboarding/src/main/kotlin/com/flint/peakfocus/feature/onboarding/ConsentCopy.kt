@@ -9,8 +9,8 @@ internal object ConsentCopy {
             "the web address shown in your browser."
     const val WHERE_IT_GOES =
         "Flint uses this only to enforce the blocks you set up. This data stays on " +
-            "your device. It is never sent off your device, shared, or sold. Flint has no " +
-            "account and no analytics."
+            "your device. It is never sent off your device, shared, or sold. Flint's local " +
+            "blocking needs no account and no analytics."
     const val NEXT_STEP =
         "On the next screen, enable “Flint app blocking” under Accessibility. You can " +
             "turn it off any time in Settings."

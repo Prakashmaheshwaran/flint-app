@@ -1,0 +1,187 @@
+[
+  {
+    "path": "android-app/build/opal-analysis/AndroidManifest.xml",
+    "sha256": "8785efde5c475de1f56db7b3c91d7521cd52b6e2d72043e0092152b4f721ab37",
+    "line_count": 822
+  },
+  {
+    "path": "android-app/build/opal-analysis/classes.txt",
+    "sha256": "50c7895cc96442f62be784160830f41b310ba4312a366116320d850585f8aea5",
+    "line_count": 174704
+  },
+  {
+    "path": "android-app/build/opal-analysis/notification-handler.smali",
+    "sha256": "525a7fe2f747b60253f5b6011789bb63cdbdd88e505c5987c07572f5c3fed62b",
+    "line_count": 2009
+  },
+  {
+    "path": "android-app/build/opal-analysis/jadx.log",
+    "sha256": "df7f9c571ccbe5909d5b7e6c8a2bb60454d1a202377e05f1a66d601ff46bc86d",
+    "line_count": 115
+  },
+  {
+    "path": "android-app/build/opal-analysis/rea-android.json",
+    "sha256": "f2c4cdae5929d6bb8cd1f792eea63a4521f3d07c00953efdda2670035058ff59",
+    "line_count": 1
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/cp/e.java",
+    "sha256": "96970083817d793bbb680ebf19f9e43866c129c32524ad6af6663a81b2bcb21a",
+    "line_count": 59
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/so/a0.java",
+    "sha256": "248b13768301d62f6de8140969ceff4c2acb91edc31cf192663767e4cfcef976",
+    "line_count": 19
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/so/g.java",
+    "sha256": "a3a63384f967c5617bfe76c2cf2f0840cf83ce27e50881bf2db075b38f0e348c",
+    "line_count": 42
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/cp/h.java",
+    "sha256": "6995249411481b0ca6f1e1311f154116fc64d05ca56ecb3bb1bbd4bb2dad72b2",
+    "line_count": 48
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/yt/d.java",
+    "sha256": "034fc0ddf3f881ebce6a3b9c0fbf7a2fe270117054aa5c1f51ef30694683518f",
+    "line_count": 103
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/st/g.java",
+    "sha256": "1257f50f9bd19000d83ee5fbdb90a8d3db8db9ca1e85f5770bff85f0e3911efe",
+    "line_count": 31
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/wt/h.java",
+    "sha256": "ebbc8ff8781ce4b6a97d8a61c0aa00bbf221ba95911e80006386801a746b2e49",
+    "line_count": 233
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/st/b.java",
+    "sha256": "ea98b60c26944a4205703cf43f707d7fedd7617cdcdba28c57f38a08fe441f3e",
+    "line_count": 71
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/gb/r.java",
+    "sha256": "cedaf26317010f3b205f2dee1a39bc0dbad8b423753d18a0ec583cb51c07b4ef",
+    "line_count": 820
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/o10/c.java",
+    "sha256": "4a664fbbe4f42a82636dca830f45b221148cd036e833a6cdfc1a824e218fbe15",
+    "line_count": 423
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/zp/j0.java",
+    "sha256": "8bb5341e2c4112af0992af5ce432ddb8d47b1f51ef5cb92be20cba00df4f3aca",
+    "line_count": 65
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/zp/k0.java",
+    "sha256": "616a155347bbd641f81ddeaed76c8eb4f63697a2c512ea61d69c056d1761ea85",
+    "line_count": 43
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/xv/a.java",
+    "sha256": "e8c8fb5942b84b583d0efde3ddb623977bfdaaefea73cc323b9f75381556ee2b",
+    "line_count": 24
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/bt/p.java",
+    "sha256": "ca93e8f048ef921ab6dc648c8171df485d6db4b567ebcc4cb7da80e1c3b02bdf",
+    "line_count": 2383
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/aw/b0.java",
+    "sha256": "41905c95beff6ab48601d1485a26b1e0df135d0625bc69484071cd02f57e42b3",
+    "line_count": 372
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/yo/l.java",
+    "sha256": "afd21ff82f73766690842b9f712ca9df917cb4efbd3b923ffd0d9fefe5ca5d2d",
+    "line_count": 45
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/to/r.java",
+    "sha256": "69c9322a7a12b256673ce4d7ad2dfa468dce9c20300fc14fc8fa1e6508e6f9bc",
+    "line_count": 925
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/tx/f0.java",
+    "sha256": "a0515b9e57f43844236e05fc64417573f314050505a3cfe286e06518a80de6df",
+    "line_count": 2299
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/aw/c0.java",
+    "sha256": "f725676ddb3d0f532acfc04f7fcc5df37c2577e073575f43e71b618df660ec4f",
+    "line_count": 572
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/tx/p.java",
+    "sha256": "97ec993dbf3739893f11cf63a7840b5459b455c2c762b1f9671a55ae6b1bd324",
+    "line_count": 805
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/nx/c.java",
+    "sha256": "a66291cf6ee9740e9e5e4c3b7a0c994354a64ed63448c6a3f76b4483bf891bf7",
+    "line_count": 109556
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/mx/d.java",
+    "sha256": "d8b4252b622bef9389acca893f337fb2ef74475221c44dec0d7d13ef5ac4399b",
+    "line_count": 135
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/androidx/room/q.java",
+    "sha256": "e2a2aeff13c0f1748d03ad389da9bd8ad22eced287857ace324a6e0555946cd1",
+    "line_count": 636
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/k1/m0.java",
+    "sha256": "9d2d11bfbf01f6f97bd80fe71a68701436e1be92d670a5fd36a801e30b7149a4",
+    "line_count": 1067
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/u20/h.java",
+    "sha256": "73707300d7684eba442608ba2f29892b2c53a6194b8569e6fc1c2899a41ab638",
+    "line_count": 355
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/tu/a0.java",
+    "sha256": "8b3d7e044f31e6410631645756caeea375c5c3740d1541d2f2641a8df756dbcb",
+    "line_count": 775
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/kl/a.java",
+    "sha256": "2346f78483b9b59a5899b931787e162ac53a9525c5311a7d7e477c28750c539f",
+    "line_count": 2136
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/com/google/android/gms/internal/p000firebaseauthapi/t9.java",
+    "sha256": "06507f5ff505f51fd27116f50ebbd46e8e54ac13df930080eec2cdd99e1f9844",
+    "line_count": 2500
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/com/withopal/opal/appsshared/service/ForegroundAppMonitorService.java",
+    "sha256": "eb96489fb9665891832c0f91471baf5f35bea2354f3120f132d5a5ae17b22c7c",
+    "line_count": 126
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/com/withopal/opal/feature/blockscreen/service/WebsiteDetectorService.java",
+    "sha256": "87c2e2e8a644151a0107ff156b29924b3028da22df4b071858d1ba190fc65232",
+    "line_count": 150
+  },
+  {
+    "path": "android-app/build/opal-analysis/decompiled/sources/com/withopal/opal/feature/blockscreen/service/NotificationBlockingService.java",
+    "sha256": "8b0da54fe84fb948aa9cb0403647c07a6c3625970eb74ee2f8e2e6c1121d17ad",
+    "line_count": 71
+  },
+  {
+    "path": "android-app/build/opal-analysis/waiting-room.smali",
+    "sha256": "c674ed68daa17bec2ea4b987b7112d8b4872f29701ad87ed0e6c340f9627bc9d",
+    "line_count": 9777
+  }
+]
