@@ -110,11 +110,14 @@ class BlockActivity : ComponentActivity() {
                     while (isActive) {
                         delay(1_000L)
                         now = System.currentTimeMillis()
-                        val endsAt = current.cause.endsAtEpochMs
-                        val over = endsAt != null && now >= endsAt
-                        if (over || BlockExemptions.isExempt(current.packageName, now)) {
+                        val effectiveCause = coordinator.currentBlockCause(current.packageName, current.cause)
+                        if (effectiveCause == null || coordinator.isExempt(current.packageName, effectiveCause)) {
                             finish()
                             break
+                        }
+                        if (effectiveCause != current.cause) {
+                            target = current.copy(cause = effectiveCause)
+                            break // the new target starts a fresh effect with its current protection
                         }
                     }
                 }

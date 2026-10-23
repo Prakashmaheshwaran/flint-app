@@ -1,5 +1,6 @@
 package com.flint.peakfocus.blocking.overlay
 
+import com.flint.peakfocus.core.model.BreakLevel
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -24,30 +25,46 @@ object BlockExemptions {
     const val GLOBAL_PACKAGE: String = "*"
 
     private val exemptUntil = ConcurrentHashMap<String, Long>()
+    private val emergencyUntil = ConcurrentHashMap<String, Long>()
 
     /** Exempt [packageName] until [untilEpochMs]. Overlapping grants keep the later end. */
     fun grant(packageName: String, untilEpochMs: Long) {
         exemptUntil.merge(packageName, untilEpochMs) { old, new -> maxOf(old, new) }
     }
 
-    /** True while [packageName] (or [GLOBAL_PACKAGE]) holds an unexpired exemption. */
-    fun isExempt(packageName: String, nowEpochMs: Long): Boolean =
-        active(packageName, nowEpochMs) || active(GLOBAL_PACKAGE, nowEpochMs)
+    /** Only explicit Emergency Pass consumption may create a Hardcore-capable exemption. */
+    fun grantEmergency(packageName: String, untilEpochMs: Long) {
+        emergencyUntil.merge(packageName, untilEpochMs) { old, new -> maxOf(old, new) }
+    }
+
+    fun hasOrdinaryExemption(packageName: String, nowEpochMs: Long): Boolean =
+        active(exemptUntil, packageName, nowEpochMs) || active(exemptUntil, GLOBAL_PACKAGE, nowEpochMs)
+
+    fun hasEmergencyExemption(packageName: String, nowEpochMs: Long): Boolean =
+        active(emergencyUntil, packageName, nowEpochMs) || active(emergencyUntil, GLOBAL_PACKAGE, nowEpochMs)
+
+    /** Evaluate the grant against the current restriction, not the tier when it was issued. */
+    fun isExempt(packageName: String, nowEpochMs: Long, level: BreakLevel = BreakLevel.EASY): Boolean =
+        hasEmergencyExemption(packageName, nowEpochMs) ||
+            (level != BreakLevel.HARDCORE && hasOrdinaryExemption(packageName, nowEpochMs))
 
     /** The exemption end for [packageName] specifically, or null if none/expired. */
     fun exemptUntil(packageName: String, nowEpochMs: Long): Long? {
-        val until = exemptUntil[packageName] ?: return null
-        return if (until > nowEpochMs) until else null
+        return listOfNotNull(exemptUntil[packageName], emergencyUntil[packageName])
+            .filter { it > nowEpochMs }.maxOrNull()
     }
 
     /** Drop everything (service teardown / tests). */
-    fun clearAll() = exemptUntil.clear()
+    fun clearAll() {
+        exemptUntil.clear()
+        emergencyUntil.clear()
+    }
 
-    private fun active(key: String, nowEpochMs: Long): Boolean {
-        val until = exemptUntil[key] ?: return false
+    private fun active(ledger: ConcurrentHashMap<String, Long>, key: String, nowEpochMs: Long): Boolean {
+        val until = ledger[key] ?: return false
         if (until <= nowEpochMs) {
             // Prune lazily; remove(key, value) only clears if nobody re-granted meanwhile.
-            exemptUntil.remove(key, until)
+            ledger.remove(key, until)
             return false
         }
         return true

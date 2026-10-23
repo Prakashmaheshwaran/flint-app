@@ -29,8 +29,33 @@ class InMemoryBlockRulesStore(initial: List<BlockRule> = emptyList()) : BlockRul
         state.update { current -> current.filterNot { it.id == rule.id } + rule }
     }
 
+    override suspend fun startSessionIfIdle(rule: BlockRule, nowEpochMs: Long): Boolean {
+        requireFiniteSession(rule, nowEpochMs)
+        while (true) {
+            val current = state.value
+            if (!current.canStartSession(rule.id, nowEpochMs)) return false
+            if (state.compareAndSet(current, current + rule)) return true
+        }
+    }
+
+    override suspend fun cancelEasySession(ruleId: String, nowEpochMs: Long): Boolean {
+        while (true) {
+            val current = state.value
+            if (!current.canCancelEasySession(ruleId, nowEpochMs)) return false
+            if (state.compareAndSet(current, current.filterNot { it.id == ruleId })) return true
+        }
+    }
+
     override suspend fun delete(ruleId: String) {
         state.update { current -> current.filterNot { it.id == ruleId } }
+    }
+
+    override suspend fun endTimerSession(expected: BlockRule, nowEpochMs: Long): Boolean {
+        while (true) {
+            val current = state.value
+            if (!current.canEndTimerSession(expected, nowEpochMs)) return false
+            if (state.compareAndSet(current, current.filterNot { it.id == expected.id })) return true
+        }
     }
 
     override suspend fun setEnabled(ruleId: String, enabled: Boolean) {

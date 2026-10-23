@@ -63,6 +63,8 @@ class OpenLimitPolicy {
      *
      * [granted] is in-memory, never persisted: a dead process forgets it and re-decides the next
      * transition, so enforcement fails strict — exactly like `BlockExemptions`.
+     * [recordAllowedOpen] is false while another restriction or exemption controls access:
+     * inspect whether this quota blocks, without spending or issuing a new foreground grant.
      */
     fun onForegroundTransition(
         previousPackage: String?,
@@ -72,6 +74,7 @@ class OpenLimitPolicy {
         granted: String?,
         limits: List<OpenLimit>,
         epochDay: Long,
+        recordAllowedOpen: Boolean = true,
     ): OpenTransition {
         val rolled = rolledOver(state, epochDay)
 
@@ -81,7 +84,12 @@ class OpenLimitPolicy {
         if (countsAsOpen(previousPackage, foregroundPackage, selfPackage)) {
             return when (val decision = decide(foregroundPackage, rolled, limits, epochDay)) {
                 is OpenLimitDecision.Blocked -> OpenTransition(decision, rolled, granted = null)
-                is OpenLimitDecision.Allowed -> OpenTransition(
+                is OpenLimitDecision.Allowed -> if (!recordAllowedOpen) {
+                    // Another restriction (or an existing exemption) controls access. Inspect
+                    // the quota for overlap precedence without charging an open the user did
+                    // not receive, or granting an unlimited foreground visit through a break.
+                    OpenTransition(decision, rolled, granted = null)
+                } else OpenTransition(
                     // One fewer remains once this open is on the books.
                     decision = OpenLimitDecision.Allowed(decision.remainingOpens?.minus(1)),
                     counts = recordOpen(rolled, foregroundPackage, epochDay),

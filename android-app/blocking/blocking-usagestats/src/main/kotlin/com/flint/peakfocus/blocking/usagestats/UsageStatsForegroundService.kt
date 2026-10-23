@@ -89,15 +89,12 @@ class UsageStatsForegroundService : Service() {
             return
         }
 
-        // Daily Time Limit — Path B's mirror of the a11y service's check, same order (ahead
-        // of the rule verdict) and same threshold sources (legacy LimitStore + the Limit
+        // Collect the daily budget alongside the rule verdict; neither can hide a stronger
+        // overlapping restriction. Threshold sources are legacy LimitStore + the Limit
         // editor's DataStore limits via the shared coordinator snapshot, stricter wins), so
         // the two paths can never disagree about a budget. [DailyLimitTracker] measures
         // consumption; its buckets are coarse/delayed — fine for daily budgets.
-        if (timeLimitGate.isSpent(pkg, now)) {
-            PathBBlockHandoff.onTimeLimitExceeded(this, pkg)
-            return
-        }
+        val timeLimitSpent = timeLimitGate.isSpent(pkg, now)
 
         val cal = java.util.Calendar.getInstance()
         val nowMin = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
@@ -108,7 +105,7 @@ class UsageStatsForegroundService : Service() {
         val verdict = engine.decide(pkg, null, ActiveRulesHolder.rules, packageName, nowMin, weekday, now)
         // Path B enforcement handoff — every tick, Allow included: open-limit counting and
         // overlay stand-down happen behind this call, not just Block rendering.
-        PathBBlockHandoff.onForegroundPolled(this, pkg, verdict)
+        PathBBlockHandoff.onForegroundPolled(this, pkg, verdict, timeLimitSpent)
     }
 
     private fun startAsForeground() {

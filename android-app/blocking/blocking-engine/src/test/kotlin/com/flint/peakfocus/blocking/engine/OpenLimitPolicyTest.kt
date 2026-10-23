@@ -338,4 +338,39 @@ class OpenLimitPolicyTest {
         assertNull(s.granted) // a block always clears the grant…
         assertTrue(s.goTo(insta) is OpenLimitDecision.Blocked) // …so Instagram is a fresh open
     }
+
+    @Test
+    fun aRuleBlockedAttemptInspectsTheQuotaWithoutSpendingOrGrantingAnOpen() {
+        val counts = OpenCountState(today, mapOf(insta to 1))
+        val checked = policy.onForegroundTransition(
+            launcher, insta, self, counts, spotify, limits(3), today,
+            recordAllowedOpen = false,
+        )
+        assertEquals(OpenLimitDecision.Allowed(2), checked.decision)
+        assertEquals(counts, checked.counts)
+        assertNull(checked.granted)
+    }
+
+    @Test
+    fun inspectionStillFindsAnExhaustedHardcoreOpenLimitBehindAnotherBlock() {
+        val counts = OpenCountState(today, mapOf(insta to 1))
+        val checked = policy.onForegroundTransition(
+            launcher, insta, self, counts, null, limits(1, BreakLevel.HARDCORE), today,
+            recordAllowedOpen = false,
+        )
+        assertEquals(BreakLevel.HARDCORE, (checked.decision as OpenLimitDecision.Blocked).limit.breakLevel)
+        assertEquals(counts, checked.counts)
+    }
+
+    @Test
+    fun inspectingAnExistingPaidOpenDoesNotTurnItIntoAnExhaustedLimit() {
+        val counts = OpenCountState(today, mapOf(insta to 1))
+        val checked = policy.onForegroundTransition(
+            insta, insta, self, counts, insta, limits(1, BreakLevel.HARDCORE), today,
+            recordAllowedOpen = false,
+        )
+        assertEquals(OpenLimitDecision.Allowed(0), checked.decision)
+        assertEquals(counts, checked.counts)
+        assertEquals(insta, checked.granted)
+    }
 }

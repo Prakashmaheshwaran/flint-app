@@ -19,7 +19,14 @@ import com.flint.peakfocus.core.model.TimeLimit
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import java.io.IOException
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -36,11 +43,12 @@ class FlintStoresTest {
     /** Minimal faithful fake: serial [updateData] against an in-memory [Preferences]. */
     private class FakePreferencesDataStore : DataStore<Preferences> {
         private val state = MutableStateFlow(emptyPreferences())
+        private val mutex = Mutex()
         override val data: Flow<Preferences> = state
-        override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences {
+        override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences = mutex.withLock {
             val next = transform(state.value)
             state.value = next
-            return next
+            next
         }
     }
 
@@ -59,6 +67,25 @@ class FlintStoresTest {
     )
 
     // MARK: BlockRulesStore (DataStore-backed)
+
+    @Test
+    fun strictSessionReadPropagatesIoFailureInsteadOfInventingAnEmptyStore() = runBlocking {
+        val failed = object : DataStore<Preferences> {
+            override val data: Flow<Preferences> = flow { throw IOException("storage unavailable") }
+            override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences =
+                throw IOException("storage unavailable")
+        }
+        val store = DataStoreBlockRulesStore(failed)
+        assertEquals(emptyList<BlockRule>(), store.rules.first()) // legacy contract remains unchanged
+        try {
+            store.rulesOrError.first()
+            throw AssertionError("Read failure was hidden")
+        } catch (_: IOException) { }
+        try {
+            store.startSessionIfIdle(ruleB.copy(id = "session-new", expiresAtEpochMs = 20_000L), 10_000L)
+            throw AssertionError("Failed persistence reported success")
+        } catch (_: IOException) { }
+    }
 
     @Test
     fun rulesStartEmptyAndUpsertAppends() {
@@ -127,6 +154,88 @@ class FlintStoresTest {
     // MARK: GroupsStore (DataStore-backed + in-memory contract)
 
     @Test
+    fun sessionStartIsAtomicAcrossConcurrentWriters() = runBlocking {
+        val data = FakePreferencesDataStore()
+        val stores = listOf(DataStoreBlockRulesStore(data), InMemoryBlockRulesStore())
+        for (store in stores) {
+            store.upsert(ruleA)
+            val results = (1..40).map { index ->
+                async(Dispatchers.Default) {
+                    store.startSessionIfIdle(
+                        ruleB.copy(id = "session-$index", expiresAtEpochMs = 20_000L),
+                        nowEpochMs = 10_000L,
+                    )
+                }
+            }.awaitAll()
+            assertEquals(1, results.count { it })
+            assertEquals(2, store.rules.first().size)
+            assertEquals(ruleA, store.rules.first().first { it.id == ruleA.id })
+        }
+    }
+
+    @Test
+    fun expiredAndDisabledSessionsDoNotPreventStartOrGetDeleted() = runBlocking {
+        for (store in listOf(DataStoreBlockRulesStore(FakePreferencesDataStore()), InMemoryBlockRulesStore())) {
+            val expired = ruleB.copy(id = "session-expired", expiresAtEpochMs = 10_000L)
+            val disabled = ruleB.copy(id = "session-disabled", enabled = false)
+            val next = ruleB.copy(id = "session-next", expiresAtEpochMs = 11_000L)
+            store.replaceAll(listOf(ruleA, expired, disabled))
+            assertTrue(store.startSessionIfIdle(next, 10_000L))
+            assertEquals(listOf(ruleA, expired, disabled, next), store.rules.first())
+            store.delete(next.id)
+            assertEquals(listOf(ruleA, expired, disabled), store.rules.first())
+            assertFalse(store.startSessionIfIdle(next.copy(id = disabled.id), 10_000L))
+        }
+    }
+
+    @Test
+    fun activeLegacySessionPreventsTimerEvenWithoutDeadline() = runBlocking {
+        for (store in listOf(DataStoreBlockRulesStore(FakePreferencesDataStore()), InMemoryBlockRulesStore())) {
+            val existing = ruleB.copy(id = "session-legacy")
+            store.upsert(existing)
+            assertFalse(store.startSessionIfIdle(ruleB.copy(id = "session-new", expiresAtEpochMs = 20_000L), 10_000L))
+            assertEquals(listOf(existing), store.rules.first())
+        }
+    }
+
+    @Test
+    fun cancellationChecksLatestStrengthAndPreservesUnrelatedRules() = runBlocking {
+        for (store in listOf(DataStoreBlockRulesStore(FakePreferencesDataStore()), InMemoryBlockRulesStore())) {
+            val session = ruleB.copy(id = "session-cancel", breakLevel = BreakLevel.EASY, expiresAtEpochMs = 20_000L)
+            store.replaceAll(listOf(ruleA, session))
+            store.upsert(session.copy(breakLevel = BreakLevel.HARDCORE))
+            assertFalse(store.cancelEasySession(session.id, 10_000L))
+            assertEquals(BreakLevel.HARDCORE, store.rules.first().last().breakLevel)
+            store.upsert(session)
+            val results = (1..20).map { async(Dispatchers.Default) { store.cancelEasySession(session.id, 10_000L) } }.awaitAll()
+            assertEquals(1, results.count { it })
+            assertEquals(listOf(ruleA), store.rules.first())
+            assertFalse(store.cancelEasySession(ruleA.id, 10_000L))
+            store.upsert(session)
+            assertFalse(store.cancelEasySession(session.id, 20_000L))
+            store.replaceAll(listOf(session, session.copy(breakLevel = BreakLevel.HARDCORE)))
+            assertFalse(store.cancelEasySession(session.id, 10_000L))
+            assertEquals(2, store.rules.first().size)
+        }
+    }
+
+    @Test
+    fun invalidSessionStartCannotAlterStoredRules() = runBlocking {
+        val store = DataStoreBlockRulesStore(FakePreferencesDataStore())
+        store.upsert(ruleA)
+        val valid = ruleB.copy(id = "session-new", expiresAtEpochMs = 20_000L)
+        for (invalid in listOf(valid.copy(id = "normal"), valid.copy(enabled = false),
+            valid.copy(expiresAtEpochMs = null), valid.copy(expiresAtEpochMs = 10_000L),
+            valid.copy(schedule = ruleA.schedule))) {
+            try {
+                store.startSessionIfIdle(invalid, 10_000L)
+                throw AssertionError("Invalid session was accepted")
+            } catch (_: IllegalArgumentException) { }
+            assertEquals(listOf(ruleA), store.rules.first())
+        }
+    }
+
+    @Test
     fun groupsUpsertReplaceDeleteAndSurviveAcrossInstances() {
         runBlocking {
             val dataStore = FakePreferencesDataStore()
@@ -150,6 +259,70 @@ class FlintStoresTest {
             // A fresh store over the same DataStore sees the persisted encoding, not memory.
             assertEquals(listOf(renamed), DataStoreGroupsStore(dataStore).groups.first())
         }
+    }
+
+    @Test
+    fun nativeTimerEndIsAtomicForAllTiersAndPreservesOtherRules() = runBlocking {
+        for (store in listOf(DataStoreBlockRulesStore(FakePreferencesDataStore()), InMemoryBlockRulesStore())) {
+            for (tier in BreakLevel.entries) {
+                val timer = ruleB.copy(id = "session-timer-native", breakLevel = tier, expiresAtEpochMs = 20_000)
+                val otherTimer = timer.copy(id = "session-timer-other")
+                store.replaceAll(listOf(ruleA, otherTimer, timer))
+                val results = (1..20).map { async(Dispatchers.Default) { store.endTimerSession(timer, 10_000) } }.awaitAll()
+                assertEquals(1, results.count { it })
+                assertEquals(listOf(ruleA, otherTimer), store.rules.first())
+            }
+        }
+    }
+
+    @Test
+    fun nativeTimerEndRejectsEveryChangedSnapshotAndAmbiguousIdentity() = runBlocking {
+        for (store in listOf(DataStoreBlockRulesStore(FakePreferencesDataStore()), InMemoryBlockRulesStore())) {
+            val timer = ruleB.copy(id = "session-timer-native", expiresAtEpochMs = 20_000)
+            val changes = listOf(
+                timer.copy(name = "Renamed"), timer.copy(breakLevel = BreakLevel.EASY),
+                timer.copy(targets = ruleA.targets), timer.copy(expiresAtEpochMs = 30_000),
+                timer.copy(enabled = false), timer.copy(schedule = ruleA.schedule),
+            )
+            for (changed in changes) {
+                store.replaceAll(listOf(ruleA, changed))
+                assertFalse(store.endTimerSession(timer, 10_000))
+                assertEquals(listOf(ruleA, changed), store.rules.first())
+            }
+            store.replaceAll(listOf(timer, timer))
+            assertFalse(store.endTimerSession(timer, 10_000))
+            assertEquals(2, store.rules.first().size)
+        }
+    }
+
+    @Test
+    fun nativeTimerEndRejectsLegacyOrdinaryInactiveAndScheduledRules() = runBlocking {
+        for (store in listOf(DataStoreBlockRulesStore(FakePreferencesDataStore()), InMemoryBlockRulesStore())) {
+            val timer = ruleB.copy(id = "session-timer-native", expiresAtEpochMs = 20_000)
+            val invalid = listOf(
+                timer.copy(id = "session-legacy"), timer.copy(id = "work"),
+                timer.copy(id = NATIVE_TIMER_ID_PREFIX), timer.copy(enabled = false),
+                timer.copy(schedule = ruleA.schedule), timer.copy(expiresAtEpochMs = 10_000),
+            )
+            for (rule in invalid) {
+                store.replaceAll(listOf(rule))
+                assertFalse(store.endTimerSession(rule, 10_000))
+                assertEquals(listOf(rule), store.rules.first())
+            }
+            store.replaceAll(listOf(timer))
+            assertFalse(store.endTimerSession(timer, -1))
+            assertEquals(listOf(timer), store.rules.first())
+        }
+    }
+
+    @Test
+    fun nativeTimerEndPersistsAcrossStoreInstances() = runBlocking {
+        val data = FakePreferencesDataStore()
+        val timer = ruleB.copy(id = "session-timer-native", expiresAtEpochMs = 20_000)
+        val first = DataStoreBlockRulesStore(data)
+        first.replaceAll(listOf(ruleA, timer))
+        assertTrue(first.endTimerSession(timer, 10_000))
+        assertEquals(listOf(ruleA), DataStoreBlockRulesStore(data).rules.first())
     }
 
     @Test

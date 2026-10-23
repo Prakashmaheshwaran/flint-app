@@ -5,12 +5,15 @@ import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.view.View
+import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
 import com.flint.peakfocus.blocking.engine.BreakPolicy
 import com.flint.peakfocus.blocking.engine.EmergencyPassPolicy
+import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.blocking.engine.OpenLimitPolicy
 import com.flint.peakfocus.core.datastore.FlintPreferences
 import com.flint.peakfocus.core.datastore.FocusStateStore
 import com.flint.peakfocus.core.datastore.LimitsStore
+import com.flint.peakfocus.core.model.ActiveRulesHolder
 import com.flint.peakfocus.core.model.BreakDecision
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.model.BreakSessionState
@@ -19,7 +22,11 @@ import com.flint.peakfocus.core.model.OpenCountState
 import com.flint.peakfocus.core.model.OpenLimit
 import com.flint.peakfocus.core.model.OpenLimitDecision
 import com.flint.peakfocus.core.model.TimeLimit
+import com.flint.peakfocus.core.model.Verdict
+import com.flint.peakfocus.feature.blockscreen.BlockScreenReason
+import java.util.Calendar
 import java.util.TimeZone
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -89,7 +96,11 @@ class BlockScreenCoordinator(
     private val breakPolicy = BreakPolicy()
     private val passPolicy = EmergencyPassPolicy()
     private val openLimitPolicy = OpenLimitPolicy()
+    private val ruleEngine = BlockDecisionEngine()
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    private data class Observation(val timeLimitSpent: Boolean, val epochDay: Long, val url: String?)
+    private val observations = ConcurrentHashMap<String, Observation>()
 
     // Persisted-state snapshots (collected below). Volatile: written by the collectors on the
     // caller's scope, read synchronously from detector callbacks. Until the first emission the
@@ -146,9 +157,86 @@ class BlockScreenCoordinator(
         return passPolicy.isAvailable(emergencyPass, now, utcOffsetMs(now))
     }
 
-    /** True while [packageName] is inside a granted break / Emergency Pass window. */
-    fun isExempt(packageName: String): Boolean =
-        BlockExemptions.isExempt(packageName, nowEpochMs())
+    /** Re-check protection before a surface hides in response to a previously issued grant. */
+    fun isExempt(packageName: String, displayedCause: BlockCause? = null): Boolean {
+        val cause = currentBlockCause(packageName, displayedCause)
+        if (cause?.reason == BlockScreenReason.UNINSTALL_GUARD) return false
+        return BlockExemptions.isExempt(packageName, nowEpochMs(), cause?.breakLevel ?: BreakLevel.EASY)
+    }
+
+    /**
+     * Both detectors submit all existing restrictions before exemptions or priority can allow
+     * access. Open-limit inspection does not spend an open behind another restriction.
+     */
+    fun evaluateBlockCause(
+        previousPackage: String?,
+        packageName: String,
+        ruleCause: BlockCause?,
+        timeLimitSpent: Boolean,
+        foregroundUrl: String? = null,
+    ): BlockCause? {
+        val now = nowEpochMs()
+        val offset = utcOffsetMs(now)
+        observations[packageName] = Observation(timeLimitSpent, openLimitPolicy.epochDay(now, offset), foregroundUrl)
+        val timeCause = if (timeLimitSpent) timeLimitBlockCause(defaultBreakLevel, now, offset) else null
+        val ordinary = BlockExemptions.hasOrdinaryExemption(packageName, now)
+        val emergency = BlockExemptions.hasEmergencyExemption(packageName, now)
+        val openDecision = onForegroundChanged(
+            previousPackage,
+            packageName,
+            recordAllowedOpen = ruleCause == null && timeCause == null && !ordinary && !emergency,
+        )
+        val openCause = (openDecision as? OpenLimitDecision.Blocked)?.let {
+            openLimitBlockCause(it.limit, now, offset)
+        }
+        return BlockOverlapPolicy.afterExemptions(
+            BlockOverlapPolicy.strongest(timeCause, ruleCause, openCause),
+            ordinary,
+            emergency,
+        )
+    }
+
+    /**
+     * Revalidate stale surface actions against current rule/open snapshots and the detector's
+     * last measured daily-time result. Usage measurement stays owned by the detector. A
+     * still-live displayed cause is retained conservatively until that detector refreshes it.
+     */
+    fun currentBlockCause(packageName: String, displayedCause: BlockCause? = null): BlockCause? {
+        val now = nowEpochMs()
+        val offset = utcOffsetMs(now)
+        val observation = observations[packageName]
+        val cal = Calendar.getInstance().apply { timeInMillis = now }
+        val verdict = ruleEngine.decide(
+            packageName,
+            observation?.url,
+            ActiveRulesHolder.rules,
+            appContext.packageName,
+            cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE),
+            IsoWeekday.fromCalendar(cal.get(Calendar.DAY_OF_WEEK)),
+            now,
+        )
+        val ruleCause = (verdict as? Verdict.Block)?.let { block ->
+            ruleBlockCause(ActiveRulesHolder.rules.firstOrNull { it.id == block.ruleId }, now, offset)
+        }
+        val timeCause = if (observation?.timeLimitSpent == true &&
+            observation.epochDay == openLimitPolicy.epochDay(now, offset)
+        ) timeLimitBlockCause(defaultBreakLevel, now, offset) else null
+        val openDecision = openLimitPolicy.onForegroundTransition(
+            previousPackage = packageName,
+            foregroundPackage = packageName,
+            selfPackage = appContext.packageName,
+            state = openCounts,
+            granted = openGrantedPackage,
+            limits = openLimits,
+            epochDay = openLimitPolicy.epochDay(now, offset),
+            recordAllowedOpen = false,
+        ).decision
+        val openCause = (openDecision as? OpenLimitDecision.Blocked)?.let {
+            openLimitBlockCause(it.limit, now, offset)
+        }
+        val liveDisplayed = displayedCause?.takeIf { it.endsAtEpochMs == null || now < it.endsAtEpochMs }
+        return BlockOverlapPolicy.strongest(timeCause, ruleCause, openCause, liveDisplayed)
+    }
 
     /** HARDER cooldown remaining at [atEpochMs], or null when none is pending. */
     fun breakWaitRemainingMillis(atEpochMs: Long): Long? =
@@ -165,7 +253,11 @@ class BlockScreenCoordinator(
      * tick later. Callers block on [OpenLimitDecision.Blocked]. Synchronous; persistence is
      * fired asynchronously on [scope].
      */
-    fun onForegroundChanged(previousPackage: String?, foregroundPackage: String): OpenLimitDecision {
+    fun onForegroundChanged(
+        previousPackage: String?,
+        foregroundPackage: String,
+        recordAllowedOpen: Boolean = true,
+    ): OpenLimitDecision {
         val now = nowEpochMs()
         val day = openLimitPolicy.epochDay(now, utcOffsetMs(now))
         val transition = openLimitPolicy.onForegroundTransition(
@@ -176,6 +268,7 @@ class BlockScreenCoordinator(
             granted = openGrantedPackage,
             limits = openLimits,
             epochDay = day,
+            recordAllowedOpen = recordAllowedOpen,
         )
         openGrantedPackage = transition.granted
         if (transition.counts != openCounts) {
@@ -239,7 +332,8 @@ class BlockScreenCoordinator(
      */
     fun requestBreak(packageName: String, cause: BlockCause): BreakDecision {
         val now = nowEpochMs()
-        val decision = breakPolicy.requestBreak(cause.breakLevel, breakSession, now)
+        val currentCause = currentBlockCause(packageName, cause) ?: cause
+        val decision = breakPolicy.requestBreak(currentCause.breakLevel, breakSession, now)
         when (decision) {
             is BreakDecision.Granted -> {
                 breakSession = decision.session
@@ -247,7 +341,7 @@ class BlockScreenCoordinator(
                 val until = now + DEFAULT_BREAK_DURATION_MS
                 BlockExemptions.grant(packageName, until)
                 scheduleExemptionExpiry(packageName, until)
-                if (cause.spendsOpenOnBreak) {
+                if (currentCause.spendsOpenOnBreak) {
                     // The extra open is recorded but never granted: what lifts the shield here
                     // is the break's exemption window, so the block returns when that window
                     // ends — the same contract every other tier gets.
@@ -261,7 +355,13 @@ class BlockScreenCoordinator(
                 breakSession = decision.session
                 persist { focusStore.setBreakSession(decision.session) }
             }
-            BreakDecision.DeniedHardcore -> Unit // the UI never offers this; defensively inert
+            BreakDecision.DeniedHardcore -> runOnMain {
+                // An old EASY/HARDER surface may still be visible when a strict rule starts.
+                if (visiblePackage == packageName) {
+                    shownCause = currentCause
+                    rerenderNow()
+                }
+            }
         }
         return decision
     }
@@ -279,7 +379,7 @@ class BlockScreenCoordinator(
         emergencyPass = consumed
         persist { focusStore.setEmergencyPass(consumed) }
         val until = cause.endsAtEpochMs ?: (now + EMERGENCY_PASS_OPEN_ENDED_EXEMPTION_MS)
-        BlockExemptions.grant(packageName, until)
+        BlockExemptions.grantEmergency(packageName, until)
         scheduleExemptionExpiry(packageName, until)
         return true
     }
@@ -355,13 +455,14 @@ class BlockScreenCoordinator(
             while (isActive) {
                 delay(1_000L)
                 val pkg = visiblePackage ?: break
-                val cause = shownCause ?: break
+                val cause = currentBlockCause(pkg, shownCause)
                 val now = nowEpochMs()
-                if (cause.endsAtEpochMs != null && now >= cause.endsAtEpochMs) {
+                if (cause == null) {
                     hideLocked() // block window over (schedule ended / midnight rollover)
                     break
                 }
-                if (BlockExemptions.isExempt(pkg, now)) {
+                shownCause = cause
+                if (isExempt(pkg, cause)) {
                     hideLocked() // a break/pass was granted meanwhile (possibly by the Activity)
                     break
                 }
