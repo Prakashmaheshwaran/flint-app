@@ -2,15 +2,14 @@
 # (no signing), then run unit tests on the first available iPhone simulator.
 # Reality check (matches the repo's honest-docs rule): CI verifies build + logic only;
 # Screen Time shield enforcement can only be proven on a physical device.
-# NOTE: written before first publish; expect a shakedown run on the first push.
 name: iOS
 
 on:
   push:
     branches: [main]
-    paths: ['ios-app/**', '.github/workflows/ios.yml']
+    paths: ['ios-app/**', 'Makefile', '.github/workflows/ios.yml']
   pull_request:
-    paths: ['ios-app/**', '.github/workflows/ios.yml']
+    paths: ['ios-app/**', 'Makefile', '.github/workflows/ios.yml']
   workflow_dispatch:
 
 permissions:

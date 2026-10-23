@@ -122,7 +122,7 @@ elif [[ "$CODE" -le 0 ]]; then
 else
   # The most recent vX.Y.Z tag that is not the one being released. Version-sorted by git,
   # so no dependency on `sort -V` (absent from BSD sort).
-  PREV="$(git -C "$ROOT" tag -l 'v[0-9]*' --sort=-v:refname 2>/dev/null | grep -vxF "$TAG" | sed -n '1p')"
+  PREV="$(git -C "$ROOT" tag --merged HEAD -l 'v[0-9]*' --sort=-v:refname 2>/dev/null | grep -vxF "$TAG" | sed -n '1p')"
   if [[ -z "$PREV" ]]; then
     skip "no previous release tag reachable — cannot compare versionCode $CODE. First release, or a shallow clone (actions/checkout needs fetch-depth: 0)."
   else
