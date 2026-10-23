@@ -1,0 +1,20 @@
+name: Repository checks
+
+on:
+  push:
+    branches: [main]
+    paths: ['scripts/**', 'Makefile', '.github/workflows/**']
+  pull_request:
+    paths: ['scripts/**', 'Makefile', '.github/workflows/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  script-selftests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify device-free scripts
+        run: make selftest
