@@ -1,5 +1,12 @@
 # Flint — Android
 
+## Build toolchain compatibility
+
+AGP 9.3.2 retains Flint's Kotlin 2.1/Compose plugin using Google's supported
+`android.builtInKotlin=false` and `android.newDsl=false` compatibility settings.
+Both debug and release unit suites stay enabled explicitly. This is an AGP 9 compatibility
+upgrade; migrating to built-in Kotlin and the new DSL remains required before AGP 10.
+
 Native Android app (Kotlin + Jetpack Compose), multi-module. The enforcement engine is isolated
 from the UI so it can run headless and survive process death. Strategy & rationale:
 [`../docs/research/03-android-technical-strategy.md`](../docs/research/03-android-technical-strategy.md).

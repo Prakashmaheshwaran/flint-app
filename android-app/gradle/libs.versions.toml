@@ -1,7 +1,7 @@
 # Version catalog — single source of truth for dependency + plugin versions.
 [versions]
 desugar = "2.1.5"
-agp = "8.7.3"
+agp = "9.3.2"
 kotlin = "2.1.21"
 coreKtx = "1.15.0"
 lifecycle = "2.8.7"
