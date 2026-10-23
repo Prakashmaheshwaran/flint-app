@@ -40,6 +40,12 @@ Firestore uses 8085 because another local service already occupies 8080. Android
 
 Dependencies are pinned in `package.json` and `package-lock.json`. No real Firebase config file or service-account key is required. A fresh synthetic credential exists only in process memory so the SDK never needs ambient account credentials; metadata-server detection is disabled. The launcher rejects conflicting project/emulator environment settings; the API refuses missing emulator variables, non-loopback/different endpoints, a non-`demo-flint` project, credential-file configuration, and `NODE_ENV=production`. There is deliberately no production starter: production needs a separate reviewed configuration, signed-token verification, deployment, and provider setup.
 
+### Development dependency security
+
+Run `npm audit --package-lock-only` after updating the lockfile. The Firebase CLI currently retains three vulnerable transitive dependency ranges. Scoped overrides select patched `uuid` 11.1.1 for gaxios 6, OpenTelemetry Core 2.8.0 for Pub/Sub 5, and basic-ftp 6.2.3 for get-uri 6. These address [UUID buffer bounds](https://github.com/advisories/GHSA-w5hq-g745-h8pq), [unbounded baggage parsing](https://github.com/advisories/GHSA-8988-4f7v-96qf), and [FTP listing parsing](https://github.com/advisories/GHSA-c475-qrg2-pj4r). They affect the development CLI dependency tree; the supported CLI use here is Auth/Firestore emulation.
+
+Remove an override when its parent dependency accepts a patched version, then regenerate the lockfile, run the audit and syntax checks, and pass all emulator integration tests under the pinned Node runtime. Do not use `npm audit fix --force`: its proposed Firebase CLI downgrade is outside the tested toolchain.
+
 ## Authentication
 
 Use Firebase Auth's emulator SDK configuration or its documented REST API. For example, the local signup path is `/identitytoolkit.googleapis.com/v1/accounts:signUp?key=flint-local-only` on port 9099 with `{email,password,returnSecureToken:true}`. Sign-in uses `accounts:signInWithPassword` with the same shape. The key here is a nonsecret placeholder for a demo project. Keep returned ID/refresh tokens in the client credential store, not source, logs, or UI.
