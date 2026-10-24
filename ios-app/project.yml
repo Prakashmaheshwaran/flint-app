@@ -110,6 +110,9 @@ targets:
     platform: iOS
     sources:
       - Extensions/DeviceActivityReportExtension
+      # Insights renders inside this extension, so it bundles the same two fonts as the app.
+      - path: Flint/Resources/Fonts
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.report

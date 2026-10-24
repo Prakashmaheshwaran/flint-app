@@ -11,6 +11,10 @@ final class AuthorizationModel: ObservableObject {
 
     func refresh() {
         status = AuthorizationCenter.shared.authorizationStatus
+        #if DEBUG
+        // `-FlintUIPreview` lets the Simulator (which can't grant Screen Time) show the approved UI.
+        if ProcessInfo.processInfo.arguments.contains("-FlintUIPreview") { status = .approved }
+        #endif
     }
 
     func requestAuthorization() async {

@@ -3,7 +3,9 @@ import ManagedSettingsUI
 import UIKit
 import FlintCore
 
-/// The branded "Peak Focus" block screen that replaces Apple's generic gray shield.
+/// The Ember & Mist block screen that replaces Apple's generic gray shield: the night colour,
+/// the ember as its icon, "<App> is resting." Apple fixes the layout (icon, title, subtitle,
+/// buttons); only text and colours are ours.
 ///
 /// **Open Limits:** for a token an enabled `FlintOpenLimitRule` covers (and no other layer hard-
 /// blocks), the primary button reads "Use app (N left)" — the same
@@ -20,31 +22,58 @@ final class FlintShieldConfiguration: ShieldConfigurationDataSource {
         let primaryButton: String
         switch remainingOpens {
         case .some(let left) where left > 0:
-            subtitle = "Open-limited — \(left) intentional \(left == 1 ? "open" : "opens") left today."
+            subtitle = "\(left) intentional \(left == 1 ? "open" : "opens") left today. Notice the reach first."
             primaryButton = "Use \(unit) (\(left) left)"
         case .some:
             // Zero also covers the enforcer's fail-closed path (App Group unreadable reports 0
             // remaining) — only promise a tomorrow reset when the counter is actually readable;
             // fail-closed has no daily reset to promise.
             subtitle = FlintGroupStore() != nil
-                ? "Open-limited — today's opens are spent. It unlocks tomorrow."
-                : "Open-limited — opens are unavailable right now."
-            primaryButton = "Stay focused"
+                ? "Today’s opens are spent. It opens again tomorrow."
+                : "Opens are unavailable right now."
+            primaryButton = "Go back"
         case .none:
-            subtitle = name.map { "“\($0)” is off-limits during your focus session." }
-                ?? "Off-limits during your focus session."
-            primaryButton = "Stay focused"
+            subtitle = "Notice the reach, then let it pass."
+            primaryButton = "Go back"
         }
+        let title = name.map { "\($0) is resting." } ?? "This \(unit) is resting."
         return ShieldConfiguration(
-            backgroundBlurStyle: .systemThinMaterialDark,
-            backgroundColor: FlintBrand.flintUI,
-            icon: nil,
-            title: ShieldConfiguration.Label(text: "Blocked by Flint", color: .white),
-            subtitle: ShieldConfiguration.Label(text: subtitle, color: FlintBrand.stoneUI),
-            primaryButtonLabel: ShieldConfiguration.Label(text: primaryButton, color: FlintBrand.onAccentUI),
-            primaryButtonBackgroundColor: FlintBrand.sparkUI
+            backgroundBlurStyle: nil,
+            backgroundColor: FlintBrand.nightUI,
+            icon: Self.ember,
+            title: ShieldConfiguration.Label(text: title, color: FlintBrand.boneUI),
+            subtitle: ShieldConfiguration.Label(text: subtitle, color: FlintBrand.mistUI),
+            primaryButtonLabel: ShieldConfiguration.Label(text: primaryButton, color: FlintBrand.onEmberUI),
+            primaryButtonBackgroundColor: FlintBrand.emberUI
         )
     }
+
+    /// The ember orb inside its halo, drawn once (design/ember-mist/E07-Shield.dc.html).
+    private static let ember: UIImage = {
+        let size = CGSize(width: 160, height: 160)
+        return UIGraphicsImageRenderer(size: size).image { context in
+            let cg = context.cgContext
+            let space = CGColorSpaceCreateDeviceRGB()
+            let center = CGPoint(x: 80, y: 80)
+            let ember = FlintBrand.emberUI
+            if let halo = CGGradient(colorsSpace: space, colors: [
+                ember.withAlphaComponent(0.45).cgColor, ember.withAlphaComponent(0.1).cgColor,
+                ember.withAlphaComponent(0).cgColor,
+            ] as CFArray, locations: [0, 0.5, 1]) {
+                cg.drawRadialGradient(halo, startCenter: center, startRadius: 0, endCenter: center, endRadius: 80, options: [])
+            }
+            if let orb = CGGradient(colorsSpace: space, colors: [
+                UIColor(red: 1, green: 0.906, blue: 0.761, alpha: 1).cgColor,
+                UIColor(red: 0.969, green: 0.745, blue: 0.416, alpha: 1).cgColor,
+                UIColor(red: 0.851, green: 0.525, blue: 0.125, alpha: 1).cgColor,
+            ] as CFArray, locations: [0, 0.4, 1]) {
+                cg.addEllipse(in: CGRect(x: 46, y: 46, width: 68, height: 68))
+                cg.clip()
+                cg.drawRadialGradient(orb, startCenter: CGPoint(x: 80, y: 76), startRadius: 0,
+                                      endCenter: center, endRadius: 37, options: [])
+            }
+        }
+    }()
 
     override func configuration(shielding application: Application) -> ShieldConfiguration {
         flintShield(

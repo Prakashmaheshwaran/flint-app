@@ -225,7 +225,7 @@ public enum FlintOpenLimitEnforcer {
         /// Another blocking layer (Session / Schedule / Time Limit) also shields this token, so
         /// a release wouldn't let the user in — nothing is spent, the shield stays.
         case hardBlocked
-        /// No enabled open-limit rule covers this token — a plain hard block ("Stay focused").
+        /// No enabled open-limit rule covers this token — a plain hard block ("Go back").
         case notOpenLimited
     }
 

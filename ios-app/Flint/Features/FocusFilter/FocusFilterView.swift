@@ -61,6 +61,7 @@ struct FocusFilterView: View {
                      + "this is build-verified only.")
             }
         }
+        .flintForm()
         .navigationTitle("Focus Filter")
         .navigationBarTitleDisplayMode(.inline)
         // Persist every edit so newly-created Focus filters pick up the latest defaults.
