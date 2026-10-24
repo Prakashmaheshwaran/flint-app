@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flint — Rules</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500&amp;family=Hanken+Grotesk:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#EDE6DA}a:hover{color:#B7AE9F}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #0E0D0F; color: #EDE6DA; font-family: 'Hanken Grotesk', -apple-system, system-ui, sans-serif">
+
+  <div aria-hidden="true" style="position: absolute; left: 0; right: 0; top: 0; height: 260px; background: linear-gradient(180deg, #0A0C11 0%, #16151B 60%, #0E0D0F 100%)"></div>
+
+  <div style="position: relative; display: flex; flex-direction: column; padding: 58px 24px 0 24px">
+    <div style="display: flex; justify-content: space-between; align-items: center">
+      <h1 style="margin: 0; font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-weight: 400; font-size: 30px; letter-spacing: -0.3px">Rules</h1>
+      <a href="E14-ScheduleEditor.dc.html" aria-label="New rule" style="width: 44px; height: 44px; border-radius: 22px; border: 1px solid rgba(237, 230, 218, 0.16); display: flex; align-items: center; justify-content: center; color: #EDE6DA">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+      </a>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 20px">
+      <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: 500; letter-spacing: 2px; color: #B7AE9F">
+        <span>TODAY</span><span>NOW 10:58</span>
+      </div>
+      <div style="position: relative; height: 22px">
+        <div style="position: absolute; left: 0; right: 0; top: 10px; height: 1px; background: rgba(237, 230, 218, 0.14)"></div>
+        <div style="position: absolute; top: 7px; height: 7px; border-radius: 4px; left: 85.5px; width: 42.8px; background: #6E665A"></div>
+        <div style="position: absolute; top: 7px; height: 7px; border-radius: 4px; left: 128.3px; width: 42.8px; background: #EDE6DA"></div>
+        <div style="position: absolute; top: 7px; height: 7px; border-radius: 4px; left: 249.4px; width: 21.4px; background: #3E3A35"></div>
+        <div style="position: absolute; top: 7px; height: 7px; border-radius: 4px; left: 285px; width: 14.3px; background: #3E3A35"></div>
+        <div style="position: absolute; left: 148px; top: 3px; width: 15px; height: 15px; border-radius: 8px; background: rgba(239, 159, 39, 0.25)"></div>
+        <div style="position: absolute; left: 152px; top: 7px; width: 7px; height: 7px; border-radius: 4px; background: #EF9F27"></div>
+      </div>
+      <div style="display: flex; justify-content: space-between; font-size: 11px; color: #9C9486; font-variant-numeric: tabular-nums">
+        <span>00</span><span>06</span><span>12</span><span>18</span><span>24</span>
+      </div>
+    </div>
+
+    <span style="margin-top: 22px; font-size: 11px; font-weight: 500; letter-spacing: 2px; color: #B7AE9F">SCHEDULES</span>
+    <div style="display: flex; flex-direction: column; margin-top: 6px">
+      <sc-for list="{{rows}}" as="r" hint-placeholder-count="5">
+        <div style="display: flex; align-items: center; gap: 14px; min-height: 60px; border-bottom: 1px solid rgba(237, 230, 218, 0.07)">
+          <a href="E14-ScheduleEditor.dc.html" style="display: flex; flex-direction: column; gap: 3px; flex: 1 1 auto; min-width: 0; text-decoration: none; color: {{r.nameColor}}">
+            <span style="display: flex; align-items: baseline; gap: 10px">
+              <span style="font-size: 15px; font-weight: 500">{{r.name}}</span>
+              <span style="font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 14px; color: #B7AE9F; font-variant-numeric: tabular-nums">{{r.time}}</span>
+            </span>
+            <span style="font-size: 12px; color: #9C9486">{{r.meta}}</span>
+          </a>
+          <button type="button" role="switch" aria-checked="{{r.on}}" aria-label="{{r.name}}" onClick="{{r.toggle}}" style="{{r.track}}">
+            <span style="{{r.knob}}"></span>
+          </button>
+        </div>
+      </sc-for>
+    </div>
+
+    <span style="margin-top: 20px; font-size: 11px; font-weight: 500; letter-spacing: 2px; color: #B7AE9F">ALSO</span>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 10px">
+      <a href="E11-Sleep.dc.html" style="display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: 20px; border: 1px solid rgba(237, 230, 218, 0.1); background: rgba(237, 230, 218, 0.03); text-decoration: none; color: #EDE6DA">
+        <span style="font-size: 15px; font-weight: 500">Sleep</span>
+        <span style="font-size: 12px; color: #B7AE9F; font-variant-numeric: tabular-nums">22:30 — 07:00</span>
+      </a>
+      <a href="E15-LimitEditor.dc.html" style="display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: 20px; border: 1px solid rgba(237, 230, 218, 0.1); background: rgba(237, 230, 218, 0.03); text-decoration: none; color: #EDE6DA">
+        <span style="font-size: 15px; font-weight: 500">App limits</span>
+        <span style="font-size: 12px; color: #B7AE9F">2 apps · 1 open limit</span>
+      </a>
+    </div>
+  </div>
+
+  <nav aria-label="Tabs" style="position: absolute; left: 24px; right: 24px; bottom: 28px; height: 64px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-radius: 32px; background: rgba(24, 22, 24, 0.82); border: 1px solid rgba(237, 230, 218, 0.1); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px)">
+    <a href="E03-Today.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; text-decoration: none; color: #9C9486; font-size: 11px; font-weight: 500">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-4.2-7"></path><circle cx="18.6" cy="6.4" r="1.6" fill="currentColor" stroke="none"></circle></svg>
+      Today
+    </a>
+    <a href="E13-Rules.dc.html" aria-current="page" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; text-decoration: none; color: #EDE6DA; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M5 7h14M5 12h10"></path><path d="M5 17h6" stroke="#EF9F27"></path></svg>
+      Rules
+    </a>
+    <a href="E12-Insights.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; text-decoration: none; color: #9C9486; font-size: 11px; font-weight: 500">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6 19v-6M12 19V6M18 19v-9"></path></svg>
+      Insights
+    </a>
+    <a href="E16-You.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; text-decoration: none; color: #9C9486; font-size: 11px; font-weight: 500">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="9" r="3.5"></circle><path d="M5 20c1.5-3.5 4-5 7-5s5.5 1.5 7 5"></path></svg>
+      You
+    </a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { on: { laser: true, rise: true, gym: true, reading: true, weekend: false } };
+  }
+  renderVals() {
+    const data = [
+      ['laser', 'Laser Focus', '09:00 — 12:00', 'Weekdays · Harder · 5 apps'],
+      ['rise', 'Rise and Shine', '06:00 — 09:00', 'Every day · Easy · 7 apps'],
+      ['gym', 'Gym Time', '17:30 — 19:00', 'Mon Wed Fri · Harder · 7 apps'],
+      ['reading', 'Reading Time', '20:00 — 21:00', 'Every day · Easy · 4 apps'],
+      ['weekend', 'Weekend Limit', '10:00 — 18:00', 'Sat Sun · Easy · 4 apps']
+    ];
+    const rows = data.map(([id, name, time, meta]) => {
+      const on = !!this.state.on[id];
+      return {
+        name, time, meta,
+        on: on ? 'true' : 'false',
+        nameColor: on ? '#EDE6DA' : '#8F887C',
+        track: 'flex: 0 0 auto; position: relative; width: 52px; height: 32px; padding: 0; border: none; border-radius: 16px; background: ' + (on ? '#EF9F27' : 'rgba(237,230,218,0.14)') + ';',
+        knob: 'position: absolute; top: 3px; left: ' + (on ? '23px' : '3px') + '; width: 26px; height: 26px; border-radius: 13px; background: ' + (on ? '#FFF6E8' : '#B7AE9F') + ';',
+        toggle: () => this.setState({ on: { ...this.state.on, [id]: !on } })
+      };
+    });
+    return { rows };
+  }
+}
+</script>
+</body>
+</html>

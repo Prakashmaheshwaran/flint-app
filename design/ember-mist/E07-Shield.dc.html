@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flint — Block screen</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500&amp;family=Hanken+Grotesk:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#EDE6DA}a:hover{color:#B7AE9F}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #0C0E13; color: #EDE6DA; font-family: 'Hanken Grotesk', -apple-system, system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; box-sizing: border-box; padding: 0 28px 44px 28px">
+
+  <div style="flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; padding-top: 40px">
+    <svg width="160" height="160" viewBox="0 0 160 160" role="img" aria-label="Flint ember">
+      <defs>
+        <radialGradient id="shHalo" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#EF9F27" stop-opacity="0.45"></stop><stop offset="0.5" stop-color="#EF9F27" stop-opacity="0.1"></stop><stop offset="1" stop-color="#EF9F27" stop-opacity="0"></stop></radialGradient>
+        <radialGradient id="shOrb" cx="0.5" cy="0.45" r="0.55"><stop offset="0" stop-color="#FFE7C2"></stop><stop offset="0.4" stop-color="#F7BE6A"></stop><stop offset="1" stop-color="#D98620"></stop></radialGradient>
+      </defs>
+      <circle cx="80" cy="80" r="80" fill="url(#shHalo)"></circle>
+      <circle cx="80" cy="80" r="34" fill="url(#shOrb)"></circle>
+      <path d="M20 104 C40 94 58 96 76 100 C96 104 116 92 140 96 L140 104 C116 100 96 112 76 108 C58 104 40 102 20 110 Z" fill="#0C0E13" opacity="0.9"></path>
+    </svg>
+    <h1 style="margin: 28px 0 0 0; font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-weight: 400; font-size: 30px; line-height: 1.25; text-align: center; letter-spacing: -0.3px">Instagram is resting.</h1>
+    <p style="margin: 12px 0 0 0; max-width: 290px; font-size: 15px; line-height: 1.55; text-align: center; color: #B7AE9F; text-wrap: pretty">Laser Focus, until 12:00. Notice the reach, then let it pass.</p>
+  </div>
+
+  <div style="align-self: stretch; display: flex; flex-direction: column; gap: 10px">
+    <a href="E03-Today.dc.html" style="height: 56px; border-radius: 28px; background: #EF9F27; color: #3A2003; text-decoration: none; font-size: 16px; font-weight: 600; display: flex; align-items: center; justify-content: center">Go back</a>
+    <a href="E09-BreakWait.dc.html" style="height: 52px; border-radius: 26px; color: #EDE6DA; text-decoration: none; font-size: 15px; font-weight: 500; display: flex; align-items: center; justify-content: center">Take a break</a>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

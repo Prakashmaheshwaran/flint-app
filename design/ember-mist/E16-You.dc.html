@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flint — You</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500&amp;family=Hanken+Grotesk:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#EDE6DA}a:hover{color:#B7AE9F}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #0E0D0F; color: #EDE6DA; font-family: 'Hanken Grotesk', -apple-system, system-ui, sans-serif">
+
+  <div aria-hidden="true" style="position: absolute; left: 0; right: 0; top: 0; height: 260px; background: linear-gradient(180deg, #0A0C11 0%, #16151B 60%, #0E0D0F 100%)"></div>
+
+  <div style="position: relative; display: flex; flex-direction: column; padding: 62px 24px 0 24px">
+    <h1 style="margin: 0; font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-weight: 400; font-size: 30px; letter-spacing: -0.3px">You</h1>
+
+    <div style="display: flex; flex-direction: column; gap: 14px; margin-top: 20px; padding: 18px; border-radius: 24px; border: 1px solid rgba(237, 230, 218, 0.1); background: rgba(237, 230, 218, 0.03)">
+      <div style="display: flex; align-items: center; justify-content: space-between">
+        <span style="display: flex; align-items: center; gap: 10px">
+          <span style="position: relative; width: 12px; height: 12px">
+            <span style="position: absolute; inset: -5px; border-radius: 11px; background: rgba(239, 159, 39, 0.22)"></span>
+            <span style="position: absolute; inset: 0; border-radius: 6px; background: #EF9F27"></span>
+          </span>
+          <span style="font-size: 16px; font-weight: 500">Protection is healthy</span>
+        </span>
+        <span style="font-size: 12px; color: #B7AE9F">Checked 10:52</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: #B7AE9F">
+        <span style="display: flex; gap: 10px; align-items: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#EDE6DA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>Screen Time access allowed</span>
+        <span style="display: flex; gap: 10px; align-items: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#EDE6DA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>Rules running in the background</span>
+        <span style="display: flex; gap: 10px; align-items: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#EDE6DA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>Emergency Pass ready · 1 this week</span>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; margin-top: 22px; border-top: 1px solid rgba(237, 230, 218, 0.08)">
+      <sc-for list="{{rows}}" as="r" hint-placeholder-count="5">
+        <button type="button" style="display: flex; align-items: center; gap: 14px; min-height: 58px; padding: 0; border: none; border-bottom: 1px solid rgba(237, 230, 218, 0.08); background: transparent; color: #EDE6DA; text-align: left">
+          <span style="flex: 1 1 auto; font-size: 15px">{{r.label}}</span>
+          <span style="font-size: 13px; color: #B7AE9F">{{r.value}}</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B7AE9F" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+        </button>
+      </sc-for>
+    </div>
+
+    <p style="margin: 22px 0 0 0; display: flex; gap: 10px; align-items: flex-start; font-size: 13px; line-height: 1.45; color: #9C9486">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" style="flex: 0 0 auto; margin-top: 1px"><rect x="5" y="11" width="14" height="9" rx="2.5"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+      No account. Your lists and history stay on this phone.
+    </p>
+  </div>
+
+  <nav aria-label="Tabs" style="position: absolute; left: 24px; right: 24px; bottom: 28px; height: 64px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-radius: 32px; background: rgba(24, 22, 24, 0.82); border: 1px solid rgba(237, 230, 218, 0.1); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px)">
+    <a href="E03-Today.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; text-decoration: none; color: #9C9486; font-size: 11px; font-weight: 500">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-4.2-7"></path><circle cx="18.6" cy="6.4" r="1.6" fill="currentColor" stroke="none"></circle></svg>
+      Today
+    </a>
+    <a href="E13-Rules.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; text-decoration: none; color: #9C9486; font-size: 11px; font-weight: 500">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M5 7h14M5 12h10M5 17h6"></path></svg>
+      Rules
+    </a>
+    <a href="E12-Insights.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; text-decoration: none; color: #9C9486; font-size: 11px; font-weight: 500">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6 19v-6M12 19V6M18 19v-9"></path></svg>
+      Insights
+    </a>
+    <a href="E16-You.dc.html" aria-current="page" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; text-decoration: none; color: #EDE6DA; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="9" r="3.5"></circle><path d="M5 20c1.5-3.5 4-5 7-5s5.5 1.5 7 5"></path><circle cx="12" cy="9" r="1.2" fill="#EF9F27" stroke="none"></circle></svg>
+      You
+    </a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const rows = [
+      ['App groups', '2'],
+      ['Website rules', '2 sites'],
+      ['Shortcuts and Focus modes', ''],
+      ['Notifications', 'On'],
+      ['About Flint', 'Open source']
+    ].map(([label, value]) => ({ label, value }));
+    return { rows };
+  }
+}
+</script>
+</body>
+</html>

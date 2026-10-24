@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flint — Permissions</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500&amp;family=Hanken+Grotesk:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#EDE6DA}a:hover{color:#B7AE9F}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #0E0D0F; color: #EDE6DA; font-family: 'Hanken Grotesk', -apple-system, system-ui, sans-serif">
+
+  <svg aria-hidden="true" width="390" height="330" viewBox="0 0 390 330" style="position: absolute; left: 0; top: 0">
+    <defs>
+      <linearGradient id="p2Sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0A0C11"></stop><stop offset="0.55" stop-color="#17161B"></stop><stop offset="0.82" stop-color="#3E2C21"></stop><stop offset="1" stop-color="#1A1614"></stop></linearGradient>
+      <radialGradient id="p2Orb" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#FFE7C2"></stop><stop offset="0.4" stop-color="#F7BE6A"></stop><stop offset="1" stop-color="#D98620"></stop></radialGradient>
+      <radialGradient id="p2Halo" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#EF9F27" stop-opacity="0.4"></stop><stop offset="1" stop-color="#EF9F27" stop-opacity="0"></stop></radialGradient>
+    </defs>
+    <rect width="390" height="330" fill="url(#p2Sky)"></rect>
+    <circle cx="70" cy="90" r="0.9" fill="#EDE6DA" opacity="0.45"></circle>
+    <circle cx="300" cy="70" r="1" fill="#EDE6DA" opacity="0.4"></circle>
+    <circle cx="200" cy="140" r="0.7" fill="#EDE6DA" opacity="0.3"></circle>
+    <circle cx="282" cy="262" r="110" fill="url(#p2Halo)"></circle>
+    <circle cx="282" cy="262" r="30" fill="url(#p2Orb)"></circle>
+    <path d="M0 268 C46 246 80 244 116 258 C150 272 172 236 214 226 C254 216 276 252 310 258 C342 264 364 242 390 238 L390 330 L0 330 Z" fill="#2A2421"></path>
+    <path d="M0 300 C44 286 82 280 120 288 C160 296 186 276 228 280 C270 284 300 300 340 296 C364 294 378 290 390 288 L390 330 L0 330 Z" fill="#171516"></path>
+    <path d="M0 322 C80 312 150 318 220 314 C290 310 340 318 390 316 L390 330 L0 330 Z" fill="#0E0D0F"></path>
+  </svg>
+
+  <div style="position: absolute; left: 24px; right: 24px; top: 62px; display: flex; justify-content: space-between; font-size: 11px; font-weight: 500; letter-spacing: 2px; color: #B7AE9F">
+    <span>STEP 1 OF 2</span>
+    <span>SETUP</span>
+  </div>
+
+  <div style="position: absolute; left: 24px; right: 24px; top: 336px; display: flex; flex-direction: column">
+    <h1 style="margin: 0; font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-weight: 400; font-size: 30px; line-height: 1.22; letter-spacing: -0.3px">Let Flint guard<br>your focus.</h1>
+    <p style="margin: 12px 0 0 0; font-size: 15px; line-height: 1.5; color: #B7AE9F; text-wrap: pretty">Two permissions, asked once. You can change either in Settings later.</p>
+
+    <div style="display: flex; flex-direction: column; margin-top: 26px; border-top: 1px solid rgba(237, 230, 218, 0.1)">
+      <div style="display: flex; align-items: center; gap: 14px; min-height: 68px; border-bottom: 1px solid rgba(237, 230, 218, 0.1)">
+        <span style="flex: 0 0 auto; width: 40px; height: 40px; border-radius: 20px; background: rgba(239, 159, 39, 0.14); display: flex; align-items: center; justify-content: center">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#EF9F27" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"></path></svg>
+        </span>
+        <span style="display: flex; flex-direction: column; gap: 3px; flex: 1 1 auto">
+          <span style="font-size: 15px; font-weight: 500">Block apps and sites</span>
+          <span style="font-size: 13px; color: #B7AE9F">Uses Screen Time</span>
+        </span>
+        <span style="font-size: 13px; color: #B7AE9F">Required</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 14px; min-height: 68px; border-bottom: 1px solid rgba(237, 230, 218, 0.1)">
+        <span style="flex: 0 0 auto; width: 40px; height: 40px; border-radius: 20px; background: rgba(237, 230, 218, 0.06); display: flex; align-items: center; justify-content: center">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#B7AE9F" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"></path><path d="M10 20.5a2 2 0 0 0 4 0"></path></svg>
+        </span>
+        <span style="display: flex; flex-direction: column; gap: 3px; flex: 1 1 auto">
+          <span style="font-size: 15px; font-weight: 500">Tell me when a session ends</span>
+          <span style="font-size: 13px; color: #B7AE9F">Notifications</span>
+        </span>
+        <span style="font-size: 13px; color: #B7AE9F">Optional</span>
+      </div>
+    </div>
+
+    <p style="margin: 14px 0 0 0; display: flex; gap: 10px; align-items: flex-start; font-size: 13px; line-height: 1.45; color: #B7AE9F">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" style="flex: 0 0 auto; margin-top: 1px"><rect x="5" y="11" width="14" height="9" rx="2.5"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+      Your lists and history stay on this phone. Nothing is uploaded.
+    </p>
+  </div>
+
+  <div style="position: absolute; left: 24px; right: 24px; bottom: 36px; display: flex; flex-direction: column; align-items: center; gap: 6px">
+    <a href="E03-Today.dc.html" style="align-self: stretch; height: 56px; border-radius: 28px; background: linear-gradient(180deg, #F6B860 0%, #EF9F27 100%); color: #3A2003; text-decoration: none; font-size: 16px; font-weight: 600; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 30px rgba(239, 159, 39, 0.24)">Allow Screen Time</a>
+    <a href="E03-Today.dc.html" style="height: 44px; padding: 0 16px; display: flex; align-items: center; font-size: 14px; font-weight: 500; text-decoration: none; color: #B7AE9F">Not now</a>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

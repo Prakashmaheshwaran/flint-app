@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flint — Emergency Pass</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500&amp;family=Hanken+Grotesk:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#EDE6DA}a:hover{color:#B7AE9F}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #0A0B10; color: #EDE6DA; font-family: 'Hanken Grotesk', -apple-system, system-ui, sans-serif">
+
+  <svg aria-hidden="true" width="390" height="844" viewBox="0 0 390 844" style="position: absolute; inset: 0">
+    <defs>
+      <linearGradient id="x10Sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#090A0F"></stop><stop offset="0.4" stop-color="#12131A"></stop><stop offset="0.55" stop-color="#2E241F"></stop><stop offset="0.65" stop-color="#151314"></stop></linearGradient>
+      <radialGradient id="x10Halo" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#EF9F27" stop-opacity="0.35"></stop><stop offset="1" stop-color="#EF9F27" stop-opacity="0"></stop></radialGradient>
+    </defs>
+    <rect width="390" height="844" fill="url(#x10Sky)"></rect>
+    <circle cx="131" cy="317" r="140" fill="url(#x10Halo)"></circle>
+    <circle cx="131" cy="317" r="44" fill="#F4B256"></circle>
+    <path d="M0 500 C40 474 72 472 106 488 C140 504 162 460 206 446 C246 434 272 476 306 484 C336 491 362 463 390 457 L390 844 L0 844 Z" fill="#29221F"></path>
+    <rect width="390" height="844" fill="#05060A" opacity="0.6"></rect>
+  </svg>
+  <span aria-hidden="true" style="position: absolute; left: 0; right: 0; top: 110px; text-align: center; font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 84px; line-height: 1; color: rgba(237, 230, 218, 0.28); font-variant-numeric: tabular-nums; letter-spacing: -2px">32:18</span>
+
+  <section role="dialog" aria-label="Use Emergency Pass" style="position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 24px 36px 24px; border-radius: 32px 32px 0 0; background: #151417; border-top: 1px solid rgba(237, 230, 218, 0.1); display: flex; flex-direction: column; align-items: center; text-align: center">
+    <span aria-hidden="true" style="width: 40px; height: 5px; border-radius: 3px; background: rgba(237, 230, 218, 0.2)"></span>
+    <span style="margin-top: 26px; width: 64px; height: 64px; border-radius: 32px; border: 1px solid rgba(239, 159, 39, 0.6); background: rgba(239, 159, 39, 0.1); display: flex; align-items: center; justify-content: center">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#EF9F27" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="12" r="4"></circle><path d="M12 12h8M17 12v3M20 12v2"></path></svg>
+    </span>
+    <h1 style="margin: 18px 0 0 0; font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-weight: 400; font-size: 26px; line-height: 1.25">Use your Emergency Pass?</h1>
+    <p style="margin: 10px 0 0 0; max-width: 300px; font-size: 15px; line-height: 1.5; color: #B7AE9F; text-wrap: pretty">This ends Deep work now, even in Hardcore. You get one each week. The next one arrives Monday.</p>
+
+    <div style="align-self: stretch; display: flex; justify-content: center; gap: 6px; margin-top: 18px" aria-label="Passes this week">
+      <span style="height: 28px; padding: 0 12px; border-radius: 14px; background: rgba(239, 159, 39, 0.14); color: #F4C27E; font-size: 12px; font-weight: 500; display: flex; align-items: center">1 pass left this week</span>
+    </div>
+
+    <div style="align-self: stretch; display: flex; flex-direction: column; gap: 8px; margin-top: 26px">
+      <a href="E06-Session.dc.html" style="height: 56px; border-radius: 28px; background: #EDE6DA; color: #141316; text-decoration: none; font-size: 16px; font-weight: 600; display: flex; align-items: center; justify-content: center">Keep focusing</a>
+      <button type="button" aria-label="Press and hold to use your Emergency Pass" style="position: relative; overflow: hidden; height: 52px; border-radius: 26px; border: 1px solid rgba(239, 159, 39, 0.5); background: transparent; color: #F4C27E; font-size: 15px; font-weight: 500">
+        <span aria-hidden="true" style="position: absolute; left: 0; top: 0; bottom: 0; width: 34%; background: rgba(239, 159, 39, 0.16)"></span>
+        <span style="position: relative">Hold to use pass</span>
+      </button>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

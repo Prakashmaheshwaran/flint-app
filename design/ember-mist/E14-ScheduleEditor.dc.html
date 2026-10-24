@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flint — Schedule editor</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500&amp;family=Hanken+Grotesk:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#EDE6DA}a:hover{color:#B7AE9F}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #0E0D0F; color: #EDE6DA; font-family: 'Hanken Grotesk', -apple-system, system-ui, sans-serif">
+
+  <div style="display: flex; flex-direction: column; padding: 54px 20px 0 20px">
+    <div style="display: flex; align-items: center; justify-content: space-between">
+      <a href="E13-Rules.dc.html" style="height: 44px; padding: 0 8px; display: flex; align-items: center; text-decoration: none; color: #B7AE9F; font-size: 15px">Cancel</a>
+      <span style="font-size: 11px; font-weight: 500; letter-spacing: 2px; color: #B7AE9F">SCHEDULE</span>
+      <a href="E13-Rules.dc.html" style="height: 36px; padding: 0 16px; border-radius: 18px; background: #EDE6DA; color: #141316; display: flex; align-items: center; text-decoration: none; font-size: 14px; font-weight: 600">Save</a>
+    </div>
+
+    <label style="display: flex; flex-direction: column; gap: 6px; margin: 18px 4px 0 4px">
+      <span style="font-size: 12px; color: #B7AE9F">Name</span>
+      <input type="text" value="Laser Focus" style="height: 44px; padding: 0; border: none; border-bottom: 1px solid rgba(237, 230, 218, 0.16); outline: none; background: transparent; color: #EDE6DA; font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 28px">
+    </label>
+
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 22px">
+      <button type="button" style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 14px 16px; border-radius: 20px; border: 1px solid rgba(237, 230, 218, 0.1); background: rgba(237, 230, 218, 0.03); color: #EDE6DA; text-align: left">
+        <span style="font-size: 12px; color: #B7AE9F">Starts</span>
+        <span style="font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 28px; font-variant-numeric: tabular-nums">09:00</span>
+      </button>
+      <button type="button" style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 14px 16px; border-radius: 20px; border: 1px solid rgba(237, 230, 218, 0.1); background: rgba(237, 230, 218, 0.03); color: #EDE6DA; text-align: left">
+        <span style="font-size: 12px; color: #B7AE9F">Ends</span>
+        <span style="font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 28px; font-variant-numeric: tabular-nums">12:00</span>
+      </button>
+    </div>
+
+    <span style="margin: 24px 4px 0 4px; font-size: 11px; font-weight: 500; letter-spacing: 2px; color: #B7AE9F">REPEATS · {{daysLabel}}</span>
+    <div role="group" aria-label="Days" style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin-top: 10px">
+      <sc-for list="{{days}}" as="d" hint-placeholder-count="7">
+        <button type="button" aria-pressed="{{d.on}}" aria-label="{{d.full}}" onClick="{{d.toggle}}" style="{{d.style}}">{{d.short}}</button>
+      </sc-for>
+    </div>
+
+    <a href="E05-AppPicker.dc.html" style="display: flex; align-items: center; gap: 14px; margin-top: 24px; min-height: 64px; padding: 0 16px; border-radius: 20px; background: rgba(237, 230, 218, 0.03); border: 1px solid rgba(237, 230, 218, 0.1); text-decoration: none; color: #EDE6DA">
+      <span style="display: flex; flex-direction: column; gap: 3px; flex: 1 1 auto">
+        <span style="font-size: 15px; font-weight: 500">Block 5 apps · 2 sites</span>
+        <span style="font-size: 13px; color: #B7AE9F">Instagram, TikTok, YouTube and more</span>
+      </span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B7AE9F" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+    </a>
+
+    <span style="margin: 24px 4px 0 4px; font-size: 11px; font-weight: 500; letter-spacing: 2px; color: #B7AE9F">BREAK LEVEL</span>
+    <div role="radiogroup" aria-label="Break level" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin-top: 10px; padding: 4px; border-radius: 18px; background: rgba(237, 230, 218, 0.05)">
+      <button type="button" role="radio" aria-checked="false" style="height: 40px; border: none; border-radius: 14px; background: transparent; color: #B7AE9F; font-size: 14px; font-weight: 500">Easy</button>
+      <button type="button" role="radio" aria-checked="true" style="height: 40px; border: none; border-radius: 14px; background: #2A2826; color: #EDE6DA; font-size: 14px; font-weight: 500">Harder</button>
+      <button type="button" role="radio" aria-checked="false" style="height: 40px; border: none; border-radius: 14px; background: transparent; color: #B7AE9F; font-size: 14px; font-weight: 500">Hardcore</button>
+    </div>
+    <p style="margin: 10px 4px 0 4px; font-size: 13px; line-height: 1.45; color: #B7AE9F">No early stop. Each break waits a few minutes first.</p>
+  </div>
+
+  <div style="position: absolute; left: 20px; right: 20px; bottom: 36px; display: flex; justify-content: center">
+    <button type="button" style="height: 44px; padding: 0 18px; border: none; background: transparent; color: #E58A7C; font-size: 14px; font-weight: 500">Delete schedule</button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { on: [true, true, true, true, true, false, false] };
+  }
+  renderVals() {
+    const full = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const on = this.state.on;
+    const days = full.map((f, i) => ({
+      full: f,
+      short: f[0],
+      on: on[i] ? 'true' : 'false',
+      style: 'height: 44px; border-radius: 22px; font-size: 14px; font-weight: 600; ' +
+        (on[i] ? 'background: #EF9F27; color: #3A2003; border: 1px solid #EF9F27;' : 'background: transparent; color: #B7AE9F; border: 1px solid rgba(237,230,218,0.16);'),
+      toggle: () => { const n = on.slice(); n[i] = !n[i]; this.setState({ on: n }); }
+    }));
+    const count = on.filter(Boolean).length;
+    const weekdays = on.slice(0, 5).every(Boolean) && !on[5] && !on[6];
+    const label = count === 7 ? 'EVERY DAY' : weekdays ? 'WEEKDAYS' : count === 0 ? 'NEVER' : count + ' DAYS';
+    return { days, daysLabel: label };
+  }
+}
+</script>
+</body>
+</html>
