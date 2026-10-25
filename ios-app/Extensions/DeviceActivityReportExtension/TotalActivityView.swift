@@ -11,6 +11,35 @@ struct TotalActivityView: View {
     private var peak: ActivitySummary.Day? { summary.days.max { $0.duration < $1.duration } }
 
     var body: some View {
+        ScrollView {
+            if summary.contentState == .activity {
+                activityContent
+            } else {
+                emptyContent
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color.clear)
+    }
+
+    private var emptyContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(summary.contentState == .empty ? "No screen time recorded" : "No activity reported")
+                .font(ReportFont.display(26))
+                .foregroundStyle(FlintBrand.bone)
+                .accessibilityAddTraits(.isHeader)
+            Text(summary.contentState == .empty
+                 ? "Screen Time recorded no usage in the selected range. Try another range, or return after using your apps."
+                 : "Screen Time hasn’t supplied activity for the selected range. Try another range, or check back after using your device.")
+                .font(ReportFont.text(16))
+                .foregroundStyle(FlintBrand.mist)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(24)
+    }
+
+    private var activityContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(isWeek ? "SCREEN TIME THIS WEEK" : "SCREEN TIME TODAY")
@@ -130,14 +159,14 @@ enum ReportFont {
     static func display(_ size: CGFloat) -> Font {
         _ = registered
         return UIFont(name: "ShipporiMincho-Regular", size: size) != nil
-            ? .custom("ShipporiMincho-Regular", size: size) : .system(size: size, design: .serif)
+            ? .custom("ShipporiMincho-Regular", size: size, relativeTo: .title) : .system(.title, design: .serif)
     }
 
     static func text(_ size: CGFloat, medium: Bool = false) -> Font {
         _ = registered
         let name = medium ? "HankenGrotesk-Medium" : "HankenGrotesk-Regular"
         return UIFont(name: name, size: size) != nil
-            ? .custom(name, size: size) : .system(size: size, weight: medium ? .medium : .regular)
+            ? .custom(name, size: size, relativeTo: .body) : .system(.body, weight: medium ? .medium : .regular)
     }
 }
 

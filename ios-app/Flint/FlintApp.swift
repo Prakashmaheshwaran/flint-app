@@ -46,7 +46,7 @@ struct RootView: View {
             switch tab {
             case .today: TodayView(auth: auth, vm: session, showStart: $showStart)
             case .rules: RulesView()
-            case .insights: StatsView()
+            case .insights: StatsView(auth: auth)
             case .you: SettingsView()
             }
         }

@@ -127,6 +127,10 @@ targets:
     platform: iOS
     sources:
       - Tests
+      # Compile the report's actual presentation in tests without launching Apple's service.
+      - Flint/Features/Stats/InsightsState.swift
+      - Extensions/DeviceActivityReportExtension/ActivitySummary.swift
+      - Extensions/DeviceActivityReportExtension/TotalActivityView.swift
       # Exercise authorization request/retry state without a host app or real permissions.
       - Flint/Features/Authorization/AuthorizationModel.swift
     settings:
