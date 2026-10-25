@@ -105,10 +105,15 @@ private struct PermissionsView: View {
                             AuthorizationControls(auth: auth, identifierPrefix: "onboarding.authorization", onApproved: onFinish)
                                 .padding(16)
                                 .background(RoundedRectangle(cornerRadius: 24).fill(FlintBrand.ground.opacity(0.94)))
-                            Button("Not now", action: onFinish)
-                                .font(FlintFont.text(14, weight: .medium))
-                                .foregroundStyle(FlintBrand.mist)
-                                .frame(minHeight: 44)
+                            Button(action: onFinish) {
+                                Text("Not now")
+                                    .font(FlintFont.text(14, weight: .medium))
+                                    .foregroundStyle(FlintBrand.mist)
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("onboarding.skip")
                         }
                         .frame(maxWidth: .infinity)
                     }
