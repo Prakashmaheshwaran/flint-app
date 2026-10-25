@@ -68,32 +68,32 @@ struct StartFocusSheet: View {
 
     private var footer: some View {
         VStack(spacing: 8) {
-                Button {
-                    vm.start()
-                    if vm.active != nil { onClose() }
-                } label: {
-                    Text("Begin \(vm.durationMinutes) minutes")
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                }
-                .buttonStyle(EmberButtonStyle())
-                .disabled(vm.selectionCount == 0)
-                if let error = vm.errorText {
-                    Text(error)
-                        .font(FlintFont.text(13))
-                        .foregroundStyle(FlintBrand.danger)
-                        .frame(maxWidth: .infinity)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else if vm.selectionCount == 0 {
-                    Text("Choose what rests first.")
-                        .flintSecondary()
-                        .frame(maxWidth: .infinity)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+            Button {
+                vm.start()
+                if vm.active != nil { onClose() }
+            } label: {
+                Text("Begin \(vm.durationMinutes) minutes")
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+            }
+            .buttonStyle(EmberButtonStyle())
+            .disabled(vm.selectionCount == 0)
+            if let error = vm.errorText {
+                Text(error)
+                    .font(FlintFont.text(13))
+                    .foregroundStyle(FlintBrand.danger)
+                    .frame(maxWidth: .infinity)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if vm.selectionCount == 0 {
+                Text("Choose what rests first.")
+                    .flintSecondary()
+                    .frame(maxWidth: .infinity)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -180,20 +180,20 @@ struct StartFocusSheet: View {
     }
 
     private var groupChips: some View {
-            FlintWrappingLayout(spacing: 8) {
-                ForEach(vm.savedGroups) { group in
-                    Button("\(group.name) · \(group.itemCount)") { vm.applyGroup(group) }
-                        .buttonStyle(ChipButtonStyle(height: 44))
-                }
-                if vm.selectionCount > 0 {
-                    Button("Save as group") { showSaveGroup = true }
-                        .font(FlintFont.text(13, weight: .medium))
-                        .foregroundStyle(FlintBrand.mist)
-                        .padding(.horizontal, 14)
-                        .frame(minHeight: 44)
-                        .overlay(Capsule().strokeBorder(FlintBrand.bone(0.22), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
-                }
+        FlintWrappingLayout(spacing: 8) {
+            ForEach(vm.savedGroups) { group in
+                Button("\(group.name) · \(group.itemCount)") { vm.applyGroup(group) }
+                    .buttonStyle(ChipButtonStyle(height: 44))
             }
+            if vm.selectionCount > 0 {
+                Button("Save as group") { showSaveGroup = true }
+                    .font(FlintFont.text(13, weight: .medium))
+                    .foregroundStyle(FlintBrand.mist)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 44)
+                    .overlay(Capsule().strokeBorder(FlintBrand.bone(0.22), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+            }
+        }
     }
 
     private var breakLevels: some View {
