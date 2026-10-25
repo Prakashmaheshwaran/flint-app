@@ -1,5 +1,7 @@
 # F3 — secure iOS PIN setup
 
+The historical results below are preserved. The subsequent review fixes and their new verification are recorded in [review-followup/README.md](review-followup/README.md).
+
 The PIN setup sheet accepts exactly 4–6 ASCII digits, asks for confirmation, and conceals both entries. Invalid or mismatched input leaves Save disabled with a format hint or inline error. Neither the form nor the core setter trims, filters, or truncates the entered value. The core setter refuses invalid replacements without modifying the saved record. Existing PIN verification and the salted-hash format are unchanged, including legacy seven-digit or nonnumeric PINs.
 
 Combined implementation: `faa54baca331ca6d424fa9033b69bbfb5d30c2e2` in `/Users/prakash/.codex/worktrees/f3-pin-validation/flint`, incorporating F2 `9c2e65c64a245b6329dd8ed4b84d58ac0134bb41` by a normal merge (F2 application source last changed at `37a3563`). [PR #60](https://github.com/Prakashmaheshwaran/flint-app/pull/60) is stacked on [#64](https://github.com/Prakashmaheshwaran/flint-app/pull/64): merge #64 first, retarget #60 to `main`, then merge #60. Later evidence-only commits do not change the tested application source.

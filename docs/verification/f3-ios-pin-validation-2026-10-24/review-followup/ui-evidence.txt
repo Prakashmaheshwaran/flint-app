@@ -1,0 +1,34 @@
+    t =     9.31s     Check for interrupting elements affecting "App lock, Off" Button
+    t =    17.18s Waiting 5.0s for "Enter PIN" StaticText to exist
+    t =    18.21s     Checking `Expect predicate `existsNoRetry == 1` for object "Enter PIN" StaticText`
+    t =    18.22s         Checking existence of `"Enter PIN" StaticText`
+F3-SNAPSHOT f3-combined-setup-background-locked
+              StaticText, 0x1073e5040, {{169.8, 300.0}, {62.3, 19.7}}, label: 'Enter PIN'
+END-F3-SNAPSHOT
+    t =    36.21s Checking existence of `"Incorrect PIN" StaticText`
+    t =    62.07s Waiting 5.0s for "Enter PIN" StaticText to exist
+    t =    63.08s     Checking `Expect predicate `existsNoRetry == 1` for object "Enter PIN" StaticText`
+    t =    63.20s         Checking existence of `"Enter PIN" StaticText`
+F3-SNAPSHOT f3-combined-authenticated-change-secure
+                        Button, 0x1073e5b80, {{319.7, 82.0}, {62.3, 36.0}}, identifier: 'pin.setup.save', label: 'Save'
+                              SecureTextField, 0x10a79c640, {{24.0, 241.7}, {354.0, 58.3}}, identifier: 'pin.setup.new', placeholderValue: 'New PIN', value: •••••
+                              SecureTextField, 0x10a79c8c0, {{24.0, 346.3}, {354.0, 58.3}}, identifier: 'pin.setup.confirm', placeholderValue: 'Confirm PIN', value: •••••, Keyboard Focused
+END-F3-SNAPSHOT
+    t =    86.39s Waiting 5.0s for "Enter PIN" StaticText to exist
+    t =    87.44s     Checking `Expect predicate `existsNoRetry == 1` for object "Enter PIN" StaticText`
+    t =    87.46s         Checking existence of `"Enter PIN" StaticText`
+    t =    96.15s Checking existence of `"Incorrect PIN" StaticText`
+    t =   106.43s Checking existence of `"Incorrect PIN" StaticText`
+F3-SNAPSHOT f3-combined-removal-requires-current-pin
+                          StaticText, 0x10723f0c0, {{151.2, 252.0}, {99.7, 20.3}}, label: 'Incorrect PIN'
+END-F3-SNAPSHOT
+    t =   115.54s Checking existence of `"Enter PIN" StaticText`
+F3-SNAPSHOT f3-combined-cleanup-pin-off
+                            Button, 0x10a79c140, {{24.0, 318.7}, {354.0, 58.0}}, label: 'App lock, Off'
+END-F3-SNAPSHOT
+F3-PASS secure setup relocks on background; change/removal require current PIN; cancelled/backgrounded setup loses authorization
+Test Case '-[FlintAuditUITests.FlintPINSetupUITests testDSecureSetupIntegratesWithLifecycleAndAuthenticatedChanges]' passed (118.784 seconds).
+	 Executed 1 test, with 0 failures (0 unexpected) in 118.784 (118.792) seconds
+	 Executed 1 test, with 0 failures (0 unexpected) in 118.784 (118.799) seconds
+	 Executed 1 test, with 0 failures (0 unexpected) in 118.784 (118.805) seconds
+** TEST SUCCEEDED **
