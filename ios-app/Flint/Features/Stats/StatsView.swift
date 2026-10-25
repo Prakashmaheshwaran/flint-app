@@ -31,15 +31,6 @@ struct StatsView: View {
     var body: some View {
         ZStack(alignment: .top) {
             FlintBrand.ground.ignoresSafeArea()
-            LinearGradient(stops: [
-                .init(color: Color(hex: 0x0A0C11), location: 0),
-                .init(color: Color(hex: 0x15151B), location: 0.45),
-                .init(color: Color(hex: 0x2A211D), location: 0.82),
-                .init(color: FlintBrand.ground, location: 1),
-            ], startPoint: .top, endPoint: .bottom)
-            .frame(height: 470)
-            .ignoresSafeArea()
-
             VStack(spacing: 0) {
                 header
                     .padding(.horizontal, 24)
@@ -62,6 +53,17 @@ struct StatsView: View {
                 }
             }
             .flintTabBarInset()
+            .background(alignment: .top) {
+                // Decoration must not impose a minimum height on a short viewport.
+                LinearGradient(stops: [
+                    .init(color: Color(hex: 0x0A0C11), location: 0),
+                    .init(color: Color(hex: 0x15151B), location: 0.45),
+                    .init(color: Color(hex: 0x2A211D), location: 0.82),
+                    .init(color: FlintBrand.ground, location: 1),
+                ], startPoint: .top, endPoint: .bottom)
+                .frame(height: 470)
+                .ignoresSafeArea()
+            }
         }
         .onAppear { refresh() }
         .onChange(of: scenePhase) { if $0 == .active { refresh() } }
