@@ -111,22 +111,7 @@ struct TodayView: View {
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("today.authorization.explanation")
-            if let message = auth.lastError {
-                errorMessage(message)
-                    .accessibilityIdentifier("today.authorization.error")
-            }
-            Button {
-                Task { await auth.requestAuthorization() }
-            } label: {
-                Text(auth.isRequesting ? "Requesting access…" : auth.lastError == nil ? "Allow Screen Time" : "Retry Screen Time")
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-            }
-            .buttonStyle(EmberButtonStyle())
-            .disabled(auth.isRequesting)
-            .accessibilityIdentifier("today.authorization.action")
+            AuthorizationControls(auth: auth, identifierPrefix: "today.authorization")
         }
         .padding(16)
         .background(feedbackBackground)
