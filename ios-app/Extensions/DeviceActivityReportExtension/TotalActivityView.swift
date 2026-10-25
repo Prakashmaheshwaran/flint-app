@@ -7,10 +7,49 @@ import FlintCore
 struct TotalActivityView: View {
     let summary: ActivitySummary
 
+    var body: some View {
+        ScrollView {
+            TotalActivityContent(summary: summary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color.clear)
+    }
+}
+
+/// The same report content is used by the on-device scroll container and pure SwiftUI render
+/// tests. An unhosted test bundle cannot snapshot the platform-backed scrolling container.
+struct TotalActivityContent: View {
+    let summary: ActivitySummary
+
     private var isWeek: Bool { summary.days.count > 1 }
     private var peak: ActivitySummary.Day? { summary.days.max { $0.duration < $1.duration } }
 
     var body: some View {
+        if summary.contentState == .activity {
+            activityContent
+        } else {
+            emptyContent
+        }
+    }
+
+    private var emptyContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(summary.contentState == .empty ? "No screen time recorded" : "No activity reported")
+                .font(ReportFont.display(26))
+                .foregroundStyle(FlintBrand.bone)
+                .accessibilityAddTraits(.isHeader)
+            Text(summary.contentState == .empty
+                 ? "Screen Time recorded no usage in the selected range. Try another range, or return after using your apps."
+                 : "Screen Time hasn’t supplied activity for the selected range. Try another range, or check back after using your device.")
+                .font(ReportFont.text(16))
+                .foregroundStyle(FlintBrand.mist)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(24)
+    }
+
+    private var activityContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(isWeek ? "SCREEN TIME THIS WEEK" : "SCREEN TIME TODAY")
@@ -20,6 +59,7 @@ struct TotalActivityView: View {
                 if isWeek, let peak, peak.duration > 0 {
                     Text("Your highest day was \(peak.start.formatted(.dateTime.weekday(.wide))), \(Self.format(peak.duration)).")
                         .font(ReportFont.text(14)).foregroundStyle(FlintBrand.mist)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(.horizontal, 24)
@@ -56,11 +96,14 @@ struct TotalActivityView: View {
             }
             Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(Color.clear)
     }
 
     static func format(_ t: TimeInterval) -> String {
+        // Positive sub-minute usage stays distinct from a recorded zero.
+        if t > 0, t < 60 { return "<1m" }
         let minutes = Int(t / 60)
         let h = minutes / 60, m = minutes % 60
         if h == 0 { return "\(m)m" }
@@ -112,7 +155,7 @@ private struct DayRidge: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(days.map { "\($0.start.formatted(.dateTime.weekday(.wide))) \(TotalActivityView.format($0.duration))" }
+        .accessibilityLabel(days.map { "\($0.start.formatted(.dateTime.weekday(.wide))) \(TotalActivityContent.format($0.duration))" }
             .joined(separator: ", "))
     }
 }
@@ -130,14 +173,24 @@ enum ReportFont {
     static func display(_ size: CGFloat) -> Font {
         _ = registered
         return UIFont(name: "ShipporiMincho-Regular", size: size) != nil
-            ? .custom("ShipporiMincho-Regular", size: size) : .system(size: size, design: .serif)
+            ? .custom("ShipporiMincho-Regular", size: size, relativeTo: .title) : fallbackDisplay(size)
     }
 
     static func text(_ size: CGFloat, medium: Bool = false) -> Font {
         _ = registered
         let name = medium ? "HankenGrotesk-Medium" : "HankenGrotesk-Regular"
         return UIFont(name: name, size: size) != nil
-            ? .custom(name, size: size) : .system(size: size, weight: medium ? .medium : .regular)
+            ? .custom(name, size: size, relativeTo: .body) : fallbackText(size, medium: medium)
+    }
+
+    /// Fallbacks keep the requested point size, matching the app's `FlintFont`: a missing
+    /// bundled face must not collapse 52 pt display type to a 28 pt text style.
+    static func fallbackDisplay(_ size: CGFloat) -> Font {
+        .system(size: size, design: .serif)
+    }
+
+    static func fallbackText(_ size: CGFloat, medium: Bool) -> Font {
+        .system(size: size, weight: medium ? .medium : .regular)
     }
 }
 

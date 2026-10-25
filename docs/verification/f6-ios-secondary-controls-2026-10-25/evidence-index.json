@@ -1,0 +1,158 @@
+[
+  {
+    "path": "screenshots/large-01-denied-recheck-target.png",
+    "sha256": "703c06bd8ebddd66662df656cba2ba6eacea3112f10f011ae3fa24eda4e87f80",
+    "test": "InsightsSecondaryControlsUITests/testDeniedRecheckHasMinimumTargetAndKeepsSettingsRecovery()",
+    "resultBundle": "/tmp/flint-fixes-20261024/F6/secondary-controls-followup/01/large.xcresult",
+    "attachment": {
+      "configurationName": "Test Scheme Action",
+      "deviceId": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+      "deviceName": "Flint Review Followup 20261025",
+      "exportedFileName": "9D78865B-3E78-4CEB-B77E-D71E6D5344BF.png",
+      "isAssociatedWithFailure": false,
+      "suggestedHumanReadableName": "01-denied-recheck-target_0_83D07439-BAEC-4607-BF96-CF2294D9F8BC.png",
+      "timestamp": 1792922865.642
+    }
+  },
+  {
+    "path": "screenshots/large-02-denied-after-recheck.png",
+    "sha256": "703c06bd8ebddd66662df656cba2ba6eacea3112f10f011ae3fa24eda4e87f80",
+    "test": "InsightsSecondaryControlsUITests/testDeniedRecheckHasMinimumTargetAndKeepsSettingsRecovery()",
+    "resultBundle": "/tmp/flint-fixes-20261024/F6/secondary-controls-followup/01/large.xcresult",
+    "attachment": {
+      "configurationName": "Test Scheme Action",
+      "deviceId": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+      "deviceName": "Flint Review Followup 20261025",
+      "exportedFileName": "D8D0CA69-E61A-4253-B7C7-23EE49056807.png",
+      "isAssociatedWithFailure": false,
+      "suggestedHumanReadableName": "02-denied-after-recheck_0_EA76C683-2917-42D3-A9C6-288FD31B4622.png",
+      "timestamp": 1792922867.297
+    }
+  },
+  {
+    "path": "screenshots/large-03-stop-waiting-target.png",
+    "sha256": "8789faba10c351693e2f9b6d1af5d325ce4cd289112215b6bc189dcc13879443",
+    "test": "InsightsSecondaryControlsUITests/testStopWaitingHasMinimumTargetAndPaddedCornerTapRecovers()",
+    "resultBundle": "/tmp/flint-fixes-20261024/F6/secondary-controls-followup/01/large.xcresult",
+    "attachment": {
+      "configurationName": "Test Scheme Action",
+      "deviceId": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+      "deviceName": "Flint Review Followup 20261025",
+      "exportedFileName": "069D8AAA-C054-40A0-9FCC-A71A047CD4DE.png",
+      "isAssociatedWithFailure": false,
+      "suggestedHumanReadableName": "03-stop-waiting-target_0_E80075F0-034C-41DB-A322-34EAF27A7DEA.png",
+      "timestamp": 1792922878.04
+    }
+  },
+  {
+    "path": "screenshots/large-04-stopped-without-error.png",
+    "sha256": "d44aa298503f25570d51909d91e498a1993df8836d81d842e9d82c0d7a65a28d",
+    "test": "InsightsSecondaryControlsUITests/testStopWaitingHasMinimumTargetAndPaddedCornerTapRecovers()",
+    "resultBundle": "/tmp/flint-fixes-20261024/F6/secondary-controls-followup/01/large.xcresult",
+    "attachment": {
+      "configurationName": "Test Scheme Action",
+      "deviceId": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+      "deviceName": "Flint Review Followup 20261025",
+      "exportedFileName": "91BA0955-3484-4937-BEAA-37E96160D7B2.png",
+      "isAssociatedWithFailure": false,
+      "suggestedHumanReadableName": "04-stopped-without-error_0_1D2D29D2-2A83-4118-8673-EA53136FC284.png",
+      "timestamp": 1792922880.64
+    }
+  },
+  {
+    "path": "screenshots/large-05-recovered-today.png",
+    "sha256": "7a238a43d78355793051b8fa76b9558db3470b243dbee9f2bad616e093b5b53e",
+    "test": "InsightsSecondaryControlsUITests/testStopWaitingHasMinimumTargetAndPaddedCornerTapRecovers()",
+    "resultBundle": "/tmp/flint-fixes-20261024/F6/secondary-controls-followup/01/large.xcresult",
+    "attachment": {
+      "configurationName": "Test Scheme Action",
+      "deviceId": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+      "deviceName": "Flint Review Followup 20261025",
+      "exportedFileName": "E881E304-EF37-40D8-A65F-7C803A571D04.png",
+      "isAssociatedWithFailure": false,
+      "suggestedHumanReadableName": "05-recovered-today_0_E1561820-2771-4A65-A904-AC5E62F200A8.png",
+      "timestamp": 1792922882.157
+    }
+  },
+  {
+    "path": "screenshots/ax5-01-denied-recheck-target.png",
+    "sha256": "3435739d602f8abc431f62b44c96ae5397ae71d607fbd25d842d2dfd12944575",
+    "test": "InsightsSecondaryControlsUITests/testDeniedRecheckHasMinimumTargetAndKeepsSettingsRecovery()",
+    "resultBundle": "/tmp/flint-fixes-20261024/F6/secondary-controls-followup/01/accessibility-extra-extra-extra-large.xcresult",
+    "attachment": {
+      "configurationName": "Test Scheme Action",
+      "deviceId": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+      "deviceName": "Flint Review Followup 20261025",
+      "exportedFileName": "1BF7D557-E3C2-4933-A52F-B3395C95F9D9.png",
+      "isAssociatedWithFailure": false,
+      "suggestedHumanReadableName": "01-denied-recheck-target_0_78FE4D3B-2D2E-47C5-B2F1-E3D967C29BB3.png",
+      "timestamp": 1792922899.677
+    }
+  },
+  {
+    "path": "screenshots/ax5-02-denied-after-recheck.png",
+    "sha256": "42315436220bf04ef8109c1761ee83414e8599f0b1328336f12d6a3786fe67de",
+    "test": "InsightsSecondaryControlsUITests/testDeniedRecheckHasMinimumTargetAndKeepsSettingsRecovery()",
+    "resultBundle": "/tmp/flint-fixes-20261024/F6/secondary-controls-followup/01/accessibility-extra-extra-extra-large.xcresult",
+    "attachment": {
+      "configurationName": "Test Scheme Action",
+      "deviceId": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+      "deviceName": "Flint Review Followup 20261025",
+      "exportedFileName": "EEC08969-9434-4AAF-A691-B2DEBAFF4C8A.png",
+      "isAssociatedWithFailure": false,
+      "suggestedHumanReadableName": "02-denied-after-recheck_0_898F1B34-F4E0-427B-8417-4E0039F1033B.png",
+      "timestamp": 1792922901.297
+    }
+  },
+  {
+    "path": "screenshots/ax5-03-stop-waiting-target.png",
+    "sha256": "1d4acc1e60585211f68fd24e823230bc61846dcf4f255c587afeebf51305ab1c",
+    "test": "InsightsSecondaryControlsUITests/testStopWaitingHasMinimumTargetAndPaddedCornerTapRecovers()",
+    "resultBundle": "/tmp/flint-fixes-20261024/F6/secondary-controls-followup/01/accessibility-extra-extra-extra-large.xcresult",
+    "attachment": {
+      "configurationName": "Test Scheme Action",
+      "deviceId": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+      "deviceName": "Flint Review Followup 20261025",
+      "exportedFileName": "13ADC129-3BD8-4C98-ACD4-6E38E8B57271.png",
+      "isAssociatedWithFailure": false,
+      "suggestedHumanReadableName": "03-stop-waiting-target_0_10357631-0B6D-4D90-BC70-2739E4868B7B.png",
+      "timestamp": 1792922913.409
+    }
+  },
+  {
+    "path": "screenshots/ax5-04-stopped-without-error.png",
+    "sha256": "0c40572d9d129f86ab2a390974bc2a322375ebbdbcf82bb0a66f5d855ccb07b3",
+    "test": "InsightsSecondaryControlsUITests/testStopWaitingHasMinimumTargetAndPaddedCornerTapRecovers()",
+    "resultBundle": "/tmp/flint-fixes-20261024/F6/secondary-controls-followup/01/accessibility-extra-extra-extra-large.xcresult",
+    "attachment": {
+      "configurationName": "Test Scheme Action",
+      "deviceId": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+      "deviceName": "Flint Review Followup 20261025",
+      "exportedFileName": "71F94D7D-436E-4C8D-83EF-9693FD19D447.png",
+      "isAssociatedWithFailure": false,
+      "suggestedHumanReadableName": "04-stopped-without-error_0_4ECA5613-D63D-4200-8A06-34D6B6019B2A.png",
+      "timestamp": 1792922916.029
+    }
+  },
+  {
+    "path": "screenshots/ax5-05-recovered-today.png",
+    "sha256": "44de2033b8103fe17b73cc19d96de1e5801afaa383363ab375699d262f181a09",
+    "test": "InsightsSecondaryControlsUITests/testStopWaitingHasMinimumTargetAndPaddedCornerTapRecovers()",
+    "resultBundle": "/tmp/flint-fixes-20261024/F6/secondary-controls-followup/01/accessibility-extra-extra-extra-large.xcresult",
+    "attachment": {
+      "configurationName": "Test Scheme Action",
+      "deviceId": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+      "deviceName": "Flint Review Followup 20261025",
+      "exportedFileName": "F4A39F2D-D707-4BC5-AD47-F8F0BEE95988.png",
+      "isAssociatedWithFailure": false,
+      "suggestedHumanReadableName": "05-recovered-today_0_871AEFD3-C267-4132-BE3C-259442746ADE.png",
+      "timestamp": 1792922917.545
+    }
+  },
+  {
+    "path": "screenshots/cleanup-large.png",
+    "sha256": "2c96ce78882fb8c9b42a761b815a38cf9d653752b65a94894fc05c5b56e19126",
+    "source": "/tmp/flint-fixes-20261024/F6/secondary-controls-followup/01/cleanup-large.png",
+    "kind": "ordinary-launch cleanup capture"
+  }
+]

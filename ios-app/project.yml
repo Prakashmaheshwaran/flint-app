@@ -127,6 +127,9 @@ targets:
     platform: iOS
     sources:
       - Tests
+      # Compile the report's actual presentation in tests without launching Apple's service.
+      - Extensions/DeviceActivityReportExtension/ActivitySummary.swift
+      - Extensions/DeviceActivityReportExtension/TotalActivityView.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.tests
