@@ -1,5 +1,7 @@
 # F5 — readable Today permission errors
 
+**25 October review follow-up:** [Denied recovery, cancellation/timeout handling, production-module tests, and new verification](review-followup-2026-10-25/README.md). The report below preserves the original implementation and evidence; the follow-up supersedes its retry-state and test-target descriptions.
+
 The 24 October audit found that the red Screen Time error occupied an independent bottom overlay and covered the permission explanation. Today now lays out the explanation, the full error, and its retry action sequentially. Dark feedback surfaces preserve contrast against the landscape. Content scrolls in a clipped viewport above the existing floating tab bar. Session errors also stay in this flow; they no longer mask an authorization error.
 
 Authorization requests have one in-flight guard shared across callers. The action is disabled while requesting; each later retry calls the authorization provider again. Failed requests retain the reported system state and error. A return without approval leaves access off and gives a retry explanation. Refreshing an approved state clears stale authorization feedback.

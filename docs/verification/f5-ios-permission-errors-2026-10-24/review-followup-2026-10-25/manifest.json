@@ -1,0 +1,222 @@
+{
+  "applicationSourceCommit": "d4b52f2028254e4f5f7537e8ee57edc8aec187fc",
+  "baseCommit": "ebc0d24f2b0b71b99c16a308103a1ff41563abb7",
+  "worktree": "/Users/prakash/.codex/worktrees/f5-permission-errors-recovery/flint",
+  "applicationPath": "/Users/prakash/Library/Developer/Xcode/DerivedData/Flint-cntarviknofepxezullqsrrpadpk/Build/Products/Debug-iphonesimulator/Flint.app",
+  "applicationBinarySHA256": "e84c19d9282b9e4b8539cb25489111b6f5dadd8e9641faa65f556ed947bc831f",
+  "debugLibrarySHA256": "03afaf5ffeb75b8a246df297712f390cb1652f9589ab3dcb7df432695b90e849",
+  "device": {
+    "name": "Flint Review Followup 20261025",
+    "model": "iPhone 18 Pro",
+    "OS": "iOS 27.0 Simulator",
+    "id": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+    "owner": "parent-created temporary verification guest"
+  },
+  "gate": {
+    "result": "passed",
+    "tests": 75,
+    "failures": 0,
+    "authorizationTests": 15,
+    "productionModule": "Flint",
+    "command": "make -f Makefile -f /tmp/flint-fixes-20261024/F5/review-followup/destination.mk verify-ios F5_GATE_RESULT=/tmp/flint-fixes-20261024/F5/review-followup/gate-02.xcresult",
+    "sourceRelationship": "Gate built the working tree subsequently committed as applicationSourceCommit; no app source changed before UI installation."
+  },
+  "uiTests": {
+    "large": {
+      "tests": 8,
+      "failures": 0
+    },
+    "accessibility-extra-extra-extra-large": {
+      "tests": 8,
+      "failures": 0
+    }
+  },
+  "cleanup": {
+    "asOfUTC": "2026-10-25T09:49:44Z",
+    "contentSize": "large",
+    "launch": "ordinary; no preview arguments",
+    "PIN": "ordinary-launch native checks passed with no PIN gate; no PIN writes by F5",
+    "deviceDeletion": "deferred to parent after all workers finish"
+  },
+  "limitations": [
+    "Real-device Screen Time grant/denial/revocation, Settings switch availability, tokens and enforcement are unverified.",
+    "Public Settings URL activated Settings; the Simulator showed its main page, not an authorization switch.",
+    "Tab/preset AX5 truncation is unchanged F4 scope."
+  ],
+  "sourceFilesSHA256": [
+    {
+      "path": "ios-app/Flint/Features/Authorization/AuthorizationControls.swift",
+      "sha256": "16ecc8af8871d4e506caf3bf82424d794090552137589dec6d635836c6a7785f"
+    },
+    {
+      "path": "ios-app/Flint/Features/Authorization/AuthorizationModel.swift",
+      "sha256": "d1de22652594ff26db0f3c389c1447caea63e2cea46b7c9203206307f4e06ea6"
+    },
+    {
+      "path": "ios-app/Flint/Features/Authorization/AuthorizationPreview.swift",
+      "sha256": "ff39bb6d7146d44820afea59f224ed3e13d2f9f87c6ef79bb705e4ceaf7d379f"
+    },
+    {
+      "path": "ios-app/Flint/Features/Onboarding/OnboardingView.swift",
+      "sha256": "f75b306c1df187528d46a98ed0b8ce086182cf54c330807f0f9be2270b26181c"
+    },
+    {
+      "path": "ios-app/Flint/Features/Today/TodayView.swift",
+      "sha256": "222728c0821fae2cd972ab67dc47008659e0c1762a836ef50d9f3f183f8c1869"
+    },
+    {
+      "path": "ios-app/Tests/AuthorizationModelTests.swift",
+      "sha256": "55ab23e051bc66a549110a56eab3948bacada9ac78a808d74a8126edf16af492"
+    },
+    {
+      "path": "ios-app/project.yml",
+      "sha256": "adc70d4c4ff67868f4bd694cdf53b57bed7963489c9841233f2adf9d997c3c8b"
+    }
+  ],
+  "filesSHA256": {
+    "README.md": "81f1f136c8eff504686eb3dff2c1fc1129bae9ea4820156922fd3aa2683bb1d7",
+    "harness/Tests/PermissionReviewTests.swift": "b2988639e554b3aa138848c8c087859501a8f542d2a06e47be3037184a65de64",
+    "harness/cleanup.sh": "73f58f4d357bc20bf9bac98793ae340118756185b82e409a6e84a3cb3379e1e6",
+    "harness/destination.mk": "28ac1a4c918440d9485bebbe5364b712f3ed342b44963684c56484bce4028a71",
+    "harness/project.yml": "9d60c2bd5a7424b1899a27f355010f30280a07a365122e39256ff89118350d39",
+    "harness/verify-ios.sh": "4325b82135294bc0b0338560123f42e25fff0c86010dcc91af2c8dd26d7668a3",
+    "harness/verify-ui.sh": "137a6fefa25c8e2798598516bec73d6862be056651b565d22f41f4cfdc1b658f",
+    "logs/cleanup.txt": "95012c6d77d85852c6888ffa8dc844d6ee187ce2367ea234ba907ab359be87b2",
+    "logs/exploratory-build-missing-import.log.gz": "f645c2942ffd7c77f7acee5f85c74adf7b33982a26840b75273c93143ea6b4c6",
+    "logs/exploratory-ui-large.log.gz": "9adcc5cd26fd775d03f881c42588ff254373d454dbbdd653d87741bbc14ee1b4",
+    "logs/gate-summary.json": "c5873ea43b8f53ff84a6007734ba0fe8a706b7e6e113011ec5d791626a6076a5",
+    "logs/sequence.txt": "18a6c7cca64c8672c4635cb40e5322c6660be45433a52e339e0a1751df0551cf",
+    "logs/ui-large-summary.json": "1b8b60b0638c1b5594e944020f2d96bae95198b8e67050021479b3698c43b210",
+    "logs/ui-large.log.gz": "24c87a4d52e5a538cf6b2bec5788f21837c849250d8cffac5a42270b466af961",
+    "logs/ui-max-summary.json": "a5bf01024f0b9221b8f5594ae948cc55dcd7b5b84314d5a71477a81dd139cdd1",
+    "logs/ui-max.log.gz": "2ced864a3e122365517012e08445dc870ec17f5720275bfa5f2e62b745933997",
+    "logs/verify-ios.log.gz": "0921382837f64706ecbd4d0c5f7b6ab96200913125a9a1c332a2b9d455d9e4e8",
+    "screenshots/large-denied-guidance-0.png": "11a443cacfc5892124623c108a824a03ffbfbfd06ad627ecb10ab8c465f38bf6",
+    "screenshots/large-onboarding-denied-controls.png": "91ab34b5203111fb8f1ffcaff778c5f8ff706d0c4460e06a889844a814fdc21a",
+    "screenshots/large-ordinary-launch-cleanup.png": "f151a73055640df89213b4fb9871760f6ed0be9c649c64cbf05820594314706e",
+    "screenshots/large-pending-controls-0.png": "bba7d32a1cf59b41255813fb87cb2331cfb1e110350039a6088f9e9ace992067",
+    "screenshots/large-settings-destination.png": "967112d979df7a8af2c0de6370bb4e6b594e17761c141faec373029aaf0ef13d",
+    "screenshots/large-timeout-guidance-0.png": "72fb5b491a47c4ea0f3b453638efab38deef3f62b013e7c72af705ef5993eb4c",
+    "screenshots/large-transient-long-error-0.png": "5569f2adf5a46253d456a20b10c38fa67c5f1e7d3a217182852e52c5696bc4ab",
+    "screenshots/large-transient-recovered.png": "61582b556cc75b75dbf397a18325073761b6af3dcf4ac70c5edb05f6c048031f",
+    "screenshots/max-denied-guidance-2.png": "414dd0d4357e8c4560ce078c568e25aa1aabf7971109984af2039a1f62d36e62",
+    "screenshots/max-denied-guidance-3.png": "7b42e84633c0527b3e94fd8b8566399dcf892d931fa37154d99a8b77461d531e",
+    "screenshots/max-onboarding-denied-3.png": "725e27e1323a31c35affa7a1978a2d6c8c7abca4f5d0605c02b794d939458b79",
+    "screenshots/max-onboarding-denied-controls.png": "e92918d0f20a3b1fca66770ff8c8165da7f5d7d41ea1f8f2cf02bf0c9fd1c511",
+    "screenshots/max-ordinary-launch-cleanup.png": "aeb1d322cf96333279f5083c7b56c7fa9543e42d33712ad9f42b8fb0640d6548",
+    "screenshots/max-pending-controls-1.png": "9a37bec3a65a26b31a8019faa03585824c7a720f536a6b6653d8d74589c5e32e",
+    "screenshots/max-timeout-guidance-2.png": "44ae20788cfc16336202216cf8d7f66f6a7b76a99d3a21814385d0e45f89b70a",
+    "screenshots/max-transient-long-error-0.png": "354adc675a10d182c964e598a4d579ab42df5e17aeac51d5335d410c50ae5b15",
+    "screenshots/max-transient-long-error-1.png": "a05d64bed8e51411d4c5179a511f172df8eb0160c953fcf3931b3062e12b5d9d",
+    "screenshots/max-transient-long-error-2.png": "47eae92c013408b2852f19eebefa4b53fd104eee553a021d1b5cedbc6ab83dda",
+    "screenshots/max-transient-long-error-3.png": "75571fd8a7529b326bd07c3b0c5284bf4f0eb64cc9f1b32d9ae358fbb8dcf776",
+    "screenshots/max-transient-recovered.png": "efca334ee81afe8cb638e6ff1e47bb36eef79f47515b8ca5baf7a2abe8e04237"
+  },
+  "screenshotAttachments": {
+    "screenshots/large-settings-destination.png": {
+      "test": "PermissionReviewTests/testDeniedUsesSettingsAndCheckWithoutReprompt()",
+      "attachment": "CD35208D-BE98-4293-AE23-E93D32D35F26.png",
+      "capturedAt": 1792921424.12
+    },
+    "screenshots/large-denied-guidance-0.png": {
+      "test": "PermissionReviewTests/testDeniedUsesSettingsAndCheckWithoutReprompt()",
+      "attachment": "AA160731-7629-407C-ACA5-F3E7AF3210BC.png",
+      "capturedAt": 1792921417.05
+    },
+    "screenshots/large-pending-controls-0.png": {
+      "test": "PermissionReviewTests/testHungRequestSurvivesForegroundThenStopWaitingAllowsRecovery()",
+      "attachment": "64391E13-A2A5-4BF3-9BAE-7F31A92D43DD.png",
+      "capturedAt": 1792921444.019
+    },
+    "screenshots/large-onboarding-denied-controls.png": {
+      "test": "PermissionReviewTests/testOnboardingDeniedUsesSameReachableRecoveryControls()",
+      "attachment": "7B104B4B-4FBB-4042-B2D1-FD31900006B5.png",
+      "capturedAt": 1792921463.208
+    },
+    "screenshots/large-timeout-guidance-0.png": {
+      "test": "PermissionReviewTests/testTimeoutOffersReadableRetryAndRecovers()",
+      "attachment": "B2690F46-D8D5-4AB3-A367-E2615A4597E7.png",
+      "capturedAt": 1792921480.258
+    },
+    "screenshots/large-transient-recovered.png": {
+      "test": "PermissionReviewTests/testTransientLongErrorAndSessionErrorStaySeparateThenRecover()",
+      "attachment": "19EBD12C-68D6-408C-99E2-1D33EE31A479.png",
+      "capturedAt": 1792921496.175
+    },
+    "screenshots/large-transient-long-error-0.png": {
+      "test": "PermissionReviewTests/testTransientLongErrorAndSessionErrorStaySeparateThenRecover()",
+      "attachment": "C4CAC999-2796-42E6-9485-F896C5541000.png",
+      "capturedAt": 1792921493.322
+    },
+    "screenshots/large-ordinary-launch-cleanup.png": {
+      "test": "PermissionReviewTests/testZOrdinaryLaunchDoesNotRetainPreviewOrPIN()",
+      "attachment": "34D67EB9-262A-40BD-AD38-D3549B35FED8.png",
+      "capturedAt": 1792921518.641
+    },
+    "screenshots/max-denied-guidance-3.png": {
+      "test": "PermissionReviewTests/testDeniedUsesSettingsAndCheckWithoutReprompt()",
+      "attachment": "36D8D71A-5B85-4BBC-A047-95524D3F1999.png",
+      "capturedAt": 1792921579.893
+    },
+    "screenshots/max-denied-guidance-2.png": {
+      "test": "PermissionReviewTests/testDeniedUsesSettingsAndCheckWithoutReprompt()",
+      "attachment": "A44F7010-8DC2-417F-9C86-B0872B30620C.png",
+      "capturedAt": 1792921577.598
+    },
+    "screenshots/max-pending-controls-1.png": {
+      "test": "PermissionReviewTests/testHungRequestSurvivesForegroundThenStopWaitingAllowsRecovery()",
+      "attachment": "70CFA558-76A8-44E2-9040-FBA07823A989.png",
+      "capturedAt": 1792921609.502
+    },
+    "screenshots/max-onboarding-denied-controls.png": {
+      "test": "PermissionReviewTests/testOnboardingDeniedUsesSameReachableRecoveryControls()",
+      "attachment": "3F9C6B94-2719-40B8-A4DA-AF9B0D74CB43.png",
+      "capturedAt": 1792921641.098
+    },
+    "screenshots/max-onboarding-denied-3.png": {
+      "test": "PermissionReviewTests/testOnboardingDeniedUsesSameReachableRecoveryControls()",
+      "attachment": "42A02D5A-7EC3-4D80-80A8-BC9B40FEB11E.png",
+      "capturedAt": 1792921637.7
+    },
+    "screenshots/max-timeout-guidance-2.png": {
+      "test": "PermissionReviewTests/testTimeoutOffersReadableRetryAndRecovers()",
+      "attachment": "7A7FEE95-C5AE-4778-A629-EBAC416A76D1.png",
+      "capturedAt": 1792921676.672
+    },
+    "screenshots/max-transient-recovered.png": {
+      "test": "PermissionReviewTests/testTransientLongErrorAndSessionErrorStaySeparateThenRecover()",
+      "attachment": "BB352EF6-9901-486D-894D-A5205381738F.png",
+      "capturedAt": 1792921707.281
+    },
+    "screenshots/max-transient-long-error-3.png": {
+      "test": "PermissionReviewTests/testTransientLongErrorAndSessionErrorStaySeparateThenRecover()",
+      "attachment": "0C6064C3-7DA8-431B-96DB-4156D39A074E.png",
+      "capturedAt": 1792921704.497
+    },
+    "screenshots/max-transient-long-error-2.png": {
+      "test": "PermissionReviewTests/testTransientLongErrorAndSessionErrorStaySeparateThenRecover()",
+      "attachment": "23CB5B45-6BB1-4CEF-910F-9800225CBD54.png",
+      "capturedAt": 1792921702.905
+    },
+    "screenshots/max-transient-long-error-1.png": {
+      "test": "PermissionReviewTests/testTransientLongErrorAndSessionErrorStaySeparateThenRecover()",
+      "attachment": "D380A08C-94D7-40D1-864B-F1066282D730.png",
+      "capturedAt": 1792921700.253
+    },
+    "screenshots/max-transient-long-error-0.png": {
+      "test": "PermissionReviewTests/testTransientLongErrorAndSessionErrorStaySeparateThenRecover()",
+      "attachment": "3624E79E-0121-461F-B0A3-9832E3C3F9EA.png",
+      "capturedAt": 1792921697.589
+    },
+    "screenshots/max-ordinary-launch-cleanup.png": {
+      "test": "PermissionReviewTests/testZOrdinaryLaunchDoesNotRetainPreviewOrPIN()",
+      "attachment": "A2A737EB-EB2C-4EF2-8AE5-52048D68D0BC.png",
+      "capturedAt": 1792921718.467
+    }
+  },
+  "historicalEvidence": {
+    "manifest": "../manifest.json",
+    "verifiedFiles": 17,
+    "result": "all hashes unchanged"
+  }
+}
