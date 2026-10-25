@@ -56,7 +56,7 @@ final class FlintInsightsTests: XCTestCase {
     }
 
     @MainActor
-    func testReportStatesRenderAtStandardAndAccessibilityTextSizes() throws {
+    func testReportContentRendersAtStandardAndAccessibilityTextSizes() throws {
         let date = Date(timeIntervalSince1970: 1_790_000_000)
         let empty = ActivitySummary(days: [.init(start: date, duration: 0)])
         let activity = ActivitySummary(total: 5_400, days: [
@@ -65,13 +65,17 @@ final class FlintInsightsTests: XCTestCase {
         ], apps: [.init(name: "Fixture app", duration: 5_400, pickups: 4)])
         for (name, summary) in [("no-data", ActivitySummary()), ("zero-usage", empty), ("activity-fixture", activity)] {
             for size in [DynamicTypeSize.large, .accessibility5] {
-                let view = TotalActivityView(summary: summary)
-                    .frame(width: 402, height: 700)
+                let view = TotalActivityContent(summary: summary)
+                    .frame(width: 402, alignment: .topLeading)
                     .background(FlintBrand.ground)
                     .environment(\.dynamicTypeSize, size)
                     .environment(\.colorScheme, .dark)
+                // Render the production content at its natural height. ImageRenderer does
+                // not capture ScrollView; a non-nil image alone can hide an empty rendering.
                 let renderer = ImageRenderer(content: view)
                 let image = try XCTUnwrap(renderer.uiImage, "\(name) at \(size)")
+                let pixels = try XCTUnwrap(image.cgImage?.dataProvider?.data) as Data
+                XCTAssertGreaterThan(Set(pixels).count, 16, "\(name) at \(size) must render more than a plain background")
                 let attachment = XCTAttachment(image: image)
                 attachment.name = "insights-report-\(name)-\(size)"
                 attachment.lifetime = .keepAlways
