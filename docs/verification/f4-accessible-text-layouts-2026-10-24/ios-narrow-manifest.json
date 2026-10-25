@@ -1,0 +1,242 @@
+{
+  "scope": "Supplemental fixed320x568 production-view fixture. Nine cases passed; YouLarge was excluded from acceptance after repeated fixture safe-area/window issues. Real iPhone SE3 production-app verification is authoritative for compact-device acceptance.",
+  "cases": [
+    {
+      "testIdentifier": "NarrowTests/testInsightsLarge()",
+      "result": "passed",
+      "seconds": 18.333,
+      "sourceCommit": "41ef429f33df482f2d1ae5c8ae00927c02af33b2",
+      "resultBundle": "ios-narrow-retry1.xcresult",
+      "hostViewportPoints": [
+        320,
+        568
+      ],
+      "attachments": [
+        {
+          "path": "screenshots/ios-narrow-insights-large-bottom.png",
+          "sha256": "76b4b999ab45d0347a8f466ce072e367ed88c324fbdf14fd9f0840508e9abbbe",
+          "timestamp": 1792908495.894,
+          "originalAttachment": "599C204D-E5EE-45CF-8E83-5591E3B3F7AB.png"
+        },
+        {
+          "path": "screenshots/ios-narrow-insights-large-top.png",
+          "sha256": "76b4b999ab45d0347a8f466ce072e367ed88c324fbdf14fd9f0840508e9abbbe",
+          "timestamp": 1792908485.135,
+          "originalAttachment": "6545A0D9-4016-48C2-9230-EF194FCFD974.png"
+        }
+      ]
+    },
+    {
+      "testIdentifier": "NarrowTests/testRulesLarge()",
+      "result": "passed",
+      "seconds": 31.036,
+      "sourceCommit": "41ef429f33df482f2d1ae5c8ae00927c02af33b2",
+      "resultBundle": "ios-narrow-retry1.xcresult",
+      "hostViewportPoints": [
+        320,
+        568
+      ],
+      "attachments": [
+        {
+          "path": "screenshots/ios-narrow-rules-large-bottom.png",
+          "sha256": "d11b231a035716533af6a751cd255a4f565a37f232fe53ae732e805ccdbc3c93",
+          "timestamp": 1792908541.468,
+          "originalAttachment": "F4848C06-BE90-4DC2-A223-10D1BDE921F7.png"
+        },
+        {
+          "path": "screenshots/ios-narrow-rules-large-top.png",
+          "sha256": "b11411c521f55f39fe8231cd5c139babbebae910b803c21eca2602b49f711a46",
+          "timestamp": 1792908517.641,
+          "originalAttachment": "39608145-45C5-425E-9FED-1A6BCF3F4A98.png"
+        }
+      ]
+    },
+    {
+      "testIdentifier": "NarrowTests/testStartLarge()",
+      "result": "passed",
+      "seconds": 9.199,
+      "sourceCommit": "41ef429f33df482f2d1ae5c8ae00927c02af33b2",
+      "resultBundle": "ios-narrow-retry1.xcresult",
+      "hostViewportPoints": [
+        320,
+        568
+      ],
+      "attachments": [
+        {
+          "path": "screenshots/ios-narrow-start-large-bottom.png",
+          "sha256": "686acebf209b734849f5f35ed4db111d4cfed4aaa842af8e4dbcc8b8af1a8207",
+          "timestamp": 1792908562.23,
+          "originalAttachment": "81F55C38-894D-4DA2-93D4-7C309B2E855E.png"
+        },
+        {
+          "path": "screenshots/ios-narrow-start-large-top.png",
+          "sha256": "686acebf209b734849f5f35ed4db111d4cfed4aaa842af8e4dbcc8b8af1a8207",
+          "timestamp": 1792908560.889,
+          "originalAttachment": "C0F44079-DE29-4BB1-96D4-C1F2B1A88314.png"
+        }
+      ]
+    },
+    {
+      "testIdentifier": "NarrowTests/testInsightsAX5()",
+      "result": "passed",
+      "seconds": 34.337,
+      "sourceCommit": "a6a2b3c2ff77b313a550dff99a1efbbc7feae1a3",
+      "resultBundle": "ios-narrow-retry2.xcresult",
+      "hostViewportPoints": [
+        320,
+        568
+      ],
+      "attachments": [
+        {
+          "path": "screenshots/ios-narrow-insights-ax5-bottom.png",
+          "sha256": "0dd83379aafbb92b5275e67e83c16b35e15a1e7a82fa29d5dff431ba81a6a186",
+          "timestamp": 1792910728.909,
+          "originalAttachment": "53FF3C98-106C-45FC-9174-5017546FCCEF.png"
+        },
+        {
+          "path": "screenshots/ios-narrow-insights-ax5-top.png",
+          "sha256": "97329e5a40b6b948dec0809d2e7963894bab4097317cc20727cfc43a2ea1e364",
+          "timestamp": 1792910709,
+          "originalAttachment": "90C26C25-EA42-43A9-A27B-1354EA74F8CA.png"
+        }
+      ]
+    },
+    {
+      "testIdentifier": "NarrowTests/testStartAX5()",
+      "result": "passed",
+      "seconds": 18.731,
+      "sourceCommit": "a6a2b3c2ff77b313a550dff99a1efbbc7feae1a3",
+      "resultBundle": "ios-narrow-retry2.xcresult",
+      "hostViewportPoints": [
+        320,
+        568
+      ],
+      "attachments": [
+        {
+          "path": "screenshots/ios-narrow-start-ax5-bottom.png",
+          "sha256": "9d9b755aafe7b4f764e888341dbbc7de9768b8d0a706ab59632255e956703614",
+          "timestamp": 1792910782.054,
+          "originalAttachment": "C698226F-06DA-4739-85CA-6F6006D72A13.png"
+        },
+        {
+          "path": "screenshots/ios-narrow-start-ax5-duration-controls.png",
+          "sha256": "bc5bcb08c7cc9745dab9b8562fcda74a0237aec080647bfacff33eaf37aa4529",
+          "timestamp": 1792910773.504,
+          "originalAttachment": "B65858C4-A167-4709-8860-ADC3AF6A93CF.png"
+        },
+        {
+          "path": "screenshots/ios-narrow-start-ax5-top.png",
+          "sha256": "bc5bcb08c7cc9745dab9b8562fcda74a0237aec080647bfacff33eaf37aa4529",
+          "timestamp": 1792910773.185,
+          "originalAttachment": "80A5DD34-642C-4CBB-A5D2-984AD6E6E286.png"
+        }
+      ]
+    },
+    {
+      "testIdentifier": "NarrowTests/testRulesAX5()",
+      "result": "passed",
+      "seconds": 29.398,
+      "sourceCommit": "a6a2b3c2ff77b313a550dff99a1efbbc7feae1a3",
+      "resultBundle": "ios-narrow-retry3.xcresult",
+      "hostViewportPoints": [
+        320,
+        568
+      ],
+      "attachments": [
+        {
+          "path": "screenshots/ios-narrow-rules-ax5-app-limits.png",
+          "sha256": "0d0b3ea503d906ab1b2914dac191262f13e5b7c0495d7541bc27e9c1a1a1f5a3",
+          "timestamp": 1792911429.933,
+          "originalAttachment": "B8AE971A-FE1A-4921-9A4C-E30B5F2797FA.png"
+        },
+        {
+          "path": "screenshots/ios-narrow-rules-ax5-sleep.png",
+          "sha256": "1f70cf650d1ed71afdf7d27a2a0d3dbfb6073ddeb99a8fb17741a14774cc40ea",
+          "timestamp": 1792911425.721,
+          "originalAttachment": "DDC97CF1-6BA6-4951-869F-0C8603B94D35.png"
+        },
+        {
+          "path": "screenshots/ios-narrow-rules-ax5-top.png",
+          "sha256": "092e312f5c52809233ca02b8295d5818a537d31e4db5105e6dd8d53b7974fb0f",
+          "timestamp": 1792911413.045,
+          "originalAttachment": "FAF5689D-2032-451D-B279-20434A0E1C22.png"
+        }
+      ]
+    },
+    {
+      "testIdentifier": "NarrowTests/testTodayAX5()",
+      "result": "passed",
+      "seconds": 42.679,
+      "sourceCommit": "a6a2b3c2ff77b313a550dff99a1efbbc7feae1a3",
+      "resultBundle": "ios-narrow-retry3.xcresult",
+      "hostViewportPoints": [
+        320,
+        568
+      ],
+      "attachments": [
+        {
+          "path": "screenshots/ios-narrow-today-ax5-bottom.png",
+          "sha256": "e47cd553b78b4eacbfa96583aad4187d0dbbdc2015919f3694e44b47440e799f",
+          "timestamp": 1792911470.86,
+          "originalAttachment": "8D1BB69E-D334-44B0-89CA-30D8C4C69024.png"
+        },
+        {
+          "path": "screenshots/ios-narrow-today-ax5-top.png",
+          "sha256": "740a2923a2a3287f83f231161e2492f9e44ec535f211ddd53d5ef54c022d2a05",
+          "timestamp": 1792911443.078,
+          "originalAttachment": "F2355E29-36D5-485D-B122-ADA784775544.png"
+        }
+      ]
+    },
+    {
+      "testIdentifier": "NarrowTests/testTodayLarge()",
+      "result": "passed",
+      "seconds": 12.863,
+      "sourceCommit": "a6a2b3c2ff77b313a550dff99a1efbbc7feae1a3",
+      "resultBundle": "ios-narrow-retry3.xcresult",
+      "hostViewportPoints": [
+        320,
+        568
+      ],
+      "attachments": [
+        {
+          "path": "screenshots/ios-narrow-today-large-bottom.png",
+          "sha256": "76c2bca34ad30a18e6b1be764bcb4c98d3764cea13a0d02e7687399118162da4",
+          "timestamp": 1792911485.837,
+          "originalAttachment": "6FC49EB2-7745-4A20-895D-156086C9FD12.png"
+        },
+        {
+          "path": "screenshots/ios-narrow-today-large-top.png",
+          "sha256": "535ccc44905f5395859cba32f44ca9cd6de0910377a0bb067459f1ffc0e704ee",
+          "timestamp": 1792911483.637,
+          "originalAttachment": "12B7698B-CA77-4753-9676-BC6EBD11BBB1.png"
+        }
+      ]
+    },
+    {
+      "testIdentifier": "NarrowTests/testYouAX5()",
+      "result": "passed",
+      "seconds": 32.546,
+      "sourceCommit": "a6a2b3c2ff77b313a550dff99a1efbbc7feae1a3",
+      "resultBundle": "ios-narrow-retry3.xcresult",
+      "hostViewportPoints": [
+        320,
+        568
+      ],
+      "attachments": [
+        {
+          "path": "screenshots/ios-narrow-you-ax5-bottom.png",
+          "sha256": "f3acab5e54224120d06151f79fad403dadf3fe0796e68fdbecd71a6c68c04bca",
+          "timestamp": 1792911518.274,
+          "originalAttachment": "7F0439FD-4939-436E-9729-75D640D1C092.png"
+        },
+        {
+          "path": "screenshots/ios-narrow-you-ax5-top.png",
+          "sha256": "aefc8117d464777e8de3eed3ef30863c75e8edd585b8a6dfaa1ab2fd5519392a",
+          "timestamp": 1792911494.413,
+          "originalAttachment": "2CAB7364-3AD6-4688-B11B-9DA62EE8D3AE.png"
+        }
+      ]
+    }
+  ]
+}

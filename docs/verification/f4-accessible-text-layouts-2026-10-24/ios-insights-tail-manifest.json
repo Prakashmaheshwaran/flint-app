@@ -1,0 +1,14 @@
+{
+  "test": "LayoutTests/testInsightsScrollTail()",
+  "result": "PASS",
+  "duration_seconds": 15.684,
+  "checkout": "41ef429f33df482f2d1ae5c8ae00927c02af33b2",
+  "host_sources_unchanged_since": "dec9530a808a2b2c70ea4577a0eaeba9837fb90c",
+  "image": "screenshots/ios-after-ax5-insights-tail.png",
+  "sha256": "0d1a5478e139c13095fc1c337c7a856b51c5920f7cb0c177f381c711b5c2bfd5",
+  "attachment_timestamp": 1792908444.219,
+  "assertions": [
+    "Final description line ends above tab top after a drag inside the visible scroll region."
+  ],
+  "result_bundle": "/tmp/flint-fixes-20261024/F4/ios-insights-tail.xcresult"
+}

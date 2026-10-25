@@ -1,0 +1,47 @@
+name: FlintNarrow
+options:
+  deploymentTarget:
+    iOS: '16.0'
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    CODE_SIGNING_ALLOWED: NO
+packages:
+  FlintCore:
+    path: /Users/prakash/.codex/worktrees/f4-accessible-text-layouts-recovery/flint/ios-app/Packages/FlintCore
+targets:
+  FlintNarrowHost:
+    type: application
+    platform: iOS
+    sources:
+      - App
+      - path: /Users/prakash/.codex/worktrees/f4-accessible-text-layouts-recovery/flint/ios-app/Flint
+        excludes: [FlintApp.swift]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.flint.f4.narrow
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+    dependencies:
+      - package: FlintCore
+  FlintNarrowTests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [Tests]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.flint.f4.narrow-tests
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: FlintNarrowHost
+schemes:
+  FlintNarrow:
+    build:
+      targets:
+        FlintNarrowHost: [test]
+        FlintNarrowTests: [test]
+    test:
+      targets: [FlintNarrowTests]
+      commandLineArguments:
+        '-FlintUIPreview': true

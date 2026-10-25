@@ -1,0 +1,12 @@
+{
+  "createdBy": "F4",
+  "uuid": "75F68879-33EA-43CB-A87D-AF366B40FBFC",
+  "name": "Flint F4 SE3 verification",
+  "deviceType": "iPhone SE (3rd generation)",
+  "runtime": "iOS 27.0",
+  "expectedViewportPoints": [
+    375,
+    667
+  ],
+  "sourceCommit": "a6a2b3c2ff77b313a550dff99a1efbbc7feae1a3"
+}

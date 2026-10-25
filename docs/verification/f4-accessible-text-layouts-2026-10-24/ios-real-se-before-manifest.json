@@ -1,0 +1,22 @@
+[
+  {
+    "path": "screenshots/ios-se-before-large-privacy-obstructed.png",
+    "sha256": "b749aabf19af6de8ec9c5ae3032c25fc7ac489c49551fe73428b90a1edecef2e",
+    "sourceCommit": "a6a2b3c2ff77b313a550dff99a1efbbc7feae1a3",
+    "resultBundle": "ios-real-se-large.xcresult",
+    "testIdentifier": "SELayoutTests/testYouAboutAndPrivacyTail()",
+    "testResult": "failed",
+    "role": "Confirmed production privacy-note obstruction on iPhone SE3",
+    "timestamp": 1792912785.756
+  },
+  {
+    "path": "screenshots/ios-se-before-ax5-privacy-obstructed.png",
+    "sha256": "1764354b9fffc5608e3c080e778bd5b19f4a506591bb35106e9016c6524fed63",
+    "sourceCommit": "a6a2b3c2ff77b313a550dff99a1efbbc7feae1a3",
+    "resultBundle": "ios-real-se-accessibility-extra-extra-extra-large.xcresult",
+    "testIdentifier": "SELayoutTests/testYouAboutAndPrivacyTail()",
+    "testResult": "failed",
+    "role": "Confirmed production privacy-note obstruction on iPhone SE3",
+    "timestamp": 1792912895.487
+  }
+]

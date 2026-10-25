@@ -1,0 +1,119 @@
+[
+  {
+    "path": "screenshots/android-after-1.0-start.png",
+    "hierarchy": "hierarchies/android-after-1.0-start.xml",
+    "sha256": "5d9da64d69d3df4bcc408fc7f3a4df9a70c092671131d07ee15650d2a3f1f9bf",
+    "sourceCommit": "516b27d52d120a9dcd1c45b9709915ff2fe0726e",
+    "sourceCapture": "android-after-1.0-levels-selected",
+    "captureModifiedEpoch": 1792909532.9565847,
+    "note": "Fresh hierarchy precedes screenshot. No session started or rule saved; cancellation asserts a unique Rules-list destination."
+  },
+  {
+    "path": "screenshots/android-after-1.5-start.png",
+    "hierarchy": "hierarchies/android-after-1.5-start.xml",
+    "sha256": "21c948129adede0188b5f1774aae957dc5580500f6f39aea9938c7b1f4aa4864",
+    "sourceCommit": "516b27d52d120a9dcd1c45b9709915ff2fe0726e",
+    "sourceCapture": "android-after-1.5-levels-selected",
+    "captureModifiedEpoch": 1792909612.7046726,
+    "note": "Fresh hierarchy precedes screenshot. No session started or rule saved; cancellation asserts a unique Rules-list destination."
+  },
+  {
+    "path": "screenshots/android-after-2.0-start.png",
+    "hierarchy": "hierarchies/android-after-2.0-start.xml",
+    "sha256": "b8b78b02b1389182f7093b1fa112e2f7b19905e1d6b37d71693c890a8dbfa831",
+    "sourceCommit": "516b27d52d120a9dcd1c45b9709915ff2fe0726e",
+    "sourceCapture": "android-after-2.0-levels-selected",
+    "captureModifiedEpoch": 1792909692.4599864,
+    "note": "Fresh hierarchy precedes screenshot. No session started or rule saved; cancellation asserts a unique Rules-list destination."
+  },
+  {
+    "path": "screenshots/android-after-2.0-start-bottom.png",
+    "hierarchy": "hierarchies/android-after-2.0-start-bottom.xml",
+    "sha256": "f8026294bae5577a47dca271e41b5714e204d8234459adef3a9011e876623a76",
+    "sourceCommit": "516b27d52d120a9dcd1c45b9709915ff2fe0726e",
+    "sourceCapture": "android-after-2.0-start-bottom",
+    "captureModifiedEpoch": 1792909707.7027748,
+    "note": "Fresh hierarchy precedes screenshot. No session started or rule saved; cancellation asserts a unique Rules-list destination."
+  },
+  {
+    "path": "screenshots/android-after-2.0-narrow-today-actions.png",
+    "hierarchy": "hierarchies/android-after-2.0-narrow-today-actions.xml",
+    "sha256": "2b096833d52a23504144e7eba65b496640c011ac6bf8b06fa911cbcf2dbe94ca",
+    "sourceCommit": "12bcca3e3a299fbfd5d3d1b6b0c94cf0d9b1615a",
+    "sourceCapture": "android-after-retry1-2.0-narrow-session-scroll-0",
+    "captureModifiedEpoch": 1792910193.554738,
+    "note": "Fresh hierarchy precedes screenshot. No session started or rule saved; cancellation asserts a unique Rules-list destination."
+  },
+  {
+    "path": "screenshots/android-after-2.0-narrow-start.png",
+    "hierarchy": "hierarchies/android-after-2.0-narrow-start.xml",
+    "sha256": "79eb1cdbb4bf5c6809ef5b22d02dfbc51928238fe75daa0b96eb0befe4668aa1",
+    "sourceCommit": "12bcca3e3a299fbfd5d3d1b6b0c94cf0d9b1615a",
+    "sourceCapture": "android-after-retry1-2.0-narrow-levels-selected",
+    "captureModifiedEpoch": 1792910206.0674424,
+    "note": "Fresh hierarchy precedes screenshot. No session started or rule saved; cancellation asserts a unique Rules-list destination."
+  },
+  {
+    "path": "screenshots/android-after-2.0-narrow-start-bottom.png",
+    "hierarchy": "hierarchies/android-after-2.0-narrow-start-bottom.xml",
+    "sha256": "cb9d5cfdbf386868f7c25ebc3e7e74eb1bbf5f42540fc58f442a26bef9c1ae1b",
+    "sourceCommit": "12bcca3e3a299fbfd5d3d1b6b0c94cf0d9b1615a",
+    "sourceCapture": "android-after-retry1-2.0-narrow-start-bottom",
+    "captureModifiedEpoch": 1792910212.7338717,
+    "note": "Fresh hierarchy precedes screenshot. No session started or rule saved; cancellation asserts a unique Rules-list destination."
+  },
+  {
+    "path": "screenshots/android-after-rule-1.0-hardcore-selected.png",
+    "hierarchy": "hierarchies/android-after-rule-1.0-hardcore-selected.xml",
+    "sha256": "d683f5305c144321d1df805a017f7f3ce7285666a2bc59d66f4d5e404e401ffa",
+    "sourceCommit": "12bcca3e3a299fbfd5d3d1b6b0c94cf0d9b1615a",
+    "sourceCapture": "android-after-rules-final-rule-1.0-hardcore-selected",
+    "captureModifiedEpoch": 1792910396.7993844,
+    "note": "Fresh hierarchy precedes screenshot. No session started or rule saved; cancellation asserts a unique Rules-list destination."
+  },
+  {
+    "path": "screenshots/android-after-rule-1.0-cancelled.png",
+    "hierarchy": "hierarchies/android-after-rule-1.0-cancelled.xml",
+    "sha256": "430e40628e6a05edef7a5d704f064131491f1f89fccd35a997f99829a842bbe8",
+    "sourceCommit": "12bcca3e3a299fbfd5d3d1b6b0c94cf0d9b1615a",
+    "sourceCapture": "android-after-rules-final-rule-1.0-cancelled",
+    "captureModifiedEpoch": 1792910403.2680118,
+    "note": "Fresh hierarchy precedes screenshot. No session started or rule saved; cancellation asserts a unique Rules-list destination."
+  },
+  {
+    "path": "screenshots/android-after-rule-1.5-narrow-hardcore-selected.png",
+    "hierarchy": "hierarchies/android-after-rule-1.5-narrow-hardcore-selected.xml",
+    "sha256": "ce2e5fc8a299a3b5b5df6aedc77c78d0b7b66469754b283a15e92fb38b184470",
+    "sourceCommit": "12bcca3e3a299fbfd5d3d1b6b0c94cf0d9b1615a",
+    "sourceCapture": "android-after-rules-final-rule-1.5-narrow-hardcore-selected",
+    "captureModifiedEpoch": 1792910436.4972723,
+    "note": "Fresh hierarchy precedes screenshot. No session started or rule saved; cancellation asserts a unique Rules-list destination."
+  },
+  {
+    "path": "screenshots/android-after-rule-1.5-narrow-cancelled.png",
+    "hierarchy": "hierarchies/android-after-rule-1.5-narrow-cancelled.xml",
+    "sha256": "21109dbb055a8eda5e31ac801a80bda0b2feb6ac5a4b9d186acd9df09e677848",
+    "sourceCommit": "12bcca3e3a299fbfd5d3d1b6b0c94cf0d9b1615a",
+    "sourceCapture": "android-after-rules-final-rule-1.5-narrow-cancelled",
+    "captureModifiedEpoch": 1792910446.6752155,
+    "note": "Fresh hierarchy precedes screenshot. No session started or rule saved; cancellation asserts a unique Rules-list destination."
+  },
+  {
+    "path": "screenshots/android-after-rule-2.0-narrow-hardcore-selected.png",
+    "hierarchy": "hierarchies/android-after-rule-2.0-narrow-hardcore-selected.xml",
+    "sha256": "1aea434948f8f3a2d206ff6c360f382136819baca1ee00047cf9ddad5a74d724",
+    "sourceCommit": "12bcca3e3a299fbfd5d3d1b6b0c94cf0d9b1615a",
+    "sourceCapture": "android-after-rules-final-rule-2.0-narrow-hardcore-selected",
+    "captureModifiedEpoch": 1792910491.2039337,
+    "note": "Fresh hierarchy precedes screenshot. No session started or rule saved; cancellation asserts a unique Rules-list destination."
+  },
+  {
+    "path": "screenshots/android-after-rule-2.0-narrow-cancelled.png",
+    "hierarchy": "hierarchies/android-after-rule-2.0-narrow-cancelled.xml",
+    "sha256": "28ab2a76bbe9554f69919f10777b3e86f7394bd41a4a82c6dfe530048c5d8e44",
+    "sourceCommit": "12bcca3e3a299fbfd5d3d1b6b0c94cf0d9b1615a",
+    "sourceCapture": "android-after-rules-final-rule-2.0-narrow-cancelled",
+    "captureModifiedEpoch": 1792910501.4331095,
+    "note": "Fresh hierarchy precedes screenshot. No session started or rule saved; cancellation asserts a unique Rules-list destination."
+  }
+]

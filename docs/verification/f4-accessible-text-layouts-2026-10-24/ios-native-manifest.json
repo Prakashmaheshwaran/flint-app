@@ -1,0 +1,145 @@
+[
+  {
+    "path": "screenshots/ios-after-large-insights-top.png",
+    "sha256": "e678f4fa55480fe892a015d70538678eb88a12e289b83ef84682f1c14f421c40",
+    "testIdentifier": "LayoutTests/testLayouts()",
+    "testResult": "passed",
+    "resultBundle": "ios-after-large-retry1.xcresult",
+    "timestamp": 1792907936.672,
+    "hostSourceCommit": "dec9530a808a2b2c70ea4577a0eaeba9837fb90c",
+    "checkedOutCommit": "41ef429f33df482f2d1ae5c8ae00927c02af33b2",
+    "note": "Host and FlintCore sources unchanged; report-only dependency and Android-only repair are separate."
+  },
+  {
+    "path": "screenshots/ios-after-large-you-top.png",
+    "sha256": "e0011c367adbae3428f2982c6309f86dd59017278e731b3dec9bde397b3a01cb",
+    "testIdentifier": "LayoutTests/testLayouts()",
+    "testResult": "passed",
+    "resultBundle": "ios-after-large-retry1.xcresult",
+    "timestamp": 1792907931.595,
+    "hostSourceCommit": "dec9530a808a2b2c70ea4577a0eaeba9837fb90c",
+    "checkedOutCommit": "41ef429f33df482f2d1ae5c8ae00927c02af33b2",
+    "note": "Host and FlintCore sources unchanged; report-only dependency and Android-only repair are separate."
+  },
+  {
+    "path": "screenshots/ios-after-large-start-top.png",
+    "sha256": "6270a4cc31317561e92e70e7bb531eff4297b58f9f555b8f4627d0a9bc4a537c",
+    "testIdentifier": "LayoutTests/testLayouts()",
+    "testResult": "passed",
+    "resultBundle": "ios-after-large-retry1.xcresult",
+    "timestamp": 1792907915.042,
+    "hostSourceCommit": "dec9530a808a2b2c70ea4577a0eaeba9837fb90c",
+    "checkedOutCommit": "41ef429f33df482f2d1ae5c8ae00927c02af33b2",
+    "note": "Host and FlintCore sources unchanged; report-only dependency and Android-only repair are separate."
+  },
+  {
+    "path": "screenshots/ios-after-large-today-actions.png",
+    "sha256": "82829a0418d7ef5a95bf51f6ad1fec19757982f30e4ddb7d4633e0e5b76d1bb2",
+    "testIdentifier": "LayoutTests/testLayouts()",
+    "testResult": "passed",
+    "resultBundle": "ios-after-large-retry1.xcresult",
+    "timestamp": 1792907912.103,
+    "hostSourceCommit": "dec9530a808a2b2c70ea4577a0eaeba9837fb90c",
+    "checkedOutCommit": "41ef429f33df482f2d1ae5c8ae00927c02af33b2",
+    "note": "Host and FlintCore sources unchanged; report-only dependency and Android-only repair are separate."
+  },
+  {
+    "path": "screenshots/ios-after-ax5-you-bottom.png",
+    "sha256": "e1f2d265d511b536e00f05300dcc2181e884588ef2db507985ef03f2a99306cf",
+    "testIdentifier": "LayoutTests/testLayouts()",
+    "testResult": "passed",
+    "resultBundle": "ios-after-accessibility-extra-extra-extra-large.xcresult",
+    "timestamp": 1792907997.292,
+    "hostSourceCommit": "dec9530a808a2b2c70ea4577a0eaeba9837fb90c",
+    "checkedOutCommit": "41ef429f33df482f2d1ae5c8ae00927c02af33b2",
+    "note": "Host and FlintCore sources unchanged; report-only dependency and Android-only repair are separate."
+  },
+  {
+    "path": "screenshots/ios-after-ax5-you-top.png",
+    "sha256": "9e0096e8573ca5dcfb26c1c5c3cc71f775c106c6aadf3d947bf02494c2b86d02",
+    "testIdentifier": "LayoutTests/testLayouts()",
+    "testResult": "passed",
+    "resultBundle": "ios-after-accessibility-extra-extra-extra-large.xcresult",
+    "timestamp": 1792907991.665,
+    "hostSourceCommit": "dec9530a808a2b2c70ea4577a0eaeba9837fb90c",
+    "checkedOutCommit": "41ef429f33df482f2d1ae5c8ae00927c02af33b2",
+    "note": "Host and FlintCore sources unchanged; report-only dependency and Android-only repair are separate."
+  },
+  {
+    "path": "screenshots/ios-after-ax5-rules-options.png",
+    "sha256": "2f34ca057e85358c275f353c114a8a92c3624d64e4d98d3f4cf4a23814a48427",
+    "testIdentifier": "LayoutTests/testLayouts()",
+    "testResult": "passed",
+    "resultBundle": "ios-after-accessibility-extra-extra-extra-large.xcresult",
+    "timestamp": 1792907987.446,
+    "hostSourceCommit": "dec9530a808a2b2c70ea4577a0eaeba9837fb90c",
+    "checkedOutCommit": "41ef429f33df482f2d1ae5c8ae00927c02af33b2",
+    "note": "Host and FlintCore sources unchanged; report-only dependency and Android-only repair are separate."
+  },
+  {
+    "path": "screenshots/ios-after-ax5-start-bottom.png",
+    "sha256": "2c56ca8af783b1aa3f12c23d940176c8a7b3061735038efa559b51ec7e79bc92",
+    "testIdentifier": "LayoutTests/testLayouts()",
+    "testResult": "passed",
+    "resultBundle": "ios-after-accessibility-extra-extra-extra-large.xcresult",
+    "timestamp": 1792907978.78,
+    "hostSourceCommit": "dec9530a808a2b2c70ea4577a0eaeba9837fb90c",
+    "checkedOutCommit": "41ef429f33df482f2d1ae5c8ae00927c02af33b2",
+    "note": "Host and FlintCore sources unchanged; report-only dependency and Android-only repair are separate."
+  },
+  {
+    "path": "screenshots/ios-after-ax5-start-levels.png",
+    "sha256": "c9db8768a30eb4b7ce85d93668a14d0de0a49194f001b37a7459ccacb0a7e1b8",
+    "testIdentifier": "LayoutTests/testLayouts()",
+    "testResult": "passed",
+    "resultBundle": "ios-after-accessibility-extra-extra-extra-large.xcresult",
+    "timestamp": 1792907975.934,
+    "hostSourceCommit": "dec9530a808a2b2c70ea4577a0eaeba9837fb90c",
+    "checkedOutCommit": "41ef429f33df482f2d1ae5c8ae00927c02af33b2",
+    "note": "Host and FlintCore sources unchanged; report-only dependency and Android-only repair are separate."
+  },
+  {
+    "path": "screenshots/ios-after-ax5-today-actions.png",
+    "sha256": "8e7754e3a5a4a5402358b5220787b583568706192377205ad312e4cee47f1185",
+    "testIdentifier": "LayoutTests/testLayouts()",
+    "testResult": "passed",
+    "resultBundle": "ios-after-accessibility-extra-extra-extra-large.xcresult",
+    "timestamp": 1792907966.528,
+    "hostSourceCommit": "dec9530a808a2b2c70ea4577a0eaeba9837fb90c",
+    "checkedOutCommit": "41ef429f33df482f2d1ae5c8ae00927c02af33b2",
+    "note": "Host and FlintCore sources unchanged; report-only dependency and Android-only repair are separate."
+  },
+  {
+    "path": "screenshots/ios-after-ax5-today-top.png",
+    "sha256": "95826c29f8e6da5e605ad883b5c155d9f92d1b7971a964963d0999846d3d9da6",
+    "testIdentifier": "LayoutTests/testLayouts()",
+    "testResult": "passed",
+    "resultBundle": "ios-after-accessibility-extra-extra-extra-large.xcresult",
+    "timestamp": 1792907963.922,
+    "hostSourceCommit": "dec9530a808a2b2c70ea4577a0eaeba9837fb90c",
+    "checkedOutCommit": "41ef429f33df482f2d1ae5c8ae00927c02af33b2",
+    "note": "Host and FlintCore sources unchanged; report-only dependency and Android-only repair are separate."
+  },
+  {
+    "path": "screenshots/ios-after-ax5-start-240.png",
+    "sha256": "c208d68330ded38b1e31cbaf7af72648a2ebc834125bc831b76db5016e4288c5",
+    "testIdentifier": "LayoutTests/testLongestDuration()",
+    "testResult": "passed",
+    "resultBundle": "ios-after-accessibility-extra-extra-extra-large.xcresult",
+    "timestamp": 1792908036.273,
+    "hostSourceCommit": "dec9530a808a2b2c70ea4577a0eaeba9837fb90c",
+    "checkedOutCommit": "41ef429f33df482f2d1ae5c8ae00927c02af33b2",
+    "note": "Host and FlintCore sources unchanged; report-only dependency and Android-only repair are separate."
+  },
+  {
+    "path": "screenshots/ios-after-ax5-permission-error-bottom.png",
+    "sha256": "96d82c9acb1d945fb6ba223c2126c8558c286d3980f6dcd1aac4788d1a5efc54",
+    "testIdentifier": "LayoutTests/testPermissionErrorLayout()",
+    "testResult": "passed",
+    "resultBundle": "ios-after-accessibility-extra-extra-extra-large.xcresult",
+    "timestamp": 1792908051.262,
+    "hostSourceCommit": "dec9530a808a2b2c70ea4577a0eaeba9837fb90c",
+    "checkedOutCommit": "41ef429f33df482f2d1ae5c8ae00927c02af33b2",
+    "note": "Host and FlintCore sources unchanged; report-only dependency and Android-only repair are separate."
+  }
+]
