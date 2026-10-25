@@ -204,11 +204,15 @@ internal fun AppPickerScreen(
                     items(6) { FlintSkeletonRow() }
                 }
                 filtered.isEmpty() -> item(key = "empty") {
-                    PickerEmptyState(
-                        query = trimmedQuery,
-                        noAppsAtAll = apps.isEmpty(),
-                        onClearSearch = { query = "" },
-                    )
+                    // A lazy item is measured with an unbounded main axis, so a plain
+                    // fillMaxSize would collapse and lose the vertical centring.
+                    Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
+                        PickerEmptyState(
+                            query = trimmedQuery,
+                            noAppsAtAll = apps.isEmpty(),
+                            onClearSearch = { query = "" },
+                        )
+                    }
                 }
                 else -> {
                     items(filtered, key = { it.packageName }) { app ->

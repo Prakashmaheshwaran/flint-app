@@ -60,6 +60,15 @@ class Ui:
         assert n.get('clickable') == 'true', 'No clickable parent'
         return n
 
+    def tab_target(self, label):
+        # Selected tabs may omit click actions, so accept either marker.
+        self.dump()
+        n = self.node(label)
+        while n in self.parents and n.get('clickable') != 'true' and n.get('selected') != 'true':
+            n = self.parents[n]
+        assert n.get('clickable') == 'true' or n.get('selected') == 'true', 'Missing tab target: '+label
+        return n
+
     def tap(self, label):
         self.root = None  # Insets/restored navigation can change after a prior dump.
         self.dump()
@@ -121,17 +130,23 @@ class Ui:
 
     def find(self, label, down=True, attempts=15):
         self.dump()
+        direction = down
+        reversed_once = False
+        def position():
+            return [(n.get('text'), n.get('content-desc'), n.get('bounds'))
+                    for n in self.root.iter('node') if n.get('package') == PACKAGE]
         for _ in range(attempts):
             if self.nodes(label):
                 return self.node(label)
-            previous = [(n.get('text'), n.get('content-desc'), n.get('bounds'))
-                        for n in self.root.iter('node') if n.get('package') == PACKAGE]
-            if not self.scroll(down):
+            before = position()
+            if not self.scroll(direction):
                 break
-            current = [(n.get('text'), n.get('content-desc'), n.get('bounds'))
-                       for n in self.root.iter('node') if n.get('package') == PACKAGE]
-            if previous == current:
-                break  # Report an unreachable target instead of repeating unchanged swipes.
+            if position() == before:
+                if reversed_once:
+                    break  # Report an unreachable target instead of repeating unchanged swipes.
+                direction = not direction
+                reversed_once = True
+                print('SCROLL_END_REVERSE', label, flush=True)
         raise AssertionError('Could not scroll to '+label)
 
     def bottom(self):
@@ -146,20 +161,24 @@ class Ui:
 
     def check_controls(self, *labels):
         self.dump()
-        # You is the tab that intercepted the original Add tap. It is unselected
-        # in both Today and Rules, unlike selected tabs that may omit click actions.
-        tabs = [self.clickable(self.node('You'))] if self.nodes('You') else []
+        # Selected tabs may omit click actions, so measure every one through tab_target.
+        tabs = [self.tab_target(label) for label in ['Today', 'Rules', 'Insights', 'You'] if self.nodes(label)]
         nav_top = min((bounds(n)[1] for n in tabs), default=10000)
         ime = adb('shell','dumpsys','input_method').decode()
         keyboard = 'mInputShown=true' in ime
         windows = adb('shell','dumpsys','window','displays').decode()
         ime_bounds = re.findall(r'type=ime.*?frame=\[\d+,(\d+)\]\[\d+,\d+\].*?visible=true', windows)
         assert not keyboard or ime_bounds, 'Missing visible IME frame'
-        ceiling = min([nav_top]+[int(y) for y in ime_bounds]) if keyboard else nav_top
+        system_nav = re.findall(r'type=navigationBars.*?frame=\[\d+,(\d+)\]\[\d+,\d+\].*?visible=true', windows)
+        ceiling = min([nav_top]+[int(y) for y in system_nav]+([int(y) for y in ime_bounds] if keyboard else []))
+        density_values = re.findall(r'(?:Physical|Override) density: (\d+)', adb('shell','wm','density').decode())
+        assert density_values, 'Missing display density'
+        minimum_height = round(48 * int(density_values[-1]) / 160)
         for label in labels:
             n = self.clickable(self.node(label))
             x1,y1,x2,y2 = bounds(n)
             assert y1 > 0 and y2 <= ceiling, f'{label} overlaps tab/IME: {bounds(n)} ceiling={ceiling}'
+            assert y2-y1 >= minimum_height, f'{label} is clipped below its 48dp action target: {bounds(n)}'
             print(json.dumps({'visible_control':label,'bounds':bounds(n),'ceiling':ceiling,'keyboard':keyboard}), flush=True)
 
     def selected_tab(self, label):
@@ -171,12 +190,10 @@ class Ui:
 
     def select_tab(self, label):
         """Establish a starting tab; flow assertions still use selected_tab/content."""
-        self.dump()
-        n = self.node(label)
-        while n.get('selected') != 'true' and n in self.parents:
-            n = self.parents[n]
-        if n.get('selected') != 'true':
-            self.tap(label)
+        if self.tab_target(label).get('selected') == 'true':
+            return
+        self.tap(label)
+        self.selected_tab(label)
 
     def launch(self):
         adb('shell','am','force-stop',PACKAGE)

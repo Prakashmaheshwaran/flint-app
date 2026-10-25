@@ -333,9 +333,6 @@ fun FlintTabBar(
     }
 }
 
-/** Height the floating bar occupies above the navigation bar — pad scrolling content by it. */
-val FlintTabBarClearance = 96.dp
-
 private fun DrawScope.drawTabGlyph(tab: FlintTabGlyph, selected: Boolean, ink: Color) {
     val k = size.width / 24f
     val stroke = Stroke(1.5f * k, cap = StrokeCap.Round, join = StrokeJoin.Round)
