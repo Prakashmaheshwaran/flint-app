@@ -5,7 +5,7 @@ final class FlintPINTests: XCTestCase {
     private let invalidPINs = [
         "", "1", "12", "123", "1234567", "12345678",
         "abcd", "12a4", " 1234", "1234 ", "12 34", "    ",
-        "1234\n", "12\t34", "12-34", "+1234", "１２３４", "١٢٣٤", "1️⃣234", "12\u{200B}34"
+        "1234\n", "12\t34", "12-34", "+1234", "١٢", "１２", "１２３４", "١٢٣٤", "1️⃣234", "12\u{200B}34"
     ]
 
     private func isolatedStore() throws -> FlintGroupStore {
@@ -23,6 +23,14 @@ final class FlintPINTests: XCTestCase {
 
     func testNewPINRejectsWrongLengthAndMalformedInputWithoutNormalization() {
         for pin in invalidPINs {
+            XCTAssertFalse(FlintPIN.isValidNewPIN(pin))
+        }
+    }
+
+    func testNonASCIIDigitsInsideByteLengthWindowAreRejected() {
+        for pin in ["١٢", "１２"] {
+            // These reach the ASCII predicate: four and six UTF-8 bytes, respectively.
+            XCTAssertTrue((4...6).contains(pin.utf8.count))
             XCTAssertFalse(FlintPIN.isValidNewPIN(pin))
         }
     }

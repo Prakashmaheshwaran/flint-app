@@ -83,7 +83,7 @@ struct SettingsView: View {
                 }
             }
             .sheet(isPresented: $showSetPIN, onDismiss: appLock.cancelPINChange) {
-                PINSetupView(onSave: appLock.savePIN)
+                PINSetupView(appLock: appLock, onSave: appLock.savePIN)
             }
         }
     }

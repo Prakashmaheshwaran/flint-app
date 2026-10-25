@@ -3,6 +3,7 @@ import FlintCore
 
 /// New-PIN entry only. The presenter owns authentication before replacing an existing PIN.
 struct PINSetupView: View {
+    @ObservedObject var appLock: FlintAppLock
     let onSave: (String) -> Bool
 
     @Environment(\.dismiss) private var dismiss
@@ -11,7 +12,9 @@ struct PINSetupView: View {
     @State private var saveFailed = false
 
     private var canSave: Bool {
-        FlintPIN.isValidNewPIN(pin) && pin == confirmation
+        // Use FlintAppLock's live edit precondition even before an interrupted sheet dismisses.
+        appLock.state.phase == .active && !appLock.isLocked
+            && FlintPIN.isValidNewPIN(pin) && pin == confirmation
     }
 
     private var validationMessage: String? {
