@@ -5,6 +5,7 @@ import FamilyControls
 /// report service; an empty host frame is not evidence of zero usage or a failed report.
 enum InsightsAvailability: Equatable {
     case needsAuthorization
+    case needsSettings
     case simulator
     case report
     case unavailable
@@ -19,7 +20,8 @@ enum InsightsAvailability: Equatable {
 
     static func resolve(_ status: AuthorizationStatus, isSimulator: Bool) -> Self {
         switch status {
-        case .notDetermined, .denied: return .needsAuthorization
+        case .notDetermined: return .needsAuthorization
+        case .denied: return .needsSettings
         case .approved: return isSimulator ? .simulator : .report
         @unknown default: return .unavailable
         }
