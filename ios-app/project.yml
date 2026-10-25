@@ -121,7 +121,7 @@ targets:
     dependencies:
       - package: FlintCore
 
-  # ── Unit tests (FlintCore logic) ──
+  # ── Unit tests (FlintCore logic and the production app module) ──
   FlintTests:
     type: bundle.unit-test
     platform: iOS
@@ -133,3 +133,5 @@ targets:
         GENERATE_INFOPLIST_FILE: "YES"
     dependencies:
       - package: FlintCore
+      # Host app dependency lets @testable import Flint exercise the shipped model.
+      - target: Flint

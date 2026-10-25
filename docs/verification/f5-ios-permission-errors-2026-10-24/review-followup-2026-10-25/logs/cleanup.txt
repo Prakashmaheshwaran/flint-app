@@ -1,0 +1,15 @@
+Sun Oct 25 09:49:38 UTC 2026
+e84c19d9282b9e4b8539cb25489111b6f5dadd8e9641faa65f556ed947bc831f  /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-cntarviknofepxezullqsrrpadpk/Build/Products/Debug-iphonesimulator/Flint.app/Flint
+03afaf5ffeb75b8a246df297712f390cb1652f9589ab3dcb7df432695b90e849  /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-cntarviknofepxezullqsrrpadpk/Build/Products/Debug-iphonesimulator/Flint.app/Flint.debug.dylib
+An error was encountered processing the command (domain=NSPOSIXErrorDomain, code=3):
+Simulator device failed to terminate com.flint.peakfocus.
+found nothing to terminate
+Underlying error (domain=NSPOSIXErrorDomain, code=3):
+	The request to terminate "com.flint.peakfocus" failed. found nothing to terminate
+	found nothing to terminate
+com.flint.peakfocus: 18660
+large
+Detected file type from extension: PNG
+Note: No display specified. Defaulting to display: 607134BF-9A48-4E74-B7CA-42CAD5A84088 (screenID: 1, name: LCD)
+Wrote screenshot to: /tmp/flint-fixes-20261024/F5/review-followup/cleanup-large-final.png
+Sun Oct 25 09:49:44 UTC 2026

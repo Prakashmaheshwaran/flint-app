@@ -1,0 +1,24 @@
+name: FlintF5
+options:
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    CODE_SIGNING_ALLOWED: NO
+targets:
+  FlintF5UITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [Tests]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.flint.f5.uitests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  FlintF5:
+    build:
+      targets:
+        FlintF5UITests: [test]
+    test:
+      targets: [FlintF5UITests]
