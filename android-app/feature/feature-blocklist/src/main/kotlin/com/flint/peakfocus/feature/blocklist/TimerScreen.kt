@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -355,6 +356,10 @@ private fun StartFocusSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        // This dialog is outside the tab scaffold's viewport. After returning from
+        // search with the IME open it can expand to the top, so reserve its own
+        // status-bar inset rather than placing the header/Close under system UI.
+        modifier = Modifier.statusBarsPadding(),
         sheetState = sheetState,
         containerColor = FlintPalette.Sheet,
         contentColor = FlintPalette.Bone,

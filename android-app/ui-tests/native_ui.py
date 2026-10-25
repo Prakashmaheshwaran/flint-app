@@ -126,7 +126,9 @@ class Ui:
 
     def check_controls(self, *labels):
         self.dump()
-        tabs = [self.clickable(self.node(t)) for t in ('Today','Rules','Insights','You') if self.nodes(t)]
+        # You is the tab that intercepted the original Add tap. It is unselected
+        # in both Today and Rules, unlike selected tabs that may omit click actions.
+        tabs = [self.clickable(self.node('You'))] if self.nodes('You') else []
         nav_top = min((bounds(n)[1] for n in tabs), default=10000)
         ime = adb('shell','dumpsys','input_method').decode()
         keyboard = 'mInputShown=true' in ime
