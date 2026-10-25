@@ -117,9 +117,12 @@ Verticals implemented:
 - **App PIN** — an optional PIN (salted SHA-256, never stored plaintext) gates cold launch and
   every return from the background, including running sessions and presented sheets. Brief
   inactive interruptions hide content without re-locking. Changing or removing a PIN requires
-  the current PIN; backgrounding expires pending change authentication. Existing saved PINs
-  remain usable regardless of length. This protects Flint's UI; OS Screen Time enforcement
-  and the system Screen Time passcode are separate protections.
+  the current PIN; backgrounding expires pending change authentication. New PINs must be
+  exactly 4–6 ASCII digits (0–9), entered twice in secure fields. Invalid or mismatched input
+  cannot be saved; input is never trimmed, filtered, or truncated. Existing saved PINs remain
+  usable until changed or removed, even if they do not meet the new policy. This protects
+  Flint's UI; OS Screen Time enforcement and the system Screen Time passcode are separate
+  protections.
 - **Hardcore uninstall guard** — while a Hardcore (Deep Focus) session runs, Flint sets
   `denyAppRemoval` on the session's `ManagedSettingsStore`, so deleting the app — otherwise the
   one-tap escape from a "non-bypassable" block — is refused by iOS. Armed on every Hardcore

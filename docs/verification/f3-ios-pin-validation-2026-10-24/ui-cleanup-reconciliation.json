@@ -1,0 +1,22 @@
+{
+  "recordedAtUTC": "2026-10-25T05:04:32.998973+00:00",
+  "testedCommit": "faa54baca331ca6d424fa9033b69bbfb5d30c2e2",
+  "uiResultBundle": "/tmp/flint-fixes-20261024/F3/ui-20261025-004811.xcresult",
+  "uiResult": "Passed",
+  "passedTests": 4,
+  "failedTests": 0,
+  "uiProcessExitCode": null,
+  "uiProcessExitCodeNote": "The original runner failed before persisting this field; XCTest success is verified independently from its result bundle and log.",
+  "postRunRunnerExitCode": 1,
+  "postRunRunnerError": "Refusing to clear an unrecognized PIN",
+  "originalIncompleteManifest": "/tmp/flint-fixes-20261024/F3/ui-passed-incomplete-manifest.json",
+  "intermediateKeyShapeRecorded": false,
+  "unknownRecordDeleted": false,
+  "storageCheck": "/tmp/flint-fixes-20261024/F3/post-run-storage-check.json",
+  "storageCheckedAtUTC": "2026-10-25T04:57:03.065695+00:00",
+  "storageReadOnly": true,
+  "absentSamples": 3,
+  "reconciliationMutations": 0,
+  "finalPINPresent": false,
+  "interpretation": "Both keys were absent on all later serialized samples without reconciliation mutation. Persistence timing is consistent with the evidence; the earlier intermediate key shape was not captured."
+}
