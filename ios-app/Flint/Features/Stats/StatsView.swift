@@ -115,8 +115,9 @@ struct StatsView: View {
                     if InsightsAvailability.isSimulator {
                         Text("Simulator can’t provide Screen Time reports. View Insights on a physical iPhone or iPad.")
                             .flintSecondary(15)
+                    } else {
+                        AuthorizationControls(auth: auth, identifierPrefix: "insights.authorization", onApproved: refresh)
                     }
-                    AuthorizationControls(auth: auth, identifierPrefix: "insights.authorization", onApproved: refresh)
                 }
 
                 if availability == .unavailable {

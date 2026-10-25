@@ -23,7 +23,15 @@ enum InsightsAvailability: Equatable {
         case .notDetermined: return .needsAuthorization
         case .denied: return .needsSettings
         case .approved: return isSimulator ? .simulator : .report
-        @unknown default: return .unavailable
+        default:
+            // `approvedWithDataAccess` (iOS 26.4+) also means access was granted, so it must
+            // show the report rather than the unavailable state. Only genuinely unknown
+            // statuses are unavailable. A plain `default` (not `@unknown default`) is needed
+            // because an early return does not make the switch exhaustive to the compiler.
+            if #available(iOS 26.4, *), status == .approvedWithDataAccess {
+                return isSimulator ? .simulator : .report
+            }
+            return .unavailable
         }
     }
 }
