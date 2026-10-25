@@ -356,17 +356,6 @@
       }
     }
   },
-  "sourceSHA256": {
-    "ios-app/Flint/Features/Stats/StatsView.swift": "06555975bc3fb1bc23021610231446235bf73098a2fc6f09c06398dcaaadb237",
-    "ios-app/Flint/Features/Stats/InsightsState.swift": "43f21e5695b58b5cf7910ab93b7a860a0e7635049a93bd691d27b2135285d109",
-    "ios-app/Flint/Features/Authorization/AuthorizationControls.swift": "16ecc8af8871d4e506caf3bf82424d794090552137589dec6d635836c6a7785f",
-    "ios-app/Flint/Features/Authorization/AuthorizationModel.swift": "d1de22652594ff26db0f3c389c1447caea63e2cea46b7c9203206307f4e06ea6",
-    "ios-app/Flint/Features/Authorization/AuthorizationPreview.swift": "ff39bb6d7146d44820afea59f224ed3e13d2f9f87c6ef79bb705e4ceaf7d379f",
-    "ios-app/Tests/FlintInsightsTests.swift": "eeb5d9d059057e5c6090aef1edec586615c7db49bab4ed64817cd12e2116f44c",
-    "ios-app/Extensions/DeviceActivityReportExtension/ActivitySummary.swift": "e012161904d79e8aea092b7d7d46386c560735240e2e43f035629549044fe29a",
-    "ios-app/Extensions/DeviceActivityReportExtension/TotalActivityView.swift": "a7a8cc3b87635e57db25bcff963fa15e96303ad575b9a147fdb22d4b159d6d6b",
-    "ios-app/project.yml": "03770182f60ef5bb52abe97d75cc9ddfc2706a988f6b84b9418bd31e0236577f"
-  },
   "screenshotsSHA256": {
     "ax5-01-denied-week.png": "352860b18d4541ec060c9eee58276eee39ed96d66b08772a2974b7f3b69a084f",
     "ax5-02-denied-today.png": "3caa97bcc8fded0011b6728bd0e2e5e59a681fa27df14f275e7422ca56ccb5c7",
@@ -419,5 +408,43 @@
     "initial-failed-attempt/project.yml": "9f8ac1ab5a1cc3f138616898b5254c86680aaed1ff0ec4dafda75e2ce7e698af",
     "project.yml": "9f8ac1ab5a1cc3f138616898b5254c86680aaed1ff0ec4dafda75e2ce7e698af",
     "verify.sh": "75805d1054119f5d2623b4bca22ade5c970fcf51afb675cb93a42e4b40daced9"
-  }
+  },
+  "sourceFiles": [
+    {
+      "path": "ios-app/Flint/Features/Stats/StatsView.swift",
+      "sha256": "06555975bc3fb1bc23021610231446235bf73098a2fc6f09c06398dcaaadb237"
+    },
+    {
+      "path": "ios-app/Flint/Features/Stats/InsightsState.swift",
+      "sha256": "43f21e5695b58b5cf7910ab93b7a860a0e7635049a93bd691d27b2135285d109"
+    },
+    {
+      "path": "ios-app/Flint/Features/Authorization/AuthorizationControls.swift",
+      "sha256": "16ecc8af8871d4e506caf3bf82424d794090552137589dec6d635836c6a7785f"
+    },
+    {
+      "path": "ios-app/Flint/Features/Authorization/AuthorizationModel.swift",
+      "sha256": "d1de22652594ff26db0f3c389c1447caea63e2cea46b7c9203206307f4e06ea6"
+    },
+    {
+      "path": "ios-app/Flint/Features/Authorization/AuthorizationPreview.swift",
+      "sha256": "ff39bb6d7146d44820afea59f224ed3e13d2f9f87c6ef79bb705e4ceaf7d379f"
+    },
+    {
+      "path": "ios-app/Tests/FlintInsightsTests.swift",
+      "sha256": "eeb5d9d059057e5c6090aef1edec586615c7db49bab4ed64817cd12e2116f44c"
+    },
+    {
+      "path": "ios-app/Extensions/DeviceActivityReportExtension/ActivitySummary.swift",
+      "sha256": "e012161904d79e8aea092b7d7d46386c560735240e2e43f035629549044fe29a"
+    },
+    {
+      "path": "ios-app/Extensions/DeviceActivityReportExtension/TotalActivityView.swift",
+      "sha256": "a7a8cc3b87635e57db25bcff963fa15e96303ad575b9a147fdb22d4b159d6d6b"
+    },
+    {
+      "path": "ios-app/project.yml",
+      "sha256": "03770182f60ef5bb52abe97d75cc9ddfc2706a988f6b84b9418bd31e0236577f"
+    }
+  ]
 }
