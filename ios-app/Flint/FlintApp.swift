@@ -42,8 +42,21 @@ struct RootView: View {
         .accessibilityHidden(appLock.state.isProtected)
         .environmentObject(appLock)
         .background(AppLockWindow(lock: appLock))
-        .onAppear { auth.refresh() }
-        .onChange(of: scenePhase) { phase in if phase == .active { auth.refresh() } }
+        .onAppear { updateScenePhase(scenePhase) }
+        .onChange(of: scenePhase, perform: updateScenePhase)
+    }
+
+    private func updateScenePhase(_ phase: ScenePhase) {
+        // SwiftUI owns this scene and can finish activation after the UIKit window
+        // anchor attaches. Reconcile here as well as in the synchronous privacy hooks.
+        switch phase {
+        case .active:
+            appLock.transition(to: .active)
+            auth.refresh()
+        case .inactive: appLock.transition(to: .inactive)
+        case .background: appLock.transition(to: .background)
+        @unknown default: appLock.transition(to: .inactive)
+        }
     }
 
     private var tabs: some View {
