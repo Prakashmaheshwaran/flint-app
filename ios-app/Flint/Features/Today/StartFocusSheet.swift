@@ -132,6 +132,7 @@ struct StartFocusSheet: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text("\(vm.durationMinutes)")
                 .font(FlintFont.display(68, relativeTo: .largeTitle))
+                .tracking(-1.5)
                 .monospacedDigit()
                 .foregroundStyle(FlintBrand.bone)
             Text("min").flintSecondary(15)

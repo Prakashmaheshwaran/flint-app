@@ -62,6 +62,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.flint.peakfocus.core.common.theme.FlintMotion
 import com.flint.peakfocus.core.common.theme.FlintPalette
@@ -290,6 +291,25 @@ fun FlintMark(modifier: Modifier = Modifier) {
 /** The four destinations of the floating bar, identical on iPhone and Android. */
 enum class FlintTabGlyph(val label: String) { Today("Today"), Rules("Rules"), Insights("Insights"), You("You") }
 
+/**
+ * The tab bar's one-row/two-row decision, kept independent of composition so the fallback is
+ * unit-testable. [widths] are the measured, scaled label widths for each tab; [maxWidth] is the
+ * bar's available content width. A single row is used only when every label fits side by side;
+ * otherwise the tabs fall back to two rows of two.
+ */
+internal data class FlintTabBarPlan(
+    val singleRow: Boolean,
+    val equalWidths: Boolean,
+    val rows: List<List<FlintTabGlyph>>,
+)
+
+internal fun planFlintTabBar(widths: Map<FlintTabGlyph, Dp>, maxWidth: Dp): FlintTabBarPlan {
+    val singleRow = widths.values.sumOf { it.value.toDouble() } <= maxWidth.value
+    val equalWidths = widths.values.max() * FlintTabGlyph.entries.size <= maxWidth
+    val rows = if (singleRow) listOf(FlintTabGlyph.entries.toList()) else FlintTabGlyph.entries.chunked(2)
+    return FlintTabBarPlan(singleRow, equalWidths, rows)
+}
+
 /** Keep full tab names visible, sharing width by their measured type before using two rows. */
 @Composable
 fun FlintTabBar(
@@ -315,9 +335,8 @@ fun FlintTabBar(
             val pixels = measurer.measure(AnnotatedString(tab.label), styles.getValue(tab), softWrap = false).size.width
             maxOf(48.dp, with(density) { pixels.toDp() } + 8.dp + 1.dp)
         }
-        val singleRow = widths.values.sumOf { it.value.toDouble() } <= maxWidth.value
-        val equalWidths = widths.values.max() * FlintTabGlyph.entries.size <= maxWidth
-        val shape = if (singleRow) CircleShape else RoundedCornerShape(32.dp)
+        val plan = planFlintTabBar(widths, maxWidth)
+        val shape = if (plan.singleRow) CircleShape else RoundedCornerShape(32.dp)
         val item: @Composable (FlintTabGlyph, Modifier) -> Unit = { tab, itemModifier ->
             val isSelected = tab == selected
             val tint = if (isSelected) FlintPalette.Bone else FlintPalette.Stone
@@ -350,11 +369,10 @@ fun FlintTabBar(
                 .border(1.dp, FlintPalette.Divider, shape)
                 .selectableGroup(),
         ) {
-            val rows = if (singleRow) listOf(FlintTabGlyph.entries.toList()) else FlintTabGlyph.entries.chunked(2)
-            rows.forEach { tabs ->
+            plan.rows.forEach { tabs ->
                 Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                     tabs.forEach { tab ->
-                        val weight = if (!singleRow || equalWidths) 1f else widths.getValue(tab).value
+                        val weight = if (!plan.singleRow || plan.equalWidths) 1f else widths.getValue(tab).value
                         item(tab, Modifier.weight(weight))
                     }
                 }
