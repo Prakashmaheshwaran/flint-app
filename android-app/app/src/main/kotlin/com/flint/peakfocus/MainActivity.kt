@@ -32,6 +32,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.sp
@@ -41,7 +44,6 @@ import com.flint.peakfocus.core.common.ui.EmberLandscape
 import com.flint.peakfocus.core.common.ui.FlintGlyphs
 import com.flint.peakfocus.core.common.ui.FlintMark
 import com.flint.peakfocus.core.common.ui.FlintTabBar
-import com.flint.peakfocus.core.common.ui.FlintTabBarClearance
 import com.flint.peakfocus.core.common.ui.FlintTabGlyph
 import com.flint.peakfocus.core.common.ui.flintSwitchColors
 import androidx.compose.foundation.layout.Arrangement
@@ -93,6 +95,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -265,48 +268,59 @@ private fun FlintApp() {
             )
             Stage.Tabs -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                 val systemBars = WindowInsets.systemBars.asPaddingValues()
-                val tabPadding = PaddingValues(
-                    top = systemBars.calculateTopPadding(),
-                    bottom = systemBars.calculateBottomPadding() + FlintTabBarClearance,
-                )
                 val plan = remember(health) { SetupGuidance.plan(health) }
-                // Compose only the selected tab. Keeping an outgoing feature alive during
-                // animation also keeps its picker BackHandler active over the next tab.
-                stateHolder.SaveableStateProvider(tab.name) {
-                    when (tab) {
-                        FlintTabGlyph.Today -> TimerScreen(
-                            contentPadding = tabPadding,
-                            headline = plan.headline,
-                            // Today keeps one sentence; Settings carries the full explanation.
-                            subline = plan.body.substringBefore(". ").removeSuffix(".") + ".",
-                            setupLabel = plan.nextStep?.ctaLabel,
-                            onSetup = { plan.nextStep?.let(onSetupStep) },
+                Scaffold(
+                    contentWindowInsets = WindowInsets.safeDrawing,
+                    bottomBar = {
+                        FlintTabBar(
+                            selected = tab,
+                            onSelect = { destination ->
+                                if (tab != destination) {
+                                    haptics.tick()
+                                    tab = destination
+                                }
+                            },
+                            modifier = Modifier.padding(top = FlintSpacing.md),
                         )
-                        FlintTabGlyph.Rules -> BlocklistScreen(
-                            contentPadding = tabPadding,
-                            quickBlockSummary = if (blockedCount == 0) "Apps blocked whenever Flint is on"
-                            else "$blockedCount ${if (blockedCount == 1) "app" else "apps"} always blocked",
-                            onQuickBlock = { detail = Detail.QuickBlock },
-                        )
-                        FlintTabGlyph.Insights -> StatsScreen(Modifier.fillMaxSize().padding(tabPadding))
-                        FlintTabGlyph.You -> SettingsScreen(
-                            Modifier.fillMaxSize().padding(tabPadding),
-                            onAccount = if (BuildConfig.DEBUG) {
-                                { detail = Detail.Account }
-                            } else null,
-                        )
+                    },
+                ) { safePadding ->
+                    // Own insets once, outside feature navigation. Every picker/editor gets
+                    // the same viewport; no branch can put controls beneath the measured
+                    // tab bar. Consume before IME padding so bottom insets are not doubled.
+                    Box(
+                        Modifier.fillMaxSize()
+                            .padding(safePadding)
+                            .consumeWindowInsets(safePadding)
+                            .imePadding()
+                            .clipToBounds(),
+                    ) {
+                        // Only the selected tab is composed, so outgoing picker BackHandlers
+                        // cannot remain active over another tab.
+                        stateHolder.SaveableStateProvider(tab.name) {
+                            when (tab) {
+                                FlintTabGlyph.Today -> TimerScreen(
+                                    headline = plan.headline,
+                                    // Today keeps one sentence; Settings carries the full explanation.
+                                    subline = plan.body.substringBefore(". ").removeSuffix(".") + ".",
+                                    setupLabel = plan.nextStep?.ctaLabel,
+                                    onSetup = { plan.nextStep?.let(onSetupStep) },
+                                )
+                                FlintTabGlyph.Rules -> BlocklistScreen(
+                                    quickBlockSummary = if (blockedCount == 0) "Apps blocked whenever Flint is on"
+                                    else "$blockedCount ${if (blockedCount == 1) "app" else "apps"} always blocked",
+                                    onQuickBlock = { detail = Detail.QuickBlock },
+                                )
+                                FlintTabGlyph.Insights -> StatsScreen(Modifier.fillMaxSize())
+                                FlintTabGlyph.You -> SettingsScreen(
+                                    Modifier.fillMaxSize(),
+                                    onAccount = if (BuildConfig.DEBUG) {
+                                        { detail = Detail.Account }
+                                    } else null,
+                                )
+                            }
+                        }
                     }
                 }
-                FlintTabBar(
-                    selected = tab,
-                    onSelect = { destination ->
-                        if (tab != destination) {
-                            haptics.tick()
-                            tab = destination
-                        }
-                    },
-                    modifier = Modifier.align(Alignment.BottomCenter),
-                )
                 AnimatedVisibility(
                     visible = detail != null,
                     enter = slideInHorizontally(tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized)) { it / 4 } +

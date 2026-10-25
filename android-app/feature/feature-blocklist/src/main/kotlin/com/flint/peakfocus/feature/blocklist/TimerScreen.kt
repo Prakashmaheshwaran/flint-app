@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -156,7 +155,7 @@ fun TimerScreen(
                 initiallySelected = state.draft.apps.map { it.packageName }.toSet(),
                 onConfirm = { viewModel.selectApps(it); pickingApps = false },
                 onCancel = { pickingApps = false },
-                modifier = modifier.statusBarsPadding(),
+                modifier = modifier,
             )
         }
         running != null -> SessionScene(
