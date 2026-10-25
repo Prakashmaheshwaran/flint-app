@@ -10,6 +10,7 @@ struct TodayView: View {
     @Binding var showStart: Bool
     @State private var now = Date()
     @State private var rules: [FlintScheduleRule] = []
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     private let presets: [(name: String, minutes: Int)] = [("Deep study", 90), ("Reading", 30), ("Workout", 60)]
 
@@ -17,41 +18,14 @@ struct TodayView: View {
         ZStack(alignment: .top) {
             EmberLandscape()
 
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text(now.formatted(.dateTime.weekday(.wide).day().month(.wide)).replacingOccurrences(of: ",", with: " ·"))
-                        .flintEyebrow()
-                    Spacer()
-                    FlintMark(size: 20)
-                }
-                .padding(.top, 18)
-
-                Text(headline)
-                    .flintTitle(31)
-                    .padding(.top, 26)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(subline)
-                    .flintSecondary(14)
-                    .padding(.top, 8)
-
-                VStack(spacing: 6) {
-                    Text(Self.duration(minutes: vm.durationMinutes)).flintNumber(50)
-                    Text("Your next session").flintEyebrow()
-                }
-                .frame(maxWidth: .infinity)
-                .accessibilityElement(children: .combine)
-                .padding(.top, 76)
-
-                Spacer()
-
-                if auth.status == .approved {
-                    actions
-                } else {
-                    grantCard
+            GeometryReader { geometry in
+                ScrollView {
+                    content
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 28)
+                        .frame(minHeight: geometry.size.height, alignment: .top)
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 104)
 
             if let message = vm.errorText ?? auth.lastError {
                 Text(message)
@@ -73,21 +47,58 @@ struct TodayView: View {
         .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { now = $0 }
     }
 
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text(now.formatted(.dateTime.weekday(.wide).day().month(.wide)).replacingOccurrences(of: ",", with: " ·"))
+                        .flintEyebrow()
+                    Spacer()
+                    FlintMark(size: 20)
+                }
+                .padding(.top, 18)
+
+                Text(headline)
+                    .flintTitle(31)
+                    .padding(.top, 26)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(subline)
+                    .flintSecondary(14)
+                    .padding(.top, 8)
+
+                VStack(spacing: 6) {
+                    Text(Self.duration(minutes: vm.durationMinutes)).flintNumber(50)
+                    Text("Your next session").flintEyebrow()
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .accessibilityElement(children: .combine)
+                .padding(.top, 76)
+
+                Spacer(minLength: 32)
+
+                if auth.status == .approved {
+                    actions
+                } else {
+                    grantCard
+                }
+        }
+    }
+
     private var actions: some View {
         VStack(spacing: 14) {
-            HStack(spacing: 8) {
+            FlintWrappingLayout(spacing: 8) {
                 ForEach(presets, id: \.name) { preset in
                     Button {
                         vm.durationMinutes = preset.minutes
                         showStart = true
                     } label: {
-                        HStack(spacing: 4) {
-                            Text(preset.name)
-                            Text("\(preset.minutes)m").foregroundStyle(FlintBrand.mist)
-                        }
-                        .lineLimit(1)
+                        (Text(preset.name) + Text(" \(preset.minutes)m").foregroundColor(FlintBrand.mist))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.vertical, typeSize.isAccessibilitySize ? 8 : 0)
                     }
-                    .buttonStyle(ChipButtonStyle())
+                    .buttonStyle(ChipButtonStyle(height: 44))
+                    .accessibilityLabel("\(preset.name), \(preset.minutes) minutes")
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

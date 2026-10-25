@@ -10,6 +10,8 @@ struct StartFocusSheet: View {
     @State private var showPicker = false
     @State private var showSaveGroup = false
     @State private var groupName = ""
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .body) private var levelWidth = 96
 
     private let durations = [25, 45, 60, 90]
 
@@ -21,6 +23,7 @@ struct StartFocusSheet: View {
 
                 HStack {
                     Text("Start focus").flintTitle(26)
+                        .fixedSize(horizontal: false, vertical: true)
                     Spacer()
                     Button(action: onClose) {
                         Image(systemName: "xmark").font(.system(size: 14, weight: .medium))
@@ -39,32 +42,15 @@ struct StartFocusSheet: View {
                         breakLevels.padding(.top, 10)
                         Text(note(for: vm.breakLevel))
                             .flintSecondary()
+                            .fixedSize(horizontal: false, vertical: true)
                             .lineSpacing(3)
                             .frame(minHeight: 38, alignment: .top)
                             .padding(.top, 12)
+                        if typeSize.isAccessibilitySize { footer.padding(.top, 12) }
                     }
                 }
 
-                Button("Begin \(vm.durationMinutes) minutes") {
-                    vm.start()
-                    if vm.active != nil { onClose() }
-                }
-                .buttonStyle(EmberButtonStyle())
-                .disabled(vm.selectionCount == 0)
-                .padding(.top, 12)
-                if let error = vm.errorText {
-                    Text(error)
-                        .font(FlintFont.text(13))
-                        .foregroundStyle(FlintBrand.danger)
-                        .frame(maxWidth: .infinity)
-                        .multilineTextAlignment(.center)
-                        .padding(.top, 8)
-                } else if vm.selectionCount == 0 {
-                    Text("Choose what rests first.")
-                        .flintSecondary()
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 8)
-                }
+                if !typeSize.isAccessibilitySize { footer.padding(.top, 12) }
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 16)
@@ -80,28 +66,58 @@ struct StartFocusSheet: View {
         .preferredColorScheme(.dark)
     }
 
+    private var footer: some View {
+        VStack(spacing: 8) {
+                Button {
+                    vm.start()
+                    if vm.active != nil { onClose() }
+                } label: {
+                    Text("Begin \(vm.durationMinutes) minutes")
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(EmberButtonStyle())
+                .disabled(vm.selectionCount == 0)
+                if let error = vm.errorText {
+                    Text(error)
+                        .font(FlintFont.text(13))
+                        .foregroundStyle(FlintBrand.danger)
+                        .frame(maxWidth: .infinity)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if vm.selectionCount == 0 {
+                    Text("Choose what rests first.")
+                        .flintSecondary()
+                        .frame(maxWidth: .infinity)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+        }
+    }
+
     private var durationPicker: some View {
         VStack(spacing: 16) {
-            HStack {
-                Button { vm.durationMinutes = max(5, vm.durationMinutes - 5) } label: {
-                    Image(systemName: "minus").font(.system(size: 16))
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    lessTime
+                    Spacer()
+                    durationValue
+                    Spacer()
+                    moreTime
                 }
-                .buttonStyle(CircleIconButtonStyle())
-                .accessibilityLabel("Five minutes less")
-                Spacer()
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("\(vm.durationMinutes)").flintNumber(68)
-                    Text("min").flintSecondary(15)
+                VStack(spacing: 12) {
+                    durationValue
+                    HStack {
+                        lessTime
+                        Spacer()
+                        moreTime
+                    }
                 }
-                .accessibilityElement(children: .combine)
-                Spacer()
-                Button { vm.durationMinutes = min(240, vm.durationMinutes + 5) } label: {
-                    Image(systemName: "plus").font(.system(size: 16))
-                }
-                .buttonStyle(CircleIconButtonStyle())
-                .accessibilityLabel("Five minutes more")
             }
-            HStack(spacing: 8) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8),
+                                     count: typeSize.isAccessibilitySize ? 2 : 4), spacing: 8) {
                 ForEach(durations, id: \.self) { minutes in
                     Button("\(minutes)") { vm.durationMinutes = minutes }
                         .buttonStyle(ChipButtonStyle(selected: vm.durationMinutes == minutes, height: 44, stretch: true))
@@ -110,6 +126,34 @@ struct StartFocusSheet: View {
                 }
             }
         }
+    }
+
+    private var durationValue: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("\(vm.durationMinutes)")
+                .font(FlintFont.display(68, relativeTo: .largeTitle))
+                .monospacedDigit()
+                .foregroundStyle(FlintBrand.bone)
+            Text("min").flintSecondary(15)
+        }
+        .fixedSize()
+        .accessibilityElement(children: .combine)
+    }
+
+    private var lessTime: some View {
+        Button { vm.durationMinutes = max(5, vm.durationMinutes - 5) } label: {
+            Image(systemName: "minus").font(.system(size: 16))
+        }
+        .buttonStyle(CircleIconButtonStyle())
+        .accessibilityLabel("Five minutes less")
+    }
+
+    private var moreTime: some View {
+        Button { vm.durationMinutes = min(240, vm.durationMinutes + 5) } label: {
+            Image(systemName: "plus").font(.system(size: 16))
+        }
+        .buttonStyle(CircleIconButtonStyle())
+        .accessibilityLabel("Five minutes more")
     }
 
     private var blockRow: some View {
@@ -121,10 +165,12 @@ struct StartFocusSheet: View {
                     Text(vm.selectionCount == 0 ? "Apps, categories and sites" : "Tap to change")
                         .flintSecondary()
                 }
+                .fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 FlintChevron()
             }
             .padding(.horizontal, 16)
+            .padding(.vertical, typeSize.isAccessibilitySize ? 12 : 0)
             .frame(minHeight: 64)
             .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(FlintBrand.bone(0.04)))
             .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(FlintBrand.bone(0.08)))
@@ -134,36 +180,36 @@ struct StartFocusSheet: View {
     }
 
     private var groupChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            FlintWrappingLayout(spacing: 8) {
                 ForEach(vm.savedGroups) { group in
                     Button("\(group.name) · \(group.itemCount)") { vm.applyGroup(group) }
-                        .buttonStyle(ChipButtonStyle(height: 36))
+                        .buttonStyle(ChipButtonStyle(height: 44))
                 }
                 if vm.selectionCount > 0 {
                     Button("Save as group") { showSaveGroup = true }
                         .font(FlintFont.text(13, weight: .medium))
                         .foregroundStyle(FlintBrand.mist)
                         .padding(.horizontal, 14)
-                        .frame(minHeight: 36)
+                        .frame(minHeight: 44)
                         .overlay(Capsule().strokeBorder(FlintBrand.bone(0.22), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
                 }
             }
-        }
     }
 
     private var breakLevels: some View {
-        HStack(spacing: 8) {
+        LazyVGrid(columns: [GridItem(typeSize.isAccessibilitySize ? .flexible() : .adaptive(minimum: levelWidth), spacing: 8)],
+                  alignment: .leading, spacing: 8) {
             ForEach(BreakLevel.allCases, id: \.self) { level in
                 let selected = vm.breakLevel == level
                 Button { vm.breakLevel = level } label: {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(title(for: level)).flintRowTitle()
+                            .fixedSize(horizontal: false, vertical: true)
                         Text(hint(for: level)).font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(12)
-                    .frame(maxWidth: .infinity, minHeight: 72, maxHeight: .infinity, alignment: .topLeading)
+                    .frame(maxWidth: .infinity, minHeight: 72, alignment: .topLeading)
                     .background(RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .fill(selected ? FlintBrand.ember.opacity(0.12) : FlintBrand.bone(0.03)))
                     .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -174,7 +220,6 @@ struct StartFocusSheet: View {
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
-        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func title(for level: BreakLevel) -> String {

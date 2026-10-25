@@ -11,6 +11,7 @@ struct SettingsView: View {
     @State private var authStatus = AuthorizationCenter.shared.authorizationStatus
     @State private var passAvailable = FlintSessionController().emergencyPassAvailable()
     @State private var checkedAt = Date()
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         NavigationStack {
@@ -84,19 +85,16 @@ struct SettingsView: View {
     /// rule die silently.
     private var healthCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                HStack(spacing: 10) {
-                    ZStack {
-                        Circle().fill((healthy ? FlintBrand.ember : FlintBrand.danger).opacity(0.22)).frame(width: 22, height: 22)
-                        Circle().fill(healthy ? FlintBrand.ember : FlintBrand.danger).frame(width: 12, height: 12)
-                    }
-                    .accessibilityHidden(true)
-                    Text(healthy ? "Protection is healthy" : "Protection needs attention")
-                        .font(FlintFont.text(16, weight: .medium)).foregroundStyle(FlintBrand.bone)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top) {
+                    healthStatus.fixedSize(horizontal: true, vertical: false)
+                    Spacer(minLength: 12)
+                    checkedTime.fixedSize()
                 }
-                Spacer()
-                Text("Checked \(checkedAt.formatted(date: .omitted, time: .shortened))")
-                    .font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
+                VStack(alignment: .leading, spacing: 10) {
+                    healthStatus
+                    checkedTime
+                }
             }
             VStack(alignment: .leading, spacing: 8) {
                 check(authStatus == .approved, authStatus == .approved ? "Screen Time access allowed" : "Screen Time access not allowed")
@@ -128,13 +126,36 @@ struct SettingsView: View {
         .accessibilityElement(children: .combine)
     }
 
+    private var healthStatus: some View {
+        let layout = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 10))
+        return layout {
+            ZStack {
+                Circle().fill((healthy ? FlintBrand.ember : FlintBrand.danger).opacity(0.22)).frame(width: 22, height: 22)
+                Circle().fill(healthy ? FlintBrand.ember : FlintBrand.danger).frame(width: 12, height: 12)
+            }
+            .accessibilityHidden(true)
+            Text(healthy ? "Protection is healthy" : "Protection needs attention")
+                .font(FlintFont.text(16, weight: .medium)).foregroundStyle(FlintBrand.bone)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var checkedTime: some View {
+        Text("Checked \(checkedAt.formatted(date: .omitted, time: .shortened))")
+            .font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
     private func check(_ ok: Bool, _ text: String) -> some View {
-        HStack(spacing: 10) {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: ok ? "checkmark" : "exclamationmark")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(ok ? FlintBrand.bone : FlintBrand.danger)
                 .frame(width: 14)
             Text(text).font(FlintFont.text(13)).foregroundStyle(FlintBrand.mist)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

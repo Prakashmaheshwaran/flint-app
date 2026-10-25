@@ -42,19 +42,16 @@ struct RootView: View {
     }
 
     private var tabs: some View {
-        ZStack(alignment: .bottom) {
-            Group {
-                switch tab {
-                case .today: TodayView(auth: auth, vm: session, showStart: $showStart)
-                case .rules: RulesView()
-                case .insights: StatsView()
-                case .you: SettingsView()
-                }
+        Group {
+            switch tab {
+            case .today: TodayView(auth: auth, vm: session, showStart: $showStart)
+            case .rules: RulesView()
+            case .insights: StatsView()
+            case .you: SettingsView()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            FlintTabBar(selection: $tab)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .safeAreaInset(edge: .bottom, spacing: 0) { FlintTabBar(selection: $tab) }
         .background(FlintBrand.ground.ignoresSafeArea())
         .ignoresSafeArea(.keyboard)
         .fullScreenCover(isPresented: Binding(get: { session.active != nil }, set: { _ in })) {
