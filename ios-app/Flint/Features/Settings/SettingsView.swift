@@ -6,7 +6,6 @@ import FlintCore
 struct SettingsView: View {
     @State private var pinIsSet = FlintPIN.isSet(FlintGroupStore())
     @State private var showSetPIN = false
-    @State private var newPIN = ""
     @State private var armingHealth = FlintGroupStore()?.loadArmingHealth() ?? FlintArmingHealth()
     @State private var authStatus = AuthorizationCenter.shared.authorizationStatus
     @State private var passAvailable = FlintSessionController().emergencyPassAvailable()
@@ -21,7 +20,7 @@ struct SettingsView: View {
                     healthCard.padding(.top, 20)
 
                     VStack(spacing: 0) {
-                        Button { newPIN = ""; showSetPIN = true } label: {
+                        Button { showSetPIN = true } label: {
                             FlintRow(title: "App lock", value: pinIsSet ? "On" : "Off", chevron: true)
                         }
                         if pinIsSet {
@@ -58,13 +57,12 @@ struct SettingsView: View {
             .flintTabBarInset()
             .toolbar(.hidden, for: .navigationBar)
             .onAppear(perform: refresh)
-            .alert("Set a 4–6 digit PIN", isPresented: $showSetPIN) {
-                TextField("PIN", text: $newPIN).keyboardType(.numberPad)
-                Button("Save") {
-                    if newPIN.count >= 4 { FlintPIN.set(newPIN, FlintGroupStore()); pinIsSet = true }
-                    newPIN = ""
+            .sheet(isPresented: $showSetPIN) {
+                PINSetupView { pin in
+                    guard FlintPIN.set(pin, FlintGroupStore()) else { return false }
+                    pinIsSet = true
+                    return true
                 }
-                Button("Cancel", role: .cancel) { newPIN = "" }
             }
         }
     }
