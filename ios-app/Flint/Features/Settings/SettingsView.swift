@@ -71,9 +71,15 @@ struct SettingsView: View {
             }
             .onChange(of: appLock.state.phase) { phase in
                 if phase == .background {
-                    openSetupAfterAuthentication = false
-                    pinAction = nil
-                    showSetPIN = false
+                    // A protected background scene must not leave a sheet dismissal
+                    // animation waiting behind the separate app-lock window.
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        openSetupAfterAuthentication = false
+                        pinAction = nil
+                        showSetPIN = false
+                    }
                 }
             }
             .sheet(isPresented: $showSetPIN, onDismiss: appLock.cancelPINChange) {
