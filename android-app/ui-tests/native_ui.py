@@ -61,6 +61,7 @@ class Ui:
         return n
 
     def tap(self, label):
+        self.root = None  # Insets/restored navigation can change after a prior dump.
         self.dump()
         n = self.clickable(self.node(label))
         assert n.get('enabled') == 'true', f'Disabled: {label}'
@@ -95,23 +96,42 @@ class Ui:
     def scroll(self, down=True):
         self.dump()
         scrolls = [n for n in self.root.iter('node')
-                   if n.get('scrollable') == 'true' and n.get('package') == PACKAGE]
-        assert scrolls, 'No scrollable viewport'
+                   if n.get('scrollable') == 'true' and n.get('package') == PACKAGE
+                   and n.get('class') != 'android.widget.EditText']
+        if not scrolls:
+            return False  # Content already fits; Compose exposes no scroll action.
         n = max(scrolls, key=lambda n: bounds(n)[3]-bounds(n)[1])
         x1,y1,x2,y2 = bounds(n)
-        x = (x1+x2)//2
-        high,low = int(y1+(y2-y1)*.2),int(y1+(y2-y1)*.8)
+        windows = adb('shell','dumpsys','window','displays').decode()
+        ime_tops = re.findall(r'type=ime.*?frame=\[\d+,(\d+)\]\[\d+,\d+\].*?visible=true', windows)
+        y2 = min([y2] + [int(y) for y in ime_tops])
+        if y2-y1 < 80 or x2 <= x1:
+            return False  # Never turn a clipped/zero-length swipe into a tap.
+        # Stay in the scroll container's gutter, away from child action centers.
+        x = x1+min(32,(x2-x1)//4)
+        high,low = int(y1+(y2-y1)*.5),int(y1+(y2-y1)*.9)
         start,end = (low,high) if down else (high,low)
-        adb('shell','input','swipe',str(x),str(start),str(x),str(end),'350')
+        print(json.dumps({'scroll_node':bounds(n), 'gesture_viewport':[x1,y1,x2,y2],
+                          'swipe':[x,start,x,end]}), flush=True)
+        adb('shell','input','swipe',str(x),str(start),str(x),str(end),'650')
         self.root = None
+        time.sleep(.5)
         self.dump()
+        return True
 
     def find(self, label, down=True, attempts=15):
         self.dump()
         for _ in range(attempts):
             if self.nodes(label):
                 return self.node(label)
-            self.scroll(down)
+            previous = [(n.get('text'), n.get('content-desc'), n.get('bounds'))
+                        for n in self.root.iter('node') if n.get('package') == PACKAGE]
+            if not self.scroll(down):
+                break
+            current = [(n.get('text'), n.get('content-desc'), n.get('bounds'))
+                       for n in self.root.iter('node') if n.get('package') == PACKAGE]
+            if previous == current:
+                break  # Report an unreachable target instead of repeating unchanged swipes.
         raise AssertionError('Could not scroll to '+label)
 
     def bottom(self):
@@ -132,8 +152,9 @@ class Ui:
         nav_top = min((bounds(n)[1] for n in tabs), default=10000)
         ime = adb('shell','dumpsys','input_method').decode()
         keyboard = 'mInputShown=true' in ime
-        windows = adb('shell','dumpsys','window','windows').decode()
+        windows = adb('shell','dumpsys','window','displays').decode()
         ime_bounds = re.findall(r'type=ime.*?frame=\[\d+,(\d+)\]\[\d+,\d+\].*?visible=true', windows)
+        assert not keyboard or ime_bounds, 'Missing visible IME frame'
         ceiling = min([nav_top]+[int(y) for y in ime_bounds]) if keyboard else nav_top
         for label in labels:
             n = self.clickable(self.node(label))
@@ -148,11 +169,20 @@ class Ui:
             n = self.parents[n]
         assert n.get('selected') == 'true', f'{label} tab lost'
 
+    def select_tab(self, label):
+        """Establish a starting tab; flow assertions still use selected_tab/content."""
+        self.dump()
+        n = self.node(label)
+        while n.get('selected') != 'true' and n in self.parents:
+            n = self.parents[n]
+        if n.get('selected') != 'true':
+            self.tap(label)
+
     def launch(self):
         adb('shell','am','force-stop',PACKAGE)
-        adb('shell','am','start','-n',PACKAGE+'/.MainActivity')
+        adb('shell','am','start','-W','-n',PACKAGE+'/.MainActivity')
         self.root = None
-        time.sleep(1)
+        time.sleep(2)  # Let the first Compose frame settle after activity launch.
         self.dump()
 
     def summary(self):

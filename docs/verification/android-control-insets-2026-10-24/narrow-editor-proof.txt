@@ -1,0 +1,153 @@
+Implementation: b04ce63df748e0e754d94456a87c52d66479d050
+Device: API35, 840x1800 at 420dpi (320x686dp), font 1.5, gesture navigation.
+Physical taps use fresh UIAutomator touch-target centers; footer assertions use the live IME frame.
+The initial Rule keyboard-scroll attempt opened a Delete confirmation. Keep it dismissed it;
+no deletion was confirmed. Bounded swipes through the observed editor gutter then reached
+fully visible Save/Cancel targets with the keyboard still shown, and Save returned to Rules.
+The subsequent New block rule center tap used the Rules-list button [63,1353][777,1479].
+Sleep navigation initially found a Rule editor after center/350ms scrolling. An observed Cancel
+returned to the captured list. Fast gutter swipes later stopped moving the list. A short
+650ms drag moved the Sleep heading from y1379 to y1066 and exposed Sleep mode. Further
+navigation used controlled short drags with stable-position detection, and action
+destinations required a unique list marker plus absence of every editor Save control.
+The same saved rule remained present after cancellation.
+An Android System UI ANR interrupted the reopened Sleep Save case. Wait did not clear it;
+Close app recovered the editor, then the saved state was restored and the shared slot released.
+Only the remaining Sleep Save and App-limit cases were resumed after emulator recovery.
+App-limit input was explicitly set to 45; reopening asserted the actual EditText value.
+This is a curated action/assertion trace; the full raw transcript remains outside the repository.
+
+EDITOR_CONFIG {"font_scale": "1.5", "size": "Physical size: 1080x2400\nOverride size: 840x1800"}
+{"tap": "Rules", "bounds": [241, 1527, 419, 1695], "center": [330, 1611]}
+{"tap": "New block rule", "bounds": [126, 1383, 714, 1509], "center": [420, 1446]}
+{"header": "New block rule", "top": 165, "status_bar_bottom": 102}
+CAPTURE narrow-editor-rule-header
+{"tap": "Rule name", "bounds": [63, 361, 777, 568], "center": [420, 464]}
+{"tap": "Choose apps", "bounds": [105, 839, 735, 965], "center": [420, 902]}
+{"tap": "Search apps", "bounds": [63, 438, 777, 613], "center": [420, 525]}
+{"tap": "Chrome", "bounds": [63, 539, 777, 700], "center": [420, 619]}
+{"visible_control": "Add \u00b7 1", "bounds": [456, 847, 777, 973], "ceiling": 1057, "keyboard": true}
+{"visible_control": "Cancel", "bounds": [525, 721, 777, 847], "ceiling": 1057, "keyboard": true}
+CAPTURE narrow-editor-rule-picker-ime
+{"tap": "Add \u00b7 1", "bounds": [456, 847, 777, 973], "center": [616, 910]}
+{"visible_control": "Save rule", "bounds": [63, 1149, 777, 1275], "ceiling": 1527, "keyboard": false}
+{"visible_control": "Cancel", "bounds": [63, 1296, 777, 1422], "ceiling": 1527, "keyboard": false}
+CAPTURE narrow-editor-rule-bottom
+{"tap": "Save rule", "bounds": [63, 1149, 777, 1275], "center": [420, 1212]}
+{"tap": "F1-narrow", "bounds": [63, 757, 777, 1321], "center": [420, 1039]}
+{"tap": "Rule name", "bounds": [63, 361, 777, 568], "center": [420, 464]}
+{"tap": "Keep it", "bounds": [264, 1043, 517, 1169], "center": [390, 1106]}
+OBSERVED_RULE_GUTTER_SWIPE {"bounds": [0, 102, 840, 1057], "swipe": [32, 866, 32, 293]}
+OBSERVED_RULE_GUTTER_SWIPE {"bounds": [0, 102, 840, 1057], "swipe": [32, 866, 32, 293]}
+OBSERVED_RULE_GUTTER_SWIPE {"bounds": [0, 102, 840, 1057], "swipe": [32, 866, 32, 293]}
+OBSERVED_RULE_GUTTER_SWIPE {"bounds": [0, 102, 840, 1057], "swipe": [32, 866, 32, 293]}
+OBSERVED_RULE_GUTTER_SWIPE {"bounds": [0, 102, 840, 1057], "swipe": [32, 866, 32, 293]}
+OBSERVED_RULE_GUTTER_SWIPE {"bounds": [0, 102, 840, 1057], "swipe": [32, 866, 32, 293]}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1057], "viewport": [0, 102, 840, 1057], "swipe": [32, 961, 32, 197], "duration_ms": 100, "keyboard": true}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1057], "viewport": [0, 102, 840, 1057], "swipe": [32, 961, 32, 197], "duration_ms": 100, "keyboard": true}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1057], "viewport": [0, 102, 840, 1057], "swipe": [32, 961, 32, 197], "duration_ms": 100, "keyboard": true}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1057], "viewport": [0, 102, 840, 1057], "swipe": [32, 961, 32, 197], "duration_ms": 100, "keyboard": true}
+{"visible_control": "Save rule", "bounds": [63, 574, 777, 700], "ceiling": 1057, "keyboard": true}
+{"visible_control": "Cancel", "bounds": [63, 868, 777, 994], "ceiling": 1057, "keyboard": true}
+CAPTURE narrow-editor-rule-bottom-ime
+{"tap": "Save rule", "bounds": [63, 574, 777, 700], "center": [420, 637]}
+{"tap": "New block rule", "bounds": [63, 1353, 777, 1479], "center": [420, 1416]}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 240], "duration_ms": 100, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 240], "duration_ms": 100, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 240], "duration_ms": 100, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 240], "duration_ms": 100, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 240], "duration_ms": 100, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 240], "duration_ms": 100, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 240], "duration_ms": 100, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 240], "duration_ms": 100, "keyboard": false}
+{"visible_control": "Save rule", "bounds": [63, 1149, 777, 1275], "ceiling": 1527, "keyboard": false}
+{"visible_control": "Cancel", "bounds": [63, 1296, 777, 1422], "ceiling": 1527, "keyboard": false}
+{"visible_control": "Save rule", "bounds": [63, 1149, 777, 1275], "ceiling": 1527, "keyboard": false}
+{"visible_control": "Cancel", "bounds": [63, 1296, 777, 1422], "ceiling": 1527, "keyboard": false}
+CAPTURE narrow-editor-rule-cancel
+{"tap": "Cancel", "bounds": [63, 1296, 777, 1422], "center": [420, 1359]}
+PASS rule save + IME save + cancel: F1-narrow
+{"tap": "Rules", "bounds": [241, 1527, 419, 1695], "center": [330, 1611]}
+{"visible_control": "Save rule", "bounds": [63, 1002, 777, 1128], "ceiling": 1527, "keyboard": false}
+{"visible_control": "Cancel", "bounds": [63, 1296, 777, 1422], "ceiling": 1527, "keyboard": false}
+{"tap": "Cancel", "bounds": [63, 1296, 777, 1422], "center": [420, 1359]}
+CAPTURE narrow-editor-rules-overview-after-restored-editor
+RULES_OVERVIEW {"marker": "New block rule", "save_controls_absent": true}
+PASS Rule Cancel destination: unique list marker and Save controls absent
+RULES_OVERVIEW {"marker": "New block rule", "save_controls_absent": true}
+RULES_OVERVIEW {"marker": "New block rule", "save_controls_absent": true}
+OBSERVED_SHORT_LIST_DRAG {"viewport": [0, 102, 840, 1485], "swipe": [32, 1400, 32, 950], "duration_ms": 650}
+{"tap": "Sleep mode", "bounds": [63, 1143, 777, 1527], "center": [420, 1335]}
+{"header": "Sleep mode", "top": 165, "status_bar_bottom": 102}
+CAPTURE narrow-editor-sleep-header
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 793], "duration_ms": 650, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 793], "duration_ms": 650, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 793], "duration_ms": 650, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 793], "duration_ms": 650, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 793], "duration_ms": 650, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 793], "duration_ms": 650, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 793], "duration_ms": 650, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 793], "duration_ms": 650, "keyboard": false}
+{"visible_control": "Save sleep mode", "bounds": [63, 1149, 777, 1275], "ceiling": 1527, "keyboard": false}
+{"visible_control": "Cancel", "bounds": [63, 1296, 777, 1422], "ceiling": 1527, "keyboard": false}
+{"visible_control": "Save sleep mode", "bounds": [63, 1149, 777, 1275], "ceiling": 1527, "keyboard": false}
+{"visible_control": "Cancel", "bounds": [63, 1296, 777, 1422], "ceiling": 1527, "keyboard": false}
+CAPTURE narrow-editor-sleep-bottom
+{"tap": "Cancel", "bounds": [63, 1296, 777, 1422], "center": [420, 1359]}
+RULES_OVERVIEW {"marker": "New block rule", "save_controls_absent": true}
+{"tap": "Sleep mode", "bounds": [63, 1381, 777, 1527], "center": [420, 1454]}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 793], "duration_ms": 650, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 793], "duration_ms": 650, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 793], "duration_ms": 650, "keyboard": false}
+{"tap": "Wait", "bounds": [42, 1062, 798, 1188], "center": [420, 1125]}
+{"tap": "Close app", "bounds": [42, 936, 798, 1062], "center": [420, 999]}
+NARROW_EDITOR_INTERRUPTED_BY_SYSTEM_UI_ANR; remaining Sleep Save and App-limit
+RESTORED {"private_files_identical": true, "font_scale": "1.0", "size": "Physical size: 1080x2400", "show_ime_with_hard_keyboard": "1", "accessibility_enabled": "0"}
+EDITOR_CONFIG {"font_scale": "1.5", "size": "Physical size: 1080x2400\nOverride size: 840x1800", "phase": "remaining cases after cold boot"}
+{"tap": "Rules", "bounds": [241, 1527, 419, 1695], "center": [330, 1611]}
+RULES_OVERVIEW {"marker": "New block rule", "save_controls_absent": true}
+NAVIGATION_TITLE_TAP {"label": "Sleep mode", "bounds": [105, 1368, 422, 1446], "center": [263, 1407]}
+{"header": "Sleep mode", "top": 165, "status_bar_bottom": 102}
+CAPTURE narrow-editor-sleep-save-header
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 793], "duration_ms": 650, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 793], "duration_ms": 650, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 793], "duration_ms": 650, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 793], "duration_ms": 650, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 793], "duration_ms": 650, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 793], "duration_ms": 650, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 793], "duration_ms": 650, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 793], "duration_ms": 650, "keyboard": false}
+{"visible_control": "Save sleep mode", "bounds": [63, 1149, 777, 1275], "ceiling": 1527, "keyboard": false}
+{"visible_control": "Cancel", "bounds": [63, 1296, 777, 1422], "ceiling": 1527, "keyboard": false}
+CAPTURE narrow-editor-sleep-bottom-save
+{"tap": "Save sleep mode", "bounds": [63, 1149, 777, 1275], "center": [420, 1212]}
+RULES_OVERVIEW {"marker": "New app limit", "save_controls_absent": true}
+PASS sleep save (Cancel verified before recovery)
+NAVIGATION_TITLE_TAP {"label": "New app limit", "bounds": [236, 1320, 605, 1398], "center": [420, 1359]}
+NAVIGATION_TITLE_TAP {"label": "Contacts", "bounds": [221, 1143, 464, 1221], "center": [342, 1182]}
+{"header": "App limits", "top": 165, "status_bar_bottom": 102}
+CAPTURE narrow-editor-limit-header
+NAVIGATION_TITLE_TAP {"label": "Daily time limit", "bounds": [105, 773, 503, 851], "center": [304, 812]}
+NAVIGATION_TITLE_TAP {"label": "Minutes per day", "bounds": [147, 1091, 578, 1182], "center": [362, 1136]}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1157], "viewport": [0, 102, 840, 1157], "swipe": [32, 1051, 32, 629], "duration_ms": 650, "keyboard": true}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1157], "viewport": [0, 102, 840, 1157], "swipe": [32, 1051, 32, 629], "duration_ms": 650, "keyboard": true}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1157], "viewport": [0, 102, 840, 1157], "swipe": [32, 1051, 32, 629], "duration_ms": 650, "keyboard": true}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1157], "viewport": [0, 102, 840, 1157], "swipe": [32, 1051, 32, 629], "duration_ms": 650, "keyboard": true}
+{"visible_control": "Save limits", "bounds": [63, 821, 777, 947], "ceiling": 1157, "keyboard": true}
+{"visible_control": "Cancel", "bounds": [63, 968, 777, 1094], "ceiling": 1157, "keyboard": true}
+CAPTURE narrow-editor-limit-bottom-ime
+{"tap": "Save limits", "bounds": [63, 821, 777, 947], "center": [420, 884]}
+RULES_OVERVIEW {"marker": "New app limit", "save_controls_absent": true}
+NAVIGATION_TITLE_TAP {"label": "Contacts", "bounds": [105, 988, 349, 1066], "center": [227, 1027]}
+CAPTURE narrow-editor-limit-saved-value
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 793], "duration_ms": 650, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 793], "duration_ms": 650, "keyboard": false}
+OBSERVED_EDITOR_SWIPE {"bounds": [0, 102, 840, 1485], "viewport": [0, 102, 840, 1485], "swipe": [32, 1346, 32, 793], "duration_ms": 650, "keyboard": false}
+{"visible_control": "Save limits", "bounds": [63, 1002, 777, 1128], "ceiling": 1527, "keyboard": false}
+{"visible_control": "Cancel", "bounds": [63, 1296, 777, 1422], "ceiling": 1527, "keyboard": false}
+CAPTURE narrow-editor-limit-bottom
+{"tap": "Cancel", "bounds": [63, 1296, 777, 1422], "center": [420, 1359]}
+RULES_OVERVIEW {"marker": "New app limit", "save_controls_absent": true}
+PASS app limit valid 45m keyboard save + reopen + cancel: Contacts
+NARROW_EDITOR_MATRIX_PASS
+RESTORED {"private_files_identical": true, "font_scale": "1.0", "size": "Physical size: 1080x2400", "show_ime_with_hard_keyboard": "1", "accessibility_enabled": "0"}

@@ -23,5 +23,19 @@
     "font_scale": "1.0",
     "size": "1080x2400",
     "accessibility_enabled": "0"
-  }
+  },
+  "large_narrow_picker_source": "b04ce63df748e0e754d94456a87c52d66479d050",
+  "normal_editor_source": "b04ce63df748e0e754d94456a87c52d66479d050",
+  "latest_sequence_cleanup": {
+    "private_files_identical": true,
+    "font_scale": "1.0",
+    "size": "Physical size: 1080x2400",
+    "show_ime_with_hard_keyboard": "1",
+    "accessibility_enabled": "0"
+  },
+  "pending_ui_checks": [],
+  "f7_evidence_head": "50db304c60c9f3661e04a15d89db16d978eb27e9",
+  "f7_evidence_merge": "a9f666ef9b882bdca105ebd24b9cbb8447bb5b1c",
+  "narrow_editor_source": "b04ce63df748e0e754d94456a87c52d66479d050",
+  "ui_acceptance_complete": true
 }

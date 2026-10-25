@@ -16,12 +16,17 @@ from native_ui import Ui, adb, SERIAL, PACKAGE
 def picker_case(ui, name, keyboard):
     ui.prefix = name
     ui.launch()
+    ui.select_tab('Today')
+    ui.node('YOUR NEXT SESSION')
     ui.tap('Start focus')
     ui.find('Choose what rests')
     ui.tap('Choose what rests')
     if keyboard:
         ui.tap('Search apps')
         ui.text('Chrome')
+        # The filtered result is the last item. Scroll it fully above the footer
+        # even when large text and the IME leave only a short list viewport.
+        ui.scroll()
     ui.find('Chrome')
     ui.tap('Chrome')
     if ui.nodes('What rests'):

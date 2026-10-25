@@ -1,0 +1,57 @@
+ERROR: null root node returned by UiTestAutomationBridge.
+{"tap": "Start focus", "bounds": [63, 1906, 1017, 2053], "center": [540, 1979]}
+{"tap": "Choose what rests", "bounds": [63, 860, 1017, 1154], "center": [540, 1007]}
+{"tap": "Chrome", "bounds": [63, 1083, 1017, 1271], "center": [540, 1177]}
+{"visible_control": "Add \u00b7 1", "bounds": [696, 1875, 1017, 2001], "ceiling": 2127, "keyboard": false}
+{"visible_control": "Cancel", "bounds": [423, 1875, 675, 2001], "ceiling": 2127, "keyboard": false}
+CAPTURE large-selected
+{"tap": "Add \u00b7 1", "bounds": [696, 1875, 1017, 2001], "center": [856, 1938]}
+ERROR: null root node returned by UiTestAutomationBridge.
+CAPTURE large-confirmed
+{"tap": "Block 1 app", "bounds": [63, 936, 1017, 1153], "center": [540, 1044]}
+{"tap": "Chrome", "bounds": [63, 1083, 1017, 1271], "center": [540, 1177]}
+{"tap": "Cancel", "bounds": [423, 1875, 675, 2001], "center": [549, 1938]}
+{"tap": "Block 1 app", "bounds": [63, 936, 1017, 1153], "center": [540, 1044]}
+{"tap": "Chrome", "bounds": [63, 1083, 1017, 1271], "center": [540, 1177]}
+{"tap": "Close", "bounds": [896, 272, 1022, 398], "center": [959, 335]}
+{"case": "large", "passed": true}
+ERROR: null root node returned by UiTestAutomationBridge.
+{"tap": "Start focus", "bounds": [63, 1906, 1017, 2053], "center": [540, 1979]}
+{"tap": "Choose what rests", "bounds": [63, 860, 1017, 1154], "center": [540, 1007]}
+{"tap": "Search apps", "bounds": [63, 374, 1017, 549], "center": [540, 461]}
+{"tap": "Chrome", "bounds": [63, 707, 1017, 895], "center": [540, 801]}
+{"visible_control": "Add \u00b7 1", "bounds": [696, 1307, 1017, 1433], "ceiling": 2127, "keyboard": true}
+{"visible_control": "Cancel", "bounds": [423, 1307, 675, 1433], "ceiling": 2127, "keyboard": true}
+CAPTURE large-ime-selected
+{"tap": "Add \u00b7 1", "bounds": [696, 1307, 1017, 1433], "center": [856, 1370]}
+CAPTURE large-ime-confirmed
+{"tap": "Close", "bounds": [896, 196, 1022, 322], "center": [959, 259]}
+{"case": "large-ime", "passed": true}
+{"tap": "Start focus", "bounds": [63, 1410, 777, 1527], "center": [420, 1468]}
+{"tap": "Choose what rests", "bounds": [63, 826, 777, 1120], "center": [420, 973]}
+{"tap": "Chrome", "bounds": [63, 1049, 777, 1128], "center": [420, 1088]}
+{"visible_control": "Add \u00b7 1", "bounds": [456, 1275, 777, 1401], "ceiling": 1527, "keyboard": false}
+{"visible_control": "Cancel", "bounds": [525, 1149, 777, 1275], "ceiling": 1527, "keyboard": false}
+CAPTURE narrow-large-selected
+{"tap": "Add \u00b7 1", "bounds": [456, 1275, 777, 1401], "center": [616, 1338]}
+CAPTURE narrow-large-confirmed
+{"tap": "Block 1 app", "bounds": [63, 826, 777, 1043], "center": [420, 934]}
+{"tap": "Chrome", "bounds": [63, 1049, 777, 1128], "center": [420, 1088]}
+{"tap": "Cancel", "bounds": [525, 1149, 777, 1275], "center": [651, 1212]}
+{"tap": "Block 1 app", "bounds": [63, 826, 777, 1043], "center": [420, 934]}
+{"tap": "Chrome", "bounds": [63, 1049, 777, 1128], "center": [420, 1088]}
+{"tap": "Close", "bounds": [656, 162, 782, 288], "center": [719, 225]}
+{"case": "narrow-large", "passed": true}
+ERROR: null root node returned by UiTestAutomationBridge.
+ERROR: null root node returned by UiTestAutomationBridge.
+{"tap": "Start focus", "bounds": [63, 1410, 777, 1527], "center": [420, 1468]}
+{"tap": "Choose what rests", "bounds": [63, 826, 777, 1120], "center": [420, 973]}
+{"tap": "Search apps", "bounds": [63, 340, 777, 515], "center": [420, 427]}
+{"tap": "Chrome", "bounds": [63, 673, 777, 700], "center": [420, 686]}
+{"visible_control": "Add \u00b7 1", "bounds": [456, 847, 777, 973], "ceiling": 1527, "keyboard": true}
+{"visible_control": "Cancel", "bounds": [525, 721, 777, 847], "ceiling": 1527, "keyboard": true}
+CAPTURE narrow-large-ime-selected
+{"tap": "Add \u00b7 1", "bounds": [456, 847, 777, 973], "center": [616, 910]}
+CAPTURE narrow-large-ime-confirmed
+{"tap": "Close", "bounds": [656, 162, 782, 288], "center": [719, 225]}
+{"case": "narrow-large-ime", "passed": true}
