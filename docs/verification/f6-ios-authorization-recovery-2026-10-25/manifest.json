@@ -1,0 +1,450 @@
+{
+  "productCommit": "c264440100d60fe767825c3f446c49c3c9c67fd5",
+  "F5ProductCommit": "d4b52f2028254e4f5f7537e8ee57edc8aec187fc",
+  "visualReview": "accepted-for-F6-scope",
+  "reportFixtureVisualReview": "passed-all-six",
+  "device": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+  "deviceModel": "iPhone 18 Pro",
+  "OS": "iOS 27.0",
+  "resultBundles": {
+    "gate": "/tmp/flint-fixes-20261024/F6/review-followup-2026-10-25/01/gate.xcresult",
+    "largeInitial": "/tmp/flint-fixes-20261024/F6/review-followup-2026-10-25/01/large.xcresult",
+    "largeDenied": "/tmp/flint-fixes-20261024/F6/review-followup-2026-10-25/02/large.xcresult",
+    "ax5": "/tmp/flint-fixes-20261024/F6/review-followup-2026-10-25/02/accessibility-extra-extra-extra-large.xcresult"
+  },
+  "runs": {
+    "initial": "/tmp/flint-fixes-20261024/F6/review-followup-2026-10-25/01",
+    "targeted-and-AX5": "/tmp/flint-fixes-20261024/F6/review-followup-2026-10-25/02"
+  },
+  "binarySHA256": {
+    "Flint": "db08ae48dd70db00e44e9ba6773e2cec3dc12f25cd76fa79778e2edb72a187bc",
+    "Flint.debug.dylib": "a9f208fc5548fa1eca5a7fcda4c3314328f716900d0d692aad5c5866fa9ea995"
+  },
+  "binaryMatchVerifiedInSecondRun": true,
+  "gateToolchain": "Xcode 27.0\nBuild version 27A266a",
+  "largeCoverage": "Three unchanged passing cases retained from initial bundle; only denied case rerun after Settings title assertion correction.",
+  "SettingsDestination": "Native Settings root on this temporary Simulator; no permission switch or real access change verified.",
+  "fixtureBoundary": "DEBUG-only UI/model authorization state; no real grants, denials, revocations or Settings writes.",
+  "visualLimitations": [
+    "Known shared floating tab bar truncates its labels at AX5 and partially overlays Check access again / Stop waiting at some captured scroll positions. Controls were reachable and activated. F4 must verify the integrated safe-area layout."
+  ],
+  "runnerPostamble": {
+    "sequenceExit": 127,
+    "afterTestCommandsSucceeded": true,
+    "message": "-u: command not found",
+    "cause": "Temporary runner was edited while its Bash process was active, disrupting the final date -u shell read.",
+    "cleanupVerified": true,
+    "testResultsPreserved": true
+  },
+  "results": {
+    "gate": {
+      "devicesAndConfigurations": [
+        {
+          "device": {
+            "architecture": "arm64",
+            "deviceId": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+            "deviceName": "Flint Review Followup 20261025",
+            "modelName": "iPhone 18 Pro",
+            "osBuildNumber": "24A434",
+            "osVersion": "27.0",
+            "platform": "iOS Simulator"
+          },
+          "expectedFailures": 0,
+          "failedTests": 0,
+          "passedTests": 82,
+          "skippedTests": 0,
+          "testPlanConfiguration": {
+            "configurationId": "1",
+            "configurationName": "Test Scheme Action"
+          }
+        }
+      ],
+      "environmentDescription": "Flint \u00b7 Built with macOS 27.0.1",
+      "expectedFailures": 0,
+      "failedTests": 0,
+      "finishTime": 1792921241.562,
+      "passedTests": 82,
+      "result": "Passed",
+      "runtimeWarnings": [],
+      "skippedTests": 0,
+      "startTime": 1792921220.545,
+      "statistics": [],
+      "testFailures": [],
+      "title": "Test - Flint",
+      "topInsights": [
+        {
+          "category": "Longest Test Runs",
+          "impact": "94% of duration",
+          "text": "1 longest test run with outlier durations exceeding 0.61s (three standard deviations)"
+        }
+      ],
+      "totalTestCount": 82
+    },
+    "largeInitial": {
+      "devicesAndConfigurations": [
+        {
+          "device": {
+            "architecture": "arm64",
+            "deviceId": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+            "deviceName": "Flint Review Followup 20261025",
+            "modelName": "iPhone 18 Pro",
+            "osBuildNumber": "24A434",
+            "osVersion": "27.0",
+            "platform": "iOS Simulator"
+          },
+          "expectedFailures": 0,
+          "failedTests": 1,
+          "passedTests": 3,
+          "skippedTests": 0,
+          "testPlanConfiguration": {
+            "configurationId": "1",
+            "configurationName": "Test Scheme Action"
+          }
+        }
+      ],
+      "environmentDescription": "FlintF6AuthorizationUI \u00b7 Built with macOS 27.0.1",
+      "expectedFailures": 0,
+      "failedTests": 1,
+      "finishTime": 1792921355.433,
+      "passedTests": 3,
+      "result": "Failed",
+      "runtimeWarnings": [],
+      "skippedTests": 0,
+      "startTime": 1792921245.718,
+      "statistics": [],
+      "testFailures": [
+        {
+          "failureText": "XCTAssertTrue failed",
+          "targetName": "FlintF6AuthorizationUITests",
+          "testIdentifier": 1,
+          "testIdentifierString": "InsightsAuthorizationUITests/testDeniedUsesSettingsAndOneRecheckForBothRangesAndResume()",
+          "testIdentifierURL": "test://com.apple.xcode/FlintF6AuthorizationUI/FlintF6AuthorizationUITests/InsightsAuthorizationUITests/testDeniedUsesSettingsAndOneRecheckForBothRangesAndResume",
+          "testName": "testDeniedUsesSettingsAndOneRecheckForBothRangesAndResume()"
+        }
+      ],
+      "title": "Test - FlintF6AuthorizationUI",
+      "topInsights": [],
+      "totalTestCount": 4
+    },
+    "largeDenied": {
+      "devicesAndConfigurations": [
+        {
+          "device": {
+            "architecture": "arm64",
+            "deviceId": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+            "deviceName": "Flint Review Followup 20261025",
+            "modelName": "iPhone 18 Pro",
+            "osBuildNumber": "24A434",
+            "osVersion": "27.0",
+            "platform": "iOS Simulator"
+          },
+          "expectedFailures": 0,
+          "failedTests": 0,
+          "passedTests": 1,
+          "skippedTests": 0,
+          "testPlanConfiguration": {
+            "configurationId": "1",
+            "configurationName": "Test Scheme Action"
+          }
+        }
+      ],
+      "environmentDescription": "FlintF6AuthorizationUI \u00b7 Built with macOS 27.0.1",
+      "expectedFailures": 0,
+      "failedTests": 0,
+      "finishTime": 1792921846.365,
+      "passedTests": 1,
+      "result": "Passed",
+      "runtimeWarnings": [],
+      "skippedTests": 0,
+      "startTime": 1792921810.403,
+      "statistics": [],
+      "testFailures": [],
+      "title": "Test - FlintF6AuthorizationUI",
+      "topInsights": [],
+      "totalTestCount": 1
+    },
+    "ax5": {
+      "devicesAndConfigurations": [
+        {
+          "device": {
+            "architecture": "arm64",
+            "deviceId": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+            "deviceName": "Flint Review Followup 20261025",
+            "modelName": "iPhone 18 Pro",
+            "osBuildNumber": "24A434",
+            "osVersion": "27.0",
+            "platform": "iOS Simulator"
+          },
+          "expectedFailures": 0,
+          "failedTests": 0,
+          "passedTests": 4,
+          "skippedTests": 0,
+          "testPlanConfiguration": {
+            "configurationId": "1",
+            "configurationName": "Test Scheme Action"
+          }
+        }
+      ],
+      "environmentDescription": "FlintF6AuthorizationUI \u00b7 Built with macOS 27.0.1",
+      "expectedFailures": 0,
+      "failedTests": 0,
+      "finishTime": 1792921989.759,
+      "passedTests": 4,
+      "result": "Passed",
+      "runtimeWarnings": [],
+      "skippedTests": 0,
+      "startTime": 1792921848.984,
+      "statistics": [],
+      "testFailures": [],
+      "title": "Test - FlintF6AuthorizationUI",
+      "topInsights": [],
+      "totalTestCount": 4
+    }
+  },
+  "acceptedNativeTestCases": [
+    {
+      "textSize": "large",
+      "testIdentifier": "InsightsAuthorizationUITests/testStopWaitingReleasesPendingRequestAndAllowsRecovery()",
+      "result": "Passed",
+      "resultBundle": "/tmp/flint-fixes-20261024/F6/review-followup-2026-10-25/01/large.xcresult",
+      "durationInSeconds": 21.70168900489807,
+      "harnessSHA256": "a2a7a6f695b6f9cd3b94c06e693d8ef7eaa426ce9ed64aa10074d1b0ab6819bc",
+      "caseSourceSHA256": "030eb56d4edffe45e4f9e4ecece0980d54e1fd6279dd0ea6d57c0c3fb3c7780d",
+      "sharedHelpersSHA256": "5ba68c7b449067ffa767b7e2a56c667fb558c5286bd415cad1d3592552a8fabf",
+      "productCommit": "c264440100d60fe767825c3f446c49c3c9c67fd5"
+    },
+    {
+      "textSize": "large",
+      "testIdentifier": "InsightsAuthorizationUITests/testTimeoutReleasesPendingRequestAndAllowsRetry()",
+      "result": "Passed",
+      "resultBundle": "/tmp/flint-fixes-20261024/F6/review-followup-2026-10-25/01/large.xcresult",
+      "durationInSeconds": 22.207471013069153,
+      "harnessSHA256": "a2a7a6f695b6f9cd3b94c06e693d8ef7eaa426ce9ed64aa10074d1b0ab6819bc",
+      "caseSourceSHA256": "1f6651445cacc971ce9f3ab9d515351a901d885996845b8c4fa1f02f7e56e044",
+      "sharedHelpersSHA256": "5ba68c7b449067ffa767b7e2a56c667fb558c5286bd415cad1d3592552a8fabf",
+      "productCommit": "c264440100d60fe767825c3f446c49c3c9c67fd5"
+    },
+    {
+      "textSize": "large",
+      "testIdentifier": "InsightsAuthorizationUITests/testTransientFailureRetriesAndKeepsSelectedRange()",
+      "result": "Passed",
+      "resultBundle": "/tmp/flint-fixes-20261024/F6/review-followup-2026-10-25/01/large.xcresult",
+      "durationInSeconds": 21.488232016563416,
+      "harnessSHA256": "a2a7a6f695b6f9cd3b94c06e693d8ef7eaa426ce9ed64aa10074d1b0ab6819bc",
+      "caseSourceSHA256": "8f9a2e832fab6be4166bd992a50b74dc898891ffc5f80d81a98a7da16f29c5a1",
+      "sharedHelpersSHA256": "5ba68c7b449067ffa767b7e2a56c667fb558c5286bd415cad1d3592552a8fabf",
+      "productCommit": "c264440100d60fe767825c3f446c49c3c9c67fd5"
+    },
+    {
+      "textSize": "large",
+      "testIdentifier": "InsightsAuthorizationUITests/testDeniedUsesSettingsAndOneRecheckForBothRangesAndResume()",
+      "result": "Passed",
+      "resultBundle": "/tmp/flint-fixes-20261024/F6/review-followup-2026-10-25/02/large.xcresult",
+      "durationInSeconds": 20.85526394844055,
+      "harnessSHA256": "99e606ccbf1cb53c129bdefe07fb3ea837f754df704bc35058e7b5f191ba0731",
+      "caseSourceSHA256": "0440e8a08e4cae06b192647dbf40077f3c906f3cb9cd3848d0edbf87bf7c5072",
+      "sharedHelpersSHA256": "5ba68c7b449067ffa767b7e2a56c667fb558c5286bd415cad1d3592552a8fabf",
+      "productCommit": "c264440100d60fe767825c3f446c49c3c9c67fd5"
+    },
+    {
+      "textSize": "ax5",
+      "testIdentifier": "InsightsAuthorizationUITests/testDeniedUsesSettingsAndOneRecheckForBothRangesAndResume()",
+      "result": "Passed",
+      "resultBundle": "/tmp/flint-fixes-20261024/F6/review-followup-2026-10-25/02/accessibility-extra-extra-extra-large.xcresult",
+      "durationInSeconds": 35.29784297943115,
+      "harnessSHA256": "99e606ccbf1cb53c129bdefe07fb3ea837f754df704bc35058e7b5f191ba0731",
+      "caseSourceSHA256": "0440e8a08e4cae06b192647dbf40077f3c906f3cb9cd3848d0edbf87bf7c5072",
+      "sharedHelpersSHA256": "5ba68c7b449067ffa767b7e2a56c667fb558c5286bd415cad1d3592552a8fabf",
+      "productCommit": "c264440100d60fe767825c3f446c49c3c9c67fd5"
+    },
+    {
+      "textSize": "ax5",
+      "testIdentifier": "InsightsAuthorizationUITests/testStopWaitingReleasesPendingRequestAndAllowsRecovery()",
+      "result": "Passed",
+      "resultBundle": "/tmp/flint-fixes-20261024/F6/review-followup-2026-10-25/02/accessibility-extra-extra-extra-large.xcresult",
+      "durationInSeconds": 39.10440397262573,
+      "harnessSHA256": "99e606ccbf1cb53c129bdefe07fb3ea837f754df704bc35058e7b5f191ba0731",
+      "caseSourceSHA256": "030eb56d4edffe45e4f9e4ecece0980d54e1fd6279dd0ea6d57c0c3fb3c7780d",
+      "sharedHelpersSHA256": "5ba68c7b449067ffa767b7e2a56c667fb558c5286bd415cad1d3592552a8fabf",
+      "productCommit": "c264440100d60fe767825c3f446c49c3c9c67fd5"
+    },
+    {
+      "textSize": "ax5",
+      "testIdentifier": "InsightsAuthorizationUITests/testTimeoutReleasesPendingRequestAndAllowsRetry()",
+      "result": "Passed",
+      "resultBundle": "/tmp/flint-fixes-20261024/F6/review-followup-2026-10-25/02/accessibility-extra-extra-extra-large.xcresult",
+      "durationInSeconds": 27.155866026878357,
+      "harnessSHA256": "99e606ccbf1cb53c129bdefe07fb3ea837f754df704bc35058e7b5f191ba0731",
+      "caseSourceSHA256": "1f6651445cacc971ce9f3ab9d515351a901d885996845b8c4fa1f02f7e56e044",
+      "sharedHelpersSHA256": "5ba68c7b449067ffa767b7e2a56c667fb558c5286bd415cad1d3592552a8fabf",
+      "productCommit": "c264440100d60fe767825c3f446c49c3c9c67fd5"
+    },
+    {
+      "textSize": "ax5",
+      "testIdentifier": "InsightsAuthorizationUITests/testTransientFailureRetriesAndKeepsSelectedRange()",
+      "result": "Passed",
+      "resultBundle": "/tmp/flint-fixes-20261024/F6/review-followup-2026-10-25/02/accessibility-extra-extra-extra-large.xcresult",
+      "durationInSeconds": 22.659942984580994,
+      "harnessSHA256": "99e606ccbf1cb53c129bdefe07fb3ea837f754df704bc35058e7b5f191ba0731",
+      "caseSourceSHA256": "8f9a2e832fab6be4166bd992a50b74dc898891ffc5f80d81a98a7da16f29c5a1",
+      "sharedHelpersSHA256": "5ba68c7b449067ffa767b7e2a56c667fb558c5286bd415cad1d3592552a8fabf",
+      "productCommit": "c264440100d60fe767825c3f446c49c3c9c67fd5"
+    }
+  ],
+  "harnessCorrectionDiff": "--- initial\n+++ corrected\n@@ -93,8 +93,10 @@\n \n         let settings = XCUIApplication(bundleIdentifier: \"com.apple.Preferences\")\n         XCTAssertTrue(settings.wait(for: .runningForeground, timeout: 5))\n-        XCTAssertTrue(settings.navigationBars[\"Flint\"].waitForExistence(timeout: 5) || settings.staticTexts[\"Flint\"].exists)\n-        snapshot(\"05-flint-settings-destination\", application: settings)\n+        // This Simulator opens Settings' root page. Record the actual destination;\n+        // opening Settings does not prove a Flint permission switch is available.\n+        XCTAssertTrue(settings.navigationBars.firstMatch.waitForExistence(timeout: 5))\n+        snapshot(\"05-settings-destination\", application: settings)\n         // Observe the destination only; do not change switches or other Settings values.\n         app.activate()\n         XCTAssertTrue(settingsAction.waitForExistence(timeout: 5))\n",
+  "cleanup": {
+    "initial": {
+      "PINBaseline": {
+        "device": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+        "checks": {
+          "initial": {
+            "PINPresent": false,
+            "checkedAt": "2026-10-25T09:39:42.273479+00:00",
+            "preferenceFilesFound": 1
+          },
+          "installed": {
+            "PINPresent": false,
+            "checkedAt": "2026-10-25T09:40:42.749209+00:00",
+            "preferenceFilesFound": 1
+          },
+          "final": {
+            "PINPresent": false,
+            "checkedAt": "2026-10-25T09:42:37.752915+00:00",
+            "preferenceFilesFound": 1
+          }
+        }
+      },
+      "cleanup": {
+        "sequenceExit": 65,
+        "restoreLargeExit": 0,
+        "normalLaunchExit": 0,
+        "readbackExit": 0,
+        "PINCheckExit": 0,
+        "finalContentSize": "large",
+        "fixtureLaunchStateCleared": true
+      }
+    },
+    "targeted-and-AX5": {
+      "PINBaseline": {
+        "device": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+        "checks": {
+          "initial": {
+            "PINPresent": false,
+            "checkedAt": "2026-10-25T09:50:02.525176+00:00",
+            "preferenceFilesFound": 1
+          },
+          "installed": {
+            "PINPresent": false,
+            "checkedAt": "2026-10-25T09:50:06.237909+00:00",
+            "preferenceFilesFound": 1
+          },
+          "final": {
+            "PINPresent": false,
+            "checkedAt": "2026-10-25T09:53:13.789177+00:00",
+            "preferenceFilesFound": 1
+          }
+        }
+      },
+      "cleanup": {
+        "sequenceExit": 127,
+        "restoreLargeExit": 0,
+        "normalLaunchExit": 0,
+        "readbackExit": 0,
+        "PINCheckExit": 0,
+        "finalContentSize": "large",
+        "fixtureLaunchStateCleared": true
+      }
+    }
+  },
+  "screenshotsSHA256": {
+    "ax5-01-denied-week.png": "352860b18d4541ec060c9eee58276eee39ed96d66b08772a2974b7f3b69a084f",
+    "ax5-02-denied-today.png": "3caa97bcc8fded0011b6728bd0e2e5e59a681fa27df14f275e7422ca56ccb5c7",
+    "ax5-03-denied-guidance.png": "c3f2b9e19a542310ca7e0f1b338ba98fcc61a523a82a7ceac1d622df7588f2ed",
+    "ax5-04-denied-settings-action.png": "ba34467a2612156103e4d4b2ba3cb095f13ebe89d5fc643cf102f16246861fd6",
+    "ax5-05-settings-destination.png": "941eeab75ce36d27272b03d4a891cb31d24355d68515b11975af75879b3b838d",
+    "ax5-06-denied-after-settings-and-recheck.png": "601bf60505ac69ff8d8c4c2bf553f42eac392cd14722f231c9fbdd9993c5ee25",
+    "ax5-07-denied-week-after-resume.png": "4cd80a16c085e0f7a96d20ad6708fec37c748fed074e16899565f0df4125952c",
+    "ax5-08-transient-error.png": "b42908c1dd08eaee75d3b21d96abf9260f94c986fe32470147c1f88415c4bf40",
+    "ax5-09-transient-retry.png": "5f7377fe56533192b8153a583a5ec25bf3a749f367d17f46fbd5f431b006f9e8",
+    "ax5-10-transient-recovered-today.png": "afbaf93a2f03998f3de311ef0cc5bd9acc9dc43f584fd29f85864ca16c7c3861",
+    "ax5-11-transient-recovered-week.png": "2a003035f27c46a18108d1ce666f841c1460534c5f75551af49c59ec436019dd",
+    "ax5-12-pending-stop-waiting.png": "2e65fe5d5bfe5e67c8a2ad275ec3eaac104845216c802eaeaf0c22d568044be4",
+    "ax5-13-pending-after-resume.png": "2e65fe5d5bfe5e67c8a2ad275ec3eaac104845216c802eaeaf0c22d568044be4",
+    "ax5-14-stopped-without-error.png": "730cd8df21c5b596d194824d0b7fb18938711a8908041f1b8ea423a68e1ea7a6",
+    "ax5-15-recovered-after-stop-waiting.png": "99e47e414c25d58960494779ff98d0273e333ea492179a5e365ef64b6a002c2a",
+    "ax5-16-timeout-guidance.png": "059e02812ad309ec723b03f19d43d519ce5a51a5eddda77e0b03b7546991a6a1",
+    "ax5-17-timeout-retry.png": "d9064c9a32ae075926f90e8d2d00b16f2ae1e334f99f18d836807edb877d3c0e",
+    "ax5-18-recovered-after-timeout.png": "99e47e414c25d58960494779ff98d0273e333ea492179a5e365ef64b6a002c2a",
+    "gate-insights-report-activity-fixture-accessibility5.png": "1ea4ece04f1ec550e278666c3aecfdd78f83f895010e593d254f576bcef050ec",
+    "gate-insights-report-activity-fixture-large.png": "8944ef2feb7474ee41cbf6da468656470bd2b289fca5519dc0faf8d8b04aa158",
+    "gate-insights-report-no-data-accessibility5.png": "e4bd81f2e9c1051d3ccda920b3b8f825663ef717270bfc8130fefc11d2e36bab",
+    "gate-insights-report-no-data-large.png": "853db661190688bbc7896b7e15c9720cce460d2d04a5580ea954ce752bff8ce4",
+    "gate-insights-report-zero-usage-accessibility5.png": "4b736e9df11da80149e289a2fba1197bb4d6e30066d3fcd24779e24eebd7f414",
+    "gate-insights-report-zero-usage-large.png": "bd85a8ce4a84c20ba18783f429ff2deee2646f4e5fc29020835d470895cd39d3",
+    "large-01-denied-week.png": "7a4e5557ddd158f9d340119e9dc228a0ad3264c3b01832ab805f7657bb2eeeea",
+    "large-02-denied-today.png": "aaabf48722fa1e8e8d756d1cd213fc2e8683b8f5d2e13aa6295dea60699d234e",
+    "large-03-denied-guidance.png": "e8d3ca1c7c97ef165d8e5dda5050dcc30077286c0db8720524d0f52091a5867c",
+    "large-04-denied-settings-action.png": "e8d3ca1c7c97ef165d8e5dda5050dcc30077286c0db8720524d0f52091a5867c",
+    "large-05-settings-destination.png": "28d632d0a5c93188950d7a90054f5c997cff0f2d32301a64074885c2eef2d776",
+    "large-06-denied-after-settings-and-recheck.png": "0e9f4de5bcc2d4995183c5cd18edebc83ec63bd2e44e454cf0206510e8c09fce",
+    "large-07-denied-week-after-resume.png": "8dad2cce59e485c7e21da335ce38c164d2d61d8b356f9b692e1e3b088b4b33d9",
+    "large-08-transient-error.png": "70b40004d7818cc785ef669b60fc9854f13f996f89cb3de8a31c52c5e60131ef",
+    "large-09-transient-retry.png": "70b40004d7818cc785ef669b60fc9854f13f996f89cb3de8a31c52c5e60131ef",
+    "large-10-transient-recovered-today.png": "155603881c50c80706a68b6bdbbabde49f99bab0f31042e3d8d2e2907fd133ac",
+    "large-11-transient-recovered-week.png": "936477b5ae47dfbd584dc4c364dec994209695e92a046f3a5d1c3928e5eb712c",
+    "large-12-pending-stop-waiting.png": "d48db8cd13651c69bed3225fa826b3d8c4a3ea024e724e63bd96ca8ce7bb0bde",
+    "large-13-pending-after-resume.png": "997f5e19ab854f9dbe67c8d0a345ff1b1893d803dacbbba8d1b2388fd3ae0ba2",
+    "large-14-stopped-without-error.png": "70b1d67f1f4ab6f399e3a7afd23ef88aaa326be41f5458f7cb3a96b32793b381",
+    "large-15-recovered-after-stop-waiting.png": "34255079b10e098dd76e1915b6c1425638a7cfcf1b2928e7cf607ecff3b52472",
+    "large-16-timeout-guidance.png": "9881dda74cb82356505dc7d50e2658da26f8ed42d3a87b673d5f4e2ba6e7b1e2",
+    "large-17-timeout-retry.png": "9881dda74cb82356505dc7d50e2658da26f8ed42d3a87b673d5f4e2ba6e7b1e2",
+    "large-18-recovered-after-timeout.png": "936477b5ae47dfbd584dc4c364dec994209695e92a046f3a5d1c3928e5eb712c"
+  },
+  "harnessSHA256": {
+    "Tests/InsightsAuthorizationUITests.swift": "99e606ccbf1cb53c129bdefe07fb3ea837f754df704bc35058e7b5f191ba0731",
+    "check_pin_baseline.py": "21dbc759208b0bcbd1559f0aa973628f825b072ec57e3ec6ad126221d4202e77",
+    "destination.mk": "30e0b82a62bf8bc90165583968c60675890610c3b8655f4c04fa9898af8e3511",
+    "initial-failed-attempt/Tests/InsightsAuthorizationUITests.swift": "a2a7a6f695b6f9cd3b94c06e693d8ef7eaa426ce9ed64aa10074d1b0ab6819bc",
+    "initial-failed-attempt/project.yml": "9f8ac1ab5a1cc3f138616898b5254c86680aaed1ff0ec4dafda75e2ce7e698af",
+    "project.yml": "9f8ac1ab5a1cc3f138616898b5254c86680aaed1ff0ec4dafda75e2ce7e698af",
+    "verify.sh": "75805d1054119f5d2623b4bca22ade5c970fcf51afb675cb93a42e4b40daced9"
+  },
+  "sourceFiles": [
+    {
+      "path": "ios-app/Flint/Features/Stats/StatsView.swift",
+      "sha256": "06555975bc3fb1bc23021610231446235bf73098a2fc6f09c06398dcaaadb237"
+    },
+    {
+      "path": "ios-app/Flint/Features/Stats/InsightsState.swift",
+      "sha256": "43f21e5695b58b5cf7910ab93b7a860a0e7635049a93bd691d27b2135285d109"
+    },
+    {
+      "path": "ios-app/Flint/Features/Authorization/AuthorizationControls.swift",
+      "sha256": "16ecc8af8871d4e506caf3bf82424d794090552137589dec6d635836c6a7785f"
+    },
+    {
+      "path": "ios-app/Flint/Features/Authorization/AuthorizationModel.swift",
+      "sha256": "d1de22652594ff26db0f3c389c1447caea63e2cea46b7c9203206307f4e06ea6"
+    },
+    {
+      "path": "ios-app/Flint/Features/Authorization/AuthorizationPreview.swift",
+      "sha256": "ff39bb6d7146d44820afea59f224ed3e13d2f9f87c6ef79bb705e4ceaf7d379f"
+    },
+    {
+      "path": "ios-app/Tests/FlintInsightsTests.swift",
+      "sha256": "eeb5d9d059057e5c6090aef1edec586615c7db49bab4ed64817cd12e2116f44c"
+    },
+    {
+      "path": "ios-app/Extensions/DeviceActivityReportExtension/ActivitySummary.swift",
+      "sha256": "e012161904d79e8aea092b7d7d46386c560735240e2e43f035629549044fe29a"
+    },
+    {
+      "path": "ios-app/Extensions/DeviceActivityReportExtension/TotalActivityView.swift",
+      "sha256": "a7a8cc3b87635e57db25bcff963fa15e96303ad575b9a147fdb22d4b159d6d6b"
+    },
+    {
+      "path": "ios-app/project.yml",
+      "sha256": "03770182f60ef5bb52abe97d75cc9ddfc2706a988f6b84b9418bd31e0236577f"
+    }
+  ]
+}

@@ -17,7 +17,8 @@ class AppPickerSelectionTest {
 
         assertEquals(listOf(chrome), selection.selectedApps(apps))
         assertFalse(selection.hasChanges(initial, apps))
-        assertEquals(2, initial.size) // Unavailable entries remain the caller's responsibility.
+        // Unavailable entries remain the caller's responsibility, not the count's.
+        assertEquals(setOf(chrome.packageName, "uninstalled.app"), selection.packageNames)
     }
 
     @Test fun `pending count follows zero one two one zero without changing the draft`() {
@@ -27,7 +28,7 @@ class AppPickerSelectionTest {
         for ((app, checked) in listOf(chrome to true, camera to true, chrome to false, camera to false)) {
             selection = selection.withSelection(listOf(app.packageName), checked)
             counts += selection.selectedApps(apps).size
-            assertTrue(initial.isEmpty())
+            assertEquals(counts.last(), selection.packageNames.size)
         }
 
         assertEquals(listOf(0, 1, 2, 1, 0), counts)

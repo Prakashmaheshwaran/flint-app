@@ -67,59 +67,62 @@ private struct PermissionsView: View {
             FlintBrand.ground.ignoresSafeArea()
             EmberLandscape(horizonOffset: -224, orbCenter: CGPoint(x: 282, y: 486), orbRadius: 30, showsMist: false)
 
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Setup").flintEyebrow().frame(maxWidth: .infinity, alignment: .trailing).padding(.top, 18)
-                Spacer().frame(height: 240)
-                Text("Let Flint guard\nyour focus.").flintTitle(30)
-                Text("One permission, asked once. You can change it in Settings later.")
-                    .flintSecondary(15)
-                    .lineSpacing(3)
-                    .padding(.top, 12)
+            GeometryReader { geometry in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Setup").flintEyebrow().frame(maxWidth: .infinity, alignment: .trailing).padding(.top, 18)
+                        Spacer().frame(height: 240)
+                        Text("Let Flint guard\nyour focus.").flintTitle(30)
+                        Text("Flint uses Screen Time to rest your apps. You can review access in Settings.")
+                            .flintSecondary(15)
+                            .lineSpacing(3)
+                            .padding(.top, 12)
 
-                HStack(spacing: 14) {
-                    ZStack {
-                        Circle().fill(FlintBrand.ember.opacity(0.14))
-                        Image(systemName: "shield").font(.system(size: 18)).foregroundStyle(FlintBrand.ember)
-                    }
-                    .frame(width: 40, height: 40)
-                    .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Block apps and sites").flintRowTitle()
-                        Text("Uses Screen Time").flintSecondary()
-                    }
-                    Spacer()
-                    Text(auth.status == .approved ? "Allowed" : "Required").flintSecondary()
-                }
-                .frame(minHeight: 68)
-                .overlay(alignment: .top) { FlintHairline(opacity: 0.10) }
-                .overlay(alignment: .bottom) { FlintHairline(opacity: 0.10) }
-                .padding(.top, 26)
-
-                FlintPrivacyNote(text: "Your lists and history stay on this phone. Nothing is uploaded.")
-                    .padding(.top, 14)
-
-                if let error = auth.lastError {
-                    Text(error).font(FlintFont.text(13)).foregroundStyle(FlintBrand.danger).padding(.top, 12)
-                }
-
-                Spacer()
-                VStack(spacing: 6) {
-                    Button("Allow Screen Time") {
-                        Task {
-                            await auth.requestAuthorization()
-                            if auth.status == .approved { onFinish() }
+                        HStack(spacing: 14) {
+                            ZStack {
+                                Circle().fill(FlintBrand.ember.opacity(0.14))
+                                Image(systemName: "shield").font(.system(size: 18)).foregroundStyle(FlintBrand.ember)
+                            }
+                            .frame(width: 40, height: 40)
+                            .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Block apps and sites").flintRowTitle()
+                                Text("Uses Screen Time").flintSecondary()
+                            }
+                            Spacer()
+                            Text(auth.status == .approved ? "Allowed" : "Required").flintSecondary()
                         }
+                        .frame(minHeight: 68)
+                        .overlay(alignment: .top) { FlintHairline(opacity: 0.10) }
+                        .overlay(alignment: .bottom) { FlintHairline(opacity: 0.10) }
+                        .padding(.top, 26)
+
+                        FlintPrivacyNote(text: "Your lists and history stay on this phone. Nothing is uploaded.")
+                            .padding(.top, 14)
+
+                        Spacer(minLength: 24)
+                        VStack(spacing: 6) {
+                            AuthorizationControls(auth: auth, identifierPrefix: "onboarding.authorization", onApproved: onFinish)
+                                .padding(16)
+                                .background(RoundedRectangle(cornerRadius: 24).fill(FlintBrand.ground.opacity(0.94)))
+                            Button(action: onFinish) {
+                                Text("Not now")
+                                    .font(FlintFont.text(14, weight: .medium))
+                                    .foregroundStyle(FlintBrand.mist)
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("onboarding.skip")
+                        }
+                        .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(EmberButtonStyle())
-                    Button("Not now", action: onFinish)
-                        .font(FlintFont.text(14, weight: .medium))
-                        .foregroundStyle(FlintBrand.mist)
-                        .frame(minHeight: 44)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 12)
+                    .frame(minHeight: geometry.size.height)
                 }
-                .frame(maxWidth: .infinity)
+                .clipped()
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 12)
         }
     }
 }

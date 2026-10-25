@@ -1,0 +1,57 @@
+F3-PASS invalid blank, short and overlong input cannot save; cold launch remains unlocked
+F3-PASS clipboard letters, spaces, mixed input and Unicode digits rejected without normalization
+F3-PASS valid 4-digit PIN saves, rejects incorrect PIN, unlocks on cold launch, and is removed
+F3-PASS valid 5-digit PIN saves, rejects incorrect PIN, unlocks on cold launch, and is removed
+F3-PASS valid 6-digit PIN saves, rejects incorrect PIN, unlocks on cold launch, and is removed
+F3-PASS secure setup relocks on background; change/removal require current PIN; cancelled/backgrounded setup loses authorization
+
+f3-seven-digits-rejected-secure
+StaticText, 0x102be0280, {{24.0, 337.8}, {60.0, 19.7}}, label: 'App lock'
+Button, 0x1063bf980, {{319.7, 82.0}, {62.3, 36.0}}, identifier: 'pin.setup.save', label: 'Save', Disabled
+SecureTextField, 0x1063c08c0, {{24.0, 241.7}, {354.0, 58.3}}, identifier: 'pin.setup.new', placeholderValue: 'New PIN', value: •••••••
+SecureTextField, 0x1063c0b40, {{24.0, 346.3}, {354.0, 58.3}}, identifier: 'pin.setup.confirm', placeholderValue: 'Confirm PIN', value: •••••••, Keyboard Focused
+StaticText, 0x1063c0c80, {{24.0, 424.7}, {220.0, 18.3}}, identifier: 'pin.setup.validation', label: 'Use 4–6 digits (0–9), with no spaces.'
+
+f3-invalid-paste-rejected
+StaticText, 0x10f96f340, {{24.0, 337.8}, {60.0, 19.7}}, label: 'App lock'
+Button, 0x10fa01540, {{319.7, 82.0}, {62.3, 36.0}}, identifier: 'pin.setup.save', label: 'Save', Disabled
+SecureTextField, 0x10fa00b40, {{24.0, 241.7}, {354.0, 56.7}}, identifier: 'pin.setup.new', placeholderValue: 'New PIN', value: ••••••, Keyboard Focused
+SecureTextField, 0x10fa008c0, {{24.0, 344.7}, {354.0, 57.0}}, identifier: 'pin.setup.confirm', placeholderValue: 'Confirm PIN'
+StaticText, 0x10fa00780, {{24.0, 421.7}, {220.0, 18.3}}, identifier: 'pin.setup.validation', label: 'Use 4–6 digits (0–9), with no spaces.'
+
+f3-confirmation-mismatch
+StaticText, 0x10f9670c0, {{24.0, 337.8}, {60.0, 19.7}}, label: 'App lock'
+Button, 0x10fa03d40, {{319.7, 82.0}, {62.3, 36.0}}, identifier: 'pin.setup.save', label: 'Save', Disabled
+SecureTextField, 0x10fa00b40, {{24.0, 241.7}, {354.0, 58.3}}, identifier: 'pin.setup.new', placeholderValue: 'New PIN', value: ••••
+SecureTextField, 0x10fa00dc0, {{24.0, 346.3}, {354.0, 58.3}}, identifier: 'pin.setup.confirm', placeholderValue: 'Confirm PIN', value: ••••, Keyboard Focused
+StaticText, 0x10fa01040, {{24.0, 424.7}, {272.0, 18.3}}, identifier: 'pin.setup.validation', label: 'PINs don’t match. Enter the same PIN twice.'
+
+f3-valid-6-digits-obscured
+StaticText, 0x1063c3ac0, {{24.0, 337.8}, {60.0, 19.7}}, label: 'App lock'
+Button, 0x10f96c000, {{319.7, 82.0}, {62.3, 36.0}}, identifier: 'pin.setup.save', label: 'Save'
+SecureTextField, 0x10f96ed00, {{24.0, 241.7}, {354.0, 58.3}}, identifier: 'pin.setup.new', placeholderValue: 'New PIN', value: ••••••
+SecureTextField, 0x10f96d540, {{24.0, 346.3}, {354.0, 58.3}}, identifier: 'pin.setup.confirm', placeholderValue: 'Confirm PIN', value: ••••••, Keyboard Focused
+
+f3-valid-6-digits-unlocked
+StaticText, 0x10f965f40, {{24.0, 337.8}, {60.0, 19.7}}, label: 'App lock'
+Button, 0x102be2580, {{24.0, 376.7}, {354.0, 58.0}}, label: 'Remove PIN'
+
+f3-combined-setup-background-locked
+StaticText, 0x10fa00b40, {{169.8, 300.0}, {62.3, 19.7}}, label: 'Enter PIN'
+
+f3-combined-authenticated-change-secure
+StaticText, 0x10f967700, {{24.0, 337.8}, {60.0, 19.7}}, label: 'App lock'
+Button, 0x10f966f80, {{24.0, 376.7}, {354.0, 58.0}}, label: 'Remove PIN'
+Button, 0x10f96c000, {{319.7, 82.0}, {62.3, 36.0}}, identifier: 'pin.setup.save', label: 'Save'
+SecureTextField, 0x10f9ffc00, {{24.0, 241.7}, {354.0, 58.3}}, identifier: 'pin.setup.new', placeholderValue: 'New PIN', value: •••••
+SecureTextField, 0x10f9fe580, {{24.0, 346.3}, {354.0, 58.3}}, identifier: 'pin.setup.confirm', placeholderValue: 'Confirm PIN', value: •••••, Keyboard Focused
+
+f3-combined-removal-requires-current-pin
+StaticText, 0x10fa24280, {{24.0, 337.8}, {60.0, 19.7}}, label: 'App lock'
+Button, 0x10fa25cc0, {{24.0, 376.7}, {354.0, 58.0}}, label: 'Remove PIN'
+StaticText, 0x10fa03c00, {{158.3, 89.3}, {85.3, 21.3}}, label: 'Remove PIN'
+SecureTextField, 0x10fa026c0, {{24.0, 197.0}, {354.0, 35.0}}, identifier: 'current-pin', placeholderValue: 'Current PIN', Keyboard Focused
+StaticText, 0x10fa03840, {{151.2, 252.0}, {99.7, 20.3}}, label: 'Incorrect PIN'
+
+f3-combined-cleanup-pin-off
+StaticText, 0x10f965b80, {{24.0, 337.8}, {60.0, 19.7}}, label: 'App lock'

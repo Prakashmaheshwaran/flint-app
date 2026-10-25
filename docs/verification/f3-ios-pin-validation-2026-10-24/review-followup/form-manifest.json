@@ -1,0 +1,53 @@
+{
+  "testedCommit": "6591c234db54e7c7dff6480624b963e8eaaf56e0",
+  "simulator": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+  "bundle": "com.flint.audit.f3-review-form",
+  "preexistingHost": false,
+  "resultBundle": "/tmp/flint-fixes-20261024/F3/review-followup/form-20261025-052902.xcresult",
+  "log": "/tmp/flint-fixes-20261024/F3/review-followup/form-20261025-052902.log",
+  "productionSources": [
+    "PINSetupView.swift",
+    "FlintUI.swift",
+    "FlintAppearance.swift",
+    "FlintCore"
+  ],
+  "uiExitCode": 0,
+  "isolatedPINKeysAbsent": true,
+  "storageObservations": [
+    {
+      "elapsedSeconds": 0.0,
+      "records": [
+        {
+          "path": "/Users/prakash/Library/Developer/CoreSimulator/Devices/3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473/data/Containers/Data/Application/B16E75D0-7ADE-40F5-944F-9B9CBB8D20D7/Library/Preferences/com.flint.audit.f3-review-form.0606EA3B-8D2E-4AAF-94A0-488EE63512F9.plist",
+          "hashPresent": true,
+          "saltPresent": true
+        }
+      ]
+    },
+    {
+      "elapsedSeconds": 2.031,
+      "records": [
+        {
+          "path": "/Users/prakash/Library/Developer/CoreSimulator/Devices/3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473/data/Containers/Data/Application/B16E75D0-7ADE-40F5-944F-9B9CBB8D20D7/Library/Preferences/com.flint.audit.f3-review-form.0606EA3B-8D2E-4AAF-94A0-488EE63512F9.plist",
+          "hashPresent": false,
+          "saltPresent": false
+        }
+      ]
+    }
+  ],
+  "ordinaryUICleanupPassed": true,
+  "postFormBaseline": {
+    "bootedGuest": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+    "contentSize": "large"
+  },
+  "temporaryBundleRemoval": [
+    {
+      "bundle": "com.flint.audit.f3-review-form",
+      "exitCode": 0
+    },
+    {
+      "bundle": "com.flint.audit.f3-review-form.uitests.xctrunner",
+      "exitCode": 0
+    }
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "recordedAtUTC": "2026-10-25T09:34:24.153183+00:00",
+  "reviewedCommit": "aa8de436bf2982657577683220ed30820b1570f4",
+  "testedApplicationCommit": "6591c234db54e7c7dff6480624b963e8eaaf56e0",
+  "baseCommit": "9c2e65c64a245b6329dd8ed4b84d58ac0134bb41",
+  "pr": "https://github.com/Prakashmaheshwaran/flint-app/pull/60",
+  "stackedOn": "https://github.com/Prakashmaheshwaran/flint-app/pull/64",
+  "simulator": {
+    "udid": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+    "name": "Flint Review Followup 20261025",
+    "model": "iPhone 18 Pro",
+    "runtime": "iOS 27.0",
+    "createdBy": "coordinator; replacement for missing prior guest"
+  },
+  "xcode": "27.0 (27A266a)",
+  "gate": {
+    "result": "Passed",
+    "passedTests": 82,
+    "failedTests": 0,
+    "skippedTests": 0,
+    "totalTestCount": 82,
+    "command": "make verify-ios",
+    "destinationOverride": "temporary xcodebuild wrapper selects approved UUID, disables parallel testing",
+    "focusedPINTestCount": 9,
+    "resultBundle": "/Users/prakash/Library/Developer/Xcode/DerivedData/Flint-fofnntawxbsmewexzbhfyzkilhen/Logs/Test/Test-Flint-2026.10.25_05-28-11--0400.xcresult",
+    "log": "/tmp/flint-fixes-20261024/F3/review-followup/verify-ios.log"
+  },
+  "nativeForm": {
+    "result": "Passed",
+    "passedTests": 1,
+    "failedTests": 0,
+    "skippedTests": 0,
+    "totalTestCount": 1,
+    "seconds": 65.705,
+    "resultBundle": "/tmp/flint-fixes-20261024/F3/review-followup/form-20261025-052902.xcresult",
+    "log": "/tmp/flint-fixes-20261024/F3/review-followup/form-20261025-052902.log",
+    "ordinaryUICleanupPassed": true,
+    "manifest": "form-manifest.json"
+  },
+  "realApp": {
+    "result": "Passed",
+    "passedTests": 1,
+    "failedTests": 0,
+    "skippedTests": 0,
+    "totalTestCount": 1,
+    "seconds": 118.784,
+    "resultBundle": "/tmp/flint-fixes-20261024/F3/review-followup/ui-20261025-053053.xcresult",
+    "log": "/tmp/flint-fixes-20261024/F3/review-followup/ui-20261025-053053.log",
+    "uiCleanupSucceeded": true,
+    "recoveredSyntheticRecords": 0,
+    "manifest": "ui-manifest.json"
+  },
+  "focusedUIWrapperExitCode": 0,
+  "cleanup": {
+    "guestOperationsPerformed": true,
+    "baseline": {
+      "bootedGuest": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+      "contentSize": "large"
+    },
+    "finalPINPresent": false,
+    "uiCleanupSucceeded": true,
+    "recoveredSyntheticRecords": 0,
+    "hostOrdinaryUICleanupPassed": true,
+    "temporaryBundleRemoval": [
+      {
+        "bundle": "com.flint.audit.f3-review-form",
+        "exitCode": 0
+      },
+      {
+        "bundle": "com.flint.audit.f3-review-form.uitests.xctrunner",
+        "exitCode": 0
+      }
+    ]
+  },
+  "sourceCI": {
+    "head": "6591c234db54e7c7dff6480624b963e8eaaf56e0",
+    "build-and-test": "success",
+    "GitGuardian Security Checks": "success",
+    "url": "https://github.com/Prakashmaheshwaran/flint-app/actions/runs/40180600758"
+  },
+  "historicalEvidence": "Existing parent report and cleanup reconciliation preserved unchanged apart from a link to this follow-up.",
+  "harnessSHA256": {
+    "form-host/project.yml": "4c8ef2a348ee898b2c73bf0c9cb609872e29daa16606f34f49d49ba3629983d0",
+    "form-host/App/PINFormPhaseApp.swift": "59cc7131d9778135d87320fdeaafb3ffb2da326970f855b643e4447996577be3",
+    "form-host/Tests/PINFormPhaseUITests.swift": "f595eae31e2ca2195ec24f4e6d3192251a9849cc9fe5d1e1c05a450724bd91bf"
+  },
+  "limits": [
+    "Synthetic phase host keeps the real production form mounted; real app lifecycle is verified separately.",
+    "Physical-device Screen Time enforcement and anti-removal are outside this simulator check."
+  ]
+}

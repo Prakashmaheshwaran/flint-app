@@ -17,51 +17,16 @@ struct TodayView: View {
         ZStack(alignment: .top) {
             EmberLandscape()
 
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text(now.formatted(.dateTime.weekday(.wide).day().month(.wide)).replacingOccurrences(of: ",", with: " ·"))
-                        .flintEyebrow()
-                    Spacer()
-                    FlintMark(size: 20)
+            GeometryReader { geometry in
+                ScrollView {
+                    content
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 12)
+                        .frame(minHeight: geometry.size.height, alignment: .top)
                 }
-                .padding(.top, 18)
-
-                Text(headline)
-                    .flintTitle(31)
-                    .padding(.top, 26)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(subline)
-                    .flintSecondary(14)
-                    .padding(.top, 8)
-
-                VStack(spacing: 6) {
-                    Text(Self.duration(minutes: vm.durationMinutes)).flintNumber(50)
-                    Text("Your next session").flintEyebrow()
-                }
-                .frame(maxWidth: .infinity)
-                .accessibilityElement(children: .combine)
-                .padding(.top, 76)
-
-                Spacer()
-
-                if auth.status == .approved {
-                    actions
-                } else {
-                    grantCard
-                }
+                .clipped()
             }
-            .padding(.horizontal, 24)
             .padding(.bottom, 104)
-
-            if let message = vm.errorText ?? auth.lastError {
-                Text(message)
-                    .font(FlintFont.text(13))
-                    .foregroundStyle(FlintBrand.danger)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
-                    .frame(maxHeight: .infinity, alignment: .bottom)
-                    .padding(.bottom, 200)
-            }
         }
         .sheet(isPresented: $showStart) {
             StartFocusSheet(vm: vm) { showStart = false }
@@ -71,6 +36,49 @@ struct TodayView: View {
             rules = FlintSchedulesController().rules()
         }
         .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { now = $0 }
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(now.formatted(.dateTime.weekday(.wide).day().month(.wide)).replacingOccurrences(of: ",", with: " ·"))
+                    .flintEyebrow()
+                Spacer()
+                FlintMark(size: 20)
+            }
+            .padding(.top, 18)
+
+            Text(headline)
+                .flintTitle(31)
+                .padding(.top, 26)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(subline)
+                .flintSecondary(14)
+                .padding(.top, 8)
+
+            VStack(spacing: 6) {
+                Text(Self.duration(minutes: vm.durationMinutes)).flintNumber(50)
+                Text("Your next session").flintEyebrow()
+            }
+            .frame(maxWidth: .infinity)
+            .accessibilityElement(children: .combine)
+            .padding(.top, 76)
+
+            Spacer(minLength: 32)
+
+            if let message = vm.errorText {
+                errorMessage(message)
+                    .padding(16)
+                    .background(feedbackBackground)
+                    .accessibilityIdentifier("today.session.error")
+                    .padding(.bottom, 14)
+            }
+            if auth.status == .approved {
+                actions
+            } else {
+                grantCard
+            }
+        }
     }
 
     private var actions: some View {
@@ -101,9 +109,26 @@ struct TodayView: View {
             Text("Flint needs Screen Time access to rest your apps. Nothing leaves this phone.")
                 .flintSecondary(14)
                 .multilineTextAlignment(.center)
-            Button("Allow Screen Time") { Task { await auth.requestAuthorization() } }
-                .buttonStyle(EmberButtonStyle())
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("today.authorization.explanation")
+            AuthorizationControls(auth: auth, identifierPrefix: "today.authorization")
         }
+        .padding(16)
+        .background(feedbackBackground)
+    }
+
+    private var feedbackBackground: some View {
+        RoundedRectangle(cornerRadius: 24, style: .continuous)
+            .fill(FlintBrand.ground.opacity(0.94))
+    }
+
+    private func errorMessage(_ message: String) -> some View {
+        Text(message)
+            .font(FlintFont.text(13))
+            .foregroundStyle(FlintBrand.danger)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity)
     }
 
     // MARK: Schedule-aware copy (real rules only — nothing invented)

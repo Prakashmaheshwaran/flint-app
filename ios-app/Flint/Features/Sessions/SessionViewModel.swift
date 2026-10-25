@@ -32,6 +32,10 @@ final class SessionViewModel: ObservableObject {
         // `-FlintUIPreviewSession <easy|harder|hardcore>` shows a running session in the Simulator,
         // which can't grant Screen Time. Nothing is shielded; the UI only.
         let args = ProcessInfo.processInfo.arguments
+        // UI-only failure fixture; does not start or authorize a session.
+        if let i = args.firstIndex(of: "-FlintUIPreviewSessionError"), args.indices.contains(i + 1) {
+            errorText = args[i + 1]
+        }
         if let i = args.firstIndex(of: "-FlintUIPreviewSession"), args.indices.contains(i + 1),
            let level = BreakLevel(rawValue: args[i + 1]) {
             active = FlintActiveSession(name: "Deep work", startedAt: Date().addingTimeInterval(-13 * 60),

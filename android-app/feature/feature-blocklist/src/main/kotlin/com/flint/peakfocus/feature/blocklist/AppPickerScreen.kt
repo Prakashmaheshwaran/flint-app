@@ -75,7 +75,8 @@ import com.flint.peakfocus.core.common.ui.rememberFlintHaptics
  * [initiallySelected] holds package names; packages that aren't in the installed list (app
  * uninstalled since the rule was made) can't be shown or toggled here — the caller is
  * responsible for preserving them across a confirm (the rule editor does).
- * [eyebrow] defaults to the pending selection count; pass a label for contextual headings.
+ * [eyebrow] defaults to the pending selection count and must not contain a count itself — the
+ * screen owns the live count. Pass only a contextual heading (for example, "App limits").
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

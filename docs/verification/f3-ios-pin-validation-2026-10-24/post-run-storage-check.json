@@ -1,0 +1,66 @@
+{
+  "checkedAtUTC": "2026-10-25T04:57:03.065695+00:00",
+  "readOnly": true,
+  "observations": [
+    {
+      "sample": 0,
+      "records": [
+        {
+          "path": "/Users/prakash/Library/Developer/CoreSimulator/Devices/4A9BF370-052B-4A38-B05C-0D5EBD91ADD4/data/Containers/Data/Application/B33BFCF9-9AF2-417C-A404-EF1A7796ACE5/Library/Preferences/group.com.flint.peakfocus.plist",
+          "fileExists": true,
+          "flint.pin.hash": {
+            "present": false,
+            "type": "NoneType",
+            "length": null
+          },
+          "flint.pin.salt": {
+            "present": false,
+            "type": "NoneType",
+            "length": null
+          },
+          "matchesKnownF3Fixture": false
+        }
+      ]
+    },
+    {
+      "sample": 1,
+      "records": [
+        {
+          "path": "/Users/prakash/Library/Developer/CoreSimulator/Devices/4A9BF370-052B-4A38-B05C-0D5EBD91ADD4/data/Containers/Data/Application/B33BFCF9-9AF2-417C-A404-EF1A7796ACE5/Library/Preferences/group.com.flint.peakfocus.plist",
+          "fileExists": true,
+          "flint.pin.hash": {
+            "present": false,
+            "type": "NoneType",
+            "length": null
+          },
+          "flint.pin.salt": {
+            "present": false,
+            "type": "NoneType",
+            "length": null
+          },
+          "matchesKnownF3Fixture": false
+        }
+      ]
+    },
+    {
+      "sample": 2,
+      "records": [
+        {
+          "path": "/Users/prakash/Library/Developer/CoreSimulator/Devices/4A9BF370-052B-4A38-B05C-0D5EBD91ADD4/data/Containers/Data/Application/B33BFCF9-9AF2-417C-A404-EF1A7796ACE5/Library/Preferences/group.com.flint.peakfocus.plist",
+          "fileExists": true,
+          "flint.pin.hash": {
+            "present": false,
+            "type": "NoneType",
+            "length": null
+          },
+          "flint.pin.salt": {
+            "present": false,
+            "type": "NoneType",
+            "length": null
+          },
+          "matchesKnownF3Fixture": false
+        }
+      ]
+    }
+  ]
+}

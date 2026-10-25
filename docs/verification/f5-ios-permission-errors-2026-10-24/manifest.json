@@ -1,0 +1,46 @@
+{
+  "applicationSourceCommit": "46d30c2d968c508818bd5aa1226d4ec6fcdcf593",
+  "worktree": "/Users/prakash/.codex/worktrees/6b27/flint",
+  "device": "iPhone 18 Pro, iOS 27.0 Simulator",
+  "deviceID": "4A9BF370-052B-4A38-B05C-0D5EBD91ADD4",
+  "applicationBinarySHA256": "cbffecfcec5ef858f9fb8a283b9ab3c17fdcdbe8128409bf32300fb0d8505f10",
+  "debugLibrarySHA256": "1b98bddced6713e65928ae623f146ea3a1d35b59eb54a7f03986e990566a183c",
+  "unitTests": {
+    "executed": 64,
+    "failures": 0
+  },
+  "uiTests": {
+    "large": {
+      "executed": 3,
+      "failures": 0
+    },
+    "accessibility-extra-extra-extra-large": {
+      "executed": 3,
+      "failures": 0
+    }
+  },
+  "cleanup": {
+    "contentSize": "large",
+    "syntheticErrors": "process-local launch arguments; terminated",
+    "finalLaunch": "ordinary, no preview flags"
+  },
+  "filesSHA256": {
+    "harness/Tests/PermissionTests.swift": "be69bbea6d2fea3b7e1f3aae173c9397d3b880da46aa90ecd66b0e8058316012",
+    "harness/project.yml": "e2a42f8fda24f0a29742e0be48a3360b966bb2b8498509527d21bebff891055f",
+    "logs/sequence.txt": "d5b0ccef0f708c54f37ed3aeb1ec77a0e933ea1c7fd99d8646fa486d1cbac200",
+    "logs/ui-large.log.gz": "b67043aa10401697f348df732e87742ad3425f79cbe5cf9435b6d9d647e513be",
+    "logs/ui-max.log.gz": "f260c01889adeddd6830640424f97939d6dda7573a07c4ec777441c763d95e76",
+    "logs/verify-ios.log.gz": "e7fa8c85a623234cf8dad7599ca70ae3e52f88e738ce0dace41ac6e4f5f223b1",
+    "screenshots/large-long-permission-0.png": "8e81410eedd24d7db3b0205ce110d2c9ebe9d3ac60e0381da57faeb472924d9b",
+    "screenshots/large-real-permission-retry.png": "d96b5b0a427bba21058f994806ee01f02757e037b0474a564aebff7b4f3327ad",
+    "screenshots/large-session-return-to-today.png": "974fb74b01fee0e7af61c0e1f9ab648907923b9460fa17385723745ec331f22a",
+    "screenshots/max-long-permission-0.png": "391c7f7056ff5992b91f3fc21208558925bba3912aaf063c64153a539ddb720d",
+    "screenshots/max-long-permission-1.png": "01d027a2294c7e7a2aef00ea0215b064c5801cd0b14dd2f2e47c030e05d863ba",
+    "screenshots/max-long-permission-2.png": "e60f23d6021befc1a719c9c71057bf4426c4672d38d2597b8dee8300ef6b8847",
+    "screenshots/max-long-permission-3.png": "6660c02bfc6d1411c2b8726649cd3ba4da06c32e588f2428eb43c8ac91cad2eb",
+    "screenshots/max-long-session-1.png": "a258a64f50d62148e64bba9c7ff0a73500c858c2b9a7adb5b487a499c7e69fb4",
+    "screenshots/max-long-session-2.png": "2f7d7129661d1757e389720a5677a7eac5686a968d246c2a1f9ce657701440ae",
+    "screenshots/max-real-permission-retry.png": "dacd539069a112a871e59473793f67b0c2c624d336b5bbcd32ec0cea160900ea",
+    "screenshots/max-session-return-to-today.png": "847e3acb49ddf5534f0e04b0777314d3ca377c9d014d32d571926843063232fb"
+  }
+}

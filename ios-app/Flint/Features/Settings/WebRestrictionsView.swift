@@ -14,9 +14,11 @@ struct WebRestrictionsView: View {
                 Toggle("Restrict Safari during sessions", isOn: $restrictions.enabled)
                     .tint(FlintBrand.spark)
             } footer: {
-                Text("While a focus session is running, Safari follows the rules below. Turning this "
-                     + "on also **disables Private Browsing** and locks *Clear History and Website "
-                     + "Data* — iOS ties both to web restrictions, so they can't be evaded mid-session.")
+                Text("""
+                    While a focus session is running, Safari follows the rules below. Turning this \
+                    on also disables Private Browsing and locks Clear History and Website \
+                    Data — iOS ties both to web restrictions, so they can't be evaded mid-session.
+                    """)
             }
 
             if restrictions.enabled {

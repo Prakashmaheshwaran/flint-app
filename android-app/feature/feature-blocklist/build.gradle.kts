@@ -19,6 +19,7 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
+    testOptions { unitTests { isIncludeAndroidResources = true } }
 }
 
 dependencies {
@@ -35,6 +36,12 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
     debugImplementation(libs.androidx.ui.tooling)
+    debugImplementation(libs.androidx.ui.test.manifest)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    // Compose UI tests need the test-only ComponentActivity manifest, which is debug-only, so
+    // this source set and these dependencies are limited to the debug unit-test variant.
+    testDebugImplementation(libs.androidx.junit)
+    testDebugImplementation(libs.androidx.ui.test.junit4)
+    testDebugImplementation(libs.robolectric)
 }
