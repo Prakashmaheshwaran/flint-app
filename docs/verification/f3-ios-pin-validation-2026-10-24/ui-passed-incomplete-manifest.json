@@ -1,0 +1,9 @@
+{
+  "worktree": "/Users/prakash/.codex/worktrees/f3-pin-validation/flint",
+  "testedCommit": "faa54baca331ca6d424fa9033b69bbfb5d30c2e2",
+  "binary": "/Users/prakash/Library/Developer/Xcode/DerivedData/Flint-fofnntawxbsmewexzbhfyzkilhen/Build/Products/Debug-iphonesimulator/Flint.app",
+  "simulator": "4A9BF370-052B-4A38-B05C-0D5EBD91ADD4",
+  "baselinePINPresent": false,
+  "resultBundle": "/tmp/flint-fixes-20261024/F3/ui-20261025-004811.xcresult",
+  "log": "/tmp/flint-fixes-20261024/F3/ui-20261025-004811.log"
+}

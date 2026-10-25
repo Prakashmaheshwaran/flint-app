@@ -1,0 +1,30 @@
+F3-REVIEW-SNAPSHOT f3-review-inactive-save-disabled
+              StaticText, 0x104fd1e00, {{16.0, 126.7}, {370.0, 14.3}}, identifier: 'fixture.status', label: 'phase=inactive; locked=false; attempts=0; result=none; pin=false'
+                      Button, 0x104fd2080, {{319.7, 163.0}, {62.3, 36.0}}, identifier: 'pin.setup.save', label: 'Save', Disabled
+                            SecureTextField, 0x104e3b480, {{24.0, 322.7}, {354.0, 58.3}}, identifier: 'pin.setup.new', placeholderValue: 'New PIN', value: ••••••
+                            SecureTextField, 0x104e3b840, {{24.0, 427.3}, {354.0, 58.3}}, identifier: 'pin.setup.confirm', placeholderValue: 'Confirm PIN', value: ••••••, Keyboard Focused
+END-F3-REVIEW-SNAPSHOT
+F3-REVIEW-SNAPSHOT f3-review-locked-save-disabled
+              StaticText, 0x11105a1c0, {{25.2, 126.7}, {351.7, 14.3}}, identifier: 'fixture.status', label: 'phase=active; locked=true; attempts=0; result=none; pin=true'
+                      Button, 0x111059680, {{319.7, 163.0}, {62.3, 36.0}}, identifier: 'pin.setup.save', label: 'Save', Disabled
+                            SecureTextField, 0x11105ad00, {{24.0, 322.7}, {354.0, 58.3}}, identifier: 'pin.setup.new', placeholderValue: 'New PIN', value: ••••••
+                            SecureTextField, 0x11105af80, {{24.0, 427.3}, {354.0, 58.3}}, identifier: 'pin.setup.confirm', placeholderValue: 'Confirm PIN', value: ••••••, Keyboard Focused
+END-F3-REVIEW-SNAPSHOT
+F3-REVIEW-SNAPSHOT f3-review-authorized-save-enabled
+              StaticText, 0x104fd2f80, {{7.0, 126.7}, {388.0, 14.3}}, identifier: 'fixture.status', label: 'phase=active; locked=false; attempts=0; result=authorized; pin=true'
+                      Button, 0x104fd3ac0, {{319.7, 163.0}, {62.3, 36.0}}, identifier: 'pin.setup.save', label: 'Save'
+                            SecureTextField, 0x104e3b480, {{24.0, 322.7}, {354.0, 56.7}}, identifier: 'pin.setup.new', placeholderValue: 'New PIN', value: ••••••
+                            SecureTextField, 0x104e3b200, {{24.0, 425.7}, {354.0, 56.7}}, identifier: 'pin.setup.confirm', placeholderValue: 'Confirm PIN', value: ••••••, Keyboard Focused
+END-F3-REVIEW-SNAPSHOT
+F3-REVIEW-SNAPSHOT f3-review-isolated-store-clean
+              StaticText, 0x11105a1c0, {{20.8, 126.7}, {360.3, 14.3}}, identifier: 'fixture.status', label: 'phase=active; locked=false; attempts=1; result=clean; pin=false'
+                      Button, 0x111059680, {{319.7, 163.0}, {62.3, 36.0}}, identifier: 'pin.setup.save', label: 'Save', Disabled
+                            SecureTextField, 0x11105aa80, {{24.0, 322.7}, {354.0, 57.0}}, identifier: 'pin.setup.new', placeholderValue: 'New PIN'
+                            SecureTextField, 0x11105ad00, {{24.0, 426.0}, {354.0, 57.0}}, identifier: 'pin.setup.confirm', placeholderValue: 'Confirm PIN', Keyboard Focused
+END-F3-REVIEW-SNAPSHOT
+F3-REVIEW-PASS invalid/mismatched entries rejected; inactive/background/locked valid entries disable Save without persistence or generic error; active authorization restores Save; synthetic record removed
+Test Case '-[PINFormPhaseUITests.PINFormPhaseUITests testSaveTracksLivePhaseAndLockBeforeInvokingPersistence]' passed (65.705 seconds).
+	 Executed 1 test, with 0 failures (0 unexpected) in 65.705 (65.729) seconds
+	 Executed 1 test, with 0 failures (0 unexpected) in 65.705 (65.731) seconds
+	 Executed 1 test, with 0 failures (0 unexpected) in 65.705 (65.851) seconds
+** TEST EXECUTE SUCCEEDED **

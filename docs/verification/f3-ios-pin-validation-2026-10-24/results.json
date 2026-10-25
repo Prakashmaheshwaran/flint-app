@@ -1,0 +1,58 @@
+{
+  "worktree": "/Users/prakash/.codex/worktrees/f3-pin-validation/flint",
+  "testedCommit": "faa54baca331ca6d424fa9033b69bbfb5d30c2e2",
+  "baseBranch": "codex/f2-ios-pin-lifecycle",
+  "f2Commit": "9c2e65c64a245b6329dd8ed4b84d58ac0134bb41",
+  "f2ProductCommit": "37a3563d5fb2ead87e17ce7a97ea3405b787d5f0",
+  "xcode": "27.0 (27A266a)",
+  "simulator": {
+    "architecture": "arm64",
+    "deviceId": "4A9BF370-052B-4A38-B05C-0D5EBD91ADD4",
+    "deviceName": "iPhone 18 Pro",
+    "modelName": "iPhone 18 Pro",
+    "osBuildNumber": "24A434",
+    "osVersion": "27.0",
+    "platform": "iOS Simulator"
+  },
+  "gate": {
+    "command": "make verify-ios",
+    "result": "passed",
+    "unitTests": 81,
+    "focusedPINTests": 8,
+    "log": "/tmp/flint-fixes-20261024/F3/verify-ios.log",
+    "resultBundle": "/Users/prakash/Library/Developer/Xcode/DerivedData/Flint-fofnntawxbsmewexzbhfyzkilhen/Logs/Test/Test-Flint-2026.10.25_00-45-36--0400.xcresult"
+  },
+  "ui": {
+    "result": "Passed",
+    "passedTests": 4,
+    "failedTests": 0,
+    "binary": "/Users/prakash/Library/Developer/Xcode/DerivedData/Flint-fofnntawxbsmewexzbhfyzkilhen/Build/Products/Debug-iphonesimulator/Flint.app",
+    "animationIdleWarnings": 0,
+    "processExitCode": null,
+    "postRunRunnerExitCode": 1,
+    "processExitCodeNote": "The original runner failed before persisting this field; XCTest success is verified independently from its result bundle and log.",
+    "log": "/tmp/flint-fixes-20261024/F3/ui-20261025-004811.log",
+    "resultBundle": "/tmp/flint-fixes-20261024/F3/ui-20261025-004811.xcresult"
+  },
+  "targetedBackgroundUI": {
+    "result": "passed",
+    "animationIdleWarnings": 0,
+    "log": "/tmp/flint-fixes-20261024/F3/ui-20261025-004603.log",
+    "resultBundle": "/tmp/flint-fixes-20261024/F3/ui-20261025-004603.xcresult",
+    "finalPINPresent": false
+  },
+  "cleanup": {
+    "baselinePINPresent": false,
+    "finalPINPresent": false,
+    "uiRemovalAssertionsPassed": true,
+    "immediateStorageGuardFailed": true,
+    "laterSerializedAbsentSamples": 3,
+    "checkedAtUTC": "2026-10-25T04:57:03.065695+00:00",
+    "reconciliationMutations": 0,
+    "unknownRecordDeleted": false,
+    "reconciliation": "ui-cleanup-reconciliation.json",
+    "fontSizeChanged": false,
+    "securityPermissionsChanged": false
+  },
+  "execution": "All build/install/device/test steps serialized through run_serialized.py --owner F3"
+}

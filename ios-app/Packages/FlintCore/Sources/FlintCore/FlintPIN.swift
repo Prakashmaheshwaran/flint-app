@@ -10,12 +10,22 @@ public enum FlintPIN {
         store?.pinRecord() != nil
     }
 
-    public static func set(_ pin: String, _ store: FlintGroupStore?) {
-        guard let store, !pin.isEmpty else { return }
-        let salt = UUID().uuidString
-        store.setPINRecord(hash: hash(pin, salt: salt), salt: salt)
+    /// New PINs must be exactly 4–6 ASCII digits. Never trim, truncate or filter input:
+    /// doing so could save a different PIN from the one the user entered.
+    public static func isValidNewPIN(_ pin: String) -> Bool {
+        (4...6).contains(pin.utf8.count) && pin.utf8.allSatisfy { (48...57).contains($0) }
     }
 
+    /// Refuses invalid new PINs without replacing an existing record.
+    @discardableResult
+    public static func set(_ pin: String, _ store: FlintGroupStore?) -> Bool {
+        guard let store, isValidNewPIN(pin) else { return false }
+        let salt = UUID().uuidString
+        store.setPINRecord(hash: hash(pin, salt: salt), salt: salt)
+        return true
+    }
+
+    /// Verify the exact saved value, including legacy PINs outside the new-PIN policy.
     public static func verify(_ pin: String, _ store: FlintGroupStore?) -> Bool {
         guard let store, let record = store.pinRecord() else { return false }
         return hash(pin, salt: record.salt) == record.hash
