@@ -158,33 +158,41 @@ internal fun AppPickerScreen(
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     )
                     Spacer(Modifier.height(FlintSpacing.sm))
-                    // Control row: result count left, filtered-subset bulk actions right.
-                    Row(
+                    // Keep the count's natural width; move the action group to the next
+                    // line when larger labels would otherwise squeeze APP/APPS into pieces.
+                    FlowRow(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalArrangement = Arrangement.spacedBy(FlintSpacing.xs),
                     ) {
                         Text(
                             text = "${filtered.size} " + if (filtered.size == 1) "APP" else "APPS",
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.align(Alignment.CenterVertically),
                             style = MaterialTheme.typography.labelMedium.merge(FlintNumerals),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         if (multiSelect) {
-                            TextButton(
-                                onClick = {
-                                    selection = selection.withSelection(filtered.map { it.packageName }, true)
-                                },
-                                enabled = filtered.any { it.packageName !in selection.packageNames },
+                            FlowRow(
+                                modifier = Modifier.align(Alignment.CenterVertically),
+                                horizontalArrangement = Arrangement.End,
+                                verticalArrangement = Arrangement.spacedBy(FlintSpacing.xs),
                             ) {
-                                Text("Select all")
-                            }
-                            TextButton(
-                                onClick = {
-                                    selection = selection.withSelection(filtered.map { it.packageName }, false)
-                                },
-                                enabled = filtered.any { it.packageName in selection.packageNames },
-                            ) {
-                                Text("Clear")
+                                TextButton(
+                                    onClick = {
+                                        selection = selection.withSelection(filtered.map { it.packageName }, true)
+                                    },
+                                    enabled = filtered.any { it.packageName !in selection.packageNames },
+                                ) {
+                                    Text("Select all")
+                                }
+                                TextButton(
+                                    onClick = {
+                                        selection = selection.withSelection(filtered.map { it.packageName }, false)
+                                    },
+                                    enabled = filtered.any { it.packageName in selection.packageNames },
+                                ) {
+                                    Text("Clear")
+                                }
                             }
                         }
                     }

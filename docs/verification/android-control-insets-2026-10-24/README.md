@@ -21,6 +21,11 @@ persistence, validation and blocking/security rules are unchanged by F1.
 
 ## Verification status
 
+The subsequent [result-count header repair](header-reflow-followup.md) addresses
+the 320 dp / 2× issue found in the parent's combined verification. Its build and
+focused visual acceptance status are recorded separately from the earlier matrix
+below.
+
 The combined F1+F7 implementation at `b04ce63df748e0e754d94456a87c52d66479d050` passed
 `make verify-android`: debug/release builds, release local-first verification and
 1,182 JVM test executions with no failures/errors/skips. CI also passed.
