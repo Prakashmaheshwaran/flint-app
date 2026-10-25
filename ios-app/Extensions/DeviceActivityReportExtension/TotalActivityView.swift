@@ -14,7 +14,6 @@ struct TotalActivityView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.clear)
     }
-
 }
 
 /// The same report content is used by the on-device scroll container and pure SwiftUI render
@@ -152,7 +151,7 @@ private struct DayRidge: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(days.map { "\($0.start.formatted(.dateTime.weekday(.wide))) \(TotalActivityView.format($0.duration))" }
+        .accessibilityLabel(days.map { "\($0.start.formatted(.dateTime.weekday(.wide))) \(TotalActivityContent.format($0.duration))" }
             .joined(separator: ", "))
     }
 }
