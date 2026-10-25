@@ -188,6 +188,85 @@ final class FlintAppLockTests: XCTestCase {
         }
     }
 
+    @MainActor func testLateBackgroundReportCannotStrandForegroundedApp() async throws {
+        try withLock(pin: "2468") { lock, _ in
+            lock.transition(to: .active)
+            XCTAssertTrue(lock.unlock(with: "2468"))
+            // UIKit/SwiftUI can deliver a coalesced `.background` after the scene has
+            // already reactivated. It must not disable the gate on a foregrounded app.
+            lock.transition(to: .background, ifSceneIs: .active)
+            XCTAssertEqual(lock.state.phase, .active)
+            XCTAssertFalse(lock.isLocked)
+            XCTAssertFalse(lock.state.isProtected)
+        }
+    }
+
+    @MainActor func testLateBackgroundReportAfterRelockLeavesGateUsable() async throws {
+        try withLock(pin: "2468") { lock, _ in
+            lock.transition(to: .active)
+            XCTAssertTrue(lock.unlock(with: "2468"))
+            lock.transition(to: .inactive)
+            lock.transition(to: .background, ifSceneIs: .background)
+            XCTAssertTrue(lock.isLocked)
+            lock.transition(to: .inactive)
+            lock.transition(to: .active)
+            XCTAssertTrue(lock.isLocked)
+            // A duplicate/stale background arrives while foreground: stay locked, but
+            // reconcile to a phase whose gate can actually be unlocked again.
+            lock.transition(to: .background, ifSceneIs: .active)
+            XCTAssertEqual(lock.state.phase, .active)
+            XCTAssertTrue(lock.isLocked)
+            XCTAssertTrue(lock.unlock(with: "2468"))
+            XCTAssertFalse(lock.state.isProtected)
+        }
+    }
+
+    @MainActor func testGenuineBackgroundReportStillLocksAndExpiresChange() async throws {
+        try withLock(pin: "2468") { lock, store in
+            lock.transition(to: .active)
+            XCTAssertTrue(lock.unlock(with: "2468"))
+            XCTAssertTrue(lock.authorizePINChange(currentPIN: "2468"))
+            lock.transition(to: .background, ifSceneIs: .background)
+            XCTAssertEqual(lock.state.phase, .background)
+            XCTAssertTrue(lock.isLocked)
+            lock.transition(to: .active)
+            XCTAssertTrue(lock.isLocked)
+            XCTAssertFalse(lock.savePIN("1357"), "Backgrounding must still expire the change authorization")
+            XCTAssertTrue(FlintPIN.verify("2468", store))
+        }
+    }
+
+    @MainActor func testStaleBackgroundDoesNotExpireForegroundChangeAuthorization() async throws {
+        try withLock(pin: "2468") { lock, _ in
+            lock.transition(to: .active)
+            XCTAssertTrue(lock.unlock(with: "2468"))
+            XCTAssertTrue(lock.authorizePINChange(currentPIN: "2468"))
+            // The scene stayed foreground-active, so no lock cycle occurred; a report
+            // that disagrees with the live scene must not expire authentication either.
+            lock.transition(to: .background, ifSceneIs: .active)
+            XCTAssertTrue(lock.savePIN("1357"))
+        }
+    }
+
+    @MainActor func testDuplicateAndOutOfOrderActiveReportsStayConsistent() async throws {
+        try withLock(pin: "2468") { lock, _ in
+            lock.transition(to: .active)
+            lock.transition(to: .active)
+            XCTAssertTrue(lock.unlock(with: "2468"))
+            XCTAssertFalse(lock.state.isProtected)
+            lock.transition(to: .inactive)
+            XCTAssertTrue(lock.state.isProtected)
+            lock.transition(to: .active)
+            XCTAssertFalse(lock.state.isProtected)
+            // Repeated stale background reports are idempotent.
+            lock.transition(to: .background, ifSceneIs: .active)
+            lock.transition(to: .background, ifSceneIs: .active)
+            XCTAssertEqual(lock.state.phase, .active)
+            XCTAssertFalse(lock.isLocked)
+            XCTAssertFalse(lock.state.isProtected)
+        }
+    }
+
     @MainActor func testUnavailableStoreCannotReportSuccessfulSetup() async {
         let lock = FlintAppLock(store: nil)
         lock.transition(to: .active)
