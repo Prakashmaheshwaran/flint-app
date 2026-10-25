@@ -22,9 +22,11 @@ struct TodayView: View {
                 ScrollView {
                     content
                         .padding(.horizontal, 24)
+                        .padding(.top, 12)
                         .padding(.bottom, 28)
                         .frame(minHeight: geometry.size.height, alignment: .top)
                 }
+                .clipped()
             }
         }
         .sheet(isPresented: $showStart) {
@@ -69,6 +71,8 @@ struct TodayView: View {
 
             if let message = vm.errorText {
                 errorMessage(message)
+                    .padding(16)
+                    .background(feedbackBackground)
                     .accessibilityIdentifier("today.session.error")
                     .padding(.bottom, 14)
             }
@@ -126,6 +130,13 @@ struct TodayView: View {
             .disabled(auth.isRequesting)
             .accessibilityIdentifier("today.authorization.action")
         }
+        .padding(16)
+        .background(feedbackBackground)
+    }
+
+    private var feedbackBackground: some View {
+        RoundedRectangle(cornerRadius: 24, style: .continuous)
+            .fill(FlintBrand.ground.opacity(0.94))
     }
 
     private func errorMessage(_ message: String) -> some View {
