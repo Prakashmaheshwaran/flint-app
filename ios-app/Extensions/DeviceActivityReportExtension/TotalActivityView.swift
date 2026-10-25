@@ -7,19 +7,30 @@ import FlintCore
 struct TotalActivityView: View {
     let summary: ActivitySummary
 
+    var body: some View {
+        ScrollView {
+            TotalActivityContent(summary: summary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color.clear)
+    }
+
+}
+
+/// The same report content is used by the on-device scroll container and pure SwiftUI render
+/// tests. An unhosted test bundle cannot snapshot the platform-backed scrolling container.
+struct TotalActivityContent: View {
+    let summary: ActivitySummary
+
     private var isWeek: Bool { summary.days.count > 1 }
     private var peak: ActivitySummary.Day? { summary.days.max { $0.duration < $1.duration } }
 
     var body: some View {
-        ScrollView {
-            if summary.contentState == .activity {
-                activityContent
-            } else {
-                emptyContent
-            }
+        if summary.contentState == .activity {
+            activityContent
+        } else {
+            emptyContent
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color.clear)
     }
 
     private var emptyContent: some View {
