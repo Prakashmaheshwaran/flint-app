@@ -1,0 +1,38 @@
+46d30c2d968c508818bd5aa1226d4ec6fcdcf593
+== Devices ==
+-- iOS 27.0 --
+    iPhone 18 Pro (4A9BF370-052B-4A38-B05C-0D5EBD91ADD4) (Booted) 
+    iPhone 18 Pro Max (45714BC8-AC80-4D15-992B-41BBA1286FD5) (Shutdown) 
+    iPhone 17e (645A2204-ED7C-4253-B298-2749820B1B7E) (Shutdown) 
+    iPhone Air (3778F0ED-7866-496F-926E-8A98B8AFFB93) (Shutdown) 
+    iPhone 17 (1BD4732B-EC1A-4074-8C70-6AC369607185) (Shutdown) 
+    iPad Pro 13-inch (M5) (0639B325-C1B6-4260-8F55-2C92FF7AE371) (Shutdown) 
+    iPad Pro 11-inch (M5) (1B649E8D-AFE1-4646-871D-1285ED090145) (Shutdown) 
+    iPad mini (A17 Pro) (150B38E3-DA15-4BC1-9E9B-8C530DB49264) (Shutdown) 
+    iPad Air 13-inch (M4) (DE6BC42E-21AE-4AEE-BF76-77987655A8F4) (Shutdown) 
+    iPad Air 11-inch (M4) (7EBF0851-E3E8-47D1-ADA0-92FA3D0D767F) (Shutdown) 
+    iPad (A16) (E98E046C-8E17-4FE5-AFB1-33DEA229B260) (Shutdown) 
+-- watchOS 27.0 --
+    Apple Watch Series 12 (46mm) (4EFE51A2-0AE4-4C5B-AEEA-18964DABFF78) (Shutdown) 
+    Apple Watch Series 12 (42mm) (DB816443-8020-48ED-98CC-87FA0655E4EC) (Shutdown) 
+    Apple Watch Ultra 4 (49mm) (8643B168-2575-4E0F-A59A-4252EEF9D989) (Shutdown) 
+    Apple Watch SE 3 (44mm) (1F9252E4-8710-44F1-860B-BACF373370C4) (Shutdown) 
+    Apple Watch SE 3 (40mm) (929C9710-6546-4253-9732-EABFD551924A) (Shutdown) 
+Oct 24 23:24:43 2026 /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-fggdlgegqjbjefbfkflrgdeztfpm/Build/Products/Debug-iphonesimulator/Flint.app/Flint
+Oct 24 23:24:43 2026 /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-fggdlgegqjbjefbfkflrgdeztfpm/Build/Products/Debug-iphonesimulator/Flint.app/Flint.debug.dylib
+cbffecfcec5ef858f9fb8a283b9ab3c17fdcdbe8128409bf32300fb0d8505f10  /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-fggdlgegqjbjefbfkflrgdeztfpm/Build/Products/Debug-iphonesimulator/Flint.app/Flint
+1b98bddced6713e65928ae623f146ea3a1d35b59eb54a7f03986e990566a183c  /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-fggdlgegqjbjefbfkflrgdeztfpm/Build/Products/Debug-iphonesimulator/Flint.app/Flint.debug.dylib
+⚙️  Generating plists...
+⚙️  Generating project...
+⚙️  Writing project...
+Created project at /tmp/flint-fixes-20261024/F5/ui/FlintF5.xcodeproj
+large
+accessibility-extra-extra-extra-large
+An error was encountered processing the command (domain=NSPOSIXErrorDomain, code=3):
+Simulator device failed to terminate com.flint.peakfocus.
+found nothing to terminate
+Underlying error (domain=NSPOSIXErrorDomain, code=3):
+	The request to terminate "com.flint.peakfocus" failed. found nothing to terminate
+	found nothing to terminate
+com.flint.peakfocus: 77667
+large
