@@ -1,0 +1,22 @@
+{
+  "headRevision": "68270197dce91b013dbbdd251bd8207109f4ef2b",
+  "checks": [
+    {
+      "id": 121113289371,
+      "name": "build-and-test",
+      "head_sha": "68270197dce91b013dbbdd251bd8207109f4ef2b",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/Prakashmaheshwaran/flint-app/actions/runs/40174873218/job/121113289371"
+    },
+    {
+      "id": 121113283258,
+      "name": "GitGuardian Security Checks",
+      "head_sha": "68270197dce91b013dbbdd251bd8207109f4ef2b",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://dashboard.gitguardian.com"
+    }
+  ],
+  "hasMore": false
+}

@@ -1,0 +1,26 @@
+{
+  "head": "7da70c0cc1b1280a1bfdda747b9408508c6f7343",
+  "apkSHA256": "0e87f655c4b83cef46a7df492d81a6f3b0642b873661069e575a55d9a389c9b0",
+  "passed": false,
+  "cases": [
+    {
+      "name": "normal-1x",
+      "passed": true,
+      "resultCount": "19 APPS",
+      "resultCountBounds": [
+        63,
+        568,
+        200,
+        606
+      ],
+      "actionTextHeights": [
+        55,
+        55
+      ]
+    }
+  ],
+  "privateFilesRestored": true,
+  "fontScaleRestored": true,
+  "displaySizeRestored": true,
+  "accessibilityUnchanged": true
+}

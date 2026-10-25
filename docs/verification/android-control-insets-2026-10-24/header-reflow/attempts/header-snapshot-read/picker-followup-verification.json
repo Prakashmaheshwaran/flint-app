@@ -1,0 +1,22 @@
+{
+  "startedUTC": "2026-10-25T08:01:18.778105+00:00",
+  "head": "7da70c0cc1b1280a1bfdda747b9408508c6f7343",
+  "initialCombinedHead": "837301642dac9a4bd42993c342195b29d94fae32",
+  "productChangesSinceInitial": [
+    "android-app/feature/feature-blocklist/src/main/kotlin/com/flint/peakfocus/feature/blocklist/AppPickerScreen.kt"
+  ],
+  "iosSourceUnchanged": true,
+  "checks": [
+    {
+      "name": "android-header-gate",
+      "exitCode": 0,
+      "log": "/tmp/flint-fixes-20261024/integration/android-header-gate.log"
+    },
+    {
+      "name": "android-header-ui",
+      "exitCode": 1,
+      "log": "/tmp/flint-fixes-20261024/integration/android-header-ui.log"
+    }
+  ],
+  "updatedUTC": "2026-10-25T08:03:06.011658+00:00"
+}
