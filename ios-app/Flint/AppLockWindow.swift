@@ -73,14 +73,25 @@ struct AppLockWindow: UIViewRepresentable {
             let phase: FlintAppLock.Phase = scene.activationState == .foregroundActive ? .active
                 : scene.activationState == .background ? .background : .inactive
             lock.transition(to: phase)
-            observation = lock.$state.sink { [weak self] state in self?.render(state) }
+            render(lock.state)
+            // @Published emits before storage changes. Window/key/keyboard operations can
+            // synchronously trigger lifecycle callbacks, so never run them in that willSet.
+            // Read the latest committed state when delivered, not a queued stale phase.
+            observation = lock.$state.receive(on: DispatchQueue.main).sink { [weak self] _ in
+                guard let self else { return }
+                self.render(self.lock.state)
+            }
         }
 
         private func observe(_ name: Notification.Name, scene: UIScene, phase: FlintAppLock.Phase) {
             notifications.append(NotificationCenter.default.addObserver(
                 forName: name, object: scene, queue: .main
             ) { [weak self] _ in
-                self?.lock.transition(to: phase)
+                guard let self else { return }
+                self.lock.transition(to: phase)
+                // Snapshot protection still happens synchronously before UIKit returns
+                // from a background/deactivation notification.
+                self.render(self.lock.state)
             })
         }
 
@@ -98,6 +109,7 @@ struct AppLockWindow: UIViewRepresentable {
                 }
                 window.layoutIfNeeded()
             } else {
+                guard !window.isHidden else { return }
                 window.endEditing(true)
                 let wasKey = window.isKeyWindow
                 window.isHidden = true
