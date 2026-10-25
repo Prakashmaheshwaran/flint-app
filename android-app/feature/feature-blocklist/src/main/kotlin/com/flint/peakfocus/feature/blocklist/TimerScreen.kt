@@ -151,7 +151,6 @@ fun TimerScreen(
             AppPickerScreen(
                 appsState = state.appsState,
                 title = "What rests",
-                eyebrow = "${state.draft.apps.size} selected",
                 multiSelect = true,
                 initiallySelected = state.draft.apps.map { it.packageName }.toSet(),
                 onConfirm = { viewModel.selectApps(it); pickingApps = false },

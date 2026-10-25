@@ -75,12 +75,13 @@ private enum class PickerRegion { LOADING, EMPTY, LIST }
  * [initiallySelected] holds package names; packages that aren't in the installed list (app
  * uninstalled since the rule was made) can't be shown or toggled here — the caller is
  * responsible for preserving them across a confirm (the rule editor does).
+ * [eyebrow] defaults to the pending selection count; pass a label for contextual headings.
  */
 @Composable
 internal fun AppPickerScreen(
     appsState: InstalledAppsUiState,
     title: String,
-    eyebrow: String,
+    eyebrow: String? = null,
     multiSelect: Boolean,
     initiallySelected: Set<String>,
     onConfirm: (List<InstalledApp>) -> Unit,
@@ -88,10 +89,18 @@ internal fun AppPickerScreen(
     modifier: Modifier = Modifier,
 ) {
     var query by remember { mutableStateOf("") }
-    var selected by remember { mutableStateOf(initiallySelected) }
+    var selection by remember { mutableStateOf(AppPickerSelection(initiallySelected.toSet())) }
     val haptics = rememberFlintHaptics()
 
     val apps = (appsState as? InstalledAppsUiState.Ready)?.apps.orEmpty()
+    val selectedApps = selection.selectedApps(apps)
+    // Until loading finishes, retain the initial/pending count. Once ready, count exactly
+    // the apps confirmation can return, including selected apps hidden by the search.
+    val selectedCount = if (appsState is InstalledAppsUiState.Ready) {
+        selectedApps.size
+    } else {
+        selection.packageNames.size
+    }
     val trimmedQuery = query.trim()
     val filtered = remember(apps, trimmedQuery) {
         if (trimmedQuery.isEmpty()) {
@@ -105,7 +114,7 @@ internal fun AppPickerScreen(
     }
 
     Column(modifier = modifier.fillMaxSize().padding(FlintSpacing.gutter)) {
-        EditorHeader(title = title, eyebrow = eyebrow, onBack = onCancel)
+        EditorHeader(title = title, eyebrow = eyebrow ?: "$selectedCount selected", onBack = onCancel)
         Spacer(Modifier.height(FlintSpacing.sm))
 
         if (appsState is InstalledAppsUiState.Ready) {
@@ -153,16 +162,18 @@ internal fun AppPickerScreen(
                 )
                 if (multiSelect) {
                     TextButton(
-                        onClick = { selected = selected + filtered.map { it.packageName } },
-                        enabled = filtered.any { it.packageName !in selected },
+                        onClick = {
+                            selection = selection.withSelection(filtered.map { it.packageName }, true)
+                        },
+                        enabled = filtered.any { it.packageName !in selection.packageNames },
                     ) {
                         Text("Select all")
                     }
                     TextButton(
                         onClick = {
-                            selected = selected - filtered.map { it.packageName }.toSet()
+                            selection = selection.withSelection(filtered.map { it.packageName }, false)
                         },
-                        enabled = filtered.any { it.packageName in selected },
+                        enabled = filtered.any { it.packageName in selection.packageNames },
                     ) {
                         Text("Clear")
                     }
@@ -207,17 +218,13 @@ internal fun AppPickerScreen(
                         AppPickerRow(
                             app = app,
                             multiSelect = multiSelect,
-                            isSelected = app.packageName in selected,
+                            isSelected = app.packageName in selection.packageNames,
                             initiallyAssigned = !multiSelect &&
                                 app.packageName in initiallySelected,
                             onToggle = { nowSelected ->
                                 if (multiSelect) {
                                     if (nowSelected) haptics.toggleOn() else haptics.toggleOff()
-                                    selected = if (nowSelected) {
-                                        selected + app.packageName
-                                    } else {
-                                        selected - app.packageName
-                                    }
+                                    selection = selection.withSelection(listOf(app.packageName), nowSelected)
                                 } else {
                                     onConfirm(listOf(app))
                                 }
@@ -241,7 +248,7 @@ internal fun AppPickerScreen(
                 ) {
                     Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                         AnimatedContent(
-                            targetState = selected.size,
+                            targetState = selectedCount,
                             transitionSpec = {
                                 val spec = tween<Float>(
                                     FlintMotion.DurationShort,
@@ -280,12 +287,12 @@ internal fun AppPickerScreen(
                     TextButton(onClick = onCancel) { Text("Cancel") }
                     Spacer(Modifier.width(FlintSpacing.sm))
                     Button(
-                        onClick = { onConfirm(apps.filter { it.packageName in selected }) },
+                        onClick = { onConfirm(selectedApps) },
                         // A confirm that changes nothing is noise — require a real edit.
-                        enabled = selected != initiallySelected,
+                        enabled = selection.hasChanges(initiallySelected, apps),
                     ) {
                         Text(
-                            text = "Add · ${selected.size}",
+                            text = "Add · $selectedCount",
                             style = LocalTextStyle.current.merge(FlintNumerals),
                         )
                     }
