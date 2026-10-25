@@ -1,0 +1,7 @@
+1.0
+Physical size: 1080x2400
+OK: killing emulator, bye bye
+OK
+android_stop_exit=0
+flint-test stopped; data preserved
+List of devices attached

@@ -1,0 +1,38 @@
+[
+  {
+    "path": "screenshots/ios-before-ax5-today-actions.png",
+    "sha256": "2f11671ff65dc38c67518cfe3fa892fce56d587207ac383420cf1b2de3f22615",
+    "phase": "before",
+    "source": "Fresh ebc0d24 baseline build; same source tree as audit 53bb455"
+  },
+  {
+    "path": "screenshots/ios-before-ax5-start-top.png",
+    "sha256": "3e0068c3fb7285f2f62f86d57bab849fabf8fda18674d0789ceaddfa790b9bee",
+    "phase": "before",
+    "source": "Fresh ebc0d24 baseline build; same source tree as audit 53bb455"
+  },
+  {
+    "path": "screenshots/ios-before-ax5-you-top.png",
+    "sha256": "af78fbf48cc145ff3db4c2aaf2f7143773617691f81057212163b5a898cecb18",
+    "phase": "before",
+    "source": "Fresh ebc0d24 baseline build; same source tree as audit 53bb455"
+  },
+  {
+    "path": "screenshots/ios-before-large-start-top.png",
+    "sha256": "0bc22d66f1e5345839327157096dfc21574f7aa65d78df71a1467b19c975c852",
+    "phase": "before",
+    "source": "Fresh ebc0d24 baseline build; same source tree as audit 53bb455"
+  },
+  {
+    "path": "screenshots/android-before-1.5-start.png",
+    "sha256": "a0ef02ddc1bfd44bf37c006f94a9ffbf257bd0f47091605cad5cfe16dfb0f46d",
+    "phase": "before",
+    "source": "cross-platform-audit-2026-10-24/screenshots/android-18-large-text-start.png"
+  },
+  {
+    "path": "screenshots/android-before-rule-1.5-narrow.png",
+    "sha256": "2bd55d50a07804d10cb7ea910dad16f2ee64c9f39157cbf7462b6deafe15ad59",
+    "phase": "before",
+    "source": "F1 native 320dp/font1.5 editor matrix on b04ce63; EditorWidgets.kt unchanged before F4 bdf975c"
+  }
+]

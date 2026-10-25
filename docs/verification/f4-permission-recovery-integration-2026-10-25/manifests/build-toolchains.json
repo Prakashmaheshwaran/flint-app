@@ -1,0 +1,28 @@
+[
+  {
+    "run": "01",
+    "sourceCommit": "85f066766fe03c75826f73c033a284903e414817",
+    "settings": {
+      "XCODE_VERSION_ACTUAL": "2700",
+      "XCODE_PRODUCT_BUILD_VERSION": "27A266a",
+      "SDK_NAME": "iphonesimulator27.0",
+      "SDK_VERSION": "27.0",
+      "CONFIGURATION": "Debug",
+      "PLATFORM_NAME": "iphonesimulator",
+      "PRODUCT_BUNDLE_IDENTIFIER": "com.flint.peakfocus"
+    }
+  },
+  {
+    "run": "02",
+    "sourceCommit": "5e62cb889a8488e4935c2ed09c6197aeaf78d81b",
+    "settings": {
+      "XCODE_VERSION_ACTUAL": "2710",
+      "XCODE_PRODUCT_BUILD_VERSION": "27A9275",
+      "SDK_NAME": "iphonesimulator27.1",
+      "SDK_VERSION": "27.1",
+      "CONFIGURATION": "Debug",
+      "PLATFORM_NAME": "iphonesimulator",
+      "PRODUCT_BUNDLE_IDENTIFIER": "com.flint.peakfocus"
+    }
+  }
+]

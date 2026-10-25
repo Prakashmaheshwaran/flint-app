@@ -64,7 +64,7 @@ struct RootView: View {
     }
 
     private var tabs: some View {
-        ZStack(alignment: .bottom) {
+        VStack(spacing: 0) {
             Group {
                 switch tab {
                 case .today: TodayView(auth: auth, vm: session, showStart: $showStart)
@@ -73,11 +73,22 @@ struct RootView: View {
                 case .you: SettingsView()
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+            .clipped()
 
+            // Give navigation-backed content real bounds above the measured bar.
             FlintTabBar(selection: $tab)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .background(FlintBrand.ground.ignoresSafeArea())
+        .background {
+            // Hosted outside the clipped tab content so Insights' decoration can paint the top
+            // safe-area band without sizing any viewport.
+            ZStack(alignment: .top) {
+                FlintBrand.ground
+                if tab == .insights { InsightsBackdrop() }
+            }
+            .ignoresSafeArea()
+        }
         .ignoresSafeArea(.keyboard)
         .fullScreenCover(isPresented: Binding(get: { session.active != nil }, set: { _ in })) {
             SessionView(vm: session)

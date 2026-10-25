@@ -1,0 +1,15 @@
+Install Started
+1%.........20.........40.........60.........80.........Install Succeeded
+2026-10-25 05:55:16.535 simctl[22628:14930278] CoreSimulator detected version change.  Framework version (1174.9.2) does not match existing job version (1171.7).  Attempting to remove the stale service in order to add the expected version.
+An error was encountered processing the command (domain=com.apple.CoreSimulator.SimError, code=405):
+Unable to lookup in current state: Shutdown
+large_restore_exit=149
+unknown
+An error was encountered processing the command (domain=com.apple.CoreSimulator.SimError, code=405):
+Unable to lookup in current state: Shutdown
+An error was encountered processing the command (domain=com.apple.CoreSimulator.SimError, code=405):
+Unable to lookup in current state: Shutdown
+production_launch_exit=149
+Authorized guest guard passed; current PIN absent. No values read into logs.
+final_baseline_guard_exit=0
+Sun Oct 25 09:55:18 UTC 2026

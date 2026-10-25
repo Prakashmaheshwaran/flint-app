@@ -29,40 +29,28 @@ struct StatsView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
-            FlintBrand.ground.ignoresSafeArea()
-            LinearGradient(stops: [
-                .init(color: Color(hex: 0x0A0C11), location: 0),
-                .init(color: Color(hex: 0x15151B), location: 0.45),
-                .init(color: Color(hex: 0x2A211D), location: 0.82),
-                .init(color: FlintBrand.ground, location: 1),
-            ], startPoint: .top, endPoint: .bottom)
-            .frame(height: 470)
-            .ignoresSafeArea()
+        VStack(spacing: 0) {
+            header
+                .padding(.horizontal, 24)
+                .padding(.top, 18)
 
-            VStack(spacing: 0) {
-                header
-                    .padding(.horizontal, 24)
-                    .padding(.top, 18)
-
-                if availability == .report {
-                    DeviceActivityReport(context, filter: filter)
-                        .id(reportID)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    Button("Report help") { showReportHelp = true }
-                        .font(FlintFont.text(14))
-                        .foregroundStyle(FlintBrand.bone)
-                        .frame(minHeight: 44)
-                } else {
-                    ScrollView {
-                        unavailableContent
-                            .padding(24)
-                    }
+            if availability == .report {
+                DeviceActivityReport(context, filter: filter)
+                    .id(reportID)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Button("Report help") { showReportHelp = true }
+                    .font(FlintFont.text(14))
+                    .foregroundStyle(FlintBrand.bone)
+                    .frame(minHeight: 44)
+            } else {
+                ScrollView {
+                    unavailableContent
+                        .padding(24)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .flintTabBarInset()
         }
+        .flintTabBarInset()
         .onAppear { refresh() }
         .onChange(of: scenePhase) { if $0 == .active { refresh() } }
         .onChange(of: range) { _ in reloadReport() }
@@ -196,5 +184,19 @@ struct StatsView: View {
             .padding(24)
         }
         .background(FlintBrand.ground)
+    }
+}
+
+/// Insights' ambient decoration. `RootView` hosts it behind the clipped tab content, so it can
+/// paint the top safe-area band without imposing its 470 pt height on a short viewport.
+struct InsightsBackdrop: View {
+    var body: some View {
+        LinearGradient(stops: [
+            .init(color: Color(hex: 0x0A0C11), location: 0),
+            .init(color: Color(hex: 0x15151B), location: 0.45),
+            .init(color: Color(hex: 0x2A211D), location: 0.82),
+            .init(color: FlintBrand.ground, location: 1),
+        ], startPoint: .top, endPoint: .bottom)
+        .frame(height: 470)
     }
 }

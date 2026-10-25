@@ -1,0 +1,347 @@
+{
+  "productCommit": "85f066766fe03c75826f73c033a284903e414817",
+  "note": "Initial acceptance attempts and diagnostic probes; not a final completion matrix.",
+  "cases": [
+    {
+      "sourceCommit": "85f066766fe03c75826f73c033a284903e414817",
+      "run": "ui-01",
+      "textSize": "large",
+      "testIdentifier": "RecoveryLayoutTests/testInsightsDeniedGuidanceSettingsAndRecheck()",
+      "result": "failed",
+      "seconds": 18.823,
+      "resultBundle": "/tmp/flint-fixes-20261024/F4/review-followup/ui-01/large.xcresult",
+      "attachments": [
+        {
+          "path": "screenshots/ui-01-insights-settings-whole-control.png",
+          "sha256": "7c3790c56077db1dea06f8a4d05460e2b34e6f0f29b43eb3ee0acb34d8a675e0",
+          "caption": "insights-settings-whole-control",
+          "attachmentTimestamp": 1792922026.259,
+          "originalExportName": "B38EC997-D4DA-406E-8FE6-FF9328017A48.png"
+        },
+        {
+          "path": "screenshots/ui-01-insights-denied-guidance.png",
+          "sha256": "7c3790c56077db1dea06f8a4d05460e2b34e6f0f29b43eb3ee0acb34d8a675e0",
+          "caption": "insights-denied-guidance",
+          "attachmentTimestamp": 1792922024.972,
+          "originalExportName": "FA73D0F6-7EB0-4B9E-B3AE-A5C5C7F2D5C6.png"
+        }
+      ]
+    },
+    {
+      "sourceCommit": "85f066766fe03c75826f73c033a284903e414817",
+      "run": "ui-01",
+      "textSize": "large",
+      "testIdentifier": "RecoveryLayoutTests/testInsightsTransientFeedbackAndRetry()",
+      "result": "passed",
+      "seconds": 18.902,
+      "resultBundle": "/tmp/flint-fixes-20261024/F4/review-followup/ui-01/large.xcresult",
+      "attachments": [
+        {
+          "path": "screenshots/ui-01-insights-recovered.png",
+          "sha256": "dfdedbf32c5e91ce3b6182db77b83f6366c4380c6fa68c66029a442777947c43",
+          "caption": "insights-recovered",
+          "attachmentTimestamp": 1792922049.967,
+          "originalExportName": "AD8E54D1-E03F-46B5-8CB0-ABEA9A12B74C.png"
+        },
+        {
+          "path": "screenshots/ui-01-insights-retry-whole-control.png",
+          "sha256": "2dca0e6558960f5336df8a0e897971ffc9c3d9802f94baca3f3bce2bdec5933f",
+          "caption": "insights-retry-whole-control",
+          "attachmentTimestamp": 1792922048.239,
+          "originalExportName": "0C3847CA-A4CE-40BC-89CE-9C2F56F579AF.png"
+        },
+        {
+          "path": "screenshots/ui-01-insights-complete-transient-feedback.png",
+          "sha256": "2dca0e6558960f5336df8a0e897971ffc9c3d9802f94baca3f3bce2bdec5933f",
+          "caption": "insights-complete-transient-feedback",
+          "attachmentTimestamp": 1792922046.974,
+          "originalExportName": "ABFB91D7-C4D2-492C-8108-BFBD11B7F4DA.png"
+        }
+      ]
+    },
+    {
+      "sourceCommit": "85f066766fe03c75826f73c033a284903e414817",
+      "run": "ui-01",
+      "textSize": "large",
+      "testIdentifier": "RecoveryLayoutTests/testTodayDeniedGuidanceSettingsAndRecheck()",
+      "result": "failed",
+      "seconds": 21.172,
+      "resultBundle": "/tmp/flint-fixes-20261024/F4/review-followup/ui-01/large.xcresult",
+      "attachments": [
+        {
+          "path": "screenshots/ui-01-today-settings-whole-control.png",
+          "sha256": "90599ab3d5b6f42047685693cf640e257e65be6d80f189fba054ed6a0a84a9d3",
+          "caption": "today-settings-whole-control",
+          "attachmentTimestamp": 1792922062.759,
+          "originalExportName": "E09EF424-E11A-4BC5-A0C9-09F95C81C20D.png"
+        },
+        {
+          "path": "screenshots/ui-01-today-denied-guidance.png",
+          "sha256": "d0337d79c28a611e070b30ba185176a376d08be18bae6a6afa054df650e8a3af",
+          "caption": "today-denied-guidance",
+          "attachmentTimestamp": 1792922059.86,
+          "originalExportName": "FF366F0F-E767-4381-9F5C-C3623400E7A6.png"
+        }
+      ]
+    },
+    {
+      "sourceCommit": "85f066766fe03c75826f73c033a284903e414817",
+      "run": "ui-01",
+      "textSize": "large",
+      "testIdentifier": "RecoveryLayoutTests/testTodayTransientFeedbackAndRetry()",
+      "result": "passed",
+      "seconds": 18.387,
+      "resultBundle": "/tmp/flint-fixes-20261024/F4/review-followup/ui-01/large.xcresult",
+      "attachments": [
+        {
+          "path": "screenshots/ui-01-today-recovered.png",
+          "sha256": "0ea50c41d346039fe458531b3d193882d564ad25ae11c4d19f526a769aeb5ce5",
+          "caption": "today-recovered",
+          "attachmentTimestamp": 1792922089.674,
+          "originalExportName": "3EB5CD8E-4A87-49D6-B1E7-6D41369F1505.png"
+        },
+        {
+          "path": "screenshots/ui-01-today-retry-whole-control.png",
+          "sha256": "5dd46015f23f42431d62b9f30c299f91576da71f6372d83c90dca5ac0537f7f0",
+          "caption": "today-retry-whole-control",
+          "attachmentTimestamp": 1792922086.732,
+          "originalExportName": "9A3DD2A8-FC58-45EE-939E-F7459A2F0941.png"
+        },
+        {
+          "path": "screenshots/ui-01-today-complete-transient-feedback.png",
+          "sha256": "7444e56ef35d2e563f84fcd9f99d1028525de279dde5949694b504e574495e73",
+          "caption": "today-complete-transient-feedback",
+          "attachmentTimestamp": 1792922085.426,
+          "originalExportName": "B5C80F21-BEF5-4528-AEF7-F20DB3598A48.png"
+        }
+      ]
+    },
+    {
+      "sourceCommit": "85f066766fe03c75826f73c033a284903e414817",
+      "run": "ui-02-ax5",
+      "textSize": "accessibility-extra-extra-extra-large",
+      "testIdentifier": "RecoveryLayoutTests/testInsightsDeniedGuidanceSettingsAndRecheck()",
+      "result": "passed",
+      "seconds": 42.604,
+      "resultBundle": "/tmp/flint-fixes-20261024/F4/review-followup/ui-02-ax5/accessibility-extra-extra-extra-large.xcresult",
+      "attachments": [
+        {
+          "path": "screenshots/ui-02-ax5-insights-denied-after-recheck.png",
+          "sha256": "9c8341a099b95c26b6fd5056f370d43b4895a8bf88b7a2aed03a0f41a9eb86e3",
+          "caption": "insights-denied-after-recheck",
+          "attachmentTimestamp": 1792922316.011,
+          "originalExportName": "CF475447-6132-441E-8511-3091CE171FBA.png"
+        },
+        {
+          "path": "screenshots/ui-02-ax5-insights-recheck-whole-control.png",
+          "sha256": "9a3ceaa363ec196318de8d3bf42870fca795941af1a9ce06a31360776c24564a",
+          "caption": "insights-recheck-whole-control",
+          "attachmentTimestamp": 1792922314.367,
+          "originalExportName": "837B26B8-523D-4C61-BE67-C9B45FA9C324.png"
+        },
+        {
+          "path": "screenshots/ui-02-ax5-insights-settings-whole-control.png",
+          "sha256": "5ade1729db25d537a42a481500941d578cd8406abdf2348b322f3b80a381ab15",
+          "caption": "insights-settings-whole-control",
+          "attachmentTimestamp": 1792922304.317,
+          "originalExportName": "1A2D7F5D-8AD5-4C16-9ADC-E97DC118F9A0.png"
+        },
+        {
+          "path": "screenshots/ui-02-ax5-insights-denied-guidance-last-line.png",
+          "sha256": "630bccc03516490a9392ea66c5afff5e30989ddd0438036a002cce3a6773b6fa",
+          "caption": "insights-denied-guidance-last-line",
+          "attachmentTimestamp": 1792922301.829,
+          "originalExportName": "005D6576-1DE9-4159-B8D9-DE9AF06FFEB6.png"
+        },
+        {
+          "path": "screenshots/ui-02-ax5-insights-denied-guidance-scroll-3.png",
+          "sha256": "630bccc03516490a9392ea66c5afff5e30989ddd0438036a002cce3a6773b6fa",
+          "caption": "insights-denied-guidance-scroll-3",
+          "attachmentTimestamp": 1792922301.57,
+          "originalExportName": "229845A2-0180-4C1D-88DC-1070DFBDC0D1.png"
+        },
+        {
+          "path": "screenshots/ui-02-ax5-insights-denied-guidance-scroll-2.png",
+          "sha256": "52fbbdc18522e8925ae24a4aed57bc3908f14b0619328d3ad66d2bc0871c963b",
+          "caption": "insights-denied-guidance-scroll-2",
+          "attachmentTimestamp": 1792922300.253,
+          "originalExportName": "B75DD5C6-66D0-4F48-96A6-2BE597B71639.png"
+        },
+        {
+          "path": "screenshots/ui-02-ax5-insights-denied-guidance-scroll-1.png",
+          "sha256": "66de9157f2652f9117315928143107ea67ff77ae0b6564bfbd7adc3b9ac9e4dc",
+          "caption": "insights-denied-guidance-scroll-1",
+          "attachmentTimestamp": 1792922298.397,
+          "originalExportName": "4575E6D1-9EE7-4195-8A30-D196BE64F34B.png"
+        },
+        {
+          "path": "screenshots/ui-02-ax5-insights-denied-guidance-scroll-0.png",
+          "sha256": "fb689d85ae64d5710e99de4380e5f9386a020d1df38bd54a0d67dd645f9868e1",
+          "caption": "insights-denied-guidance-scroll-0",
+          "attachmentTimestamp": 1792922296.505,
+          "originalExportName": "924DBFCD-20FA-477A-8FB7-EE2B2A269F00.png"
+        },
+        {
+          "path": "screenshots/ui-02-ax5-insights-denied-guidance-first-line.png",
+          "sha256": "c856995672ca5cadddadcc066ce0f9a489df491652328142a2f6ea893e5ce5ae",
+          "caption": "insights-denied-guidance-first-line",
+          "attachmentTimestamp": 1792922294.732,
+          "originalExportName": "B03827B7-CF06-4415-9A40-D7643F4D0DE8.png"
+        }
+      ]
+    },
+    {
+      "sourceCommit": "85f066766fe03c75826f73c033a284903e414817",
+      "run": "ui-02-ax5",
+      "textSize": "accessibility-extra-extra-extra-large",
+      "testIdentifier": "RecoveryLayoutTests/testInsightsTransientFeedbackAndRetry()",
+      "result": "passed",
+      "seconds": 28.995,
+      "resultBundle": "/tmp/flint-fixes-20261024/F4/review-followup/ui-02-ax5/accessibility-extra-extra-extra-large.xcresult",
+      "attachments": [
+        {
+          "path": "screenshots/ui-02-ax5-insights-recovered.png",
+          "sha256": "4e92e4770604da3a819e812d9e1d0acd22a96e4c38eeeea26cec5f263f2bb778",
+          "caption": "insights-recovered",
+          "attachmentTimestamp": 1792922345.173,
+          "originalExportName": "BD221707-3EC4-46E1-ABF0-18E9388E5780.png"
+        },
+        {
+          "path": "screenshots/ui-02-ax5-insights-retry-whole-control.png",
+          "sha256": "c5121ae97205f373031e718424c35466f75030a666c456d56b7fab0b1cec30f3",
+          "caption": "insights-retry-whole-control",
+          "attachmentTimestamp": 1792922343.455,
+          "originalExportName": "49E68AC8-5ED0-48E0-A4D9-96EB7F24B463.png"
+        },
+        {
+          "path": "screenshots/ui-02-ax5-insights-complete-transient-feedback.png",
+          "sha256": "a38986935b1d126115f42a4fc144ca8af94490c493c0476472ca1816744d7a4e",
+          "caption": "insights-complete-transient-feedback",
+          "attachmentTimestamp": 1792922340.603,
+          "originalExportName": "6BA60D9A-F1EA-4388-8498-DBE1042E1C64.png"
+        }
+      ]
+    },
+    {
+      "sourceCommit": "85f066766fe03c75826f73c033a284903e414817",
+      "run": "ui-02-ax5",
+      "textSize": "accessibility-extra-extra-extra-large",
+      "testIdentifier": "RecoveryLayoutTests/testTodayDeniedGuidanceSettingsAndRecheck()",
+      "result": "passed",
+      "seconds": 29.576,
+      "resultBundle": "/tmp/flint-fixes-20261024/F4/review-followup/ui-02-ax5/accessibility-extra-extra-extra-large.xcresult",
+      "attachments": [
+        {
+          "path": "screenshots/ui-02-ax5-today-denied-after-recheck.png",
+          "sha256": "08571620d57781dac404a3cba3216509df01374a20e155dad1b7eb66171c0577",
+          "caption": "today-denied-after-recheck",
+          "attachmentTimestamp": 1792922374.705,
+          "originalExportName": "8AAC409C-9049-4165-8DB1-FBEA38326EF1.png"
+        },
+        {
+          "path": "screenshots/ui-02-ax5-today-recheck-whole-control.png",
+          "sha256": "9e76e307fd80128122b39d36567898cc43ba1c0b53b206f3bca35fc483df4043",
+          "caption": "today-recheck-whole-control",
+          "attachmentTimestamp": 1792922373.092,
+          "originalExportName": "961CB62E-B41F-48AA-9DC4-CFFFFACB7C9D.png"
+        },
+        {
+          "path": "screenshots/ui-02-ax5-today-settings-whole-control.png",
+          "sha256": "bb5b3b38effbeb21b08fc377caec23a13db4a1da3652c1c047c287635c071680",
+          "caption": "today-settings-whole-control",
+          "attachmentTimestamp": 1792922366.833,
+          "originalExportName": "752FFFE6-6BF1-4CFA-8A07-3DAB9FE7117C.png"
+        },
+        {
+          "path": "screenshots/ui-02-ax5-today-denied-guidance.png",
+          "sha256": "c23a9224f11ad326796b52af211a10789565a406f9464d999feaa3e1f5cb0a0f",
+          "caption": "today-denied-guidance",
+          "attachmentTimestamp": 1792922364.195,
+          "originalExportName": "9D866806-9CC9-4DCE-8BAD-84F4518CEA31.png"
+        }
+      ]
+    },
+    {
+      "sourceCommit": "85f066766fe03c75826f73c033a284903e414817",
+      "run": "ui-02-ax5",
+      "textSize": "accessibility-extra-extra-extra-large",
+      "testIdentifier": "RecoveryLayoutTests/testTodayTransientFeedbackAndRetry()",
+      "result": "passed",
+      "seconds": 26.075,
+      "resultBundle": "/tmp/flint-fixes-20261024/F4/review-followup/ui-02-ax5/accessibility-extra-extra-extra-large.xcresult",
+      "attachments": [
+        {
+          "path": "screenshots/ui-02-ax5-today-recovered.png",
+          "sha256": "548fff05bbfd63a6f589453d37e1d3ed339ba8b15613f47e01b58cc34c722867",
+          "caption": "today-recovered",
+          "attachmentTimestamp": 1792922400.815,
+          "originalExportName": "19DAF59B-9EE0-44B1-90DF-6D6251ADC5CA.png"
+        },
+        {
+          "path": "screenshots/ui-02-ax5-today-retry-whole-control.png",
+          "sha256": "eb6f5dd09bb5f17fcad1fee876a4dd332748ce8b3f4e221b42a52aaeaa0865dd",
+          "caption": "today-retry-whole-control",
+          "attachmentTimestamp": 1792922397.955,
+          "originalExportName": "FC7F80D8-BB97-403D-B474-6C0EB85F0E21.png"
+        },
+        {
+          "path": "screenshots/ui-02-ax5-today-complete-transient-feedback.png",
+          "sha256": "1854042be1c166c4c93a49894dc43ce1390f585a3370b4dedd829e044173bc4a",
+          "caption": "today-complete-transient-feedback",
+          "attachmentTimestamp": 1792922395.247,
+          "originalExportName": "E5BD4995-0F01-4D35-BAC5-13D13010ACD6.png"
+        }
+      ]
+    },
+    {
+      "sourceCommit": "85f066766fe03c75826f73c033a284903e414817",
+      "run": "probe-01",
+      "textSize": "large",
+      "testIdentifier": "SecondaryTargetProbeTests/testStopWaitingTargetProbe()",
+      "result": "failed",
+      "seconds": 13.873,
+      "resultBundle": "/tmp/flint-fixes-20261024/F4/review-followup/probe-01/large.xcresult",
+      "attachments": [
+        {
+          "path": "screenshots/probe-01-stop-waiting-after-off-label-probes.png",
+          "sha256": "6ac4eae00ac200fa089c96fa703b832ca0b9ea7d1b812cbd30aa1dcfd0f7f027",
+          "caption": "stop-waiting-after-off-label-probes",
+          "attachmentTimestamp": 1792922471.857,
+          "originalExportName": "7386ECB9-3FBB-4408-87A4-B33D0E287CFD.png"
+        },
+        {
+          "path": "screenshots/probe-01-stop-waiting-before-off-label-probes.png",
+          "sha256": "52870b09d122f43f22856bd849f0a6d1af0985be45e8a09e7e4bd7608b59bd62",
+          "caption": "stop-waiting-before-off-label-probes",
+          "attachmentTimestamp": 1792922470.312,
+          "originalExportName": "B3DB1C24-B58D-40C7-AFEE-1F5AEEFC78E1.png"
+        }
+      ]
+    },
+    {
+      "sourceCommit": "85f066766fe03c75826f73c033a284903e414817",
+      "run": "probe-02-upper",
+      "textSize": "large",
+      "testIdentifier": "SecondaryTargetProbeTests/testStopWaitingUpperTargetProbe()",
+      "result": "failed",
+      "seconds": 13.587,
+      "resultBundle": "/tmp/flint-fixes-20261024/F4/review-followup/probe-02-upper/large.xcresult",
+      "attachments": [
+        {
+          "path": "screenshots/probe-02-upper-stop-waiting-after-upper-edge-probe.png",
+          "sha256": "be03b1debaba0c44666e124650fe95c99aad38c3ffc2254f61249f27a9cf219b",
+          "caption": "stop-waiting-after-upper-edge-probe",
+          "attachmentTimestamp": 1792922570.47,
+          "originalExportName": "59B33574-B96D-41C1-BB81-2CAE9E283E53.png"
+        },
+        {
+          "path": "screenshots/probe-02-upper-stop-waiting-before-upper-edge-probe.png",
+          "sha256": "1cbfabc6f8acb63c568388f0cc4b0965716453c9e4bc6b79d8f42e026eb75076",
+          "caption": "stop-waiting-before-upper-edge-probe",
+          "attachmentTimestamp": 1792922568.921,
+          "originalExportName": "136B6CDC-F219-49C5-AB93-9C936B64DDF2.png"
+        }
+      ]
+    }
+  ]
+}

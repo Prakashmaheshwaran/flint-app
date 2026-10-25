@@ -36,6 +36,7 @@ struct RulesView: View {
     @State private var sleep = FlintSleepConfig.load()
     @State private var limitCount = 0
     @State private var openLimitCount = 0
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         NavigationStack {
@@ -70,7 +71,10 @@ struct RulesView: View {
                     }
 
                     Text("Also").flintEyebrow().padding(.top, 20)
-                    HStack(spacing: 10) {
+                    let alsoLayout = typeSize.isAccessibilitySize
+                        ? AnyLayout(VStackLayout(spacing: 10))
+                        : AnyLayout(HStackLayout(spacing: 10))
+                    alsoLayout {
                         NavigationLink { SleepModeView() } label: {
                             alsoCard("Sleep", sleep.enabled
                                      ? "\(FlintTodaySchedule.clock(sleep.schedule.startHour, sleep.schedule.startMinute)) — \(FlintTodaySchedule.clock(sleep.schedule.endHour, sleep.schedule.endMinute))"
@@ -157,7 +161,10 @@ struct RulesView: View {
         HStack(spacing: 14) {
             Button { editing = rule } label: {
                 VStack(alignment: .leading, spacing: 3) {
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    let labelLayout = typeSize.isAccessibilitySize
+                        ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+                        : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 10))
+                    labelLayout {
                         Text(rule.name)
                             .font(FlintFont.text(15, weight: .medium))
                             .foregroundStyle(rule.enabled ? FlintBrand.bone : FlintBrand.faint)
@@ -168,6 +175,7 @@ struct RulesView: View {
                     }
                     Text(meta(rule)).font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
                 }
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
@@ -230,10 +238,17 @@ struct TodayTimeline: View {
         let nowMinute = Double(cal.component(.hour, from: now) * 60 + cal.component(.minute, from: now))
         let current = FlintTodaySchedule.current(in: rules, at: now)
         VStack(spacing: 8) {
-            HStack {
-                Text("Today").flintEyebrow()
-                Spacer()
-                Text("Now \(now.formatted(date: .omitted, time: .shortened))").flintEyebrow()
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    Text("Today").flintEyebrow().fixedSize()
+                    Spacer()
+                    Text("Now \(now.formatted(date: .omitted, time: .shortened))").flintEyebrow().fixedSize()
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Today").flintEyebrow()
+                    Text("Now \(now.formatted(date: .omitted, time: .shortened))").flintEyebrow()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             GeometryReader { geo in
                 let w = geo.size.width

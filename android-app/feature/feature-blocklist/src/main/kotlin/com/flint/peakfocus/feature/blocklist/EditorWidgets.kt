@@ -17,6 +17,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -52,7 +53,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -207,21 +211,48 @@ internal fun BreakLevelSelector(
             ) {
                 RadioButton(selected = isSelected, onClick = null)
                 Spacer(Modifier.width(FlintSpacing.sm))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = breakLevelLabel(level),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        text = breakLevelDescription(level),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (level == BreakLevel.HARDCORE) {
-                    Spacer(Modifier.width(FlintSpacing.sm))
-                    FlintBadge(text = breakLevelLabel(level), emphasized = isSelected)
+                BoxWithConstraints(Modifier.weight(1f)) {
+                    val title = breakLevelLabel(level)
+                    val description = breakLevelDescription(level)
+                    val titleStyle = MaterialTheme.typography.bodyLarge
+                    val descriptionStyle = MaterialTheme.typography.bodySmall
+                    val measurer = rememberTextMeasurer()
+                    val inlineBadge = level == BreakLevel.HARDCORE && run {
+                        // Keep the badge beside the copy only while whole words fit at
+                        // the actual scaled typography; otherwise give it its own line.
+                        val copyPixels = maxOf(
+                            measurer.measure(AnnotatedString(title), titleStyle, softWrap = false).size.width,
+                            description.split(' ').maxOf { word ->
+                                measurer.measure(AnnotatedString(word), descriptionStyle, softWrap = false).size.width
+                            },
+                        )
+                        val badgePixels = measurer.measure(
+                            AnnotatedString(title.uppercase()), MaterialTheme.typography.labelMedium, softWrap = false,
+                        ).size.width
+                        val requiredWidth = with(LocalDensity.current) { (copyPixels + badgePixels).toDp() } +
+                            (FlintSpacing.sm + FlintSpacing.xs) * 2 + FlintSpacing.sm + FlintSpacing.xs
+                        maxWidth >= requiredWidth
+                    }
+                    val copy: @Composable (Modifier) -> Unit = { copyModifier ->
+                        Column(copyModifier) {
+                            Text(title, style = titleStyle, color = MaterialTheme.colorScheme.onSurface)
+                            Text(description, style = descriptionStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    if (inlineBadge) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            copy(Modifier.weight(1f))
+                            Spacer(Modifier.width(FlintSpacing.sm))
+                            FlintBadge(text = title, emphasized = isSelected)
+                        }
+                    } else {
+                        Column {
+                            copy(Modifier)
+                            if (level == BreakLevel.HARDCORE) {
+                                FlintBadge(text = title, emphasized = isSelected, modifier = Modifier.padding(top = FlintSpacing.sm))
+                            }
+                        }
+                    }
                 }
             }
         }

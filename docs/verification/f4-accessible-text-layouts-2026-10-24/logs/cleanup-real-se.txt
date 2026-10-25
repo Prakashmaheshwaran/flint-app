@@ -1,0 +1,8 @@
+se_font_restore_exit=0
+Original shutdown iPhone PIN baseline absent; no device boot or key values read.
+original_phone_pin_guard_exit=0
+task_se_shutdown_exit=0
+    Flint F4 SE3 verification (75F68879-33EA-43CB-A87D-AF366B40FBFC) (Shutdown)
+task_se_delete_exit=0
+Task-created SE removed; original iPhone Shutdown; no iOS guest booted.
+final_guest_state_exit=0

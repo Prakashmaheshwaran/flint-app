@@ -1,0 +1,139 @@
+{
+  "finalProductCommit": "5e62cb889a8488e4935c2ed09c6197aeaf78d81b",
+  "finalAffectedPassed": 8,
+  "retainedTransientPassed": 4,
+  "acceptedUniqueCases": 12,
+  "retainedReason": "AuthorizationModel, AuthorizationPreview, RootView, Today and Stats are unchanged; shared-control changes since the initial source only expand secondary labels and onboarding skip. No final-source rerun is claimed for these transient cases.",
+  "finalAffectedManifest": "manifests/native-final-affected.json",
+  "retainedTransientCases": [
+    {
+      "sourceCommit": "85f066766fe03c75826f73c033a284903e414817",
+      "run": "ui-01",
+      "textSize": "large",
+      "testIdentifier": "RecoveryLayoutTests/testInsightsTransientFeedbackAndRetry()",
+      "result": "passed",
+      "seconds": 18.902,
+      "resultBundle": "/tmp/flint-fixes-20261024/F4/review-followup/ui-01/large.xcresult",
+      "attachments": [
+        {
+          "path": "screenshots/ui-01-insights-recovered.png",
+          "sha256": "dfdedbf32c5e91ce3b6182db77b83f6366c4380c6fa68c66029a442777947c43",
+          "caption": "insights-recovered",
+          "attachmentTimestamp": 1792922049.967,
+          "originalExportName": "AD8E54D1-E03F-46B5-8CB0-ABEA9A12B74C.png"
+        },
+        {
+          "path": "screenshots/ui-01-insights-retry-whole-control.png",
+          "sha256": "2dca0e6558960f5336df8a0e897971ffc9c3d9802f94baca3f3bce2bdec5933f",
+          "caption": "insights-retry-whole-control",
+          "attachmentTimestamp": 1792922048.239,
+          "originalExportName": "0C3847CA-A4CE-40BC-89CE-9C2F56F579AF.png"
+        },
+        {
+          "path": "screenshots/ui-01-insights-complete-transient-feedback.png",
+          "sha256": "2dca0e6558960f5336df8a0e897971ffc9c3d9802f94baca3f3bce2bdec5933f",
+          "caption": "insights-complete-transient-feedback",
+          "attachmentTimestamp": 1792922046.974,
+          "originalExportName": "ABFB91D7-C4D2-492C-8108-BFBD11B7F4DA.png"
+        }
+      ]
+    },
+    {
+      "sourceCommit": "85f066766fe03c75826f73c033a284903e414817",
+      "run": "ui-01",
+      "textSize": "large",
+      "testIdentifier": "RecoveryLayoutTests/testTodayTransientFeedbackAndRetry()",
+      "result": "passed",
+      "seconds": 18.387,
+      "resultBundle": "/tmp/flint-fixes-20261024/F4/review-followup/ui-01/large.xcresult",
+      "attachments": [
+        {
+          "path": "screenshots/ui-01-today-recovered.png",
+          "sha256": "0ea50c41d346039fe458531b3d193882d564ad25ae11c4d19f526a769aeb5ce5",
+          "caption": "today-recovered",
+          "attachmentTimestamp": 1792922089.674,
+          "originalExportName": "3EB5CD8E-4A87-49D6-B1E7-6D41369F1505.png"
+        },
+        {
+          "path": "screenshots/ui-01-today-retry-whole-control.png",
+          "sha256": "5dd46015f23f42431d62b9f30c299f91576da71f6372d83c90dca5ac0537f7f0",
+          "caption": "today-retry-whole-control",
+          "attachmentTimestamp": 1792922086.732,
+          "originalExportName": "9A3DD2A8-FC58-45EE-939E-F7459A2F0941.png"
+        },
+        {
+          "path": "screenshots/ui-01-today-complete-transient-feedback.png",
+          "sha256": "7444e56ef35d2e563f84fcd9f99d1028525de279dde5949694b504e574495e73",
+          "caption": "today-complete-transient-feedback",
+          "attachmentTimestamp": 1792922085.426,
+          "originalExportName": "B5C80F21-BEF5-4528-AEF7-F20DB3598A48.png"
+        }
+      ]
+    },
+    {
+      "sourceCommit": "85f066766fe03c75826f73c033a284903e414817",
+      "run": "ui-02-ax5",
+      "textSize": "accessibility-extra-extra-extra-large",
+      "testIdentifier": "RecoveryLayoutTests/testInsightsTransientFeedbackAndRetry()",
+      "result": "passed",
+      "seconds": 28.995,
+      "resultBundle": "/tmp/flint-fixes-20261024/F4/review-followup/ui-02-ax5/accessibility-extra-extra-extra-large.xcresult",
+      "attachments": [
+        {
+          "path": "screenshots/ui-02-ax5-insights-recovered.png",
+          "sha256": "4e92e4770604da3a819e812d9e1d0acd22a96e4c38eeeea26cec5f263f2bb778",
+          "caption": "insights-recovered",
+          "attachmentTimestamp": 1792922345.173,
+          "originalExportName": "BD221707-3EC4-46E1-ABF0-18E9388E5780.png"
+        },
+        {
+          "path": "screenshots/ui-02-ax5-insights-retry-whole-control.png",
+          "sha256": "c5121ae97205f373031e718424c35466f75030a666c456d56b7fab0b1cec30f3",
+          "caption": "insights-retry-whole-control",
+          "attachmentTimestamp": 1792922343.455,
+          "originalExportName": "49E68AC8-5ED0-48E0-A4D9-96EB7F24B463.png"
+        },
+        {
+          "path": "screenshots/ui-02-ax5-insights-complete-transient-feedback.png",
+          "sha256": "a38986935b1d126115f42a4fc144ca8af94490c493c0476472ca1816744d7a4e",
+          "caption": "insights-complete-transient-feedback",
+          "attachmentTimestamp": 1792922340.603,
+          "originalExportName": "6BA60D9A-F1EA-4388-8498-DBE1042E1C64.png"
+        }
+      ]
+    },
+    {
+      "sourceCommit": "85f066766fe03c75826f73c033a284903e414817",
+      "run": "ui-02-ax5",
+      "textSize": "accessibility-extra-extra-extra-large",
+      "testIdentifier": "RecoveryLayoutTests/testTodayTransientFeedbackAndRetry()",
+      "result": "passed",
+      "seconds": 26.075,
+      "resultBundle": "/tmp/flint-fixes-20261024/F4/review-followup/ui-02-ax5/accessibility-extra-extra-extra-large.xcresult",
+      "attachments": [
+        {
+          "path": "screenshots/ui-02-ax5-today-recovered.png",
+          "sha256": "548fff05bbfd63a6f589453d37e1d3ed339ba8b15613f47e01b58cc34c722867",
+          "caption": "today-recovered",
+          "attachmentTimestamp": 1792922400.815,
+          "originalExportName": "19DAF59B-9EE0-44B1-90DF-6D6251ADC5CA.png"
+        },
+        {
+          "path": "screenshots/ui-02-ax5-today-retry-whole-control.png",
+          "sha256": "eb6f5dd09bb5f17fcad1fee876a4dd332748ce8b3f4e221b42a52aaeaa0865dd",
+          "caption": "today-retry-whole-control",
+          "attachmentTimestamp": 1792922397.955,
+          "originalExportName": "FC7F80D8-BB97-403D-B474-6C0EB85F0E21.png"
+        },
+        {
+          "path": "screenshots/ui-02-ax5-today-complete-transient-feedback.png",
+          "sha256": "1854042be1c166c4c93a49894dc43ce1390f585a3370b4dedd829e044173bc4a",
+          "caption": "today-complete-transient-feedback",
+          "attachmentTimestamp": 1792922395.247,
+          "originalExportName": "E5BD4995-0F01-4D35-BAC5-13D13010ACD6.png"
+        }
+      ]
+    }
+  ],
+  "excluded": "Initial Large denied AX-height failures, superseded initial AX5 denied passes, and two intentionally failing diagnostic AX-height probes are historical and not counted again."
+}

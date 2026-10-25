@@ -1,0 +1,376 @@
+{
+  "sourceCommit": "d9d08bbb3505ce6334b5d76919a6b3c783fdbfb9",
+  "cases": [
+    {
+      "device": "18pro",
+      "viewportPoints": [
+        402,
+        874
+      ],
+      "textSize": "large",
+      "sourceCommit": "d9d08bbb3505ce6334b5d76919a6b3c783fdbfb9",
+      "testIdentifier": "SELayoutTests/test18ProCompactNavigationAndStart()",
+      "result": "passed",
+      "seconds": 16.608,
+      "resultBundle": "ios-18pro-rootfix-large.xcresult",
+      "attachments": [
+        {
+          "path": "screenshots/ios-final-18pro-large-insights-tail-visible.png",
+          "sha256": "897c22a0906ef1a2dbfecf00bba035e3151eabbb9fb75b8b2db8010b5419150b",
+          "timestamp": 1792913175.856
+        },
+        {
+          "path": "screenshots/ios-final-18pro-large-start-hardcore-selected.png",
+          "sha256": "126008e86fd188b16d85d374bbbf5a70e22c814c190366c8d35c86a1c03115e3",
+          "timestamp": 1792913171.174
+        },
+        {
+          "path": "screenshots/ios-final-18pro-large-start-top.png",
+          "sha256": "133b2e5db5cbb93eb49fe1d18f4b53899c5612ba841bdd89a44292fa9662f72f",
+          "timestamp": 1792913169.237
+        },
+        {
+          "path": "screenshots/ios-final-18pro-large-today-top.png",
+          "sha256": "28e383a82a9d82bc4fe944d5dd495aa4983fb8cd29d944c1b727e6b83e2b7854",
+          "timestamp": 1792913167.236
+        }
+      ]
+    },
+    {
+      "device": "18pro",
+      "viewportPoints": [
+        402,
+        874
+      ],
+      "textSize": "large",
+      "sourceCommit": "d9d08bbb3505ce6334b5d76919a6b3c783fdbfb9",
+      "testIdentifier": "SELayoutTests/test18ProYouAboutAndPrivacyTail()",
+      "result": "passed",
+      "seconds": 8.003,
+      "resultBundle": "ios-18pro-rootfix-large.xcresult",
+      "attachments": [
+        {
+          "path": "screenshots/ios-final-18pro-large-you-privacy-tail-visible.png",
+          "sha256": "1e83f21ca014422e4c24af02d9ecec4a938056f45555c49d6b2ee79f9bf0d78a",
+          "timestamp": 1792913183.823
+        },
+        {
+          "path": "screenshots/ios-final-18pro-large-you-about-visible.png",
+          "sha256": "1e83f21ca014422e4c24af02d9ecec4a938056f45555c49d6b2ee79f9bf0d78a",
+          "timestamp": 1792913183.486
+        },
+        {
+          "path": "screenshots/ios-final-18pro-large-you-top.png",
+          "sha256": "47088ecfeb20fd43e0b53e988de6f9d1643bb05f1f2c591beb9f470834e920c3",
+          "timestamp": 1792913183.194
+        }
+      ]
+    },
+    {
+      "device": "18pro",
+      "viewportPoints": [
+        402,
+        874
+      ],
+      "textSize": "ax5",
+      "sourceCommit": "d9d08bbb3505ce6334b5d76919a6b3c783fdbfb9",
+      "testIdentifier": "SELayoutTests/test18ProYouAboutAndPrivacyTail()",
+      "result": "passed",
+      "seconds": 23.201,
+      "resultBundle": "ios-18pro-rootfix-accessibility-extra-extra-extra-large.xcresult",
+      "attachments": [
+        {
+          "path": "screenshots/ios-final-18pro-ax5-you-privacy-tail-visible.png",
+          "sha256": "2902019bf5c04172d41c645f43f3fff5a0b679597bbdd515b8ff8f32ee6e759f",
+          "timestamp": 1792913290.265
+        },
+        {
+          "path": "screenshots/ios-final-18pro-ax5-you-about-visible.png",
+          "sha256": "62131bf2068a46aa38d0d482e21d0bb386ac3f5f072381e3d2e672159e455141",
+          "timestamp": 1792913288.041
+        },
+        {
+          "path": "screenshots/ios-final-18pro-ax5-you-top.png",
+          "sha256": "3891514981964d4d3049be9b56ce9622e6dec9da1b9d6a86fd55f85af6d5f0dc",
+          "timestamp": 1792913276.226
+        }
+      ]
+    },
+    {
+      "device": "se3",
+      "viewportPoints": [
+        375,
+        667
+      ],
+      "textSize": "large",
+      "sourceCommit": "d9d08bbb3505ce6334b5d76919a6b3c783fdbfb9",
+      "testIdentifier": "SELayoutTests/testCompactNavigationAndStart()",
+      "result": "passed",
+      "seconds": 28.794,
+      "resultBundle": "ios-real-se-rootfix-large.xcresult",
+      "attachments": [
+        {
+          "path": "screenshots/ios-final-se3-large-insights-tail-visible.png",
+          "sha256": "69b28f7c49f1efda527e252dfba74eaed09b10df575220f12e76a707b7ca2e70",
+          "timestamp": 1792913405.817
+        },
+        {
+          "path": "screenshots/ios-final-se3-large-insights-top.png",
+          "sha256": "08a24a70ce4fbaaf72d9b1a49f2beb84f1a987cac295dc4af19375f3f6987fcc",
+          "timestamp": 1792913405.237
+        },
+        {
+          "path": "screenshots/ios-final-se3-large-rules-options.png",
+          "sha256": "955d5cc39638d3db86def81d61efa776a73cff2e64cb713cba3a26daa98dcbe4",
+          "timestamp": 1792913402.571
+        },
+        {
+          "path": "screenshots/ios-final-se3-large-start-footer.png",
+          "sha256": "77987a15d1ce5ff5f92af266b1fa15b8137d0df5f5f8b2adf9defa57f5dcd321",
+          "timestamp": 1792913398.365
+        },
+        {
+          "path": "screenshots/ios-final-se3-large-start-hardcore-selected.png",
+          "sha256": "a12678345f37761bd510c4d48ff08511beaf26891e35892df802f8e9707bc22b",
+          "timestamp": 1792913397.594
+        },
+        {
+          "path": "screenshots/ios-final-se3-large-start-top.png",
+          "sha256": "f6bd42565355b24e9517acf6bf74cc51591695e7bb0ea5ce4458ef77e18a3e21",
+          "timestamp": 1792913394.22
+        },
+        {
+          "path": "screenshots/ios-final-se3-large-today-actions.png",
+          "sha256": "1124916fbb7a056f77d70966b311006520eecc6ad11479da4f239b7ca7a086f9",
+          "timestamp": 1792913391.825
+        },
+        {
+          "path": "screenshots/ios-final-se3-large-today-top.png",
+          "sha256": "e8f2ae1a4ff3abcf31344c3ae53e26f0a37160f3b5952c6f2442dc2e260101fe",
+          "timestamp": 1792913391.202
+        }
+      ]
+    },
+    {
+      "device": "se3",
+      "viewportPoints": [
+        375,
+        667
+      ],
+      "textSize": "large",
+      "sourceCommit": "d9d08bbb3505ce6334b5d76919a6b3c783fdbfb9",
+      "testIdentifier": "SELayoutTests/testYouAboutAndPrivacyTail()",
+      "result": "passed",
+      "seconds": 12.249,
+      "resultBundle": "ios-real-se-rootfix-large.xcresult",
+      "attachments": [
+        {
+          "path": "screenshots/ios-final-se3-large-you-privacy-tail-visible.png",
+          "sha256": "3ab76c82fe11a7a62dd8e5386c823d023a74592778ab7776469d8af4e7d17b73",
+          "timestamp": 1792913418.409
+        },
+        {
+          "path": "screenshots/ios-final-se3-large-you-about-visible.png",
+          "sha256": "2d41ebc773885d8519a82c301195cfab88b328e01e83cbb27fb146a5f57339d6",
+          "timestamp": 1792913416.258
+        },
+        {
+          "path": "screenshots/ios-final-se3-large-you-top.png",
+          "sha256": "2d41ebc773885d8519a82c301195cfab88b328e01e83cbb27fb146a5f57339d6",
+          "timestamp": 1792913415.83
+        }
+      ]
+    },
+    {
+      "device": "se3",
+      "viewportPoints": [
+        375,
+        667
+      ],
+      "textSize": "ax5",
+      "sourceCommit": "d9d08bbb3505ce6334b5d76919a6b3c783fdbfb9",
+      "testIdentifier": "SELayoutTests/testYouAboutAndPrivacyTail()",
+      "result": "passed",
+      "seconds": 31.109,
+      "resultBundle": "ios-real-se-rootfix-accessibility-extra-extra-extra-large.xcresult",
+      "attachments": [
+        {
+          "path": "screenshots/ios-final-se3-ax5-you-privacy-tail-visible.png",
+          "sha256": "232917b41d6a31772fd70b2386c7d314e1c9272cd36934ef3d2a65e187f37b90",
+          "timestamp": 1792913527.156
+        },
+        {
+          "path": "screenshots/ios-final-se3-ax5-you-about-visible.png",
+          "sha256": "aaf6d49925c8a4d0b4ca85cac3ec63aa92be7ae39abfc0d2e5ab4946805934ec",
+          "timestamp": 1792913523.506
+        },
+        {
+          "path": "screenshots/ios-final-se3-ax5-you-top.png",
+          "sha256": "a61c0ee84b49317048a467ec47c89fd191f9db58cdf22d68c4bc5eb98b1cf01a",
+          "timestamp": 1792913507.093
+        }
+      ]
+    },
+    {
+      "device": "se3",
+      "viewportPoints": [
+        375,
+        667
+      ],
+      "textSize": "ax5",
+      "sourceCommit": "d9d08bbb3505ce6334b5d76919a6b3c783fdbfb9",
+      "testIdentifier": "SELayoutTests/testCompactNavigationAndStart()",
+      "result": "passed",
+      "seconds": 62.24,
+      "resultBundle": "ios-real-se-nav-retry-accessibility-extra-extra-extra-large.xcresult",
+      "attachments": [
+        {
+          "path": "screenshots/ios-final-se3-ax5-insights-tail-visible.png",
+          "sha256": "be162c9f892e548a9934c76d2673f8f3463b8a5334712b84130e0361975792aa",
+          "timestamp": 1792913855.667
+        },
+        {
+          "path": "screenshots/ios-final-se3-ax5-insights-scroll-through-6.png",
+          "sha256": "113283c76103f8a71c2277388661865babf204fd1b6cd3cde8c454682f56259e",
+          "timestamp": 1792913853.849
+        },
+        {
+          "path": "screenshots/ios-final-se3-ax5-insights-scroll-through-4.png",
+          "sha256": "c79809acda090ea7be55a8ab32fc7fe7e6600fd52af9fcace13dd84cea9aed11",
+          "timestamp": 1792913850.625
+        },
+        {
+          "path": "screenshots/ios-final-se3-ax5-insights-scroll-through-2.png",
+          "sha256": "eebf6b0e5555b9bba4852ec20744ba5f66e830a0c44a02d75acdb6901314d7ad",
+          "timestamp": 1792913847.785
+        },
+        {
+          "path": "screenshots/ios-final-se3-ax5-insights-scroll-through-0.png",
+          "sha256": "052d0cefc113472f5bc7f4362a028919eaa90ac7ec08c2fe69bb273755dc4aba",
+          "timestamp": 1792913844.745
+        },
+        {
+          "path": "screenshots/ios-final-se3-ax5-insights-top.png",
+          "sha256": "bd6b47298a02694f2bdf32e4f7a80baebe224415fc6ac82b1fa74ee8e9bef3a8",
+          "timestamp": 1792913844.599
+        },
+        {
+          "path": "screenshots/ios-final-se3-ax5-rules-options.png",
+          "sha256": "8e9127c6704ee8052a31f9403a5fb7443340bce1e86d3fddb96bfce26b9c5183",
+          "timestamp": 1792913842.361
+        },
+        {
+          "path": "screenshots/ios-final-se3-ax5-start-footer.png",
+          "sha256": "0a89e61cc9d2cdd9a73739efd9302741de41541f79032ff30f3fb650216b6a99",
+          "timestamp": 1792913828.625
+        },
+        {
+          "path": "screenshots/ios-final-se3-ax5-start-hardcore-selected.png",
+          "sha256": "c55760975951d3ae02f60b6db6969a32c5bd00e2c23565f5240798928dd58489",
+          "timestamp": 1792913822.771
+        },
+        {
+          "path": "screenshots/ios-final-se3-ax5-start-top.png",
+          "sha256": "b17e113dc9812b15470d717638b41d41e3dfa0c3e4dae329240b4c20f6044be1",
+          "timestamp": 1792913813.628
+        },
+        {
+          "path": "screenshots/ios-final-se3-ax5-today-actions.png",
+          "sha256": "43699e3d69721de2b65f4c13a6dbbcaec903c2e376d073f26025024f160866be",
+          "timestamp": 1792913811.594
+        },
+        {
+          "path": "screenshots/ios-final-se3-ax5-today-top.png",
+          "sha256": "4e93bc705ae20c66527efeb54bedf5c399cf4f2b87fd2d9461f75fe45fcd1cc9",
+          "timestamp": 1792913803.572
+        }
+      ],
+      "additionalFrameAudit": "Begin20 frame(24,474,327,141.5) is wholly inside actual ScrollView(24,110,327,541); bottom615.5 <651."
+    },
+    {
+      "device": "18pro",
+      "viewportPoints": [
+        402,
+        874
+      ],
+      "textSize": "ax5",
+      "sourceCommit": "d9d08bbb3505ce6334b5d76919a6b3c783fdbfb9",
+      "testIdentifier": "LayoutTests/testPermissionErrorLayout()",
+      "result": "passed",
+      "seconds": 18.727,
+      "resultBundle": "ios-root-permission-ax5.xcresult",
+      "attachments": [
+        {
+          "path": "screenshots/ios-final-18pro-ax5-permission-error-bottom.png",
+          "sha256": "b43c1ec89533b1bc8828848a09db8b86c15bcd70b825ab00bf7f26e68df4b7e5",
+          "timestamp": 1792913718.493
+        }
+      ]
+    },
+    {
+      "device": "18pro",
+      "viewportPoints": [
+        402,
+        874
+      ],
+      "textSize": "ax5",
+      "sourceCommit": "d9d08bbb3505ce6334b5d76919a6b3c783fdbfb9",
+      "testIdentifier": "SELayoutTests/test18ProCompactNavigationAndStart()",
+      "result": "passed",
+      "seconds": 39.227,
+      "resultBundle": "ios-18pro-nav-final-ax5.xcresult",
+      "attachments": [
+        {
+          "path": "screenshots/ios-final-18pro-ax5-insights-tail-visible.png",
+          "sha256": "20a127a640480bd824a588f252053e4ed1fcef76715c13c475dccf43f2d1e0a6",
+          "timestamp": 1792913984.666
+        },
+        {
+          "path": "screenshots/ios-final-18pro-ax5-insights-scroll-through-2.png",
+          "sha256": "f10abd8ee2ca0d6c8d77741a31063e65ece6e012bd3065b34caced664b401f1f",
+          "timestamp": 1792913983.06
+        },
+        {
+          "path": "screenshots/ios-final-18pro-ax5-insights-scroll-through-0.png",
+          "sha256": "842adb3c4d84d2c4ada0d16617b8c3369d80e0653310442bc4cfc6c381970dd6",
+          "timestamp": 1792913979.723
+        },
+        {
+          "path": "screenshots/ios-final-18pro-ax5-insights-top.png",
+          "sha256": "87dc667809e2bef2d4324c3516570ac46268882f48803cdf8824b8f35ac7b8f6",
+          "timestamp": 1792913979.554
+        },
+        {
+          "path": "screenshots/ios-final-18pro-ax5-rules-options.png",
+          "sha256": "c043168e6954709804bfbf422c008f5e3f924e944419a6a6117c6cc04d48c06e",
+          "timestamp": 1792913977.507
+        },
+        {
+          "path": "screenshots/ios-final-18pro-ax5-start-footer.png",
+          "sha256": "3f5397b6496d5d47f4a8037f6bd6cb68d79d4ebee7859d44ec7371b3ed3faf8e",
+          "timestamp": 1792913970.096
+        },
+        {
+          "path": "screenshots/ios-final-18pro-ax5-start-hardcore-selected.png",
+          "sha256": "38ce8521cbe4561349091eb01c33806365b5e6e4fc0cfefe3d1ef354c67ed772",
+          "timestamp": 1792913965.793
+        },
+        {
+          "path": "screenshots/ios-final-18pro-ax5-start-top.png",
+          "sha256": "363ef7b9a14b4743ab6a9a195478a47a8cba6566a763638460a39e06576fa403",
+          "timestamp": 1792913959.859
+        },
+        {
+          "path": "screenshots/ios-final-18pro-ax5-today-actions.png",
+          "sha256": "fdf8e5a5c0ee7221ca76af435365c9c6b4a3a008f9f92e421ccab16daa762a5f",
+          "timestamp": 1792913958.235
+        },
+        {
+          "path": "screenshots/ios-final-18pro-ax5-today-top.png",
+          "sha256": "f4c4f9fccdb5f309e06c02ced479ef2b7689b3c60367d607ff303d6c1f055a84",
+          "timestamp": 1792913953.671
+        }
+      ]
+    }
+  ]
+}

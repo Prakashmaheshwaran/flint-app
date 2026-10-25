@@ -1,0 +1,14 @@
+{
+  "sourceCommit": "85f066766fe03c75826f73c033a284903e414817",
+  "appPath": "/Users/prakash/Library/Developer/Xcode/DerivedData/Flint-gzilznchzdewhiarzmllmrocytev/Build/Products/Debug-iphonesimulator/Flint.app",
+  "executables": [
+    {
+      "path": "/Users/prakash/Library/Developer/Xcode/DerivedData/Flint-gzilznchzdewhiarzmllmrocytev/Build/Products/Debug-iphonesimulator/Flint.app/Flint",
+      "sha256": "2d60091fcac46a837b04d73364bb7f8422d6be8389366681def7b71f27af9c32"
+    },
+    {
+      "path": "/Users/prakash/Library/Developer/Xcode/DerivedData/Flint-gzilznchzdewhiarzmllmrocytev/Build/Products/Debug-iphonesimulator/Flint.app/Flint.debug.dylib",
+      "sha256": "a1b83b4f00352fc6450b6e1f52c8db21962afb091959d36a69c6750f168c7ad1"
+    }
+  ]
+}

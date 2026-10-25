@@ -1,0 +1,30 @@
+{
+  "verifiedProductCommit": "5e62cb889a8488e4935c2ed09c6197aeaf78d81b",
+  "docsMergeCommit": "3dbd04f55046a0bc0f4908c346cbc3bc9bb27eea",
+  "finalF6Head": "8e6645764e854478b21b96a0e68e36caec0785d4",
+  "finalF5Head": "3792264466d7bbdd8ba8b0a5453646a42bd63b0e",
+  "nonDocumentationDiff": [],
+  "normalMergeParents": [
+    "5e62cb889a8488e4935c2ed09c6197aeaf78d81b",
+    "8e6645764e854478b21b96a0e68e36caec0785d4"
+  ],
+  "androidTree": "617f9027ad784d31697df17309329b3b024e84e7",
+  "files": [
+    {
+      "path": "ios-app/Flint/FlintApp.swift",
+      "sha256": "f4df6d3150720593607cba0d69689b31e0d17fd28aa0f525da53d5a457fbd3e2"
+    },
+    {
+      "path": "ios-app/Flint/Features/Today/TodayView.swift",
+      "sha256": "701dc0f86114d43a69094a658b648aeb886e835a98186cc7c66a9163dfc79841"
+    },
+    {
+      "path": "ios-app/Flint/Features/Stats/StatsView.swift",
+      "sha256": "1b9261cba9ac4307da4d3dd5c4a1bcfe5dde0865a661c4c065522fcebf73cda3"
+    },
+    {
+      "path": "ios-app/project.yml",
+      "sha256": "03770182f60ef5bb52abe97d75cc9ddfc2706a988f6b84b9418bd31e0236577f"
+    }
+  ]
+}

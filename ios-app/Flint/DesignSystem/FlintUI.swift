@@ -262,6 +262,42 @@ struct FlintSegmented<Value: Hashable>: View {
 
 // MARK: - Surfaces
 
+/// Content-sized options wrap onto another row instead of compressing their text.
+struct FlintWrappingLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(subviews, width: proposal.width ?? .infinity).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let arrangement = arrange(subviews, width: bounds.width)
+        for (index, frame) in arrangement.frames.enumerated() {
+            subviews[index].place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                                  proposal: ProposedViewSize(frame.size))
+        }
+    }
+
+    private func arrange(_ subviews: Subviews, width: CGFloat) -> (size: CGSize, frames: [CGRect]) {
+        var frames: [CGRect] = []
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, usedWidth: CGFloat = 0
+        for subview in subviews {
+            let ideal = subview.sizeThatFits(.unspecified)
+            let size = subview.sizeThatFits(ProposedViewSize(width: min(ideal.width, width), height: nil))
+            if x > 0 && x + size.width > width {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            frames.append(CGRect(x: x, y: y, width: size.width, height: size.height))
+            usedWidth = max(usedWidth, x + size.width)
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return (CGSize(width: usedWidth, height: y + rowHeight), frames)
+    }
+}
+
 /// Quiet card: 20 radius, bone@0.03 fill, bone@0.10 hairline.
 struct FlintCard<Content: View>: View {
     var radius: CGFloat = 20
@@ -285,18 +321,24 @@ struct FlintRow<Trailing: View>: View {
     var chevron = false
     var minHeight: CGFloat = 58
     @ViewBuilder var trailing: Trailing
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         HStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).flintRowTitle()
                 if let subtitle { Text(subtitle).flintSecondary() }
+                if typeSize.isAccessibilitySize, let value {
+                    Text(value).flintSecondary(14).monospacedDigit()
+                }
             }
+            .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
-            if let value { Text(value).flintSecondary(14).monospacedDigit() }
+            if !typeSize.isAccessibilitySize, let value { Text(value).flintSecondary(14).monospacedDigit() }
             trailing
             if chevron { FlintChevron() }
         }
+        .padding(.vertical, typeSize.isAccessibilitySize ? 12 : 0)
         .frame(minHeight: minHeight)
         .overlay(alignment: .bottom) { FlintHairline() }
         .contentShape(Rectangle())
@@ -562,13 +604,32 @@ enum FlintTab: String, CaseIterable, Hashable {
     }
 }
 
-/// The floating four-tab bar, identical on iPhone and Android.
+/// The floating four-tab bar. Reflow into two rows when the full labels need more width.
 struct FlintTabBar: View {
     @Binding var selection: FlintTab
 
     var body: some View {
+        ViewThatFits(in: .horizontal) {
+            tabRow(FlintTab.allCases)
+            VStack(spacing: 0) {
+                tabRow([.today, .rules])
+                tabRow([.insights, .you])
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                .fill(.ultraThinMaterial).environment(\.colorScheme, .dark)
+                .overlay(RoundedRectangle(cornerRadius: 32, style: .continuous)
+                    .fill(Color(red: 24 / 255, green: 22 / 255, blue: 24 / 255).opacity(0.82)))
+        )
+        .overlay(RoundedRectangle(cornerRadius: 32, style: .continuous).strokeBorder(FlintBrand.bone(0.10)))
+        .padding(.horizontal, 24)
+        .padding(.bottom, 12)
+    }
+
+    private func tabRow(_ tabs: [FlintTab]) -> some View {
         HStack(spacing: 0) {
-            ForEach(FlintTab.allCases, id: \.self) { tab in
+            ForEach(tabs, id: \.self) { tab in
                 let selected = tab == selection
                 Button { selection = tab } label: {
                     VStack(spacing: 3) {
@@ -576,9 +637,12 @@ struct FlintTabBar: View {
                             .frame(width: 22, height: 22)
                         Text(tab.title)
                             .font(FlintFont.text(11, weight: selected ? .semibold : .medium, relativeTo: .caption2))
+                            .fixedSize()
                     }
                     .foregroundStyle(selected ? FlintBrand.bone : FlintBrand.stone)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, minHeight: 64)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -586,14 +650,6 @@ struct FlintTabBar: View {
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
-        .frame(height: 64)
-        .background(
-            Capsule().fill(.ultraThinMaterial).environment(\.colorScheme, .dark)
-                .overlay(Capsule().fill(Color(red: 24 / 255, green: 22 / 255, blue: 24 / 255).opacity(0.82)))
-        )
-        .overlay(Capsule().strokeBorder(FlintBrand.bone(0.10)))
-        .padding(.horizontal, 24)
-        .padding(.bottom, 12)
     }
 }
 
@@ -643,10 +699,10 @@ struct FlintTabIcon: View {
     }
 }
 
-/// Clears the floating tab bar at the bottom of scrolling tab content.
+/// Breathing room above the tab bar, whose actual height is reserved by RootView.
 extension View {
     func flintTabBarInset() -> some View {
-        safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: 84) }
+        safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: 8) }
     }
 }
 

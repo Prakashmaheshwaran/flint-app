@@ -1,0 +1,38 @@
+[
+  {
+    "path": "screenshots/ios-final-large-insights-tail.png",
+    "sha256": "fb3144d7611e2e2b3103996db4fd5b9eb9b4cd4e93fac1d4256dbde9ae0657e8",
+    "sourceCommit": "a6a2b3c2ff77b313a550dff99a1efbbc7feae1a3",
+    "testIdentifier": "LayoutTests/testInsightsScrollTail()",
+    "testResult": "passed",
+    "resultBundle": "ios-insights-gradient-large.xcresult",
+    "timestamp": 1792910643.384
+  },
+  {
+    "path": "screenshots/ios-final-large-insights-top.png",
+    "sha256": "fb3144d7611e2e2b3103996db4fd5b9eb9b4cd4e93fac1d4256dbde9ae0657e8",
+    "sourceCommit": "a6a2b3c2ff77b313a550dff99a1efbbc7feae1a3",
+    "testIdentifier": "LayoutTests/testInsightsScrollTail()",
+    "testResult": "passed",
+    "resultBundle": "ios-insights-gradient-large.xcresult",
+    "timestamp": 1792910642.114
+  },
+  {
+    "path": "screenshots/ios-final-ax5-insights-tail.png",
+    "sha256": "7a9fe358c21c65882994c633072305fd787d144d52cf6d0bc77817efe892f8bc",
+    "sourceCommit": "a6a2b3c2ff77b313a550dff99a1efbbc7feae1a3",
+    "testIdentifier": "LayoutTests/testInsightsScrollTail()",
+    "testResult": "passed",
+    "resultBundle": "ios-insights-gradient-accessibility-extra-extra-extra-large.xcresult",
+    "timestamp": 1792910666.482
+  },
+  {
+    "path": "screenshots/ios-final-ax5-insights-top.png",
+    "sha256": "266f1af4382e57c05bcf96855476e7d26e7f67b7415bf6fe32acd8135f35b33e",
+    "sourceCommit": "a6a2b3c2ff77b313a550dff99a1efbbc7feae1a3",
+    "testIdentifier": "LayoutTests/testInsightsScrollTail()",
+    "testResult": "passed",
+    "resultBundle": "ios-insights-gradient-accessibility-extra-extra-extra-large.xcresult",
+    "timestamp": 1792910662.565
+  }
+]

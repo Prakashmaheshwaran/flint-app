@@ -1,0 +1,97 @@
+{
+  "sourceCommit": "5e62cb889a8488e4935c2ed09c6197aeaf78d81b",
+  "targets": [
+    {
+      "axFrame": [
+        40,
+        395.3333333333333,
+        322,
+        44
+      ],
+      "cornerCancellationObserved": true,
+      "cornerTap": [
+        359,
+        436.3333333333333
+      ],
+      "screen": "Insights",
+      "tabTop": 764,
+      "viewport": [
+        0,
+        130,
+        402,
+        634
+      ],
+      "textSize": "large",
+      "clearanceAboveTabs": 324.6666666666667
+    },
+    {
+      "axFrame": [
+        40,
+        676,
+        322,
+        44
+      ],
+      "cornerCancellationObserved": true,
+      "cornerTap": [
+        359,
+        717
+      ],
+      "screen": "Today",
+      "tabTop": 764,
+      "viewport": [
+        0,
+        20,
+        402,
+        744
+      ],
+      "textSize": "large",
+      "clearanceAboveTabs": 44
+    },
+    {
+      "axFrame": [
+        40,
+        550.6666666666665,
+        322,
+        51
+      ],
+      "cornerCancellationObserved": true,
+      "cornerTap": [
+        359,
+        598.6666666666665
+      ],
+      "screen": "Insights",
+      "tabTop": 638.6666666666666,
+      "viewport": [
+        0,
+        230,
+        402,
+        408.6666666666665
+      ],
+      "textSize": "accessibility-extra-extra-extra-large",
+      "clearanceAboveTabs": 37.000000000000114
+    },
+    {
+      "axFrame": [
+        40,
+        585.6666666666666,
+        322,
+        51
+      ],
+      "cornerCancellationObserved": true,
+      "cornerTap": [
+        359,
+        633.6666666666666
+      ],
+      "screen": "Today",
+      "tabTop": 638.6666666666666,
+      "viewport": [
+        0,
+        20,
+        402,
+        618.6666666666666
+      ],
+      "textSize": "accessibility-extra-extra-extra-large",
+      "clearanceAboveTabs": 2.0
+    }
+  ]
+}

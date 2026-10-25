@@ -10,6 +10,7 @@ struct TodayView: View {
     @Binding var showStart: Bool
     @State private var now = Date()
     @State private var rules: [FlintScheduleRule] = []
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     private let presets: [(name: String, minutes: Int)] = [("Deep study", 90), ("Reading", 30), ("Workout", 60)]
 
@@ -21,12 +22,12 @@ struct TodayView: View {
                 ScrollView {
                     content
                         .padding(.horizontal, 24)
-                        .padding(.vertical, 12)
+                        .padding(.top, 12)
+                        .padding(.bottom, 28)
                         .frame(minHeight: geometry.size.height, alignment: .top)
                 }
                 .clipped()
             }
-            .padding(.bottom, 104)
         }
         .sheet(isPresented: $showStart) {
             StartFocusSheet(vm: vm) { showStart = false }
@@ -59,6 +60,8 @@ struct TodayView: View {
             VStack(spacing: 6) {
                 Text(Self.duration(minutes: vm.durationMinutes)).flintNumber(50)
                 Text("Your next session").flintEyebrow()
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity)
             .accessibilityElement(children: .combine)
@@ -83,19 +86,18 @@ struct TodayView: View {
 
     private var actions: some View {
         VStack(spacing: 14) {
-            HStack(spacing: 8) {
+            FlintWrappingLayout(spacing: 8) {
                 ForEach(presets, id: \.name) { preset in
                     Button {
                         vm.durationMinutes = preset.minutes
                         showStart = true
                     } label: {
-                        HStack(spacing: 4) {
-                            Text(preset.name)
-                            Text("\(preset.minutes)m").foregroundStyle(FlintBrand.mist)
-                        }
-                        .lineLimit(1)
+                        (Text(preset.name) + Text(" \(preset.minutes)m").foregroundColor(FlintBrand.mist))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.vertical, typeSize.isAccessibilitySize ? 8 : 0)
                     }
-                    .buttonStyle(ChipButtonStyle())
+                    .buttonStyle(ChipButtonStyle(height: 44))
+                    .accessibilityLabel("\(preset.name), \(preset.minutes) minutes")
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

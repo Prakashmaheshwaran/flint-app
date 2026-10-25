@@ -1,0 +1,23 @@
+[
+  {
+    "path": "screenshots/android-before-tabs-2.0-narrow.png",
+    "sourceCapture": "android-after-2.0-narrow-today.png",
+    "sha256": "af9682f6008984c4612def93d970eed07fd27599aa2b0455d5388783cd05a2d0",
+    "sourceCommit": "516b27d52d120a9dcd1c45b9709915ff2fe0726e",
+    "note": "Before/after the adaptive tab-label follow-up; earlier Timer and Rule changes are already present."
+  },
+  {
+    "path": "screenshots/android-after-tabs-2.0-narrow.png",
+    "sourceCapture": "android-after-retry1-2.0-narrow-today.png",
+    "sha256": "8dce2a0477e442174ed505b6c0e1945ce2552076fec8543628b6464aec4208d2",
+    "sourceCommit": "12bcca3e3a299fbfd5d3d1b6b0c94cf0d9b1615a",
+    "note": "Before/after the adaptive tab-label follow-up; earlier Timer and Rule changes are already present."
+  },
+  {
+    "path": "screenshots/android-after-tabs-normal.png",
+    "sourceCapture": "android-after-retry1-nav-normal.png",
+    "sha256": "581b7dd996e98dcc8b004eef02b699de033873b097540e2c8496851d815d547c",
+    "sourceCommit": "12bcca3e3a299fbfd5d3d1b6b0c94cf0d9b1615a",
+    "note": "Before/after the adaptive tab-label follow-up; earlier Timer and Rule changes are already present."
+  }
+]

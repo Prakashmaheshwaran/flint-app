@@ -1,0 +1,24 @@
+{
+  "sourceCommit": "dec9530a808a2b2c70ea4577a0eaeba9837fb90c",
+  "checks": [
+    {
+      "name": "build-and-test",
+      "conclusion": "success",
+      "checkRunId": 121074910191,
+      "url": "https://github.com/Prakashmaheshwaran/flint-app/actions/runs/40161858055/job/121074910191"
+    },
+    {
+      "name": "build-and-test",
+      "conclusion": "success",
+      "checkRunId": 121074910020,
+      "url": "https://github.com/Prakashmaheshwaran/flint-app/actions/runs/40161858053/job/121074910020"
+    },
+    {
+      "name": "GitGuardian Security Checks",
+      "conclusion": "success",
+      "checkRunId": 121074905538,
+      "url": "https://dashboard.gitguardian.com"
+    }
+  ],
+  "note": "This records CI at the source commit. Local final gates, native UI, and cleanup are documented separately."
+}
