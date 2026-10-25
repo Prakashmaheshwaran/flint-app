@@ -1,0 +1,13 @@
+{
+  "sourceCommit": "5e62cb889a8488e4935c2ed09c6197aeaf78d81b",
+  "f6Product": "3de5132e34fd2b0d6a1ee68cff7a7bfdbaac2e5b",
+  "f6DocsHead": "9dacf0087435b2230586bc9fbc505a2ff57107e8",
+  "f5TargetFix": "08bbc204b9074e9fd56a9efa26faad96e995b155",
+  "androidTree": "617f9027ad784d31697df17309329b3b024e84e7",
+  "androidUnchangedFromF67ad4b": true,
+  "measuredRootUnchangedFromF67ad4b": true,
+  "authorizationModelAndPreviewUnchangedFrom85f0667": true,
+  "TodayAndStatsSourcesUnchangedFrom85f0667": true,
+  "sharedControlsIdenticalToF6": true,
+  "retainedTransientEvidenceReason": "Only secondary-label layout and onboarding skip target changed since 85f0667; primary actions, transient feedback, model and root/Today/Insights source remain unchanged."
+}

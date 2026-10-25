@@ -1,0 +1,31 @@
+{
+  "axFrame": [
+    162.66666666666666,
+    689,
+    77,
+    18.33333333333337
+  ],
+  "centerActivated": null,
+  "intended44ptLayoutArea": [
+    162.66666666666666,
+    676.1666666666667,
+    77,
+    44
+  ],
+  "lowerOffLabelActivated": true,
+  "lowerProbePoint": [
+    201.16666666666666,
+    719.1666666666667
+  ],
+  "upperOffLabelActivated": null,
+  "upperProbePoint": [
+    201.16666666666666,
+    677.1666666666667
+  ],
+  "source": "85f066766fe03c75826f73c033a284903e414817",
+  "scenario": "Today hung UI-only fixture",
+  "font": "Large",
+  "log": "/tmp/flint-fixes-20261024/F4/review-followup/probe-01/large.log",
+  "diagnosticResult": "Strict AX-height assertion failed after probe observations",
+  "interpretation": "Lower edge at +21pt from center, 11.833pt below the reported AX label, DID cancel the pending fixture. Thus the AX frame does not fully describe the touch region; do not claim a short physical touch target from AX height alone. Upper edge not yet probed."
+}

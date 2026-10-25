@@ -1,0 +1,32 @@
+{
+  "insights": {
+    "capturedGeometry": [
+      "Button, 0x113918a00, {{251.7, 83.0}, {59.3, 44.0}}, identifier: 'insights.range', label: 'Today', Selected",
+      "ScrollView, 0x11391abc0, {{0.0, 130.0}, {402.0, 634.0}}",
+      "Button, 0x11391b340, {{40.0, 433.0}, {322.0, 56.0}}, identifier: 'insights.authorization.action', label: 'Open Settings'",
+      "Button, 0x11391b480, {{139.3, 514.0}, {123.7, 18.3}}, identifier: 'insights.authorization.check', label: 'Check access again'"
+    ],
+    "AXFrameHeightAtAssertion": 18.3333333333333,
+    "isHittableAtContainmentCheck": true,
+    "wholeAXFrameInsideScrollAndAboveTabs": true,
+    "settingsActivated": true,
+    "settingsDestination": "Settings root",
+    "recheckTapExecuted": false,
+    "reasonRecheckTapNotExecuted": "Stopped at strict 44pt secondary-target assertion before tap."
+  },
+  "today": {
+    "capturedGeometry": [
+      "ScrollView, 0x113369540, {{0.0, 0.0}, {402.0, 764.0}}",
+      "Button, 0x113368a00, {{40.0, 608.0}, {322.0, 56.0}}, identifier: 'today.authorization.action', label: 'Open Settings'",
+      "Button, 0x113368780, {{139.3, 689.0}, {123.7, 18.3}}, identifier: 'today.authorization.check', label: 'Check access again'",
+      "Button, 0x113369180, {{24.0, 764.0}, {88.7, 64.0}}, label: 'Today', Selected"
+    ],
+    "AXFrameHeightAtAssertion": 18.3333333333333,
+    "isHittableAtContainmentCheck": true,
+    "wholeAXFrameInsideScrollAndAboveTabs": true,
+    "settingsActivated": true,
+    "settingsDestination": "Settings root",
+    "recheckTapExecuted": false,
+    "reasonRecheckTapNotExecuted": "Stopped at strict 44pt secondary-target assertion before tap."
+  }
+}

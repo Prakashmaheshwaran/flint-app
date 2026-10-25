@@ -1,5 +1,7 @@
 # F4 — Accessible text layouts
 
+**Historical layout record:** the original product and device results below retain their recorded revisions. The [2026-10-25 permission recovery integration](../f4-permission-recovery-integration-2026-10-25/README.md) records the latest F5/F6 integration, 82-test iOS gate, and final Large/AX5 secondary-control checks at `5e62cb8`.
+
 [PR #67](https://github.com/Prakashmaheshwaran/flint-app/pull/67) is stacked on F6 (#65), after F5 (#61). Android integration also requires #66 before #67 because it reserves the measured tab-bar height. F4 does not change MainActivity or merge F1 into this branch.
 
 ## Changes

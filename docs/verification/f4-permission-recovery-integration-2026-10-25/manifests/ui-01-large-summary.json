@@ -1,0 +1,60 @@
+{
+  "devicesAndConfigurations" : [
+    {
+      "device" : {
+        "architecture" : "arm64",
+        "deviceId" : "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+        "deviceName" : "Flint Review Followup 20261025",
+        "modelName" : "iPhone 18 Pro",
+        "osBuildNumber" : "24A434",
+        "osVersion" : "27.0",
+        "platform" : "iOS Simulator"
+      },
+      "expectedFailures" : 0,
+      "failedTests" : 2,
+      "passedTests" : 2,
+      "skippedTests" : 0,
+      "testPlanConfiguration" : {
+        "configurationId" : "1",
+        "configurationName" : "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription" : "FlintF4RecoveryUI · Built with macOS 27.0.1",
+  "expectedFailures" : 0,
+  "failedTests" : 2,
+  "finishTime" : 1792922091.411,
+  "passedTests" : 2,
+  "result" : "Failed",
+  "runtimeWarnings" : [
+
+  ],
+  "skippedTests" : 0,
+  "startTime" : 1792921999.162,
+  "statistics" : [
+
+  ],
+  "testFailures" : [
+    {
+      "failureText" : "XCTAssertGreaterThanOrEqual failed: (\"18.333333333333258\") is less than (\"44.0\")",
+      "targetName" : "FlintF4RecoveryUITests",
+      "testIdentifier" : 1,
+      "testIdentifierString" : "RecoveryLayoutTests/testInsightsDeniedGuidanceSettingsAndRecheck()",
+      "testIdentifierURL" : "test://com.apple.xcode/FlintF4RecoveryUI/FlintF4RecoveryUITests/RecoveryLayoutTests/testInsightsDeniedGuidanceSettingsAndRecheck",
+      "testName" : "testInsightsDeniedGuidanceSettingsAndRecheck()"
+    },
+    {
+      "failureText" : "XCTAssertGreaterThanOrEqual failed: (\"18.33333333333337\") is less than (\"44.0\")",
+      "targetName" : "FlintF4RecoveryUITests",
+      "testIdentifier" : 3,
+      "testIdentifierString" : "RecoveryLayoutTests/testTodayDeniedGuidanceSettingsAndRecheck()",
+      "testIdentifierURL" : "test://com.apple.xcode/FlintF4RecoveryUI/FlintF4RecoveryUITests/RecoveryLayoutTests/testTodayDeniedGuidanceSettingsAndRecheck",
+      "testName" : "testTodayDeniedGuidanceSettingsAndRecheck()"
+    }
+  ],
+  "title" : "Test - FlintF4RecoveryUI",
+  "topInsights" : [
+
+  ],
+  "totalTestCount" : 4
+}

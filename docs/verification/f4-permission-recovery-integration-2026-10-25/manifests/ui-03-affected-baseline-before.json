@@ -1,0 +1,9 @@
+{
+  "guest": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+  "bootedGuests": [
+    "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473"
+  ],
+  "appInstalled": true,
+  "examinedPreferenceFiles": 1,
+  "pinPresent": false
+}

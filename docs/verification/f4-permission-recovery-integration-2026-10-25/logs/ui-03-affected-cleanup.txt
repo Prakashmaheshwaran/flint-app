@@ -1,0 +1,13 @@
+large_restore_exit=0
+large
+An error was encountered processing the command (domain=NSPOSIXErrorDomain, code=3):
+Simulator device failed to terminate com.flint.peakfocus.
+found nothing to terminate
+Underlying error (domain=NSPOSIXErrorDomain, code=3):
+	The request to terminate "com.flint.peakfocus" failed. found nothing to terminate
+	found nothing to terminate
+com.flint.peakfocus: 36645
+production_launch_exit=0
+Authorized guest guard passed; current PIN absent. No values read into logs.
+final_baseline_guard_exit=0
+Sun Oct 25 10:18:32 UTC 2026
