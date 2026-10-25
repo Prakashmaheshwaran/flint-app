@@ -12,7 +12,6 @@ struct StatsView: View {
     @State private var range: InsightsRange = .week
     @State private var referenceDate = Date()
     @State private var reportID = UUID()
-    @State private var isRequesting = false
     @State private var accessFeedback: String?
     @State private var showReportHelp = false
     private let context = DeviceActivityReport.Context("Total Activity")
@@ -128,24 +127,17 @@ struct StatsView: View {
                         .accessibilityIdentifier("insights.authorizationError")
                     }
                     Button {
-                        guard !isRequesting else { return }
-                        isRequesting = true
                         accessFeedback = nil
-                        auth.lastError = nil
                         Task { @MainActor in
                             await auth.requestAuthorization()
-                            isRequesting = false
-                            if auth.status != .approved && auth.lastError == nil {
-                                accessFeedback = "Screen Time access is still off. Allow access to see Insights."
-                            }
                         }
                     } label: {
-                        Text(isRequesting ? "Requesting access…" : auth.lastError == nil ? "Allow Screen Time" : "Try again")
+                        Text(auth.isRequesting ? "Requesting access…" : auth.lastError == nil ? "Allow Screen Time" : "Try again")
                             .padding(.vertical, 10)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .buttonStyle(EmberButtonStyle())
-                    .disabled(isRequesting)
+                    .disabled(auth.isRequesting)
                     .accessibilityIdentifier("insights.authorize")
                 }
 
@@ -159,7 +151,7 @@ struct StatsView: View {
                     .font(FlintFont.text(16, weight: .medium))
                     .foregroundStyle(FlintBrand.bone)
                     .frame(minHeight: 44)
-                    .disabled(isRequesting)
+                    .disabled(auth.isRequesting)
                     .accessibilityIdentifier("insights.checkAccess")
                 }
                 if let accessFeedback {
