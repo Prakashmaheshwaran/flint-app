@@ -42,16 +42,22 @@ struct RootView: View {
     }
 
     private var tabs: some View {
-        Group {
-            switch tab {
-            case .today: TodayView(auth: auth, vm: session, showStart: $showStart)
-            case .rules: RulesView()
-            case .insights: StatsView(auth: auth)
-            case .you: SettingsView()
+        VStack(spacing: 0) {
+            Group {
+                switch tab {
+                case .today: TodayView(auth: auth, vm: session, showStart: $showStart)
+                case .rules: RulesView()
+                case .insights: StatsView(auth: auth)
+                case .you: SettingsView()
+                }
             }
+            .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+            .clipped()
+
+            // Give navigation-backed content real bounds above the measured bar.
+            FlintTabBar(selection: $tab)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .safeAreaInset(edge: .bottom, spacing: 0) { FlintTabBar(selection: $tab) }
         .background(FlintBrand.ground.ignoresSafeArea())
         .ignoresSafeArea(.keyboard)
         .fullScreenCover(isPresented: Binding(get: { session.active != nil }, set: { _ in })) {
