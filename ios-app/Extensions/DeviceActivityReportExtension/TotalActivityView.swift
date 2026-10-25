@@ -102,6 +102,8 @@ struct TotalActivityContent: View {
     }
 
     static func format(_ t: TimeInterval) -> String {
+        // Positive sub-minute usage stays distinct from a recorded zero.
+        if t > 0, t < 60 { return "<1m" }
         let minutes = Int(t / 60)
         let h = minutes / 60, m = minutes % 60
         if h == 0 { return "\(m)m" }
@@ -171,14 +173,24 @@ enum ReportFont {
     static func display(_ size: CGFloat) -> Font {
         _ = registered
         return UIFont(name: "ShipporiMincho-Regular", size: size) != nil
-            ? .custom("ShipporiMincho-Regular", size: size, relativeTo: .title) : .system(.title, design: .serif)
+            ? .custom("ShipporiMincho-Regular", size: size, relativeTo: .title) : fallbackDisplay(size)
     }
 
     static func text(_ size: CGFloat, medium: Bool = false) -> Font {
         _ = registered
         let name = medium ? "HankenGrotesk-Medium" : "HankenGrotesk-Regular"
         return UIFont(name: name, size: size) != nil
-            ? .custom(name, size: size, relativeTo: .body) : .system(.body, weight: medium ? .medium : .regular)
+            ? .custom(name, size: size, relativeTo: .body) : fallbackText(size, medium: medium)
+    }
+
+    /// Fallbacks keep the requested point size, matching the app's `FlintFont`: a missing
+    /// bundled face must not collapse 52 pt display type to a 28 pt text style.
+    static func fallbackDisplay(_ size: CGFloat) -> Font {
+        .system(size: size, design: .serif)
+    }
+
+    static func fallbackText(_ size: CGFloat, medium: Bool) -> Font {
+        .system(size: size, weight: medium ? .medium : .regular)
     }
 }
 

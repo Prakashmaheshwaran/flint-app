@@ -1,0 +1,10 @@
+{
+  "avd": "flint-test",
+  "serial": "emulator-5554",
+  "ready_at_utc": "2026-10-25T06:14:36.525092+00:00",
+  "snapshot_load": false,
+  "snapshot_save": false,
+  "wipe_requested": false,
+  "api": "35",
+  "scope": "Same preserved-data AVD; only remaining Sleep Save and App-limit acceptance."
+}

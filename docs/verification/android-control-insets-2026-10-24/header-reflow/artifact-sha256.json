@@ -1,0 +1,23 @@
+{
+  "after/header-320dp-2x-live-count-and-footer.png": "c8025e15213ea9a715d7dfd8e54c96e65217249a3352b9be7e12d468f58ef1d8",
+  "after/header-320dp-2x-live-count-and-footer.xml": "9b60c2fe402a0990e85e2c30388efe25a3d4e79a7913db4550de8820e07756fa",
+  "after/header-320dp-2x-result-count-readable.png": "5026a6b0d6067a5088194b65453fe49448ccf2dc25807e214c0b0f3cc5618380",
+  "after/header-320dp-2x-result-count-readable.xml": "7093a58113d4d72b726afc35556aed70010aa977f78e1d9fc588f73762a7353b",
+  "after/header-normal-1x-live-count-and-footer.png": "26e14c04e793bf610bc538f8ae53957d6ecb0656d70fb8f7dd6188ad11ef70bb",
+  "after/header-normal-1x-live-count-and-footer.xml": "30b73aa54b328e3ca43e90e63553848c82ae1e875744fd8b203e0365b089e563",
+  "after/header-normal-1x-result-count-readable.png": "b4df35ecbbdcf2a4e023b9fa7a7db20eb3523ec05b8c5e6451532cdc81c5ee8c",
+  "after/header-normal-1x-result-count-readable.xml": "05f75b4eeb7c0c02625cd73fef80e06a59189967163c4dc58577c24d923960ed",
+  "android-header-ui-retry2.log": "6bf1bb55a506e5a342e59194e7a348cc9135e22fe6906da67d49ded6dc539246",
+  "attempts/header-partial-start/android-header-ui-retry.log": "5d08e2c4568923cac3e62864642f4d894cfe264d113cf5e7c7bff3b103af4bc8",
+  "attempts/header-partial-start/picker-header-ui-manifest.json": "c5c60e30afc3a70205fe856bbaa409065c3ea12fd2250e263a63cd773540573b",
+  "attempts/header-partial-start/picker-header-ui.py": "226ba5da6f42dfc9f963e39a6125d2fbe50035ecece4b3b9d75a7c2c7de2c98d",
+  "attempts/header-snapshot-read/android-header-ui.log": "7ca799be4f1bde57ba34a1864abbc7781f4bdd50897c5322431c43788f3ee6a9",
+  "attempts/header-snapshot-read/picker-followup-verification.json": "9029f80cc6e0b65753ea017b7d04a46346161bde40853217a94eefd832105fcc",
+  "attempts/header-snapshot-read/picker-header-ui-manifest.json": "32781988565636b3a72a48082a777041ebaba39d7432d8481888ea785ceb69a0",
+  "attempts/header-snapshot-read/picker-header-ui.py": "67deee36e7fd60fecee5f115624693dcd8bcf7a6c7dec2ed34966d87134bfb0b",
+  "manifest.json": "3f18f0f234ac4eb0359875feaeecf7b6e7beb471864efcf1d501935afcb2ab00",
+  "native_ui.py": "af5702475242d3699cdab0af3ba9d2510a1e05f0ab1ecb8ff60f4feea752571c",
+  "picker-header-ui-manifest.json": "20de34c2e3ec5cb37073dd5a886e78c6960ea7445e43b9c1ad568a7bb85f37d4",
+  "picker-header-ui.py": "58119a7209e7f9e0b506160f4b315fc0efcd705fbf13ef8819fc9d87179a3109",
+  "source-ci.json": "07fee95d9b81881714b2a4be806ce42acac7bb99db79162d8c6b87fb3f6e336f"
+}

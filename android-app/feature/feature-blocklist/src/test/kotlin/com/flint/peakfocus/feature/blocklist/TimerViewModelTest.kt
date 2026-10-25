@@ -98,6 +98,29 @@ class TimerViewModelTest {
         assertEquals(BreakLevel.HARDER, vm.uiState.value.draft.breakLevel)
     }
 
+    @Test fun `pending picker edits leave the draft untouched until confirmation`() = runTest(dispatcher) {
+        val vm = model(InMemoryBlockRulesStore())
+        runCurrent()
+        vm.selectApps(listOf(app))
+        val initial = vm.uiState.value.draft.apps.map { it.packageName }.toSet()
+        val pending = AppPickerSelection(initial)
+            .withSelection(listOf(app.packageName), false)
+            .withSelection(listOf(otherApp.packageName), true)
+
+        vm.refreshClock()
+        assertEquals(initial, vm.uiState.value.draft.apps.map { it.packageName }.toSet())
+        val fromDraft = AppPickerSelection(vm.uiState.value.draft.apps.map { it.packageName }.toSet())
+        assertEquals(listOf(app), fromDraft.selectedApps(listOf(app, otherApp)))
+
+        vm.selectApps(pending.selectedApps(listOf(app, otherApp)))
+        assertEquals(setOf(otherApp.packageName), vm.uiState.value.draft.apps.map { it.packageName }.toSet())
+        assertTrue(vm.uiState.value.sessions.isEmpty())
+
+        vm.selectApps(pending.withSelection(listOf(otherApp.packageName), false).selectedApps(listOf(app, otherApp)))
+        assertTrue(vm.uiState.value.draft.apps.isEmpty())
+        assertFalse(vm.uiState.value.canStart)
+    }
+
     @Test fun `new viewmodel restores stored timer and rejects draft changes and another start`() = runTest(dispatcher) {
         val saved = session(tier = BreakLevel.HARDCORE)
         val store = ControlledStore(listOf(saved))

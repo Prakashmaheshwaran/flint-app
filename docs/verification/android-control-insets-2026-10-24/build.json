@@ -1,0 +1,41 @@
+{
+  "implementation_commit": "b04ce63df748e0e754d94456a87c52d66479d050",
+  "worktree": "/Users/prakash/.codex/worktrees/f1-control-insets-recovery/flint",
+  "branch": "codex/f1-android-control-insets",
+  "base": "codex/f7-android-selection-count",
+  "f7_ancestor": "3b68362e3cc08f8a2c10d1b66b3270ffbd54546b",
+  "apk": "/tmp/flint-fixes-20261024/F1/flint-f1-f7-b04ce63-debug.apk",
+  "apk_sha256": "f9d3b84ab8182b6fc64eedb1369658b18b90b3a89ba787cd4ffcb527ca87e958",
+  "api": 35,
+  "navigation_mode": 2,
+  "display_density": 420,
+  "display_size": "1080x2400",
+  "test_counts": {
+    "tests": 1182,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "normal_no_ime_source": "9dfc073f1d12ad726984c54397671f28879c5496",
+  "keyboard_source": "b04ce63df748e0e754d94456a87c52d66479d050",
+  "first_sequence_cleanup": {
+    "private_files_identical": true,
+    "font_scale": "1.0",
+    "size": "1080x2400",
+    "accessibility_enabled": "0"
+  },
+  "large_narrow_picker_source": "b04ce63df748e0e754d94456a87c52d66479d050",
+  "normal_editor_source": "b04ce63df748e0e754d94456a87c52d66479d050",
+  "latest_sequence_cleanup": {
+    "private_files_identical": true,
+    "font_scale": "1.0",
+    "size": "Physical size: 1080x2400",
+    "show_ime_with_hard_keyboard": "1",
+    "accessibility_enabled": "0"
+  },
+  "pending_ui_checks": [],
+  "f7_evidence_head": "50db304c60c9f3661e04a15d89db16d978eb27e9",
+  "f7_evidence_merge": "a9f666ef9b882bdca105ebd24b9cbb8447bb5b1c",
+  "narrow_editor_source": "b04ce63df748e0e754d94456a87c52d66479d050",
+  "ui_acceptance_complete": true
+}

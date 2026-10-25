@@ -1,0 +1,35 @@
+TAB_ALREADY_SELECTED Today
+{"visible_control": "Start focus", "bounds": [63, 1906, 1017, 2053], "ceiling": 2127, "keyboard": false}
+{"tap": "Start focus", "bounds": [63, 1906, 1017, 2053], "center": [540, 1979]}
+ERROR: null root node returned by UiTestAutomationBridge.
+NAVIGATION_TITLE_TAP {"label": "Choose what rests", "bounds": [105, 1163, 430, 1214], "center": [267, 1188]}
+{"visible_control": "Select all", "bounds": [610, 525, 848, 651], "ceiling": 2127, "keyboard": false}
+{"visible_control": "Clear", "bounds": [848, 525, 1017, 651], "ceiling": 2127, "keyboard": false}
+{"visible_control": "Cancel", "bounds": [539, 1876, 735, 2002], "ceiling": 2127, "keyboard": false}
+CAPTURE header-normal-1x-result-count-readable
+NAVIGATION_TITLE_TAP {"label": "Chrome", "bounds": [221, 979, 372, 1034], "center": [296, 1006]}
+{"visible_control": "Add \u00b7 1", "bounds": [756, 1876, 1017, 2002], "ceiling": 2127, "keyboard": false}
+{"visible_control": "Cancel", "bounds": [539, 1876, 735, 2002], "ceiling": 2127, "keyboard": false}
+CAPTURE header-normal-1x-live-count-and-footer
+{"tap": "Add \u00b7 1", "bounds": [756, 1876, 1017, 2002], "center": [886, 1939]}
+CAPTURE header-normal-1x-confirmed-one-app
+{"tap": "Close", "bounds": [896, 531, 1022, 657], "center": [959, 594]}
+CAPTURE header-normal-1x-failure
+Traceback (most recent call last):
+  File "/tmp/flint-fixes-20261024/integration/picker-header-ui.py", line 49, in <module>
+    assert restore_data()
+           ~~~~~~~~~~~~^^
+  File "/tmp/flint-fixes-20261024/integration/picker-header-ui.py", line 41, in restore_data
+    return contents(backup) == contents(adb('exec-out','run-as',PACKAGE,'tar','-cf','-',*existing))
+                               ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/flint-fixes-20261024/integration/picker-header-ui.py", line 34, in contents
+    with tarfile.open(fileobj=io.BytesIO(raw)) as archive:
+         ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tarfile.py", line 1935, in open
+    raise ReadError(f"file could not be opened successfully:\n{error_msgs_summary}")
+tarfile.ReadError: file could not be opened successfully:
+- method gz: ReadError('not a gzip file')
+- method bz2: ReadError('not a bzip2 file')
+- method xz: ReadError('not an lzma file')
+- method zst: ReadError('not a zstd file')
+- method tar: ReadError('bad checksum')

@@ -1,0 +1,94 @@
+{"event": "environment", "at_utc": "2026-10-25T04:14:03Z", "worktree": "/Users/prakash/.codex/worktrees/f1-control-insets-recovery/flint", "selection_worktree": "/Users/prakash/.codex/worktrees/f7-selection-recovery/flint", "commit": "b04ce63df748e0e754d94456a87c52d66479d050", "f7_ancestor": "3b68362e3cc08f8a2c10d1b66b3270ffbd54546b", "verification": "combined F1+F7 UI", "apk_sha256": "f9d3b84ab8182b6fc64eedb1369658b18b90b3a89ba787cd4ffcb527ca87e958", "font_scale": "1.0", "sdk": "35"}
+{"event": "install", "at_utc": "2026-10-25T04:14:06Z", "output": "Performing Streamed Install\nSuccess"}
+ERROR: null root node returned by UiTestAutomationBridge.
+{"event": "capture", "at_utc": "2026-10-25T04:14:23Z", "name": "00-today"}
+{"event": "tap", "at_utc": "2026-10-25T04:14:31Z", "label": "Start focus", "x": 540, "y": 1979, "method": "normal control center"}
+ERROR: null root node returned by UiTestAutomationBridge.
+{"event": "tap", "at_utc": "2026-10-25T04:14:55Z", "label": "Choose what rests", "x": 540, "y": 1214, "method": "normal control center"}
+{"event": "capture", "at_utc": "2026-10-25T04:15:01Z", "name": "01-zero"}
+{"event": "pass", "at_utc": "2026-10-25T04:15:01Z", "check": "pending header count and confirmation enabled state", "count": 0, "enabled": false, "name": "01-zero"}
+{"event": "pass", "at_utc": "2026-10-25T04:15:01Z", "check": "accessible Add label agrees with header", "count": 0}
+{"event": "pass", "at_utc": "2026-10-25T04:15:01Z", "check": "accessible checkbox state", "package": "com.android.chrome", "checked": false}
+{"event": "tap", "at_utc": "2026-10-25T04:15:04Z", "label": "Chrome", "x": 540, "y": 1028, "method": "normal control center"}
+{"event": "capture", "at_utc": "2026-10-25T04:15:09Z", "name": "02-one"}
+{"event": "pass", "at_utc": "2026-10-25T04:15:09Z", "check": "pending header count and confirmation enabled state", "count": 1, "enabled": true, "name": "02-one"}
+{"event": "pass", "at_utc": "2026-10-25T04:15:09Z", "check": "accessible Add label agrees with header", "count": 1}
+{"event": "pass", "at_utc": "2026-10-25T04:15:09Z", "check": "accessible checkbox state", "package": "com.android.chrome", "checked": true}
+{"event": "tap", "at_utc": "2026-10-25T04:15:12Z", "label": "Camera", "x": 540, "y": 881, "method": "normal control center"}
+{"event": "capture", "at_utc": "2026-10-25T04:15:17Z", "name": "03-two"}
+{"event": "pass", "at_utc": "2026-10-25T04:15:17Z", "check": "pending header count and confirmation enabled state", "count": 2, "enabled": true, "name": "03-two"}
+{"event": "pass", "at_utc": "2026-10-25T04:15:17Z", "check": "accessible Add label agrees with header", "count": 2}
+{"event": "pass", "at_utc": "2026-10-25T04:15:17Z", "check": "accessible checkbox state", "package": "com.android.camera2", "checked": true}
+{"event": "tap", "at_utc": "2026-10-25T04:15:19Z", "label": "Chrome", "x": 540, "y": 1028, "method": "normal control center"}
+{"event": "capture", "at_utc": "2026-10-25T04:15:25Z", "name": "04-one-after-deselect"}
+{"event": "pass", "at_utc": "2026-10-25T04:15:25Z", "check": "pending header count and confirmation enabled state", "count": 1, "enabled": true, "name": "04-one-after-deselect"}
+{"event": "pass", "at_utc": "2026-10-25T04:15:25Z", "check": "accessible Add label agrees with header", "count": 1}
+{"event": "tap", "at_utc": "2026-10-25T04:15:28Z", "label": "Camera", "x": 540, "y": 881, "method": "normal control center"}
+{"event": "capture", "at_utc": "2026-10-25T04:15:33Z", "name": "05-zero-after-deselect"}
+{"event": "pass", "at_utc": "2026-10-25T04:15:33Z", "check": "pending header count and confirmation enabled state", "count": 0, "enabled": false, "name": "05-zero-after-deselect"}
+{"event": "pass", "at_utc": "2026-10-25T04:15:33Z", "check": "accessible Add label agrees with header", "count": 0}
+{"event": "tap", "at_utc": "2026-10-25T04:15:35Z", "label": "Chrome", "x": 540, "y": 1028, "method": "normal control center"}
+{"event": "search", "at_utc": "2026-10-25T04:15:45Z", "query": "Camera"}
+{"event": "capture", "at_utc": "2026-10-25T04:15:50Z", "name": "06-search-hides-selected"}
+{"event": "pass", "at_utc": "2026-10-25T04:15:50Z", "check": "pending header count and confirmation enabled state", "count": 1, "enabled": true, "name": "06-search-hides-selected"}
+{"event": "pass", "at_utc": "2026-10-25T04:15:50Z", "check": "accessible Add label agrees with header", "count": 1}
+{"event": "tap", "at_utc": "2026-10-25T04:15:53Z", "label": "Select all", "x": 729, "y": 588, "method": "normal control center"}
+{"event": "capture", "at_utc": "2026-10-25T04:15:58Z", "name": "07-filtered-select-all"}
+{"event": "pass", "at_utc": "2026-10-25T04:15:58Z", "check": "pending header count and confirmation enabled state", "count": 2, "enabled": true, "name": "07-filtered-select-all"}
+{"event": "pass", "at_utc": "2026-10-25T04:15:58Z", "check": "accessible Add label agrees with header", "count": 2}
+{"event": "tap", "at_utc": "2026-10-25T04:16:00Z", "label": "Clear", "x": 932, "y": 588, "method": "normal control center"}
+{"event": "capture", "at_utc": "2026-10-25T04:16:05Z", "name": "08-filtered-clear-keeps-chrome"}
+{"event": "pass", "at_utc": "2026-10-25T04:16:05Z", "check": "pending header count and confirmation enabled state", "count": 1, "enabled": true, "name": "08-filtered-clear-keeps-chrome"}
+{"event": "pass", "at_utc": "2026-10-25T04:16:05Z", "check": "accessible Add label agrees with header", "count": 1}
+{"event": "tap", "at_utc": "2026-10-25T04:16:08Z", "label": "Clear search", "x": 955, "y": 431, "method": "normal control center"}
+{"event": "capture", "at_utc": "2026-10-25T04:16:14Z", "name": "09-clear-search"}
+{"event": "pass", "at_utc": "2026-10-25T04:16:14Z", "check": "pending header count and confirmation enabled state", "count": 1, "enabled": true, "name": "09-clear-search"}
+{"event": "pass", "at_utc": "2026-10-25T04:16:14Z", "check": "accessible Add label agrees with header", "count": 1}
+{"event": "pass", "at_utc": "2026-10-25T04:16:14Z", "check": "accessible checkbox state", "package": "com.android.chrome", "checked": true}
+{"event": "search", "at_utc": "2026-10-25T04:16:23Z", "query": "no-such-app-f7"}
+{"event": "capture", "at_utc": "2026-10-25T04:16:28Z", "name": "10-empty-search-keeps-selection"}
+{"event": "pass", "at_utc": "2026-10-25T04:16:28Z", "check": "pending header count and confirmation enabled state", "count": 1, "enabled": true, "name": "10-empty-search-keeps-selection"}
+{"event": "pass", "at_utc": "2026-10-25T04:16:28Z", "check": "accessible Add label agrees with header", "count": 1}
+{"event": "tap", "at_utc": "2026-10-25T04:16:31Z", "label": "Clear search", "x": 541, "y": 1020, "method": "normal control center"}
+{"event": "tap", "at_utc": "2026-10-25T04:16:35Z", "label": "Cancel", "x": 637, "y": 1939, "method": "normal control center"}
+{"event": "capture", "at_utc": "2026-10-25T04:16:48Z", "name": "11-cancel-preserves-empty-draft"}
+{"event": "tap", "at_utc": "2026-10-25T04:16:56Z", "label": "Choose what rests", "x": 540, "y": 1214, "method": "normal control center"}
+{"event": "capture", "at_utc": "2026-10-25T04:17:02Z", "name": "12-reopen-after-cancel"}
+{"event": "pass", "at_utc": "2026-10-25T04:17:02Z", "check": "pending header count and confirmation enabled state", "count": 0, "enabled": false, "name": "12-reopen-after-cancel"}
+{"event": "pass", "at_utc": "2026-10-25T04:17:02Z", "check": "accessible Add label agrees with header", "count": 0}
+{"event": "tap", "at_utc": "2026-10-25T04:17:05Z", "label": "Chrome", "x": 540, "y": 1028, "method": "normal control center"}
+{"event": "tap", "at_utc": "2026-10-25T04:17:09Z", "label": "Add · 1", "x": 886, "y": 1939, "method": "normal control center"}
+{"event": "capture", "at_utc": "2026-10-25T04:17:18Z", "name": "15-confirm-updates-draft"}
+{"event": "tap", "at_utc": "2026-10-25T04:17:23Z", "label": "Block 1 app", "x": 540, "y": 1279, "method": "normal control center"}
+{"event": "capture", "at_utc": "2026-10-25T04:17:30Z", "name": "16-reopen-confirmed-selection"}
+{"event": "pass", "at_utc": "2026-10-25T04:17:30Z", "check": "pending header count and confirmation enabled state", "count": 1, "enabled": false, "name": "16-reopen-confirmed-selection"}
+{"event": "pass", "at_utc": "2026-10-25T04:17:30Z", "check": "accessible Add label agrees with header", "count": 1}
+{"event": "pass", "at_utc": "2026-10-25T04:17:30Z", "check": "accessible checkbox state", "package": "com.android.chrome", "checked": true}
+{"event": "tap", "at_utc": "2026-10-25T04:17:33Z", "label": "Camera", "x": 540, "y": 881, "method": "normal control center"}
+{"event": "capture", "at_utc": "2026-10-25T04:17:37Z", "name": "17-pending-edit-over-existing-draft"}
+{"event": "pass", "at_utc": "2026-10-25T04:17:37Z", "check": "pending header count and confirmation enabled state", "count": 2, "enabled": true, "name": "17-pending-edit-over-existing-draft"}
+{"event": "pass", "at_utc": "2026-10-25T04:17:37Z", "check": "accessible Add label agrees with header", "count": 2}
+{"event": "tap", "at_utc": "2026-10-25T04:17:40Z", "label": "Back", "x": 127, "y": 268, "method": "normal control center"}
+{"event": "capture", "at_utc": "2026-10-25T04:17:59Z", "name": "18-cancel-preserves-existing-draft"}
+{"event": "tap", "at_utc": "2026-10-25T04:18:09Z", "label": "Block 1 app", "x": 540, "y": 1279, "method": "normal control center"}
+{"event": "capture", "at_utc": "2026-10-25T04:18:15Z", "name": "19-reopen-after-second-cancel"}
+{"event": "pass", "at_utc": "2026-10-25T04:18:15Z", "check": "pending header count and confirmation enabled state", "count": 1, "enabled": false, "name": "19-reopen-after-second-cancel"}
+{"event": "pass", "at_utc": "2026-10-25T04:18:15Z", "check": "accessible Add label agrees with header", "count": 1}
+{"event": "pass", "at_utc": "2026-10-25T04:18:15Z", "check": "accessible checkbox state", "package": "com.android.chrome", "checked": true}
+{"event": "pass", "at_utc": "2026-10-25T04:18:15Z", "check": "accessible checkbox state", "package": "com.android.camera2", "checked": false}
+{"event": "tap", "at_utc": "2026-10-25T04:18:18Z", "label": "Chrome", "x": 540, "y": 1028, "method": "normal control center"}
+{"event": "capture", "at_utc": "2026-10-25T04:18:23Z", "name": "20-clear-last-initial-selection"}
+{"event": "pass", "at_utc": "2026-10-25T04:18:23Z", "check": "pending header count and confirmation enabled state", "count": 0, "enabled": true, "name": "20-clear-last-initial-selection"}
+{"event": "pass", "at_utc": "2026-10-25T04:18:23Z", "check": "accessible Add label agrees with header", "count": 0}
+{"event": "tap", "at_utc": "2026-10-25T04:18:26Z", "label": "Add · 0", "x": 886, "y": 1939, "method": "normal control center"}
+{"event": "capture", "at_utc": "2026-10-25T04:18:37Z", "name": "21-confirm-empty-draft"}
+{"event": "tap", "at_utc": "2026-10-25T04:18:44Z", "label": "Close", "x": 959, "y": 529, "method": "normal control center"}
+{"event": "tap", "at_utc": "2026-10-25T04:18:52Z", "label": "Rules", "x": 420, "y": 2211, "method": "normal control center"}
+{"event": "tap", "at_utc": "2026-10-25T04:19:08Z", "label": "New app limit", "x": 540, "y": 1960, "method": "normal control center"}
+{"event": "capture", "at_utc": "2026-10-25T04:19:12Z", "name": "22-single-select-app-limits"}
+{"event": "tap", "at_utc": "2026-10-25T04:19:15Z", "label": "Chrome", "x": 540, "y": 940, "method": "normal control center"}
+{"event": "capture", "at_utc": "2026-10-25T04:19:19Z", "name": "23-single-select-immediate-confirm"}
+{"event": "pass", "at_utc": "2026-10-25T04:19:19Z", "check": "single select opens limit editor immediately with contextual heading"}
+{"event": "tap", "at_utc": "2026-10-25T04:19:27Z", "label": "Today", "x": 182, "y": 2211, "method": "normal control center"}
+{"event": "success", "at_utc": "2026-10-25T04:19:34Z", "scope": "F7 pending selection, search, cancel, confirm, zero confirmation, single select"}
+{"event": "cleanup", "at_utc": "2026-10-25T04:19:34Z", "font_scale": "1.0", "preferences_unchanged": true, "action": "Force-stopped test app; no sessions or rules saved, no permissions changed."}

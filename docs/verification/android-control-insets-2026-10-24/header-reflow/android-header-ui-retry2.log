@@ -1,0 +1,64 @@
+Acquired build/device slot: ORCHESTRATOR
+TAB_ALREADY_SELECTED Today
+{"scroll_viewport": [0, 102, 840, 1470], "swipe": [32, 1333, 32, 786]}
+{"scroll_viewport": [0, 102, 840, 1470], "swipe": [32, 1333, 32, 786]}
+{"visible_control": "Start focus", "bounds": [63, 1291, 777, 1438], "ceiling": 1512, "keyboard": false}
+{"tap": "Start focus", "bounds": [63, 1291, 777, 1438], "center": [420, 1364]}
+ERROR: null root node returned by UiTestAutomationBridge.
+NAVIGATION_TITLE_TAP {"label": "Choose what rests", "bounds": [105, 874, 661, 1061], "center": [383, 967]}
+{"visible_control": "Select all", "bounds": [63, 687, 432, 825], "ceiling": 1512, "keyboard": false}
+{"visible_control": "Clear", "bounds": [432, 687, 679, 825], "ceiling": 1512, "keyboard": false}
+{"visible_control": "Cancel", "bounds": [482, 1110, 777, 1248], "ceiling": 1512, "keyboard": false}
+CAPTURE header-320dp-2x-result-count-readable
+{"scroll_viewport": [63, 165, 777, 1086], "swipe": [95, 993, 95, 625]}
+NAVIGATION_TITLE_TAP {"label": "Chrome", "bounds": [221, 1006, 481, 1086], "center": [351, 1046]}
+{"scroll_viewport": [63, 165, 777, 1086], "swipe": [95, 625, 95, 993]}
+{"visible_control": "Add \u00b7 1", "bounds": [417, 1248, 777, 1386], "ceiling": 1512, "keyboard": false}
+{"visible_control": "Cancel", "bounds": [482, 1110, 777, 1248], "ceiling": 1512, "keyboard": false}
+CAPTURE header-320dp-2x-live-count-and-footer
+{"tap": "Add \u00b7 1", "bounds": [417, 1248, 777, 1386], "center": [597, 1317]}
+CAPTURE header-320dp-2x-confirmed-one-app
+{"tap": "Close", "bounds": [656, 164, 782, 290], "center": [719, 227]}
+{
+  "head": "7da70c0cc1b1280a1bfdda747b9408508c6f7343",
+  "apkSHA256": "0e87f655c4b83cef46a7df492d81a6f3b0642b873661069e575a55d9a389c9b0",
+  "passed": true,
+  "cases": [
+    {
+      "name": "normal-1x",
+      "passed": true,
+      "resultCount": "19 APPS",
+      "resultCountBounds": [
+        63,
+        568,
+        200,
+        606
+      ],
+      "actionTextHeights": [
+        55,
+        55
+      ]
+    },
+    {
+      "name": "320dp-2x",
+      "passed": true,
+      "resultCount": "19 APPS",
+      "resultCountBounds": [
+        63,
+        601,
+        338,
+        676
+      ],
+      "actionTextHeights": [
+        96,
+        96
+      ]
+    }
+  ],
+  "retainedNormalCaseFrom": "attempts/header-snapshot-read/picker-header-ui-manifest.json",
+  "snapshotReadRetries": 1,
+  "privateFilesRestored": true,
+  "fontScaleRestored": true,
+  "displaySizeRestored": true,
+  "accessibilityUnchanged": true
+}

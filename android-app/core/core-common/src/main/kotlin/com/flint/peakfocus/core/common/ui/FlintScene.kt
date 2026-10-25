@@ -381,9 +381,6 @@ fun FlintTabBar(
     }
 }
 
-/** Legacy fixed-bar clearance. Adaptive hosts should reserve the bar's measured height. */
-val FlintTabBarClearance = 96.dp
-
 private fun DrawScope.drawTabGlyph(tab: FlintTabGlyph, selected: Boolean, ink: Color) {
     val k = size.width / 24f
     val stroke = Stroke(1.5f * k, cap = StrokeCap.Round, join = StrokeJoin.Round)

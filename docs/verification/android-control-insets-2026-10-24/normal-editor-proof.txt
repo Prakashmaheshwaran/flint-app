@@ -1,0 +1,71 @@
+Implementation: b04ce63df748e0e754d94456a87c52d66479d050
+Device: API35, 1080x2400, 420dpi, font 1.0, gesture navigation.
+Physical taps use the current UIAutomator touch-target center.
+A fitting filtered list exposes no scroll action; the helper now permits this.
+The first App-limit Save correctly rejected an empty field (45 was a placeholder).
+Then 45 was entered, saved with the numeric keyboard open, and asserted as the actual editable value on reopening.
+
+{"tap": "Rules", "bounds": [301, 2127, 539, 2295], "center": [420, 2211]}
+{"tap": "New block rule", "bounds": [126, 1124, 954, 1250], "center": [540, 1187]}
+{"header": "New block rule", "top": 199, "status_bar_bottom": 136}
+CAPTURE normal-editor-rule-header
+{"tap": "Rule name", "bounds": [63, 377, 1017, 545], "center": [540, 461]}
+{"tap": "Choose apps", "bounds": [105, 775, 975, 901], "center": [540, 838]}
+{"tap": "Search apps", "bounds": [63, 356, 1017, 503], "center": [540, 429]}
+{"tap": "Chrome", "bounds": [63, 661, 1017, 808], "center": [540, 734]}
+{"visible_control": "Add \u00b7 1", "bounds": [756, 1308, 1017, 1434], "ceiling": 1517, "keyboard": true}
+{"visible_control": "Cancel", "bounds": [539, 1308, 735, 1434], "ceiling": 1517, "keyboard": true}
+CAPTURE normal-editor-rule-picker-ime
+{"tap": "Add \u00b7 1", "bounds": [756, 1308, 1017, 1434], "center": [886, 1371]}
+{"visible_control": "Save rule", "bounds": [63, 1750, 1017, 1876], "ceiling": 2127, "keyboard": false}
+{"visible_control": "Cancel", "bounds": [63, 1897, 1017, 2023], "ceiling": 2127, "keyboard": false}
+CAPTURE normal-editor-rule-bottom
+{"tap": "Save rule", "bounds": [63, 1750, 1017, 1876], "center": [540, 1813]}
+{"tap": "F1-normal", "bounds": [63, 648, 1017, 1022], "center": [540, 835]}
+{"tap": "Rule name", "bounds": [63, 377, 1017, 545], "center": [540, 461]}
+{"visible_control": "Save rule", "bounds": [63, 1035, 1017, 1161], "ceiling": 1517, "keyboard": true}
+{"visible_control": "Cancel", "bounds": [63, 1329, 1017, 1455], "ceiling": 1517, "keyboard": true}
+CAPTURE normal-editor-rule-bottom-ime
+{"tap": "Save rule", "bounds": [63, 1035, 1017, 1161], "center": [540, 1098]}
+{"tap": "New block rule", "bounds": [63, 1055, 1017, 1181], "center": [540, 1118]}
+{"visible_control": "Save rule", "bounds": [63, 1750, 1017, 1876], "ceiling": 2127, "keyboard": false}
+{"visible_control": "Cancel", "bounds": [63, 1897, 1017, 2023], "ceiling": 2127, "keyboard": false}
+{"tap": "Cancel", "bounds": [63, 1897, 1017, 2023], "center": [540, 1960]}
+PASS rule save + IME save + cancel: F1-normal
+{"tap": "Rules", "bounds": [301, 2127, 539, 2295], "center": [420, 2211]}
+{"tap": "Sleep mode", "bounds": [63, 1800, 1017, 2044], "center": [540, 1922]}
+{"header": "Sleep mode", "top": 199, "status_bar_bottom": 136}
+CAPTURE normal-editor-sleep-header
+{"visible_control": "Save sleep mode", "bounds": [63, 1750, 1017, 1876], "ceiling": 2127, "keyboard": false}
+{"visible_control": "Cancel", "bounds": [63, 1897, 1017, 2023], "ceiling": 2127, "keyboard": false}
+CAPTURE normal-editor-sleep-bottom
+{"tap": "Cancel", "bounds": [63, 1897, 1017, 2023], "center": [540, 1960]}
+{"tap": "Sleep mode", "bounds": [63, 1800, 1017, 2044], "center": [540, 1922]}
+{"tap": "Save sleep mode", "bounds": [63, 1750, 1017, 1876], "center": [540, 1813]}
+PASS sleep save + cancel
+{"tap": "Rules", "bounds": [301, 2127, 539, 2295], "center": [420, 2211]}
+{"tap": "New app limit", "bounds": [63, 1897, 1017, 2023], "center": [540, 1960]}
+{"tap": "Chrome", "bounds": [63, 867, 1017, 1014], "center": [540, 940]}
+{"header": "App limits", "top": 199, "status_bar_bottom": 136}
+CAPTURE normal-editor-limit-header
+{"tap": "Daily time limit", "bounds": [105, 717, 975, 843], "center": [540, 780]}
+{"tap": "Minutes per day", "bounds": [105, 850, 975, 1018], "center": [540, 934]}
+{"visible_control": "Save limits", "bounds": [63, 1298, 1017, 1424], "ceiling": 1633, "keyboard": true}
+{"visible_control": "Cancel", "bounds": [63, 1445, 1017, 1571], "ceiling": 1633, "keyboard": true}
+CAPTURE normal-editor-limit-bottom-ime
+{"tap": "Save limits", "bounds": [63, 1298, 1017, 1424], "center": [540, 1361]}
+CAPTURE normal-editor-limit-empty-validation
+{"tap": "Minutes per day", "bounds": [105, 362, 975, 530], "center": [540, 446]}
+{"visible_control": "Save limits", "bounds": [63, 1298, 1017, 1424], "ceiling": 1633, "keyboard": true}
+{"visible_control": "Cancel", "bounds": [63, 1445, 1017, 1571], "ceiling": 1633, "keyboard": true}
+CAPTURE normal-editor-limit-bottom-ime
+{"tap": "Save limits", "bounds": [63, 1298, 1017, 1424], "center": [540, 1361]}
+{"tap": "Chrome", "bounds": [63, 1619, 1017, 1864], "center": [540, 1741]}
+CAPTURE normal-editor-limit-saved-value
+{"visible_control": "Save limits", "bounds": [63, 1603, 1017, 1729], "ceiling": 2127, "keyboard": false}
+{"visible_control": "Cancel", "bounds": [63, 1897, 1017, 2023], "ceiling": 2127, "keyboard": false}
+CAPTURE normal-editor-limit-bottom
+{"tap": "Cancel", "bounds": [63, 1897, 1017, 2023], "center": [540, 1960]}
+PASS app limit valid 45m save + reopen + cancel: Chrome
+NORMAL_EDITOR_MATRIX_PASS
+RESTORED {"private_files_identical": true, "font_scale": "1.0", "size": "Physical size: 1080x2400", "accessibility_enabled": "0"}

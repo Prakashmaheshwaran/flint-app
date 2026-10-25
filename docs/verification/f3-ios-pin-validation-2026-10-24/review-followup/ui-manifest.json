@@ -1,0 +1,57 @@
+{
+  "worktree": "/Users/prakash/.codex/worktrees/f3-pin-validation/flint",
+  "testedCommit": "6591c234db54e7c7dff6480624b963e8eaaf56e0",
+  "binary": "/Users/prakash/Library/Developer/Xcode/DerivedData/Flint-fofnntawxbsmewexzbhfyzkilhen/Build/Products/Debug-iphonesimulator/Flint.app",
+  "simulator": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+  "baselinePINPresent": false,
+  "resultBundle": "/tmp/flint-fixes-20261024/F3/review-followup/ui-20261025-053053.xcresult",
+  "log": "/tmp/flint-fixes-20261024/F3/review-followup/ui-20261025-053053.log",
+  "uiExitCode": 0,
+  "uiCleanupSucceeded": true,
+  "recoveredSyntheticRecords": 0,
+  "recoveryOperations": [],
+  "cleanupCompleted": true,
+  "postUIStorageObservations": [
+    {
+      "elapsedSeconds": 0.0,
+      "records": [
+        {
+          "path": "/Users/prakash/Library/Developer/CoreSimulator/Devices/3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473/data/Containers/Data/Application/EDA14422-6382-4080-8682-0B82FAB97ACB/Library/Preferences/group.com.flint.peakfocus.plist",
+          "hashPresent": false,
+          "saltPresent": true,
+          "hashType": "NoneType",
+          "saltType": "str",
+          "completeStringRecord": false,
+          "matchesKnownF3Fixture": false
+        }
+      ]
+    },
+    {
+      "elapsedSeconds": 0.256,
+      "records": [
+        {
+          "path": "/Users/prakash/Library/Developer/CoreSimulator/Devices/3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473/data/Containers/Data/Application/EDA14422-6382-4080-8682-0B82FAB97ACB/Library/Preferences/group.com.flint.peakfocus.plist",
+          "hashPresent": false,
+          "saltPresent": false,
+          "hashType": "NoneType",
+          "saltType": "NoneType",
+          "completeStringRecord": false,
+          "matchesKnownF3Fixture": false
+        }
+      ]
+    }
+  ],
+  "finalPINPresent": false,
+  "finalCompletePINRecordPresent": false,
+  "finalPINStorage": [
+    {
+      "path": "/Users/prakash/Library/Developer/CoreSimulator/Devices/3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473/data/Containers/Data/Application/EDA14422-6382-4080-8682-0B82FAB97ACB/Library/Preferences/group.com.flint.peakfocus.plist",
+      "hashPresent": false,
+      "saltPresent": false,
+      "hashType": "NoneType",
+      "saltType": "NoneType",
+      "completeStringRecord": false,
+      "matchesKnownF3Fixture": false
+    }
+  ]
+}

@@ -4,9 +4,10 @@ import FlintCore
 
 /// The You tab: is protection healthy, and everything that isn't a rule.
 struct SettingsView: View {
-    @State private var pinIsSet = FlintPIN.isSet(FlintGroupStore())
+    @EnvironmentObject private var appLock: FlintAppLock
     @State private var showSetPIN = false
-    @State private var newPIN = ""
+    @State private var pinAction: PINAction?
+    @State private var openSetupAfterAuthentication = false
     @State private var armingHealth = FlintGroupStore()?.loadArmingHealth() ?? FlintArmingHealth()
     @State private var authStatus = AuthorizationCenter.shared.authorizationStatus
     @State private var passAvailable = FlintSessionController().emergencyPassAvailable()
@@ -22,13 +23,14 @@ struct SettingsView: View {
                     healthCard.padding(.top, 20)
 
                     VStack(spacing: 0) {
-                        Button { newPIN = ""; showSetPIN = true } label: {
-                            FlintRow(title: "App lock", value: pinIsSet ? "On" : "Off", chevron: true)
+                        Button {
+                            appLock.cancelPINChange()
+                            if appLock.pinIsSet { pinAction = .change } else { showSetPIN = true }
+                        } label: {
+                            FlintRow(title: "App lock", value: appLock.pinIsSet ? "On" : "Off", chevron: true)
                         }
-                        if pinIsSet {
-                            Button {
-                                FlintPIN.clear(FlintGroupStore()); pinIsSet = false
-                            } label: {
+                        if appLock.pinIsSet {
+                            Button { pinAction = .remove } label: {
                                 FlintRow(title: "Remove PIN")
                             }
                         }
@@ -59,18 +61,50 @@ struct SettingsView: View {
             .flintTabBarInset()
             .toolbar(.hidden, for: .navigationBar)
             .onAppear(perform: refresh)
-            .alert("Set a 4–6 digit PIN", isPresented: $showSetPIN) {
-                TextField("PIN", text: $newPIN).keyboardType(.numberPad)
-                Button("Save") {
-                    if newPIN.count >= 4 { FlintPIN.set(newPIN, FlintGroupStore()); pinIsSet = true }
-                    newPIN = ""
+            .sheet(item: $pinAction, onDismiss: finishPINAuthentication) { action in
+                PINAuthenticationView(title: action == .change ? "Change PIN" : "Remove PIN",
+                                      authenticate: { pin in
+                    action == .change ? appLock.authorizePINChange(currentPIN: pin)
+                        : appLock.removePIN(currentPIN: pin)
+                }, onSuccess: {
+                    openSetupAfterAuthentication = action == .change
+                })
+            }
+            .onChange(of: appLock.state.phase) { phase in
+                if phase == .background {
+                    // A protected background scene must not leave a sheet dismissal
+                    // animation waiting behind the separate app-lock window.
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        openSetupAfterAuthentication = false
+                        pinAction = nil
+                        showSetPIN = false
+                    }
                 }
-                Button("Cancel", role: .cancel) { newPIN = "" }
+            }
+            .sheet(isPresented: $showSetPIN, onDismiss: appLock.cancelPINChange) {
+                PINSetupView(appLock: appLock, onSave: appLock.savePIN)
             }
         }
     }
 
+    private enum PINAction: String, Identifiable {
+        case change, remove
+        var id: String { rawValue }
+    }
+
+    private func finishPINAuthentication() {
+        if openSetupAfterAuthentication && !appLock.isLocked && appLock.state.phase == .active {
+            showSetPIN = true
+        } else {
+            appLock.cancelPINChange()
+        }
+        openSetupAfterAuthentication = false
+    }
+
     private func refresh() {
+        appLock.refresh()
         armingHealth = FlintGroupStore()?.loadArmingHealth() ?? FlintArmingHealth()
         authStatus = AuthorizationCenter.shared.authorizationStatus
         passAvailable = FlintSessionController().emergencyPassAvailable()

@@ -1,0 +1,13 @@
+** BUILD SUCCEEDED **
+F3 destination override: authorized temporary guest 3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473; parallel testing off
+Test Suite 'FlintPINTests' started at 2026-10-25 05:28:29.668.
+Test Case '-[FlintTests.FlintPINTests testNonASCIIDigitsInsideByteLengthWindowAreRejected]' started.
+Test Case '-[FlintTests.FlintPINTests testNonASCIIDigitsInsideByteLengthWindowAreRejected]' passed (0.002 seconds).
+Test Suite 'FlintPINTests' passed at 2026-10-25 05:28:29.900.
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.214 (0.232) seconds
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.084 (0.095) seconds
+	 Executed 82 tests, with 0 failures (0 unexpected) in 0.731 (0.853) seconds
+	 Executed 82 tests, with 0 failures (0 unexpected) in 0.731 (0.856) seconds
+	/Users/prakash/Library/Developer/Xcode/DerivedData/Flint-fofnntawxbsmewexzbhfyzkilhen/Logs/Test/Test-Flint-2026.10.25_05-28-11--0400.xcresult
+** TEST SUCCEEDED **
+iOS gate passed.

@@ -1,0 +1,12 @@
+Implementation commit: b04ce63df748e0e754d94456a87c52d66479d050
+Command: ANDROID_HOME=<installed SDK> make verify-android
+Shared lock owner: F1
+
+BUILD SUCCESSFUL in 15s
+BUILD SUCCESSFUL in 38s
+Release APK verified: no connected account code or network permissions.
+BUILD SUCCESSFUL in 5s
+Android gate passed.
+
+{"tests": 1182, "failures": 0, "errors": 0, "skipped": 0}
+Full log: /tmp/flint-fixes-20261024/F1/verify-final-android.log
