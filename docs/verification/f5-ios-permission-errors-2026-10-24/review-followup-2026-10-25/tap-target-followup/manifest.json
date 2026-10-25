@@ -1,0 +1,226 @@
+{
+  "applicationSourceCommit": "08bbc204b9074e9fd56a9efa26faad96e995b155",
+  "previousApplicationSourceCommit": "d4b52f2028254e4f5f7537e8ee57edc8aec187fc",
+  "worktree": "/Users/prakash/.codex/worktrees/f5-permission-errors-recovery/flint",
+  "toolchain": {
+    "xcode": "27.1",
+    "build": "27A9275",
+    "sdk": "iPhoneSimulator27.1",
+    "runtime": "iOS 27.0"
+  },
+  "device": {
+    "name": "Flint Review Followup 20261025",
+    "model": "iPhone 18 Pro",
+    "OS": "iOS 27.0 Simulator",
+    "id": "3B8730F1-B59C-46D1-9ADA-ADC0FE7EA473",
+    "owner": "parent-created temporary verification guest"
+  },
+  "applicationPath": "/Users/prakash/Library/Developer/Xcode/DerivedData/Flint-cntarviknofepxezullqsrrpadpk/Build/Products/Debug-iphonesimulator/Flint.app",
+  "applicationBinarySHA256": "a7ed9e84285baf7918f58c1d467eca563bc39295eb1bc255a87f5a3b290cce6b",
+  "debugLibrarySHA256": "2308c0ca1aa0c4c316368819f17aac2ca978e4a4dc5188ac41db76114f44c59c",
+  "sourceRelationship": "Full gate built the two-file working-tree delta on 02b09a8 subsequently committed as applicationSourceCommit. UI run records applicationSourceCommit and the same built executable and debug-library hashes. No app source changed between gate and UI run.",
+  "verification": {
+    "gate": {
+      "result": "Passed",
+      "total": 75,
+      "passed": 75,
+      "failed": 0,
+      "skipped": 0,
+      "summary": "logs/gate-summary.json"
+    },
+    "ui-large": {
+      "result": "Passed",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "summary": "logs/ui-large-summary.json"
+    },
+    "ui-max": {
+      "result": "Passed",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "summary": "logs/ui-max-summary.json"
+    }
+  },
+  "gate": {
+    "command": "make -f Makefile -f /tmp/flint-fixes-20261024/F5/review-followup/destination.mk verify-ios F5_GATE_RESULT=/tmp/flint-fixes-20261024/F5/review-followup/gate-03.xcresult",
+    "productionModule": "Flint",
+    "authorizationTests": 15,
+    "filteredUnitTests": false
+  },
+  "uiTests": {
+    "flows": [
+      "denied Settings activation, return and recheck",
+      "pending request across foreground, Stop waiting and recovery",
+      "onboarding denied guidance, recheck and Not now persistence"
+    ],
+    "sizes": [
+      "large",
+      "accessibility-extra-extra-extra-large"
+    ],
+    "minimumAccessibleFramePoints": [
+      44,
+      44
+    ],
+    "stopWaitingAndNotNowTapNormalizedCoordinates": [
+      0.05,
+      0.1
+    ],
+    "evidence": "logs/button-frames.txt",
+    "priorBroaderUI": {
+      "sourceCommit": "d4b52f2028254e4f5f7537e8ee57edc8aec187fc",
+      "passed": 16,
+      "failed": 0,
+      "report": "../README.md"
+    }
+  },
+  "measuredAccessibleFramesPoints": {
+    "large": {
+      "checkAccessTodayAndOnboarding": [
+        322,
+        44
+      ],
+      "stopWaiting": [
+        322,
+        44
+      ],
+      "notNow": [
+        354,
+        44
+      ]
+    },
+    "accessibility-extra-extra-extra-large": {
+      "checkAccessTodayAndOnboarding": [
+        322,
+        101.66666666666674
+      ],
+      "stopWaiting": [
+        322,
+        51
+      ],
+      "notNow": [
+        354,
+        51
+      ]
+    }
+  },
+  "visualReview": {
+    "selectedScreenshots": 6,
+    "result": "affected controls readable and fully visible at captured scroll positions",
+    "knownUnchangedIssue": "Shared tab labels truncate at AX5 in standalone F5; composed layout is F4 scope."
+  },
+  "cleanup": {
+    "asOfUTC": "2026-10-25T10:05:27Z",
+    "contentSize": "large",
+    "launch": "ordinary; no preview arguments",
+    "PIN": "No PIN writes by F5; unchanged parent baseline. Earlier broad ordinary-launch native check verified no PIN gate.",
+    "deviceDeletion": "parent-owned after verification queue",
+    "log": "logs/sequence.txt"
+  },
+  "interpretation": "F4 measured 18.333pt pre-fix accessibility Button height, but upper and lower off-label Stop waiting taps both activated. This fixes explicit accessibility bounds and verifies new padded-corner interaction; it does not establish a prior physical tap failure.",
+  "limitations": [
+    "Real-device Screen Time grant/denial/revocation, Settings switch availability, tokens and enforcement are unverified.",
+    "Public Settings URL activated Settings; the Simulator showed its main page, not an authorization switch.",
+    "Tab/preset AX5 truncation is unchanged F4 scope."
+  ],
+  "sourceFilesSHA256": [
+    {
+      "path": "ios-app/Flint/Features/Authorization/AuthorizationControls.swift",
+      "sha256": "32dcd59eaf43dafbd510a05fb15af9f5b1b50d6a47d3facbe9a3695da5a77777"
+    },
+    {
+      "path": "ios-app/Flint/Features/Authorization/AuthorizationModel.swift",
+      "sha256": "d1de22652594ff26db0f3c389c1447caea63e2cea46b7c9203206307f4e06ea6"
+    },
+    {
+      "path": "ios-app/Flint/Features/Authorization/AuthorizationPreview.swift",
+      "sha256": "ff39bb6d7146d44820afea59f224ed3e13d2f9f87c6ef79bb705e4ceaf7d379f"
+    },
+    {
+      "path": "ios-app/Flint/Features/Onboarding/OnboardingView.swift",
+      "sha256": "534cec670b2d03780c3acb2a73bb1fa770ca415fc37a653aae56e5d9bcf433f6"
+    },
+    {
+      "path": "ios-app/Flint/Features/Today/TodayView.swift",
+      "sha256": "222728c0821fae2cd972ab67dc47008659e0c1762a836ef50d9f3f183f8c1869"
+    },
+    {
+      "path": "ios-app/Tests/AuthorizationModelTests.swift",
+      "sha256": "55ab23e051bc66a549110a56eab3948bacada9ac78a808d74a8126edf16af492"
+    },
+    {
+      "path": "ios-app/project.yml",
+      "sha256": "adc70d4c4ff67868f4bd694cdf53b57bed7963489c9841233f2adf9d997c3c8b"
+    }
+  ],
+  "filesSHA256": {
+    "README.md": "97eb7e1458576ba337ef77ead78cf41c2e9612ed02df0cc49b3f2265e89b67fb",
+    "harness/Tests/PermissionReviewTests.swift": "65338a9f4f0a292075755e064f79de75477016fb43f79448088f85973178c9e4",
+    "harness/destination.mk": "28ac1a4c918440d9485bebbe5364b712f3ed342b44963684c56484bce4028a71",
+    "harness/project.yml": "9d60c2bd5a7424b1899a27f355010f30280a07a365122e39256ff89118350d39",
+    "harness/verify-ios.sh": "4325b82135294bc0b0338560123f42e25fff0c86010dcc91af2c8dd26d7668a3",
+    "harness/verify-ui.sh": "13e3b0e79b2bff0a0b501f91b7b2d19d677a2a3906f48156ed5217f64db0ae8c",
+    "logs/button-frames.txt": "32972a1cec305bd543ad859c55979db2509c0c88d1d9df99ac0691fab220e018",
+    "logs/gate-summary.json": "8d4953923a2b4275741a5b94130df10c73851c000e29c96d669d5e66cec565c6",
+    "logs/sequence.txt": "5d75e36d7af8ca56cf7d66d95e10159b06ee3687a8238e04f5d396bcd6c78247",
+    "logs/ui-large-summary.json": "58c02f9e198b69e50fcae3507f29d9ed41881a14322b5fb811c2cdd3a821753b",
+    "logs/ui-large.log.gz": "281e63e66ac9df5d8461badb722c2a9cf87b753257215b038d5494a2ada48cac",
+    "logs/ui-max-summary.json": "c4dc433d2334b74a240c598c380195947216decc5c63183646d42f5046aaf3a2",
+    "logs/ui-max.log.gz": "79685d553fea7cd7ff2147383cc24de7655d29521978a8286685f18bbddcdaf1",
+    "logs/verify-ios.log.gz": "3a10e962f5b01a0086da9f19385e272e3d38b3ae813fd546fcf54fd4cf5edb94",
+    "screenshots/large-denied-return.png": "9d8b5acbb4728af1b791117b20059b0bea0c296692952b65bb4a132aa9c52a1b",
+    "screenshots/large-onboarding-denied-controls.png": "782d68c9e73f8d8d2dfe7378c54c8c54bba1e320770c57c682b3dda5bd3802cf",
+    "screenshots/large-pending-controls-0.png": "4546297a9f4f50782104e0fd7ce67e292b9c17425f7de92877046e22589007ab",
+    "screenshots/max-denied-return.png": "8f638e78adfecc6bbe35d05fbeb5d012c04704f7fa4725345f01ade02a700d0c",
+    "screenshots/max-onboarding-denied-controls.png": "91ede11bd8e14d425de0f2e3a07ac31da5406dfcb130598fc89ad0196ddc435f",
+    "screenshots/max-pending-controls-1.png": "c7dc073133ea6e3d7e42c441c95664f889544805fc1d9d46c44152546e6534a6"
+  },
+  "screenshotAttachments": {
+    "screenshots/large-denied-return.png": {
+      "test": "PermissionReviewTests/testDeniedUsesSettingsAndCheckWithoutReprompt()",
+      "attachment": "7473AE40-C09E-4301-912E-10E8C8ED6CD0.png",
+      "capturedAt": 1792922604.969
+    },
+    "screenshots/large-pending-controls-0.png": {
+      "test": "PermissionReviewTests/testHungRequestSurvivesForegroundThenStopWaitingAllowsRecovery()",
+      "attachment": "56538133-9BDC-4164-8EE7-B0C2C7A7E97E.png",
+      "capturedAt": 1792922618.334
+    },
+    "screenshots/large-onboarding-denied-controls.png": {
+      "test": "PermissionReviewTests/testOnboardingDeniedUsesSameReachableRecoveryControls()",
+      "attachment": "DE621300-FB03-4519-A3DF-623A26F431F6.png",
+      "capturedAt": 1792922637.255
+    },
+    "screenshots/max-denied-return.png": {
+      "test": "PermissionReviewTests/testDeniedUsesSettingsAndCheckWithoutReprompt()",
+      "attachment": "58BDCB1F-4856-4340-9604-5610E1787E84.png",
+      "capturedAt": 1792922670.264
+    },
+    "screenshots/max-pending-controls-1.png": {
+      "test": "PermissionReviewTests/testHungRequestSurvivesForegroundThenStopWaitingAllowsRecovery()",
+      "attachment": "476DFB02-8587-44EE-8AD5-6800DE79084D.png",
+      "capturedAt": 1792922687.082
+    },
+    "screenshots/max-onboarding-denied-controls.png": {
+      "test": "PermissionReviewTests/testOnboardingDeniedUsesSameReachableRecoveryControls()",
+      "attachment": "DA0501A1-BE33-4BD2-8BC7-3E833DAEB1F5.png",
+      "capturedAt": 1792922719.448
+    }
+  },
+  "priorEvidenceIntegrity": [
+    {
+      "manifest": "../../manifest.json",
+      "verifiedFiles": 17,
+      "result": "all recorded hashes unchanged"
+    },
+    {
+      "manifest": "../manifest.json",
+      "verifiedFiles": 37,
+      "result": "all recorded hashes unchanged"
+    }
+  ],
+  "logNormalization": "Trailing whitespace trimmed from sequence.txt; original sequence retained in local UI result directory."
+}
