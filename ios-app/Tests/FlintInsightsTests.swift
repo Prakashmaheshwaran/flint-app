@@ -1,5 +1,6 @@
 import XCTest
 import SwiftUI
+import UIKit
 import FamilyControls
 import FlintCore
 
@@ -56,7 +57,7 @@ final class FlintInsightsTests: XCTestCase {
     }
 
     @MainActor
-    func testReportStatesRenderAtStandardAndAccessibilityTextSizes() throws {
+    func testReportStatesRenderAtStandardAndAccessibilityTextSizes() async throws {
         let date = Date(timeIntervalSince1970: 1_790_000_000)
         let empty = ActivitySummary(days: [.init(start: date, duration: 0)])
         let activity = ActivitySummary(total: 5_400, days: [
@@ -70,8 +71,27 @@ final class FlintInsightsTests: XCTestCase {
                     .background(FlintBrand.ground)
                     .environment(\.dynamicTypeSize, size)
                     .environment(\.colorScheme, .dark)
-                let renderer = ImageRenderer(content: view)
-                let image = try XCTUnwrap(renderer.uiImage, "\(name) at \(size)")
+                // ImageRenderer can return a non-nil, blank image for ScrollView. Host the
+                // actual report view so its UIKit-backed scrolling content participates.
+                let controller = UIHostingController(rootView: view)
+                let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
+                window.rootViewController = controller
+                window.makeKeyAndVisible()
+                defer { window.isHidden = true; window.rootViewController = nil }
+                controller.view.frame = window.bounds
+                controller.view.layoutIfNeeded()
+                try await Task.sleep(nanoseconds: 100_000_000)
+                controller.view.layoutIfNeeded()
+
+                let format = UIGraphicsImageRendererFormat()
+                format.preferredRange = .standard
+                var drewContent = false
+                let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                    drewContent = controller.view.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                }
+                XCTAssertTrue(drewContent)
+                let pixels = try XCTUnwrap(image.cgImage?.dataProvider?.data) as Data
+                XCTAssertGreaterThan(Set(pixels).count, 16, "\(name) at \(size) must render more than a plain background")
                 let attachment = XCTAttachment(image: image)
                 attachment.name = "insights-report-\(name)-\(size)"
                 attachment.lifetime = .keepAlways
