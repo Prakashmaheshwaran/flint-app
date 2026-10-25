@@ -13,6 +13,18 @@ class TimerModelsTest {
     private val app = AppRef("example.app", "Example")
     private val draft = TimerDraft(apps = setOf(app))
 
+    @Test fun `start instant is read back from timestamped ids and ignored otherwise`() {
+        val start = 1_790_000_000_000L
+        val timed = timerRule(draft, start, "$start-7f3c9a2e-0000-4000-8000-000000000000")
+        assertEquals(start, timerStartEpochMs(timed))
+        // Pre-redesign ids are a bare UUID, even one whose first block is all digits.
+        assertNull(timerStartEpochMs(timerRule(draft, start, "12345678-aaaa-4bbb-8ccc-dddddddddddd")))
+        assertNull(timerStartEpochMs(timerRule(draft, start, "7f3c9a2e-aaaa-4bbb-8ccc-dddddddddddd")))
+        // A claimed start at or after the deadline is not trusted.
+        assertNull(timerStartEpochMs(timed.copy(expiresAtEpochMs = start)))
+        assertNull(timerStartEpochMs(timed.copy(id = BlockRule.SESSION_ID_PREFIX + "$start-x")))
+    }
+
     @Test fun `finite duration choices have five minute then hourly steps`() {
         assertEquals((5..120 step 5).toList() + (3..24).map { it * 60 }, timerDurationChoices)
         assertFalse(0 in timerDurationChoices)

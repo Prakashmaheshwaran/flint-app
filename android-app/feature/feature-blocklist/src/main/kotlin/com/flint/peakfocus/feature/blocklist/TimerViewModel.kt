@@ -290,6 +290,9 @@ internal class TimerViewModel(
                 override fun <T : ViewModel> create(modelClass: Class<T>): T = TimerViewModel(
                     rulesStore = FlintPreferences.blockRules(appContext),
                     loadInstalledApps = InstalledAppsSource(appContext)::loadLaunchable,
+                    // The start instant rides the id so Today's sun arc can place the ember;
+                    // see timerStartEpochMs.
+                    newId = { "${System.currentTimeMillis()}-${UUID.randomUUID()}" },
                 ) as T
             }
         }

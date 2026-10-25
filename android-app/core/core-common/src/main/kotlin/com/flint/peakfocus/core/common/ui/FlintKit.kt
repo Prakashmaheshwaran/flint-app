@@ -53,28 +53,29 @@ import com.flint.peakfocus.core.common.theme.FlintSpacing
 
 /**
  * Flint's shared component kit — the coherence lever. Every feature screen builds from these
- * so the app reads as one continuous surface: same card idiom (20dp radius, hairline border,
- * matte container — depth from the tonal ladder, never shadows), same typographic signature
- * (headline + uppercase eyebrow), same pill/badge/status vocabulary. All values come from
- * FlintTheme / tokens.json; nothing here hard-codes a color or an off-scale dimension.
+ * so the app reads as one continuous surface: same card idiom (20dp radius, bone hairline,
+ * bone@0.03 fill — depth from the alpha ladder, never shadows), same typographic signature
+ * (mist eyebrow + serif title), same pill/badge/status vocabulary. All values come from
+ * FlintTheme / tokens.json. The Ember & Mist controls and scene live in FlintControls.kt and
+ * FlintScene.kt.
  */
 
-/** The screen-opening signature: headlineMedium title over the uppercase primary eyebrow. */
+/** The screen-opening signature: the quiet mist eyebrow over the serif display title. */
 @Composable
 fun FlintScreenHeader(title: String, eyebrow: String? = null, modifier: Modifier = Modifier) {
-    Column(modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(FlintSpacing.sm)) {
+        if (eyebrow != null) {
+            Text(
+                text = eyebrow.uppercase(),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Text(
             text = title,
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onBackground,
         )
-        if (eyebrow != null) {
-            Text(
-                text = eyebrow.uppercase(),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
     }
 }
 

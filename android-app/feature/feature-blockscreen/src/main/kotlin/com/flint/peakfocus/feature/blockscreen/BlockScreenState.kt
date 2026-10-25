@@ -118,7 +118,7 @@ internal fun blockScreenContent(state: BlockScreenState): BlockScreenContent {
     val name = displayNameFor(state)
     return BlockScreenContent(
         displayName = name,
-        headline = "$name can wait",
+        headline = "$name is resting.",
         reasonLine = reasonLineFor(state.reason),
         badge = badgeFor(state.reason, state.breakLevel),
         countdownLabel = countdownLabelFor(state.reason, state.remainingMillis),

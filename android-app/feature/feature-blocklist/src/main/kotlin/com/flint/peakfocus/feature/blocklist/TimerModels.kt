@@ -81,6 +81,20 @@ internal fun activeTimerSessions(rules: List<BlockRule>, nowEpochMs: Long): List
         it.id.startsWith(BlockRule.SESSION_ID_PREFIX) && it.enabled && !it.isExpired(nowEpochMs)
     }.sortedWith(compareBy<BlockRule> { it.expiresAtEpochMs ?: Long.MAX_VALUE }.thenBy { it.id })
 
+/**
+ * When a native timer started, read back from its id ("session-timer-<epochMs>-<uuid>", as the
+ * production factory mints them). Older ids carry no instant and return null.
+ */
+internal fun timerStartEpochMs(rule: BlockRule): Long? {
+    if (!rule.id.startsWith(NATIVE_TIMER_ID_PREFIX)) return null
+    val start = rule.id.removePrefix(NATIVE_TIMER_ID_PREFIX).substringBefore('-').toLongOrNull() ?: return null
+    val deadline = rule.expiresAtEpochMs ?: return null
+    return start.takeIf { it > EARLIEST_TIMER_EPOCH_MS && it < deadline }
+}
+
+/** 2017-07-14 — anything earlier is a UUID fragment that happened to be all digits. */
+private const val EARLIEST_TIMER_EPOCH_MS = 1_500_000_000_000L
+
 internal fun canCancelTimer(rule: BlockRule): Boolean =
     rule.id.startsWith(BlockRule.SESSION_ID_PREFIX) &&
         !rule.id.startsWith(NATIVE_TIMER_ID_PREFIX) && rule.breakLevel == BreakLevel.EASY

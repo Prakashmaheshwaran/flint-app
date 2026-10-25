@@ -51,6 +51,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.flint.peakfocus.core.common.ui.flintSwitchColors
 import com.flint.peakfocus.core.common.theme.FlintSpacing
 import com.flint.peakfocus.core.common.ui.FlintCard
 import com.flint.peakfocus.core.common.ui.FlintScreenHeader
@@ -404,7 +405,7 @@ private fun PolicySwitch(label: String, checked: Boolean, enabled: Boolean, onCh
     Row(Modifier.fillMaxWidth().toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange),
         verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f))
-        Switch(checked, onCheckedChange = null, enabled = enabled)
+        Switch(checked, onCheckedChange = null, enabled = enabled, colors = flintSwitchColors())
     }
 }
 

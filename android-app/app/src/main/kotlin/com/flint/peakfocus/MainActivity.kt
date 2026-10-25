@@ -11,6 +11,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.ManagedActivityResultLauncher
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -29,6 +30,20 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.sp
+import com.flint.peakfocus.core.common.theme.FlintPalette
+import com.flint.peakfocus.core.common.ui.EmberButton
+import com.flint.peakfocus.core.common.ui.EmberLandscape
+import com.flint.peakfocus.core.common.ui.FlintGlyphs
+import com.flint.peakfocus.core.common.ui.FlintMark
+import com.flint.peakfocus.core.common.ui.FlintTabBar
+import com.flint.peakfocus.core.common.ui.FlintTabBarClearance
+import com.flint.peakfocus.core.common.ui.FlintTabGlyph
+import com.flint.peakfocus.core.common.ui.flintSwitchColors
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -127,26 +142,20 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
-/** One launchable app for the Home quick-blocklist: identity plus a small pre-decoded icon. */
+/** One launchable app for the quick block list: identity plus a small pre-decoded icon. */
 data class AppEntry(val packageName: String, val label: String, val icon: ImageBitmap? = null)
 
-/** APK-backed hub order. Insights and profile/settings remain reachable from Home. */
-private enum class FlintTab(
-    val label: String,
-    val iconSelected: ImageVector,
-    val iconUnselected: ImageVector,
-) {
-    Home("Home", Icons.Filled.Home, Icons.Outlined.Home),
-    MyApps("My Apps", Icons.Filled.Lock, Icons.Outlined.Lock),
-    Timer("Timer", FlintIcons.timer(), FlintIcons.timer()),
-}
-
-private enum class HomePage { Overview, Stats, Settings, Account }
+/** Screens pushed over the tabs. */
+private enum class Detail { QuickBlock, Account }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // Ember & Mist is dark-only: light system-bar icons over the night sky.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         setContent {
             FlintTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -161,8 +170,13 @@ class MainActivity : ComponentActivity() {
 private fun FlintApp() {
     val context = LocalContext.current
     val haptics = rememberFlintHaptics()
+    val prefs = remember { context.getSharedPreferences("flint_onboarding", Context.MODE_PRIVATE) }
+    var welcomed by rememberSaveable { mutableStateOf(prefs.getBoolean(KEY_WELCOMED, false)) }
     var showConsent by rememberSaveable { mutableStateOf(false) }
-    var homePage by rememberSaveable { mutableStateOf(HomePage.Overview) }
+    var detail by rememberSaveable { mutableStateOf<Detail?>(null) }
+    var health by remember { mutableStateOf(PermissionHealthChecker.check(context)) }
+    val store = remember { BlocklistStore(context) }
+    var blockedCount by remember { mutableStateOf(store.blockedPackages.size) }
 
     // Result is deliberately unused: the FGS runs with or without the grant — the permission
     // only controls whether its ongoing notification is visible on Android 13+.
@@ -170,8 +184,9 @@ private fun FlintApp() {
         ActivityResultContracts.RequestPermission(),
     ) {}
 
-    // On every return to the app: re-sync the engine's rule list (a freshness pass) and
-    // reconcile the Path B fallback service with the current grants.
+    // On every return to the app: re-sync the engine's rule list (a freshness pass), reconcile
+    // the Path B fallback service with the current grants, and re-read enforcement health —
+    // Today may have sent the user to a Settings surface, and OEMs revoke grants silently.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -179,33 +194,49 @@ private fun FlintApp() {
                 ActiveRulesBridge.republish(context)
                 PathBServiceGate.sync(context)
                 maybeRequestPathBNotificationPermission(context, notifPermissionLauncher)
+                health = PermissionHealthChecker.check(context)
+                blockedCount = store.blockedPackages.size
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+    LaunchedEffect(Unit) {
+        store.load() // publishes the legacy projection under its own holder source key
+        blockedCount = store.blockedPackages.size
+    }
 
-    // Hoisted out of HomeScreen so the launchable-apps query (and its skeleton pass) runs
-    // once per activity composition, not once per visit to the Home tab.
+    // Hoisted so the launchable-apps query (and its skeleton pass) runs once per activity
+    // composition, not once per visit to the quick block list.
     var apps by remember { mutableStateOf<List<AppEntry>?>(null) } // null = still loading
     LaunchedEffect(Unit) {
         apps = withContext(Dispatchers.IO) { loadLaunchableApps(context) }
     }
 
-    var tab by rememberSaveable { mutableStateOf(FlintTab.Home) }
+    var tab by rememberSaveable { mutableStateOf(FlintTabGlyph.Today) }
     val stateHolder = rememberSaveableStateHolder()
-    // Back walks to Home before leaving the app. Feature-level handlers (rule editors,
-    // pickers) compose later, so they win whenever they are enabled.
-    BackHandler(enabled = !showConsent &&
-        !(homePage == HomePage.Account && tab == FlintTab.Home) &&
-        (tab != FlintTab.Home || homePage != HomePage.Overview)) {
-        tab = FlintTab.Home
-        homePage = HomePage.Overview
+    // Back pops a pushed screen, then walks to Today before leaving the app. Feature-level
+    // handlers (rule editors, pickers) compose later, so they win whenever they are enabled.
+    BackHandler(enabled = !showConsent && welcomed && (detail != null || tab != FlintTabGlyph.Today)) {
+        if (detail != null) detail = null else tab = FlintTabGlyph.Today
+    }
+
+    val onSetupStep: (SetupStep) -> Unit = { step ->
+        val handOff = settingsHandOff(context, step)
+        if (handOff == null) {
+            showConsent = true
+        } else {
+            context.startActivity(handOff.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
     }
 
     val consentSlidePx = with(LocalDensity.current) { FlintSpacing.lg.roundToPx() }
     AnimatedContent(
-        targetState = showConsent,
+        targetState = when {
+            !welcomed -> Stage.Welcome
+            showConsent -> Stage.Consent
+            else -> Stage.Tabs
+        },
         modifier = Modifier.fillMaxSize(),
         transitionSpec = {
             (fadeIn(tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized)) +
@@ -214,12 +245,16 @@ private fun FlintApp() {
                 ) { consentSlidePx }) togetherWith
                 fadeOut(tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard))
         },
-        label = "consent",
-    ) { consenting ->
-        if (consenting) {
+        label = "stage",
+    ) { stage ->
+        when (stage) {
+            Stage.Welcome -> WelcomeScreen(onBegin = {
+                prefs.edit().putBoolean(KEY_WELCOMED, true).apply()
+                welcomed = true
+            })
             // ADR-007 (Play gate): full-screen prominent disclosure. The Accept button below is
             // the ONLY route to the accessibility-settings hand-off — no tab bar, no shortcut.
-            AccessibilityConsentScreen(
+            Stage.Consent -> AccessibilityConsentScreen(
                 onAccept = {
                     showConsent = false
                     context.startActivity(
@@ -228,102 +263,71 @@ private fun FlintApp() {
                 },
                 onDecline = { showConsent = false },
             )
-        } else {
-            Scaffold(
-                containerColor = MaterialTheme.colorScheme.background,
-                bottomBar = {
-                    // The FlintCard hairline idiom carried to the nav surface: a 1dp
-                    // outlineVariant line above the bar instead of elevation.
-                    Column {
-                        HorizontalDivider(
-                            thickness = 1.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant,
-                        )
-                        NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
-                            FlintTab.entries.forEach { destination ->
-                                val selected = tab == destination
-                                NavigationBarItem(
-                                    selected = selected,
-                                    onClick = {
-                                        if (destination == FlintTab.Home) homePage = HomePage.Overview
-                                        if (tab != destination) {
-                                            haptics.tick()
-                                            tab = destination
-                                        }
-                                    },
-                                    icon = {
-                                        Icon(
-                                            imageVector = if (selected) destination.iconSelected
-                                            else destination.iconUnselected,
-                                            contentDescription = destination.label,
-                                        )
-                                    },
-                                    label = { Text(destination.label) },
-                                    colors = NavigationBarItemDefaults.colors(
-                                        indicatorColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    ),
-                                )
-                            }
-                        }
-                    }
-                },
-            ) { innerPadding ->
+            Stage.Tabs -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                val systemBars = WindowInsets.systemBars.asPaddingValues()
+                val tabPadding = PaddingValues(
+                    top = systemBars.calculateTopPadding(),
+                    bottom = systemBars.calculateBottomPadding() + FlintTabBarClearance,
+                )
+                val plan = remember(health) { SetupGuidance.plan(health) }
                 // Compose only the selected tab. Keeping an outgoing feature alive during
-                // animation also keeps its picker/account BackHandler active over the next tab.
-                Box(Modifier.fillMaxSize()) {
-                    val destination = tab
-                    // One saveable slot per tab: LazyColumn scroll positions and
-                    // rememberSaveable state survive tab switches.
-                    stateHolder.SaveableStateProvider(destination) {
-                        val contentModifier = Modifier.fillMaxSize()
-                        when (destination) {
-                            // Home draws edge-to-edge; the scaffold insets merge into its
-                            // LazyColumn contentPadding instead of clipping the container.
-                            FlintTab.Home -> stateHolder.SaveableStateProvider(homePage) {
-                                when (homePage) {
-                                    HomePage.Overview -> HomeScreen(
-                                        contentModifier,
-                                        innerPadding = innerPadding,
-                                        apps = apps,
-                                        onTimer = { tab = FlintTab.Timer },
-                                        onStats = { homePage = HomePage.Stats },
-                                        onProfile = { homePage = HomePage.Settings },
-                                        onSetupStep = { step ->
-                                            val handOff = settingsHandOff(context, step)
-                                            if (handOff == null) {
-                                                showConsent = true
-                                            } else {
-                                                context.startActivity(
-                                                    handOff.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                                                )
-                                            }
-                                        },
-                                    )
-                                    HomePage.Stats -> HomeDetail(
-                                        contentModifier.padding(innerPadding),
-                                        onBack = { homePage = HomePage.Overview },
-                                    ) { detailModifier -> StatsScreen(detailModifier) }
-                                    HomePage.Account -> ConnectedDevelopmentScreen(
-                                        onBack = { homePage = HomePage.Settings },
-                                        modifier = contentModifier.padding(innerPadding),
-                                    )
-                                    HomePage.Settings -> HomeDetail(
-                                        contentModifier.padding(innerPadding),
-                                        onBack = { homePage = HomePage.Overview },
-                                    ) { detailModifier ->
-                                        SettingsScreen(
-                                            detailModifier,
-                                            onAccount = if (BuildConfig.DEBUG) {
-                                                { homePage = HomePage.Account }
-                                            } else null,
-                                        )
-                                    }
-                                }
-                            }
-                            FlintTab.MyApps -> BlocklistScreen(contentModifier.padding(innerPadding))
-                            FlintTab.Timer -> TimerScreen(contentModifier.padding(innerPadding))
+                // animation also keeps its picker BackHandler active over the next tab.
+                stateHolder.SaveableStateProvider(tab.name) {
+                    when (tab) {
+                        FlintTabGlyph.Today -> TimerScreen(
+                            contentPadding = tabPadding,
+                            headline = plan.headline,
+                            // Today keeps one sentence; Settings carries the full explanation.
+                            subline = plan.body.substringBefore(". ").removeSuffix(".") + ".",
+                            setupLabel = plan.nextStep?.ctaLabel,
+                            onSetup = { plan.nextStep?.let(onSetupStep) },
+                        )
+                        FlintTabGlyph.Rules -> BlocklistScreen(
+                            contentPadding = tabPadding,
+                            quickBlockSummary = if (blockedCount == 0) "Apps blocked whenever Flint is on"
+                            else "$blockedCount ${if (blockedCount == 1) "app" else "apps"} always blocked",
+                            onQuickBlock = { detail = Detail.QuickBlock },
+                        )
+                        FlintTabGlyph.Insights -> StatsScreen(Modifier.fillMaxSize().padding(tabPadding))
+                        FlintTabGlyph.You -> SettingsScreen(
+                            Modifier.fillMaxSize().padding(tabPadding),
+                            onAccount = if (BuildConfig.DEBUG) {
+                                { detail = Detail.Account }
+                            } else null,
+                        )
+                    }
+                }
+                FlintTabBar(
+                    selected = tab,
+                    onSelect = { destination ->
+                        if (tab != destination) {
+                            haptics.tick()
+                            tab = destination
+                        }
+                    },
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
+                AnimatedVisibility(
+                    visible = detail != null,
+                    enter = slideInHorizontally(tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized)) { it / 4 } +
+                        fadeIn(tween(FlintMotion.DurationMedium)),
+                    exit = slideOutHorizontally(tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized)) { it / 4 } +
+                        fadeOut(tween(FlintMotion.DurationShort)),
+                ) {
+                    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                        when (detail) {
+                            Detail.QuickBlock -> QuickBlockScreen(
+                                store = store,
+                                apps = apps,
+                                contentPadding = systemBars,
+                                onBack = { detail = null },
+                                onChanged = { blockedCount = store.blockedPackages.size },
+                            )
+                            Detail.Account -> ConnectedDevelopmentScreen(
+                                onBack = { detail = null },
+                                modifier = Modifier.fillMaxSize().padding(systemBars),
+                            )
+                            null -> Unit
                         }
                     }
                 }
@@ -332,22 +336,52 @@ private fun FlintApp() {
     }
 }
 
+private enum class Stage { Welcome, Consent, Tabs }
+
+private const val KEY_WELCOMED = "welcomed"
+
+/** E01 — first run: the mark, the promise, one ember action. */
 @Composable
-private fun HomeDetail(
-    modifier: Modifier,
-    onBack: () -> Unit,
-    content: @Composable (Modifier) -> Unit,
-) {
-    Column(modifier) {
-        TextButton(onClick = onBack, modifier = Modifier.padding(horizontal = FlintSpacing.sm)) {
-            Text("Back to Home")
+private fun WelcomeScreen(onBegin: () -> Unit) {
+    Box(Modifier.fillMaxSize()) {
+        EmberLandscape(horizonOffset = 20f, orbCenter = Offset(195f, 480f), orbRadius = 64f)
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(WindowInsets.systemBars.asPaddingValues())
+                .padding(horizontal = FlintSpacing.gutter),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.height(110.dp))
+            FlintMark(Modifier.size(40.dp))
+            Spacer(Modifier.height(14.dp))
+            Text("Flint", style = MaterialTheme.typography.displaySmall.copy(fontSize = 48.sp, letterSpacing = (-0.8).sp))
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "Make time for what matters.",
+                style = MaterialTheme.typography.titleLarge.copy(fontSize = 18.sp, lineHeight = 27.sp),
+                color = FlintPalette.SoftBone,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                "No account  ·  No analytics  ·  Every feature free",
+                style = MaterialTheme.typography.bodySmall,
+                color = FlintPalette.Mist,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(18.dp))
+            EmberButton("Begin", onBegin)
+            Spacer(Modifier.height(18.dp))
+            Text("Open source · built in the open", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                color = FlintPalette.Stone)
+            Spacer(Modifier.height(12.dp))
         }
-        content(Modifier.fillMaxWidth().weight(1f))
     }
 }
 
 /**
- * Direct Settings hand-off for a Home setup step. Accessibility deliberately returns null:
+ * Direct Settings hand-off for a setup step. Accessibility deliberately returns null:
  * its only route is the prominent-disclosure consent screen in [FlintApp] (ADR-007).
  */
 private fun settingsHandOff(context: Context, step: SetupStep): Intent? = when (step) {
@@ -357,90 +391,40 @@ private fun settingsHandOff(context: Context, step: SetupStep): Intent? = when (
     SetupStep.REQUEST_BATTERY_EXEMPTION -> BatteryOptimization.requestIntent(context)
 }
 
+/**
+ * The always-on quick block list (the legacy blocklist store): apps blocked whenever Flint
+ * is on, optionally only during set hours. Reached from Rules.
+ */
 @Composable
-private fun HomeScreen(
-    modifier: Modifier = Modifier,
-    innerPadding: PaddingValues = PaddingValues(0.dp),
-    apps: List<AppEntry>? = null, // null = still loading; owned by FlintApp
-    onSetupStep: (SetupStep) -> Unit,
-    onTimer: () -> Unit,
-    onStats: () -> Unit,
-    onProfile: () -> Unit,
+private fun QuickBlockScreen(
+    store: BlocklistStore,
+    apps: List<AppEntry>?, // null = still loading; owned by FlintApp
+    contentPadding: PaddingValues,
+    onBack: () -> Unit,
+    onChanged: () -> Unit,
 ) {
-    val context = LocalContext.current
-    val store = remember { BlocklistStore(context) }
-    var health by remember { mutableStateOf(PermissionHealthChecker.check(context)) }
     var blocked by remember { mutableStateOf(store.blockedPackages) }
     var appQuery by rememberSaveable { mutableStateOf("") }
 
-    // Block Now sessions live in the DataStore rules under the session id prefix; the engine
-    // stops enforcing them at expiry on its own, so this state is purely presentational.
-    val rulesStore = remember { FlintPreferences.blockRules(context) }
-    val dataStoreRules by rulesStore.rules.collectAsState(initial = emptyList())
-    var sessionNow by remember { mutableStateOf(System.currentTimeMillis()) }
-    val activeSession = dataStoreRules.firstOrNull {
-        it.id.startsWith(BlockRule.SESSION_ID_PREFIX) && it.enabled && !it.isExpired(sessionNow)
-    }
-    LaunchedEffect(activeSession?.id) {
-        if (activeSession == null) return@LaunchedEffect
-        while (isActive) {
-            delay(1_000L)
-            sessionNow = System.currentTimeMillis()
-        }
-    }
-
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                // The card may have sent the user to any of three Settings surfaces, and OEMs
-                // may revoke grants silently. Re-read the complete truth on every return.
-                health = PermissionHealthChecker.check(context)
-                blocked = store.blockedPackages
-                sessionNow = System.currentTimeMillis()
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-
-    LaunchedEffect(Unit) {
-        store.load() // publishes the legacy projection under its own holder source key
-    }
-
     LazyColumn(
-        modifier = modifier,
-        // Edge-to-edge: scaffold insets fold into the scroll padding so content slides under
-        // the translucent status bar and behind the nav bar instead of being clipped.
+        modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
             start = FlintSpacing.gutter,
-            top = innerPadding.calculateTopPadding() + FlintSpacing.gutter,
+            top = contentPadding.calculateTopPadding() + FlintSpacing.sm,
             end = FlintSpacing.gutter,
-            bottom = innerPadding.calculateBottomPadding() + FlintSpacing.gutter,
+            bottom = contentPadding.calculateBottomPadding() + FlintSpacing.gutter,
         ),
     ) {
         item(key = "header") {
-            FlintScreenHeader("Flint", eyebrow = "Peak Focus")
-            Row(horizontalArrangement = Arrangement.spacedBy(FlintSpacing.sm)) {
-                OutlinedButton(onClick = onStats, modifier = Modifier.weight(1f)) { Text("Insights") }
-                OutlinedButton(onClick = onProfile, modifier = Modifier.weight(1f)) { Text("Profile & settings") }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) {
+                    Icon(FlintGlyphs.back, contentDescription = "Back to Rules", modifier = Modifier.size(20.dp))
+                }
+                Text("Rules", style = MaterialTheme.typography.bodyMedium)
             }
-            Spacer(Modifier.height(FlintSpacing.md))
-        }
-        item(key = "status") {
-            StatusCard(
-                plan = remember(health) { SetupGuidance.plan(health) },
-                onSetupStep = onSetupStep,
-            )
-            Spacer(Modifier.height(FlintSpacing.cardGap))
-        }
-        item(key = "focus-session") {
-            FocusSessionCard(
-                session = activeSession,
-                nowEpochMs = sessionNow,
-                onOpenTimer = onTimer,
-            )
-            Spacer(Modifier.height(FlintSpacing.cardGap))
+            Spacer(Modifier.height(FlintSpacing.sm))
+            FlintScreenHeader("Quick block list", eyebrow = "${blocked.size} selected")
+            Spacer(Modifier.height(FlintSpacing.lg))
         }
         item(key = "schedule") {
             ScheduleCard(store)
@@ -480,6 +464,7 @@ private fun HomeScreen(
                             ) {
                                 store.toggle(app.packageName)
                                 blocked = store.blockedPackages
+                                onChanged()
                             }
                         }
                     }
@@ -507,46 +492,7 @@ private fun AppSearchField(query: String, onQueryChange: (String) -> Unit) {
     )
 }
 
-/** Home summarizes the persisted session; Timer owns creation and cancellation. */
-@Composable
-private fun FocusSessionCard(
-    session: BlockRule?,
-    nowEpochMs: Long,
-    onOpenTimer: () -> Unit,
-) {
-    FlintCard {
-        FlintSectionLabel("Focus timer")
-        Spacer(Modifier.height(FlintSpacing.sm))
-        if (session != null) {
-            Text(
-                session.expiresAtEpochMs?.let { formatCountdown(it - nowEpochMs) } ?: "Session active",
-                style = MaterialTheme.typography.displaySmall.merge(FlintNumerals),
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Text(session.name, style = MaterialTheme.typography.bodyMedium)
-        } else {
-            Text("Choose apps and a duration for your next focus session.",
-                style = MaterialTheme.typography.bodyMedium)
-        }
-        Spacer(Modifier.height(FlintSpacing.cardGap))
-        Button(onClick = onOpenTimer, modifier = Modifier.fillMaxWidth()) {
-            Text(if (session == null) "Set a timer" else "View timer")
-        }
-    }
-}
 
-/** "1h 24m" / "12m 30s" / "42s"; negatives clamp to "0s". */
-private fun formatCountdown(millis: Long): String {
-    val totalSeconds = (millis / 1000).coerceAtLeast(0)
-    val hours = totalSeconds / 3600
-    val minutes = (totalSeconds % 3600) / 60
-    val seconds = totalSeconds % 60
-    return when {
-        hours > 0 -> "${hours}h ${minutes}m"
-        minutes > 0 -> "${minutes}m ${seconds}s"
-        else -> "${seconds}s"
-    }
-}
 
 @Composable
 private fun EmptyAppsState() {
@@ -566,89 +512,6 @@ private fun EmptyAppsState() {
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-    }
-}
-
-@Composable
-private fun StatusCard(plan: SetupPlan, onSetupStep: (SetupStep) -> Unit) {
-    // The enforcement truth animates instead of snapping: Path A and Path B both light the
-    // card, while the CTA expands below the explanation whenever one setup step remains.
-    val haptics = rememberFlintHaptics()
-    val statusColorSpec = tween<Color>(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard)
-    val titleColor by animateColorAsState(
-        targetValue = if (plan.enforcingNow) MaterialTheme.colorScheme.primary
-        else MaterialTheme.colorScheme.onSurface,
-        animationSpec = statusColorSpec,
-        label = "statusTitleColor",
-    )
-    val dotColor by animateColorAsState(
-        targetValue = if (plan.enforcingNow) MaterialTheme.colorScheme.primary
-        else MaterialTheme.colorScheme.onSurfaceVariant,
-        animationSpec = statusColorSpec,
-        label = "statusDotColor",
-    )
-    FlintCard {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(FlintSpacing.cardGap),
-        ) {
-            AnimatedVisibility(
-                visible = plan.enforcingNow,
-                enter = fadeIn(tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard)) +
-                    expandHorizontally(tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized)),
-                exit = fadeOut(tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard)) +
-                    shrinkHorizontally(tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized)),
-            ) {
-                Icon(
-                    imageVector = rememberFlintMark(),
-                    contentDescription = null,
-                    tint = Color.Unspecified,
-                    modifier = Modifier.size(40.dp),
-                )
-            }
-            Column(Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(FlintSpacing.sm),
-                ) {
-                    // Pulsing only while blocking is live — the screen's one quiet ember.
-                    FlintStatusDot(color = dotColor, pulsing = plan.enforcingNow)
-                    Text(
-                        plan.headline,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = titleColor,
-                    )
-                }
-                Text(
-                    plan.body,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        val nextStep = plan.nextStep
-        AnimatedVisibility(
-            visible = nextStep != null,
-            enter = fadeIn(tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard)) +
-                expandVertically(tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized)),
-            exit = fadeOut(tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard)) +
-                shrinkVertically(tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized)),
-        ) {
-            if (nextStep != null) {
-                Column {
-                    Spacer(Modifier.height(FlintSpacing.md))
-                    Button(
-                        onClick = {
-                            haptics.tick()
-                            onSetupStep(nextStep)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(nextStep.ctaLabel)
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -706,7 +569,7 @@ private fun AppRow(
         }
         // Row-level toggleable carries the state + Switch role for TalkBack; the Switch
         // itself is display-only so there is exactly one interactive target.
-        Switch(checked = isBlocked, onCheckedChange = null)
+        Switch(checked = isBlocked, onCheckedChange = null, colors = flintSwitchColors())
     }
 }
 
@@ -728,7 +591,7 @@ private fun ScheduleCard(store: BlocklistStore) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Switch(checked = enabled, onCheckedChange = {
+            Switch(checked = enabled, colors = flintSwitchColors(), onCheckedChange = {
                 if (it) haptics.toggleOn() else haptics.toggleOff()
                 enabled = it; store.scheduleEnabled = it
                 ActiveRulesBridge.republish(context)
