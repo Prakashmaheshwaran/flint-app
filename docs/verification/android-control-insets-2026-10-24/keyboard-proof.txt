@@ -1,0 +1,12 @@
+ERROR: null root node returned by UiTestAutomationBridge.
+{"tap": "Start focus", "bounds": [63, 1906, 1017, 2053], "center": [540, 1979]}
+{"tap": "Choose what rests", "bounds": [63, 1130, 1017, 1299], "center": [540, 1214]}
+{"tap": "Search apps", "bounds": [63, 356, 1017, 503], "center": [540, 429]}
+{"tap": "Chrome", "bounds": [63, 661, 1017, 808], "center": [540, 734]}
+{"visible_control": "Add \u00b7 1", "bounds": [756, 1308, 1017, 1434], "ceiling": 2127, "keyboard": true}
+{"visible_control": "Cancel", "bounds": [539, 1308, 735, 1434], "ceiling": 2127, "keyboard": true}
+CAPTURE normal-ime-final-selected
+{"tap": "Add \u00b7 1", "bounds": [756, 1308, 1017, 1434], "center": [886, 1371]}
+CAPTURE normal-ime-final-confirmed
+{"tap": "Close", "bounds": [896, 196, 1022, 322], "center": [959, 259]}
+{"case": "normal-ime-final", "passed": true}

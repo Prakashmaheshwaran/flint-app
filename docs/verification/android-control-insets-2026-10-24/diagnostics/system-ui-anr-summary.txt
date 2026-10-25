@@ -1,0 +1,2 @@
+System UI ANR was captured; Wait did not clear it; Close app restored the Sleep editor.
+No selected ANR summary fields were retained from the bounded post-recovery query.

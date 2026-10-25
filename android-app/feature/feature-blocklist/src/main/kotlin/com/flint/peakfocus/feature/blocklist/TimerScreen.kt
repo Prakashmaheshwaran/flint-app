@@ -378,6 +378,10 @@ private fun StartFocusSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        // This dialog is outside the tab scaffold's viewport. After returning from
+        // search with the IME open it can expand to the top, so reserve its own
+        // status-bar inset rather than placing the header/Close under system UI.
+        modifier = Modifier.statusBarsPadding(),
         sheetState = sheetState,
         containerColor = FlintPalette.Sheet,
         contentColor = FlintPalette.Bone,

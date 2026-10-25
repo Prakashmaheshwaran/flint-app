@@ -11,8 +11,11 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -63,9 +66,6 @@ import com.flint.peakfocus.core.common.theme.rememberFlintMark
 import com.flint.peakfocus.core.common.ui.FlintSkeletonRow
 import com.flint.peakfocus.core.common.ui.rememberFlintHaptics
 
-/** Which of the picker's three bodies is showing; keys the region crossfade. */
-private enum class PickerRegion { LOADING, EMPTY, LIST }
-
 /**
  * Launchable-app chooser backed by [InstalledAppsUiState]. In multi-select mode rows toggle
  * checkboxes and "Add · N" confirms the set; in single-select mode tapping a row confirms
@@ -78,6 +78,7 @@ private enum class PickerRegion { LOADING, EMPTY, LIST }
  * [eyebrow] defaults to the pending selection count and must not contain a count itself — the
  * screen owns the live count. Pass only a contextual heading (for example, "App limits").
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun AppPickerScreen(
     appsState: InstalledAppsUiState,
@@ -115,106 +116,106 @@ internal fun AppPickerScreen(
     }
 
     Column(modifier = modifier.fillMaxSize().padding(FlintSpacing.gutter)) {
-        EditorHeader(title = title, eyebrow = eyebrow ?: "$selectedCount selected", onBack = onCancel)
-        Spacer(Modifier.height(FlintSpacing.sm))
-
-        if (appsState is InstalledAppsUiState.Ready) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Search apps") },
-                leadingIcon = {
-                    Icon(imageVector = Icons.Outlined.Search, contentDescription = null)
-                },
-                trailingIcon = {
-                    AnimatedVisibility(
-                        visible = query.isNotEmpty(),
-                        enter = fadeIn(
-                            tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard),
-                        ),
-                        exit = fadeOut(
-                            tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard),
-                        ),
+        // Header/search scroll with the apps. A large font or the IME must not consume
+        // the entire list viewport or push the confirmation controls off-screen.
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            contentPadding = PaddingValues(bottom = FlintSpacing.md),
+        ) {
+            item(key = "header") {
+                EditorHeader(title = title, eyebrow = eyebrow ?: "$selectedCount selected", onBack = onCancel)
+                Spacer(Modifier.height(FlintSpacing.sm))
+            }
+            if (appsState is InstalledAppsUiState.Ready) {
+                item(key = "search") {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Search apps") },
+                        leadingIcon = {
+                            Icon(imageVector = Icons.Outlined.Search, contentDescription = null)
+                        },
+                        trailingIcon = {
+                            AnimatedVisibility(
+                                visible = query.isNotEmpty(),
+                                enter = fadeIn(
+                                    tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard),
+                                ),
+                                exit = fadeOut(
+                                    tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard),
+                                ),
+                            ) {
+                                IconButton(onClick = { query = "" }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Clear search",
+                                    )
+                                }
+                            }
+                        },
+                        shape = MaterialTheme.shapes.large,
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    )
+                    Spacer(Modifier.height(FlintSpacing.sm))
+                    // Keep the count's natural width; move the action group to the next
+                    // line when larger labels would otherwise squeeze APP/APPS into pieces.
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalArrangement = Arrangement.spacedBy(FlintSpacing.xs),
                     ) {
-                        IconButton(onClick = { query = "" }) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Clear search",
-                            )
+                        Text(
+                            text = "${filtered.size} " + if (filtered.size == 1) "APP" else "APPS",
+                            modifier = Modifier.align(Alignment.CenterVertically),
+                            style = MaterialTheme.typography.labelMedium.merge(FlintNumerals),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (multiSelect) {
+                            FlowRow(
+                                modifier = Modifier.align(Alignment.CenterVertically),
+                                horizontalArrangement = Arrangement.End,
+                                verticalArrangement = Arrangement.spacedBy(FlintSpacing.xs),
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        selection = selection.withSelection(filtered.map { it.packageName }, true)
+                                    },
+                                    enabled = filtered.any { it.packageName !in selection.packageNames },
+                                ) {
+                                    Text("Select all")
+                                }
+                                TextButton(
+                                    onClick = {
+                                        selection = selection.withSelection(filtered.map { it.packageName }, false)
+                                    },
+                                    enabled = filtered.any { it.packageName in selection.packageNames },
+                                ) {
+                                    Text("Clear")
+                                }
+                            }
                         }
                     }
-                },
-                shape = MaterialTheme.shapes.large,
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            )
-            Spacer(Modifier.height(FlintSpacing.sm))
-            // Control row: result count left, filtered-subset bulk actions right.
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "${filtered.size} " + if (filtered.size == 1) "APP" else "APPS",
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.labelMedium.merge(FlintNumerals),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (multiSelect) {
-                    TextButton(
-                        onClick = {
-                            selection = selection.withSelection(filtered.map { it.packageName }, true)
-                        },
-                        enabled = filtered.any { it.packageName !in selection.packageNames },
-                    ) {
-                        Text("Select all")
-                    }
-                    TextButton(
-                        onClick = {
-                            selection = selection.withSelection(filtered.map { it.packageName }, false)
-                        },
-                        enabled = filtered.any { it.packageName in selection.packageNames },
-                    ) {
-                        Text("Clear")
-                    }
+                    Spacer(Modifier.height(FlintSpacing.xs))
                 }
             }
-            Spacer(Modifier.height(FlintSpacing.xs))
-        }
-
-        val region = when {
-            appsState is InstalledAppsUiState.Loading -> PickerRegion.LOADING
-            filtered.isEmpty() -> PickerRegion.EMPTY
-            else -> PickerRegion.LIST
-        }
-        AnimatedContent(
-            targetState = region,
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            transitionSpec = {
-                fadeIn(
-                    tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard),
-                ) togetherWith fadeOut(
-                    tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard),
-                )
-            },
-            label = "pickerRegion",
-        ) { current ->
-            when (current) {
-                PickerRegion.LOADING -> Column(Modifier.fillMaxSize()) {
-                    repeat(6) { FlintSkeletonRow() }
+            when {
+                appsState is InstalledAppsUiState.Loading -> {
+                    items(6) { FlintSkeletonRow() }
                 }
-
-                PickerRegion.EMPTY -> PickerEmptyState(
-                    query = trimmedQuery,
-                    noAppsAtAll = apps.isEmpty(),
-                    onClearSearch = { query = "" },
-                )
-
-                PickerRegion.LIST -> LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = FlintSpacing.md),
-                ) {
+                filtered.isEmpty() -> item(key = "empty") {
+                    // A lazy item is measured with an unbounded main axis, so a plain
+                    // fillMaxSize would collapse and lose the vertical centring.
+                    Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
+                        PickerEmptyState(
+                            query = trimmedQuery,
+                            noAppsAtAll = apps.isEmpty(),
+                            onClearSearch = { query = "" },
+                        )
+                    }
+                }
+                else -> {
                     items(filtered, key = { it.packageName }) { app ->
                         AppPickerRow(
                             app = app,
@@ -243,11 +244,14 @@ internal fun AppPickerScreen(
                 color = MaterialTheme.colorScheme.outlineVariant,
             )
             Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                Row(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth().padding(vertical = FlintSpacing.sm),
-                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(FlintSpacing.sm, Alignment.End),
                 ) {
-                    Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        Modifier.align(Alignment.CenterVertically),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         AnimatedContent(
                             targetState = selectedCount,
                             transitionSpec = {
@@ -286,7 +290,6 @@ internal fun AppPickerScreen(
                         )
                     }
                     TextButton(onClick = onCancel) { Text("Cancel") }
-                    Spacer(Modifier.width(FlintSpacing.sm))
                     Button(
                         onClick = { onConfirm(selectedApps) },
                         // A confirm that changes nothing is noise — require a real edit.

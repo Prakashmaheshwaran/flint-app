@@ -1,0 +1,33 @@
+{
+  "startedUTC": "2026-10-25T08:01:18.827868+00:00",
+  "worktree": "/Users/prakash/.codex/worktrees/flint-eight-fixes-check/flint",
+  "head": "7da70c0cc1b1280a1bfdda747b9408508c6f7343",
+  "sourceTree": "e58b54adac07cd70c5449e7ffa3b5f503905106f",
+  "sourceWithoutDocsSHA256": "def9864693315c5890301e5613e7540f57a766611d6244077bc62de9c10d433d",
+  "checks": {
+    "verify-android": {
+      "exitCode": 0,
+      "log": "/tmp/flint-fixes-20261024/integration/verify-android.log"
+    }
+  },
+  "issueHeads": {
+    "f1-android-control-insets": "68270197dce91b013dbbdd251bd8207109f4ef2b",
+    "f2-ios-pin-lifecycle": "9c2e65c64a245b6329dd8ed4b84d58ac0134bb41",
+    "f3-ios-pin-validation": "aa8de436bf2982657577683220ed30820b1570f4",
+    "f4-accessible-text-layouts": "f67ad4b79ff035c252b510ccbab2bce72c7b4d3d",
+    "f5-ios-permission-error-layout": "851ce84658e1734758ea1329370ad8e6e00f0f8d",
+    "f6-ios-insights-states": "d4828125b68e12a3fcafd969b7d984930d7b5878",
+    "f7-android-selection-count": "50db304c60c9f3661e04a15d89db16d978eb27e9",
+    "f8-ios-web-copy-formatting": "faa4e303236ad38fce7115c1d3e3fb7da68769df"
+  },
+  "androidTests": {
+    "reportExecutions": 1182,
+    "uniqueCases": 689,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "finalHead": "7da70c0cc1b1280a1bfdda747b9408508c6f7343",
+  "trackedSourceClean": true,
+  "completedUTC": "2026-10-25T08:01:33.723352+00:00"
+}
