@@ -59,6 +59,7 @@ struct TotalActivityContent: View {
                 if isWeek, let peak, peak.duration > 0 {
                     Text("Your highest day was \(peak.start.formatted(.dateTime.weekday(.wide))), \(Self.format(peak.duration)).")
                         .font(ReportFont.text(14)).foregroundStyle(FlintBrand.mist)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(.horizontal, 24)
