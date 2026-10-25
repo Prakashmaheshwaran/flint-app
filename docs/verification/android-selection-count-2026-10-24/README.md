@@ -15,12 +15,14 @@ Recovered managed worktree: `/Users/prakash/.codex/worktrees/f7-selection-recove
 - Filtered Select all/Clear preserves selected packages outside the filter.
 - App-list removal/reappearance and refreshed app metadata.
 - Only editable changes enable confirmation; removing the last initial app confirms an empty set.
-- Timer draft remains unchanged until confirmation; reopening after cancellation uses the saved draft.
+- Timer draft remains unchanged by pending picker edits until confirmation.
+- Picker composition (Robolectric/Compose, debug unit tests) locks the header, footer and `Add · N`
+  label to the pending selection when the confirmed draft still has the old count.
 
 ## Automated verification
 
-- Targeted `:feature:feature-blocklist:testDebugUnitTest` for `AppPickerSelectionTest` and `TimerViewModelTest`: passed (6 selection tests + 26 timer tests).
-- `make verify-android`: passed (debug build, release build, local-first APK check, all JVM test tasks). Reports contain 1,182 executions / 689 unique class+test pairs, zero failures, errors or skips. Gradle reused cached/up-to-date work; these totals do not imply every test reran fresh.
+- Targeted `:feature:feature-blocklist:testDebugUnitTest` for `AppPickerSelectionTest`, `TimerViewModelTest` and `TimerAppPickerTest`: passed (6 selection tests + 26 timer tests + 2 picker composition tests).
+- `make verify-android`: passed (debug build, release build, local-first APK check, all JVM test tasks). Reports contain 1,184 executions / 691 unique class+test pairs, zero failures, errors or skips. Gradle reused cached/up-to-date work; these totals do not imply every test reran fresh.
 - [Android CI](https://github.com/Prakashmaheshwaran/flint-app/actions/runs/40157714083): passed on the implementation commit above.
 - `git diff --check`: passed.
 

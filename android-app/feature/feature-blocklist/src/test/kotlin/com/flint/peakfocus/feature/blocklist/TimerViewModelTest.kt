@@ -98,7 +98,7 @@ class TimerViewModelTest {
         assertEquals(BreakLevel.HARDER, vm.uiState.value.draft.breakLevel)
     }
 
-    @Test fun `picker edits stay pending until confirmation and reopening discards cancelled edits`() = runTest(dispatcher) {
+    @Test fun `pending picker edits leave the draft untouched until confirmation`() = runTest(dispatcher) {
         val vm = model(InMemoryBlockRulesStore())
         runCurrent()
         vm.selectApps(listOf(app))
@@ -109,8 +109,8 @@ class TimerViewModelTest {
 
         vm.refreshClock()
         assertEquals(initial, vm.uiState.value.draft.apps.map { it.packageName }.toSet())
-        val reopened = AppPickerSelection(vm.uiState.value.draft.apps.map { it.packageName }.toSet())
-        assertEquals(listOf(app), reopened.selectedApps(listOf(app, otherApp)))
+        val fromDraft = AppPickerSelection(vm.uiState.value.draft.apps.map { it.packageName }.toSet())
+        assertEquals(listOf(app), fromDraft.selectedApps(listOf(app, otherApp)))
 
         vm.selectApps(pending.selectedApps(listOf(app, otherApp)))
         assertEquals(setOf(otherApp.packageName), vm.uiState.value.draft.apps.map { it.packageName }.toSet())
