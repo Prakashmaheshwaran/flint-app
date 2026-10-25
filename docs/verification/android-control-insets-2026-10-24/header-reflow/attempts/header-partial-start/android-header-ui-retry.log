@@ -1,0 +1,13 @@
+Acquired build/device slot: ORCHESTRATOR
+TAB_ALREADY_SELECTED Today
+{"scroll_viewport": [0, 102, 840, 1470], "swipe": [32, 1333, 32, 786]}
+{"scroll_viewport": [0, 102, 840, 1470], "swipe": [32, 1333, 32, 786]}
+CAPTURE header-320dp-2x-failure
+Traceback (most recent call last):
+  File "/tmp/flint-fixes-20261024/integration/picker-header-ui.py", line 90, in <module>
+    ui.check_controls('Start focus')
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/private/tmp/flint-fixes-20261024/integration/native_ui.py", line 211, in check_controls
+    assert y2-y1 >= minimum_height, f'{label} is clipped below its 48dp action target: {bounds(n)}'
+           ^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Start focus is clipped below its 48dp action target: (63, 1403, 777, 1512)
