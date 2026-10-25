@@ -86,4 +86,20 @@ final class FlintPINTests: XCTestCase {
         XCTAssertFalse(FlintPIN.isSet(nil))
         XCTAssertFalse(FlintPIN.verify("1234", nil))
     }
+
+    @MainActor
+    func testAuthenticatedInvalidReplacementCanBeCorrectedWithoutChangingTheOldPIN() async throws {
+        let store = try isolatedStore()
+        let lock = FlintAppLock(store: store)
+        lock.transition(to: .active)
+        XCTAssertTrue(lock.savePIN("0123"))
+        XCTAssertTrue(lock.authorizePINChange(currentPIN: "0123"))
+        for pin in invalidPINs {
+            XCTAssertFalse(lock.savePIN(pin))
+            XCTAssertTrue(FlintPIN.verify("0123", store))
+        }
+        XCTAssertTrue(lock.savePIN("543210"))
+        XCTAssertFalse(FlintPIN.verify("0123", store))
+        XCTAssertTrue(FlintPIN.verify("543210", store))
+    }
 }

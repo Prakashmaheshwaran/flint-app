@@ -19,7 +19,7 @@ struct FlintApp: App {
 /// Top-level shell: an optional app-PIN gate, first-run onboarding, then the four tabs in a
 /// floating bar. A running session (and its Complete screen) covers every tab.
 struct RootView: View {
-    @State private var locked = FlintPIN.isSet(FlintGroupStore())
+    @StateObject private var appLock = FlintAppLock()
     @AppStorage("flint.onboarded") private var onboarded = false
     @StateObject private var auth = AuthorizationModel()
     @StateObject private var session = SessionViewModel()
@@ -29,14 +29,19 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if locked {
-                PINGateView { locked = false }
-            } else if !onboarded && auth.status != .approved {
+            if !onboarded && auth.status != .approved {
                 OnboardingView(auth: auth) { onboarded = true }
             } else {
                 tabs
             }
         }
+        // Keep the initial frame private while the scene window attaches. Retain the
+        // hierarchy so active sessions and in-progress navigation survive re-locking.
+        .opacity(appLock.state.isProtected ? 0 : 1)
+        .allowsHitTesting(!appLock.state.isProtected)
+        .accessibilityHidden(appLock.state.isProtected)
+        .environmentObject(appLock)
+        .background(AppLockWindow(lock: appLock))
         .onAppear { auth.refresh() }
         .onChange(of: scenePhase) { phase in if phase == .active { auth.refresh() } }
     }
@@ -90,7 +95,7 @@ private struct FinishedItem: Identifiable {
 }
 
 struct PINGateView: View {
-    let onUnlock: () -> Void
+    @ObservedObject var lock: FlintAppLock
     @State private var pin = ""
     @State private var showError = false
 
@@ -113,9 +118,7 @@ struct PINGateView: View {
                 }
                 Spacer()
                 Button("Unlock") {
-                    if FlintPIN.verify(pin, FlintGroupStore()) {
-                        onUnlock()
-                    } else {
+                    if !lock.unlock(with: pin) {
                         showError = true
                         pin = ""
                     }
