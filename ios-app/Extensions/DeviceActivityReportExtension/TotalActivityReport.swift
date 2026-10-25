@@ -5,27 +5,6 @@ extension DeviceActivityReport.Context {
     static let totalActivity = Self("Total Activity")
 }
 
-/// What Insights shows: total screen time for the interval, one total per day (the host asks
-/// for daily segments), and the apps reached for most.
-struct ActivitySummary {
-    struct Day: Identifiable {
-        let start: Date
-        let duration: TimeInterval
-        var id: Date { start }
-    }
-
-    struct App: Identifiable {
-        let name: String
-        let duration: TimeInterval
-        let pickups: Int
-        var id: String { name }
-    }
-
-    var total: TimeInterval = 0
-    var days: [Day] = []
-    var apps: [App] = []
-}
-
 /// Aggregates screen time for the report interval. The host app picks the interval via the
 /// `DeviceActivityFilter` it passes to the embedded `DeviceActivityReport`.
 struct TotalActivityReport: DeviceActivityReportScene {
