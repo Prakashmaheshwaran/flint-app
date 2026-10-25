@@ -6,8 +6,10 @@ active timer on a disposable emulator. Run under the shared device lock. No
 session is started or rule saved. Environment: ADB, ANDROID_SERIAL,
 FLINT_UI_EVIDENCE (default /tmp/flint-control-insets-proof).
 """
+import argparse
 import json
 import re
+import time
 from native_ui import Ui, adb, SERIAL, PACKAGE
 
 
@@ -29,6 +31,11 @@ def picker_case(ui, name, keyboard):
         assert 'mInputShown=true' in adb('shell', 'dumpsys', 'input_method').decode()
     ui.capture('selected')
     ui.tap('Add · 1')  # Center of the actual touch target; not a semantic click.
+    # A dialog is created while the old field releases the IME. Observe its
+    # settled geometry before checking content or targeting the Close button.
+    time.sleep(1)
+    ui.root = None
+    ui.dump()
     ui.node('Start focus')
     ui.node('Block 1 app')
     ui.node('Chrome')
@@ -46,12 +53,19 @@ def picker_case(ui, name, keyboard):
             ui.node('Block 1 app')
             ui.node('Chrome')
     ui.tap('Close')
+    time.sleep(.5)
+    ui.root = None
+    ui.dump()
     # Observe Today itself. A selected tab is not necessarily exposed as clickable.
     ui.node('YOUR NEXT SESSION')
     print(json.dumps({'case': name, 'passed': True}), flush=True)
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--only', action='append', choices=('normal','large','narrow-large'),
+                        help='Run selected viewport cases; omit to run all three.')
+    options = parser.parse_args()
     assert SERIAL.startswith('emulator-'), 'Use a disposable emulator'
     original_font = adb('shell','settings','get','system','font_scale').decode().strip()
     original_size = adb('shell','wm','size').decode()
@@ -63,6 +77,8 @@ def main():
         # At the audit emulator's 420 dpi, 840×1800 is a 320×686 dp viewport.
         for name, scale, size in (('normal','1.0','reset'), ('large','1.5','reset'),
                                   ('narrow-large','1.5','840x1800')):
+            if options.only and name not in options.only:
+                continue
             adb('shell','wm','size',size)
             adb('shell','settings','put','system','font_scale',scale)
             for keyboard in (False, True):
