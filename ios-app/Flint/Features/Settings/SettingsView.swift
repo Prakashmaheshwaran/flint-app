@@ -6,7 +6,6 @@ import FlintCore
 struct SettingsView: View {
     @EnvironmentObject private var appLock: FlintAppLock
     @State private var showSetPIN = false
-    @State private var newPIN = ""
     @State private var pinAction: PINAction?
     @State private var openSetupAfterAuthentication = false
     @State private var armingHealth = FlintGroupStore()?.loadArmingHealth() ?? FlintArmingHealth()
@@ -24,7 +23,6 @@ struct SettingsView: View {
 
                     VStack(spacing: 0) {
                         Button {
-                            newPIN = ""
                             appLock.cancelPINChange()
                             if appLock.pinIsSet { pinAction = .change } else { showSetPIN = true }
                         } label: {
@@ -73,20 +71,19 @@ struct SettingsView: View {
             }
             .onChange(of: appLock.state.phase) { phase in
                 if phase == .background {
-                    openSetupAfterAuthentication = false
-                    pinAction = nil
-                    showSetPIN = false
-                    newPIN = ""
+                    // A protected background scene must not leave a sheet dismissal
+                    // animation waiting behind the separate app-lock window.
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        openSetupAfterAuthentication = false
+                        pinAction = nil
+                        showSetPIN = false
+                    }
                 }
             }
-            .alert("Set a 4–6 digit PIN", isPresented: $showSetPIN) {
-                TextField("PIN", text: $newPIN).keyboardType(.numberPad)
-                Button("Save") {
-                    if newPIN.count >= 4 { appLock.savePIN(newPIN) }
-                    appLock.cancelPINChange()
-                    newPIN = ""
-                }
-                Button("Cancel", role: .cancel) { newPIN = ""; appLock.cancelPINChange() }
+            .sheet(isPresented: $showSetPIN, onDismiss: appLock.cancelPINChange) {
+                PINSetupView(appLock: appLock, onSave: appLock.savePIN)
             }
         }
     }
