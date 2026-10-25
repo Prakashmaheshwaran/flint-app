@@ -47,6 +47,28 @@ public final class FlintAppLock: ObservableObject {
         state = next
     }
 
+    /// Applies a lifecycle report after cross-checking it against the scene's live
+    /// activation state. UIKit and SwiftUI delivery can coalesce or lag, so a
+    /// `.background` report may arrive after the scene has already reactivated.
+    /// Adopting it would set `isLocked` and leave the gate in `.background`, where it
+    /// renders only the ground and `unlock` refuses — a blank, non-interactive screen
+    /// on a foregrounded app. A genuine background always reports the scene as
+    /// `.background`, so only a demonstrably-active scene rejects the report.
+    public func transition(to phase: Phase, ifSceneIs observed: Phase) {
+        guard phase == .background, observed == .active else {
+            transition(to: phase)
+            return
+        }
+        // Reconcile to the live foreground phase; an earlier stale report may already
+        // have stranded the gate. Lock state is preserved — the app is still the same
+        // protected instance — but it becomes unlockable again. Authorization is not
+        // expired because no backgrounding actually occurred.
+        refresh()
+        var next = state
+        next.phase = .active
+        state = next
+    }
+
     /// A changed/removed record cannot leave stale authentication or a stale gate behind.
     public func refresh() {
         let record = currentRecord

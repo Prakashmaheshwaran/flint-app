@@ -3,6 +3,31 @@ import SwiftUI
 import UIKit
 import FlintCore
 
+extension FlintAppLock.Phase {
+    /// The lock phase implied by UIKit's authoritative scene activation state.
+    init(sceneActivationState: UIScene.ActivationState) {
+        switch sceneActivationState {
+        case .foregroundActive: self = .active
+        case .background: self = .background
+        case .foregroundInactive, .unattached: self = .inactive
+        @unknown default: self = .inactive
+        }
+    }
+}
+
+/// Live activation state of the scene hosting the app. SwiftUI can deliver a coalesced
+/// `.background` after the scene has already reactivated; this is the authority used to
+/// reject that stale report and keep the gate usable.
+@MainActor
+enum AppLockSceneState {
+    static var phase: FlintAppLock.Phase? {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first
+            .map { FlintAppLock.Phase(sceneActivationState: $0.activationState) }
+    }
+}
+
 /// A separate scene window keeps the gate above navigation, sheets, alerts and session
 /// covers. A root SwiftUI overlay alone would sit *under* those presentations.
 struct AppLockWindow: UIViewRepresentable {
@@ -88,7 +113,11 @@ struct AppLockWindow: UIViewRepresentable {
                 forName: name, object: scene, queue: .main
             ) { [weak self] _ in
                 guard let self else { return }
-                self.lock.transition(to: phase)
+                // Cross-check the notification's implied phase against the scene's live
+                // activation state: a late/coalesced background report must not lock a
+                // foregrounded app into an unusable gate.
+                let observed = FlintAppLock.Phase(sceneActivationState: scene.activationState)
+                self.lock.transition(to: phase, ifSceneIs: observed)
                 // Snapshot protection still happens synchronously before UIKit returns
                 // from a background/deactivation notification.
                 self.render(self.lock.state)

@@ -54,7 +54,11 @@ struct RootView: View {
             appLock.transition(to: .active)
             auth.refresh()
         case .inactive: appLock.transition(to: .inactive)
-        case .background: appLock.transition(to: .background)
+        case .background:
+            // SwiftUI can deliver this late, after the scene has reactivated. The live
+            // activation state is authoritative; adopting a stale background would
+            // strand the gate on a blank, non-interactive screen.
+            appLock.transition(to: .background, ifSceneIs: AppLockSceneState.phase ?? .background)
         @unknown default: appLock.transition(to: .inactive)
         }
     }
