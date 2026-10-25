@@ -14,7 +14,7 @@ import FlintCore
 ///                straight in (no response can open the app from here).
 ///  - exhausted → the daily opens are spent; the token is kept/re-shielded and the shield stays.
 ///  - otherwise → plain hard block (Session / Schedule / Time Limit): the original
-///                "Stay focused" behavior, and no open is ever charged.
+///                "Go back" behavior, and no open is ever charged.
 ///
 /// The block screen side lives in `FlintShieldConfiguration`: open-limited tokens label the
 /// primary button "Use app (N left)" via the same `FlintOpenLimitEnforcer` lookup, so the label
@@ -67,7 +67,7 @@ final class FlintShieldAction: ShieldActionDelegate {
         case .granted:
             return .close   // token released; the very next launch opens unshielded
         case .exhausted, .hardBlocked, .notOpenLimited:
-            return .defer   // keep the shield up ("Stay focused")
+            return .defer   // keep the shield up ("Go back")
         }
     }
 
@@ -75,7 +75,7 @@ final class FlintShieldAction: ShieldActionDelegate {
     private func response(for action: ShieldAction) -> ShieldActionResponse {
         switch action {
         case .primaryButtonPressed:
-            return .defer   // "Stay focused" — keep the shield up
+            return .defer   // "Go back" — keep the shield up
         case .secondaryButtonPressed:
             return .close   // dismiss to home
         @unknown default:

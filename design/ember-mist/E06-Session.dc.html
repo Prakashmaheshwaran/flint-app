@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flint — Session</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500&amp;family=Hanken+Grotesk:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#EDE6DA}a:hover{color:#B7AE9F}
+button{font:inherit;cursor:pointer}
+@keyframes as-breathe{0%,100%{transform:scale(0.82);opacity:.25}50%{transform:scale(1.18);opacity:.6}}
+.as-breathe{animation:as-breathe 8s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes as-drift{0%,100%{transform:translateX(-16px)}50%{transform:translateX(16px)}}
+.as-drift{animation:as-drift 24s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){.as-breathe,.as-drift{animation:none}}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #0A0B10; color: #EDE6DA; font-family: 'Hanken Grotesk', -apple-system, system-ui, sans-serif">
+
+  <svg aria-hidden="true" width="390" height="844" viewBox="0 0 390 844" style="position: absolute; inset: 0">
+    <defs>
+      <linearGradient id="asSky" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#090A0F"></stop>
+        <stop offset="0.4" stop-color="#12131A"></stop>
+        <stop offset="0.53" stop-color="#231D1C"></stop>
+        <stop offset="0.6" stop-color="#3A291E"></stop>
+        <stop offset="0.7" stop-color="#171413"></stop>
+        <stop offset="1" stop-color="#0C0B0D"></stop>
+      </linearGradient>
+      <radialGradient id="asOrb" cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stop-color="#FFE9C8"></stop>
+        <stop offset="0.35" stop-color="#F7BE6A"></stop>
+        <stop offset="0.72" stop-color="#EF9F27"></stop>
+        <stop offset="1" stop-color="#C47418"></stop>
+      </radialGradient>
+      <radialGradient id="asHalo" cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stop-color="#EF9F27" stop-opacity="0.38"></stop>
+        <stop offset="0.5" stop-color="#EF9F27" stop-opacity="0.1"></stop>
+        <stop offset="1" stop-color="#EF9F27" stop-opacity="0"></stop>
+      </radialGradient>
+      <filter id="asGrain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"></feTurbulence><feColorMatrix type="saturate" values="0"></feColorMatrix></filter>
+    </defs>
+    <rect width="390" height="844" fill="url(#asSky)"></rect>
+    <circle cx="58" cy="96" r="0.9" fill="#EDE6DA" opacity="0.45"></circle>
+    <circle cx="318" cy="70" r="1" fill="#EDE6DA" opacity="0.4"></circle>
+    <circle cx="352" cy="230" r="0.8" fill="#EDE6DA" opacity="0.3"></circle>
+    <circle cx="30" cy="250" r="0.7" fill="#EDE6DA" opacity="0.3"></circle>
+    <path d="M50 470 Q195 90 340 470" fill="none" stroke="#EDE6DA" stroke-opacity="0.22" stroke-width="1" stroke-dasharray="1 7" stroke-linecap="round"></path>
+    <path d="M50 470 Q90.6 363.6 131.2 316.8" fill="none" stroke="#EDE6DA" stroke-opacity="0.5" stroke-width="1.2" stroke-linecap="round"></path>
+    <circle cx="131.2" cy="316.8" r="150" fill="url(#asHalo)"></circle>
+    <circle class="as-breathe" cx="131.2" cy="316.8" r="78" fill="none" stroke="#F7BE6A" stroke-width="1"></circle>
+    <circle class="as-breathe" cx="131.2" cy="316.8" r="104" fill="none" stroke="#F7BE6A" stroke-width="0.8" style="animation-delay: -2s"></circle>
+    <circle cx="131.2" cy="316.8" r="44" fill="url(#asOrb)"></circle>
+    <circle cx="340" cy="470" r="3" fill="#EDE6DA" opacity="0.4"></circle>
+    <path d="M0 500 C40 474 72 472 106 488 C140 504 162 460 206 446 C246 434 272 476 306 484 C336 491 362 463 390 457 L390 844 L0 844 Z" fill="#29221F"></path>
+    <path d="M0 556 C36 538 62 520 96 528 C132 536 152 506 192 513 C232 520 252 548 292 540 C330 532 360 516 390 523 L390 844 L0 844 Z" fill="#1A1717"></path>
+    <path d="M0 610 C50 592 92 602 132 598 C176 594 202 576 246 583 C290 590 332 608 390 600 L390 844 L0 844 Z" fill="#0F0E10"></path>
+    <rect width="390" height="844" filter="url(#asGrain)" opacity="0.07"></rect>
+  </svg>
+  <div class="as-drift" aria-hidden="true" style="position: absolute; left: -40px; top: 508px; width: 470px; height: 46px; border-radius: 50%; background: rgba(237, 230, 218, 0.07); filter: blur(14px)"></div>
+
+  <div style="position: relative; display: flex; flex-direction: column; align-items: center; padding: 62px 24px 0 24px">
+    <div style="align-self: stretch; display: flex; justify-content: space-between; font-size: 11px; font-weight: 500; letter-spacing: 2px; color: #B7AE9F">
+      <span>DEEP WORK</span>
+      <span>7 APPS RESTING</span>
+    </div>
+    <span style="margin-top: 34px; font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 84px; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -2px">32:18</span>
+    <span style="margin-top: 10px; font-size: 14px; color: #B7AE9F">ends at 11:30</span>
+  </div>
+
+  <p style="position: absolute; left: 0; right: 0; top: 640px; margin: 0; text-align: center; font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 17px; color: #D8CFC0">Breathe with the light.</p>
+
+  <div style="position: absolute; left: 24px; right: 24px; bottom: 36px; display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 18px; border-radius: 28px; background: rgba(24, 22, 24, 0.68); border: 1px solid rgba(237, 230, 218, 0.1); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px)">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#B7AE9F" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2.5"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+    <span style="display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-width: 0">
+      <span style="font-size: 14px; font-weight: 500">Hardcore</span>
+      <span style="font-size: 12px; color: #B7AE9F">Locked until it ends</span>
+    </span>
+    <a href="E10-EmergencyPass.dc.html" style="height: 44px; padding: 0 16px; border-radius: 22px; border: 1px solid rgba(237, 230, 218, 0.18); background: transparent; color: #EDE6DA; font-size: 13px; font-weight: 500; white-space: nowrap; text-decoration: none; display: flex; align-items: center">Emergency Pass · 1</a>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

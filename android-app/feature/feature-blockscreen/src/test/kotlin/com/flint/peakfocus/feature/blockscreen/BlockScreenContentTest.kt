@@ -127,7 +127,7 @@ class BlockScreenContentTest {
 
     @Test
     fun `headline names the blocked app`() {
-        assertEquals("Instagram can wait", blockScreenContent(state()).headline)
+        assertEquals("Instagram is resting.", blockScreenContent(state()).headline)
     }
 
     // ---- Reason copy ----

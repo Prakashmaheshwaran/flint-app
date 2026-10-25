@@ -7,8 +7,8 @@ import SwiftUI
 @main
 struct FlintReport: DeviceActivityReportExtension {
     var body: some DeviceActivityReportScene {
-        TotalActivityReport { totalActivity in
-            TotalActivityView(totalActivity: totalActivity)
+        TotalActivityReport { summary in
+            TotalActivityView(summary: summary)
         }
     }
 }

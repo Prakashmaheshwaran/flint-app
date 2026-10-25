@@ -16,6 +16,7 @@ struct SleepModeView: View {
 
     var body: some View {
         Form {
+            SleepDialHeader(vm: vm)
             introSection
             masterSection
             nightsSection
@@ -24,7 +25,8 @@ struct SleepModeView: View {
             allowedAppsSection
             goodToKnowSection
         }
-        .navigationTitle("Sleep Mode")
+        .flintForm()
+        .navigationTitle("Sleep")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { vm.refresh() }
         .onDisappear { vm.applyNow() }

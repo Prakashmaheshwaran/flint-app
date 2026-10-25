@@ -2,16 +2,23 @@ import Foundation
 import FamilyControls
 import FlintCore
 
-/// Drives the Block Now screen: holds the picker selection, duration, break level, and the live
-/// countdown for an active session.
+/// Drives the Today tab: holds the picker selection, duration, break level, and the live
+/// countdown for an active session — and the "complete" moment when one runs to its end.
 @MainActor
 final class SessionViewModel: ObservableObject {
+    /// A session that ran to its end, shown once on the Complete screen.
+    struct Finished: Equatable {
+        let name: String
+        let minutes: Int
+    }
+
     @Published var selection = FamilyActivitySelection()
-    @Published var durationMinutes: Int = 25
-    @Published var breakLevel: BreakLevel = .easy
+    @Published var durationMinutes: Int = 45
+    @Published var breakLevel: BreakLevel = .harder
     @Published private(set) var active: FlintActiveSession?
     @Published private(set) var remaining: TimeInterval = 0
     @Published private(set) var savedGroups: [FlintAppGroup] = []
+    @Published var finished: Finished?
     @Published var errorText: String?
 
     private let controller = FlintSessionController()
@@ -21,6 +28,17 @@ final class SessionViewModel: ObservableObject {
         if let saved = FlintGroupStore()?.loadSelection() { selection = saved }
         savedGroups = FlintGroupStore()?.loadAppGroups() ?? []
         active = controller.activeSession
+        #if DEBUG
+        // `-FlintUIPreviewSession <easy|harder|hardcore>` shows a running session in the Simulator,
+        // which can't grant Screen Time. Nothing is shielded; the UI only.
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-FlintUIPreviewSession"), args.indices.contains(i + 1),
+           let level = BreakLevel(rawValue: args[i + 1]) {
+            active = FlintActiveSession(name: "Deep work", startedAt: Date().addingTimeInterval(-13 * 60),
+                                        endsAt: Date().addingTimeInterval(32 * 60 + 18), breakLevel: level,
+                                        monitorName: "preview")
+        }
+        #endif
         startTicking()
     }
 
@@ -53,9 +71,29 @@ final class SessionViewModel: ObservableObject {
             + selection.webDomainTokens.count
     }
 
+    /// "7 apps · 2 sites" — what the selection blocks, in the design's words.
+    var selectionSummary: String {
+        var parts: [String] = []
+        let apps = selection.applicationTokens.count
+        let categories = selection.categoryTokens.count
+        let sites = selection.webDomainTokens.count
+        if apps > 0 { parts.append("\(apps) \(apps == 1 ? "app" : "apps")") }
+        if categories > 0 { parts.append("\(categories) \(categories == 1 ? "category" : "categories")") }
+        if sites > 0 { parts.append("\(sites) \(sites == 1 ? "site" : "sites")") }
+        return parts.joined(separator: " · ")
+    }
+
     var canStopActive: Bool {
         guard let active else { return false }
         return controller.canStop(active)
+    }
+
+    /// 0…1 through the active session; drives the ember along its arc.
+    var progress: Double {
+        guard let active, let endsAt = active.endsAt else { return 0 }
+        let total = endsAt.timeIntervalSince(active.startedAt)
+        guard total > 0 else { return 1 }
+        return min(1, max(0, 1 - remaining / total))
     }
 
     func persistSelection() {
@@ -118,6 +156,10 @@ final class SessionViewModel: ObservableObject {
             // On a real device the monitor clears the shield; mirror that here for the UI and as
             // a fallback (the Simulator doesn't run the monitor extension).
             controller.finishIfExpired()
+            if let endsAt = active.endsAt {
+                let minutes = Int((endsAt.timeIntervalSince(active.startedAt) / 60).rounded())
+                finished = Finished(name: active.name, minutes: minutes)
+            }
             self.active = nil
             remaining = 0
             timer?.invalidate()

@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flint — Sleep</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500&amp;family=Hanken+Grotesk:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#EDE6DA}a:hover{color:#B7AE9F}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #08090D; color: #EDE6DA; font-family: 'Hanken Grotesk', -apple-system, system-ui, sans-serif">
+
+  <svg aria-hidden="true" width="390" height="844" viewBox="0 0 390 844" style="position: absolute; inset: 0">
+    <defs>
+      <linearGradient id="s11Sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#07080C"></stop><stop offset="0.5" stop-color="#0E1016"></stop><stop offset="1" stop-color="#0B0B0E"></stop></linearGradient>
+    </defs>
+    <rect width="390" height="844" fill="url(#s11Sky)"></rect>
+    <circle cx="40" cy="140" r="0.9" fill="#EDE6DA" opacity="0.5"></circle>
+    <circle cx="330" cy="120" r="1" fill="#EDE6DA" opacity="0.45"></circle>
+    <circle cx="360" cy="460" r="0.8" fill="#EDE6DA" opacity="0.35"></circle>
+    <circle cx="24" cy="420" r="0.7" fill="#EDE6DA" opacity="0.3"></circle>
+    <circle cx="290" cy="70" r="0.7" fill="#EDE6DA" opacity="0.35"></circle>
+  </svg>
+
+  <div style="position: relative; display: flex; flex-direction: column; padding: 54px 20px 0 20px">
+    <div style="display: flex; align-items: center; justify-content: space-between">
+      <a href="E13-Rules.dc.html" style="height: 44px; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px; text-decoration: none; color: #EDE6DA; font-size: 15px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg>
+        Rules
+      </a>
+      <button type="button" role="switch" aria-checked="true" aria-label="Sleep mode" style="position: relative; width: 52px; height: 32px; padding: 0; border: none; border-radius: 16px; background: #EF9F27">
+        <span style="position: absolute; top: 3px; left: 23px; width: 26px; height: 26px; border-radius: 13px; background: #FFF6E8"></span>
+      </button>
+    </div>
+    <h1 style="margin: 14px 4px 0 4px; font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-weight: 400; font-size: 30px; letter-spacing: -0.3px">Sleep</h1>
+    <p style="margin: 6px 4px 0 4px; font-size: 14px; color: #B7AE9F">Every night · Easy</p>
+  </div>
+
+  <div style="position: absolute; left: 75px; top: 214px; width: 240px; height: 240px">
+    <svg width="240" height="240" viewBox="0 0 240 240" aria-hidden="true">
+      <circle cx="120" cy="120" r="104" fill="none" stroke="#EDE6DA" stroke-opacity="0.08" stroke-width="18"></circle>
+      <path d="M80.2 23.9 A104 104 0 0 1 220.5 146.9" fill="none" stroke="#3A3F5C" stroke-width="18" stroke-linecap="round"></path>
+      <circle cx="80.2" cy="23.9" r="13" fill="#EDE6DA"></circle>
+      <path d="M84 18 a7 7 0 1 0 2 11 a5.5 5.5 0 1 1 -2 -11z" fill="#3A3F5C"></path>
+      <circle cx="220.5" cy="146.9" r="13" fill="#EF9F27"></circle>
+      <text x="120" y="44" text-anchor="middle" font-size="11" fill="#9C9486" font-family="Hanken Grotesk, sans-serif">00</text>
+      <text x="200" y="124" text-anchor="middle" font-size="11" fill="#9C9486" font-family="Hanken Grotesk, sans-serif">06</text>
+      <text x="120" y="204" text-anchor="middle" font-size="11" fill="#9C9486" font-family="Hanken Grotesk, sans-serif">12</text>
+      <text x="40" y="124" text-anchor="middle" font-size="11" fill="#9C9486" font-family="Hanken Grotesk, sans-serif">18</text>
+    </svg>
+    <div style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px">
+      <span style="font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 36px; font-variant-numeric: tabular-nums">8h 30m</span>
+      <span style="font-size: 12px; color: #B7AE9F">of quiet</span>
+    </div>
+  </div>
+
+  <div style="position: absolute; left: 20px; right: 20px; top: 478px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+    <button type="button" style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 14px 16px; border-radius: 20px; border: 1px solid rgba(237, 230, 218, 0.1); background: rgba(237, 230, 218, 0.03); color: #EDE6DA; text-align: left">
+      <span style="font-size: 12px; color: #B7AE9F">Bedtime</span>
+      <span style="font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 24px; font-variant-numeric: tabular-nums">22:30</span>
+    </button>
+    <button type="button" style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 14px 16px; border-radius: 20px; border: 1px solid rgba(237, 230, 218, 0.1); background: rgba(237, 230, 218, 0.03); color: #EDE6DA; text-align: left">
+      <span style="font-size: 12px; color: #B7AE9F">Wake</span>
+      <span style="font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 24px; font-variant-numeric: tabular-nums">07:00</span>
+    </button>
+  </div>
+
+  <div style="position: absolute; left: 20px; right: 20px; top: 582px; display: flex; flex-direction: column; border-top: 1px solid rgba(237, 230, 218, 0.08)">
+    <div style="display: flex; align-items: center; justify-content: space-between; min-height: 58px; border-bottom: 1px solid rgba(237, 230, 218, 0.08)">
+      <span style="display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 15px; font-weight: 500">Wind down</span>
+        <span style="font-size: 13px; color: #B7AE9F">Quiet apps 30 min before bed</span>
+      </span>
+      <span style="font-size: 14px; color: #B7AE9F">30 min</span>
+    </div>
+    <div style="display: flex; align-items: center; justify-content: space-between; min-height: 58px; border-bottom: 1px solid rgba(237, 230, 218, 0.08)">
+      <span style="display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 15px; font-weight: 500">Still allowed</span>
+        <span style="font-size: 13px; color: #B7AE9F">Clock, Phone, Music</span>
+      </span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B7AE9F" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+    </div>
+  </div>
+
+  <nav aria-label="Tabs" style="position: absolute; left: 24px; right: 24px; bottom: 28px; height: 64px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-radius: 32px; background: rgba(24, 22, 24, 0.82); border: 1px solid rgba(237, 230, 218, 0.1); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px)">
+    <a href="E03-Today.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; text-decoration: none; color: #9C9486; font-size: 11px; font-weight: 500">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-4.2-7"></path><circle cx="18.6" cy="6.4" r="1.6" fill="currentColor" stroke="none"></circle></svg>
+      Today
+    </a>
+    <a href="E13-Rules.dc.html" aria-current="page" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; text-decoration: none; color: #EDE6DA; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M5 7h14M5 12h10"></path><path d="M5 17h6" stroke="#EF9F27"></path></svg>
+      Rules
+    </a>
+    <a href="E12-Insights.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; text-decoration: none; color: #9C9486; font-size: 11px; font-weight: 500">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6 19v-6M12 19V6M18 19v-9"></path></svg>
+      Insights
+    </a>
+    <a href="E16-You.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; text-decoration: none; color: #9C9486; font-size: 11px; font-weight: 500">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="9" r="3.5"></circle><path d="M5 20c1.5-3.5 4-5 7-5s5.5 1.5 7 5"></path></svg>
+      You
+    </a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

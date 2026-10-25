@@ -56,6 +56,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.flint.peakfocus.core.common.ui.flintSwitchColors
 import com.flint.peakfocus.core.common.theme.FlintMotion
 import com.flint.peakfocus.core.common.theme.FlintNumerals
 import com.flint.peakfocus.core.common.theme.FlintSpacing
@@ -163,7 +164,7 @@ internal fun LabeledSwitchRow(
             )
         }
         Spacer(Modifier.width(FlintSpacing.cardGap))
-        Switch(checked = checked, onCheckedChange = null)
+        Switch(checked = checked, onCheckedChange = null, colors = flintSwitchColors())
     }
 }
 

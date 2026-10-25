@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ember and Mist — system</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500&amp;family=Hanken+Grotesk:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#EDE6DA}a:hover{color:#B7AE9F}
+button{font:inherit}
+</style>
+</helmet>
+<div style="width: 720px; height: 1180px; box-sizing: border-box; padding: 56px; background: #0E0D0F; color: #EDE6DA; font-family: 'Hanken Grotesk', -apple-system, system-ui, sans-serif; display: flex; flex-direction: column; gap: 36px">
+
+  <div style="display: flex; justify-content: space-between; align-items: flex-end">
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <span style="font-size: 11px; font-weight: 500; letter-spacing: 2px; color: #B7AE9F">FLINT · ONE SYSTEM FOR IPHONE AND ANDROID</span>
+      <h1 style="margin: 0; font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-weight: 400; font-size: 44px; letter-spacing: -0.6px">Ember &amp; Mist</h1>
+    </div>
+    <svg width="44" height="44" viewBox="0 0 56 56" aria-hidden="true"><polygon points="14,44 28,8 36,26 44,18 30,48" fill="#EDE6DA"></polygon><polygon points="36,26 44,18 42,30" fill="#EF9F27"></polygon><polygon points="30,48 42,30 44,40" fill="#FAC775"></polygon></svg>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 14px">
+    <span style="font-size: 11px; font-weight: 500; letter-spacing: 2px; color: #B7AE9F">COLOUR</span>
+    <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px">
+      <sc-for list="{{colors}}" as="c" hint-placeholder-count="10">
+        <div style="display: flex; flex-direction: column; gap: 8px">
+          <div style="{{c.chip}}"></div>
+          <span style="display: flex; flex-direction: column; gap: 1px">
+            <span style="font-size: 13px; font-weight: 500">{{c.name}}</span>
+            <span style="font-size: 12px; color: #B7AE9F; font-variant-numeric: tabular-nums">{{c.hex}}</span>
+            <span style="font-size: 12px; color: #9C9486">{{c.role}}</span>
+          </span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; border-top: 1px solid rgba(237, 230, 218, 0.1); padding-top: 26px">
+    <div style="display: flex; flex-direction: column; gap: 12px">
+      <span style="font-size: 11px; font-weight: 500; letter-spacing: 2px; color: #B7AE9F">DISPLAY · SHIPPORI MINCHO 400</span>
+      <span style="font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 72px; line-height: 1; letter-spacing: -2px; font-variant-numeric: tabular-nums">32:18</span>
+      <span style="font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 30px; line-height: 1.2">The ember has set.</span>
+      <span style="font-size: 13px; color: #B7AE9F; line-height: 1.5">Timers 62–84 · titles 26–34 · numbers 22–52. Tabular figures always.</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 12px">
+      <span style="font-size: 11px; font-weight: 500; letter-spacing: 2px; color: #B7AE9F">TEXT · HANKEN GROTESK</span>
+      <span style="font-size: 16px; font-weight: 600">Button 16 / 600</span>
+      <span style="font-size: 15px; font-weight: 500">Row title 15 / 500</span>
+      <span style="font-size: 13px; color: #B7AE9F">Secondary 13 / 400 · Mist</span>
+      <span style="font-size: 11px; font-weight: 500; letter-spacing: 2px">EYEBROW 11 / 500 / +2</span>
+      <span style="font-size: 13px; color: #B7AE9F; line-height: 1.5">Bundled in both apps, so iPhone and Android render the same type.</span>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 16px; border-top: 1px solid rgba(237, 230, 218, 0.1); padding-top: 26px">
+    <span style="font-size: 11px; font-weight: 500; letter-spacing: 2px; color: #B7AE9F">COMPONENTS</span>
+    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
+      <span style="height: 56px; padding: 0 28px; border-radius: 28px; background: linear-gradient(180deg, #F6B860 0%, #EF9F27 100%); color: #3A2003; font-size: 16px; font-weight: 600; display: flex; align-items: center">Start focus</span>
+      <span style="height: 56px; padding: 0 28px; border-radius: 28px; background: #EDE6DA; color: #141316; font-size: 16px; font-weight: 600; display: flex; align-items: center">Done</span>
+      <span style="height: 44px; padding: 0 16px; border-radius: 22px; border: 1px solid rgba(237, 230, 218, 0.18); color: #EDE6DA; font-size: 13px; font-weight: 500; display: flex; align-items: center">Ghost</span>
+      <span style="height: 40px; padding: 0 12px; border-radius: 20px; border: 1px solid rgba(237, 230, 218, 0.16); background: rgba(237, 230, 218, 0.06); font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 4px">Reading <span style="color: #B7AE9F">30m</span></span>
+      <span style="position: relative; width: 52px; height: 32px; border-radius: 16px; background: #EF9F27"><span style="position: absolute; top: 3px; left: 23px; width: 26px; height: 26px; border-radius: 13px; background: #FFF6E8"></span></span>
+      <span style="position: relative; width: 52px; height: 32px; border-radius: 16px; background: rgba(237, 230, 218, 0.14)"><span style="position: absolute; top: 3px; left: 3px; width: 26px; height: 26px; border-radius: 13px; background: #B7AE9F"></span></span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px">
+      <div style="display: flex; flex-direction: column; gap: 8px; align-items: center">
+        <svg width="120" height="80" viewBox="0 0 120 80" aria-hidden="true"><defs><radialGradient id="sysOrb" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#FFE7C2"></stop><stop offset="0.4" stop-color="#F7BE6A"></stop><stop offset="1" stop-color="#D98620"></stop></radialGradient><radialGradient id="sysHalo" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#EF9F27" stop-opacity="0.4"></stop><stop offset="1" stop-color="#EF9F27" stop-opacity="0"></stop></radialGradient></defs><circle cx="60" cy="44" r="38" fill="url(#sysHalo)"></circle><circle cx="60" cy="44" r="16" fill="url(#sysOrb)"></circle><path d="M0 58 C20 48 34 50 48 54 C64 58 80 46 100 48 C108 49 114 52 120 50 L120 80 L0 80 Z" fill="#2C2522"></path></svg>
+        <span style="font-size: 12px; color: #B7AE9F; text-align: center">The ember: today’s progress, a session’s clock</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px; align-items: center">
+        <svg width="120" height="80" viewBox="0 0 120 80" aria-hidden="true"><path d="M10 72 Q60 -20 110 72" fill="none" stroke="#EDE6DA" stroke-opacity="0.3" stroke-dasharray="1 5" stroke-linecap="round"></path><path d="M10 72 Q24 42 38 30" fill="none" stroke="#EDE6DA" stroke-opacity="0.6" stroke-linecap="round"></path><circle cx="38" cy="30" r="6" fill="#EF9F27"></circle></svg>
+        <span style="font-size: 12px; color: #B7AE9F; text-align: center">The arc: the sun’s path across a session</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px; align-items: center">
+        <svg width="120" height="80" viewBox="0 0 120 80" aria-hidden="true"><circle cx="60" cy="40" r="34" fill="none" stroke="#F7BE6A" stroke-opacity="0.3"></circle><circle cx="60" cy="40" r="24" fill="none" stroke="#F7BE6A" stroke-opacity="0.55"></circle><circle cx="60" cy="40" r="12" fill="#EF9F27"></circle></svg>
+        <span style="font-size: 12px; color: #B7AE9F; text-align: center">The breath: 8 s cycle; still under reduced motion</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; border-top: 1px solid rgba(237, 230, 218, 0.1); padding-top: 26px">
+    <div style="display: flex; flex-direction: column; gap: 10px">
+      <span style="font-size: 11px; font-weight: 500; letter-spacing: 2px; color: #B7AE9F">IDENTICAL ON BOTH</span>
+      <span style="font-size: 14px; line-height: 1.6; color: #D8CFC0">Four tabs in a floating bar · every screen layout · colours, type, radii · sheets · switches · motion · all copy</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 10px">
+      <span style="font-size: 11px; font-weight: 500; letter-spacing: 2px; color: #B7AE9F">NATIVE PER PLATFORM</span>
+      <span style="font-size: 14px; line-height: 1.6; color: #D8CFC0">iOS app picker is Apple’s · iOS block screen uses only icon, title, subtitle, two buttons, solid colour · permission names · system back gesture</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":720,"height":1180}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const chip = (hex, b) => 'height: 56px; border-radius: 16px; background: ' + hex + ';' + (b ? ' border: 1px solid rgba(237,230,218,0.14); box-sizing: border-box;' : '');
+    const colors = [
+      ['Night', '#0C0E13', 'sky, block screen', true], ['Ground', '#0E0D0F', 'app background', true], ['Sheet', '#151417', 'sheets, dialogs', true], ['Ridge', '#2C2522', 'far mountains', false], ['Dusk', '#4B3322', 'horizon glow', false],
+      ['Bone', '#EDE6DA', 'text, light button', false], ['Mist', '#B7AE9F', 'secondary text', false], ['Stone', '#9C9486', 'tertiary, tabs', false], ['Ember', '#EF9F27', 'the one accent', false], ['Glow', '#FFE7C2', 'orb core', false]
+    ].map(([name, hex, role, b]) => ({ name, hex, role, chip: chip(hex, b) }));
+    return { colors };
+  }
+}
+</script>
+</body>
+</html>

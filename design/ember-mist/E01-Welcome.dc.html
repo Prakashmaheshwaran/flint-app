@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flint — Welcome</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500&amp;family=Hanken+Grotesk:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#EDE6DA}a:hover{color:#B7AE9F}
+button{font:inherit;cursor:pointer}
+@keyframes e-glow{0%,100%{opacity:.7}50%{opacity:1}}
+.e-glow{animation:e-glow 8s ease-in-out infinite}
+@keyframes e-drift{0%,100%{transform:translateX(-14px)}50%{transform:translateX(14px)}}
+.e-drift{animation:e-drift 22s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){.e-glow,.e-drift{animation:none}}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #0C0E13; color: #EDE6DA; font-family: 'Hanken Grotesk', -apple-system, system-ui, sans-serif">
+
+  <svg aria-hidden="true" width="390" height="844" viewBox="0 0 390 844" style="position: absolute; inset: 0">
+    <defs>
+      <linearGradient id="w1Sky" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#0A0C11"></stop>
+        <stop offset="0.42" stop-color="#14151B"></stop>
+        <stop offset="0.55" stop-color="#2E241F"></stop>
+        <stop offset="0.62" stop-color="#583A23"></stop>
+        <stop offset="0.72" stop-color="#1A1614"></stop>
+        <stop offset="1" stop-color="#0E0D0F"></stop>
+      </linearGradient>
+      <radialGradient id="w1Orb" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#FFE7C2"></stop><stop offset="0.35" stop-color="#F7BE6A"></stop><stop offset="0.7" stop-color="#EF9F27"></stop><stop offset="1" stop-color="#C9781A"></stop></radialGradient>
+      <radialGradient id="w1Halo" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#EF9F27" stop-opacity="0.45"></stop><stop offset="0.45" stop-color="#EF9F27" stop-opacity="0.12"></stop><stop offset="1" stop-color="#EF9F27" stop-opacity="0"></stop></radialGradient>
+      <filter id="w1Grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"></feTurbulence><feColorMatrix type="saturate" values="0"></feColorMatrix></filter>
+    </defs>
+    <rect width="390" height="844" fill="url(#w1Sky)"></rect>
+    <circle cx="44" cy="110" r="0.9" fill="#EDE6DA" opacity="0.5"></circle>
+    <circle cx="318" cy="92" r="1" fill="#EDE6DA" opacity="0.45"></circle>
+    <circle cx="350" cy="250" r="0.8" fill="#EDE6DA" opacity="0.35"></circle>
+    <circle cx="96" cy="300" r="0.7" fill="#EDE6DA" opacity="0.3"></circle>
+    <circle cx="232" cy="64" r="0.7" fill="#EDE6DA" opacity="0.35"></circle>
+    <circle cx="160" cy="180" r="0.6" fill="#EDE6DA" opacity="0.3"></circle>
+    <circle class="e-glow" cx="195" cy="500" r="200" fill="url(#w1Halo)"></circle>
+    <circle cx="195" cy="500" r="64" fill="url(#w1Orb)"></circle>
+    <path d="M0 512 C40 486 72 484 106 500 C140 516 162 472 206 458 C246 446 272 488 306 496 C336 503 362 475 390 469 L390 844 L0 844 Z" fill="#2C2522"></path>
+    <path d="M0 568 C36 550 62 532 96 540 C132 548 152 518 192 525 C232 532 252 560 292 552 C330 544 360 528 390 535 L390 844 L0 844 Z" fill="#1C1919"></path>
+    <path d="M0 620 C50 602 92 612 132 608 C176 604 202 586 246 593 C290 600 332 618 390 610 L390 844 L0 844 Z" fill="#111012"></path>
+    <rect width="390" height="844" filter="url(#w1Grain)" opacity="0.07"></rect>
+  </svg>
+  <div class="e-drift" aria-hidden="true" style="position: absolute; left: -40px; top: 522px; width: 470px; height: 46px; border-radius: 50%; background: rgba(237, 230, 218, 0.07); filter: blur(14px)"></div>
+
+  <div style="position: absolute; left: 0; right: 0; top: 168px; display: flex; flex-direction: column; align-items: center; gap: 14px">
+    <svg width="40" height="40" viewBox="0 0 56 56" aria-hidden="true"><polygon points="14,44 28,8 36,26 44,18 30,48" fill="#EDE6DA"></polygon><polygon points="36,26 44,18 42,30" fill="#EF9F27"></polygon><polygon points="30,48 42,30 44,40" fill="#FAC775"></polygon></svg>
+    <h1 style="margin: 0; font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-weight: 400; font-size: 48px; letter-spacing: -0.8px">Flint</h1>
+    <p style="margin: 0; max-width: 260px; text-align: center; font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 18px; line-height: 1.5; color: #D8CFC0">Make time for what matters.</p>
+  </div>
+
+  <div style="position: absolute; left: 24px; right: 24px; bottom: 44px; display: flex; flex-direction: column; align-items: center; gap: 18px">
+    <div style="display: flex; gap: 18px; font-size: 13px; color: #B7AE9F">
+      <span>No account</span>
+      <span aria-hidden="true">·</span>
+      <span>No analytics</span>
+      <span aria-hidden="true">·</span>
+      <span>Every feature free</span>
+    </div>
+    <a href="E02-Permissions.dc.html" style="align-self: stretch; height: 56px; border-radius: 28px; background: linear-gradient(180deg, #F6B860 0%, #EF9F27 100%); color: #3A2003; text-decoration: none; font-size: 16px; font-weight: 600; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 30px rgba(239, 159, 39, 0.28)">Begin</a>
+    <span style="font-size: 12px; color: #9C9486">Open source · built in the open</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flint — Limit editor</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500&amp;family=Hanken+Grotesk:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#EDE6DA}a:hover{color:#B7AE9F}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #0E0D0F; color: #EDE6DA; font-family: 'Hanken Grotesk', -apple-system, system-ui, sans-serif">
+
+  <div style="display: flex; flex-direction: column; padding: 54px 20px 0 20px">
+    <div style="display: flex; align-items: center; justify-content: space-between">
+      <a href="E13-Rules.dc.html" style="height: 44px; padding: 0 8px; display: flex; align-items: center; text-decoration: none; color: #B7AE9F; font-size: 15px">Cancel</a>
+      <span style="font-size: 11px; font-weight: 500; letter-spacing: 2px; color: #B7AE9F">APP LIMIT</span>
+      <a href="E13-Rules.dc.html" style="height: 36px; padding: 0 16px; border-radius: 18px; background: #EDE6DA; color: #141316; display: flex; align-items: center; text-decoration: none; font-size: 14px; font-weight: 600">Save</a>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 12px; margin: 18px 4px 0 4px">
+      <span style="width: 44px; height: 44px; border-radius: 12px; background: #3A3430; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 600; color: #D8CFC0">I</span>
+      <span style="display: flex; flex-direction: column; gap: 2px">
+        <span style="font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 26px">Instagram</span>
+        <span style="font-size: 13px; color: #B7AE9F">Change app</span>
+      </span>
+    </div>
+
+    <div role="radiogroup" aria-label="Limit type" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin-top: 22px; padding: 4px; border-radius: 18px; background: rgba(237, 230, 218, 0.05)">
+      <button type="button" role="radio" aria-checked="true" style="height: 40px; border: none; border-radius: 14px; background: #2A2826; color: #EDE6DA; font-size: 14px; font-weight: 500">Time limit</button>
+      <button type="button" role="radio" aria-checked="false" style="height: 40px; border: none; border-radius: 14px; background: transparent; color: #B7AE9F; font-size: 14px; font-weight: 500">Open limit</button>
+    </div>
+
+    <div style="position: relative; width: 210px; height: 210px; margin: 26px auto 0 auto">
+      <svg width="210" height="210" viewBox="0 0 210 210" aria-hidden="true">
+        <circle cx="105" cy="105" r="96" fill="none" stroke="#EDE6DA" stroke-opacity="0.1" stroke-width="10"></circle>
+        <circle cx="105" cy="105" r="96" fill="none" stroke="#EF9F27" stroke-width="10" stroke-linecap="round" stroke-dasharray="361.9 603.2" transform="rotate(-90 105 105)"></circle>
+      </svg>
+      <div style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px">
+        <span style="font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 44px; line-height: 1; font-variant-numeric: tabular-nums">12m</span>
+        <span style="font-size: 12px; color: #B7AE9F">left today · 18 of 30 used</span>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 24px; padding: 10px 10px 10px 18px; border-radius: 22px; border: 1px solid rgba(237, 230, 218, 0.1); background: rgba(237, 230, 218, 0.03)">
+      <span style="display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 12px; color: #B7AE9F">Daily allowance</span>
+        <span style="font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 22px; font-variant-numeric: tabular-nums">30 min</span>
+      </span>
+      <span style="display: flex; gap: 8px">
+        <button type="button" aria-label="Less" style="width: 44px; height: 44px; border-radius: 22px; border: 1px solid rgba(237, 230, 218, 0.16); background: transparent; color: #EDE6DA; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12"></path></svg></button>
+        <button type="button" aria-label="More" style="width: 44px; height: 44px; border-radius: 22px; border: 1px solid rgba(237, 230, 218, 0.16); background: transparent; color: #EDE6DA; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12M12 6v12"></path></svg></button>
+      </span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; margin-top: 18px; border-top: 1px solid rgba(237, 230, 218, 0.08)">
+      <div style="display: flex; align-items: center; justify-content: space-between; min-height: 58px; border-bottom: 1px solid rgba(237, 230, 218, 0.08)">
+        <span style="display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 15px; font-weight: 500">Reset each day</span>
+          <span style="font-size: 13px; color: #B7AE9F">Off means once it’s gone, it’s gone</span>
+        </span>
+        <button type="button" role="switch" aria-checked="true" aria-label="Reset each day" style="position: relative; width: 52px; height: 32px; padding: 0; border: none; border-radius: 16px; background: #EF9F27"><span style="position: absolute; top: 3px; left: 23px; width: 26px; height: 26px; border-radius: 13px; background: #FFF6E8"></span></button>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; min-height: 58px; border-bottom: 1px solid rgba(237, 230, 218, 0.08)">
+        <span style="display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 15px; font-weight: 500">When time runs out</span>
+          <span style="font-size: 13px; color: #B7AE9F">Rest until tomorrow · Harder</span>
+        </span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B7AE9F" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

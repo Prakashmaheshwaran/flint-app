@@ -1,5 +1,10 @@
 package com.flint.peakfocus.feature.blockscreen
 
+import com.flint.peakfocus.core.common.theme.FlintPalette
+import com.flint.peakfocus.core.common.ui.QuietButton
+import com.flint.peakfocus.core.common.ui.drawEmber
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.Canvas
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
@@ -190,7 +195,7 @@ fun BlockScreen(
         }
     }
 
-    Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    Surface(modifier = modifier.fillMaxSize(), color = FlintPalette.Night) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -230,9 +235,9 @@ fun BlockScreen(
                 Spacer(Modifier.height(FlintSpacing.md))
                 EntranceSlot(entrance, step = 1) {
                     Text(
-                        text = "Peak Focus".uppercase(),
+                        text = "Flint".uppercase(),
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Spacer(Modifier.height(FlintSpacing.md))
@@ -280,8 +285,8 @@ fun BlockScreen(
                             onClick = onDismiss,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(52.dp),
-                            shape = MaterialTheme.shapes.large,
+                                .height(56.dp),
+                            shape = CircleShape,
                         ) {
                             Text("Go back")
                         }
@@ -473,13 +478,11 @@ private fun BreathingMark(
     pulse: () -> Float,
     modifier: Modifier = Modifier,
 ) {
-    Icon(
-        imageVector = rememberFlintMark(),
-        // Decorative: the "PEAK FOCUS" eyebrow right below carries the brand for TalkBack.
-        contentDescription = null,
-        tint = Color.Unspecified,
+    // The ember (design/ember-mist/E07-Shield): orb in its halo, breathing with the glow.
+    // Decorative: the "FLINT" eyebrow right below carries the brand for TalkBack.
+    Canvas(
         modifier = modifier
-            .size(64.dp)
+            .size(160.dp)
             .graphicsLayer {
                 val b = breath()
                 val p = pulse()
@@ -489,7 +492,9 @@ private fun BreathingMark(
                 scaleX = scale
                 scaleY = scale
             },
-    )
+    ) {
+        drawEmber(center, size.width * 34f / 160f, size.width / 2f, haloAlpha = 0.75f + 0.25f * breath())
+    }
 }
 
 /** The break-level-aware action row beneath the primary "Go back" button. */
@@ -502,14 +507,7 @@ private fun BreakActions(
 ) {
     when (affordance) {
         // 48dp minimum keeps the deliberate 52/48/48 exit ladder under "Go back".
-        BreakAffordance.TakeABreak -> OutlinedButton(
-            onClick = onBreakRequested,
-            modifier = modifier
-                .fillMaxWidth()
-                .heightIn(min = 48.dp),
-        ) {
-            Text("Take a break")
-        }
+        BreakAffordance.TakeABreak -> QuietButton("Take a break", onBreakRequested, modifier = modifier)
 
         is BreakAffordance.HoldToRequest -> HoldToRequestBreakButton(
             holdMillis = affordance.holdMillis,

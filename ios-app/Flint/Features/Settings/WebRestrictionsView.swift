@@ -68,6 +68,7 @@ struct WebRestrictionsView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .flintForm()
         .navigationTitle("Web & Safari")
         .navigationBarTitleDisplayMode(.inline)
         // Persist every edit to the shared App Group so a starting session enforces the latest config.

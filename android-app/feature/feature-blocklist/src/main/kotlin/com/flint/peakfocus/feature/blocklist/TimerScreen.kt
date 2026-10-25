@@ -1,29 +1,40 @@
 package com.flint.peakfocus.feature.blocklist
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.RadioButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -34,11 +45,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -46,22 +62,47 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.flint.peakfocus.core.common.theme.FlintNumerals
+import com.flint.peakfocus.core.common.theme.FlintPalette
 import com.flint.peakfocus.core.common.theme.FlintSpacing
-import com.flint.peakfocus.core.common.ui.FlintCard
-import com.flint.peakfocus.core.common.ui.FlintScreenHeader
-import com.flint.peakfocus.core.common.ui.FlintSectionLabel
+import com.flint.peakfocus.core.common.ui.BoneButton
+import com.flint.peakfocus.core.common.ui.EmberButton
+import com.flint.peakfocus.core.common.ui.EmberLandscape
+import com.flint.peakfocus.core.common.ui.FlintChip
+import com.flint.peakfocus.core.common.ui.FlintChipText
+import com.flint.peakfocus.core.common.ui.FlintChoiceCard
+import com.flint.peakfocus.core.common.ui.FlintCircleButton
+import com.flint.peakfocus.core.common.ui.FlintEyebrow
+import com.flint.peakfocus.core.common.ui.FlintGlyphs
+import com.flint.peakfocus.core.common.ui.FlintMark
+import com.flint.peakfocus.core.common.ui.FlintNavPanel
+import com.flint.peakfocus.core.common.ui.GhostButton
+import com.flint.peakfocus.core.common.ui.QuietButton
+import com.flint.peakfocus.core.common.ui.SunArc
 import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BreakLevel
 import java.text.DateFormat
+import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Locale
 
 /**
- * Dedicated finite Timer: choose apps and duration, then restore the persisted session on
- * every visit. Leaving this screen does not stop it. Existing Flint break tiers still apply.
+ * Today: the ember on the horizon, the state of blocking, and the one way into a focus timer.
+ * A running timer takes the whole screen (the sun arc); finishing shows "The ember has set."
+ * Leaving this screen does not stop a timer. Existing Flint break tiers still apply.
+ *
+ * [headline]/[subline] describe enforcement (from the app's setup guidance); [setupLabel] and
+ * [onSetup] offer the single next setup step when blocking needs one.
  */
 @Composable
-fun TimerScreen(modifier: Modifier = Modifier) {
+fun TimerScreen(
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(),
+    headline: String? = null,
+    subline: String? = null,
+    setupLabel: String? = null,
+    onSetup: () -> Unit = {},
+) {
     val context = LocalContext.current
     val viewModel: TimerViewModel = viewModel(factory = remember(context) { TimerViewModel.factory(context) })
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -83,101 +124,86 @@ fun TimerScreen(modifier: Modifier = Modifier) {
         }
     }
 
+    var starting by rememberSaveable { mutableStateOf(false) }
     var pickingApps by rememberSaveable { mutableStateOf(false) }
-    var pickingDuration by rememberSaveable { mutableStateOf(false) }
     var cancellingId by remember { mutableStateOf<String?>(null) }
     var viewingId by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(state.sessions.isNotEmpty()) {
-        if (state.sessions.isNotEmpty()) {
+    var finished by remember { mutableStateOf<BlockRule?>(null) }
+    var lastSession by remember { mutableStateOf<BlockRule?>(null) }
+    LaunchedEffect(state.sessions) {
+        val running = state.sessions.firstOrNull()
+        if (running != null) {
+            starting = false
             pickingApps = false
-            pickingDuration = false
+            lastSession = running
+        } else {
+            // A session that ran out its clock (not one ended early) gets its moment.
+            val previous = lastSession
+            if (previous != null && previous.isExpired(state.nowEpochMs)) finished = previous
+            lastSession = null
         }
     }
 
-    if (pickingApps) {
-        BackHandler { pickingApps = false }
-        AppPickerScreen(
-            appsState = state.appsState,
-            title = "Choose apps to block",
-            eyebrow = "Timer",
-            multiSelect = true,
-            initiallySelected = state.draft.apps.map { it.packageName }.toSet(),
-            onConfirm = { viewModel.selectApps(it); pickingApps = false },
-            onCancel = { pickingApps = false },
+    val running = state.sessions.firstOrNull()
+    when {
+        pickingApps -> {
+            BackHandler { pickingApps = false }
+            AppPickerScreen(
+                appsState = state.appsState,
+                title = "What rests",
+                eyebrow = "${state.draft.apps.size} selected",
+                multiSelect = true,
+                initiallySelected = state.draft.apps.map { it.packageName }.toSet(),
+                onConfirm = { viewModel.selectApps(it); pickingApps = false },
+                onCancel = { pickingApps = false },
+                modifier = modifier.statusBarsPadding(),
+            )
+        }
+        running != null -> SessionScene(
+            session = running,
+            others = state.sessions.size - 1,
+            nowEpochMs = state.nowEpochMs,
+            enabled = !state.busy && state.rulesError == null,
+            contentPadding = contentPadding,
+            onViewApps = { viewingId = running.id },
+            onEnd = {
+                if (canEndNativeTimer(running)) viewModel.requestExit(running.id) else cancellingId = running.id
+            },
+            canEnd = canEndNativeTimer(running) || canCancelTimer(running),
             modifier = modifier,
         )
-    } else {
-        Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(FlintSpacing.gutter),
-                verticalArrangement = Arrangement.spacedBy(FlintSpacing.cardGap),
-            ) {
-                FlintScreenHeader("Timer", eyebrow = "Make time for what matters")
-                if (state.busy || (!state.rulesLoaded && state.rulesError == null)) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
-                }
-                state.rulesError?.let { message ->
-                    TimerNotice(message, isError = true, action = "Refresh", onAction = viewModel::retryRules)
-                }
-                state.error?.let { message ->
-                    TimerNotice(message, isError = true, action = "Dismiss", onAction = viewModel::dismissFeedback)
-                }
-                state.message?.let { message ->
-                    TimerNotice(message, isError = false, action = "Dismiss", onAction = viewModel::dismissFeedback)
-                }
-
-                if (state.sessions.isNotEmpty()) {
-                    state.sessions.forEach { session ->
-                        RunningTimerCard(
-                            session = session,
-                            nowEpochMs = state.nowEpochMs,
-                            enabled = !state.busy && state.rulesError == null,
-                            onViewApps = { viewingId = session.id },
-                            onCancel = {
-                                if (canEndNativeTimer(session)) viewModel.requestExit(session.id)
-                                else cancellingId = session.id
-                            },
-                        )
-                    }
-                } else if (state.rulesLoaded && state.rulesError == null) {
-                    IdleTimer(
-                        state = state,
-                        onPickApps = { pickingApps = true },
-                        onClearApps = viewModel::clearApps,
-                        onRetryApps = viewModel::retryApps,
-                        onPickDuration = { pickingDuration = true },
-                        onPreset = viewModel::selectPreset,
-                        onBreakLevel = viewModel::selectBreakLevel,
-                        onStart = viewModel::start,
-                    )
-                } else if (state.rulesError == null) {
-                    Text("Loading saved timers…", style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-        }
+        finished != null -> CompleteScene(
+            session = finished!!,
+            contentPadding = contentPadding,
+            onDone = { finished = null },
+            onAgain = { finished = null; starting = true },
+            modifier = modifier,
+        )
+        else -> TodayScene(
+            state = state,
+            headline = headline,
+            subline = subline,
+            setupLabel = setupLabel,
+            onSetup = onSetup,
+            contentPadding = contentPadding,
+            onPreset = { id -> viewModel.selectPreset(id); starting = true },
+            onStart = { starting = true },
+            onRetry = viewModel::retryRules,
+            onDismiss = viewModel::dismissFeedback,
+            modifier = modifier,
+        )
     }
 
-    if (pickingDuration && state.canEdit) {
-        AlertDialog(
-            onDismissRequest = { pickingDuration = false },
-            title = { Text("Timer duration") },
-            text = {
-                LazyColumn(Modifier.heightIn(max = 360.dp)) {
-                    items(timerDurationChoices, key = { it }) { minutes ->
-                        Row(
-                            Modifier.fillMaxWidth().clickable {
-                                viewModel.selectDuration(minutes)
-                                pickingDuration = false
-                            }.padding(vertical = FlintSpacing.xs),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RadioButton(selected = state.draft.durationMinutes == minutes, onClick = null)
-                            Text(timerDurationLabel(minutes), modifier = Modifier.padding(start = FlintSpacing.sm))
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { pickingDuration = false }) { Text("Close") } },
+    if (starting && running == null && !pickingApps) {
+        StartFocusSheet(
+            state = state,
+            onDismiss = { starting = false },
+            onPickApps = { pickingApps = true },
+            onDuration = viewModel::selectDuration,
+            onPreset = viewModel::selectPreset,
+            onBreakLevel = viewModel::selectBreakLevel,
+            onRetryApps = viewModel::retryApps,
+            onStart = viewModel::start,
         )
     }
 
@@ -206,7 +232,7 @@ fun TimerScreen(modifier: Modifier = Modifier) {
     state.sessions.firstOrNull { it.id == viewingId }?.let { session ->
         AlertDialog(
             onDismissRequest = { viewingId = null },
-            title = { Text(if (session.targets.allowListMode) "Allowed apps and sites" else "Blocked apps and sites") },
+            title = { Text(if (session.targets.allowListMode) "Allowed apps and sites" else "Resting apps and sites") },
             text = {
                 Column {
                     Text("This selection stays fixed until the timer ends.", style = MaterialTheme.typography.bodySmall)
@@ -225,154 +251,381 @@ fun TimerScreen(modifier: Modifier = Modifier) {
     }
 }
 
+/** E03 — Today. */
 @Composable
-private fun IdleTimer(
+private fun TodayScene(
     state: TimerUiState,
-    onPickApps: () -> Unit,
-    onClearApps: () -> Unit,
-    onRetryApps: () -> Unit,
-    onPickDuration: () -> Unit,
+    headline: String?,
+    subline: String?,
+    setupLabel: String?,
+    onSetup: () -> Unit,
+    contentPadding: PaddingValues,
     onPreset: (String) -> Unit,
-    onBreakLevel: (BreakLevel) -> Unit,
     onStart: () -> Unit,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier,
 ) {
-    FlintCard {
-        Text("Apps to block", style = MaterialTheme.typography.titleMedium)
-        Text(
-            if (state.draft.apps.isEmpty()) "Choose the apps you want a break from." else appSummary(state.draft.apps),
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        state.appsError?.let {
-            Text(it, color = MaterialTheme.colorScheme.error)
-            TextButton(onClick = onRetryApps, enabled = !state.busy) { Text("Retry loading apps") }
-        }
-        OutlinedButton(
-            onClick = onPickApps,
-            enabled = state.canEdit && state.appsState is InstalledAppsUiState.Ready,
+    Box(modifier.fillMaxSize()) {
+        EmberLandscape()
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(contentPadding)
+                .padding(horizontal = FlintSpacing.gutter),
         ) {
+            Row(Modifier.fillMaxWidth().padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                FlintEyebrow(remember { todayLabel() }, Modifier.weight(1f))
+                FlintMark(Modifier.size(20.dp))
+            }
             Text(
-                if (state.appsState is InstalledAppsUiState.Loading && state.appsError == null) "Loading apps…"
-                else "Choose apps",
+                (headline ?: "Make time for what matters").let { if (it.endsWith(".")) it else "$it." },
+                style = MaterialTheme.typography.headlineMedium.copy(fontSize = MaterialTheme.typography.headlineMedium.fontSize * (31f / 30f)),
+                modifier = Modifier.padding(top = 26.dp),
             )
-        }
-        if (state.draft.apps.isNotEmpty()) {
-            TextButton(onClick = onClearApps, enabled = state.canEdit) { Text("Clear selection") }
-        }
-    }
-    FlintCard {
-        Text("Your session", style = MaterialTheme.typography.titleMedium)
-        OutlinedButton(onClick = onPickDuration, enabled = state.canEdit) {
-            Text("Duration · ${timerDurationLabel(state.draft.durationMinutes)}")
-        }
-        Text("Flint break level", style = MaterialTheme.typography.labelLarge)
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(FlintSpacing.sm),
-        ) {
-            BreakLevel.entries.forEach { level ->
-                FilterChip(
-                    selected = state.draft.breakLevel == level,
-                    onClick = { onBreakLevel(level) },
-                    enabled = state.canEdit,
-                    label = { Text(timerBreakLabel(level)) },
+            if (subline != null) {
+                Text(
+                    subline,
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = MaterialTheme.typography.bodySmall.fontSize * (14f / 13f)),
+                    color = FlintPalette.Mist,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 8.dp),
                 )
             }
-        }
-        Text(timerBreakDisclosure(state.draft.breakLevel), style = MaterialTheme.typography.bodySmall)
-        Button(onClick = onStart, enabled = state.canStart, modifier = Modifier.fillMaxWidth()) {
-            Text(if (state.busy) "Starting…" else "Start timer")
-        }
-        if (state.draft.apps.isEmpty()) {
-            Text("Select at least one app to start.", style = MaterialTheme.typography.bodySmall)
+            Column(
+                Modifier.fillMaxWidth().padding(top = 64.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(timerDurationLabel(state.draft.durationMinutes), style = MaterialTheme.typography.displaySmall.merge(FlintNumerals))
+                FlintEyebrow("Your next session")
+            }
+            Spacer(Modifier.weight(1f))
+
+            if (state.busy || (!state.rulesLoaded && state.rulesError == null)) {
+                LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = 12.dp), color = FlintPalette.Ember, trackColor = FlintPalette.BoneFill)
+            }
+            val notice = state.rulesError ?: state.error ?: state.message
+            if (notice != null) {
+                Row(
+                    Modifier.fillMaxWidth().padding(bottom = 12.dp).semantics { liveRegion = LiveRegionMode.Polite },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(notice, style = MaterialTheme.typography.bodySmall,
+                        color = if (state.message != null && state.error == null && state.rulesError == null) FlintPalette.Mist else FlintPalette.Danger,
+                        modifier = Modifier.weight(1f))
+                    TextButton(onClick = if (state.rulesError != null) onRetry else onDismiss) {
+                        Text(if (state.rulesError != null) "Refresh" else "Dismiss", color = FlintPalette.Bone)
+                    }
+                }
+            }
+            if (setupLabel != null) {
+                QuietButton(setupLabel, onSetup, outlined = true, color = FlintPalette.Ember, modifier = Modifier.padding(bottom = 12.dp))
+            }
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                todayPresets.forEach { preset ->
+                    FlintChip(onClick = { onPreset(preset.id) }, enabled = state.canEdit) {
+                        FlintChipText(preset.name)
+                        FlintChipText(timerDurationLabel(preset.minutes), color = FlintPalette.Mist)
+                    }
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            EmberButton("Start focus", onStart, enabled = state.rulesLoaded && state.rulesError == null)
+            Spacer(Modifier.height(12.dp))
         }
     }
-    FlintSectionLabel("Focus presets")
-    PresetRail(state, detox = false, onPreset)
-    FlintSectionLabel("Digital detox durations")
-    Text(
-        "These presets set the duration only. Each uses your selected apps and Flint break level.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    PresetRail(state, detox = true, onPreset)
 }
 
+/** E04 — the Start focus sheet: how long, what rests, how hard it is to leave. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PresetRail(state: TimerUiState, detox: Boolean, onPreset: (String) -> Unit) {
-    Row(
-        Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(FlintSpacing.sm),
-    ) {
-        timerPresets.filter { it.detox == detox }.forEach { preset ->
-            FilterChip(
-                selected = state.draft.presetId == preset.id,
-                onClick = { onPreset(preset.id) },
-                enabled = state.canEdit,
-                label = { Text("${preset.name} · ${timerDurationLabel(preset.minutes)}") },
-            )
-        }
-    }
-}
-
-@Composable
-private fun RunningTimerCard(
-    session: BlockRule,
-    nowEpochMs: Long,
-    enabled: Boolean,
-    onViewApps: () -> Unit,
-    onCancel: () -> Unit,
+private fun StartFocusSheet(
+    state: TimerUiState,
+    onDismiss: () -> Unit,
+    onPickApps: () -> Unit,
+    onDuration: (Int) -> Unit,
+    onPreset: (String) -> Unit,
+    onBreakLevel: (BreakLevel) -> Unit,
+    onRetryApps: () -> Unit,
+    onStart: () -> Unit,
 ) {
-    FlintCard {
-        Text(session.name, style = MaterialTheme.typography.titleMedium)
-        val deadline = session.expiresAtEpochMs
-        if (deadline != null) {
-            val remaining = timerCountdown(deadline - nowEpochMs)
-            Text(
-                remaining,
-                style = MaterialTheme.typography.displaySmall.merge(FlintNumerals),
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.semantics { contentDescription = "$remaining remaining" },
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = FlintPalette.Sheet,
+        contentColor = FlintPalette.Bone,
+        scrimColor = Color(0xFF07080B).copy(alpha = 0.6f),
+        shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
+        dragHandle = {
+            Box(
+                Modifier
+                    .padding(top = 10.dp)
+                    .size(40.dp, 5.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(FlintPalette.Bone.copy(alpha = 0.2f)),
             )
+        },
+    ) {
+        val minutes = state.draft.durationMinutes
+        val choices = timerDurationChoices
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = FlintSpacing.gutter)
+                .navigationBarsPadding()
+                .padding(bottom = 16.dp),
+        ) {
+            Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Start focus", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+                FlintCircleButton(onClick = onDismiss, contentDescription = "Close", size = 44.dp, filled = true) {
+                    Icon(FlintGlyphs.close, contentDescription = null, modifier = Modifier.size(16.dp))
+                }
+            }
+
+            Row(Modifier.fillMaxWidth().padding(top = 30.dp), verticalAlignment = Alignment.CenterVertically) {
+                FlintCircleButton(
+                    onClick = { choices.lastOrNull { it < minutes }?.let(onDuration) },
+                    contentDescription = "Less time",
+                    enabled = state.canEdit && choices.any { it < minutes },
+                ) { Icon(FlintGlyphs.minus, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.Bottom) {
+                    val big = if (minutes < 60 || minutes % 60 != 0) minutes.toString() else (minutes / 60).toString()
+                    val unit = if (minutes < 60 || minutes % 60 != 0) "min" else if (minutes == 60) "hour" else "hours"
+                    Text(if (minutes >= 60 && minutes % 60 != 0) timerDurationLabel(minutes) else big,
+                        style = MaterialTheme.typography.displayMedium.merge(FlintNumerals))
+                    if (!(minutes >= 60 && minutes % 60 != 0)) {
+                        Text(unit, style = MaterialTheme.typography.bodyMedium, color = FlintPalette.Mist,
+                            modifier = Modifier.padding(start = 8.dp, bottom = 10.dp))
+                    }
+                }
+                FlintCircleButton(
+                    onClick = { choices.firstOrNull { it > minutes }?.let(onDuration) },
+                    contentDescription = "More time",
+                    enabled = state.canEdit && choices.any { it > minutes },
+                ) { Icon(FlintGlyphs.plus, contentDescription = null, modifier = Modifier.size(18.dp)) }
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(25, 45, 60, 90).forEach { choice ->
+                    FlintChip(
+                        onClick = { onDuration(choice) },
+                        selected = minutes == choice,
+                        enabled = state.canEdit,
+                        height = 44.dp,
+                        modifier = Modifier.weight(1f).semantics { contentDescription = "$choice minutes" },
+                    ) { FlintChipText(choice.toString()) }
+                }
+            }
+
+            FlintNavPanel(
+                title = if (state.draft.apps.isEmpty()) "Choose what rests" else "Block ${state.draft.apps.size} ${if (state.draft.apps.size == 1) "app" else "apps"}",
+                subtitle = when {
+                    state.appsState is InstalledAppsUiState.Loading && state.appsError == null -> "Loading apps…"
+                    state.draft.apps.isEmpty() -> "Pick the apps you want a break from"
+                    else -> appSummary(state.draft.apps)
+                },
+                onClick = onPickApps,
+                enabled = state.canEdit && state.appsState is InstalledAppsUiState.Ready,
+                modifier = Modifier.padding(top = 28.dp),
+            )
+            state.appsError?.let {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(it, color = FlintPalette.Danger, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    TextButton(onClick = onRetryApps, enabled = !state.busy) { Text("Retry", color = FlintPalette.Bone) }
+                }
+            }
+
+            FlintEyebrow("Break level", Modifier.padding(top = 30.dp))
+            Row(
+                Modifier.fillMaxWidth().padding(top = 10.dp).height(IntrinsicSize.Max),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                BreakLevel.entries.forEach { level ->
+                    FlintChoiceCard(
+                        title = timerBreakLabel(level),
+                        hint = timerBreakHint(level),
+                        selected = state.draft.breakLevel == level,
+                        onClick = { onBreakLevel(level) },
+                        enabled = state.canEdit,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                    )
+                }
+            }
             Text(
-                "Ends ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(deadline))}",
+                timerBreakDisclosure(state.draft.breakLevel),
                 style = MaterialTheme.typography.bodySmall,
+                color = FlintPalette.Mist,
+                modifier = Modifier.padding(top = 12.dp).heightIn(min = 38.dp),
             )
-        } else {
-            Text("This saved session has no end time.", style = MaterialTheme.typography.bodyMedium)
-        }
-        Text(timerBreakDisclosure(session.breakLevel, canEndNativeTimer(session)), style = MaterialTheme.typography.bodySmall)
-        Text(
-            "${session.targets.apps.size} apps · ${session.targets.domains.size} sites" +
-                if (session.targets.allowListMode) " allowed" else " blocked",
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        OutlinedButton(onClick = onViewApps) { Text("View selection") }
-        if (canEndNativeTimer(session) || canCancelTimer(session)) {
-            OutlinedButton(onClick = onCancel, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
-                Text("End timer")
+
+            FlintEyebrow("Longer breaks", Modifier.padding(top = 18.dp))
+            Row(
+                Modifier.fillMaxWidth().padding(top = 10.dp).horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                timerPresets.filter { it.detox }.forEach { preset ->
+                    FlintChip(onClick = { onPreset(preset.id) }, selected = state.draft.presetId == preset.id,
+                        enabled = state.canEdit, height = 36.dp) {
+                        FlintChipText("${preset.name} · ${timerDurationLabel(preset.minutes)}")
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+            EmberButton(
+                if (state.busy) "Starting…" else "Begin ${timerDurationLabel(minutes)}",
+                onStart,
+                enabled = state.canStart,
+            )
+            val hint = state.error ?: if (state.draft.apps.isEmpty()) "Choose what rests first." else null
+            if (hint != null) {
+                Text(hint, style = MaterialTheme.typography.bodySmall,
+                    color = if (state.error != null) FlintPalette.Danger else FlintPalette.Mist,
+                    textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
             }
         }
-        Text("Other rules and limits keep their own settings.", style = MaterialTheme.typography.bodySmall)
     }
 }
 
+/** E06 — a running timer: the ember travels its arc, breath rings around it. */
 @Composable
-private fun TimerNotice(message: String, isError: Boolean, action: String, onAction: () -> Unit) {
-    FlintCard {
-        Text(
-            message,
-            color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-        )
-        TextButton(onClick = onAction) { Text(action) }
+private fun SessionScene(
+    session: BlockRule,
+    others: Int,
+    nowEpochMs: Long,
+    enabled: Boolean,
+    canEnd: Boolean,
+    contentPadding: PaddingValues,
+    onViewApps: () -> Unit,
+    onEnd: () -> Unit,
+    modifier: Modifier,
+) {
+    val deadline = session.expiresAtEpochMs
+    val start = session.createdAtEpochMsOrNull()
+    val progress = if (deadline != null && start != null && deadline > start) {
+        ((nowEpochMs - start).toFloat() / (deadline - start)).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+    Box(modifier.fillMaxSize()) {
+        EmberLandscape(horizonOffset = 8f, orbCenter = null)
+        SunArc(progress)
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(contentPadding)
+                .padding(horizontal = FlintSpacing.gutter),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Row(Modifier.fillMaxWidth().padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                FlintEyebrow(session.name, Modifier.weight(1f))
+                TextButton(onClick = onViewApps) {
+                    FlintEyebrow("${session.targets.apps.size} ${if (session.targets.apps.size == 1) "app" else "apps"} " +
+                        if (session.targets.allowListMode) "open" else "resting")
+                }
+            }
+            if (others > 0) FlintEyebrow("+$others more running", color = FlintPalette.Stone)
+            if (deadline != null) {
+                val remaining = timerCountdown(deadline - nowEpochMs)
+                Text(
+                    remaining,
+                    style = MaterialTheme.typography.displayLarge.merge(FlintNumerals),
+                    maxLines = 1,
+                    modifier = Modifier.padding(top = 26.dp).semantics { contentDescription = "$remaining remaining" },
+                )
+                Text(
+                    "ends at ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(deadline))}",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = MaterialTheme.typography.bodySmall.fontSize * (14f / 13f)),
+                    color = FlintPalette.Mist,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+            } else {
+                Text("No end time", style = MaterialTheme.typography.headlineLarge, modifier = Modifier.padding(top = 40.dp))
+            }
+            Spacer(Modifier.weight(1f))
+            Text("Breathe with the light.", style = MaterialTheme.typography.titleLarge.copy(fontSize = MaterialTheme.typography.titleLarge.fontSize * (17f / 22f)),
+                color = FlintPalette.SoftBone, modifier = Modifier.padding(bottom = 64.dp))
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+                    .background28()
+                    .padding(start = 18.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Icon(FlintGlyphs.lock, contentDescription = null, tint = FlintPalette.Mist, modifier = Modifier.size(20.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(timerBreakLabel(session.breakLevel), style = MaterialTheme.typography.titleSmall.copy(fontSize = MaterialTheme.typography.titleSmall.fontSize * (14f / 15f)))
+                    Text(if (canEndNativeTimer(session)) "Hold to end early" else timerBreakHint(session.breakLevel),
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = MaterialTheme.typography.bodySmall.fontSize * (12f / 13f)),
+                        color = FlintPalette.Mist)
+                }
+                if (canEnd) GhostButton("End session", onEnd, enabled = enabled)
+            }
+        }
     }
 }
+
+/** E08 — the ember has set. */
+@Composable
+private fun CompleteScene(
+    session: BlockRule,
+    contentPadding: PaddingValues,
+    onDone: () -> Unit,
+    onAgain: () -> Unit,
+    modifier: Modifier,
+) {
+    val minutes = session.createdAtEpochMsOrNull()?.let { start ->
+        session.expiresAtEpochMs?.let { ((it - start) / 60_000L).toInt() }
+    }
+    Box(modifier.fillMaxSize()) {
+        EmberLandscape(horizonOffset = 8f, orbCenter = null, showsMist = false)
+        SunArc(1f, complete = true)
+        Column(
+            Modifier.fillMaxSize().padding(contentPadding).padding(horizontal = FlintSpacing.gutter),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            FlintEyebrow("${session.name} · Complete", Modifier.padding(top = 52.dp))
+            Text("The ember has set.", style = MaterialTheme.typography.headlineLarge, textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 18.dp))
+            if (minutes != null && minutes > 0) {
+                Text("${timerDurationLabel(minutes)}, start to finish.", style = MaterialTheme.typography.bodyMedium,
+                    color = FlintPalette.Mist, modifier = Modifier.padding(top = 10.dp))
+            }
+            Spacer(Modifier.weight(1f))
+            BoneButton("Done", onDone)
+            QuietButton("Start another", onAgain, modifier = Modifier.padding(top = 8.dp, bottom = 12.dp))
+        }
+    }
+}
+
+private val todayPresets: List<TimerPreset>
+    get() = listOf("deep-study", "reading", "workout").mapNotNull { id -> timerPresets.firstOrNull { it.id == id } }
+
+private fun todayLabel(): String =
+    SimpleDateFormat("EEEE · d MMMM", Locale.getDefault()).format(Date())
+
+/** Timer rule ids carry no start time, so the arc derives it from the persisted rule when it can. */
+private fun BlockRule.createdAtEpochMsOrNull(): Long? = timerStartEpochMs(this)
+
+/** The session's floating control bar: 28dp capsule, translucent night, bone hairline. */
+private fun Modifier.background28(): Modifier = this
+    .clip(RoundedCornerShape(28.dp))
+    .background(Color(0xE0181618))
+    .border(1.dp, FlintPalette.Divider, RoundedCornerShape(28.dp))
 
 private fun appLabel(app: AppRef): String = app.label?.takeIf { it.isNotBlank() } ?: app.packageName
 
 private fun appSummary(apps: Set<AppRef>): String {
     val names = apps.sortedBy(::appLabel).take(3).joinToString(", ", transform = ::appLabel)
-    return if (apps.size > 3) "$names and ${apps.size - 3} more" else names
+    return if (apps.size > 3) "$names and more" else names
 }
 
 private fun timerBreakLabel(level: BreakLevel): String = when (level) {
@@ -381,11 +634,14 @@ private fun timerBreakLabel(level: BreakLevel): String = when (level) {
     BreakLevel.HARDCORE -> "Hardcore"
 }
 
-private fun timerBreakDisclosure(level: BreakLevel, nativeTimer: Boolean = true): String = when {
-    !nativeTimer && level == BreakLevel.EASY -> "Easy — you can end this session at any time."
-    !nativeTimer && level == BreakLevel.HARDER -> "Harder — no early stop. Breaks come with friction."
-    !nativeTimer && level == BreakLevel.HARDCORE -> "Hardcore — no breaks, no early stop. Your weekly Emergency Pass is the only exit."
-    level == BreakLevel.EASY -> "Easy — ordinary breaks are available. Hold to end this timer early."
-    level == BreakLevel.HARDER -> "Harder — breaks come with friction. Hold to end this timer early."
-    else -> "Hardcore — no ordinary breaks. Hold to end this timer early; other rules stay active."
+private fun timerBreakHint(level: BreakLevel): String = when (level) {
+    BreakLevel.EASY -> "Breaks any time"
+    BreakLevel.HARDER -> "Breaks take friction"
+    BreakLevel.HARDCORE -> "No breaks"
+}
+
+private fun timerBreakDisclosure(level: BreakLevel): String = when (level) {
+    BreakLevel.EASY -> "Ordinary breaks are available. Hold to end this timer early."
+    BreakLevel.HARDER -> "Each break waits a few minutes first. Hold to end this timer early."
+    BreakLevel.HARDCORE -> "No ordinary breaks. Hold to end this timer early; other rules stay active."
 }

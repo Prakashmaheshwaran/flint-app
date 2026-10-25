@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flint — Start focus</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500&amp;family=Hanken+Grotesk:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#EDE6DA}a:hover{color:#B7AE9F}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #0C0E13; color: #EDE6DA; font-family: 'Hanken Grotesk', -apple-system, system-ui, sans-serif">
+
+  <svg aria-hidden="true" width="390" height="844" viewBox="0 0 390 844" style="position: absolute; inset: 0">
+    <defs>
+      <linearGradient id="s4Sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0B0D12"></stop><stop offset="0.12" stop-color="#14151B"></stop><stop offset="0.2" stop-color="#3A2A20"></stop><stop offset="0.3" stop-color="#151314"></stop></linearGradient>
+      <radialGradient id="s4Halo" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#EF9F27" stop-opacity="0.4"></stop><stop offset="1" stop-color="#EF9F27" stop-opacity="0"></stop></radialGradient>
+    </defs>
+    <rect width="390" height="844" fill="url(#s4Sky)"></rect>
+    <circle cx="195" cy="150" r="110" fill="url(#s4Halo)"></circle>
+    <circle cx="195" cy="150" r="28" fill="#F4B256"></circle>
+    <path d="M0 160 C40 140 74 138 108 150 C142 162 164 128 206 118 C246 108 272 142 306 148 C336 154 362 132 390 128 L390 844 L0 844 Z" fill="#2A2421"></path>
+    <rect width="390" height="844" fill="#07080B" opacity="0.45"></rect>
+  </svg>
+
+  <section aria-label="Start focus" style="position: absolute; left: 0; right: 0; top: 132px; bottom: 0; padding: 10px 24px 40px 24px; box-sizing: border-box; border-radius: 32px 32px 0 0; background: #151417; border-top: 1px solid rgba(237, 230, 218, 0.1); display: flex; flex-direction: column">
+    <span aria-hidden="true" style="align-self: center; width: 40px; height: 5px; border-radius: 3px; background: rgba(237, 230, 218, 0.2)"></span>
+
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px">
+      <h1 style="margin: 0; font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-weight: 400; font-size: 26px">Start focus</h1>
+      <a href="E03-Today.dc.html" aria-label="Close" style="width: 44px; height: 44px; border-radius: 22px; background: rgba(237, 230, 218, 0.06); display: flex; align-items: center; justify-content: center; color: #EDE6DA">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+      </a>
+    </div>
+
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 30px">
+      <button type="button" aria-label="Five minutes less" onClick="{{less}}" style="width: 48px; height: 48px; border-radius: 24px; border: 1px solid rgba(237, 230, 218, 0.16); background: transparent; color: #EDE6DA; display: flex; align-items: center; justify-content: center">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12"></path></svg>
+      </button>
+      <span style="display: flex; align-items: baseline; gap: 8px">
+        <span style="font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 68px; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -1.5px">{{minutes}}</span>
+        <span style="font-size: 15px; color: #B7AE9F">min</span>
+      </span>
+      <button type="button" aria-label="Five minutes more" onClick="{{more}}" style="width: 48px; height: 48px; border-radius: 24px; border: 1px solid rgba(237, 230, 218, 0.16); background: transparent; color: #EDE6DA; display: flex; align-items: center; justify-content: center">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12M12 6v12"></path></svg>
+      </button>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 16px">
+      <sc-for list="{{durations}}" as="d" hint-placeholder-count="4">
+        <button type="button" aria-pressed="{{d.pressed}}" onClick="{{d.pick}}" style="{{d.style}}">{{d.label}}</button>
+      </sc-for>
+    </div>
+
+    <a href="E05-AppPicker.dc.html" style="display: flex; align-items: center; gap: 14px; margin-top: 28px; min-height: 64px; padding: 0 16px; border-radius: 20px; background: rgba(237, 230, 218, 0.04); border: 1px solid rgba(237, 230, 218, 0.08); text-decoration: none; color: #EDE6DA">
+      <span style="display: flex; flex-direction: column; gap: 3px; flex: 1 1 auto">
+        <span style="font-size: 15px; font-weight: 500">Block 7 apps · 2 sites</span>
+        <span style="font-size: 13px; color: #B7AE9F">Instagram, TikTok, YouTube and more</span>
+      </span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B7AE9F" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+    </a>
+
+    <span style="margin-top: 30px; font-size: 11px; font-weight: 500; letter-spacing: 2px; color: #B7AE9F">BREAK LEVEL</span>
+    <div role="radiogroup" aria-label="Break level" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px">
+      <sc-for list="{{levels}}" as="l" hint-placeholder-count="3">
+        <button type="button" role="radio" aria-checked="{{l.pressed}}" onClick="{{l.pick}}" style="{{l.style}}">
+          <span style="font-size: 15px; font-weight: 500">{{l.label}}</span>
+          <span style="font-size: 12px; color: #B7AE9F">{{l.hint}}</span>
+        </button>
+      </sc-for>
+    </div>
+    <p style="margin: 12px 0 0 0; min-height: 38px; font-size: 13px; line-height: 1.45; color: #B7AE9F; text-wrap: pretty">{{note}}</p>
+
+    <a href="E06-Session.dc.html" style="margin-top: auto; height: 56px; border-radius: 28px; background: linear-gradient(180deg, #F6B860 0%, #EF9F27 100%); color: #3A2003; text-decoration: none; font-size: 16px; font-weight: 600; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 30px rgba(239, 159, 39, 0.22)">Begin {{minutes}} minutes</a>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { minutes: 45, level: 'harder' };
+  }
+  renderVals() {
+    const m = this.state.minutes;
+    const durations = [25, 45, 60, 90].map((v) => {
+      const on = m === v;
+      return {
+        label: String(v),
+        pressed: on ? 'true' : 'false',
+        style: 'height: 44px; border-radius: 22px; font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; ' +
+          (on ? 'background: #EDE6DA; color: #141316; border: 1px solid #EDE6DA;' : 'background: transparent; color: #EDE6DA; border: 1px solid rgba(237,230,218,0.16);'),
+        pick: () => this.setState({ minutes: v })
+      };
+    });
+    const defs = [
+      ['easy', 'Easy', 'Stop any time', 'You can end this session whenever you like.'],
+      ['harder', 'Harder', 'Breaks take friction', 'No early stop. Each break waits a few minutes first.'],
+      ['hardcore', 'Hardcore', 'No way out', 'Can’t be stopped, and Flint can’t be removed, until it ends. Your weekly Emergency Pass is the only exit.']
+    ];
+    const levels = defs.map(([id, label, hint]) => {
+      const on = this.state.level === id;
+      return {
+        label, hint,
+        pressed: on ? 'true' : 'false',
+        style: 'display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-height: 72px; padding: 12px; border-radius: 18px; text-align: left; color: #EDE6DA; ' +
+          (on ? 'background: rgba(239,159,39,0.12); border: 1px solid rgba(239,159,39,0.7);' : 'background: rgba(237,230,218,0.03); border: 1px solid rgba(237,230,218,0.1);'),
+        pick: () => this.setState({ level: id })
+      };
+    });
+    const note = defs.find((d) => d[0] === this.state.level)[3];
+    return {
+      minutes: m, durations, levels, note,
+      less: () => this.setState({ minutes: Math.max(5, m - 5) }),
+      more: () => this.setState({ minutes: Math.min(240, m + 5) })
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -229,7 +229,7 @@ private fun UsageAccessPrompt(onOpenSettings: () -> Unit) {
             .verticalScroll(rememberScrollState())
             .padding(FlintSpacing.gutter),
     ) {
-        FlintScreenHeader(title = "See where your time goes", eyebrow = "Screen time")
+        FlintScreenHeader(title = "Insights", eyebrow = "See where your time goes")
         Spacer(Modifier.height(FlintSpacing.md))
         FlintCard {
             Text(
@@ -297,8 +297,8 @@ private fun StatsReport(report: UsageReport) {
             .padding(FlintSpacing.gutter),
     ) {
         FlintScreenHeader(
-            title = "Screen time",
-            eyebrow = "Last 7 days",
+            title = "Insights",
+            eyebrow = "Screen time · last 7 days",
             modifier = Modifier.cardEntrance(revealed, 0),
         )
         Spacer(Modifier.height(FlintSpacing.md))

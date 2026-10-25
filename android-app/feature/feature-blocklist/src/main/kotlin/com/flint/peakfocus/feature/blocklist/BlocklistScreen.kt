@@ -65,6 +65,10 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.flint.peakfocus.core.common.ui.FlintNavPanel
+import com.flint.peakfocus.core.common.ui.FlintGlyphs
+import com.flint.peakfocus.core.common.ui.FlintCircleButton
+import com.flint.peakfocus.core.common.ui.flintSwitchColors
 import com.flint.peakfocus.core.common.theme.FlintMotion
 import com.flint.peakfocus.core.common.theme.FlintNumerals
 import com.flint.peakfocus.core.common.theme.FlintSpacing
@@ -143,8 +147,17 @@ private const val EMPTY_TEMPLATES_INDEX = 3
  * (time + open limits). All reads/writes flow through core-datastore's observable stores via
  * [BlocklistViewModel]; the system back button collapses editors back to the overview.
  */
+/**
+ * The Rules tab. [contentPadding] clears the status bar and the floating tab bar;
+ * [quickBlockSummary]/[onQuickBlock] surface the always-on quick block list kept by the app.
+ */
 @Composable
-fun BlocklistScreen(modifier: Modifier = Modifier) {
+fun BlocklistScreen(
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(),
+    quickBlockSummary: String? = null,
+    onQuickBlock: (() -> Unit)? = null,
+) {
     val context = LocalContext.current
     val blocklistViewModel: BlocklistViewModel =
         viewModel(factory = remember(context) { BlocklistViewModel.factory(context) })
@@ -218,6 +231,9 @@ fun BlocklistScreen(modifier: Modifier = Modifier) {
                         destination = BlocklistDestination.EditSleep(visit = ++editorVisits)
                     },
                     onToggleSleep = blocklistViewModel::setSleepEnabled,
+                    contentPadding = contentPadding,
+                    quickBlockSummary = quickBlockSummary,
+                    onQuickBlock = onQuickBlock,
                 )
 
                 is BlocklistDestination.EditRule -> {
@@ -309,6 +325,9 @@ private fun BlocklistOverview(
     onEditSleep: () -> Unit,
     onToggleSleep: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(),
+    quickBlockSummary: String? = null,
+    onQuickBlock: (() -> Unit)? = null,
 ) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -327,14 +346,31 @@ private fun BlocklistOverview(
     LazyColumn(
         state = listState,
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(vertical = FlintSpacing.gutter),
+        contentPadding = PaddingValues(
+            top = contentPadding.calculateTopPadding() + FlintSpacing.md,
+            bottom = contentPadding.calculateBottomPadding() + FlintSpacing.gutter,
+        ),
     ) {
         item(key = "header") {
-            FlintScreenHeader(
-                title = "Blocking",
-                eyebrow = "Rules, schedules & limits",
-                modifier = Modifier.padding(horizontal = FlintSpacing.gutter),
-            )
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = FlintSpacing.gutter),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Rules", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+                FlintCircleButton(onClick = onNewRule, contentDescription = "New block rule", size = 44.dp) {
+                    Icon(FlintGlyphs.plus, contentDescription = null, modifier = Modifier.size(18.dp))
+                }
+            }
+        }
+        if (onQuickBlock != null) {
+            item(key = "quick-block") {
+                FlintNavPanel(
+                    title = "Quick block list",
+                    subtitle = quickBlockSummary,
+                    onClick = onQuickBlock,
+                    modifier = Modifier.padding(horizontal = FlintSpacing.gutter).padding(top = FlintSpacing.lg),
+                )
+            }
         }
         item(key = "rules-label") {
             SectionLabelItem("Block rules")
@@ -664,6 +700,7 @@ private fun RuleCard(
             }
             Spacer(Modifier.width(FlintSpacing.cardGap))
             Switch(
+                colors = flintSwitchColors(),
                 checked = rule.enabled,
                 onCheckedChange = onToggle,
                 // TalkBack otherwise announces a bare "On/Off" with no owner.
@@ -733,6 +770,7 @@ private fun SleepCard(config: SleepConfig?, onClick: () -> Unit, onToggle: (Bool
                 )
             } else {
                 Switch(
+                    colors = flintSwitchColors(),
                     checked = config.enabled,
                     onCheckedChange = onToggle,
                     modifier = Modifier.semantics { contentDescription = "Sleep mode rule" },

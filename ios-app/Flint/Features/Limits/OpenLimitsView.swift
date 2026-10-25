@@ -44,6 +44,7 @@ struct OpenLimitsView: View {
                 }
             }
         }
+        .flintForm()
         .navigationTitle("Open Limits")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -136,6 +137,7 @@ struct OpenLimitEditor: View {
                     .pickerStyle(.segmented)
                 }
             }
+            .flintForm()
             .navigationTitle(existingID == nil ? "New open limit" : "Edit open limit")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

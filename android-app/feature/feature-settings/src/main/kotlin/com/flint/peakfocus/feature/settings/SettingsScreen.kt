@@ -137,7 +137,7 @@ internal fun SettingsContent(
                 .verticalScroll(rememberScrollState())
                 .padding(FlintSpacing.gutter),
         ) {
-            FlintScreenHeader(title = "Settings", eyebrow = "Keep blocking alive")
+            FlintScreenHeader(title = "You", eyebrow = "Keep blocking alive")
             Spacer(Modifier.height(FlintSpacing.md))
             if (onAccount != null) {
                 OutlinedButton(onClick = onAccount, modifier = Modifier.fillMaxWidth()) {
