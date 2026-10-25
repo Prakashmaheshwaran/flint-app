@@ -6,7 +6,7 @@ import FlintCore
 /// way to surface per-app/website usage. The host explains known availability constraints;
 /// only the report extension can decide whether returned usage is empty.
 struct StatsView: View {
-    @StateObject private var auth = AuthorizationModel()
+    @ObservedObject var auth: AuthorizationModel
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var range: InsightsRange = .week
