@@ -1,0 +1,228 @@
+{
+  "F6SourceRevision": "3328601af3ca440cfa67ef725d0ba0281f3c1c9e",
+  "uiTestedSourceRevision": "fd135b4bf6168ca500285725dccdfc8b1bc59d27",
+  "ownInitialGateSourceRevision": "fd135b4bf6168ca500285725dccdfc8b1bc59d27",
+  "reportGate": {
+    "kind": "own-report-gate",
+    "F6SourceRevision": "3328601af3ca440cfa67ef725d0ba0281f3c1c9e",
+    "resultBundle": "/tmp/flint-fixes-20261024/F6/DerivedData/Logs/Test/Test-Flint-2026.10.25_01-57-51--0400.xcresult",
+    "logName": "verify-report-ios.log",
+    "visualReview": "passed",
+    "visualReviewNotes": "Fresh own-branch fixtures reviewed: the maximum-text activity image shows the complete SCREEN TIME THIS WEEK heading and Your highest day was Tuesday, 1h 0m. sentence. No-data and zero-usage copy is fully readable at natural height; standard rendering is unchanged.",
+    "sourceSHA256": {
+      "ios-app/Extensions/DeviceActivityReportExtension/TotalActivityView.swift": "a7a8cc3b87635e57db25bcff963fa15e96303ad575b9a147fdb22d4b159d6d6b",
+      "ios-app/Extensions/DeviceActivityReportExtension/ActivitySummary.swift": "e012161904d79e8aea092b7d7d46386c560735240e2e43f035629549044fe29a",
+      "ios-app/Extensions/DeviceActivityReportExtension/TotalActivityReport.swift": "e84bda1c17e9daa531401c765ffb2b1b7433dbd818438f60b733732ab039c468",
+      "ios-app/Tests/FlintInsightsTests.swift": "9b109b597315a2846364f84c8bb34c195ca7e26b0fb1f4dfd8d77f7c776923d7",
+      "ios-app/Flint/Features/Stats/InsightsState.swift": "66fcc2b306ad8fe57e43d1dd243f4d0b0009b55bc96b7d9a2d086ab37ab007f3",
+      "ios-app/Packages/FlintCore/Sources/FlintCore/FlintBrand.swift": "5e7552088b22989bb867eba0b1c4de799866f6818690c4930492700e67fda877"
+    },
+    "baseline": {
+      "initialPINPresent": false,
+      "finalPINPresent": false
+    },
+    "restoredContentSize": "large"
+  },
+  "iOSSourceDeltaAfterUI": [
+    "ios-app/Extensions/DeviceActivityReportExtension/TotalActivityView.swift"
+  ],
+  "toolchain": "Xcode 27.0\nBuild version 27A266a",
+  "uiAppExecutableSHA256": "f8ad2a2f0a426e443a0f12459fa004a8d6852ccf5580ce953bd85c19aa773475",
+  "baseline": {
+    "initialPINPresent": false,
+    "finalPINPresent": false
+  },
+  "fontRestoration": "F6 native UI runner restored Large on exit. Later owners may change the shared Simulator setting.",
+  "resultBundles": {
+    "own-unit": "/tmp/flint-fixes-20261024/F6/DerivedData/Logs/Test/Test-Flint-2026.10.25_00-19-48--0400.xcresult",
+    "report-unit": "/tmp/flint-fixes-20261024/F6/DerivedData/Logs/Test/Test-Flint-2026.10.25_01-57-51--0400.xcresult",
+    "ui-standard": "/tmp/flint-fixes-20261024/F6/ui-standard.xcresult",
+    "ui-accessibility": "/tmp/flint-fixes-20261024/F6/ui-large.xcresult"
+  },
+  "results": {
+    "own-unit": {
+      "devicesAndConfigurations": [
+        {
+          "device": {
+            "architecture": "arm64",
+            "deviceId": "4A9BF370-052B-4A38-B05C-0D5EBD91ADD4",
+            "deviceName": "iPhone 18 Pro",
+            "modelName": "iPhone 18 Pro",
+            "osBuildNumber": "24A434",
+            "osVersion": "27.0",
+            "platform": "iOS Simulator"
+          },
+          "expectedFailures": 0,
+          "failedTests": 0,
+          "passedTests": 70,
+          "skippedTests": 0,
+          "testPlanConfiguration": {
+            "configurationId": "1",
+            "configurationName": "Test Scheme Action"
+          }
+        }
+      ],
+      "environmentDescription": "Flint \u00b7 Built with macOS 27.0.1",
+      "expectedFailures": 0,
+      "failedTests": 0,
+      "finishTime": 1792902002.619,
+      "passedTests": 70,
+      "result": "Passed",
+      "runtimeWarnings": [],
+      "skippedTests": 0,
+      "startTime": 1792901988.287,
+      "statistics": [],
+      "testFailures": [],
+      "title": "Test - Flint",
+      "topInsights": [
+        {
+          "category": "Longest Test Runs",
+          "impact": "93% of duration",
+          "text": "1 longest test run with outlier durations exceeding 1.76s (three standard deviations)"
+        }
+      ],
+      "totalTestCount": 70
+    },
+    "report-unit": {
+      "devicesAndConfigurations": [
+        {
+          "device": {
+            "architecture": "arm64",
+            "deviceId": "4A9BF370-052B-4A38-B05C-0D5EBD91ADD4",
+            "deviceName": "iPhone 18 Pro",
+            "modelName": "iPhone 18 Pro",
+            "osBuildNumber": "24A434",
+            "osVersion": "27.0",
+            "platform": "iOS Simulator"
+          },
+          "expectedFailures": 0,
+          "failedTests": 0,
+          "passedTests": 70,
+          "skippedTests": 0,
+          "testPlanConfiguration": {
+            "configurationId": "1",
+            "configurationName": "Test Scheme Action"
+          }
+        }
+      ],
+      "environmentDescription": "Flint \u00b7 Built with macOS 27.0.1",
+      "expectedFailures": 0,
+      "failedTests": 0,
+      "finishTime": 1792907882.741,
+      "passedTests": 70,
+      "result": "Passed",
+      "runtimeWarnings": [],
+      "skippedTests": 0,
+      "startTime": 1792907871.404,
+      "statistics": [],
+      "testFailures": [],
+      "title": "Test - Flint",
+      "topInsights": [
+        {
+          "category": "Longest Test Runs",
+          "impact": "89% of duration",
+          "text": "1 longest test run with outlier durations exceeding 0.29s (three standard deviations)"
+        }
+      ],
+      "totalTestCount": 70
+    },
+    "ui-standard": {
+      "devicesAndConfigurations": [
+        {
+          "device": {
+            "architecture": "arm64",
+            "deviceId": "4A9BF370-052B-4A38-B05C-0D5EBD91ADD4",
+            "deviceName": "iPhone 18 Pro",
+            "modelName": "iPhone 18 Pro",
+            "osBuildNumber": "24A434",
+            "osVersion": "27.0",
+            "platform": "iOS Simulator"
+          },
+          "expectedFailures": 0,
+          "failedTests": 0,
+          "passedTests": 3,
+          "skippedTests": 0,
+          "testPlanConfiguration": {
+            "configurationId": "1",
+            "configurationName": "Test Scheme Action"
+          }
+        }
+      ],
+      "environmentDescription": "FlintF6UI \u00b7 Built with macOS 27.0.1",
+      "expectedFailures": 0,
+      "failedTests": 0,
+      "finishTime": 1792902098.257,
+      "passedTests": 3,
+      "result": "Passed",
+      "runtimeWarnings": [],
+      "skippedTests": 0,
+      "startTime": 1792902016.819,
+      "statistics": [],
+      "testFailures": [],
+      "title": "Test - FlintF6UI",
+      "topInsights": [],
+      "totalTestCount": 3
+    },
+    "ui-accessibility": {
+      "devicesAndConfigurations": [
+        {
+          "device": {
+            "architecture": "arm64",
+            "deviceId": "4A9BF370-052B-4A38-B05C-0D5EBD91ADD4",
+            "deviceName": "iPhone 18 Pro",
+            "modelName": "iPhone 18 Pro",
+            "osBuildNumber": "24A434",
+            "osVersion": "27.0",
+            "platform": "iOS Simulator"
+          },
+          "expectedFailures": 0,
+          "failedTests": 0,
+          "passedTests": 3,
+          "skippedTests": 0,
+          "testPlanConfiguration": {
+            "configurationId": "1",
+            "configurationName": "Test Scheme Action"
+          }
+        }
+      ],
+      "environmentDescription": "FlintF6UI \u00b7 Built with macOS 27.0.1",
+      "expectedFailures": 0,
+      "failedTests": 0,
+      "finishTime": 1792902158.773,
+      "passedTests": 3,
+      "result": "Passed",
+      "runtimeWarnings": [],
+      "skippedTests": 0,
+      "startTime": 1792902102.907,
+      "statistics": [],
+      "testFailures": [],
+      "title": "Test - FlintF6UI",
+      "topInsights": [],
+      "totalTestCount": 3
+    }
+  },
+  "screenshots": {
+    "accessibility-01-unauthorized-week.png": "15c9e8901ff7834d4bb13efc76b5278b6e293237c3cd2a2e7d5232430a713dd3",
+    "accessibility-02-unauthorized-today.png": "38cacad8bd6a3d22b7acd9fb35d626ceaa98586b32a16e3a90fbe7a81d0468f0",
+    "accessibility-03-check-access-feedback.png": "0068885d19f33b4ef3f37c10b6e0ec8d4d7d68650f6909ec5bc7fcea2c3ebc08",
+    "accessibility-04-resume-refresh.png": "88719e40192d7ee5bdd519f79eada02f3330cbb33c6655d68afe4704941dd19a",
+    "accessibility-05-authorization-error.png": "1bd854a4e9ce025ea6918f42e9f9a6c98ce26e58006aa74fc37120880455682f",
+    "accessibility-06-retry-error.png": "f554891bc79047e8a2cb80706a5fcf5b559ad255992dd515b92fdfa8dc37ef0a",
+    "accessibility-07-simulator-week-ui-preview.png": "ca71ce0ffb642385f12a430ce2f1fb9ed06d87f059694109a857adf65a17d960",
+    "accessibility-08-simulator-today-ui-preview.png": "2ba8810fed2e1c5563b2e3d71b207bcf014b03aa51009b743cace36d61b876a8",
+    "render-insights-report-activity-fixture-accessibility5.png": "da0a60dca4d1a30423987983e13c9d4dd64d30c377733d70642b3b8c29d8e2a7",
+    "render-insights-report-activity-fixture-large.png": "6c14a4a77db7de0e4c86be400b4ab778ccf27355852ee90f49c8292b9c3db42f",
+    "render-insights-report-no-data-accessibility5.png": "744bcd3a18da063a6676f1861d49e7574aa52c18b62d8e59235a08b5302bda34",
+    "render-insights-report-no-data-large.png": "f38881dd0d9663cfeda95c92b188edc5961bed5801f9b3a61214bb6f4d18dea4",
+    "render-insights-report-zero-usage-accessibility5.png": "7e35b12749502fa40d7d71fa2b5720aa05c0b48bde2bc31d90e262606c45f8b1",
+    "render-insights-report-zero-usage-large.png": "66c5ec82bdadb7a413437d2b44907dda4152331f47ac7b6d58075fdba222da00",
+    "standard-01-unauthorized-week.png": "044993aac781ac08b15d92b26953f06da737df3dc12585346782934840e26f04",
+    "standard-02-unauthorized-today.png": "91d8bf828a013f5d8b7f1ac63e1308a0fdcc03194558a4f0699e4cbd60ea4ba4",
+    "standard-03-check-access-feedback.png": "8647cf9ceab33b206c93c3f159c98ffbe6cb8acf49c588f844e216a7504613af",
+    "standard-04-resume-refresh.png": "c7b2d099ad44b307d6d87d4ceb01597022b1e78889b5c62bb62bb477c0130a4c",
+    "standard-05-authorization-error.png": "fe59b1dfa8971270071c24aca1108cc7f2678f0f3c6fca31bb2302e17a7533b9",
+    "standard-06-retry-error.png": "fe59b1dfa8971270071c24aca1108cc7f2678f0f3c6fca31bb2302e17a7533b9",
+    "standard-07-simulator-week-ui-preview.png": "f0ace1b029fb3b93f2d6159cc0c9f3d3ce3ea4394563c7f6b7d0c588648fb96d",
+    "standard-08-simulator-today-ui-preview.png": "146297b814bb3aebeb37a182c7c4bcfb91602b96a9220b68d5edc9df99a805fa"
+  }
+}
