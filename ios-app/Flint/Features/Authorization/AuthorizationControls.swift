@@ -24,15 +24,11 @@ struct AuthorizationControls: View {
                 } label: { actionLabel("Open Settings") }
                 .buttonStyle(EmberButtonStyle())
                 .accessibilityIdentifier("\(identifierPrefix).action")
-                Button("Check access again") {
+                Button {
                     auth.refresh()
                     if auth.status == .approved { onApproved() }
-                }
-                .font(FlintFont.text(14, weight: .medium))
-                .foregroundStyle(FlintBrand.bone)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(minHeight: 44)
+                } label: { secondaryLabel("Check access again") }
+                .buttonStyle(.plain)
                 .accessibilityIdentifier("\(identifierPrefix).check")
                 if settingsUnavailable {
                     feedback("Settings couldn’t be opened. Open the Settings app manually, then check Flint’s Screen Time access.")
@@ -51,11 +47,8 @@ struct AuthorizationControls: View {
                 .disabled(auth.isRequesting)
                 .accessibilityIdentifier("\(identifierPrefix).action")
                 if auth.isRequesting {
-                    Button("Stop waiting") { auth.cancelRequest() }
-                        .font(FlintFont.text(14, weight: .medium))
-                        .foregroundStyle(FlintBrand.bone)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(minHeight: 44)
+                    Button { auth.cancelRequest() } label: { secondaryLabel("Stop waiting") }
+                        .buttonStyle(.plain)
                         .accessibilityIdentifier("\(identifierPrefix).cancel")
                 }
             }
@@ -68,6 +61,17 @@ struct AuthorizationControls: View {
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
+    }
+
+    private func secondaryLabel(_ title: String) -> some View {
+        Text(title)
+            .font(FlintFont.text(14, weight: .medium))
+            .foregroundStyle(FlintBrand.bone)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            // Size the label itself so both the hit region and accessibility frame are 44pt+.
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .contentShape(Rectangle())
     }
 
     private func feedback(_ message: String) -> some View {
