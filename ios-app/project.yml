@@ -121,21 +121,20 @@ targets:
     dependencies:
       - package: FlintCore
 
-  # ── Unit tests (FlintCore logic) ──
+  # ── Unit tests (FlintCore logic and the production app module) ──
   FlintTests:
     type: bundle.unit-test
     platform: iOS
     sources:
       - Tests
       # Compile the report's actual presentation in tests without launching Apple's service.
-      - Flint/Features/Stats/InsightsState.swift
       - Extensions/DeviceActivityReportExtension/ActivitySummary.swift
       - Extensions/DeviceActivityReportExtension/TotalActivityView.swift
-      # Exercise authorization request/retry state without a host app or real permissions.
-      - Flint/Features/Authorization/AuthorizationModel.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.tests
         GENERATE_INFOPLIST_FILE: "YES"
     dependencies:
       - package: FlintCore
+      # Host app dependency lets @testable import Flint exercise the shipped model.
+      - target: Flint

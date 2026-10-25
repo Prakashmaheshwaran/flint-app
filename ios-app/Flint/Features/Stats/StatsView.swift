@@ -113,52 +113,30 @@ struct StatsView: View {
                     .accessibilityAddTraits(.isHeader)
                 Text(stateDescription).flintSecondary(16)
 
-                if availability == .needsAuthorization {
+                if availability == .needsAuthorization || availability == .needsSettings {
                     if InsightsAvailability.isSimulator {
                         Text("Simulator can’t provide Screen Time reports. View Insights on a physical iPhone or iPad.")
                             .flintSecondary(15)
                     }
-                    if let error = auth.lastError {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Screen Time access wasn’t enabled. You can try again or check access after changing Screen Time settings.")
-                            Text(error)
-                        }
-                        .font(FlintFont.text(15))
-                        .foregroundStyle(FlintBrand.danger)
-                        .accessibilityElement(children: .combine)
-                        .accessibilityIdentifier("insights.authorizationError")
-                    }
-                    Button {
-                        accessFeedback = nil
-                        Task { @MainActor in
-                            await auth.requestAuthorization()
-                        }
-                    } label: {
-                        Text(auth.isRequesting ? "Requesting access…" : auth.lastError == nil ? "Allow Screen Time" : "Try again")
-                            .padding(.vertical, 10)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .buttonStyle(EmberButtonStyle())
-                    .disabled(auth.isRequesting)
-                    .accessibilityIdentifier("insights.authorize")
+                    AuthorizationControls(auth: auth, identifierPrefix: "insights.authorization", onApproved: refresh)
                 }
 
-                if availability != .simulator {
+                if availability == .unavailable {
                     Button("Check access again") {
                         refresh()
-                        accessFeedback = availability == .needsAuthorization
-                            ? "Screen Time access is still off. Allow access to see Insights."
-                            : "Screen Time access could not be confirmed. Try again after checking Settings."
+                        if availability == .unavailable {
+                            accessFeedback = "Screen Time access could not be confirmed. Try again after checking Settings."
+                        }
                     }
                     .font(FlintFont.text(16, weight: .medium))
                     .foregroundStyle(FlintBrand.bone)
                     .frame(minHeight: 44)
                     .disabled(auth.isRequesting)
                     .accessibilityIdentifier("insights.checkAccess")
-                }
-                if let accessFeedback {
-                    Text(accessFeedback).flintSecondary(15)
-                        .accessibilityIdentifier("insights.accessFeedback")
+                    if let accessFeedback {
+                        Text(accessFeedback).flintSecondary(15)
+                            .accessibilityIdentifier("insights.accessFeedback")
+                    }
                 }
             }
             .fixedSize(horizontal: false, vertical: true)
@@ -167,7 +145,7 @@ struct StatsView: View {
 
     private var stateTitle: String {
         switch availability {
-        case .needsAuthorization: return "Screen Time access needed"
+        case .needsAuthorization, .needsSettings: return "Screen Time access needed"
         case .simulator: return "Insights needs a device"
         case .unavailable: return "Insights is unavailable"
         case .report: return ""
@@ -178,6 +156,8 @@ struct StatsView: View {
         switch availability {
         case .needsAuthorization:
             return "Allow Screen Time to see your activity for \(range.description). Your usage stays on your device."
+        case .needsSettings:
+            return "Your activity for \(range.description) is unavailable while Screen Time access is off. Your usage stays on your device."
         case .simulator:
             return "Simulator can’t provide Screen Time reports for \(range.description). Run Flint on a physical iPhone or iPad and allow Screen Time to see your activity."
         case .unavailable:

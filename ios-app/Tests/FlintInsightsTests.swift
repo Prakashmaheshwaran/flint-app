@@ -2,17 +2,36 @@ import XCTest
 import SwiftUI
 import FamilyControls
 import FlintCore
+@testable import Flint
 
 final class FlintInsightsTests: XCTestCase {
     func testAuthorizationChangesAndSimulatorNeverImplyAnEmptyReport() {
-        for status in [AuthorizationStatus.notDetermined, .denied] {
-            XCTAssertEqual(InsightsAvailability.resolve(status, isSimulator: false), .needsAuthorization)
-            XCTAssertEqual(InsightsAvailability.resolve(status, isSimulator: true), .needsAuthorization)
+        for isSimulator in [false, true] {
+            XCTAssertEqual(InsightsAvailability.resolve(.notDetermined, isSimulator: isSimulator), .needsAuthorization)
+            XCTAssertEqual(InsightsAvailability.resolve(.denied, isSimulator: isSimulator), .needsSettings)
         }
         XCTAssertEqual(InsightsAvailability.resolve(.approved, isSimulator: true), .simulator)
         XCTAssertEqual(InsightsAvailability.resolve(.approved, isSimulator: false), .report)
-        // A subsequent refresh after revocation must remove the report again.
-        XCTAssertEqual(InsightsAvailability.resolve(.denied, isSimulator: false), .needsAuthorization)
+    }
+
+    @MainActor
+    func testSharedAuthorizationRefreshRemovesRevokedReportAndRestoresApprovedAvailability() {
+        var status = AuthorizationStatus.approved
+        let auth = AuthorizationModel(readStatus: { status }, request: {})
+
+        auth.refresh()
+        XCTAssertEqual(InsightsAvailability.resolve(auth.status, isSimulator: false), .report)
+        XCTAssertEqual(InsightsAvailability.resolve(auth.status, isSimulator: true), .simulator)
+
+        status = .denied
+        auth.refresh()
+        XCTAssertEqual(InsightsAvailability.resolve(auth.status, isSimulator: false), .needsSettings)
+        XCTAssertEqual(InsightsAvailability.resolve(auth.status, isSimulator: true), .needsSettings)
+
+        status = .approved
+        auth.refresh()
+        XCTAssertEqual(InsightsAvailability.resolve(auth.status, isSimulator: false), .report)
+        XCTAssertEqual(InsightsAvailability.resolve(auth.status, isSimulator: true), .simulator)
     }
 
     func testRangesUseCalendarDaysIncludingDaylightSavingTime() throws {
