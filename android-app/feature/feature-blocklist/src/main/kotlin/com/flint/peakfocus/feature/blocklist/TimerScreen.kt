@@ -273,75 +273,80 @@ private fun TodayScene(
 ) {
     Box(modifier.fillMaxSize()) {
         EmberLandscape()
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(contentPadding)
-                .padding(horizontal = FlintSpacing.gutter),
-        ) {
-            Row(Modifier.fillMaxWidth().padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                FlintEyebrow(remember { todayLabel() }, Modifier.weight(1f))
-                FlintMark(Modifier.size(20.dp))
-            }
-            Text(
-                (headline ?: "Make time for what matters").let { if (it.endsWith(".")) it else "$it." },
-                style = MaterialTheme.typography.headlineMedium.copy(fontSize = MaterialTheme.typography.headlineMedium.fontSize * (31f / 30f)),
-                modifier = Modifier.padding(top = 26.dp),
-            )
-            if (subline != null) {
-                Text(
-                    subline,
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = MaterialTheme.typography.bodySmall.fontSize * (14f / 13f)),
-                    color = FlintPalette.Mist,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            }
+        BoxWithConstraints(Modifier.fillMaxSize().padding(contentPadding)) {
             Column(
-                Modifier.fillMaxWidth().padding(top = 64.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .heightIn(min = maxHeight)
+                    .padding(horizontal = FlintSpacing.gutter),
+                verticalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text(timerDurationLabel(state.draft.durationMinutes), style = MaterialTheme.typography.displaySmall.merge(FlintNumerals))
-                FlintEyebrow("Your next session")
-            }
-            Spacer(Modifier.weight(1f))
+                Column {
+                    Row(Modifier.fillMaxWidth().padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                        FlintEyebrow(remember { todayLabel() }, Modifier.weight(1f))
+                        FlintMark(Modifier.size(20.dp))
+                    }
+                    Text(
+                        (headline ?: "Make time for what matters").let { if (it.endsWith(".")) it else "$it." },
+                        style = MaterialTheme.typography.headlineMedium.copy(fontSize = MaterialTheme.typography.headlineMedium.fontSize * (31f / 30f)),
+                        modifier = Modifier.padding(top = 26.dp),
+                    )
+                    if (subline != null) {
+                        Text(
+                            subline,
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = MaterialTheme.typography.bodySmall.fontSize * (14f / 13f)),
+                            color = FlintPalette.Mist,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                    Column(
+                        Modifier.fillMaxWidth().padding(top = 64.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(timerDurationLabel(state.draft.durationMinutes), style = MaterialTheme.typography.displaySmall.merge(FlintNumerals))
+                        FlintEyebrow("Your next session")
+                    }
+                }
 
-            if (state.busy || (!state.rulesLoaded && state.rulesError == null)) {
-                LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = 12.dp), color = FlintPalette.Ember, trackColor = FlintPalette.BoneFill)
-            }
-            val notice = state.rulesError ?: state.error ?: state.message
-            if (notice != null) {
-                Row(
-                    Modifier.fillMaxWidth().padding(bottom = 12.dp).semantics { liveRegion = LiveRegionMode.Polite },
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(notice, style = MaterialTheme.typography.bodySmall,
-                        color = if (state.message != null && state.error == null && state.rulesError == null) FlintPalette.Mist else FlintPalette.Danger,
-                        modifier = Modifier.weight(1f))
-                    TextButton(onClick = if (state.rulesError != null) onRetry else onDismiss) {
-                        Text(if (state.rulesError != null) "Refresh" else "Dismiss", color = FlintPalette.Bone)
+                Column(Modifier.padding(top = 32.dp)) {
+                    if (state.busy || (!state.rulesLoaded && state.rulesError == null)) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = 12.dp), color = FlintPalette.Ember, trackColor = FlintPalette.BoneFill)
                     }
+                    val notice = state.rulesError ?: state.error ?: state.message
+                    if (notice != null) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(bottom = 12.dp).semantics { liveRegion = LiveRegionMode.Polite },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(notice, style = MaterialTheme.typography.bodySmall,
+                                color = if (state.message != null && state.error == null && state.rulesError == null) FlintPalette.Mist else FlintPalette.Danger,
+                                modifier = Modifier.weight(1f))
+                            TextButton(onClick = if (state.rulesError != null) onRetry else onDismiss) {
+                                Text(if (state.rulesError != null) "Refresh" else "Dismiss", color = FlintPalette.Bone)
+                            }
+                        }
+                    }
+                    if (setupLabel != null) {
+                        QuietButton(setupLabel, onSetup, outlined = true, color = FlintPalette.Ember, modifier = Modifier.padding(bottom = 12.dp))
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        todayPresets.forEach { preset ->
+                            FlintChip(onClick = { onPreset(preset.id) }, enabled = state.canEdit) {
+                                FlintChipText(preset.name)
+                                FlintChipText(timerDurationLabel(preset.minutes), color = FlintPalette.Mist)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    EmberButton("Start focus", onStart, enabled = state.rulesLoaded && state.rulesError == null)
+                    Spacer(Modifier.height(12.dp))
                 }
             }
-            if (setupLabel != null) {
-                QuietButton(setupLabel, onSetup, outlined = true, color = FlintPalette.Ember, modifier = Modifier.padding(bottom = 12.dp))
-            }
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                todayPresets.forEach { preset ->
-                    FlintChip(onClick = { onPreset(preset.id) }, enabled = state.canEdit) {
-                        FlintChipText(preset.name)
-                        FlintChipText(timerDurationLabel(preset.minutes), color = FlintPalette.Mist)
-                    }
-                }
-            }
-            Spacer(Modifier.height(14.dp))
-            EmberButton("Start focus", onStart, enabled = state.rulesLoaded && state.rulesError == null)
-            Spacer(Modifier.height(12.dp))
         }
     }
 }
