@@ -148,15 +148,12 @@ fun TimerScreen(
     when {
         pickingApps -> {
             BackHandler { pickingApps = false }
-            AppPickerScreen(
+            TimerAppPicker(
                 appsState = state.appsState,
-                title = "What rests",
-                eyebrow = "${state.draft.apps.size} selected",
-                multiSelect = true,
                 initiallySelected = state.draft.apps.map { it.packageName }.toSet(),
                 onConfirm = { viewModel.selectApps(it); pickingApps = false },
                 onCancel = { pickingApps = false },
-                modifier = modifier.statusBarsPadding(),
+                modifier = modifier,
             )
         }
         running != null -> SessionScene(
@@ -249,6 +246,30 @@ fun TimerScreen(
             confirmButton = { TextButton(onClick = { viewingId = null }) { Text("Close") } },
         )
     }
+}
+
+/**
+ * The timer's "What rests" picker. [initiallySelected] is the confirmed draft; the screen's
+ * header, footer and Add label all derive from the pending selection, so this wrapper must not
+ * supply a selection count as [AppPickerScreen.eyebrow].
+ */
+@Composable
+internal fun TimerAppPicker(
+    appsState: InstalledAppsUiState,
+    initiallySelected: Set<String>,
+    onConfirm: (List<InstalledApp>) -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AppPickerScreen(
+        appsState = appsState,
+        title = "What rests",
+        multiSelect = true,
+        initiallySelected = initiallySelected,
+        onConfirm = onConfirm,
+        onCancel = onCancel,
+        modifier = modifier.statusBarsPadding(),
+    )
 }
 
 /** E03 — Today. */

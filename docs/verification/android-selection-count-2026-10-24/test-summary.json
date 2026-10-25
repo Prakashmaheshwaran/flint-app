@@ -1,0 +1,34 @@
+{
+  "executions": 1182,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "unique_tests": 689,
+  "report_files": 102,
+  "focused": [
+    {
+      "report": "android-app/feature/feature-blocklist/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.feature.blocklist.TimerViewModelTest.xml",
+      "tests": "26",
+      "failures": "0",
+      "errors": "0"
+    },
+    {
+      "report": "android-app/feature/feature-blocklist/build/test-results/testDebugUnitTest/TEST-com.flint.peakfocus.feature.blocklist.AppPickerSelectionTest.xml",
+      "tests": "6",
+      "failures": "0",
+      "errors": "0"
+    },
+    {
+      "report": "android-app/feature/feature-blocklist/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.feature.blocklist.TimerViewModelTest.xml",
+      "tests": "26",
+      "failures": "0",
+      "errors": "0"
+    },
+    {
+      "report": "android-app/feature/feature-blocklist/build/test-results/testReleaseUnitTest/TEST-com.flint.peakfocus.feature.blocklist.AppPickerSelectionTest.xml",
+      "tests": "6",
+      "failures": "0",
+      "errors": "0"
+    }
+  ]
+}
