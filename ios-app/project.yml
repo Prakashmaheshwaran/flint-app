@@ -127,6 +127,8 @@ targets:
     platform: iOS
     sources:
       - Tests
+      # Exercise authorization request/retry state without a host app or real permissions.
+      - Flint/Features/Authorization/AuthorizationModel.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.tests

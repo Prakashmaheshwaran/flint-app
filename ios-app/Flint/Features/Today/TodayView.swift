@@ -26,16 +26,6 @@ struct TodayView: View {
                         .frame(minHeight: geometry.size.height, alignment: .top)
                 }
             }
-
-            if let message = vm.errorText ?? auth.lastError {
-                Text(message)
-                    .font(FlintFont.text(13))
-                    .foregroundStyle(FlintBrand.danger)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
-                    .frame(maxHeight: .infinity, alignment: .bottom)
-                    .padding(.bottom, 200)
-            }
         }
         .sheet(isPresented: $showStart) {
             StartFocusSheet(vm: vm) { showStart = false }
@@ -49,39 +39,44 @@ struct TodayView: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text(now.formatted(.dateTime.weekday(.wide).day().month(.wide)).replacingOccurrences(of: ",", with: " ·"))
-                        .flintEyebrow()
-                    Spacer()
-                    FlintMark(size: 20)
-                }
-                .padding(.top, 18)
+            HStack {
+                Text(now.formatted(.dateTime.weekday(.wide).day().month(.wide)).replacingOccurrences(of: ",", with: " ·"))
+                    .flintEyebrow()
+                Spacer()
+                FlintMark(size: 20)
+            }
+            .padding(.top, 18)
 
-                Text(headline)
-                    .flintTitle(31)
-                    .padding(.top, 26)
+            Text(headline)
+                .flintTitle(31)
+                .padding(.top, 26)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(subline)
+                .flintSecondary(14)
+                .padding(.top, 8)
+
+            VStack(spacing: 6) {
+                Text(Self.duration(minutes: vm.durationMinutes)).flintNumber(50)
+                Text("Your next session").flintEyebrow()
                     .fixedSize(horizontal: false, vertical: true)
-                Text(subline)
-                    .flintSecondary(14)
-                    .padding(.top, 8)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .accessibilityElement(children: .combine)
+            .padding(.top, 76)
 
-                VStack(spacing: 6) {
-                    Text(Self.duration(minutes: vm.durationMinutes)).flintNumber(50)
-                    Text("Your next session").flintEyebrow()
-                        .fixedSize(horizontal: false, vertical: true)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity)
-                .accessibilityElement(children: .combine)
-                .padding(.top, 76)
+            Spacer(minLength: 32)
 
-                Spacer(minLength: 32)
-
-                if auth.status == .approved {
-                    actions
-                } else {
-                    grantCard
-                }
+            if let message = vm.errorText {
+                errorMessage(message)
+                    .accessibilityIdentifier("today.session.error")
+                    .padding(.bottom, 14)
+            }
+            if auth.status == .approved {
+                actions
+            } else {
+                grantCard
+            }
         }
     }
 
@@ -112,9 +107,34 @@ struct TodayView: View {
             Text("Flint needs Screen Time access to rest your apps. Nothing leaves this phone.")
                 .flintSecondary(14)
                 .multilineTextAlignment(.center)
-            Button("Allow Screen Time") { Task { await auth.requestAuthorization() } }
-                .buttonStyle(EmberButtonStyle())
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("today.authorization.explanation")
+            if let message = auth.lastError {
+                errorMessage(message)
+                    .accessibilityIdentifier("today.authorization.error")
+            }
+            Button {
+                Task { await auth.requestAuthorization() }
+            } label: {
+                Text(auth.isRequesting ? "Requesting access…" : auth.lastError == nil ? "Allow Screen Time" : "Retry Screen Time")
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+            }
+            .buttonStyle(EmberButtonStyle())
+            .disabled(auth.isRequesting)
+            .accessibilityIdentifier("today.authorization.action")
         }
+    }
+
+    private func errorMessage(_ message: String) -> some View {
+        Text(message)
+            .font(FlintFont.text(13))
+            .foregroundStyle(FlintBrand.danger)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity)
     }
 
     // MARK: Schedule-aware copy (real rules only — nothing invented)
