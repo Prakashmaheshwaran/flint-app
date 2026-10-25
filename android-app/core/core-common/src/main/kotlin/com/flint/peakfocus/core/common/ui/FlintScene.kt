@@ -15,17 +15,20 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -56,6 +60,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import com.flint.peakfocus.core.common.theme.FlintMotion
 import com.flint.peakfocus.core.common.theme.FlintPalette
@@ -284,30 +290,39 @@ fun FlintMark(modifier: Modifier = Modifier) {
 /** The four destinations of the floating bar, identical on iPhone and Android. */
 enum class FlintTabGlyph(val label: String) { Today("Today"), Rules("Rules"), Insights("Insights"), You("You") }
 
-/** The floating four-tab bar: 64dp capsule inset 24 from the sides, above the navigation bar. */
+/** Keep full tab names visible, sharing width by their measured type before using two rows. */
 @Composable
 fun FlintTabBar(
     selected: FlintTabGlyph,
     onSelect: (FlintTabGlyph) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    BoxWithConstraints(
         modifier
             .navigationBarsPadding()
             .padding(start = 24.dp, end = 24.dp, bottom = 16.dp)
-            .fillMaxWidth()
-            .height(64.dp)
-            .clip(CircleShape)
-            .background(Color(0xF0181618))
-            .border(1.dp, FlintPalette.Divider, CircleShape)
-            .selectableGroup(),
+            .fillMaxWidth(),
     ) {
-        FlintTabGlyph.entries.forEach { tab ->
+        val measurer = rememberTextMeasurer()
+        val density = LocalDensity.current
+        val styles = FlintTabGlyph.entries.associateWith { tab ->
+            MaterialTheme.typography.labelSmall.copy(
+                fontWeight = if (tab == selected) androidx.compose.ui.text.font.FontWeight.SemiBold
+                else androidx.compose.ui.text.font.FontWeight.Medium,
+            )
+        }
+        val widths = FlintTabGlyph.entries.associateWith { tab ->
+            val pixels = measurer.measure(AnnotatedString(tab.label), styles.getValue(tab), softWrap = false).size.width
+            maxOf(48.dp, with(density) { pixels.toDp() } + 8.dp + 1.dp)
+        }
+        val singleRow = widths.values.sumOf { it.value.toDouble() } <= maxWidth.value
+        val equalWidths = widths.values.max() * FlintTabGlyph.entries.size <= maxWidth
+        val shape = if (singleRow) CircleShape else RoundedCornerShape(32.dp)
+        val item: @Composable (FlintTabGlyph, Modifier) -> Unit = { tab, itemModifier ->
             val isSelected = tab == selected
             val tint = if (isSelected) FlintPalette.Bone else FlintPalette.Stone
             Column(
-                Modifier
-                    .weight(1f)
+                itemModifier
                     .fillMaxHeight()
                     // No square ripple inside the capsule: the tint and ember accent answer the tap.
                     .selectable(
@@ -315,25 +330,40 @@ fun FlintTabBar(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
                         role = Role.Tab,
-                    ) { onSelect(tab) },
+                    ) { onSelect(tab) }
+                    .heightIn(min = 64.dp)
+                    .padding(horizontal = 4.dp, vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically),
             ) {
                 Canvas(Modifier.size(22.dp)) { drawTabGlyph(tab, isSelected, tint) }
                 Text(
                     tab.label,
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.SemiBold
-                        else androidx.compose.ui.text.font.FontWeight.Medium,
-                    ),
+                    style = styles.getValue(tab),
                     color = tint,
                 )
+            }
+        }
+        Column(
+            Modifier.fillMaxWidth().clip(shape)
+                .background(Color(0xF0181618))
+                .border(1.dp, FlintPalette.Divider, shape)
+                .selectableGroup(),
+        ) {
+            val rows = if (singleRow) listOf(FlintTabGlyph.entries.toList()) else FlintTabGlyph.entries.chunked(2)
+            rows.forEach { tabs ->
+                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                    tabs.forEach { tab ->
+                        val weight = if (!singleRow || equalWidths) 1f else widths.getValue(tab).value
+                        item(tab, Modifier.weight(weight))
+                    }
+                }
             }
         }
     }
 }
 
-/** Height the floating bar occupies above the navigation bar — pad scrolling content by it. */
+/** Legacy fixed-bar clearance. Adaptive hosts should reserve the bar's measured height. */
 val FlintTabBarClearance = 96.dp
 
 private fun DrawScope.drawTabGlyph(tab: FlintTabGlyph, selected: Boolean, ink: Color) {
