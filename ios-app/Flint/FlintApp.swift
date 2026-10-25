@@ -19,7 +19,7 @@ struct FlintApp: App {
 /// Top-level shell: an optional app-PIN gate, first-run onboarding, then the four tabs in a
 /// floating bar. A running session (and its Complete screen) covers every tab.
 struct RootView: View {
-    @State private var locked = FlintPIN.isSet(FlintGroupStore())
+    @StateObject private var appLock = FlintAppLock()
     @AppStorage("flint.onboarded") private var onboarded = false
     @StateObject private var auth = AuthorizationModel()
     @StateObject private var session = SessionViewModel()
@@ -29,16 +29,38 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if locked {
-                PINGateView { locked = false }
-            } else if !onboarded && auth.status != .approved {
+            if !onboarded && auth.status != .approved {
                 OnboardingView(auth: auth) { onboarded = true }
             } else {
                 tabs
             }
         }
-        .onAppear { auth.refresh() }
-        .onChange(of: scenePhase) { phase in if phase == .active { auth.refresh() } }
+        // Keep the initial frame private while the scene window attaches. Retain the
+        // hierarchy so active sessions and in-progress navigation survive re-locking.
+        .opacity(appLock.state.isProtected ? 0 : 1)
+        .allowsHitTesting(!appLock.state.isProtected)
+        .accessibilityHidden(appLock.state.isProtected)
+        .environmentObject(appLock)
+        .background(AppLockWindow(lock: appLock))
+        .onAppear { updateScenePhase(scenePhase) }
+        .onChange(of: scenePhase, perform: updateScenePhase)
+    }
+
+    private func updateScenePhase(_ phase: ScenePhase) {
+        // SwiftUI owns this scene and can finish activation after the UIKit window
+        // anchor attaches. Reconcile here as well as in the synchronous privacy hooks.
+        switch phase {
+        case .active:
+            appLock.transition(to: .active)
+            auth.refresh()
+        case .inactive: appLock.transition(to: .inactive)
+        case .background:
+            // SwiftUI can deliver this late, after the scene has reactivated. The live
+            // activation state is authoritative; adopting a stale background would
+            // strand the gate on a blank, non-interactive screen.
+            appLock.transition(to: .background, ifSceneIs: AppLockSceneState.phase ?? .background)
+        @unknown default: appLock.transition(to: .inactive)
+        }
     }
 
     private var tabs: some View {
@@ -90,7 +112,7 @@ private struct FinishedItem: Identifiable {
 }
 
 struct PINGateView: View {
-    let onUnlock: () -> Void
+    @ObservedObject var lock: FlintAppLock
     @State private var pin = ""
     @State private var showError = false
 
@@ -113,9 +135,7 @@ struct PINGateView: View {
                 }
                 Spacer()
                 Button("Unlock") {
-                    if FlintPIN.verify(pin, FlintGroupStore()) {
-                        onUnlock()
-                    } else {
+                    if !lock.unlock(with: pin) {
                         showError = true
                         pin = ""
                     }

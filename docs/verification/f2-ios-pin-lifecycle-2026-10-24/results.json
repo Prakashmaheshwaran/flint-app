@@ -1,0 +1,50 @@
+{
+  "worktree": "/Users/prakash/.codex/worktrees/f2-pin-lifecycle-recovery/flint",
+  "commit": "37a3563d5fb2ead87e17ce7a97ea3405b787d5f0",
+  "sourceDirty": "",
+  "device": "4A9BF370-052B-4A38-B05C-0D5EBD91ADD4",
+  "initialPINPresent": false,
+  "recoveredF3Records": 0,
+  "uiExitCode": 0,
+  "uiCleanupSucceeded": true,
+  "recoveredF2Records": 0,
+  "finalPINPresent": false,
+  "date": "2026-10-24",
+  "unitTests": {
+    "executed": 73,
+    "failures": 0,
+    "focusedLockAuthCases": 13
+  },
+  "uiTests": {
+    "executed": 3,
+    "failures": 0,
+    "seconds": 137.688
+  },
+  "ci": "https://github.com/Prakashmaheshwaran/flint-app/actions/runs/40159354940",
+  "screenshots": [
+    {
+      "file": "screenshots/01-resume-after-setup-gated.png",
+      "sha256": "513423cd5959975dadc1fb7b6465ee95c112908442c66ed4af87b3381f924bea"
+    },
+    {
+      "file": "screenshots/03-wrong-current-pin-cannot-remove.png",
+      "sha256": "34710dc9a1b9c0003c2bb4bc8a0f4461518da7db5fe8a699eb74f5d8f7429aa9"
+    },
+    {
+      "file": "screenshots/05-gate-above-presented-schedule.png",
+      "sha256": "9dbb4c588f83697894caa647094889c8ff2b741e1ef8c3a948ca2272b02e4437"
+    },
+    {
+      "file": "screenshots/06-authenticated-removal-off.png",
+      "sha256": "f4b33fe93621237650943866f23ae91ac0c9b379b9ebc4a01be43c0f5729758a"
+    },
+    {
+      "file": "screenshots/08-gate-above-active-session.png",
+      "sha256": "87c8ed0d367d9ee9ed6080c4046c606730e3fc2f022f97cbb63da533354d99a8"
+    },
+    {
+      "file": "screenshots/09-transient-control-center-privacy.png",
+      "sha256": "ed22f2bde4fa1dfbc435f75abd1bec40ef961a021db4abcca5110488bb3248bf"
+    }
+  ]
+}

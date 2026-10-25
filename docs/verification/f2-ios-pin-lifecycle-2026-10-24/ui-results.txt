@@ -1,0 +1,13 @@
+F2-INTERRUPTED-CHANGE-ACTIVE-SESSION passed (UI preview only)
+F2-SYNTHETIC-PIN-CLEANUP passed
+Test Case '-[FlintAuditUITests.PINLifecycleTests testBackgroundExpiresChangeAndCoversActiveSession]' passed (55.446 seconds).
+F2-LIFECYCLE-CHANGE-REMOVE passed
+Test Case '-[FlintAuditUITests.PINLifecycleTests testLifecycleAndSensitiveChanges]' passed (58.095 seconds).
+F2-CONTROL-CENTER state 4 frame (0.0, 0.0, 402.0, 874.0)
+F2-TRANSIENT-CONTROL-CENTER passed
+F2-SYNTHETIC-PIN-CLEANUP passed
+Test Case '-[FlintAuditUITests.PINLifecycleTests testTransientControlCenterDoesNotRelock]' passed (24.148 seconds).
+	 Executed 3 tests, with 0 failures (0 unexpected) in 137.688 (137.694) seconds
+	 Executed 3 tests, with 0 failures (0 unexpected) in 137.688 (137.702) seconds
+	 Executed 3 tests, with 0 failures (0 unexpected) in 137.688 (137.704) seconds
+** TEST SUCCEEDED **

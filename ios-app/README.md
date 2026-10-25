@@ -114,9 +114,12 @@ Verticals implemented:
   (real per-app usage on device; empty in the Simulator).
 - **App groups / presets + Allow List** — save a picker selection as a named, reusable group and
   apply it in one tap; Allow List ("brick phone") ships in Schedules (`.all(except:)`).
-- **App-PIN anti-bypass** — optional app-open PIN (salted SHA-256, never stored plaintext) gates
-  Flint; the **Settings** tab surfaces the system Screen Time passcode as the real anti-uninstall
-  guarantee.
+- **App PIN** — an optional PIN (salted SHA-256, never stored plaintext) gates cold launch and
+  every return from the background, including running sessions and presented sheets. Brief
+  inactive interruptions hide content without re-locking. Changing or removing a PIN requires
+  the current PIN; backgrounding expires pending change authentication. Existing saved PINs
+  remain usable regardless of length. This protects Flint's UI; OS Screen Time enforcement
+  and the system Screen Time passcode are separate protections.
 - **Hardcore uninstall guard** — while a Hardcore (Deep Focus) session runs, Flint sets
   `denyAppRemoval` on the session's `ManagedSettingsStore`, so deleting the app — otherwise the
   one-tap escape from a "non-bypassable" block — is refused by iOS. Armed on every Hardcore
