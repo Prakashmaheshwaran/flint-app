@@ -51,17 +51,23 @@ public struct FlintLedgerInstant: Codable, Equatable, Sendable {
     }
 
     /// Elapsed seconds for **release intervals** (pass recovery, access grants) — never less
-    /// than may have passed, so a release can only end early, not late — or nil after a reboot
-    /// (the release then ends conservatively, §9). With matching known boot ids the monotonic
-    /// delta is exact; without a boot id the larger of the monotonic and wall deltas is used: an
-    /// undetected reboot under-counts monotonic time, and a wall clock moved back under-counts
-    /// wall time, but never both.
+    /// than may have passed, so a release can only end early, not late — or nil when that can't
+    /// be shown (the release then ends conservatively, §9). With matching known boot ids the
+    /// monotonic delta is exact. Without a boot id an undetected reboot under-counts monotonic
+    /// time and a wall clock moved back under-counts wall time; the larger delta is safe unless
+    /// both happened, so a wall clock that fell behind the monotonic delta (rollback evidence)
+    /// yields nil.
     public func elapsedForRelease(until now: FlintLedgerInstant) -> TimeInterval? {
         guard isSameBootCandidate(now) else { return nil }
         let monotonicDelta = now.monotonic - monotonic
         if bootID != nil, now.bootID != nil { return monotonicDelta }
-        return max(monotonicDelta, now.wall.timeIntervalSince(wall))
+        let wallDelta = now.wall.timeIntervalSince(wall)
+        if wallDelta < monotonicDelta - Self.rollbackTolerance { return nil }
+        return max(monotonicDelta, wallDelta)
     }
+
+    /// Wall-vs-monotonic disagreement treated as a clock change (ADR-012 §9's threshold).
+    static let rollbackTolerance: TimeInterval = 5
 
     private func isSameBootCandidate(_ now: FlintLedgerInstant) -> Bool {
         guard now.monotonic >= monotonic else { return false }

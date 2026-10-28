@@ -309,13 +309,13 @@ final class FlintProtectionLedgerTests: XCTestCase {
         XCTAssertEqual(start.elapsedForRelease(until: instant), 3700, "…but ends a release early")
         now = now.addingTimeInterval(-3600 - 3600)
         XCTAssertEqual(start.elapsed(until: instant), 100)
-        XCTAssertEqual(start.elapsedForRelease(until: instant), 100, "a backward wall jump never extends a release (PC-55)")
+        XCTAssertNil(start.elapsedForRelease(until: instant), "a backward wall jump ends a release rather than extending it (PC-55)")
         monotonic = 1
         XCTAssertNil(start.elapsed(until: instant), "monotonic below the anchor proves a reboot")
         XCTAssertNil(start.elapsedForRelease(until: instant))
     }
 
-    func testABackwardClockJumpNeverExtendsRecoveryWithoutABootID() throws {
+    func testABackwardClockJumpEndsRecoveryWithoutABootID() throws {
         boot = nil
         var s = try state()
         _ = s.consumePass(operationID: "a", hasActiveCommitment: true, at: instant)
@@ -324,7 +324,37 @@ final class FlintProtectionLedgerTests: XCTestCase {
         s.pass.checkpoint(at: instant)
         now = now.addingTimeInterval(-3600)
         advance(600)
-        XCTAssertEqual(s.pass.status(at: instant, hasActiveCommitment: true).recoveryRemaining, 2400)
+        XCTAssertEqual(s.pass.status(at: instant, hasActiveCommitment: true).recoveryRemaining, 0)
+    }
+
+    func testBootlessRebootPlusClockRollbackEndsRecoveryPC55() throws {
+        boot = nil
+        var s = try state()
+        _ = s.consumePass(operationID: "a", hasActiveCommitment: true, at: instant)
+        advance(50)
+        s.pass.checkpoint(at: instant)
+        // Unreported reboot (uptime restarts but already exceeds the anchor) + clock set back.
+        monotonic += 50
+        now = now.addingTimeInterval(-30 * 86_400)
+        XCTAssertEqual(s.pass.status(at: instant, hasActiveCommitment: true).recoveryRemaining, 0)
+        s.pass.checkpoint(at: instant)
+        XCTAssertGreaterThan(s.pass.cooldownRemaining, 0)
+    }
+
+    func testASameBootForwardWallJumpLeavesRecoveryUnchangedPC54() throws {
+        var s = try state()
+        _ = s.consumePass(operationID: "a", hasActiveCommitment: true, at: instant)
+        advance(600)
+        now = now.addingTimeInterval(2 * 3600)
+        XCTAssertEqual(s.pass.status(at: instant, hasActiveCommitment: true).recoveryRemaining, 3000)
+    }
+
+    func testOneMissingBootIDStillCountsAsTheSameBootCandidate() {
+        let start = instant
+        boot = nil
+        advance(100)
+        XCTAssertEqual(start.elapsed(until: instant), 100)
+        XCTAssertEqual(start.elapsedForRelease(until: instant), 100)
     }
 
     func testOneOperationAcrossABatchIncrementsEachCauseOncePC19() throws {

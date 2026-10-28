@@ -20,15 +20,17 @@ extension FlintLedgerState.Pass {
     /// monotonic time; across a reboot (or unknown boot) credit nothing and re-anchor, so a
     /// powered-off interval never shortens the cooldown.
     public mutating func checkpoint(at now: FlintLedgerInstant) {
-        if let last = checkpoint, let elapsed = last.elapsed(until: now),
-           let released = last.elapsedForRelease(until: now) {
-            // Cooldown credits only time that surely passed; recovery (a release) only ends
-            // early, never late.
-            cooldownRemaining = max(0, cooldownRemaining - elapsed)
-            recoveryRemaining = max(0, recoveryRemaining - released)
-        } else if checkpoint != nil {
-            // Reboot: recovery access ends conservatively (§9), cooldown keeps its remainder.
-            recoveryRemaining = 0
+        if let last = checkpoint {
+            // Cooldown credits only time that surely passed (after a reboot it keeps its
+            // remainder); recovery — a release — only ends early, never late (§9).
+            if let elapsed = last.elapsed(until: now) {
+                cooldownRemaining = max(0, cooldownRemaining - elapsed)
+            }
+            if let released = last.elapsedForRelease(until: now) {
+                recoveryRemaining = max(0, recoveryRemaining - released)
+            } else {
+                recoveryRemaining = 0
+            }
         }
         checkpoint = now
     }
@@ -174,6 +176,9 @@ extension FlintLedgerState {
     /// multi-cause batch increments each cause once (§4, PC-19). A retry that carries an id the
     /// wait no longer has (a resumed wait adopted a newer id) reports `.nothingPending`.
     public mutating func commitHarderWait(cause: String, operationID: String, at now: FlintLedgerInstant) -> FlintHarderCommit {
+        // The idempotency record is "<operation id>#<cause>" (cause ids are UUIDs; `#` never
+        // appears in them). A batch over more causes than `operationLimit` evicts its own
+        // records; a replay then reports `.nothingPending` — still never a second increment.
         let record = "\(operationID)#\(cause)"
         if operation(record) != nil { return .alreadyCommitted }
         guard var entry = harder[cause] else { return .nothingPending }
