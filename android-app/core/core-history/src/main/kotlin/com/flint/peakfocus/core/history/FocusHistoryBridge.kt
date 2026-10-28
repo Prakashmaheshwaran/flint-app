@@ -70,6 +70,7 @@ object FocusHistoryBridge {
         val app = context.applicationContext
         val store = store(app)
         val observer = HistoryReconciler(store).also { reconciler = it }
+        FocusCompletionNotifier.start(app, scope, store, observer.ready)
         job = scope.launch(Dispatchers.IO) {
             store.load()
             observer.collectSnapshots(FlintPreferences.blockRules(app).rulesState.map(::historyRulesSnapshot).withDeadlineObservations(
