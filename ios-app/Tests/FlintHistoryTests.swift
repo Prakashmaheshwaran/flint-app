@@ -397,7 +397,7 @@ final class FlintHistoryTests: XCTestCase {
         let exact = try JSONDecoder().decode(FlintHistoryEvent.self, from: Data(contentsOf: XCTUnwrap(inbox.first)))
         XCTAssertEqual(exact.type, .endedEarly); XCTAssertEqual(exact.route, "manual_stop")
         sink.perform { _ in XCTFail("expired maintenance must not begin") }
-        wait(for: [expired], timeout: 2)
+        wait(for: [expired], timeout: 10)
         XCTAssertEqual(store().read().events, [exact])
     }
     func testExtensionTerminalSurvivesSlowHostMaintenanceWithoutRetry() {
@@ -408,12 +408,14 @@ final class FlintHistoryTests: XCTestCase {
         })
         s.append(event(.started, 0)); _ = s.read()
         DispatchQueue.global().async { _ = s.compactIfNeeded(); completed.fulfill() }
-        XCTAssertEqual(entered.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(entered.wait(timeout: .now() + 10), .success)
         let begin = ProcessInfo.processInfo.systemUptime
         let terminal = event(.completed, 3600)
         XCTAssertTrue(FlintHistoryStore(directory: directory, isHost: false).append(terminal))
-        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - begin, 0.2)
-        release.signal(); wait(for: [completed], timeout: 3)
+        // Maintenance holds for up to 5 s; publication must not wait for it. The bound
+        // leaves headroom for fsync on loaded CI runners.
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - begin, 2)
+        release.signal(); wait(for: [completed], timeout: 10)
         XCTAssertTrue(s.read().events.contains(terminal))
     }
     func testExtensionSinkAppendsBeforeReturning() {

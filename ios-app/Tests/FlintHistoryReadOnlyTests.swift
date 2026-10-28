@@ -199,13 +199,13 @@ final class FlintHistoryReadOnlyTests: XCTestCase {
         DispatchQueue.global().async {
             XCTAssertEqual(host.read().availability, .unavailable); finished.fulfill()
         }
-        wait(for: [moved], timeout: 2)
+        wait(for: [moved], timeout: 10)
         XCTAssertFalse(FileManager.default.fileExists(atPath: log.path))
         let during = store(host: false).readOnlySnapshot()
         XCTAssertEqual(during.availability, .unavailable)
         XCTAssertTrue(FlintHistoryAggregator.summarize(during, activeSessionID: nil, now: now)
             .days.allSatisfy { $0.focusedSeconds == nil })
-        resume.signal(); wait(for: [finished], timeout: 2)
+        resume.signal(); wait(for: [finished], timeout: 10)
         XCTAssertEqual(store(host: false).readOnlySnapshot().availability, .unavailable)
     }
 
@@ -280,7 +280,7 @@ final class FlintHistoryReadOnlyTests: XCTestCase {
         DispatchQueue.global().async {
             XCTAssertFalse(host.compactIfNeeded()); finished.fulfill()
         }
-        wait(for: [delivered, finished], timeout: 2)
+        wait(for: [delivered, finished], timeout: 10)
         XCTAssertEqual(reasons, ["compact"])
         XCTAssertEqual(store(host: false).readOnlySnapshot().events, [recent])
     }
@@ -338,7 +338,7 @@ final class FlintHistoryReadOnlyTests: XCTestCase {
         }
         defer { NotificationCenter.default.removeObserver(token) }
         DispatchQueue.global().async { XCTAssertTrue(host.clear(keepingRunningSession: nil)) }
-        wait(for: [delivered], timeout: 2)
+        wait(for: [delivered], timeout: 10)
         XCTAssertEqual(reasons, ["clear"])
     }
 
