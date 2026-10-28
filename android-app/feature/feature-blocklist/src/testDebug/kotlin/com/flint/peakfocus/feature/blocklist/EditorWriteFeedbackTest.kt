@@ -32,7 +32,7 @@ class EditorWriteFeedbackTest {
         compose.onNode(hasSetTextAction() and hasText("Work")).performTextReplacement("My edited draft")
         compose.onNodeWithText("Save rule").performScrollTo().performClick()
         compose.onNodeWithText(error).assertExists()
-        compose.onNodeWithText("Save rule").performClick()
+        compose.onNodeWithText("Save rule").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(listOf("My edited draft", "My edited draft"), saved.map { it.name }) }
     }
 
@@ -40,14 +40,17 @@ class EditorWriteFeedbackTest {
         val state = mutableStateOf(EditorSaveState())
         val saved = mutableListOf<SleepConfig>()
         compose.setContent {
-            SleepEditorScreen(initial = SleepConfig.DEFAULT, appsState = InstalledAppsUiState.Ready(emptyList()),
+            SleepEditorScreen(initial = SleepConfig.DEFAULT.copy(bedMinute = 1290), appsState = InstalledAppsUiState.Ready(emptyList()),
                 onSave = { saved += it; state.value = EditorSaveState(error = error) }, onClose = {}, saveState = state.value)
         }
-        compose.onNode(hasSetTextAction() and hasText("22:30")).performScrollTo().performTextReplacement("21:30")
+        compose.onNodeWithText("Mon").performScrollTo().performClick()
         compose.onNodeWithText("Save sleep mode").performScrollTo().performClick()
         compose.onNodeWithText(error).assertExists()
-        compose.onNodeWithText("Save sleep mode").performClick()
-        compose.runOnIdle { assertEquals(listOf(1290, 1290), saved.map { it.bedMinute }) }
+        compose.onNodeWithText("Save sleep mode").performScrollTo().performClick()
+        compose.runOnIdle {
+            assertEquals(listOf(1290, 1290), saved.map { it.bedMinute })
+            assertEquals(listOf(IsoDays.WEEKDAYS - 1, IsoDays.WEEKDAYS - 1), saved.map { it.nights })
+        }
     }
 
     @Test fun limitsDraftSurvivesFailureRecompositionAndRetryUsesSameMinutes() {
@@ -63,7 +66,7 @@ class EditorWriteFeedbackTest {
         compose.onNode(hasSetTextAction() and hasText("30")).performScrollTo().performTextReplacement("21")
         compose.onNodeWithText("Save limits").performScrollTo().performClick()
         compose.onNodeWithText(error).assertExists()
-        compose.onNodeWithText("Save limits").performClick()
+        compose.onNodeWithText("Save limits").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(listOf(TimeLimit("app", 21), TimeLimit("app", 21)), saved) }
     }
 }
