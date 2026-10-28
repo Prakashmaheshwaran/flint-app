@@ -4,9 +4,9 @@ name: Android
 on:
   push:
     branches: [main]
-    paths: ['android-app/**', 'Makefile', 'scripts/verify_local_first_apk.py', 'scripts/test_report.py', '.github/workflows/android.yml']
+    paths: ['android-app/**', 'Makefile', 'scripts/verify_local_first_apk.py', 'scripts/ci_test_report.py', '.github/workflows/android.yml']
   pull_request:
-    paths: ['android-app/**', 'Makefile', 'scripts/verify_local_first_apk.py', 'scripts/test_report.py', '.github/workflows/android.yml']
+    paths: ['android-app/**', 'Makefile', 'scripts/verify_local_first_apk.py', 'scripts/ci_test_report.py', '.github/workflows/android.yml']
   workflow_dispatch:
 
 permissions:
@@ -47,7 +47,7 @@ jobs:
 
       - name: Summarize JUnit results
         if: always()
-        run: python3 scripts/test_report.py --title 'Android JVM unit tests' --junit 'android-app/**/build/test-results/test*/TEST-*.xml'
+        run: python3 scripts/ci_test_report.py --title 'Android JVM unit tests' --junit 'android-app/**/build/test-results/test*/TEST-*.xml'
 
       - name: Record APK and source provenance
         if: always()

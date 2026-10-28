@@ -7,9 +7,9 @@ name: iOS
 on:
   push:
     branches: [main]
-    paths: ['ios-app/**', 'docs/store/ios/**', 'Makefile', 'scripts/test_report.py', '.github/workflows/ios.yml']
+    paths: ['ios-app/**', 'docs/store/ios/**', 'Makefile', 'scripts/ci_test_report.py', '.github/workflows/ios.yml']
   pull_request:
-    paths: ['ios-app/**', 'docs/store/ios/**', 'Makefile', 'scripts/test_report.py', '.github/workflows/ios.yml']
+    paths: ['ios-app/**', 'docs/store/ios/**', 'Makefile', 'scripts/ci_test_report.py', '.github/workflows/ios.yml']
   workflow_dispatch:
 
 permissions:
@@ -55,7 +55,7 @@ jobs:
       - name: Summarize Xcode unit tests as JUnit
         if: always()
         run: |
-          python3 scripts/test_report.py --title 'iOS simulator unit tests (not Screen Time enforcement)' \
+          python3 scripts/ci_test_report.py --title 'iOS simulator unit tests (not Screen Time enforcement)' \
             --xcresult artifacts/unit-tests.xcresult --output artifacts/ios-unit-tests.xml
 
       - name: Upload unit test results

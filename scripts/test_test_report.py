@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from test_report import counts, summarize, xcresult_junit
+from ci_test_report import counts, summarize, xcresult_junit
 
 
 class TestReportTests(unittest.TestCase):
@@ -30,7 +30,7 @@ class TestReportTests(unittest.TestCase):
               for result in ["Failed", "Skipped", "Expected Failure", "unknown"]],
         ]}]}
         with tempfile.TemporaryDirectory() as folder, patch(
-            "test_report.subprocess.check_output", return_value=json.dumps(report)
+            "ci_test_report.subprocess.check_output", return_value=json.dumps(report)
         ):
             path = Path(folder) / "report.xml"
             xcresult_junit(Path("tests.xcresult"), path)
