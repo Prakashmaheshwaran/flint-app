@@ -5,6 +5,12 @@
   },
   "supplements": [
     {
+      "coordinate": "androidx\\.glance:glance-appwidget-external-protobuf:1\\.1\\.1",
+      "source": "https://github.com/protocolbuffers/protobuf/tree/v28.2",
+      "licenseFamily": "BSD-3-Clause",
+      "files": ["licenses/protobuf-28.2-LICENSE.txt"]
+    },
+    {
       "coordinate": "androidx\\.datastore:datastore-preferences-external-protobuf:1\\.2\\.1",
       "source": "https://github.com/protocolbuffers/protobuf/tree/v28.2",
       "files": ["licenses/protobuf-28.2-LICENSE.txt"]

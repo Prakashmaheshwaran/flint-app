@@ -101,6 +101,59 @@ class LegalGeneratorTest(unittest.TestCase):
         with self.assertRaisesRegex(LegalError, "font license inventory mismatch"):
             self.run_generator()
 
+    def use_glance_protobuf(self, version="1.1.1"):
+        self.pom.write_text(self.pom.read_text().replace("Apache-2.0", "BSD-3-Clause"))
+        self.entry["coordinate"] = f"androidx.glance:glance-appwidget-external-protobuf:{version}"
+        self.inventory.write_text(json.dumps([self.entry]))
+
+    def test_reviewed_glance_includes_actual_upstream_bsd_copyright(self):
+        self.use_glance_protobuf()
+        actual = (Path(__file__).parent / "licenses/protobuf-28.2-LICENSE.txt").read_text()
+        output = self.run_generator()
+        self.assertIn(actual.strip().encode(), output["open-source-licenses.txt"])
+        self.assertIn(b"Copyright 2008 Google Inc.", output["open-source-licenses.txt"])
+        component = json.loads(output["dependency-list.json"])["components"][0]
+        self.assertEqual(component["licenses"][0]["family"], "BSD-3-Clause")
+        self.assertEqual(len([n for n in component["notices"] if "protobuf-28.2-LICENSE.txt" in n["source"]]), 1)
+
+    def test_glance_version_upgrade_without_source_review_fails(self):
+        self.use_glance_protobuf("1.1.2")
+        with self.assertRaisesRegex(LegalError, "No bundled full license text"):
+            self.run_generator()
+        actual = (Path(__file__).parent / "licenses/protobuf-28.2-LICENSE.txt").read_text()
+        with zipfile.ZipFile(self.jar, "w") as archive:
+            archive.writestr("LICENSE", actual)
+        with self.assertRaisesRegex(LegalError, "Missing reviewed upstream notices"):
+            self.run_generator()
+
+    def test_glance_missing_empty_and_holderless_source_license_fail(self):
+        self.use_glance_protobuf()
+        path = self.repo / "android-app/legal/licenses/protobuf-28.2-LICENSE.txt"
+        actual = path.read_bytes()
+        path.unlink()
+        with self.assertRaises(FileNotFoundError):
+            self.run_generator()
+        path.write_text(" \n\t")
+        with self.assertRaisesRegex(LegalError, "Required license/notice text is empty"):
+            self.run_generator()
+        path.write_bytes(actual.replace(b"Copyright 2008 Google Inc.  All rights reserved.\n", b""))
+        with self.assertRaisesRegex(LegalError, "No bundled full license text"):
+            self.run_generator()
+
+    def test_glance_supplement_does_not_allow_unknown_license_family(self):
+        self.use_glance_protobuf()
+        self.pom.write_text(self.pom.read_text().replace("BSD-3-Clause", "Unknown license"))
+        with self.assertRaisesRegex(LegalError, "Unknown license family"):
+            self.run_generator()
+
+    def test_glance_registry_addition_does_not_change_outputs_without_glance(self):
+        with_glance_entry = self.run_generator()
+        registry_path = self.repo / "android-app/legal/supplemental.json"
+        registry = json.loads(registry_path.read_text())
+        registry["supplements"] = [s for s in registry["supplements"] if "glance" not in s["coordinate"]]
+        registry_path.write_text(json.dumps(registry))
+        self.assertEqual(with_glance_entry, self.run_generator())
+
     def test_upgrade_requiring_source_notices_fails_until_reviewed(self):
         self.inventory.write_text(json.dumps([dict(self.entry, coordinate="com.android.tools:desugar_jdk_libs:99.0")]))
         with self.assertRaisesRegex(LegalError, "Missing reviewed upstream notices"):

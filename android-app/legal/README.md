@@ -42,6 +42,13 @@ copies, and font modification descriptions match `design/fonts/README.md`.
   The released DataStore `datastore-preferences-external-protobuf:1.2.1` JAR's
   `RuntimeVersion` constants identify its actual protobuf runtime as 4.28.2
   (`javap -constants`), rather than assuming a version from current upstream source.
+- Repackaged Glance protobuf: the released `androidx.glance:glance-appwidget-external-protobuf:1.1.1`
+  JAR's `androidx.glance.appwidget.protobuf.RuntimeVersion` constants independently identify
+  protobuf 4.28.2 (`MAJOR=4`, `MINOR=28`, `PATCH=2`, `javap -constants`). The JAR omits its
+  license entirely; the exact coordinate reuses the full upstream v28.2 BSD text above,
+  including Google's copyright. Other versions require a new review; this is not a
+  general BSD template. Resolved JAR SHA-256:
+  `10176c95e30d3f1069bfef661aae683c6eaa184dfbe4696f103fcad3c458aa96`.
 - Desugar: upstream [2.1.5 preparation commit `73170c3`](https://github.com/google/desugar_jdk_libs/commit/73170c345e6a762fc6a1f0301bb15218850023ef),
   including `LICENSE` (GPLv2 + Classpath Exception), `ADDITIONAL_LICENSE_INFO`,
   `ASSEMBLY_EXCEPTION` and source notices corresponding to release JAR classes.
