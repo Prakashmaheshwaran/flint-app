@@ -112,6 +112,38 @@ final class FlintCompletionNotificationTests: XCTestCase {
         wait(for: [cancelled], timeout: 2)
         drain(sut)
     }
+    func testStartupRecoversSavedOptOutWithoutSchedulingOrRequestingPermission() {
+        defaults.set(false, forKey: FlintCompletionNotifier.preferenceKey)
+        let center = NotificationCenterStub()
+        center.pending = ["flint.session.complete.a", "unrelated.notification"]
+        let sut = notifier(center)
+        drain(sut)
+        XCTAssertEqual(center.pending, ["unrelated.notification"])
+        XCTAssertEqual(center.cancelled, ["flint.session.complete.a"])
+        XCTAssertTrue(center.requests.isEmpty)
+        XCTAssertEqual(center.statusCount, 0)
+        XCTAssertEqual(center.requestCount, 0)
+    }
+
+    func testStartupOptOutEnumerationPreservesNewStartAfterReenable() {
+        defaults.set(false, forKey: FlintCompletionNotifier.preferenceKey)
+        let center = NotificationCenterStub()
+        center.pending = ["flint.session.complete.a", "unrelated.notification"]
+        var pendingReply: (([String]) -> Void)?
+        center.onPending = { pendingReply = $0 }
+        let sut = notifier(center)
+        drain(sut)
+        sut.setEnabled(true)
+        sut.handle(.started(session(id: "b"), source: .manual, at: now))
+        drain(sut)
+        pendingReply?(["flint.session.complete.a", "flint.session.complete.b", "unrelated.notification"])
+        drain(sut)
+        XCTAssertEqual(Set(center.pending), ["flint.session.complete.b", "unrelated.notification"])
+        XCTAssertEqual(center.cancelled, ["flint.session.complete.a"])
+        XCTAssertEqual(center.requests.map(\.identifier), ["flint.session.complete.b"])
+        XCTAssertEqual(center.requestCount, 0)
+    }
+
     func testToggleOffCancelsOnlyFlintCompletionRequests() {
         let center = NotificationCenterStub(), sut = notifier(center)
         XCTAssertTrue(sut.isEnabled)

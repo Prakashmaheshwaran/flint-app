@@ -156,13 +156,20 @@ public final class FlintCompletionNotifier: FlintSessionEventSink, @unchecked Se
     }
 
     private func reconcilePending() {
+        let recoveringOptOut = !isEnabled
         terminalSessions.formUnion(persistedTerminalIDs())
         center.pendingIdentifiers { [weak self] identifiers in
             guard let self else { return }
             self.queue.async {
                 self.terminalSessions.formUnion(self.persistedTerminalIDs())
-                let stale = identifiers.filter {
-                    $0.hasPrefix(Self.identifierPrefix) && self.terminalSessions.contains(String($0.dropFirst(Self.identifierPrefix.count)))
+                let stale = identifiers.filter { identifier in
+                    guard identifier.hasPrefix(Self.identifierPrefix) else { return false }
+                    let sessionID = String(identifier.dropFirst(Self.identifierPrefix.count))
+                    // Recover an opt-out whose asynchronous removal was interrupted by exit.
+                    // A new start after re-enabling owns a generation and must survive an
+                    // older enumeration; a preference that is still Off cancels everything.
+                    return !self.isEnabled || self.terminalSessions.contains(sessionID) ||
+                        (recoveringOptOut && self.generations[sessionID] == nil)
                 }
                 if !stale.isEmpty { self.center.cancel(stale) }
             }
