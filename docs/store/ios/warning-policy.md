@@ -25,3 +25,14 @@ tool output and would be brittle across Xcode updates. We therefore enforce
 compiler warnings for owned targets rather than a global text filter. The
 local FlintCore Swift package is a separate SwiftPM graph; this project setting
 does not promise to turn every dependency diagnostic into an error.
+
+Hosted runner SDKs can differ from the local SDK. For example, Xcode 26.6
+reports a known `ShieldAction.firstSecondarySubmenuItemPressed` case absent
+from older switch lists. The shield adapter deliberately handles every action
+other than its supported primary/secondary buttons with the existing `.none`
+response, so its explicit `default` preserves behavior across SDK case lists
+without granting access. This is not a new submenu action implementation.
+When a runner SDK exposes another source diagnostic, the owning lane must
+triage and fix it promptly (lane B owns shield/enforcement adapters). Do not
+silently turn off the compiler gate to hide SDK-driven warnings; check both
+the runner diagnostic and the local SDK before choosing the smallest fix.
