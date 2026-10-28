@@ -24,4 +24,15 @@ final class FlintSleepProtectionStatusTests: XCTestCase {
         XCTAssertNil(FlintSleepProtectionStatus.issue(activityNames: [name], report: report,
                                                     authorized: true, now: now))
     }
+
+    func testStaleAndEmptySleepStatus() {
+        let now = Date()
+        let name = "flint.rule.sleep.night"
+        let stale = FlintArmingHealth.DomainReport(enabled: 1, attempted: 1, armed: 1,
+            failures: [], updatedAt: now.addingTimeInterval(-24 * 3600 - 1), observedActivities: [name])
+        XCTAssertNotNil(FlintSleepProtectionStatus.issue(activityNames: [name], report: stale,
+                                                       authorized: true, now: now))
+        XCTAssertNil(FlintSleepProtectionStatus.issue(activityNames: [], report: nil,
+                                                    authorized: false, now: now))
+    }
 }

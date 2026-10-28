@@ -109,9 +109,14 @@ final class FlintActivityRegistrationTests: XCTestCase {
         center.held[.init(request.name)] = request
         request.configurationChanged = true
         center.refused.insert(request.name)
-        let report = reconcile([request], center)
+        var cleared: [String] = []
+        let report = FlintActivityRegistration.reconcile([request], prefix: "flint.rule.", enabled: 1,
+            validationFailures: [], center: center, onRemove: { cleared.append($0) })
         XCTAssertEqual(report.observed, 0)
         XCTAssertEqual(report.failures.count, 1)
+        XCTAssertEqual(cleared, [request.name])
+        XCTAssertEqual(center.stops, [[request.name]])
+        XCTAssertTrue(center.activities.isEmpty, "no old registration may reapply the failed rule")
     }
 
     private func activity(_ name: String, hour: Int = 9) -> FlintActivityRegistration {

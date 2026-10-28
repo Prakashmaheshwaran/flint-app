@@ -174,7 +174,7 @@ struct OpenLimitEditor: View {
 
     private var footerText: Text {
         if let issue = selectionIssue {
-            return Text(issue.message(for: .openLimit) + (!selection.categoryTokens.isEmpty
+            return Text(issue.message(for: .openLimit) + (issue == .emptySelection && !selection.categoryTokens.isEmpty
                 ? " Open Limits require specific apps or websites; categories cannot be open-limited." : ""))
         }
         if !selection.categoryTokens.isEmpty {

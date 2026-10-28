@@ -57,6 +57,11 @@ struct FlintActivityRegistration {
                 armed += 1
                 accepted.insert(request.name)
             } catch {
+                // A refused replacement can leave the old registration/store behind, while
+                // Open Limits may already have applied its launch shield. Release this cause
+                // explicitly: a failed arm must not leave a shield with no dependable end.
+                center.stopMonitoring([name])
+                onRemove(request.name)
                 failures.append(.init(activityName: request.name, reason: String(describing: error)))
             }
         }

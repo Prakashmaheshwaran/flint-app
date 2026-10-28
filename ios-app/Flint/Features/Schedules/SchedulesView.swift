@@ -484,6 +484,11 @@ struct ScheduleEditor: View {
                         .frame(minHeight: 58)
                         .overlay(alignment: .bottom) { FlintHairline() }
 
+                        if allowList {
+                            Text("Only individually picked apps stay open. Website and category picks are ignored; websites remain blocked.")
+                                .flintSecondary(12).padding(.top, 8)
+                        }
+
                         Text("Break level").flintEyebrow().padding(.top, 24)
                         FlintSegmented(options: [(BreakLevel.easy, "Easy"), (.harder, "Harder"), (.hardcore, "Hardcore")],
                                        selection: $breakLevel)
