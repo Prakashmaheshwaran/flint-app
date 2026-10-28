@@ -165,6 +165,20 @@ final class FlintGlanceTests: XCTestCase {
         XCTAssertNil(URLComponents(url: FlintGlancePresentation.openURL, resolvingAgainstBaseURL: false)?.query)
     }
 
+    func testPublicNamesAreBoundedAndControlCharactersDoNotReachSurfaces() {
+        XCTAssertEqual(FlintGlancePresentation.sanitizedName(" Deep\n focus\u{202E} "), "Deep focus")
+        XCTAssertEqual(FlintGlancePresentation.sanitizedName("\n\u{202E}"), "Focus session")
+        XCTAssertEqual(FlintGlancePresentation.sanitizedName(String(repeating: "a", count: 100)).count, 64)
+        var value = input()
+        var session = value.session!
+        session.name = "Deep study"
+        value = .init(protection: value.protection, checkedAt: value.checkedAt, validUntil: value.validUntil,
+                      session: session, protectionEndsAt: value.protectionEndsAt, next: value.next,
+                      history: value.history, headline: .init(name: "Deep study", kind: "session", tier: "Harder"))
+        XCTAssertEqual(plan(value)?.cause, "Deep study")
+        XCTAssertEqual(FlintGlancePresentation(value, at: now).causeSummary, "Deep study · Harder")
+    }
+
     private func project(version: Int = 1, state: String = "protected", observed: TimeInterval = -10,
                          validity: TimeInterval? = 600, reasons: [String] = [],
                          ends: [Date?]? = nil, recovery: Date? = nil) -> FlintGlanceInput {

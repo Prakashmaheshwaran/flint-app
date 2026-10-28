@@ -9,6 +9,7 @@ enum FlintGlanceStatusAdapter {
                         session: FlintGlanceInput.Session?, enforcingEnds: [Date?],
                         next: FlintGlanceInput.Occurrence?, recoveryUntil: Date?,
                         degradedReasons: [String], history: FlintGlanceInput.History,
+                        headline: FlintGlanceInput.Cause? = nil,
                         at date: Date) -> FlintGlanceInput {
         func unavailable() -> FlintGlanceInput {
             .init(protection: .unavailable, checkedAt: nil, validUntil: nil, session: nil,
@@ -41,6 +42,6 @@ enum FlintGlanceStatusAdapter {
             end = enforcingEnds.compactMap { $0 }.max()
         } else { end = nil }
         return .init(protection: protection, checkedAt: observedAt, validUntil: freshness,
-                     session: session, protectionEndsAt: end, next: next, history: history)
+                     session: session, protectionEndsAt: end, next: next, history: history, headline: headline)
     }
 }

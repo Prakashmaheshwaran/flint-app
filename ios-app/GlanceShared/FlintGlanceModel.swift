@@ -19,11 +19,14 @@ struct FlintGlanceInput: Equatable {
         let isArmed: Bool
         let startedAt: Date
         let endsAt: Date
+        var name: String? = nil
     }
     struct Occurrence: Equatable {
         let startsAt: Date
         let endsAt: Date
+        var name: String? = nil
     }
+    struct Cause: Equatable { let name: String; let kind: String; let tier: String }
     struct History: Equatable {
         enum Availability: CaseIterable { case unavailable, degraded, empty, value }
         let availability: Availability
@@ -38,6 +41,7 @@ struct FlintGlanceInput: Equatable {
     let protectionEndsAt: Date?
     let next: Occurrence?
     let history: History
+    var headline: Cause? = nil
 
     static func unavailable(at date: Date) -> Self {
         .init(protection: .unavailable, checkedAt: nil, validUntil: nil, session: nil,
@@ -57,7 +61,10 @@ struct FlintGlancePresentation: Equatable {
     let title: String
     let detail: String
     let countdownEnd: Date?
+    let plannedEnd: Date?
+    let causeSummary: String?
     let nextStart: Date?
+    let nextName: String?
     let historyValue: String
     let historyNote: String?
     let checkedAt: Date?
@@ -98,6 +105,10 @@ struct FlintGlancePresentation: Equatable {
         case .stale: title = "Status needs checking"; detail = "Open Flint to refresh"
         case .expired: title = "Planned end reached"; detail = "Open Flint to check"
         }
+        if valid, [.armed, .enforcing, .degraded].contains(status), let cause = input.headline {
+            causeSummary = "\(Self.sanitizedName(cause.name)) · \(cause.tier)"
+        } else { causeSummary = nil }
+        plannedEnd = valid && [.armed, .enforcing, .pass].contains(status) ? input.protectionEndsAt : nil
         // Stop the timer at the first unsupported boundary, including snapshot freshness.
         if valid, [.armed, .enforcing].contains(status), let end = input.protectionEndsAt,
            let until = input.validUntil, end > date {
@@ -105,7 +116,8 @@ struct FlintGlancePresentation: Equatable {
         } else { countdownEnd = nil }
         if valid, let next = input.next, next.startsAt > date, next.endsAt > next.startsAt {
             nextStart = next.startsAt
-        } else { nextStart = nil }
+            nextName = next.name.map(Self.sanitizedName)
+        } else { nextStart = nil; nextName = nil }
 
         let history = input.history
         if !calendar.isDate(date, inSameDayAs: history.readAt) || history.readAt > date {
@@ -135,6 +147,14 @@ struct FlintGlancePresentation: Equatable {
         if seconds > 0 && minutes == 0 { return "<1m" }
         if minutes < 60 { return "\(minutes)m" }
         return minutes % 60 == 0 ? "\(minutes / 60)h" : "\(minutes / 60)h \(minutes % 60)m"
+    }
+
+    static func sanitizedName(_ value: String) -> String {
+        let scalars = value.unicodeScalars.filter {
+            !CharacterSet.controlCharacters.contains($0) && $0.properties.generalCategory != .format
+        }
+        let text = String(String.UnicodeScalarView(scalars)).split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return text.isEmpty ? "Focus session" : String(text.prefix(64))
     }
 
     /// Future entries may retire an old claim; they never predict arming or completion.
@@ -168,7 +188,8 @@ struct FlintGlanceActivityPlan: Equatable {
               ["Easy", "Harder", "Hardcore"].contains(session.tier),
               session.startedAt <= date, session.endsAt > date,
               session.endsAt > session.startedAt else { return nil }
-        return .init(sessionID: session.id, cause: session.cause.rawValue.capitalized,
+        return .init(sessionID: session.id,
+                     cause: FlintGlancePresentation.sanitizedName(session.name ?? session.cause.rawValue.capitalized),
                      tier: session.tier, startedAt: session.startedAt,
                      endsAt: session.endsAt, staleAt: min(valid, session.endsAt))
     }

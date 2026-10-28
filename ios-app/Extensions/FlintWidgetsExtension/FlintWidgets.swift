@@ -91,37 +91,66 @@ private struct FlintGlanceWidgetView: View {
     }
 
     private var home: some View {
-        VStack(alignment: .leading, spacing: family == .systemSmall ? 4 : 7) {
-            Label("FLINT", systemImage: "flame.fill")
-                .font(.caption2.weight(.semibold)).foregroundStyle(FlintBrand.ember)
-            Text(model.title).font(family == .systemSmall ? .caption.weight(.semibold) : .headline)
-                .foregroundStyle(FlintBrand.bone)
-                .lineLimit(2).minimumScaleFactor(0.8)
-            if let end = model.countdownEnd {
-                HStack { countdown(end).font(.headline.monospacedDigit()); Text("to check").font(.caption2) }
-                    .foregroundStyle(FlintBrand.bone)
-            }
-            nextOccurrence.font(.caption2).foregroundStyle(FlintBrand.mist).lineLimit(1)
-            Spacer(minLength: 0)
-            HStack(alignment: .firstTextBaseline) {
-                Text("Focused today").font(.caption2)
-                Spacer(minLength: 2)
-                Text(model.historyValue).font(.caption2.weight(.semibold)).lineLimit(2)
-            }
-            .foregroundStyle(FlintBrand.bone)
-            if family == .systemMedium {
-                Text(model.historyNote ?? model.detail).font(.caption2).foregroundStyle(FlintBrand.mist)
-                    .lineLimit(1)
-            }
+        VStack(alignment: .leading, spacing: family == .systemSmall ? 2 : 6) {
             HStack(spacing: 3) {
-                if let checked = model.checkedAt {
-                    Text("Checked")
-                    Text(checked, style: .time)
-                } else { Text("Open Flint") }
+                Label("FLINT", systemImage: "flame.fill")
+                Spacer(minLength: 0)
+                if let end = model.plannedEnd { Text("Ends"); Text(end, style: .time) }
             }
-            .font(.caption2).foregroundStyle(FlintBrand.ember).lineLimit(1)
+            .font(.caption2.weight(.semibold)).foregroundStyle(FlintBrand.ember).lineLimit(1)
+            if family == .systemMedium {
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        protection
+                        Spacer(minLength: 0)
+                        checked
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    VStack(alignment: .leading, spacing: 5) {
+                        if let name = model.nextName {
+                            Text(name).font(.caption.weight(.semibold)).lineLimit(1).privacySensitive()
+                        }
+                        nextOccurrence.font(.caption2).lineLimit(2)
+                        Spacer(minLength: 0)
+                        Text("Focused today").font(.caption2)
+                        Text(model.historyValue).font(.headline).lineLimit(2).privacySensitive()
+                        if let note = model.historyNote { Text(note).font(.caption2).lineLimit(2) }
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
+            } else {
+                protection
+                nextOccurrence.font(.caption2).foregroundStyle(FlintBrand.mist).lineLimit(1)
+                Spacer(minLength: 0)
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Focused today").font(.caption2)
+                    Spacer(minLength: 2)
+                    Text(model.historyValue).font(.caption2.weight(.semibold)).lineLimit(2).privacySensitive()
+                }
+                checked
+            }
         }
+        .foregroundStyle(FlintBrand.bone)
         .accessibilityElement(children: .combine)
+    }
+
+    private var protection: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(model.title).font(family == .systemSmall ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
+                .lineLimit(2).minimumScaleFactor(0.8)
+            if let cause = model.causeSummary {
+                Text(cause).font(.caption2).lineLimit(1).minimumScaleFactor(0.7).privacySensitive()
+            }
+            if let end = model.countdownEnd {
+                HStack { countdown(end).font(.headline); Text("to check").font(.caption2) }
+            }
+        }
+    }
+
+    private var checked: some View {
+        HStack(spacing: 3) {
+            if let checked = model.checkedAt { Text("Checked"); Text(checked, style: .time) }
+            else { Text("Open Flint") }
+        }
+        .font(.caption2).foregroundStyle(FlintBrand.ember).lineLimit(1)
     }
 
     @ViewBuilder private var nextOccurrence: some View {
