@@ -23,6 +23,8 @@ final class SessionViewModel: ObservableObject {
 
     private let controller = FlintSessionController()
     private var timer: Timer?
+    /// The saved group last applied, so a start from an unchanged preset is reported as one.
+    private var appliedGroupSelection: FamilyActivitySelection?
 
     init() {
         if let saved = FlintGroupStore()?.loadSelection() { selection = saved }
@@ -58,6 +60,7 @@ final class SessionViewModel: ObservableObject {
 
     func applyGroup(_ group: FlintAppGroup) {
         selection = group.selection
+        appliedGroupSelection = group.selection
         persistSelection()
     }
 
@@ -111,7 +114,8 @@ final class SessionViewModel: ObservableObject {
                 selection: selection,
                 duration: TimeInterval(durationMinutes * 60),
                 breakLevel: breakLevel,
-                name: "Focus"
+                name: "Focus",
+                source: appliedGroupSelection == selection ? .preset : .manual
             )
             startTicking()
         } catch {
@@ -125,7 +129,8 @@ final class SessionViewModel: ObservableObject {
             errorText = "Hardcore session — it can't be stopped until it ends."
             return
         }
-        controller.stop()
+        // In-app, Harder only stops after its wait (SessionView's BreakWaitView).
+        controller.stop(route: active.breakLevel == .harder ? .harderWait : .manualStop)
         self.active = nil
         remaining = 0
         timer?.invalidate()
