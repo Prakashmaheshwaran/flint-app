@@ -89,7 +89,8 @@ class RollingEmergencyPassPolicyTest {
         assertTrue(afterReboot.clockUncertain)
         val rebased = policy.checkpointed(before, at(5L, boot = "boot-2"))
         val e = policy.eligibility(rebased, at(5L + 1_000L, boot = "boot-2"))
-        assertTrue(e is Eligibility.CoolingDown && !e.clockUncertain && e.remainingMs == 604_800_000L - 86_400_000L - 1_000L)
+        // Monotonic again on the new boot, but the date estimate stays uncertain (sticky, §9).
+        assertTrue(e is Eligibility.CoolingDown && e.clockUncertain && e.remainingMs == 604_800_000L - 86_400_000L - 1_000L)
     }
 
     @Test fun `PC-45 a retry of the committed operation never spends again or extends`() {
