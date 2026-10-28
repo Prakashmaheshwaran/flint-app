@@ -59,6 +59,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -75,9 +76,14 @@ import com.flint.peakfocus.core.common.theme.FlintPalette
 
 internal fun Modifier.semanticsLabel(label: String): Modifier = semantics { contentDescription = label }
 
-internal fun Modifier.selectableRole(selected: Boolean): Modifier = semantics { this.selected = selected }
+internal fun Modifier.selectableRole(selected: Boolean, role: Role = Role.RadioButton): Modifier =
+    semantics(mergeDescendants = true) {
+        this.selected = selected
+        this.role = role
+    }
 
-fun Modifier.flintClickable(onClick: () -> Unit): Modifier = clickable(onClick = onClick)
+fun Modifier.flintClickable(onClick: () -> Unit): Modifier =
+    semantics(mergeDescendants = true) {}.clickable(role = Role.Button, onClick = onClick)
 
 private val Sky = listOf(
     0xFF0B0D12 to 0f, 0xFF14151B to 321f, 0xFF2A221E to 439f, 0xFF4B3322 to 506f, 0xFF1A1614 to 608f, 0xFF0E0D0F to 844f,
