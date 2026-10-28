@@ -8,6 +8,9 @@ struct SleepDialHeader: View {
     @State private var editing: Field?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    // E11-Sleep.dc.html's night arc and moon glyph; retained per design review.
+    private static let nightArcColor = Color(hex: 0x3A3F5C)
+
     private enum Field: Identifiable { case bedtime, wake; var id: Self { self } }
 
     var body: some View {
@@ -77,11 +80,11 @@ struct SleepDialHeader: View {
         return ZStack {
             Circle().stroke(FlintBrand.bone(0.08), lineWidth: 18)
             NightArc(start: startFrac, end: endFrac)
-                .stroke(FlintBrand.mist, style: StrokeStyle(lineWidth: 18, lineCap: .round))
+                .stroke(Self.nightArcColor, style: StrokeStyle(lineWidth: 18, lineCap: .round))
             knob(at: startFrac, fill: FlintBrand.bone) {
                 Image(systemName: "moon.fill")
                     .font(.system(size: 11))
-                    .foregroundStyle(FlintBrand.onBone)
+                    .foregroundStyle(Self.nightArcColor)
                     .accessibilityHidden(true)
             }
             knob(at: endFrac, fill: FlintBrand.ember) { EmptyView() }
