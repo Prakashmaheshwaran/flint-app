@@ -19,13 +19,9 @@ xcodebuild -project "$ios_dir/Flint.xcodeproj" -scheme Flint \
   -derivedDataPath "$derived_data" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
 app="$derived_data/Build/Products/Debug-iphonesimulator/Flint.app"
 [[ -d "$app" ]] || { echo "Built app not found: $app" >&2; exit 1; }
-agent_orca emulator attach "$simulator" --worktree "path:$PWD" --json
-if [[ -x scripts/flint-devices.sh ]]; then
-  claim=(claim ios "$device")
-  if [[ "$state" == Shutdown ]]; then claim+=(--booted); fi
-  scripts/flint-devices.sh "${claim[@]}"
-fi
-xcrun simctl bootstatus "$device" -b
+# Fresh state, explicit boot proof and returned attach identity are checked after
+# the build. Always attach the exact resolved UDID, never Orca's fuzzy name match.
+agent_device ios "$device"
 xcrun simctl install "$device" "$app"
 xcrun simctl launch "$device" "$bundle_id"
 echo "Flint launched: device=$simulator ($device) bundle=$bundle_id"

@@ -1,40 +1,93 @@
 #!/usr/bin/env python3
 """Device-free integration tests: real temporary Git history, fake native/Orca/gh tools."""
 import json
+import importlib.util
 import os
 from pathlib import Path
+import resource
 import shutil
+import signal
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
-REAL_GIT = shutil.which("git")
-REAL_MAKE = shutil.which("make")
+
+
+def real_tool(name):
+    found = shutil.which(name)
+    # macOS /usr/bin/git and make are xcrun launchers, not the actual tools.
+    # Pin their binaries so an isolated DEVELOPER_DIR cannot select live tools.
+    native = Path('/Library/Developer/CommandLineTools/usr/bin') / ('gnumake' if name == 'make' else name)
+    return str(native) if found == f'/usr/bin/{name}' and native.is_file() else found
+
+
+REAL_GIT = real_tool('git')
+REAL_MAKE = real_tool('make')
+FILE_LIMIT = 1024 * 1024
+_soft, _hard = resource.getrlimit(resource.RLIMIT_FSIZE)
+_limit = min(FILE_LIMIT, _hard) if _hard != resource.RLIM_INFINITY else FILE_LIMIT
+if _soft != resource.RLIM_INFINITY:
+    _limit = min(_limit, _soft)
+# Applied to this process and every fixture subprocess, including imported use.
+resource.setrlimit(resource.RLIMIT_FSIZE, (_limit, _hard))
 
 SHIM = r'''#!/usr/bin/env python3
-import json, os, pathlib, sys
+import json, os, pathlib, sys, time
 name = pathlib.Path(sys.argv[0]).name
 args = sys.argv[1:]
 with open(os.environ["EVENTS"], "a") as f:
     f.write(json.dumps([name, args]) + "\n")
 with open(os.environ["BINARY_PATHS"], "a") as f:
     f.write(json.dumps({"tool": name, "resolved": str(pathlib.Path(sys.argv[0]).resolve())}) + "\n")
-if set(args) & {"delete", "shutdown", "erase", "-wipe-data", "--wipe-data"}:
+if set(args) & {"delete", "erase", "-wipe-data", "--wipe-data"}:
     sys.exit("unexpected destructive device command in agent selftest")
 if name == os.environ.get("FAIL_TOOL") or (name == "fake-make" and args[0] == os.environ.get("FAIL_TARGET")):
     sys.exit(7)
-if name == "xcrun" and args[:4] == ["simctl", "list", "devices", "available"]:
-    print(os.environ["SIM_DEVICES"])
-elif name == "xcrun" and args == ["simctl", "list", "devices", "--json"]:
-    print(os.environ["SIM_DEVICES"])
+if name == "xcrun" and args[:3] == ["simctl", "list", "devices"]:
+    devices = json.loads(os.environ["SIM_DEVICES"])
+    for rows in devices["devices"].values():
+        for device in rows:
+            if pathlib.Path('booted-' + device['udid']).exists():
+                device.update(state='Booted', lastBootedAt='2026-10-28T01:00:00Z')
+                if os.environ.get('NO_BOOT_EPOCH'):
+                    device.pop('lastBootedAt')
+    print(json.dumps(devices))
 elif name == "xcodebuild" and not os.environ.get("NO_APP"):
     d = pathlib.Path(args[args.index("-derivedDataPath") + 1])
-    (d / "Build/Products/Debug-iphonesimulator/Flint.app").mkdir(parents=True)
+    (d / "Build/Products/Debug-iphonesimulator/Flint.app").mkdir(parents=True, exist_ok=True)
+    if os.environ.get("OTHER_ACTOR_BOOTS_DURING_BUILD"):
+        pathlib.Path('booted-TEST-UDID').touch()
+elif name == 'xcrun' and args[:2] == ['simctl', 'boot']:
+    pathlib.Path('booted-' + args[2]).touch()
+    if os.environ.get('BOOT_RACE'):
+        sys.exit(149)
+elif name == 'xcrun' and args[:2] == ['simctl', 'shutdown']:
+    pathlib.Path('booted-' + args[2]).unlink(missing_ok=True)
+elif name == 'flint-devices.sh' and args[0] == 'incarnation':
+    if not os.environ.get('NO_INCARNATION'):
+        token = 'b' if os.environ.get('CHANGE_INCARNATION_AFTER_ATTACH') and pathlib.Path('attached').exists() else 'a'
+        print('v1:' + token * 64)
+elif name == 'flint-devices.sh' and args[0] == 'rollback':
+    if os.environ.get('PEER_CLAIM'):
+        sys.exit('rollback refused: device/AVD is claimed; preserve peers')
+    with open(os.environ['EVENTS'], 'a') as f:
+        command = ['xcrun', ['simctl', 'shutdown', args[2]]] if args[1] == 'ios' else ['adb', ['-s', args[2], 'emu', 'kill']]
+        f.write(json.dumps(command) + '\n')
+elif name == 'emulator':
+    pathlib.Path('emulator-group').write_text(str(os.getpid()))
+    pathlib.Path('emulator-serial').write_text('emulator-' + args[args.index('-port') + 1])
+    pathlib.Path('emulator-ready').touch()
+    while True:
+        time.sleep(1)
 elif name == "fake-make" and args == ["android"]:
     p = pathlib.Path("android-app/app/build/outputs/apk/debug/app-debug.apk")
     p.parent.mkdir(parents=True, exist_ok=True)
     p.touch()
+    pathlib.Path('built-android').touch()
 elif name == "orca":
     verb = args[1]
     if verb == "devices":
@@ -44,6 +97,25 @@ elif name == "orca":
         print(json.dumps({"result": {"devices": [
             {"id": "emulator-5554" if booted else "flint-test", "name": "flint-test", "platform": "android", "state": "booted" if booted else "shutdown"},
             {"id": "emulator-5556", "name": "other-avd", "platform": "android", "state": "booted"}]}}))
+    elif verb == 'attach':
+        if os.environ.get('ATTACH_DELAY'):
+            time.sleep(float(os.environ['ATTACH_DELAY']))
+        pathlib.Path('attached').write_text(os.environ.get('ATTACH_DEVICE', args[2]))
+        if os.environ.get('ATTACH_JSON'):
+            print(os.environ['ATTACH_JSON'])
+        else:
+            ident = args[2]
+            if ident == 'iPhone 17':
+                ident = 'TEST-UDID'
+            if ident == 'flint-test':
+                ident = 'emulator-5554'
+            backend = 'android' if ident.startswith('emulator-') else 'ios'
+            print(json.dumps({'ok': True, 'result': {'attached': True, 'info': {
+                'deviceUdid': os.environ.get('ATTACH_DEVICE', ident), 'backend': backend, 'helperPid': 12345}}}))
+    elif verb == 'list':
+        print(json.dumps({'result': {'running': True, 'pid': 12345, 'device': pathlib.Path('attached').read_text()}}))
+    elif verb == 'install':
+        pathlib.Path('installed').touch()
     elif verb == "exec":
         print(json.dumps({"result": {"stdout": "123\n"}}))
     elif verb == "logcat":
@@ -56,11 +128,35 @@ elif name == "adb":
     if args == ["devices"]:
         print("List of devices attached\nemulator-5554\tdevice\nemulator-5556\tdevice")
     elif args[2:] == ["emu", "avd", "name"]:
-        print("flint-test\nOK" if args[1] == "emulator-5554" else "other-avd\nOK")
+        ours = pathlib.Path('emulator-serial').read_text() if pathlib.Path('emulator-serial').exists() else 'emulator-5554'
+        value = os.environ.get('ACTUAL_AVD_NAME', 'flint-test' if args[1] == ours else 'other-avd')
+        if os.environ.get('AVD_CHANGED_AFTER_INSTALL') and pathlib.Path('installed').exists():
+            value = 'other-avd'
+        if os.environ.get('AVD_CHANGED_AFTER_BUILD') and pathlib.Path('built-android').exists():
+            value = 'other-avd'
+        print(value + '\nOK')
+    elif args[2:] == ['get-state']:
+        print('device')
+    elif args[2:] == ['shell', 'cat', '/proc/sys/kernel/random/boot_id']:
+        print('11111111-2222-3333-4444-555555555555')
+    elif args[2:] == ['emu', 'kill']:
+        pass
     elif args[2:4] == ["shell", "pidof"]:
         print("123")
     elif "logcat" in args:
         print("app event via adb")
+elif name == 'xcrun' and args[:2] == ['simctl', 'spawn'] and args[-2:] == ['launchctl', 'managerpid']:
+    print('43210')
+elif name == 'ps':
+    if args == ['-axo', 'pid=,pgid=,lstart=,command=']:
+        if pathlib.Path('emulator-group').exists():
+            group = pathlib.Path('emulator-group').read_text()
+            port = pathlib.Path('emulator-serial').read_text().removeprefix('emulator-')
+            print(group + ' ' + group + ' Tue Oct 27 01:00:00 2026 /fake/emulator -avd flint-test -port ' + port)
+    elif args == ['-p', '43210', '-o', 'lstart=,comm=']:
+        print('Tue Oct 27 01:00:00 2026 /fake/launchd_sim')
+    elif args == ['-p', '12345', '-o', 'lstart=,comm=']:
+        print('Tue Oct 27 01:00:00 2026 /fake/serve-sim')
 elif name == "git":
     if args == ["branch", "--show-current"]:
         print("agent-test")
@@ -94,13 +190,29 @@ class AgentCommands(unittest.TestCase):
         ledger = self.root / "scripts/flint-devices.sh"
         ledger.unlink(missing_ok=True)
         ledger.symlink_to(self.shim)
-        for name in ("orca", "xcrun", "simctl", "xcodebuild", "xcodegen", "gh", "fake-make", "adb", "emulator", "avdmanager"):
+        for name in ("orca", "xcrun", "simctl", "xcodebuild", "xcodegen", "gh", "fake-make", "adb", "emulator", "avdmanager", "ps"):
             (self.bin / name).symlink_to(self.shim.name)
-        self.env = os.environ.copy()
-        for key in ("ORCA_CLI_COMMAND", "MAKEFLAGS", "MFLAGS", "MAKELEVEL"):
-            self.env.pop(key, None)
+        self.home = Path(temp).resolve() / 'home'
+        self.home.mkdir()
+        self.env = {key: value for key, value in os.environ.items()
+                    if not key.startswith(('GIT_', 'FLINT_', 'ANDROID_', 'ORCA_', 'XDG_'))
+                    and key not in ('MAKEFLAGS', 'MFLAGS', 'MAKELEVEL', 'BASH_ENV', 'ENV', 'ZDOTDIR',
+                                    'JAVA_HOME', 'DEVELOPER_DIR', 'XCODE_DEV', 'CODEX_THREAD_ID', 'CLAUDE_SESSION_ID',
+                                    'IOS_DIR', 'IOS_SIM', 'IOS_DERIVED_DATA', 'AVD', 'DRY_RUN', 'CONFIRM',
+                                    'ORPHAN_PLAN', 'ORPHAN_DIGEST', 'TAG')}
         self.env.update(
-            PATH=f"{self.bin}{os.pathsep}{os.environ['PATH']}",
+            HOME=str(self.home),
+            XDG_CONFIG_HOME=str(self.home / '.config'),
+            XDG_CACHE_HOME=str(self.home / '.cache'),
+            XDG_DATA_HOME=str(self.home / '.local/share'),
+            XDG_STATE_HOME=str(self.home / '.local/state'),
+            GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_SYSTEM=os.devnull, GIT_CONFIG_GLOBAL=os.devnull,
+            GIT_CONFIG_COUNT='3', GIT_CONFIG_KEY_0='core.hooksPath', GIT_CONFIG_VALUE_0=os.devnull,
+            GIT_CONFIG_KEY_1='init.templateDir', GIT_CONFIG_VALUE_1=str(self.home / 'empty-template'),
+            GIT_CONFIG_KEY_2='commit.gpgsign', GIT_CONFIG_VALUE_2='false',
+            PYTHONDONTWRITEBYTECODE='1',
+            JAVA_HOME=str(self.home / 'fake-java'), DEVELOPER_DIR=str(self.home / 'fake-xcode'),
+            PATH=os.pathsep.join((str(self.bin), str(Path(REAL_GIT).parent), str(Path(REAL_MAKE).parent), os.environ['PATH'])),
             EVENTS=str(self.events),
             BINARY_PATHS=str(self.root / "binary-paths.jsonl"),
             FLINT_MAKE=str(self.bin / "fake-make"),
@@ -114,16 +226,44 @@ class AgentCommands(unittest.TestCase):
         sdk = self.root / "fake-sdk"
         (sdk / "platform-tools").mkdir(parents=True)
         (sdk / "platform-tools/adb").symlink_to(self.shim)
+        (sdk / 'emulator').mkdir()
+        (sdk / 'emulator/emulator').symlink_to(self.shim)
+        self.image = sdk / 'system-images/android-35/google_apis/arm64-v8a'
+        self.image.mkdir(parents=True)
+        (self.image / 'system.img').touch()
+        (self.image / 'package.xml').write_text('<repository><localPackage path="system-images;android-35;google_apis;arm64-v8a"/></repository>')
+        self.avd_config = self.home / '.android/avd/flint-test.avd/config.ini'
+        self.avd_config.parent.mkdir(parents=True)
+        self.avd_config.write_text('AvdId=flint-test\nimage.sysdir.1=system-images/android-35/google_apis/arm64-v8a/\n')
+        (self.home / 'empty-template').mkdir()
         self.env.update(
             ANDROID_HOME=str(sdk), ANDROID_SDK_ROOT=str(sdk),
             ORCA_CLI_COMMAND=str(self.bin / "orca"),
             ORCA_ROOT_PATH=str(self.root), ORCA_WORKTREE_PATH=str(self.root),
         )
 
-    def run_cmd(self, args, **env):
-        return subprocess.run(args, cwd=self.root, env={**self.env, **env}, text=True, capture_output=True)
+    def run_cmd(self, args, command_timeout=20, **env):
+        with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+            child = subprocess.Popen(args, cwd=self.root, env={**self.env, **env},
+                                     stdout=out, stderr=err, start_new_session=True)
+            try:
+                code = child.wait(timeout=command_timeout)
+            except subprocess.TimeoutExpired:
+                os.killpg(child.pid, signal.SIGKILL)
+                child.wait(timeout=2)
+                code = 124
+            out.seek(0)
+            err.seek(0)
+            return subprocess.CompletedProcess(args, code, out.read(FILE_LIMIT).decode(errors='replace'),
+                                               err.read(FILE_LIMIT).decode(errors='replace'))
 
     def tearDown(self):
+        group = self.root / 'emulator-group'
+        if group.exists():
+            try:
+                os.killpg(int(group.read_text()), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
         paths = self.root / "binary-paths.jsonl"
         if paths.exists():
             for line in paths.read_text().splitlines():
@@ -243,7 +383,8 @@ class AgentCommands(unittest.TestCase):
         self.assertIn("CODE_SIGNING_ALLOWED=NO", build)
         self.assertEqual(self.calls("xcodegen"), [["generate"]])
         self.assertEqual(self.calls("orca"), [["emulator", "attach", "TEST-UDID", "--worktree", f"path:{self.root}", "--json"]])
-        self.assertEqual(self.calls("flint-devices.sh"), [["claim", "ios", "TEST-UDID", "--booted"]])
+        self.assertEqual([a for a in self.calls('flint-devices.sh') if a[0] == 'claim'],
+                         [["claim", "ios", "TEST-UDID", "--booted", '--incarnation', 'v1:' + 'a' * 64, '--helper-pid', '12345']])
         calls = self.calls("xcrun")
         self.assertIn(["simctl", "install", "TEST-UDID", "ios-app/Custom Data/Build/Products/Debug-iphonesimulator/Flint.app"], calls)
         self.assertIn(["simctl", "launch", "TEST-UDID", "com.flint.peakfocus"], calls)
@@ -258,7 +399,7 @@ class AgentCommands(unittest.TestCase):
     def test_ios_claim_does_not_own_shutdown_for_an_already_booted_device(self):
         result = self.make("ios-run", "IOS_SIM=OTHER-UDID")
         self.assert_ok(result)
-        self.assertEqual(self.calls("flint-devices.sh"), [["claim", "ios", "OTHER-UDID"]])
+        self.assertEqual(self.calls("flint-devices.sh"), [["claim", "ios", "OTHER-UDID", '--helper-pid', '12345']])
 
     def test_missing_app_prevents_attach(self):
         result = self.make("ios-run", NO_APP="1")
@@ -279,16 +420,19 @@ class AgentCommands(unittest.TestCase):
         result = self.make("android-run", "AVD=flint-test")
         self.assert_ok(result)
         scope = ["--device", "emulator-5554", "--worktree", f"path:{self.root}", "--json"]
+        serial = (self.root / 'emulator-serial').read_text()
+        scope[1] = serial
         self.assertEqual(self.calls("orca"), [
             ["emulator", "devices", "--json"],
-            ["emulator", "attach", "flint-test", "--worktree", f"path:{self.root}", "--json"],
-            ["emulator", "devices", "--json"],
+            ["emulator", "attach", serial, "--worktree", f"path:{self.root}", "--json"],
             ["emulator", "install", str(self.root / "android-app/app/build/outputs/apk/debug/app-debug.apk"), "--reinstall", *scope],
             ["emulator", "launch", "com.flint.peakfocus", *scope],
         ])
         self.assertEqual(self.calls("fake-make"), [["android"]])
-        self.assertEqual(self.calls("flint-devices.sh"), [["claim", "android", "emulator-5554", "--avd", "flint-test", "--booted"]])
-        self.assertEqual([name for name, _ in self.calls()], ["orca", "orca", "orca", "adb", "flint-devices.sh", "fake-make", "orca", "orca"])
+        claim, = [a for a in self.calls('flint-devices.sh') if a[0] == 'claim']
+        self.assertEqual(claim[:7], ['claim', 'android', serial, '--avd', 'flint-test', '--booted', '--incarnation'])
+        self.assertEqual(claim[-4:], ['--process-group', (self.root / 'emulator-group').read_text(), '--helper-pid', '12345'])
+        self.assertIn('-no-snapshot-save', self.calls('emulator')[0])
 
     def use_real_ledger(self):
         ledger = self.root / "scripts/flint-devices.sh"
@@ -315,6 +459,7 @@ class AgentCommands(unittest.TestCase):
         self.assertEqual(entry["claimant"], "fixture-claude-session")
         self.assertFalse(entry["booted"])
         self.assertFalse(entry["created"])
+        self.assertEqual(entry['helper']['pid'], 12345)
 
     def test_ios_real_ledger_inherits_orca_identity_and_only_cold_start_rights(self):
         self.use_real_ledger()
@@ -328,11 +473,31 @@ class AgentCommands(unittest.TestCase):
         self.assertEqual(entry["claimant"], "fixture-orca-session")
         self.assertTrue(entry["booted"])
         self.assertFalse(entry["created"])
+        self.assertEqual(entry['helper']['pid'], 12345)
+
+    def test_m1_ios_real_ledger_uses_launchd_fallback_without_boot_epoch(self):
+        self.use_real_ledger()
+        ident = '11111111-2222-3333-4444-555555555555'
+        devices = json.loads(self.env['SIM_DEVICES'])
+        devices['devices']['runtime'][0]['udid'] = ident
+        self.assert_ok(self.make('ios-run', f'IOS_SIM={ident}', SIM_DEVICES=json.dumps(devices), NO_BOOT_EPOCH='1'))
+        entry, = self.ledger_entries()
+        self.assertTrue(entry['booted'])
+        self.assertEqual(entry['incarnation_evidence']['kind'], 'launchd_sim-process')
+        self.assertEqual(entry['helper']['pid'], 12345)
+
+    def test_m1_android_real_ledger_binds_child_group_boot_and_helper(self):
+        self.use_real_ledger()
+        self.assert_ok(self.make('android-run'))
+        entry, = self.ledger_entries()
+        self.assertTrue(entry['booted'])
+        self.assertEqual(entry['incarnation_evidence']['process_group'], int((self.root / 'emulator-group').read_text()))
+        self.assertEqual(entry['helper']['pid'], 12345)
 
     def test_android_running_device_claim_does_not_own_shutdown(self):
         result = self.make("android-run", AVD_BOOTED="1")
         self.assert_ok(result)
-        self.assertEqual(self.calls("flint-devices.sh"), [["claim", "android", "emulator-5554", "--avd", "flint-test"]])
+        self.assertEqual(self.calls("flint-devices.sh"), [["claim", "android", "emulator-5554", "--avd", "flint-test", '--helper-pid', '12345']])
 
     def test_android_attach_or_build_failure_stops_before_install(self):
         for failing in ("orca", "fake-make"):
@@ -340,6 +505,187 @@ class AgentCommands(unittest.TestCase):
                 result = self.make("android-run", FAIL_TOOL=failing)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse(any(args[1] in ("install", "launch") for args in self.calls("orca")))
+
+    def test_m1_ios_other_actor_boots_during_build_gets_use_only_claim(self):
+        self.assert_ok(self.make('ios-run', OTHER_ACTOR_BOOTS_DURING_BUILD='1'))
+        claims = [a for a in self.calls('flint-devices.sh') if a[0] == 'claim']
+        self.assertEqual(claims, [['claim', 'ios', 'TEST-UDID', '--helper-pid', '12345']])
+        self.assertNotIn(['simctl', 'boot', 'TEST-UDID'], self.calls('xcrun'))
+
+    def test_m1_ios_failed_boot_race_gets_use_only_claim(self):
+        self.assert_ok(self.make('ios-run', BOOT_RACE='1'))
+        self.assertIn(['simctl', 'boot', 'TEST-UDID'], self.calls('xcrun'))
+        claims = [a for a in self.calls('flint-devices.sh') if a[0] == 'claim']
+        self.assertEqual(claims, [['claim', 'ios', 'TEST-UDID', '--helper-pid', '12345']])
+
+    def test_m1_ios_cold_boot_requires_explicit_boot_and_incarnation(self):
+        self.assert_ok(self.make('ios-run'))
+        self.assertIn(['simctl', 'boot', 'TEST-UDID'], self.calls('xcrun'))
+        claim, = [a for a in self.calls('flint-devices.sh') if a[0] == 'claim']
+        self.assertIn('--booted', claim)
+        self.assertEqual(claim[claim.index('--incarnation') + 1], 'v1:' + 'a' * 64)
+
+    def test_m1_ios_unknown_incarnation_never_grants_shutdown_rights(self):
+        self.assert_ok(self.make('ios-run', NO_INCARNATION='1'))
+        claim, = [a for a in self.calls('flint-devices.sh') if a[0] == 'claim']
+        self.assertNotIn('--booted', claim)
+
+    def test_e2e1_exact_name_attaches_resolved_udid(self):
+        devices = json.loads(self.env['SIM_DEVICES'])
+        devices['devices']['runtime'].insert(0, {'name': 'iPhone 17e', 'udid': 'PREFIX-OTHER', 'state': 'Shutdown'})
+        self.assert_ok(self.make('ios-run', 'IOS_SIM=iPhone 17', SIM_DEVICES=json.dumps(devices)))
+        attach, = [a for a in self.calls('orca') if a[1] == 'attach']
+        self.assertEqual(attach[2], 'TEST-UDID')
+
+    def test_e2e1_mismatch_rolls_back_only_proven_own_boot(self):
+        result = self.make('ios-run', ATTACH_DEVICE='OTHER-UDID')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('expected ios', result.stderr)
+        self.assertIn('OTHER-UDID', result.stderr)
+        self.assertEqual([a for a in self.calls('flint-devices.sh') if a[0] == 'claim'], [])
+        self.assertFalse(any(a[1] in ('install', 'launch') for a in self.calls('xcrun')))
+        self.assertEqual([a for a in self.calls('xcrun') if a[1] == 'shutdown'],
+                         [['simctl', 'shutdown', 'TEST-UDID']])
+        self.assertFalse(any(a[1] in ('kill', 'shutdown') for a in self.calls('orca')))
+
+    def test_e2e1_mismatch_preserves_rebooted_or_shared_devices(self):
+        result = self.make('ios-run', ATTACH_DEVICE='OTHER-UDID', CHANGE_INCARNATION_AFTER_ATTACH='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any(a[1] in ('shutdown', 'install', 'launch') for a in self.calls('xcrun')))
+        self.assertFalse(any(a[1] in ('kill', 'shutdown') for a in self.calls('orca')))
+
+    def test_e2e1_malformed_attach_never_claims_or_installs(self):
+        for info in ({}, None, [], {'deviceUdid': 'TEST-UDID', 'backend': 'ios', 'helperPid': True}):
+            with self.subTest(info=info):
+                result = self.make('ios-run', ATTACH_JSON=json.dumps({'ok': True, 'result': {'attached': True, 'info': info}}))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn('Traceback', result.stderr)
+                self.assertFalse(any(a[0] == 'claim' for a in self.calls('flint-devices.sh')))
+                self.assertFalse(any(a[1] in ('install', 'launch') for a in self.calls('xcrun')))
+
+    def test_e2e1_mismatch_rollback_preserves_peer_claim(self):
+        result = self.make('ios-run', ATTACH_DEVICE='OTHER-UDID', PEER_CLAIM='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('preserve peers', result.stderr)
+        self.assertTrue(any(a[0] == 'rollback' for a in self.calls('flint-devices.sh')))
+        self.assertFalse(any(a[1] in ('shutdown', 'install', 'launch') for a in self.calls('xcrun')))
+
+    def test_e2e2_missing_image_fails_under_five_seconds_before_device_calls(self):
+        shutil.rmtree(self.image)
+        start = time.monotonic()
+        result = self.make('android-run')
+        self.assertLess(time.monotonic() - start, 5)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('sdkmanager', result.stderr)
+        self.assertIn('system-images;android-35;google_apis;arm64-v8a', result.stderr)
+        self.assertIn('--sdk_root=', result.stderr)
+        self.assertEqual(self.calls('orca'), [])
+        self.assertEqual(self.calls('emulator'), [])
+        self.assertEqual(self.calls('fake-make'), [])
+
+    def test_e2e2_missing_or_invalid_avd_config_prevents_attach(self):
+        self.avd_config.unlink()
+        result = self.make('android-run')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('config.ini', result.stderr)
+        self.assertEqual(self.calls('orca'), [])
+
+    def test_e2e2_image_package_metadata_must_match_resolved_sdk(self):
+        (self.image / 'package.xml').write_text('<localPackage path="system-images;android-34;google_apis;arm64-v8a"/>')
+        result = self.make('android-run')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('missing/incomplete image package', result.stderr)
+        self.assertEqual(self.calls('orca'), [])
+
+    def test_e2e2_image_outside_resolved_sdk_is_rejected(self):
+        self.avd_config.write_text('image.sysdir.1=/tmp/foreign-sdk/system-images/android-35/google_apis/arm64-v8a/\n')
+        result = self.make('android-run')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('under resolved SDK', result.stderr)
+        self.assertEqual(self.calls('orca'), [])
+
+    def test_e2e2_attach_mismatch_rolls_back_only_own_serial(self):
+        result = self.make('android-run', ATTACH_DEVICE='emulator-5998')
+        self.assertNotEqual(result.returncode, 0)
+        serial = (self.root / 'emulator-serial').read_text()
+        self.assertIn(['-s', serial, 'emu', 'kill'], self.calls('adb'))
+        self.assertNotIn(['-s', 'emulator-5998', 'emu', 'kill'], self.calls('adb'))
+        self.assertFalse(any(a[0] == 'claim' for a in self.calls('flint-devices.sh')))
+        self.assertFalse(any(a[1] in ('kill', 'shutdown', 'install', 'launch') for a in self.calls('orca')))
+
+    def test_e2e2_attach_timeout_is_bounded_and_never_installs(self):
+        start = time.monotonic()
+        result = self.make('android-run', AVD_BOOTED='1', ATTACH_DELAY='10', FLINT_AGENT_DEVICE_TIMEOUT='0.1')
+        self.assertLess(time.monotonic() - start, 5)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('timed out', result.stderr)
+        self.assertFalse(any(a[0] == 'claim' for a in self.calls('flint-devices.sh')))
+        self.assertFalse(any(a[1] in ('install', 'launch') for a in self.calls('orca')))
+
+    def test_e2e2_cold_start_without_group_proof_never_claims(self):
+        result = self.make('android-run', NO_INCARNATION='1', FLINT_AGENT_DEVICE_TIMEOUT='0.2')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any(a[0] == 'claim' for a in self.calls('flint-devices.sh')))
+        self.assertFalse(any(a[1] == 'attach' for a in self.calls('orca')))
+        self.assertFalse(any(a[-2:] == ['emu', 'kill'] for a in self.calls('adb')))
+
+    def test_e2e2_avd_identity_is_rechecked_after_build_before_install(self):
+        result = self.make('android-run', AVD_BOOTED='1', AVD_CHANGED_AFTER_BUILD='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any(a[1] in ('install', 'launch') for a in self.calls('orca')))
+
+    def test_e2e2_avd_identity_is_rechecked_before_launch(self):
+        result = self.make('android-run', AVD_BOOTED='1', AVD_CHANGED_AFTER_INSTALL='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue(any(a[1] == 'install' for a in self.calls('orca')))
+        self.assertFalse(any(a[1] == 'launch' for a in self.calls('orca')))
+
+    def test_m4_caller_home_git_config_and_hooks_are_not_inherited(self):
+        caller = self.home / 'caller'
+        hooks = caller / 'hooks'
+        hooks.mkdir(parents=True)
+        sentinel = caller / 'hook-executed'
+        hook = hooks / 'pre-commit'
+        hook.write_text('#!/bin/sh\ntouch ' + str(sentinel) + '\n')
+        hook.chmod(0o755)
+        config = caller / '.gitconfig'
+        config.write_text(f'[core]\n hooksPath = "{hooks}"\n')
+        spec = importlib.util.spec_from_file_location('candidate_agent_suite', ROOT / 'scripts/agent/selftest.py')
+        candidate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(candidate)
+        case = candidate.AgentCommands('test_gate_mapping_and_dry_run')
+        try:
+            with mock.patch.dict(os.environ, {'HOME': str(caller), 'GIT_CONFIG_GLOBAL': str(config),
+                                             'GIT_CONFIG_PARAMETERS': "'core.hooksPath=" + str(hooks) + "'"}):
+                case.setUp()
+            case.init_repo()
+            self.assertFalse(sentinel.exists(), 'caller global Git hook executed')
+            self.assertNotEqual(case.env['HOME'], str(caller))
+            self.assertEqual(case.env['GIT_CONFIG_NOSYSTEM'], '1')
+            self.assertEqual(case.env['GIT_CONFIG_GLOBAL'], os.devnull)
+            self.assertNotIn('GIT_CONFIG_PARAMETERS', case.env)
+            self.assertTrue(case.env['XDG_CONFIG_HOME'].startswith(case.env['HOME']))
+        finally:
+            case.doCleanups()
+
+    def test_m4_subprocess_deadline_terminates_descendants(self):
+        marker = self.root / 'escaped-child'
+        descendant = 'import time; from pathlib import Path; time.sleep(0.7); Path(' + repr(str(marker)) + ').touch()'
+        parent = 'import subprocess, sys, time; subprocess.Popen([sys.executable, "-c", ' + repr(descendant) + ']); time.sleep(30)'
+        result = self.run_cmd([sys.executable, '-c', parent], command_timeout=0.1)
+        self.assertEqual(result.returncode, 124)
+        time.sleep(0.8)
+        self.assertFalse(marker.exists(), 'timed-out subprocess descendant survived')
+
+    def test_m4_file_cap_applies_process_wide(self):
+        self.assertLessEqual(resource.getrlimit(resource.RLIMIT_FSIZE)[0], FILE_LIMIT)
+        result = self.run_cmd([sys.executable, '-c', 'import resource; print(resource.getrlimit(resource.RLIMIT_FSIZE)[0])'])
+        self.assert_ok(result)
+        self.assertLessEqual(int(result.stdout.strip()), FILE_LIMIT)
+
+    def test_m4_subprocess_output_is_capped(self):
+        result = self.run_cmd([sys.executable, '-c', 'import os; os.write(1, b"x" * (4 * 1024 * 1024))'])
+        self.assertLessEqual(len(result.stdout), FILE_LIMIT)
 
     def test_ios_logs_use_exact_device_and_process_without_boot(self):
         result = self.make("logs-ios")

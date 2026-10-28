@@ -6,3 +6,4 @@ if [[ -f "$agent_dir/../flint-env.sh" ]]; then
   source "$agent_dir/../flint-env.sh"
 fi
 agent_orca() { "${ORCA_CLI_COMMAND:-orca}" "$@"; }
+agent_device() { python3 "$agent_dir/device-run.py" "$@"; }
