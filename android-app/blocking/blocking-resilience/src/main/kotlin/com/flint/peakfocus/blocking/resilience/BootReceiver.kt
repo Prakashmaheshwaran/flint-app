@@ -41,9 +41,7 @@ class BootReceiver : BroadcastReceiver() {
 
         // 2. App-registered re-arm hooks. Failures are isolated so one bad hook cannot
         //    break the rest of re-arm.
-        for (action in rearmActions) {
-            runCatching { action(appContext) }
-        }
+        rearmDetectors(rearmActions.map { action -> { action(appContext) } })
     }
 
     companion object {

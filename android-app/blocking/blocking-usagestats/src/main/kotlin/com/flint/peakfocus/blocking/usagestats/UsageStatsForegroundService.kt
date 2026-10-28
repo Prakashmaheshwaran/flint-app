@@ -1,5 +1,6 @@
 package com.flint.peakfocus.blocking.usagestats
 
+import android.app.AppOpsManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -9,136 +10,190 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.Process
+import android.util.Log
 import androidx.core.content.ContextCompat
 import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
 import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.blocking.overlay.PathBBlockHandoff
 import com.flint.peakfocus.core.data.LimitStore
+import com.flint.peakfocus.core.data.UsageQuery
 import com.flint.peakfocus.core.model.ActiveRulesHolder
+import com.flint.peakfocus.core.model.DetectorCadence
+import com.flint.peakfocus.core.model.DetectorModeProbe
+import com.flint.peakfocus.core.model.EnforcementSignals
+import com.flint.peakfocus.core.model.FallbackMode
 import com.flint.peakfocus.core.model.Verdict
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Path B liveness: a persistent foreground service that polls [UsagePoller] when the
- * AccessibilityService is unavailable. Lowest kill-priority (ongoing notification). When a11y
- * is active, the poll interval can be slowed to save battery (a11y events are the primary
- * trigger) — see the Android strategy doc §6.5.
- *
- * Android 15 note: a background-started FGS needs a visible overlay first; keep this service
- * persistently alive (started from the app/onboarding while in foreground) so it never needs a
- * background start.
+ * A persistent specialUse FGS, started while the app is visible or from an allowed boot/time
+ * broadcast. While Path A is actually bound it stays in cheap standby (no UsageEvents queries).
+ * Unbind/destruction wakes fallback immediately; it never depends on an Android 12+ background
+ * FGS start after revocation. The trade-off is an ongoing, honestly labelled notification.
  */
 class UsageStatsForegroundService : Service() {
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // Serialize shield ownership on Main with Path A; expensive platform reads run on IO and
+    // re-check ownership after suspension before they can hand off a decision.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val engine = BlockDecisionEngine()
+    private val wake = Channel<Unit>(Channel.CONFLATED)
+    private val modeProbe = DetectorModeProbe(::usageAccessGranted)
     private lateinit var poller: UsagePoller
     private lateinit var timeLimitGate: PathBTimeLimitGate
     private var loop: Job? = null
+    private var resetObservation = true
+    private var notifiedMode: FallbackMode? = null
+    private var stopSignals: (() -> Unit)? = null
+    private var stopRules: (() -> Unit)? = null
 
     override fun onCreate() {
         super.onCreate()
         poller = UsagePoller(this)
-        val limitTracker = DailyLimitTracker(this)
-        val limitStore = LimitStore(this)
+        val tracker = DailyLimitTracker(this)
+        val limits = LimitStore(this)
         timeLimitGate = PathBTimeLimitGate(
-            limitMinutesFor = { pkg ->
-                listOfNotNull(
-                    limitStore.limitMinutes(pkg),
-                    PathBBlockHandoff.coordinator(this).timeLimitMinutes(pkg),
-                ).minOrNull()
-            },
-            foregroundMillisToday = limitTracker::foregroundMillisToday,
+            limitMinutesFor = { pkg -> listOfNotNull(
+                limits.limitMinutes(pkg),
+                PathBBlockHandoff.coordinator(this).timeLimitMinutes(pkg),
+            ).minOrNull() },
+            foregroundMillisToday = tracker::foregroundMillisToday,
         )
-        startAsForeground()
+        stopSignals = EnforcementSignals.detectors.subscribe {
+            scope.launch {
+                resetObservation = true
+                if (EnforcementSignals.detectors.pathAConnected) {
+                    PathBBlockHandoff.coordinator(this@UsageStatsForegroundService).hideIfShown()
+                }
+                wake.trySend(Unit)
+            }
+        }
+        stopRules = ActiveRulesHolder.subscribe { wake.trySend(Unit) }
+        startAsForeground(currentMode())
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Re-post the FGS notification on every start: a POST_NOTIFICATIONS grant that lands
-        // after onCreate (the Android 13+ runtime ask) never resurrects a dropped notification
-        // on its own — the next PathBServiceGate.sync() on app resume routes here and fixes it.
-        startAsForeground()
+        // Re-post after a notification permission grant and wake an existing loop after boot
+        // or a clock-change start command; do not wait for its polling delay to elapse.
+        modeProbe.invalidate()
+        startAsForeground(currentMode())
+        resetObservation = true
+        wake.trySend(Unit)
         if (loop?.isActive != true) {
             loop = scope.launch {
                 while (isActive) {
-                    tick()
-                    delay(POLL_INTERVAL_MS)
+                    var mode = if (EnforcementSignals.detectors.pathAConnected) FallbackMode.STANDBY else FallbackMode.ENFORCING
+                    try {
+                        mode = currentMode()
+                        if (mode != notifiedMode) startAsForeground(mode)
+                        if (mode == FallbackMode.OFF) {
+                            PathBBlockHandoff.coordinator(this@UsageStatsForegroundService).hideIfShown()
+                            stopSelf()
+                            return@launch
+                        }
+                        if (mode == FallbackMode.ENFORCING) tick()
+                        else PathBBlockHandoff.coordinator(this@UsageStatsForegroundService).hideIfShown()
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (failure: RuntimeException) {
+                        // Permission changes/binder failures must not permanently kill fallback.
+                        resetObservation = true
+                        Log.w("FlintFallback", "Foreground observation unavailable", failure)
+                    }
+                    withTimeoutOrNull(DetectorCadence.delayMs(mode)) { wake.receive() }
                 }
             }
         }
         return START_STICKY
     }
 
-    private fun tick() {
+    private suspend fun tick() {
+        if (resetObservation) {
+            poller.reset()
+            timeLimitGate.invalidate()
+            UsageQuery.invalidate()
+            resetObservation = false
+        }
         val now = System.currentTimeMillis()
-        val pkg = poller.currentForegroundPackage(now) ?: return
-
-        // Safety floor (dialer, emergency, home apps, Settings/permission recovery, Flint): never
-        // shielded. Route as Allow so the overlay stands down and the handoff still tracks the
-        // previous package (launcher→app IS an open). The coordinator re-applies the floor
-        // before every cause; this early return also skips the budget query.
+        val pkg = withContext(Dispatchers.IO) { poller.currentForegroundPackage(now) }
+        if (EnforcementSignals.detectors.pathAConnected || resetObservation) return
+        if (pkg == null) {
+            PathBBlockHandoff.coordinator(this).hideIfShown()
+            return
+        }
+        // C1 safety floor always precedes time budgets and ordinary rule/open causes.
         if (PathBBlockHandoff.coordinator(this).isSafetyFloor(pkg)) {
             PathBBlockHandoff.onForegroundPolled(this, pkg, Verdict.Allow)
             return
         }
-
-        // Collect the daily budget alongside the rule verdict; neither can hide a stronger
-        // overlapping restriction. Threshold sources are legacy LimitStore + the Limit
-        // editor's DataStore limits via the shared coordinator snapshot, stricter wins), so
-        // the two paths can never disagree about a budget. [DailyLimitTracker] measures
-        // consumption; its buckets are coarse/delayed — fine for daily budgets.
-        val timeLimitSpent = timeLimitGate.isSpent(pkg, now)
-
+        val spent = withContext(Dispatchers.IO) { timeLimitGate.isSpent(pkg, now) }
+        if (EnforcementSignals.detectors.pathAConnected || resetObservation) return
         val cal = java.util.Calendar.getInstance()
-        val nowMin = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
-        // Schedule.daysOfWeek is ISO-numbered (1=Mon…7=Sun — core-model's documented contract,
-        // and what feature-blocklist persists); Calendar.DAY_OF_WEEK is 1=Sun…7=Sat. Convert
-        // before asking the engine, or "Weekdays" rules block Sunday and skip Friday.
-        val weekday = IsoWeekday.fromCalendar(cal.get(java.util.Calendar.DAY_OF_WEEK))
-        val verdict = engine.decide(pkg, null, ActiveRulesHolder.rules, packageName, nowMin, weekday, now)
-        // Path B enforcement handoff — every tick, Allow included: open-limit counting and
-        // overlay stand-down happen behind this call, not just Block rendering.
-        PathBBlockHandoff.onForegroundPolled(this, pkg, verdict, timeLimitSpent)
+        val verdict = engine.decide(
+            pkg, null, ActiveRulesHolder.rules, packageName,
+            cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE),
+            IsoWeekday.fromCalendar(cal.get(java.util.Calendar.DAY_OF_WEEK)), cal.timeInMillis,
+        )
+        PathBBlockHandoff.onForegroundPolled(this, pkg, verdict, spent)
     }
 
-    private fun startAsForeground() {
+    private fun currentMode(): FallbackMode = modeProbe.mode(
+        System.currentTimeMillis(), EnforcementSignals.detectors.pathAConnected,
+    )
+
+    private fun usageAccessGranted(): Boolean {
+        val ops = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ops.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), packageName)
+        } else {
+            @Suppress("DEPRECATION")
+            ops.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), packageName)
+        }
+        return permission == AppOpsManager.MODE_ALLOWED
+    }
+
+    private fun startAsForeground(mode: FallbackMode) {
         val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            mgr.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Focus enforcement", NotificationManager.IMPORTANCE_LOW),
-            )
+            mgr.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Focus enforcement", NotificationManager.IMPORTANCE_LOW))
         }
-        // The channel-id constructor is API 26+; below O channels don't exist yet.
-        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(this, CHANNEL_ID)
-        } else {
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) Notification.Builder(this, CHANNEL_ID)
+        else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
         }
-        // Brand strike silhouette (alpha-only) + spark accent, not a stock system glyph.
-        val notification: Notification = builder
-            .setContentTitle("Flint is keeping you focused")
-            .setContentText("Enforcing your active blocks.")
+        val notification = builder
+            .setContentTitle("Flint focus protection is running")
+            .setContentText(when (mode) {
+                FallbackMode.STANDBY -> "Backup ready while Accessibility is connected."
+                FallbackMode.ENFORCING -> "Checking active blocks with Usage Access."
+                FallbackMode.OFF -> "Usage Access is unavailable."
+            })
             .setSmallIcon(R.drawable.ic_stat_flint)
             .setColor(ContextCompat.getColor(this, R.color.flint_spark))
             .setOngoing(true)
             .build()
-
-        if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            startForeground(NOTIF_ID, notification)
-        }
+        if (Build.VERSION.SDK_INT >= 34) startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        else startForeground(NOTIF_ID, notification)
+        notifiedMode = mode
     }
 
     override fun onDestroy() {
-        loop?.cancel()
+        stopSignals?.invoke()
+        stopRules?.invoke()
+        scope.cancel()
+        wake.close()
+        PathBBlockHandoff.coordinator(this).hideIfShown()
         super.onDestroy()
     }
 
@@ -147,20 +202,13 @@ class UsageStatsForegroundService : Service() {
     companion object {
         private const val CHANNEL_ID = "flint_enforcement"
         private const val NOTIF_ID = 1001
-        private const val POLL_INTERVAL_MS = 1_000L
 
         fun start(context: Context) {
             val intent = Intent(context, UsageStatsForegroundService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
+            else context.startService(intent)
         }
 
-        /** Stop the poll loop (e.g. when Path A takes over — running both double-enforces). */
-        fun stop(context: Context) {
-            context.stopService(Intent(context, UsageStatsForegroundService::class.java))
-        }
+        fun stop(context: Context) { context.stopService(Intent(context, UsageStatsForegroundService::class.java)) }
     }
 }
