@@ -2,9 +2,9 @@ package com.flint.peakfocus.feature.onboarding
 
 /** Policy-sensitive AccessibilityService disclosure copy, isolated for JVM regression tests. */
 internal object ConsentCopy {
-    const val HEADLINE = "Before Flint can block apps"
+    const val HEADLINE = "Before enabling Accessibility"
     const val WHAT_IT_READS =
-        "To block apps in real time, Flint uses Android's Accessibility service to " +
+        "Flint uses Android's Accessibility service to " +
             "detect which app is in the foreground using app and screen class names, and " +
             "read the web address from known " +
             "browser address bars for website blocking. Not all browsers or pages expose an address. " +

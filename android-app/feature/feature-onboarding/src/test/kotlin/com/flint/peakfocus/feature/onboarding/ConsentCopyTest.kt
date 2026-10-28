@@ -29,6 +29,8 @@ class ConsentCopyTest {
 
     @Test
     fun `consent is explicit optional and describes the actual revocation path`() {
+        assertTrue(ConsentCopy.HEADLINE.contains("enabling Accessibility"))
+        assertFalse(ConsentCopy.HEADLINE.contains("Before Flint can block apps"))
         assertTrue(ConsentCopy.ACCEPT_LABEL.contains("Accept"))
         assertTrue(ConsentCopy.DECLINE_LABEL.isNotBlank())
         assertFalse(ConsentCopy.DECLINE_LABEL.contains("accept", ignoreCase = true))
