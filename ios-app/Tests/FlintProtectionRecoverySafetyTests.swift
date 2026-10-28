@@ -56,6 +56,21 @@ final class FlintProtectionRecoverySafetyTests: XCTestCase {
         }
     }
 
+    func testFailedEncodingPreservesTheAuthoritativeArrayInsteadOfRemovingItsKey() throws {
+        enum EncodingRefusal: Error { case refused }
+        try withDefaults { defaults in
+            let rule = FlintScheduleRule(name: "Keep", schedule: .init(startHour: 9, endHour: 17), allowListMode: true)
+            XCTAssertTrue(FlintDesiredRules.save([rule], key: .schedules, to: defaults))
+            let originalData = defaults.data(forKey: FlintDesiredRules.Key.schedules.rawValue)
+            XCTAssertFalse(FlintDesiredRules.save([rule], key: .schedules, to: defaults,
+                encode: { _ in throw EncodingRefusal.refused }))
+            XCTAssertEqual(defaults.data(forKey: FlintDesiredRules.Key.schedules.rawValue), originalData)
+            XCTAssertEqual(FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: defaults), [rule])
+            XCTAssertTrue(FlintDesiredRules.save([FlintScheduleRule](), key: .schedules, to: defaults))
+            XCTAssertEqual(FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: defaults), [])
+        }
+    }
+
     func testRefusedReplacementRetainsLastGoodProtectionInEveryNamespace() {
         for prefix in ["flint.rule.", "flint.limit.", "flint.openLimit."] {
             let center = FakeActivityCenter()
@@ -73,6 +88,56 @@ final class FlintProtectionRecoverySafetyTests: XCTestCase {
             XCTAssertEqual(report.observed, 0)
             XCTAssertEqual(report.failures.count, 1)
         }
+    }
+
+    func testMissingRefusedFiniteRegistrationClearsOnceAfterItsPinnedWindowEnd() throws {
+        try withDefaults { defaults in
+            let end = Date(timeIntervalSinceReferenceDate: 12345)
+            for prefix in ["flint.rule.", "flint.limit."] {
+                let center = FakeActivityCenter()
+                let name = prefix + "missing"
+                center.refused = [name]
+                var request = activity(name)
+                request.retainedUntil = end
+                var cleared: [String] = []
+                let reconcile = { (now: Date) in
+                    FlintActivityRegistration.reconcile([request], prefix: prefix, enabled: 1,
+                        validationFailures: [], center: center, defaults: defaults, now: now,
+                        onRemove: { cleared.append($0) })
+                }
+                XCTAssertEqual(reconcile(end.addingTimeInterval(-60)).failures.count, 1)
+                XCTAssertTrue(cleared.isEmpty, "retain last-good finite protection before its end")
+                // A subsequent day must not push a failed repair's stored end forward forever.
+                request.retainedUntil = end.addingTimeInterval(86400)
+                let expired = reconcile(end.addingTimeInterval(60))
+                XCTAssertEqual(cleared, [name])
+                XCTAssertTrue(expired.failures.contains { $0.reason.contains("retained shield was cleared") })
+                _ = reconcile(end.addingTimeInterval(120))
+                XCTAssertEqual(cleared, [name], "clear once per abandoned registration episode")
+                XCTAssertEqual(expired.armed, 0)
+            }
+            let center = FakeActivityCenter()
+            let open = activity("flint.openLimit.noExpiry")
+            center.refused = [open.name]
+            _ = FlintActivityRegistration.reconcile([open], prefix: "flint.openLimit.", enabled: 1,
+                validationFailures: [], center: center, defaults: defaults, now: end.addingTimeInterval(86400),
+                onRemove: { _ in XCTFail("Open Limits have no finite expiry") })
+        }
+    }
+
+    func testFiniteWindowEndIncludesOvernightAndWeekdayGate() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let mondayNight = try XCTUnwrap(calendar.date(from: .init(year: 2026, month: 10, day: 26, hour: 23)))
+        let tuesdayEnd = try XCTUnwrap(calendar.date(from: .init(year: 2026, month: 10, day: 27, hour: 6)))
+        let end = { (now: Date) in
+            FlintRetainedProtection.windowEnd(startHour: 22, startMinute: 0, endHour: 6, endMinute: 0,
+                daysOfWeek: [2], now: now, calendar: calendar)
+        }
+        XCTAssertEqual(end(mondayNight), tuesdayEnd)
+        XCTAssertEqual(end(tuesdayEnd.addingTimeInterval(6 * 3600)), tuesdayEnd)
+        XCTAssertLessThan(end(mondayNight.addingTimeInterval(-2 * 3600)), mondayNight,
+                          "outside this week's window, an abandoned shield's last window already ended")
     }
 
     func testSemanticNormalizationAndPersistedDefinitionPreventRestartChurn() throws {

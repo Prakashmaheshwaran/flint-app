@@ -53,7 +53,6 @@ public final class FlintSchedulesController {
     /// Insert or update a rule, then re-register monitoring.
     @discardableResult
     public func upsert(_ rule: FlintScheduleRule) -> [FlintScheduleArmFailure] {
-        guard let group = FlintGroupStore() else { return [] }
         guard var all = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: environment.defaults) else {
             environment.record("schedules", FlintDesiredRules.unavailable("schedules", previous: environment.loadHealth()))
             return []
@@ -63,7 +62,10 @@ public final class FlintSchedulesController {
         } else {
             all.append(rule)
         }
-        group.saveRules(all)
+        guard FlintDesiredRules.save(all, key: .schedules, to: environment.defaults) else {
+            environment.record("schedules", FlintDesiredRules.saveFailure("schedules", previous: environment.loadHealth()))
+            return []
+        }
         let failures = reload()
         NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
         return failures
@@ -71,13 +73,15 @@ public final class FlintSchedulesController {
 
     @discardableResult
     public func delete(_ ruleID: String) -> [FlintScheduleArmFailure] {
-        guard let group = FlintGroupStore() else { return [] }
         guard var all = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: environment.defaults) else {
             environment.record("schedules", FlintDesiredRules.unavailable("schedules", previous: environment.loadHealth()))
             return []
         }
         all.removeAll { $0.id == ruleID }
-        group.saveRules(all)
+        guard FlintDesiredRules.save(all, key: .schedules, to: environment.defaults) else {
+            environment.record("schedules", FlintDesiredRules.saveFailure("schedules", previous: environment.loadHealth()))
+            return []
+        }
         ManagedSettingsStore(named: ManagedSettingsStore.Name("flint.\(ruleID)")).clearAllSettings()
         FlintScheduling.stopMonitoring(["flint.rule.\(ruleID)"])
         let failures = reload()
@@ -87,14 +91,16 @@ public final class FlintSchedulesController {
 
     @discardableResult
     public func setEnabled(_ ruleID: String, _ enabled: Bool) -> [FlintScheduleArmFailure] {
-        guard let group = FlintGroupStore() else { return [] }
         guard var all = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: environment.defaults) else {
             environment.record("schedules", FlintDesiredRules.unavailable("schedules", previous: environment.loadHealth()))
             return []
         }
         guard let index = all.firstIndex(where: { $0.id == ruleID }) else { return [] }
         all[index].enabled = enabled
-        group.saveRules(all)
+        guard FlintDesiredRules.save(all, key: .schedules, to: environment.defaults) else {
+            environment.record("schedules", FlintDesiredRules.saveFailure("schedules", previous: environment.loadHealth()))
+            return []
+        }
         if !enabled {
             ManagedSettingsStore(named: ManagedSettingsStore.Name("flint.\(ruleID)")).clearAllSettings()
         }
@@ -180,7 +186,10 @@ public final class FlintSchedulesController {
                 intervalStart: DateComponents(hour: rule.schedule.startHour, minute: rule.schedule.startMinute),
                 intervalEnd: DateComponents(hour: rule.schedule.endHour, minute: rule.schedule.endMinute),
                 repeats: true
-            ), configurationChanged: FlintScheduleRegistrationState.changed(rule, previous: previous[rule.monitorName]))
+            ), configurationChanged: FlintScheduleRegistrationState.changed(rule, previous: previous[rule.monitorName]),
+               retainedUntil: FlintRetainedProtection.windowEnd(startHour: rule.schedule.startHour,
+                    startMinute: rule.schedule.startMinute, endHour: rule.schedule.endHour,
+                    endMinute: rule.schedule.endMinute, daysOfWeek: rule.schedule.daysOfWeek, now: Date()))
         }
         let validationFailures = plan.failures.map {
             FlintArmingHealth.Failure(activityName: "flint.rule.\($0.ruleID)", reason: $0.message)

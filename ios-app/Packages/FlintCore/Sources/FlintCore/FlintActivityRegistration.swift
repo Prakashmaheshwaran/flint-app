@@ -20,6 +20,8 @@ struct FlintActivityRegistration {
     var events: [DeviceActivityEvent.Name: DeviceActivityEvent] = [:]
     // Schedule selection/day/allow-list edits are not represented in OS schedules/events.
     var configurationChanged = false
+    /// nil for Open Limits, whose shields intentionally have no finite window.
+    var retainedUntil: Date? = nil
     var definition: FlintActivityDefinition { .init(schedule: schedule, events: events) }
 
     static func reconcile(
@@ -29,11 +31,13 @@ struct FlintActivityRegistration {
         validationFailures: [FlintArmingHealth.Failure],
         center: FlintActivityRegistering = DeviceActivityCenter(),
         defaults: UserDefaults? = .flintGroup,
+        now: Date = Date(),
         onRemove: (String) -> Void = { _ in }
     ) -> FlintArmingHealth.DomainReport {
         let wanted = Set(desired.map { DeviceActivityName($0.name) })
         let before = Set(center.activities)
         var definitions = FlintActivityDefinition.load(from: defaults)
+        var retained = FlintRetainedProtection.load(from: defaults)
         let removed = before.filter { $0.rawValue.hasPrefix(prefix) && !wanted.contains($0) }
         // Never forward [] to Apple's stop-all default.
         if !removed.isEmpty {
@@ -41,6 +45,7 @@ struct FlintActivityRegistration {
             center.stopMonitoring(Array(removed))
         }
         definitions = definitions.filter { !$0.key.hasPrefix(prefix) || wanted.contains(.init($0.key)) }
+        retained = retained.filter { !$0.key.hasPrefix(prefix) || wanted.contains(.init($0.key)) }
         var attempted = 0
         var armed = 0
         var failures = validationFailures
@@ -69,6 +74,17 @@ struct FlintActivityRegistration {
                 // shield (including a spent Time Limit or non-expiring Open-Limit shield).
                 // A refused new attempt has no newly applied shield to clear. Report the fault.
                 failures.append(.init(activityName: request.name, reason: String(describing: error)))
+                let hasEnd = center.activities.contains(name) && center.schedule(for: name) != nil
+                if !hasEnd, let end = request.retainedUntil {
+                    var receipt = retained[request.name] ?? .init(endsAt: end, cleared: false)
+                    if now >= receipt.endsAt, !receipt.cleared {
+                        onRemove(request.name)
+                        receipt.cleared = true
+                        failures.append(.init(activityName: request.name,
+                            reason: "The previous protection window ended without a registered end. Its retained shield was cleared."))
+                    }
+                    retained[request.name] = receipt
+                }
             }
         }
         // Observe after writes as well. Acceptance and observation are separate facts.
@@ -91,6 +107,8 @@ struct FlintActivityRegistration {
             definitions[request.name] = previous[request.name]
         }
         FlintActivityDefinition.save(definitions, to: defaults)
+        for name in observed { retained.removeValue(forKey: name) }
+        FlintRetainedProtection.save(retained, to: defaults)
         return .init(enabled: enabled, attempted: attempted, armed: armed, failures: failures,
                      observedActivities: observed)
     }

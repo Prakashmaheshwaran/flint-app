@@ -23,6 +23,19 @@ enum FlintDesiredRules {
               failures: [.init(activityName: domain,
                 reason: "Saved rules are unavailable. Existing protection was preserved; Flint did not change registrations or shields.")])
     }
+
+    static func save<Rule: Encodable>(_ rules: [Rule], key: Key, to defaults: UserDefaults?,
+        encode: ([Rule]) throws -> Data = { try JSONEncoder().encode($0) }) -> Bool {
+        guard let defaults, let data = try? encode(rules) else { return false }
+        defaults.set(data, forKey: key.rawValue)
+        return true
+    }
+
+    static func saveFailure(_ domain: String, previous: FlintArmingHealth) -> FlintArmingHealth.DomainReport {
+        .init(enabled: previous.domains[domain]?.enabled ?? 0, attempted: 0, armed: 0,
+              failures: [.init(activityName: domain,
+                reason: "Changes could not be saved. Existing saved rules and protection were preserved.")])
+    }
 }
 
 struct FlintRuleReloadEnvironment {

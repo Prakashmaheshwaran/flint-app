@@ -42,7 +42,6 @@ public final class FlintLimitsController {
     }
 
     public func upsert(_ limit: FlintLimitRule) {
-        guard let group = FlintGroupStore() else { return }
         guard var all = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: environment.defaults) else {
             environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
             return
@@ -52,19 +51,24 @@ public final class FlintLimitsController {
         } else {
             all.append(limit)
         }
-        group.saveLimits(all)
+        guard FlintDesiredRules.save(all, key: .limits, to: environment.defaults) else {
+            environment.record("limits", FlintDesiredRules.saveFailure("limits", previous: environment.loadHealth()))
+            return
+        }
         reload()
         NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
     }
 
     public func delete(_ limitID: String) {
-        guard let group = FlintGroupStore() else { return }
         guard var all = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: environment.defaults) else {
             environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
             return
         }
         all.removeAll { $0.id == limitID }
-        group.saveLimits(all)
+        guard FlintDesiredRules.save(all, key: .limits, to: environment.defaults) else {
+            environment.record("limits", FlintDesiredRules.saveFailure("limits", previous: environment.loadHealth()))
+            return
+        }
         ManagedSettingsStore(named: ManagedSettingsStore.Name("flintL.\(limitID)")).clearAllSettings()
         FlintScheduling.stopMonitoring(["flint.limit.\(limitID)"])
         reload()
@@ -72,14 +76,16 @@ public final class FlintLimitsController {
     }
 
     public func setEnabled(_ limitID: String, _ enabled: Bool) {
-        guard let group = FlintGroupStore() else { return }
         guard var all = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: environment.defaults) else {
             environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
             return
         }
         guard let index = all.firstIndex(where: { $0.id == limitID }) else { return }
         all[index].enabled = enabled
-        group.saveLimits(all)
+        guard FlintDesiredRules.save(all, key: .limits, to: environment.defaults) else {
+            environment.record("limits", FlintDesiredRules.saveFailure("limits", previous: environment.loadHealth()))
+            return
+        }
         if !enabled {
             ManagedSettingsStore(named: ManagedSettingsStore.Name("flintL.\(limitID)")).clearAllSettings()
         }
@@ -112,7 +118,9 @@ public final class FlintLimitsController {
                 threshold: DateComponents(minute: limit.thresholdMinutes)
             )
             return FlintActivityRegistration(name: limit.activityName, schedule: schedule,
-                events: [DeviceActivityEvent.Name(limit.eventName): event])
+                events: [DeviceActivityEvent.Name(limit.eventName): event],
+                retainedUntil: FlintRetainedProtection.windowEnd(startHour: 0, startMinute: 0,
+                    endHour: 23, endMinute: 59, now: Date()))
         }
         let report = FlintActivityRegistration.reconcile(
             requests, prefix: "flint.limit.", enabled: plan.enabled,

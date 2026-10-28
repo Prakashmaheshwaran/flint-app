@@ -216,7 +216,7 @@ struct SettingsView: View {
                     }
                 }
                 ForEach(Array(FlintSessionHealthPresentation.messages(health: sessionHealth,
-                    report: health.domains["session"]).enumerated()), id: \.offset) { _, message in
+                    report: health.domains["session"], active: activeSession).enumerated()), id: \.offset) { _, message in
                     Text(message).font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
                 }
                 Text("Registration does not verify that a shield or background callback took effect.")

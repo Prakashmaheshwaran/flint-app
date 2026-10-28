@@ -13,7 +13,8 @@ enum FlintSessionHealthPresentation {
         return false
     }
 
-    static func messages(health: FlintSessionHealth, report: FlintArmingHealth.DomainReport?) -> [String] {
+    static func messages(health: FlintSessionHealth, report: FlintArmingHealth.DomainReport?,
+                         active: FlintActiveSession? = nil) -> [String] {
         var messages: [String] = []
         if let failure = health.lastArmFailure {
             messages.append("Last session arm failure: \(failure.sessionName) — \(failure.reason). "
@@ -34,11 +35,13 @@ enum FlintSessionHealthPresentation {
                 + "Recorded at \(timestamp(anomaly.detectedAt)).")
         }
         if let since = health.unauthorizedSince {
-            messages.append("A session is running but Screen Time access is off — iOS isn't blocking it. "
-                + "Since \(timestamp(since)).")
+            let state = active == nil
+                ? "The last session lacked Screen Time access — iOS wasn't blocking it. "
+                : "A session is running but Screen Time access is off — iOS isn't blocking it. "
+            messages.append(state + "Since \(timestamp(since)).")
         }
         if report?.notAuthorized == true {
-            messages.append("At the last check, the running session did not have Screen Time access.")
+            messages.append("At the last check, the last session did not have Screen Time access.")
         }
         if report?.rearmFailed == true {
             let reason = report?.failures.last { $0.activityName != "session.lastAttempt" }?.reason

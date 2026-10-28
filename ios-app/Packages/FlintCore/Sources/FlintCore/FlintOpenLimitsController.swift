@@ -71,7 +71,10 @@ public final class FlintOpenLimitsController {
         } else {
             all.append(rule)
         }
-        FlintOpenLimitRule.saveAll(all)
+        guard FlintDesiredRules.save(all, key: .openLimits, to: environment.defaults) else {
+            environment.record("openLimits", FlintDesiredRules.saveFailure("openLimits", previous: environment.loadHealth()))
+            return
+        }
         reload()
         NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
     }
@@ -83,7 +86,10 @@ public final class FlintOpenLimitsController {
         }
         guard let index = all.firstIndex(where: { $0.id == ruleID }) else { return }
         let removed = all.remove(at: index)
-        FlintOpenLimitRule.saveAll(all)
+        guard FlintDesiredRules.save(all, key: .openLimits, to: environment.defaults) else {
+            environment.record("openLimits", FlintDesiredRules.saveFailure("openLimits", previous: environment.loadHealth()))
+            return
+        }
         FlintOpenLimitEnforcer.clearShield(for: removed)
         FlintScheduling.stopMonitoring([removed.activityName])
         reload()
@@ -97,7 +103,10 @@ public final class FlintOpenLimitsController {
         }
         guard let index = all.firstIndex(where: { $0.id == ruleID }) else { return }
         all[index].enabled = enabled
-        FlintOpenLimitRule.saveAll(all)
+        guard FlintDesiredRules.save(all, key: .openLimits, to: environment.defaults) else {
+            environment.record("openLimits", FlintDesiredRules.saveFailure("openLimits", previous: environment.loadHealth()))
+            return
+        }
         if !enabled {
             FlintOpenLimitEnforcer.clearShield(for: all[index])
         }

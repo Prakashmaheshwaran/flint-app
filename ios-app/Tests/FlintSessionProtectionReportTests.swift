@@ -83,7 +83,7 @@ final class FlintSessionProtectionReportTests: XCTestCase {
                 sessionID: "private-id", detectedAt: now), unauthorizedSince: now)
             let report = FlintArmingHealth.DomainReport(enabled: 1, attempted: 1, armed: 0,
                 failures: [], notAuthorized: true, rearmFailed: true)
-            let messages = FlintSessionHealthPresentation.messages(health: health, report: report)
+            let messages = FlintSessionHealthPresentation.messages(health: health, report: report, active: session())
             XCTAssertEqual(messages.count, 4)
             XCTAssertTrue(messages[0].contains("42 seconds"))
             XCTAssertTrue(messages[0].contains("Recorded at"))
@@ -109,6 +109,10 @@ final class FlintSessionProtectionReportTests: XCTestCase {
         var current = health
         current.lastTimeAnomaly = .init(kind: .wallBehind, seconds: 10, sessionID: session().id, detectedAt: now)
         XCTAssertTrue(FlintSessionHealthPresentation.hasCurrentIssue(health: current, active: session(), report: report))
+        current.unauthorizedSince = now
+        let endedCopy = FlintSessionHealthPresentation.messages(health: current, report: report, active: nil).joined()
+        XCTAssertTrue(endedCopy.contains("last session lacked Screen Time access"))
+        XCTAssertFalse(endedCopy.contains("A session is running"))
     }
 
     private func session(timed: Bool = true) -> FlintActiveSession {
