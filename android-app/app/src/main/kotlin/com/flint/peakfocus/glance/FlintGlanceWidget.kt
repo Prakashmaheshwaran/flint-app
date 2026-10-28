@@ -20,6 +20,7 @@ import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.height
 import androidx.glance.layout.padding
+import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
@@ -36,22 +37,30 @@ class FlintGlanceWidget : GlanceAppWidget() {
         GlanceSurfaceBridge.readDisplay()
         provideContent {
             val display by GlanceSurfaceBridge.display.collectAsState()
+            val open = actionStartActivity(Intent(context, MainActivity::class.java))
             val primary = TextStyle(color = ColorProvider(Color(0xFFF1EFE8)), fontSize = 14.sp)
             val secondary = TextStyle(color = ColorProvider(Color(0xFFFAC775)), fontSize = 12.sp)
             Column(
                 GlanceModifier.fillMaxSize().background(Color(0xFF2C2C2A)).padding(16.dp)
-                    .clickable(actionStartActivity(Intent(context, MainActivity::class.java))),
+                    .clickable(open),
             ) {
                 Text("Flint", style = primary.copy(fontSize = 18.sp, fontWeight = FontWeight.Bold))
                 Spacer(GlanceModifier.height(8.dp))
-                Text(display.status, style = primary.copy(fontWeight = FontWeight.Bold), maxLines = 2)
-                Text(display.detail, style = primary, maxLines = 3)
+                // Scroll long names/large text while keeping the observation footer visible.
+                LazyColumn(GlanceModifier.defaultWeight()) {
+                    item { Text(display.status, GlanceModifier.clickable(open),
+                        style = primary.copy(fontWeight = FontWeight.Bold)) }
+                    item { Text(display.detail, GlanceModifier.clickable(open), style = primary) }
+                    item { Spacer(GlanceModifier.height(8.dp)) }
+                    item { Text(display.next, GlanceModifier.clickable(open), style = primary) }
+                    item { Text("${display.focusedTodayLabel}: ${display.focusedToday}",
+                        GlanceModifier.clickable(open), style = primary) }
+                    display.historyNote?.let { note ->
+                        item { Text(note, GlanceModifier.clickable(open), style = secondary) }
+                    }
+                }
                 Spacer(GlanceModifier.height(8.dp))
-                Text(display.next, style = primary, maxLines = 2)
-                Text("${display.focusedTodayLabel}: ${display.focusedToday}", style = primary, maxLines = 2)
-                display.historyNote?.let { Text(it, style = secondary, maxLines = 2) }
-                Spacer(GlanceModifier.height(8.dp))
-                Text(display.checked, style = secondary, maxLines = 2)
+                Text(display.checked, style = secondary)
             }
         }
     }
