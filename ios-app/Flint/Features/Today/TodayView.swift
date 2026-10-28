@@ -10,6 +10,8 @@ struct TodayView: View {
     @Binding var showStart: Bool
     @State private var now = Date()
     @State private var rules: [FlintScheduleRule] = []
+    @ObservedObject private var history = FocusHistoryModel.shared
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var typeSize
 
     private let presets: [(name: String, minutes: Int)] = [("Deep study", 90), ("Reading", 30), ("Workout", 60)]
@@ -35,8 +37,10 @@ struct TodayView: View {
         .task {
             auth.refresh()
             rules = FlintSchedulesController().rules()
+            history.refresh()
         }
-        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { now = $0 }
+        .onChange(of: scenePhase) { if $0 == .active { history.refresh() } }
+        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { now = $0; history.refresh() }
     }
 
     private var content: some View {
@@ -57,6 +61,9 @@ struct TodayView: View {
                 .flintSecondary(14)
                 .padding(.top, 8)
 
+            FocusedTodayCard(history: history)
+                .padding(.top, 28)
+
             VStack(spacing: 6) {
                 Text(Self.duration(minutes: vm.durationMinutes)).flintNumber(50)
                 Text("Your next session").flintEyebrow()
@@ -65,7 +72,7 @@ struct TodayView: View {
             }
             .frame(maxWidth: .infinity)
             .accessibilityElement(children: .combine)
-            .padding(.top, 76)
+            .padding(.top, 24)
 
             Spacer(minLength: 32)
 

@@ -12,6 +12,8 @@ struct SettingsView: View {
     @State private var authStatus = AuthorizationCenter.shared.authorizationStatus
     @State private var passAvailable = FlintSessionController().emergencyPassAvailable()
     @State private var checkedAt = Date()
+    @State private var confirmClearHistory = false
+    @State private var historyFeedback: String?
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
@@ -52,6 +54,13 @@ struct SettingsView: View {
                     .overlay(alignment: .top) { FlintHairline() }
                     .padding(.top, 22)
 
+                    Button { confirmClearHistory = true } label: {
+                        FlintRow(title: "Clear focus history", subtitle: FocusHistoryText.definition)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("settings.clearFocusHistory")
+                    if let historyFeedback { Text(historyFeedback).flintSecondary(13) }
+
                     FlintPrivacyNote(text: "No account. No analytics. Your lists and history stay on this phone.",
                                      color: FlintBrand.stone)
                         .padding(.top, 22)
@@ -62,6 +71,16 @@ struct SettingsView: View {
             .flintTabBarInset()
             .toolbar(.hidden, for: .navigationBar)
             .onAppear(perform: refresh)
+            .confirmationDialog("Clear focus history?", isPresented: $confirmClearHistory, titleVisibility: .visible) {
+                Button("Clear focus history", role: .destructive) {
+                    FocusHistoryModel.shared.clear { success in
+                        historyFeedback = success ? "Focus history cleared. Any running session is kept." : "Focus history couldn’t be cleared. Try again."
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Past focus sessions will be removed from this device. A running session will be kept.")
+            }
             .sheet(item: $pinAction, onDismiss: finishPINAuthentication) { action in
                 PINAuthenticationView(title: action == .change ? "Change PIN" : "Remove PIN",
                                       authenticate: { pin in
