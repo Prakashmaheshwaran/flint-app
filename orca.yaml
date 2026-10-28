@@ -1,0 +1,13 @@
+scripts:
+  setup: bash scripts/orca/setup.sh
+  archive: if [ -f scripts/orca/archive.sh ]; then bash scripts/orca/archive.sh; else printf '%s\n' 'Flint archive hook is not present in this checkout; skipped.'; fi
+issueCommand: >-
+  Work on {{artifact_url}} in this Flint workspace. Read AGENTS.md first, inspect
+  the issue and existing implementation, preserve unrelated changes, and complete
+  the requested work. Run make env, make selftest for scripts or Makefile changes,
+  make verify-ios for iOS changes, and make verify-android for Android changes;
+  run both platform gates for cross-platform changes. Follow the project Orca
+  emulator skills for device interaction. Report what changed, the verification
+  evidence, and anything unverified or blocked. Do not push, publish, open or
+  modify PRs, merge, close issues, or take other external actions without explicit
+  authorization.

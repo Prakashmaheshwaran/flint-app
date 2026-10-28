@@ -5,6 +5,11 @@
 - Never hand-edit `ios-app/Flint.xcodeproj`; edit `project.yml` and run `make ios-gen`.
 - Preserve existing user changes and inspect the PR/branch graph before consolidation.
 
+## Workspace
+- `scripts/flint-env.sh` resolves tool paths for Make/setup; source it for direct shell commands. Existing environment wins; Android then uses `local.properties`, then `~/Library/Android/sdk`.
+- Run `make env` (or `make doctor`) for paths, sources, and missing tools. Worktree setup comes from the committed `orca.yaml`.
+- Drive devices through the project `orca-emulator` / `orca-emulator-android` skills, not raw `adb` / `simctl` UI input.
+
 ## Verification
 - iOS changes: run `make verify-ios` when the toolchain is available.
 - Android changes: run `make verify-android`.
