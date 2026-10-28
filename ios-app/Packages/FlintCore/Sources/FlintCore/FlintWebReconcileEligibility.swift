@@ -9,15 +9,20 @@ enum FlintWebReconcileEligibility {
     static func session(_ session: FlintActiveSession?, report: FlintArmingHealth.DomainReport?) -> FlintActiveSession? {
         guard let session else { return nil }
         if session.endsAt == nil { return session } // deliberately open-ended; no auto-end needed
-        return report?.observedActivities?.contains(session.monitorName) == true ? session : nil
+        return isObserved(session.monitorName, domain: "session", report: report) ? session : nil
     }
 
     static func rules(_ rules: [FlintScheduleRule], report: FlintArmingHealth.DomainReport?) -> [FlintScheduleRule] {
         rules.map { rule in
             var eligible = rule
-            eligible.enabled = rule.enabled && report?.observedActivities?.contains(rule.monitorName) == true
+            eligible.enabled = rule.enabled && isObserved(rule.monitorName, domain: "schedules", report: report)
             return eligible
         }
+    }
+
+    private static func isObserved(_ name: String, domain: String, report: FlintArmingHealth.DomainReport?) -> Bool {
+        guard let report, report.observedActivities?.contains(name) == true else { return false }
+        return !report.failures.contains { $0.activityName == name || $0.activityName == domain }
     }
 }
 #endif

@@ -7,7 +7,7 @@ final class FlintWebReconcileEligibilityTests: XCTestCase {
         let rules = [rule("ok"), rule("failed"), rule("unobserved"), rule("off", enabled: false)]
         let report = FlintArmingHealth.DomainReport(enabled: 3, attempted: 3, armed: 2,
             failures: [.init(activityName: rules[1].monitorName, reason: "refused")],
-            observedActivities: [rules[0].monitorName])
+            observedActivities: [rules[0].monitorName, rules[1].monitorName])
         let eligible = FlintWebReconcileEligibility.rules(rules, report: report)
         XCTAssertEqual(eligible.map(\.id), rules.map(\.id), "retain every cause so stale web keys are cleared")
         XCTAssertEqual(eligible.map(\.enabled), [true, false, false, false])
@@ -29,6 +29,10 @@ final class FlintWebReconcileEligibilityTests: XCTestCase {
         let current = FlintArmingHealth.DomainReport(enabled: 1, attempted: 1, armed: 1, failures: [],
                                                       observedActivities: [session.monitorName])
         XCTAssertEqual(FlintWebReconcileEligibility.session(session, report: current), session)
+        let failed = FlintArmingHealth.DomainReport(enabled: 1, attempted: 1, armed: 0,
+            failures: [.init(activityName: session.monitorName, reason: "refused")],
+            observedActivities: [session.monitorName])
+        XCTAssertNil(FlintWebReconcileEligibility.session(session, report: failed), "failure wins over old observation")
     }
 
     func testOpenEndedSessionDoesNotRequireAnAutoEndRegistration() {
