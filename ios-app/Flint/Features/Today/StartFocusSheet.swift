@@ -159,23 +159,13 @@ struct StartFocusSheet: View {
 
     private var blockRow: some View {
         Button { showPicker = true } label: {
-            HStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(vm.selectionCount == 0 ? "Choose what rests" : "Block \(vm.selectionSummary)")
-                        .flintRowTitle()
-                    Text(vm.selectionCount == 0 ? "Apps, categories and sites" : "Tap to change")
-                        .flintSecondary()
-                }
-                .fixedSize(horizontal: false, vertical: true)
-                Spacer()
-                FlintChevron()
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, typeSize.isAccessibilitySize ? 12 : 0)
-            .frame(minHeight: 64)
-            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(FlintBrand.bone(0.04)))
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(FlintBrand.bone(0.08)))
-            .contentShape(Rectangle())
+            SelectionSummaryRow(selection: vm.selection, emptyTitle: "Choose what rests")
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .frame(minHeight: 64)
+                .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(FlintBrand.bone(0.04)))
+                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(FlintBrand.bone(0.08)))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }

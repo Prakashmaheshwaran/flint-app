@@ -1,6 +1,8 @@
 import SwiftUI
 import FamilyControls
 import FlintCore
+import UserNotifications
+import UIKit
 
 /// The You tab: is protection healthy, and everything that isn't a rule.
 struct SettingsView: View {
@@ -12,6 +14,8 @@ struct SettingsView: View {
     @State private var authStatus = AuthorizationCenter.shared.authorizationStatus
     @State private var passAvailable = FlintSessionController().emergencyPassAvailable()
     @State private var checkedAt = Date()
+    @State private var confirmClearHistory = false
+    @State private var historyFeedback: String?
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
@@ -54,6 +58,14 @@ struct SettingsView: View {
                     .overlay(alignment: .top) { FlintHairline() }
                     .padding(.top, 22)
 
+                    Button { confirmClearHistory = true } label: {
+                        FlintRow(title: "Clear focus history", subtitle: FocusHistoryText.definition)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("settings.clearFocusHistory")
+                    if let historyFeedback { Text(historyFeedback).flintSecondary(13) }
+                    CompletionNotificationSettingsRow()
+
                     FlintPrivacyNote(text: "No account. No analytics. Your lists and history stay on this phone.",
                                      color: FlintBrand.stone)
                         .padding(.top, 22)
@@ -64,6 +76,16 @@ struct SettingsView: View {
             .flintTabBarInset()
             .toolbar(.hidden, for: .navigationBar)
             .onAppear(perform: refresh)
+            .confirmationDialog("Clear focus history?", isPresented: $confirmClearHistory, titleVisibility: .visible) {
+                Button("Clear focus history", role: .destructive) {
+                    FocusHistoryModel.shared.clear { success, keptRunningSession in
+                        historyFeedback = FocusHistoryText.clearFeedback(success: success, keptRunningSession: keptRunningSession)
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Past focus sessions will be removed from this device. A running session will be kept.")
+            }
             .sheet(item: $pinAction, onDismiss: finishPINAuthentication) { action in
                 PINAuthenticationView(title: action == .change ? "Change PIN" : "Remove PIN",
                                       authenticate: { pin in
@@ -194,5 +216,99 @@ struct SettingsView: View {
             Text(text).font(FlintFont.text(13)).foregroundStyle(FlintBrand.mist)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+@MainActor
+final class CompletionNotificationSettingsModel: ObservableObject {
+    @Published private(set) var status: UNAuthorizationStatus?
+    @Published private(set) var isRequesting = false
+    @Published private(set) var enabled = true
+    private let notifier: FlintCompletionNotifier
+
+    init(notifier: FlintCompletionNotifier = .shared) { self.notifier = notifier }
+
+    var allowed: Bool { status.map(FlintCompletionNotifier.isAuthorized) == true }
+    var statusText: String { Self.statusText(status: status, enabled: enabled) }
+    var showsSettingsLink: Bool { Self.showsSettingsLink(status: status) }
+    static func statusText(status: UNAuthorizationStatus?, enabled: Bool) -> String {
+        guard let status else { return "Checking…" }
+        switch status {
+        case .notDetermined: return "Optional"
+        case .denied: return "Off in Settings"
+        case .authorized: return enabled ? "On" : "Off"
+        case .provisional: return enabled ? "On (quiet)" : "Off (quiet permission)"
+        case .ephemeral: return enabled ? "On (temporary)" : "Off (temporary permission)"
+        @unknown default: return "Check Settings"
+        }
+    }
+    static func showsSettingsLink(status: UNAuthorizationStatus?) -> Bool {
+        guard let status else { return false }
+        switch status {
+        case .notDetermined, .authorized: return false
+        case .denied, .provisional, .ephemeral: return true
+        @unknown default: return true
+        }
+    }
+    func refresh() {
+        notifier.authorizationStatus { [weak self] status in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.status = status; self.enabled = self.notifier.isEnabled
+            }
+        }
+    }
+    func request() {
+        guard !isRequesting, status == .notDetermined else { return }
+        isRequesting = true
+        notifier.requestPermission { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isRequesting = false
+                self.refresh()
+            }
+        }
+    }
+    func setEnabled(_ value: Bool) { enabled = value; notifier.setEnabled(value) }
+}
+
+struct CompletionNotificationSettingsRow: View {
+    @StateObject private var notifications = CompletionNotificationSettingsModel()
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if notifications.allowed {
+                Toggle(isOn: Binding(get: { notifications.enabled }, set: notifications.setEnabled)) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Focus time notifications").flintRowTitle()
+                        Text(notifications.statusText).flintSecondary(13)
+                    }
+                }
+                .tint(FlintBrand.ember)
+                .accessibilityIdentifier("settings.completionNotifications.toggle")
+            } else {
+                FlintRow(title: "Focus time notifications", value: notifications.statusText)
+                if notifications.status == .notDetermined {
+                    Button(notifications.isRequesting ? "Requesting…" : "Allow notifications", action: notifications.request)
+                        .buttonStyle(BoneButtonStyle())
+                        .disabled(notifications.isRequesting)
+                        .accessibilityIdentifier("settings.completionNotifications.request")
+                }
+            }
+            if notifications.showsSettingsLink {
+                Link("Open notification settings", destination: URL(string: UIApplication.openSettingsURLString)!)
+                    .font(FlintFont.text(15, weight: .medium))
+                    .foregroundStyle(FlintBrand.bone)
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("settings.completionNotifications.settings")
+            }
+            Text("Optional reminders when planned focus time ends. Applies to sessions you start after turning this on.")
+                .flintSecondary(13)
+        }
+        .padding(.vertical, 16)
+        .overlay(alignment: .top) { FlintHairline() }
+        .onAppear { notifications.refresh() }
+        .onChange(of: scenePhase) { if $0 == .active { notifications.refresh() } }
     }
 }

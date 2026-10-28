@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The platform loads this service metadata through the manifest, outside
+     ordinary code references. Keep it explicit across resource-shrinker changes. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@xml/accessibility_service_config" />

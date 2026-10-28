@@ -28,6 +28,8 @@ android {
 dependencies {
     implementation(project(":core:core-common"))
     implementation(project(":core:core-model"))
+    implementation(project(":core:core-history"))
+    implementation(libs.kotlinx.coroutines.android)
     implementation(project(":permissions:permissions-special"))
     implementation(project(":blocking:blocking-resilience"))
     implementation(platform(libs.androidx.compose.bom))

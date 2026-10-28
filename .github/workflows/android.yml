@@ -39,6 +39,14 @@ jobs:
           python3 scripts/verify_local_first_apk.py android-app/app/build/outputs/apk/release/app-release.apk
           python3 scripts/verify_local_first_apk.py android-app/app/build/outputs/bundle/release/app-release.aab
 
+      - name: Retain release R8 mapping for this exact build
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-release-mapping-${{ github.sha }}
+          path: android-app/app/build/outputs/mapping/release/mapping.txt
+          if-no-files-found: error
+          retention-days: 90
+
       # `test` (not `testDebugUnitTest`): the pure-Kotlin modules (blocking-engine,
       # core-model) are kotlin.jvm projects whose test task is `test` — the old task name
       # silently skipped them, making the engine-test gate a false one (review P0-1).

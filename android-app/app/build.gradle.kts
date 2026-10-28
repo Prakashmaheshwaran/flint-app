@@ -73,7 +73,8 @@ android {
             // Incomplete credentials fail above; they never silently fall back.
             signingConfig = signingConfigs.getByName(if (uploadSigningRequested) "upload" else "debug")
             buildConfigField("boolean", "DEVELOPMENT_SIGNED_PREVIEW", (!uploadSigningRequested).toString())
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -99,6 +100,7 @@ dependencies {
     implementation(project(":core:core-common"))
     implementation(project(":core:core-data"))
     implementation(project(":core:core-datastore"))
+    implementation(project(":core:core-history"))
     implementation(project(":blocking:blocking-engine"))
     implementation(project(":blocking:blocking-accessibility"))
     implementation(project(":blocking:blocking-usagestats"))

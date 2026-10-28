@@ -52,7 +52,7 @@ struct TotalActivityContent: View {
     private var activityContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(isWeek ? "SCREEN TIME THIS WEEK" : "SCREEN TIME TODAY")
+                Text(isWeek ? "SCREEN TIME · LAST 7 DAYS" : "SCREEN TIME TODAY")
                     .font(ReportFont.text(11, medium: true)).tracking(2).foregroundStyle(FlintBrand.mist)
                 Text(Self.format(summary.total))
                     .font(ReportFont.display(52)).tracking(-1).monospacedDigit().foregroundStyle(FlintBrand.bone)

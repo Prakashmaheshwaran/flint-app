@@ -25,6 +25,7 @@ android {
 dependencies {
     implementation(project(":core:core-common"))
     implementation(project(":core:core-model"))
+    implementation(project(":core:core-history"))
     implementation(project(":permissions:permissions-special"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
@@ -35,4 +36,5 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     debugImplementation(libs.androidx.ui.tooling)
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

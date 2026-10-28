@@ -378,8 +378,16 @@ struct SessionCompleteView: View {
             VStack(spacing: 0) {
                 Text("\(finished.name) · Complete").flintEyebrow().padding(.top, 52)
                 Text("The ember has set.").flintTitle(34).padding(.top, 18)
-                Text("\(finished.minutes) minutes, start to finish.").flintSecondary(15).padding(.top, 10)
+                Text("\(FocusHistoryText.duration(finished.focusedSeconds)) focused in this session.").flintSecondary(15).padding(.top, 10)
+                if finished.isPreview { Text("DEBUG · Seeded preview events").flintSecondary(12).padding(.top, 8) }
+                if finished.historyDegraded { Text(FocusHistoryText.degraded).flintSecondary(13).padding(.top, 8) }
                 Spacer()
+                VStack(spacing: 6) {
+                    Text(FocusHistoryText.duration(finished.todaySeconds)).flintNumber(36)
+                    Text("Focused today").flintEyebrow()
+                }
+                .padding(.vertical, 24)
+                .accessibilityElement(children: .combine)
                 VStack(spacing: 8) {
                     Button("Done", action: onDone).buttonStyle(BoneButtonStyle())
                     Button("Start another", action: onAgain).buttonStyle(QuietButtonStyle())
