@@ -31,7 +31,11 @@ private struct WelcomeView: View {
 
     var body: some View {
         ZStack {
-            EmberLandscape(horizonOffset: 20, orbCenter: CGPoint(x: 195, y: 480), orbRadius: 64)
+            // At accessibility sizes the promises wrap down across the horizon; leave the
+            // decorative orb out there so they stay legible.
+            EmberLandscape(horizonOffset: 20,
+                           orbCenter: typeSize.isAccessibilitySize ? nil : CGPoint(x: 195, y: 480),
+                           orbRadius: 64)
             GeometryReader { geometry in
                 ScrollView {
                     VStack(spacing: 14) {
