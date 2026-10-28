@@ -111,6 +111,7 @@ final class FlintProtectionRecoverySafetyTests: XCTestCase {
                 request.retainedUntil = end.addingTimeInterval(86400)
                 let expired = reconcile(end.addingTimeInterval(60))
                 XCTAssertEqual(cleared, [name])
+                XCTAssertEqual(expired.failures.count, 1, "one row combines refusal and cleanup details")
                 XCTAssertTrue(expired.failures.contains { $0.reason.contains("retained shield was cleared") })
                 _ = reconcile(end.addingTimeInterval(120))
                 XCTAssertEqual(cleared, [name], "clear once per abandoned registration episode")

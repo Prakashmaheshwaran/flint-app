@@ -14,8 +14,8 @@ public final class FlintGroupStore {
         static let selection = "flint.selection"
         static let sessions = "flint.sessions"
         static let activeSession = "flint.activeSession"
-        static let rules = "flint.rules"
-        static let limits = "flint.limits"
+        static let rules = FlintRuleStoreKey.schedules.rawValue
+        static let limits = FlintRuleStoreKey.limits.rawValue
         static let appGroups = "flint.appGroups"
         static let emergencyPassLastUsed = "flint.emergencyPass.lastUsed"
         static let pinHash = "flint.pin.hash"

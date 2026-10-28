@@ -178,7 +178,7 @@ public struct FlintOpenLimitRule: Codable, Identifiable, Equatable {
 }
 
 private enum FlintOpenLimitStoreKey {
-    static let rules = "flint.openLimit.rules"
+    static let rules = FlintRuleStoreKey.openLimits.rawValue
 }
 
 extension FlintOpenLimitRule {
