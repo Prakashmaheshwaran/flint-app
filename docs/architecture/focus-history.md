@@ -1,9 +1,9 @@
 # Focus history contract (v1)
 
 Status: accepted for the v1 build (lane F). Applies to iOS and Android.
-Event names are provisional until ADR-012 (`protection-contract.md`) fixes the lifecycle
-vocabulary; each platform keeps the wire names in **one** enum so a rename is a mapping
-change, and readers accept both old and new names.
+Aligned with ADR-012 §11 (`protection-contract.md`), which owns the canonical lifecycle
+vocabulary and the durable enforcement outbox; this file is the focus-history projection.
+Each platform keeps the wire names in **one** enum, and readers accept old and new names.
 
 ## Purpose and boundaries
 
@@ -41,18 +41,26 @@ One JSON object per event. Both platforms use the same field names.
 | `route` | string | `ended_early` | `manual_stop`, `harder_wait`, `emergency_pass`, `shortcut_stop`, `focus_filter_off`, `hold_to_end`, `cancel`, `deleted`, `disabled`, `unknown`. |
 | `by` | string | `superseded` | Id of the session that replaced this one. |
 | `breakEnd` | int64 | `break_started` | Planned break end. |
-| `reason` | string | `failed_to_arm` | Short machine reason, e.g. `monitor_registration_failed`. |
+| `reason` | string | `failed_to_arm`, `ended_early`, `break_ended`, `protection_degraded`, optional elsewhere | Short machine reason (ADR-012 §11), e.g. `monitor_registration_failed`, `stop`, `toggle_off`, `deadline`. |
+| `originRoute` | string | optional, additive | ADR-012 origin: `app_ui`, `shortcut`, `siri`, `focus_filter`, `automation`, `notification`, `shield_action`, `monitor`, `service`, `startup_reconciliation`, `migration`. |
+| `observedAt` | int64 | optional, additive | Wall time the transition was observed (ADR-012 `sourceObservedAt`) when it differs from the logical `at`. |
+| `kind` | string | `break_started` | `ordinary` or `planned` (precommitted Pomodoro rest). |
+| `grant` | string | optional | Break/access grant or pass operation id. |
+| `sessions` | [string] | `pass_used` | Session ids the pass affected (zero or more). |
+| `recoveryEnd` | int64 | `pass_used` | End of the pass's release/recovery window. |
 
 ### Event types
 
 | Type | Emitted when |
 | --- | --- |
-| `started` | A focus session became active (persisted as the active session / rule). |
-| `completed` | The session reached its planned end without an earlier terminal event. `at` = planned end. |
+| `started` | A focus session's occurrence started after its arm prerequisites were durably accepted (ADR-012 §11: persisted alone is not armed). |
+| `completed` | The session reached its **logical** deadline without an earlier terminal event; never written before that deadline. `at` = the deadline. |
 | `ended_early` | The session stopped before its planned end, by `route`. |
 | `superseded` | A new session replaced a still-running one (`by` = new id). |
-| `break_started` / `break_ended` | A break inside the session began / ended (Android only in v1). |
-| `pass_used` | An Emergency Pass was spent while this session was active. Does not by itself end the session; iOS also emits `ended_early(route: emergency_pass)`. |
+| `break_started` / `break_ended` | A break inside the session began / ended (both platforms per ADR-012 §4; `kind`, `grant`). |
+| `pass_used` | One global Emergency Pass operation (ADR-012 §6). `session` is the pass operation id; `sessions` lists affected sessions; `[at, recoveryEnd)` is subtracted from each listed session's focus. A session the pass ends also gets `ended_early(route: emergency_pass)`. |
+| `protection_degraded` / `protection_restored` | A known coverage gap for this session began / ended; the gap is subtracted from focus. Permission loss is never a completion. |
+| `access_started` / `access_ended` | Open-Limit credit interval (ADR-012 §5). Not focus sessions; preserved and ignored by focus aggregation. |
 | `failed_to_arm` | Starting or arming the session's out-of-app teardown failed. Diagnostic; does not end the session. |
 | `rescheduled` | A still-running session's planned end changed in place (same session id). Carries the new `plannedEnd`. Name/tier-only edits emit nothing. |
 | `open_intercepted` | Android only: a block surface was shown for a new foreground open attempt during this session. |
@@ -88,8 +96,10 @@ For one session:
   "in progress" wherever shown.
 - **Inferred unknown ends (rule 4) credit zero focused time.** Flint cannot prove when such a
   session actually stopped, so it under-reports rather than invents time.
-- Subtract break intervals `[break_started.at, break_ended.at ?? breakEnd ?? end)` clipped
-  to the session interval. An observed `break_ended` takes precedence over the planned
+- Subtract break intervals `[break_started.at, break_ended.at ?? breakEnd ?? end)`, pass
+  windows `[pass_used.at, recoveryEnd)` for sessions listed in `sessions`, and coverage gaps
+  `[protection_degraded.at, protection_restored.at ?? end)`, each clipped to the session
+  interval. An observed `break_ended` takes precedence over the planned
   `breakEnd`, whether it is earlier or later.
 - If `end < started.at` (wall clock moved backwards) the session contributes zero.
 - Ended-early and superseded sessions **do** contribute the time actually spent before the
@@ -178,9 +188,9 @@ FlintSessionLifecycle.didFailToArm(_ session: FlintActiveSession, reason: String
 ```
 
 `didStart` with a non-expired `previous` emits `superseded(previous, by:)`; with an expired
-one, `completed(previous)`. `didEnd(.completed)` from the monitor's `intervalDidEnd` uses
-`at: session.endsAt` and is emitted only when the end is within 120 s of `endsAt`
-(DeviceActivity truncates the schedule end to whole seconds). Proposed hook sites, for
+one, `completed(previous)`. `didEnd(.completed)` records `at: session.endsAt` and must only be
+called at or after the logical deadline (ADR-012 §4/§11; lane B's warning-time deadline
+adapter owns the timing — no early-callback allowance). Proposed hook sites, for
 lane B to accept or adapt: `FlintSessionController.startBlockNow` (after saving the active
 session), `stop(route:)`, `finishIfExpired`, `useEmergencyPass`, the monitor's session
 `intervalDidEnd` branch (before `clearActiveSession`), Shortcuts stop, Focus filter off,
@@ -203,6 +213,9 @@ route, break, pass and `open_intercepted` emission needs one call each in
 
 ## Notifications (local only)
 
+- Copy (ADR-012 §11): a pre-scheduled alert says only that the **planned focus time has
+  ended** (e.g. "Planned focus time ended"); it never claims committed completion or that
+  anything was blocked. Delivery is not enforcement evidence.
 - iOS: optional permission requested from onboarding (E02) and You; never required. On
   `didStart` with a planned end and authorization granted, schedule one local notification
   (`flint.session.complete.<sessionId>`) at `endsAt`; cancel it on early end or supersede.
@@ -234,3 +247,6 @@ route, break, pass and `open_intercepted` emission needs one call each in
 - **FH-19** streak: completions today and the previous two days → 3; none today → counts from yesterday.
 - **FH-20** `rescheduled` extends/shortens the effective planned end; completion and clamping
   use the latest value; name/tier-only edits change nothing.
+- **FH-21** a global `pass_used` listing two sessions subtracts `[at, recoveryEnd)` from
+  each; a `protection_degraded`/`protection_restored` gap is subtracted; `access_*` events
+  change nothing.
