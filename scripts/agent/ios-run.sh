@@ -23,5 +23,5 @@ app="$derived_data/Build/Products/Debug-iphonesimulator/Flint.app"
 # the build. Always attach the exact resolved UDID, never Orca's fuzzy name match.
 agent_device ios "$device"
 xcrun simctl install "$device" "$app"
-xcrun simctl launch "$device" "$bundle_id"
+agent_device ios-launch "$device" "$bundle_id"
 echo "Flint launched: device=$simulator ($device) bundle=$bundle_id"
