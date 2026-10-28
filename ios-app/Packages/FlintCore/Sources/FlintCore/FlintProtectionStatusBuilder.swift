@@ -98,11 +98,14 @@ public enum FlintProtectionStatusBuilder {
         public var pass: Snapshot.Pass
         /// nil means the required time state is unavailable; unverifiable means uncertainty.
         public var timeIntegrity: FlintTimeIntegrity.Verdict?
+        /// No live duration anchor needs assessment. This is distinct from a trusted clock.
+        public var timeIntegrityApplies: Bool
         public var available: Bool
 
         public init(now: Date, quotaCalendar: Calendar = .current, activeSession: SessionInput? = nil,
                     recordUnreadable: Bool = false, rules: [RuleInput] = [], authorized: Bool?,
-                    pass: Snapshot.Pass, timeIntegrity: FlintTimeIntegrity.Verdict?, available: Bool = true) {
+                    pass: Snapshot.Pass, timeIntegrity: FlintTimeIntegrity.Verdict?, available: Bool = true,
+                    timeIntegrityApplies: Bool = true) {
             self.now = now
             self.quotaCalendar = quotaCalendar
             self.activeSession = activeSession
@@ -111,6 +114,7 @@ public enum FlintProtectionStatusBuilder {
             self.authorized = authorized
             self.pass = pass
             self.timeIntegrity = timeIntegrity
+            self.timeIntegrityApplies = timeIntegrityApplies
             self.available = available
         }
     }
@@ -119,7 +123,8 @@ public enum FlintProtectionStatusBuilder {
         let now = inputs.now
         let enabled = inputs.rules.filter(\.enabled)
         var reasons = Set<String>()
-        var unavailable = !inputs.available || inputs.authorized == nil || inputs.timeIntegrity == nil
+        var unavailable = !inputs.available || inputs.authorized == nil
+            || (inputs.timeIntegrityApplies && inputs.timeIntegrity == nil)
             || inputs.pass.eligibility == .unavailable || enabled.contains { !$0.available }
         if inputs.recordUnreadable {
             unavailable = true
@@ -127,8 +132,8 @@ public enum FlintProtectionStatusBuilder {
         }
         if unavailable { reasons.insert("state_unavailable") }
         if inputs.authorized == false { reasons.insert("not_authorized") }
-        let timeTrusted = inputs.timeIntegrity == .consistent
-        if inputs.timeIntegrity != nil && !timeTrusted { reasons.insert("time_uncertain") }
+        let timeTrusted = !inputs.timeIntegrityApplies || inputs.timeIntegrity == .consistent
+        if inputs.timeIntegrityApplies && inputs.timeIntegrity != nil && !timeTrusted { reasons.insert("time_uncertain") }
         let recovery = inputs.pass.recoveryUntil.flatMap { $0 > now ? $0 : nil }
         let canEnforce = !unavailable && inputs.authorized == true && timeTrusted && recovery == nil
         var boundaries = [now.addingTimeInterval(24 * 3600)]

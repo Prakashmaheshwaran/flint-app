@@ -15,6 +15,24 @@ extension FlintProtectionStatusBuilder.RuleInput {
 }
 
 extension FlintProtectionStatus {
+    public struct ObservationEnvironment {
+        public var authorized: () -> Bool?
+        public var registeredActivities: () -> Set<String>
+        public var clock: FlintClock
+
+        public init(authorized: @escaping () -> Bool?, registeredActivities: @escaping () -> Set<String>,
+                    clock: FlintClock) {
+            self.authorized = authorized
+            self.registeredActivities = registeredActivities
+            self.clock = clock
+        }
+
+        public static var system: Self {
+            Self(authorized: { AuthorizationCenter.shared.authorizationStatus == .approved },
+                 registeredActivities: { Set(DeviceActivityCenter().activities.map(\.rawValue)) }, clock: .system)
+        }
+    }
+
     public struct RuleObservation: Equatable, Sendable {
         public let armed: Bool
         public let observed: Bool
@@ -40,13 +58,14 @@ extension FlintProtectionStatus {
         sessionOrigin: FlintProtectionStatusSnapshot.Session.Origin = .appUI,
         timeIntegrity: FlintTimeIntegrity.Verdict? = nil, quotaCalendar: Calendar = .current,
         writer: Writer = .host,
+        environment: ObservationEnvironment = .system,
         effects: PublicationEffects = .system
     ) -> FlintProtectionStatusSnapshot {
         let inputs = currentInputs(now: now, defaults: defaults, pass: pass, ledgerPass: ledgerPass,
             ruleObservations: ruleObservations, thresholdReached: thresholdReached,
             openEnforcing: openEnforcing, sessionArmed: sessionArmed,
             sessionKind: sessionKind, sessionOrigin: sessionOrigin,
-            timeIntegrity: timeIntegrity, quotaCalendar: quotaCalendar)
+            timeIntegrity: timeIntegrity, quotaCalendar: quotaCalendar, environment: environment)
         let snapshot = FlintProtectionStatusBuilder.make(inputs).withWriter(writer.rawValue)
         publish(snapshot, to: defaults, writer: writer, effects: effects)
         return snapshot
@@ -64,7 +83,8 @@ extension FlintProtectionStatus {
         thresholdReached: [String: Bool] = [:], openEnforcing: [String: Bool] = [:],
         sessionArmed: Bool? = nil, sessionKind: FlintProtectionStatusSnapshot.Session.Kind = .session,
         sessionOrigin: FlintProtectionStatusSnapshot.Session.Origin = .appUI,
-        timeIntegrity: FlintTimeIntegrity.Verdict? = nil, quotaCalendar: Calendar = .current
+        timeIntegrity: FlintTimeIntegrity.Verdict? = nil, quotaCalendar: Calendar = .current,
+        environment: ObservationEnvironment = .system
     ) -> FlintProtectionStatusBuilder.Inputs {
         var unreadable = false
         func read<T: Decodable>(_ key: String, as type: T.Type) -> T? {
@@ -80,7 +100,7 @@ extension FlintProtectionStatus {
         let limits = read("flint.limits", as: [FlintLimitRule].self) ?? []
         let opens = read("flint.openLimit.rules", as: [FlintOpenLimitRule].self) ?? []
         let health = read("flint.armingHealth", as: FlintArmingHealth.self)
-        let activities = Set(DeviceActivityCenter().activities.map(\.rawValue))
+        let activities = environment.registeredActivities()
         func observation(id: String, activity: String, domain: String) -> RuleObservation {
             if let supplied = ruleObservations[id] { return supplied }
             // Aggregate health proves this rule armed only when the entire domain succeeded.
@@ -114,12 +134,24 @@ extension FlintProtectionStatus {
                 armed: sessionArmed ?? activities.contains($0.monitorName),
                 kind: sessionKind, origin: sessionOrigin)
         }
-        let clock = FlintClock.system
-        let verdict = timeIntegrity ?? active.map {
+        let clock = environment.clock
+        let liveActive = active.flatMap { $0.isExpired(at: now) ? nil : $0 }
+        // A recent observed wall-clock anomaly remains relevant without a manual session.
+        // Old diagnostic history and repaired zone/registration events are not clock verdicts.
+        let anomaly = FlintSessionHealth.load(from: defaults).lastTimeAnomaly.flatMap { anomaly -> FlintTimeIntegrity.Verdict? in
+            guard anomaly.detectedAt <= now, now.timeIntervalSince(anomaly.detectedAt) <= 300 else { return nil }
+            switch anomaly.kind {
+            case .wallAhead: return .wallAhead(seconds: anomaly.seconds)
+            case .wallBehind: return .wallBehind(seconds: anomaly.seconds)
+            default: return nil
+            }
+        }
+        let verdict = timeIntegrity ?? liveActive.map {
             FlintTimeIntegrity.verdict(wallStart: $0.startedAt, monotonicStart: $0.monotonicStart,
                 bootSessionID: $0.bootSessionID, now: now, monotonicNow: clock.monotonic(),
                 currentBootSessionID: clock.bootSessionID())
-        } ?? .unverifiable
+        } ?? anomaly
+        let timeIntegrityApplies = timeIntegrity != nil || liveActive != nil || anomaly != nil
         let hasActiveCommitment = (session.map { !$0.session.isExpired(at: now) && $0.session.startedAt <= now }
             ?? false) || rules.contains { $0.isActive(at: now) }
         let projectedPass = ledgerPass.map {
@@ -129,8 +161,9 @@ extension FlintProtectionStatus {
         } ?? pass
         return .init(now: now, quotaCalendar: quotaCalendar, activeSession: session,
             recordUnreadable: unreadable, rules: rules,
-            authorized: AuthorizationCenter.shared.authorizationStatus == .approved,
-            pass: projectedPass, timeIntegrity: verdict, available: defaults != nil)
+            authorized: environment.authorized(),
+            pass: projectedPass, timeIntegrity: verdict, available: defaults != nil,
+            timeIntegrityApplies: timeIntegrityApplies)
     }
 }
 #endif

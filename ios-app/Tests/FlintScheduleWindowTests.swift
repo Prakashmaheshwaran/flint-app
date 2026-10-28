@@ -20,7 +20,8 @@ final class FlintScheduleWindowTests: XCTestCase {
                                                 calendar: calendar())?.current)
     }
 
-    func testDSTMissingEndpointMovesByGapAndRepeatedEndUsesLaterInstant() throws {
+    // ADR-012 §9: missing endpoint shifts by the gap, ambiguous start is earlier/end later.
+    func testADR012DSTMissingEndpointMovesByGapAndRepeatedEndUsesLaterInstant() throws {
         let zone = calendar("America/New_York")
         let spring = FlintSchedule(startHour: 1, endHour: 2, endMinute: 30)
         let first = try XCTUnwrap(FlintScheduleWindow.resolve(spring,
@@ -35,5 +36,16 @@ final class FlintScheduleWindowTests: XCTestCase {
     func testInvalidScheduleIsUnavailable() {
         XCTAssertNil(FlintScheduleWindow.resolve(FlintSchedule(startHour: 25, endHour: 7),
                                                 at: Date(), calendar: calendar()))
+    }
+
+    func testMidnightDSTNeverMovesTheWindowToTheWrongDay() {
+        let zone = calendar("America/Santiago")
+        let now = date("2026-09-06T04:30:00Z") // 01:30 after the missing local midnight
+        let schedule = FlintSchedule(startHour: 0, endHour: 3)
+        guard let result = FlintScheduleWindow.resolve(schedule, at: now, calendar: zone) else {
+            return // Unrepresentable day is unavailable, never a claim for a different day.
+        }
+        XCTAssertEqual(result.current?.start, date("2026-09-06T04:00:00Z"))
+        XCTAssertEqual(result.current?.end, date("2026-09-06T06:00:00Z"))
     }
 }

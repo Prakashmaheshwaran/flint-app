@@ -117,6 +117,9 @@ final class FlintProtectionStatusTests: XCTestCase {
         XCTAssertNil(result.session)
         XCTAssertNil(result.headline)
         XCTAssertEqual(result.state, .degraded)
+        XCTAssertEqual(result.causes.map(\.id), ["session"])
+        XCTAssertEqual(result.causes.first?.kind, .session)
+        XCTAssertEqual(result.causes.first?.enforcing, false)
         value.activeSession = session(end: 0)
         result = Builder.make(value)
         XCTAssertNil(result.session)
@@ -239,6 +242,13 @@ final class FlintProtectionStatusTests: XCTestCase {
         XCTAssertNil(FlintProtectionStatus.load(now: now.addingTimeInterval(601), from: store))
     }
 
+    func testReaderRejectsOversizedBlobBeforeDecoding() throws {
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .secondsSince1970
+        let valid = try encoder.encode(Builder.make(inputs()))
+        let oversized = valid + Data(repeating: 32, count: 64 * 1024)
+        XCTAssertNil(FlintProtectionStatus.decode(oversized, now: now))
+    }
+
     func testPublisherWritesBeforeWidgetReloadAndDarwinNotification() {
         let store = defaults()
         let snapshot = Builder.make(inputs())
@@ -297,6 +307,23 @@ final class FlintProtectionStatusTests: XCTestCase {
         var unavailable = value; unavailable.available = false
         XCTAssertTrue(FlintProtectionStatus.contributors(for: "opaque", inputs: unavailable,
             coverageByCauseID: [:]).causes.isEmpty)
+    }
+
+    func testUncoveredTargetIsNotProtectedAndUnrelatedOpenCapIsExcluded() {
+        var covered = rule("covered", kind: .openLimit); covered.opensAllowed = 5
+        var unrelated = rule("unrelated", kind: .openLimit); unrelated.opensAllowed = 1
+        let value = inputs(rules: [covered, unrelated])
+        let scopes: [String: FlintProtectionStatus.TargetScope] = [
+            "covered": .only(["target"]), "unrelated": .allExcept(["target"])
+        ]
+        let result = FlintProtectionStatus.contributors(for: "target", inputs: value, coverageByCauseID: scopes)
+        XCTAssertEqual(result.causes.map(\.id), ["covered"])
+        XCTAssertEqual(result.openCap, 5)
+        let uncovered = FlintProtectionStatus.contributors(for: "target", inputs: value,
+            coverageByCauseID: ["covered": .allExcept(["target"]), "unrelated": .only(["other"])])
+        XCTAssertEqual(uncovered.state, .notProtected)
+        XCTAssertTrue(uncovered.causes.isEmpty)
+        XCTAssertNil(uncovered.openCap)
     }
 
     func testProjectionDoesNotEncodeSelectionsMonitorNamesOrCallerTargetKeys() throws {

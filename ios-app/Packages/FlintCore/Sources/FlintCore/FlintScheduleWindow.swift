@@ -2,6 +2,8 @@ import Foundation
 
 /// Shared weekday/overnight occurrence calculation. The weekday belongs to the start date;
 /// callers supply the saved rule's calendar/zone, rather than moving an active occurrence.
+/// ADR-012 §9 requires an earlier ambiguous start and a later ambiguous end. The same
+/// materialization policy governs enforcement; a repeated hour does not shorten that end.
 public enum FlintScheduleWindow {
     public struct Resolution: Equatable, Sendable {
         public let current: DateInterval?
@@ -34,9 +36,11 @@ public enum FlintScheduleWindow {
 
     private static func endpoint(hour: Int, minute: Int, day: Date, calendar: Calendar,
                                  repeated: Calendar.RepeatedTimePolicy) -> Date? {
-        calendar.nextDate(after: day.addingTimeInterval(-1),
-                          matching: DateComponents(hour: hour, minute: minute, second: 0),
-                          matchingPolicy: .nextTimePreservingSmallerComponents,
-                          repeatedTimePolicy: repeated, direction: .forward)
+        guard let result = calendar.nextDate(after: day.addingTimeInterval(-1),
+            matching: DateComponents(hour: hour, minute: minute, second: 0),
+            matchingPolicy: .nextTimePreservingSmallerComponents,
+            repeatedTimePolicy: repeated, direction: .forward),
+            calendar.isDate(result, inSameDayAs: day) else { return nil }
+        return result
     }
 }
