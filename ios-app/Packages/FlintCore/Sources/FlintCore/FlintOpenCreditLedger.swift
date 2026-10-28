@@ -146,10 +146,18 @@ public struct FlintOpenCreditPreview: Equatable, Sendable {
     public let blockedBy: FlintOpenCreditBlock?
     public let grant: FlintOpenCreditGrant?
     public let blockingContributors: [String]
+    /// Proposed elapsed access (or the existing grant's remaining time); may be <300 at reset.
+    public let duration: TimeInterval?
+    public let resetAtEstimate: Date?
+    public let quotaZone: String?
+    public let timeUncertain: Bool
     public init(remaining: Int?, cap: Int?, blockedBy: FlintOpenCreditBlock?, grant: FlintOpenCreditGrant? = nil,
-                blockingContributors: [String] = []) {
+                blockingContributors: [String] = [], duration: TimeInterval? = nil,
+                resetAtEstimate: Date? = nil, quotaZone: String? = nil, timeUncertain: Bool = true) {
         self.remaining = remaining; self.cap = cap; self.blockedBy = blockedBy; self.grant = grant
         self.blockingContributors = blockingContributors
+        self.duration = duration; self.resetAtEstimate = resetAtEstimate
+        self.quotaZone = quotaZone; self.timeUncertain = timeUncertain
     }
 }
 
@@ -284,7 +292,11 @@ extension FlintLedgerState {
         return .init(remaining: remaining, cap: cap,
                      blockedBy: blockedBy ?? (additionalOpenCause ? .otherContributor :
                         (grant == nil && remaining == 0 ? .exhausted : nil)), grant: grant,
-                     blockingContributors: contributors)
+                     blockingContributors: contributors,
+                     duration: grant?.remaining(at: now) ?? min(300, openCredits.resetRemaining),
+                     resetAtEstimate: now.wall.addingTimeInterval(openCredits.resetRemaining),
+                     quotaZone: openCredits.quotaZone,
+                     timeUncertain: now.bootID == nil || abs(now.wall.timeIntervalSince(openCredits.trustedWall!)) > 5)
     }
 
     /// One atomic acceptance. `register` must succeed before consumption; failure spends

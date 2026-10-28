@@ -235,6 +235,8 @@ final class FlintOpenCreditTests: XCTestCase {
 
     func testPC35MidnightClipsAndReshieldsBeforeNewPeriodAcceptance() throws {
         now = ISO8601DateFormatter().date(from: "2026-10-28T23:58:00Z")!
+        _ = try state()
+        XCTAssertEqual(service().preview(target: openAppKey).duration, 120, "preview discloses clipped access")
         let first = try accepted()
         XCTAssertEqual(first.grant.duration, 120)
         XCTAssertEqual(first.grant.deadline, calendar.dateInterval(of: .day, for: now)?.end)
@@ -437,6 +439,7 @@ final class FlintOpenCreditTests: XCTestCase {
         advance(100); now = now.addingTimeInterval(3 * 86_400)
         _ = service().reconcile()
         XCTAssertEqual(service().preview(target: openAppKey).grant?.remaining(at: instant), 200)
+        XCTAssertTrue(service().preview(target: openAppKey).timeUncertain)
         now = now.addingTimeInterval(-6 * 86_400)
         _ = service().reconcile()
         XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
