@@ -6,7 +6,7 @@ or emulator CPU measurement was observed for this change. The shared device slot
 
 ## Matrix v1
 
-`BrowserAddressBars.supportedBrowsers` is the versioned adapter list shown in the existing
+`BrowserAddressBars.supportedBrowsers` is the versioned known-adapter list shown in the existing
 Settings health banner. It retains all 25 baseline package/ID pairs; the evidence field
 explicitly says source IDs pinned 2026-10-28, browser version/device unverified. Listing an
 adapter is not a compatibility certification. Tests pin all package IDs and families.
@@ -24,29 +24,43 @@ one monotonic leading/trailing throttle. There is at most one view-ID lookup per
 per current browser window. Alternate IDs rotate on misses, retaining a working ID on
 success; no loop of view-ID lookups is run in a single window. The final event in a burst
 gets a trailing read even if there are no later events. Window/rule/service changes cancel
-or invalidate queued work. Continuous-burst cost is unit-tested only, not CPU-measured.
+or invalidate queued work. Unchanged URLs still update coverage, but skip the full coordinator
+evaluation and any time-budget usage query; scrolling is not a reason to query usage twice
+per second. A changed foreground root is reconciled before a content callback can evaluate
+its cached browser context, without scheduling another URL read. All lookup roots and
+returned address-bar nodes are recycled. Continuous-burst cost is unit-tested only, not CPU-measured.
 
-Three consecutive misses in the foreground activity-backed browser window mark coverage
-degraded. A successful read clears it; switching browser/window resets the session.
-Dialog/view window events do not establish a main application window; root/package/window
-identity must match before reading/counting. A Flint overlay never counts as a missing
-browser bar. Unavailable roots cannot establish a miss and do not prove readable coverage.
+After three unsuccessful reads with no successful read in that browser window/session,
+coverage is **Unconfirmed**, informational only. Missing/hidden/renamed bars and a History,
+Downloads or tab-switcher-only visit cannot prove a compatibility failure. Once a window
+has produced a successful read, three consecutive reads of a visible but blank/unreadable
+address-bar node mark coverage **Degraded**; absent nodes do not count toward that threshold.
+One successful read clears either state; switching browser/window resets the session.
+Root application-window metadata and the first successful read also establish evidence after
+service restart, without needing a new activity event. Root/package/window identity must
+match before reading/counting. A Flint overlay never counts as a missing browser bar.
+Unavailable roots cannot establish a miss and do not prove readable coverage.
 URL cache and health are process-local; health contains no URL/history. The last browser
 observation remains visible when opening Flint/Settings and is labeled as a last check;
-foreground miss counts reset when leaving that window. Settings refreshes the snapshot
+foreground miss counts reset when leaving that window, and historical gaps no longer
+contribute to the global health level in ordinary apps/Flint. Settings refreshes the snapshot
 on resume, as before. With active domain rules and Accessibility disabled,
 the same health surface says website blocks are paused, even if app fallback still works.
 
 ## Verification and remaining acceptance
 
-30 new tests cover matrix/version/IDs, active windows and allow-list exclusion, consecutive
+41 new tests cover matrix/version/IDs, active windows and allow-list exclusion, consecutive
 misses/recovery, switches/stale windows, unsupported handlers, the leading/trailing throttle,
 synthetic service filtering, health presentation and event disclosure. The existing
 AccessibilityDisclosureNavigationTest retains all affirmative-consent gate checks.
 
-Local targeted execution passed 380 tests in the five changed modules (before the final
-additional activity-window identification test). Final exact-head CI results are linked
-from the PR and the lane handoff report.
+The first candidate passed 381 local changed-module tests and full Android CI. The review
+follow-up adds global-delivery disclosure guards, unchanged-scroll/stale-root/utility-screen
+and root-recycling regressions. Final execution results are linked from the PR and lane
+handoff report. Remaining ambiguity: a visible empty address field (for example a new-tab
+or search surface after browsing) can still produce Degraded after three blank reads; this
+means no readable address, not a certified browser regression. A missing bar after a prior
+success retains only that last successful observation, not proof of current-page coverage.
 Before general website claims, manually exercise Chrome plus a non-Chromium browser:
 typed URL, link, redirect, subdomain, same-tab navigation, hidden/private address bars,
 unsupported browser and Accessibility-off fallback. Record browser versions, scrolling

@@ -18,8 +18,9 @@ class WebCoverageTest {
 
     @Test fun `three consecutive main window misses degrade and preserve the first degradation time`() {
         tracker.foreground(chrome, true, true)
+        tracker.addressBarRead(chrome, true, true, 0)
         repeat(2) { miss() }
-        assertEquals(WebCoverage.AwaitingBrowser, tracker.state)
+        assertTrue(tracker.state is WebCoverage.Available)
         miss(now = 300)
         assertEquals(WebCoverage.Degraded(BrowserAddressBars.find(chrome.packageName)!!, 300), tracker.state)
         miss(now = 400)
@@ -28,6 +29,7 @@ class WebCoverageTest {
 
     @Test fun `one successful read clears degradation and resets consecutive misses`() {
         tracker.foreground(chrome, true, true)
+        tracker.addressBarRead(chrome, true, true, 0)
         repeat(3) { miss() }
         tracker.addressBarRead(chrome, true, true, 500)
         assertTrue(tracker.state is WebCoverage.Available)
@@ -73,6 +75,23 @@ class WebCoverageTest {
         tracker.foreground(chrome, true, true)
         miss()
         assertEquals(WebCoverage.AwaitingBrowser, tracker.state)
+    }
+
+    @Test fun `renamed missing ids and utility windows are informational until a successful read`() {
+        tracker.foreground(chrome, true, true)
+        repeat(3) { tracker.addressBarRead(chrome, false, true, 100, addressBarNodePresent = false) }
+        assertEquals(WebCoverage.Unconfirmed(BrowserAddressBars.find(chrome.packageName)!!), tracker.state)
+        tracker.addressBarRead(chrome, true, true, 200)
+        assertTrue(tracker.state is WebCoverage.Available)
+    }
+
+    @Test fun `hidden bar after a success never fabricates degraded coverage`() {
+        tracker.foreground(chrome, true, true)
+        tracker.addressBarRead(chrome, true, true, 100)
+        repeat(10) { tracker.addressBarRead(chrome, false, true, 200, addressBarNodePresent = false) }
+        assertTrue(tracker.state is WebCoverage.Available)
+        repeat(3) { tracker.addressBarRead(chrome, false, true, 300, addressBarNodePresent = true) }
+        assertTrue(tracker.state is WebCoverage.Degraded)
     }
 
     @Test fun `website activity uses enabled expiry schedule and excludes allow-list domains`() {

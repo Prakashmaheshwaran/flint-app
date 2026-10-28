@@ -65,6 +65,9 @@ object BlockingHealthUi {
             role = "Instant app and website blocking",
             disclosure = "Flint's accessibility service detects which app is in the foreground " +
                 "and reads web addresses from known browser address bars for website blocking. " +
+                "While a website rule is active, it re-reads supported browsers' address bars " +
+                "when a page changes. Android also sends page-change signals from other apps; " +
+                "Flint ignores those without reading their content. " +
                 "App and screen class names identify the foreground app. " +
                 "Flint uses this only to enforce the blocks you set up. Everything stays on " +
                 "your device; it is never sent off your device, shared, or sold. Review the " +
@@ -158,12 +161,15 @@ object BlockingHealthUi {
             WebCoverage.Paused -> "Website blocks paused: website rules need Accessibility."
             is WebCoverage.Available -> "Last browser check: address bar readable in ${coverage.browser.displayName}."
             is WebCoverage.Degraded -> "Last browser check: website blocking can't read ${coverage.browser.displayName}'s address bar."
-            is WebCoverage.Unsupported -> "Last browser check: website blocking unavailable in ${coverage.packageName}: unsupported browser."
+            is WebCoverage.Unconfirmed -> "Flint hasn't been able to confirm it can read ${coverage.browser.displayName}'s " +
+                "address bar; website rules may not apply there."
+            is WebCoverage.Unsupported -> "Last website check: website blocking unavailable in ${coverage.displayName}: " +
+                if (coverage.isBrowser) "unsupported browser." else "unsupported link handler."
         }
-        return observation + "\nSupported browser adapters (list ${BrowserAddressBars.MATRIX_VERSION}): " +
+        return observation + "\nKnown adapters (not verified on this device): " +
             BrowserAddressBars.supportedBrowsers.joinToString { it.displayName } +
             ". Browser updates, hidden address bars and private pages can reduce coverage; " +
-            "this list is not device verification. Other browsers and the usage-access backup " +
+            "support depends on a readable address bar. Other browsers and the usage-access backup " +
             "path do not filter websites. Allow-list mode uses the app list and ignores websites."
     }
 

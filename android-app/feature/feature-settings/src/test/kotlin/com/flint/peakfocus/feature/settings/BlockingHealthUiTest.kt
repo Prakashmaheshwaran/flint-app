@@ -15,7 +15,8 @@ class BlockingHealthUiTest {
         val states = mapOf(
             WebCoverage.Paused to "Website blocks paused",
             WebCoverage.Degraded(chrome, 100) to "can't read Chrome's address bar",
-            WebCoverage.Unsupported("test.browser") to "test.browser",
+            WebCoverage.Unsupported("test.browser", "Local link app") to "Local link app",
+            WebCoverage.Unconfirmed(chrome) to "hasn't been able to confirm",
         )
         states.forEach { (coverage, expected) ->
             val health = status().copy(websiteCoverage = coverage)
@@ -23,9 +24,20 @@ class BlockingHealthUiTest {
             val text = BlockingHealthUi.websiteCoverage(health)
             assertTrue(text.contains("Chrome"))
             assertTrue(text.contains("Firefox"))
-            assertTrue(text.contains("not device verification"))
+            assertTrue(text.contains("not verified on this device"))
             assertTrue(text.contains("Allow-list mode uses the app list"))
+            assertFalse(text.contains("test.browser"))
+            assertTrue(text.contains("Known adapters (not verified on this device)"))
         }
+    }
+
+    @Test fun pageChangeSummaryExplainsTheGlobalSignalFilterInPlainLanguage() {
+        val text = BlockingHealthUi.rows(status()).first { it.kind == PermissionKind.ACCESSIBILITY }.disclosure
+        assertTrue(text.contains("when a page changes"))
+        assertTrue(text.contains("signals from other apps"))
+        assertTrue(text.contains("without reading their content"))
+        assertFalse(text.contains("window-content"))
+        assertFalse(text.contains("same-tab"))
     }
 
     private fun status(

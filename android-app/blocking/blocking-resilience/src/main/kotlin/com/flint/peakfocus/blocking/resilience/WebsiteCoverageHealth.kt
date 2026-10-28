@@ -9,21 +9,32 @@ import com.flint.peakfocus.blocking.engine.WebCoverageTracker
 object WebsiteCoverageHealth {
     private var tracker = WebCoverageTracker()
     private var lastBrowserObservation: WebCoverage? = null
+    private var currentBrowser = false
 
-    @Synchronized fun foreground(window: BrowserWindow?, domainsActive: Boolean, isHttpHandler: Boolean) {
-        tracker.foreground(window, domainsActive, isHttpHandler)
+    @Synchronized fun foreground(
+        window: BrowserWindow?, domainsActive: Boolean, isHttpHandler: Boolean,
+        handlerLabel: String? = null, isBrowserHandler: Boolean = false,
+    ) {
+        tracker.foreground(window, domainsActive, isHttpHandler, handlerLabel, isBrowserHandler)
+        currentBrowser = domainsActive && (isHttpHandler || window?.let { BrowserAddressBars.isBrowser(it.packageName) } == true)
         if (!domainsActive) lastBrowserObservation = null
         else if (isHttpHandler || window?.let { BrowserAddressBars.isBrowser(it.packageName) } == true) {
             lastBrowserObservation = tracker.state
         }
     }
 
-    @Synchronized fun addressBarRead(window: BrowserWindow, found: Boolean, mainWindow: Boolean, nowMs: Long) {
-        tracker.addressBarRead(window, found, mainWindow, nowMs)
-        if (tracker.state is WebCoverage.Available || tracker.state is WebCoverage.Degraded) {
+    @Synchronized fun addressBarRead(
+        window: BrowserWindow, found: Boolean, mainWindow: Boolean, nowMs: Long,
+        addressBarNodePresent: Boolean = true,
+    ) {
+        tracker.addressBarRead(window, found, mainWindow, nowMs, addressBarNodePresent)
+        if (tracker.state is WebCoverage.Available || tracker.state is WebCoverage.Degraded ||
+            tracker.state is WebCoverage.Unconfirmed) {
             lastBrowserObservation = tracker.state
         }
     }
+
+    @Synchronized fun isCurrentBrowser(): Boolean = currentBrowser
 
     @Synchronized fun snapshot(domainsActive: Boolean, accessibilityEnabled: Boolean): WebCoverage = when {
         !domainsActive -> WebCoverage.NotRequired
@@ -34,5 +45,6 @@ object WebsiteCoverageHealth {
     @Synchronized fun reset() {
         tracker = WebCoverageTracker()
         lastBrowserObservation = null
+        currentBrowser = false
     }
 }

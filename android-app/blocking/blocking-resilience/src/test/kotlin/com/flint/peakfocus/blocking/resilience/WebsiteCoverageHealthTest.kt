@@ -26,6 +26,7 @@ class WebsiteCoverageHealthTest {
     @Test fun `process-local degradation and recovery are exposed without changing grant facts`() {
         val window = BrowserWindow("com.android.chrome", 1)
         WebsiteCoverageHealth.foreground(window, true, true)
+        WebsiteCoverageHealth.addressBarRead(window, true, true, 0)
         repeat(3) { WebsiteCoverageHealth.addressBarRead(window, false, true, 100) }
         val observed = WebsiteCoverageHealth.snapshot(true, true)
         assertTrue(observed is WebCoverage.Degraded)
@@ -45,13 +46,26 @@ class WebsiteCoverageHealthTest {
     @Test fun `opening Flint health preserves the last browser gap while resetting foreground misses`() {
         val window = BrowserWindow("com.android.chrome", 1)
         WebsiteCoverageHealth.foreground(window, true, true)
+        WebsiteCoverageHealth.addressBarRead(window, true, true, 0)
         repeat(3) { WebsiteCoverageHealth.addressBarRead(window, false, true, 100) }
         val gap = WebsiteCoverageHealth.snapshot(true, true)
         WebsiteCoverageHealth.foreground(null, true, false)
         assertEquals(gap, WebsiteCoverageHealth.snapshot(true, true))
+        assertFalse(WebsiteCoverageHealth.isCurrentBrowser())
+        assertEquals(HealthLevel.HEALTHY, HealthStatus(true, true, true, true,
+            websiteCoverage = gap, websiteCoverageIsCurrent = WebsiteCoverageHealth.isCurrentBrowser()).level)
         WebsiteCoverageHealth.foreground(window, true, true)
         assertEquals(WebCoverage.AwaitingBrowser, WebsiteCoverageHealth.snapshot(true, true))
         WebsiteCoverageHealth.addressBarRead(window, false, true, 200)
         assertEquals(WebCoverage.AwaitingBrowser, WebsiteCoverageHealth.snapshot(true, true))
+    }
+
+    @Test fun `unconfirmed address bar is informational even in the current browser`() {
+        val window = BrowserWindow("com.android.chrome", 1)
+        WebsiteCoverageHealth.foreground(window, true, true)
+        repeat(3) { WebsiteCoverageHealth.addressBarRead(window, false, true, 100, false) }
+        val observed = WebsiteCoverageHealth.snapshot(true, true)
+        assertTrue(observed is WebCoverage.Unconfirmed)
+        assertEquals(HealthLevel.HEALTHY, HealthStatus(true, true, true, true, websiteCoverage = observed).level)
     }
 }

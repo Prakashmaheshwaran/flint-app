@@ -59,7 +59,10 @@ data class HealthStatus(
     val batteryExemptionGranted: Boolean,
     val notificationsRequired: Boolean = false,
     val notificationsGranted: Boolean = true,
+    /** Last process-local browser observation; historical gaps remain readable in Settings. */
     val websiteCoverage: WebCoverage = WebCoverage.NotRequired,
+    /** Historical observations are informational after leaving the browser. */
+    val websiteCoverageIsCurrent: Boolean = true,
 ) {
     /** The Path B service notification can show when Path B runs (nothing gated, or granted). */
     val serviceNotificationVisible: Boolean get() = !notificationsRequired || notificationsGranted
@@ -77,8 +80,8 @@ data class HealthStatus(
     val level: HealthLevel
         get() = when {
             !canEnforce -> HealthLevel.BROKEN
-            websiteCoverage is WebCoverage.Degraded || websiteCoverage is WebCoverage.Unsupported ||
-                websiteCoverage == WebCoverage.Paused -> HealthLevel.DEGRADED
+            websiteCoverage == WebCoverage.Paused || (websiteCoverageIsCurrent &&
+                (websiteCoverage is WebCoverage.Degraded || websiteCoverage is WebCoverage.Unsupported)) -> HealthLevel.DEGRADED
             accessibilityEnabled && usageAccessGranted && overlayGranted && batteryExemptionGranted ->
                 HealthLevel.HEALTHY
             else -> HealthLevel.DEGRADED
@@ -107,6 +110,7 @@ object PermissionHealthChecker {
                 ),
                 accessibility,
             ),
+            websiteCoverageIsCurrent = WebsiteCoverageHealth.isCurrentBrowser(),
         )
     }
 

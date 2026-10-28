@@ -54,6 +54,9 @@ reads the address bar in supported browsers to compare the current app or websit
 with your rules. URLs are processed locally for that decision; Flint does not
 save or upload a raw browsing-history log. Browser support depends on an
 accessible address bar and can change when browsers update.
+While a website rule is active, Flint also re-reads supported browsers' address bars
+when a page changes within a tab; other apps' page-change signals are ignored without
+reading their content.
 
 With Usage Access, Flint reads Android's on-device app-usage events and duration
 to calculate local reports and limits and provide app-only fallback detection.

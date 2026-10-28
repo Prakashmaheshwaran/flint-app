@@ -18,11 +18,14 @@ and reads the address bar in supported browsers. Flint compares that information
 locally with the user's selected apps, domains, schedules and limits, then shows
 a blocking screen when a rule applies. Known address-bar IDs are used; browser
 updates, inaccessible bars or unsupported browsers can reduce website coverage.
-The service requests window-state and window-content-change events. It processes
+The service requests window-state and window-content-change events. Android delivers
+these events for all apps; Flint filters content-change events to supported browsers
+before any window-content access. It processes
 content changes in supported browsers only while a website rule is active, to
 re-read the address bar after same-tab navigation, throttled to one view-ID lookup
-per browser window per 500 ms with a final trailing read. Outside that scope it
-returns before reading window content. URLs stay on device; this adds no new data
+per browser window per 500 ms with a final trailing read. Content-change events outside
+that scope return before reading window content; window-state events still identify
+the foreground app, including through root package metadata. URLs stay on device; this adds no new data
 category, collection or transmission. The existing affirmative consent gate is unchanged.
 No raw URL history or screen content is uploaded. There are no accounts,
 analytics, ads or remote commands in the release.
