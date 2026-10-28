@@ -38,6 +38,7 @@ class BlockedTestActivity : Activity() {
 class FlintSmokeTest {
     @get:Rule val testName = TestName()
     private lateinit var device: UiDevice
+    private var ownsSetup = false
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val app = "com.flint.peakfocus"
     private val target = "$app.test"
@@ -52,6 +53,9 @@ class FlintSmokeTest {
         assertEquals("Only disposable emulators are supported", "1", shell("getprop ro.kernel.qemu").trim())
         assertEquals("Explicit disposable consent required", "true",
             InstrumentationRegistry.getArguments().getString("flintDisposable"))
+        val enabled = shell("settings get secure enabled_accessibility_services").trim()
+        assertTrue("Refusing to replace existing accessibility services", enabled.isEmpty() || enabled == "null")
+        ownsSetup = true
         disableService()
         assertTrue(shell("pm clear $app").contains("Success"))
         launchFlint()
@@ -60,7 +64,7 @@ class FlintSmokeTest {
     }
 
     @After fun captureAndReset() {
-        if (!::device.isInitialized) return
+        if (!ownsSetup) return
         screenshot("final")
         disableService()
         shell("am force-stop $app")
@@ -130,10 +134,10 @@ class FlintSmokeTest {
         clickTab("Rules")
         visible(By.desc("New block rule")).click()
         visible(By.text("Rule name"))
-        visible(By.clazz("android.widget.EditText")).text = name
+        visible(By.clazz("android.widget.EditText")).apply { click(); text = name }
         device.pressBack() // dismiss keyboard
         click("Choose apps")
-        visible(By.clazz("android.widget.EditText")).text = "Flint E2E Target"
+        visible(By.clazz("android.widget.EditText")).apply { click(); text = "Flint E2E Target" }
         visible(By.text("Flint E2E Target")).click()
         device.pressBack() // dismiss search keyboard
         click("Add · 1")
@@ -145,10 +149,10 @@ class FlintSmokeTest {
     }
 
     private fun clickTab(name: String) {
-        // Tab semantics have a stable content description; text is merged into the tab.
-        val tab = device.wait(Until.findObject(By.desc(name)), timeout)
-            ?: visible(By.text(name))
-        tab.click()
+        // The header and tab may share text; the bottom-most match is the navigation tab.
+        val matches = device.wait(Until.findObjects(By.text(name)), timeout)
+        check(!matches.isNullOrEmpty()) { "Missing $name tab" }
+        matches.maxBy { it.visibleBounds.bottom }.click()
     }
 
     private fun enableService() {
