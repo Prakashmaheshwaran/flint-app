@@ -24,7 +24,20 @@ struct SleepModeView: View {
             nightsSection
             sleepAssistSection
             morningAssistSection
+            tierSection
             allowedAppsSection
+            Section("Saved protection") {
+                ForEach(vm.effectiveRules) { rule in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(rule.name) · \(rule.breakLevel.rawValue.capitalized)")
+                        if let queued = rule.protection?.queuedChange {
+                            Text("\(queued.summary) · after \(queued.window.end.formatted(date: .abbreviated, time: .shortened))")
+                                .font(.footnote).foregroundStyle(FlintBrand.ember)
+                        }
+                    }
+                }
+                Button("Save Sleep changes") { vm.applyNow() }.frame(minHeight: 44)
+            }
             goodToKnowSection
         }
         .flintForm()
@@ -32,7 +45,7 @@ struct SleepModeView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { vm.refresh() }
         .onReceive(NotificationCenter.default.publisher(for: .flintProtectionReconciled)) { _ in vm.refreshHealth() }
-        .onDisappear { vm.applyNow() }
+        .ruleMutationFlow(vm.flow)
     }
 
     // MARK: Sections
@@ -156,9 +169,24 @@ struct SleepModeView: View {
         case .off:
             return "No bedtime shield. Morning Assist below can still run on its own after wake-up."
         case .windDown:
-            return "Wind Down uses Harder strictness from bedtime to wake-up. Allowed apps stay reachable. Turning Sleep Mode off lifts the night shield."
+            return "New Wind Down starts at Easy. Choose a tier below. Active protection changes only after you save and complete its confirmation."
         case .fullAssist:
-            return "Full Assist uses Hardcore strictness from bedtime to wake-up. Allowed apps stay reachable. Flint's free Emergency Pass becomes available seven days after use; in this build it ends Hardcore focus sessions, not Sleep windows. Turning Sleep Mode off lifts the night shield."
+            return "New Full Assist starts at Harder. Hardcore is an explicit choice below. Weakening an active Hardcore window can be saved for after this occurrence."
+        }
+    }
+
+    private var tierSection: some View {
+        Section("Protection tier") {
+            Picker("Bedtime tier", selection: Binding(get: {
+                vm.config.nightBreakLevel ?? (vm.config.sleepAssist == .fullAssist ? .harder : .easy)
+            }, set: { vm.config.nightBreakLevel = $0 })) {
+                ForEach(BreakLevel.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
+            }
+            Picker("Morning tier", selection: Binding(get: { vm.config.morningBreakLevel ?? .harder },
+                set: { vm.config.morningBreakLevel = $0 })) {
+                ForEach(BreakLevel.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
+            }
+            Text("Existing saved tiers are retained. Raising a tier requires confirmation when you save.").font(.footnote)
         }
     }
 
@@ -199,7 +227,7 @@ struct SleepModeView: View {
         case .slowUplift:
             return "This build saves your Slow Uplift choice but provides no reminders or shield for it. Choose Full Assist for a morning shield."
         case .fullAssist:
-            return "Morning Full Assist uses Hardcore strictness for \(vm.config.morningAssistMinutes) minutes after wake-up. Allowed apps stay reachable. Overnight windows map to the following morning."
+            return "Morning Full Assist uses the selected tier for \(vm.config.morningAssistMinutes) minutes after wake-up. New morning windows default to Harder. Overnight windows map to the following morning."
         }
     }
 
@@ -242,54 +270,41 @@ struct SleepModeView: View {
 
 /// Owns the persisted `FlintSleepConfig` and keeps the enforcement rules in sync with it.
 /// Every edit saves immediately (cheap App Group write, like `FocusFilterView`); re-materializing
-/// the `DeviceActivity` registrations is debounced so wheel-scrubbing a `DatePicker` doesn't
-/// stop/start monitoring dozens of times, and flushed on screen exit and on the next entry.
+/// DeviceActivity changes happen only after an explicit save and the shared rule gate.
 @MainActor
 final class SleepModeViewModel: ObservableObject {
 
-    @Published var config: FlintSleepConfig {
-        didSet {
-            guard config != oldValue else { return }
-            config.save()
-            scheduleApply()
-        }
-    }
+    @Published var config: FlintSleepConfig
     @Published private(set) var savedGroups: [FlintAppGroup]
     @Published private(set) var armingReport: FlintArmingHealth.DomainReport?
+    @Published private(set) var effectiveRules: [FlintScheduleRule] = []
+    let flow = RuleMutationFlow()
 
     private let controller = SleepModeController()
-    private var applyTask: Task<Void, Never>?
 
     init() {
         config = FlintSleepConfig.load()
         savedGroups = FlintGroupStore()?.loadAppGroups() ?? []
-        controller.apply(config) // re-arm on entry; also self-heals rules deleted elsewhere
         refreshHealth()
+        if config.contractVersion == nil {
+            config.nightBreakLevel = config.nightBreakLevel ?? effectiveRules.first { $0.id == SleepModeController.nightRuleID }?.breakLevel
+            config.morningBreakLevel = config.morningBreakLevel ?? effectiveRules.first { $0.id == SleepModeController.morningRuleID }?.breakLevel
+        }
     }
 
     /// Refresh the preset list (it changes in Block Now) and re-assert the rules.
     func refresh() {
         savedGroups = FlintGroupStore()?.loadAppGroups() ?? []
-        applyNow()
-    }
-
-    /// Flush any pending debounced apply immediately (deterministic teardown on disappear).
-    func applyNow() {
-        applyTask?.cancel()
-        applyTask = nil
-        controller.apply(config)
         refreshHealth()
     }
 
-    private func scheduleApply() {
-        applyTask?.cancel()
+    /// Keep the draft until the user accepts the arbiter's confirmation/wait/deferral.
+    func applyNow() {
         let snapshot = config
-        applyTask = Task { [controller] in
-            try? await Task.sleep(nanoseconds: 800_000_000)
-            guard !Task.isCancelled else { return }
-            controller.apply(snapshot)
-            self.refreshHealth()
-        }
+        flow.run(scope: "Sleep and Morning Assist", operation: { [controller] in controller.apply(snapshot, confirmation: $0) },
+            cancel: { [controller] in controller.cancel() }, onSaved: {
+                self.config = FlintSleepConfig.load(); self.refreshHealth()
+            })
     }
 
     // MARK: Derived state for the view
@@ -303,7 +318,7 @@ final class SleepModeViewModel: ObservableObject {
         }
         let names = [(nightArmed, SleepModeController.nightRuleID),
                      (morningArmed, SleepModeController.morningRuleID)]
-            .filter(\.0).map { "flint.rule.\($0.1)" }
+            .filter(\.0).compactMap { pair in effectiveRules.first { $0.id == pair.1 }?.monitorName }
         guard !names.isEmpty else { return nil }
         let selection = savedGroups.first { $0.id == config.allowGroupID }?.selection ?? FamilyActivitySelection()
         if let issue = FlintSelectionValidation.issue(for: selection, context: .allowList) {
@@ -315,6 +330,9 @@ final class SleepModeViewModel: ObservableObject {
 
     func refreshHealth() {
         armingReport = FlintGroupStore()?.loadArmingHealth().domains["schedules"]
+        effectiveRules = FlintSchedulesController().rules().filter {
+            $0.id == SleepModeController.nightRuleID || $0.id == SleepModeController.morningRuleID
+        }
     }
 
     var nightWindowActiveNow: Bool {

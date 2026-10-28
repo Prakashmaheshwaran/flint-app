@@ -14,7 +14,7 @@ final class FlintOpenLimitsTests: XCTestCase {
         let data = try JSONEncoder().encode(rule)
         XCTAssertEqual(rule, try JSONDecoder().decode(FlintOpenLimitRule.self, from: data))
         XCTAssertEqual(rule.storeName, "flintO.\(rule.id)")
-        XCTAssertEqual(rule.activityName, "flint.openLimit.\(rule.id)")
+        XCTAssertEqual(rule.activityName, "flint.openLimit.\(rule.id).r1")
     }
 
     func testOpenLimitRulesSaveLoadRoundTrip() throws {

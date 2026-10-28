@@ -150,8 +150,8 @@ final class FlintCoreTests: XCTestCase {
         let limit = FlintLimitRule(name: "Social", thresholdMinutes: 30, breakLevel: .harder)
         let data = try JSONEncoder().encode(limit)
         XCTAssertEqual(limit, try JSONDecoder().decode(FlintLimitRule.self, from: data))
-        XCTAssertEqual(limit.activityName, "flint.limit.\(limit.id)")
-        XCTAssertEqual(limit.eventName, "flint.limitEvent.\(limit.id)")
+        XCTAssertEqual(limit.activityName, "flint.limit.\(limit.id).r1")
+        XCTAssertEqual(limit.eventName, "flint.limitEvent.\(limit.id).r1")
         XCTAssertEqual(limit.storeName, "flintL.\(limit.id)")
     }
 

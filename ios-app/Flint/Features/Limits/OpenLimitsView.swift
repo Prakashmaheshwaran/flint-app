@@ -18,9 +18,20 @@ final class OpenLimitsViewModel: ObservableObject {
         health = FlintGroupStore()?.loadArmingHealth() ?? FlintArmingHealth()
         observation = FlintProtectionObservation.load()
     }
-    func save(_ rule: FlintOpenLimitRule) { controller.upsert(rule); refresh() }
-    func delete(_ id: String) { controller.delete(id); refresh() }
-    func toggle(_ rule: FlintOpenLimitRule) { controller.setEnabled(rule.id, !rule.enabled); refresh() }
+    func save(_ rule: FlintOpenLimitRule, confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
+        let result = controller.upsert(rule, confirmation: confirmation); refresh(); return result
+    }
+    func delete(_ rule: FlintOpenLimitRule, confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
+        let result = controller.delete(rule.id, revision: rule.protection?.revision, confirmation: confirmation); refresh(); return result
+    }
+    func toggle(_ rule: FlintOpenLimitRule, confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
+        let result = controller.setEnabled(rule.id, !rule.enabled, revision: rule.protection?.revision,
+            confirmation: confirmation); refresh(); return result
+    }
+    func cancel(_ id: String) { controller.cancelPendingChange(id) }
+    func delete(_ rules: [FlintOpenLimitRule], confirmation: FlintRuleConfirmation?) -> FlintRuleMutationResult {
+        let result = controller.deleteBatch(rules, confirmation: confirmation); refresh(); return result
+    }
 }
 
 /// Create/edit daily quotas of bounded, explicitly accepted access credits. A pushable `View` (no own
@@ -31,6 +42,7 @@ final class OpenLimitsViewModel: ObservableObject {
 /// delivery and re-application require physical-device verification.
 struct OpenLimitsView: View {
     @StateObject private var vm = OpenLimitsViewModel()
+    @StateObject private var flow = RuleMutationFlow()
     @State private var showAdd = false
     @State private var editing: FlintOpenLimitRule?
 
@@ -44,7 +56,12 @@ struct OpenLimitsView: View {
                         Button { editing = rule } label: { row(rule) }
                             .buttonStyle(.plain)
                     }
-                    .onDelete { set in set.map { vm.rules[$0].id }.forEach(vm.delete) }
+                    .onDelete { set in
+                        let selected = set.map { vm.rules[$0] }
+                        flow.run(scope: selected.map(\.name).joined(separator: ", "),
+                            operation: { vm.delete(selected, confirmation: $0) },
+                            cancel: { selected.forEach { vm.cancel($0.id) } })
+                    }
                 }
             }
         }
@@ -55,8 +72,9 @@ struct OpenLimitsView: View {
                 Button { showAdd = true } label: { Image(systemName: "plus") }
             }
         }
-        .sheet(isPresented: $showAdd) { OpenLimitEditor(rule: nil) { vm.save($0) } }
-        .sheet(item: $editing) { rule in OpenLimitEditor(rule: rule) { vm.save($0) } }
+        .sheet(isPresented: $showAdd) { OpenLimitEditor(rule: nil) { vm.save($0, confirmation: $1) } }
+        .sheet(item: $editing) { rule in OpenLimitEditor(rule: rule) { vm.save($0, confirmation: $1) } }
+        .ruleMutationFlow(flow)
         .onAppear { vm.refresh() }
         .onReceive(NotificationCenter.default.publisher(for: .flintProtectionReconciled)) { _ in vm.refresh() }
     }
@@ -82,6 +100,11 @@ struct OpenLimitsView: View {
                 Text(rule.name).font(.body.weight(.medium))
                 Text("\(rule.opensAllowed) \(rule.opensAllowed == 1 ? "credit" : "credits")/day")
                     .font(.caption).foregroundStyle(.secondary)
+                if let queued = rule.protection?.queuedChange {
+                    Text("\(queued.summary) · after \(queued.window.end.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.caption).foregroundStyle(FlintBrand.ember)
+                }
+                if rule.protection?.requiresTierReview == true { Text("Review migrated tier").font(.caption) }
                 if rule.enabled {
                     Text(FlintRuleProtectionStatus.status(enabled: rule.enabled, activityName: rule.activityName,
                         domain: "openLimits", health: vm.health, observation: vm.observation,
@@ -90,7 +113,9 @@ struct OpenLimitsView: View {
                 }
             }
             Spacer()
-            Toggle("", isOn: Binding(get: { rule.enabled }, set: { _ in vm.toggle(rule) }))
+            Toggle("", isOn: Binding(get: { rule.enabled }, set: { _ in
+                flow.run(scope: rule.name, operation: { vm.toggle(rule, confirmation: $0) }, cancel: { vm.cancel(rule.id) })
+            }))
                 .labelsHidden().tint(FlintBrand.spark)
         }
         .padding(.vertical, 4)
@@ -102,7 +127,9 @@ struct OpenLimitEditor: View {
 
     private let existingID: String?
     private let existingEnabled: Bool
-    private let onSave: (FlintOpenLimitRule) -> Void
+    private let original: FlintOpenLimitRule?
+    private let onSave: (FlintOpenLimitRule, FlintRuleConfirmation?) -> FlintRuleMutationResult
+    @StateObject private var flow = RuleMutationFlow()
 
     @State private var name: String
     @State private var opensAllowed: Int
@@ -110,9 +137,10 @@ struct OpenLimitEditor: View {
     @State private var selection: FamilyActivitySelection
     @State private var showPicker = false
 
-    init(rule: FlintOpenLimitRule?, onSave: @escaping (FlintOpenLimitRule) -> Void) {
+    init(rule: FlintOpenLimitRule?, onSave: @escaping (FlintOpenLimitRule, FlintRuleConfirmation?) -> FlintRuleMutationResult) {
         self.existingID = rule?.id
         self.existingEnabled = rule?.enabled ?? true
+        self.original = rule
         self.onSave = onSave
         _name = State(initialValue: rule?.name ?? "")
         _opensAllowed = State(initialValue: rule?.opensAllowed ?? 3)
@@ -162,6 +190,7 @@ struct OpenLimitEditor: View {
                 }
             }
             .familyActivityPicker(isPresented: $showPicker, selection: $selection)
+            .ruleMutationFlow(flow)
         }
     }
 
@@ -193,10 +222,11 @@ struct OpenLimitEditor: View {
             opensAllowed: opensAllowed,
             selection: selection,
             breakLevel: breakLevel,
-            enabled: existingEnabled
+            enabled: existingEnabled, protection: original?.protection ?? .init()
         )
-        onSave(rule)
-        dismiss()
+        flow.run(scope: rule.name, operation: { onSave(rule, $0) },
+            cancel: { if let existingID { FlintOpenLimitsController().cancelPendingChange(existingID) } },
+            onSaved: { dismiss() })
     }
 
     private var selectionIssue: FlintSelectionIssue? {

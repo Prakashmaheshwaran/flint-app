@@ -8,20 +8,8 @@ import FlintCore
 ///  - `sleep.night`   — the bedtime → wake window (Sleep Assist: Wind Down / Full Assist).
 ///  - `sleep.morning` — the wake → wake + wind-up window (Morning Assist: Full Assist).
 ///
-/// Reusing the Schedules machinery (`FlintSchedulesController` + the monitor extension's rule
-/// handling) is deliberate: the extension already applies each rule's allow-list shield on
-/// `intervalDidStart`, gated by weekday, and keeps enforcing while the app is closed — so Sleep
-/// Mode gets the same device-real enforcement as Schedules without new shared types or extension
-/// changes. Side effect (documented, accepted): the two windows also show up in the Schedules
-/// list, named "Sleep Mode" and "Morning Assist" so their origin is obvious. `FlintSleepConfig`
-/// is the source of truth — `apply(_:)` re-materializes the rules, so an edit or deletion made in
-/// the Schedules list is overwritten the next time the Sleep screen applies.
-///
-/// Out of scope here, per the v1 spec: soundscapes/sleep-stories/meditations (content, not a
-/// blocking control), Slow Uplift's gentle reminders (notification behavior, not a shield — the
-/// level is stored but arms nothing), and an in-window Emergency Pass exit flow (the pass today
-/// ends Hardcore *sessions* via `FlintSessionController`; wiring it to scheduled rules is a
-/// follow-up — the UI says so honestly).
+/// Saves both windows as one arbiter batch. Opening the screen does not overwrite rule edits;
+/// active Hardcore changes queue behind their frozen occurrence, just like other schedules.
 struct SleepModeController {
 
     /// Stable rule ids so apply/remove is idempotent. Store names become "flint.sleep.night" /
@@ -34,51 +22,24 @@ struct SleepModeController {
     /// Defensive ceiling for the morning wind-up (the UI offers 15…180; the model default is 60).
     static let maximumMorningMinutes = 720
 
-    private let schedules = FlintSchedulesController()
+    private let rules = FlintSleepRulesController()
 
     init() {}
 
     // MARK: Materialization
 
-    /// Re-materialize both rules from `config`. Idempotent — called after edits and on screen
-    /// entry (which also self-heals a rule the user deleted from the Schedules list).
-    func apply(_ config: FlintSleepConfig) {
-        if let window = Self.nightWindow(for: config) {
-            schedules.upsert(FlintScheduleRule(
-                id: Self.nightRuleID,
-                name: "Sleep Mode",
-                schedule: window,
-                // Wind Down = a strong nudge the user stays in control of; Full Assist registers
-                // at Hardcore, whose only sanctioned early exit is the free weekly Emergency Pass.
-                breakLevel: config.sleepAssist == .fullAssist ? .hardcore : .harder,
-                selection: allowedSelection(config.allowGroupID),
-                allowListMode: true,
-                enabled: true
-            ))
-        } else {
-            schedules.delete(Self.nightRuleID)
-        }
-
-        if let window = Self.morningWindow(for: config) {
-            schedules.upsert(FlintScheduleRule(
-                id: Self.morningRuleID,
-                name: "Morning Assist",
-                schedule: window,
-                breakLevel: .hardcore,
-                selection: allowedSelection(config.allowGroupID),
-                allowListMode: true,
-                enabled: true
-            ))
-        } else {
-            schedules.delete(Self.morningRuleID)
-        }
+    /// Explicit save only; every affected rule is decided again at commit time.
+    func apply(_ config: FlintSleepConfig, confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
+        rules.save(config, confirmation: confirmation)
     }
 
     /// Remove both rules (clears their shields and stops their monitoring via the schedules API).
     func removeAll() {
-        schedules.delete(Self.nightRuleID)
-        schedules.delete(Self.morningRuleID)
+        var config = FlintSleepConfig.load(); config.enabled = false
+        _ = rules.save(config)
     }
+
+    func cancel() { rules.cancel() }
 
     // MARK: Window math (pure — shared by apply() and the view's status/summary rows)
 

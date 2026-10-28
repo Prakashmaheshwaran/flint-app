@@ -1,0 +1,109 @@
+import Foundation
+
+public enum FlintRuleActivity {
+    public static func name(prefix: String, id: String, protection: FlintRuleProtection?) -> String {
+        guard let protection, !protection.usesLegacyActivityName else { return prefix + id }
+        return "\(prefix)\(id).r\(protection.activityRevision)"
+    }
+
+    static func ruleID(_ name: String, prefix: String) -> String? {
+        guard name.hasPrefix(prefix) else { return nil }
+        let suffix = String(name.dropFirst(prefix.count))
+        if let marker = suffix.range(of: ".r", options: .backwards),
+           Int(suffix[marker.upperBound...]) != nil { return String(suffix[..<marker.lowerBound]) }
+        return suffix
+    }
+}
+
+/// Versioned, persisted rule authority. A queued edit changes the template revision without
+/// changing the active registration's revision or its frozen window (ADR-012 PC-10/11/14).
+public struct FlintRuleProtection: Codable, Equatable, Sendable {
+    public var revision: Int
+    public var contractVersion: Int
+    public var activityRevision: Int
+    public var timeZoneID: String
+    public var legacyRightsUntil: Date?
+    public var usesLegacyActivityName: Bool
+    public var requiresTierReview: Bool
+    public var occurrence: FlintRuleWindow?
+    public var queuedChange: FlintQueuedRuleChange?
+
+    public init(revision: Int = 1, timeZoneID: String = TimeZone.current.identifier,
+                legacyRightsUntil: Date? = nil, usesLegacyActivityName: Bool = false,
+                requiresTierReview: Bool = false) {
+        self.revision = revision
+        contractVersion = 12
+        activityRevision = revision
+        self.timeZoneID = timeZoneID
+        self.legacyRightsUntil = legacyRightsUntil
+        self.usesLegacyActivityName = usesLegacyActivityName
+        self.requiresTierReview = requiresTierReview
+    }
+
+    var isValid: Bool {
+        contractVersion == 12 && revision > 0 && activityRevision > 0 && activityRevision <= revision
+            && TimeZone(identifier: timeZoneID) != nil
+            && (occurrence?.isValid ?? true)
+            && (queuedChange.map { $0.baseRevision == revision && $0.window.isValid } ?? true)
+    }
+}
+
+public struct FlintRuleWindow: Codable, Equatable, Sendable {
+    public var start: Date
+    public var end: Date
+    public init(start: Date, end: Date) { self.start = start; self.end = end }
+    public func contains(_ date: Date) -> Bool { start <= date && date < end }
+    var isValid: Bool { FlintProtectionPolicy.issue(forOccurrenceFrom: start, to: end) == nil }
+    var identity: String { String(start.timeIntervalSince1970) }
+}
+
+public struct FlintQueuedRuleChange: Codable, Equatable, Sendable {
+    public enum Action: String, Codable, Sendable { case edit, turnOff, delete }
+    public let action: Action
+    public let baseRevision: Int
+    public let window: FlintRuleWindow
+    /// Exact future snapshot, with no nested queue. nil only for deletion.
+    public let snapshot: Data?
+    public let fingerprint: String
+    public var batchID: String? = nil
+    public var summary: String {
+        switch action {
+        case .edit:
+            guard let snapshot, let fields = (try? JSONSerialization.jsonObject(with: snapshot)) as? [String: Any] else { return "Queued edit" }
+            let name = fields["name"] as? String ?? "Rule"
+            let tier = (fields["breakLevel"] as? String)?.capitalized ?? ""
+            let budget = (fields["thresholdMinutes"] as? Int).map { " · \($0) min/day" }
+                ?? (fields["opensAllowed"] as? Int).map { " · \($0) credits/day" } ?? ""
+            return "Queued: \(name) · \(tier)\(budget)"
+        case .turnOff: return "Queued: turn off"
+        case .delete: return "Queued deletion"
+        }
+    }
+}
+
+public struct FlintRuleConfirmation: Equatable, Sendable {
+    public let revision: Int
+    public let fingerprint: String
+    public let confirmsTierIncrease: Bool
+    public init(revision: Int, fingerprint: String, confirmsTierIncrease: Bool = false) {
+        self.revision = revision
+        self.fingerprint = fingerprint
+        self.confirmsTierIncrease = confirmsTierIncrease
+    }
+}
+
+public enum FlintRuleMutationResult: Equatable, Sendable {
+    case applied
+    case queued(until: Date)
+    case confirmationRequired(FlintRuleConfirmation, raisesTier: Bool)
+    case waiting(FlintRuleConfirmation, remaining: TimeInterval, required: TimeInterval)
+    case deferRequired(FlintRuleConfirmation, until: Date)
+    case staleRevision
+    case denied(FlintDenialReason, cause: String, tier: BreakLevel, end: Date?)
+    case invalid(String)
+    case unavailable
+
+    public var didSave: Bool {
+        switch self { case .applied, .queued: return true; default: return false }
+    }
+}

@@ -8,12 +8,46 @@ import DeviceActivity
 /// Lives outside FlintGroupStore so its legacy convenience readers stay source compatible.
 enum FlintDesiredRules {
     typealias Key = FlintRuleStoreKey
+    private struct Marker: Codable { let schema: Int }
 
-    static func load<Rule: Decodable>(_ type: Rule.Type, key: Key, from defaults: UserDefaults?) -> [Rule]? {
+    static func load<Rule: FlintGatedRule>(_ type: Rule.Type, key: Key, from defaults: UserDefaults?,
+                                         at now: Date = Date()) -> [Rule]? {
         guard let defaults else { return nil }
-        guard let object = defaults.object(forKey: key.rawValue) else { return [] }
-        guard let data = object as? Data else { return nil }
-        return try? JSONDecoder().decode([Rule].self, from: data)
+        defaults.synchronize()
+        let marker = defaults.object(forKey: key.marker)
+        if let marker {
+            guard let data = marker as? Data,
+                  let decoded = try? JSONDecoder().decode(Marker.self, from: data), decoded.schema == 1 else { return nil }
+        }
+        guard let object = defaults.object(forKey: key.rawValue) else {
+            // A deleted key on an established domain must never mean "remove all activities".
+            return marker == nil && defaults.object(forKey: key.original) == nil ? [] : nil
+        }
+        guard let data = object as? Data,
+              var rules = try? JSONDecoder().decode([Rule].self, from: data),
+              Set(rules.map(\.id)).count == rules.count,
+              rules.allSatisfy({ $0.validationIssue == nil }) else {
+            if defaults.object(forKey: key.rawValue + ".quarantine.adr012") == nil {
+                defaults.set(object, forKey: key.rawValue + ".quarantine.adr012")
+            }
+            return nil
+        }
+        var migrated = false
+        for index in rules.indices where rules[index].protection == nil {
+            let occurrence = rules[index].templateOccurrence(at: now)
+            var protection = FlintRuleProtection(legacyRightsUntil: occurrence?.end, usesLegacyActivityName: true,
+                requiresTierReview: rules[index].legacyTierNeedsReview)
+            protection.occurrence = occurrence
+            rules[index].protection = protection
+            migrated = true
+        }
+        if migrated || marker == nil {
+            // Backup first. A crash at any checkpoint preserves source bytes and cannot
+            // grandfather a later occurrence a second time (PC-70/71).
+            if defaults.object(forKey: key.original) == nil { defaults.set(data, forKey: key.original) }
+            guard save(rules, key: key, to: defaults) else { return nil }
+        }
+        return rules
     }
 
     static func unavailable(_ domain: String, previous: FlintArmingHealth) -> FlintArmingHealth.DomainReport {
@@ -22,11 +56,14 @@ enum FlintDesiredRules {
                 reason: "Saved rules are unavailable. Existing protection was preserved; Flint did not change registrations or shields.")])
     }
 
-    static func save<Rule: Encodable>(_ rules: [Rule], key: Key, to defaults: UserDefaults?,
+    static func save<Rule: FlintGatedRule>(_ rules: [Rule], key: Key, to defaults: UserDefaults?,
         encode: ([Rule]) throws -> Data = { try JSONEncoder().encode($0) }) -> Bool {
-        guard let defaults, let data = try? encode(rules) else { return false }
+        guard let defaults, Set(rules.map(\.id)).count == rules.count,
+              let data = try? encode(rules) else { return false }
         defaults.set(data, forKey: key.rawValue)
-        return true
+        guard defaults.synchronize(), defaults.data(forKey: key.rawValue) == data else { return false }
+        defaults.set(try? JSONEncoder().encode(Marker(schema: 1)), forKey: key.marker)
+        return defaults.synchronize()
     }
 
     static func saveFailure(_ domain: String, previous: FlintArmingHealth) -> FlintArmingHealth.DomainReport {
@@ -44,6 +81,21 @@ struct FlintRuleReloadEnvironment {
     var record: (String, FlintArmingHealth.DomainReport) -> Void
     var loadHealth: () -> FlintArmingHealth = { .init() }
     var reconcileOpenCredits: () -> Void = {}
+    var clock: FlintClock = .system
+    var ledger: () -> FlintProtectionLedger? = { .appGroup() }
+    // Tests use an isolated temporary lock. The production environment requires the App Group.
+    var lockDirectory: URL? = FileManager.default.temporaryDirectory.appendingPathComponent("FlintRuleTestLocks")
+    var acceptSave: () -> Bool = { true }
+    var validateSelection: (FamilyActivitySelection, FlintSelectionContext) -> FlintSelectionIssue? = {
+        FlintSelectionValidation.issue(for: $0, context: $1)
+    }
+    var applyRuleShield: (FlintScheduleRule) -> Void = { FlintRuleShield.apply($0) }
+    var applyLimitShield: (FlintLimitRule) -> Void = { FlintRuleShield.apply($0) }
+    var timeLimitIsShielded: (FlintLimitRule) -> Bool = {
+        let store = ManagedSettingsStore(named: .init($0.storeName))
+        return store.shield.applications != nil || store.shield.applicationCategories != nil
+            || store.shield.webDomains != nil || store.shield.webDomainCategories != nil
+    }
 
     static var live: Self {
         let group = FlintGroupStore()
@@ -54,7 +106,9 @@ struct FlintRuleReloadEnvironment {
                 guard let group else { return }
                 group.saveArmingHealth(group.loadArmingHealth().replacing(domain, with: report))
             }, loadHealth: { group?.loadArmingHealth() ?? .init() },
-            reconcileOpenCredits: { FlintOpenCredit.reconcile() })
+            reconcileOpenCredits: { FlintOpenCredit.reconcile() },
+            lockDirectory: FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: FlintGroupStore.appGroupID)?
+                .appendingPathComponent("FlintRules", isDirectory: true))
     }
 }
 #endif

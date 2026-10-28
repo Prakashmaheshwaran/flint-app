@@ -18,13 +18,22 @@ final class LimitsViewModel: ObservableObject {
         health = FlintGroupStore()?.loadArmingHealth() ?? FlintArmingHealth()
         observation = FlintProtectionObservation.load()
     }
-    func save(_ limit: FlintLimitRule) { controller.upsert(limit); refresh() }
-    func delete(_ id: String) { controller.delete(id); refresh() }
-    func toggle(_ limit: FlintLimitRule) { controller.setEnabled(limit.id, !limit.enabled); refresh() }
+    func save(_ limit: FlintLimitRule, confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
+        let result = controller.upsert(limit, confirmation: confirmation); refresh(); return result
+    }
+    func delete(_ limit: FlintLimitRule, confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
+        let result = controller.delete(limit.id, revision: limit.protection?.revision, confirmation: confirmation); refresh(); return result
+    }
+    func toggle(_ limit: FlintLimitRule, confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
+        let result = controller.setEnabled(limit.id, !limit.enabled, revision: limit.protection?.revision,
+            confirmation: confirmation); refresh(); return result
+    }
+    func cancel(_ id: String) { controller.cancelPendingChange(id) }
 }
 
 struct LimitsView: View {
     @StateObject private var vm = LimitsViewModel()
+    @StateObject private var flow = RuleMutationFlow()
     @State private var showAdd = false
     @State private var editing: FlintLimitRule?
 
@@ -66,8 +75,11 @@ struct LimitsView: View {
         .background(FlintGroundBackground())
         .flintTabBarInset()
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showAdd) { LimitEditor(limit: nil) { vm.save($0) } }
-        .sheet(item: $editing) { limit in LimitEditor(limit: limit, onDelete: { vm.delete(limit.id) }) { vm.save($0) } }
+        .sheet(isPresented: $showAdd) { LimitEditor(limit: nil) { vm.save($0, confirmation: $1) } }
+        .sheet(item: $editing) { limit in
+            LimitEditor(limit: limit, onDelete: { vm.delete(limit, confirmation: $0) }) { vm.save($0, confirmation: $1) }
+        }
+        .ruleMutationFlow(flow)
         .onAppear { vm.refresh() }
         .onReceive(NotificationCenter.default.publisher(for: .flintProtectionReconciled)) { _ in vm.refresh() }
     }
@@ -83,6 +95,11 @@ struct LimitsView: View {
                             .foregroundStyle(FlintBrand.mist).monospacedDigit()
                     }
                     Text("A day").font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
+                    if let queued = limit.protection?.queuedChange {
+                        Text("\(queued.summary) · after \(queued.window.end.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption).foregroundStyle(FlintBrand.ember)
+                    }
+                    if limit.protection?.requiresTierReview == true { Text("Review migrated tier").font(.caption) }
                     if limit.enabled {
                         Text(FlintRuleProtectionStatus.status(enabled: limit.enabled, activityName: limit.activityName,
                             domain: "limits", health: vm.health, observation: vm.observation,
@@ -94,7 +111,9 @@ struct LimitsView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            Toggle(limit.name, isOn: Binding(get: { limit.enabled }, set: { _ in vm.toggle(limit) }))
+            Toggle(limit.name, isOn: Binding(get: { limit.enabled }, set: { _ in
+                flow.run(scope: limit.name, operation: { vm.toggle(limit, confirmation: $0) }, cancel: { vm.cancel(limit.id) })
+            }))
                 .toggleStyle(EmberToggleStyle()).labelsHidden().fixedSize()
         }
         .frame(minHeight: 60)
@@ -107,8 +126,10 @@ struct LimitEditor: View {
 
     private let existingID: String?
     private let existingEnabled: Bool
-    private let onSave: (FlintLimitRule) -> Void
-    private let onDelete: (() -> Void)?
+    private let original: FlintLimitRule?
+    private let onSave: (FlintLimitRule, FlintRuleConfirmation?) -> FlintRuleMutationResult
+    private let onDelete: ((FlintRuleConfirmation?) -> FlintRuleMutationResult)?
+    @StateObject private var flow = RuleMutationFlow()
 
     @State private var name: String
     @State private var minutes: Int
@@ -116,9 +137,11 @@ struct LimitEditor: View {
     @State private var selection: FamilyActivitySelection
     @State private var showPicker = false
 
-    init(limit: FlintLimitRule?, onDelete: (() -> Void)? = nil, onSave: @escaping (FlintLimitRule) -> Void) {
+    init(limit: FlintLimitRule?, onDelete: ((FlintRuleConfirmation?) -> FlintRuleMutationResult)? = nil,
+         onSave: @escaping (FlintLimitRule, FlintRuleConfirmation?) -> FlintRuleMutationResult) {
         self.existingID = limit?.id
         self.existingEnabled = limit?.enabled ?? true
+        self.original = limit
         self.onSave = onSave
         self.onDelete = limit == nil ? nil : onDelete
         _name = State(initialValue: limit?.name ?? "")
@@ -223,8 +246,9 @@ struct LimitEditor: View {
 
                         if let onDelete {
                             Button("Delete limit") {
-                                onDelete()
-                                dismiss()
+                                flow.run(scope: name, operation: onDelete,
+                                    cancel: { if let existingID { FlintLimitsController().cancelPendingChange(existingID) } },
+                                    onSaved: { dismiss() })
                             }
                             .font(FlintFont.text(14, weight: .medium))
                             .foregroundStyle(FlintBrand.danger)
@@ -240,6 +264,7 @@ struct LimitEditor: View {
         }
         .familyActivityPicker(isPresented: $showPicker, selection: $selection)
         .preferredColorScheme(.dark)
+        .ruleMutationFlow(flow)
     }
 
     private var selectionCount: Int {
@@ -254,10 +279,11 @@ struct LimitEditor: View {
             thresholdMinutes: minutes,
             selection: selection,
             breakLevel: breakLevel,
-            enabled: existingEnabled
+            enabled: existingEnabled, protection: original?.protection ?? .init()
         )
-        onSave(limit)
-        dismiss()
+        flow.run(scope: limit.name, operation: { onSave(limit, $0) },
+            cancel: { if let existingID { FlintLimitsController().cancelPendingChange(existingID) } },
+            onSaved: { dismiss() })
     }
 
     private var selectionIssue: FlintSelectionIssue? {
