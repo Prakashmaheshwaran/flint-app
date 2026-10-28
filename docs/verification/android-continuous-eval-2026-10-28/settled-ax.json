@@ -1,0 +1,538 @@
+[
+  {
+    "source": "quiet-flint-ax.out",
+    "nodes": [
+      {
+        "packageName": "com.flint.peakfocus",
+        "text": "WEDNESDAY \u00b7 28 OCTOBER",
+        "bounds": {
+          "left": 63,
+          "top": 191,
+          "right": 964,
+          "bottom": 229
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.flint.peakfocus",
+        "text": "Blocking is on.",
+        "bounds": {
+          "left": 63,
+          "top": 304,
+          "right": 624,
+          "bottom": 405
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.flint.peakfocus",
+        "text": "Instant blocking, the backup path, and the battery exemption are all in place.",
+        "bounds": {
+          "left": 63,
+          "top": 426,
+          "right": 1017,
+          "bottom": 524
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.flint.peakfocus",
+        "text": "No focus sessions yet",
+        "bounds": {
+          "left": 250,
+          "top": 692,
+          "right": 831,
+          "bottom": 764
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.flint.peakfocus",
+        "text": "FOCUSED TODAY",
+        "bounds": {
+          "left": 399,
+          "top": 780,
+          "right": 681,
+          "bottom": 818
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.flint.peakfocus",
+        "text": "Your next session \u00b7 30m",
+        "bounds": {
+          "left": 359,
+          "top": 866,
+          "right": 722,
+          "bottom": 910
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.flint.peakfocus",
+        "text": "Deep study",
+        "bounds": {
+          "left": 95,
+          "top": 1785,
+          "right": 268,
+          "bottom": 1829
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.flint.peakfocus",
+        "text": "1h 30m",
+        "bounds": {
+          "left": 279,
+          "top": 1785,
+          "right": 392,
+          "bottom": 1829
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.flint.peakfocus",
+        "text": "Reading",
+        "bounds": {
+          "left": 477,
+          "top": 1785,
+          "right": 599,
+          "bottom": 1829
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.flint.peakfocus",
+        "text": "30m",
+        "bounds": {
+          "left": 610,
+          "top": 1785,
+          "right": 676,
+          "bottom": 1829
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.flint.peakfocus",
+        "text": "Workout",
+        "bounds": {
+          "left": 761,
+          "top": 1785,
+          "right": 895,
+          "bottom": 1829
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.flint.peakfocus",
+        "text": "1h",
+        "bounds": {
+          "left": 906,
+          "top": 1785,
+          "right": 944,
+          "bottom": 1829
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.flint.peakfocus",
+        "text": "Start focus",
+        "bounds": {
+          "left": 436,
+          "top": 1952,
+          "right": 644,
+          "bottom": 2007
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.flint.peakfocus",
+        "text": "Today",
+        "bounds": {
+          "left": 144,
+          "top": 2225,
+          "right": 220,
+          "bottom": 2263
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.flint.peakfocus",
+        "text": "Rules",
+        "bounds": {
+          "left": 386,
+          "top": 2225,
+          "right": 454,
+          "bottom": 2263
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.flint.peakfocus",
+        "text": "Insights",
+        "bounds": {
+          "left": 612,
+          "top": 2225,
+          "right": 706,
+          "bottom": 2263
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.flint.peakfocus",
+        "text": "You",
+        "bounds": {
+          "left": 875,
+          "top": 2225,
+          "right": 921,
+          "bottom": 2263
+        },
+        "enabled": true
+      }
+    ]
+  },
+  {
+    "source": "quiet-clock-ax.out",
+    "nodes": [
+      {
+        "packageName": "com.google.android.deskclock",
+        "text": "Clock",
+        "bounds": {
+          "left": 63,
+          "top": 177,
+          "right": 214,
+          "bottom": 262
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "contentDesc": "More options",
+        "bounds": {
+          "left": 975,
+          "top": 156,
+          "right": 1080,
+          "bottom": 282
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "text": "6:17\u200aPM",
+        "contentDesc": "6:17\u200aPM",
+        "bounds": {
+          "left": 63,
+          "top": 304,
+          "right": 553,
+          "bottom": 604
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "text": "Wed, Oct 28",
+        "contentDesc": "Wednesday, October 28",
+        "bounds": {
+          "left": 63,
+          "top": 604,
+          "right": 324,
+          "bottom": 672
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "contentDesc": "Add city",
+        "bounds": {
+          "left": 414,
+          "top": 1833,
+          "right": 666,
+          "bottom": 2085
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "contentDesc": "Alarm",
+        "bounds": {
+          "left": 0,
+          "top": 2127,
+          "right": 216,
+          "bottom": 2337
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "text": "Alarm",
+        "bounds": {
+          "left": 63,
+          "top": 2259,
+          "right": 153,
+          "bottom": 2309
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "contentDesc": "Clock",
+        "bounds": {
+          "left": 216,
+          "top": 2127,
+          "right": 432,
+          "bottom": 2337
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "text": "Clock",
+        "bounds": {
+          "left": 281,
+          "top": 2259,
+          "right": 367,
+          "bottom": 2309
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "contentDesc": "Timer",
+        "bounds": {
+          "left": 432,
+          "top": 2127,
+          "right": 648,
+          "bottom": 2337
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "text": "Timer",
+        "bounds": {
+          "left": 496,
+          "top": 2259,
+          "right": 583,
+          "bottom": 2309
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "contentDesc": "Stopwatch",
+        "bounds": {
+          "left": 648,
+          "top": 2127,
+          "right": 864,
+          "bottom": 2337
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "text": "Stopwatch",
+        "bounds": {
+          "left": 675,
+          "top": 2259,
+          "right": 837,
+          "bottom": 2309
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "contentDesc": "Bedtime",
+        "bounds": {
+          "left": 864,
+          "top": 2127,
+          "right": 1080,
+          "bottom": 2337
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "text": "Bedtime",
+        "bounds": {
+          "left": 908,
+          "top": 2259,
+          "right": 1035,
+          "bottom": 2309
+        },
+        "enabled": true
+      }
+    ]
+  },
+  {
+    "source": "b-clock-ax.out",
+    "nodes": [
+      {
+        "packageName": "com.google.android.deskclock",
+        "text": "Clock",
+        "bounds": {
+          "left": 63,
+          "top": 177,
+          "right": 214,
+          "bottom": 262
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "contentDesc": "More options",
+        "bounds": {
+          "left": 975,
+          "top": 156,
+          "right": 1080,
+          "bottom": 282
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "text": "6:27\u200aPM",
+        "contentDesc": "6:27\u200aPM",
+        "bounds": {
+          "left": 63,
+          "top": 304,
+          "right": 553,
+          "bottom": 604
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "text": "Wed, Oct 28",
+        "contentDesc": "Wednesday, October 28",
+        "bounds": {
+          "left": 63,
+          "top": 604,
+          "right": 324,
+          "bottom": 672
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "contentDesc": "Add city",
+        "bounds": {
+          "left": 414,
+          "top": 1833,
+          "right": 666,
+          "bottom": 2085
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "contentDesc": "Alarm",
+        "bounds": {
+          "left": 0,
+          "top": 2127,
+          "right": 216,
+          "bottom": 2337
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "text": "Alarm",
+        "bounds": {
+          "left": 63,
+          "top": 2259,
+          "right": 153,
+          "bottom": 2309
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "contentDesc": "Clock",
+        "bounds": {
+          "left": 216,
+          "top": 2127,
+          "right": 432,
+          "bottom": 2337
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "text": "Clock",
+        "bounds": {
+          "left": 281,
+          "top": 2259,
+          "right": 367,
+          "bottom": 2309
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "contentDesc": "Timer",
+        "bounds": {
+          "left": 432,
+          "top": 2127,
+          "right": 648,
+          "bottom": 2337
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "text": "Timer",
+        "bounds": {
+          "left": 496,
+          "top": 2259,
+          "right": 583,
+          "bottom": 2309
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "contentDesc": "Stopwatch",
+        "bounds": {
+          "left": 648,
+          "top": 2127,
+          "right": 864,
+          "bottom": 2337
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "text": "Stopwatch",
+        "bounds": {
+          "left": 675,
+          "top": 2259,
+          "right": 837,
+          "bottom": 2309
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "contentDesc": "Bedtime",
+        "bounds": {
+          "left": 864,
+          "top": 2127,
+          "right": 1080,
+          "bottom": 2337
+        },
+        "enabled": true
+      },
+      {
+        "packageName": "com.google.android.deskclock",
+        "text": "Bedtime",
+        "bounds": {
+          "left": 908,
+          "top": 2259,
+          "right": 1035,
+          "bottom": 2309
+        },
+        "enabled": true
+      }
+    ]
+  }
+]
