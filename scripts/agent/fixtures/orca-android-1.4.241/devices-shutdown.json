@@ -1,0 +1,25 @@
+{
+  "id": "capture-devices-shutdown",
+  "ok": true,
+  "result": [
+    {
+      "backend": "android",
+      "id": "flint-opal-reference",
+      "name": "flint-opal-reference",
+      "state": "shutdown",
+      "detail": "avd",
+      "isAvailable": true
+    },
+    {
+      "backend": "android",
+      "id": "flint-test",
+      "name": "flint-test",
+      "state": "shutdown",
+      "detail": "avd",
+      "isAvailable": true
+    }
+  ],
+  "_meta": {
+    "runtimeId": "capture-runtime"
+  }
+}

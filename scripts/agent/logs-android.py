@@ -15,6 +15,8 @@ def capture(args):
 
 
 def process_ids(output):
+    if not isinstance(output, str):
+        raise ValueError("Unrecognized Orca pidof result; expected a string")
     values = output.split()
     if not values or not all(value.isdecimal() for value in values):
         raise ValueError("Flint is not running, or its process IDs could not be read")
@@ -25,14 +27,23 @@ def orca_logs(cli, target, lines):
     """Keep Orca response-format knowledge isolated here for version changes."""
     scope = ["--device", target, "--worktree", f"path:{Path.cwd()}", "--json"]
     response = json.loads(capture([cli, "emulator", "exec", "--command", f"pidof {PACKAGE}", *scope]))
-    result = response["result"]
-    pids = process_ids(result.get("stdout", result.get("output", "")))
+    if not isinstance(response, dict) or response.get('ok') is not True:
+        raise ValueError("Orca pidof reported failure")
+    # Captured 1.4.241 exec replies put the raw shell string in result.
+    pids = process_ids(response["result"])
     response = json.loads(capture([cli, "emulator", "logcat", "--lines", str(lines), *scope]))
-    entries = response["result"]["entries"]
-    if not isinstance(entries, list):
+    if not isinstance(response, dict) or response.get('ok') is not True:
+        raise ValueError("Orca logcat reported failure")
+    entries = response["result"]
+    if not isinstance(entries, list) or any(not isinstance(entry, dict) for entry in entries):
         raise ValueError("Unrecognized Orca logcat entries")
+    # Actual 1.4.241 entries expose timestamp/level/tag/message, without PID or
+    # raw threadtime. A tag/message match cannot establish process ownership.
+    # Use the existing explicitly targeted SDK adb --pid path in that case.
+    if any('pid' not in entry or not str(entry['pid']).isdecimal() for entry in entries):
+        raise ValueError("Orca logcat omits process IDs; cannot safely select Flint logs")
     return [
-        entry.get("raw") or f'{entry.get("timestamp", "")} {entry.get("priority", "")}/{entry.get("tag", "")}({entry["pid"]}): {entry["message"]}'
+        entry.get("raw") or f'{entry.get("timestamp", "")} {entry.get("level", "")}/{entry.get("tag", "")}({entry["pid"]}): {entry["message"]}'
         for entry in entries
         if str(entry["pid"]) in pids
     ]

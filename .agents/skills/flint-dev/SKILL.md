@@ -44,8 +44,20 @@ for current targets and override options rather than duplicating their mechanics
    [upstream tap investigation](https://github.com/stablyai/orca/issues/23997#issuecomment-6461183992).
    Android AVDs need their configured image; the run target fails before attach
    with the exact missing package and installation guidance. The Android 35 Google
-   APIs ARM64 image is currently missing on this host. The remedy uses the
-   executable sdkmanager on PATH, or generic SDK Manager guidance if unavailable.
+   APIs ARM64 image was installed and verified on this host on 2026-10-28; see
+   `docs/verification/workspace-android-live-2026-10-28.md` for raw JSON and UI
+   evidence. Missing-image guidance uses the executable sdkmanager on PATH, or
+   generic SDK Manager guidance if unavailable. Android waits for
+   `sys.boot_completed=1` before attach and launches explicit `.MainActivity`;
+   Orca's activity-less monkey launch failed on the verified AVD. Reused Android
+   attach can omit backend, accepted only after fresh backend inventory plus
+   exact SDK AVD/boot checks. No helper PID was returned, so no helper ownership
+   is inferred. Orca 1.4.241 logcat returns entries without PIDs; `make logs-android`
+   falls back to the SDK with explicit serial and Flint PID. Use `button back`
+   for Android Back; this CLI has no emulator `key` or `screenshot` verb.
+   Live verification used a coordinator-approved read-only SDK screenshot
+   fallback; keep UI input on Orca verbs. Verify pixels and AX after each input
+   and stop before any sensitive permission prompt.
    Android runs also compare the recorded/live boot incarnation after building
    and before installation and launch; a restart requires an explicit rerun.
 3. Review `make gates DRY_RUN=1`, then run `make gates` for the AGENTS.md path-based

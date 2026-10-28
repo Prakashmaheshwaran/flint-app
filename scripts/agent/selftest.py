@@ -104,18 +104,25 @@ elif name == "fake-make" and args == ["android"]:
 elif name == "orca":
     verb = args[1]
     if verb == "devices":
+        if os.environ.get('DEVICES_JSON_AFTER_ATTACH') and pathlib.Path('attached').exists():
+            print(os.environ['DEVICES_JSON_AFTER_ATTACH'])
+            sys.exit(0)
+        if os.environ.get('DEVICES_JSON'):
+            print(os.environ['DEVICES_JSON'])
+            sys.exit(0)
         count = sum(1 for line in pathlib.Path(os.environ["EVENTS"]).read_text().splitlines()
                     if json.loads(line) == ["orca", ["emulator", "devices", "--json"]])
         booted = count > 1 or os.environ.get("AVD_BOOTED")
-        print(json.dumps({"result": {"devices": [
-            {"id": "emulator-5554" if booted else "flint-test", "name": "flint-test", "platform": "android", "state": "booted" if booted else "shutdown"},
-            {"id": "emulator-5556", "name": "other-avd", "platform": "android", "state": "booted"}]}}))
+        fixture = 'devices-booted.json' if booted else 'devices-shutdown.json'
+        payload = json.loads((pathlib.Path('scripts/agent/fixtures/orca-android-1.4.241') / fixture).read_text())
+        print(json.dumps(payload))
     elif verb == 'attach':
         if os.environ.get('ATTACH_DELAY'):
             time.sleep(float(os.environ['ATTACH_DELAY']))
         pathlib.Path('attached').write_text(os.environ.get('ATTACH_DEVICE', args[2]))
         if os.environ.get('ATTACH_JSON'):
             print(os.environ['ATTACH_JSON'])
+            sys.exit(int(os.environ.get('ATTACH_RETURN_CODE', '0')))
         else:
             ident = args[2]
             if ident == 'iPhone 17':
@@ -123,18 +130,21 @@ elif name == "orca":
             if ident == 'flint-test':
                 ident = 'emulator-5554'
             backend = 'android' if ident.startswith('emulator-') else 'ios'
-            print(json.dumps({'ok': True, 'result': {'attached': True, 'info': {
-                'deviceUdid': os.environ.get('ATTACH_DEVICE', ident), 'backend': backend, 'helperPid': 12345}}}))
+            if backend == 'android':
+                payload = json.loads(pathlib.Path('scripts/agent/fixtures/orca-android-1.4.241/attach.json').read_text())
+                payload['result']['info']['deviceUdid'] = os.environ.get('ATTACH_DEVICE', ident)
+                print(json.dumps(payload))
+            else:
+                print(json.dumps({'ok': True, 'result': {'attached': True, 'info': {
+                    'deviceUdid': os.environ.get('ATTACH_DEVICE', ident), 'backend': backend, 'helperPid': 12345}}}))
     elif verb == 'list':
         print(json.dumps({'result': {'running': True, 'pid': 12345, 'device': pathlib.Path('attached').read_text()}}))
     elif verb == 'install':
         pathlib.Path('installed').touch()
     elif verb == "exec":
-        print(json.dumps({"result": {"stdout": "123\n"}}))
+        print(pathlib.Path('scripts/agent/fixtures/orca-android-1.4.241/pidof.json').read_text())
     elif verb == "logcat":
-        print(json.dumps({"result": {"entries": [
-            {"pid": 999, "tag": "Other", "message": "unrelated secret"},
-            {"pid": 123, "tag": "Flint", "message": "app event"}]}}))
+        print(pathlib.Path('scripts/agent/fixtures/orca-android-1.4.241/logcat.json').read_text())
     else:
         print(json.dumps({"result": {"device": {"id": "emulator-5554"}}}))
 elif name == "adb":
@@ -150,6 +160,8 @@ elif name == "adb":
         print(value + '\nOK')
     elif args[2:] == ['get-state']:
         print('device')
+    elif args[2:] == ['shell', 'getprop', 'sys.boot_completed']:
+        print(os.environ.get('BOOT_COMPLETED', '1'))
     elif args[2:] == ['shell', 'cat', '/proc/sys/kernel/random/boot_id']:
         print('11111111-2222-3333-4444-555555555555')
     elif args[2:] == ['emu', 'kill']:
@@ -453,13 +465,57 @@ class AgentCommands(unittest.TestCase):
             ["emulator", "devices", "--json"],
             ["emulator", "attach", serial, "--worktree", f"path:{self.root}", "--json"],
             ["emulator", "install", str(self.root / "android-app/app/build/outputs/apk/debug/app-debug.apk"), "--reinstall", *scope],
-            ["emulator", "launch", "com.flint.peakfocus", *scope],
+            ["emulator", "launch", "com.flint.peakfocus", "--activity", ".MainActivity", *scope],
         ])
         self.assertEqual(self.calls("fake-make"), [["android"]])
         claim, = [a for a in self.calls('flint-devices.sh') if a[0] == 'claim']
         self.assertEqual(claim[:7], ['claim', 'android', serial, '--avd', 'flint-test', '--booted', '--incarnation'])
-        self.assertEqual(claim[-4:], ['--process-group', (self.root / 'emulator-group').read_text(), '--helper-pid', '12345'])
+        self.assertEqual(claim[-2:], ['--process-group', (self.root / 'emulator-group').read_text()])
+        self.assertNotIn('--helper-pid', claim)
         self.assertIn('-no-snapshot-save', self.calls('emulator')[0])
+
+    def test_android_inventory_uses_captured_backend_array(self):
+        sample = (ROOT / 'scripts/agent/fixtures/orca-android-1.4.241/devices-shutdown.json').read_text()
+        result = self.make('android-run', DEVICES_JSON=sample)
+        self.assert_ok(result)
+        self.assertTrue(any(args[1] == 'launch' for args in self.calls('orca')))
+
+    def test_android_unknown_inventory_never_boots_or_attaches(self):
+        for payload in ({'devices': []}, [None], [{'platform': 'android', 'id': 'flint-test',
+                                                 'name': 'flint-test', 'state': 'shutdown'}]):
+            with self.subTest(payload=payload):
+                result = self.make('android-run', DEVICES_JSON=json.dumps({'ok': True, 'result': payload}))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(self.calls('emulator'), [])
+                self.assertFalse(any(args[1] in ('attach', 'install', 'launch') for args in self.calls('orca')))
+
+    def test_android_framework_readiness_precedes_attach(self):
+        result = self.make('android-run', AVD_BOOTED='1', BOOT_COMPLETED='0')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('has not completed boot', result.stderr)
+        self.assertFalse(any(args[1] in ('attach', 'install', 'launch') for args in self.calls('orca')))
+        result = self.make('android-run', BOOT_COMPLETED='0', FLINT_AGENT_DEVICE_TIMEOUT='0.2')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any(args[1] in ('attach', 'install', 'launch') for args in self.calls('orca')))
+
+    def test_android_failed_attach_preserves_real_json_diagnostic(self):
+        sample = (ROOT / 'scripts/agent/fixtures/orca-android-1.4.241/attach-not-ready.json').read_text()
+        result = self.make('android-run', ATTACH_JSON=sample, ATTACH_RETURN_CODE='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('scrcpy server exited before the video stream started', result.stderr)
+        self.assertFalse(any(args[1] in ('install', 'launch') for args in self.calls('orca')))
+
+    def test_android_reused_stream_requires_fresh_android_inventory(self):
+        sample = (ROOT / 'scripts/agent/fixtures/orca-android-1.4.241/attach-reused.json').read_text()
+        self.assert_ok(self.make('android-run', AVD_BOOTED='1', ATTACH_JSON=sample))
+        (self.root / 'events.jsonl').unlink()
+        (self.root / 'attached').unlink()
+        wrong = {'ok': True, 'result': [{'backend': 'ios', 'id': 'emulator-5554',
+                                       'name': 'flint-test', 'state': 'booted'}]}
+        result = self.make('android-run', AVD_BOOTED='1', ATTACH_JSON=sample,
+                           DEVICES_JSON_AFTER_ATTACH=json.dumps(wrong))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any(args[1] in ('install', 'launch') for args in self.calls('orca')))
 
     def use_real_ledger(self):
         ledger = self.root / "scripts/flint-devices.sh"
@@ -486,7 +542,7 @@ class AgentCommands(unittest.TestCase):
         self.assertEqual(entry["claimant"], "fixture-claude-session")
         self.assertFalse(entry["booted"])
         self.assertFalse(entry["created"])
-        self.assertEqual(entry['helper']['pid'], 12345)
+        self.assertIsNone(entry['helper'])
 
     def test_ios_real_ledger_inherits_orca_identity_and_only_cold_start_rights(self):
         self.use_real_ledger()
@@ -519,13 +575,13 @@ class AgentCommands(unittest.TestCase):
         entry, = self.ledger_entries()
         self.assertTrue(entry['booted'])
         self.assertEqual(entry['incarnation_evidence']['process_group'], int((self.root / 'emulator-group').read_text()))
-        self.assertEqual(entry['helper']['pid'], 12345)
+        self.assertIsNone(entry['helper'])
 
     def test_android_running_device_claim_does_not_own_shutdown(self):
         result = self.make("android-run", AVD_BOOTED="1")
         self.assert_ok(result)
         self.assertEqual([args for args in self.calls("flint-devices.sh") if args[0] == 'claim'],
-                         [["claim", "android", "emulator-5554", "--avd", "flint-test", '--helper-pid', '12345']])
+                         [["claim", "android", "emulator-5554", "--avd", "flint-test"]])
 
     def test_android_attach_or_build_failure_stops_before_install(self):
         for failing in ("orca", "fake-make"):
@@ -721,11 +777,13 @@ class AgentCommands(unittest.TestCase):
         self.assertEqual(self.calls("xcrun")[-1], ["simctl", "spawn", "11111111-2222-3333-4444-555555555555", "log", "stream", "--level", "debug", "--style", "compact", "--predicate", 'process == "Flint"'])
         self.assertFalse(any("bootstatus" in args for _, args in self.calls()))
 
-    def test_android_logs_filter_pids_and_sdk_fallback(self):
+    def test_android_logs_reject_pidless_orca_entries_and_use_scoped_sdk(self):
         result = self.make("logs-android")
         self.assert_ok(result)
-        self.assertIn("app event", result.stdout)
-        self.assertNotIn("unrelated secret", result.stdout)
+        self.assertIn("app event via adb", result.stdout)
+        self.assertIn("Orca logcat omits process IDs", result.stderr)
+        self.assertNotIn('AiAiEcho', result.stdout)
+        self.assertIn(["-s", "emulator-5554", "logcat", "--pid=123", "-d", "-t", "500"], self.calls("adb"))
         result = self.make("logs-android", FAIL_TOOL="orca", ANDROID_HOME=str(self.root / "absent-sdk"))
         self.assert_ok(result)
         self.assertIn("app event via adb", result.stdout)

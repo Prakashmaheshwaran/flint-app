@@ -1,0 +1,24 @@
+{
+  "id": "capture-logcat",
+  "ok": true,
+  "result": [
+    {
+      "message": "--------- beginning of main"
+    },
+    {
+      "timestamp": "10-28 01:09:00.430",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "EchoTargets:"
+    },
+    {
+      "timestamp": "10-28 01:09:00.430",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "Filtered by AiAi flag check:"
+    }
+  ],
+  "_meta": {
+    "runtimeId": "capture-runtime"
+  }
+}

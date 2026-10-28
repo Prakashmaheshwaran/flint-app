@@ -17,5 +17,7 @@ apk="$android_dir/app/build/outputs/apk/debug/app-debug.apk"
 agent_device verify-android "$serial" "$avd_name" "$incarnation"
 agent_orca emulator install "$apk" --reinstall --device "$serial" --worktree "path:$PWD" --json
 agent_device verify-android "$serial" "$avd_name" "$incarnation"
-agent_orca emulator launch "$bundle_id" --device "$serial" --worktree "path:$PWD" --json
+# Orca's activity-less launch uses Android monkey, which aborts on this AVD
+# ("SYS_KEYS has no physical keys"). Target Flint's declared launcher directly.
+agent_orca emulator launch "$bundle_id" --activity .MainActivity --device "$serial" --worktree "path:$PWD" --json
 echo "Flint launched: device=$avd ($serial) bundle=$bundle_id"

@@ -1,0 +1,25 @@
+{
+  "id": "capture-devices-booted",
+  "ok": true,
+  "result": [
+    {
+      "backend": "android",
+      "id": "emulator-5554",
+      "name": "flint-test",
+      "state": "booted",
+      "detail": "emulator",
+      "isAvailable": true
+    },
+    {
+      "backend": "android",
+      "id": "flint-opal-reference",
+      "name": "flint-opal-reference",
+      "state": "shutdown",
+      "detail": "avd",
+      "isAvailable": true
+    }
+  ],
+  "_meta": {
+    "runtimeId": "capture-runtime"
+  }
+}

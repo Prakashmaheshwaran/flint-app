@@ -1,0 +1,17 @@
+{
+  "id": "capture-attach",
+  "ok": true,
+  "result": {
+    "attached": true,
+    "info": {
+      "deviceUdid": "emulator-5554",
+      "streamUrl": "scrcpy://emulator-5554",
+      "wsUrl": "",
+      "streamCodec": "h264",
+      "backend": "android"
+    }
+  },
+  "_meta": {
+    "runtimeId": "capture-runtime"
+  }
+}

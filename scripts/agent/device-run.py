@@ -60,7 +60,8 @@ def run(args, timeout=None, check=True):
                                              out.read(OUTPUT_LIMIT).decode(errors="replace"),
                                              err.read(OUTPUT_LIMIT).decode(errors="replace"))
     if check and result.returncode:
-        raise ValueError(f"{Path(args[0]).name} failed ({result.returncode}): {result.stderr[-4000:].strip()}")
+        detail = result.stderr[-4000:].strip() or result.stdout[-4000:].strip()
+        raise ValueError(f"{Path(args[0]).name} failed ({result.returncode}): {detail}")
     return result
 
 
@@ -118,8 +119,12 @@ def attach(platform, device, timeout):
     # Reused iOS helpers can omit backend (or return null). Accept only that
     # variant, with an exact UUID independently present in fresh simctl data.
     reused_ios = platform == "ios" and backend is None
+    # Reused Android streams also omit backend in the observed 1.4.241 reply.
+    # A serial alone is insufficient: verify fresh backend inventory and the
+    # SDK's exact, boot-completed AVD identity before accepting this variant.
+    reused_android = platform == "android" and backend is None
     if (result.get("attached") is not True or actual != device
-            or (backend != platform and not reused_ios)):
+            or (backend != platform and not (reused_ios or reused_android))):
         raise ValueError(
             f"Orca attach identity mismatch: expected {platform} {device!r}, "
             f"returned {info.get('backend')!r} {actual!r}. No claim/install/launch. "
@@ -132,6 +137,12 @@ def attach(platform, device, timeout):
     if reused_ios:
         if ios_state(actual) != "Booted":
             raise ValueError(f"Simulator {actual} is not booted; no claim/install/launch")
+    if reused_android:
+        name = avd_name(actual)
+        observed, state = android_device(actual, name)
+        if observed != actual or state != "booted":
+            raise ValueError(f"Android {actual} is not booted; no claim/install/launch")
+        verify_android(actual, name)
     helper_pid = info.get("helperPid")
     if helper_pid is not None and (type(helper_pid) is not int or helper_pid <= 1):
         raise ValueError("Orca attach returned an invalid helper PID; no claim/install/launch")
@@ -321,14 +332,18 @@ def preflight(name):
 
 
 def android_device(selector, name):
-    result = orca("devices")
-    devices = result if isinstance(result, list) else result["devices"]
-    matches = [d for d in devices if d.get("platform") == "android"
-               and selector in (d.get("id"), d.get("name"), d.get("avdName"))]
+    # Orca 1.4.241 returns result as an array, with backend (not platform).
+    # Keep the captured Android rows in fixtures; reject unknown shapes rather
+    # than interpreting an unverified inventory as permission to boot an AVD.
+    devices = orca("devices")
+    if not isinstance(devices, list) or any(not isinstance(d, dict) for d in devices):
+        raise ValueError("Orca devices returned malformed inventory; no boot/attach/install/launch")
+    matches = [d for d in devices if d.get("backend") == "android"
+               and selector in (d.get("id"), d.get("name"))]
     if len(matches) != 1:
         raise ValueError(f"AVD={selector!r} matches {len(matches)} Android devices; use a unique AVD name or serial")
     device = matches[0]
-    if device.get("avdName", device.get("name")) != name:
+    if device.get("name") != name:
         raise ValueError(f"Android inventory identity mismatch for {selector!r}")
     state = device.get("state", "").lower()
     if state not in ("shutdown", "booted"):
@@ -341,6 +356,11 @@ def verify_android(serial, name):
         raise ValueError(f"Android identity mismatch: expected {serial} / {name!r}; no claim/install/launch")
     if run([adb_path(), "-s", serial, "get-state"], timeout=2).stdout.strip() != "device":
         raise ValueError(f"Android emulator {serial} is not ready")
+    # adb becomes available before the framework/display services used by Orca's
+    # scrcpy server. The first live cold boot reached attach too early and failed
+    # with "scrcpy server exited before the video stream started".
+    if run([adb_path(), "-s", serial, "shell", "getprop", "sys.boot_completed"], timeout=2).stdout.strip() != "1":
+        raise ValueError(f"Android emulator {serial} has not completed boot; no attach/install/launch")
 
 
 def verify_android_claim(serial, name, expected):
