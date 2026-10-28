@@ -10,15 +10,22 @@ struct TodayView: View {
     @Binding var showStart: Bool
     @State private var now = Date()
     @State private var rules: [FlintScheduleRule] = []
+    @ObservedObject private var history = FocusHistoryModel.shared
+    @State private var lastHistoryRefresh = Date.distantPast
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var typeSize
 
     private let presets: [(name: String, minutes: Int)] = [("Deep study", 90), ("Reading", 30), ("Workout", 60)]
 
     var body: some View {
-        ZStack(alignment: .top) {
-            EmberLandscape()
+        GeometryReader { geometry in
+            ZStack(alignment: .top) {
+                if typeSize.isAccessibilitySize || geometry.size.height < 700 {
+                    FlintGroundBackground()
+                } else {
+                    EmberLandscape()
+                }
 
-            GeometryReader { geometry in
                 ScrollView {
                     content
                         .padding(.horizontal, 24)
@@ -35,8 +42,20 @@ struct TodayView: View {
         .task {
             auth.refresh()
             rules = FlintSchedulesController().rules()
+            refreshHistory()
         }
-        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { now = $0 }
+        .onChange(of: scenePhase) { if $0 == .active { refreshHistory() } }
+        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { date in
+            now = date
+            if history.summary?.sessions.contains(where: \.isInProgress) == true || date.timeIntervalSince(lastHistoryRefresh) >= 300 {
+                refreshHistory()
+            }
+        }
+    }
+
+    private func refreshHistory() {
+        lastHistoryRefresh = Date()
+        history.refresh()
     }
 
     private var content: some View {
@@ -57,15 +76,8 @@ struct TodayView: View {
                 .flintSecondary(14)
                 .padding(.top, 8)
 
-            VStack(spacing: 6) {
-                Text(Self.duration(minutes: vm.durationMinutes)).flintNumber(50)
-                Text("Your next session").flintEyebrow()
-                    .fixedSize(horizontal: false, vertical: true)
-                    .multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity)
-            .accessibilityElement(children: .combine)
-            .padding(.top, 76)
+            FocusedTodayCard(history: history, nextSessionDuration: Self.duration(minutes: vm.durationMinutes))
+                .padding(.top, 28)
 
             Spacer(minLength: 32)
 

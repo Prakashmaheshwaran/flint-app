@@ -1,0 +1,477 @@
+{
+  "id": "1fdd6835-0745-4c7a-bdeb-ae9731157185",
+  "ok": true,
+  "result": [
+    {
+      "role": "application",
+      "type": "Application",
+      "label": "Flint",
+      "value": "",
+      "enabled": true,
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "width": 1,
+        "height": 1
+      },
+      "children": [
+        {
+          "role": "heading",
+          "type": "Heading",
+          "label": "Insights",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.0597,
+            "y": 0.0915,
+            "width": 0.2861,
+            "height": 0.0431
+          },
+          "children": []
+        },
+        {
+          "role": "heading",
+          "type": "Heading",
+          "label": "Focus sessions",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.0995,
+            "y": 0.1781,
+            "width": 0.4196,
+            "height": 0.0343
+          },
+          "children": [],
+          "id": "history.section"
+        },
+        {
+          "role": "button",
+          "type": "Button",
+          "label": "Today",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.107,
+            "y": 0.2342,
+            "width": 0.1476,
+            "height": 0.0503
+          },
+          "children": [],
+          "id": "history.section"
+        },
+        {
+          "role": "button",
+          "type": "Button",
+          "label": "7 days",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.2595,
+            "y": 0.2342,
+            "width": 0.1542,
+            "height": 0.0503
+          },
+          "children": [],
+          "id": "history.section"
+        },
+        {
+          "role": "text",
+          "type": "StaticText",
+          "label": "DEBUG · Seeded preview events",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.0995,
+            "y": 0.3063,
+            "width": 0.432,
+            "height": 0.0179
+          },
+          "children": [],
+          "id": "history.section"
+        },
+        {
+          "role": "text",
+          "type": "StaticText",
+          "label": "3h 5m focused",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.0995,
+            "y": 0.3425,
+            "width": 0.2919,
+            "height": 0.0572
+          },
+          "children": [],
+          "id": "history.section"
+        },
+        {
+          "role": "text",
+          "type": "StaticText",
+          "label": "Focused since Sat, Oct 24",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.0995,
+            "y": 0.418,
+            "width": 0.4022,
+            "height": 0.021
+          },
+          "children": [],
+          "id": "history.section"
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "Oct 22, 2026, No data",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.0995,
+            "y": 0.4577,
+            "width": 0.093,
+            "height": 0.1529
+          },
+          "children": [],
+          "id": "history.section"
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "Oct 23, 2026, No data",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.2172,
+            "y": 0.4577,
+            "width": 0.0937,
+            "height": 0.1529
+          },
+          "children": [],
+          "id": "history.section"
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "Oct 24, 2026, 30m",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.3358,
+            "y": 0.4573,
+            "width": 0.0929,
+            "height": 0.1533
+          },
+          "children": [],
+          "id": "history.section"
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "Oct 25, 2026, 0m",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.4536,
+            "y": 0.4573,
+            "width": 0.0929,
+            "height": 0.1533
+          },
+          "children": [],
+          "id": "history.section"
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "Oct 26, 2026, 50m",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.5713,
+            "y": 0.4573,
+            "width": 0.0929,
+            "height": 0.1533
+          },
+          "children": [],
+          "id": "history.section"
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "Oct 27, 2026, 1h",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.6891,
+            "y": 0.4573,
+            "width": 0.0937,
+            "height": 0.1533
+          },
+          "children": [],
+          "id": "history.section"
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "Oct 28, 2026, 45m",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.8076,
+            "y": 0.4573,
+            "width": 0.0929,
+            "height": 0.1533
+          },
+          "children": [],
+          "id": "history.section"
+        },
+        {
+          "role": "text",
+          "type": "StaticText",
+          "label": "3 completed · 1 ended early",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.0995,
+            "y": 0.6289,
+            "width": 0.4386,
+            "height": 0.021
+          },
+          "children": [],
+          "id": "history.section"
+        },
+        {
+          "role": "text",
+          "type": "StaticText",
+          "label": "3-day completion streak",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.0995,
+            "y": 0.6568,
+            "width": 0.3781,
+            "height": 0.021
+          },
+          "children": [],
+          "id": "history.section"
+        },
+        {
+          "role": "text",
+          "type": "StaticText",
+          "label": "Counts focus sessions you start. Schedules and limits aren’t counted.",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.0995,
+            "y": 0.696,
+            "width": 0.7778,
+            "height": 0.0389
+          },
+          "children": [],
+          "id": "history.section"
+        },
+        {
+          "role": "heading",
+          "type": "Heading",
+          "label": "Screen Time",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.0597,
+            "y": 0.7853,
+            "width": 0.3582,
+            "height": 0.0343
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "type": "Button",
+          "label": "Today",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.626,
+            "y": 0.7773,
+            "width": 0.1476,
+            "height": 0.0503
+          },
+          "children": [],
+          "id": "insights.range"
+        },
+        {
+          "role": "button",
+          "type": "Button",
+          "label": "7 days",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.7786,
+            "y": 0.7773,
+            "width": 0.1542,
+            "height": 0.0503
+          },
+          "children": [],
+          "id": "insights.range"
+        },
+        {
+          "role": "heading",
+          "type": "Heading",
+          "label": "Screen Time needs a device",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.0995,
+            "y": 0.8699,
+            "width": 0.7753,
+            "height": 0.0343
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "type": "StaticText",
+          "label": "Simulator can’t provide Screen Time reports for the last 7 days. Run Flint on a physical iPhone or iPad and allow Screen Time to see your activity.",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.0995,
+            "y": 0.9226,
+            "width": 0.7985,
+            "height": 0.0957
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "type": "Button",
+          "label": "Today",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.0597,
+            "y": 0.8741,
+            "width": 0.2206,
+            "height": 0.0732
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "type": "Button",
+          "label": "Rules",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.2803,
+            "y": 0.8741,
+            "width": 0.2197,
+            "height": 0.0732
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "type": "Button",
+          "label": "Insights",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.5,
+            "y": 0.8741,
+            "width": 0.2206,
+            "height": 0.0732
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "type": "Button",
+          "label": "You",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.7206,
+            "y": 0.8741,
+            "width": 0.2197,
+            "height": 0.0732
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "type": "StaticText",
+          "label": "4:28 PM",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.1352,
+            "y": 0.0248,
+            "width": 0.0987,
+            "height": 0.0248
+          },
+          "children": []
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "Dynamic Island, Empty",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.3441,
+            "y": 0.016,
+            "width": 0.3118,
+            "height": 0.042
+          },
+          "children": []
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "Cellular",
+          "value": "No signal",
+          "enabled": true,
+          "frame": {
+            "x": 0.7081,
+            "y": 0.0286,
+            "width": 0.0506,
+            "height": 0.0156
+          },
+          "children": []
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "",
+          "value": "SSID, 3 of 3 Wi-Fi bars",
+          "enabled": true,
+          "frame": {
+            "x": 0.7811,
+            "y": 0.0297,
+            "width": 0.0439,
+            "height": 0.0145
+          },
+          "children": [],
+          "id": "3 of 3 Wi-Fi bars"
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "100% battery power",
+          "value": "Not charging",
+          "enabled": true,
+          "frame": {
+            "x": 0.8474,
+            "y": 0.029,
+            "width": 0.0721,
+            "height": 0.0156
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "_meta": {
+    "runtimeId": "8f38263a-4ff0-4ed2-9d46-3f93ba87f5d9"
+  }
+}

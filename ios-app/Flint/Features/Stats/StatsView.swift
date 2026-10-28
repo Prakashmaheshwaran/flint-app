@@ -2,9 +2,8 @@ import SwiftUI
 import DeviceActivity
 import FlintCore
 
-/// Insights. The numbers come from the `DeviceActivityReport` extension — the only sanctioned
-/// way to surface per-app/website usage. The host explains known availability constraints;
-/// only the report extension can decide whether returned usage is empty.
+/// App-owned focus history and Screen Time are separate sections. Usage numbers stay in
+/// DeviceActivityReport; only the extension can decide whether returned usage is empty.
 struct StatsView: View {
     @ObservedObject var auth: AuthorizationModel
     @Environment(\.scenePhase) private var scenePhase
@@ -14,6 +13,7 @@ struct StatsView: View {
     @State private var reportID = UUID()
     @State private var accessFeedback: String?
     @State private var showReportHelp = false
+    @ObservedObject private var history = FocusHistoryModel.shared
     private let context = DeviceActivityReport.Context("Total Activity")
 
     private var availability: InsightsAvailability {
@@ -30,31 +30,43 @@ struct StatsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            Text("Insights").flintTitle(30).accessibilityAddTraits(.isHeader)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 24)
                 .padding(.top, 18)
 
-            if availability == .report {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    FocusHistorySection(history: history)
+                    header
+                    screenTimeContent
+                }
+                .padding(24)
+            }
+        }
+        .flintTabBarInset()
+        .onAppear { refresh(); history.refresh() }
+        .onChange(of: scenePhase) { if $0 == .active { refresh(); history.refresh() } }
+        .onChange(of: range) { _ in reloadReport() }
+        .sheet(isPresented: $showReportHelp) { reportHelp }
+    }
+
+    @ViewBuilder
+    private var screenTimeContent: some View {
+        if availability == .report {
+            VStack(spacing: 12) {
                 DeviceActivityReport(context, filter: filter)
                     .id(reportID)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(minHeight: 500)
                 Button("Report help") { showReportHelp = true }
                     .font(FlintFont.text(14))
                     .foregroundStyle(FlintBrand.bone)
                     .frame(minHeight: 44)
-            } else {
-                ScrollView {
-                    unavailableContent
-                        .padding(24)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+        } else {
+            unavailableContent
         }
-        .flintTabBarInset()
-        .onAppear { refresh() }
-        .onChange(of: scenePhase) { if $0 == .active { refresh() } }
-        .onChange(of: range) { _ in reloadReport() }
-        .sheet(isPresented: $showReportHelp) { reportHelp }
     }
 
     @ViewBuilder
@@ -82,7 +94,7 @@ struct StatsView: View {
     }
 
     private var title: some View {
-        Text("Insights").flintTitle(30).accessibilityAddTraits(.isHeader)
+        Text("Screen Time").flintTitle(24).accessibilityAddTraits(.isHeader)
     }
 
     private var rangePicker: some View {
@@ -133,8 +145,8 @@ struct StatsView: View {
     private var stateTitle: String {
         switch availability {
         case .needsAuthorization, .needsSettings: return "Screen Time access needed"
-        case .simulator: return "Insights needs a device"
-        case .unavailable: return "Insights is unavailable"
+        case .simulator: return "Screen Time needs a device"
+        case .unavailable: return "Screen Time is unavailable"
         case .report: return ""
         }
     }

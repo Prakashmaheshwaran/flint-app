@@ -1,6 +1,8 @@
 import Foundation
 import FamilyControls
 import FlintCore
+import Combine
+import UIKit
 
 /// Drives the Today tab: holds the picker selection, duration, break level, and the live
 /// countdown for an active session — and the "complete" moment when one runs to its end.
@@ -8,8 +10,14 @@ import FlintCore
 final class SessionViewModel: ObservableObject {
     /// A session that ran to its end, shown once on the Complete screen.
     struct Finished: Equatable {
+        let id: String
         let name: String
-        let minutes: Int
+        let focusedSeconds: TimeInterval
+        let todaySeconds: TimeInterval?
+        let isPreview: Bool
+        let historyDegraded: Bool
+        // Compatibility for RootView's existing presentation identity.
+        var minutes: Int { Int(max(0, focusedSeconds) / 60) }
     }
 
     @Published var selection = FamilyActivitySelection()
@@ -18,13 +26,20 @@ final class SessionViewModel: ObservableObject {
     @Published private(set) var active: FlintActiveSession?
     @Published private(set) var remaining: TimeInterval = 0
     @Published private(set) var savedGroups: [FlintAppGroup] = []
-    @Published var finished: Finished?
+    @Published var finished: Finished? {
+        didSet {
+            if finished == nil, let oldValue {
+                UserDefaults.standard.set(oldValue.id, forKey: FocusHistoryModel.shared.acknowledgementKey)
+            }
+        }
+    }
     @Published var errorText: String?
 
     private let controller = FlintSessionController()
     private var timer: Timer?
     /// The saved group last applied, so a start from an unchanged preset is reported as one.
     private var appliedGroupSelection: FamilyActivitySelection?
+    private var completionForeground: AnyCancellable?
 
     init() {
         if let saved = FlintGroupStore()?.loadSelection() { selection = saved }
@@ -46,6 +61,9 @@ final class SessionViewModel: ObservableObject {
         }
         #endif
         startTicking()
+        refreshCompletion()
+        completionForeground = NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
+            .sink { [weak self] _ in Task { @MainActor in self?.refreshCompletion() } }
     }
 
     // MARK: Saved app groups (presets)
@@ -165,13 +183,22 @@ final class SessionViewModel: ObservableObject {
             // On a real device the monitor clears the shield; mirror that here for the UI and as
             // a fallback (the Simulator doesn't run the monitor extension).
             controller.finishIfExpired()
-            if let endsAt = active.endsAt {
-                let minutes = Int((endsAt.timeIntervalSince(active.startedAt) / 60).rounded())
-                finished = Finished(name: active.name, minutes: minutes)
-            }
             self.active = nil
             remaining = 0
             timer?.invalidate()
+            refreshCompletion()
+        }
+    }
+
+    /// Reconstructs completion after process death; acknowledgement lives only in host defaults.
+    private func refreshCompletion() {
+        let history = FocusHistoryModel.shared
+        history.refresh { [weak self] summary in
+            guard let self, self.active == nil, self.finished == nil,
+                  let session = history.completionToPresent(in: summary) else { return }
+            self.finished = Finished(id: session.id, name: session.name, focusedSeconds: session.focusedSeconds,
+                                     todaySeconds: summary.days.last?.focusedSeconds, isPreview: history.isPreview,
+                                     historyDegraded: summary.availability == .degraded)
         }
     }
 }

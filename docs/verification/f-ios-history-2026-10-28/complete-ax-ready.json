@@ -1,0 +1,193 @@
+{
+  "id": "1a0b8504-41fc-4078-ba45-2d478bd0f11c",
+  "ok": true,
+  "result": [
+    {
+      "role": "application",
+      "type": "Application",
+      "label": "Flint",
+      "value": "",
+      "enabled": true,
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "width": 1,
+        "height": 1
+      },
+      "children": [
+        {
+          "role": "text",
+          "type": "StaticText",
+          "label": "PREVIEW · DEEP STUDY · COMPLETE",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.194,
+            "y": 0.1304,
+            "width": 0.6119,
+            "height": 0.0164
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "type": "StaticText",
+          "label": "The ember has set.",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.1244,
+            "y": 0.1674,
+            "width": 0.7512,
+            "height": 0.0484
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "type": "StaticText",
+          "label": "45m focused in this session.",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.2678,
+            "y": 0.2273,
+            "width": 0.4643,
+            "height": 0.0225
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "type": "StaticText",
+          "label": "DEBUG · Seeded preview events",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.284,
+            "y": 0.259,
+            "width": 0.432,
+            "height": 0.0179
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "type": "StaticText",
+          "label": "45m, Focused today",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.3599,
+            "y": 0.717,
+            "width": 0.2803,
+            "height": 0.0748
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "type": "Button",
+          "label": "Done",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.0597,
+            "y": 0.8192,
+            "width": 0.8806,
+            "height": 0.0641
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "type": "Button",
+          "label": "Start another",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.0597,
+            "y": 0.8924,
+            "width": 0.8806,
+            "height": 0.0549
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "type": "StaticText",
+          "label": "4:28 PM",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.1352,
+            "y": 0.0248,
+            "width": 0.0987,
+            "height": 0.0248
+          },
+          "children": []
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "Dynamic Island, Empty",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.3441,
+            "y": 0.016,
+            "width": 0.3118,
+            "height": 0.042
+          },
+          "children": []
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "Cellular",
+          "value": "No signal",
+          "enabled": true,
+          "frame": {
+            "x": 0.7081,
+            "y": 0.0286,
+            "width": 0.0506,
+            "height": 0.0156
+          },
+          "children": []
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "",
+          "value": "SSID, 3 of 3 Wi-Fi bars",
+          "enabled": true,
+          "frame": {
+            "x": 0.7811,
+            "y": 0.0297,
+            "width": 0.0439,
+            "height": 0.0145
+          },
+          "children": [],
+          "id": "3 of 3 Wi-Fi bars"
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "100% battery power",
+          "value": "Not charging",
+          "enabled": true,
+          "frame": {
+            "x": 0.8474,
+            "y": 0.029,
+            "width": 0.0721,
+            "height": 0.0156
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "_meta": {
+    "runtimeId": "8f38263a-4ff0-4ed2-9d46-3f93ba87f5d9"
+  }
+}

@@ -1,5 +1,7 @@
 import SwiftUI
 import FlintCore
+import UserNotifications
+import UIKit
 
 /// First run: Welcome, then the one permission Flint needs. "Not now" lands on Today, which
 /// keeps offering Screen Time access until it is granted.
@@ -99,6 +101,9 @@ private struct PermissionsView: View {
     @ObservedObject var auth: AuthorizationModel
     let onFinish: () -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var notifications = CompletionNotificationSettingsModel()
+    @State private var skippedNotifications = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -126,6 +131,24 @@ private struct PermissionsView: View {
                                 symbol: "shield", title: "Block apps and sites", detail: "Uses Screen Time",
                                 status: auth.status == .approved ? "Allowed" : "Required")
                             // Optional permission rows go here, in the same style.
+                            OnboardingPermissionRow(symbol: "bell", title: "Tell me when focus time ends",
+                                detail: "Notifications · optional", status: LocalizedStringKey(notifications.statusText))
+                            if notifications.status == .notDetermined && !skippedNotifications {
+                                Button(notifications.isRequesting ? "Requesting…" : "Allow notifications", action: notifications.request)
+                                    .buttonStyle(BoneButtonStyle())
+                                    .disabled(notifications.isRequesting)
+                                    .accessibilityIdentifier("onboarding.notifications.request")
+                                Button("Not now") { skippedNotifications = true }
+                                    .buttonStyle(QuietButtonStyle())
+                                    .accessibilityLabel("Skip optional notifications")
+                                    .accessibilityIdentifier("onboarding.notifications.skip")
+                            } else if notifications.showsSettingsLink {
+                                Link("Open notification settings", destination: URL(string: UIApplication.openSettingsURLString)!)
+                                    .font(FlintFont.text(14, weight: .medium))
+                                    .foregroundStyle(FlintBrand.bone)
+                                    .frame(minHeight: 44)
+                                    .accessibilityIdentifier("onboarding.notifications.settings")
+                            }
                         }
                         .overlay(alignment: .top) { FlintHairline(opacity: 0.10) }
                         .padding(.top, 26)
@@ -146,6 +169,7 @@ private struct PermissionsView: View {
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel("Skip setup for now")
                             .accessibilityIdentifier("onboarding.skip")
                         }
                         .frame(maxWidth: .infinity)
@@ -157,6 +181,8 @@ private struct PermissionsView: View {
                 .clipped()
             }
         }
+        .onAppear { notifications.refresh() }
+        .onChange(of: scenePhase) { if $0 == .active { notifications.refresh() } }
     }
 
     /// The reference breaks the title after "guard"; large text wraps it naturally instead.
