@@ -35,6 +35,9 @@ data class OpenTransition(
  * anyway" (spending an extra recorded open via [recordOpen]) is up to the limit's `breakLevel`
  * — EASY/HARDER may, HARDCORE must not (Emergency Pass excepted). That wiring is the
  * service/UI's job.
+ *
+ * **Superseded by [OpenCreditPolicy]** (ADR-012: explicit timed credits instead of launch counting). Still the live
+ * authority until the coordinator is rewired (lane C, C4b); do not add new callers.
  */
 class OpenLimitPolicy {
 
