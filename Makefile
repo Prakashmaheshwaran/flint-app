@@ -5,6 +5,8 @@ IOS_DIR     := ios-app
 ANDROID_DIR := android-app
 # Keep Xcode outputs with the checkout so archiving a worktree reclaims them.
 IOS_DERIVED_DATA ?= $(IOS_DIR)/DerivedData
+IOS_SIM ?= iPhone 17
+AVD ?= flint-test
 # One resolver for recipes, parse-time shell calls, setup, and sourced terminals.
 # The wrapper accepts GNU Make 3.81's ordinary -c interface, without .SHELLFLAGS.
 SHELL := "$(CURDIR)/scripts/flint-shell.sh"
@@ -90,12 +92,35 @@ verify-ios: ios-build ios-test ## Run the iOS CI gate locally
 verify: verify-android verify-ios ## Run both platform gates
 	@echo "All gates passed."
 
+gates: ## Run AGENTS.md gates for changed paths vs origin/main (DRY_RUN=1 plans only)
+	@DRY_RUN="$(DRY_RUN)" FLINT_MAKE="$(MAKE)" bash scripts/agent/gates.sh
+
+ios-run: ios-gen ## Build, attach, install and launch on IOS_SIM (default: iPhone 17)
+	@IOS_DIR="$(IOS_DIR)" IOS_DERIVED_DATA="$(IOS_DERIVED_DATA)" IOS_SIM="$(IOS_SIM)" \
+		bash scripts/agent/ios-run.sh
+
+android-run: ## Attach AVD (default: flint-test), build, install and launch debug
+	@ANDROID_DIR="$(ANDROID_DIR)" AVD="$(AVD)" FLINT_MAKE="$(MAKE)" bash scripts/agent/android-run.sh
+
+logs-ios: ## Stream Flint process logs from IOS_SIM (does not boot the simulator)
+	@IOS_SIM="$(IOS_SIM)" bash scripts/agent/logs-ios.sh
+
+logs-android: ## Dump recent logs for Flint's running Android process on AVD
+	@AVD="$(AVD)" bash scripts/agent/logs-android.sh
+
+pr-status: ## Read current-branch PR, checks and recent CI runs (requires gh)
+	@bash scripts/agent/pr-status.sh
+
+ancestry: ## Fetch main and report ahead/behind and origin/main ancestry (no remote writes)
+	@bash scripts/agent/ancestry.sh
+
 selftest: ## Run the device-free script selftests (no emulator, Gradle, or Xcode needed)
 	@bash scripts/flint-env-selftest.sh
 	@bash scripts/orca-setup-selftest.sh
 	@bash scripts/android-verify-selftest.sh
 	@bash scripts/check-release-version-selftest.sh
 	@python3 -m unittest discover -s scripts -p 'test_*.py'
+	@python3 scripts/agent/selftest.py
 
 # Run this BEFORE you cut the tag, while version mistakes are still a working-tree edit.
 release-check: ## Check the tree is consistent with a release tag: make release-check TAG=v0.2.0
@@ -112,4 +137,5 @@ clean-orphans: ## Preview stale Flint host artifacts/devices; delete only with C
 	@bash scripts/clean-devices.sh --orphans $(if $(filter 1,$(CONFIRM)),--confirm,)
 
 .PHONY: help env doctor ios-gen ios ios-build ios-test android android-release android-install android-test \
-	verify verify-ios verify-android selftest release-check clean clean-devices clean-orphans
+	verify verify-ios verify-android selftest release-check clean clean-devices clean-orphans \
+	gates ios-run android-run logs-ios logs-android pr-status ancestry
