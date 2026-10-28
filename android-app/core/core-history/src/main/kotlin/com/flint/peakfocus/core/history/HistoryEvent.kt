@@ -39,8 +39,10 @@ data class HistoryEvent(
     val recoveryEnd: Long? = null,
     /** Original line retains future fields byte-for-byte through compaction. */
     val originalLine: String? = null,
+    /** A resource-bounded envelope read preserves unsupported payloads without aggregating them. */
+    val opaque: Boolean = false,
 ) {
-    val knownType: HistoryEventType? get() = if (v == 1) HistoryEventType.fromWire(type) else null
+    val knownType: HistoryEventType? get() = if (v == 1 && !opaque) HistoryEventType.fromWire(type) else null
 }
 
 data class HistorySnapshot(

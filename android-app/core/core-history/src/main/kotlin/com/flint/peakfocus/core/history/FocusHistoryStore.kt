@@ -2,6 +2,7 @@ package com.flint.peakfocus.core.history
 
 import java.io.File
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
 import java.security.MessageDigest
 import java.time.Clock
 import java.time.ZoneId
@@ -44,15 +45,22 @@ class FocusHistoryStore(
         if (snapshot.degraded) rewriteLog(snapshot.events)
         val existing = snapshot.events.mapTo(mutableSetOf()) { it.id }
         val additions = events(snapshot).filter { existing.add(it.id) }
+        val accepted = snapshot.events.toMutableList()
         additions.forEach { event ->
-            require(event.knownType != HistoryEventType.COMPLETED || event.at <= clock.millis()) {
-                "Completion cannot precede its logical deadline"
+            if (event.knownType == HistoryEventType.COMPLETED) {
+                require(event.at <= clock.millis()) { "Completion cannot be in the future" }
+                val plan = accepted.filter { it.session == event.session && it.knownType in setOf(
+                    HistoryEventType.STARTED, HistoryEventType.RESCHEDULED) }.sortedBy { it.at }.lastOrNull()
+                require(plan == null || (plan.plannedEnd != null && event.at >= plan.plannedEnd)) {
+                    "Completion cannot precede its effective logical deadline"
+                }
             }
             val encoded = HistoryCodec.encode(event)
             HistoryCodec.decode(encoded) // reject invalid writes; never corrupt the durable log
             val bytes = (encoded + "\n").toByteArray(Charsets.UTF_8)
             require(bytes.size <= HARD_CAP) { "Event exceeds log cap" }
             FileOutputStream(log, true).use { stream -> stream.write(bytes); stream.flush(); stream.fd.sync() }
+            accepted += event
         }
         snapshot = readLocked()
         compactIfNeeded(snapshot)
@@ -91,25 +99,42 @@ class FocusHistoryStore(
 
     private fun readLocked(): HistorySnapshot {
         check(directory.isDirectory || directory.mkdirs()) { "History directory unavailable" }
-        val meta = readMetadata()
+        var meta = readMetadata()
         val createdAt = meta.created
         val clearedAt = meta.cleared
         lastCompaction = meta.compactedDay
         degraded = degraded || meta.degraded
         if (!log.exists()) syncWrite(log, byteArrayOf())
-        val bytes = log.readBytes()
-        val text = bytes.toString(Charsets.UTF_8)
+        if (log.length() > READ_CAP) {
+            // Preserve the original before resetting. Never allocate an unbounded external file.
+            quarantine(log)
+            atomicWrite(log, byteArrayOf())
+            degraded = true
+            meta = meta.copy(degraded = true, pendingClear = null, keepSessions = emptySet())
+            writeMetadata(meta)
+        }
         val events = mutableListOf<HistoryEvent>()
         var bad = false
-        val lines = text.split('\n')
-        lines.forEachIndexed { index, line ->
-            if (index == lines.lastIndex && line.isEmpty()) return@forEachIndexed
-            if (index == lines.lastIndex) { bad = true; return@forEachIndexed }
-            try { events += HistoryCodec.decode(line) } catch (_: Exception) { bad = true }
+        val terminated = log.length() == 0L || RandomAccessFile(log, "r").use {
+            it.seek(it.length() - 1); it.read() == '\n'.code
+        }
+        log.bufferedReader().use { reader ->
+            var line = reader.readLine()
+            while (line != null) {
+                val next = reader.readLine()
+                if (next == null && !terminated) bad = true else {
+                    try {
+                        val event = HistoryCodec.decode(line)
+                        events += event
+                        if (event.opaque && event.v == 1 && HistoryEventType.fromWire(event.type) != null) bad = true
+                    } catch (_: Exception) { bad = true }
+                }
+                line = next
+            }
         }
         if (bad) {
             degraded = true
-            quarantine(bytes)
+            quarantine(log)
             writeMetadata(meta.copy(degraded = true))
         }
         if (meta.pendingClear != null) {
@@ -134,6 +159,11 @@ class FocusHistoryStore(
             // A pre-existing log without metadata must not invent an earlier history start.
             writeMetadata(Metadata(clock.millis()))
         }
+        if (metadata.length() > HistoryCodec.MATERIALIZATION_LIMIT) {
+            quarantine(metadata, "metadata")
+            degraded = true
+            return Metadata(clock.millis(), degraded = true).also { writeMetadata(it) }
+        }
         val bytes = metadata.readBytes()
         return try {
             val fields = FlatJson.decode(bytes.toString(Charsets.UTF_8))
@@ -141,11 +171,12 @@ class FocusHistoryStore(
             fun long(key: String) = fields[key]?.let { it as? Long ?: error("Invalid $key") }
             val created = long("createdAt") ?: error("History metadata unavailable")
             val pending = long("pendingClear")
-            val keep = fields["keepSessions"]?.let { value ->
-                (value as? List<*>)?.map { it as? String ?: error("Invalid retained session") }?.toSet()
-                    ?: error("Invalid retained sessions")
+            val retained = fields["keepSessions"]
+            require(pending == null || retained is List<*>) { "Invalid clear intent" }
+            val keep = retained?.let { value ->
+                (value as? List<*>)?.map { (it as? String)?.takeIf(String::isNotBlank)
+                    ?: error("Invalid retained session") }?.toSet() ?: error("Invalid retained sessions")
             }.orEmpty()
-            require(pending == null || fields.containsKey("keepSessions"))
             val flag = fields["degraded"]?.let { it as? Boolean ?: error("Invalid diagnostic") } ?: false
             Metadata(created, long("clearedAt"), long("compactedDay"), flag, pending, keep)
         } catch (e: Exception) {
@@ -177,7 +208,7 @@ class FocusHistoryStore(
         val dependents = mutableMapOf<String, MutableList<Int>>()
         owners.forEachIndexed { index, ids -> ids.forEach { dependents.getOrPut(it) { mutableListOf() }.add(index) } }
         val references = owners.map { ids -> ids.count { it in retainedIds } }.toIntArray()
-        val sizes = snapshot.events.map { (HistoryCodec.encode(it) + "\n").toByteArray(Charsets.UTF_8).size.toLong() }
+        val sizes = snapshot.events.map { utf8Size(HistoryCodec.encode(it)) + 1 }
         var size = snapshot.events.indices.sumOf { if (references[it] > 0) sizes[it] else 0 }
         groups.entries.sortedBy { (_, events) -> events.maxOf { it.at } }.forEach { (id, _) ->
             if (size > HARD_CAP && retainedIds.remove(id)) dependents[id].orEmpty().forEach { index ->
@@ -192,8 +223,11 @@ class FocusHistoryStore(
         state.value = readLocked()
     }
 
-    private fun rewriteLog(events: List<HistoryEvent>) = atomicWrite(log,
-        events.joinToString("") { HistoryCodec.encode(it) + "\n" }.toByteArray(Charsets.UTF_8))
+    private fun rewriteLog(events: List<HistoryEvent>) = atomicWrite(log) { stream ->
+        stream.writer(Charsets.UTF_8).apply {
+            events.forEach { write(HistoryCodec.encode(it)); write("\n") }; flush()
+        }
+    }
 
     private fun groupOwners(events: List<HistoryEvent>): Map<String, Set<String>> =
         events.groupBy { it.session }.mapValues { (id, group) -> buildSet {
@@ -206,13 +240,29 @@ class FocusHistoryStore(
     }
 
     private fun quarantine(bytes: ByteArray, label: String = "events") {
+        val source = File(directory, "quarantine-source.tmp")
+        try { syncWrite(source, bytes); quarantine(source, label) } finally { source.delete() }
+    }
+
+    private fun quarantine(source: File, label: String = "events") {
         val dir = File(directory, "quarantine")
         check(dir.isDirectory || dir.mkdirs())
-        val digest = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        fun digest(file: File): ByteArray {
+            val hash = MessageDigest.getInstance("SHA-256")
+            file.inputStream().buffered().use { stream ->
+                val buffer = ByteArray(8192)
+                while (true) { val count = stream.read(buffer); if (count < 0) break; hash.update(buffer, 0, count) }
+            }
+            return hash.digest()
+        }
+        val hash = digest(source)
+        val digest = hash.joinToString("") { "%02x".format(it) }
         // Filename includes content digest so reopening the same corrupt log never makes another copy.
         val existing = dir.listFiles().orEmpty().firstOrNull { it.name.endsWith("-$digest.jsonl") }
-        if (existing == null || !existing.readBytes().contentEquals(bytes)) {
-            atomicWrite(existing ?: File(dir, "${clock.millis()}-$label-$digest.jsonl"), bytes)
+        if (existing == null || existing.length() != source.length() || !digest(existing).contentEquals(hash)) {
+            atomicWrite(existing ?: File(dir, "${clock.millis()}-$label-$digest.jsonl")) { output ->
+                source.inputStream().use { it.copyTo(output) }
+            }
         }
         dir.listFiles().orEmpty().filter { it.extension == "jsonl" }.sortedByDescending { it.lastModified() }
             .drop(3).forEach { check(it.delete()) }
@@ -222,9 +272,30 @@ class FocusHistoryStore(
         FileOutputStream(file).use { it.write(bytes); it.flush(); it.fd.sync() }
     }
     private fun atomicWrite(file: File, bytes: ByteArray) {
+        atomicWrite(file) { it.write(bytes) }
+    }
+    private fun atomicWrite(file: File, write: (FileOutputStream) -> Unit) {
         val temporary = File(file.parentFile, file.name + ".tmp")
-        try { syncWrite(temporary, bytes); check(temporary.renameTo(file)) { "History replace failed" } }
+        try {
+            FileOutputStream(temporary).use { write(it); it.flush(); it.fd.sync() }
+            check(temporary.renameTo(file)) { "History replace failed" }
+        }
         finally { temporary.delete() }
+    }
+
+    private fun utf8Size(text: String): Long {
+        var bytes = 0L; var index = 0
+        while (index < text.length) {
+            val c = text[index++]
+            bytes += when {
+                c.code < 0x80 -> 1
+                c.code < 0x800 -> 2
+                c.isHighSurrogate() && index < text.length && text[index].isLowSurrogate() -> { index++; 4 }
+                c.isSurrogate() -> 1 // UTF-8 encoder's replacement byte
+                else -> 3
+            }
+        }
+        return bytes
     }
 
     companion object {
@@ -232,5 +303,6 @@ class FocusHistoryStore(
         const val RETENTION_MS = 400L * 24 * 60 * 60 * 1000
         const val SOFT_CAP = 1024 * 1024
         const val HARD_CAP = 5 * 1024 * 1024
+        const val READ_CAP = 2L * HARD_CAP
     }
 }

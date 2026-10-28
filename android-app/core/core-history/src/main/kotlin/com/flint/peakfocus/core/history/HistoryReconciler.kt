@@ -82,7 +82,8 @@ class HistoryReconciler(
                     it.knownType in setOf(HistoryEventType.STARTED, HistoryEventType.RESCHEDULED)
                 } ?: return@forEach
                 if (plan.plannedEnd != rule.plannedEnd) {
-                    events += event(HistoryEventType.RESCHEDULED, rule.id, now).copy(plannedEnd = rule.plannedEnd)
+                    events += event(HistoryEventType.RESCHEDULED, rule.id, minOf(now, rule.plannedEnd ?: now)).copy(
+                        plannedEnd = rule.plannedEnd, observedAt = now, inferred = true)
                 }
             }
             (snapshot.events + events).filter { it.knownType != null }.groupBy { it.session }.forEach { (id, group) ->
@@ -93,7 +94,9 @@ class HistoryReconciler(
                 val deadline = if (rule != null) rule.plannedEnd else plan.plannedEnd
                 if (deadline != null && now >= deadline) {
                     // Expiry is provable even if ActiveRulesBridge has not swept the row yet.
-                    events += event(HistoryEventType.COMPLETED, id, deadline).copy(inferred = coldStart || id in sessions)
+                    events += event(HistoryEventType.COMPLETED, id, deadline).copy(
+                        inferred = coldStart || id in sessions || now > deadline,
+                        observedAt = now.takeIf { it > deadline })
                 } else if (id !in current) {
                     events += event(HistoryEventType.ENDED_EARLY, id, now).copy(route = "unknown", inferred = coldStart)
                 }

@@ -2,6 +2,7 @@ package com.flint.peakfocus.core.history
 
 /** Known fields are strict; opaque future JSON payloads survive unchanged in originalLine. */
 object HistoryCodec {
+    const val MATERIALIZATION_LIMIT = 64 * 1024
     fun encode(event: HistoryEvent): String = event.originalLine ?: FlatJson.encode(linkedMapOf<String, Any?>(
         "v" to event.v.toLong(), "id" to event.id, "type" to event.type,
         "session" to event.session, "at" to event.at, "tz" to event.tz,
@@ -24,6 +25,8 @@ object HistoryCodec {
     })
 
     fun decode(line: String): HistoryEvent {
+        val envelope = HistoryEnvelope.read(line)
+        if (envelope.v > 1 || HistoryEventType.fromWire(envelope.type) == null || envelope.opaque || line.length > MATERIALIZATION_LIMIT) return envelope.copy(opaque = true)
         val fields = FlatJson.decode(line)
         fun string(key: String): String = (fields[key] as? String)?.takeIf { it.isNotBlank() }
             ?: error("Missing string: $key")
