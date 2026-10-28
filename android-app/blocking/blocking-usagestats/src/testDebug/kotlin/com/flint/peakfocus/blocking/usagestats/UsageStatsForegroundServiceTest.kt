@@ -131,7 +131,6 @@ class UsageStatsForegroundServiceTest {
         }
         controller.create(); startLoop(); scheduler.runCurrent()
         val calls = CountingUsageStats.calls
-        val lease = ProtectionStatusHub.status.value.validUntilElapsedRealtimeMs
         ShadowSystemClock.advanceBy(Duration.ofMillis(10_000))
         fresh = false
         PathBNotification.requestRefresh(); scheduler.runCurrent()
@@ -142,7 +141,11 @@ class UsageStatsForegroundServiceTest {
         assertEquals(0L, n.timeoutAfter)
         assertTrue(n.flags and Notification.FLAG_ONGOING_EVENT != 0)
         assertEquals(calls, CountingUsageStats.calls)
-        assertEquals(lease, ProtectionStatusHub.status.value.validUntilElapsedRealtimeMs)
+        // A display update at +10s must not push the service's original +90s lease to +100s.
+        // Policy publishers may independently shorten snapshot validity, so assert the live
+        // service state itself at its lease boundary instead of comparing policy deadlines.
+        ShadowSystemClock.advanceBy(Duration.ofMillis(80_000))
+        assertEquals(PathBState.UNKNOWN, health())
     }
 
     @Test fun `permission loss removes foreground and reports off with its observed reason`() {

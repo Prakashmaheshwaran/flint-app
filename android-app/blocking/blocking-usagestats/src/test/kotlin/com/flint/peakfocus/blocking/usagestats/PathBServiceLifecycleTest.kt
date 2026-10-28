@@ -15,7 +15,7 @@ class PathBServiceLifecycleTest {
     private val owner = Any()
 
     @Test fun `an accepted start request is unknown and cannot overwrite a live owner`() {
-        health.stopRequested(false, emptySet())
+        health.stopRequested(health.stopGeneration(), false, emptySet())
         health.startRequested()
         assertEquals(PathBState.UNKNOWN, events.last().state)
         health.starting(owner); health.foregroundStarted(owner)
@@ -62,19 +62,19 @@ class PathBServiceLifecycleTest {
     @Test fun `a stop request is unknown until the running instance ends`() {
         health.starting(owner); health.foregroundStarted(owner)
         health.mode(owner, FallbackMode.ENFORCING)
-        health.stopRequested(true, setOf("usage-access-missing"))
+        health.stopRequested(health.stopGeneration(), true, setOf("usage-access-missing"))
         assertEquals(Published(PathBState.UNKNOWN, setOf("usage-access-missing"), null), events.last())
         health.stopped(owner)
         assertEquals(PathBState.OFF, events.last().state)
     }
 
     @Test fun `only an observed absent service without a local owner is off`() {
-        health.stopRequested(true, emptySet())
+        health.stopRequested(health.stopGeneration(), true, emptySet())
         assertEquals(PathBState.UNKNOWN, events.last().state)
-        health.stopRequested(false, emptySet())
+        health.stopRequested(health.stopGeneration(), false, emptySet())
         assertEquals(PathBState.OFF, events.last().state)
         health.starting(owner)
-        health.stopRequested(false, emptySet())
+        health.stopRequested(health.stopGeneration(), false, emptySet())
         assertEquals(PathBState.UNKNOWN, events.last().state)
     }
 
@@ -83,6 +83,28 @@ class PathBServiceLifecycleTest {
         assertEquals(Published(PathBState.UNKNOWN, setOf("usage-access-check-failed"), null), events.last())
         health.gateFailed("foreground-stop-failed")
         assertEquals(PathBState.UNKNOWN, events.last().state)
+    }
+
+    @Test fun `a late stop result cannot erase a completed destruction report`() {
+        health.starting(owner); health.foregroundStarted(owner)
+        val generation = health.stopGeneration()
+        health.stopped(owner)
+        val count = events.size
+        health.stopRequested(generation, true, emptySet())
+        health.stopFailed(generation)
+        assertEquals(count, events.size)
+        assertEquals(PathBState.OFF, events.last().state)
+    }
+
+    @Test fun `an old stop result cannot erase a replacement service health report`() {
+        health.starting(owner); health.foregroundStarted(owner)
+        val generation = health.stopGeneration()
+        val replacement = Any()
+        health.starting(replacement); health.foregroundStarted(replacement)
+        health.mode(replacement, FallbackMode.STANDBY)
+        health.stopRequested(generation, false, setOf("usage-access-missing"))
+        health.stopFailed(generation)
+        assertEquals(Published(PathBState.STANDBY, emptySet(), 91_000L), events.last())
     }
 
     @Test fun `replacement rejects old instance completion and destruction`() {

@@ -297,11 +297,12 @@ class UsageStatsForegroundService : Service() {
         }
 
         fun stop(context: Context, degradedReasons: Set<String> = emptySet()) {
+            val observedGeneration = health.stopGeneration()
             try {
                 val wasRunning = context.stopService(Intent(context, UsageStatsForegroundService::class.java))
-                health.stopRequested(wasRunning, degradedReasons)
+                health.stopRequested(observedGeneration, wasRunning, degradedReasons)
             } catch (failure: RuntimeException) {
-                health.gateFailed("foreground-stop-failed")
+                health.stopFailed(observedGeneration)
                 Log.w("FlintFallback", "Foreground stop request unavailable", failure)
             }
         }

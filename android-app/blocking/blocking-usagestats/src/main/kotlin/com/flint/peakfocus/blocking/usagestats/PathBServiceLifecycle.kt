@@ -12,9 +12,11 @@ internal class PathBServiceLifecycle(
     private var owner: Any? = null
     private var foregroundStarted = false
     private var reasons: Set<String> = emptySet()
+    private var generation = 0L
 
     @Synchronized fun startRequested() {
         if (owner == null) {
+            generation++
             reasons = emptySet()
             publish(PathBState.UNKNOWN, reasons, null)
         }
@@ -23,6 +25,7 @@ internal class PathBServiceLifecycle(
     @Synchronized fun isOwner(instance: Any): Boolean = owner === instance
 
     @Synchronized fun starting(instance: Any) {
+        generation++
         owner = instance
         foregroundStarted = false
         reasons = emptySet()
@@ -59,15 +62,24 @@ internal class PathBServiceLifecycle(
 
     @Synchronized fun stopped(instance: Any) {
         if (owner !== instance) return
+        generation++
         owner = null
         foregroundStarted = false
         publish(PathBState.OFF, reasons, null)
     }
 
+    /** Capture before calling Android: onDestroy or a replacement may run during the binder call. */
+    @Synchronized fun stopGeneration(): Long = generation
+
     /** OFF requires stopService finding no running service and no live local instance. */
-    @Synchronized fun stopRequested(serviceWasRunning: Boolean, degradedReasons: Set<String>) {
+    @Synchronized fun stopRequested(observedGeneration: Long, serviceWasRunning: Boolean, degradedReasons: Set<String>) {
+        if (observedGeneration != generation) return
         reasons = degradedReasons.toSet()
         publish(if (owner == null && !serviceWasRunning) PathBState.OFF else PathBState.UNKNOWN, reasons, null)
+    }
+
+    @Synchronized fun stopFailed(observedGeneration: Long) {
+        if (observedGeneration == generation) gateFailed("foreground-stop-failed")
     }
 
     @Synchronized fun startFailed() {
