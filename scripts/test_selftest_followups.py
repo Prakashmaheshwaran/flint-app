@@ -1,4 +1,5 @@
 """Device-free regressions for the outer watchdog and Apple Make launchers."""
+import ast
 import importlib.util
 import json
 import os
@@ -34,6 +35,56 @@ class SelftestFollowups(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory(prefix='.selftest-followup-', dir=ROOT)
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
+
+    def python_selection(self, *, fallback):
+        # Exercise the actual entrypoint with a tiny suite, avoiding recursive
+        # selftest discovery. CLT's Python cannot perform fd-safe cleanup.
+        older = '/Library/Developer/CommandLineTools/usr/bin/python3'
+        capability = subprocess.run([older, '-B', '-c',
+                                     "import inspect, shutil, sys; sys.exit(0 if 'dir_fd' in inspect.signature(shutil.rmtree).parameters else 1)"],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+        if capability.returncode == 0:
+            self.skipTest('CLT Python already supports fd-safe cleanup')
+        scripts = self.root / 'checkout/scripts'
+        scripts.mkdir(parents=True)
+        source = (SOURCE / 'scripts/selftest.py').read_text()
+        assignment = next(node for node in ast.parse(source).body if isinstance(node, ast.Assign)
+                          and any(isinstance(target, ast.Name) and target.id == 'SUITES'
+                                  for target in node.targets))
+        lines = source.splitlines(keepends=True)
+        probe = "import inspect, shutil, sys; assert 'dir_fd' in inspect.signature(shutil.rmtree).parameters; print('compatible-python-ok', sys.executable)"
+        lines[assignment.lineno - 1:assignment.end_lineno] = [f'SUITES = [[sys.executable, "-B", "-c", {probe!r}]]\n']
+        runner = scripts / 'selftest.py'
+        runner.write_text(''.join(lines))
+        (scripts / 'selftest_processes.py').write_bytes((SOURCE / 'scripts/selftest_processes.py').read_bytes())
+        old_bin, new_bin = self.root / 'old-bin', self.root / 'new-bin'
+        old_bin.mkdir()
+        new_bin.mkdir()
+        (old_bin / 'python3').symlink_to(older)
+        (new_bin / 'python3').symlink_to(sys.executable)
+        search = str(old_bin) + (':' + str(new_bin) if fallback else '')
+        return subprocess.run([older, '-B', str(runner)], cwd=runner.parent.parent,
+                              env={'PATH': search, 'HOME': str(self.root), 'TMPDIR': str(self.root),
+                                   'PYTHONDONTWRITEBYTECODE': '1'},
+                              text=True, capture_output=True, timeout=15)
+
+    @unittest.skipUnless(Path('/Library/Developer/CommandLineTools/usr/bin/python3').is_file(),
+                         'Apple CommandLineTools Python is unavailable')
+    def test_n4_clt_python_shadowing_selects_compatible_python(self):
+        result = self.python_selection(fallback=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('compatible-python-ok', result.stdout)
+        selected = next(line.removeprefix('compatible-python-ok ') for line in result.stdout.splitlines()
+                        if line.startswith('compatible-python-ok '))
+        self.assertEqual(Path(selected).resolve(), Path(sys.executable).resolve())
+
+    @unittest.skipUnless(Path('/Library/Developer/CommandLineTools/usr/bin/python3').is_file(),
+                         'Apple CommandLineTools Python is unavailable')
+    def test_n4_no_compatible_python_fails_clearly_before_suites(self):
+        result = self.python_selection(fallback=False)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn('No compatible python3 on PATH', result.stderr)
+        self.assertNotIn('SELFTEST ', result.stdout)
 
     def test_n4_apple_make_launchers_and_symlinks_pin_gnumake(self):
         agent = load_agent()

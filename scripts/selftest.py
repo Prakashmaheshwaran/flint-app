@@ -1,13 +1,46 @@
 #!/usr/bin/env python3
 """Run every device-free suite in an isolated, bounded process tree."""
+import inspect
 import os
 from pathlib import Path
 import resource
+import shutil
 import subprocess
 import sys
 import tempfile
 
 from selftest_processes import ProcessRegistry, REGISTRY_ENV
+
+
+def ensure_cleanup_python():
+    """CLT-first PATH must not silently select Apple's older Python launcher."""
+    if (getattr(shutil.rmtree, "avoids_symlink_attacks", False)
+            and "dir_fd" in inspect.signature(shutil.rmtree).parameters):
+        return
+    seen = {Path(sys.executable).resolve()}
+    probe = ("import inspect, shutil, sys; sys.exit(0 if "
+             "getattr(shutil.rmtree, 'avoids_symlink_attacks', False) and "
+             "'dir_fd' in inspect.signature(shutil.rmtree).parameters else 1)")
+    for directory in os.environ.get("PATH", "").split(os.pathsep):
+        candidate = Path(os.path.abspath(directory or os.curdir)) / "python3"
+        resolved = candidate.resolve()
+        if resolved in seen or not candidate.is_file() or not os.access(candidate, os.X_OK):
+            continue
+        seen.add(resolved)
+        try:
+            supported = subprocess.run([str(candidate), "-B", "-c", probe], timeout=3,
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if supported:
+            print(f"Selftest: {sys.executable} lacks fd-safe cleanup; using {candidate}",
+                  file=sys.stderr, flush=True)
+            os.execve(str(candidate), [str(candidate), "-B", *sys.argv],
+                      {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+    print("No compatible python3 on PATH: selftest requires symlink-safe shutil.rmtree(dir_fd). "
+          "Install a current Python or put it on PATH; cleanup safeguards remain enabled.", file=sys.stderr)
+    sys.exit(2)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SUITES = [
@@ -80,4 +113,5 @@ def main():
 
 
 if __name__ == "__main__":
+    ensure_cleanup_python()
     sys.exit(main())
