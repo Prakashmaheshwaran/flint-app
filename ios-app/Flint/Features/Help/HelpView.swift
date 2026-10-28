@@ -25,6 +25,7 @@ struct HelpView: View {
                     HelpItem(title: "Harder", text: "Ending early from the session screen asks you to wait first, so the urge has time to pass.")
                     HelpItem(title: "Hardcore", text: "The session screen has no way to end it early. An Emergency Pass can end it.")
                     HelpParagraph("A session started by a Focus mode ends when that Focus turns off.")
+                    HelpParagraph("In this version, starting a session from Shortcuts or a Focus mode replaces the one that’s running, even a Hardcore session. Stopping a Harder session from Shortcuts doesn’t wait.")
                 }
 
                 HelpSection(title: "Emergency Pass") {
@@ -36,7 +37,7 @@ struct HelpView: View {
                     HelpItem(title: "Turning off Screen Time access",
                              text: "Flint’s Screen Time access can be turned off in Settings. Flint’s blocking stops while it’s off.")
                     HelpItem(title: "Emergency calls",
-                             text: "Emergency SOS and emergency calls from the Lock Screen are iOS features outside Flint’s blocks. Apps you use for calls can be blocked like any other app, so make sure the ones you rely on stay allowed.")
+                             text: "Emergency SOS and emergency calls from the Lock Screen are part of iOS and are expected to stay available. This hasn’t been verified on a device yet. Apps you use for calls can be blocked like any other app, so make sure the ones you rely on stay allowed.")
                     HelpItem(title: "Deleting apps",
                              text: "A Hardcore session restricts deleting apps until it ends. iOS applies this to every app on this iPhone, not only Flint.")
                     HelpItem(title: "Changing the clock",
