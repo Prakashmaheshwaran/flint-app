@@ -32,9 +32,11 @@ final class FlintMonitor: DeviceActivityMonitor {
             applyOpenLimitShield(openLimit) // new day → re-arm tokens released by yesterday's grants
         } else if FlintSessionController.isSessionActivity(activity.rawValue) {
             FlintSessionController().handleMonitorEvent(.intervalDidStart, activity: activity.rawValue)
+            return // the session controller publishes its own changes
         } else {
             stopStaleActivity(activity)
         }
+        publishStatus()
     }
 
     override func intervalDidEnd(for activity: DeviceActivityName) {
@@ -49,9 +51,11 @@ final class FlintMonitor: DeviceActivityMonitor {
             // Natural expiry with the app closed/killed: ending the session clears its store,
             // which drops the shield AND the Hardcore uninstall guard living on it.
             FlintSessionController().handleMonitorEvent(.intervalDidEnd, activity: activity.rawValue)
+            return // the session controller publishes its own changes
         } else {
             stopStaleActivity(activity)
         }
+        publishStatus()
     }
 
     /// Only session registrations shorter than 15 minutes carry a warning: it marks their real
@@ -71,6 +75,13 @@ final class FlintMonitor: DeviceActivityMonitor {
         // unmatched event is stale — a no-op, never a cue to shield the session's selection.
         guard let limit = limit(forEvent: event) else { return }
         applyLimitShield(limit) // daily budget hit → shield until the day resets
+        publishStatus()
+    }
+
+    /// Re-publish the shared status projection widgets and the shield read (ADR-012 §11: no
+    /// targets in it). Content-unchanged publications skip the widget reload.
+    private func publishStatus() {
+        FlintProtectionStatus.publishAfterCommit(writer: .monitor)
     }
 
     // MARK: Lookups

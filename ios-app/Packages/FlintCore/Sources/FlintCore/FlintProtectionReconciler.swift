@@ -28,14 +28,18 @@ struct FlintOpenLimitProtectionLayer: FlintProtectionLayer {
 public final class FlintProtectionReconciler {
     private let layers: [any FlintProtectionLayer]
     private let persist: (FlintProtectionObservation) -> Void
+    private let publish: () -> Void
     private let now: () -> Date
     private var tail: Task<FlintProtectionObservation, Never>?
 
+    /// `publish` re-publishes the shared status projection once every layer has reconciled.
     public init(layers: [any FlintProtectionLayer], now: @escaping () -> Date = Date.init,
-                persist: @escaping (FlintProtectionObservation) -> Void = { $0.save() }) {
+                persist: @escaping (FlintProtectionObservation) -> Void = { $0.save() },
+                publish: @escaping () -> Void = {}) {
         self.layers = layers
         self.now = now
         self.persist = persist
+        self.publish = publish
     }
 
     @discardableResult
@@ -54,6 +58,7 @@ public final class FlintProtectionReconciler {
             }
             let observation = FlintProtectionObservation(observedAt: now(), trigger: trigger, domains: domains)
             persist(observation)
+            publish()
             NotificationCenter.default.post(name: .flintProtectionReconciled, object: nil)
             return observation
         }

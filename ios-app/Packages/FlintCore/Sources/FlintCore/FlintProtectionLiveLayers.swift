@@ -59,7 +59,12 @@ extension FlintProtectionReconciler {
                 lifecycle: FlintWebRestrictionLifecycle()
             )
         }
-    ])
+    ], publish: {
+        // The host initializes the ledger (and runs its one-time legacy pass import) so
+        // read-only peeks — extensions, the shield, App detail — find it (ADR-012 §8, §12).
+        _ = FlintProtectionLedger.appGroup()?.read()
+        FlintProtectionStatus.publishAfterCommit(writer: .host)
+    })
 
     private static func missingReport(_ domain: String) -> FlintArmingHealth.DomainReport {
         .init(enabled: 0, attempted: 0, armed: 0,
