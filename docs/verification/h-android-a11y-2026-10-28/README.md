@@ -12,6 +12,11 @@ at rebased commit `2a9326fc64c5f31a4d69918fc0ff7fc82af18527` (verified with `git
 Both `make android-run` invocations used the Android heavy semaphore and the device
 session held `flint-heavy device -- sleep 2700`.
 
+The final picker string changes the captured clause “Flint never blocks them” to
+“Rules never block them.” This scopes the note to the verified rule safety floor
+while lane C's separate Settings/uninstall-guard removal (#105) is still pending.
+The lane H lead requested this copy correction without recapturing the screenshots.
+
 ## Captures and observations
 
 - `welcome-font-1.png`: font scale 1.0; mark/title/tagline, claims, Begin and footer
