@@ -15,6 +15,8 @@ struct FlintGlanceInput: Equatable {
         let id: String
         let cause: Cause
         let tier: String
+        /// Must come from a report for this exact occurrence, not aggregate rule health.
+        let isArmed: Bool
         let startedAt: Date
         let endsAt: Date
     }
@@ -85,10 +87,10 @@ struct FlintGlancePresentation: Equatable {
             }
         }
         switch status {
-        case .idle: title = "No active protection"; detail = "Open Flint"
+        case .idle: title = "No protection at last check"; detail = "Open Flint"
         case .saved: title = "Not armed"; detail = "Open Flint to review"
-        case .armed: title = "Protection armed"; detail = "Registration accepted"
-        case .enforcing: title = "Protection enforcing"; detail = "Reported by Flint"
+        case .armed: title = "Armed at last check"; detail = "Registration accepted"
+        case .enforcing: title = "Enforcing at last check"; detail = "Reported by Flint"
         case .suspended: title = "Protection suspended"; detail = "Open Flint to review"
         case .pass: title = "Emergency Pass active"; detail = "Protection in recovery"
         case .degraded: title = "Protection degraded"; detail = "Open Flint to review"
@@ -116,9 +118,13 @@ struct FlintGlancePresentation: Equatable {
                 historyValue = "No sessions yet"; historyNote = nil
             case .degraded, .value:
                 let duration = history.seconds.map(Self.duration) ?? "No data"
-                historyValue = history.inProgress ? "\(duration) · in progress" : duration
+                let supported = valid && !expired && (input.session.map { date < $0.endsAt } ?? true)
+                if history.inProgress {
+                    historyValue = supported ? "\(duration) · in progress at update" : "\(duration) · as of update"
+                } else { historyValue = duration }
                 if history.availability == .degraded { historyNote = "Some history couldn't be read" }
-                else { historyNote = history.inProgress ? "In progress · as of update" : nil }
+                else if history.inProgress { historyNote = supported ? "In progress · as of update" : "Open Flint to refresh" }
+                else { historyNote = nil }
             }
         }
     }
@@ -154,7 +160,8 @@ struct FlintGlanceActivityPlan: Equatable {
               let checked = input.checkedAt, checked <= date,
               let valid = input.validUntil, valid > date, valid > checked,
               let session = input.session, session.cause != .other,
-              !session.id.isEmpty, !session.tier.isEmpty,
+              session.isArmed, !session.id.isEmpty,
+              ["Easy", "Harder", "Hardcore"].contains(session.tier),
               session.startedAt <= date, session.endsAt > date,
               session.endsAt > session.startedAt,
               let protectionEnd = input.protectionEndsAt, protectionEnd > date else { return nil }

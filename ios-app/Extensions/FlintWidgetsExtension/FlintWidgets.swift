@@ -113,14 +113,20 @@ private struct FlintGlanceWidgetView: View {
                 Text(model.historyNote ?? model.detail).font(.caption2).foregroundStyle(FlintBrand.mist)
                     .lineLimit(1)
             }
-            Text("Open Flint").font(.caption2).foregroundStyle(FlintBrand.ember)
+            HStack(spacing: 3) {
+                if let checked = model.checkedAt {
+                    Text("Checked")
+                    Text(checked, style: .time)
+                } else { Text("Open Flint") }
+            }
+            .font(.caption2).foregroundStyle(FlintBrand.ember).lineLimit(1)
         }
         .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder private var nextOccurrence: some View {
         if let start = model.nextStart {
-            HStack(spacing: 3) { Text("Next"); Text(start, style: .time) }
+            HStack(spacing: 3) { Text("Next"); Text(start, format: .dateTime.weekday(.abbreviated).hour().minute()) }
         } else { Text("Next: open Flint to check") }
     }
 

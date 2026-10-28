@@ -7,12 +7,13 @@ final class FlintGlanceTests: XCTestCase {
     private func input(_ state: FlintGlanceInput.Protection = .enforcing,
                        checked: TimeInterval = -10, valid: TimeInterval = 60,
                        end: TimeInterval = 600, session: Bool = true,
+                       sessionArmed: Bool = true,
                        cause: FlintGlanceInput.Session.Cause = .manual,
                        history: FlintGlanceInput.History.Availability = .value,
                        seconds: TimeInterval? = 125, inProgress: Bool = false) -> FlintGlanceInput {
         .init(protection: state, checkedAt: now.addingTimeInterval(checked),
               validUntil: now.addingTimeInterval(valid),
-              session: session ? .init(id: "fixture", cause: cause, tier: "Harder",
+              session: session ? .init(id: "fixture", cause: cause, tier: "Harder", isArmed: sessionArmed,
                                       startedAt: now.addingTimeInterval(-300),
                                       endsAt: now.addingTimeInterval(end)) : nil,
               protectionEndsAt: now.addingTimeInterval(end),
@@ -83,6 +84,7 @@ final class FlintGlanceTests: XCTestCase {
             XCTAssertNil(plan(input(state)), "\(state)")
         }
         XCTAssertNil(plan(input(session: false)))
+        XCTAssertNil(plan(input(sessionArmed: false)))
     }
 
     func testActivityRequiresOptInAndOSAuthorization() {
@@ -131,6 +133,19 @@ final class FlintGlanceTests: XCTestCase {
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: now)!
         let model = FlintGlancePresentation(input(), at: tomorrow, calendar: calendar)
         XCTAssertEqual(model.historyValue, "Unavailable")
+    }
+
+    func testCachedRunningHistoryWithdrawsProgressAtUnsupportedBoundaries() {
+        let value = input(inProgress: true)
+        XCTAssertTrue(FlintGlancePresentation(value, at: now).historyValue.contains("in progress at update"))
+        for offset: TimeInterval in [60, 600] {
+            let model = FlintGlancePresentation(value, at: now.addingTimeInterval(offset))
+            XCTAssertEqual(model.historyValue, "2m · as of update")
+            XCTAssertFalse(model.historyValue.contains("in progress"))
+            XCTAssertEqual(model.historyNote, "Open Flint to refresh")
+        }
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now)!
+        XCTAssertEqual(FlintGlancePresentation(value, at: tomorrow).historyValue, "Unavailable")
     }
 
     func testDurationNeverInventsOrOverflows() {

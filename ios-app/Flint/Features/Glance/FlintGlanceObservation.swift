@@ -72,7 +72,7 @@ final class FlintGlanceActivityController {
         var kept: Activity<FlintFocusActivityAttributes>?
         for activity in activities {
             if let plan, activity.attributes.sessionID == plan.sessionID, kept == nil,
-               activity.activityState == .active || activity.activityState == .stale {
+               isOngoing(activity) {
                 kept = activity
             } else {
                 await end(activity)
@@ -111,6 +111,12 @@ final class FlintGlanceActivityController {
         if #available(iOS 16.2, *) { await activity.end(nil, dismissalPolicy: .immediate) }
         else { await activity.end(using: nil, dismissalPolicy: .immediate) }
         lastStates.removeValue(forKey: activity.id)
+    }
+
+    private func isOngoing(_ activity: Activity<FlintFocusActivityAttributes>) -> Bool {
+        if activity.activityState == .active { return true }
+        if #available(iOS 16.2, *) { return activity.activityState == .stale }
+        return false
     }
 }
 
