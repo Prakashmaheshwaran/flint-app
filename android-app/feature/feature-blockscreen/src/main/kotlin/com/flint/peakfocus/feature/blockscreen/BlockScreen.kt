@@ -516,7 +516,7 @@ private fun BreakActions(
     when (affordance) {
         BreakAffordance.Saving -> CircularProgressIndicator(modifier = modifier.size(32.dp))
         BreakAffordance.Unavailable -> Text(
-            "Couldn't save. Try again.",
+            "Protection state unavailable",
             modifier = modifier,
             color = MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.bodyMedium,

@@ -31,11 +31,13 @@ object BlockExemptions {
     @Volatile private var committed = Projection(-1, emptyList())
 
     /** Replace only the durable projection. Call ONLY with a Ready or acknowledged snapshot. */
-    fun restoreCommitted(receipts: Collection<PersistedExemption>, nowEpochMs: Long, revision: Long) {
+    fun restoreCommitted(receipts: Collection<PersistedExemption>, nowEpochMs: Long, revision: Long, bootSessionId: String) {
         require(revision >= 0)
         synchronized(projectionLock) {
             if (revision < committed.revision) return
-            committed = Projection(revision, receipts.filter { it.untilEpochMs > nowEpochMs }.toList())
+            committed = Projection(revision, receipts.filter {
+                it.untilEpochMs > nowEpochMs && it.bootSessionId == bootSessionId
+            }.toList())
         }
     }
 

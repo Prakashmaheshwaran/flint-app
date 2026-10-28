@@ -18,9 +18,9 @@ class DurableGrantControllerTest {
     @Before fun before() { BlockExemptions.clearAll() }
     @After fun after() { scopes.forEach { it.cancel() }; BlockExemptions.clearAll() }
 
-    private fun controller(store: FocusStateStore, timeoutMs: Long = DurableGrantController.COMMIT_TIMEOUT_MS): DurableGrantController {
+    private fun controller(store: FocusStateStore, timeoutMs: Long = DurableGrantController.COMMIT_TIMEOUT_MS, boot: String = "boot-one"): DurableGrantController {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined).also { scopes += it }
-        return DurableGrantController(store, scope, { now }, { 0L }, timeoutMs)
+        return DurableGrantController(store, scope, { now }, { 0L }, boot, timeoutMs)
     }
     private fun request(
         id: GrantRequestId = GrantRequestId.issue(now), name: String = pkg, level: BreakLevel = BreakLevel.EASY,
@@ -294,10 +294,10 @@ class DurableGrantControllerTest {
         val command = request()
         grants.request(command, true)
         val saved = snapshot(store)
-        assertTrue(grants.recordOpen(command.id, pkg, null) is GrantResult.Unavailable)
+        assertTrue(grants.recordOpen(command.id, pkg, OpenLimit(pkg, 99)) is GrantResult.Unavailable)
         assertEquals(saved, snapshot(store))
         val normal = GrantRequestId.issue(now)
-        grants.recordOpen(normal, "com.other", null)
+        grants.recordOpen(normal, "com.other", OpenLimit("com.other", 99))
         assertEquals(GrantResult.Denied, grants.request(request(id = normal, name = "com.other"), true))
     }
 
@@ -305,7 +305,7 @@ class DurableGrantControllerTest {
         val store = InMemoryFocusStateStore()
         val old = GrantRequestId(now - DurableGrantController.RETRY_HORIZON_MS - 1, UUID.randomUUID().toString())
         val expired = PersistedExemption(old.prefix + "0", pkg, "cause", ExemptionKind.BREAK, now - 1)
-        val active = expired.copy(requestId = "old-active", packageName = "com.active", untilEpochMs = now + 100_000)
+        val active = expired.copy(requestId = "old-active", packageName = "com.active", untilEpochMs = now + 100_000, bootSessionId = "boot-one")
         store.transact { FocusMutation(it.copy(exemptions = listOf(expired, active).associateBy { r -> r.requestId }), Unit) }
         val grants = controller(store)
         grants.request(request(name = "com.new"), true)
@@ -321,9 +321,9 @@ class DurableGrantControllerTest {
         val store = InMemoryFocusStateStore()
         val grants = controller(store)
         val id = GrantRequestId.issue(now)
-        grants.recordOpen(id, pkg, null)
+        grants.recordOpen(id, pkg, OpenLimit(pkg, 99))
         now += DurableGrantController.RETRY_HORIZON_MS
-        assertTrue(grants.recordOpen(id, pkg, null) is GrantResult.Unavailable)
+        assertTrue(grants.recordOpen(id, pkg, OpenLimit(pkg, 99)) is GrantResult.Unavailable)
         assertEquals(1, snapshot(store).openCounts.opensFor(pkg))
     }
 
@@ -333,7 +333,7 @@ class DurableGrantControllerTest {
             val store = InMemoryFocusStateStore()
             val grants = controller(store)
             val id = GrantRequestId.issue(now)
-            if (normalOpen) grants.recordOpen(id, pkg, null)
+            if (normalOpen) grants.recordOpen(id, pkg, OpenLimit(pkg, 99))
             else grants.request(request(id = id), true)
             now += DurableGrantController.RETRY_HORIZON_MS + 1
             grants.request(request(name = "com.other"), true)
@@ -342,7 +342,7 @@ class DurableGrantControllerTest {
             assertTrue(saved.minimumRequestEpochMs > id.issuedAtEpochMs)
             now = id.issuedAtEpochMs + 1 // old identity would pass an epoch-only freshness check
             val reopened = controller(store)
-            val result = if (normalOpen) reopened.recordOpen(id, pkg, null)
+            val result = if (normalOpen) reopened.recordOpen(id, pkg, OpenLimit(pkg, 99))
                 else reopened.request(request(id = id), true)
             assertTrue(result is GrantResult.Unavailable)
             assertEquals(saved, snapshot(store))
@@ -365,12 +365,15 @@ class DurableGrantControllerTest {
         val store = InMemoryFocusStateStore()
         val receipts = (0 until DurableGrantController.MAX_RECEIPTS).associate { index ->
             val id = "active-$index"
-            id to PersistedExemption(id, "com.$index", "cause", ExemptionKind.BREAK, now + 100_000)
+            id to PersistedExemption(id, "com.$index", "cause", ExemptionKind.BREAK, now + 100_000, "boot-one")
         }
         store.transact { FocusMutation(it.copy(exemptions = receipts), Unit) }
         val saved = snapshot(store)
         assertTrue(controller(store).request(request(), true) is GrantResult.Unavailable)
-        assertEquals(saved, snapshot(store))
+        val refused = snapshot(store)
+        assertEquals(saved.exemptions, refused.exemptions)
+        assertEquals(saved.breakSession, refused.breakSession)
+        assertEquals(saved.emergencyPass, refused.emergencyPass)
     }
 
     @Test fun expiredCapacityIsReclaimedBeforeAcceptingTheNextRequest() = runBlocking {
@@ -404,5 +407,70 @@ class DurableGrantControllerTest {
         reads.value = StorageState.Ready(old)
         assertTrue(BlockExemptions.isExempt(pkg, now))
         assertEquals(1, grants.lastGood!!.breakSession.breaksTaken)
+    }
+
+    @Test fun unconfiguredAppSwitchesCreateNoCounterWritesOrReceiptPressure() = runBlocking {
+        val store = FaultStore()
+        val grants = controller(store)
+        repeat(DurableGrantController.MAX_RECEIPTS * 2) { index ->
+            assertEquals(GrantResult.OpenAllowed, grants.recordOpen(GrantRequestId.issue(now), "com.$index", null))
+        }
+        assertEquals(0, store.writes)
+        assertEquals(FocusSnapshot(), snapshot(store.backing))
+        assertTrue(grants.request(request(), true) is GrantResult.Granted)
+    }
+
+    @Test fun partialReclamationCommitsEvenWhenTheRequestedScopeStillCannotFit() = runBlocking {
+        val store = InMemoryFocusStateStore()
+        val entries = (0 until DurableGrantController.MAX_RECEIPTS - 1).associate { index ->
+            val id = "active-$index"
+            id to PersistedExemption(id, "com.$index", "cause", ExemptionKind.BREAK, now + 100_000, "boot-one")
+        }
+        val old = GrantRequestId(now - DurableGrantController.RETRY_HORIZON_MS, UUID.randomUUID().toString())
+        val expired = PersistedExemption(old.prefix + "0", "com.expired", "cause", ExemptionKind.BREAK, now - 1, "boot-one")
+        store.transact { FocusMutation(it.copy(exemptions = entries + (expired.requestId to expired)), Unit) }
+        val grants = controller(store)
+        assertTrue(grants.request(request(scope = GrantScope.Packages(setOf(pkg, "com.extra"))), true) is GrantResult.Unavailable)
+        val reclaimed = snapshot(store)
+        assertEquals(entries, reclaimed.exemptions)
+        assertTrue(reclaimed.minimumRequestEpochMs > old.issuedAtEpochMs)
+        assertEquals(0, reclaimed.breakSession.breaksTaken)
+        assertTrue(grants.request(request(), true) is GrantResult.Granted)
+        assertEquals(1, snapshot(store).breakSession.breaksTaken)
+    }
+
+    @Test fun aFullNormalOpenLedgerDrainsAfterItsRetryHorizonInsteadOfWedging() = runBlocking {
+        val store = InMemoryFocusStateStore()
+        val grants = controller(store)
+        val limit = OpenLimit(pkg, DurableGrantController.MAX_RECEIPTS + 1)
+        repeat(DurableGrantController.MAX_RECEIPTS) {
+            assertEquals(GrantResult.OpenAllowed, grants.recordOpen(GrantRequestId.issue(now), pkg, limit))
+        }
+        assertTrue(grants.recordOpen(GrantRequestId.issue(now), pkg, limit) is GrantResult.Unavailable)
+        now += DurableGrantController.RETRY_HORIZON_MS
+        assertEquals(GrantResult.OpenAllowed, grants.recordOpen(GrantRequestId.issue(now), pkg, limit))
+        assertEquals(1, snapshot(store).exemptions.size)
+        assertEquals(limit.dailyOpens, snapshot(store).openCounts.opensFor(pkg))
+    }
+
+    @Test fun sameBootRestartRestoresAccessButRebootKeepsConsumptionWithoutAccessOrReplay() = runBlocking {
+        for (emergency in listOf(false, true)) {
+            BlockExemptions.clearAll()
+            val store = InMemoryFocusStateStore()
+            val command = request(emergency = emergency)
+            controller(store).request(command, true)
+            val saved = snapshot(store)
+            scopes.forEach { it.cancel() }
+            BlockExemptions.clearAll()
+            controller(store)
+            assertTrue(BlockExemptions.isExempt(pkg, now, if (emergency) BreakLevel.HARDCORE else BreakLevel.EASY))
+            assertEquals(command.id.issuedAtEpochMs + 300_000, BlockExemptions.exemptUntil(pkg, now))
+            scopes.forEach { it.cancel() }
+            BlockExemptions.clearAll()
+            val rebooted = controller(store, boot = "boot-two")
+            assertFalse(BlockExemptions.isExempt(pkg, now))
+            assertEquals(GrantResult.Denied, rebooted.request(command, true))
+            assertEquals(saved, snapshot(store))
+        }
     }
 }

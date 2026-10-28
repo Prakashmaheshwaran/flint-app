@@ -126,6 +126,9 @@ class BlockScreenCoordinator(
 
     /** Package whose current block was already reported as an intercepted open (cleared on hide). Main thread only. */
     private var interceptedPackage: String? = null
+    private var mountedPackage: String? = null
+    private var pendingSurfacePackage: String? = null
+    private var pendingSurface: Job? = null
     private val focusStore = focusStateStore ?: FlintPreferences.focusState(appContext)
     private val limitsStore = configuredLimitsStore ?: FlintPreferences.limits(appContext)
     private val rulesStore = blockRulesStore ?: FlintPreferences.blockRules(appContext)
@@ -138,7 +141,7 @@ class BlockScreenCoordinator(
     private data class Observation(val timeLimitSpent: Boolean, val epochDay: Long, val url: String?)
     private val observations = ConcurrentHashMap<String, Observation>()
 
-    private val grants = DurableGrantController(focusStore, scope, nowEpochMs, ::utcOffsetMs)
+    private val grants = DurableGrantController(focusStore, scope, nowEpochMs, ::utcOffsetMs, BootIdentity.current(appContext))
     private val openState = MutableStateFlow<StorageState<List<OpenLimit>>>(StorageState.Loading)
     private val timeState = MutableStateFlow<StorageState<List<TimeLimit>>>(StorageState.Loading)
     private val rulesState = MutableStateFlow<StorageState<List<BlockRule>>>(StorageState.Loading)
@@ -358,9 +361,11 @@ class BlockScreenCoordinator(
         if (visit?.packageName == foregroundPackage && visit.charge && !visit.paid && recordAllowedOpen &&
             decision is OpenLimitDecision.Allowed
         ) {
-            if (counterInputsReady()) queueOpen(visit)
             val limit = openLimits.firstOrNull { it.packageName == foregroundPackage }
-            if (limit != null) return OpenLimitDecision.Blocked(limit, "waiting for durable open accounting")
+            if (limit != null) {
+                if (counterInputsReady()) queueOpen(visit)
+                if (!visit.paid) return OpenLimitDecision.Blocked(limit, "waiting for durable open accounting")
+            }
         }
         return decision
     }
@@ -387,16 +392,21 @@ class BlockScreenCoordinator(
     }
 
     private fun queueOpen(visit: OpenVisits.Visit) {
+        if (openLimits.none { it.packageName == visit.packageName }) return
         if (!pendingOpens.add(visit.id.prefix)) return
         scope.launch {
             try {
-                if (safetyFloor.protectsFresh(visit.packageName)) return@launch
-                val result = grants.recordOpen(visit.id, visit.packageName, openLimits.firstOrNull { it.packageName == visit.packageName })
+                if (!counterInputsReady() || safetyFloor.protects(visit.packageName)) return@launch
+                val limit = openLimits.firstOrNull { it.packageName == visit.packageName } ?: return@launch
+                val result = grants.recordOpen(visit.id, visit.packageName, limit)
                 if (result == GrantResult.OpenAllowed) {
                     visits.acknowledge(visit)
                     failures.remove(visit.packageName)
                     runCatching { onEnforcementChanged?.invoke() }
-                } else if (result is GrantResult.Unavailable || result == GrantResult.Unconfirmed) failures.add(visit.packageName)
+                } else if (result == GrantResult.Denied) {
+                    runCatching { onEnforcementChanged?.invoke() }
+                } else if ((result is GrantResult.Unavailable || result == GrantResult.Unconfirmed) &&
+                    visits.current(visit.packageName) === visit) failures.add(visit.packageName)
             } finally {
                 pendingOpens.remove(visit.id.prefix)
                 rerenderNow()
@@ -410,11 +420,15 @@ class BlockScreenCoordinator(
      * can't attach, [onBlockSurfaceUnavailable] takes over (full-screen Activity fallback).
      */
     fun showBlocked(packageName: String, appLabel: String?, cause: BlockCause) = runOnMain {
+        showBlockedLocked(packageName, appLabel, cause, deferPendingOpen = true)
+    }
+
+    private fun showBlockedLocked(packageName: String, appLabel: String?, cause: BlockCause, deferPendingOpen: Boolean) {
         val now = nowEpochMs()
         if (cause.endsAtEpochMs != null && now >= cause.endsAtEpochMs) {
             // Stale cause: the block window already ended. Make sure nothing lingers.
             hideLocked()
-            return@runOnMain
+            return
         }
         // Defense in depth for any caller: never mount a shield on a floor surface, for any
         // reason. A new mount force-resolves the runtime floor once (a launcher or dialer made
@@ -427,15 +441,38 @@ class BlockScreenCoordinator(
         if (onFloor) {
             // Only drop this package's own shield; never reveal another app's block.
             if (visiblePackage == packageName) hideLocked()
-            return@runOnMain
+            return
         }
         val existing = shownView
+        if (deferPendingOpen && existing == null && pendingOpenHold(packageName, cause)) {
+            if (pendingSurfacePackage != packageName) {
+                pendingSurface?.cancel()
+                pendingSurfacePackage = packageName
+                pendingSurface = scope.launch {
+                    delay(PENDING_OPEN_SURFACE_GRACE_MS)
+                    runOnMain {
+                        if (pendingSurfacePackage != packageName) return@runOnMain
+                        pendingSurfacePackage = null
+                        pendingSurface = null
+                        val current = currentBlockCause(packageName, cause)
+                        if (current != null && !isExempt(packageName, current)) {
+                            showBlockedLocked(packageName, appLabel, current, deferPendingOpen = false)
+                        }
+                    }
+                }
+            }
+            return
+        }
+        pendingSurface?.cancel()
+        pendingSurface = null
+        pendingSurfacePackage = null
         if (existing != null && visiblePackage == packageName) {
             // Same app, refreshed cause (e.g. new tick, or a different rule took over).
             shownCause = cause
             shownLabel = appLabel
             existing.render(screenState(packageName, appLabel, cause, now))
-            return@runOnMain
+            reportInterception(packageName, cause, now)
+            return
         }
         if (existing != null) hideLocked() // swapping to another app's block surface
         // After the swap's hide (which clears it): this package's mount has force-resolved.
@@ -443,6 +480,7 @@ class BlockScreenCoordinator(
         // Set after hideLocked() — it clears these fields.
         shownCause = cause
         shownLabel = appLabel
+        if (mountedPackage != packageName && !pendingOpenHold(packageName, cause)) failures.remove(packageName)
         val requests = SurfaceRequests()
         surfaceRequests = requests
         val view = BlockScreenHostView(
@@ -467,7 +505,14 @@ class BlockScreenCoordinator(
         // Once per new block of this package that actually reached the user (Path B's fallback
         // re-launches every poll tick while the overlay is unavailable; those are not new
         // interceptions, and a failed attach with no fallback blocked nothing).
-        if (mounted && interceptedPackage != packageName) {
+        if (mounted) {
+            mountedPackage = packageName
+            reportInterception(packageName, cause, now)
+        }
+    }
+
+    private fun reportInterception(packageName: String, cause: BlockCause, now: Long) {
+        if (!pendingOpenHold(packageName, cause) && interceptedPackage != packageName) {
             interceptedPackage = packageName
             BlockEventHooks.openIntercepted(cause.ruleId, now)
         }
@@ -548,6 +593,16 @@ class BlockScreenCoordinator(
             counterInputsReady() && inspectOpen(packageName, includeUnpaidVisit = false) is OpenLimitDecision.Allowed
     }
 
+    /** Accounting holds are provisional, not evidence of a genuinely exhausted quota. */
+    private fun pendingOpenHold(packageName: String, cause: BlockCause): Boolean {
+        val visit = visits.current(packageName) ?: return false
+        if (cause.reason != BlockScreenReason.OPEN_LIMIT || !visit.charge || visit.paid) return false
+        val focus = grants.lastGood ?: return true
+        val now = nowEpochMs()
+        return openLimitPolicy.decide(packageName, focus.openCounts, openLimits,
+            openLimitPolicy.epochDay(now, utcOffsetMs(now))) is OpenLimitDecision.Allowed
+    }
+
     fun screenState(packageName: String, label: String?, cause: BlockCause, now: Long): BlockScreenState {
         val status = when {
             grants.state.value is StorageState.Loading || openState.value is StorageState.Loading ||
@@ -607,6 +662,11 @@ class BlockScreenCoordinator(
 
     /** Main-thread body of hide. Only call via [runOnMain]/[hideIfShown]. */
     private fun hideLocked() {
+        (visiblePackage ?: mountedPackage ?: pendingSurfacePackage)?.let { failures.remove(it) }
+        pendingSurface?.cancel()
+        pendingSurface = null
+        pendingSurfacePackage = null
+        mountedPackage = null
         ticker?.cancel()
         ticker = null
         mountCheckedPackage = null
@@ -694,5 +754,8 @@ class BlockScreenCoordinator(
 
         /** Re-check a hair after expiry so the re-evaluation never races the ledger. */
         private const val EXPIRY_SLACK_MS: Long = 250L
+
+        /** Policy stays blocked while IO is pending; avoid flashing a full screen for fast edits. */
+        internal const val PENDING_OPEN_SURFACE_GRACE_MS: Long = 100L
     }
 }

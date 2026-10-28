@@ -65,6 +65,7 @@ internal class DurableGrantController(
     scope: CoroutineScope,
     private val nowEpochMs: () -> Long,
     private val utcOffsetMs: (Long) -> Long,
+    private val bootSessionId: String,
     private val commitTimeoutMs: Long = COMMIT_TIMEOUT_MS,
 ) {
     private val mutableState = MutableStateFlow<StorageState<FocusSnapshot>>(StorageState.Loading)
@@ -82,7 +83,7 @@ internal class DurableGrantController(
         if (next is StorageState.Ready) {
             if (next.value.revision < (lastGood?.revision ?: -1L)) return@synchronized
             lastGood = next.value
-            BlockExemptions.restoreCommitted(next.value.exemptions.values, nowEpochMs(), next.value.revision)
+            BlockExemptions.restoreCommitted(next.value.exemptions.values, nowEpochMs(), next.value.revision, bootSessionId)
         }
         mutableState.value = next
     }
@@ -118,7 +119,7 @@ internal class DurableGrantController(
         val prior = current.exemptions.values.filter { it.requestId.startsWith(request.id.prefix) }
         if (prior.isNotEmpty()) {
             if (prior.map { it.packageName }.toSet() != targets.toSet() || prior.any {
-                it.causeKey != request.causeKey || it.kind != kind || it.untilEpochMs <= now
+                it.causeKey != request.causeKey || it.kind != kind || it.untilEpochMs <= now || it.bootSessionId != bootSessionId
             }) return unchanged(GrantResult.Denied)
             return unchanged(GrantResult.Granted(prior, false, now))
         }
@@ -126,16 +127,18 @@ internal class DurableGrantController(
         // Different callbacks/surfaces may have different tokens for the same accepted exit.
         // An already active exemption covers this request without spending another credit.
         val covering = current.exemptions.values.filter {
-            it.untilEpochMs > now && (!request.emergency || it.kind == ExemptionKind.EMERGENCY_PASS)
+            it.untilEpochMs > now && it.bootSessionId == bootSessionId && (!request.emergency || it.kind == ExemptionKind.EMERGENCY_PASS)
         }
         if (targets.all { target -> covering.any { it.packageName == target || it.packageName == BlockExemptions.GLOBAL_PACKAGE } }) {
             return unchanged(GrantResult.Granted(covering, false, now))
         }
-        var next = retained(current, now)
-        if (current.revision == Long.MAX_VALUE || next.exemptions.size + targets.size > MAX_RECEIPTS ||
-            !withinWireBudget(next) || now < 0 || request.durationMs > Long.MAX_VALUE - now) {
+        if (current.revision == Long.MAX_VALUE || now < 0 || request.durationMs > Long.MAX_VALUE - now) {
             return unchanged(GrantResult.Unavailable())
         }
+        var next = retained(current, now, bootSessionId)
+        if (!withinWireBudget(next)) return unchanged(GrantResult.Unavailable())
+        // Reclamation is a durable mutation even when the requested scope still cannot fit.
+        if (next.exemptions.size + targets.size > MAX_RECEIPTS) return FocusMutation(next, GrantResult.Unavailable())
         val until = minOf(now + request.durationMs, request.notAfterEpochMs ?: Long.MAX_VALUE)
         if (until <= now) return unchanged(GrantResult.Denied)
         if (request.emergency) {
@@ -156,7 +159,7 @@ internal class DurableGrantController(
         }
         val receipts = targets.mapIndexed { index, target ->
             val id = request.id.prefix + index
-            PersistedExemption(id, target, request.causeKey, kind, until)
+            PersistedExemption(id, target, request.causeKey, kind, until, bootSessionId)
         }
         next = next.copy(exemptions = next.exemptions + receipts.associateBy { it.requestId })
         if (!withinWireBudget(next)) return unchanged(GrantResult.Unavailable())
@@ -165,6 +168,8 @@ internal class DurableGrantController(
 
     /** Normal opens use an inactive receipt: it deduplicates the debit, never exempts a rule. */
     suspend fun recordOpen(id: GrantRequestId, packageName: String, limit: OpenLimit?): GrantResult {
+        if (limit == null) return GrantResult.OpenAllowed // unrestricted apps create no accounting traffic
+        if (limit.packageName != packageName) return GrantResult.Unavailable()
         if (state.value !is StorageState.Ready) return unavailable()
         val now = nowEpochMs()
         val day = opens.epochDay(now, utcOffsetMs(now))
@@ -174,16 +179,17 @@ internal class DurableGrantController(
             when {
                 !fresh(id, now, current.minimumRequestEpochMs) || !validAtom(packageName) -> FocusMutation(current, GrantResult.Unavailable())
                 previous != null && previous.packageName == packageName && previous.causeKey == OPEN_VISIT_CAUSE &&
-                    previous.kind == ExemptionKind.OPEN_LIMIT && previous.untilEpochMs == 0L ->
+                    previous.kind == ExemptionKind.OPEN_LIMIT && previous.untilEpochMs == 0L && previous.bootSessionId == bootSessionId ->
                     FocusMutation(current, GrantResult.OpenAllowed)
                 previous != null || current.revision == Long.MAX_VALUE -> FocusMutation(current, GrantResult.Unavailable())
                 opens.decide(packageName, current.openCounts, listOfNotNull(limit), day) is OpenLimitDecision.Blocked ->
                     FocusMutation(current, GrantResult.Denied)
                 opens.opensUsed(current.openCounts, packageName, day) == Int.MAX_VALUE -> FocusMutation(current, GrantResult.Unavailable())
                 else -> {
-                    val kept = retained(current, now)
-                    if (kept.exemptions.size >= MAX_RECEIPTS) FocusMutation(current, GrantResult.Unavailable()) else {
-                        val receipt = PersistedExemption(receiptId, packageName, OPEN_VISIT_CAUSE, ExemptionKind.OPEN_LIMIT, 0L)
+                    val kept = retained(current, now, bootSessionId)
+                    if (!withinWireBudget(kept)) FocusMutation(current, GrantResult.Unavailable())
+                    else if (kept.exemptions.size >= MAX_RECEIPTS) FocusMutation(kept, GrantResult.Unavailable()) else {
+                        val receipt = PersistedExemption(receiptId, packageName, OPEN_VISIT_CAUSE, ExemptionKind.OPEN_LIMIT, 0L, bootSessionId)
                         val next = kept.copy(
                             openCounts = opens.recordOpen(current.openCounts, packageName, day),
                             exemptions = kept.exemptions + (receiptId to receipt),
@@ -220,16 +226,16 @@ internal class DurableGrantController(
         // Conservative escaping budget also covers valid older records with longer atoms.
         // Refuse before invoking the codec's hard bound, rather than throwing from a UI job.
         private fun withinWireBudget(snapshot: FocusSnapshot): Boolean =
-            snapshot.exemptions.values.sumOf { 3L * (it.requestId.length + it.packageName.length + it.causeKey.length) + 100L } +
+            snapshot.exemptions.values.sumOf { 3L * (it.requestId.length + it.packageName.length + it.causeKey.length + (it.bootSessionId?.length ?: 1)) + 100L } +
                 snapshot.breaksByCause.keys.sumOf { 3L * it.length + 256L } < 4_000_000L
         private fun fresh(id: GrantRequestId, now: Long, floor: Long): Boolean =
             id.issuedAtEpochMs >= floor && id.issuedAtEpochMs <= now && now - id.issuedAtEpochMs < RETRY_HORIZON_MS &&
                 runCatching { UUID.fromString(id.nonce).toString() == id.nonce }.getOrDefault(false)
 
-        private fun retained(current: FocusSnapshot, now: Long): FocusSnapshot {
+        private fun retained(current: FocusSnapshot, now: Long, boot: String): FocusSnapshot {
             val floor = maxOf(current.minimumRequestEpochMs, (now - RETRY_HORIZON_MS + 1).coerceAtLeast(0))
             return current.copy(minimumRequestEpochMs = floor, exemptions = current.exemptions.filterValues { receipt ->
-                if (receipt.untilEpochMs > now) true else {
+                if (receipt.untilEpochMs > now && receipt.bootSessionId == boot) true else {
                     val fields = receipt.requestId.split(':')
                     val issued = fields.getOrNull(1)?.toLongOrNull()
                     fields.size == 4 && fields[0] == "f1" && issued != null &&

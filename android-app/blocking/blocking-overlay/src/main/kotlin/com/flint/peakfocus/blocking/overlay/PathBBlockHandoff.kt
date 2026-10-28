@@ -6,12 +6,18 @@ import android.view.View
 import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
 import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.core.model.ActiveRulesHolder
+import com.flint.peakfocus.core.model.EnforcementSignals
 import com.flint.peakfocus.core.model.Verdict
+import com.flint.peakfocus.core.datastore.FocusStateStore
+import com.flint.peakfocus.core.datastore.LimitsStore
+import com.flint.peakfocus.core.datastore.BlockRulesStore
 import java.util.Calendar
 import java.util.TimeZone
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
 
 /**
  * Path B's enforcement handoff: the single entry point the UsageStats poll loop calls with
@@ -101,9 +107,19 @@ object PathBBlockHandoff {
         }
     }
 
-    private fun create(appContext: Context): BlockScreenCoordinator {
+    /** Production construction, with store/surface seams for deterministic handoff tests. */
+    internal fun create(
+        appContext: Context,
+        scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+        surfaceHost: BlockScreenCoordinator.SurfaceHost? = null,
+        focusStateStore: FocusStateStore? = null,
+        limitsStore: LimitsStore? = null,
+        rulesStore: BlockRulesStore? = null,
+        safetyFloor: SafetyFloorGate? = null,
+        nowEpochMs: () -> Long = System::currentTimeMillis,
+    ): BlockScreenCoordinator {
         val overlay = OverlayController(appContext)
-        val host = object : BlockScreenCoordinator.SurfaceHost {
+        val host = surfaceHost ?: object : BlockScreenCoordinator.SurfaceHost {
             override fun attach(view: View): Boolean {
                 if (!overlay.canShow()) return false
                 overlay.show(view)
@@ -125,15 +141,25 @@ object PathBBlockHandoff {
                 }
             }
         }
+        // Defer until construction has published the singleton. A synchronous initial
+        // readiness signal can otherwise re-enter coordinator() through a live subscriber.
+        val requestEvaluation: () -> Unit = {
+            scope.launch { yield(); EnforcementSignals.detectors.requestEvaluation() }
+        }
         return BlockScreenCoordinator(
             context = appContext,
-            scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+            scope = scope,
             surfaceHost = host,
             onBlockSurfaceUnavailable = { ctx, pkg, label, cause ->
                 BlockActivity.launch(ctx, pkg, label, cause)
             },
-            // No expiry callback: the poll loop re-evaluates within a tick anyway.
-            onExemptionExpired = null,
+            onExemptionExpired = { requestEvaluation() },
+            onEnforcementChanged = requestEvaluation,
+            focusStateStore = focusStateStore,
+            configuredLimitsStore = limitsStore,
+            blockRulesStore = rulesStore,
+            safetyFloorGate = safetyFloor,
+            nowEpochMs = nowEpochMs,
         )
     }
 

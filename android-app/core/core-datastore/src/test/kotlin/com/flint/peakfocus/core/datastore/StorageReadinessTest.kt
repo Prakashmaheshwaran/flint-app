@@ -233,7 +233,7 @@ class StorageReadinessTest {
         try {
             fun open() = DataStoreFocusStateStore(PreferenceDataStoreFactory.create(
                 scope = CoroutineScope(Dispatchers.IO + owner), produceFile = { file }))
-            val emergency = receipt.copy(kind = ExemptionKind.EMERGENCY_PASS, untilEpochMs = 1_801_000)
+            val emergency = receipt.copy(kind = ExemptionKind.EMERGENCY_PASS, untilEpochMs = 1_801_000, bootSessionId = "boot-one")
             open().transact { FocusMutation(it.copy(emergencyPass = EmergencyPassState(20633, 1000),
                 exemptions = mapOf(emergency.requestId to emergency), minimumRequestEpochMs = 123), Unit) }
             owner.cancelAndJoin()
@@ -269,7 +269,7 @@ class StorageReadinessTest {
         assertEquals(BreakSessionState(2, BreakRequestState(1000, 301000)), decoded.breaksByCause["cause\n1"])
         assertEquals(0L, decoded.revision)
         assertEquals(0L, decoded.minimumRequestEpochMs)
-        assertEquals(literal.replaceFirst("H|1\n", "H|2|0|0\n"), FocusLedgerCodec.encode(decoded))
+        assertEquals(literal.replaceFirst("H|1\n", "H|2|0|0\n").replace("1801000\nB", "1801000|-\nB"), FocusLedgerCodec.encode(decoded))
     }
 
     @Test fun v1ReceiptHeaderMigrationAddsWatermarkWithoutRewritingLegacyAccounting() = runBlocking {
@@ -291,9 +291,18 @@ class StorageReadinessTest {
             store.transact { FocusMutation(it.copy(minimumRequestEpochMs = 123_456), Unit) }
             val reopened = snapshot(DataStoreFocusStateStore(disk))
             assertEquals(old.copy(revision = old.revision + 1, minimumRequestEpochMs = 123_456), reopened)
-            assertEquals("H|2|${old.revision + 1}|123456\nE|old-id|app|cause|BREAK|301000",
+            assertEquals("H|2|${old.revision + 1}|123456\nE|old-id|app|cause|BREAK|301000|-",
                 disk.values.value[PrefsKeys.FOCUS_LEDGER])
             assertEquals(legacy.asMap(), disk.values.value.asMap().filterKeys { it != PrefsKeys.FOCUS_LEDGER })
+        }
+    }
+
+    @Test fun version2BootFieldRoundTripsWhileLegacyMissingBootRemainsUnproven() {
+        val literal = "H|2|7|123\nE|id|app|cause|BREAK|301000|boot%7C1"
+        assertEquals("boot|1", FocusLedgerCodec.decode(literal).exemptions.getValue("id").bootSessionId)
+        assertEquals(literal, FocusLedgerCodec.encode(FocusLedgerCodec.decode(literal)))
+        for (header in listOf("H|1", "H|1|7", "H|2|7|123")) {
+            assertNull(FocusLedgerCodec.decode("$header\nE|old|app|cause|BREAK|301000").exemptions.getValue("old").bootSessionId)
         }
     }
 
@@ -303,6 +312,8 @@ class StorageReadinessTest {
             "H|2|1" to StorageFailure.CORRUPT,
             "H|2|1|-1" to StorageFailure.CORRUPT,
             "H|2|1|bad" to StorageFailure.CORRUPT,
+            "H|2|1|0\nE|id|app|cause|BREAK|123|" to StorageFailure.CORRUPT,
+            "H|2|1|0\nE|id|app|cause|BREAK|123|%ZZ" to StorageFailure.CORRUPT,
             "H|2|1|0|future" to StorageFailure.UNSUPPORTED_VERSION,
             "H|3|1|0" to StorageFailure.UNSUPPORTED_VERSION,
         )) {

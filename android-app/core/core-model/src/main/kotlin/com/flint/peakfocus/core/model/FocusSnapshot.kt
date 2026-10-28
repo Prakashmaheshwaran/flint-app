@@ -9,6 +9,8 @@ data class PersistedExemption(
     val causeKey: String,
     val kind: ExemptionKind,
     val untilEpochMs: Long,
+    /** Null for legacy receipts whose boot cannot be proved: consumption stays, access closes. */
+    val bootSessionId: String? = null,
 )
 
 /**

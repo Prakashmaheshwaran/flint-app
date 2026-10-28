@@ -18,8 +18,10 @@ import com.flint.peakfocus.core.model.BlockRule
 import java.util.TimeZone
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 
@@ -38,8 +40,28 @@ internal suspend fun guardCurrentFocus(store: FocusStateStore, shift: ClockShift
             openCounts = guard.guardedOpenCounts(current.openCounts, shift),
             emergencyPass = guard.guardedEmergencyPass(current.emergencyPass, shift),
             breakSession = guard.guardedBreakSession(current.breakSession, shift),
+            // Only shorten access on a measured rollback. In particular, never move an
+            // inactive normal-open receipt (until=0) into an active release interval.
+            exemptions = current.exemptions.mapValues { (_, receipt) ->
+                if (receipt.untilEpochMs == 0L || shift.wallDeltaMs >= 0) receipt
+                else receipt.copy(untilEpochMs = (receipt.untilEpochMs + shift.wallDeltaMs).coerceAtLeast(0))
+            },
         ), Unit)
     }
+
+/** Independent bounded domains: unreadable focus state must not skip valid session guards. */
+internal suspend fun applyClockGuards(focus: FocusStateStore, rules: BlockRulesStore, shift: ClockShift) = coroutineScope {
+    launch { isolateClockGuard { guardCurrentFocus(focus, shift) } }
+    launch { isolateClockGuard {
+        val snapshot = rules.rulesState.snapshotOrNull() ?: return@isolateClockGuard
+        ClockChangeGuard().guardedSessionRules(snapshot, shift).forEach { rules.upsert(it) }
+    } }
+    Unit
+}
+
+private suspend fun isolateClockGuard(block: suspend () -> Unit) {
+    try { block() } catch (cancel: CancellationException) { throw cancel } catch (_: Exception) { }
+}
 
 /**
  * Time-change re-arm (anti-bypass, spec 2.4/2.5): users can dodge schedules and daily limits
@@ -72,7 +94,6 @@ internal suspend fun guardCurrentFocus(store: FocusStateStore, shift: ClockShift
 class TimeChangeReceiver : BroadcastReceiver() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val guard = ClockChangeGuard()
 
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action
@@ -134,14 +155,11 @@ class TimeChangeReceiver : BroadcastReceiver() {
                 withTimeout(5_000) {
                     val store = FlintPreferences.focusState(appContext)
                     val rulesStore = FlintPreferences.blockRules(appContext)
-                    val (_, rules) = clockGuardSnapshot(store, rulesStore) ?: return@withTimeout
-                    if (guardCurrentFocus(store, shift) is FocusCommit.Unavailable) return@withTimeout
                     // One-shot Block Now sessions measure DURATION, not a wall deadline: shift
                     // their expiry with the injected jump so a set-forward clock can't end a
                     // Hardcore session early (nor a set-back stretch one). Upserting also
                     // restores a session the lazy expiry sweep raced to delete after the jump.
-                    guard.guardedSessionRules(rules, shift)
-                        .forEach { rulesStore.upsert(it) }
+                    applyClockGuards(store, rulesStore, shift)
                 }
             } catch (_: Exception) {
                 // Swallowed on purpose (see KDoc above): fail toward existing state, no crash

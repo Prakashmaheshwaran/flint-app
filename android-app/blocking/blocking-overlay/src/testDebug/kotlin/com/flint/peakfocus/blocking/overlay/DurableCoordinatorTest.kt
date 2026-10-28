@@ -95,6 +95,45 @@ class DurableCoordinatorTest {
         assertTrue(events.isEmpty())
     }
 
+    @Test fun loadedRulesStillEnforceWhileFocusIsUnavailableAndNoGrantCanSpend() = runBlocking {
+        val backing = InMemoryFocusStateStore()
+        val focus = object : FocusStateStore by backing {
+            override val state = MutableStateFlow<StorageState<FocusSnapshot>>(StorageState.Unavailable(StorageFailure.CORRUPT))
+        }
+        val rule = rule(BreakLevel.HARDCORE)
+        val c = coordinator(focus, rules = listOf(rule))
+        val cause = ruleBlockCause(rule, now, 0)
+        assertEquals(cause, c.evaluateBlockCause(null, pkg, cause, false))
+        assertEquals(GrantStatus.UNAVAILABLE, c.screenState(pkg, null, cause, now).grantStatus)
+        assertTrue(c.requestEmergencyPass(pkg, cause, GrantRequestId.issue(now)) is GrantResult.Unavailable)
+        assertFalse(c.canDismiss(pkg, cause))
+        assertNull(backing.state.snapshotOrNull()!!.emergencyPass.usedAtEpochMs)
+        assertTrue(events.isEmpty())
+    }
+
+    @Test fun unrestrictedForegroundSwitchesNeverQueueACounterCommit() = runBlocking {
+        val focus = PausedFocus()
+        val c = coordinator(focus, rules = emptyList())
+        repeat(32) { index ->
+            assertTrue(c.onForegroundChanged("com.example.${index - 1}", "com.example.$index") is OpenLimitDecision.Allowed)
+        }
+        assertFalse(focus.started.isCompleted)
+        assertTrue(focus.backing.state.snapshotOrNull()!!.exemptions.isEmpty())
+    }
+
+    @Test fun aFailedSaveDoesNotLabelANewlyMountedSurfaceAsFailed() = runBlocking {
+        val focus = PausedFocus().apply { fail = true; release.complete(Unit) }
+        val c = coordinator(focus, mount = true)
+        val cause = ruleBlockCause(rule(BreakLevel.EASY), now, 0)
+        c.showBlocked(pkg, null, cause)
+        assertTrue(c.requestBreak(pkg, cause, GrantRequestId.issue(now)) is GrantResult.Unavailable)
+        assertEquals(GrantStatus.FAILED, c.screenState(pkg, null, cause, now).grantStatus)
+        c.hideIfShown()
+        c.showBlocked(pkg, null, cause)
+        assertEquals(GrantStatus.READY, c.screenState(pkg, null, cause, now).grantStatus)
+        c.hideIfShown()
+    }
+
     @Test fun readinessRecoveryReevaluatesButOwnCreditWritesDoNotCreateAConfigLoop() = runBlocking {
         val backing = InMemoryFocusStateStore()
         val states = MutableStateFlow<StorageState<FocusSnapshot>>(StorageState.Loading)

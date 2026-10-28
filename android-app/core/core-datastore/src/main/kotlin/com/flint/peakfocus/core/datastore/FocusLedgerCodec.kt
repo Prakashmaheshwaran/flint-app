@@ -17,7 +17,9 @@ internal object FocusLedgerCodec {
         value.exemptions.toSortedMap().forEach { (id, grant) ->
             require(id == grant.requestId && grant.untilEpochMs >= 0)
             add(listOf("E", atom(id), atom(grant.packageName), atom(grant.causeKey), grant.kind.name,
-                grant.untilEpochMs.toString()).joinToString("|"))
+                grant.untilEpochMs.toString(), grant.bootSessionId?.let {
+                    require(it != "-"); atom(it)
+                } ?: "-").joinToString("|"))
         }
         value.breaksByCause.toSortedMap().forEach { (cause, session) ->
             val encoded = PrefsCodec.encodeBreakSession(session)
@@ -53,11 +55,13 @@ internal object FocusLedgerCodec {
             val f = row.split('|')
             when (f[0]) {
                 "E" -> {
-                    if (f.size != 6) corrupt()
+                    if (f.size !in 6..7 || (version == 1 && f.size != 6)) corrupt()
                     val id = readAtom(f[1])
                     val kind = ExemptionKind.entries.firstOrNull { it.name == f[4] } ?: future()
                     val deadline = f[5].toLongOrNull()?.takeIf { it >= 0 } ?: corrupt()
-                    val grant = PersistedExemption(id, readAtom(f[2]), readAtom(f[3]), kind, deadline)
+                    // Older v1/unshipped-v2 rows remain readable but cannot prove boot-scoped access.
+                    val boot = f.getOrNull(6)?.takeUnless { it == "-" }?.let(::readAtom)
+                    val grant = PersistedExemption(id, readAtom(f[2]), readAtom(f[3]), kind, deadline, boot)
                     if (exemptions.put(id, grant) != null) corrupt()
                 }
                 "B" -> {
