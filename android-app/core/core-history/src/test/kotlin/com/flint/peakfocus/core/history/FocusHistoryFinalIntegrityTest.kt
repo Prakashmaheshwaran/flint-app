@@ -81,6 +81,7 @@ class FocusHistoryFinalIntegrityTest {
         assertEquals(listOf("started", "rescheduled", "rescheduled"), events.map { it.type })
         assertNull(observer.diagnostic.value)
         assertEquals(0L, FocusHistoryAggregator.sessions(events, clock.now, emptySet()).single().focusedMs)
+        assertEquals(begin + 20 * minute, FocusHistoryAggregator.sessions(events, clock.now, emptySet()).single().plannedEnd)
         val bytes = File(dir, "events.v1.jsonl").readBytes()
         assertFalse(store.update { listOf(HistoryEvent(type = "rescheduled", session = "session-a", at = begin,
             tz = "UTC", plannedEnd = begin + 500 * minute),

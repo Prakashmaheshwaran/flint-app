@@ -27,6 +27,30 @@ class FocusHistoryRecoveryTest {
         override fun withZone(zone: ZoneId): Clock = this
         override fun instant(): Instant = Instant.ofEpochMilli(value)
     }
+    @Test fun R17_failedLiveEndRetriesOriginalEvidenceAfterDeadlineWithoutCompleting() = runTest {
+        val dir = temporary.newFolder(); val clock = MutableClock(begin)
+        val store = FocusHistoryStore(dir, clock)
+        val bridge = HistoryReconciler(store, clock)
+        val rule = HistoryRule("session-a", "Focus", "easy", begin + hour)
+        bridge.observe(listOf(rule))
+        val log = File(dir, "events.v1.jsonl")
+        val savedLog = File(dir, "saved-events")
+        assertTrue(log.renameTo(savedLog)); assertTrue(log.mkdir()) // injected append failure
+        clock.value = begin + hour / 2
+        bridge.observe(emptyList())
+        assertTrue(bridge.activeSessionIds.value.isEmpty())
+        assertNotNull(bridge.diagnostic.value)
+        assertTrue(log.delete()); assertTrue(savedLog.renameTo(log))
+        clock.value = begin + 2 * hour
+        bridge.observe(emptyList()); bridge.observe(emptyList())
+        val events = store.load().events
+        assertEquals(listOf("started", "ended_early"), events.map { it.type })
+        assertEquals(begin + hour / 2, events.last().at)
+        assertNull(bridge.diagnostic.value)
+        val result = FocusHistoryAggregator.sessions(events, clock.value, emptySet()).single()
+        assertEquals(SessionOutcome.ENDED_EARLY, result.outcome)
+        assertEquals(hour / 2, result.focusedMs)
+    }
     @Test fun B1_metadataCorruptionSalvagesEventsAndAppendAndClearRecoverAcrossRestarts() = runTest {
         for (bad in listOf("truncated", "{\"v\":1,\"createdAt\":\"invalid\"}", "{\"v\":1,\"createdAt\":1,\"clearedAt\":false}")) {
             val dir = temporary.newFolder(); val clock = MutableClock(begin)

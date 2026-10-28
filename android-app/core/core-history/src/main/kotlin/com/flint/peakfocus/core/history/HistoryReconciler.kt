@@ -28,6 +28,9 @@ class HistoryReconciler(
 ) {
     private var firstSuccessfulSnapshot = true
     private val observationMutex = Mutex()
+    // Public active IDs update immediately; an observed end keeps its original time
+    // until history accepts it, even if a later retry is after the planned deadline.
+    private val pendingEarlyEnds = mutableMapOf<String, Long>()
     private val active = MutableStateFlow<Set<String>>(emptySet())
     val activeSessionIds: StateFlow<Set<String>> = active.asStateFlow()
     private val readiness = MutableStateFlow(false)
@@ -63,6 +66,9 @@ class HistoryReconciler(
         val previouslyActive = active.value
         active.value = current
         val coldStart = firstSuccessfulSnapshot
+        if (!coldStart) previouslyActive.filterNot { it in current }.forEach { id ->
+            pendingEarlyEnds.putIfAbsent(id, now)
+        }
         val success = store.update { snapshot ->
             val events = mutableListOf<HistoryEvent>()
             val known = snapshot.events.filter { it.knownType != null }.groupBy { it.session }
@@ -101,13 +107,15 @@ class HistoryReconciler(
                 val deadline = if (rule != null) rule.plannedEnd else plan.plannedEnd
                 // An expired/missing rule is not proof of natural completion. Leave
                 // the occurrence open for the coordinator's durable terminal/outbox.
-                if (!coldStart && id in previouslyActive && id !in current && (deadline == null || now < deadline)) {
-                    events += event(HistoryEventType.ENDED_EARLY, id, now).copy(route = "unknown")
+                val observedEnd = pendingEarlyEnds[id]
+                if (observedEnd != null && (deadline == null || observedEnd < deadline)) {
+                    events += event(HistoryEventType.ENDED_EARLY, id, observedEnd).copy(route = "unknown")
                 }
             }
             events
         }
         if (success) {
+            pendingEarlyEnds.clear()
             firstSuccessfulSnapshot = false
             readiness.value = true
             diagnostics.value = null
