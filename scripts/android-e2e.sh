@@ -9,6 +9,8 @@ cd "$ROOT"
   exit 2
 }
 serial=${AVD:-}
+variant=${FLINT_E2E_VARIANT:-debug}
+[[ $variant == debug || $variant == release ]] || { echo 'FLINT_E2E_VARIANT must be debug or release.' >&2; exit 2; }
 [[ $serial =~ ^emulator-[0-9]+$ ]] || { echo 'AVD must be an exact booted emulator serial (emulator-N).' >&2; exit 2; }
 [[ $(adb -s "$serial" shell getprop ro.kernel.qemu | tr -d '\r') == 1 ]] || exit 2
 [[ $(adb -s "$serial" shell getprop sys.boot_completed | tr -d '\r') == 1 ]] || exit 2
@@ -61,6 +63,10 @@ collect() {
 trap collect EXIT
 export ANDROID_SERIAL="$serial"
 cd android-app
+if [[ $variant == release ]]; then
+  FLINT_E2E_OUTER_RUN_TOKEN="$run_token" bash "$ROOT/scripts/android-release-instrumentation.sh" "$serial" "$boot_id" "$run_token"
+  exit 0
+fi
 # Never retry assertions. Retain test APK so its screenshot files can be pulled on failure too.
 ./gradlew -PflintE2E=true :e2e:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.flintDisposable=true \
