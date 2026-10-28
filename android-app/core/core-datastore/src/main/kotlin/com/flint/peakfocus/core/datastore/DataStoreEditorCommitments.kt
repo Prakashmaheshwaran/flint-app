@@ -10,6 +10,7 @@ import com.flint.peakfocus.blocking.engine.*
 import com.flint.peakfocus.core.model.*
 import java.util.TimeZone
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 internal val EDITOR_COMMITMENTS_KEY = stringPreferencesKey("editor_commitments_v1")
 internal val EDITOR_VERSION_KEY = longPreferencesKey("editor_commitments_version")
@@ -22,6 +23,7 @@ class DataStoreEditorCommitmentStore(
     private val clockAtCommit: (() -> AccessClockStamp)? = null,
     private val defaultZone: () -> String = { TimeZone.getDefault().id },
 ) : EditorCommitmentStore {
+    override val changes: Flow<Unit> = dataStore.data.map { Unit }
     override val state: Flow<StorageState<EditorCommitmentState>> = dataStore.data.storageStates {
         readEditorState(it).also { _ -> if (StrictPrefsCodec.string(it, EDITOR_COMMITMENTS_KEY) != null) readHarderWait(it) }
     }
@@ -40,6 +42,8 @@ class DataStoreEditorCommitmentStore(
                 ?.boundaries?.get(ruleCauseKey(rule.id))
             val interval = boundary ?: cause?.interval
             if (!rule.enabled) rule
+            // Preserve future schedule starts for the foreground evaluator's boundary timer.
+            else if (rule.schedule != null && boundary == null) rule
             else if (rule.schedule != null && interval?.remainingMs(now) == 0L) rule.copy(enabled = false)
             else if (interval == null) rule
             else {
@@ -51,13 +55,26 @@ class DataStoreEditorCommitmentStore(
         }
     }
 
-    override suspend fun request(change: EditorChange, now: AccessClockStamp, safety: EditorSafety): EditorCommitResult = transact(now) { prefs, now ->
+    override suspend fun request(change: EditorChange, now: AccessClockStamp, safety: EditorSafety): EditorCommitResult =
+        transact(now) { prefs, stamp -> request(prefs, stamp, safety) { change } }
+
+    override suspend fun requestEnabled(ruleIds: Set<String>, enabled: Boolean, label: String, now: AccessClockStamp, safety: EditorSafety, requireAll: Boolean): EditorCommitResult =
+        transact(now) { prefs, stamp ->
+            request(prefs, stamp, safety) {
+                val current = prefs.editorRules().filter { it.id in ruleIds }
+                if (current.isEmpty() || (requireAll && current.map { it.id }.toSet() != ruleIds)) null
+                else EditorChange(label, upserts = current.map { it.copy(enabled = enabled) })
+            }
+        }
+
+    private fun request(prefs: MutablePreferences, now: AccessClockStamp, safety: EditorSafety, changeAtCommit: () -> EditorChange?): EditorCommitResult {
         var state = prepare(prefs, now)
-        validation(prefs, change, now, safety)?.let { return@transact EditorCommitResult.Rejected(it) }
+        val change = changeAtCommit() ?: return EditorCommitResult.Rejected("This rule changed. Refresh and try again.")
+        validation(prefs, change, now, safety)?.let { return EditorCommitResult.Rejected(it) }
         val expected = expected(prefs, state, change, now)
         val decision = decision(prefs, state, change, now)
-        if (decision.first == CommitmentPolicy.Outcome.DENY) return@transact EditorCommitResult.Rejected(denial(prefs, state, change, now))
-        if (state.nextId == Long.MAX_VALUE) return@transact EditorCommitResult.Rejected("Protection state unavailable. Open recovery and try again.")
+        if (decision.first == CommitmentPolicy.Outcome.DENY) return EditorCommitResult.Rejected(denial(prefs, state, change, now))
+        if (state.nextId == Long.MAX_VALUE) return EditorCommitResult.Rejected("Protection state unavailable. Open recovery and try again.")
         val operation = decision.second
         val pending = state.pending?.takeIf { it.change == change && it.expected == expected && it.outcome == decision.first }
             ?: PendingEditorChange(state.nextId, change, expected, decision.first, operation)
@@ -80,7 +97,7 @@ class DataStoreEditorCommitmentStore(
                 queued = state.queued.map { q -> q.copy(boundaries = q.boundaries.mapValues { checkpoint(it.value) }) })
         }
         prefs.putEditorState(state)
-        if (operation != null) EditorCommitResult.Waiting(pending, remaining) else EditorCommitResult.Preview(pending)
+        return if (operation != null) EditorCommitResult.Waiting(pending, remaining) else EditorCommitResult.Preview(pending)
     }
 
     override suspend fun confirm(id: Long, now: AccessClockStamp, safety: EditorSafety): EditorCommitResult = transact(now) { prefs, now ->
@@ -116,19 +133,18 @@ class DataStoreEditorCommitmentStore(
             state = state.copy(queued = retained + QueuedEditorChange(id, change, pending.expected, boundaries))
         } else {
             apply(prefs, change)
-            // Only an explicitly confirmed strengthening may extend an active snapshot.
-            // Reconciliation and clock-display rewrites never acquire that authority.
+            // Explicitly confirmed edits may shorten or extend an active snapshot. Ordinary
+            // reconciliation and clock-display rewrites never acquire that authority.
             val causes = state.causes.toMutableMap()
             change.upserts.forEach { rule ->
                 val key = ruleCauseKey(rule.id)
                 val cause = causes[key] ?: return@forEach
                 val interval = cause.interval ?: return@forEach
-                if (!rule.enabled || interval.remainingMs(now) == 0L) return@forEach
+                if (interval.remainingMs(now) == 0L) return@forEach
                 val candidateRemaining = if (rule.expiresAtEpochMs != null) rule.expiresAtEpochMs!! - now.wallEpochMs
                     else ruleOccurrence(rule, cause.zoneId, logicalClock(state, now))?.interval?.remainingAtAnchorMs ?: 0
-                if (candidateRemaining > interval.remainingMs(now)) {
-                    causes[key] = cause.copy(interval = AnchoredInterval(now, candidateRemaining, now.wallEpochMs + candidateRemaining))
-                }
+                val remaining = if (rule.enabled) candidateRemaining.coerceAtLeast(0) else 0
+                causes[key] = cause.copy(interval = AnchoredInterval(now, remaining, now.wallEpochMs + remaining))
             }
             state = state.copy(causes = causes.toMap())
         }
@@ -334,7 +350,7 @@ class DataStoreEditorCommitmentStore(
             if (rule.targets.allowListMode && !safety.resolved && (old == null || !old.enabled || old.targets != rule.targets || (!old.targets.allowListMode && rule.targets.allowListMode))) {
                 return "Calling or Home safety could not be checked. Protection health is degraded; try again before starting allow-list protection."
             }
-            if (rule.targets.apps.any { it.packageName in floor(safety) }) return "Calling, Home, system recovery and Flint apps stay available. Remove those apps from this selection."
+            if (!rule.targets.allowListMode && rule.targets.apps.any { it.packageName in floor(safety) }) return "Calling, Home, system recovery and Flint apps stay available. Remove those apps from this selection."
         }
         change.limits?.let { l ->
             require(l.time == null || (l.time.packageName == l.packageName && l.time.dailyMinutes in 0..1440))

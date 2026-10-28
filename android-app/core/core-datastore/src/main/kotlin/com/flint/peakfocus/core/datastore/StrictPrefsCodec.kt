@@ -4,7 +4,8 @@ import androidx.datastore.preferences.core.Preferences
 import com.flint.peakfocus.core.model.*
 
 /**
- * The v1 wire format is unchanged. Unlike the historical lenient decoder, live reads and
+ * Legacy v1 formats remain readable; Time Limits append an explicit tier (see README).
+ * Unlike the historical lenient decoder, live reads and
  * read/modify/write operations refuse the WHOLE affected value if any record is unknown or
  * malformed. This prevents a later unrelated upsert from erasing undecodable records.
  */

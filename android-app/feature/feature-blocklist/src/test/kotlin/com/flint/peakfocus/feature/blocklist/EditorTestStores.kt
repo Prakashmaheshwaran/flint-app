@@ -13,6 +13,8 @@ internal class EditorTestStore(private val rules: BlockRulesStore, private val l
     private val values = MutableStateFlow<StorageState<EditorCommitmentState>>(StorageState.Ready(EditorCommitmentState()))
     override val state = values.asStateFlow()
     private var pending: Pair<EditorChange, BlockRule>? = null
+    override suspend fun requestEnabled(ruleIds: Set<String>, enabled: Boolean, label: String, now: AccessClockStamp, safety: EditorSafety, requireAll: Boolean) =
+        request(EditorChange(label, upserts = rules.rulesOrError.first().filter { it.id in ruleIds }.map { it.copy(enabled = enabled) }), now, safety)
     override suspend fun request(change: EditorChange, now: AccessClockStamp, safety: EditorSafety): EditorCommitResult {
         if (change.timerExit) {
             val expected = rules.rulesOrError.first().single { it.id in change.deleteIds }

@@ -4,10 +4,12 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import com.flint.peakfocus.blocking.engine.CommitmentPolicy
 import com.flint.peakfocus.blocking.engine.HarderWaitPolicy
+import com.flint.peakfocus.blocking.engine.NextEvaluationBoundary
 import com.flint.peakfocus.core.model.*
 import java.io.IOException
 import java.util.Calendar
 import java.util.TimeZone
+import java.time.ZoneId
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -20,8 +22,12 @@ class EditorCommitmentStoreTest {
         val values = MutableStateFlow(initial)
         val lock = Mutex()
         var fail = false
+        var updates = 0
+        var beforeUpdate: (() -> Unit)? = null
         override val data: Flow<Preferences> = values
         override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences = lock.withLock {
+            updates++
+            beforeUpdate?.also { beforeUpdate = null }?.invoke()
             val next = transform(values.value)
             if (fail) throw IOException("disk full")
             values.value = next
@@ -263,7 +269,7 @@ class EditorCommitmentStoreTest {
         val longer = old.copy(schedule = old.schedule!!.copy(endMinuteOfDay = 12 * 60))
         assertEquals(EditorCommitResult.Applied(), confirm(store, EditorChange("Extend", upserts = listOf(longer))))
         val effective = store.reconcileRules(clock()).single()
-        assertEquals(at + 2 * 3_600_000, effective.expiresAtEpochMs)
+        assertEquals(longer.schedule, effective.schedule)
         assertEquals(2 * 3_600_000L, snapshot(store).causes.getValue(ruleCauseKey(old.id)).interval!!.remainingMs(clock()))
     }
 
@@ -281,5 +287,51 @@ class EditorCommitmentStoreTest {
         recreated.reconcile(clock(3_600_001))
         assertTrue(snapshot(recreated).queued.single().needsReview)
         assertEquals(listOf(changed), rules.rules.first())
+    }
+
+    @Test fun `PC-12 published unqueued schedules retain their next start boundary`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk)
+        val future = rule().copy(schedule = Schedule(startMinuteOfDay = 12 * 60, endMinuteOfDay = 13 * 60))
+        DataStoreBlockRulesStore(disk).upsert(future)
+        val published = store.reconcileRules(clock())
+        assertEquals(listOf(future), published)
+        assertEquals(at + 2 * 3_600_000, NextEvaluationBoundary.next(at, ZoneId.of("UTC"), "a", published))
+    }
+
+    @Test fun `PC-12 confirmed Harder shortening replaces the current anchored end after its wait`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk); val old = rule(BreakLevel.HARDER)
+        DataStoreBlockRulesStore(disk).upsert(old)
+        val shorter = old.copy(schedule = old.schedule!!.copy(endMinuteOfDay = 10 * 60 + 30))
+        val waiting = store.request(EditorChange("Shorten", upserts = listOf(shorter)), clock(), safe) as EditorCommitResult.Waiting
+        assertEquals(60_000L, waiting.remainingMs)
+        assertEquals(EditorCommitResult.Applied(), store.confirm(waiting.pending.id, clock(60_000), safe))
+        assertEquals(shorter.schedule, store.reconcileRules(clock(60_000)).single().schedule)
+        assertEquals(29 * 60_000L, snapshot(store).causes.getValue(ruleCauseKey(old.id)).interval!!.remainingMs(clock(60_000)))
+    }
+
+    @Test fun `PC-52 safety apps may be explicitly allowed by Sleep allow-list protection`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk)
+        val allowed = rule().copy(targets = BlockTargets(allowListMode = true, apps = setOf(AppRef("com.flint.peakfocus"))))
+        assertEquals(EditorCommitResult.Applied(), confirm(store, EditorChange("Sleep", upserts = listOf(allowed))))
+        assertEquals(listOf(allowed), DataStoreBlockRulesStore(disk).rules.first())
+    }
+
+    @Test fun `PC-10 toggles derive the complete latest record inside the mutating transaction`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk); val old = rule(BreakLevel.EASY)
+        DataStoreBlockRulesStore(disk).upsert(old)
+        val newer = old.copy(name = "Concurrent save", targets = BlockTargets(apps = setOf(AppRef("c"))))
+        disk.beforeUpdate = { disk.values.value = disk.values.value.toMutablePreferences().apply { putEditorRules(listOf(newer)) } }
+        val preview = store.requestEnabled(setOf(old.id), false, "Turn off", clock(), safe) as EditorCommitResult.Preview
+        assertEquals(listOf(newer), preview.pending.expected.rules)
+        assertEquals(EditorCommitResult.Applied(), store.confirm(preview.pending.id, clock(), safe))
+        assertEquals(listOf(newer.copy(enabled = false)), DataStoreBlockRulesStore(disk).rules.first())
+    }
+
+    @Test fun `PC-70 established limit collectors validate without another migration write`() = runBlocking {
+        val disk = Disk(); fresh(disk)
+        val before = disk.updates
+        val limits = EditorMigratingLimitsStore(disk) { clock() }
+        limits.timeLimits.first(); limits.openLimits.first(); limits.timeLimits.first()
+        assertEquals(before, disk.updates)
     }
 }

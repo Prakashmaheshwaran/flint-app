@@ -1,5 +1,6 @@
 package com.flint.peakfocus.core.datastore
 
+import androidx.datastore.core.CorruptionException
 import com.flint.peakfocus.blocking.engine.AnchoredInterval
 import com.flint.peakfocus.blocking.engine.CommitmentPolicy
 import com.flint.peakfocus.blocking.engine.HarderWaitPolicy
@@ -8,7 +9,9 @@ import com.flint.peakfocus.blocking.engine.isValidOccurrenceDuration
 import com.flint.peakfocus.core.model.*
 import java.util.Calendar
 import java.util.TimeZone
+import java.io.IOException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 /** New Timer rights are identified durably; an old all-tier Timer never acquires new rights. */
 const val CONTRACT_TIMER_ID_PREFIX = "session-timer-v2-"
@@ -57,7 +60,10 @@ sealed interface EditorCommitResult {
 
 interface EditorCommitmentStore {
     val state: Flow<StorageState<EditorCommitmentState>>
+    /** Includes raw template changes made by other writers, even when the sidecar is unchanged. */
+    val changes: Flow<Unit> get() = state.map { Unit }
     suspend fun request(change: EditorChange, now: AccessClockStamp, safety: EditorSafety): EditorCommitResult
+    suspend fun requestEnabled(ruleIds: Set<String>, enabled: Boolean, label: String, now: AccessClockStamp, safety: EditorSafety, requireAll: Boolean = true): EditorCommitResult
     suspend fun confirm(id: Long, now: AccessClockStamp, safety: EditorSafety): EditorCommitResult
     suspend fun cancel(id: Long)
     suspend fun dismissMigrationNotice()
@@ -71,6 +77,14 @@ interface EditorCommitmentStore {
 
 /** A fresh resolution supplied by the adapter, never a permission bit or a visible shield. */
 data class EditorSafety(val resolved: Boolean, val excludedPackages: Set<String> = emptySet())
+
+/** Publication boundaries must replace stale Ready state even when decoding throws unexpectedly. */
+fun editorPublicationFailure(cause: Throwable): StorageFailure = when (cause) {
+    is StorageUnavailableException -> cause.reason
+    is CorruptionException -> StorageFailure.CORRUPT
+    is IOException -> StorageFailure.IO
+    else -> StorageFailure.CORRUPT
+}
 
 fun ruleCauseKey(id: String) = "rule:$id"
 fun timeCauseKey(pkg: String) = "time:$pkg"

@@ -286,9 +286,7 @@ internal class BlocklistViewModel(
 
     fun setRuleEnabled(ruleId: String, enabled: Boolean) {
         protectionWrite {
-            val rule = rulesStore.rulesState.readyValues(throwOnUnavailable = true).first().singleOrNull { it.id == ruleId }
-                ?: return@protectionWrite EditorCommitResult.Rejected("This rule changed. Refresh and try again.")
-            commitments.request(EditorChange(if (enabled) "Turn on ${rule.name}" else "Turn off ${rule.name}", upserts = listOf(rule.copy(enabled = enabled))), clock(), withContext(ioDispatcher) { safety() })
+            commitments.requestEnabled(setOf(ruleId), enabled, if (enabled) "Turn on rule" else "Turn off rule", clock(), withContext(ioDispatcher) { safety() })
         }
     }
 
@@ -306,8 +304,8 @@ internal class BlocklistViewModel(
      *  ONE store transaction (separate writes could desync them across a process death). */
     fun setSleepEnabled(enabled: Boolean) {
         protectionWrite {
-            val rules = rulesStore.rulesState.readyValues(throwOnUnavailable = true).first().filter { it.id in setOf(SLEEP_WINDOW_RULE_ID, SLEEP_MORNING_RULE_ID) }
-            commitments.request(EditorChange(if (enabled) "Turn on Sleep" else "Turn off Sleep", upserts = rules.map { it.copy(enabled = enabled) }), clock(), withContext(ioDispatcher) { safety() })
+            commitments.requestEnabled(setOf(SLEEP_WINDOW_RULE_ID, SLEEP_MORNING_RULE_ID), enabled,
+                if (enabled) "Turn on Sleep" else "Turn off Sleep", clock(), withContext(ioDispatcher) { safety() }, requireAll = false)
         }
     }
 

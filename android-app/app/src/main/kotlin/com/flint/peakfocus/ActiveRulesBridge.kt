@@ -3,16 +3,18 @@ package com.flint.peakfocus
 import android.content.Context
 import com.flint.peakfocus.core.data.BlocklistStore
 import com.flint.peakfocus.core.datastore.FlintPreferences
-import com.flint.peakfocus.core.datastore.StorageUnavailableException
+import com.flint.peakfocus.core.datastore.editorPublicationFailure
 import com.flint.peakfocus.core.model.ActiveRulesHolder
 import com.flint.peakfocus.core.model.StorageState
-import com.flint.peakfocus.core.model.StorageFailure
-import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import com.flint.peakfocus.core.datastore.ProtectionClock
 
 /**
@@ -31,6 +33,8 @@ import com.flint.peakfocus.core.datastore.ProtectionClock
 object ActiveRulesBridge {
 
     private val started = AtomicBoolean(false)
+    private val invalidations = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    private val publication = Mutex()
 
     /** Begin observing DataStore rules (idempotent). Call from [FlintApplication.onCreate]. */
     fun start(context: Context, scope: CoroutineScope) {
@@ -38,27 +42,46 @@ object ActiveRulesBridge {
         val appContext = context.applicationContext
         scope.launch {
             val store = FlintPreferences.editorCommitments(appContext)
-            while (isActive) {
-                try {
-                    // This serialized read applies queued off/delete/edits before publishing
-                    // an adjacent occurrence. Queued old snapshots are expiry-clipped too.
-                    val rules = store.reconcileRules(ProtectionClock.now())
-                    ActiveRulesHolder.publishState(ActiveRulesHolder.SOURCE_DATASTORE, StorageState.Ready(rules))
-                } catch (cause: IOException) {
-                    val reason = (cause as? StorageUnavailableException)?.reason ?: StorageFailure.IO
-                    ActiveRulesHolder.publishState(ActiveRulesHolder.SOURCE_DATASTORE, StorageState.Unavailable(reason))
-                }
-                delay(1_000)
-            }
+            runEditorRulePublication(merge(store.changes, invalidations), { refresh(appContext) }, ::unavailable)
         }
+    }
+
+    /** Reconcile and publish its acknowledged result before returning, then replace the timer. */
+    suspend fun reconcileAndPublish(context: Context) {
+        try { refresh(context.applicationContext) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (cause: Throwable) { unavailable(cause) }
+        finally { invalidations.tryEmit(Unit) }
+    }
+
+    private suspend fun refresh(context: Context): Long? = publication.withLock {
+        val store = FlintPreferences.editorCommitments(context)
+        val now = ProtectionClock.now()
+        // One edit reconciles queued changes before publishing an adjacent occurrence.
+        val rules = store.reconcileRules(now)
+        val state = store.state.first { it !is StorageState.Loading }
+        when (state) {
+            is StorageState.Ready -> {
+                val nextDelay = nextEditorReconciliationDelay(rules, state.value, now)
+                ActiveRulesHolder.publishState(ActiveRulesHolder.SOURCE_DATASTORE, StorageState.Ready(rules))
+                nextDelay
+            }
+            is StorageState.Unavailable -> {
+                ActiveRulesHolder.publishState(ActiveRulesHolder.SOURCE_DATASTORE, state)
+                EDITOR_RETRY_MS
+            }
+            StorageState.Loading -> error("No completed editor snapshot")
+        }
+    }
+
+    private fun unavailable(cause: Throwable) {
+        ActiveRulesHolder.publishState(ActiveRulesHolder.SOURCE_DATASTORE, StorageState.Unavailable(editorPublicationFailure(cause)))
     }
 
     /**
      * Re-sync the legacy projection from its persisted prefs (cheap, synchronous). The
-     * DataStore contribution needs no refresh here — the [start] collector re-publishes it on
-     * every emission. Kept for the existing call sites (activity ON_RESUME, Home-tab
-     * mutations) as a belt-and-braces freshness pass; it is no longer load-bearing for
-     * correctness the way it was under the clobber-window regime.
+     * DataStore contribution has its own change/boundary driver in [start]. Existing activity
+     * and Home-tab call sites use this only to refresh the independent legacy source.
      */
     fun republish(context: Context) {
         BlocklistStore(context).load()

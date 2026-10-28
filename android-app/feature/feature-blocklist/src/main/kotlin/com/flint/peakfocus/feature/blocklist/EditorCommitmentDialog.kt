@@ -14,16 +14,18 @@ import androidx.compose.ui.unit.dp
 import com.flint.peakfocus.blocking.engine.CommitmentPolicy
 import com.flint.peakfocus.core.datastore.EditorCommitmentState
 import com.flint.peakfocus.core.datastore.QueuedEditorChange
+import com.flint.peakfocus.core.datastore.ProtectionClock
+import com.flint.peakfocus.core.model.AccessClockStamp
 import java.text.DateFormat
 import java.util.Date
 
 @Composable
 internal fun EditorCommitmentDialog(state: EditorCommitmentState, remainingMs: Long?, busy: Boolean,
-    error: String?, onConfirm: (Long) -> Unit, onCancel: (Long) -> Unit) {
+    error: String?, onConfirm: (Long) -> Unit, onCancel: (Long) -> Unit, now: AccessClockStamp = ProtectionClock.now()) {
     val pending = state.pending ?: return
     val waiting = pending.outcome == CommitmentPolicy.Outcome.WAIT
     val deferred = pending.outcome == CommitmentPolicy.Outcome.DEFER
-    val end = pending.change.keys.mapNotNull { state.causes[it]?.interval?.wallEndEpochMs }.maxOrNull()
+    val end = editorCurrentOccurrenceEnd(state, now)
     AlertDialog(
         onDismissRequest = { if (!busy) onCancel(pending.id) },
         title = { Text(pending.change.label) },
@@ -60,6 +62,15 @@ internal fun EditorCommitmentDialog(state: EditorCommitmentState, remainingMs: L
         } },
         dismissButton = { TextButton(onClick = { onCancel(pending.id) }, enabled = !busy) { Text("Cancel") } },
     )
+}
+
+/** A persisted pre-restart estimate is never presented as the current occurrence's deadline. */
+internal fun editorCurrentOccurrenceEnd(state: EditorCommitmentState, now: AccessClockStamp): Long? {
+    val pending = state.pending ?: return null
+    return pending.change.keys.mapNotNull { key ->
+        val cause = state.causes[key]?.takeIf { it.occurrenceId == pending.expected.occurrences[key] }
+        cause?.interval?.remainingMs(now)?.takeIf { it > 0 }?.let { now.wallEpochMs + it }
+    }.maxOrNull()
 }
 
 internal fun editorEndLabel(epochMs: Long): String = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(epochMs))
