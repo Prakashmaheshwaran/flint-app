@@ -44,6 +44,29 @@ do not themselves justify declaring boot-time API use. No unused reason codes
 are declared. Recheck the final archive and Apple's privacy report before upload;
 platform implementation details are not application API calls.
 
+### History metadata and optimized binary retention
+
+On 2026-10-28, lane K inspected an unsigned optimized simulator Release build
+containing merged history PR #90 and the read-only reader from PR #132
+(`f5ca108`). All five current executables plus the proposed widget executable
+retain `_fstat`, Foundation's `attributesOfItem` and `FlintHistoryStore` reader
+code. This supports the FileTimestamp declaration in every current bundle;
+the widget's separate target also needs it. The report extension still keeps
+DeviceActivity report data inside its process; retained history metadata APIs
+do not authorize report export.
+
+[Per-bundle symbol checks and executable hashes](../../verification/ios-history-privacy-2026-10-28/release-retention.json)
+record the evidence and its source-provenance limitation: the build included
+uncommitted display wiring, so its post-build diff hash is not an exact build
+attestation. This inspection proves binary retention, not signed-device behavior
+or App Store acceptance. Rerun the inventory against the final signed archive.
+
+Apple's current [required-reason list](https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitype),
+re-read on 2026-10-28, explicitly lists `fstat` and file-attribute APIs.
+`C617.1` permits metadata access for files inside app and App Group containers,
+which matches local bounded history reads, cleanup and quarantine ordering.
+Keep the file-descriptor and size checks; removing safety checks is unnecessary.
+
 ### B2 clock and boot-session identity refresh
 
 `FlintSessionTiming.swift` now calls
