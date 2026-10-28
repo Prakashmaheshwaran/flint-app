@@ -233,20 +233,21 @@ class StorageReadinessTest {
         try {
             fun open() = DataStoreFocusStateStore(PreferenceDataStoreFactory.create(
                 scope = CoroutineScope(Dispatchers.IO + owner), produceFile = { file }))
-            val emergency = receipt.copy(kind = ExemptionKind.EMERGENCY_PASS, untilEpochMs = 1_801_000)
+            val emergency = receipt.copy(kind = ExemptionKind.EMERGENCY_PASS, untilEpochMs = 1_801_000, bootSessionId = "boot-one")
             open().transact { FocusMutation(it.copy(emergencyPass = EmergencyPassState(20633, 1000),
-                exemptions = mapOf(emergency.requestId to emergency)), Unit) }
+                exemptions = mapOf(emergency.requestId to emergency), minimumRequestEpochMs = 123), Unit) }
             owner.cancelAndJoin()
             owner = SupervisorJob()
             val restored = snapshot(open())
             assertEquals(EmergencyPassState(20633, 1000), restored.emergencyPass)
             assertEquals(emergency, restored.exemptions[emergency.requestId])
+            assertEquals(123L, restored.minimumRequestEpochMs)
         } finally { owner.cancelAndJoin(); dir.deleteRecursively() }
     }
 
     @Test fun corruptAndFutureReceiptLedgersRefuseAllFocusWritesVerbatim() = runBlocking {
         for ((payload, reason) in listOf("broken" to StorageFailure.CORRUPT,
-            "H|2" to StorageFailure.UNSUPPORTED_VERSION,
+            "H|99" to StorageFailure.UNSUPPORTED_VERSION,
             "H|1\nE|id|app|cause|FUTURE|1000" to StorageFailure.UNSUPPORTED_VERSION,
             "H|1\nE|id|app|cause|BREAK|bad" to StorageFailure.CORRUPT)) {
             val disk = Disk(mutablePreferencesOf(PrefsKeys.FOCUS_LEDGER to payload))
@@ -267,7 +268,79 @@ class StorageReadinessTest {
             decoded.exemptions["request|1"])
         assertEquals(BreakSessionState(2, BreakRequestState(1000, 301000)), decoded.breaksByCause["cause\n1"])
         assertEquals(0L, decoded.revision)
-        assertEquals(literal.replaceFirst("H|1\n", "H|1|0\n"), FocusLedgerCodec.encode(decoded))
+        assertEquals(0L, decoded.minimumRequestEpochMs)
+        assertEquals(literal.replaceFirst("H|1\n", "H|2|0|0\n").replace("1801000\nB", "1801000|-\nB"), FocusLedgerCodec.encode(decoded))
+    }
+
+    @Test fun v1ReceiptHeaderMigrationAddsWatermarkWithoutRewritingLegacyAccounting() = runBlocking {
+        val legacy = mutablePreferencesOf(
+            PrefsKeys.DEFAULT_BREAK_LEVEL to "HARDER",
+            PrefsKeys.BREAK_SESSION to "7~1000~901000",
+            PrefsKeys.EMERGENCY_PASS_WEEK_START to 20633L,
+            PrefsKeys.EMERGENCY_PASS_USED_AT to 1234567L,
+            PrefsKeys.OPEN_COUNTS_DAY to 20637L,
+            PrefsKeys.OPEN_COUNTS to "app~4\nother~8",
+        )
+        for (header in listOf("H|1", "H|1|9")) {
+            val literal = "$header\nE|old-id|app|cause|BREAK|301000"
+            val disk = Disk(legacy.toMutablePreferences().apply { this[PrefsKeys.FOCUS_LEDGER] = literal })
+            val store = DataStoreFocusStateStore(disk)
+            val old = snapshot(store)
+            assertEquals(0L, old.minimumRequestEpochMs)
+            assertEquals(literal, disk.values.value[PrefsKeys.FOCUS_LEDGER])
+            store.transact { FocusMutation(it.copy(minimumRequestEpochMs = 123_456), Unit) }
+            val reopened = snapshot(DataStoreFocusStateStore(disk))
+            assertEquals(old.copy(revision = old.revision + 1, minimumRequestEpochMs = 123_456), reopened)
+            assertEquals("H|2|${old.revision + 1}|123456\nE|old-id|app|cause|BREAK|301000|-",
+                disk.values.value[PrefsKeys.FOCUS_LEDGER])
+            assertEquals(legacy.asMap(), disk.values.value.asMap().filterKeys { it != PrefsKeys.FOCUS_LEDGER })
+        }
+    }
+
+    @Test fun version2BootFieldRoundTripsWhileLegacyMissingBootRemainsUnproven() {
+        val literal = "H|2|7|123\nE|id|app|cause|BREAK|301000|boot%7C1"
+        assertEquals("boot|1", FocusLedgerCodec.decode(literal).exemptions.getValue("id").bootSessionId)
+        assertEquals(literal, FocusLedgerCodec.encode(FocusLedgerCodec.decode(literal)))
+        for (header in listOf("H|1", "H|1|7", "H|2|7|123")) {
+            assertNull(FocusLedgerCodec.decode("$header\nE|old|app|cause|BREAK|301000").exemptions.getValue("old").bootSessionId)
+        }
+    }
+
+    @Test fun version2RetentionWatermarkRejectsMalformedOrFuturePayloadsVerbatim() = runBlocking {
+        for ((payload, reason) in listOf(
+            "H|2" to StorageFailure.CORRUPT,
+            "H|2|1" to StorageFailure.CORRUPT,
+            "H|2|1|-1" to StorageFailure.CORRUPT,
+            "H|2|1|bad" to StorageFailure.CORRUPT,
+            "H|2|1|0\nE|id|app|cause|BREAK|123|" to StorageFailure.CORRUPT,
+            "H|2|1|0\nE|id|app|cause|BREAK|123|%ZZ" to StorageFailure.CORRUPT,
+            "H|2|1|0|future" to StorageFailure.UNSUPPORTED_VERSION,
+            "H|3|1|0" to StorageFailure.UNSUPPORTED_VERSION,
+        )) {
+            val disk = Disk(mutablePreferencesOf(PrefsKeys.FOCUS_LEDGER to payload))
+            val store = DataStoreFocusStateStore(disk)
+            assertEquals(StorageState.Unavailable(reason), store.state.drop(1).first())
+            var called = false
+            assertEquals(FocusCommit.Unavailable(reason), store.transact { called = true; grant(it) })
+            assertFalse(called)
+            assertEquals(payload, disk.values.value[PrefsKeys.FOCUS_LEDGER])
+            assertEquals(0, disk.writes)
+        }
+    }
+
+    @Test fun retentionWatermarkNeverRewindsInEitherStore() = runBlocking {
+        val disk = Disk()
+        for (store in listOf(DataStoreFocusStateStore(disk), InMemoryFocusStateStore())) {
+            store.transact { FocusMutation(it.copy(minimumRequestEpochMs = 123_456), Unit) }
+            val before = snapshot(store)
+            val bytes = disk.values.value.asMap().toMap()
+            try {
+                store.transact { FocusMutation(it.copy(minimumRequestEpochMs = 123_455), Unit) }
+                fail("Retention watermark rewind accepted")
+            } catch (_: IllegalArgumentException) { }
+            assertEquals(before, snapshot(store))
+            assertEquals(bytes, disk.values.value.asMap())
+        }
     }
 
     @Test fun recoveryFromCorruptValuePublishesReadyOnlyWhenBackingDataIsActuallyRepaired() = runBlocking {

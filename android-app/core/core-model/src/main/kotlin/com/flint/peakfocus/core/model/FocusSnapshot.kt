@@ -9,6 +9,8 @@ data class PersistedExemption(
     val causeKey: String,
     val kind: ExemptionKind,
     val untilEpochMs: Long,
+    /** Null for legacy receipts whose boot cannot be proved: consumption stays, access closes. */
+    val bootSessionId: String? = null,
 )
 
 /**
@@ -25,6 +27,8 @@ data class FocusSnapshot(
     val breaksByCause: Map<String, BreakSessionState> = emptyMap(),
     /** Store-owned monotonic revision, including changes to the legacy accounting keys. */
     val revision: Long = 0,
+    /** Monotonic retention watermark: clock rollback cannot make a pruned request fresh. */
+    val minimumRequestEpochMs: Long = 0,
 )
 
 data class FocusMutation<R>(val next: FocusSnapshot, val result: R)

@@ -290,6 +290,14 @@ fun BlockScreen(
                         ) {
                             Text("Go back")
                         }
+                        if (state.grantStatus == GrantStatus.FAILED || state.grantStatus == GrantStatus.RETRY_OPEN) {
+                            Text(
+                                "Couldn't save. Try again.",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodyMedium,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
                         // Class-keyed: a ticking WaitBeforeBreak updates in place; only a
                         // different affordance kind animates, with the column height easing.
                         AnimatedContent(
@@ -506,6 +514,15 @@ private fun BreakActions(
     modifier: Modifier = Modifier,
 ) {
     when (affordance) {
+        BreakAffordance.Saving -> CircularProgressIndicator(modifier = modifier.size(32.dp))
+        BreakAffordance.Unavailable -> Text(
+            "Protection state unavailable",
+            modifier = modifier,
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+        )
+        BreakAffordance.RetryOpen -> QuietButton("Try again", onBreakRequested, modifier = modifier)
         // 48dp minimum keeps the deliberate 52/48/48 exit ladder under "Go back".
         BreakAffordance.TakeABreak -> QuietButton("Take a break", onBreakRequested, modifier = modifier)
 

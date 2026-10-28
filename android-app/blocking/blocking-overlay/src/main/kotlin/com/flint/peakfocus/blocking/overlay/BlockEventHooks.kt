@@ -11,10 +11,11 @@ import java.util.concurrent.CopyOnWriteArraySet
  * Contract:
  *  - [Listener.onOpenIntercepted] fires once per NEW block surface mount for a foreground app (a
  *    different package, or the first mount after the surface was hidden) — never per one-second
- *    re-render or cause refresh.
+ *    re-render or cause refresh. Provisional holds for an unacknowledged normal-open
+ *    counter write never report an interception.
  *  - [Listener.onBreakGranted] / [Listener.onEmergencyPassUsed] fire only for accepted grants,
- *    after the grant's state is committed (today: after the in-memory grant; the durable-grant
- *    work moves this behind the storage commit without changing the signature).
+ *    after credit consumption and its exemption receipt are durably committed together.
+ *    Idempotent retries do not emit another accepted-grant event.
  *  - `ruleId` is the rule behind the cause when the cause is a rule verdict; null for daily Time
  *    Limit, Open Limit and uninstall-guard causes.
  *  - Called synchronously on the caller's thread (often main): listeners must enqueue and return.

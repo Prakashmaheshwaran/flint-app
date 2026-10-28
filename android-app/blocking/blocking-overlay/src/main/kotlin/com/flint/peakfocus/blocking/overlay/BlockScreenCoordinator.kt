@@ -11,20 +11,23 @@ import com.flint.peakfocus.blocking.engine.BreakPolicy
 import com.flint.peakfocus.blocking.engine.EmergencyPassPolicy
 import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.blocking.engine.OpenLimitPolicy
+import com.flint.peakfocus.core.datastore.BlockRulesStore
 import com.flint.peakfocus.core.datastore.FlintPreferences
 import com.flint.peakfocus.core.datastore.FocusStateStore
 import com.flint.peakfocus.core.datastore.LimitsStore
 import com.flint.peakfocus.core.model.ActiveRulesHolder
-import com.flint.peakfocus.core.model.BreakDecision
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.model.BreakSessionState
-import com.flint.peakfocus.core.model.EmergencyPassState
-import com.flint.peakfocus.core.model.OpenCountState
+import com.flint.peakfocus.core.model.BlockRule
+import com.flint.peakfocus.core.model.StorageState
 import com.flint.peakfocus.core.model.OpenLimit
 import com.flint.peakfocus.core.model.OpenLimitDecision
 import com.flint.peakfocus.core.model.TimeLimit
 import com.flint.peakfocus.core.model.Verdict
 import com.flint.peakfocus.feature.blockscreen.BlockScreenReason
+import com.flint.peakfocus.feature.blockscreen.BlockScreenState
+import com.flint.peakfocus.feature.blockscreen.GrantStatus
+import java.security.MessageDigest
 import java.util.Calendar
 import java.util.TimeZone
 import java.util.concurrent.ConcurrentHashMap
@@ -34,6 +37,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -64,7 +68,7 @@ import kotlinx.coroutines.launch
  *
  * Threading: detector entry points ([onForegroundChanged], [isExempt], [showBlocked],
  * [hideIfShown]) may be called from any thread; view work is marshalled to the main looper
- * internally. [requestBreak]/[requestEmergencyPass] compute synchronously against snapshots.
+ * internally. Grant requests suspend until their accounting and receipts commit together.
  */
 class BlockScreenCoordinator(
     context: Context,
@@ -91,6 +95,9 @@ class BlockScreenCoordinator(
     private val onEnforcementChanged: (() -> Unit)? = null,
     /** Test seam; production resolves the device's runtime floor surfaces lazily. */
     safetyFloorGate: SafetyFloorGate? = null,
+    focusStateStore: FocusStateStore? = null,
+    configuredLimitsStore: LimitsStore? = null,
+    blockRulesStore: BlockRulesStore? = null,
 ) {
 
     /** How a path actually mounts the block surface. Implementations own the window type. */
@@ -119,10 +126,13 @@ class BlockScreenCoordinator(
 
     /** Package whose current block was already reported as an intercepted open (cleared on hide). Main thread only. */
     private var interceptedPackage: String? = null
-    private val focusStore: FocusStateStore = FlintPreferences.focusState(appContext)
-    private val limitsStore: LimitsStore = FlintPreferences.limits(appContext)
+    private var mountedPackage: String? = null
+    private var pendingSurfacePackage: String? = null
+    private var pendingSurface: Job? = null
+    private val focusStore = focusStateStore ?: FlintPreferences.focusState(appContext)
+    private val limitsStore = configuredLimitsStore ?: FlintPreferences.limits(appContext)
+    private val rulesStore = blockRulesStore ?: FlintPreferences.blockRules(appContext)
 
-    private val breakPolicy = BreakPolicy()
     private val passPolicy = EmergencyPassPolicy()
     private val openLimitPolicy = OpenLimitPolicy()
     private val ruleEngine = BlockDecisionEngine()
@@ -131,23 +141,40 @@ class BlockScreenCoordinator(
     private data class Observation(val timeLimitSpent: Boolean, val epochDay: Long, val url: String?)
     private val observations = ConcurrentHashMap<String, Observation>()
 
-    // Persisted-state snapshots (collected below). Volatile: written by the collectors on the
-    // caller's scope, read synchronously from detector callbacks. Until the first emission the
-    // documented store defaults apply (EASY, pass available, no counts) — a block landing in
-    // that first-millisecond window errs toward the default, never toward a crash.
-    @Volatile private var breakSession = BreakSessionState()
-    @Volatile private var emergencyPass = EmergencyPassState()
-    @Volatile private var openCounts = OpenCountState()
+    private val grants = DurableGrantController(focusStore, scope, nowEpochMs, ::utcOffsetMs, BootIdentity.current(appContext))
+    private val openState = MutableStateFlow<StorageState<List<OpenLimit>>>(StorageState.Loading)
+    private val timeState = MutableStateFlow<StorageState<List<TimeLimit>>>(StorageState.Loading)
+    private val rulesState = MutableStateFlow<StorageState<List<BlockRule>>>(StorageState.Loading)
+    // Lists are last-known-good only, never a replacement emitted because a read failed.
     @Volatile private var openLimits: List<OpenLimit> = emptyList()
     @Volatile private var timeLimits: List<TimeLimit> = emptyList()
-    @Volatile private var defaultBreakLevel = BreakLevel.EASY
+    private val visits = OpenVisits.process
+    private val pendingOpens = ConcurrentHashMap.newKeySet<String>()
+    private val busy = ConcurrentHashMap.newKeySet<String>()
+    private val failures = ConcurrentHashMap.newKeySet<String>()
+    private val scheduledExpiries = ConcurrentHashMap<String, Long>()
 
-    /**
-     * The package whose current open the Open-Limit machine already granted (see
-     * [OpenLimitPolicy.onForegroundTransition]). Deliberately in-memory, like [BlockExemptions]:
-     * a dead process forgets the grant and re-decides, so enforcement fails strict.
-     */
-    @Volatile private var openGrantedPackage: String? = null
+    /** Tokens belong to one mounted surface; a late callback cannot act on a newer mount. */
+    internal class SurfaceRequests {
+        var breakId: GrantRequestId? = null
+        var passId: GrantRequestId? = null
+        var retired = false
+        fun id(emergency: Boolean, now: Long): GrantRequestId {
+            val previous = if (emergency) passId else breakId
+            if (previous != null && previous.issuedAtEpochMs <= now &&
+                now - previous.issuedAtEpochMs < DurableGrantController.RETRY_HORIZON_MS) return previous
+            return GrantRequestId.issue(now).also { if (emergency) passId = it else breakId = it }
+        }
+        fun recordResult(emergency: Boolean, result: GrantResult) {
+            // A stronger cause may keep this mount visible after an acknowledged grant.
+            // Its next explicit action is a new request; uncertain retries retain the old id.
+            // A confirmed rejection also permits a new identity if the cause has changed.
+            if (result is GrantResult.Pending || result is GrantResult.Granted || result == GrantResult.OpenAllowed || result == GrantResult.Denied) {
+                if (emergency) passId = null else breakId = null
+            }
+        }
+    }
+    private var surfaceRequests: SurfaceRequests? = null
 
     // The currently mounted surface. Mutated on the main thread only.
     private var shownView: BlockScreenHostView? = null
@@ -157,22 +184,32 @@ class BlockScreenCoordinator(
     @Volatile private var visiblePackage: String? = null
 
     init {
-        scope.launch { focusStore.breakSession.collect { breakSession = it } }
-        scope.launch { focusStore.emergencyPass.collect { emergencyPass = it } }
-        scope.launch { focusStore.openCounts.collect { openCounts = it } }
-        // One collector for the three enforcement inputs, so "loaded" is a single signal after
-        // all three have emitted (never a notification over a half-loaded snapshot), and a
-        // write to any other key of the shared DataStore (open counts, break/pass state)
-        // re-emits equal values that distinctUntilChanged swallows — no re-evaluation loop.
+        scope.launch { limitsStore.openLimitsState.collect { state ->
+            if (state is StorageState.Ready) openLimits = state.value
+            openState.value = state
+        } }
+        scope.launch { limitsStore.timeLimitsState.collect { state ->
+            if (state is StorageState.Ready) timeLimits = state.value
+            timeState.value = state
+        } }
+        scope.launch { rulesStore.rulesState.collect { rulesState.value = it } }
+        scope.launch { grants.state.collect { state ->
+            if (state is StorageState.Ready) state.value.exemptions.values.forEach { receipt ->
+                if (receipt.untilEpochMs > nowEpochMs() && scheduledExpiries.putIfAbsent(receipt.requestId, receipt.untilEpochMs) == null) {
+                    scheduleExemptionExpiry(receipt.requestId, receipt.packageName, receipt.untilEpochMs)
+                }
+            }
+            rerenderNow()
+        } }
         scope.launch {
-            combine(focusStore.defaultBreakLevel, limitsStore.openLimits, limitsStore.timeLimits) { level, open, time ->
-                Triple(level, open, time)
-            }.distinctUntilChanged().collect { (level, open, time) ->
-                defaultBreakLevel = level
-                openLimits = open
-                timeLimits = time
-                // Observe-only: a detector bug must never stop these snapshots updating.
+            // Include readiness (and recovery), but exclude counters/receipts from the config
+            // signal so our own debits cannot create an event-driven re-evaluation loop.
+            combine(grants.state, openState, timeState, rulesState) { focus, open, time, rules ->
+                listOf(focus::class, (focus as? StorageState.Ready)?.value?.defaultBreakLevel,
+                    open, time, rules)
+            }.distinctUntilChanged().collect {
                 runCatching { onEnforcementChanged?.invoke() }
+                rerenderNow()
             }
         }
     }
@@ -182,10 +219,16 @@ class BlockScreenCoordinator(
      * device's resolved dialer/home apps). Detectors short-circuit on this before measuring
      * budgets; [evaluateBlockCause] and [currentBlockCause] apply it regardless.
      */
-    fun isSafetyFloor(packageName: String): Boolean = safetyFloor.protects(packageName)
+    fun isSafetyFloor(packageName: String): Boolean {
+        val protected = safetyFloor.protects(packageName)
+        // Home/runtime floor apps are real departures; system shade/Flint dips preserve the
+        // paid visit, exactly as countsAsOpen classifies them. Never debit a floor package.
+        if (protected && openLimitPolicy.countsAsOpen(null, packageName, appContext.packageName)) visits.leave()
+        return protected
+    }
 
-    /** Store-wide default break level — the tier for Time Limit blocks (no per-limit tier yet). */
-    fun currentDefaultBreakLevel(): BreakLevel = defaultBreakLevel
+    /** Loaded tier for Time Limit displays; unknown accounting has no grant affordance. */
+    fun currentDefaultBreakLevel(): BreakLevel = grants.lastGood?.defaultBreakLevel ?: BreakLevel.HARDCORE
 
     /**
      * The Limit editor's daily Time Limit for [packageName] (minutes), or null. Synchronous
@@ -197,12 +240,13 @@ class BlockScreenCoordinator(
         timeLimits.firstOrNull { it.packageName == packageName }?.dailyMinutes
 
     /** Snapshot of the HARDER break bookkeeping (BlockActivity rebuilds its state from this). */
-    fun currentBreakSession(): BreakSessionState = breakSession
+    fun currentBreakSession(): BreakSessionState = grants.lastGood?.breakSession ?: BreakSessionState()
 
     /** True while this week's Emergency Pass is unspent — drives the HARDCORE CTA's state. */
     fun isEmergencyPassAvailable(): Boolean {
         val now = nowEpochMs()
-        return passPolicy.isAvailable(emergencyPass, now, utcOffsetMs(now))
+        val focus = (grants.state.value as? StorageState.Ready)?.value ?: return false
+        return passPolicy.isAvailable(focus.emergencyPass, now, utcOffsetMs(now))
     }
 
     /** Re-check protection before a surface hides in response to a previously issued grant. */
@@ -225,11 +269,11 @@ class BlockScreenCoordinator(
         // Safety floor before every cause: nothing is measured, counted or shielded. Open-limit
         // bookkeeping is untouched too — a floor app is not an open, and leaving one for an app
         // is still decided by countsAsOpen on the next real transition.
-        if (safetyFloor.protects(packageName)) return null
+        if (isSafetyFloor(packageName)) return null
         val now = nowEpochMs()
         val offset = utcOffsetMs(now)
         observations[packageName] = Observation(timeLimitSpent, openLimitPolicy.epochDay(now, offset), foregroundUrl)
-        val timeCause = if (timeLimitSpent) timeLimitBlockCause(defaultBreakLevel, now, offset) else null
+        val timeCause = if (timeLimitSpent) timeLimitBlockCause(currentDefaultBreakLevel(), now, offset) else null
         val ordinary = BlockExemptions.hasOrdinaryExemption(packageName, now)
         val emergency = BlockExemptions.hasEmergencyExemption(packageName, now)
         val openDecision = onForegroundChanged(
@@ -276,27 +320,20 @@ class BlockScreenCoordinator(
         }
         val timeCause = if (observation?.timeLimitSpent == true &&
             observation.epochDay == openLimitPolicy.epochDay(now, offset)
-        ) timeLimitBlockCause(defaultBreakLevel, now, offset) else null
-        val openDecision = openLimitPolicy.onForegroundTransition(
-            previousPackage = packageName,
-            foregroundPackage = packageName,
-            selfPackage = appContext.packageName,
-            state = openCounts,
-            granted = openGrantedPackage,
-            limits = openLimits,
-            epochDay = openLimitPolicy.epochDay(now, offset),
-            recordAllowedOpen = false,
-        ).decision
+        ) timeLimitBlockCause(currentDefaultBreakLevel(), now, offset) else null
+        val openDecision = inspectOpen(packageName)
         val openCause = (openDecision as? OpenLimitDecision.Blocked)?.let {
             openLimitBlockCause(it.limit, now, offset)
         }
         val liveDisplayed = displayedCause?.takeIf { it.endsAtEpochMs == null || now < it.endsAtEpochMs }
+            ?.takeUnless { it.reason == BlockScreenReason.OPEN_LIMIT && openState.value is StorageState.Ready && openCause == null }
+            ?.let { if (it.reason == BlockScreenReason.TIME_LIMIT) it.copy(breakLevel = currentDefaultBreakLevel()) else it }
         return BlockOverlapPolicy.strongest(timeCause, ruleCause, openCause, liveDisplayed)
     }
 
     /** HARDER cooldown remaining at [atEpochMs], or null when none is pending. */
     fun breakWaitRemainingMillis(atEpochMs: Long): Long? =
-        breakSession.pending
+        grants.lastGood?.breakSession?.pending
             ?.takeIf { !it.isElapsed(atEpochMs) }
             ?.let { it.effectiveAtEpochMs - atEpochMs }
 
@@ -306,32 +343,86 @@ class BlockScreenCoordinator(
      * changes aren't opens). An open that was allowed stays allowed while the app holds the
      * foreground — [OpenLimitPolicy.onForegroundTransition] carries that grant across
      * re-evaluations, so the app the user just spent their last open on is not shielded a poll
-     * tick later. Callers block on [OpenLimitDecision.Blocked]. Synchronous; persistence is
-     * fired asynchronously on [scope].
+     * tick later. A new limited visit is held until its counter debit commits; the detector's
+     * re-evaluation callback then accepts the paid visit. The event hot path never waits on IO.
      */
     fun onForegroundChanged(
         previousPackage: String?,
         foregroundPackage: String,
         recordAllowedOpen: Boolean = true,
     ): OpenLimitDecision {
-        val now = nowEpochMs()
-        val day = openLimitPolicy.epochDay(now, utcOffsetMs(now))
-        val transition = openLimitPolicy.onForegroundTransition(
-            previousPackage = previousPackage,
-            foregroundPackage = foregroundPackage,
-            selfPackage = appContext.packageName,
-            state = openCounts,
-            granted = openGrantedPackage,
-            limits = openLimits,
-            epochDay = day,
-            recordAllowedOpen = recordAllowedOpen,
+        if (isSafetyFloor(foregroundPackage)) return OpenLimitDecision.Allowed(null)
+        val visit = visits.observe(
+            foregroundPackage,
+            openLimitPolicy.countsAsOpen(null, foregroundPackage, appContext.packageName),
+            recordAllowedOpen && openLimitPolicy.countsAsOpen(previousPackage, foregroundPackage, appContext.packageName),
+            nowEpochMs(),
         )
-        openGrantedPackage = transition.granted
-        if (transition.counts != openCounts) {
-            openCounts = transition.counts
-            persist { focusStore.setOpenCounts(transition.counts) }
+        val decision = inspectOpen(foregroundPackage, includeUnpaidVisit = false)
+        if (visit?.packageName == foregroundPackage && visit.charge && !visit.paid && recordAllowedOpen &&
+            decision is OpenLimitDecision.Allowed
+        ) {
+            val limit = openLimits.firstOrNull { it.packageName == foregroundPackage }
+            if (limit != null) {
+                if (counterInputsReady()) queueOpen(visit)
+                if (!visit.paid) return OpenLimitDecision.Blocked(limit, "waiting for durable open accounting")
+            }
         }
-        return transition.decision
+        return decision
+    }
+
+    private fun counterInputsReady() = grants.state.value is StorageState.Ready && openState.value is StorageState.Ready
+
+    private fun grantInputs(cause: BlockCause, emergency: Boolean): List<StorageState<*>> =
+        listOf(grants.state.value) + when {
+            // A package Emergency Pass covers all cause tiers; configuration cannot change
+            // its accounting decision. The durable focus ledger must still be Ready.
+            emergency -> emptyList()
+            cause.reason == BlockScreenReason.OPEN_LIMIT -> listOf(openState.value)
+            cause.reason == BlockScreenReason.TIME_LIMIT -> listOf(timeState.value)
+            else -> listOf(rulesState.value, ActiveRulesHolder.dataStoreState)
+        }
+
+    private fun grantInputsReady(cause: BlockCause, emergency: Boolean) =
+        grantInputs(cause, emergency).all { it is StorageState.Ready }
+
+    private fun inspectOpen(packageName: String, includeUnpaidVisit: Boolean = true): OpenLimitDecision {
+        val limit = openLimits.firstOrNull { it.packageName == packageName } ?: return OpenLimitDecision.Allowed(null)
+        val focus = grants.lastGood
+        if (visits.current(packageName)?.paid == true && focus != null) {
+            val day = openLimitPolicy.epochDay(nowEpochMs(), utcOffsetMs(nowEpochMs()))
+            return OpenLimitDecision.Allowed((limit.dailyOpens - openLimitPolicy.opensUsed(focus.openCounts, packageName, day)).coerceAtLeast(0))
+        }
+        if (!counterInputsReady() || focus == null) return OpenLimitDecision.Blocked(limit, "storage unavailable")
+        val decision = openLimitPolicy.decide(packageName, focus.openCounts, openLimits,
+            openLimitPolicy.epochDay(nowEpochMs(), utcOffsetMs(nowEpochMs())))
+        if (includeUnpaidVisit && visits.current(packageName)?.let { it.charge && !it.paid } == true && decision is OpenLimitDecision.Allowed) {
+            return OpenLimitDecision.Blocked(limit, "waiting for durable open accounting")
+        }
+        return decision
+    }
+
+    private fun queueOpen(visit: OpenVisits.Visit) {
+        if (openLimits.none { it.packageName == visit.packageName }) return
+        if (!pendingOpens.add(visit.id.prefix)) return
+        scope.launch {
+            try {
+                if (!counterInputsReady() || safetyFloor.protects(visit.packageName)) return@launch
+                val limit = openLimits.firstOrNull { it.packageName == visit.packageName } ?: return@launch
+                val result = grants.recordOpen(visit.id, visit.packageName, limit)
+                if (result == GrantResult.OpenAllowed) {
+                    visits.acknowledge(visit)
+                    failures.remove(visit.packageName)
+                    runCatching { onEnforcementChanged?.invoke() }
+                } else if (result == GrantResult.Denied) {
+                    runCatching { onEnforcementChanged?.invoke() }
+                } else if ((result is GrantResult.Unavailable || result == GrantResult.Unconfirmed) &&
+                    visits.current(visit.packageName) === visit) failures.add(visit.packageName)
+            } finally {
+                pendingOpens.remove(visit.id.prefix)
+                rerenderNow()
+            }
+        }
     }
 
     /**
@@ -340,11 +431,15 @@ class BlockScreenCoordinator(
      * can't attach, [onBlockSurfaceUnavailable] takes over (full-screen Activity fallback).
      */
     fun showBlocked(packageName: String, appLabel: String?, cause: BlockCause) = runOnMain {
+        showBlockedLocked(packageName, appLabel, cause, deferPendingOpen = true)
+    }
+
+    private fun showBlockedLocked(packageName: String, appLabel: String?, cause: BlockCause, deferPendingOpen: Boolean) {
         val now = nowEpochMs()
         if (cause.endsAtEpochMs != null && now >= cause.endsAtEpochMs) {
             // Stale cause: the block window already ended. Make sure nothing lingers.
             hideLocked()
-            return@runOnMain
+            return
         }
         // Defense in depth for any caller: never mount a shield on a floor surface, for any
         // reason. A new mount force-resolves the runtime floor once (a launcher or dialer made
@@ -357,15 +452,38 @@ class BlockScreenCoordinator(
         if (onFloor) {
             // Only drop this package's own shield; never reveal another app's block.
             if (visiblePackage == packageName) hideLocked()
-            return@runOnMain
+            return
         }
         val existing = shownView
+        if (deferPendingOpen && existing == null && pendingOpenHold(packageName, cause)) {
+            if (pendingSurfacePackage != packageName) {
+                pendingSurface?.cancel()
+                pendingSurfacePackage = packageName
+                pendingSurface = scope.launch {
+                    delay(PENDING_OPEN_SURFACE_GRACE_MS)
+                    runOnMain {
+                        if (pendingSurfacePackage != packageName) return@runOnMain
+                        pendingSurfacePackage = null
+                        pendingSurface = null
+                        val current = currentBlockCause(packageName, cause)
+                        if (current != null && !isExempt(packageName, current)) {
+                            showBlockedLocked(packageName, appLabel, current, deferPendingOpen = false)
+                        }
+                    }
+                }
+            }
+            return
+        }
+        pendingSurface?.cancel()
+        pendingSurface = null
+        pendingSurfacePackage = null
         if (existing != null && visiblePackage == packageName) {
             // Same app, refreshed cause (e.g. new tick, or a different rule took over).
             shownCause = cause
             shownLabel = appLabel
-            existing.render(blockScreenState(packageName, appLabel, cause, breakSession, now, isEmergencyPassAvailable()))
-            return@runOnMain
+            existing.render(screenState(packageName, appLabel, cause, now))
+            reportInterception(packageName, cause, now)
+            return
         }
         if (existing != null) hideLocked() // swapping to another app's block surface
         // After the swap's hide (which clears it): this package's mount has force-resolved.
@@ -373,14 +491,17 @@ class BlockScreenCoordinator(
         // Set after hideLocked() — it clears these fields.
         shownCause = cause
         shownLabel = appLabel
+        if (mountedPackage != packageName && !pendingOpenHold(packageName, cause)) failures.remove(packageName)
+        val requests = SurfaceRequests()
+        surfaceRequests = requests
         val view = BlockScreenHostView(
             context = appContext,
             onDismiss = ::handleDismiss,
             onOpenFlint = ::handleOpenFlint,
-            onBreakRequested = ::handleBreakRequested,
-            onEmergencyPassRequested = ::handleEmergencyPassRequested,
+            onBreakRequested = { handleGrantRequested(packageName, requests, emergency = false) },
+            onEmergencyPassRequested = { handleGrantRequested(packageName, requests, emergency = true) },
         )
-        view.render(blockScreenState(packageName, appLabel, cause, breakSession, now, isEmergencyPassAvailable()))
+        view.render(screenState(packageName, appLabel, cause, now))
         val mounted = if (surfaceHost.attach(view)) {
             shownView = view
             visiblePackage = packageName
@@ -395,7 +516,14 @@ class BlockScreenCoordinator(
         // Once per new block of this package that actually reached the user (Path B's fallback
         // re-launches every poll tick while the overlay is unavailable; those are not new
         // interceptions, and a failed attach with no fallback blocked nothing).
-        if (mounted && interceptedPackage != packageName) {
+        if (mounted) {
+            mountedPackage = packageName
+            reportInterception(packageName, cause, now)
+        }
+    }
+
+    private fun reportInterception(packageName: String, cause: BlockCause, now: Long) {
+        if (!pendingOpenHold(packageName, cause) && interceptedPackage != packageName) {
             interceptedPackage = packageName
             BlockEventHooks.openIntercepted(cause.ruleId, now)
         }
@@ -409,45 +537,11 @@ class BlockScreenCoordinator(
      * EASY → granted now; HARDER → arms the persisted friction request first, grants when
      * asked again after it elapses; HARDCORE → denied, always (Emergency Pass is separate).
      * A grant exempts [packageName] for [DEFAULT_BREAK_DURATION_MS] and — for Open Limit
-     * blocks — spends one more recorded open ("use anyway"). Returns the raw decision so
-     * Activity hosts can finish() on grant.
+     * blocks — spends one more recorded open ("use anyway") in the same transaction.
+     * Callers retain requestId on failure and only dismiss after an acknowledged result.
      */
-    fun requestBreak(packageName: String, cause: BlockCause): BreakDecision {
-        val now = nowEpochMs()
-        val currentCause = currentBlockCause(packageName, cause) ?: cause
-        val decision = breakPolicy.requestBreak(currentCause.breakLevel, breakSession, now)
-        when (decision) {
-            is BreakDecision.Granted -> {
-                breakSession = decision.session
-                persist { focusStore.setBreakSession(decision.session) }
-                val until = now + DEFAULT_BREAK_DURATION_MS
-                BlockExemptions.grant(packageName, until)
-                scheduleExemptionExpiry(packageName, until)
-                BlockEventHooks.breakGranted(currentCause.ruleId, until, now)
-                if (currentCause.spendsOpenOnBreak) {
-                    // The extra open is recorded but never granted: what lifts the shield here
-                    // is the break's exemption window, so the block returns when that window
-                    // ends — the same contract every other tier gets.
-                    val day = openLimitPolicy.epochDay(now, utcOffsetMs(now))
-                    val next = openLimitPolicy.recordOpen(openCounts, packageName, day)
-                    openCounts = next
-                    persist { focusStore.setOpenCounts(next) }
-                }
-            }
-            is BreakDecision.Pending -> {
-                breakSession = decision.session
-                persist { focusStore.setBreakSession(decision.session) }
-            }
-            BreakDecision.DeniedHardcore -> runOnMain {
-                // An old EASY/HARDER surface may still be visible when a strict rule starts.
-                if (visiblePackage == packageName) {
-                    shownCause = currentCause
-                    rerenderNow()
-                }
-            }
-        }
-        return decision
-    }
+    suspend fun requestBreak(packageName: String, cause: BlockCause, requestId: GrantRequestId): GrantResult =
+        requestGrant(packageName, cause, requestId, emergency = false)
 
     /**
      * Explicitly spend this week's Emergency Pass ([EmergencyPassPolicy.consume]). True →
@@ -456,16 +550,85 @@ class BlockScreenCoordinator(
      * can't stop the session itself; rule mutation belongs to the app layer). False → the
      * pass was already spent this week; the block stands.
      */
-    fun requestEmergencyPass(packageName: String, cause: BlockCause): Boolean {
+    suspend fun requestEmergencyPass(packageName: String, cause: BlockCause, requestId: GrantRequestId): GrantResult =
+        requestGrant(packageName, cause, requestId, emergency = true)
+
+    private suspend fun requestGrant(packageName: String, cause: BlockCause, id: GrantRequestId, emergency: Boolean): GrantResult {
+        if (safetyFloor.protectsFresh(packageName)) return GrantResult.Denied
+        if (grants.state.value !is StorageState.Ready) return GrantResult.Unavailable()
+        if (!busy.add(packageName)) return GrantResult.Unavailable()
+        failures.remove(packageName)
+        rerenderNow()
+        try {
+            val current = currentBlockCause(packageName, cause) ?: return GrantResult.Denied
+            if (!grantInputsReady(current, emergency)) return GrantResult.Unavailable()
+            runOnMain { if (visiblePackage == packageName) shownCause = current }
+            val retry = if (!emergency && openRetryNeeded(packageName, current)) visits.current(packageName) else null
+            val now = nowEpochMs()
+            val result = if (retry != null) {
+                grants.recordOpen(retry.id, packageName, openLimits.firstOrNull { it.packageName == packageName }).also {
+                    if (it == GrantResult.OpenAllowed) {
+                        visits.acknowledge(retry)
+                        runCatching { onEnforcementChanged?.invoke() }
+                    }
+                }
+            } else {
+                val duration = if (emergency) current.endsAtEpochMs?.minus(now)
+                    ?: EMERGENCY_PASS_OPEN_ENDED_EXEMPTION_MS else DEFAULT_BREAK_DURATION_MS
+                grants.request(GrantRequest(
+                    id, packageName, causeKey(packageName, current), GrantScope.Packages(setOf(packageName)),
+                    duration, current.breakLevel, emergency, current.spendsOpenOnBreak,
+                    usesDefaultLevel = current.reason == BlockScreenReason.TIME_LIMIT,
+                    notAfterEpochMs = current.endsAtEpochMs.takeIf { emergency },
+                ), inputsReady = grantInputsReady(current, emergency))
+            }
+            if (result is GrantResult.Unavailable || result == GrantResult.Unconfirmed) failures.add(packageName)
+            if (result is GrantResult.Granted && result.newlyAccepted) {
+                // Observe-only history hooks happen strictly after the atomic edit returns.
+                if (emergency) BlockEventHooks.emergencyPassUsed(current.ruleId, result.atEpochMs)
+                else BlockEventHooks.breakGranted(current.ruleId, result.receipts.maxOf { it.untilEpochMs }, result.atEpochMs)
+            }
+            return result
+        } finally {
+            busy.remove(packageName)
+            rerenderNow()
+        }
+    }
+
+    private fun causeKey(packageName: String, cause: BlockCause): String = MessageDigest.getInstance("SHA-256")
+        .digest("$packageName|${cause.reason}|${cause.ruleId}|${cause.endsAtEpochMs}".toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
+
+    private fun openRetryNeeded(packageName: String, cause: BlockCause): Boolean {
+        val visit = visits.current(packageName) ?: return false
+        return cause.reason == BlockScreenReason.OPEN_LIMIT && visit.charge && !visit.paid &&
+            counterInputsReady() && inspectOpen(packageName, includeUnpaidVisit = false) is OpenLimitDecision.Allowed
+    }
+
+    /** Accounting holds are provisional, not evidence of a genuinely exhausted quota. */
+    private fun pendingOpenHold(packageName: String, cause: BlockCause): Boolean {
+        val visit = visits.current(packageName) ?: return false
+        if (cause.reason != BlockScreenReason.OPEN_LIMIT || !visit.charge || visit.paid) return false
+        val focus = grants.lastGood ?: return true
         val now = nowEpochMs()
-        val consumed = passPolicy.consume(emergencyPass, now, utcOffsetMs(now)) ?: return false
-        emergencyPass = consumed
-        persist { focusStore.setEmergencyPass(consumed) }
-        val until = cause.endsAtEpochMs ?: (now + EMERGENCY_PASS_OPEN_ENDED_EXEMPTION_MS)
-        BlockExemptions.grantEmergency(packageName, until)
-        scheduleExemptionExpiry(packageName, until)
-        BlockEventHooks.emergencyPassUsed(cause.ruleId, now)
-        return true
+        return openLimitPolicy.decide(packageName, focus.openCounts, openLimits,
+            openLimitPolicy.epochDay(now, utcOffsetMs(now))) is OpenLimitDecision.Allowed
+    }
+
+    fun screenState(packageName: String, label: String?, cause: BlockCause, now: Long): BlockScreenState {
+        val inputs = grantInputs(cause, emergency = cause.breakLevel == BreakLevel.HARDCORE)
+        val status = when {
+            inputs.any { it is StorageState.Loading } -> GrantStatus.LOADING
+            inputs.any { it !is StorageState.Ready } -> GrantStatus.UNAVAILABLE
+            packageName in busy || visits.current(packageName)?.let { it.id.prefix in pendingOpens } == true -> GrantStatus.SAVING
+            packageName in failures && openRetryNeeded(packageName, cause) -> GrantStatus.RETRY_OPEN
+            packageName in failures -> GrantStatus.FAILED
+            else -> GrantStatus.READY
+        }
+        // These neutral values feed display only. Every policy/credit decision above requires
+        // Ready and reads real accounting again inside the transaction.
+        return blockScreenState(packageName, label, cause, currentBreakSession(), now, isEmergencyPassAvailable())
+            .copy(grantStatus = status)
     }
 
     // MARK: Surface callbacks (Compose invokes these on the main thread)
@@ -487,34 +650,40 @@ class BlockScreenCoordinator(
         }
     }
 
-    private fun handleBreakRequested() {
-        val packageName = visiblePackage ?: return
+    private fun handleGrantRequested(packageName: String, requests: SurfaceRequests, emergency: Boolean) {
+        if (requests.retired || surfaceRequests !== requests || visiblePackage != packageName || packageName in busy) return
         val cause = shownCause ?: return
-        when (requestBreak(packageName, cause)) {
-            is BreakDecision.Granted -> hideIfShown() // reveal the app; user is on a break
-            is BreakDecision.Pending -> rerenderNow() // swap the hold control for the wait pill
-            BreakDecision.DeniedHardcore -> Unit
+        val id = requests.id(emergency, nowEpochMs())
+        scope.launch {
+            val result = if (emergency) requestEmergencyPass(packageName, cause, id) else requestBreak(packageName, cause, id)
+            requests.recordResult(emergency, result)
+            if (result is GrantResult.Granted || result == GrantResult.OpenAllowed) {
+                runOnMain {
+                    if (surfaceRequests === requests && visiblePackage == packageName && canDismiss(packageName, cause)) hideLocked()
+                }
+            }
+            rerenderNow()
         }
     }
 
-    private fun handleEmergencyPassRequested() {
-        val packageName = visiblePackage ?: return
-        val cause = shownCause ?: return
-        if (requestEmergencyPass(packageName, cause)) {
-            hideIfShown()
-        }
-        // else: pass already used this week — the block stands. (BlockScreenState has no slot
-        // for "pass unavailable" feedback yet; that copy belongs to feature-blockscreen.)
-    }
+    fun canDismiss(packageName: String, cause: BlockCause): Boolean =
+        currentBlockCause(packageName, cause) == null || isExempt(packageName, cause)
 
     // MARK: Internals
 
     /** Main-thread body of hide. Only call via [runOnMain]/[hideIfShown]. */
     private fun hideLocked() {
+        (visiblePackage ?: mountedPackage ?: pendingSurfacePackage)?.let { failures.remove(it) }
+        pendingSurface?.cancel()
+        pendingSurface = null
+        pendingSurfacePackage = null
+        mountedPackage = null
         ticker?.cancel()
         ticker = null
         mountCheckedPackage = null
         interceptedPackage = null
+        surfaceRequests?.retired = true
+        surfaceRequests = null
         val view = shownView ?: return
         shownView = null
         visiblePackage = null
@@ -527,7 +696,7 @@ class BlockScreenCoordinator(
     private fun rerenderNow() = runOnMain {
         val pkg = visiblePackage ?: return@runOnMain
         val cause = shownCause ?: return@runOnMain
-        shownView?.render(blockScreenState(pkg, shownLabel, cause, breakSession, nowEpochMs(), isEmergencyPassAvailable()))
+        shownView?.render(screenState(pkg, shownLabel, cause, nowEpochMs()))
     }
 
     /**
@@ -555,22 +724,20 @@ class BlockScreenCoordinator(
                     hideLocked() // a break/pass was granted meanwhile (possibly by the Activity)
                     break
                 }
-                shownView?.render(blockScreenState(pkg, shownLabel, cause, breakSession, now, isEmergencyPassAvailable()))
+                shownView?.render(screenState(pkg, shownLabel, cause, now))
             }
         }
     }
 
-    private fun scheduleExemptionExpiry(packageName: String, untilEpochMs: Long) {
-        val callback = onExemptionExpired ?: return
+    private fun scheduleExemptionExpiry(requestId: String, packageName: String, untilEpochMs: Long) {
         scope.launch {
-            delay((untilEpochMs - nowEpochMs()).coerceAtLeast(0L) + EXPIRY_SLACK_MS)
-            callback(packageName)
+            val remaining = (untilEpochMs - nowEpochMs()).coerceAtLeast(0L)
+            delay(if (remaining > Long.MAX_VALUE - EXPIRY_SLACK_MS) Long.MAX_VALUE else remaining + EXPIRY_SLACK_MS)
+            scheduledExpiries.remove(requestId, untilEpochMs)
+            if (packageName == BlockExemptions.GLOBAL_PACKAGE) {
+                runCatching { onEnforcementChanged?.invoke() }
+            } else runCatching { onExemptionExpired?.invoke(packageName) }
         }
-    }
-
-    private fun persist(write: suspend () -> Unit) {
-        // DataStore serializes updateData calls per instance, so submission order is kept.
-        scope.launch { runCatching { write() } }
     }
 
     private fun utcOffsetMs(now: Long): Long = TimeZone.getDefault().getOffset(now).toLong()
@@ -598,5 +765,8 @@ class BlockScreenCoordinator(
 
         /** Re-check a hair after expiry so the re-evaluation never races the ledger. */
         private const val EXPIRY_SLACK_MS: Long = 250L
+
+        /** Policy stays blocked while IO is pending; avoid flashing a full screen for fast edits. */
+        internal const val PENDING_OPEN_SURFACE_GRACE_MS: Long = 100L
     }
 }

@@ -205,12 +205,13 @@ class DataStoreFocusStateStore(
                 val current = readFocus(prefs)
                 val mutation = transform(current)
                 require(mutation.next.revision == current.revision) { "Focus revision is store-owned" }
+                require(mutation.next.minimumRequestEpochMs >= current.minimumRequestEpochMs) { "Request retention cannot rewind" }
                 val next = if (mutation.next == current) current else {
                     require(current.revision < Long.MAX_VALUE) { "Focus revision exhausted" }
                     mutation.next.copy(revision = current.revision + 1)
                 }
                 // Validate ALL output before touching preferences, and freeze caller-owned maps.
-                val ledger = FocusLedgerCodec.encode(FocusLedgerCodec.Ledger(next.exemptions, next.breaksByCause, next.revision))
+                val ledger = FocusLedgerCodec.encode(FocusLedgerCodec.Ledger(next.exemptions, next.breaksByCause, next.revision, next.minimumRequestEpochMs))
                 val session = PrefsCodec.encodeBreakSession(next.breakSession)
                 val counts = PrefsCodec.encodeOpenCounts(next.openCounts.opensByPackage)
                 StrictPrefsCodec.session(session); StrictPrefsCodec.counts(counts)
@@ -269,5 +270,6 @@ private fun readFocus(prefs: Preferences): FocusSnapshot {
         exemptions = ledger.exemptions,
         breaksByCause = ledger.breaksByCause,
         revision = ledger.revision,
+        minimumRequestEpochMs = ledger.minimumRequestEpochMs,
     )
 }

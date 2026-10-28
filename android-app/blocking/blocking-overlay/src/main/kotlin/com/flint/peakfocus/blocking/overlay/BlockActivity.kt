@@ -18,13 +18,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.toArgb
+import androidx.lifecycle.lifecycleScope
 import com.flint.peakfocus.core.common.theme.FlintTheme
-import com.flint.peakfocus.core.model.BreakDecision
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.feature.blockscreen.BlockScreen
 import com.flint.peakfocus.feature.blockscreen.BlockScreenReason
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 /**
  * Full-screen fallback host for the shared `BlockScreen` (feature-blockscreen) — used on
@@ -107,6 +108,7 @@ class BlockActivity : ComponentActivity() {
                 val current = target ?: return@FlintTheme
                 var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
                 var refresh by remember { mutableIntStateOf(0) }
+                val requests = remember(current) { BlockScreenCoordinator.SurfaceRequests() }
 
                 // Host-owned clock: tick the countdowns; leave when the block window ends or
                 // an exemption (granted here or on another surface) starts covering the app.
@@ -129,13 +131,11 @@ class BlockActivity : ComponentActivity() {
                 }
 
                 val state = remember(current, now, refresh) {
-                    blockScreenState(
+                    coordinator.screenState(
                         current.packageName,
                         current.label,
                         current.cause,
-                        coordinator.currentBreakSession(),
                         now,
-                        coordinator.isEmergencyPassAvailable(),
                     )
                 }
                 BlockScreen(
@@ -153,17 +153,37 @@ class BlockActivity : ComponentActivity() {
                         finish()
                     },
                     onBreakRequested = {
-                        when (coordinator.requestBreak(current.packageName, current.cause)) {
-                            is BreakDecision.Granted -> finish() // exemption granted; app is free
-                            is BreakDecision.Pending -> refresh++ // show the cooldown pill now
-                            BreakDecision.DeniedHardcore -> nudge++ // refusal, made visible
+                        if (!requests.retired) {
+                            val id = requests.id(emergency = false, now = System.currentTimeMillis())
+                            lifecycleScope.launch {
+                                val result = coordinator.requestBreak(current.packageName, current.cause, id)
+                                requests.recordResult(emergency = false, result)
+                                if ((result is GrantResult.Granted || result == GrantResult.OpenAllowed) &&
+                                    target == current && coordinator.canDismiss(current.packageName, current.cause)
+                                ) {
+                                    requests.retired = true
+                                    finish()
+                                } else if (result == GrantResult.Denied) nudge++
+                                refresh++
+                            }
+                            refresh++ // display Saving before the next clock tick
                         }
                     },
                     onEmergencyPassRequested = {
-                        if (coordinator.requestEmergencyPass(current.packageName, current.cause)) {
-                            finish()
-                        } else {
-                            nudge++ // this week's pass is already spent — the block stands
+                        if (!requests.retired) {
+                            val id = requests.id(emergency = true, now = System.currentTimeMillis())
+                            lifecycleScope.launch {
+                                val result = coordinator.requestEmergencyPass(current.packageName, current.cause, id)
+                                requests.recordResult(emergency = true, result)
+                                if (result is GrantResult.Granted && target == current &&
+                                    coordinator.canDismiss(current.packageName, current.cause)
+                                ) {
+                                    requests.retired = true
+                                    finish()
+                                } else if (result == GrantResult.Denied) nudge++
+                                refresh++
+                            }
+                            refresh++
                         }
                     },
                     nudge = nudge,

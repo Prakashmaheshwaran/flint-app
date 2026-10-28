@@ -2,21 +2,24 @@ package com.flint.peakfocus.core.datastore
 
 import com.flint.peakfocus.core.model.*
 
-/** Additive v1 receipts only; existing v1 accounting keys retain their exact format. */
+/** Versioned additive receipts; existing v1 accounting keys retain their exact format. */
 internal object FocusLedgerCodec {
     data class Ledger(
         val exemptions: Map<String, PersistedExemption> = emptyMap(),
         val breaksByCause: Map<String, BreakSessionState> = emptyMap(),
         val revision: Long = 0,
+        val minimumRequestEpochMs: Long = 0,
     )
 
     fun encode(value: Ledger): String = buildList {
-        require(value.revision >= 0)
-        add("H|1|${value.revision}")
+        require(value.revision >= 0 && value.minimumRequestEpochMs >= 0)
+        add("H|2|${value.revision}|${value.minimumRequestEpochMs}")
         value.exemptions.toSortedMap().forEach { (id, grant) ->
             require(id == grant.requestId && grant.untilEpochMs >= 0)
             add(listOf("E", atom(id), atom(grant.packageName), atom(grant.causeKey), grant.kind.name,
-                grant.untilEpochMs.toString()).joinToString("|"))
+                grant.untilEpochMs.toString(), grant.bootSessionId?.let {
+                    require(it != "-"); atom(it)
+                } ?: "-").joinToString("|"))
         }
         value.breaksByCause.toSortedMap().forEach { (cause, session) ->
             val encoded = PrefsCodec.encodeBreakSession(session)
@@ -33,10 +36,13 @@ internal object FocusLedgerCodec {
         val rows = encoded.split('\n')
         val header = rows.first().split('|')
         if (header.size < 2 || header[0] != "H" || header[1].toIntOrNull() == null) corrupt()
-        if (header[1] != "1") future()
-        if (header.size > 3) future()
+        if (header[1] != "1" && header[1] != "2") future()
+        val version = header[1].toInt()
+        if (header.size > if (version == 1) 3 else 4) future()
+        if (version == 2 && header.size != 4) corrupt()
         // Initial additive-v1 fixtures without a revision migrate losslessly on first write.
         val revision = if (header.size == 2) 0L else header[2].toLongOrNull()?.takeIf { it >= 0 } ?: corrupt()
+        val floor = if (version == 1) 0L else header[3].toLongOrNull()?.takeIf { it >= 0 } ?: corrupt()
         val exemptions = linkedMapOf<String, PersistedExemption>()
         val causes = linkedMapOf<String, BreakSessionState>()
         fun readAtom(raw: String): String {
@@ -49,11 +55,13 @@ internal object FocusLedgerCodec {
             val f = row.split('|')
             when (f[0]) {
                 "E" -> {
-                    if (f.size != 6) corrupt()
+                    if (f.size !in 6..7 || (version == 1 && f.size != 6)) corrupt()
                     val id = readAtom(f[1])
                     val kind = ExemptionKind.entries.firstOrNull { it.name == f[4] } ?: future()
                     val deadline = f[5].toLongOrNull()?.takeIf { it >= 0 } ?: corrupt()
-                    val grant = PersistedExemption(id, readAtom(f[2]), readAtom(f[3]), kind, deadline)
+                    // Older v1/unshipped-v2 rows remain readable but cannot prove boot-scoped access.
+                    val boot = f.getOrNull(6)?.takeUnless { it == "-" }?.let(::readAtom)
+                    val grant = PersistedExemption(id, readAtom(f[2]), readAtom(f[3]), kind, deadline, boot)
                     if (exemptions.put(id, grant) != null) corrupt()
                 }
                 "B" -> {
@@ -65,7 +73,7 @@ internal object FocusLedgerCodec {
                 else -> future()
             }
         }
-        return Ledger(exemptions.toMap(), causes.toMap(), revision)
+        return Ledger(exemptions.toMap(), causes.toMap(), revision, floor)
     }
 
     private fun atom(raw: String): String {

@@ -12,8 +12,8 @@ import java.util.concurrent.ConcurrentHashMap
  * either surface (accessibility overlay, Path B overlay, or the full-screen BlockActivity)
  * silences the other path too — they run in the same app process.
  *
- * [restoreCommitted] projects a successfully read/committed durable focus ledger. The old
- * in-memory grant entry points remain compatible until the coordinator adopts transactions.
+ * [restoreCommitted] projects a successfully read/committed durable focus ledger. Production
+ * grants use this projection exclusively; the old entry points support pure legacy fixtures.
  *
  * Plain JVM (ConcurrentHashMap, no Android imports) so the grant/expiry semantics are
  * unit-tested in `BlockExemptionsTest`.
@@ -31,11 +31,13 @@ object BlockExemptions {
     @Volatile private var committed = Projection(-1, emptyList())
 
     /** Replace only the durable projection. Call ONLY with a Ready or acknowledged snapshot. */
-    fun restoreCommitted(receipts: Collection<PersistedExemption>, nowEpochMs: Long, revision: Long = 0) {
+    fun restoreCommitted(receipts: Collection<PersistedExemption>, nowEpochMs: Long, revision: Long, bootSessionId: String) {
         require(revision >= 0)
         synchronized(projectionLock) {
             if (revision < committed.revision) return
-            committed = Projection(revision, receipts.filter { it.untilEpochMs > nowEpochMs }.toList())
+            committed = Projection(revision, receipts.filter {
+                it.untilEpochMs > nowEpochMs && it.bootSessionId == bootSessionId
+            }.toList())
         }
     }
 

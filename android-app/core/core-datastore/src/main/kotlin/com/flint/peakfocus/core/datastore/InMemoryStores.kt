@@ -154,11 +154,12 @@ class InMemoryFocusStateStore : FocusStateStore {
         val current = snapshot.value
         val mutation = transform(current)
         require(mutation.next.revision == current.revision) { "Focus revision is store-owned" }
+        require(mutation.next.minimumRequestEpochMs >= current.minimumRequestEpochMs) { "Request retention cannot rewind" }
         val next = if (mutation.next == current) current else {
             require(current.revision < Long.MAX_VALUE) { "Focus revision exhausted" }
             mutation.next.copy(revision = current.revision + 1)
         }
-        val ledger = FocusLedgerCodec.decode(FocusLedgerCodec.encode(FocusLedgerCodec.Ledger(next.exemptions, next.breaksByCause, next.revision)))
+        val ledger = FocusLedgerCodec.decode(FocusLedgerCodec.encode(FocusLedgerCodec.Ledger(next.exemptions, next.breaksByCause, next.revision, next.minimumRequestEpochMs)))
         StrictPrefsCodec.session(PrefsCodec.encodeBreakSession(next.breakSession))
         StrictPrefsCodec.counts(PrefsCodec.encodeOpenCounts(next.openCounts.opensByPackage))
         val frozen = next.copy(exemptions = ledger.exemptions, breaksByCause = ledger.breaksByCause,

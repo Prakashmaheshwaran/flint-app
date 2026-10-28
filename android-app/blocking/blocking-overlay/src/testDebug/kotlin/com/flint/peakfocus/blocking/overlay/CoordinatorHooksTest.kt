@@ -8,12 +8,14 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.flint.peakfocus.core.datastore.FlintPreferences
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BlockTargets
-import com.flint.peakfocus.core.model.BreakDecision
+import com.flint.peakfocus.core.model.ActiveRulesHolder
+import com.flint.peakfocus.core.model.FocusMutation
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.model.BreakSessionState
 import com.flint.peakfocus.core.model.EmergencyPassState
 import com.flint.peakfocus.core.model.OpenCountState
 import com.flint.peakfocus.core.model.TimeLimit
+import com.flint.peakfocus.feature.blockscreen.GrantStatus
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -58,6 +60,8 @@ class CoordinatorHooksTest {
 
     @Before fun setUp() {
         BlockExemptions.clearAll()
+        OpenVisits.process.leave()
+        ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, emptyList())
         BlockEventHooks.register(listener)
         coordinator = newCoordinator(withFallback = true)
         // Process-wide rules from other suites must not block the hook test packages.
@@ -80,14 +84,16 @@ class CoordinatorHooksTest {
 
     @After fun tearDown() {
         BlockEventHooks.unregister(listener)
-        BlockExemptions.clearAll()
         runBlocking {
             FlintPreferences.limits(app).clearTimeLimit(APP_A)
-            FlintPreferences.focusState(app).setEmergencyPass(EmergencyPassState())
-            FlintPreferences.focusState(app).setBreakSession(BreakSessionState())
-            FlintPreferences.focusState(app).setOpenCounts(OpenCountState())
+            FlintPreferences.focusState(app).transact {
+                FocusMutation(it.copy(emergencyPass = EmergencyPassState(), breakSession = BreakSessionState(),
+                    openCounts = OpenCountState(), exemptions = emptyMap(), breaksByCause = emptyMap()), Unit)
+            }
         }
         scope.cancel()
+        BlockExemptions.clearAll()
+        OpenVisits.process.leave()
     }
 
     @Test fun `an intercepted open is reported once per new block, not per re-render`() {
@@ -123,8 +129,11 @@ class CoordinatorHooksTest {
 
     @Test fun `accepted break and pass grants are reported with the rule id`() {
         val cause = ruleBlockCause(rule, System.currentTimeMillis(), 0L)
-        assertTrue(coordinator.requestBreak(APP_A, cause) is BreakDecision.Granted)
-        assertTrue(coordinator.requestEmergencyPass(APP_B, cause))
+        awaitReady(cause)
+        runBlocking {
+            assertTrue(coordinator.requestBreak(APP_A, cause, GrantRequestId.issue(System.currentTimeMillis())) is GrantResult.Granted)
+            assertTrue(coordinator.requestEmergencyPass(APP_B, cause, GrantRequestId.issue(System.currentTimeMillis())) is GrantResult.Granted)
+        }
         assertEquals(
             listOf("break:session-timer-7:${BlockScreenCoordinator.DEFAULT_BREAK_DURATION_MS}", "pass:session-timer-7"),
             events,
@@ -133,7 +142,8 @@ class CoordinatorHooksTest {
 
     @Test fun `a denied Hardcore break reports nothing`() {
         val hardcore = ruleBlockCause(rule.copy(breakLevel = BreakLevel.HARDCORE), System.currentTimeMillis(), 0L)
-        assertEquals(BreakDecision.DeniedHardcore, coordinator.requestBreak(APP_A, hardcore))
+        awaitReady(hardcore)
+        runBlocking { assertEquals(GrantResult.Denied, coordinator.requestBreak(APP_A, hardcore, GrantRequestId.issue(System.currentTimeMillis()))) }
         assertEquals(emptyList<String>(), events)
     }
 
@@ -145,7 +155,7 @@ class CoordinatorHooksTest {
     }
 
     @Test fun `the coordinator's own counter and grant writes never notify (no re-evaluation loop)`() {
-        awaitTrue("initial snapshots") { enforcementChanges.get() >= 1 }
+        awaitReady(ruleBlockCause(rule, System.currentTimeMillis(), 0L))
         Thread.sleep(200L); idle()
         val settled = enforcementChanges.get()
         val focus = FlintPreferences.focusState(app)
@@ -182,6 +192,10 @@ class CoordinatorHooksTest {
     }
 
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
+
+    private fun awaitReady(cause: BlockCause) = awaitTrue("complete storage readiness") {
+        coordinator.screenState(APP_A, null, cause, System.currentTimeMillis()).grantStatus == GrantStatus.READY
+    }
 
     private fun awaitTrue(what: String, condition: () -> Boolean) {
         val deadline = System.currentTimeMillis() + 5_000L
