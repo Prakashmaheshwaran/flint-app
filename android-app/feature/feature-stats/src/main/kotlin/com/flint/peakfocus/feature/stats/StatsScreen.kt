@@ -168,6 +168,7 @@ fun StatsScreen(modifier: Modifier = Modifier) {
         ) { s ->
             when (s) {
                 is StatsUiState.Loading -> LoadingState()
+                is StatsUiState.Error -> UsageError(onRetry = { statsViewModel.refresh() })
                 is StatsUiState.PermissionRequired -> UsageAccessPrompt(
                     onOpenSettings = {
                         context.startActivity(
@@ -181,6 +182,20 @@ fun StatsScreen(modifier: Modifier = Modifier) {
     }
 }
 
+@Composable
+private fun UsageError(onRetry: () -> Unit) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(FlintSpacing.gutter)) {
+        FlintScreenHeader(title = "Insights", eyebrow = "Focus sessions and screen usage")
+        Spacer(Modifier.height(FlintSpacing.md))
+        FocusSessionsSection()
+        FlintCard {
+            Text("Screen usage unavailable", style = MaterialTheme.typography.titleMedium)
+            Text("Couldn't load screen usage. Try again.", modifier = Modifier.padding(vertical = FlintSpacing.sm))
+            Button(onClick = onRetry) { Text("Retry screen usage") }
+        }
+    }
+}
+
 /** Skeleton that echoes the report layout, so Ready lands in place instead of reflowing. */
 @Composable
 private fun LoadingState() {
@@ -190,6 +205,7 @@ private fun LoadingState() {
             .verticalScroll(rememberScrollState())
             .padding(FlintSpacing.gutter),
     ) {
+        FocusSessionsSection()
         FlintSkeletonBlock(Modifier.fillMaxWidth(0.45f), height = 28.dp)
         Spacer(Modifier.height(FlintSpacing.sm))
         FlintSkeletonBlock(Modifier.width(96.dp), height = 10.dp)
@@ -231,6 +247,7 @@ private fun UsageAccessPrompt(onOpenSettings: () -> Unit) {
     ) {
         FlintScreenHeader(title = "Insights", eyebrow = "See where your time goes")
         Spacer(Modifier.height(FlintSpacing.md))
+        FocusSessionsSection()
         FlintCard {
             Text(
                 text = "To show screen-time reports, Flint needs Android's Usage Access. It reads " +
@@ -298,10 +315,11 @@ private fun StatsReport(report: UsageReport) {
     ) {
         FlintScreenHeader(
             title = "Insights",
-            eyebrow = "Screen time · last 7 days",
+            eyebrow = "Focus sessions and screen usage",
             modifier = Modifier.cardEntrance(revealed, 0),
         )
         Spacer(Modifier.height(FlintSpacing.md))
+        FocusSessionsSection()
         TodayCard(
             todayTotalMillis = report.todayTotalMillis,
             shareOfTypical = report.todayShareOfTypical,
@@ -334,18 +352,11 @@ private fun TodayCard(
     revealed: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    // Hero count-up shares the bars' report-identity gate; every frame goes through the real
-    // duration formatter and FlintNumerals keeps the digits from jittering as they change.
-    val countUp by animateFloatAsState(
-        targetValue = if (revealed) 1f else 0f,
-        animationSpec = tween(FlintMotion.DurationLong, easing = FlintMotion.EasingEmphasized),
-        label = "todayCountUp",
-    )
     FlintCard(modifier = modifier) {
         FlintSectionLabel("Today")
         Spacer(Modifier.height(FlintSpacing.xs))
         Text(
-            text = DurationFormat.format((todayTotalMillis * countUp).toLong()),
+            text = DurationFormat.format(todayTotalMillis),
             style = MaterialTheme.typography.displaySmall.merge(FlintNumerals),
             color = MaterialTheme.colorScheme.primary,
         )

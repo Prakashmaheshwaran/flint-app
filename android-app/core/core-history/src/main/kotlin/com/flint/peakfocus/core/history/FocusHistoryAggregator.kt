@@ -19,6 +19,7 @@ data class FocusSession(
     val intervals: List<FocusInterval>,
     val breaks: Int?,
     val opensIntercepted: Int?,
+    val terminalRecorded: Boolean = false,
 ) {
     val focusedMs: Long get() = intervals.sumOf { it.end - it.start }
 }
@@ -131,7 +132,7 @@ object FocusHistoryAggregator {
             }
             FocusSession(id, start.name ?: "Focus", start.at, end, plannedEnd, outcome, inferred,
                 intervals, breaks.size.takeIf { it > 0 },
-                ordered.count { it.knownType == HistoryEventType.OPEN_INTERCEPTED }.takeIf { it > 0 })
+                ordered.count { it.knownType == HistoryEventType.OPEN_INTERCEPTED }.takeIf { it > 0 }, terminal != null)
         }
     }
 
