@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /** Contains no target identifiers and never mutates the rules store. */
 data class HistoryRule(val id: String, val name: String, val tier: String, val plannedEnd: Long?)
@@ -25,6 +27,7 @@ class HistoryReconciler(
     private val zone: () -> ZoneId = { ZoneId.systemDefault() },
 ) {
     private var firstSuccessfulSnapshot = true
+    private val observationMutex = Mutex()
     private val active = MutableStateFlow<Set<String>>(emptySet())
     val activeSessionIds: StateFlow<Set<String>> = active.asStateFlow()
     private val readiness = MutableStateFlow(false)
@@ -53,7 +56,7 @@ class HistoryReconciler(
         }
     }
 
-    suspend fun observe(rules: List<HistoryRule>) {
+    suspend fun observe(rules: List<HistoryRule>) = observationMutex.withLock {
         val now = clock.millis()
         val sessions = rules.filter { it.id.startsWith("session-") }.associateBy { it.id }
         val current = sessions.filterValues { it.plannedEnd == null || it.plannedEnd > now }.keys

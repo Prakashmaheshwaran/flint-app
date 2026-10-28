@@ -168,6 +168,7 @@ fun StatsScreen(modifier: Modifier = Modifier) {
         ) { s ->
             when (s) {
                 is StatsUiState.Loading -> LoadingState()
+                is StatsUiState.Error -> UsageError(onRetry = { statsViewModel.refresh() })
                 is StatsUiState.PermissionRequired -> UsageAccessPrompt(
                     onOpenSettings = {
                         context.startActivity(
@@ -177,6 +178,20 @@ fun StatsScreen(modifier: Modifier = Modifier) {
                 )
                 is StatsUiState.Ready -> StatsReport(s.report)
             }
+        }
+    }
+}
+
+@Composable
+private fun UsageError(onRetry: () -> Unit) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(FlintSpacing.gutter)) {
+        FlintScreenHeader(title = "Insights", eyebrow = "Focus sessions and screen usage")
+        Spacer(Modifier.height(FlintSpacing.md))
+        FocusSessionsSection()
+        FlintCard {
+            Text("Screen usage unavailable", style = MaterialTheme.typography.titleMedium)
+            Text("Couldn't load screen usage. Try again.", modifier = Modifier.padding(vertical = FlintSpacing.sm))
+            Button(onClick = onRetry) { Text("Retry screen usage") }
         }
     }
 }
@@ -337,18 +352,11 @@ private fun TodayCard(
     revealed: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    // Hero count-up shares the bars' report-identity gate; every frame goes through the real
-    // duration formatter and FlintNumerals keeps the digits from jittering as they change.
-    val countUp by animateFloatAsState(
-        targetValue = if (revealed) 1f else 0f,
-        animationSpec = tween(FlintMotion.DurationLong, easing = FlintMotion.EasingEmphasized),
-        label = "todayCountUp",
-    )
     FlintCard(modifier = modifier) {
         FlintSectionLabel("Today")
         Spacer(Modifier.height(FlintSpacing.xs))
         Text(
-            text = DurationFormat.format((todayTotalMillis * countUp).toLong()),
+            text = DurationFormat.format(todayTotalMillis),
             style = MaterialTheme.typography.displaySmall.merge(FlintNumerals),
             color = MaterialTheme.colorScheme.primary,
         )

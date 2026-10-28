@@ -12,12 +12,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -39,6 +41,7 @@ import com.flint.peakfocus.core.history.FocusHistoryText
 import com.flint.peakfocus.core.history.HistoryAvailability
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.launch
 
 internal data class FocusPeriodTotals(val focused: String, val completed: Int, val endedEarly: Int)
 
@@ -52,6 +55,8 @@ internal fun focusPeriodTotals(days: List<FocusDay>): FocusPeriodTotals = FocusP
 internal fun FocusSessionsSection() {
     if (LocalInspectionMode.current) { FlintSectionLabel("Focus sessions"); return }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var retrying by remember { mutableStateOf(false) }
     val history by remember(context) { FocusHistoryBridge.summaries(context) }.collectAsStateWithLifecycle(initialValue = null)
     var week by rememberSaveable { mutableStateOf(true) }
     var selectedDate by rememberSaveable { mutableStateOf<String?>(null) }
@@ -62,6 +67,10 @@ internal fun FocusSessionsSection() {
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
         if (summary == null || summary.availability == HistoryAvailability.UNAVAILABLE) {
             Text(FocusHistoryText.today(summary), modifier = Modifier.padding(top = 12.dp))
+            if (summary?.availability == HistoryAvailability.UNAVAILABLE) Button(enabled = !retrying, onClick = {
+                retrying = true
+                scope.launch { FocusHistoryBridge.retry(context); retrying = false }
+            }) { Text(if (retrying) "Retrying…" else "Retry focus history") }
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = !week, onClick = { week = false }, label = { Text("Day") })
