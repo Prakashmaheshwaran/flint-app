@@ -1,0 +1,2 @@
+{"name": "clean-devices", "command": ["make", "clean-devices"], "started": "2026-10-28T03:02:59.275855+00:00", "seconds": 0.129, "exit": 0, "output_bytes": 62, "truncated": false, "env": {"PYTHONDONTWRITEBYTECODE": "1"}}
+No claimed devices; unclaimed devices/helpers are left alone.

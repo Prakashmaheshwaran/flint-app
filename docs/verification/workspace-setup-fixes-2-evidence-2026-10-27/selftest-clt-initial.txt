@@ -1,0 +1,360 @@
+{"name": "selftest-clt", "command": ["make", "selftest"], "started": "2026-10-28T02:51:45.253333+00:00", "seconds": 61.046, "exit": 2, "output_bytes": 22344, "truncated": false, "env": {"PYTHONDONTWRITEBYTECODE": "1", "PATH_prefix": "/Library/Developer/CommandLineTools/usr/bin"}}
+SELFTEST /bin/bash scripts/flint-env-selftest.sh
+ok - CI ANDROID_HOME beats SDK_ROOT and local.properties
+ok - SDK_ROOT beats local.properties
+ok - local.properties beats default
+ok - property decoding, spaces and last key wins
+ok - relative property resolves from android-app
+ok - properties are data, never shell code
+ok - default SDK uses temporary HOME
+ok - idempotent, exact PATH de-duplication, cwd/options/functions preserved
+ok - sourceable and idempotent in /bin/bash
+ok - sourceable and idempotent in /bin/sh
+ok - sourceable and idempotent in /bin/zsh
+ok - Make aliases and recipe overrides agree, including spaces
+ok - Make default JAVA_HOME alias equals resolver
+ok - Make default XCODE_DEV alias equals resolver
+ok - Make default SDK matches sourced default
+ok - recipe exit status preserved
+ok - recipe errexit preserved
+ok - missing toolchains do not block help/env
+ok - generic shell path drift is visible and never overrides environment
+ok - doctor reuses env exactly
+ok - conflicting Gradle SDK is caught before build
+ok - no build or device binary is executed by environment diagnostics
+=== flint-env: 22 checks passed ===
+SELFTEST /bin/bash scripts/orca-setup-selftest.sh
+ok - setup twice generates stable project/properties under set -e, with loud missing-tool warnings
+ok - an existing local.properties is never overwritten, including an env conflict
+ok - missing SDK does not block iOS generation or write a bogus properties file
+ok - missing XcodeGen fails clearly
+ok - fake-tool call log contains only project generation and diagnostics
+ok - failure dumps are bounded and cannot feed their own redirected log
+ok - process-local file-size limit stops unbounded fixture writes
+=== orca-setup: 7 checks passed ===
+SELFTEST /bin/bash scripts/android-verify-selftest.sh
+=== android-verify.sh selftest (lib: /Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/lib/android-verify.sh) ===
+ok   - anchor-hit exits 0
+ok   - provenance: script sha256 full + correct
+ok   - provenance: lib sha256 logged
+ok   - harness copies: driver + lib
+ok   - harness copy matches executed driver
+ok   - latest symlink points at the run dir
+ok   - fingerprint + geometry logged
+ok   - END line on success
+ok   - exit trap: 99-final.png + logcat
+ok   - wait-miss exits nonzero
+ok   - failed-wait artifacts saved
+ok   - failure hints at scroll_find_text
+ok   - failure explains LazyColumn composition
+ok   - trap logs RUN FAILED with exit code
+ok   - scroll-found exits 0
+ok   - swipe logged with geometry + purpose
+ok   - swipe recorded as a real input event
+ok   - outcome logged (found after N swipes)
+ok   - scroll-dry exits nonzero
+ok   - distinguishes 'list stopped moving'
+ok   - verdict: absent, not off-viewport
+ok   - only one swipe spent (not max=4)
+ok   - wait_anchor_then_scroll exits 0
+ok   - assert_badge_text 'Open limit' passes
+ok   - source-case 'Open limit' fails (run-2 bug)
+ok   - source-case failure saves artifacts
+ok   - tap-first exits 0
+ok   - tap center = 403 2274 (run 3's real tap)
+ok   - tap coords logged in run.txt
+ok   - XML-entity text tappable (&amp; unescaped)
+ok   - maxy picks the lowest duplicate
+ok   - tap-miss exits nonzero + saves artifacts
+ok   - assert_overlay passes w/ bare window
+ok   - assert_overlay fails w/ activity-only
+ok   - overlay failure names the artifact
+ok   - assert_no_overlay passes w/ activity-only
+ok   - assert_no_overlay fails w/ bare window
+ok   - second run into same dir refused (exit 2)
+ok   - refusal names the guard
+ok   - first run's run.txt untouched
+ok   - type_text logs the literal string
+ok   - type_text escapes spaces for input text
+ok   - apk sha256 logged in full
+ok   - lint-bait driver still exits 0 (warn-only)
+ok   - lint flags source-case badge grep
+ok   - lint flags raw shell input
+ok   - bash -c $0 flagged as unhashable
+=== 47 passed, 0 failed (work: /var/folders/rp/2kj3kz19101cywzlww95b36w0000gn/T/flint-selftest-ed7trfcy/av-selftest.3CCwFM) ===
+OK
+SELFTEST /bin/bash scripts/check-release-version-selftest.sh
+=== check-release-version.sh selftest (checker: /Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/check-release-version.sh) ===
+ok   - consistent tree exits 0
+ok   - consistent tree reports OK
+ok   - no previous tag SKIPs loudly (not a pass)
+ok   - SKIP names the shallow-clone cause
+ok   - stale versionName exits 1
+ok   - stale versionName names both versions
+ok   - stale versionName spells out the symptom
+ok   - stale MARKETING_VERSION exits 1
+ok   - stale MARKETING_VERSION is named
+ok   - missing CHANGELOG section exits 1
+ok   - missing CHANGELOG section is named
+ok   - all-bad tree exits 1
+ok   - 3 independent FAILs in one pass
+ok   - summary counts the failures
+ok   - unbumped versionCode exits 1
+ok   - names the shipped code and the tag
+ok   - says INSTALL_FAILED_UPDATE_INCOMPATIBLE
+ok   - versionCode is the ONLY failure
+ok   - bumped versionCode exits 0
+ok   - logs the comparison it made
+ok   - older release ignores descendant tags
+ok   - older release compares its own ancestor
+ok   - regressed versionCode exits 1
+ok   - versionCode 0 exits 1
+ok   - versionCode 0 named as non-positive
+ok   - tag "0.2.0" rejected (exit 1)
+ok   - tag "v0.2" rejected (exit 1)
+ok   - tag "v0.2.0.1" rejected (exit 1)
+ok   - tag "release-1" rejected (exit 1)
+ok   - empty tag exits 2 (usage)
+ok   - bad tag short-circuits before versionName
+ok   - bad tag reads no versions
+ok   - v0.2.0-rc.1 with matching tree exits 0
+ok   - suffixed tag reports its semver core
+ok   - suffixed tag needs suffixed versionName
+ok   - missing files exit 2 (not 0, not 1)
+ok   - missing files name the unreadable path
+ok   - unparseable versionName exits 2
+ok   - unparseable versionName is named
+ok   - non-git ROOT exits 0 with a SKIP
+ok   - non-git ROOT does not claim a comparison
+=== 41 passed, 0 failed (work: /var/folders/rp/2kj3kz19101cywzlww95b36w0000gn/T/flint-selftest-ed7trfcy/crv-selftest.rsWi8R) ===
+OK
+SELFTEST /Library/Developer/CommandLineTools/usr/bin/python3 -B -m unittest discover -s scripts -p test_cleanup.py
+..F....F..F..FFF.................FFFFF.F.FFFFFF.FF.....
+======================================================================
+FAIL: test_archive_targets_env_worktree_from_different_cwd_and_releases_all_sessions (test_cleanup.CleanupTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 406, in test_archive_targets_env_worktree_from_different_cwd_and_releases_all_sessions
+    self.assertFalse((self.root / "ios-app/DerivedData").exists())
+AssertionError: True is not false
+
+======================================================================
+FAIL: test_clean_removes_native_artifacts_without_gradle_or_shared_caches (test_cleanup.CleanupTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 345, in test_clean_removes_native_artifacts_without_gradle_or_shared_caches
+    self.call("artifacts")
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 202, in call
+    self.assertEqual(result.returncode, 0, result.stdout)
+AssertionError: 1 != 0 : Cleanup refused/deferred: Python lacks fd-safe shutil.rmtree; artifacts preserved
+
+
+======================================================================
+FAIL: test_h1_custom_directory_with_dot_spelling_is_removed (test_cleanup.CleanupTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 504, in test_h1_custom_directory_with_dot_spelling_is_removed
+    self.call('artifacts', '--derived-data', 'ios-app/./custom-cache')
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 202, in call
+    self.assertEqual(result.returncode, 0, result.stdout)
+AssertionError: 1 != 0 : Cleanup refused/deferred: Python lacks fd-safe shutil.rmtree; artifacts preserved
+
+
+======================================================================
+FAIL: test_h2_leaf_inode_replacement_is_preserved (test_cleanup.CleanupTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 528, in test_h2_leaf_inode_replacement_is_preserved
+    self.assertTrue((leaf / 'precious').exists())
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_h2_orphan_parent_swap_preserves_other_host_artifact (test_cleanup.CleanupTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 534, in test_h2_orphan_parent_swap_preserves_other_host_artifact
+    flags = self.approve_orphans() if '--plan-digest' in (self.root / 'scripts/clean-worktree.py').read_text() else ['--confirm']
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 231, in approve_orphans
+    output = self.call('orphans', '--plan', str(plan), *flags).stdout
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 202, in call
+    self.assertEqual(result.returncode, 0, result.stdout)
+AssertionError: 1 != 0 : Cleanup refused/deferred: Python lacks fd-safe shutil.rmtree; artifacts preserved
+
+
+======================================================================
+FAIL: test_h2_parent_symlink_swap_during_size_probe_preserves_other_checkout (test_cleanup.CleanupTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 518, in test_h2_parent_symlink_swap_during_size_probe_preserves_other_checkout
+    self.assertTrue((parent.with_name('cache-parent-saved') / 'build').exists())
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_m3_changed_identity_or_new_claim_invalidates_plan_before_artifact_delete (test_cleanup.CleanupTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 861, in test_m3_changed_identity_or_new_claim_invalidates_plan_before_artifact_delete
+    flags = self.approve_orphans(LEGACY)
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 231, in approve_orphans
+    output = self.call('orphans', '--plan', str(plan), *flags).stdout
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 202, in call
+    self.assertEqual(result.returncode, 0, result.stdout)
+AssertionError: 1 != 0 : Cleanup refused/deferred: Python lacks fd-safe shutil.rmtree; artifacts preserved
+
+
+======================================================================
+FAIL: test_m3_exact_plan_deletes_only_explicit_legacy_udid (test_cleanup.CleanupTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 838, in test_m3_exact_plan_deletes_only_explicit_legacy_udid
+    flags = self.approve_orphans(LEGACY)
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 231, in approve_orphans
+    output = self.call('orphans', '--plan', str(plan), *flags).stdout
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 202, in call
+    self.assertEqual(result.returncode, 0, result.stdout)
+AssertionError: 1 != 0 : Cleanup refused/deferred: Python lacks fd-safe shutil.rmtree; artifacts preserved
+
+
+======================================================================
+FAIL: test_m3_new_live_checkout_invalidates_saved_artifact_plan (test_cleanup.CleanupTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 875, in test_m3_new_live_checkout_invalidates_saved_artifact_plan
+    flags = self.approve_orphans()
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 231, in approve_orphans
+    output = self.call('orphans', '--plan', str(plan), *flags).stdout
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 202, in call
+    self.assertEqual(result.returncode, 0, result.stdout)
+AssertionError: 1 != 0 : Cleanup refused/deferred: Python lacks fd-safe shutil.rmtree; artifacts preserved
+
+
+======================================================================
+FAIL: test_m3_plan_digest_tamper_and_wrong_approval_preserve_everything (test_cleanup.CleanupTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 848, in test_m3_plan_digest_tamper_and_wrong_approval_preserve_everything
+    flags = self.approve_orphans(LEGACY)
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 231, in approve_orphans
+    output = self.call('orphans', '--plan', str(plan), *flags).stdout
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 202, in call
+    self.assertEqual(result.returncode, 0, result.stdout)
+AssertionError: 1 != 0 : Cleanup refused/deferred: Python lacks fd-safe shutil.rmtree; artifacts preserved
+
+
+======================================================================
+FAIL: test_m3_preview_plan_never_overwrites_existing_file_or_symlink (test_cleanup.CleanupTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 889, in test_m3_preview_plan_never_overwrites_existing_file_or_symlink
+    flags = self.approve_orphans()
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 231, in approve_orphans
+    output = self.call('orphans', '--plan', str(plan), *flags).stdout
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 202, in call
+    self.assertEqual(result.returncode, 0, result.stdout)
+AssertionError: 1 != 0 : Cleanup refused/deferred: Python lacks fd-safe shutil.rmtree; artifacts preserved
+DRY RUN; deletion requires --confirm --plan FILE --plan-digest SHA256
+KEEP name-only candidate flint-review-61 33333333-3333-3333-3333-333333333333; explicit --allow-legacy-udid required
+
+
+======================================================================
+FAIL: test_n1_deadline_restores_remaining_tree_and_retry (test_cleanup.CleanupTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 643, in test_n1_deadline_restores_remaining_tree_and_retry
+    self.call('artifacts')
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 202, in call
+    self.assertEqual(result.returncode, 0, result.stdout)
+AssertionError: 1 != 0 : Cleanup refused/deferred: Python lacks fd-safe shutil.rmtree; artifacts preserved
+
+
+======================================================================
+FAIL: test_n1_hard_stop_keeps_durable_provenance_and_retry_defers (test_cleanup.CleanupTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 696, in test_n1_hard_stop_keeps_durable_provenance_and_retry_defers
+    self.assertIn(str(quarantines[0]), retry.stdout)
+AssertionError: '/private/var/folders/rp/2kj3kz19101cywzlww95b36w0000gn/T/flint-selftest-ed7trfcy/flint-cleanup-selftest-rz1vgn2g/checkout with spaces/ios-app/.flint-clean-1080e9fd0db74c53a1d9d04612789b8f' not found in 'Cleanup refused/deferred: Python lacks fd-safe shutil.rmtree; artifacts preserved\n'
+
+======================================================================
+FAIL: test_n1_legacy_or_unverified_quarantine_is_discovered_and_deferred (test_cleanup.CleanupTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 670, in test_n1_legacy_or_unverified_quarantine_is_discovered_and_deferred
+    self.assertIn(str(quarantine), result.stdout)
+AssertionError: '/private/var/folders/rp/2kj3kz19101cywzlww95b36w0000gn/T/flint-selftest-ed7trfcy/flint-cleanup-selftest-qwkdu065/checkout with spaces/custom-output/.flint-clean-legacy' not found in 'Cleanup refused/deferred: Python lacks fd-safe shutil.rmtree; artifacts preserved\n'
+
+======================================================================
+FAIL: test_n1_mid_delete_restores_exact_remaining_tree_and_retry (test_cleanup.CleanupTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 634, in test_n1_mid_delete_restores_exact_remaining_tree_and_retry
+    self.call('artifacts')
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 202, in call
+    self.assertEqual(result.returncode, 0, result.stdout)
+AssertionError: 1 != 0 : Cleanup refused/deferred: Python lacks fd-safe shutil.rmtree; artifacts preserved
+
+
+======================================================================
+FAIL: test_n1_new_build_is_never_clobbered_and_quarantine_retry_defers (test_cleanup.CleanupTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 660, in test_n1_new_build_is_never_clobbered_and_quarantine_retry_defers
+    self.assertIn(str(quarantine), retry.stdout)
+AssertionError: '/private/var/folders/rp/2kj3kz19101cywzlww95b36w0000gn/T/flint-selftest-ed7trfcy/flint-cleanup-selftest-c4spa4t6/checkout with spaces/ios-app/.flint-clean-2e057f661def4fe49cabd63d11643a05' not found in 'Cleanup refused/deferred: Python lacks fd-safe shutil.rmtree; artifacts preserved\n'
+
+======================================================================
+FAIL: test_n1_orphan_quarantine_defers_preview_and_approved_cleanup (test_cleanup.CleanupTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 700, in test_n1_orphan_quarantine_defers_preview_and_approved_cleanup
+    flags = self.approve_orphans()
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 231, in approve_orphans
+    output = self.call('orphans', '--plan', str(plan), *flags).stdout
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 202, in call
+    self.assertEqual(result.returncode, 0, result.stdout)
+AssertionError: 1 != 0 : Cleanup refused/deferred: Python lacks fd-safe shutil.rmtree; artifacts preserved
+
+
+======================================================================
+FAIL: test_n1_real_immutable_denial_restores_and_retry_removes (test_cleanup.CleanupTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 624, in test_n1_real_immutable_denial_restores_and_retry_removes
+    self.call('artifacts')
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 202, in call
+    self.assertEqual(result.returncode, 0, result.stdout)
+AssertionError: 1 != 0 : Cleanup refused/deferred: Python lacks fd-safe shutil.rmtree; artifacts preserved
+
+
+======================================================================
+FAIL: test_orphan_booted_or_claimed_legacy_simulator_is_kept (test_cleanup.CleanupTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 389, in test_orphan_booted_or_claimed_legacy_simulator_is_kept
+    self.call("orphans", *self.approve_orphans())
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 231, in approve_orphans
+    output = self.call('orphans', '--plan', str(plan), *flags).stdout
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 202, in call
+    self.assertEqual(result.returncode, 0, result.stdout)
+AssertionError: 1 != 0 : Cleanup refused/deferred: Python lacks fd-safe shutil.rmtree; artifacts preserved
+DRY RUN; deletion requires --confirm --plan FILE --plan-digest SHA256
+KEEP active/claimed flint-review-61 33333333-3333-3333-3333-333333333333
+
+
+======================================================================
+FAIL: test_orphan_default_is_dry_run_and_live_checkout_missing_project_is_kept (test_cleanup.CleanupTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 376, in test_orphan_default_is_dry_run_and_live_checkout_missing_project_is_kept
+    out = self.call("orphans").stdout
+  File "/Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/test_cleanup.py", line 202, in call
+    self.assertEqual(result.returncode, 0, result.stdout)
+AssertionError: 1 != 0 : Cleanup refused/deferred: Python lacks fd-safe shutil.rmtree; artifacts preserved
+
+
+----------------------------------------------------------------------
+Ran 55 tests in 54.222s
+
+FAILED (failures=20)
+Selftest failed (exit 1); process/log limits remained active.
+make: *** [selftest] Error 1

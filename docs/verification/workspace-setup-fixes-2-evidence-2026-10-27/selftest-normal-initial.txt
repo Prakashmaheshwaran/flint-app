@@ -1,0 +1,210 @@
+{"name": "selftest-normal", "command": ["make", "selftest"], "started": "2026-10-28T02:48:31.636842+00:00", "seconds": 171.126, "exit": 0, "output_bytes": 13431, "truncated": false, "env": {"PYTHONDONTWRITEBYTECODE": "1"}}
+SELFTEST /bin/bash scripts/flint-env-selftest.sh
+ok - CI ANDROID_HOME beats SDK_ROOT and local.properties
+ok - SDK_ROOT beats local.properties
+ok - local.properties beats default
+ok - property decoding, spaces and last key wins
+ok - relative property resolves from android-app
+ok - properties are data, never shell code
+ok - default SDK uses temporary HOME
+ok - idempotent, exact PATH de-duplication, cwd/options/functions preserved
+ok - sourceable and idempotent in /bin/bash
+ok - sourceable and idempotent in /bin/sh
+ok - sourceable and idempotent in /bin/zsh
+ok - Make aliases and recipe overrides agree, including spaces
+ok - Make default JAVA_HOME alias equals resolver
+ok - Make default XCODE_DEV alias equals resolver
+ok - Make default SDK matches sourced default
+ok - recipe exit status preserved
+ok - recipe errexit preserved
+ok - missing toolchains do not block help/env
+ok - generic shell path drift is visible and never overrides environment
+ok - doctor reuses env exactly
+ok - conflicting Gradle SDK is caught before build
+ok - no build or device binary is executed by environment diagnostics
+=== flint-env: 22 checks passed ===
+SELFTEST /bin/bash scripts/orca-setup-selftest.sh
+ok - setup twice generates stable project/properties under set -e, with loud missing-tool warnings
+ok - an existing local.properties is never overwritten, including an env conflict
+ok - missing SDK does not block iOS generation or write a bogus properties file
+ok - missing XcodeGen fails clearly
+ok - fake-tool call log contains only project generation and diagnostics
+ok - failure dumps are bounded and cannot feed their own redirected log
+ok - process-local file-size limit stops unbounded fixture writes
+=== orca-setup: 7 checks passed ===
+SELFTEST /bin/bash scripts/android-verify-selftest.sh
+=== android-verify.sh selftest (lib: /Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/lib/android-verify.sh) ===
+ok   - anchor-hit exits 0
+ok   - provenance: script sha256 full + correct
+ok   - provenance: lib sha256 logged
+ok   - harness copies: driver + lib
+ok   - harness copy matches executed driver
+ok   - latest symlink points at the run dir
+ok   - fingerprint + geometry logged
+ok   - END line on success
+ok   - exit trap: 99-final.png + logcat
+ok   - wait-miss exits nonzero
+ok   - failed-wait artifacts saved
+ok   - failure hints at scroll_find_text
+ok   - failure explains LazyColumn composition
+ok   - trap logs RUN FAILED with exit code
+ok   - scroll-found exits 0
+ok   - swipe logged with geometry + purpose
+ok   - swipe recorded as a real input event
+ok   - outcome logged (found after N swipes)
+ok   - scroll-dry exits nonzero
+ok   - distinguishes 'list stopped moving'
+ok   - verdict: absent, not off-viewport
+ok   - only one swipe spent (not max=4)
+ok   - wait_anchor_then_scroll exits 0
+ok   - assert_badge_text 'Open limit' passes
+ok   - source-case 'Open limit' fails (run-2 bug)
+ok   - source-case failure saves artifacts
+ok   - tap-first exits 0
+ok   - tap center = 403 2274 (run 3's real tap)
+ok   - tap coords logged in run.txt
+ok   - XML-entity text tappable (&amp; unescaped)
+ok   - maxy picks the lowest duplicate
+ok   - tap-miss exits nonzero + saves artifacts
+ok   - assert_overlay passes w/ bare window
+ok   - assert_overlay fails w/ activity-only
+ok   - overlay failure names the artifact
+ok   - assert_no_overlay passes w/ activity-only
+ok   - assert_no_overlay fails w/ bare window
+ok   - second run into same dir refused (exit 2)
+ok   - refusal names the guard
+ok   - first run's run.txt untouched
+ok   - type_text logs the literal string
+ok   - type_text escapes spaces for input text
+ok   - apk sha256 logged in full
+ok   - lint-bait driver still exits 0 (warn-only)
+ok   - lint flags source-case badge grep
+ok   - lint flags raw shell input
+ok   - bash -c $0 flagged as unhashable
+=== 47 passed, 0 failed (work: /var/folders/rp/2kj3kz19101cywzlww95b36w0000gn/T/flint-selftest-bl1jzipd/av-selftest.stlUl7) ===
+OK
+SELFTEST /bin/bash scripts/check-release-version-selftest.sh
+=== check-release-version.sh selftest (checker: /Users/prakash/orca/workspaces/flint/ws-fixes2/scripts/check-release-version.sh) ===
+ok   - consistent tree exits 0
+ok   - consistent tree reports OK
+ok   - no previous tag SKIPs loudly (not a pass)
+ok   - SKIP names the shallow-clone cause
+ok   - stale versionName exits 1
+ok   - stale versionName names both versions
+ok   - stale versionName spells out the symptom
+ok   - stale MARKETING_VERSION exits 1
+ok   - stale MARKETING_VERSION is named
+ok   - missing CHANGELOG section exits 1
+ok   - missing CHANGELOG section is named
+ok   - all-bad tree exits 1
+ok   - 3 independent FAILs in one pass
+ok   - summary counts the failures
+ok   - unbumped versionCode exits 1
+ok   - names the shipped code and the tag
+ok   - says INSTALL_FAILED_UPDATE_INCOMPATIBLE
+ok   - versionCode is the ONLY failure
+ok   - bumped versionCode exits 0
+ok   - logs the comparison it made
+ok   - older release ignores descendant tags
+ok   - older release compares its own ancestor
+ok   - regressed versionCode exits 1
+ok   - versionCode 0 exits 1
+ok   - versionCode 0 named as non-positive
+ok   - tag "0.2.0" rejected (exit 1)
+ok   - tag "v0.2" rejected (exit 1)
+ok   - tag "v0.2.0.1" rejected (exit 1)
+ok   - tag "release-1" rejected (exit 1)
+ok   - empty tag exits 2 (usage)
+ok   - bad tag short-circuits before versionName
+ok   - bad tag reads no versions
+ok   - v0.2.0-rc.1 with matching tree exits 0
+ok   - suffixed tag reports its semver core
+ok   - suffixed tag needs suffixed versionName
+ok   - missing files exit 2 (not 0, not 1)
+ok   - missing files name the unreadable path
+ok   - unparseable versionName exits 2
+ok   - unparseable versionName is named
+ok   - non-git ROOT exits 0 with a SKIP
+ok   - non-git ROOT does not claim a comparison
+=== 41 passed, 0 failed (work: /var/folders/rp/2kj3kz19101cywzlww95b36w0000gn/T/flint-selftest-bl1jzipd/crv-selftest.BaOxgV) ===
+OK
+SELFTEST /opt/homebrew/opt/python@3.14/bin/python3.14 -B -m unittest discover -s scripts -p test_cleanup.py
+.......................................................
+----------------------------------------------------------------------
+Ran 55 tests in 37.520s
+
+OK
+SELFTEST /opt/homebrew/opt/python@3.14/bin/python3.14 -B -m unittest discover -s scripts -p test_device_followups.py
+......................
+----------------------------------------------------------------------
+Ran 22 tests in 60.258s
+
+OK
+SELFTEST /opt/homebrew/opt/python@3.14/bin/python3.14 -B -m unittest discover -s scripts -p test_selftest_followups.py
+...........
+----------------------------------------------------------------------
+Ran 11 tests in 2.877s
+
+OK
+SELFTEST /opt/homebrew/opt/python@3.14/bin/python3.14 -B -m unittest discover -s scripts -p test_verify_local_first_apk.py
+........
+----------------------------------------------------------------------
+Ran 8 tests in 0.003s
+
+OK
+SELFTEST /opt/homebrew/opt/python@3.14/bin/python3.14 -B -m unittest discover -s scripts -p test_workspace_safety.py
+...........
+----------------------------------------------------------------------
+Ran 11 tests in 1.793s
+
+OK
+SELFTEST /opt/homebrew/opt/python@3.14/bin/python3.14 -B scripts/agent/selftest.py
+test_android_attach_or_build_failure_stops_before_install (__main__.AgentCommands.test_android_attach_or_build_failure_stops_before_install) ... ok
+test_android_logs_filter_pids_and_sdk_fallback (__main__.AgentCommands.test_android_logs_filter_pids_and_sdk_fallback) ... ok
+test_android_run_composes_attach_build_reinstall_launch (__main__.AgentCommands.test_android_run_composes_attach_build_reinstall_launch) ... ok
+test_android_running_device_claim_does_not_own_shutdown (__main__.AgentCommands.test_android_running_device_claim_does_not_own_shutdown) ... ok
+test_android_serial_claim_uses_real_avd_and_ending_session_identity (__main__.AgentCommands.test_android_serial_claim_uses_real_avd_and_ending_session_identity) ... ok
+test_direct_script_sources_shared_environment_when_present (__main__.AgentCommands.test_direct_script_sources_shared_environment_when_present) ... ok
+test_e2e1_exact_name_attaches_resolved_udid (__main__.AgentCommands.test_e2e1_exact_name_attaches_resolved_udid) ... ok
+test_e2e1_malformed_attach_never_claims_or_installs (__main__.AgentCommands.test_e2e1_malformed_attach_never_claims_or_installs) ... ok
+test_e2e1_mismatch_preserves_rebooted_or_shared_devices (__main__.AgentCommands.test_e2e1_mismatch_preserves_rebooted_or_shared_devices) ... ok
+test_e2e1_mismatch_rollback_preserves_peer_claim (__main__.AgentCommands.test_e2e1_mismatch_rollback_preserves_peer_claim) ... ok
+test_e2e1_mismatch_rolls_back_only_proven_own_boot (__main__.AgentCommands.test_e2e1_mismatch_rolls_back_only_proven_own_boot) ... ok
+test_e2e2_attach_mismatch_rolls_back_only_own_serial (__main__.AgentCommands.test_e2e2_attach_mismatch_rolls_back_only_own_serial) ... ok
+test_e2e2_attach_timeout_is_bounded_and_never_installs (__main__.AgentCommands.test_e2e2_attach_timeout_is_bounded_and_never_installs) ... ok
+test_e2e2_avd_identity_is_rechecked_after_build_before_install (__main__.AgentCommands.test_e2e2_avd_identity_is_rechecked_after_build_before_install) ... ok
+test_e2e2_avd_identity_is_rechecked_before_launch (__main__.AgentCommands.test_e2e2_avd_identity_is_rechecked_before_launch) ... ok
+test_e2e2_cold_start_without_group_proof_never_claims (__main__.AgentCommands.test_e2e2_cold_start_without_group_proof_never_claims) ... ok
+test_e2e2_image_outside_resolved_sdk_is_rejected (__main__.AgentCommands.test_e2e2_image_outside_resolved_sdk_is_rejected) ... ok
+test_e2e2_image_package_metadata_must_match_resolved_sdk (__main__.AgentCommands.test_e2e2_image_package_metadata_must_match_resolved_sdk) ... ok
+test_e2e2_missing_image_fails_under_five_seconds_before_device_calls (__main__.AgentCommands.test_e2e2_missing_image_fails_under_five_seconds_before_device_calls) ... ok
+test_e2e2_missing_or_invalid_avd_config_prevents_attach (__main__.AgentCommands.test_e2e2_missing_or_invalid_avd_config_prevents_attach) ... ok
+test_failed_pr_lookup_still_reports_ci_and_returns_failure (__main__.AgentCommands.test_failed_pr_lookup_still_reports_ci_and_returns_failure) ... ok
+test_gate_failures_do_not_skip_remaining_gates (__main__.AgentCommands.test_gate_failures_do_not_skip_remaining_gates) ... ok
+test_gate_includes_commits_staging_untracked_deletions_and_renames (__main__.AgentCommands.test_gate_includes_commits_staging_untracked_deletions_and_renames) ... ok
+test_gate_mapping_and_dry_run (__main__.AgentCommands.test_gate_mapping_and_dry_run) ... ok
+test_gate_missing_main_fails_without_running_tools (__main__.AgentCommands.test_gate_missing_main_fails_without_running_tools) ... ok
+test_gate_preserves_staged_then_reversed_worktree_change (__main__.AgentCommands.test_gate_preserves_staged_then_reversed_worktree_change) ... ok
+test_ios_build_failure_never_attaches (__main__.AgentCommands.test_ios_build_failure_never_attaches) ... ok
+test_ios_claim_does_not_own_shutdown_for_an_already_booted_device (__main__.AgentCommands.test_ios_claim_does_not_own_shutdown_for_an_already_booted_device) ... ok
+test_ios_logs_use_exact_device_and_process_without_boot (__main__.AgentCommands.test_ios_logs_use_exact_device_and_process_without_boot) ... ok
+test_ios_missing_or_ambiguous_device_never_builds (__main__.AgentCommands.test_ios_missing_or_ambiguous_device_never_builds) ... ok
+test_ios_real_ledger_inherits_orca_identity_and_only_cold_start_rights (__main__.AgentCommands.test_ios_real_ledger_inherits_orca_identity_and_only_cold_start_rights) ... ok
+test_ios_run_composes_scoped_build_install_and_launch (__main__.AgentCommands.test_ios_run_composes_scoped_build_install_and_launch) ... ok
+test_m1_android_real_ledger_binds_child_group_boot_and_helper (__main__.AgentCommands.test_m1_android_real_ledger_binds_child_group_boot_and_helper) ... ok
+test_m1_ios_cold_boot_requires_explicit_boot_and_incarnation (__main__.AgentCommands.test_m1_ios_cold_boot_requires_explicit_boot_and_incarnation) ... ok
+test_m1_ios_failed_boot_race_gets_use_only_claim (__main__.AgentCommands.test_m1_ios_failed_boot_race_gets_use_only_claim) ... ok
+test_m1_ios_other_actor_boots_during_build_gets_use_only_claim (__main__.AgentCommands.test_m1_ios_other_actor_boots_during_build_gets_use_only_claim) ... ok
+test_m1_ios_real_ledger_uses_launchd_fallback_without_boot_epoch (__main__.AgentCommands.test_m1_ios_real_ledger_uses_launchd_fallback_without_boot_epoch) ... ok
+test_m1_ios_unknown_incarnation_never_grants_shutdown_rights (__main__.AgentCommands.test_m1_ios_unknown_incarnation_never_grants_shutdown_rights) ... ok
+test_m4_caller_home_git_config_and_hooks_are_not_inherited (__main__.AgentCommands.test_m4_caller_home_git_config_and_hooks_are_not_inherited) ... ok
+test_m4_file_cap_applies_process_wide (__main__.AgentCommands.test_m4_file_cap_applies_process_wide) ... ok
+test_m4_subprocess_deadline_terminates_descendants (__main__.AgentCommands.test_m4_subprocess_deadline_terminates_descendants) ... ok
+test_m4_subprocess_output_is_capped (__main__.AgentCommands.test_m4_subprocess_output_is_capped) ... ok
+test_missing_app_prevents_attach (__main__.AgentCommands.test_missing_app_prevents_attach) ... ok
+test_read_only_status_and_ancestry_commands (__main__.AgentCommands.test_read_only_status_and_ancestry_commands) ... ok
+
+----------------------------------------------------------------------
+Ran 44 tests in 61.143s
+
+OK

@@ -15,8 +15,13 @@ for current targets and override options rather than duplicating their mechanics
    or `make android-run AVD="<name or serial>"`. These attach the selected device to
    this worktree and install/launch Flint. Names resolve exactly; direct iOS
    commands should use exact UDIDs. Both run targets validate the attach identity
-   before installation. Load the project `orca-emulator` skill
-   for iOS interaction or `orca-emulator-android` for Android interaction. Use
+   before installation. Existing iOS helper replies with a missing/null backend
+   still require an exact, valid UDID in fresh simulator inventory. Runs wait for
+   SpringBoard after bootstatus; only FBS code 5 earns one delayed launch retry.
+   An ambiguous boot timeout prints the exact possibly booted, unclaimed UDID
+   for manual review and grants no shutdown rights. Load the project
+   `orca-emulator` skill for iOS interaction or `orca-emulator-android` for Android
+   interaction. Use
    `make logs-ios` / `make logs-android` with the same selector for app logs.
    Drive one platform per worktree at a time: attaching Android in the same
    worktree shut down the active iOS simulator during verification. If
@@ -31,10 +36,15 @@ for current targets and override options rather than duplicating their mechanics
    tap failures remain unresolved; retain evidence using the
    [Task H upstream issue guidance](/Users/prakash/flint-planning/2026-10-27/workspace-setup/ios-tap-investigation.md#upstream-issue-wording-if-the-persistent-failure-recurs).
    Android AVDs need their configured image; the run target fails before attach
-   with the exact missing package and sdkmanager command. The Android 35 Google
-   APIs ARM64 image is currently missing on this host.
+   with the exact missing package and installation guidance. The Android 35 Google
+   APIs ARM64 image is currently missing on this host. The remedy uses the
+   executable sdkmanager on PATH, or generic SDK Manager guidance if unavailable.
+   Android runs also compare the recorded/live boot incarnation after building
+   and before installation and launch; a restart requires an explicit rerun.
 3. Review `make gates DRY_RUN=1`, then run `make gates` for the AGENTS.md path-based
    checks against the local `origin/main` merge-base, including uncommitted work.
+   Selftest selects a Python on PATH supporting fd-safe cleanup if a CLT launcher
+   shadows it, and pins Apple Make launchers before fake toolchain isolation.
    `make ancestry` refreshes main and reports divergence; `make pr-status` reads
    the current branch's PR and CI state. Neither writes to the remote.
 4. `orca emulator list --worktree` is not worktree-scoped. Claim devices through
@@ -48,6 +58,10 @@ for current targets and override options rather than duplicating their mechanics
    Orphan cleanup requires a saved reviewed plan plus its digest; `CONFIRM=1`
    alone never authorizes deletion, and a simulator name is only a preview hint.
    Report what changed, what actually passed, and any unavailable verification.
+   Interrupted artifact removal restores the verified remaining tree without
+   replacing new output. If a `.flint-clean-*` quarantine remains, review its
+   printed location and `recovery.json` provenance manually; later artifact and
+   orphan cleanup defers while quarantines remain.
 
 Keep Flint local-first, account-free, and analytics-free. Treat Screen Time,
 accessibility, device-owner, and anti-removal behavior as security-sensitive;
