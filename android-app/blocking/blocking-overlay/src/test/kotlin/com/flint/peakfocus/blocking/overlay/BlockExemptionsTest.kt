@@ -1,6 +1,8 @@
 package com.flint.peakfocus.blocking.overlay
 
 import com.flint.peakfocus.core.model.BreakLevel
+import com.flint.peakfocus.core.model.PersistedExemption
+import com.flint.peakfocus.core.model.ExemptionKind
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -11,6 +13,61 @@ import org.junit.Test
 
 /** JVM tests for the break/pass exemption ledger both detection paths consult. */
 class BlockExemptionsTest {
+
+    @Test fun delayedOlderReadCannotEraseANewerAcknowledgedGrant() {
+        val old = PersistedExemption("old", "com.old", "cause", ExemptionKind.BREAK, 2_000)
+        val granted = PersistedExemption("new", "com.new", "cause", ExemptionKind.EMERGENCY_PASS, 5_000)
+        BlockExemptions.restoreCommitted(listOf(old, granted), 1_000, revision = 2)
+        BlockExemptions.restoreCommitted(listOf(old), 1_000, revision = 1)
+        assertTrue(BlockExemptions.isExempt("com.new", 1_000, BreakLevel.HARDCORE))
+        assertEquals(5_000L, BlockExemptions.exemptUntil("com.new", 1_000))
+        BlockExemptions.restoreCommitted(emptyList(), 1_000, revision = 3)
+        assertFalse(BlockExemptions.isExempt("com.new", 1_000, BreakLevel.HARDCORE))
+    }
+
+    @Test fun restoredReceiptsRespectPackageKindAndExactDeadline() {
+        val ordinary = PersistedExemption("one", "com.x", "rule:one", ExemptionKind.BREAK, 2_000)
+        val pass = PersistedExemption("two", "com.y", "rule:two", ExemptionKind.EMERGENCY_PASS, 3_000)
+        BlockExemptions.restoreCommitted(listOf(ordinary, pass), 1_000)
+        assertTrue(BlockExemptions.isExempt("com.x", 1_999, BreakLevel.HARDER))
+        assertFalse(BlockExemptions.isExempt("com.x", 1_999, BreakLevel.HARDCORE))
+        assertFalse(BlockExemptions.isExempt("com.x", 2_000))
+        assertTrue(BlockExemptions.isExempt("com.y", 2_999, BreakLevel.HARDCORE))
+        assertFalse(BlockExemptions.isExempt("com.y", 3_000, BreakLevel.HARDCORE))
+        assertFalse(BlockExemptions.isExempt("com.other", 1_000))
+    }
+
+    @Test fun globalReceiptsRestoreAndExpiredReceiptsStayInactive() {
+        BlockExemptions.restoreCommitted(listOf(
+            PersistedExemption("one", "*", "cause", ExemptionKind.EMERGENCY_PASS, 2_000),
+            PersistedExemption("old", "com.old", "cause", ExemptionKind.BREAK, 999),
+        ), 1_000)
+        assertTrue(BlockExemptions.isExempt("com.any", 1_999, BreakLevel.HARDCORE))
+        assertEquals(2_000L, BlockExemptions.exemptUntil("com.any", 1_000))
+        assertFalse(BlockExemptions.isExempt("com.any", 2_000))
+        assertNull(BlockExemptions.exemptUntil("com.old", 2_000))
+    }
+
+    @Test fun replacementDropsRemovedReceiptsAndKeepsActiveOverlaps() {
+        val one = PersistedExemption("one", "com.x", "first", ExemptionKind.OPEN_LIMIT, 2_000)
+        val two = one.copy(requestId = "two", causeKey = "second", untilEpochMs = 4_000)
+        BlockExemptions.restoreCommitted(listOf(one, two), 1_000)
+        assertEquals(4_000L, BlockExemptions.exemptUntil("com.x", 1_000))
+        BlockExemptions.restoreCommitted(listOf(one), 1_000)
+        assertEquals(2_000L, BlockExemptions.exemptUntil("com.x", 1_000))
+        BlockExemptions.restoreCommitted(emptyList(), 1_000)
+        assertFalse(BlockExemptions.isExempt("com.x", 1_000))
+    }
+
+    @Test fun processProjectionCanBeRebuiltWithoutConsumingAnotherCredit() {
+        val saved = listOf(PersistedExemption("id", "com.x", "cause", ExemptionKind.EMERGENCY_PASS, 9_000))
+        BlockExemptions.restoreCommitted(saved, 1_000)
+        BlockExemptions.clearAll()
+        assertFalse(BlockExemptions.isExempt("com.x", 2_000))
+        BlockExemptions.restoreCommitted(saved, 2_000)
+        assertTrue(BlockExemptions.isExempt("com.x", 2_000, BreakLevel.HARDCORE))
+        assertFalse(BlockExemptions.isExempt("com.x", 9_000, BreakLevel.HARDCORE))
+    }
 
     @Before
     fun setUp() = BlockExemptions.clearAll()

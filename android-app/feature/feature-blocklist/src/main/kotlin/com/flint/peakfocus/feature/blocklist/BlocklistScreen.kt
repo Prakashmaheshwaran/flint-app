@@ -46,6 +46,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -167,6 +168,7 @@ fun BlocklistScreen(
     val appsState by blocklistViewModel.installedApps.collectAsStateWithLifecycle()
     val defaultBreakLevel by blocklistViewModel.defaultBreakLevel.collectAsStateWithLifecycle()
     val groups by blocklistViewModel.groups.collectAsStateWithLifecycle()
+    val saveState by blocklistViewModel.editorSave.collectAsStateWithLifecycle()
 
     // Editor state (which rule, half-built drafts) intentionally lives in composition, not
     // SavedState — process death drops back to the overview, never to a corrupt half-draft.
@@ -175,8 +177,10 @@ fun BlocklistScreen(
     }
     var editorVisits by remember { mutableStateOf(0) }
 
+    LaunchedEffect(destination) { blocklistViewModel.clearSaveFeedback() }
+
     BackHandler(enabled = destination != BlocklistDestination.Overview) {
-        destination = BlocklistDestination.Overview
+        if (!saveState.busy) destination = BlocklistDestination.Overview
     }
 
     val slideDistance = with(LocalDensity.current) { EditorSlideDistance.roundToPx() }
@@ -231,19 +235,24 @@ fun BlocklistScreen(
                         destination = BlocklistDestination.EditSleep(visit = ++editorVisits)
                     },
                     onToggleSleep = blocklistViewModel::setSleepEnabled,
+                    saveError = saveState.error,
                     contentPadding = contentPadding,
                     quickBlockSummary = quickBlockSummary,
                     onQuickBlock = onQuickBlock,
                 )
 
                 is BlocklistDestination.EditRule -> {
+                    val initialRules = rememberEditorSnapshot(dest, rulesState as? RulesUiState.Ready)
+                    if (initialRules == null) {
+                        StorageEditorUnavailable(onClose = { destination = BlocklistDestination.Overview }, loading = rulesState is RulesUiState.Loading)
+                        return@AnimatedContent
+                    }
                     // Snapshotted once per destination: the exiting editor must keep rendering
                     // the draft it opened with — recomputing from live rulesState mid-pop
                     // flashes a blank "New block rule" form the instant a delete's DataStore
                     // emission removes the rule while the pop animation is still playing.
                     val existing = remember(dest) {
-                        (rulesState as? RulesUiState.Ready)
-                            ?.rules?.firstOrNull { it.id == dest.ruleId }
+                        initialRules.rules.firstOrNull { it.id == dest.ruleId }
                     }
                     val initialDraft = remember(dest) {
                         existing?.let(::ruleDraftOf)
@@ -257,18 +266,21 @@ fun BlocklistScreen(
                         onSaveGroup = blocklistViewModel::saveGroup,
                         onDeleteGroup = blocklistViewModel::deleteGroup,
                         onSave = { draft ->
-                            blocklistViewModel.saveRule(draft)
-                            destination = BlocklistDestination.Overview
+                            blocklistViewModel.saveRule(draft) {
+                                if (destination == dest) destination = BlocklistDestination.Overview
+                            }
                         },
                         onDelete = if (existing == null) {
                             null
                         } else {
                             {
-                                blocklistViewModel.deleteRule(existing.id)
-                                destination = BlocklistDestination.Overview
+                                blocklistViewModel.deleteRule(existing.id) {
+                                    if (destination == dest) destination = BlocklistDestination.Overview
+                                }
                             }
                         },
-                        onClose = { destination = BlocklistDestination.Overview },
+                        onClose = { if (!saveState.busy) destination = BlocklistDestination.Overview },
+                        saveState = saveState,
                     )
                 }
 
@@ -278,32 +290,40 @@ fun BlocklistScreen(
                     limitsState = limitsState,
                     defaultBreakLevel = defaultBreakLevel,
                     onSaveLimits = { pkg, time, open ->
-                        blocklistViewModel.saveLimits(pkg, time, open)
-                        destination = BlocklistDestination.Overview
+                        blocklistViewModel.saveLimits(pkg, time, open) {
+                            if (destination == dest) destination = BlocklistDestination.Overview
+                        }
                     },
                     onClearLimits = { pkg ->
-                        blocklistViewModel.clearLimits(pkg)
-                        destination = BlocklistDestination.Overview
+                        blocklistViewModel.clearLimits(pkg) {
+                            if (destination == dest) destination = BlocklistDestination.Overview
+                        }
                     },
-                    onClose = { destination = BlocklistDestination.Overview },
+                    onClose = { if (!saveState.busy) destination = BlocklistDestination.Overview },
+                    saveState = saveState,
                 )
 
                 is BlocklistDestination.EditSleep -> {
+                    val initialRules = rememberEditorSnapshot(dest, rulesState as? RulesUiState.Ready)
+                    if (initialRules == null) {
+                        StorageEditorUnavailable(onClose = { destination = BlocklistDestination.Overview }, loading = rulesState is RulesUiState.Loading)
+                        return@AnimatedContent
+                    }
                     // Same snapshot rationale as EditRule: the exiting editor keeps the
                     // config it opened with even if a save's emission lands mid-pop.
                     val initial = remember(dest) {
-                        (rulesState as? RulesUiState.Ready)
-                            ?.rules?.let(::sleepConfigFrom)
-                            ?: SleepConfig.DEFAULT
+                        sleepConfigFrom(initialRules.rules) ?: SleepConfig.DEFAULT
                     }
                     SleepEditorScreen(
                         initial = initial,
                         appsState = appsState,
                         onSave = { config ->
-                            blocklistViewModel.saveSleep(config)
-                            destination = BlocklistDestination.Overview
+                            blocklistViewModel.saveSleep(config) {
+                                if (destination == dest) destination = BlocklistDestination.Overview
+                            }
                         },
-                        onClose = { destination = BlocklistDestination.Overview },
+                        onClose = { if (!saveState.busy) destination = BlocklistDestination.Overview },
+                        saveState = saveState,
                     )
                 }
             }
@@ -328,6 +348,7 @@ private fun BlocklistOverview(
     contentPadding: PaddingValues = PaddingValues(),
     quickBlockSummary: String? = null,
     onQuickBlock: (() -> Unit)? = null,
+    saveError: String? = null,
 ) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -374,8 +395,12 @@ private fun BlocklistOverview(
         }
         item(key = "rules-label") {
             SectionLabelItem("Block rules")
+            ErrorMessages(listOfNotNull(saveError))
         }
         when {
+            rulesState is RulesUiState.Unavailable -> item(key = "rules-unavailable") {
+                ErrorMessages(listOf("Couldn't load. Try again."), Modifier.padding(horizontal = FlintSpacing.gutter))
+            }
             authoredRules == null -> item(key = "rules-loading") {
                 LoadingRows(
                     modifier = animatedRow()
@@ -460,13 +485,14 @@ private fun BlocklistOverview(
         item(key = "sleep-card") {
             // Single card either way, so this section can keep a literal Crossfade.
             Crossfade(
-                targetState = rulesState is RulesUiState.Loading,
+                targetState = rulesState !is RulesUiState.Ready,
                 modifier = Modifier.padding(horizontal = FlintSpacing.gutter),
                 animationSpec = tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard),
                 label = "sleepSection",
             ) { loading ->
                 if (loading) {
-                    LoadingRows()
+                    if (rulesState is RulesUiState.Unavailable) ErrorMessages(listOf("Couldn't load. Try again."))
+                    else LoadingRows()
                 } else {
                     SleepCard(
                         config = sleepConfigFrom(
@@ -486,6 +512,9 @@ private fun BlocklistOverview(
             SectionLabelItem("Daily app limits")
         }
         when {
+            limitsState is LimitsUiState.Unavailable -> item(key = "limits-unavailable") {
+                ErrorMessages(listOf("Couldn't load. Try again."), Modifier.padding(horizontal = FlintSpacing.gutter))
+            }
             limitRows == null -> item(key = "limits-loading") {
                 LoadingRows(
                     modifier = animatedRow()

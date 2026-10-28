@@ -68,4 +68,32 @@ class ActiveRulesHolderTest {
         ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, listOf(rule("ds")))
         assertEquals(listOf("ds", "future"), ActiveRulesHolder.rules.map { it.id })
     }
+
+    @Test fun unavailableAndLoadingNeverEraseLastKnownGoodRules() {
+        val source = ActiveRulesHolder.SOURCE_DATASTORE
+        ActiveRulesHolder.publish(source, listOf(rule("ds")))
+        ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_LEGACY, listOf(rule("legacy")))
+        ActiveRulesHolder.publishState(source, StorageState.Unavailable(StorageFailure.IO))
+        assertEquals(StorageState.Unavailable(StorageFailure.IO), ActiveRulesHolder.dataStoreState)
+        assertEquals(listOf("legacy", "ds"), ActiveRulesHolder.rules.map { it.id })
+        ActiveRulesHolder.publishState(source, StorageState.Loading)
+        assertEquals(StorageState.Loading, ActiveRulesHolder.dataStoreState)
+        assertEquals(listOf("legacy", "ds"), ActiveRulesHolder.rules.map { it.id })
+    }
+
+    @Test fun onlyReadyEmptyMayClearPreviouslyLoadedRules() {
+        val source = ActiveRulesHolder.SOURCE_DATASTORE
+        ActiveRulesHolder.publish(source, listOf(rule("ds")))
+        ActiveRulesHolder.publishState(source, StorageState.Unavailable(StorageFailure.CORRUPT))
+        ActiveRulesHolder.publishState(source, StorageState.Ready(emptyList()))
+        assertTrue(ActiveRulesHolder.rules.isEmpty())
+        assertEquals(StorageState.Ready(emptyList<BlockRule>()), ActiveRulesHolder.dataStoreState)
+    }
+
+    @Test fun publishingCallerOwnedListTakesASnapshot() {
+        val rules = mutableListOf(rule("ds"))
+        ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, rules)
+        rules.clear()
+        assertEquals(listOf("ds"), ActiveRulesHolder.rules.map { it.id })
+    }
 }

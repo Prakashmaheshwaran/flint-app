@@ -2,21 +2,12 @@ package com.flint.peakfocus.core.datastore
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
-import com.flint.peakfocus.core.model.AppGroup
-import com.flint.peakfocus.core.model.BlockRule
-import com.flint.peakfocus.core.model.BreakLevel
-import com.flint.peakfocus.core.model.BreakSessionState
-import com.flint.peakfocus.core.model.EmergencyPassState
-import com.flint.peakfocus.core.model.OpenCountState
-import com.flint.peakfocus.core.model.OpenLimit
-import com.flint.peakfocus.core.model.TimeLimit
-import java.io.IOException
+import com.flint.peakfocus.core.model.*
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 
 /**
@@ -38,34 +29,45 @@ internal object PrefsKeys {
     val BREAK_SESSION = stringPreferencesKey("break_session_v1")
     val OPEN_COUNTS_DAY = longPreferencesKey("open_counts_day_v1")
     val OPEN_COUNTS = stringPreferencesKey("open_counts_v1")
+    val FOCUS_LEDGER = stringPreferencesKey("focus_exemptions_v1")
 }
 
-/** Standard DataStore hygiene: a corrupted/unreadable file degrades to defaults, not a crash. */
-private fun DataStore<Preferences>.safeData(): Flow<Preferences> =
-    data.catch { cause -> if (cause is IOException) emit(emptyPreferences()) else throw cause }
+private fun Preferences.rules() = StrictPrefsCodec.rules(StrictPrefsCodec.string(this, PrefsKeys.BLOCK_RULES).orEmpty())
+private fun Preferences.groups() = StrictPrefsCodec.groups(StrictPrefsCodec.string(this, PrefsKeys.APP_GROUPS).orEmpty())
+private fun Preferences.timeLimits() = StrictPrefsCodec.timeLimits(StrictPrefsCodec.string(this, PrefsKeys.TIME_LIMITS).orEmpty())
+private fun Preferences.openLimits() = StrictPrefsCodec.openLimits(StrictPrefsCodec.string(this, PrefsKeys.OPEN_LIMITS).orEmpty())
+private fun MutablePreferences.putRules(rules: List<BlockRule>) {
+    val encoded = PrefsCodec.encodeRules(rules)
+    StrictPrefsCodec.rules(encoded)
+    this[PrefsKeys.BLOCK_RULES] = encoded
+}
 
 class DataStoreBlockRulesStore(
     private val dataStore: DataStore<Preferences>,
 ) : BlockRulesStore {
 
-    override val rulesOrError: Flow<List<BlockRule>> = dataStore.data.map { prefs ->
-        PrefsCodec.decodeRules(prefs[PrefsKeys.BLOCK_RULES].orEmpty())
-    }
+    override val rulesState: Flow<StorageState<List<BlockRule>>> = dataStore.data.storageStates { it.rules() }
 
-    override val rules: Flow<List<BlockRule>> = dataStore.safeData().map { prefs ->
-        PrefsCodec.decodeRules(prefs[PrefsKeys.BLOCK_RULES].orEmpty())
-    }
+    override val rulesOrError: Flow<List<BlockRule>> = rulesState.readyValues(throwOnUnavailable = true)
+    override val rules: Flow<List<BlockRule>> = rulesState.readyValues()
 
     override suspend fun upsert(rule: BlockRule) =
         mutate { current -> current.filterNot { it.id == rule.id } + rule }
+
+    override suspend fun updateRules(upserts: List<BlockRule>, deleteIds: Set<String>) = mutate { current ->
+        require(upserts.map { it.id }.distinct().size == upserts.size)
+        current.filterNot { it.id in deleteIds || it.id in upserts.map(BlockRule::id) } + upserts
+    }
+
+    override suspend fun pruneExpired(nowEpochMs: Long) = mutate { current -> current.filterNot { it.isExpired(nowEpochMs) } }
 
     override suspend fun startSessionIfIdle(rule: BlockRule, nowEpochMs: Long): Boolean {
         requireFiniteSession(rule, nowEpochMs)
         var started = false
         dataStore.edit { prefs ->
-            val current = PrefsCodec.decodeRules(prefs[PrefsKeys.BLOCK_RULES].orEmpty())
+            val current = prefs.rules()
             started = current.canStartSession(rule.id, nowEpochMs)
-            if (started) prefs[PrefsKeys.BLOCK_RULES] = PrefsCodec.encodeRules(current + rule)
+            if (started) prefs.putRules(current + rule)
         }
         return started
     }
@@ -73,9 +75,9 @@ class DataStoreBlockRulesStore(
     override suspend fun cancelEasySession(ruleId: String, nowEpochMs: Long): Boolean {
         var cancelled = false
         dataStore.edit { prefs ->
-            val current = PrefsCodec.decodeRules(prefs[PrefsKeys.BLOCK_RULES].orEmpty())
+            val current = prefs.rules()
             cancelled = current.canCancelEasySession(ruleId, nowEpochMs)
-            if (cancelled) prefs[PrefsKeys.BLOCK_RULES] = PrefsCodec.encodeRules(current.filterNot { it.id == ruleId })
+            if (cancelled) prefs.putRules(current.filterNot { it.id == ruleId })
         }
         return cancelled
     }
@@ -86,9 +88,9 @@ class DataStoreBlockRulesStore(
     override suspend fun endTimerSession(expected: BlockRule, nowEpochMs: Long): Boolean {
         var ended = false
         dataStore.edit { prefs ->
-            val current = PrefsCodec.decodeRules(prefs[PrefsKeys.BLOCK_RULES].orEmpty())
+            val current = prefs.rules()
             ended = current.canEndTimerSession(expected, nowEpochMs)
-            if (ended) prefs[PrefsKeys.BLOCK_RULES] = PrefsCodec.encodeRules(current.filterNot { it.id == expected.id })
+            if (ended) prefs.putRules(current.filterNot { it.id == expected.id })
         }
         return ended
     }
@@ -103,8 +105,8 @@ class DataStoreBlockRulesStore(
 
     private suspend fun mutate(transform: (List<BlockRule>) -> List<BlockRule>) {
         dataStore.edit { prefs ->
-            val current = PrefsCodec.decodeRules(prefs[PrefsKeys.BLOCK_RULES].orEmpty())
-            prefs[PrefsKeys.BLOCK_RULES] = PrefsCodec.encodeRules(transform(current))
+            val current = prefs.rules()
+            prefs.putRules(transform(current))
         }
     }
 }
@@ -113,9 +115,8 @@ class DataStoreGroupsStore(
     private val dataStore: DataStore<Preferences>,
 ) : GroupsStore {
 
-    override val groups: Flow<List<AppGroup>> = dataStore.safeData().map { prefs ->
-        PrefsCodec.decodeGroups(prefs[PrefsKeys.APP_GROUPS].orEmpty())
-    }
+    override val groupsState: Flow<StorageState<List<AppGroup>>> = dataStore.data.storageStates { it.groups() }
+    override val groups: Flow<List<AppGroup>> = groupsState.readyValues()
 
     override suspend fun upsert(group: AppGroup) =
         mutate { current -> current.filterNot { it.id == group.id } + group }
@@ -125,8 +126,10 @@ class DataStoreGroupsStore(
 
     private suspend fun mutate(transform: (List<AppGroup>) -> List<AppGroup>) {
         dataStore.edit { prefs ->
-            val current = PrefsCodec.decodeGroups(prefs[PrefsKeys.APP_GROUPS].orEmpty())
-            prefs[PrefsKeys.APP_GROUPS] = PrefsCodec.encodeGroups(transform(current))
+            val current = prefs.groups()
+            val encoded = PrefsCodec.encodeGroups(transform(current))
+            StrictPrefsCodec.groups(encoded)
+            prefs[PrefsKeys.APP_GROUPS] = encoded
         }
     }
 }
@@ -135,12 +138,23 @@ class DataStoreLimitsStore(
     private val dataStore: DataStore<Preferences>,
 ) : LimitsStore {
 
-    override val timeLimits: Flow<List<TimeLimit>> = dataStore.safeData().map { prefs ->
-        PrefsCodec.decodeTimeLimits(prefs[PrefsKeys.TIME_LIMITS].orEmpty())
-    }
+    override val timeLimitsState: Flow<StorageState<List<TimeLimit>>> = dataStore.data.storageStates { it.timeLimits() }
+    override val openLimitsState: Flow<StorageState<List<OpenLimit>>> = dataStore.data.storageStates { it.openLimits() }
+    override val timeLimits: Flow<List<TimeLimit>> = timeLimitsState.readyValues()
+    override val openLimits: Flow<List<OpenLimit>> = openLimitsState.readyValues()
 
-    override val openLimits: Flow<List<OpenLimit>> = dataStore.safeData().map { prefs ->
-        PrefsCodec.decodeOpenLimits(prefs[PrefsKeys.OPEN_LIMITS].orEmpty())
+    override suspend fun setLimits(packageName: String, time: TimeLimit?, open: OpenLimit?) {
+        require(time == null || time.packageName == packageName)
+        require(open == null || open.packageName == packageName)
+        dataStore.edit { prefs ->
+            val times = prefs.timeLimits().filterNot { it.packageName == packageName } + listOfNotNull(time)
+            val opens = prefs.openLimits().filterNot { it.packageName == packageName } + listOfNotNull(open)
+            val encodedTime = PrefsCodec.encodeTimeLimits(times)
+            val encodedOpen = PrefsCodec.encodeOpenLimits(opens)
+            StrictPrefsCodec.timeLimits(encodedTime); StrictPrefsCodec.openLimits(encodedOpen)
+            prefs[PrefsKeys.TIME_LIMITS] = encodedTime
+            prefs[PrefsKeys.OPEN_LIMITS] = encodedOpen
+        }
     }
 
     override suspend fun setTimeLimit(limit: TimeLimit) =
@@ -157,15 +171,19 @@ class DataStoreLimitsStore(
 
     private suspend fun mutateTime(transform: (List<TimeLimit>) -> List<TimeLimit>) {
         dataStore.edit { prefs ->
-            val current = PrefsCodec.decodeTimeLimits(prefs[PrefsKeys.TIME_LIMITS].orEmpty())
-            prefs[PrefsKeys.TIME_LIMITS] = PrefsCodec.encodeTimeLimits(transform(current))
+            val current = prefs.timeLimits()
+            val encoded = PrefsCodec.encodeTimeLimits(transform(current))
+            StrictPrefsCodec.timeLimits(encoded)
+            prefs[PrefsKeys.TIME_LIMITS] = encoded
         }
     }
 
     private suspend fun mutateOpen(transform: (List<OpenLimit>) -> List<OpenLimit>) {
         dataStore.edit { prefs ->
-            val current = PrefsCodec.decodeOpenLimits(prefs[PrefsKeys.OPEN_LIMITS].orEmpty())
-            prefs[PrefsKeys.OPEN_LIMITS] = PrefsCodec.encodeOpenLimits(transform(current))
+            val current = prefs.openLimits()
+            val encoded = PrefsCodec.encodeOpenLimits(transform(current))
+            StrictPrefsCodec.openLimits(encoded)
+            prefs[PrefsKeys.OPEN_LIMITS] = encoded
         }
     }
 }
@@ -174,53 +192,82 @@ class DataStoreFocusStateStore(
     private val dataStore: DataStore<Preferences>,
 ) : FocusStateStore {
 
-    override val defaultBreakLevel: Flow<BreakLevel> = dataStore.safeData().map { prefs ->
-        PrefsCodec.decodeBreakLevel(prefs[PrefsKeys.DEFAULT_BREAK_LEVEL])
-    }
+    override val state: Flow<StorageState<FocusSnapshot>> = dataStore.data.storageStates(::readFocus)
+    override val defaultBreakLevel: Flow<BreakLevel> = state.readyValues().map { it.defaultBreakLevel }
+    override val emergencyPass: Flow<EmergencyPassState> = state.readyValues().map { it.emergencyPass }
+    override val breakSession: Flow<BreakSessionState> = state.readyValues().map { it.breakSession }
+    override val openCounts: Flow<OpenCountState> = state.readyValues().map { it.openCounts }
 
-    override val emergencyPass: Flow<EmergencyPassState> = dataStore.safeData().map { prefs ->
-        EmergencyPassState(
-            weekStartEpochDay = prefs[PrefsKeys.EMERGENCY_PASS_WEEK_START]
-                ?: EmergencyPassState.WEEK_UNINITIALIZED,
-            usedAtEpochMs = prefs[PrefsKeys.EMERGENCY_PASS_USED_AT],
-        )
-    }
-
-    override val breakSession: Flow<BreakSessionState> = dataStore.safeData().map { prefs ->
-        prefs[PrefsKeys.BREAK_SESSION]?.let(PrefsCodec::decodeBreakSession) ?: BreakSessionState()
-    }
-
-    override val openCounts: Flow<OpenCountState> = dataStore.safeData().map { prefs ->
-        OpenCountState(
-            epochDay = prefs[PrefsKeys.OPEN_COUNTS_DAY] ?: OpenCountState.DAY_UNINITIALIZED,
-            opensByPackage = PrefsCodec.decodeOpenCounts(prefs[PrefsKeys.OPEN_COUNTS].orEmpty()),
-        )
-    }
-
-    override suspend fun setDefaultBreakLevel(level: BreakLevel) {
-        dataStore.edit { prefs -> prefs[PrefsKeys.DEFAULT_BREAK_LEVEL] = level.name }
-    }
-
-    override suspend fun setEmergencyPass(state: EmergencyPassState) {
-        dataStore.edit { prefs ->
-            prefs[PrefsKeys.EMERGENCY_PASS_WEEK_START] = state.weekStartEpochDay
-            val usedAt = state.usedAtEpochMs
-            if (usedAt == null) {
-                prefs.remove(PrefsKeys.EMERGENCY_PASS_USED_AT)
-            } else {
-                prefs[PrefsKeys.EMERGENCY_PASS_USED_AT] = usedAt
+    override suspend fun <R> transact(transform: (FocusSnapshot) -> FocusMutation<R>): FocusCommit<R> {
+        var committed: FocusCommit.Committed<R>? = null
+        return try {
+            dataStore.edit { prefs ->
+                val current = readFocus(prefs)
+                val mutation = transform(current)
+                require(mutation.next.revision == current.revision) { "Focus revision is store-owned" }
+                val next = if (mutation.next == current) current else {
+                    require(current.revision < Long.MAX_VALUE) { "Focus revision exhausted" }
+                    mutation.next.copy(revision = current.revision + 1)
+                }
+                // Validate ALL output before touching preferences, and freeze caller-owned maps.
+                val ledger = FocusLedgerCodec.encode(FocusLedgerCodec.Ledger(next.exemptions, next.breaksByCause, next.revision))
+                val session = PrefsCodec.encodeBreakSession(next.breakSession)
+                val counts = PrefsCodec.encodeOpenCounts(next.openCounts.opensByPackage)
+                StrictPrefsCodec.session(session); StrictPrefsCodec.counts(counts)
+                require(next.emergencyPass.usedAtEpochMs?.let { it >= 0 } != false)
+                if (next.defaultBreakLevel != current.defaultBreakLevel) prefs[PrefsKeys.DEFAULT_BREAK_LEVEL] = next.defaultBreakLevel.name
+                if (next.breakSession != current.breakSession) prefs[PrefsKeys.BREAK_SESSION] = session
+                if (next.emergencyPass != current.emergencyPass) {
+                    prefs[PrefsKeys.EMERGENCY_PASS_WEEK_START] = next.emergencyPass.weekStartEpochDay
+                    val usedAt = next.emergencyPass.usedAtEpochMs
+                    if (usedAt == null) prefs.remove(PrefsKeys.EMERGENCY_PASS_USED_AT)
+                    else prefs[PrefsKeys.EMERGENCY_PASS_USED_AT] = usedAt
+                }
+                if (next.openCounts != current.openCounts) {
+                    prefs[PrefsKeys.OPEN_COUNTS_DAY] = next.openCounts.epochDay
+                    prefs[PrefsKeys.OPEN_COUNTS] = counts
+                }
+                if (next.revision != current.revision) {
+                    prefs[PrefsKeys.FOCUS_LEDGER] = ledger
+                }
+                committed = FocusCommit.Committed(readFocus(prefs), mutation.result)
             }
+            checkNotNull(committed) // edit returned: the acknowledgement now represents durable data.
+        } catch (cause: Exception) {
+            FocusCommit.Unavailable(storageFailure(cause) ?: throw cause)
         }
     }
 
-    override suspend fun setBreakSession(state: BreakSessionState) {
-        dataStore.edit { prefs -> prefs[PrefsKeys.BREAK_SESSION] = PrefsCodec.encodeBreakSession(state) }
-    }
-
-    override suspend fun setOpenCounts(state: OpenCountState) {
-        dataStore.edit { prefs ->
-            prefs[PrefsKeys.OPEN_COUNTS_DAY] = state.epochDay
-            prefs[PrefsKeys.OPEN_COUNTS] = PrefsCodec.encodeOpenCounts(state.opensByPackage)
+    private suspend fun update(transform: (FocusSnapshot) -> FocusSnapshot) {
+        when (val result = transact { FocusMutation(transform(it), Unit) }) {
+            is FocusCommit.Committed -> Unit
+            is FocusCommit.Unavailable -> throw StorageUnavailableException(result.reason)
         }
     }
+
+    override suspend fun setDefaultBreakLevel(level: BreakLevel) = update { it.copy(defaultBreakLevel = level) }
+    override suspend fun setEmergencyPass(state: EmergencyPassState) = update { it.copy(emergencyPass = state) }
+    override suspend fun setBreakSession(state: BreakSessionState) = update { it.copy(breakSession = state) }
+    override suspend fun setOpenCounts(state: OpenCountState) = update { it.copy(openCounts = state) }
+}
+
+private fun readFocus(prefs: Preferences): FocusSnapshot {
+    val ledger = FocusLedgerCodec.decode(StrictPrefsCodec.string(prefs, PrefsKeys.FOCUS_LEDGER))
+    val usedAt = StrictPrefsCodec.long(prefs, PrefsKeys.EMERGENCY_PASS_USED_AT)
+    if (usedAt != null && usedAt < 0) throw StorageUnavailableException(StorageFailure.CORRUPT)
+    return FocusSnapshot(
+        defaultBreakLevel = StrictPrefsCodec.level(StrictPrefsCodec.string(prefs, PrefsKeys.DEFAULT_BREAK_LEVEL)),
+        emergencyPass = EmergencyPassState(
+            StrictPrefsCodec.long(prefs, PrefsKeys.EMERGENCY_PASS_WEEK_START) ?: EmergencyPassState.WEEK_UNINITIALIZED,
+            usedAt,
+        ),
+        breakSession = StrictPrefsCodec.session(StrictPrefsCodec.string(prefs, PrefsKeys.BREAK_SESSION)),
+        openCounts = OpenCountState(
+            StrictPrefsCodec.long(prefs, PrefsKeys.OPEN_COUNTS_DAY) ?: OpenCountState.DAY_UNINITIALIZED,
+            StrictPrefsCodec.counts(StrictPrefsCodec.string(prefs, PrefsKeys.OPEN_COUNTS).orEmpty()),
+        ),
+        exemptions = ledger.exemptions,
+        breaksByCause = ledger.breaksByCause,
+        revision = ledger.revision,
+    )
 }

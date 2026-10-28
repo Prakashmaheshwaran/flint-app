@@ -3,7 +3,11 @@ package com.flint.peakfocus
 import android.content.Context
 import com.flint.peakfocus.core.data.BlocklistStore
 import com.flint.peakfocus.core.datastore.FlintPreferences
+import com.flint.peakfocus.core.datastore.StorageUnavailableException
 import com.flint.peakfocus.core.model.ActiveRulesHolder
+import com.flint.peakfocus.core.model.StorageState
+import com.flint.peakfocus.core.model.StorageFailure
+import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -31,13 +35,20 @@ object ActiveRulesBridge {
         val appContext = context.applicationContext
         scope.launch {
             val store = FlintPreferences.blockRules(appContext)
-            store.rules.collect { rules ->
-                ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, rules)
+            store.rulesState.collect { state ->
+                ActiveRulesHolder.publishState(ActiveRulesHolder.SOURCE_DATASTORE, state)
+                if (state !is StorageState.Ready) return@collect
+                val rules = state.value
                 // Lazy sweep of spent one-shot sessions. Enforcement never depends on this —
                 // the engine checks expiry itself — it just keeps dead rows out of the store.
                 // Each delete re-emits, so the sweep converges in one extra pass.
                 val now = System.currentTimeMillis()
-                rules.filter { it.isExpired(now) }.forEach { store.delete(it.id) }
+                try {
+                    if (rules.any { it.isExpired(now) }) store.pruneExpired(now)
+                } catch (cause: IOException) {
+                    val reason = (cause as? StorageUnavailableException)?.reason ?: StorageFailure.IO
+                    ActiveRulesHolder.publishState(ActiveRulesHolder.SOURCE_DATASTORE, StorageState.Unavailable(reason))
+                }
             }
         }
     }
