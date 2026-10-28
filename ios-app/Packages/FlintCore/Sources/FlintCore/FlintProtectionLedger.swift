@@ -267,6 +267,23 @@ public final class FlintProtectionLedger {
         transaction { $0 }
     }
 
+    /// Reads the last committed document without locking, migrating, checkpointing or writing.
+    /// Atomic replacement gives readers a complete committed version, including while a
+    /// transaction is open. A missing ledger is unavailable, even on a new install: only a
+    /// transaction may initialize it. Corrupt bytes are left untouched, without quarantine.
+    public func peek() -> Result<FlintLedgerState, FlintLedgerError> {
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return .failure(.unavailable(initializedMarker() != nil
+                ? "ledger missing after initialization" : "ledger is not initialized"))
+        } catch {
+            return .failure(.unavailable("cannot read ledger: \(error)"))
+        }
+        return Self.decode(data)
+    }
+
     /// Run `body` against the current state under an exclusive cross-process lock and persist
     /// the result atomically. If `body` throws, nothing is written and the error is returned
     /// as `.unavailable`. Never nest transactions on one thread (it would self-deadlock across
@@ -326,15 +343,20 @@ public final class FlintProtectionLedger {
         } catch {
             return .failure(.unavailable("cannot read ledger: \(error)"))
         }
+        return Self.decode(data, onCorrupt: { self.quarantine(data) }).map { ($0, true) }
+    }
+
+    /// Shared validation; only transactional reads supply a quarantine effect.
+    private static func decode(_ data: Data, onCorrupt: () -> Void = {}) -> Result<FlintLedgerState, FlintLedgerError> {
         // Peek at the version first so a newer schema is reported as such, not as corruption.
         if let header = try? JSONDecoder().decode(Header.self, from: data),
            header.version > FlintLedgerState.currentVersion {
             return .failure(.unavailable("ledger schema \(header.version) is newer than this build"))
         }
         do {
-            return .success((try Self.makeDecoder().decode(FlintLedgerState.self, from: data), true))
+            return .success(try makeDecoder().decode(FlintLedgerState.self, from: data))
         } catch {
-            quarantine(data)
+            onCorrupt()
             return .failure(.unavailable("ledger is corrupt"))
         }
     }
