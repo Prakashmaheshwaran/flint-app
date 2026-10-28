@@ -5,6 +5,8 @@ drafts, not Console submissions or approval evidence. No Google account action,
 upload, signing enrollment, release, or publication has been performed.
 
 - [Target API assessment](target-api.md)
+- [Upload signing and key custody](signing.md)
+- [APK and app bundle verification](bundles.md)
 - [Listing copy and asset checklist](listing.md)
 - [On-device inventory and Data safety answers](data-safety.md)
 - [Accessibility declaration and demo shot list](accessibility.md)

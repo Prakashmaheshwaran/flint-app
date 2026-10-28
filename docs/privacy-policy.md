@@ -44,8 +44,10 @@ can limit related blocking, website or reporting features.
 ## iOS Screen Time and local storage
 
 Flint uses Apple's Family Controls, Device Activity and Managed Settings APIs
-when you authorize Screen Time access. Your app, category and website selections
-use Apple's privacy-preserving tokens. Flint stores your selections, configured
+when you authorize Screen Time access. Selections made in Apple's Screen Time
+picker use privacy-preserving tokens. If you type custom Safari allow/block
+domains, Flint stores those domain strings locally in its shared app-group
+preferences. Flint stores your selections, configured
 rules and session state locally in its app and shared app-group storage, which
 lets its own Screen Time extensions apply your choices. Local usage information
 is used for the features shown on your device and is not uploaded to Flint.
