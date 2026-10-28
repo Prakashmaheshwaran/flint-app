@@ -10,7 +10,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,12 +21,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -54,7 +55,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,6 +67,7 @@ import com.flint.peakfocus.core.common.theme.FlintNumerals
 import com.flint.peakfocus.core.common.theme.FlintSpacing
 import com.flint.peakfocus.core.common.theme.rememberFlintMark
 import com.flint.peakfocus.core.common.ui.FlintSkeletonRow
+import com.flint.peakfocus.core.common.ui.flintLoading
 import com.flint.peakfocus.core.common.ui.rememberFlintHaptics
 
 /**
@@ -124,6 +128,12 @@ internal fun AppPickerScreen(
         ) {
             item(key = "header") {
                 EditorHeader(title = title, eyebrow = eyebrow ?: "$selectedCount selected", onBack = onCancel)
+                Spacer(Modifier.height(FlintSpacing.sm))
+                Text(
+                    stringResource(R.string.picker_safety_floor_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 Spacer(Modifier.height(FlintSpacing.sm))
             }
             if (appsState is InstalledAppsUiState.Ready) {
@@ -202,7 +212,11 @@ internal fun AppPickerScreen(
             }
             when {
                 appsState is InstalledAppsUiState.Loading -> {
-                    items(6) { FlintSkeletonRow() }
+                    item(key = "loading") {
+                        Column(Modifier.fillMaxWidth().flintLoading()) {
+                            repeat(6) { FlintSkeletonRow() }
+                        }
+                    }
                 }
                 filtered.isEmpty() -> item(key = "empty") {
                     // A lazy item is measured with an unbounded main axis, so a plain
@@ -292,6 +306,7 @@ internal fun AppPickerScreen(
                     TextButton(onClick = onCancel) { Text("Cancel") }
                     Button(
                         onClick = { onConfirm(selectedApps) },
+                        modifier = Modifier.heightIn(min = 48.dp),
                         // A confirm that changes nothing is noise — require a real edit.
                         enabled = selection.hasChanges(initiallySelected, apps),
                     ) {
@@ -332,7 +347,7 @@ private fun PickerEmptyState(
             Spacer(Modifier.height(FlintSpacing.xs))
             Text(
                 text = if (noAppsAtAll) {
-                    "No launchable apps found on this device."
+                    stringResource(R.string.picker_empty_list_note)
                 } else {
                     "Nothing matches your search."
                 },
@@ -350,7 +365,7 @@ private fun PickerEmptyState(
 
 /**
  * One selectable app row. Multi-select uses [androidx.compose.foundation.selection.toggleable]
- * with a checkbox role so TalkBack announces checked state; single-select is a plain button
+ * with a checkbox role so TalkBack announces checked state; single-select is a radio control
  * that confirms immediately, with a primary check marking the currently assigned row.
  */
 @Composable
@@ -374,14 +389,16 @@ private fun AppPickerRow(
     val interaction = if (multiSelect) {
         Modifier.toggleable(value = isSelected, role = Role.Checkbox, onValueChange = onToggle)
     } else {
-        Modifier.clickable(role = Role.Button) { onToggle(true) }
+        Modifier.selectable(selected = initiallyAssigned, role = Role.RadioButton) { onToggle(true) }
     }
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .heightIn(min = 48.dp)
             .clip(MaterialTheme.shapes.medium)
             .background(container)
             .then(interaction)
+            .semantics(mergeDescendants = true) {}
             .padding(horizontal = FlintSpacing.sm, vertical = FlintSpacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -392,7 +409,7 @@ private fun AppPickerRow(
                 text = app.label,
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
@@ -410,7 +427,7 @@ private fun AppPickerRow(
             Spacer(Modifier.width(FlintSpacing.sm))
             Icon(
                 imageVector = Icons.Default.Check,
-                contentDescription = "Currently selected",
+                contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
             )
         }
