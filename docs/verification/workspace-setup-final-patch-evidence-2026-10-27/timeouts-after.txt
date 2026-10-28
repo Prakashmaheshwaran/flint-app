@@ -1,0 +1,11 @@
+test_m_cheap_commands_keep_short_default_and_name_command (test_device_timeouts.DeviceTimeouts.test_m_cheap_commands_keep_short_default_and_name_command) ... ok
+test_m_five_second_inventory_succeeds (test_device_timeouts.DeviceTimeouts.test_m_five_second_inventory_succeeds) ... ok
+test_m_five_second_nonblocking_bootstatus_query_succeeds (test_device_timeouts.DeviceTimeouts.test_m_five_second_nonblocking_bootstatus_query_succeeds) ... ok
+test_m_five_second_springboard_query_succeeds (test_device_timeouts.DeviceTimeouts.test_m_five_second_springboard_query_succeeds) ... ok
+test_m_hung_inventory_stops_at_thirty_seconds (test_device_timeouts.DeviceTimeouts.test_m_hung_inventory_stops_at_thirty_seconds) ... ok
+test_m_springboard_query_respects_shorter_readiness_deadline (test_device_timeouts.DeviceTimeouts.test_m_springboard_query_respects_shorter_readiness_deadline) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 50.535s
+
+OK

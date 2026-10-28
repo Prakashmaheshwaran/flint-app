@@ -23,6 +23,7 @@ import xml.etree.ElementTree as ET
 HERE = Path(__file__).resolve().parent
 LEDGER = HERE.parent / "flint-devices.sh"
 OUTPUT_LIMIT = 1024 * 1024
+SIMCTL_QUERY_TIMEOUT = 30
 
 
 class CommandTimeout(ValueError):
@@ -37,8 +38,13 @@ def file_limit():
     resource.setrlimit(resource.RLIMIT_FSIZE, (limit, hard))
 
 
-def run(args, timeout=3, check=True):
+def run(args, timeout=None, check=True):
     """Bound time, output and descendants; never leave a timed-out CLI alive."""
+    if timeout is None:
+        # CoreSimulator queries can queue behind a peer boot. Mutating simctl
+        # callers below supply explicit transaction budgets; cheap CLIs stay short.
+        timeout = (SIMCTL_QUERY_TIMEOUT
+                   if Path(args[0]).name == "xcrun" and args[1:2] == ["simctl"] else 3)
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
         child = subprocess.Popen(args, stdout=out, stderr=err, start_new_session=True,
                                  preexec_fn=file_limit)
@@ -47,7 +53,7 @@ def run(args, timeout=3, check=True):
         except subprocess.TimeoutExpired:
             os.killpg(child.pid, signal.SIGKILL)
             child.wait(timeout=2)
-            raise CommandTimeout(f"{Path(args[0]).name} {' '.join(args[1:3])} timed out after {timeout:g}s")
+            raise CommandTimeout(f"{shlex.join(map(str, args))} timed out after {timeout:g}s")
         out.seek(0)
         err.seek(0)
         result = subprocess.CompletedProcess(args, child.returncode,
@@ -165,12 +171,12 @@ def rollback(platform, device, token, avd=None, group=None):
 def springboard_ready(device, timeout):
     # bootstatus can finish before the system shell is running. This is a
     # bounded readiness check, not a diagnosis of the observed FBS code 5.
-    wait = min(timeout, 15)
+    wait = min(timeout, SIMCTL_QUERY_TIMEOUT)
     deadline = time.monotonic() + wait
+    query = ["xcrun", "simctl", "spawn", device, "launchctl", "print", "system/com.apple.SpringBoard"]
     while (remaining := deadline - time.monotonic()) > 0:
         try:
-            result = run(["xcrun", "simctl", "spawn", device, "launchctl", "print",
-                          "system/com.apple.SpringBoard"], timeout=min(3, remaining), check=False)
+            result = run(query, timeout=min(SIMCTL_QUERY_TIMEOUT, remaining), check=False)
             pid = re.search(r"^\s*pid\s*=\s*([0-9]+)\s*$", result.stdout, re.MULTILINE)
             if (result.returncode == 0 and pid and int(pid[1]) > 1
                     and re.search(r"^\s*state\s*=\s*running\s*$", result.stdout, re.MULTILINE)):
@@ -179,7 +185,7 @@ def springboard_ready(device, timeout):
             pass
         time.sleep(min(0.2, max(0, deadline - time.monotonic())))
     raise ValueError(f"Simulator {device} SpringBoard readiness timed out after {wait:g}s; "
-                     "stopping before any further app launch")
+                     f"query: {shlex.join(query)}; stopping before any further app launch")
 
 
 def ios_launch(device, bundle):

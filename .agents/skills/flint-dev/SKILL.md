@@ -32,8 +32,17 @@ for current targets and override options rather than duplicating their mechanics
    Flint and an enabled target with a nonzero frame; bound readiness to eight
    polls and confirm the screenshot agrees. Tap once at the current frame center,
    then inspect a screenshot and AX for the intended destination. AX may time out
-   after a successful transition; never blindly repeat a tap. Persistent late
-   tap failures remain unresolved; retain evidence using the
+   after a successful transition; never blindly repeat a tap. Orca iOS `tap`
+   can acknowledge `ok` without observable input, intermittently and depending
+   on the device. Prefer iPhone 17, exact UDID
+   `1BD4732B-EC1A-4074-8C70-6AC369607185`, for UI-driving verification: most
+   recorded runs worked, while the latest iPhone 17e run persistently failed
+   even with a fresh helper. Boot origin does not explain the failures; both
+   helper-driven and explicit simctl boots have successful and failed runs.
+   This remains unresolved. Preserve screenshot + AX postconditions and report
+   failures with the upstream title “iOS helper acknowledges taps without a UI
+   postcondition; AX can time out or describe a prior foreground view after
+   launch/transition” and diagnostic wording in the
    [Task H upstream issue guidance](/Users/prakash/flint-planning/2026-10-27/workspace-setup/ios-tap-investigation.md#upstream-issue-wording-if-the-persistent-failure-recurs).
    Android AVDs need their configured image; the run target fails before attach
    with the exact missing package and installation guidance. The Android 35 Google

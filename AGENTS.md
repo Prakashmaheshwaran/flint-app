@@ -16,6 +16,7 @@
 - iOS runs wait for SpringBoard after bootstatus and retry launch once only for FBS code 5. A timed-out boot grants no shutdown rights; review the exact UDID in the "possibly booted, unclaimed" warning manually.
 - Android preflights the AVD image before boot/attach and resolves the sdkmanager executable for its remedy, otherwise gives generic guidance. It rechecks the ledger/live boot incarnation after building and before installation and launch.
 - Before iOS input, require two fresh AX samples about one second apart showing Flint and an enabled target with a nonzero frame, plus an agreeing screenshot (bound readiness to eight polls). Tap once, then verify pixels and AX; a transition-time AX timeout is not a failed tap. Helper restart recovers AX availability only; never repeat taps blindly.
+- Orca iOS `tap` can return `ok` without observable input; prefer iPhone 17 (`1BD4732B-EC1A-4074-8C70-6AC369607185`, reliable in most runs) for UI verification. The latest iPhone 17e failure persisted with a fresh helper, and boot origin does not explain it. Verify every postcondition with screenshot + AX, never repeat taps blindly, and report unresolved failures using the upstream-issue wording linked in `flint-dev`.
 
 ## Verification
 - iOS changes: run `make verify-ios` when the toolchain is available.
