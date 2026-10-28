@@ -20,8 +20,7 @@ class FocusHistoryTest : FlintE2EFixture() {
         evidence("empty-insights")
         clickTab("Today")
 
-        val began = SystemClock.elapsedRealtime()
-        startFiveMinuteTimer()
+        val began = startFiveMinuteTimer()
         val initial = awaitHistory { events -> events.count { it.getString("type") == "started" } == 1 }
         val first = initial.single { it.getString("type") == "started" }
         val firstId = first.getString("session")
@@ -77,7 +76,7 @@ class FocusHistoryTest : FlintE2EFixture() {
         evidence("insights-day")
     }
 
-    private fun startFiveMinuteTimer() {
+    private fun startFiveMinuteTimer(): Long {
         scrollTo("Start focus").click()
         scrollTo("Choose what rests").click()
         visible(By.text("What rests"))
@@ -92,8 +91,10 @@ class FocusHistoryTest : FlintE2EFixture() {
             scrollTo("Begin ${minutes}m") // fresh postcondition before another input
         }
         val begin = visible(By.text("Begin 5m").enabled(true))
+        val began = SystemClock.elapsedRealtime()
         begin.click()
         visible(By.text("Breathe with the light."))
+        return began
     }
 
     private fun showDurationControls() {
