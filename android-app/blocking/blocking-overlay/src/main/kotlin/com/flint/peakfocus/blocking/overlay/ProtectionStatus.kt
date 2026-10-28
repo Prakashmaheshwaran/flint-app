@@ -15,6 +15,11 @@ import kotlinx.coroutines.flow.asStateFlow
  * holds [ProtectionStatus.UNKNOWN]: readiness UNAVAILABLE and no causes — show "unavailable",
  * never "protected". Countdowns use [ActiveCause.logicalEndElapsedRealtimeMs] (same boot only,
  * per ADR-012 §9); the wall-clock end is a display estimate.
+ *
+ * Boot identity: the hub is process memory, so a snapshot read from [ProtectionStatusHub.status]
+ * always belongs to the current boot (a reboot restarts the process and the hub at [UNKNOWN]). A
+ * consumer that persists a snapshot (e.g. for a widget) must discard it unless it re-reads the
+ * hub, and must stop trusting it after [validUntilElapsedRealtimeMs].
  */
 data class ProtectionStatus(
     val readiness: Readiness,
@@ -26,6 +31,11 @@ data class ProtectionStatus(
     val safetyFloorResolved: Boolean,
     /** When this snapshot was computed; null for [UNKNOWN]. */
     val observedAt: AccessClockStamp?,
+    /**
+     * The snapshot is stale at or after this `elapsedRealtime()` (the next cause boundary, grant
+     * or recovery end, or a freshness horizon); null for [UNKNOWN]. Enforcement republishes by then.
+     */
+    val validUntilElapsedRealtimeMs: Long?,
 ) {
     enum class Readiness { LOADING, READY, UNAVAILABLE }
 
@@ -33,6 +43,8 @@ data class ProtectionStatus(
 
     data class ActiveCause(
         val ruleId: String?,
+        /** Sanitized user-facing name (rule/session name), at most [MAX_DISPLAY_NAME] chars. */
+        val displayName: String,
         val kind: CauseKind,
         val tier: BreakLevel,
         /** Remaining at [observedAt]; null when open-ended (legacy only). */
@@ -44,7 +56,13 @@ data class ProtectionStatus(
         val timeUncertain: Boolean,
     )
 
-    data class NextOccurrence(val ruleId: String, val kind: CauseKind, val startWallEstimateEpochMs: Long)
+    data class NextOccurrence(
+        val ruleId: String,
+        /** Sanitized user-facing name, at most [MAX_DISPLAY_NAME] chars. */
+        val displayName: String,
+        val kind: CauseKind,
+        val startWallEstimateEpochMs: Long,
+    )
 
     sealed interface PassStatus {
         data object Available : PassStatus
@@ -53,9 +71,16 @@ data class ProtectionStatus(
         data object Unavailable : PassStatus
     }
 
-    enum class PathBState { OFF, STANDBY, ENFORCING }
+    /**
+     * Path B's *live* service state, published by the service itself from its own lifecycle
+     * (foreground started / stopped) — never inferred from permissions or configuration.
+     * STANDBY and ENFORCING both mean the foreground service and its ongoing notification are
+     * live; OFF means positively stopped; UNKNOWN covers startup and detector handoff.
+     */
+    enum class PathBState { UNKNOWN, OFF, STANDBY, ENFORCING }
 
     data class DetectorHealth(
+        /** Path A is bound and serving (service liveness, not the Settings grant bit). */
         val accessibilityConnected: Boolean,
         val pathB: PathBState,
         /** Short machine-readable reasons, e.g. "usage-access-missing", "overlay-missing". */
@@ -68,10 +93,17 @@ data class ProtectionStatus(
             activeCauses = emptyList(),
             nextOccurrence = null,
             pass = PassStatus.Unavailable,
-            detectors = DetectorHealth(accessibilityConnected = false, pathB = PathBState.OFF, degradedReasons = emptySet()),
+            detectors = DetectorHealth(accessibilityConnected = false, pathB = PathBState.UNKNOWN, degradedReasons = emptySet()),
             safetyFloorResolved = false,
             observedAt = null,
+            validUntilElapsedRealtimeMs = null,
         )
+
+        const val MAX_DISPLAY_NAME = 64
+
+        /** Collapse whitespace/control characters and cap at [MAX_DISPLAY_NAME] for display surfaces. */
+        fun sanitizeDisplayName(raw: String): String =
+            raw.replace(Regex("[\\p{Cntrl}\\s]+"), " ").trim().take(MAX_DISPLAY_NAME)
     }
 }
 

@@ -15,6 +15,12 @@ class ProtectionStatusHubTest {
         assertTrue(s.activeCauses.isEmpty())
         assertEquals(ProtectionStatus.PassStatus.Unavailable, s.pass)
         assertEquals(false, s.safetyFloorResolved)
+        assertEquals(ProtectionStatus.PathBState.UNKNOWN, s.detectors.pathB)
+    }
+
+    @Test fun `display names are single-line and capped`() {
+        assertEquals("Deep work", ProtectionStatus.sanitizeDisplayName("  Deep\n\twork  "))
+        assertEquals(64, ProtectionStatus.sanitizeDisplayName("x".repeat(100)).length)
     }
 
     @Test fun `published snapshots are observed`() {
