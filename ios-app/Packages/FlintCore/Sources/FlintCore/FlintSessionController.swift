@@ -188,11 +188,6 @@ extension FlintGroupStore: FlintSessionStateStoring {
         )
     }
 
-    public func hasActiveSessionRecord() -> Bool {
-        // FlintGroupStore's own key for the active session (its Key enum is private to its file).
-        UserDefaults.flintGroup?.data(forKey: "flint.activeSession") != nil
-    }
-
     public func clearSessionSelection() {
         UserDefaults.flintGroup?.removeObject(forKey: Self.sessionSelectionKey)
     }

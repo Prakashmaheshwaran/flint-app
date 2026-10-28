@@ -46,12 +46,21 @@ public final class FlintGroupStore {
     // MARK: Active session
 
     public func saveActiveSession(_ session: FlintActiveSession) {
-        defaults.set(try? JSONEncoder().encode(session), forKey: Key.activeSession)
+        // An encoding failure keeps the previous record instead of erasing it (ADR-012 §8).
+        guard let data = try? JSONEncoder().encode(session) else { return }
+        defaults.set(data, forKey: Key.activeSession)
     }
 
     public func loadActiveSession() -> FlintActiveSession? {
         guard let data = defaults.data(forKey: Key.activeSession) else { return nil }
         return try? JSONDecoder().decode(FlintActiveSession.self, from: data)
+    }
+
+    /// True when anything is stored under the session key — including a record that doesn't
+    /// decode or has the wrong type — so unreadable state is never mistaken for "no session"
+    /// (ADR-012 §8).
+    public func hasActiveSessionRecord() -> Bool {
+        defaults.object(forKey: Key.activeSession) != nil
     }
 
     public func clearActiveSession() {
