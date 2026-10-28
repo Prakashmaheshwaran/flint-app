@@ -171,8 +171,8 @@ class DataStoreEditorCommitmentStore(
         @Suppress("UNCHECKED_CAST") return result as R
     }
 
-    /** Migration, queued future changes, THEN new occurrences; this ordering is load-bearing. */
-    private fun prepare(prefs: MutablePreferences, now: AccessClockStamp): EditorCommitmentState {
+    /** Call inside one DataStore edit: migrate, apply queued changes, then materialize new occurrences. */
+    internal fun prepare(prefs: MutablePreferences, now: AccessClockStamp): EditorCommitmentState {
         var state: EditorCommitmentState
         if (StrictPrefsCodec.string(prefs, EDITOR_COMMITMENTS_KEY) == null) {
             if (StrictPrefsCodec.long(prefs, EDITOR_VERSION_KEY) != null) wireCorrupt()
@@ -384,7 +384,8 @@ internal fun MutablePreferences.putEditorState(state: EditorCommitmentState) {
     this[EDITOR_VERSION_KEY] = 1L
 }
 
-private fun readEditorState(prefs: Preferences): EditorCommitmentState {
+/** Call inside the same DataStore edit when composing a protection mutation. */
+internal fun readEditorState(prefs: Preferences): EditorCommitmentState {
     val raw = StrictPrefsCodec.string(prefs, EDITOR_COMMITMENTS_KEY)
     val version = StrictPrefsCodec.long(prefs, EDITOR_VERSION_KEY)
     if (version != null && version != 1L) wireFuture()
