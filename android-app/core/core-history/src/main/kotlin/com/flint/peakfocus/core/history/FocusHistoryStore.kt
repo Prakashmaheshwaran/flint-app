@@ -14,10 +14,13 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
+enum class HistoryClearPhase { BEFORE_INTENT, INTENT_COMMITTED, LOG_REPLACED, METADATA_COMMITTED }
+
 /** App-private, single-process log. All instances share the lock; no enforcement caller waits here. */
 class FocusHistoryStore(
     val directory: File,
     private val clock: Clock = Clock.systemUTC(),
+    private val clearPhase: (HistoryClearPhase) -> Unit = {},
     private val zone: () -> ZoneId = { ZoneId.systemDefault() },
 ) {
     private val log = File(directory, "events.v1.jsonl")
@@ -42,6 +45,9 @@ class FocusHistoryStore(
         val existing = snapshot.events.mapTo(mutableSetOf()) { it.id }
         val additions = events(snapshot).filter { existing.add(it.id) }
         additions.forEach { event ->
+            require(event.knownType != HistoryEventType.COMPLETED || event.at <= clock.millis()) {
+                "Completion cannot precede its logical deadline"
+            }
             val encoded = HistoryCodec.encode(event)
             HistoryCodec.decode(encoded) // reject invalid writes; never corrupt the durable log
             val bytes = (encoded + "\n").toByteArray(Charsets.UTF_8)
@@ -57,10 +63,17 @@ class FocusHistoryStore(
         val running = FocusHistoryAggregator.sessions(snapshot.events, clock.millis(), activeSessionIds)
             .filter { it.outcome == SessionOutcome.RUNNING }.mapTo(mutableSetOf()) { it.id }
         val retained = snapshot.events.filter { it.session in running }
-        rewriteLog(retained)
         val old = readMetadata()
+        val at = maxOf(old.cleared ?: Long.MIN_VALUE, clock.millis())
+        clearPhase(HistoryClearPhase.BEFORE_INTENT)
+        val intent = old.copy(pendingClear = at, keepSessions = running)
+        writeMetadata(intent)
+        clearPhase(HistoryClearPhase.INTENT_COMMITTED)
+        rewriteLog(retained)
+        clearPhase(HistoryClearPhase.LOG_REPLACED)
         degraded = false
-        writeMetadata(old.created, maxOf(old.cleared ?: Long.MIN_VALUE, clock.millis()), old.compactedDay)
+        writeMetadata(intent.copy(cleared = at, degraded = false, pendingClear = null, keepSessions = emptySet()))
+        clearPhase(HistoryClearPhase.METADATA_COMMITTED)
         state.value = readLocked()
     }
 
@@ -97,30 +110,56 @@ class FocusHistoryStore(
         if (bad) {
             degraded = true
             quarantine(bytes)
-            writeMetadata(meta.created, meta.cleared, meta.compactedDay)
+            writeMetadata(meta.copy(degraded = true))
+        }
+        if (meta.pendingClear != null) {
+            rewriteLog(events.filter { it.session in meta.keepSessions })
+            degraded = false
+            writeMetadata(meta.copy(cleared = maxOf(meta.cleared ?: Long.MIN_VALUE, meta.pendingClear),
+                degraded = false, pendingClear = null, keepSessions = emptySet()))
+            return readLocked()
         }
         return HistorySnapshot(events, maxOf(createdAt, clearedAt ?: createdAt),
             readable = !bad || events.isNotEmpty(), degraded = degraded,
             diagnostic = if (degraded) "Some history couldn't be read" else null).also { state.value = it }
     }
 
-    private data class Metadata(val created: Long, val cleared: Long?, val compactedDay: Long?, val degraded: Boolean)
+    private data class Metadata(
+        val created: Long, val cleared: Long? = null, val compactedDay: Long? = null, val degraded: Boolean = false,
+        val pendingClear: Long? = null, val keepSessions: Set<String> = emptySet(),
+    )
 
     private fun readMetadata(): Metadata {
         if (!metadata.exists()) {
             // A pre-existing log without metadata must not invent an earlier history start.
-            writeMetadata(clock.millis(), null)
+            writeMetadata(Metadata(clock.millis()))
         }
-        val fields = FlatJson.decode(metadata.readText(Charsets.UTF_8))
-        require(fields["v"] == 1L)
-        val created = fields["createdAt"] as? Long ?: error("History metadata unavailable")
-        val cleared = fields["clearedAt"]?.let { it as? Long ?: error("Invalid clearedAt") }
-        return Metadata(created, cleared, fields["compactedDay"] as? Long, fields["degraded"] == true)
+        val bytes = metadata.readBytes()
+        return try {
+            val fields = FlatJson.decode(bytes.toString(Charsets.UTF_8))
+            require(fields["v"] == 1L)
+            fun long(key: String) = fields[key]?.let { it as? Long ?: error("Invalid $key") }
+            val created = long("createdAt") ?: error("History metadata unavailable")
+            val pending = long("pendingClear")
+            val keep = fields["keepSessions"]?.let { value ->
+                (value as? List<*>)?.map { it as? String ?: error("Invalid retained session") }?.toSet()
+                    ?: error("Invalid retained sessions")
+            }.orEmpty()
+            require(pending == null || fields.containsKey("keepSessions"))
+            val flag = fields["degraded"]?.let { it as? Boolean ?: error("Invalid diagnostic") } ?: false
+            Metadata(created, long("clearedAt"), long("compactedDay"), flag, pending, keep)
+        } catch (e: Exception) {
+            quarantine(bytes, "metadata")
+            // Neither creation nor clear can be trusted. Never invent an earlier historyStart.
+            degraded = true
+            Metadata(clock.millis(), degraded = true).also { writeMetadata(it) }
+        }
     }
 
-    private fun writeMetadata(created: Long, cleared: Long?, compactedDay: Long? = null) = atomicWrite(metadata,
-        FlatJson.encode(linkedMapOf("v" to 1L, "createdAt" to created, "clearedAt" to cleared,
-            "compactedDay" to compactedDay, "degraded" to degraded)).toByteArray(Charsets.UTF_8))
+    private fun writeMetadata(meta: Metadata) = atomicWrite(metadata,
+        FlatJson.encode(linkedMapOf("v" to 1L, "createdAt" to meta.created, "clearedAt" to meta.cleared,
+            "compactedDay" to meta.compactedDay, "degraded" to meta.degraded,
+            "pendingClear" to meta.pendingClear, "keepSessions" to meta.keepSessions.toList())).toByteArray(Charsets.UTF_8))
 
     private fun compactIfNeeded(snapshot: HistorySnapshot) {
         val today = clock.instant().atZone(zone()).toLocalDate().toEpochDay()
@@ -139,20 +178,21 @@ class FocusHistoryStore(
         rewriteLog(snapshot.events.filter { it.session in retainedIds })
         lastCompaction = clock.instant().atZone(zone()).toLocalDate().toEpochDay()
         val meta = readMetadata()
-        writeMetadata(meta.created, meta.cleared, lastCompaction)
+        writeMetadata(meta.copy(compactedDay = lastCompaction, degraded = degraded))
         state.value = readLocked()
     }
 
     private fun rewriteLog(events: List<HistoryEvent>) = atomicWrite(log,
         events.joinToString("") { HistoryCodec.encode(it) + "\n" }.toByteArray(Charsets.UTF_8))
 
-    private fun quarantine(bytes: ByteArray) {
+    private fun quarantine(bytes: ByteArray, label: String = "events") {
         val dir = File(directory, "quarantine")
         check(dir.isDirectory || dir.mkdirs())
         val digest = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
         // Filename includes content digest so reopening the same corrupt log never makes another copy.
-        if (dir.listFiles().orEmpty().none { it.name.endsWith("-$digest.jsonl") }) {
-            syncWrite(File(dir, "${clock.millis()}-$digest.jsonl"), bytes)
+        val existing = dir.listFiles().orEmpty().firstOrNull { it.name.endsWith("-$digest.jsonl") }
+        if (existing == null || !existing.readBytes().contentEquals(bytes)) {
+            atomicWrite(existing ?: File(dir, "${clock.millis()}-$label-$digest.jsonl"), bytes)
         }
         dir.listFiles().orEmpty().filter { it.extension == "jsonl" }.sortedByDescending { it.lastModified() }
             .drop(3).forEach { check(it.delete()) }

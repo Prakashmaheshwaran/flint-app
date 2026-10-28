@@ -4,9 +4,11 @@ import java.util.UUID
 
 /** The only mapping between lifecycle names and wire names. Unknown names remain in type. */
 enum class HistoryEventType(val wireName: String, val terminal: Boolean = false) {
-    STARTED("started"), COMPLETED("completed", true), ENDED_EARLY("ended_early", true),
+    STARTED("started"), RESCHEDULED("rescheduled"), COMPLETED("completed", true), ENDED_EARLY("ended_early", true),
     SUPERSEDED("superseded", true), BREAK_STARTED("break_started"), BREAK_ENDED("break_ended"),
-    PASS_USED("pass_used"), FAILED_TO_ARM("failed_to_arm"), OPEN_INTERCEPTED("open_intercepted");
+    PASS_USED("pass_used"), FAILED_TO_ARM("failed_to_arm"), OPEN_INTERCEPTED("open_intercepted"),
+    PROTECTION_DEGRADED("protection_degraded"), PROTECTION_RESTORED("protection_restored"),
+    ACCESS_STARTED("access_started"), ACCESS_ENDED("access_ended");
 
     companion object {
         fun fromWire(name: String): HistoryEventType? = entries.firstOrNull { it.wireName == name }
@@ -29,6 +31,12 @@ data class HistoryEvent(
     val by: String? = null,
     val breakEnd: Long? = null,
     val reason: String? = null,
+    val originRoute: String? = null,
+    val observedAt: Long? = null,
+    val kind: String? = null,
+    val grant: String? = null,
+    val sessions: List<String>? = null,
+    val recoveryEnd: Long? = null,
     /** Original line retains future fields byte-for-byte through compaction. */
     val originalLine: String? = null,
 ) {

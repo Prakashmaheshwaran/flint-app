@@ -44,7 +44,7 @@ class HistoryReconciler(
         val success = store.update { snapshot ->
             val events = mutableListOf<HistoryEvent>()
             val known = snapshot.events.filter { it.knownType != null }.groupBy { it.session }
-            sessions.values.forEach { rule ->
+            sessions.values.filter { it.id in current }.forEach { rule ->
                 if (known[rule.id].orEmpty().none { it.knownType == HistoryEventType.STARTED }) {
                     val native = rule.id.startsWith("session-timer-")
                     val timestamp = if (native) rule.id.removePrefix("session-timer-").substringBefore('-').toLongOrNull() else null
@@ -60,12 +60,25 @@ class HistoryReconciler(
                     )
                 }
             }
-            (snapshot.events + events).filter { it.knownType != null }.groupBy { it.session }.forEach { (id, group) ->
-                val start = group.firstOrNull { it.knownType == HistoryEventType.STARTED } ?: return@forEach
+            sessions.values.forEach { rule ->
+                val group = known[rule.id].orEmpty()
                 if (group.any { it.knownType?.terminal == true }) return@forEach
-                if (start.plannedEnd != null && now >= start.plannedEnd) {
+                val plan = group.sortedBy { it.at }.lastOrNull {
+                    it.knownType in setOf(HistoryEventType.STARTED, HistoryEventType.RESCHEDULED)
+                } ?: return@forEach
+                if (plan.plannedEnd != rule.plannedEnd) {
+                    events += event(HistoryEventType.RESCHEDULED, rule.id, now).copy(plannedEnd = rule.plannedEnd)
+                }
+            }
+            (snapshot.events + events).filter { it.knownType != null }.groupBy { it.session }.forEach { (id, group) ->
+                if (group.none { it.knownType == HistoryEventType.STARTED }) return@forEach
+                if (group.any { it.knownType?.terminal == true }) return@forEach
+                val plan = group.sortedBy { it.at }.last { it.knownType in setOf(HistoryEventType.STARTED, HistoryEventType.RESCHEDULED) }
+                val rule = sessions[id]
+                val deadline = if (rule != null) rule.plannedEnd else plan.plannedEnd
+                if (deadline != null && now >= deadline) {
                     // Expiry is provable even if ActiveRulesBridge has not swept the row yet.
-                    events += event(HistoryEventType.COMPLETED, id, start.plannedEnd).copy(inferred = coldStart)
+                    events += event(HistoryEventType.COMPLETED, id, deadline).copy(inferred = coldStart || id in sessions)
                 } else if (id !in current) {
                     events += event(HistoryEventType.ENDED_EARLY, id, now).copy(route = "unknown", inferred = coldStart)
                 }

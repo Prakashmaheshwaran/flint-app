@@ -109,7 +109,7 @@ class FocusHistoryContractTest {
         assertEquals(10 * 60_000L, focused(listOf(started(), breakStart.copy(breakEnd = start + 2 * hour), complete())))
     }
     @Test fun FH12_corruptAndTruncatedLinesQuarantineOnce() = runTest {
-        val dir = temporary.newFolder(); val store = store(dir = dir)
+        val dir = temporary.newFolder(); val clock = MutableClock(start); val store = store(clock, dir)
         store.append(started())
         File(dir, "events.v1.jsonl").appendText("not json\n{\"truncated\":")
         val read = store.load()
@@ -117,8 +117,9 @@ class FocusHistoryContractTest {
         assertTrue(read.degraded)
         store.load()
         assertEquals(1, File(dir, "quarantine").listFiles()!!.size)
+        clock.value += hour
         store.append(complete())
-        val reopened = store(dir = dir).load()
+        val reopened = store(clock, dir).load()
         assertEquals(2, reopened.events.size)
         assertTrue(reopened.degraded)
     }
@@ -140,12 +141,13 @@ class FocusHistoryContractTest {
     }
     @Test fun FH15_clearRetainsRunningEventsAndUpdatesMetadata() = runTest {
         val clock = MutableClock(start); val dir = temporary.newFolder(); val store = store(clock, dir)
-        store.append(started(id = "old")); store.append(complete(id = "old")); store.append(started(id = "running"))
+        store.append(started(at = start - hour, id = "old")); store.append(complete(at = start, id = "old")); store.append(started(id = "running"))
         clock.value += hour / 2
         assertTrue(store.clear(setOf("running")))
         val reopened = store(clock, dir).load()
         assertEquals(setOf("running"), reopened.events.map { it.session }.toSet())
         assertEquals(clock.value, reopened.historyStart)
+        clock.value = start + hour
         assertTrue(store.append(complete(id = "running")))
     }
     @Test fun FH16_absentEmptyZeroDegradedUnavailableDiffer() {
@@ -229,7 +231,9 @@ class FocusHistoryContractTest {
         }
         assertEquals(3, File(dir, "quarantine").listFiles()!!.size)
         File(dir, "metadata.v1.json").writeText("invalid metadata")
-        assertFalse(store(dir = dir).load().readable)
+        val recovered = store(dir = dir).load()
+        assertTrue(recovered.readable)
+        assertTrue(recovered.degraded)
     }
     @Test fun bridgeDiffRestartIdempotenceAndObservedVsColdEnds() = runTest {
         val clock = MutableClock(start); val store = store(clock)

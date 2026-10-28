@@ -90,7 +90,11 @@ object FocusHistoryAggregator {
             val ordered = group.sortedBy { it.at } // stable: ties retain file order
             val start = ordered.firstOrNull { it.knownType == HistoryEventType.STARTED } ?: return@mapNotNull null
             val terminal = ordered.firstOrNull { it.knownType?.terminal == true }
-            val expired = start.plannedEnd?.let { it <= now } == true
+            val plan = ordered.takeWhile { it !== terminal }.lastOrNull {
+                it.knownType in setOf(HistoryEventType.STARTED, HistoryEventType.RESCHEDULED)
+            } ?: start
+            val plannedEnd = plan.plannedEnd
+            val expired = plannedEnd?.let { it <= now } == true
             val outcome = when (terminal?.knownType) {
                 HistoryEventType.COMPLETED -> SessionOutcome.COMPLETED
                 HistoryEventType.ENDED_EARLY -> SessionOutcome.ENDED_EARLY
@@ -103,20 +107,24 @@ object FocusHistoryAggregator {
             }
             val inferred = terminal?.inferred ?: (outcome != SessionOutcome.RUNNING)
             val unknownEnd = outcome == SessionOutcome.ENDED_EARLY && inferred && (terminal == null || terminal.route == "unknown")
-            val end = terminal?.at ?: if (expired) start.plannedEnd!! else now
-            val clampedEnd = minOf(end, start.plannedEnd ?: end)
+            val end = terminal?.at ?: if (expired) plannedEnd!! else now
+            val clampedEnd = minOf(end, plannedEnd ?: end)
             var intervals = if (unknownEnd || clampedEnd <= start.at) emptyList()
                 else listOf(FocusInterval(start.at, clampedEnd))
             val breaks = ordered.filter { it.knownType == HistoryEventType.BREAK_STARTED }
             breaks.forEach { b ->
-                val breakEnd = minOf(
-                    b.breakEnd ?: clampedEnd,
-                    ordered.firstOrNull { it.knownType == HistoryEventType.BREAK_ENDED && it.at >= b.at }?.at ?: clampedEnd,
-                    clampedEnd,
-                )
+                val observed = ordered.firstOrNull { it.knownType == HistoryEventType.BREAK_ENDED && it.at >= b.at &&
+                    (b.grant == null || it.grant == b.grant) }?.at
+                val breakEnd = minOf(observed ?: b.breakEnd ?: clampedEnd, clampedEnd)
                 intervals = subtract(intervals, FocusInterval(b.at, breakEnd))
             }
-            FocusSession(id, start.name ?: "Focus", start.at, end, start.plannedEnd, outcome, inferred,
+            ordered.filter { it.knownType == HistoryEventType.PROTECTION_DEGRADED }.forEach { gap ->
+                val restored = ordered.firstOrNull { it.knownType == HistoryEventType.PROTECTION_RESTORED && it.at >= gap.at }?.at
+                intervals = subtract(intervals, FocusInterval(gap.at, restored ?: clampedEnd))
+            }
+            events.distinctBy { it.id }.filter { it.knownType == HistoryEventType.PASS_USED && id in it.sessions.orEmpty() }
+                .forEach { pass -> intervals = subtract(intervals, FocusInterval(pass.at, pass.recoveryEnd ?: pass.at)) }
+            FocusSession(id, start.name ?: "Focus", start.at, end, plannedEnd, outcome, inferred,
                 intervals, breaks.size.takeIf { it > 0 },
                 ordered.count { it.knownType == HistoryEventType.OPEN_INTERCEPTED }.takeIf { it > 0 })
         }
