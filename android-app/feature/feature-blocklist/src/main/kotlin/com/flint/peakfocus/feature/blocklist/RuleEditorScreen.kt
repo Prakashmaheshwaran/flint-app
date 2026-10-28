@@ -95,8 +95,9 @@ internal fun RuleEditorScreen(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
     groups: List<AppGroup> = emptyList(),
-    onSaveGroup: ((name: String, apps: Set<AppRef>, domains: List<String>) -> Unit)? = null,
-    onDeleteGroup: ((groupId: String) -> Unit)? = null,
+    onSaveGroup: ((name: String, apps: Set<AppRef>, domains: List<String>, onSaved: () -> Unit) -> Unit)? = null,
+    onDeleteGroup: ((groupId: String, onSaved: () -> Unit) -> Unit)? = null,
+    saveState: EditorSaveState = EditorSaveState(),
 ) {
     var draft by remember(initialDraft.id) { mutableStateOf(initialDraft) }
     var startText by remember(initialDraft.id) {
@@ -530,10 +531,11 @@ internal fun RuleEditorScreen(
                 }
                 Spacer(Modifier.height(FlintSpacing.lg))
 
-                ErrorMessages(errors.map { it.message })
+                ErrorMessages(errors.map { it.message } + listOfNotNull(saveState.error))
                 if (errors.isNotEmpty()) Spacer(Modifier.height(FlintSpacing.cardGap))
 
                 Button(
+                    enabled = !saveState.busy,
                     onClick = {
                         attemptedSave = true
                         val problems = validate(candidate)
@@ -563,6 +565,7 @@ internal fun RuleEditorScreen(
                     Spacer(Modifier.height(FlintSpacing.sm))
                     TextButton(
                         onClick = { confirmingDelete = true },
+                        enabled = !saveState.busy,
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.textButtonColors(
                             contentColor = MaterialTheme.colorScheme.error,
@@ -617,8 +620,7 @@ internal fun RuleEditorScreen(
                 confirmButton = {
                     TextButton(
                         onClick = {
-                            onDeleteGroup(group.id)
-                            deletingGroup = null
+                            onDeleteGroup(group.id) { deletingGroup = null }
                         },
                     ) {
                         Text("Delete", color = MaterialTheme.colorScheme.error)
@@ -636,22 +638,27 @@ internal fun RuleEditorScreen(
             onDismissRequest = { namingGroup = false },
             title = { Text("Name this group") },
             text = {
-                OutlinedTextField(
+                Column {
+                    ErrorMessages(listOfNotNull(saveState.error))
+                    OutlinedTextField(
                     value = groupName,
                     onValueChange = { groupName = it },
+                    enabled = !saveState.busy,
                     label = { Text("Group name") },
                     placeholder = { Text("Social media") },
                     singleLine = true,
-                )
+                    )
+                }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        onSaveGroup(groupName, draft.apps, draft.domains)
-                        namingGroup = false
-                        groupName = ""
+                        onSaveGroup(groupName, draft.apps, draft.domains) {
+                            namingGroup = false
+                            groupName = ""
+                        }
                     },
-                    enabled = groupName.isNotBlank(),
+                    enabled = groupName.isNotBlank() && !saveState.busy,
                 ) {
                     Text("Save group")
                 }

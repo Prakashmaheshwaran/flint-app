@@ -71,8 +71,14 @@ internal fun LimitEditorFlow(
     onClearLimits: (String) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    saveState: EditorSaveState = EditorSaveState(),
 ) {
     var chosenPackage by remember(packageName) { mutableStateOf(packageName) }
+    val initialLimits = remember(packageName) { limitsState as? LimitsUiState.Ready }
+    if (initialLimits == null) {
+        StorageEditorUnavailable(onClose)
+        return
+    }
 
     AnimatedContent(
         targetState = chosenPackage,
@@ -95,8 +101,7 @@ internal fun LimitEditorFlow(
                 onCancel = onClose,
             )
         } else {
-            val row = (limitsState as? LimitsUiState.Ready)
-                ?.rows?.firstOrNull { it.packageName == pkg }
+            val row = initialLimits.rows.firstOrNull { it.packageName == pkg }
             val app = (appsState as? InstalledAppsUiState.Ready)
                 ?.apps?.firstOrNull { it.packageName == pkg }
 
@@ -114,6 +119,7 @@ internal fun LimitEditorFlow(
                     null
                 },
                 onClose = onClose,
+                saveState = saveState,
             )
         }
     }
@@ -131,6 +137,7 @@ private fun LimitEditorContent(
     onRemove: (() -> Unit)?,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    saveState: EditorSaveState = EditorSaveState(),
 ) {
     var draft by remember(packageName) {
         mutableStateOf(limitDraftOf(packageName, existingTime, existingOpen, defaultBreakLevel))
@@ -305,10 +312,11 @@ private fun LimitEditorContent(
         }
         Spacer(Modifier.height(FlintSpacing.lg))
 
-        ErrorMessages(errors.map { it.message })
+        ErrorMessages(errors.map { it.message } + listOfNotNull(saveState.error))
         if (errors.isNotEmpty()) Spacer(Modifier.height(FlintSpacing.cardGap))
 
         Button(
+            enabled = !saveState.busy,
             onClick = {
                 attemptedSave = true
                 val result = draft.resolve()
@@ -327,6 +335,7 @@ private fun LimitEditorContent(
             Spacer(Modifier.height(FlintSpacing.sm))
             TextButton(
                 onClick = onRemove,
+                enabled = !saveState.busy,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.textButtonColors(
                     contentColor = MaterialTheme.colorScheme.error,

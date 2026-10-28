@@ -44,8 +44,7 @@ object ActiveRulesBridge {
                 // Each delete re-emits, so the sweep converges in one extra pass.
                 val now = System.currentTimeMillis()
                 try {
-                    val expired = rules.filter { it.isExpired(now) }.map { it.id }.toSet()
-                    if (expired.isNotEmpty()) store.updateRules(emptyList(), expired)
+                    if (rules.any { it.isExpired(now) }) store.pruneExpired(now)
                 } catch (cause: IOException) {
                     val reason = (cause as? StorageUnavailableException)?.reason ?: StorageFailure.IO
                     ActiveRulesHolder.publishState(ActiveRulesHolder.SOURCE_DATASTORE, StorageState.Unavailable(reason))

@@ -62,6 +62,7 @@ internal fun SleepEditorScreen(
     onSave: (SleepConfig) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    saveState: EditorSaveState = EditorSaveState(),
 ) {
     var config by remember { mutableStateOf(initial) }
     var bedText by remember { mutableStateOf(formatMinuteOfDay(initial.bedMinute)) }
@@ -293,10 +294,11 @@ internal fun SleepEditorScreen(
                 }
                 Spacer(Modifier.height(FlintSpacing.lg))
 
-                ErrorMessages(errors.map { it.message })
+                ErrorMessages(errors.map { it.message } + listOfNotNull(saveState.error))
                 if (errors.isNotEmpty()) Spacer(Modifier.height(FlintSpacing.cardGap))
 
                 Button(
+                    enabled = !saveState.busy,
                     onClick = {
                         attemptedSave = true
                         if (validate(candidate).isEmpty()) {

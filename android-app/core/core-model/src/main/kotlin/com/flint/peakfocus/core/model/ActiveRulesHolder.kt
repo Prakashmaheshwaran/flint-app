@@ -25,16 +25,14 @@ object ActiveRulesHolder {
 
     private val contributions = LinkedHashMap<String, List<BlockRule>>()
 
-    @Volatile
-    private var combined: List<BlockRule> = emptyList()
+    private data class Snapshot(val rules: List<BlockRule>, val dataStoreState: StorageState<List<BlockRule>>)
+    @Volatile private var snapshot = Snapshot(emptyList(), StorageState.Loading)
 
-    @Volatile
-    var dataStoreState: StorageState<List<BlockRule>> = StorageState.Loading
-        private set
+    val dataStoreState: StorageState<List<BlockRule>> get() = snapshot.dataStoreState
 
     /** The current combined rule list — what both detection paths hand the engine. */
     val rules: List<BlockRule>
-        get() = combined
+        get() = snapshot.rules
 
     /**
      * Replace [source]'s contribution with [rules] (empty clears it) and refresh the combined
@@ -47,13 +45,17 @@ object ActiveRulesHolder {
     /** Loading/errors retain the last good contribution; only a successful read may clear it. */
     fun publishState(source: String, state: StorageState<List<BlockRule>>) {
         synchronized(contributions) {
-            if (source == SOURCE_DATASTORE) dataStoreState = state
-            if (state !is StorageState.Ready) return
-            val rules = state.value.toList()
+            val published = if (state is StorageState.Ready) StorageState.Ready(state.value.toList()) else state
+            val dataStoreState = if (source == SOURCE_DATASTORE) published else snapshot.dataStoreState
+            if (published !is StorageState.Ready) {
+                snapshot = snapshot.copy(dataStoreState = dataStoreState)
+                return
+            }
+            val rules = published.value
             if (rules.isEmpty()) contributions.remove(source) else contributions[source] = rules
             val known = knownOrder.flatMap { contributions[it].orEmpty() }
             val rest = contributions.entries.filter { it.key !in knownOrder }.flatMap { it.value }
-            combined = known + rest
+            snapshot = Snapshot(known + rest, dataStoreState)
         }
     }
 }

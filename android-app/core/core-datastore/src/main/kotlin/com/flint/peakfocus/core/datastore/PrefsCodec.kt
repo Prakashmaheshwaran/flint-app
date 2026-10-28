@@ -19,7 +19,8 @@ import com.flint.peakfocus.core.model.TimeLimit
  * library, so we encode to a small line format instead of adding one. Layers: records are
  * separated by `\n`, fields by `|`, list items by `,`, item sub-fields by `~`; every
  * user-supplied atom is %-escaped so names/domains may contain any delimiter. Decoding is
- * defensive: malformed records are dropped, never thrown on.
+ * These historical helpers are lenient; live stores use [StrictPrefsCodec] to reject an
+ * undecodable value before any read/modify/write, preserving every malformed raw record.
  *
  * Pure Kotlin (no Android imports) so it is unit-testable on the JVM.
  */

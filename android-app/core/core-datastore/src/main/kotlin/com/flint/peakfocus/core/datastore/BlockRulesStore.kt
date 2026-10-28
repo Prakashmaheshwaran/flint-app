@@ -33,6 +33,11 @@ interface BlockRulesStore {
         error("Atomic rule updates are not supported by this store")
     }
 
+    /** Recheck expiry in the same transaction as the sweep; never delete a renewed rule. */
+    suspend fun pruneExpired(nowEpochMs: Long) {
+        error("Atomic expiry pruning is not supported by this store")
+    }
+
     /**
      * Atomically insert a finite session only if no enabled, unexpired session exists.
      * Returns false on an active-session or id conflict; unrelated rules are preserved.

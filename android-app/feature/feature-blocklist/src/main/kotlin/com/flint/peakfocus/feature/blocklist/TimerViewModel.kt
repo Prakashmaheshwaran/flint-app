@@ -58,7 +58,7 @@ internal class TimerViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                state.update { it.copy(rulesError = "Couldn't load timers. Refresh to try again.") }
+                state.update { it.copy(rulesLoaded = false, rulesError = "Couldn't load timers. Refresh to try again.") }
             }
         }
     }

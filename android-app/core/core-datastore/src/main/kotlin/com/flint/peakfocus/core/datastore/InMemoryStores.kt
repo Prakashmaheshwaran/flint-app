@@ -40,6 +40,10 @@ class InMemoryBlockRulesStore(initial: List<BlockRule> = emptyList()) : BlockRul
         state.update { current -> current.filterNot { it.id in deleteIds || it.id in upserts.map(BlockRule::id) } + upserts }
     }
 
+    override suspend fun pruneExpired(nowEpochMs: Long) {
+        state.update { current -> current.filterNot { it.isExpired(nowEpochMs) } }
+    }
+
     override suspend fun startSessionIfIdle(rule: BlockRule, nowEpochMs: Long): Boolean {
         requireFiniteSession(rule, nowEpochMs)
         while (true) {
@@ -78,6 +82,7 @@ class InMemoryBlockRulesStore(initial: List<BlockRule> = emptyList()) : BlockRul
     }
 
     override suspend fun replaceAll(rules: List<BlockRule>) {
+        StrictPrefsCodec.rules(PrefsCodec.encodeRules(rules))
         state.value = rules
     }
 }

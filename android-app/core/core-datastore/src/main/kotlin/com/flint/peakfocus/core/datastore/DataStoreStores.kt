@@ -53,6 +53,8 @@ class DataStoreBlockRulesStore(
         current.filterNot { it.id in deleteIds || it.id in upserts.map(BlockRule::id) } + upserts
     }
 
+    override suspend fun pruneExpired(nowEpochMs: Long) = mutate { current -> current.filterNot { it.isExpired(nowEpochMs) } }
+
     override suspend fun startSessionIfIdle(rule: BlockRule, nowEpochMs: Long): Boolean {
         requireFiniteSession(rule, nowEpochMs)
         var started = false
