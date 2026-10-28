@@ -5,6 +5,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+- **Android (removed): the Hardcore uninstall/Settings guard.** Per the protection contract
+  (ADR-012 §10) and the Play Accessibility API policy, Flint no longer intercepts the uninstaller,
+  Settings, Accessibility disable, app info, force-stop or permission revocation at any tier, and
+  no longer reads Settings window text. The uninstaller and Settings/permission surfaces are on
+  the safety floor instead; turning access off reduces protection and stays the user's choice.
+  This supersedes the "Hardcore uninstall guard (Path A)" entry below.
+- **Android:** the safety floor (dialer, emergency, default home app, Settings/permission
+  recovery, uninstaller, Flint) applies before every block cause on both detectors.
 - **Android:** native finite-session Timer with persisted restoration, explicit hold-to-leave,
   and preservation of overlapping restrictions; selected-day and weekly usage rankings.
 - **Android:** strongest-cause arbitration prevents ordinary breaks bypassing overlapping

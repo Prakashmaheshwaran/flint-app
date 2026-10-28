@@ -9,12 +9,9 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
 import com.flint.peakfocus.blocking.engine.BrowserAddressBars
-import com.flint.peakfocus.blocking.engine.ForegroundSurface
 import com.flint.peakfocus.blocking.engine.IsoWeekday
-import com.flint.peakfocus.blocking.engine.UninstallGuard
 import com.flint.peakfocus.blocking.overlay.BlockScreenCoordinator
 import com.flint.peakfocus.blocking.overlay.ruleBlockCause
-import com.flint.peakfocus.blocking.overlay.uninstallGuardBlockCause
 import com.flint.peakfocus.core.data.BlocklistStore
 import com.flint.peakfocus.core.data.LimitStore
 import com.flint.peakfocus.core.data.UsageQuery
@@ -41,11 +38,7 @@ import kotlinx.coroutines.launch
  * enforcement behavior. The [BlockScreenCoordinator] (blocking-overlay) supplies the screen,
  * the 1-second clock, and the break / Emergency-Pass / Open-Limit accounting shared with Path B.
  *
- * Decision order per foreground change (existing checks preserved, new ones layered in):
- *  0. [UninstallGuard] — while a Hardcore window is active, the system uninstaller and
- *     Settings-pages-about-Flint are shielded (anti-bypass). Deliberately ahead of the
- *     break/pass stand-down: an exemption granted on some *other* rule must not open the
- *     uninstall window, and Hardcore itself never grants breaks;
+ * Decision order per foreground change:
  *  1. the enforcement safety floor ([BlockScreenCoordinator.isSafetyFloor]: dialer, emergency,
  *     home apps, Settings/permission recovery, Flint) — no ordinary cause reaches those;
  *  2. Gather daily Time Limit, rule and Open Limit candidates;
@@ -53,29 +46,28 @@ import kotlinx.coroutines.launch
  *     ordinary breaks never bypass a currently applicable Hardcore restriction;
  *  4. count a permitted open only when no other restriction/exemption controls access.
  *
+ * No uninstall/disable guard (protection contract ADR-012 §10, Play Accessibility API policy):
+ * this service never intercepts uninstallers, Settings, Accessibility disable, app info,
+ * force-stop or permission revocation, and never reads Settings window text. Turning access off
+ * reduces or stops protection, and that stays the user's call.
+ *
  * Compliance: NOT an accessibility tool; the in-app consent flow (feature-onboarding) must run
  * before the user enables this. On connect it loads the persisted blocklist.
  */
 class FlintAccessibilityService : AccessibilityService() {
 
     private val engine = BlockDecisionEngine()
-    private val uninstallGuard = UninstallGuard()
     private var serviceScope: CoroutineScope? = null
     private var coordinator: BlockScreenCoordinator? = null
 
     /** One-shot re-check armed while a time-limited app sits in front (see [armTimeLimitRecheck]). */
     private var timeLimitRecheck: Job? = null
 
-    /** Flint's own launcher label — what the uninstall guard scans Settings text for. */
-    private val selfLabel: String by lazy { labelFor(packageName) }
-
     /** Last package seen in the foreground (Flint + system surfaces included — the open-limit
      *  policy interprets those transitions itself, e.g. shield bounces are not re-opens). */
     @Volatile private var lastForegroundPackage: String? = null
 
-    /** Class name from the last window event — [reevaluateForeground] reuses it because a
-     *  root node's own className is a View class ("android.widget.FrameLayout"), never the
-     *  Activity, and would blind the uninstall guard's class-hint gate. */
+    /** Class name from the last window event (recognises Flint's own MainActivity coming to front). */
     @Volatile private var lastForegroundClassName: String? = null
 
     override fun onServiceConnected() {
@@ -110,7 +102,7 @@ class FlintAccessibilityService : AccessibilityService() {
             }
             return
         }
-        evaluateForeground(previous, pkg, event.className?.toString())
+        evaluateForeground(previous, pkg)
     }
 
     /** Re-run the decision pipeline for whatever is in front (used after exemption expiry). */
@@ -120,14 +112,11 @@ class FlintAccessibilityService : AccessibilityService() {
             ?: lastForegroundPackage
             ?: return
         if (pkg == packageName) return
-        // The last event's class name still describes this window as long as the package
-        // hasn't changed underneath us; a mismatch means we know nothing about the class.
-        val className = lastForegroundClassName.takeIf { rootPkg == null || rootPkg == lastForegroundPackage }
         // previous == pkg on purpose: a re-check is not a new "open" of the app.
-        evaluateForeground(previousPackage = pkg, pkg = pkg, windowClassName = className)
+        evaluateForeground(previousPackage = pkg, pkg = pkg)
     }
 
-    private fun evaluateForeground(previousPackage: String?, pkg: String, windowClassName: String?) {
+    private fun evaluateForeground(previousPackage: String?, pkg: String) {
         val coordinator = coordinator ?: return // events never precede onServiceConnected
         timeLimitRecheck?.cancel() // every fresh decision invalidates a pending budget re-check
         val now = System.currentTimeMillis()
@@ -135,28 +124,8 @@ class FlintAccessibilityService : AccessibilityService() {
         val cal = Calendar.getInstance()
         val nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
         // Schedule.daysOfWeek is ISO-numbered (1=Mon…7=Sun — core-model's documented contract);
-        // Calendar.DAY_OF_WEEK is 1=Sun…7=Sat. Convert before handing to the engine/guard.
+        // Calendar.DAY_OF_WEEK is 1=Sun…7=Sat. Convert before handing to the engine.
         val weekday = IsoWeekday.fromCalendar(cal.get(Calendar.DAY_OF_WEEK))
-
-        // 0) Uninstall guard — checked ahead of the break/pass stand-down so an exemption
-        //    granted on some other rule can never open the uninstall window (see class KDoc).
-        //    The isArmed pre-gate keeps the node-text sweep (binder round-trips) off the
-        //    event thread for every user without an active Hardcore window.
-        if (uninstallGuard.isCandidateSurface(pkg) &&
-            uninstallGuard.isArmed(ActiveRulesHolder.rules, nowMin, weekday, now)
-        ) {
-            val surface = ForegroundSurface(
-                packageName = pkg,
-                className = windowClassName,
-                visibleText = if (uninstallGuard.needsWindowText(pkg)) collectVisibleText() else emptyList(),
-            )
-            val armingRule =
-                uninstallGuard.judge(surface, packageName, selfLabel, ActiveRulesHolder.rules, nowMin, weekday, now)
-            if (armingRule != null) {
-                coordinator.showBlocked(pkg, labelFor(pkg), uninstallGuardBlockCause(armingRule, now, utcOffset))
-                return
-            }
-        }
 
         // 1) Safety floor (allow-list windows included): blocking the launcher loops the Home
         //    button into the shield; the dialer and emergency surfaces are emergency calling;
@@ -242,34 +211,6 @@ class FlintAccessibilityService : AccessibilityService() {
         pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
     }.getOrDefault(pkg)
 
-    // MARK: Window-text collection (uninstall guard)
-
-    /**
-     * Best-effort sweep of the text visible in the active window — node text plus content
-     * descriptions, breadth-first, capped at [MAX_TEXT_NODES] so a pathological Settings
-     * hierarchy can't stall the event thread. Only called when the guard is armed AND says
-     * the surface needs text ([UninstallGuard.needsWindowText]). An empty result makes the
-     * guard judge on the class name alone — fail-closed for the protected screen families,
-     * open elsewhere ([UninstallGuard.isProtectedSettingsSurface]'s documented contract).
-     */
-    private fun collectVisibleText(): List<String> {
-        val root = runCatching { rootInActiveWindow }.getOrNull() ?: return emptyList()
-        val texts = mutableListOf<String>()
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        var visited = 0
-        while (queue.isNotEmpty() && visited < MAX_TEXT_NODES) {
-            val node = queue.removeFirst()
-            visited++
-            node.text?.toString()?.takeIf { it.isNotBlank() }?.let(texts::add)
-            node.contentDescription?.toString()?.takeIf { it.isNotBlank() }?.let(texts::add)
-            for (i in 0 until node.childCount) {
-                runCatching { node.getChild(i) }.getOrNull()?.let(queue::add)
-            }
-        }
-        return texts
-    }
-
     // MARK: URL reading
 
     /**
@@ -306,9 +247,6 @@ class FlintAccessibilityService : AccessibilityService() {
     }
 
     private companion object {
-        /** Node-visit budget for [collectVisibleText] — plenty for any real Settings page. */
-        const val MAX_TEXT_NODES = 200
-
         /** Slack past the computed budget expiry — UsageStats buckets update coarsely. */
         const val RECHECK_SLACK_MS = 5_000L
     }

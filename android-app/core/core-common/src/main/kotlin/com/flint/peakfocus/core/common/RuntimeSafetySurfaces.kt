@@ -3,12 +3,14 @@ package com.flint.peakfocus.core.common
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.telecom.TelecomManager
 
 /**
  * The device's *runtime* safety-floor surfaces (see `core-model` SafetyFloor): the current
- * default home app and the default and system dialer. A custom default dialer or launcher can be
+ * default home app, the default and system dialer, and the package that handles uninstalling an
+ * app (contract §7/§10: uninstall UI stays reachable on every OEM). A custom default dialer or launcher can be
  * any package, so a build-time list cannot cover it. Shared by the detectors' block coordinator
  * and the app pickers, so a surface the pickers hide is exactly one enforcement refuses to shield.
  *
@@ -27,6 +29,7 @@ object RuntimeSafetySurfaces {
     const val SOURCE_HOME = "home"
     const val SOURCE_DEFAULT_DIALER = "default-dialer"
     const val SOURCE_SYSTEM_DIALER = "system-dialer"
+    const val SOURCE_UNINSTALLER = "uninstaller"
 
     /** Source → resolved packages (empty = none configured), or null when that lookup failed. */
     fun resolveBySource(context: Context): Map<String, Set<String>?> {
@@ -42,6 +45,16 @@ object RuntimeSafetySurfaces {
                     @Suppress("DEPRECATION") // ResolveInfoFlags overloads need API 33; minSdk is 23.
                     setOfNotNull(
                         pm.resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName,
+                    )
+                }.getOrNull(),
+            )
+            put(
+                SOURCE_UNINSTALLER,
+                runCatching {
+                    val delete = Intent(Intent.ACTION_DELETE, Uri.parse("package:${context.packageName}"))
+                    @Suppress("DEPRECATION")
+                    setOfNotNull(
+                        pm.resolveActivity(delete, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName,
                     )
                 }.getOrNull(),
             )

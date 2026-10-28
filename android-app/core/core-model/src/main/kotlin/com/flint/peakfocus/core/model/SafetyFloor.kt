@@ -9,14 +9,14 @@ package com.flint.peakfocus.core.model
  * where Flint's own grants are recovered, and Flint itself hosts the exit paths.
  *
  * [STATIC_PACKAGES] is the build-time, best-effort OEM list. Detectors add the device's
- * *runtime* surfaces — the resolved default dialer, system dialer and default home app — because a
+ * *runtime* surfaces — the resolved default/system dialer, default home app and uninstaller — because a
  * custom default dialer or launcher can be any package. Both sets go through [isProtected], so
  * the engine, the shared block coordinator and the app pickers all ask the same question.
  *
  * Plain Kotlin on purpose: the pure engine, the pickers and the JVM tests share it.
  *
- * Out of scope here: the Hardcore uninstall/Settings guard is a separate, explicitly designed
- * cause with its own consent story; the floor governs only the ordinary block causes above.
+ * There is no uninstall/disable interception on Android (ADR-012 §10): the uninstaller, Settings
+ * and permission surfaces are on the floor, so no cause of any kind can shield them.
  */
 object SafetyFloor {
 
@@ -27,11 +27,16 @@ object SafetyFloor {
     )
 
     /** Settings and the places Flint's grants (Accessibility, Usage Access, overlay,
-     *  notifications, battery exemptions) are recovered from, including common OEM managers. */
+     *  notifications, battery exemptions) are recovered from, including common OEM managers,
+     *  plus the system uninstaller (protection contract §7/§10: uninstall UI stays reachable). */
     private val PERMISSION_RECOVERY = setOf(
         "com.android.settings",
         "com.android.permissioncontroller",
         "com.google.android.permissioncontroller",
+        "com.android.packageinstaller",
+        "com.google.android.packageinstaller",
+        "com.samsung.android.packageinstaller",
+        "com.miui.packageinstaller",
         "com.miui.securitycenter",
         "com.coloros.safecenter",
         "com.oplus.safecenter",

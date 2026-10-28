@@ -112,10 +112,4 @@ class BlockOverlapPolicyTest {
         assertNotNull(effective(ruleCause(timed)))
         assertNull(effective(timeLimitBlockCause(BreakLevel.EASY, now, 0), ruleCause(timed, at = now + 1_000), at = now + 1_000))
     }
-
-    @Test fun `emergency grant never suppresses uninstall guard`() {
-        BlockExemptions.grantEmergency(pkg, now + 1_000)
-        val guard = uninstallGuardBlockCause(strictRule, now, 0)
-        assertEquals(guard, effective(timeLimitBlockCause(BreakLevel.HARDCORE, now, 0), ruleCause(strictRule), guard))
-    }
 }
