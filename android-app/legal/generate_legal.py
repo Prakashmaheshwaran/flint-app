@@ -114,6 +114,17 @@ def generate(inventory_path, repo, output):
             for source, text in embedded_notices(data):
                 embedded.append(text)
                 notices.append(dict(source=path.name + "!/" + source, text=add_text(text, path.name + "!/" + source)))
+        supplements = [s for s in registry["supplements"] if re.fullmatch(s["coordinate"], coordinate)]
+        reviewed_bsd = []
+        for supplement in supplements:
+            if supplement.get("licenseFamily") == "BSD-3-Clause":
+                for filename in supplement["files"]:
+                    text = (legal / filename).read_text()
+                    add_text(text, filename)  # Empty/missing source text must still fail.
+                    if (text.lstrip().startswith("Copyright")
+                            and "Redistribution and use in source and binary forms" in text
+                            and "Neither" in text and "MERCHANTABILITY" in text):
+                        reviewed_bsd.append(text)
         for declaration in metadata["licenses"]:
             family = declaration["family"]
             filename = registry["families"].get(family)
@@ -121,7 +132,7 @@ def generate(inventory_path, repo, output):
                 notices.append(dict(source=filename, text=add_text((legal / filename).read_text(), filename)))
             elif family == "BSD-3-Clause" and any(
                     "Redistribution and use in source and binary forms" in text
-                    and "Neither" in text and "MERCHANTABILITY" in text for text in embedded):
+                    and "Neither" in text and "MERCHANTABILITY" in text for text in embedded + reviewed_bsd):
                 # BSD has holder-specific text. Preserve the actual artifact's license,
                 # never fill a generic template with an invented copyright holder.
                 pass
@@ -138,6 +149,7 @@ def generate(inventory_path, repo, output):
                                    "org.jetbrains.kotlinx:kotlinx-coroutines-",
                                    "org.jetbrains.kotlinx:kotlinx-serialization-",
                                    "androidx.datastore:datastore-preferences-external-protobuf:",
+                                   "androidx.glance:glance-appwidget-external-protobuf:",
                                    "org.jetbrains.kotlin:kotlin-stdlib"))
                 and not any(re.fullmatch(s["coordinate"], coordinate) for s in registry["supplements"])):
             raise LegalError(f"Missing reviewed upstream notices for {coordinate}; update supplemental.json")

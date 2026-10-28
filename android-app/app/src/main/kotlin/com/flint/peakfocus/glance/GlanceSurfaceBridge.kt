@@ -17,9 +17,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -59,7 +61,8 @@ object GlanceSurfaceBridge {
         focus = focusReader
         val app = context.applicationContext
         observer = scope.launch {
-            merge(protection.changes, focus.changes).conflate().collect {
+            merge(protection.changes.catch { emit(Unit) }, focus.changes.catch { emit(Unit) })
+                .onStart { emit(Unit) }.conflate().collect {
                 refresh(app)
                 boundary?.cancel()
                 display.value.refreshAtElapsedMs?.let { at ->
@@ -73,26 +76,17 @@ object GlanceSurfaceBridge {
     }
 
     suspend fun readDisplay(): GlanceDisplay = lock.withLock {
-        val reading = readOr({ ProtectionReading() }) { protection.read() }
-        val history = readOr({ FocusTodayReading() }) { focus.read() }
-        GlanceDisplayMapper.map(reading, history, SystemClock.elapsedRealtime(), System.currentTimeMillis())
+        readGlanceDisplay(protection, focus, SystemClock::elapsedRealtime, System::currentTimeMillis)
             .also { mutableDisplay.value = it }
     }
 
     suspend fun refresh(context: Context) {
         val state = readDisplay()
-        scheduleRefresh(context, state.refreshAtElapsedMs)
-        FlintGlanceWidget().updateAll(context)
-    }
-
-    private suspend fun <T> readOr(fallback: () -> T, read: suspend () -> T): T = try {
-        withTimeout(2_000) { read() }
-    } catch (timeout: kotlinx.coroutines.TimeoutCancellationException) {
-        fallback()
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (_: Exception) {
-        fallback()
+        // Widget/launcher failures must not cancel the app's independent observation job.
+        guardedGlanceRead({ Unit }, timeoutMs = 8_000) {
+            scheduleRefresh(context, state.refreshAtElapsedMs)
+            FlintGlanceWidget().updateAll(context)
+        }
     }
 
     private fun scheduleRefresh(context: Context, elapsedMs: Long?) {
@@ -111,6 +105,12 @@ class GlanceRefreshReceiver : BroadcastReceiver() {
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
             try {
                 withTimeout(8_000) { GlanceSurfaceBridge.refresh(context.applicationContext) }
+            } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
+                // Optional rendering can be deferred by the launcher; never crash Flint.
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // Keep the cached, observation-qualified surface until the next update.
             } finally {
                 pending.finish()
             }

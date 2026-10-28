@@ -1,6 +1,7 @@
 package com.flint.peakfocus.glance
 
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -29,6 +30,8 @@ data class ProtectionReading(
     val cause: ActiveGlanceCause? = null,
     val recoveryEndElapsedMs: Long? = null,
     val next: NextGlanceSession? = null,
+    val sameBootVerified: Boolean = false,
+    val timeUncertain: Boolean = false,
 )
 
 data class ActiveGlanceCause(
@@ -44,6 +47,7 @@ data class NextGlanceSession(val name: String, val startsAtEpochMs: Long)
 data class FocusTodayReading(
     val text: String = "Focus history unavailable",
     val note: String? = null,
+    val day: LocalDate? = null,
 )
 
 data class GlanceDisplay(
@@ -55,6 +59,7 @@ data class GlanceDisplay(
     val checked: String,
     val countdownEndElapsedMs: Long? = null,
     val refreshAtElapsedMs: Long? = null,
+    val focusedTodayLabel: String = "Focused today",
 )
 
 /** Pure display projection: no mutation, release, lifecycle event or completion inference. */
@@ -71,28 +76,38 @@ object GlanceDisplayMapper {
     ): GlanceDisplay {
         fun at(epochMs: Long): String = DateTimeFormatter.ofPattern("EEE HH:mm", locale)
             .withZone(zone).format(Instant.ofEpochMilli(epochMs))
-        fun end(elapsedMs: Long) = at(nowEpochMs + (elapsedMs - nowElapsedMs))
+        fun atElapsed(elapsedMs: Long) = at(nowEpochMs + (elapsedMs - nowElapsedMs))
         val checked = reading.checkedElapsedMs
         val validUntil = reading.validUntilElapsedMs
-        val fresh = checked != null && checked >= 0 && checked <= nowElapsedMs &&
+        val fresh = reading.sameBootVerified && !reading.timeUncertain &&
+            checked != null && checked >= 0 && checked <= nowElapsedMs &&
             nowElapsedMs - checked < MAX_AGE_MS && validUntil != null &&
             validUntil > nowElapsedMs && validUntil >= checked
-        val stamp = if (checked != null && checked in 0..nowElapsedMs)
-            "Checked ${end(checked)} · Open Flint for current state" else "Open Flint to check protection"
+        val stamp = if (reading.sameBootVerified && !reading.timeUncertain && checked != null && checked in 0..nowElapsedMs)
+            "Checked ${atElapsed(checked)} · Open Flint for current state" else "Open Flint to check protection"
+        val today = Instant.ofEpochMilli(nowEpochMs).atZone(zone).toLocalDate()
+        val historyCurrent = focus.day == today
+        val midnight = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val historyBoundary = if (historyCurrent) nowElapsedMs + (midnight - nowEpochMs) else null
         val base = GlanceDisplay(
             status = "Protection state unavailable",
             detail = "Open Flint to check",
             next = "Next session unavailable",
-            focusedToday = focus.text,
-            historyNote = focus.note,
+            focusedToday = if (historyCurrent) focus.text else "Focus history unavailable",
+            historyNote = if (focus.day != null && !historyCurrent) "Open Flint to refresh" else focus.note,
             checked = stamp,
+            refreshAtElapsedMs = historyBoundary,
+            focusedTodayLabel = "Focused today · ${today.format(DateTimeFormatter.ofPattern("MMM d", locale))}",
         )
         if (reading.status == ProtectionStatus.UNAVAILABLE) return base
         if (!fresh) return base.copy(status = "Protection check needed", detail = "Last check is out of date")
         val next = reading.next?.takeIf { it.startsAtEpochMs > nowEpochMs }?.let {
             "Next: ${it.name.take(64)} · ${at(it.startsAtEpochMs)}"
         } ?: if (reading.next == null) "No upcoming session" else "Next session needs a new check"
-        val refresh = minOf(checked!! + MAX_AGE_MS, validUntil!!)
+        val nextBoundary = reading.next?.takeIf { it.startsAtEpochMs > nowEpochMs }?.let {
+            nowElapsedMs + (it.startsAtEpochMs - nowEpochMs)
+        }
+        val refresh = listOfNotNull(checked!! + MAX_AGE_MS, validUntil, historyBoundary, nextBoundary).min()
         val available = base.copy(next = next, refreshAtElapsedMs = refresh)
         return when (reading.status) {
             ProtectionStatus.UNAVAILABLE -> base
@@ -107,7 +122,7 @@ object GlanceDisplayMapper {
                 if (end <= nowElapsedMs) available.copy(
                     status = "Recovery time ended", detail = "Open Flint to check protection",
                 ) else available.copy(
-                    status = "Emergency Pass recovery", detail = "Recovery until ${end(end)}",
+                    status = "Emergency Pass recovery", detail = "Recovery until ${atElapsed(end)}",
                     refreshAtElapsedMs = minOf(refresh, end),
                 )
             }
@@ -121,7 +136,7 @@ object GlanceDisplayMapper {
                 available.copy(
                     status = "Protection active at last check",
                     detail = "${cause.name.take(64)} · ${cause.tier.label}" +
-                        (end?.let { " · Until ${end(it)}" } ?: " · Until ended in Flint"),
+                        (end?.let { " · Until ${atElapsed(it)}" } ?: " · Until ended in Flint"),
                     countdownEndElapsedMs = end,
                     refreshAtElapsedMs = end?.let { minOf(refresh, it) } ?: refresh,
                 )

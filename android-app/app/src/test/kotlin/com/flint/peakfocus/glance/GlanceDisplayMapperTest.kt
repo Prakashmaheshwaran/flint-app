@@ -1,6 +1,7 @@
 package com.flint.peakfocus.glance
 
 import java.time.ZoneId
+import java.time.Instant
 import java.util.Locale
 import org.junit.Assert.*
 import org.junit.Test
@@ -8,7 +9,8 @@ import org.junit.Test
 class GlanceDisplayMapperTest {
     private val now = 100_000L
     private val cause = ActiveGlanceCause("occurrence-1", "Focus", GlanceTier.HARDCORE, now + 300_000)
-    private val active = ProtectionReading(ProtectionStatus.ACTIVE, now, now + 60_000, cause)
+    private val active = ProtectionReading(ProtectionStatus.ACTIVE, now, now + 60_000, cause,
+        sameBootVerified = true)
     private fun display(reading: ProtectionReading, focus: FocusTodayReading = FocusTodayReading()) =
         GlanceDisplayMapper.map(reading, focus, now, 1_800_000_000_000, ZoneId.of("UTC"), Locale.US)
 
@@ -44,6 +46,8 @@ class GlanceDisplayMapperTest {
             active.copy(checkedElapsedMs = null),
             active.copy(validUntilElapsedMs = now),
             active.copy(validUntilElapsedMs = null),
+            active.copy(sameBootVerified = false),
+            active.copy(timeUncertain = true),
         ).forEach {
             assertEquals("Protection check needed", display(it).status)
             assertNull(display(it).countdownEndElapsedMs)
@@ -77,10 +81,21 @@ class GlanceDisplayMapperTest {
 
     @Test fun focusLinesPreserveFAbsenceZeroEmptyPartialAndInProgressCopy() {
         listOf("Focus history unavailable", "No focus sessions yet", "0m", "5m · in progress").forEach { line ->
-            val result = display(active, FocusTodayReading(line, "Some history couldn't be read"))
+            val day = Instant.ofEpochMilli(1_800_000_000_000).atZone(ZoneId.of("UTC")).toLocalDate()
+            val result = display(active, FocusTodayReading(line, "Some history couldn't be read", day))
             assertEquals(line, result.focusedToday)
             assertEquals("Some history couldn't be read", result.historyNote)
         }
+    }
+
+    @Test fun historyFromYesterdayIsUnavailableAndDateAlwaysQualifiesCachedTodayLabel() {
+        val day = Instant.ofEpochMilli(1_800_000_000_000).atZone(ZoneId.of("UTC")).toLocalDate()
+        val stale = display(active, FocusTodayReading("5m", day = day.minusDays(1)))
+        assertEquals("Focus history unavailable", stale.focusedToday)
+        assertEquals("Open Flint to refresh", stale.historyNote)
+        assertTrue(stale.focusedTodayLabel.contains("Jan 15"))
+        val valid = display(ProtectionReading(), FocusTodayReading("0m", day = day))
+        assertNotNull(valid.refreshAtElapsedMs) // History midnight refresh even when C is unavailable.
     }
 
     @Test fun nextSessionUsesOnlyFutureAuthoritativeReading() {

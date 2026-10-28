@@ -1,6 +1,7 @@
 package com.flint.peakfocus.glance
 
 import android.content.Context
+import android.content.Intent
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
@@ -39,7 +40,7 @@ class FlintGlanceWidget : GlanceAppWidget() {
             val secondary = TextStyle(color = ColorProvider(Color(0xFFFAC775)), fontSize = 12.sp)
             Column(
                 GlanceModifier.fillMaxSize().background(Color(0xFF2C2C2A)).padding(16.dp)
-                    .clickable(actionStartActivity<MainActivity>()),
+                    .clickable(actionStartActivity(Intent(context, MainActivity::class.java))),
             ) {
                 Text("Flint", style = primary.copy(fontSize = 18.sp, fontWeight = FontWeight.Bold))
                 Spacer(GlanceModifier.height(8.dp))
@@ -47,7 +48,7 @@ class FlintGlanceWidget : GlanceAppWidget() {
                 Text(display.detail, style = primary, maxLines = 3)
                 Spacer(GlanceModifier.height(8.dp))
                 Text(display.next, style = primary, maxLines = 2)
-                Text("Focused today: ${display.focusedToday}", style = primary, maxLines = 2)
+                Text("${display.focusedTodayLabel}: ${display.focusedToday}", style = primary, maxLines = 2)
                 display.historyNote?.let { Text(it, style = secondary, maxLines = 2) }
                 Spacer(GlanceModifier.height(8.dp))
                 Text(display.checked, style = secondary, maxLines = 2)

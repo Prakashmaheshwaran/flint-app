@@ -22,10 +22,12 @@ class OngoingNotificationPlanTest {
     }
 
     @Test fun deadlineDoesNotBecomeCompletionAlert() {
-        val plan = OngoingNotificationPlan.from(display.copy(refreshAtElapsedMs = 500_000), 400_000)
-        assertNull(plan.countdownEndElapsedMs)
-        assertTrue(plan.title.contains("Planned end reached"))
-        assertFalse(plan.title.contains("complete"))
+        for (now in listOf(400_000L, 400_001L, 450_000L)) {
+            val plan = OngoingNotificationPlan.from(display.copy(refreshAtElapsedMs = 500_000), now)
+            assertNull(plan.countdownEndElapsedMs)
+            assertTrue(plan.title.contains("Planned end reached"))
+            assertFalse(plan.title.contains("complete"))
+        }
     }
 
     @Test fun degradedPassAndIdleRetainHonestStatusWithoutCountdown() {

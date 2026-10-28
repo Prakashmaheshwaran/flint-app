@@ -44,6 +44,7 @@ object OngoingSessionNotification {
         builder.setContentTitle(plan.title).setContentText(plan.text)
             .setContentIntent(open).setOnlyAlertOnce(true).setShowWhen(false)
             .setUsesChronometer(false).setVisibility(Notification.VISIBILITY_PRIVATE)
+            .setSubText("Planned end · Open Flint to check")
         if (Build.VERSION.SDK_INT >= 24) {
             builder.setChronometerCountDown(false)
             plan.countdownEndElapsedMs?.let { end ->
@@ -53,8 +54,8 @@ object OngoingSessionNotification {
                     .setShowWhen(true).setUsesChronometer(true).setChronometerCountDown(true)
             }
         } // API 23 displays the absolute end from the mapper, never an upwards timer.
-        if (Build.VERSION.SDK_INT >= 26) {
-            builder.setTimeoutAfter(plan.countdownEndElapsedMs?.let { it - elapsed } ?: 0)
-        }
+        // This is C's mandatory FGS notification: never time it out/cancel it at a session
+        // deadline. C re-invokes this customizer at boundaries, removing the countdown while
+        // preserving notification visibility for the service and independent causes.
     }
 }
