@@ -24,7 +24,11 @@ struct FlintFocusFilter: SetFocusFilterIntent {
     var preset: FlintAppGroupEntity?
 
     /// How hard the auto-started block is to stop, from Flint or by turning the Focus off.
-    @Parameter(title: "Strictness", default: .easy)
+    /// Choosing it here is the confirmation of its rights (ADR-012 §2), so its rights are stated
+    /// here and in the summary below.
+    @Parameter(title: "Strictness",
+               description: "Easy ends with the Focus. Harder needs a wait, then confirming in Flint. Hardcore can't be ended early — not in Flint, not by turning the Focus off — until it ends or you use the Emergency Pass.",
+               default: .easy)
     var strictness: FocusFilterBreakLevel
 
     /// Harder and Hardcore blocks need a set length (ADR-012 §1); 0 = while the Focus is on,
@@ -38,10 +42,18 @@ struct FlintFocusFilter: SetFocusFilterIntent {
     var displayRepresentation: DisplayRepresentation {
         DisplayRepresentation(
             title: "Block \(preset?.name ?? "your last selection")",
-            subtitle: minutes > 0
-                ? "\(strictness.label) · \(minutes) min"
-                : "\(strictness.label) · while the Focus is on"
+            subtitle: subtitle
         )
+    }
+
+    private var subtitle: LocalizedStringResource {
+        switch (strictness.breakLevel, minutes > 0) {
+        case (.easy, true): return "Easy · \(minutes) min"
+        case (.easy, false): return "Easy · while the Focus is on"
+        case (.harder, true): return "Harder · \(minutes) min · ending needs a wait"
+        case (.hardcore, true): return "Hardcore · \(minutes) min · can't be ended early"
+        case (_, false): return "\(strictness.label) needs a set length — set Minutes, or this won't start"
+        }
     }
 
     /// The block this filter's parameters describe.

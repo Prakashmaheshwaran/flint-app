@@ -147,6 +147,7 @@ final class SessionViewModel: ObservableObject {
                 breakLevel: breakLevel,
                 name: "Focus",
                 source: appliedGroupSelection == selection ? .preset : .manual,
+                origin: .appUI,
                 confirmed: confirmed
             )
             startTicking()

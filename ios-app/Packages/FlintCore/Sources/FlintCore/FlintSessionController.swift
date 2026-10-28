@@ -348,7 +348,7 @@ public final class FlintSessionController {
         breakLevel: BreakLevel,
         name: String = "Focus",
         source: FlintSessionSource = .manual,
-        origin: FlintSessionOrigin = .appUI,
+        origin: FlintSessionOrigin,
         ownerID: String? = nil,
         replacing: Bool = true,
         confirmed: Bool = false
@@ -563,9 +563,9 @@ public final class FlintSessionController {
             end(session, route: route, at: now, in: store)
             return .stopped
         case .wait:
-            // A background route (Shortcut, Focus off) may start or resume the wait but never
-            // completes it: the final confirmation happens in Flint (§2 "no automatic completion").
-            switch harderGate(for: session, kind: "stop", scope: [], confirmed: confirmed && !route.isBackground) {
+            // Only the in-app stop completes a wait; every other route (Shortcut, Focus off, any
+            // later one) may start or resume it, never finish it (§2 "no automatic completion").
+            switch harderGate(for: session, kind: "stop", scope: [], confirmed: confirmed && route == .manualStop) {
             case .proceed:
                 end(session, route: route == .manualStop ? .harderWait : route, at: now, in: store)
                 return .stopped

@@ -38,18 +38,11 @@ struct StartSessionIntent: AppIntent {
             breakLevel: strictness.breakLevel,
             name: "Focus"
         )
-        // Hardcore removes the early exit: ask before granting it, even from an automation.
-        let hardcore = strictness.breakLevel == .hardcore
-        if hardcore {
-            if #available(iOS 18.0, *) {
-                try await requestConfirmation(
-                    actionName: .start,
-                    dialog: "Start a Hardcore block for \(minutes) minutes? You can't end it early — it ends on its own, or with your Emergency Pass in Flint.")
-            } else {
-                try await requestConfirmation()
-            }
-        }
-        let session = try FlintShortcutsRunner.start(request, confirmed: hardcore)
+        // Hardcore removes the early exit and a replacement retires the running session: both
+        // ask first, even from an automation (ADR-012 §2).
+        let session = try await startConfirmingIfNeeded(
+            { try FlintShortcutsRunner.start(request, confirmed: $0) },
+            hardcore: strictness.breakLevel == .hardcore, minutes: minutes)
         if session.endsAt != nil {
             return .result(dialog: "Focus on — blocking for \(minutes) minutes.")
         }

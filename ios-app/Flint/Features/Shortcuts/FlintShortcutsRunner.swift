@@ -1,7 +1,35 @@
 #if canImport(AppIntents) && canImport(FamilyControls) && canImport(ManagedSettings) && canImport(DeviceActivity)
+import AppIntents
 import Foundation
 import FamilyControls
 import FlintCore
+
+extension AppIntent {
+    /// Ask the user to confirm a start that needs it (a Hardcore start, or replacing the running
+    /// session — ADR-012 §2), with the custom dialog where iOS supports one. Throws if declined.
+    func confirmFlintStart(_ dialog: IntentDialog) async throws {
+        if #available(iOS 18.0, *) {
+            try await requestConfirmation(actionName: .start, dialog: dialog)
+        } else {
+            try await requestConfirmation()
+        }
+    }
+
+    /// Start `request`, asking for confirmation first for Hardcore and again if the start would
+    /// replace the running session.
+    func startConfirmingIfNeeded(_ start: (_ confirmed: Bool) throws -> FlintActiveSession,
+                                 hardcore: Bool, minutes: Int) async throws -> FlintActiveSession {
+        if hardcore {
+            try await confirmFlintStart("Start a Hardcore block for \(minutes) minutes? You can't end it early — it ends on its own, or with your Emergency Pass in Flint.")
+        }
+        do {
+            return try start(hardcore)
+        } catch FlintSessionError.needsConfirmation {
+            try await confirmFlintStart("Replace the session that's running now with this one?")
+            return try start(true)
+        }
+    }
+}
 
 /// User-facing failures the Shortcuts/Siri intents can hit *before* the OS ever applies a shield.
 /// `FlintSessionController` raises its own `FlintSessionError` (empty selection, token cap) once a
@@ -83,7 +111,8 @@ enum FlintShortcutsRunner {
     static func startPomodoro(
         _ config: FlintPomodoroConfig,
         appGroupID: String?,
-        breakLevel: BreakLevel
+        breakLevel: BreakLevel,
+        confirmed: Bool = false
     ) throws -> FlintActiveSession {
         config.save()
         let request = FlintSessionRequest(
@@ -92,7 +121,7 @@ enum FlintShortcutsRunner {
             breakLevel: breakLevel,
             name: "Pomodoro"
         )
-        return try start(request, source: .pomodoro)
+        return try start(request, source: .pomodoro, confirmed: confirmed)
     }
 
     /// Stop the running session through the same tier rules as the app (ADR-012 §2, PC-07):

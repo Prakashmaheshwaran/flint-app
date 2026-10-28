@@ -24,9 +24,6 @@ public enum FlintSessionEndRoute: String, Codable, Equatable, Sendable, CaseIter
     case unknown
 
     public var isEarly: Bool { self != .completed }
-
-    /// Routes that run without Flint on screen (ADR-012 §2: they never complete a Harder wait).
-    public var isBackground: Bool { self == .shortcutStop || self == .focusFilterOff }
 }
 
 /// One focus-session lifecycle transition, as handed to every registered sink.
