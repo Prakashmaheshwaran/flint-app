@@ -110,11 +110,16 @@ final class FlintActivityRegistrationTests: XCTestCase {
         request.configurationChanged = true
         center.refused.insert(request.name)
         var cleared: [String] = []
+        var heldWhenCleared = false
         let report = FlintActivityRegistration.reconcile([request], prefix: "flint.rule.", enabled: 1,
-            validationFailures: [], center: center, onRemove: { cleared.append($0) })
+            validationFailures: [], center: center, onRemove: {
+                cleared.append($0)
+                heldWhenCleared = center.activities.contains(.init($0))
+            })
         XCTAssertEqual(report.observed, 0)
         XCTAssertEqual(report.failures.count, 1)
         XCTAssertEqual(cleared, [request.name])
+        XCTAssertTrue(heldWhenCleared, "clear the shield before removing its old end registration")
         XCTAssertEqual(center.stops, [[request.name]])
         XCTAssertTrue(center.activities.isEmpty, "no old registration may reapply the failed rule")
     }

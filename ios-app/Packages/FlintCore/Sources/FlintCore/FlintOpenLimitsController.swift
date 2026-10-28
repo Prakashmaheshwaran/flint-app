@@ -93,7 +93,6 @@ public final class FlintOpenLimitsController {
             FlintOpenLimitEnforcer.clearShield(for: rule)
         }
         let requests = plan.arm.map { rule in
-            if reapplyShields { FlintOpenLimitEnforcer.applyShield(for: rule) }
             let schedule = DeviceActivitySchedule(
                 intervalStart: DateComponents(hour: 0, minute: 0),
                 intervalEnd: DateComponents(hour: 23, minute: 59),
@@ -108,6 +107,11 @@ public final class FlintOpenLimitsController {
                 let id = name.dropFirst("flint.openLimit.".count)
                 ManagedSettingsStore(named: .init("flintO.\(id)")).clearAllSettings()
             })
+        if reapplyShields {
+            for rule in plan.arm where report.observedActivities?.contains(rule.activityName) == true {
+                FlintOpenLimitEnforcer.applyShield(for: rule)
+            }
+        }
         FlintArmingHealth.record(
             domain: "openLimits", enabled: report.enabled, attempted: report.attempted,
             armed: report.armed, failures: report.failures,
