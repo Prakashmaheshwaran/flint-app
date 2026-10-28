@@ -8,14 +8,19 @@ final class FakeActivityCenter: FlintActivityRegistering {
     var stops: [[String]] = []
     var refused: Set<String> = []
     var hideAccepted = false
+    var hiddenSchedules: Set<String> = []
+    var onStart: ((String) -> Void)?
     var activities: [DeviceActivityName] { Array(held.keys) }
-    func schedule(for name: DeviceActivityName) -> DeviceActivitySchedule? { held[name]?.schedule }
+    func schedule(for name: DeviceActivityName) -> DeviceActivitySchedule? {
+        hiddenSchedules.contains(name.rawValue) ? nil : held[name]?.schedule
+    }
     func events(for name: DeviceActivityName) -> [DeviceActivityEvent.Name: DeviceActivityEvent] {
         held[name]?.events ?? [:]
     }
     func startMonitoring(_ name: DeviceActivityName, during schedule: DeviceActivitySchedule,
                          events: [DeviceActivityEvent.Name: DeviceActivityEvent]) throws {
         starts.append(name.rawValue)
+        onStart?(name.rawValue)
         if refused.contains(name.rawValue) { throw DeviceActivityCenter.MonitoringError.excessiveActivities }
         if !hideAccepted {
             held[name] = .init(name: name.rawValue, schedule: schedule, events: events)

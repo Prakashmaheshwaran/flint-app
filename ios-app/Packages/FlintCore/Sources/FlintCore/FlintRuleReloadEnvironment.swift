@@ -7,9 +7,7 @@ import DeviceActivity
 /// Reconciliation distinguishes a decoded empty array from unavailable persisted intent.
 /// Lives outside FlintGroupStore so its legacy convenience readers stay source compatible.
 enum FlintDesiredRules {
-    enum Key: String, CaseIterable {
-        case schedules = "flint.rules", limits = "flint.limits", openLimits = "flint.openLimit.rules"
-    }
+    typealias Key = FlintRuleStoreKey
 
     static func load<Rule: Decodable>(_ type: Rule.Type, key: Key, from defaults: UserDefaults?) -> [Rule]? {
         guard let defaults else { return nil }
