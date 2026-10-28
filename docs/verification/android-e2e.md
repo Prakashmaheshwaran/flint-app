@@ -14,12 +14,13 @@ and device configuration. Only those image/AVD paths are cached; no adb keys or
 post-test snapshots are saved. A restored image must have the exact package
 revision and nonempty boot/system payloads before use.
 
-Image installation alone permits three attempts, each bounded to 120 seconds,
+Preparation permits three image-install attempts, each bounded to 120 seconds,
 with 5/10-second backoff. A successful installer exit without a verified package
 still fails. This handles observed SDK ZIP preparation failures; it never
 restarts tests or retries assertions. Setup logs and cache provenance are in the
 ordinary always-uploaded artifact even when no emulator starts. The 25-minute
-job cap remains. The cache runner is CI-only; local execution below is unchanged.
+job cap remains, including the emulator action's subsequent standard SDK checks.
+The cache runner is CI-only; local execution below is unchanged.
 
 The opt-in `:e2e` module instruments itself and contains a harmless launchable **Flint E2E
 Target** activity. UIAutomator interacts with the separately installed Flint

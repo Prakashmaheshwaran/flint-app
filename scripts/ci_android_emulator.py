@@ -116,6 +116,7 @@ def main():
     install_image(tools / "bin/sdkmanager", image, metadata["revision"])
     avd_home = Path.home() / ".android/avd"
     avd_home.mkdir(parents=True, exist_ok=True)
+    os.environ["ANDROID_AVD_HOME"] = str(avd_home)
     avd_dir = avd_home / f"{AVD}.avd"
     if not avd_dir.exists():
         # avdmanager's hardware-profile prompt expects 'no', not sdkmanager's 'yes'.
