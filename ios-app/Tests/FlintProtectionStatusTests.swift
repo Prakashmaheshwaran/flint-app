@@ -41,6 +41,13 @@ final class FlintProtectionStatusTests: XCTestCase {
     private let quiet = FlintProtectionStatus.PublicationEffects(reloadTimelines: { _ in },
                                                                  postDarwinNotification: { _ in })
 
+    private func published(_ snapshot: Snapshot, writer: String = "host") -> Snapshot {
+        .init(version: snapshot.version, observedAt: snapshot.observedAt, validUntil: snapshot.validUntil,
+              state: snapshot.state, session: snapshot.session, headline: snapshot.headline,
+              causes: snapshot.causes, nextOccurrence: snapshot.nextOccurrence, pass: snapshot.pass,
+              degradedReasons: snapshot.degradedReasons, writer: writer)
+    }
+
     func testAllFiveStatesAndPrecedence() {
         XCTAssertEqual(Builder.make(inputs()).state, .notProtected)
         var value = inputs(rules: [rule()])
@@ -205,7 +212,7 @@ final class FlintProtectionStatusTests: XCTestCase {
         XCTAssertNil(FlintProtectionStatus.load(now: now, from: store))
         let valid = Builder.make(inputs(rules: [rule()]))
         FlintProtectionStatus.publish(valid, to: store, effects: quiet)
-        XCTAssertEqual(FlintProtectionStatus.load(now: now, from: store), valid)
+        XCTAssertEqual(FlintProtectionStatus.load(now: now, from: store), published(valid))
         let data = try XCTUnwrap(store.data(forKey: FlintProtectionStatus.storageKey))
         let original = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         for (key, replacement) in [("version", 2), ("observedAt", now.timeIntervalSince1970 + 1),
@@ -237,7 +244,7 @@ final class FlintProtectionStatusTests: XCTestCase {
         let snapshot = Builder.make(inputs())
         var calls: [String] = []
         let effects = FlintProtectionStatus.PublicationEffects(reloadTimelines: { kind in
-            XCTAssertEqual(FlintProtectionStatus.load(now: self.now, from: store), snapshot)
+            XCTAssertEqual(FlintProtectionStatus.load(now: self.now, from: store), self.published(snapshot))
             calls.append(kind)
         }, postDarwinNotification: { name in
             XCTAssertEqual(calls, ["FlintProtectionWidget"])
@@ -248,6 +255,16 @@ final class FlintProtectionStatusTests: XCTestCase {
         calls = []
         FlintProtectionStatus.publish(snapshot, to: nil, effects: effects)
         XCTAssertTrue(calls.isEmpty)
+    }
+
+    func testEveryPublicationWriterIsStampedWithoutChangingProjection() {
+        let store = defaults()
+        let snapshot = Builder.make(inputs())
+        for writer in [FlintProtectionStatus.Writer.host, .monitor, .shieldAction] {
+            FlintProtectionStatus.publish(snapshot, to: store, writer: writer, effects: quiet)
+            XCTAssertEqual(FlintProtectionStatus.load(now: now, from: store),
+                           published(snapshot, writer: writer.rawValue))
+        }
     }
 
     func testContributorsAreTargetScopedOrderedAndReturnSharedMinimumOpenCap() {

@@ -39,6 +39,7 @@ extension FlintProtectionStatus {
         sessionArmed: Bool? = nil, sessionKind: FlintProtectionStatusSnapshot.Session.Kind = .session,
         sessionOrigin: FlintProtectionStatusSnapshot.Session.Origin = .appUI,
         timeIntegrity: FlintTimeIntegrity.Verdict? = nil, quotaCalendar: Calendar = .current,
+        writer: Writer = .host,
         effects: PublicationEffects = .system
     ) -> FlintProtectionStatusSnapshot {
         let inputs = currentInputs(now: now, defaults: defaults, pass: pass, ledgerPass: ledgerPass,
@@ -46,8 +47,8 @@ extension FlintProtectionStatus {
             openEnforcing: openEnforcing, sessionArmed: sessionArmed,
             sessionKind: sessionKind, sessionOrigin: sessionOrigin,
             timeIntegrity: timeIntegrity, quotaCalendar: quotaCalendar)
-        let snapshot = FlintProtectionStatusBuilder.make(inputs)
-        publish(snapshot, to: defaults, effects: effects)
+        let snapshot = FlintProtectionStatusBuilder.make(inputs).withWriter(writer.rawValue)
+        publish(snapshot, to: defaults, writer: writer, effects: effects)
         return snapshot
     }
 
