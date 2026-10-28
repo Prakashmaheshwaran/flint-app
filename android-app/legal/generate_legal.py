@@ -89,7 +89,9 @@ def generate(inventory_path, repo, output):
         raise LegalError("Release dependency inventory is empty")
     texts = {}
 
-    def add_text(text):
+    def add_text(text, source):
+        if not text.strip():
+            raise LegalError(f"Required license/notice text is empty: {source}")
         normalized = text.strip() + "\n"
         key = digest(normalized.encode())
         texts[key] = normalized
@@ -111,12 +113,12 @@ def generate(inventory_path, repo, output):
             artifacts.append(dict(name=path.name, sha256=digest(data)))
             for source, text in embedded_notices(data):
                 embedded.append(text)
-                notices.append(dict(source=path.name + "!/" + source, text=add_text(text)))
+                notices.append(dict(source=path.name + "!/" + source, text=add_text(text, path.name + "!/" + source)))
         for declaration in metadata["licenses"]:
             family = declaration["family"]
             filename = registry["families"].get(family)
             if filename:
-                notices.append(dict(source=filename, text=add_text((legal / filename).read_text())))
+                notices.append(dict(source=filename, text=add_text((legal / filename).read_text(), filename)))
             elif family == "BSD-3-Clause" and any(
                     "Redistribution and use in source and binary forms" in text
                     and "Neither" in text and "MERCHANTABILITY" in text for text in embedded):
@@ -129,7 +131,7 @@ def generate(inventory_path, repo, output):
             if re.fullmatch(supplement["coordinate"], coordinate):
                 for filename in supplement["files"]:
                     notices.append(dict(source=supplement["source"] + "/" + filename.rsplit("/", 1)[-1],
-                                        text=add_text((legal / filename).read_text())))
+                                        text=add_text((legal / filename).read_text(), filename)))
         # These artifacts omit upstream notices in their binary JAR. Only reviewed
         # versions have a source snapshot; an upgrade must not silently lose it.
         if (coordinate.startswith(("com.android.tools:desugar_jdk_libs:",
@@ -159,7 +161,7 @@ def generate(inventory_path, repo, output):
         font_entries.append(dict(name=font["name"], source=font["source"],
                                  files=[dict(name=n, sha256=digest((bundled_fonts / n).read_bytes()))
                                         for n in font["files"]],
-                                 notices=[dict(source=font["license"], text=add_text(license_path.read_text()))]))
+                                 notices=[dict(source=font["license"], text=add_text(license_path.read_text(), font["license"]))]))
 
     lines = ["Open-source licenses", "", "Resolved Android release libraries and core-library desugaring inputs.",
              "Debug/test-only libraries are excluded. Font notices follow the dependency list.", ""]

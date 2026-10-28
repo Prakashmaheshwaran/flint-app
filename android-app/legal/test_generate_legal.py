@@ -111,6 +111,31 @@ class LegalGeneratorTest(unittest.TestCase):
         with self.assertRaisesRegex(LegalError, "inventory is empty"):
             self.run_generator()
 
+    def test_empty_required_font_family_and_supplement_text_fails(self):
+        registry = json.loads((self.repo / "android-app/legal/supplemental.json").read_text())
+        supplement = registry["supplements"][0]
+        supplement["coordinate"] = "org.example:library:1.0"
+        (self.repo / "android-app/legal/supplemental.json").write_text(json.dumps(registry))
+        paths = [self.repo / registry["fonts"][0]["license"],
+                 self.repo / "android-app/legal" / registry["families"]["Apache-2.0"],
+                 self.repo / "android-app/legal" / supplement["files"][0]]
+        for path in paths:
+            original = path.read_bytes()
+            try:
+                for empty in ("", " \n\t\r\n"):
+                    with self.subTest(path=path.name, empty=empty):
+                        path.write_text(empty)
+                        with self.assertRaisesRegex(LegalError, f"Required license/notice text is empty: .*{path.name}"):
+                            self.run_generator()
+            finally:
+                path.write_bytes(original)
+
+    def test_missing_required_license_file_fails(self):
+        registry = json.loads((self.repo / "android-app/legal/supplemental.json").read_text())
+        (self.repo / registry["fonts"][0]["license"]).unlink()
+        with self.assertRaises(FileNotFoundError):
+            self.run_generator()
+
     def test_nested_aar_notices_are_preserved(self):
         nested = io.BytesIO()
         with zipfile.ZipFile(nested, "w") as jar:
