@@ -72,18 +72,8 @@ struct TodayView: View {
                 .flintSecondary(14)
                 .padding(.top, 8)
 
-            FocusedTodayCard(history: history)
+            FocusedTodayCard(history: history, nextSessionDuration: Self.duration(minutes: vm.durationMinutes))
                 .padding(.top, 28)
-
-            VStack(spacing: 6) {
-                Text(Self.duration(minutes: vm.durationMinutes)).flintNumber(50)
-                Text("Your next session").flintEyebrow()
-                    .fixedSize(horizontal: false, vertical: true)
-                    .multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity)
-            .accessibilityElement(children: .combine)
-            .padding(.top, 24)
 
             Spacer(minLength: 32)
 

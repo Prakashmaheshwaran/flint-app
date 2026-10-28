@@ -78,24 +78,28 @@ struct FocusHistorySection: View {
 
 struct FocusedTodayCard: View {
     @ObservedObject var history: FocusHistoryModel
+    let nextSessionDuration: String
     var body: some View {
         VStack(spacing: 6) {
             Text("Focused today").flintEyebrow()
             if let summary = history.summary,
                summary.availability == .value || summary.availability == .degraded {
-                Text(FocusHistoryText.today(summary)).flintNumber(38)
+                Text(FocusHistoryText.today(summary)).flintNumber(50)
             } else {
                 Text(FocusHistoryText.today(history.summary)).flintSecondary(16)
             }
             if history.summary?.days.last?.inProgress == true { Text("In progress").flintSecondary(13) }
             if history.summary?.availability == .degraded { Text(FocusHistoryText.degraded).flintSecondary(13) }
             if history.isPreview { Text("DEBUG · Seeded preview events").flintSecondary(12) }
+            Text("Your next session · \(nextSessionDuration)")
+                .flintSecondary(14)
+                .padding(.top, 8)
         }
         .multilineTextAlignment(.center)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity)
         .padding(16)
-        .background(RoundedRectangle(cornerRadius: 20).fill(FlintBrand.ground.opacity(0.75)))
+        .background(RoundedRectangle(cornerRadius: 20).fill(FlintBrand.ground))
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("today.focusHistory")
     }
