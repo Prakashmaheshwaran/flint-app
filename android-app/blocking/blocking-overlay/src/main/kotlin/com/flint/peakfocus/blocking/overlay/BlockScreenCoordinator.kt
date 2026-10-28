@@ -32,6 +32,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -80,6 +81,13 @@ class BlockScreenCoordinator(
      */
     private val onExemptionExpired: ((String) -> Unit)? = null,
     private val nowEpochMs: () -> Long = System::currentTimeMillis,
+    /**
+     * Invoked (on [scope]) after the first load and every distinct change of the Time Limit,
+     * Open Limit or default-tier snapshots, so an event-driven detector can re-evaluate a
+     * stationary foreground app whose protection just changed. Not invoked for open-count
+     * changes (the coordinator's own writes).
+     */
+    private val onEnforcementChanged: (() -> Unit)? = null,
     /** Test seam; production resolves the device's runtime floor surfaces lazily. */
     safetyFloorGate: SafetyFloorGate? = null,
 ) {
@@ -107,6 +115,9 @@ class BlockScreenCoordinator(
 
     /** Package whose newest mount already force-resolved the floor (cleared on hide). */
     private var mountCheckedPackage: String? = null
+
+    /** Package whose current block was already reported as an intercepted open (cleared on hide). */
+    private var interceptedPackage: String? = null
     private val focusStore: FocusStateStore = FlintPreferences.focusState(appContext)
     private val limitsStore: LimitsStore = FlintPreferences.limits(appContext)
 
@@ -148,9 +159,24 @@ class BlockScreenCoordinator(
         scope.launch { focusStore.breakSession.collect { breakSession = it } }
         scope.launch { focusStore.emergencyPass.collect { emergencyPass = it } }
         scope.launch { focusStore.openCounts.collect { openCounts = it } }
-        scope.launch { focusStore.defaultBreakLevel.collect { defaultBreakLevel = it } }
-        scope.launch { limitsStore.openLimits.collect { openLimits = it } }
-        scope.launch { limitsStore.timeLimits.collect { timeLimits = it } }
+        scope.launch {
+            focusStore.defaultBreakLevel.distinctUntilChanged().collect {
+                defaultBreakLevel = it
+                onEnforcementChanged?.invoke()
+            }
+        }
+        scope.launch {
+            limitsStore.openLimits.distinctUntilChanged().collect {
+                openLimits = it
+                onEnforcementChanged?.invoke()
+            }
+        }
+        scope.launch {
+            limitsStore.timeLimits.distinctUntilChanged().collect {
+                timeLimits = it
+                onEnforcementChanged?.invoke()
+            }
+        }
     }
 
     /**
@@ -333,15 +359,14 @@ class BlockScreenCoordinator(
             // Defense in depth for any caller: never mount an ordinary shield on a floor surface.
             // A new mount force-resolves the runtime floor once (a launcher or dialer made default
             // seconds ago); refreshes of the same surface use the short fresh window.
-            val firstMount = mountCheckedPackage != packageName
-            mountCheckedPackage = packageName
-            val onFloor = if (firstMount) {
+            val onFloor = if (mountCheckedPackage != packageName) {
                 safetyFloor.protectsFresh(packageName, maxAgeMs = 0L)
             } else {
                 safetyFloor.protectsFresh(packageName)
             }
             if (onFloor) {
-                hideLocked()
+                // Only drop this package's own shield; never reveal another app's block.
+                if (visiblePackage == packageName) hideLocked()
                 return@runOnMain
             }
         }
@@ -354,6 +379,8 @@ class BlockScreenCoordinator(
             return@runOnMain
         }
         if (existing != null) hideLocked() // swapping to another app's block surface
+        // After the swap's hide (which clears it): this package's mount has force-resolved.
+        mountCheckedPackage = packageName
         // Set after hideLocked() — it clears these fields.
         shownCause = cause
         shownLabel = appLabel
@@ -371,6 +398,12 @@ class BlockScreenCoordinator(
             startTicker()
         } else {
             onBlockSurfaceUnavailable?.invoke(appContext, packageName, appLabel, cause)
+        }
+        // Once per new block of this package (Path B's fallback re-launches every poll tick
+        // while the overlay is unavailable; those are not new interceptions).
+        if (interceptedPackage != packageName) {
+            interceptedPackage = packageName
+            BlockEventHooks.openIntercepted(cause.ruleId, now)
         }
     }
 
@@ -396,6 +429,7 @@ class BlockScreenCoordinator(
                 val until = now + DEFAULT_BREAK_DURATION_MS
                 BlockExemptions.grant(packageName, until)
                 scheduleExemptionExpiry(packageName, until)
+                BlockEventHooks.breakGranted(currentCause.ruleId, until, now)
                 if (currentCause.spendsOpenOnBreak) {
                     // The extra open is recorded but never granted: what lifts the shield here
                     // is the break's exemption window, so the block returns when that window
@@ -436,6 +470,7 @@ class BlockScreenCoordinator(
         val until = cause.endsAtEpochMs ?: (now + EMERGENCY_PASS_OPEN_ENDED_EXEMPTION_MS)
         BlockExemptions.grantEmergency(packageName, until)
         scheduleExemptionExpiry(packageName, until)
+        BlockEventHooks.emergencyPassUsed(cause.ruleId, now)
         return true
     }
 
@@ -485,6 +520,7 @@ class BlockScreenCoordinator(
         ticker?.cancel()
         ticker = null
         mountCheckedPackage = null
+        interceptedPackage = null
         val view = shownView ?: return
         shownView = null
         visiblePackage = null

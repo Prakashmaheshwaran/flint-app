@@ -28,6 +28,4 @@ internal val SYSTEM_SURFACE_PACKAGES: Set<String> = setOf(
     "com.android.phone",
     "com.android.server.telecom",
     "com.android.emergency",
-).also { surfaces ->
-    check(surfaces.all { it in SafetyFloor.STATIC_PACKAGES }) { "every dip surface must be on the safety floor" }
-}
+) // Must stay a subset of SafetyFloor.STATIC_PACKAGES — enforced by OpenLimitDipSurfacesTest.
