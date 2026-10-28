@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import FlintCore
 
 @main
@@ -126,36 +127,48 @@ struct PINGateView: View {
     @ObservedObject var lock: FlintAppLock
     @State private var pin = ""
     @State private var showError = false
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         ZStack {
             EmberLandscape(horizonOffset: 20, orbCenter: CGPoint(x: 195, y: 480), orbRadius: 64)
-            VStack(spacing: 14) {
-                FlintMark(size: 40)
-                Text("Flint").font(FlintFont.display(48)).tracking(-0.8).foregroundStyle(FlintBrand.bone)
-                Text("Enter PIN").flintSecondary(15)
-                SecureField("PIN", text: $pin)
-                    .keyboardType(.numberPad)
-                    .font(FlintFont.display(28))
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(FlintBrand.bone)
-                    .frame(width: 180, height: 52)
-                    .overlay(alignment: .bottom) { FlintHairline(opacity: 0.16) }
-                if showError {
-                    Text("Incorrect PIN").font(FlintFont.text(13)).foregroundStyle(FlintBrand.danger)
-                }
-                Spacer()
-                Button("Unlock") {
-                    if !lock.unlock(with: pin) {
-                        showError = true
-                        pin = ""
+            // Scrolls at accessibility sizes so the PIN field and Unlock stay reachable.
+            GeometryReader { geometry in
+                ScrollView {
+                    VStack(spacing: 14) {
+                        FlintMark(size: 40)
+                        Text("Flint").font(FlintFont.display(48)).tracking(-0.8).foregroundStyle(FlintBrand.bone)
+                            .accessibilityAddTraits(.isHeader)
+                        Text("Enter PIN").flintSecondary(15)
+                        SecureField("PIN", text: $pin)
+                            .keyboardType(.numberPad)
+                            .font(FlintFont.display(28))
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(FlintBrand.bone)
+                            .frame(minWidth: 180, maxWidth: typeSize.isAccessibilitySize ? 280 : 180, minHeight: 52)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .overlay(alignment: .bottom) { FlintHairline(opacity: 0.16) }
+                        if showError {
+                            Text("Incorrect PIN").font(FlintFont.text(13)).foregroundStyle(FlintBrand.danger)
+                        }
+                        Spacer(minLength: 24)
+                        Button("Unlock") {
+                            if !lock.unlock(with: pin) {
+                                showError = true
+                                pin = ""
+                                // The error appears without moving focus; say it.
+                                UIAccessibility.post(notification: .announcement,
+                                                     argument: String(localized: "Incorrect PIN"))
+                            }
+                        }
+                        .buttonStyle(EmberButtonStyle())
                     }
+                    .padding(.top, typeSize.isAccessibilitySize ? 40 : 110)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 12)
+                    .frame(minHeight: geometry.size.height)
                 }
-                .buttonStyle(EmberButtonStyle())
             }
-            .padding(.top, 110)
-            .padding(.horizontal, 24)
-            .padding(.bottom, 12)
         }
     }
 }
