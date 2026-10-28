@@ -29,12 +29,14 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
-      - name: Assemble debug and local-first release APKs
+      - name: Assemble debug and local-first release APK and AAB
         working-directory: android-app
-        run: ./gradlew assembleDebug :app:assembleRelease
+        run: ./gradlew assembleDebug :app:assembleRelease :app:bundleRelease
 
       - name: Verify release excludes accounts and network permissions
-        run: python3 scripts/verify_local_first_apk.py android-app/app/build/outputs/apk/release/app-release.apk
+        run: |
+          python3 scripts/verify_local_first_apk.py android-app/app/build/outputs/apk/release/app-release.apk
+          python3 scripts/verify_local_first_apk.py android-app/app/build/outputs/bundle/release/app-release.aab
 
       # `test` (not `testDebugUnitTest`): the pure-Kotlin modules (blocking-engine,
       # core-model) are kotlin.jvm projects whose test task is `test` — the old task name
