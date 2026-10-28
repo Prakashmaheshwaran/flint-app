@@ -27,7 +27,8 @@ final class FlintCompletionControllerIntegrationTests: XCTestCase {
         registrar = ControllerNotificationRegistrar()
         let state = self.state!, defaults = self.defaults!
         controller = FlintSessionController(environment: FlintSessionEnvironment(
-            store: { state }, shield: ControllerNotificationShield(), registrar: registrar,
+            store: { state }, shield: ControllerNotificationShield(),
+            webRestrictions: ControllerNotificationWebRestrictions(), registrar: registrar,
             isAuthorized: { true }, clock: FlintClock(now: { self.now }, monotonic: { 10_000 },
                 bootSessionID: { "notification-integration" }, calendar: { Calendar(identifier: .gregorian) }),
             healthDefaults: { defaults }))
@@ -84,6 +85,10 @@ final class FlintCompletionControllerIntegrationTests: XCTestCase {
         XCTAssertTrue(center.requests.isEmpty)
         XCTAssertNil(state.active)
     }
+}
+
+private struct ControllerNotificationWebRestrictions: FlintSessionWebRestricting {
+    func reconcile(_ session: FlintActiveSession, now: Date) {}
 }
 
 private final class ControllerNotificationCenter: FlintNotificationCenter {

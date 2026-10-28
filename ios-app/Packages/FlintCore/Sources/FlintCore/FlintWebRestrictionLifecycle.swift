@@ -65,16 +65,19 @@ public final class FlintWebRestrictionLifecycle {
     }
 
     /// Call after saving preferences and on launch/foreground with current, armed causes.
-    /// The host must pass failed/unobserved schedule registrations as disabled rule copies,
-    /// and a timed session without an observed auto-end registration as nil. This function
+    /// The host passes unobserved schedules as disabled copies and unarmed timed sessions as
+    /// nil. Failed repairs are instead listed in preservingStores: their last-good keys end
+    /// with the surviving registration or bounded cause-store cleanup. This function
     /// decides scope and wall-clock eligibility; it cannot observe DeviceActivity registrations.
     /// Deleted rules are cleared by their controller before removal from persisted state.
     public func reconcile(
         activeSession: FlintActiveSession?, rules: [FlintScheduleRule], config: FlintWebRestrictions,
-        now: Date = Date(), calendar: Calendar = .current
+        now: Date = Date(), calendar: Calendar = .current, preservingStores: Set<String> = []
     ) {
-        reconcileSession(activeSession, config: config, now: now)
-        for rule in rules {
+        if !preservingStores.contains(Self.sessionStoreName) {
+            reconcileSession(activeSession, config: config, now: now)
+        }
+        for rule in rules where !preservingStores.contains(rule.storeName) {
             reconcileRule(rule, config: config, now: now, calendar: calendar)
         }
         writer.clear(store: Self.legacyStoreName)

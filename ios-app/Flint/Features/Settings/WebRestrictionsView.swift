@@ -73,10 +73,7 @@ struct WebRestrictionsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: restrictions) { newValue in
             newValue.save()
-            guard let group = FlintGroupStore() else { return }
-            FlintWebRestrictionLifecycle().reconcile(
-                activeSession: group.loadActiveSession(), rules: group.loadRules(), config: newValue
-            )
+            Task { await FlintProtectionReconciler.shared.reconcile(trigger: .configEdit) }
         }
     }
 }

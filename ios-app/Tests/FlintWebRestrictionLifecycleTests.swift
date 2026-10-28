@@ -1,6 +1,7 @@
 import XCTest
 import FamilyControls
 import ManagedSettings
+import DeviceActivity
 @testable import FlintCore
 
 final class FlintWebRestrictionLifecycleTests: XCTestCase {
@@ -236,6 +237,119 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
                        .all(except: []))
     }
 
+    private func hostHealth(_ rules: [FlintScheduleRule], failures: [FlintArmingHealth.Failure] = [],
+                            observed: [String]? = nil) -> FlintArmingHealth {
+        .init(domains: [
+            "session": .init(enabled: 1, attempted: 0, armed: 1, failures: [], observedActivities: ["flint.session"]),
+            "schedules": .init(enabled: rules.count, attempted: 0, armed: rules.count, failures: failures,
+                               observedActivities: observed ?? rules.map(\.monitorName))
+        ])
+    }
+
+    func testHostPreservesFailedObservedRuleWhileUpdatingOtherOwners() {
+        let writer = RecordingWebWriter()
+        let rules = [rule("failed"), rule("healthy")]
+        let old = FlintWebRestrictions(enabled: true)
+        writer.web[rules[0].storeName] = old
+        let config = FlintWebRestrictions(enabled: true, applyDuringSchedules: true, filter: .allowedOnly)
+        let health = hostHealth(rules, failures: [.init(activityName: rules[0].monitorName, reason: "refused repair")])
+        let report = FlintWebRestrictionHostReconciler.reconcile(
+            activeSession: session(), hasActiveSessionRecord: true, rules: rules, config: config, health: health,
+            lifecycle: FlintWebRestrictionLifecycle(writer: writer), now: now, calendar: calendar
+        )
+        XCTAssertEqual(writer.web[rules[0].storeName], old)
+        XCTAssertEqual(writer.web[rules[1].storeName], config)
+        XCTAssertEqual(writer.web["flint"], config)
+        XCTAssertFalse(writer.cleared.contains(rules[0].storeName))
+        XCTAssertEqual(report.armed, 0, "web settings do not create extra native activity slots")
+        XCTAssertNil(report.observedActivities, "a settings write is not observed OS enforcement")
+        XCTAssertEqual(report.failures.map(\.activityName), [rules[0].monitorName])
+    }
+
+    func testHostPreservesFailedUnobservedRuleUntilBoundedWholeStoreCleanup() throws {
+        let suite = "test.flint.web.bound.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let writer = RecordingWebWriter()
+        let rule = rule("failed")
+        let config = FlintWebRestrictions(applyDuringSchedules: true)
+        writer.web[rule.storeName] = config
+        let center = FakeActivityCenter()
+        center.refused = [rule.monitorName]
+        let end = date("2026-10-27T07:00:00-04:00")
+        let request = FlintActivityRegistration(name: rule.monitorName,
+            schedule: DeviceActivitySchedule(intervalStart: .init(hour: 22), intervalEnd: .init(hour: 7), repeats: true),
+            retainedUntil: end)
+        for instant in [now, end, end.addingTimeInterval(60)] {
+            let report = FlintActivityRegistration.reconcile([request], prefix: "flint.rule.", enabled: 1,
+                validationFailures: [], center: center, defaults: defaults, now: instant,
+                onRemove: { _ in writer.clearAllSettings(store: rule.storeName) })
+            var health = hostHealth([rule])
+            health.domains["schedules"] = report
+            _ = FlintWebRestrictionHostReconciler.reconcile(
+                activeSession: nil, hasActiveSessionRecord: false, rules: [rule], config: config, health: health,
+                lifecycle: FlintWebRestrictionLifecycle(writer: writer), now: instant, calendar: calendar
+            )
+            XCTAssertEqual(writer.web[rule.storeName], instant < end ? config : nil)
+        }
+        XCTAssertEqual(writer.wholeStoresCleared, [rule.storeName], "bounded cleanup clears exactly once")
+        XCTAssertTrue(writer.applied.isEmpty, "the web adapter never resurrects a failed cause")
+    }
+
+    func testHostClearsExplicitlyDisabledHealthyRule() {
+        let writer = RecordingWebWriter()
+        let rule = rule("disabled", enabled: false)
+        writer.web[rule.storeName] = FlintWebRestrictions(applyDuringSchedules: true)
+        _ = FlintWebRestrictionHostReconciler.reconcile(
+            activeSession: nil, hasActiveSessionRecord: false, rules: [rule], config: .default,
+            health: hostHealth([rule], observed: []), lifecycle: FlintWebRestrictionLifecycle(writer: writer),
+            now: now, calendar: calendar
+        )
+        XCTAssertNil(writer.web[rule.storeName])
+        XCTAssertTrue(writer.cleared.contains(rule.storeName))
+        XCTAssertTrue(writer.wholeStoresCleared.isEmpty, "web config edits preserve unrelated keys")
+    }
+
+    func testHostUnavailableInputOrUnreadableSessionMakesNoNativeWrites() {
+        let rules = [rule("a")]
+        for kind in ["rules", "config", "sessionDomain", "scheduleDomain", "record", "reportFlag", "missingReport"] {
+            let writer = RecordingWebWriter()
+            let config = FlintWebRestrictions(enabled: true, applyDuringSchedules: true)
+            writer.web = ["flint": config, rules[0].storeName: config, "flint.web": config]
+            let before = writer.web
+            var health = hostHealth(rules)
+            if kind == "sessionDomain" { health.domains["session"]?.failures = [.init(activityName: "session", reason: "unavailable")] }
+            if kind == "scheduleDomain" { health.domains["schedules"]?.failures = [.init(activityName: "schedules", reason: "unavailable")] }
+            if kind == "reportFlag" { health.domains["session"]?.recordUnreadable = true }
+            if kind == "missingReport" { health.domains.removeValue(forKey: "schedules") }
+            let report = FlintWebRestrictionHostReconciler.reconcile(
+                activeSession: kind == "record" ? nil : session(), hasActiveSessionRecord: true,
+                rules: kind == "rules" ? nil : rules, config: kind == "config" ? nil : .default,
+                health: health, lifecycle: FlintWebRestrictionLifecycle(writer: writer), now: now, calendar: calendar
+            )
+            XCTAssertEqual(writer.web, before, kind)
+            XCTAssertTrue(writer.applied.isEmpty, kind)
+            XCTAssertTrue(writer.cleared.isEmpty, kind)
+            XCTAssertFalse(report.failures.isEmpty, kind)
+        }
+    }
+
+    func testHostSessionRearmFailurePreservesSessionKeysAndReconcilesHealthyRules() {
+        let writer = RecordingWebWriter()
+        let rules = [rule("healthy")]
+        let old = FlintWebRestrictions(enabled: true)
+        writer.web["flint"] = old
+        let config = FlintWebRestrictions(applyDuringSchedules: true)
+        var health = hostHealth(rules)
+        health.domains["session"]?.rearmFailed = true
+        _ = FlintWebRestrictionHostReconciler.reconcile(
+            activeSession: session(), hasActiveSessionRecord: true, rules: rules, config: config, health: health,
+            lifecycle: FlintWebRestrictionLifecycle(writer: writer), now: now, calendar: calendar
+        )
+        XCTAssertEqual(writer.web["flint"], old)
+        XCTAssertEqual(writer.web[rules[0].storeName], config)
+    }
+
     func testAdultFilterKeepsNormalizedBlockAndAllowLists() {
         let config = FlintWebRestrictions(blockedDomains: ["www.example.com"], allowedDomains: ["apple.com"])
         XCTAssertEqual(FlintWebRestrictionStore.filterPolicy(for: config),
@@ -353,18 +467,31 @@ final class FlintSessionWebRestrictionTests: XCTestCase {
         XCTAssertEqual(h.writer.applied, ["flint"])
     }
 
+    func testUnreadableActiveSessionRecordPreservesExistingSafariKeys() throws {
+        let h = WebSessionHarness()
+        let controller = h.controller()
+        _ = try h.start(controller)
+        h.store.active = nil
+        h.store.corruptRecord = true
+        XCTAssertTrue(controller.reconcile().recordUnreadable)
+        XCTAssertEqual(h.writer.web["flint"], h.config)
+        XCTAssertTrue(h.writer.wholeStoresCleared.isEmpty)
+    }
+
     func testPC72EverySessionEndClearsItsWholeStoreAndLeavesTwoRuleOwners() throws {
         for end in ["manual", "shortcut", "focusOff", "pass", "expiry", "monitor", "warning", "carrier", "noSession"] {
             let h = WebSessionHarness()
             let controller = h.controller()
-            let session = try h.start(controller, duration: end == "warning" || end == "carrier" ? 300 : 1800)
+            let session = try h.start(controller, duration: end == "warning" || end == "carrier" ? 300 : 1800,
+                                      source: end == "focusOff" ? .focusFilter : .manual,
+                                      level: ["manual", "shortcut", "focusOff"].contains(end) ? .easy : .hardcore)
             h.writer.web["flint.rule-a"] = h.config
             h.writer.web["flint.rule-b"] = h.config
             let surgicalClears = h.writer.cleared.count
             switch end {
-            case "manual": controller.stop()
-            case "shortcut": controller.stop(route: .shortcutStop)
-            case "focusOff": controller.stop(route: .focusFilterOff)
+            case "manual": XCTAssertEqual(controller.requestStop(confirmed: true), .stopped)
+            case "shortcut": XCTAssertEqual(controller.requestStop(route: .shortcutStop, confirmed: true), .stopped)
+            case "focusOff": XCTAssertEqual(controller.requestStop(route: .focusFilterOff, confirmed: true), .stopped)
             case "pass": XCTAssertTrue(controller.useEmergencyPass())
             case "expiry":
                 h.now = session.endsAt!
@@ -411,9 +538,11 @@ private final class WebSessionHarness {
     }
 
     func start(_ controller: FlintSessionController, duration: TimeInterval = 1800,
-               source: FlintSessionSource = .manual) throws -> FlintActiveSession {
+               source: FlintSessionSource = .manual, level: BreakLevel = .hardcore) throws -> FlintActiveSession {
         try controller.startBlockNow(selection: FamilyActivitySelection(), duration: duration,
-                                     breakLevel: .hardcore, source: source)
+                                     breakLevel: level, source: source,
+                                     origin: source == .focusFilter ? .focusFilter : source == .shortcut ? .shortcut : .appUI,
+                                     confirmed: true)
     }
 }
 
@@ -422,6 +551,8 @@ private final class WebSessionShield: FlintSessionShielding {
     var refuse = false
     init(writer: RecordingWebWriter) { self.writer = writer }
     func counts(of selection: FamilyActivitySelection) -> FlintSelectionCounts { .init(applications: 1) }
+    func targets(of selection: FamilyActivitySelection) -> FlintSessionTargets { .init(applications: ["test-app"]) }
+    func fingerprint(of selection: FamilyActivitySelection) -> String { "test-app" }
     func applyBlockList(_ selection: FamilyActivitySelection) throws {
         if refuse { throw WebTestRefusal() }
         writer.events.append("shield")
@@ -452,6 +583,7 @@ private final class WebSessionState: FlintSessionStateStoring {
     var sessionSelection: FamilyActivitySelection?
     var passUsed: Date?
     var loads = 0
+    var corruptRecord = false
     var onLoad: ((Int) -> Void)?
     func loadActiveSession() -> FlintActiveSession? {
         loads += 1
@@ -459,6 +591,7 @@ private final class WebSessionState: FlintSessionStateStoring {
         return active
     }
     func saveActiveSession(_ session: FlintActiveSession) { active = session }
+    func hasActiveSessionRecord() -> Bool { active != nil || corruptRecord }
     func clearActiveSession() { active = nil }
     func saveSelection(_ selection: FamilyActivitySelection) { self.selection = selection }
     func loadSelection() -> FamilyActivitySelection? { selection }
