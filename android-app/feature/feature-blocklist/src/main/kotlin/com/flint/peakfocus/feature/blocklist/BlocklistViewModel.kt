@@ -10,6 +10,18 @@ import com.flint.peakfocus.core.datastore.FocusStateStore
 import com.flint.peakfocus.core.datastore.GroupsStore
 import com.flint.peakfocus.core.datastore.LimitsStore
 import com.flint.peakfocus.core.datastore.readyValues
+import com.flint.peakfocus.core.datastore.EditorChange
+import com.flint.peakfocus.core.datastore.EditorLimitsChange
+import com.flint.peakfocus.core.datastore.EditorCommitmentStore
+import com.flint.peakfocus.core.datastore.EditorCommitmentState
+import com.flint.peakfocus.core.datastore.EditorCommitResult
+import com.flint.peakfocus.core.datastore.EditorSafety
+import com.flint.peakfocus.core.datastore.HarderWaitStore
+import com.flint.peakfocus.core.datastore.ProtectionClock
+import com.flint.peakfocus.core.model.AccessClockStamp
+import com.flint.peakfocus.core.common.RuntimeSafetySurfaces
+import com.flint.peakfocus.core.model.SafetyFloor
+import com.flint.peakfocus.blocking.engine.HarderWaitPolicy
 import com.flint.peakfocus.core.model.AppGroup
 import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
@@ -60,9 +72,10 @@ internal sealed interface LimitsUiState {
 internal sealed interface InstalledAppsUiState {
     data object Loading : InstalledAppsUiState
     data class Ready(val apps: List<InstalledApp>) : InstalledAppsUiState
+    data class Error(val message: String, val retry: (() -> Unit)? = null) : InstalledAppsUiState
 }
 
-internal data class EditorSaveState(val busy: Boolean = false, val error: String? = null)
+internal data class EditorSaveState(val busy: Boolean = false, val error: String? = null, val result: String? = null)
 
 /**
  * State + actions for the whole blocklist feature. All persistence goes through the observable
@@ -80,9 +93,55 @@ internal class BlocklistViewModel(
     private val focusStateStore: FocusStateStore,
     private val groupsStore: GroupsStore,
     private val loadInstalledApps: () -> List<InstalledApp>,
+    private val commitments: EditorCommitmentStore,
+    private val harderWaits: HarderWaitStore,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val newRuleId: () -> String = { UUID.randomUUID().toString() },
+    private val clock: () -> AccessClockStamp = ProtectionClock::now,
+    private val safety: () -> EditorSafety = { EditorSafety(false) },
 ) : ViewModel() {
+
+    val commitmentState = commitments.state.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StorageState.Loading)
+    val waitRemaining = combine(harderWaits.state, secondTicks(clock)) { storage, now ->
+        (storage as? StorageState.Ready)?.value?.pending?.let { HarderWaitPolicy().remainingMs(it, now) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    private var afterCommit: (() -> Unit)? = null
+
+    private fun protectionWrite(onSaved: () -> Unit = {}, action: suspend () -> EditorCommitResult) {
+        if (saveState.value.busy) return
+        saveState.value = EditorSaveState(busy = true)
+        viewModelScope.launch {
+            try {
+                when (val result = action()) {
+                    is EditorCommitResult.Applied -> {
+                        saveState.value = EditorSaveState(result = if (result.queued) "Saved for after this occurrence." else "Saved.")
+                        afterCommit = null
+                        onSaved()
+                    }
+                    is EditorCommitResult.Preview, is EditorCommitResult.Waiting -> {
+                        afterCommit = onSaved
+                        saveState.value = EditorSaveState()
+                    }
+                    is EditorCommitResult.Rejected -> saveState.value = EditorSaveState(error = result.reason)
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { saveState.value = EditorSaveState(error = "Couldn't save. Your draft is still here; try again.") }
+            finally { saveState.value = saveState.value.copy(busy = false) }
+        }
+    }
+
+    private fun request(change: EditorChange, onSaved: () -> Unit = {}) = protectionWrite(onSaved) {
+        val freshSafety = withContext(ioDispatcher) { safety() }
+        commitments.request(change, clock(), freshSafety)
+    }
+
+    fun confirmChange(id: Long) = protectionWrite(afterCommit ?: {}) {
+        commitments.confirm(id, clock(), withContext(ioDispatcher) { safety() })
+    }
+
+    fun cancelChange(id: Long) {
+        write { commitments.cancel(id); afterCommit = null }
+    }
 
     private val saveState = MutableStateFlow(EditorSaveState())
     val editorSave: StateFlow<EditorSaveState> = saveState.asStateFlow()
@@ -168,9 +227,17 @@ internal class BlocklistViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
+        viewModelScope.launch { runCatching { commitments.reconcile(clock()) } }
+        retryInstalledApps()
+    }
+
+    fun retryInstalledApps() {
+        installedAppsState.value = InstalledAppsUiState.Loading
         viewModelScope.launch {
-            val apps = withContext(ioDispatcher) { loadInstalledApps() }
-            installedAppsState.value = InstalledAppsUiState.Ready(apps)
+            try {
+                installedAppsState.value = InstalledAppsUiState.Ready(withContext(ioDispatcher) { loadInstalledApps() })
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { installedAppsState.value = InstalledAppsUiState.Error("Couldn't load installed apps. Try again.", ::retryInstalledApps) }
         }
     }
 
@@ -181,11 +248,11 @@ internal class BlocklistViewModel(
     fun saveRule(draft: RuleDraft, onSaved: () -> Unit = {}) {
         if (validate(draft).isNotEmpty()) return
         val rule = draft.toRule(id = draft.id ?: newRuleId())
-        write(onSaved) { rulesStore.upsert(rule) }
+        request(EditorChange("Save ${rule.name}", upserts = listOf(rule)), onSaved)
     }
 
     fun deleteRule(ruleId: String, onSaved: () -> Unit = {}) {
-        write(onSaved) { rulesStore.delete(ruleId) }
+        request(EditorChange("Delete rule", deleteIds = setOf(ruleId)), onSaved)
     }
 
     /**
@@ -216,7 +283,11 @@ internal class BlocklistViewModel(
     }
 
     fun setRuleEnabled(ruleId: String, enabled: Boolean) {
-        write { rulesStore.setEnabled(ruleId, enabled) }
+        protectionWrite {
+            val rule = rulesStore.rulesState.readyValues(throwOnUnavailable = true).first().singleOrNull { it.id == ruleId }
+                ?: return@protectionWrite EditorCommitResult.Rejected("This rule changed. Refresh and try again.")
+            commitments.request(EditorChange(if (enabled) "Turn on ${rule.name}" else "Turn off ${rule.name}", upserts = listOf(rule.copy(enabled = enabled))), clock(), withContext(ioDispatcher) { safety() })
+        }
     }
 
     /**
@@ -226,24 +297,21 @@ internal class BlocklistViewModel(
      */
     fun saveSleep(config: SleepConfig, onSaved: () -> Unit = {}) {
         if (validate(config).isNotEmpty()) return
-        write(onSaved) {
-            rulesStore.updateRules(config.toRules(), if (config.morningEnabled) emptySet() else setOf(SLEEP_MORNING_RULE_ID))
-        }
+        request(EditorChange("Save Sleep", upserts = config.toRules(), deleteIds = if (config.morningEnabled) emptySet() else setOf(SLEEP_MORNING_RULE_ID)), onSaved)
     }
 
     /** Flip sleep mode on/off from the overview card — both sleep rules move together, in
      *  ONE store transaction (separate writes could desync them across a process death). */
     fun setSleepEnabled(enabled: Boolean) {
-        write {
-            rulesStore.setEnabled(setOf(SLEEP_WINDOW_RULE_ID, SLEEP_MORNING_RULE_ID), enabled)
+        protectionWrite {
+            val rules = rulesStore.rulesState.readyValues(throwOnUnavailable = true).first().filter { it.id in setOf(SLEEP_WINDOW_RULE_ID, SLEEP_MORNING_RULE_ID) }
+            commitments.request(EditorChange(if (enabled) "Turn on Sleep" else "Turn off Sleep", upserts = rules.map { it.copy(enabled = enabled) }), clock(), withContext(ioDispatcher) { safety() })
         }
     }
 
     /** Writes both limit kinds for one package; a null side clears that limit. */
     fun saveLimits(packageName: String, timeLimit: TimeLimit?, openLimit: OpenLimit?, onSaved: () -> Unit = {}) {
-        write(onSaved) {
-            limitsStore.setLimits(packageName, timeLimit, openLimit)
-        }
+        request(EditorChange("Save limits for $packageName", limits = EditorLimitsChange(packageName, timeLimit, openLimit)), onSaved)
     }
 
     /** Removes both limits for [packageName] (each clear is a no-op if absent). */
@@ -263,6 +331,9 @@ internal class BlocklistViewModel(
                         focusStateStore = FlintPreferences.focusState(appContext),
                         groupsStore = FlintPreferences.groups(appContext),
                         loadInstalledApps = source::loadLaunchable,
+                        commitments = FlintPreferences.editorCommitments(appContext),
+                        harderWaits = FlintPreferences.harderWait(appContext),
+                        safety = { loadEditorSafety(appContext) },
                     ) as T
                 }
             }
@@ -278,6 +349,10 @@ private fun minuteTicks(): Flow<Long> = flow {
         emit(now)
         delay(60_000L - now % 60_000L)
     }
+}
+
+private fun secondTicks(clock: () -> AccessClockStamp): Flow<AccessClockStamp> = flow {
+    while (true) { emit(clock()); delay(1_000) }
 }
 
 /** One rule's live schedule state for the overview: biting right now, plus the next edge

@@ -30,7 +30,7 @@ class SleepRulesTest {
         assertEquals(config, sleepConfigFrom(config.toRules()))
         val windowOnly = config.copy(morningEnabled = false)
         assertEquals(windowOnly, sleepConfigFrom(windowOnly.toRules()))
-        val disabled = config.copy(enabled = false, assist = SleepAssist.WIND_DOWN)
+        val disabled = config.copy(enabled = false, assist = SleepAssist.WIND_DOWN, breakLevel = BreakLevel.EASY)
         assertEquals(disabled, sleepConfigFrom(disabled.toRules()))
     }
 
@@ -59,11 +59,14 @@ class SleepRulesTest {
     }
 
     @Test
-    fun assistLevelMapsToTierAndNeverToHardcore() {
-        val windDown = config.copy(assist = SleepAssist.WIND_DOWN).toRules()
-        val fullAssist = config.copy(assist = SleepAssist.FULL_ASSIST).toRules()
+    fun `PC-82 assist defaults are Easy and Harder while saved Hardcore is preserved`() {
+        val windDown = SleepConfig(assist = SleepAssist.WIND_DOWN).toRules()
+        val fullAssist = SleepConfig(assist = SleepAssist.FULL_ASSIST).toRules()
         assertTrue(windDown.all { it.breakLevel == BreakLevel.EASY })
         assertTrue(fullAssist.all { it.breakLevel == BreakLevel.HARDER })
+        val hardcore = config.copy(breakLevel = BreakLevel.HARDCORE)
+        assertTrue(hardcore.toRules().all { it.breakLevel == BreakLevel.HARDCORE })
+        assertEquals(BreakLevel.HARDCORE, sleepConfigFrom(hardcore.toRules())?.breakLevel)
     }
 
     @Test
@@ -160,17 +163,17 @@ class SleepRulesTest {
 
     @Test
     fun summaryNamesTheCommonNightSetsAndTheWindow() {
-        assertEquals("Weeknights · 22:30 – 07:00 · morning to 08:00", sleepSummary(config))
+        assertEquals("Weeknights · 22:30 – 07:00 · morning to 08:00 · Harder", sleepSummary(config))
         assertEquals(
-            "Every night · 22:30 – 07:00",
+            "Every night · 22:30 – 07:00 · Harder",
             sleepSummary(config.copy(nights = emptySet(), morningEnabled = false)),
         )
         assertEquals(
-            "Weekend nights · 22:30 – 07:00",
+            "Weekend nights · 22:30 – 07:00 · Harder",
             sleepSummary(config.copy(nights = setOf(6, 7), morningEnabled = false)),
         )
         assertEquals(
-            "Mon Wed · 22:30 – 07:00",
+            "Mon Wed · 22:30 – 07:00 · Harder",
             sleepSummary(config.copy(nights = setOf(3, 1), morningEnabled = false)),
         )
     }

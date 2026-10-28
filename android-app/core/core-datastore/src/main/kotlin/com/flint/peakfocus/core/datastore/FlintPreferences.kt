@@ -19,6 +19,12 @@ private val Context.flintPreferencesDataStore: DataStore<Preferences> by prefere
 
 object FlintPreferences {
 
+    fun harderWait(context: Context): HarderWaitStore =
+        DataStoreHarderWaitStore(context.applicationContext.flintPreferencesDataStore)
+
+    fun editorCommitments(context: Context): EditorCommitmentStore =
+        DataStoreEditorCommitmentStore(context.applicationContext.flintPreferencesDataStore)
+
     fun blockRules(context: Context): BlockRulesStore =
         DataStoreBlockRulesStore(context.applicationContext.flintPreferencesDataStore)
 

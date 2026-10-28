@@ -102,8 +102,8 @@ internal fun breakLevelLabel(level: BreakLevel): String = when (level) {
 /** One-line explanation of what each tier means, shown under the selector. */
 internal fun breakLevelDescription(level: BreakLevel): String = when (level) {
     BreakLevel.EASY -> "Take a break or stop the block whenever you like."
-    BreakLevel.HARDER -> "Breaks arrive after a growing wait, and only from inside Flint."
-    BreakLevel.HARDCORE -> "No breaks, no early stop — one Emergency Pass per week."
+    BreakLevel.HARDER -> "Early changes wait 1, 5, then 15 minutes and need confirmation."
+    BreakLevel.HARDCORE -> "No ordinary breaks or early weakening. Expiry or an available Emergency Pass provides an exit; planned credits and rests still apply. A pass renews seven days after use."
 }
 
 /** "45m", "1h", "1h 30m" — same duration style the block screen uses. */

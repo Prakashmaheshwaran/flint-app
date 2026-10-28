@@ -1,0 +1,218 @@
+package com.flint.peakfocus.core.datastore
+
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.*
+import com.flint.peakfocus.blocking.engine.CommitmentPolicy
+import com.flint.peakfocus.blocking.engine.HarderWaitPolicy
+import com.flint.peakfocus.core.model.*
+import java.io.IOException
+import java.util.Calendar
+import java.util.TimeZone
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import org.junit.Assert.*
+import org.junit.Test
+
+class EditorCommitmentStoreTest {
+    private class Disk(initial: Preferences = emptyPreferences()) : DataStore<Preferences> {
+        val values = MutableStateFlow(initial)
+        val lock = Mutex()
+        var fail = false
+        override val data: Flow<Preferences> = values
+        override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences = lock.withLock {
+            val next = transform(values.value)
+            if (fail) throw IOException("disk full")
+            values.value = next
+            next
+        }
+    }
+    private val at = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+        clear(); set(2026, Calendar.OCTOBER, 28, 10, 0)
+    }.timeInMillis
+    private fun clock(ms: Long = 0, wall: Long = ms, boot: String = "boot") = AccessClockStamp(at + wall, 10_000 + ms, boot)
+    private val safe = EditorSafety(true)
+    private fun rule(tier: BreakLevel = BreakLevel.HARDCORE) = BlockRule("work", "Work",
+        BlockTargets(apps = setOf(AppRef("a"), AppRef("b"))), Schedule(startMinuteOfDay = 9 * 60, endMinuteOfDay = 11 * 60), tier)
+    private suspend fun fresh(disk: Disk): DataStoreEditorCommitmentStore = DataStoreEditorCommitmentStore(disk) { "UTC" }.also { it.reconcile(clock()) }
+    private suspend fun snapshot(store: EditorCommitmentStore) = (store.state.first { it is StorageState.Ready } as StorageState.Ready).value
+    private suspend fun confirm(store: EditorCommitmentStore, change: EditorChange, now: AccessClockStamp = clock()): EditorCommitResult {
+        val result = store.request(change, now, safe)
+        val id = when (result) {
+            is EditorCommitResult.Preview -> result.pending.id
+            is EditorCommitResult.Waiting -> result.pending.id
+            else -> error("No preview: $result")
+        }
+        return store.confirm(id, now, safe)
+    }
+
+    @Test fun `PC-11 PC-14 active Hardcore weakening is durable future-only and applies at exact end before rematerializing`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk); val rules = DataStoreBlockRulesStore(disk)
+        val old = rule(); rules.upsert(old)
+        val after = old.copy(targets = BlockTargets(apps = setOf(AppRef("a"))))
+        assertEquals(EditorCommitResult.Applied(true), confirm(store, EditorChange("Weaken", upserts = listOf(after))))
+        assertEquals(listOf(old), rules.rules.first())
+        val deadline = snapshot(store).queued.single().boundaries.values.single().wallEndEpochMs
+        val recreated = DataStoreEditorCommitmentStore(disk) { "UTC" }
+        recreated.reconcile(clock(3_599_999))
+        assertEquals(listOf(old), rules.rules.first())
+        assertEquals(deadline, snapshot(recreated).queued.single().boundaries.values.single().wallEndEpochMs)
+        recreated.reconcile(clock(3_600_000))
+        assertEquals(listOf(after), rules.rules.first()); assertTrue(snapshot(recreated).queued.isEmpty())
+        recreated.reconcile(clock(3_600_000))
+        assertEquals(listOf(after), rules.rules.first())
+    }
+
+    @Test fun `PC-13 inactive Hardcore template can be deleted after ordinary confirmation`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk); val rules = DataStoreBlockRulesStore(disk)
+        rules.upsert(rule().copy(schedule = Schedule(startMinuteOfDay = 12 * 60, endMinuteOfDay = 13 * 60)))
+        val preview = store.request(EditorChange("Delete", deleteIds = setOf("work")), clock(), safe) as EditorCommitResult.Preview
+        assertEquals(CommitmentPolicy.Outcome.ALLOW, preview.pending.outcome)
+        assertEquals(EditorCommitResult.Applied(), store.confirm(preview.pending.id, clock(), safe))
+        assertTrue(rules.rules.first().isEmpty())
+    }
+
+    @Test fun `PC-15 daily Hardcore Time Limit below budget still defers increase and removal`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk); val limits = DataStoreLimitsStore(disk)
+        val limit = TimeLimit("a", 30, BreakLevel.HARDCORE)
+        assertEquals(EditorCommitResult.Applied(), confirm(store, EditorChange("Create", limits = EditorLimitsChange("a", limit, null))))
+        val preview = store.request(EditorChange("Increase", limits = EditorLimitsChange("a", limit.copy(dailyMinutes = 60), null)), clock(), safe) as EditorCommitResult.Preview
+        assertEquals(CommitmentPolicy.Outcome.DEFER, preview.pending.outcome)
+        assertEquals(EditorCommitResult.Applied(true), store.confirm(preview.pending.id, clock(), safe))
+        assertEquals(listOf(limit), limits.timeLimits.first())
+        store.reconcile(clock(14 * 3_600_000L)) // Midnight, adjacent daily occurrence.
+        assertEquals(60, limits.timeLimits.first().single().dailyMinutes)
+        assertFalse(snapshot(store).causes.getValue(timeCauseKey("a")).legacyRights)
+    }
+
+    @Test fun `PC-16 Open Limit remains active without a shield including during a credit`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk)
+        confirm(store, EditorChange("Create", limits = EditorLimitsChange("a", null, OpenLimit("a", 3, BreakLevel.HARDCORE))))
+        val preview = store.request(EditorChange("Remove", limits = EditorLimitsChange("a", null, null)), clock(), safe) as EditorCommitResult.Preview
+        assertEquals(CommitmentPolicy.Outcome.DEFER, preview.pending.outcome)
+    }
+
+    @Test fun `PC-17 PC-21 Harder Timer wait survives recreation and needs final confirmation`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk); val rules = DataStoreBlockRulesStore(disk)
+        val timer = rule(BreakLevel.HARDER).copy(id = CONTRACT_TIMER_ID_PREFIX + "new", schedule = null, expiresAtEpochMs = at + 300_000)
+        assertTrue(store.startTimer(timer, clock()))
+        val wait = store.request(EditorChange("End", deleteIds = setOf(timer.id), timerExit = true), clock(), safe) as EditorCommitResult.Waiting
+        assertEquals(60_000, wait.remainingMs)
+        val recreated = DataStoreEditorCommitmentStore(disk) { "UTC" }
+        assertEquals(1, (recreated.confirm(wait.pending.id, clock(59_999), safe) as EditorCommitResult.Waiting).remainingMs)
+        recreated.reconcile(clock(60_000)); assertEquals(listOf(timer), rules.rules.first())
+        assertEquals(EditorCommitResult.Applied(), recreated.confirm(wait.pending.id, clock(60_000), safe))
+        assertTrue(rules.rules.first().isEmpty())
+        assertTrue(recreated.confirm(wait.pending.id, clock(60_000), safe) is EditorCommitResult.Rejected)
+        assertEquals(listOf(1), HarderWaitCodec.decode(disk.values.value[HARDER_WAIT_KEY]).counts.values.toList())
+    }
+
+    @Test fun `PC-67 PC-68 legacy Hardcore Timer retains exit while new Hardcore denies it`() = runBlocking {
+        val legacy = rule().copy(id = NATIVE_TIMER_ID_PREFIX + "old", schedule = null, expiresAtEpochMs = at + 300_000)
+        val disk = Disk(preferencesOf(PrefsKeys.BLOCK_RULES to PrefsCodec.encodeRules(listOf(legacy))))
+        val store = fresh(disk)
+        assertEquals(EditorCommitResult.Applied(), confirm(store, EditorChange("End legacy", deleteIds = setOf(legacy.id), timerExit = true)))
+        val strict = legacy.copy(id = CONTRACT_TIMER_ID_PREFIX + "new")
+        assertTrue(store.startTimer(strict, clock()))
+        assertTrue(store.request(EditorChange("End new", deleteIds = setOf(strict.id), timerExit = true), clock(), safe) is EditorCommitResult.Rejected)
+        assertEquals(listOf(strict), DataStoreBlockRulesStore(disk).rules.first())
+    }
+
+    @Test fun `PC-10 exact preview rejects a concurrent policy upgrade without spending wait`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk); val rules = DataStoreBlockRulesStore(disk)
+        val old = rule(BreakLevel.EASY); rules.upsert(old)
+        val preview = store.request(EditorChange("Delete", deleteIds = setOf(old.id)), clock(), safe) as EditorCommitResult.Preview
+        rules.upsert(old.copy(breakLevel = BreakLevel.HARDCORE))
+        assertTrue(store.confirm(preview.pending.id, clock(), safe) is EditorCommitResult.Rejected)
+        assertEquals(BreakLevel.HARDCORE, rules.rules.first().single().breakLevel)
+    }
+
+    @Test fun `PC-18 counts are shared with breaks and are not reset by a rename`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk); val rules = DataStoreBlockRulesStore(disk)
+        val old = rule(BreakLevel.HARDER); rules.upsert(old); store.reconcile(clock())
+        val occurrence = editorOccurrence(ruleCauseKey(old.id), snapshot(store).causes.getValue(ruleCauseKey(old.id)))
+        DataStoreHarderWaitStore(disk).transact { HarderWaitMutation(it.copy(counts = mapOf(occurrence to 2)), Unit) }
+        confirm(store, EditorChange("Rename", upserts = listOf(old.copy(name = "Renamed"))))
+        val wait = store.request(EditorChange("Off", upserts = listOf(old.copy(name = "Renamed", enabled = false))), clock(), safe) as EditorCommitResult.Waiting
+        assertEquals(900_000, wait.remainingMs)
+        assertEquals(EditorCommitResult.Applied(), store.confirm(wait.pending.id, clock(900_000), safe))
+        assertEquals(3, HarderWaitCodec.decode(disk.values.value[HARDER_WAIT_KEY]).counts[occurrence])
+    }
+
+    @Test fun `PC-20 cancellation spends nothing and another request restarts the full wait`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk); DataStoreBlockRulesStore(disk).upsert(rule(BreakLevel.HARDER))
+        val change = EditorChange("Delete", deleteIds = setOf("work"))
+        val first = store.request(change, clock(), safe) as EditorCommitResult.Waiting
+        store.cancel(first.pending.id)
+        val next = store.request(change, clock(59_000), safe) as EditorCommitResult.Waiting
+        assertEquals(60_000, next.remainingMs)
+        assertTrue(HarderWaitCodec.decode(disk.values.value[HARDER_WAIT_KEY]).counts.isEmpty())
+    }
+
+    @Test fun `PC-53 unresolved safety floor declines new broad allow-list with honest degraded reason`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk)
+        val broad = rule(BreakLevel.EASY).copy(targets = BlockTargets(allowListMode = true))
+        val result = store.request(EditorChange("Sleep", upserts = listOf(broad)), clock(), EditorSafety(false)) as EditorCommitResult.Rejected
+        assertTrue(result.reason.contains("degraded")); assertTrue(DataStoreBlockRulesStore(disk).rules.first().isEmpty())
+    }
+
+    @Test fun `PC-52 saved safety targets are rejected while original bytes remain intact`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk)
+        val result = store.request(EditorChange("Limit", limits = EditorLimitsChange("dialer", TimeLimit("dialer", 1), null)), clock(), EditorSafety(true, setOf("dialer")))
+        assertTrue(result is EditorCommitResult.Rejected)
+    }
+
+    @Test fun `PC-54 PC-55 clock jumps cannot end commitment or extend its deferred deadline`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk); DataStoreBlockRulesStore(disk).upsert(rule())
+        confirm(store, EditorChange("Delete", deleteIds = setOf("work")))
+        val original = snapshot(store).queued.single()
+        store.reconcile(clock(1_000, wall = 24 * 3_600_000))
+        assertEquals(original, snapshot(store).queued.single())
+        store.reconcile(clock(2_000, wall = -24 * 3_600_000))
+        assertEquals(original, snapshot(store).queued.single())
+        assertEquals(1, DataStoreBlockRulesStore(disk).rules.first().size)
+    }
+
+    @Test fun `PC-70 tierless literal v1 import snapshots default once and preserves archive`() = runBlocking {
+        val disk = Disk(preferencesOf(PrefsKeys.TIME_LIMITS to "a~30\nb~0", PrefsKeys.DEFAULT_BREAK_LEVEL to "HARDCORE"))
+        val store = fresh(disk)
+        assertEquals(listOf(BreakLevel.HARDCORE, BreakLevel.HARDCORE), DataStoreLimitsStore(disk).timeLimits.first().map { it.breakLevel })
+        assertEquals("a~30\nb~0", disk.values.value[stringPreferencesKey("editor_migration_time_limits_v1")])
+        DataStoreFocusStateStore(disk).setDefaultBreakLevel(BreakLevel.EASY)
+        DataStoreEditorCommitmentStore(disk).reconcile(clock())
+        assertEquals(BreakLevel.HARDCORE, DataStoreLimitsStore(disk).timeLimits.first().first().breakLevel)
+        assertEquals(EditorCommitmentCodec.decode(EditorCommitmentCodec.encode(snapshot(store))), snapshot(store))
+    }
+
+    @Test fun `PC-70 failed migration or queued write keeps original readable and no success`() = runBlocking {
+        val raw = "a~30"; val disk = Disk(preferencesOf(PrefsKeys.TIME_LIMITS to raw, PrefsKeys.DEFAULT_BREAK_LEVEL to "HARDER"))
+        disk.fail = true
+        try { fresh(disk); fail("accepted failed write") } catch (_: IOException) { }
+        assertEquals(raw, disk.values.value[PrefsKeys.TIME_LIMITS]); assertNull(disk.values.value[EDITOR_COMMITMENTS_KEY])
+        disk.fail = false; val store = fresh(disk)
+        val change = EditorChange("New", upserts = listOf(rule(BreakLevel.EASY)))
+        val preview = store.request(change, clock(), safe) as EditorCommitResult.Preview
+        disk.fail = true
+        try { store.confirm(preview.pending.id, clock(), safe); fail("accepted failed write") } catch (_: IOException) { }
+        assertTrue(DataStoreBlockRulesStore(disk).rules.first().isEmpty()); assertNotNull(snapshot(store).pending)
+    }
+
+    @Test fun `PC-71 unknown editor schema and missing initialized wait state never become fresh policy`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk)
+        disk.values.value = disk.values.value.toMutablePreferences().apply { this[EDITOR_COMMITMENTS_KEY] = "E|2" }
+        assertEquals(StorageState.Unavailable(StorageFailure.UNSUPPORTED_VERSION), store.state.first { it is StorageState.Unavailable })
+        try { store.reconcile(clock()); fail("unknown schema accepted") } catch (_: StorageUnavailableException) { }
+        val other = Disk(); val initialized = fresh(other)
+        other.values.value = other.values.value.toMutablePreferences().apply { remove(HARDER_WAIT_KEY) }
+        try { initialized.reconcile(clock()); fail("missing wait state accepted") } catch (_: StorageUnavailableException) { }
+    }
+
+    @Test fun `PC-01 bounds reject new finite sessions over 24 hours and open-ended Hardcore`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk)
+        val open = rule().copy(schedule = null)
+        assertTrue(store.request(EditorChange("New", upserts = listOf(open)), clock(), safe) is EditorCommitResult.Rejected)
+        val long = open.copy(expiresAtEpochMs = at + 24 * 3_600_000L + 1)
+        assertTrue(store.request(EditorChange("New", upserts = listOf(long)), clock(), safe) is EditorCommitResult.Rejected)
+    }
+}

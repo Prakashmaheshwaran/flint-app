@@ -84,7 +84,7 @@ internal fun List<BlockRule>.canStartSession(id: String, nowEpochMs: Long): Bool
 
 internal fun List<BlockRule>.canCancelEasySession(id: String, nowEpochMs: Long): Boolean =
     singleOrNull { it.id == id }?.let {
-    it.id.startsWith(BlockRule.SESSION_ID_PREFIX) && it.enabled &&
+    it.id.startsWith(BlockRule.SESSION_ID_PREFIX) && !it.id.startsWith(NATIVE_TIMER_ID_PREFIX) && it.enabled &&
         !it.isExpired(nowEpochMs) && it.breakLevel == BreakLevel.EASY
 } == true
 
@@ -92,7 +92,7 @@ internal fun List<BlockRule>.canCancelEasySession(id: String, nowEpochMs: Long):
 const val NATIVE_TIMER_ID_PREFIX = "session-timer-"
 
 internal fun List<BlockRule>.canEndTimerSession(expected: BlockRule, nowEpochMs: Long): Boolean =
-    nowEpochMs >= 0 && expected.id.startsWith(NATIVE_TIMER_ID_PREFIX) &&
+    nowEpochMs >= 0 && expected.id.startsWith(NATIVE_TIMER_ID_PREFIX) && !expected.id.startsWith(CONTRACT_TIMER_ID_PREFIX) &&
         expected.id.length > NATIVE_TIMER_ID_PREFIX.length &&
         expected.enabled && expected.schedule == null && !expected.isExpired(nowEpochMs) &&
         singleOrNull { it.id == expected.id } == expected

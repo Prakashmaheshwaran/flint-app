@@ -218,6 +218,10 @@ internal fun AppPickerScreen(
                         }
                     }
                 }
+                appsState is InstalledAppsUiState.Error -> item(key = "error") {
+                    Text(appsState.message, color = MaterialTheme.colorScheme.error)
+                    appsState.retry?.let { retry -> TextButton(onClick = retry) { Text("Retry") } }
+                }
                 filtered.isEmpty() -> item(key = "empty") {
                     // A lazy item is measured with an unbounded main axis, so a plain
                     // fillMaxSize would collapse and lose the vertical centring.

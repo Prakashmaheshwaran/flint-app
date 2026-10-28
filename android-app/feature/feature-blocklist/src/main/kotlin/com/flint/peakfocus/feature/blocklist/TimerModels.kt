@@ -5,6 +5,8 @@ import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BlockTargets
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.datastore.NATIVE_TIMER_ID_PREFIX
+import com.flint.peakfocus.core.datastore.CONTRACT_TIMER_ID_PREFIX
+import com.flint.peakfocus.blocking.engine.isValidNewSessionDuration
 
 /** Finite duration choices; a zero-duration/infinite session is deliberately unsupported. */
 internal val timerDurationChoices: List<Int> = (5..120 step 5).toList() + (3..24).map { it * 60 }
@@ -25,8 +27,8 @@ internal val timerPresets = listOf(
     TimerPreset("weekend-zen", "Weekend zen", 60),
     TimerPreset("touch-grass", "Touch Grass", 480, detox = true),
     TimerPreset("quiet-day", "Quiet Day", 1440, detox = true),
-    TimerPreset("digital-sabbath", "Digital Sabbath", 2880, detox = true),
-    TimerPreset("retreat", "Retreat", 7200, detox = true),
+    TimerPreset("digital-sabbath", "Digital Sabbath", 1440, detox = true),
+    TimerPreset("retreat", "Retreat", 1440, detox = true),
 )
 
 internal data class TimerDraft(
@@ -55,6 +57,7 @@ internal data class TimerUiState(
 
 internal fun validTimerDraft(draft: TimerDraft): Boolean =
     draft.apps.isNotEmpty() && draft.apps.all { it.packageName.isNotBlank() } &&
+        isValidNewSessionDuration(draft.durationMinutes * 60_000L) &&
         (draft.durationMinutes in timerDurationChoices ||
             timerPresets.any { it.detox && it.minutes == draft.durationMinutes })
 
@@ -67,7 +70,7 @@ internal fun timerRule(draft: TimerDraft, nowEpochMs: Long, uniqueId: String): B
         it.id == draft.presetId && it.minutes == draft.durationMinutes
     }
     return BlockRule(
-        id = NATIVE_TIMER_ID_PREFIX + uniqueId,
+        id = CONTRACT_TIMER_ID_PREFIX + uniqueId,
         name = preset?.name ?: "Focus timer",
         targets = BlockTargets(apps = draft.apps.distinctBy { it.packageName }.toSet()),
         breakLevel = draft.breakLevel,
@@ -87,7 +90,8 @@ internal fun activeTimerSessions(rules: List<BlockRule>, nowEpochMs: Long): List
  */
 internal fun timerStartEpochMs(rule: BlockRule): Long? {
     if (!rule.id.startsWith(NATIVE_TIMER_ID_PREFIX)) return null
-    val start = rule.id.removePrefix(NATIVE_TIMER_ID_PREFIX).substringBefore('-').toLongOrNull() ?: return null
+    val start = rule.id.removePrefix(if (rule.id.startsWith(CONTRACT_TIMER_ID_PREFIX)) CONTRACT_TIMER_ID_PREFIX else NATIVE_TIMER_ID_PREFIX)
+        .substringBefore('-').toLongOrNull() ?: return null
     val deadline = rule.expiresAtEpochMs ?: return null
     return start.takeIf { it > EARLIEST_TIMER_EPOCH_MS && it < deadline }
 }
@@ -101,16 +105,19 @@ internal fun canCancelTimer(rule: BlockRule): Boolean =
 
 internal fun canEndNativeTimer(rule: BlockRule): Boolean =
     rule.id.startsWith(NATIVE_TIMER_ID_PREFIX) && rule.id.length > NATIVE_TIMER_ID_PREFIX.length &&
-        rule.enabled && rule.schedule == null
+        rule.enabled && rule.schedule == null &&
+        (!rule.id.startsWith(CONTRACT_TIMER_ID_PREFIX) || rule.breakLevel != BreakLevel.HARDCORE)
 
-internal enum class TimerExitPhase { IDLE, HOLDING, FINISHING, SETTLING, SAVING }
+internal enum class TimerExitPhase { WAITING, IDLE, HOLDING, FINISHING, SETTLING, SAVING }
 
 internal data class TimerExitConfirmation(
     val expected: BlockRule,
     val phase: TimerExitPhase = TimerExitPhase.IDLE,
     val progress: Float = 0f,
+    val operationId: Long? = null,
+    val waitRemainingMs: Long? = null,
 ) {
-    val canDismiss: Boolean get() = phase == TimerExitPhase.IDLE || phase == TimerExitPhase.HOLDING
+    val canDismiss: Boolean get() = phase in setOf(TimerExitPhase.WAITING, TimerExitPhase.IDLE, TimerExitPhase.HOLDING)
 }
 
 internal const val TIMER_EXIT_HOLD_MS = 2_000L

@@ -51,7 +51,9 @@ class EditorSaveTest {
 
     private fun model(rules: BlockRulesStore = Rules(), limits: LimitsStore = Limits(),
         groups: GroupsStore = InMemoryGroupsStore()): BlocklistViewModel {
-        val vm = BlocklistViewModel(rules, limits, InMemoryFocusStateStore(), groups, { emptyList() }, dispatcher, { "stable-id" })
+        val vm = BlocklistViewModel(rules, limits, InMemoryFocusStateStore(), groups, { emptyList() },
+            EditorTestStore(rules, limits), TestHarderWaitStore(), dispatcher, { "stable-id" },
+            clock = { AccessClockStamp(1_000_000, dispatcher.scheduler.currentTime, "boot") })
         ViewModelStore().also { it.put("editor", vm); owners += it }
         return vm
     }
@@ -69,7 +71,7 @@ class EditorSaveTest {
         gate.complete(Unit); runCurrent()
         assertEquals(1, acknowledgements)
         assertEquals(draft.toRule("stable-id"), rules.rules.first().single())
-        assertEquals(EditorSaveState(), vm.editorSave.value)
+        assertEquals(EditorSaveState(result = "Saved."), vm.editorSave.value)
     }
 
     @Test fun failedRuleKeepsDraftOpenAndSameSelectionCanBeRetried() = runTest(dispatcher) {

@@ -35,7 +35,7 @@ class TimerModelsTest {
     }
 
     @Test fun `every preset is finite valid and keeps explicit app targets`() {
-        assertEquals(listOf(90, 30, 60, 30, 60, 480, 1440, 2880, 7200), timerPresets.map { it.minutes })
+        assertEquals(listOf(90, 30, 60, 30, 60, 480, 1440, 1440, 1440), timerPresets.map { it.minutes })
         timerPresets.forEach { preset ->
             val presetDraft = draft.copy(durationMinutes = preset.minutes, presetId = preset.id)
             assertTrue(validTimerDraft(presetDraft))
@@ -89,9 +89,13 @@ class TimerModelsTest {
         assertFalse(canCancelTimer(rule.copy(id = "work")))
     }
 
-    @Test fun `native timer ending permits every tier but excludes legacy and scheduled rules`() {
+    @Test fun `PC-67 PC-68 native Timer exit distinguishes legacy rights from new Hardcore`() {
         val native = timerRule(draft, 1000, "one")
-        BreakLevel.entries.forEach { assertTrue(canEndNativeTimer(native.copy(breakLevel = it))) }
+        assertTrue(canEndNativeTimer(native))
+        assertTrue(canEndNativeTimer(native.copy(breakLevel = BreakLevel.HARDER)))
+        assertFalse(canEndNativeTimer(native.copy(breakLevel = BreakLevel.HARDCORE)))
+        val legacy = native.copy(id = "session-timer-old")
+        BreakLevel.entries.forEach { assertTrue(canEndNativeTimer(legacy.copy(breakLevel = it))) }
         assertFalse(canEndNativeTimer(native.copy(id = "session-legacy")))
         assertFalse(canEndNativeTimer(native.copy(id = "session-timer-")))
         assertFalse(canEndNativeTimer(native.copy(id = "work")))

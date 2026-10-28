@@ -214,7 +214,7 @@ internal fun SleepEditorScreen(
                 FlintCard {
                     AssistSelector(
                         selected = config.assist,
-                        onSelect = { config = config.copy(assist = it) },
+                        onSelect = { config = config.copy(assist = it, breakLevel = if (it == SleepAssist.WIND_DOWN) com.flint.peakfocus.core.model.BreakLevel.EASY else com.flint.peakfocus.core.model.BreakLevel.HARDER) },
                     )
                     Spacer(Modifier.height(FlintSpacing.sm))
                     Text(
@@ -226,6 +226,9 @@ internal fun SleepEditorScreen(
                 }
                 Spacer(Modifier.height(FlintSpacing.lg))
 
+                SectionLabel("Protection tier")
+                BreakLevelSelector(selected = config.breakLevel, onSelect = { config = config.copy(breakLevel = it) })
+                Spacer(Modifier.height(FlintSpacing.lg))
                 SectionLabel("Allowed overnight")
                 Spacer(Modifier.height(FlintSpacing.sm))
                 FlintCard {

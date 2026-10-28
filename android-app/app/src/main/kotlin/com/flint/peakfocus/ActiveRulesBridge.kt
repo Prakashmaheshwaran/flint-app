@@ -11,6 +11,9 @@ import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import com.flint.peakfocus.core.datastore.ProtectionClock
 
 /**
  * The app-side bridge that `BlockRulesStore`'s KDoc defers to ("a later integration task
@@ -34,21 +37,18 @@ object ActiveRulesBridge {
         if (!started.compareAndSet(false, true)) return
         val appContext = context.applicationContext
         scope.launch {
-            val store = FlintPreferences.blockRules(appContext)
-            store.rulesState.collect { state ->
-                ActiveRulesHolder.publishState(ActiveRulesHolder.SOURCE_DATASTORE, state)
-                if (state !is StorageState.Ready) return@collect
-                val rules = state.value
-                // Lazy sweep of spent one-shot sessions. Enforcement never depends on this —
-                // the engine checks expiry itself — it just keeps dead rows out of the store.
-                // Each delete re-emits, so the sweep converges in one extra pass.
-                val now = System.currentTimeMillis()
+            val store = FlintPreferences.editorCommitments(appContext)
+            while (isActive) {
                 try {
-                    if (rules.any { it.isExpired(now) }) store.pruneExpired(now)
+                    // This serialized read applies queued off/delete/edits before publishing
+                    // an adjacent occurrence. Queued old snapshots are expiry-clipped too.
+                    val rules = store.reconcileRules(ProtectionClock.now())
+                    ActiveRulesHolder.publishState(ActiveRulesHolder.SOURCE_DATASTORE, StorageState.Ready(rules))
                 } catch (cause: IOException) {
                     val reason = (cause as? StorageUnavailableException)?.reason ?: StorageFailure.IO
                     ActiveRulesHolder.publishState(ActiveRulesHolder.SOURCE_DATASTORE, StorageState.Unavailable(reason))
                 }
+                delay(1_000)
             }
         }
     }

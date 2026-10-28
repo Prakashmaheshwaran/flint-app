@@ -22,6 +22,7 @@ dependencies {
     // api: the store interfaces expose core-model types and kotlinx Flow in their signatures,
     // so consumers (feature-blocklist &c.) must see them on their compile classpath.
     api(project(":core:core-model"))
+    api(project(":blocking:blocking-engine"))
     api(libs.kotlinx.coroutines.core)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.core.ktx)

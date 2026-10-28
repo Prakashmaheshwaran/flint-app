@@ -12,4 +12,6 @@ package com.flint.peakfocus.core.model
 data class TimeLimit(
     val packageName: String,
     val dailyMinutes: Int,
+    /** Owned by this limit. Legacy tierless rows snapshot the old default during migration. */
+    val breakLevel: BreakLevel = BreakLevel.EASY,
 )

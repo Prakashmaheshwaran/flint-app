@@ -159,17 +159,18 @@ internal object PrefsCodec {
 
     // MARK: limits — one record per package
 
-    /** `pkg~minutes` per line. */
+    /** `pkg~minutes~tier` per line; the two-field v1 fixture remains readable. */
     fun encodeTimeLimits(limits: List<TimeLimit>): String =
-        limits.joinToString(RECORD) { escape(it.packageName) + SUB + it.dailyMinutes }
+        limits.joinToString(RECORD) { escape(it.packageName) + SUB + it.dailyMinutes + SUB + it.breakLevel.name }
 
-    fun decodeTimeLimits(encoded: String): List<TimeLimit> =
+    fun decodeTimeLimits(encoded: String, legacyTier: BreakLevel = BreakLevel.EASY): List<TimeLimit> =
         encoded.split(RECORD).filter { it.isNotBlank() }.mapNotNull { line ->
             val sub = line.split(SUB)
-            if (sub.size != 2) return@mapNotNull null
+            if (sub.size !in 2..3) return@mapNotNull null
             val minutes = sub[1].toIntOrNull() ?: return@mapNotNull null
             val pkg = unescape(sub[0])
-            if (pkg.isEmpty()) null else TimeLimit(packageName = pkg, dailyMinutes = minutes)
+            if (pkg.isEmpty()) null else TimeLimit(packageName = pkg, dailyMinutes = minutes,
+                breakLevel = sub.getOrNull(2)?.let(::decodeBreakLevel) ?: legacyTier)
         }
 
     /** `pkg~opens~breakLevel` per line. */
