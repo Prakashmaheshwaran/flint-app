@@ -194,9 +194,8 @@ final class SessionViewModel: ObservableObject {
     private func refreshCompletion() {
         let history = FocusHistoryModel.shared
         history.refresh { [weak self] summary in
-            guard let self, self.active == nil, self.finished == nil, history.presentsCompletions,
-                  let session = FocusHistoryModel.latestCompletion(in: summary,
-                    acknowledgedID: UserDefaults.standard.string(forKey: history.acknowledgementKey)) else { return }
+            guard let self, self.active == nil, self.finished == nil,
+                  let session = history.completionToPresent(in: summary) else { return }
             self.finished = Finished(id: session.id, name: session.name, focusedSeconds: session.focusedSeconds,
                                      todaySeconds: summary.days.last?.focusedSeconds, isPreview: history.isPreview,
                                      historyDegraded: summary.availability == .degraded)

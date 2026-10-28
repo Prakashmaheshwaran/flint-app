@@ -43,13 +43,25 @@ final class FocusHistoryModel: ObservableObject {
         }
     }
 
-    func clear(completion: @escaping (Bool) -> Void) {
+    func clear(completion: @escaping (Bool, Bool) -> Void) {
         let now = clock(), active = activeSession()
         let keep = active.flatMap { session in session.endsAt.map { $0 <= now } == true ? nil : session.id }
         sink.perform { [weak self] store in
             let success = store.clear(keepingRunningSession: keep)
-            DispatchQueue.main.async { self?.refresh(); completion(success) }
+            DispatchQueue.main.async { self?.refresh(); completion(success, success && keep != nil) }
         }
+    }
+
+    func completionToPresent(in summary: FlintHistorySummary, defaults: UserDefaults = .standard) -> FlintHistorySessionSummary? {
+        guard presentsCompletions, let latest = Self.latestCompletion(in: summary,
+            acknowledgedID: defaults.string(forKey: acknowledgementKey)) else { return nil }
+        let now = clock()
+        guard calendar.isDate(latest.endedAt, inSameDayAs: now) ||
+                (latest.endedAt <= now && now.timeIntervalSince(latest.endedAt) <= 12 * 3600) else {
+            defaults.set(latest.id, forKey: acknowledgementKey)
+            return nil
+        }
+        return latest
     }
 
     static func latestCompletion(in summary: FlintHistorySummary, acknowledgedID: String?) -> FlintHistorySessionSummary? {
@@ -78,6 +90,22 @@ enum FocusHistoryText {
         if summary.availability == .unavailable { return "Focus history unavailable" }
         if summary.availability == .empty { return "No focus sessions yet" }
         return duration(summary.days.last?.focusedSeconds)
+    }
+
+    static func total(_ days: [FlintHistoryDay]) -> TimeInterval? {
+        let values = days.compactMap(\.focusedSeconds)
+        return values.isEmpty ? nil : values.reduce(0, +)
+    }
+
+    static func weekLabel(_ days: [FlintHistoryDay]) -> String {
+        guard let first = days.first(where: { $0.focusedSeconds != nil }) else { return "No data for this range" }
+        if days.first?.start == first.start { return "Focused in the last 7 days" }
+        return "Focused since \(first.start.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))"
+    }
+
+    static func clearFeedback(success: Bool, keptRunningSession: Bool) -> String {
+        guard success else { return "Focus history couldn’t be cleared. Try again." }
+        return "Focus history cleared." + (keptRunningSession ? " Your running session was kept." : "")
     }
 }
 

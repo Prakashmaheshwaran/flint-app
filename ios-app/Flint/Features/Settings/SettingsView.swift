@@ -73,8 +73,8 @@ struct SettingsView: View {
             .onAppear(perform: refresh)
             .confirmationDialog("Clear focus history?", isPresented: $confirmClearHistory, titleVisibility: .visible) {
                 Button("Clear focus history", role: .destructive) {
-                    FocusHistoryModel.shared.clear { success in
-                        historyFeedback = success ? "Focus history cleared. Any running session is kept." : "Focus history couldn’t be cleared. Try again."
+                    FocusHistoryModel.shared.clear { success, keptRunningSession in
+                        historyFeedback = FocusHistoryText.clearFeedback(success: success, keptRunningSession: keptRunningSession)
                     }
                 }
                 Button("Cancel", role: .cancel) {}

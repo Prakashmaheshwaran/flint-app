@@ -26,10 +26,10 @@ struct FocusHistorySection: View {
                     } else if summary.availability == .empty {
                         Text("No focus sessions yet").flintSecondary(16)
                     } else {
-                        Text(FocusHistoryText.duration(days.compactMap(\.focusedSeconds).reduce(0, +)))
+                        Text(FocusHistoryText.duration(FocusHistoryText.total(days)))
                             .flintNumber(40)
-                            .accessibilityLabel("\(FocusHistoryText.duration(days.compactMap(\.focusedSeconds).reduce(0, +))) focused")
-                        Text(showsWeek ? "Focused in the last 7 days" : "Focused today").flintSecondary(14)
+                            .accessibilityLabel("\(FocusHistoryText.duration(FocusHistoryText.total(days))) focused")
+                        Text(showsWeek ? FocusHistoryText.weekLabel(days) : "Focused today").flintSecondary(14)
                         if days.contains(where: \.inProgress) { Text("Includes a session in progress").flintSecondary(13) }
                         bars
                         VStack(alignment: .leading, spacing: 6) {

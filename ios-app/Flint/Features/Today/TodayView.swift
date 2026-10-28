@@ -11,6 +11,7 @@ struct TodayView: View {
     @State private var now = Date()
     @State private var rules: [FlintScheduleRule] = []
     @ObservedObject private var history = FocusHistoryModel.shared
+    @State private var lastHistoryRefresh = Date.distantPast
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var typeSize
 
@@ -37,10 +38,20 @@ struct TodayView: View {
         .task {
             auth.refresh()
             rules = FlintSchedulesController().rules()
-            history.refresh()
+            refreshHistory()
         }
-        .onChange(of: scenePhase) { if $0 == .active { history.refresh() } }
-        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { now = $0; history.refresh() }
+        .onChange(of: scenePhase) { if $0 == .active { refreshHistory() } }
+        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { date in
+            now = date
+            if history.summary?.sessions.contains(where: \.isInProgress) == true || date.timeIntervalSince(lastHistoryRefresh) >= 300 {
+                refreshHistory()
+            }
+        }
+    }
+
+    private func refreshHistory() {
+        lastHistoryRefresh = Date()
+        history.refresh()
     }
 
     private var content: some View {

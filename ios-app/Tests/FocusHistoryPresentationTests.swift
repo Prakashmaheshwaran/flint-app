@@ -32,6 +32,41 @@ final class FocusHistoryPresentationTests: XCTestCase {
                       FlintHistoryEvent(type: .endedEarly, session: "a", at: now.addingTimeInterval(-900), route: "manual_stop")]
         XCTAssertNil(FocusHistoryModel.latestCompletion(in: summary(events), acknowledgedID: nil))
     }
+    func testStaleCompletionIsSilentlyAcknowledgedAndStaysDismissedAfterRestart() {
+        let suite = "FocusHistoryPresentation.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let clock = calendar.startOfDay(for: now).addingTimeInterval(8 * 3600)
+        let old = summary(session("old", end: clock.addingTimeInterval(-13 * 3600)))
+        func model() -> FocusHistoryModel {
+            FocusHistoryModel(sink: .init(store: .init(directory: nil)), clock: { clock }, calendar: calendar,
+                              acknowledgementKey: "acknowledged")
+        }
+        XCTAssertNil(model().completionToPresent(in: old, defaults: defaults))
+        XCTAssertEqual(defaults.string(forKey: "acknowledged"), "old")
+        XCTAssertNil(model().completionToPresent(in: old, defaults: defaults))
+        let recent = summary(session("recent", end: clock.addingTimeInterval(-11 * 3600)))
+        XCTAssertEqual(model().completionToPresent(in: recent, defaults: defaults)?.id, "recent")
+        let todayClock = calendar.startOfDay(for: clock).addingTimeInterval(23 * 3600)
+        let today = summary(session("today", end: todayClock.addingTimeInterval(-20 * 3600)))
+        let todayModel = FocusHistoryModel(sink: .init(store: .init(directory: nil)), clock: { todayClock }, calendar: calendar)
+        XCTAssertEqual(todayModel.completionToPresent(in: today, defaults: defaults)?.id, "today")
+    }
+    func testPartialWeekCaptionAndAbsentTotalDoNotClaimSevenObservedDays() {
+        let partial = summary([])
+        XCTAssertTrue(FocusHistoryText.weekLabel(partial.days).hasPrefix("Focused since "))
+        XCTAssertNil(FocusHistoryText.total(summary([], state: .unavailable).days))
+        XCTAssertEqual(FocusHistoryText.total(partial.days), 0)
+        let full = FlintHistoryAggregator.summarize(.init(events: [], historyStart: now.addingTimeInterval(-8 * 86400), availability: .empty),
+            activeSessionID: nil, now: now)
+        XCTAssertEqual(FocusHistoryText.weekLabel(full.days), "Focused in the last 7 days")
+    }
+    func testClearFeedbackOnlyClaimsKeptSessionWhenThereWasOne() {
+        XCTAssertEqual(FocusHistoryText.clearFeedback(success: true, keptRunningSession: false), "Focus history cleared.")
+        XCTAssertEqual(FocusHistoryText.clearFeedback(success: true, keptRunningSession: true), "Focus history cleared. Your running session was kept.")
+        XCTAssertFalse(FocusHistoryText.clearFeedback(success: false, keptRunningSession: true).contains("was kept"))
+    }
     func testRunningSummaryIsLabelledAndNeverPresentedAsComplete() {
         let event = FlintHistoryEvent(type: .started, session: "a", at: now.addingTimeInterval(-300),
                                      plannedEnd: now.addingTimeInterval(600), tier: "easy", source: "manual", name: "Read")
