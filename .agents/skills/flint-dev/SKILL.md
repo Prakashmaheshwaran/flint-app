@@ -40,10 +40,8 @@ for current targets and override options rather than duplicating their mechanics
    even with a fresh helper. Boot origin does not explain the failures; both
    helper-driven and explicit simctl boots have successful and failed runs.
    This remains unresolved. Preserve screenshot + AX postconditions and report
-   failures with the upstream title “iOS helper acknowledges taps without a UI
-   postcondition; AX can time out or describe a prior foreground view after
-   launch/transition” and diagnostic wording in the
-   [Task H upstream issue guidance](/Users/prakash/flint-planning/2026-10-27/workspace-setup/ios-tap-investigation.md#upstream-issue-wording-if-the-persistent-failure-recurs).
+   failures using the evidence and diagnostic limits in the
+   [upstream tap investigation](https://github.com/stablyai/orca/issues/23997#issuecomment-6461183992).
    Android AVDs need their configured image; the run target fails before attach
    with the exact missing package and installation guidance. The Android 35 Google
    APIs ARM64 image is currently missing on this host. The remedy uses the
