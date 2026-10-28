@@ -1,6 +1,7 @@
 package com.flint.peakfocus
 
 import android.app.Application
+import com.flint.peakfocus.blocking.overlay.PathBFallbackActivityHandoff
 import com.flint.peakfocus.blocking.resilience.BootReceiver
 import com.flint.peakfocus.blocking.resilience.TimeChangeReceiver
 import kotlinx.coroutines.CoroutineScope
@@ -27,6 +28,7 @@ class FlintApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        PathBFallbackActivityHandoff(this)
         ActiveRulesBridge.start(this, appScope)
         BootReceiver.registerRearmAction { context -> PathBServiceGate.sync(context) }
         TimeChangeReceiver.baselineAnchor(this)
