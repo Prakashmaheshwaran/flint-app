@@ -4,6 +4,7 @@ import android.app.Application
 import com.flint.peakfocus.blocking.overlay.PathBFallbackActivityHandoff
 import com.flint.peakfocus.blocking.resilience.BootReceiver
 import com.flint.peakfocus.blocking.resilience.TimeChangeReceiver
+import com.flint.peakfocus.glance.GlanceSurfaceBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -31,6 +32,7 @@ class FlintApplication : Application() {
         PathBFallbackActivityHandoff(this)
         ActiveRulesBridge.start(this, appScope)
         FocusHistoryEventAdapter.start(this, appScope)
+        GlanceSurfaceBridge.start(this, appScope)
         BootReceiver.registerRearmAction { context -> PathBServiceGate.sync(context) }
         TimeChangeReceiver.baselineAnchor(this)
         TimeChangeReceiver.registerRearmAction { context -> PathBServiceGate.sync(context) }
