@@ -50,7 +50,7 @@ For a short review: open Today > Start focus, use Apple's picker to select one n
 
 The host uses Family Controls and Managed Settings. Four embedded extensions monitor activity boundaries, configure the shield, respond to shield buttons, and render Device Activity reports. Selection tokens and settings are shared locally through group.com.flint.peakfocus. Report values are rendered inside the report extension, not exported to a Flint server. New installs may have no report data; a missing report must not be read as zero activity.
 
-Stronger protection levels are optional. A Hardcore session can temporarily deny removal of apps across the device, not just removal of Flint. Start with Easy. Before testing Hardcore, read its in-app duration/exit explanation and confirm an Emergency Pass is available. Use its Emergency Pass control in Flint if an early exit is needed, or wait for the verified timed session to end. The app-open PIN is separate from Apple's Screen Time passcode; no preconfigured PIN is supplied. Review Screen Time access in iOS Settings to withdraw authorization if needed.
+Start with Easy. Hardcore prevents ordinary early changes inside Flint until the shown end, subject to verified platform limits. Restricting app deletion is a separate opt-in: it can apply device-wide, not just to Flint, only while an eligible armed, finite Hardcore commitment owns it. Screen Time permission remains revocable in iOS Settings. Before opting in, read the exact end, pass availability and recovery instructions. An eligible, explicitly confirmed Emergency Pass provides 60 minutes of global personal-protection recovery; its confirmation lists affected sessions/rules and what resumes. The next pass becomes available seven days after you use it, with any clock uncertainty shown. Home, emergency calling and OS permission controls never require a pass. The app-open PIN is separate from Apple's Screen Time passcode; no preconfigured PIN is supplied.
 
 The About link opens an external browser. Core focus behavior does not require a Flint server. Public support/privacy destinations and the App Review contact are supplied in their dedicated App Store Connect fields.
 ```
@@ -138,14 +138,34 @@ Actual reliable expiry remains lane B + physical evidence, not a D6 finding.
 
 Only on a consenting owner's test device, with known recovery access and an
 available Emergency Pass: read the final Hardcore disclosure, choose a bounded
-duration and the same single nonessential app. Confirm the UI explains that
-app-removal denial is device-wide and is temporary. Verify the normal stop/edit/
-replacement behavior against merged ADR-012 across UI, Shortcuts, and Focus.
-Observe removal availability without completing deletion. Exercise the in-app
-Emergency Pass confirmation/hold once and verify actual shield/guard release;
-do not reset defaults or change the clock to replenish it. In a separate timed
-run, verify expiry releases the guard with the host closed. Record the pass's
-actual state/cooldown; do not promise a fixed weekly policy until ADR-012/B agree.
+duration and the same single nonessential app. Verify app-deletion restriction
+is a separate opt-in, not an automatic consequence of choosing Hardcore. With
+it off, deletion remains available. Before opting in, verify device-wide scope,
+the exact end, pass availability and reachable recovery/permission controls.
+Verify it is requested only by an eligible active, armed, finite Hardcore
+commitment, with unavailable/failed arming shown honestly; a saved inactive
+template or unknown time must not enable it. Observe deletion availability
+without completing deletion. Check ordinary stop/edit/replacement behavior
+against [ADR-012](../../architecture/protection-contract.md) across UI,
+Shortcuts and Focus, including another active owner's continuing guard.
+
+Exercise the in-app Emergency Pass explicit confirmation/hold once. It must
+list every affected commitment, the 60-minute global recovery end and next
+pass time before committing use. Verify transient sessions end, eligible rules
+pause without losing counters/templates, and owned shields/guards/Safari
+restrictions release. After recovery only naturally active causes resume;
+explicit “Resume protection now” ends recovery without refunding the pass.
+Capture “Available” or the next date/time/zone **seven days after committed
+use**, plus any clock uncertainty. There is no Monday refill or accumulated
+bank; do not reset defaults or change the clock to replenish it. Link lane B's
+automated transaction evidence for failed/ambiguous writes and crash/retry
+without double spending; those fault cases are not App Review device actions.
+These are pending lane B acceptance cases, not observations from this draft.
+
+In a separate timed run, verify expiry releases the guard with the host closed.
+Home, emergency calling and OS permission controls must stay reachable without
+a pass. Record the actual observed state; a code assignment is not proof the
+OS applied or released deletion restriction.
 Confirm Settings withdrawal of authorization and subsequent honest UI state as
 an owner-approved recovery test. Never rely on an unverified PIN bypass or an
 unproven claim that withdrawal instantly clears every restriction.
@@ -243,7 +263,7 @@ The host app (com.flint.peakfocus) presents Apple's activity picker and lets the
 
 Opaque selections and app-defined settings are shared locally using group.com.flint.peakfocus. The iOS source has no Flint account, analytics SDK, advertising SDK, or app-owned data-upload client. Screen Time report values are not exported to the host or a Flint server. All protection levels are available without a payment gate.
 
-Managed Settings implements the restrictions selected by the user. Optional stronger sessions can temporarily restrict device-wide app removal; the release must explain scope, duration, and the verified safe exit. We will supply final signed-device demonstration steps, public privacy/support destinations, and any further information requested during review.
+Managed Settings implements the restrictions selected by the user. A separately disclosed opt-in can request device-wide app-deletion restriction only while an eligible active, armed, finite Hardcore commitment owns it. Screen Time permission remains revocable in iOS Settings; finite expiry and eligible pass recovery release the corresponding guard ownership. We will supply final signed-device demonstration steps, verified scope and recovery behavior, public privacy/support destinations, and any further information requested during review.
 ```
 
 This is preparatory purpose text, not a statement that the stronger-session
