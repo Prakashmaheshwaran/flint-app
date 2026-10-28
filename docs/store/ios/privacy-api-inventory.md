@@ -3,6 +3,8 @@
 Source inventory: 2026-10-28. Re-audit after adding storage, networking, SDKs or
 required-reason APIs. These declarations describe Flint code; they do not certify
 Apple account disclosures or signed-device behavior.
+The final integration refresh includes B2 (`a0ecb02`), which added the clock
+calls discussed below.
 
 ## Required-reason APIs
 
@@ -36,6 +38,31 @@ active-keyboard API (`activeInputModes`). `Date`, calendar arithmetic and timers
 do not themselves justify declaring boot-time API use. No unused reason codes
 are declared. Recheck the final archive and Apple's privacy report before upload;
 platform implementation details are not application API calls.
+
+### B2 clock and boot-session identity refresh
+
+`FlintSessionTiming.swift` now calls
+`clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)` for elapsed session timing and
+`sysctlbyname("kern.bootsessionuuid", ...)` for a same-boot comparison token.
+These are actual production calls and were reviewed separately from `Date` and
+timer scheduling. The anchors and boot token stay in local shared session state;
+they are not sent to a service or used to identify a person.
+
+Apple's current `NSPrivacyAccessedAPICategorySystemBootTime` list names
+`ProcessInfo.systemUptime` and `mach_absolute_time()`. It does not list
+`clock_gettime_nsec_np` or `sysctlbyname`; neither appears in the other current
+required-reason categories. On that source-to-list mapping, these B2 calls do
+not add a declared category or change the five manifests. This is an inference
+from the published list, not a promise about future policy or archive validation.
+If an implementation switches to a listed API, elapsed session timing must be
+reviewed against Apple's `35F9.1` reason before shipping.
+
+This list was re-read on **2026-10-28** in Apple's
+[API type documentation](https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitype)
+and its [official DocC data](https://developer.apple.com/tutorials/data/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitype.json)
+(`primaryContentSections` → `possibleValues`). The Markdown rendering omits
+those value sections, so it is insufficient by itself for checking the list.
+Recheck the final signed archive and Apple's privacy report before upload.
 
 ## Collection and tracking
 
