@@ -28,7 +28,6 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import com.flint.peakfocus.core.common.theme.FlintSpacing
 import com.flint.peakfocus.core.common.ui.FlintCard
-import com.flint.peakfocus.core.common.ui.FlintScreenHeader
 import com.flint.peakfocus.core.common.ui.FlintSectionLabel
 
 /**
@@ -93,55 +92,61 @@ internal fun HelpSettingsLink(onOpen: () -> Unit) {
 @Composable
 internal fun HelpScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(FlintSpacing.gutter)
-                .testTag("help-screen"),
-        ) {
-            TextButton(onClick = onBack) { Text(stringResource(R.string.help_back)) }
-            FlintScreenHeader(
-                title = stringResource(R.string.help_title),
-                modifier = Modifier.semantics { heading() },
-            )
-            Spacer(Modifier.height(FlintSpacing.sm))
-            Text(
-                stringResource(R.string.help_intro),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            HelpContent.sections.forEach { section ->
-                Spacer(Modifier.height(FlintSpacing.lg))
-                FlintSectionLabel(
-                    stringResource(section.title),
+        Column(Modifier.fillMaxSize().padding(horizontal = FlintSpacing.gutter).testTag("help-screen")) {
+            // Kept outside the scrolling content so the way back never scrolls away.
+            TextButton(onClick = onBack, modifier = Modifier.padding(top = FlintSpacing.sm)) {
+                Text(stringResource(R.string.help_back))
+            }
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(bottom = FlintSpacing.gutter),
+            ) {
+                Text(
+                    stringResource(R.string.help_title),
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.semantics { heading() },
                 )
                 Spacer(Modifier.height(FlintSpacing.sm))
-                FlintCard(modifier = Modifier.fillMaxWidth()) {
-                    section.facts.forEachIndexed { index, fact ->
-                        if (index > 0) Spacer(Modifier.height(FlintSpacing.md))
-                        Text(
-                            stringResource(fact.title),
-                            style = MaterialTheme.typography.titleSmall,
-                            modifier = Modifier.semantics { heading() },
-                        )
-                        Spacer(Modifier.height(FlintSpacing.xs))
-                        Text(
-                            stringResource(fact.text),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                Text(
+                    stringResource(R.string.help_intro),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                HelpContent.sections.forEach { section ->
+                    Spacer(Modifier.height(FlintSpacing.lg))
+                    FlintSectionLabel(
+                        stringResource(section.title),
+                        modifier = Modifier.semantics { heading() },
+                    )
+                    Spacer(Modifier.height(FlintSpacing.sm))
+                    FlintCard(modifier = Modifier.fillMaxWidth()) {
+                        section.facts.forEachIndexed { index, fact ->
+                            if (index > 0) Spacer(Modifier.height(FlintSpacing.md))
+                            Text(
+                                stringResource(fact.title),
+                                style = MaterialTheme.typography.titleSmall,
+                                modifier = Modifier.semantics { heading() },
+                            )
+                            Spacer(Modifier.height(FlintSpacing.xs))
+                            Text(
+                                stringResource(fact.text),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
+                Spacer(Modifier.height(FlintSpacing.lg))
+                Text(
+                    stringResource(R.string.help_privacy),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(FlintSpacing.lg))
             }
-            Spacer(Modifier.height(FlintSpacing.lg))
-            Text(
-                stringResource(R.string.help_privacy),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(FlintSpacing.lg))
         }
     }
 }

@@ -54,7 +54,13 @@ class HelpCopyTest {
     fun `access copy keeps the user's control and its consequence`() {
         val access = strings.getValue("help_access_text")
         assertTrue(access.contains("doesn't block those settings"))
-        assertTrue(access.contains("stops or becomes less reliable"))
+        assertTrue(access.contains("can stop or weaken blocking"))
+    }
+
+    @Test
+    fun `clock copy does not claim schedules or limits are protected from clock changes`() {
+        val clock = strings.getValue("help_clock_text")
+        assertTrue(clock.contains("schedules and daily time limits follow the phone's clock"))
     }
 
     @Test
