@@ -1,0 +1,3306 @@
+{
+  "id": "ac2df418-2eeb-495d-b725-fe90790c330c",
+  "ok": true,
+  "result": [
+    {
+      "message": "--------- beginning of system"
+    },
+    {
+      "timestamp": "10-28 01:09:17.627",
+      "level": "W",
+      "tag": "Looper",
+      "message": "Slow delivery took 362ms main h=com.android.server.accessibility.AccessibilityManagerService$MainHandler c=<recycled PooledLambda@f7621ec> m=0"
+    },
+    {
+      "message": "--------- beginning of main"
+    },
+    {
+      "timestamp": "10-28 01:09:17.650",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.651",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.651",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.651",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.651",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.651",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.651",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.651",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.651",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.652",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.652",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.652",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.652",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.652",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.652",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.652",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.652",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.652",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.652",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.652",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.652",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.652",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.652",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.652",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.652",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.652",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.652",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:17.652",
+      "level": "W",
+      "tag": "Looper",
+      "message": "Drained"
+    },
+    {
+      "timestamp": "10-28 01:09:17.653",
+      "level": "D",
+      "tag": "BatterySaverPolicy",
+      "message": "accessibility changed to true, updating policy."
+    },
+    {
+      "timestamp": "10-28 01:09:17.676",
+      "level": "W",
+      "tag": "Looper",
+      "message": "Slow delivery took 47ms wmshell.main h=android.view.ViewRootImpl$ViewRootHandler c=android.view.accessibility.AccessibilityManager$$ExternalSyntheticLambda0@c3e8d28 m=0"
+    },
+    {
+      "timestamp": "10-28 01:09:17.851",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=91.68ms min=11.58ms max=200.47ms count=6"
+    },
+    {
+      "timestamp": "10-28 01:09:18.388",
+      "level": "D",
+      "tag": "InetDiagMessage",
+      "message": "Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14"
+    },
+    {
+      "timestamp": "10-28 01:09:18.416",
+      "level": "D",
+      "tag": "InetDiagMessage",
+      "message": "Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14"
+    },
+    {
+      "timestamp": "10-28 01:09:18.416",
+      "level": "D",
+      "tag": "InetDiagMessage",
+      "message": "Destroyed live tcp sockets for uids={10205} in 104ms"
+    },
+    {
+      "timestamp": "10-28 01:09:18.416",
+      "level": "D",
+      "tag": "InetDiagMessage",
+      "message": "Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14"
+    },
+    {
+      "timestamp": "10-28 01:09:18.416",
+      "level": "D",
+      "tag": "InetDiagMessage",
+      "message": "Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14"
+    },
+    {
+      "timestamp": "10-28 01:09:18.416",
+      "level": "D",
+      "tag": "InetDiagMessage",
+      "message": "Destroyed live tcp sockets for uids={20205} in 0ms"
+    },
+    {
+      "timestamp": "10-28 01:09:18.585",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:18.891",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=48.29ms min=7.76ms max=97.29ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:09:18.969",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:19.956",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=59.55ms min=9.69ms max=115.03ms count=9"
+    },
+    {
+      "timestamp": "10-28 01:09:20.470",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.492",
+      "level": "W",
+      "tag": "AccessibilityNodeInfoDumper",
+      "message": "Fetch time: 1545ms"
+    },
+    {
+      "timestamp": "10-28 01:09:20.615",
+      "level": "W",
+      "tag": "MagnificationConnectionManager",
+      "message": "requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED"
+    },
+    {
+      "timestamp": "10-28 01:09:20.615",
+      "level": "D",
+      "tag": "AccessibilityManagerService",
+      "message": "restoreCurrentUserForTestAutomationIfNeededLocked(): ignoring because device doesn't support visible background users"
+    },
+    {
+      "timestamp": "10-28 01:09:20.615",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.615",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.616",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.616",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.616",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.616",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.656",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.656",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.656",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.690",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "Settings changed for uri: content://settings/secure/accessibility_enabled"
+    },
+    {
+      "timestamp": "10-28 01:09:20.691",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "Predicting[0]:  [CONTEXT sampling_count=5 ]"
+    },
+    {
+      "timestamp": "10-28 01:09:20.691",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "EchoTargets:"
+    },
+    {
+      "timestamp": "10-28 01:09:20.691",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "Filtered by AiAi flag check:"
+    },
+    {
+      "timestamp": "10-28 01:09:20.691",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "[CONTEXT ratelimit_period=\"10 SECONDS\" ]"
+    },
+    {
+      "timestamp": "10-28 01:09:20.707",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "Ranked targets strategy: SORT, count: 0, ranking metadata:  [CONTEXT ratelimit_period=\"10 SECONDS\" ]"
+    },
+    {
+      "timestamp": "10-28 01:09:20.708",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.708",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.708",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.710",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.710",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.711",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.711",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.711",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.711",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.712",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.713",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.713",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.713",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.713",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.713",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.713",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.713",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.713",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:20.713",
+      "level": "D",
+      "tag": "BatterySaverPolicy",
+      "message": "accessibility changed to false, updating policy."
+    },
+    {
+      "timestamp": "10-28 01:09:20.729",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "#remoteViewsTwiddler: feature disabled."
+    },
+    {
+      "timestamp": "10-28 01:09:20.730",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "Predicting[0]:  [CONTEXT sampling_count=5 ]"
+    },
+    {
+      "timestamp": "10-28 01:09:20.774",
+      "level": "W",
+      "tag": "Looper",
+      "message": "Drained"
+    },
+    {
+      "timestamp": "10-28 01:09:20.774",
+      "level": "W",
+      "tag": "Looper",
+      "message": "Slow dispatch took 43ms wmshell.main h=android.view.ViewRootImpl$ViewRootHandler c=android.view.accessibility.AccessibilityManager$$ExternalSyntheticLambda0@a947a41 m=0"
+    },
+    {
+      "timestamp": "10-28 01:09:20.785",
+      "level": "D",
+      "tag": "AndroidRuntime",
+      "message": "Shutting down VM"
+    },
+    {
+      "timestamp": "10-28 01:09:20.852",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "EchoTargets:"
+    },
+    {
+      "timestamp": "10-28 01:09:20.852",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "Filtered by AiAi flag check:"
+    },
+    {
+      "timestamp": "10-28 01:09:20.852",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "[CONTEXT ratelimit_period=\"10 SECONDS\" ]"
+    },
+    {
+      "timestamp": "10-28 01:09:20.852",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "Ranked targets strategy: SORT, count: 0, ranking metadata:  [CONTEXT ratelimit_period=\"10 SECONDS\" ]"
+    },
+    {
+      "timestamp": "10-28 01:09:20.853",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "#remoteViewsTwiddler: feature disabled."
+    },
+    {
+      "timestamp": "10-28 01:09:20.853",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "Predicting[0]:  [CONTEXT sampling_count=5 ]"
+    },
+    {
+      "timestamp": "10-28 01:09:20.853",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "EchoTargets:"
+    },
+    {
+      "timestamp": "10-28 01:09:20.853",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "Filtered by AiAi flag check:"
+    },
+    {
+      "timestamp": "10-28 01:09:20.853",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "[CONTEXT ratelimit_period=\"10 SECONDS\" ]"
+    },
+    {
+      "timestamp": "10-28 01:09:20.853",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "Ranked targets strategy: SORT, count: 0, ranking metadata:  [CONTEXT ratelimit_period=\"10 SECONDS\" ]"
+    },
+    {
+      "timestamp": "10-28 01:09:20.853",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "#remoteViewsTwiddler: feature disabled."
+    },
+    {
+      "timestamp": "10-28 01:09:20.970",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "#postPredictionTargets: Sending updates to UISurface home with targets# 0 (types=[])"
+    },
+    {
+      "timestamp": "10-28 01:09:20.980",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "#postPredictionTargets: Sending updates to UISurface media_data_manager with targets# 0 (types=[])"
+    },
+    {
+      "timestamp": "10-28 01:09:20.982",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "#postPredictionTargets: Sending updates to UISurface lockscreen with targets# 0 (types=[])"
+    },
+    {
+      "timestamp": "10-28 01:09:20.983",
+      "level": "D",
+      "tag": "SsBaseTemplateCard",
+      "message": "No text view can be set up"
+    },
+    {
+      "timestamp": "10-28 01:09:20.983",
+      "level": "D",
+      "tag": "SsBaseTemplateCard",
+      "message": "Passed-in item info is null"
+    },
+    {
+      "timestamp": "10-28 01:09:20.983",
+      "level": "D",
+      "tag": "SsBaseTemplateCard",
+      "message": "Passed-in item info is null"
+    },
+    {
+      "timestamp": "10-28 01:09:20.983",
+      "level": "D",
+      "tag": "SsBaseTemplateCard",
+      "message": "Passed-in item info is null"
+    },
+    {
+      "timestamp": "10-28 01:09:20.983",
+      "level": "I",
+      "tag": "SsBaseTemplateCard",
+      "message": "Secondary card pane is null"
+    },
+    {
+      "timestamp": "10-28 01:09:20.986",
+      "level": "D",
+      "tag": "SsMediaDataProvider",
+      "message": "Forwarding Smartspace updates []"
+    },
+    {
+      "timestamp": "10-28 01:09:20.987",
+      "level": "W",
+      "tag": "PageIndicator",
+      "message": "Total number of pages invalid: 0. Assuming 1 page."
+    },
+    {
+      "timestamp": "10-28 01:09:21.029",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=48.64ms min=30.39ms max=92.80ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:09:21.610",
+      "level": "D",
+      "tag": "BufferPoolAccessor2.0",
+      "message": "bufferpool2 0xb400007be0cf90f8 : 2(2211840 size) total buffers - 1(1105920 size) used buffers - 536/548 (recycle/alloc) - 36/548 (fetch/transfer)"
+    },
+    {
+      "timestamp": "10-28 01:09:21.612",
+      "level": "I",
+      "tag": "BistoHotwordHelper",
+      "message": "(REDACTED) getHotwordActive::active query: %s, watch: %s, devices connected: %s"
+    },
+    {
+      "timestamp": "10-28 01:09:22.199",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=43.58ms min=9.76ms max=88.21ms count=9"
+    },
+    {
+      "timestamp": "10-28 01:09:23.318",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=63.99ms min=8.41ms max=119.70ms count=9"
+    },
+    {
+      "timestamp": "10-28 01:09:23.345",
+      "level": "D",
+      "tag": "ActivityManager",
+      "message": "freezing 1705 com.google.android.gms"
+    },
+    {
+      "timestamp": "10-28 01:09:23.469",
+      "level": "D",
+      "tag": "ActivityManager",
+      "message": "freezing 4026 com.google.android.adservices.api"
+    },
+    {
+      "timestamp": "10-28 01:09:24.407",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=73.13ms min=9.52ms max=141.80ms count=6"
+    },
+    {
+      "timestamp": "10-28 01:09:24.666",
+      "level": "D",
+      "tag": "InetDiagMessage",
+      "message": "Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14"
+    },
+    {
+      "timestamp": "10-28 01:09:24.672",
+      "level": "D",
+      "tag": "InetDiagMessage",
+      "message": "Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14"
+    },
+    {
+      "timestamp": "10-28 01:09:24.672",
+      "level": "D",
+      "tag": "InetDiagMessage",
+      "message": "Destroyed live tcp sockets for uids={10205} in 17ms"
+    },
+    {
+      "timestamp": "10-28 01:09:25.540",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=62.76ms min=11.62ms max=165.68ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:09:26.560",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:26.563",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=87.21ms min=43.73ms max=126.61ms count=6"
+    },
+    {
+      "timestamp": "10-28 01:09:26.649",
+      "level": "I",
+      "tag": "ChimeraSrvcProxy",
+      "message": "NullBinder for android.net.action.RECOMMEND_NETWORKS triggering remote TransactionTooLargeException due to Service without Chimera impl"
+    },
+    {
+      "timestamp": "10-28 01:09:26.650",
+      "level": "W",
+      "tag": ".gms.persistent",
+      "message": "Large reply transaction of 1056768 bytes, interface descriptor , code 1"
+    },
+    {
+      "timestamp": "10-28 01:09:26.651",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:26.656",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:26.656",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:26.657",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:26.657",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:26.657",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:26.657",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:26.657",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:26.658",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:26.658",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:26.667",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:26.667",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:26.667",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:26.668",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:26.668",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:26.670",
+      "level": "I",
+      "tag": "BugleRcsEngine",
+      "message": "handleMessage processing message:[NOTIFY_UPTIME_IGNORE_STATE_CHANGED] with [non-null]:RcsEngineImpl reference [CONTEXT log_prefix=\"RcsEngineImpl[DUAL_REG]:[c0bf5a51-73bd]>Handler\" thread_id=66 ]"
+    },
+    {
+      "timestamp": "10-28 01:09:26.670",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:26.670",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:26.671",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:26.671",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:26.672",
+      "level": "I",
+      "tag": "BugleRcsEngine",
+      "message": "Connected state: [1], networkType: [WIFI] [CONTEXT thread_id=59 ]"
+    },
+    {
+      "timestamp": "10-28 01:09:26.676",
+      "level": "W",
+      "tag": "BpBinder",
+      "message": "Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps."
+    },
+    {
+      "timestamp": "10-28 01:09:26.684",
+      "level": "D",
+      "tag": "OomAdjuster",
+      "message": "Not killing cached processes"
+    },
+    {
+      "timestamp": "10-28 01:09:26.700",
+      "level": "W",
+      "tag": "ProcessState",
+      "message": "Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested."
+    },
+    {
+      "timestamp": "10-28 01:09:26.815",
+      "level": "W",
+      "tag": "ContentProviderHelper",
+      "message": "Slow operation: 140ms so far, now at getContentProviderImpl: after updateOomAdj"
+    },
+    {
+      "timestamp": "10-28 01:09:26.816",
+      "level": "W",
+      "tag": "ContentProviderHelper",
+      "message": "Slow operation: 141ms so far, now at getContentProviderImpl: done!"
+    },
+    {
+      "timestamp": "10-28 01:09:26.883",
+      "level": "I",
+      "tag": "hwservicemanager",
+      "message": "getTransport: Cannot find entry android.hardware.graphics.mapper@4.0::IMapper/default in either framework or device VINTF manifest."
+    },
+    {
+      "timestamp": "10-28 01:09:26.883",
+      "level": "I",
+      "tag": "Gralloc4",
+      "message": "mapper 4.x is not supported"
+    },
+    {
+      "message": "--------- beginning of kernel"
+    },
+    {
+      "timestamp": "10-28 01:09:26.882",
+      "level": "I",
+      "tag": "servicemanager",
+      "message": "Caller(pid=5670,uid=2000,sid=u:r:shell:s0) Could not find android.hardware.graphics.allocator.IAllocator/default in the VINTF manifest. No alternative instances declared in VINTF."
+    },
+    {
+      "timestamp": "10-28 01:09:27.028",
+      "level": "W",
+      "tag": "ndroid.systemui",
+      "message": "Long monitor contention with owner SysUiBg (992) at boolean android.os.MessageQueue.enqueueMessage(android.os.Message, long)(MessageQueue.java:695) waiters=0 in android.os.Message android.os.MessageQueue.next() for 335ms"
+    },
+    {
+      "timestamp": "10-28 01:09:27.067",
+      "level": "D",
+      "tag": "BufferPoolAccessor2.0",
+      "message": "bufferpool2 0xb400007be0cf90f8 : 2(2211840 size) total buffers - 1(1105920 size) used buffers - 554/566 (recycle/alloc) - 36/566 (fetch/transfer)"
+    },
+    {
+      "timestamp": "10-28 01:09:27.320",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:27.456",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:27.608",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=62.90ms min=7.95ms max=127.94ms count=7"
+    },
+    {
+      "timestamp": "10-28 01:09:28.678",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=53.69ms min=21.09ms max=92.64ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:09:29.029",
+      "level": "W",
+      "tag": "Looper",
+      "message": "Slow delivery took 57ms wmshell.main h=android.os.Handler c=com.android.wm.shell.onehanded.OneHandedTimeoutHandler$$ExternalSyntheticLambda0@dbe0be6 m=0"
+    },
+    {
+      "timestamp": "10-28 01:09:29.782",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=95.71ms min=46.15ms max=209.46ms count=7"
+    },
+    {
+      "timestamp": "10-28 01:09:30.723",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:30.855",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=77.45ms min=26.63ms max=193.84ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:09:31.869",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=52.12ms min=19.29ms max=93.08ms count=7"
+    },
+    {
+      "timestamp": "10-28 01:09:32.161",
+      "level": "D",
+      "tag": "BufferPoolAccessor2.0",
+      "message": "bufferpool2 0xb400007be0cf90f8 : 2(2211840 size) total buffers - 1(1105920 size) used buffers - 568/580 (recycle/alloc) - 36/580 (fetch/transfer)"
+    },
+    {
+      "timestamp": "10-28 01:09:32.930",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=65.63ms min=39.18ms max=136.34ms count=7"
+    },
+    {
+      "timestamp": "10-28 01:09:33.207",
+      "level": "D",
+      "tag": "OomAdjuster",
+      "message": "Not killing cached processes"
+    },
+    {
+      "timestamp": "10-28 01:09:34.005",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=44.03ms min=3.97ms max=87.80ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:09:34.478",
+      "level": "D",
+      "tag": "ActivityManager",
+      "message": "sync unfroze 3930 com.google.android.gms.ui for 3"
+    },
+    {
+      "timestamp": "10-28 01:09:34.647",
+      "level": "D",
+      "tag": "ActivityThread",
+      "message": "Package [com.flint.peakfocus] reported as REPLACED, but missing application info. Assuming REMOVED."
+    },
+    {
+      "timestamp": "10-28 01:09:35.038",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=45.63ms min=30.92ms max=77.92ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:09:36.139",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=59.41ms min=2.15ms max=134.69ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:09:37.193",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=70.64ms min=2.42ms max=137.66ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:09:37.710",
+      "level": "D",
+      "tag": "BufferPoolAccessor2.0",
+      "message": "bufferpool2 0xb400007be0cf90f8 : 2(2211840 size) total buffers - 1(1105920 size) used buffers - 583/595 (recycle/alloc) - 38/595 (fetch/transfer)"
+    },
+    {
+      "timestamp": "10-28 01:09:38.259",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=47.76ms min=3.48ms max=105.97ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:09:39.294",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=46.00ms min=13.84ms max=84.34ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:09:40.071",
+      "level": "I",
+      "tag": "rkstack.process",
+      "message": "Background concurrent mark compact GC freed 2756KB AllocSpace bytes, 8(160KB) LOS objects, 49% free, 2834KB/5669KB, paused 155us,2.392ms total 781.291ms"
+    },
+    {
+      "timestamp": "10-28 01:09:40.367",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=59.19ms min=7.62ms max=148.41ms count=7"
+    },
+    {
+      "timestamp": "10-28 01:09:40.696",
+      "level": "I",
+      "tag": "logd",
+      "message": "logdr: UID=2000 GID=2000 PID=5813 n tail=500 logMask=99 pid=0 start=0ns deadline=0ns"
+    },
+    {
+      "timestamp": "10-28 01:09:41.441",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=67.32ms min=8.49ms max=197.56ms count=7"
+    },
+    {
+      "timestamp": "10-28 01:09:42.518",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=77.65ms min=48.16ms max=115.00ms count=6"
+    },
+    {
+      "timestamp": "10-28 01:09:43.471",
+      "level": "D",
+      "tag": "BufferPoolAccessor2.0",
+      "message": "bufferpool2 0xb400007be0cf90f8 : 2(2211840 size) total buffers - 1(1105920 size) used buffers - 603/615 (recycle/alloc) - 39/615 (fetch/transfer)"
+    },
+    {
+      "timestamp": "10-28 01:09:43.623",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=49.82ms min=6.94ms max=93.31ms count=9"
+    },
+    {
+      "timestamp": "10-28 01:09:44.537",
+      "level": "D",
+      "tag": "ActivityManager",
+      "message": "freezing 3930 com.google.android.gms.ui"
+    },
+    {
+      "timestamp": "10-28 01:09:44.634",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=67.57ms min=35.10ms max=115.38ms count=7"
+    },
+    {
+      "timestamp": "10-28 01:09:45.669",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=60.94ms min=31.00ms max=169.26ms count=9"
+    },
+    {
+      "timestamp": "10-28 01:09:45.780",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=31258.26ms min=31258.26ms max=31258.26ms count=1"
+    },
+    {
+      "timestamp": "10-28 01:09:45.967",
+      "level": "I",
+      "tag": "HWUI",
+      "message": "Davey! duration=712ms; Flags=0, FrameTimelineVsyncId=16989, IntendedVsync=230650353629, Vsync=230800353623, InputEventId=0, HandleInputStart=230834545401, AnimationStart=230834546360, PerformTraversalsStart=230834546485, DrawStart=230864366610, FrameDeadline=230667020295, FrameInterval=230802200026, FrameStartTime=16666666, SyncQueued=230865123026, SyncStart=230865237318, IssueDrawCommandsStart=230865665526, SwapBuffers=231106002568, FrameCompleted=231363155776, DequeueBufferDuration=23458, QueueBufferDuration=1049375, GpuCompleted=231363155776, SwapBuffersCompleted=231320882693, DisplayPresentTime=0, CommandSubmissionCompleted=231106002568,"
+    },
+    {
+      "timestamp": "10-28 01:09:46.859",
+      "level": "D",
+      "tag": "OomAdjuster",
+      "message": "Not killing cached processes"
+    },
+    {
+      "timestamp": "10-28 01:09:46.863",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=55.14ms min=33.86ms max=103.71ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:09:47.931",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=92.62ms min=11.83ms max=218.46ms count=7"
+    },
+    {
+      "timestamp": "10-28 01:09:48.971",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=50.90ms min=16.93ms max=81.04ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:09:48.984",
+      "level": "D",
+      "tag": "BufferPoolAccessor2.0",
+      "message": "bufferpool2 0xb400007be0cf90f8 : 2(2211840 size) total buffers - 1(1105920 size) used buffers - 626/638 (recycle/alloc) - 41/638 (fetch/transfer)"
+    },
+    {
+      "timestamp": "10-28 01:09:50.063",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=47.18ms min=28.38ms max=81.13ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:09:51.206",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=47.24ms min=3.07ms max=88.05ms count=9"
+    },
+    {
+      "timestamp": "10-28 01:09:52.303",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=59.51ms min=7.16ms max=158.80ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:09:53.497",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=50.66ms min=11.12ms max=74.81ms count=9"
+    },
+    {
+      "timestamp": "10-28 01:09:54.032",
+      "level": "D",
+      "tag": "BufferPoolAccessor2.0",
+      "message": "bufferpool2 0xb400007be0cf90f8 : 2(2211840 size) total buffers - 1(1105920 size) used buffers - 643/655 (recycle/alloc) - 42/655 (fetch/transfer)"
+    },
+    {
+      "timestamp": "10-28 01:09:54.644",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=84.92ms min=25.37ms max=126.93ms count=6"
+    },
+    {
+      "timestamp": "10-28 01:09:55.705",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=56.78ms min=7.81ms max=118.81ms count=9"
+    },
+    {
+      "timestamp": "10-28 01:09:56.817",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=56.76ms min=8.39ms max=117.46ms count=9"
+    },
+    {
+      "timestamp": "10-28 01:09:57.339",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:57.373",
+      "level": "I",
+      "tag": "BugleRcsEngine",
+      "message": "Connected state: [1], networkType: [WIFI] [CONTEXT thread_id=59 ]"
+    },
+    {
+      "timestamp": "10-28 01:09:57.374",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:57.374",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:57.374",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:57.375",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:57.385",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:57.385",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:57.386",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:57.386",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:57.386",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:57.386",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:57.386",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:57.386",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:57.386",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:57.386",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:57.386",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:57.386",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:57.387",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:57.387",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:57.428",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:57.528",
+      "level": "I",
+      "tag": "BugleRcsEngine",
+      "message": "handleMessage processing message:[NOTIFY_UPTIME_IGNORE_STATE_CHANGED] with [non-null]:RcsEngineImpl reference [CONTEXT log_prefix=\"RcsEngineImpl[DUAL_REG]:[c0bf5a51-73bd]>Handler\" thread_id=66 ]"
+    },
+    {
+      "timestamp": "10-28 01:09:57.546",
+      "level": "I",
+      "tag": "ChimeraSrvcProxy",
+      "message": "NullBinder for android.net.action.RECOMMEND_NETWORKS triggering remote TransactionTooLargeException due to Service without Chimera impl"
+    },
+    {
+      "timestamp": "10-28 01:09:57.546",
+      "level": "W",
+      "tag": ".gms.persistent",
+      "message": "Large reply transaction of 1056768 bytes, interface descriptor , code 1"
+    },
+    {
+      "timestamp": "10-28 01:09:57.680",
+      "level": "D",
+      "tag": "OomAdjuster",
+      "message": "Not killing cached processes"
+    },
+    {
+      "timestamp": "10-28 01:09:57.887",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=45.35ms min=8.52ms max=81.47ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:09:58.856",
+      "level": "D",
+      "tag": "ActivityManager",
+      "message": "sync unfroze 1669 com.google.android.googlequicksearchbox:search for 6"
+    },
+    {
+      "timestamp": "10-28 01:09:58.936",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=54.55ms min=7.63ms max=98.06ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:09:58.936",
+      "level": "D",
+      "tag": "ActivityManager",
+      "message": "sync unfroze 3976 com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0 for 6"
+    },
+    {
+      "timestamp": "10-28 01:09:58.999",
+      "level": "W",
+      "tag": "system_server",
+      "message": "Long monitor contention with owner appscheduling.default (711) at int com.android.server.am.ActivityManagerService.bindServiceInstance(android.app.IApplicationThread, android.os.IBinder, android.content.Intent, java.lang.String, android.app.IServiceConnection, long, java.lang.String, boolean, int, java.lang.String, android.app.IApplicationThread, java.lang.String, int)(ActivityManagerService.java:14231) waiters=1 in void com.android.server.am.BroadcastQueueModernImpl.handleProcessFreezableChanged(com.android.server.am.ProcessRecord) for 224ms"
+    },
+    {
+      "timestamp": "10-28 01:09:59.069",
+      "level": "I",
+      "tag": "netd",
+      "message": "tetherGetStats() -> {[]} <2.68ms>"
+    },
+    {
+      "timestamp": "10-28 01:09:59.103",
+      "level": "D",
+      "tag": "BufferPoolAccessor2.0",
+      "message": "bufferpool2 0xb400007be0cf90f8 : 2(2211840 size) total buffers - 1(1105920 size) used buffers - 664/676 (recycle/alloc) - 44/675 (fetch/transfer)"
+    },
+    {
+      "timestamp": "10-28 01:09:59.443",
+      "level": "D",
+      "tag": "ConnectivityService",
+      "message": "releasing NetworkRequest [ REQUEST id=154, [ Transports: CELLULAR Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VPN&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Forbidden: LOCAL_NETWORK Uid: 10143 RequestorUid: 10143 RequestorPkg: com.google.android.googlequicksearchbox UnderlyingNetworks: Null] ] (release request)"
+    },
+    {
+      "timestamp": "10-28 01:09:59.447",
+      "level": "I",
+      "tag": "ConnectivityService",
+      "message": "Update capabilities for net 100 : -FOREGROUND"
+    },
+    {
+      "timestamp": "10-28 01:09:59.488",
+      "level": "I",
+      "tag": "netd",
+      "message": "networkSetPermissionForNetwork(100, 1) <25.38ms>"
+    },
+    {
+      "timestamp": "10-28 01:09:59.507",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:59.507",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:59.508",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:59.514",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:59.565",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:59.565",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:09:59.665",
+      "level": "W",
+      "tag": "ProcessStats",
+      "message": "Tracking association SourceState{2ae9399 com.google.android.googlequicksearchbox:search/10143 ImpBg #2532} whose proc state 6 is better than process ProcessState{c6d38ed com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0/10143 pkg=com.google.android.googlequicksearchbox} proc state 14 (1 skipped)"
+    },
+    {
+      "timestamp": "10-28 01:09:59.712",
+      "level": "I",
+      "tag": "BgTaskExecutorImpl",
+      "message": "(REDACTED) Starting %s background task %s."
+    },
+    {
+      "timestamp": "10-28 01:09:59.998",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=67.04ms min=39.85ms max=97.69ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:10:00.042",
+      "level": "I",
+      "tag": "A",
+      "message": "NGA enabled in interactor."
+    },
+    {
+      "timestamp": "10-28 01:10:00.109",
+      "level": "I",
+      "tag": "NetworkRecognitionRnr",
+      "message": "Using pair HTTP connection"
+    },
+    {
+      "timestamp": "10-28 01:10:00.154",
+      "level": "I",
+      "tag": "A",
+      "message": "NGA enabled in interactor."
+    },
+    {
+      "timestamp": "10-28 01:10:00.157",
+      "level": "I",
+      "tag": "A",
+      "message": "NGA enabled in interactor."
+    },
+    {
+      "timestamp": "10-28 01:10:00.159",
+      "level": "W",
+      "tag": "Looper",
+      "message": "Slow dispatch took 120ms main h=com.android.server.alarm.AlarmManagerService$AlarmHandler c=com.android.server.alarm.AlarmManagerService$2$$ExternalSyntheticLambda0@b12aa3f m=0"
+    },
+    {
+      "timestamp": "10-28 01:10:00.163",
+      "level": "I",
+      "tag": "A",
+      "message": "NGA enabled in interactor."
+    },
+    {
+      "timestamp": "10-28 01:10:00.165",
+      "level": "I",
+      "tag": "A",
+      "message": "NGA enabled in interactor."
+    },
+    {
+      "timestamp": "10-28 01:10:00.165",
+      "level": "I",
+      "tag": "A",
+      "message": "NGA enabled in interactor."
+    },
+    {
+      "timestamp": "10-28 01:10:00.203",
+      "level": "W",
+      "tag": "earchbox",
+      "message": "search: Long monitor contention with owner BG Thread #1 (2152) at void com.google.android.apps.gsa.staticplugins.nga.a.a.co.run()(PG:24) waiters=0 in com.google.android.apps.gsa.nga.api.NgaState com.google.android.apps.gsa.staticplugins.nga.a.a.cu.a() for 168ms"
+    },
+    {
+      "timestamp": "10-28 01:10:00.203",
+      "level": "W",
+      "tag": "earchbox",
+      "message": "search: Long monitor contention with owner BG Thread #1 (2152) at void com.google.android.apps.gsa.staticplugins.nga.a.a.co.run()(PG:24) waiters=1 in com.google.android.apps.gsa.nga.api.NgaState com.google.android.apps.gsa.staticplugins.nga.a.a.cu.a() for 206ms"
+    },
+    {
+      "timestamp": "10-28 01:10:00.206",
+      "level": "I",
+      "tag": "A",
+      "message": "NGA enabled in interactor."
+    },
+    {
+      "timestamp": "10-28 01:10:00.211",
+      "level": "I",
+      "tag": "A",
+      "message": "NGA enabled in interactor."
+    },
+    {
+      "timestamp": "10-28 01:10:00.249",
+      "level": "I",
+      "tag": "A",
+      "message": "NGA enabled in interactor."
+    },
+    {
+      "timestamp": "10-28 01:10:00.251",
+      "level": "W",
+      "tag": "earchbox",
+      "message": "search: Long monitor contention with owner BG Thread #1 (2152) at void com.google.android.apps.gsa.staticplugins.nga.a.a.co.run()(PG:24) waiters=2 in com.google.android.apps.gsa.nga.api.NgaState com.google.android.apps.gsa.staticplugins.nga.a.a.cu.a() for 229ms"
+    },
+    {
+      "timestamp": "10-28 01:10:00.253",
+      "level": "I",
+      "tag": "A",
+      "message": "[Upload] Connected"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "onError"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "com.google.android.apps.gsa.shared.speech.b.l: errorCode: 65561, engine: 2"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "at com.google.android.apps.gsa.staticplugins.bp.a.f.a(PG:23)"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "at com.google.android.apps.gsa.s3.o.hg(PG:13)"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "at com.google.ch.g.a.f.e(PG:9)"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "at com.google.android.apps.gsa.speech.k.a.g.d(PG:162)"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "at com.google.android.apps.gsa.speech.k.a.g.iN(PG:26)"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "at com.google.android.apps.gsa.s3.p.c(PG:102)"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "at com.google.android.apps.gsa.s3.q.run(PG:1)"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:487)"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "at java.util.concurrent.FutureTask.run(FutureTask.java:264)"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "at com.google.android.apps.gsa.shared.util.c.a.e.run(PG:12)"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "at com.google.android.apps.gsa.shared.util.c.a.bg.run(PG:3)"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "at com.google.android.apps.gsa.shared.util.c.a.bg.run(PG:3)"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:644)"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "at java.lang.Thread.run(Thread.java:1012)"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "at com.google.android.apps.gsa.shared.util.c.a.l.run(PG:42)"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "Caused by: com.google.android.apps.gsa.shared.speech.b.n: errorCode: 65586, engine: 2"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "at com.google.android.apps.gsa.s3.o.hg(PG:6)"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "... 14 more"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "Caused by: com.google.android.apps.gsa.shared.speech.b.j: errorCode: 401, engine: 2"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "at com.google.android.apps.gsa.assistant.shared.n.i.b(PG:30)"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "at com.google.android.apps.gsa.s3.producers.j.hq(PG:11)"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "at com.google.android.apps.gsa.speech.k.a.g.d(PG:135)"
+    },
+    {
+      "timestamp": "10-28 01:10:00.261",
+      "level": "E",
+      "tag": "A",
+      "message": "... 12 more"
+    },
+    {
+      "timestamp": "10-28 01:10:00.382",
+      "level": "I",
+      "tag": "NetworkRecognitionRnr",
+      "message": "Using pair HTTP connection"
+    },
+    {
+      "timestamp": "10-28 01:10:00.401",
+      "level": "I",
+      "tag": "A",
+      "message": "[Upload] Connected"
+    },
+    {
+      "timestamp": "10-28 01:10:00.406",
+      "level": "I",
+      "tag": "A",
+      "message": "NGA enabled in interactor."
+    },
+    {
+      "timestamp": "10-28 01:10:00.408",
+      "level": "W",
+      "tag": "A",
+      "message": "Failed to sync device settings."
+    },
+    {
+      "timestamp": "10-28 01:10:00.409",
+      "level": "I",
+      "tag": "A",
+      "message": "Retrying to sync device settings."
+    },
+    {
+      "timestamp": "10-28 01:10:00.409",
+      "level": "I",
+      "tag": "A",
+      "message": "NGA enabled in interactor."
+    },
+    {
+      "timestamp": "10-28 01:10:00.410",
+      "level": "W",
+      "tag": "A",
+      "message": "(REDACTED) Failed to get connectivityLock in %d ms"
+    },
+    {
+      "timestamp": "10-28 01:10:00.665",
+      "level": "I",
+      "tag": "A",
+      "message": "NGA enabled in interactor."
+    },
+    {
+      "timestamp": "10-28 01:10:00.668",
+      "level": "W",
+      "tag": "system_server",
+      "message": "Long monitor contention with owner binder:590_3 (687) at boolean com.android.server.job.JobSchedulerService.isBatteryCharging()(JobSchedulerService.java:5512) waiters=0 in void com.android.server.job.controllers.ConnectivityController$2.onCapabilitiesChanged(android.net.Network, android.net.NetworkCapabilities) for 201ms"
+    },
+    {
+      "timestamp": "10-28 01:10:00.669",
+      "level": "W",
+      "tag": "JobInfo",
+      "message": "Job 'com.google.android.googlequicksearchbox/com.google.android.apps.gsa.tasks.BackgroundTasksJobService#-353' has a deadline with functional constraints and an extremely short time window of 0 ms (delay=120000, deadline=120000). The functional constraints are not likely to be satisfied when the job runs."
+    },
+    {
+      "timestamp": "10-28 01:10:00.698",
+      "level": "W",
+      "tag": "JobInfo",
+      "message": "Job 'com.google.android.googlequicksearchbox/com.google.android.apps.gsa.tasks.BackgroundTasksJobService#-353' has a deadline with functional constraints and an extremely short time window of 0 ms (delay=120000, deadline=120000). The functional constraints are not likely to be satisfied when the job runs."
+    },
+    {
+      "timestamp": "10-28 01:10:00.714",
+      "level": "W",
+      "tag": "JobInfo",
+      "message": "Job 'com.google.android.googlequicksearchbox/com.google.android.apps.gsa.tasks.BackgroundTasksJobService#-353' has a deadline with functional constraints and an extremely short time window of 0 ms (delay=120000, deadline=120000). The functional constraints are not likely to be satisfied when the job runs."
+    },
+    {
+      "timestamp": "10-28 01:10:00.725",
+      "level": "W",
+      "tag": "m.android.phone",
+      "message": "Long monitor contention with owner binder:1014_8 (1201) at boolean android.os.MessageQueue.enqueueMessage(android.os.Message, long)(MessageQueue.java:695) waiters=0 in boolean android.os.MessageQueue.enqueueMessage(android.os.Message, long) for 143ms"
+    },
+    {
+      "timestamp": "10-28 01:10:00.740",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:00.877",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:00.879",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:00.883",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:00.884",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:00.885",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:00.886",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:00.887",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:00.903",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:01.022",
+      "level": "I",
+      "tag": "BugleRcsEngine",
+      "message": "Connected state: [1], networkType: [WIFI] [CONTEXT thread_id=59 ]"
+    },
+    {
+      "timestamp": "10-28 01:10:01.040",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=61.76ms min=34.71ms max=92.78ms count=6"
+    },
+    {
+      "timestamp": "10-28 01:10:01.040",
+      "level": "I",
+      "tag": "BugleRcsEngine",
+      "message": "handleMessage processing message:[NOTIFY_UPTIME_IGNORE_STATE_CHANGED] with [non-null]:RcsEngineImpl reference [CONTEXT log_prefix=\"RcsEngineImpl[DUAL_REG]:[c0bf5a51-73bd]>Handler\" thread_id=66 ]"
+    },
+    {
+      "timestamp": "10-28 01:10:01.043",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:01.043",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:01.049",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:01.052",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:01.052",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:01.053",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:01.165",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "Predicting[0]:  [CONTEXT sampling_count=5 ]"
+    },
+    {
+      "timestamp": "10-28 01:10:01.166",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "EchoTargets:"
+    },
+    {
+      "timestamp": "10-28 01:10:01.166",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "Filtered by AiAi flag check:"
+    },
+    {
+      "timestamp": "10-28 01:10:01.166",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "[CONTEXT ratelimit_period=\"10 SECONDS\" ]"
+    },
+    {
+      "timestamp": "10-28 01:10:01.203",
+      "level": "W",
+      "tag": "ndroid.systemui",
+      "message": "Long monitor contention with owner SysUiBg (992) at void android.net.ConnectivityManager$CallbackHandler.handleMessage(android.os.Message)(ConnectivityManager.java:4433) waiters=0 in void android.net.ConnectivityManager$CallbackHandler.handleMessage(android.os.Message) for 212ms"
+    },
+    {
+      "timestamp": "10-28 01:10:01.205",
+      "level": "W",
+      "tag": "JobScheduler",
+      "message": "Job didn't exist in JobStore: b44eba3 #u0a143/-353 com.google.android.googlequicksearchbox/com.google.android.apps.gsa.tasks.BackgroundTasksJobService"
+    },
+    {
+      "timestamp": "10-28 01:10:01.291",
+      "level": "W",
+      "tag": "system_server",
+      "message": "Long monitor contention with owner binder:590_3 (687) at boolean com.android.server.am.ActivityManagerService.unbindService(android.app.IServiceConnection)(ActivityManagerService.java:14253) waiters=0 in int com.android.server.am.ActivityManagerService.bindServiceInstance(android.app.IApplicationThread, android.os.IBinder, android.content.Intent, java.lang.String, android.app.IServiceConnection, long, java.lang.String, boolean, int, java.lang.String, android.app.IApplicationThread, java.lang.String, int) for 248ms"
+    },
+    {
+      "timestamp": "10-28 01:10:01.346",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "Ranked targets strategy: SORT, count: 0, ranking metadata:  [CONTEXT ratelimit_period=\"10 SECONDS\" ]"
+    },
+    {
+      "timestamp": "10-28 01:10:01.346",
+      "level": "I",
+      "tag": "netd",
+      "message": "tetherGetStats() -> {[]} <52.05ms>"
+    },
+    {
+      "timestamp": "10-28 01:10:01.347",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "#remoteViewsTwiddler: feature disabled."
+    },
+    {
+      "timestamp": "10-28 01:10:01.347",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "Predicting[0]:  [CONTEXT sampling_count=5 ]"
+    },
+    {
+      "timestamp": "10-28 01:10:01.348",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "EchoTargets:"
+    },
+    {
+      "timestamp": "10-28 01:10:01.348",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "Filtered by AiAi flag check:"
+    },
+    {
+      "timestamp": "10-28 01:10:01.348",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "[CONTEXT ratelimit_period=\"10 SECONDS\" ]"
+    },
+    {
+      "timestamp": "10-28 01:10:01.348",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "Ranked targets strategy: SORT, count: 0, ranking metadata:  [CONTEXT ratelimit_period=\"10 SECONDS\" ]"
+    },
+    {
+      "timestamp": "10-28 01:10:01.348",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "#remoteViewsTwiddler: feature disabled."
+    },
+    {
+      "timestamp": "10-28 01:10:01.349",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "#postPredictionTargets: Sending updates to UISurface lockscreen with targets# 0 (types=[])"
+    },
+    {
+      "timestamp": "10-28 01:10:01.349",
+      "level": "I",
+      "tag": "AiAiEcho",
+      "message": "#postPredictionTargets: Sending updates to UISurface home with targets# 0 (types=[])"
+    },
+    {
+      "timestamp": "10-28 01:10:01.355",
+      "level": "D",
+      "tag": "SsBaseTemplateCard",
+      "message": "No text view can be set up"
+    },
+    {
+      "timestamp": "10-28 01:10:01.356",
+      "level": "D",
+      "tag": "SsBaseTemplateCard",
+      "message": "Passed-in item info is null"
+    },
+    {
+      "timestamp": "10-28 01:10:01.356",
+      "level": "D",
+      "tag": "SsBaseTemplateCard",
+      "message": "Passed-in item info is null"
+    },
+    {
+      "timestamp": "10-28 01:10:01.356",
+      "level": "D",
+      "tag": "SsBaseTemplateCard",
+      "message": "Passed-in item info is null"
+    },
+    {
+      "timestamp": "10-28 01:10:01.356",
+      "level": "I",
+      "tag": "SsBaseTemplateCard",
+      "message": "Secondary card pane is null"
+    },
+    {
+      "timestamp": "10-28 01:10:01.359",
+      "level": "W",
+      "tag": "PageIndicator",
+      "message": "Total number of pages invalid: 0. Assuming 1 page."
+    },
+    {
+      "timestamp": "10-28 01:10:01.539",
+      "level": "W",
+      "tag": "system_server",
+      "message": "Long monitor contention with owner binder:590_3 (687) at boolean com.android.server.am.ActivityManagerService.unbindService(android.app.IServiceConnection)(ActivityManagerService.java:14253) waiters=1 in android.app.ContentProviderHolder com.android.server.am.ContentProviderHelper.getContentProviderImpl(android.app.IApplicationThread, java.lang.String, android.os.IBinder, int, java.lang.String, java.lang.String, boolean, int) for 384ms"
+    },
+    {
+      "timestamp": "10-28 01:10:01.686",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=15904.88ms min=15904.88ms max=15904.88ms count=1"
+    },
+    {
+      "timestamp": "10-28 01:10:02.021",
+      "level": "D",
+      "tag": "ActivityManager",
+      "message": "sync unfroze 1705 com.google.android.gms for 6"
+    },
+    {
+      "timestamp": "10-28 01:10:02.083",
+      "level": "I",
+      "tag": "ChimeraSrvcProxy",
+      "message": "NullBinder for android.net.action.RECOMMEND_NETWORKS triggering remote TransactionTooLargeException due to Service without Chimera impl"
+    },
+    {
+      "timestamp": "10-28 01:10:02.084",
+      "level": "W",
+      "tag": ".gms.persistent",
+      "message": "Large reply transaction of 1056768 bytes, interface descriptor , code 1"
+    },
+    {
+      "timestamp": "10-28 01:10:02.086",
+      "level": "W",
+      "tag": "Looper",
+      "message": "Slow delivery took 1345ms SysUiBg h=android.net.ConnectivityManager$CallbackHandler c=null m=6"
+    },
+    {
+      "timestamp": "10-28 01:10:02.137",
+      "level": "W",
+      "tag": "Looper",
+      "message": "Drained"
+    },
+    {
+      "timestamp": "10-28 01:10:02.151",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=113.80ms min=20.23ms max=238.86ms count=6"
+    },
+    {
+      "timestamp": "10-28 01:10:02.185",
+      "level": "D",
+      "tag": "ActivityManager",
+      "message": "sync unfroze 4026 com.google.android.adservices.api for 6"
+    },
+    {
+      "timestamp": "10-28 01:10:02.188",
+      "level": "I",
+      "tag": "HWUI",
+      "message": "Davey! duration=948ms; Flags=0, FrameTimelineVsyncId=18500, IntendedVsync=246283686337, Vsync=246350353001, InputEventId=0, HandleInputStart=246357309742, AnimationStart=246357310659, PerformTraversalsStart=246357310825, DrawStart=246413044742, FrameDeadline=246300353003, FrameInterval=246357294534, FrameStartTime=16666666, SyncQueued=246414750825, SyncStart=246414951534, IssueDrawCommandsStart=246418271409, SwapBuffers=247126789617, FrameCompleted=247232382701, DequeueBufferDuration=37166, QueueBufferDuration=915916, GpuCompleted=247228449117, SwapBuffersCompleted=247232382701, DisplayPresentTime=0, CommandSubmissionCompleted=247126789617,"
+    },
+    {
+      "timestamp": "10-28 01:10:02.232",
+      "level": "W",
+      "tag": "system_server",
+      "message": "Long monitor contention with owner binder:590_17 (2031) at int com.android.server.am.ActivityManagerService.bindServiceInstance(android.app.IApplicationThread, android.os.IBinder, android.content.Intent, java.lang.String, android.app.IServiceConnection, long, java.lang.String, boolean, int, java.lang.String, android.app.IApplicationThread, java.lang.String, int)(ActivityManagerService.java:14231) waiters=1 in void com.android.server.am.ActivityManagerService.publishService(android.os.IBinder, android.content.Intent, android.os.IBinder) for 558ms"
+    },
+    {
+      "timestamp": "10-28 01:10:02.240",
+      "level": "W",
+      "tag": "system_server",
+      "message": "Long monitor contention with owner binder:590_17 (2031) at int com.android.server.am.ActivityManagerService.bindServiceInstance(android.app.IApplicationThread, android.os.IBinder, android.content.Intent, java.lang.String, android.app.IServiceConnection, long, java.lang.String, boolean, int, java.lang.String, android.app.IApplicationThread, java.lang.String, int)(ActivityManagerService.java:14231) waiters=2 in void com.android.server.am.BroadcastQueueModernImpl.handleProcessFreezableChanged(com.android.server.am.ProcessRecord) for 496ms"
+    },
+    {
+      "timestamp": "10-28 01:10:02.319",
+      "level": "I",
+      "tag": "netd",
+      "message": "tetherGetStats() -> {[]} <30.00ms>"
+    },
+    {
+      "timestamp": "10-28 01:10:02.559",
+      "level": "W",
+      "tag": "TapAndPay",
+      "message": "NfcAdapter is null while obtaining CardEmulation instance. [CONTEXT service_id=79 ]"
+    },
+    {
+      "timestamp": "10-28 01:10:02.559",
+      "level": "W",
+      "tag": "TapAndPay",
+      "message": "java.lang.NullPointerException: NfcAdapter is null"
+    },
+    {
+      "timestamp": "10-28 01:10:02.559",
+      "level": "W",
+      "tag": "TapAndPay",
+      "message": "at android.nfc.cardemulation.CardEmulation.getInstance(CardEmulation.java:170)"
+    },
+    {
+      "timestamp": "10-28 01:10:02.559",
+      "level": "W",
+      "tag": "TapAndPay",
+      "message": "at dhwn.<init>(:com.google.android.gms@242335038@24.23.35 (190400-646585959):15)"
+    },
+    {
+      "timestamp": "10-28 01:10:02.559",
+      "level": "W",
+      "tag": "TapAndPay",
+      "message": "at com.google.android.gms.tapandpay.hce.task.TapAndPayAidRegistrationTaskOperation.a(:com.google.android.gms@242335038@24.23.35 (190400-646585959):50)"
+    },
+    {
+      "timestamp": "10-28 01:10:02.559",
+      "level": "W",
+      "tag": "TapAndPay",
+      "message": "at com.google.android.gms.tapandpay.gcmtask.TapAndPayGcmTaskChimeraService.a(:com.google.android.gms@242335038@24.23.35 (190400-646585959):32)"
+    },
+    {
+      "timestamp": "10-28 01:10:02.559",
+      "level": "W",
+      "tag": "TapAndPay",
+      "message": "at bpjj.call(:com.google.android.gms@242335038@24.23.35 (190400-646585959):32)"
+    },
+    {
+      "timestamp": "10-28 01:10:02.559",
+      "level": "W",
+      "tag": "TapAndPay",
+      "message": "at java.util.concurrent.FutureTask.run(FutureTask.java:264)"
+    },
+    {
+      "timestamp": "10-28 01:10:02.559",
+      "level": "W",
+      "tag": "TapAndPay",
+      "message": "at angs.c(:com.google.android.gms@242335038@24.23.35 (190400-646585959):50)"
+    },
+    {
+      "timestamp": "10-28 01:10:02.559",
+      "level": "W",
+      "tag": "TapAndPay",
+      "message": "at angs.run(:com.google.android.gms@242335038@24.23.35 (190400-646585959):76)"
+    },
+    {
+      "timestamp": "10-28 01:10:02.559",
+      "level": "W",
+      "tag": "TapAndPay",
+      "message": "at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)"
+    },
+    {
+      "timestamp": "10-28 01:10:02.559",
+      "level": "W",
+      "tag": "TapAndPay",
+      "message": "at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:644)"
+    },
+    {
+      "timestamp": "10-28 01:10:02.559",
+      "level": "W",
+      "tag": "TapAndPay",
+      "message": "at anmg.run(:com.google.android.gms@242335038@24.23.35 (190400-646585959):8)"
+    },
+    {
+      "timestamp": "10-28 01:10:02.559",
+      "level": "W",
+      "tag": "TapAndPay",
+      "message": "at java.lang.Thread.run(Thread.java:1012)"
+    },
+    {
+      "timestamp": "10-28 01:10:02.609",
+      "level": "I",
+      "tag": "flint.peakfocus",
+      "message": "Background concurrent mark compact GC freed 6378KB AllocSpace bytes, 0(0B) LOS objects, 49% free, 5975KB/11MB, paused 455us,76.439ms total 1.016s"
+    },
+    {
+      "timestamp": "10-28 01:10:02.665",
+      "level": "W",
+      "tag": "flint.peakfocus",
+      "message": "ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/PrebuiltDeskClockGoogle/PrebuiltDeskClockGoogle.apk' with 1 weak references"
+    },
+    {
+      "timestamp": "10-28 01:10:02.666",
+      "level": "W",
+      "tag": "flint.peakfocus",
+      "message": "ApkAssets: Deleting an ApkAssets object '<empty> and /product/priv-app/GoogleDialer/GoogleDialer.apk' with 1 weak references"
+    },
+    {
+      "timestamp": "10-28 01:10:02.667",
+      "level": "W",
+      "tag": "flint.peakfocus",
+      "message": "ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/PrebuiltGmail/PrebuiltGmail.apk' with 1 weak references"
+    },
+    {
+      "timestamp": "10-28 01:10:02.668",
+      "level": "W",
+      "tag": "flint.peakfocus",
+      "message": "ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/YouTube/YouTube.apk' with 1 weak references"
+    },
+    {
+      "timestamp": "10-28 01:10:02.669",
+      "level": "W",
+      "tag": "flint.peakfocus",
+      "message": "ApkAssets: Deleting an ApkAssets object '<empty> and /system/app/Stk/Stk.apk' with 1 weak references"
+    },
+    {
+      "timestamp": "10-28 01:10:02.669",
+      "level": "W",
+      "tag": "flint.peakfocus",
+      "message": "ApkAssets: Deleting an ApkAssets object '<empty> and /product/priv-app/SafetyHubPrebuilt/SafetyHubPrebuilt.apk' with 1 weak references"
+    },
+    {
+      "timestamp": "10-28 01:10:02.669",
+      "level": "W",
+      "tag": "flint.peakfocus",
+      "message": "ApkAssets: Deleting an ApkAssets object '<empty> and /system/priv-app/DocumentsUIGoogle/DocumentsUIGoogle.apk' with 1 weak references"
+    },
+    {
+      "timestamp": "10-28 01:10:02.683",
+      "level": "W",
+      "tag": "flint.peakfocus",
+      "message": "ApkAssets: Deleting an ApkAssets object '<empty> and /product/priv-app/Velvet/Velvet.apk' with 1 weak references"
+    },
+    {
+      "timestamp": "10-28 01:10:02.684",
+      "level": "W",
+      "tag": "flint.peakfocus",
+      "message": "ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~drWag-u3vWrqsqtXIVgekg==/com.withopal.opal-OFJ1BV6MpVPHDG3O2g_IPA==/base.apk' with 1 weak references"
+    },
+    {
+      "timestamp": "10-28 01:10:02.715",
+      "level": "D",
+      "tag": "ConnectivityService",
+      "message": "requestNetwork for uid/pid:10143/1669 activeRequest: null callbackRequest: 155 [NetworkRequest [ REQUEST id=155, [ Transports: CELLULAR Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VPN&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Forbidden: LOCAL_NETWORK Uid: 10143 RequestorUid: 10143 RequestorPkg: com.google.android.googlequicksearchbox UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false"
+    },
+    {
+      "timestamp": "10-28 01:10:02.716",
+      "level": "W",
+      "tag": "flint.peakfocus",
+      "message": "ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~drWag-u3vWrqsqtXIVgekg==/com.withopal.opal-OFJ1BV6MpVPHDG3O2g_IPA==/split_config.arm64_v8a.apk' with 1 weak references"
+    },
+    {
+      "timestamp": "10-28 01:10:02.716",
+      "level": "W",
+      "tag": "flint.peakfocus",
+      "message": "ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~drWag-u3vWrqsqtXIVgekg==/com.withopal.opal-OFJ1BV6MpVPHDG3O2g_IPA==/split_config.en.apk' with 1 weak references"
+    },
+    {
+      "timestamp": "10-28 01:10:02.716",
+      "level": "W",
+      "tag": "flint.peakfocus",
+      "message": "ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~drWag-u3vWrqsqtXIVgekg==/com.withopal.opal-OFJ1BV6MpVPHDG3O2g_IPA==/split_config.xxhdpi.apk' with 1 weak references"
+    },
+    {
+      "timestamp": "10-28 01:10:02.735",
+      "level": "I",
+      "tag": "netd",
+      "message": "networkSetPermissionForNetwork(100, 0) <8.12ms>"
+    },
+    {
+      "timestamp": "10-28 01:10:02.739",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:02.742",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:02.743",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:02.743",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:02.743",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:02.947",
+      "level": "D",
+      "tag": "ConnectivityService",
+      "message": "NetReassign [155 : null → 100] [c 0] [a 32] [i 191]"
+    },
+    {
+      "timestamp": "10-28 01:10:02.987",
+      "level": "D",
+      "tag": "ConnectivityService",
+      "message": "reportNetworkConnectivity(101, false) by 10143"
+    },
+    {
+      "timestamp": "10-28 01:10:02.992",
+      "level": "D",
+      "tag": "NetworkMonitor/101",
+      "message": "Forcing reevaluation for UID 10143. Dns signal count: 0"
+    },
+    {
+      "timestamp": "10-28 01:10:03.024",
+      "level": "I",
+      "tag": "NetworkScheduler.Stats",
+      "message": "Task com.google.android.gms/com.google.android.gms.tapandpay.gcmtask.TapAndPayGcmTaskService started execution. cause:4 exec_start_elapsed_seconds: 245 [CONTEXT service_id=218 ]"
+    },
+    {
+      "timestamp": "10-28 01:10:03.024",
+      "level": "I",
+      "tag": "NetworkScheduler.Stats",
+      "message": "Task com.google.android.gms/com.google.android.gms.telephonyspam.sync.SpamListSyncTaskService started execution. cause:4 exec_start_elapsed_seconds: 245 [CONTEXT service_id=218 ]"
+    },
+    {
+      "timestamp": "10-28 01:10:03.051",
+      "level": "I",
+      "tag": "TelephonySpamChimeraSer",
+      "message": "Running Telephony Spam Chimera Service [CONTEXT service_id=150 ]"
+    },
+    {
+      "timestamp": "10-28 01:10:03.054",
+      "level": "I",
+      "tag": "TelephonySpamChimeraSer",
+      "message": "Cleaning SIP Header local table of old entries [CONTEXT service_id=150 ]"
+    },
+    {
+      "timestamp": "10-28 01:10:03.054",
+      "level": "I",
+      "tag": "SpamListSync",
+      "message": "Call spam module disabled. Skipping cleaning cache sip header table. [CONTEXT service_id=150 ]"
+    },
+    {
+      "timestamp": "10-28 01:10:03.054",
+      "level": "I",
+      "tag": "TelephonySpamChimeraSer",
+      "message": "Syncing Call Spam List [CONTEXT service_id=150 ]"
+    },
+    {
+      "timestamp": "10-28 01:10:03.054",
+      "level": "I",
+      "tag": "SpamListSync",
+      "message": "SpamListSyncChimeraService.syncSpamList called with tag: telephonyspam.SpamListSyncOneOffTask, extras: Bundle[{SpamList Type=0, Action=1.0}] [CONTEXT service_id=150 ]"
+    },
+    {
+      "timestamp": "10-28 01:10:03.055",
+      "level": "I",
+      "tag": "SpamListSync",
+      "message": "Call spam module disabled. Skipping spam list syncing. [CONTEXT service_id=150 ]"
+    },
+    {
+      "timestamp": "10-28 01:10:03.061",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(84) with statsTag=0xffffff81, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.067",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(84) with statsTag=0xffffff81, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.074",
+      "level": "I",
+      "tag": "NetworkScheduler.Stats",
+      "message": "Task com.google.android.gms/com.google.android.gms.tapandpay.gcmtask.TapAndPayGcmTaskService finished executing. cause:4 result: 3 elapsed_millis: 3157 uptime_millis: 3157 exec_start_elapsed_seconds: 245 [CONTEXT service_id=218 ]"
+    },
+    {
+      "timestamp": "10-28 01:10:03.075",
+      "level": "D",
+      "tag": "OomAdjuster",
+      "message": "Not killing cached processes"
+    },
+    {
+      "timestamp": "10-28 01:10:03.109",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(132) with statsTag=0xffffff81, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.165",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=65.57ms min=8.08ms max=174.32ms count=7"
+    },
+    {
+      "timestamp": "10-28 01:10:03.189",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(132) with statsTag=0xffffff81, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.218",
+      "level": "I",
+      "tag": "resolv",
+      "message": "ResNSendHandler::run: 0 / {101 983141 101 983141 1073 1}"
+    },
+    {
+      "timestamp": "10-28 01:10:03.226",
+      "level": "I",
+      "tag": "resolv",
+      "message": "ResNSendHandler::run: 0 / {101 983141 101 983141 1073 1}"
+    },
+    {
+      "timestamp": "10-28 01:10:03.227",
+      "level": "I",
+      "tag": "resolv",
+      "message": "resolv_cache_lookup: FOUND IN CACHE entry=0xb4000070fec1c110"
+    },
+    {
+      "timestamp": "10-28 01:10:03.252",
+      "level": "I",
+      "tag": "resolv",
+      "message": "ResNSendHandler::run: 0 / {101 983141 101 983141 1073 1}"
+    },
+    {
+      "timestamp": "10-28 01:10:03.252",
+      "level": "I",
+      "tag": "resolv",
+      "message": "ResNSendHandler::run: 0 / {101 983141 101 983141 1073 1}"
+    },
+    {
+      "timestamp": "10-28 01:10:03.252",
+      "level": "I",
+      "tag": "resolv",
+      "message": "resolv_cache_lookup: FOUND IN CACHE entry=0xb4000070bec1ebd0"
+    },
+    {
+      "timestamp": "10-28 01:10:03.252",
+      "level": "I",
+      "tag": "resolv",
+      "message": "resolv_cache_lookup: FOUND IN CACHE entry=0xb40000722ec23250"
+    },
+    {
+      "timestamp": "10-28 01:10:03.256",
+      "level": "I",
+      "tag": "resolv",
+      "message": "res_nsend: used send_dg 75 terrno: 0"
+    },
+    {
+      "timestamp": "10-28 01:10:03.292",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(128) with statsTag=0xffffffff, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.294",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(128) with statsTag=0xffffffff, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.294",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(128) with statsTag=0xffffffff, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.295",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(128) with statsTag=0xffffffff, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.295",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(128) with statsTag=0xffffffff, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.295",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(128) with statsTag=0xffffffff, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.296",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(128) with statsTag=0xffffffff, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.313",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(128) with statsTag=0xffffffff, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.350",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(128) with statsTag=0xffffffff, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.353",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(128) with statsTag=0xffffffff, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.370",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(128) with statsTag=0xffffffff, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.458",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(128) with statsTag=0xffffffff, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.537",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(128) with statsTag=0xffffffff, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.563",
+      "level": "I",
+      "tag": "ChimeraSrvcProxy",
+      "message": "NullBinder for android.net.action.RECOMMEND_NETWORKS triggering remote TransactionTooLargeException due to Service without Chimera impl"
+    },
+    {
+      "timestamp": "10-28 01:10:03.563",
+      "level": "W",
+      "tag": ".gms.persistent",
+      "message": "Large reply transaction of 1056768 bytes, interface descriptor , code 1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.587",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:03.587",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:03.587",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:03.587",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:03.587",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:03.588",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:03.588",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:03.588",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:03.588",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:03.588",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:03.588",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:03.588",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:03.681",
+      "level": "I",
+      "tag": "BugleRcsEngine",
+      "message": "Connected state: [1], networkType: [WIFI] [CONTEXT thread_id=59 ]"
+    },
+    {
+      "timestamp": "10-28 01:10:03.685",
+      "level": "I",
+      "tag": "BugleRcsEngine",
+      "message": "handleMessage processing message:[NOTIFY_UPTIME_IGNORE_STATE_CHANGED] with [non-null]:RcsEngineImpl reference [CONTEXT log_prefix=\"RcsEngineImpl[DUAL_REG]:[c0bf5a51-73bd]>Handler\" thread_id=66 ]"
+    },
+    {
+      "timestamp": "10-28 01:10:03.721",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(128) with statsTag=0xffffffff, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.733",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(128) with statsTag=0xffffffff, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.743",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(128) with statsTag=0xffffffff, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.803",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(84) with statsTag=0xffffffff, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.807",
+      "level": "D",
+      "tag": "NetworkMonitor/101",
+      "message": "PROBE_DNS www.google.com 743ms OK 142.251.155.119,142.251.151.119,142.251.156.119,142.251.152.119,142.251.153.119,142.251.154.119,142.251.150.119,142.251.157.119,2001:4860:482b:7700::,2001:4860:482a:7700::,2001:4860:4826:7700::,2001:4860:482d:7700::,2001:4860:4827:7700::,2001:4860:4828:7700::,2001:4860:4829:7700::,2001:4860:482c:7700::"
+    },
+    {
+      "timestamp": "10-28 01:10:03.835",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(84) with statsTag=0xffffffff, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.846",
+      "level": "I",
+      "tag": "resolv",
+      "message": "GetAddrInfoHandler::run: {101 983141 101 983141 1073 1}"
+    },
+    {
+      "timestamp": "10-28 01:10:03.848",
+      "level": "I",
+      "tag": "resolv",
+      "message": "res_nmkquery: (QUERY, IN, AAAA)"
+    },
+    {
+      "timestamp": "10-28 01:10:03.848",
+      "level": "I",
+      "tag": "resolv",
+      "message": "resolv_cache_lookup: FOUND IN CACHE entry=0xb4000070fec1c110"
+    },
+    {
+      "timestamp": "10-28 01:10:03.848",
+      "level": "I",
+      "tag": "resolv",
+      "message": "doQuery: rcode=0, ancount=8, return value=256"
+    },
+    {
+      "timestamp": "10-28 01:10:03.854",
+      "level": "I",
+      "tag": "resolv",
+      "message": "res_nmkquery: (QUERY, IN, A)"
+    },
+    {
+      "timestamp": "10-28 01:10:03.854",
+      "level": "I",
+      "tag": "resolv",
+      "message": "resolv_cache_lookup: FOUND IN CACHE entry=0xb40000722ec23250"
+    },
+    {
+      "timestamp": "10-28 01:10:03.854",
+      "level": "I",
+      "tag": "resolv",
+      "message": "doQuery: rcode=0, ancount=8, return value=160"
+    },
+    {
+      "timestamp": "10-28 01:10:03.855",
+      "level": "D",
+      "tag": "NetworkMonitor/101",
+      "message": "PROBE_DNS connectivitycheck.gstatic.com 745ms OK 142.251.150.120,2001:4860:4826:7800::"
+    },
+    {
+      "timestamp": "10-28 01:10:03.855",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(84) with statsTag=0xffffff81, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.856",
+      "level": "I",
+      "tag": "resolv",
+      "message": "GetAddrInfoHandler::run: {101 983141 101 983141 1073 1}"
+    },
+    {
+      "timestamp": "10-28 01:10:03.857",
+      "level": "I",
+      "tag": "resolv",
+      "message": "res_nmkquery: (QUERY, IN, AAAA)"
+    },
+    {
+      "timestamp": "10-28 01:10:03.857",
+      "level": "I",
+      "tag": "resolv",
+      "message": "resolv_cache_lookup: FOUND IN CACHE entry=0xb4000070bec1c470"
+    },
+    {
+      "timestamp": "10-28 01:10:03.857",
+      "level": "I",
+      "tag": "resolv",
+      "message": "doQuery: rcode=0, ancount=1, return value=75"
+    },
+    {
+      "timestamp": "10-28 01:10:03.857",
+      "level": "I",
+      "tag": "resolv",
+      "message": "res_nmkquery: (QUERY, IN, A)"
+    },
+    {
+      "timestamp": "10-28 01:10:03.857",
+      "level": "I",
+      "tag": "resolv",
+      "message": "resolv_cache_lookup: FOUND IN CACHE entry=0xb4000070bec1ebd0"
+    },
+    {
+      "timestamp": "10-28 01:10:03.857",
+      "level": "I",
+      "tag": "resolv",
+      "message": "doQuery: rcode=0, ancount=1, return value=63"
+    },
+    {
+      "timestamp": "10-28 01:10:03.858",
+      "level": "D",
+      "tag": "TrafficStats",
+      "message": "tagSocket(132) with statsTag=0xffffff81, statsUid=-1"
+    },
+    {
+      "timestamp": "10-28 01:10:03.923",
+      "level": "I",
+      "tag": "NetworkScheduler.Stats",
+      "message": "Task com.google.android.gms/com.google.android.gms.telephonyspam.sync.SpamListSyncTaskService finished executing. cause:4 result: 1 elapsed_millis: 3052 uptime_millis: 3052 exec_start_elapsed_seconds: 245 [CONTEXT service_id=218 ]"
+    },
+    {
+      "timestamp": "10-28 01:10:04.141",
+      "level": "D",
+      "tag": "NetworkMonitor/101",
+      "message": "PROBE_HTTP http://connectivitycheck.gstatic.com/generate_204 time=285ms ret=204 request={Connection=[close], User-Agent=[Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.32 Safari/537.36]} headers={null=[HTTP/1.1 204 No Content], Connection=[close], Content-Length=[0], Cross-Origin-Resource-Policy=[cross-origin], Date=[Wed, 28 Oct 2026 05:10:03 GMT], X-Android-Received-Millis=[1793164204140], X-Android-Response-Source=[NETWORK 204], X-Android-Selected-Protocol=[http/1.1], X-Android-Sent-Millis=[1793164203922]}"
+    },
+    {
+      "timestamp": "10-28 01:10:04.168",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=48.51ms min=33.90ms max=111.25ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:10:04.186",
+      "level": "I",
+      "tag": "netd",
+      "message": "tetherGetStats() -> {[]} <0.66ms>"
+    },
+    {
+      "timestamp": "10-28 01:10:04.191",
+      "level": "D",
+      "tag": "NetworkMonitor/101",
+      "message": "PROBE_HTTPS https://www.google.com/generate_204 time=348ms ret=204 request={Connection=[close], User-Agent=[Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.32 Safari/537.36]} headers={null=[HTTP/1.1 204 No Content], Alt-Svc=[h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000], Connection=[close], Content-Length=[0], Cross-Origin-Resource-Policy=[cross-origin], Date=[Wed, 28 Oct 2026 05:10:03 GMT], X-Android-Received-Millis=[1793164204187], X-Android-Response-Source=[NETWORK 204], X-Android-Selected-Protocol=[http/1.1], X-Android-Sent-Millis=[1793164204148]}"
+    },
+    {
+      "timestamp": "10-28 01:10:04.216",
+      "level": "D",
+      "tag": "NetworkMonitor/101",
+      "message": "isCaptivePortal: isSuccessful()=true isPortal()=false RedirectUrl=null isPartialConnectivity()=false Time=1213ms"
+    },
+    {
+      "timestamp": "10-28 01:10:04.217",
+      "level": "W",
+      "tag": "A",
+      "message": "(REDACTED) [%s] response code: %d"
+    },
+    {
+      "timestamp": "10-28 01:10:04.250",
+      "level": "D",
+      "tag": "BufferPoolAccessor2.0",
+      "message": "bufferpool2 0xb400007be0cf90f8 : 2(2211840 size) total buffers - 1(1105920 size) used buffers - 671/683 (recycle/alloc) - 45/683 (fetch/transfer)"
+    },
+    {
+      "timestamp": "10-28 01:10:04.332",
+      "level": "I",
+      "tag": "NetworkScheduler.Stats",
+      "message": "Task com.google.android.gms/com.google.android.gms.ads.jams.NegotiationService started execution. cause:5 exec_start_elapsed_seconds: 249 [CONTEXT service_id=218 ]"
+    },
+    {
+      "timestamp": "10-28 01:10:04.332",
+      "level": "I",
+      "tag": "NetworkScheduler.Stats",
+      "message": "Task com.google.android.gms/com.google.android.gms.ads.jams.NegotiationService finished executing. cause:5 result: 1 elapsed_millis: 180 uptime_millis: 180 exec_start_elapsed_seconds: 249 [CONTEXT service_id=218 ]"
+    },
+    {
+      "timestamp": "10-28 01:10:04.372",
+      "level": "D",
+      "tag": "ConnectivityService",
+      "message": "[101 WIFI] validation passed"
+    },
+    {
+      "timestamp": "10-28 01:10:05.303",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=57.72ms min=8.69ms max=128.88ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:10:06.364",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=53.08ms min=34.57ms max=101.34ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:10:07.372",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=60.61ms min=36.27ms max=109.29ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:10:08.378",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=69.56ms min=44.09ms max=106.39ms count=6"
+    },
+    {
+      "timestamp": "10-28 01:10:08.724",
+      "level": "E",
+      "tag": "JobScheduler.Quota",
+      "message": "<0>com.google.android.apps.photos has 0 EJ quota without running anything"
+    },
+    {
+      "timestamp": "10-28 01:10:09.531",
+      "level": "D",
+      "tag": "InetDiagMessage",
+      "message": "Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14"
+    },
+    {
+      "timestamp": "10-28 01:10:09.532",
+      "level": "D",
+      "tag": "InetDiagMessage",
+      "message": "Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14"
+    },
+    {
+      "timestamp": "10-28 01:10:09.532",
+      "level": "D",
+      "tag": "InetDiagMessage",
+      "message": "Destroyed live tcp sockets for uids={10205} in 69ms"
+    },
+    {
+      "timestamp": "10-28 01:10:09.533",
+      "level": "D",
+      "tag": "InetDiagMessage",
+      "message": "Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14"
+    },
+    {
+      "timestamp": "10-28 01:10:09.533",
+      "level": "D",
+      "tag": "InetDiagMessage",
+      "message": "Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14"
+    },
+    {
+      "timestamp": "10-28 01:10:09.533",
+      "level": "D",
+      "tag": "InetDiagMessage",
+      "message": "Destroyed live tcp sockets for uids={20205} in 1ms"
+    },
+    {
+      "timestamp": "10-28 01:10:09.541",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=50.67ms min=34.97ms max=75.81ms count=9"
+    },
+    {
+      "timestamp": "10-28 01:10:09.578",
+      "level": "D",
+      "tag": "BufferPoolAccessor2.0",
+      "message": "bufferpool2 0xb400007be0cf90f8 : 2(2211840 size) total buffers - 1(1105920 size) used buffers - 688/700 (recycle/alloc) - 46/700 (fetch/transfer)"
+    },
+    {
+      "timestamp": "10-28 01:10:09.774",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:09.776",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:09.777",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:09.777",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:09.829",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:09.836",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:09.836",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:09.904",
+      "level": "D",
+      "tag": "OomAdjuster",
+      "message": "Not killing cached processes"
+    },
+    {
+      "timestamp": "10-28 01:10:09.904",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:09.905",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:09.905",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:09.906",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:09.906",
+      "level": "W",
+      "tag": "IPCThreadState",
+      "message": "Sending oneway calls to frozen process."
+    },
+    {
+      "timestamp": "10-28 01:10:09.911",
+      "level": "I",
+      "tag": "ChimeraSrvcProxy",
+      "message": "NullBinder for android.net.action.RECOMMEND_NETWORKS triggering remote TransactionTooLargeException due to Service without Chimera impl"
+    },
+    {
+      "timestamp": "10-28 01:10:09.911",
+      "level": "W",
+      "tag": ".gms.persistent",
+      "message": "Large reply transaction of 1056768 bytes, interface descriptor , code 1"
+    },
+    {
+      "timestamp": "10-28 01:10:09.991",
+      "level": "I",
+      "tag": "BugleRcsEngine",
+      "message": "handleMessage processing message:[NOTIFY_UPTIME_IGNORE_STATE_CHANGED] with [non-null]:RcsEngineImpl reference [CONTEXT log_prefix=\"RcsEngineImpl[DUAL_REG]:[c0bf5a51-73bd]>Handler\" thread_id=66 ]"
+    },
+    {
+      "timestamp": "10-28 01:10:09.996",
+      "level": "I",
+      "tag": "BugleRcsEngine",
+      "message": "Connected state: [1], networkType: [WIFI] [CONTEXT thread_id=59 ]"
+    },
+    {
+      "timestamp": "10-28 01:10:10.591",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=83.55ms min=23.98ms max=238.45ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:10:11.658",
+      "level": "D",
+      "tag": "ActivityManager",
+      "message": "freezing 1669 com.google.android.googlequicksearchbox:search"
+    },
+    {
+      "timestamp": "10-28 01:10:11.703",
+      "level": "D",
+      "tag": "ActivityManager",
+      "message": "freezing 3976 com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0"
+    },
+    {
+      "timestamp": "10-28 01:10:11.703",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=59.08ms min=22.33ms max=119.62ms count=9"
+    },
+    {
+      "timestamp": "10-28 01:10:12.722",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=69.20ms min=36.50ms max=119.63ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:10:13.764",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=65.76ms min=19.81ms max=93.94ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:10:13.972",
+      "level": "D",
+      "tag": "InetDiagMessage",
+      "message": "Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14"
+    },
+    {
+      "timestamp": "10-28 01:10:13.973",
+      "level": "D",
+      "tag": "InetDiagMessage",
+      "message": "Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14"
+    },
+    {
+      "timestamp": "10-28 01:10:13.973",
+      "level": "D",
+      "tag": "InetDiagMessage",
+      "message": "Destroyed live tcp sockets for uids={99000} in 2ms"
+    },
+    {
+      "timestamp": "10-28 01:10:14.373",
+      "level": "D",
+      "tag": "ActivityManager",
+      "message": "freezing 1705 com.google.android.gms"
+    },
+    {
+      "timestamp": "10-28 01:10:14.462",
+      "level": "D",
+      "tag": "ActivityManager",
+      "message": "freezing 4026 com.google.android.adservices.api"
+    },
+    {
+      "timestamp": "10-28 01:10:14.813",
+      "level": "D",
+      "tag": "BufferPoolAccessor2.0",
+      "message": "bufferpool2 0xb400007be0cf90f8 : 2(2211840 size) total buffers - 1(1105920 size) used buffers - 706/718 (recycle/alloc) - 47/718 (fetch/transfer)"
+    },
+    {
+      "timestamp": "10-28 01:10:14.850",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=58.56ms min=32.72ms max=93.11ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:10:15.061",
+      "level": "D",
+      "tag": "InetDiagMessage",
+      "message": "Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14"
+    },
+    {
+      "timestamp": "10-28 01:10:15.079",
+      "level": "D",
+      "tag": "InetDiagMessage",
+      "message": "Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14"
+    },
+    {
+      "timestamp": "10-28 01:10:15.094",
+      "level": "D",
+      "tag": "InetDiagMessage",
+      "message": "Destroyed live tcp sockets for uids={10205} in 34ms"
+    },
+    {
+      "timestamp": "10-28 01:10:15.900",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=61.29ms min=32.72ms max=91.82ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:10:16.267",
+      "level": "D",
+      "tag": "OomAdjuster",
+      "message": "Not killing cached processes"
+    },
+    {
+      "timestamp": "10-28 01:10:16.746",
+      "level": "I",
+      "tag": "NearbyDiscovery",
+      "message": "FastPair: isDestroyable: Scanner is alive. [CONTEXT service_id=265 ]"
+    },
+    {
+      "timestamp": "10-28 01:10:16.747",
+      "level": "I",
+      "tag": "NearbyDiscovery",
+      "message": "DiscoveryService: Skip stopSelf(), fast pair controller is not destroyable. [CONTEXT service_id=265 ]"
+    },
+    {
+      "timestamp": "10-28 01:10:16.905",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=55.05ms min=10.28ms max=95.85ms count=9"
+    },
+    {
+      "timestamp": "10-28 01:10:17.982",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=60.11ms min=8.57ms max=125.07ms count=9"
+    },
+    {
+      "timestamp": "10-28 01:10:19.007",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=62.77ms min=40.79ms max=105.82ms count=7"
+    },
+    {
+      "timestamp": "10-28 01:10:20.140",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=52.30ms min=7.14ms max=84.82ms count=7"
+    },
+    {
+      "timestamp": "10-28 01:10:20.343",
+      "level": "D",
+      "tag": "BufferPoolAccessor2.0",
+      "message": "bufferpool2 0xb400007be0cf90f8 : 2(2211840 size) total buffers - 1(1105920 size) used buffers - 729/741 (recycle/alloc) - 49/740 (fetch/transfer)"
+    },
+    {
+      "timestamp": "10-28 01:10:21.161",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=56.52ms min=13.34ms max=100.34ms count=7"
+    },
+    {
+      "timestamp": "10-28 01:10:21.591",
+      "level": "I",
+      "tag": "BistoHotwordHelper",
+      "message": "(REDACTED) getHotwordActive::active query: %s, watch: %s, devices connected: %s"
+    },
+    {
+      "timestamp": "10-28 01:10:22.306",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=46.21ms min=16.80ms max=88.53ms count=9"
+    },
+    {
+      "timestamp": "10-28 01:10:23.384",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=48.25ms min=2.68ms max=128.00ms count=9"
+    },
+    {
+      "timestamp": "10-28 01:10:24.451",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=76.64ms min=24.43ms max=133.27ms count=6"
+    },
+    {
+      "timestamp": "10-28 01:10:25.344",
+      "level": "D",
+      "tag": "BufferPoolAccessor2.0",
+      "message": "bufferpool2 0xb400007be0cf90f8 : 2(2211840 size) total buffers - 1(1105920 size) used buffers - 745/757 (recycle/alloc) - 50/757 (fetch/transfer)"
+    },
+    {
+      "timestamp": "10-28 01:10:25.593",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=40.14ms min=2.46ms max=71.75ms count=9"
+    },
+    {
+      "timestamp": "10-28 01:10:26.631",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=57.62ms min=8.76ms max=100.00ms count=7"
+    },
+    {
+      "timestamp": "10-28 01:10:27.661",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=60.71ms min=2.00ms max=103.56ms count=9"
+    },
+    {
+      "timestamp": "10-28 01:10:28.677",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=49.41ms min=11.10ms max=87.62ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:10:29.770",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=54.81ms min=22.11ms max=75.60ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:10:30.834",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=60.14ms min=36.95ms max=117.78ms count=7"
+    },
+    {
+      "timestamp": "10-28 01:10:30.958",
+      "level": "D",
+      "tag": "BufferPoolAccessor2.0",
+      "message": "bufferpool2 0xb400007be0cf90f8 : 2(2211840 size) total buffers - 1(1105920 size) used buffers - 759/771 (recycle/alloc) - 51/771 (fetch/transfer)"
+    },
+    {
+      "timestamp": "10-28 01:10:31.955",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=52.85ms min=23.09ms max=89.97ms count=7"
+    },
+    {
+      "timestamp": "10-28 01:10:33.033",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=68.94ms min=32.01ms max=132.67ms count=8"
+    },
+    {
+      "timestamp": "10-28 01:10:34.138",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=46.46ms min=1.66ms max=108.35ms count=9"
+    },
+    {
+      "timestamp": "10-28 01:10:35.233",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=51.37ms min=24.34ms max=75.26ms count=7"
+    },
+    {
+      "timestamp": "10-28 01:10:36.246",
+      "level": "D",
+      "tag": "EGL_emulation",
+      "message": "app_time_stats: avg=66.46ms min=4.40ms max=101.97ms count=7"
+    }
+  ],
+  "_meta": {
+    "runtimeId": "cab26e39-2703-435c-b1e3-757b327d33d8"
+  }
+}

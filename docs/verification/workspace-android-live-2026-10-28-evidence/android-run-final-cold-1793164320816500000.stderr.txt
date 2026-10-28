@@ -1,0 +1,1 @@
+Claimed android emulator-5554; created=False booted=True

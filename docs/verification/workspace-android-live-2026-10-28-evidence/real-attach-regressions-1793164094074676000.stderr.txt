@@ -1,0 +1,9 @@
+test_android_reused_stream_requires_fresh_android_inventory (__main__.AgentCommands.test_android_reused_stream_requires_fresh_android_inventory) ... ok
+test_android_run_composes_attach_build_reinstall_launch (__main__.AgentCommands.test_android_run_composes_attach_build_reinstall_launch) ... ok
+test_android_serial_claim_uses_real_avd_and_ending_session_identity (__main__.AgentCommands.test_android_serial_claim_uses_real_avd_and_ending_session_identity) ... ok
+test_m1_android_real_ledger_binds_child_group_boot_and_helper (__main__.AgentCommands.test_m1_android_real_ledger_binds_child_group_boot_and_helper) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 19.451s
+
+OK

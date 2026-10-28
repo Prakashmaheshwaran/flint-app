@@ -1,0 +1,10 @@
+{
+  "id": "4cbd906c-40be-48ea-8fe6-fa789925c850",
+  "ok": true,
+  "result": {
+    "running": false
+  },
+  "_meta": {
+    "runtimeId": "cab26e39-2703-435c-b1e3-757b327d33d8"
+  }
+}

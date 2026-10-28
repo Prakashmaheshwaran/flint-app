@@ -1,0 +1,15 @@
+== Flint toolchain (source; path exists) ==
+ANDROID_HOME      /Users/prakash/Library/Android/sdk [env:ANDROID_HOME; exists]
+ANDROID_SDK_ROOT  /Users/prakash/Library/Android/sdk [env:ANDROID_HOME; exists]
+JAVA_HOME         /opt/homebrew/opt/openjdk@21 [env:JAVA_HOME; exists]
+DEVELOPER_DIR     /Applications/Xcode.app/Contents/Developer [default:latest-/Applications/Xcode*.app; exists]
+XCODE_DEV         /Applications/Xcode.app/Contents/Developer [default:latest-/Applications/Xcode*.app; exists]
+PATH              /Users/prakash/Library/Android/sdk/platform-tools:/Users/prakash/Library/Android/sdk/emulator:/Users/prakash/Library/Android/sdk/cmdline-tools/latest/bin:/opt/homebrew/opt/openjdk@21/bin:/Users/prakash/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Users/prakash/.codex/packages/standalone/releases/0.162.1-aarch64-apple-darwin/codex-path:/Users/prakash/.codeium/windsurf/bin:/Users/prakash/.codex/tmp/arg0/codex-arg0QWzV3o:/Applications/Orca.app/Contents/Resources/bin:/Users/prakash/.orbstack/bin:/Users/prakash/.volta/bin:/Users/prakash/.asdf/shims:/Users/prakash/.fnm/aliases/default/bin:/Users/prakash/.local/share/mise/shims:/Users/prakash/Library/pnpm:/Users/prakash/.yarn/bin:/Users/prakash/.bun/bin:/usr/local/sbin:/nix/var/nix/profiles/default/bin:/Users/prakash/bin:/Users/prakash/.nix-profile/bin:/Users/prakash/.opencode/bin:/Users/prakash/.vite-plus/bin
+xcodebuild        /usr/bin/xcodebuild
+xcodegen          /opt/homebrew/bin/xcodegen
+java              /opt/homebrew/opt/openjdk@21/bin/java
+adb               /Users/prakash/Library/Android/sdk/platform-tools/adb
+emulator          /Users/prakash/Library/Android/sdk/emulator/emulator
+sdkmanager        /opt/homebrew/bin/sdkmanager
+avdmanager        /opt/homebrew/bin/avdmanager
+orca              /usr/local/bin/orca

@@ -31,6 +31,7 @@ jobs:
       - name: Build (Simulator, no signing)
         run: |
           xcodebuild -project ios-app/Flint.xcodeproj -scheme Flint \
+            -derivedDataPath ios-app/DerivedData \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
 
@@ -39,5 +40,6 @@ jobs:
           DEVICE=$(xcrun simctl list devices available | grep -oE 'iPhone [^(]+' | head -1 | sed 's/ *$//')
           echo "Using simulator: $DEVICE"
           xcodebuild test -project ios-app/Flint.xcodeproj -scheme Flint \
+            -derivedDataPath ios-app/DerivedData \
             -destination "platform=iOS Simulator,name=$DEVICE" \
             CODE_SIGNING_ALLOWED=NO

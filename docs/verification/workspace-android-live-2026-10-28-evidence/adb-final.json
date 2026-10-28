@@ -1,0 +1,18 @@
+{
+  "empty": true,
+  "seconds": 0.016,
+  "polls": [
+    {
+      "utc": "2026-10-28T05:14:40.817170+00:00",
+      "argv": [
+        "/Users/prakash/Library/Android/sdk/platform-tools/adb",
+        "devices"
+      ],
+      "returncode": 0,
+      "seconds": 0.016,
+      "attempt": 0,
+      "stdoutValue": "List of devices attached\n\n",
+      "stderrValue": ""
+    }
+  ]
+}

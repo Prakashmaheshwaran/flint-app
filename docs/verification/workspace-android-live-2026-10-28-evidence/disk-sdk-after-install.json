@@ -1,0 +1,29 @@
+{
+  "utc": "2026-10-28T05:04:47Z",
+  "disk": {
+    "total": 245107195904,
+    "used": 208091754496,
+    "free": 37015441408
+  },
+  "freeGiB": 34.47331619262695,
+  "licenses": [
+    "android-sdk-arm-dbt-license",
+    "android-sdk-license"
+  ],
+  "imagePresent": true,
+  "imageFiles": [
+    "NOTICE.txt",
+    "VerifiedBootParams.textproto",
+    "advancedFeatures.ini",
+    "build.prop",
+    "data",
+    "encryptionkey.img",
+    "kernel-ranchu",
+    "kernel_cmdline.txt",
+    "package.xml",
+    "ramdisk.img",
+    "source.properties",
+    "system.img",
+    "vendor.img"
+  ]
+}

@@ -1,0 +1,29 @@
+Task K N1 differential evidence
+
+Base: 0b168eb0c698e4f59ec8ea17fb8733f257639664
+Fix: 79db421 (Restore interrupted cleanup trees and surface quarantines)
+
+Initial baseline command, before editing clean-worktree.py:
+  PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s scripts -p test_cleanup.py -k test_n1
+Result: 6 methods in 2.848s, 7 assertion failures including orphan subtests.
+Real macOS UF_IMMUTABLE denial stranded the fixture payload under quarantine;
+retry, partial-delete restoration, deadline restoration, replacement recovery
+location, custom-parent quarantine discovery and both orphan modes reproduced
+the missing behavior. Immutable flags were cleared only on fixture files.
+
+After adding empty-replacement and hard-exit coverage, an isolated differential
+loaded test_cleanup.py through importlib, obtained the base cleanup bytes via
+  git show 0b168eb:scripts/clean-worktree.py
+and wrapped CleanupTests.setUp to replace only its disposable fixture's
+scripts/clean-worktree.py. All eight test_n1_* methods ran; the real checkout's
+implementation was never swapped.
+Result: 8 methods in 3.597s, 8 assertion failures including subtests, 1 expected
+missing-recovery.json error. Every method failed on the reviewed base.
+
+Fixed-source verification:
+  PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s scripts -p test_cleanup.py
+Result: all 55 methods passed in 38.282s, including all eight N1 methods.
+The final integrated selftest logs contain the subsequent complete gate run.
+
+All work used isolated Git/HOME/SDK fixtures with capped subprocess logs.
+No live device, shared cache, host artifact, or another checkout was deleted.

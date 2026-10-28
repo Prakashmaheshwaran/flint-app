@@ -1,0 +1,11 @@
+{
+  "id": "capture-attach-not-ready",
+  "ok": false,
+  "error": {
+    "code": "runtime_error",
+    "message": "scrcpy server exited before the video stream started"
+  },
+  "_meta": {
+    "runtimeId": "capture-runtime"
+  }
+}

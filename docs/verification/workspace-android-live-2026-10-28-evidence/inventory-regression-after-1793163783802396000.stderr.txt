@@ -1,0 +1,8 @@
+test_android_inventory_uses_captured_backend_array (__main__.AgentCommands.test_android_inventory_uses_captured_backend_array) ... ok
+test_android_unknown_inventory_never_boots_or_attaches (__main__.AgentCommands.test_android_unknown_inventory_never_boots_or_attaches) ... ok
+test_android_run_composes_attach_build_reinstall_launch (__main__.AgentCommands.test_android_run_composes_attach_build_reinstall_launch) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 7.043s
+
+OK

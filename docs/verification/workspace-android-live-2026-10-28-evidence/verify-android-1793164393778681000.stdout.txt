@@ -1,0 +1,2129 @@
+cd "$ANDROID_DIR" && ./gradlew assembleDebug
+Reusing configuration cache.
+> Task :app:preBuild UP-TO-DATE
+> Task :core:core-model:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :blocking:blocking-accessibility:preBuild UP-TO-DATE
+> Task :blocking:blocking-usagestats:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :blocking:blocking-overlay:preBuild UP-TO-DATE
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :blocking:blocking-overlay:preDebugBuild UP-TO-DATE
+> Task :blocking:blocking-engine:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :blocking:blocking-resilience:preBuild UP-TO-DATE
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :blocking:blocking-accessibility:preDebugBuild UP-TO-DATE
+> Task :blocking:blocking-engine:processResources NO-SOURCE
+> Task :blocking:blocking-usagestats:preDebugBuild UP-TO-DATE
+> Task :app:generateDebugBuildConfig UP-TO-DATE
+> Task :core:core-model:processResources NO-SOURCE
+> Task :blocking:blocking-overlay:processDebugNavigationResources UP-TO-DATE
+> Task :blocking:blocking-resilience:preDebugBuild UP-TO-DATE
+> Task :blocking:blocking-accessibility:processDebugNavigationResources UP-TO-DATE
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :core:core-common:preBuild UP-TO-DATE
+> Task :core:core-datastore:preBuild UP-TO-DATE
+> Task :core:core-common:preDebugBuild UP-TO-DATE
+> Task :feature:feature-blocklist:preBuild UP-TO-DATE
+> Task :core:core-data:preBuild UP-TO-DATE
+> Task :core:core-datastore:preDebugBuild UP-TO-DATE
+> Task :feature:feature-connected:preBuild UP-TO-DATE
+> Task :feature:feature-blockscreen:preBuild UP-TO-DATE
+> Task :blocking:blocking-resilience:processDebugNavigationResources UP-TO-DATE
+> Task :feature:feature-blocklist:preDebugBuild UP-TO-DATE
+> Task :feature:feature-blockscreen:preDebugBuild UP-TO-DATE
+> Task :core:core-common:processDebugNavigationResources UP-TO-DATE
+> Task :blocking:blocking-usagestats:processDebugNavigationResources UP-TO-DATE
+> Task :feature:feature-connected:preDebugBuild UP-TO-DATE
+> Task :core:core-datastore:processDebugNavigationResources UP-TO-DATE
+> Task :core:core-data:preDebugBuild UP-TO-DATE
+> Task :feature:feature-blocklist:processDebugNavigationResources UP-TO-DATE
+> Task :feature:feature-onboarding:preBuild UP-TO-DATE
+> Task :feature:feature-onboarding:preDebugBuild UP-TO-DATE
+> Task :feature:feature-settings:preBuild UP-TO-DATE
+> Task :feature:feature-stats:preBuild UP-TO-DATE
+> Task :core:core-data:processDebugNavigationResources UP-TO-DATE
+> Task :feature:feature-stats:preDebugBuild UP-TO-DATE
+> Task :feature:feature-blockscreen:processDebugNavigationResources UP-TO-DATE
+> Task :feature:feature-onboarding:processDebugNavigationResources UP-TO-DATE
+> Task :permissions:permissions-special:preBuild UP-TO-DATE
+> Task :permissions:permissions-special:preDebugBuild UP-TO-DATE
+> Task :blocking:blocking-accessibility:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:packageDebugResources UP-TO-DATE
+> Task :core:core-model:compileKotlin UP-TO-DATE
+> Task :feature:feature-stats:processDebugNavigationResources UP-TO-DATE
+> Task :feature:feature-connected:processDebugNavigationResources UP-TO-DATE
+> Task :blocking:blocking-overlay:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:core-common:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:core-datastore:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :permissions:permissions-special:processDebugNavigationResources UP-TO-DATE
+> Task :feature:feature-settings:preDebugBuild UP-TO-DATE
+> Task :core:core-common:javaPreCompileDebug UP-TO-DATE
+> Task :blocking:blocking-accessibility:generateDebugResources UP-TO-DATE
+> Task :core:core-common:generateDebugResources UP-TO-DATE
+> Task :core:core-model:compileJava NO-SOURCE
+> Task :core:core-model:classes UP-TO-DATE
+> Task :feature:feature-settings:processDebugNavigationResources UP-TO-DATE
+> Task :feature:feature-blockscreen:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :blocking:blocking-overlay:generateDebugResources UP-TO-DATE
+> Task :core:core-datastore:javaPreCompileDebug UP-TO-DATE
+> Task :core:core-data:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:core-datastore:generateDebugResources UP-TO-DATE
+> Task :core:core-common:packageDebugResources UP-TO-DATE
+> Task :feature:feature-blockscreen:javaPreCompileDebug UP-TO-DATE
+> Task :core:core-common:parseDebugLocalResources UP-TO-DATE
+> Task :feature:feature-blockscreen:generateDebugResources UP-TO-DATE
+> Task :blocking:blocking-overlay:javaPreCompileDebug UP-TO-DATE
+> Task :blocking:blocking-overlay:packageDebugResources UP-TO-DATE
+> Task :core:core-data:generateDebugResources UP-TO-DATE
+> Task :blocking:blocking-overlay:parseDebugLocalResources UP-TO-DATE
+> Task :core:core-common:generateDebugRFile UP-TO-DATE
+> Task :blocking:blocking-accessibility:javaPreCompileDebug UP-TO-DATE
+> Task :blocking:blocking-resilience:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:core-model:jar UP-TO-DATE
+> Task :blocking:blocking-accessibility:packageDebugResources UP-TO-DATE
+> Task :core:core-datastore:packageDebugResources UP-TO-DATE
+> Task :blocking:blocking-resilience:generateDebugResources UP-TO-DATE
+> Task :core:core-datastore:parseDebugLocalResources UP-TO-DATE
+> Task :blocking:blocking-accessibility:parseDebugLocalResources UP-TO-DATE
+> Task :core:core-data:javaPreCompileDebug UP-TO-DATE
+> Task :permissions:permissions-special:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :blocking:blocking-accessibility:generateDebugRFile UP-TO-DATE
+> Task :permissions:permissions-special:generateDebugResources UP-TO-DATE
+> Task :permissions:permissions-special:javaPreCompileDebug UP-TO-DATE
+> Task :blocking:blocking-resilience:javaPreCompileDebug UP-TO-DATE
+> Task :blocking:blocking-usagestats:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :blocking:blocking-overlay:generateDebugRFile UP-TO-DATE
+> Task :core:core-datastore:generateDebugRFile UP-TO-DATE
+> Task :feature:feature-blockscreen:packageDebugResources UP-TO-DATE
+> Task :core:core-data:packageDebugResources UP-TO-DATE
+> Task :blocking:blocking-resilience:packageDebugResources UP-TO-DATE
+> Task :blocking:blocking-usagestats:generateDebugResources UP-TO-DATE
+> Task :blocking:blocking-resilience:parseDebugLocalResources UP-TO-DATE
+> Task :core:core-data:parseDebugLocalResources UP-TO-DATE
+> Task :blocking:blocking-engine:compileKotlin UP-TO-DATE
+> Task :feature:feature-blockscreen:parseDebugLocalResources UP-TO-DATE
+> Task :blocking:blocking-usagestats:javaPreCompileDebug UP-TO-DATE
+> Task :permissions:permissions-special:packageDebugResources UP-TO-DATE
+> Task :app:processDebugNavigationResources UP-TO-DATE
+> Task :feature:feature-blocklist:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :blocking:blocking-resilience:generateDebugRFile UP-TO-DATE
+> Task :feature:feature-blocklist:generateDebugResources UP-TO-DATE
+> Task :core:core-data:generateDebugRFile UP-TO-DATE
+> Task :blocking:blocking-usagestats:packageDebugResources UP-TO-DATE
+> Task :app:parseDebugLocalResources UP-TO-DATE
+> Task :permissions:permissions-special:parseDebugLocalResources UP-TO-DATE
+> Task :feature:feature-blocklist:javaPreCompileDebug UP-TO-DATE
+> Task :feature:feature-blockscreen:generateDebugRFile UP-TO-DATE
+> Task :feature:feature-connected:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :feature:feature-connected:generateDebugResources UP-TO-DATE
+> Task :blocking:blocking-engine:compileJava NO-SOURCE
+> Task :blocking:blocking-engine:classes UP-TO-DATE
+> Task :permissions:permissions-special:generateDebugRFile UP-TO-DATE
+> Task :feature:feature-connected:javaPreCompileDebug UP-TO-DATE
+> Task :feature:feature-onboarding:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :feature:feature-connected:packageDebugResources UP-TO-DATE
+> Task :blocking:blocking-usagestats:parseDebugLocalResources UP-TO-DATE
+> Task :feature:feature-onboarding:generateDebugResources UP-TO-DATE
+> Task :feature:feature-connected:parseDebugLocalResources UP-TO-DATE
+> Task :feature:feature-blocklist:packageDebugResources UP-TO-DATE
+> Task :app:generateDebugRFile UP-TO-DATE
+> Task :blocking:blocking-engine:jar UP-TO-DATE
+> Task :feature:feature-onboarding:javaPreCompileDebug UP-TO-DATE
+> Task :blocking:blocking-usagestats:generateDebugRFile UP-TO-DATE
+> Task :feature:feature-onboarding:packageDebugResources UP-TO-DATE
+> Task :feature:feature-connected:generateDebugRFile UP-TO-DATE
+> Task :feature:feature-settings:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :feature:feature-onboarding:parseDebugLocalResources UP-TO-DATE
+> Task :feature:feature-blocklist:parseDebugLocalResources UP-TO-DATE
+> Task :feature:feature-stats:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :feature:feature-settings:generateDebugResources UP-TO-DATE
+> Task :feature:feature-settings:javaPreCompileDebug UP-TO-DATE
+> Task :feature:feature-stats:javaPreCompileDebug UP-TO-DATE
+> Task :app:javaPreCompileDebug UP-TO-DATE
+> Task :feature:feature-blocklist:generateDebugRFile UP-TO-DATE
+> Task :feature:feature-stats:generateDebugResources UP-TO-DATE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :blocking:blocking-accessibility:generateDebugAssets UP-TO-DATE
+> Task :blocking:blocking-overlay:generateDebugAssets UP-TO-DATE
+> Task :blocking:blocking-accessibility:mergeDebugAssets UP-TO-DATE
+> Task :blocking:blocking-resilience:generateDebugAssets UP-TO-DATE
+> Task :feature:feature-onboarding:generateDebugRFile UP-TO-DATE
+> Task :blocking:blocking-resilience:mergeDebugAssets UP-TO-DATE
+> Task :core:core-common:generateDebugAssets UP-TO-DATE
+> Task :blocking:blocking-usagestats:generateDebugAssets UP-TO-DATE
+> Task :core:core-common:mergeDebugAssets UP-TO-DATE
+> Task :blocking:blocking-overlay:mergeDebugAssets UP-TO-DATE
+> Task :core:core-datastore:generateDebugAssets UP-TO-DATE
+> Task :core:core-data:generateDebugAssets UP-TO-DATE
+> Task :core:core-datastore:mergeDebugAssets UP-TO-DATE
+> Task :feature:feature-blocklist:generateDebugAssets UP-TO-DATE
+> Task :feature:feature-settings:packageDebugResources UP-TO-DATE
+> Task :blocking:blocking-usagestats:mergeDebugAssets UP-TO-DATE
+> Task :feature:feature-blockscreen:generateDebugAssets UP-TO-DATE
+> Task :feature:feature-connected:generateDebugAssets UP-TO-DATE
+> Task :core:core-data:mergeDebugAssets UP-TO-DATE
+> Task :feature:feature-onboarding:generateDebugAssets UP-TO-DATE
+> Task :feature:feature-connected:mergeDebugAssets UP-TO-DATE
+> Task :feature:feature-settings:generateDebugAssets UP-TO-DATE
+> Task :feature:feature-blocklist:mergeDebugAssets UP-TO-DATE
+> Task :feature:feature-stats:generateDebugAssets UP-TO-DATE
+> Task :feature:feature-stats:mergeDebugAssets UP-TO-DATE
+> Task :permissions:permissions-special:generateDebugAssets UP-TO-DATE
+> Task :feature:feature-settings:parseDebugLocalResources UP-TO-DATE
+> Task :feature:feature-onboarding:mergeDebugAssets UP-TO-DATE
+> Task :feature:feature-blockscreen:mergeDebugAssets UP-TO-DATE
+> Task :feature:feature-settings:mergeDebugAssets UP-TO-DATE
+> Task :app:generateDebugGlobalSynthetics UP-TO-DATE
+> Task :feature:feature-stats:packageDebugResources UP-TO-DATE
+> Task :permissions:permissions-special:mergeDebugAssets UP-TO-DATE
+> Task :feature:feature-stats:parseDebugLocalResources UP-TO-DATE
+> Task :core:core-data:compileDebugKotlin UP-TO-DATE
+> Task :feature:feature-settings:generateDebugRFile UP-TO-DATE
+> Task :core:core-datastore:compileDebugKotlin UP-TO-DATE
+> Task :core:core-data:compileDebugJavaWithJavac NO-SOURCE
+> Task :permissions:permissions-special:compileDebugKotlin UP-TO-DATE
+> Task :core:core-datastore:compileDebugJavaWithJavac NO-SOURCE
+> Task :feature:feature-stats:generateDebugRFile UP-TO-DATE
+> Task :core:core-data:processDebugJavaRes UP-TO-DATE
+> Task :core:core-data:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :core:core-common:compileDebugKotlin UP-TO-DATE
+> Task :permissions:permissions-special:compileDebugJavaWithJavac NO-SOURCE
+> Task :core:core-datastore:processDebugJavaRes UP-TO-DATE
+> Task :permissions:permissions-special:processDebugJavaRes UP-TO-DATE
+> Task :core:core-datastore:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :permissions:permissions-special:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :core:core-common:processDebugJavaRes UP-TO-DATE
+> Task :core:core-data:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :core:core-datastore:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :core:core-common:compileDebugJavaWithJavac NO-SOURCE
+> Task :app:l8DexDesugarLibDebug UP-TO-DATE
+> Task :core:core-common:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :core:core-common:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :permissions:permissions-special:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :app:checkDebugDuplicateClasses UP-TO-DATE
+> Task :blocking:blocking-resilience:compileDebugKotlin UP-TO-DATE
+> Task :blocking:blocking-resilience:compileDebugJavaWithJavac NO-SOURCE
+> Task :blocking:blocking-resilience:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :app:mergeDebugAssets UP-TO-DATE
+> Task :blocking:blocking-resilience:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :blocking:blocking-resilience:processDebugJavaRes UP-TO-DATE
+> Task :app:compressDebugAssets UP-TO-DATE
+> Task :blocking:blocking-accessibility:writeDebugAarMetadata UP-TO-DATE
+> Task :blocking:blocking-resilience:writeDebugAarMetadata UP-TO-DATE
+> Task :blocking:blocking-usagestats:writeDebugAarMetadata UP-TO-DATE
+> Task :blocking:blocking-overlay:writeDebugAarMetadata UP-TO-DATE
+> Task :core:core-common:writeDebugAarMetadata UP-TO-DATE
+> Task :core:core-data:writeDebugAarMetadata UP-TO-DATE
+> Task :core:core-datastore:writeDebugAarMetadata UP-TO-DATE
+> Task :feature:feature-blocklist:writeDebugAarMetadata UP-TO-DATE
+> Task :feature:feature-blockscreen:compileDebugKotlin UP-TO-DATE
+> Task :feature:feature-blockscreen:writeDebugAarMetadata UP-TO-DATE
+> Task :app:desugarDebugFileDependencies UP-TO-DATE
+> Task :feature:feature-stats:compileDebugKotlin UP-TO-DATE
+> Task :feature:feature-onboarding:writeDebugAarMetadata UP-TO-DATE
+> Task :feature:feature-connected:writeDebugAarMetadata UP-TO-DATE
+> Task :feature:feature-stats:compileDebugJavaWithJavac NO-SOURCE
+> Task :feature:feature-blockscreen:processDebugJavaRes UP-TO-DATE
+> Task :feature:feature-stats:processDebugJavaRes UP-TO-DATE
+> Task :feature:feature-stats:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :feature:feature-stats:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :feature:feature-settings:writeDebugAarMetadata UP-TO-DATE
+> Task :permissions:permissions-special:writeDebugAarMetadata UP-TO-DATE
+> Task :feature:feature-blockscreen:compileDebugJavaWithJavac NO-SOURCE
+> Task :feature:feature-stats:writeDebugAarMetadata UP-TO-DATE
+> Task :feature:feature-blockscreen:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :feature:feature-onboarding:compileDebugKotlin UP-TO-DATE
+> Task :feature:feature-blockscreen:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :app:mapDebugSourceSetPaths UP-TO-DATE
+> Task :feature:feature-blocklist:compileDebugKotlin UP-TO-DATE
+> Task :feature:feature-onboarding:compileDebugJavaWithJavac NO-SOURCE
+> Task :feature:feature-onboarding:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :feature:feature-onboarding:processDebugJavaRes UP-TO-DATE
+> Task :app:compileDebugNavigationResources UP-TO-DATE
+> Task :feature:feature-onboarding:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :feature:feature-blocklist:compileDebugJavaWithJavac NO-SOURCE
+> Task :feature:feature-blocklist:processDebugJavaRes UP-TO-DATE
+> Task :feature:feature-blocklist:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :feature:feature-blocklist:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE
+> Task :app:extractDeepLinksDebug UP-TO-DATE
+> Task :blocking:blocking-accessibility:extractDeepLinksDebug UP-TO-DATE
+> Task :feature:feature-settings:compileDebugKotlin UP-TO-DATE
+> Task :app:checkDebugAarMetadata UP-TO-DATE
+> Task :blocking:blocking-overlay:extractDeepLinksDebug UP-TO-DATE
+> Task :blocking:blocking-resilience:extractDeepLinksDebug UP-TO-DATE
+> Task :blocking:blocking-overlay:compileDebugKotlin UP-TO-DATE
+> Task :feature:feature-settings:processDebugJavaRes UP-TO-DATE
+> Task :blocking:blocking-overlay:compileDebugJavaWithJavac NO-SOURCE
+> Task :blocking:blocking-overlay:processDebugJavaRes UP-TO-DATE
+> Task :blocking:blocking-overlay:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :feature:feature-settings:compileDebugJavaWithJavac NO-SOURCE
+> Task :blocking:blocking-usagestats:extractDeepLinksDebug UP-TO-DATE
+> Task :blocking:blocking-overlay:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :feature:feature-settings:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :feature:feature-connected:compileDebugKotlin UP-TO-DATE
+> Task :blocking:blocking-resilience:processDebugManifest UP-TO-DATE
+> Task :blocking:blocking-accessibility:compileDebugKotlin UP-TO-DATE
+> Task :blocking:blocking-overlay:processDebugManifest UP-TO-DATE
+> Task :blocking:blocking-accessibility:processDebugManifest UP-TO-DATE
+> Task :feature:feature-settings:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :blocking:blocking-accessibility:compileDebugJavaWithJavac NO-SOURCE
+> Task :app:mergeDebugResources UP-TO-DATE
+> Task :feature:feature-connected:compileDebugJavaWithJavac NO-SOURCE
+> Task :blocking:blocking-accessibility:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :feature:feature-connected:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :feature:feature-connected:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :blocking:blocking-accessibility:processDebugJavaRes UP-TO-DATE
+> Task :blocking:blocking-accessibility:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :feature:feature-connected:processDebugJavaRes UP-TO-DATE
+> Task :blocking:blocking-usagestats:processDebugManifest UP-TO-DATE
+> Task :blocking:blocking-usagestats:compileDebugKotlin UP-TO-DATE
+> Task :core:core-common:extractDeepLinksDebug UP-TO-DATE
+> Task :core:core-datastore:extractDeepLinksDebug UP-TO-DATE
+> Task :core:core-data:extractDeepLinksDebug UP-TO-DATE
+> Task :core:core-data:processDebugManifest UP-TO-DATE
+> Task :blocking:blocking-usagestats:processDebugJavaRes UP-TO-DATE
+> Task :feature:feature-blocklist:extractDeepLinksDebug UP-TO-DATE
+> Task :core:core-datastore:processDebugManifest UP-TO-DATE
+> Task :blocking:blocking-usagestats:compileDebugJavaWithJavac NO-SOURCE
+> Task :feature:feature-connected:extractDeepLinksDebug UP-TO-DATE
+> Task :feature:feature-blockscreen:processDebugManifest UP-TO-DATE
+> Task :core:core-common:processDebugManifest UP-TO-DATE
+> Task :blocking:blocking-usagestats:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :feature:feature-settings:extractDeepLinksDebug UP-TO-DATE
+> Task :feature:feature-onboarding:extractDeepLinksDebug UP-TO-DATE
+> Task :feature:feature-stats:extractDeepLinksDebug UP-TO-DATE
+> Task :feature:feature-blocklist:processDebugManifest UP-TO-DATE
+> Task :feature:feature-onboarding:processDebugManifest UP-TO-DATE
+> Task :feature:feature-connected:processDebugManifest UP-TO-DATE
+> Task :feature:feature-stats:processDebugManifest UP-TO-DATE
+> Task :permissions:permissions-special:extractDeepLinksDebug UP-TO-DATE
+> Task :feature:feature-blockscreen:extractDeepLinksDebug UP-TO-DATE
+> Task :blocking:blocking-overlay:mapDebugSourceSetPaths UP-TO-DATE
+> Task :feature:feature-settings:processDebugManifest UP-TO-DATE
+> Task :blocking:blocking-accessibility:mapDebugSourceSetPaths UP-TO-DATE
+> Task :blocking:blocking-usagestats:mapDebugSourceSetPaths UP-TO-DATE
+> Task :core:core-common:mapDebugSourceSetPaths UP-TO-DATE
+> Task :blocking:blocking-accessibility:compileDebugLibraryResources UP-TO-DATE
+> Task :blocking:blocking-resilience:mapDebugSourceSetPaths UP-TO-DATE
+> Task :core:core-data:mapDebugSourceSetPaths UP-TO-DATE
+> Task :blocking:blocking-overlay:compileDebugLibraryResources UP-TO-DATE
+> Task :blocking:blocking-usagestats:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :core:core-data:compileDebugLibraryResources UP-TO-DATE
+> Task :core:core-datastore:mapDebugSourceSetPaths UP-TO-DATE
+> Task :blocking:blocking-usagestats:compileDebugLibraryResources UP-TO-DATE
+> Task :feature:feature-blocklist:mapDebugSourceSetPaths UP-TO-DATE
+> Task :core:core-common:compileDebugLibraryResources UP-TO-DATE
+> Task :core:core-datastore:compileDebugLibraryResources UP-TO-DATE
+> Task :blocking:blocking-resilience:compileDebugLibraryResources UP-TO-DATE
+> Task :feature:feature-blockscreen:mapDebugSourceSetPaths UP-TO-DATE
+> Task :app:mergeExtDexDebug UP-TO-DATE
+> Task :feature:feature-connected:mapDebugSourceSetPaths UP-TO-DATE
+> Task :permissions:permissions-special:processDebugManifest UP-TO-DATE
+> Task :feature:feature-onboarding:mapDebugSourceSetPaths UP-TO-DATE
+> Task :feature:feature-blocklist:compileDebugLibraryResources UP-TO-DATE
+> Task :app:mergeLibDexDebug UP-TO-DATE
+> Task :blocking:blocking-accessibility:mergeDebugJniLibFolders UP-TO-DATE
+> Task :feature:feature-stats:mapDebugSourceSetPaths UP-TO-DATE
+> Task :permissions:permissions-special:mapDebugSourceSetPaths UP-TO-DATE
+> Task :feature:feature-connected:compileDebugLibraryResources UP-TO-DATE
+> Task :feature:feature-settings:mapDebugSourceSetPaths UP-TO-DATE
+> Task :feature:feature-blockscreen:compileDebugLibraryResources UP-TO-DATE
+> Task :app:mergeDebugJniLibFolders UP-TO-DATE
+> Task :blocking:blocking-accessibility:mergeDebugNativeLibs NO-SOURCE
+> Task :feature:feature-onboarding:compileDebugLibraryResources UP-TO-DATE
+> Task :feature:feature-stats:compileDebugLibraryResources UP-TO-DATE
+> Task :feature:feature-settings:compileDebugLibraryResources UP-TO-DATE
+> Task :blocking:blocking-resilience:mergeDebugJniLibFolders UP-TO-DATE
+> Task :blocking:blocking-accessibility:copyDebugJniLibsProjectOnly UP-TO-DATE
+> Task :blocking:blocking-resilience:mergeDebugNativeLibs NO-SOURCE
+> Task :permissions:permissions-special:compileDebugLibraryResources UP-TO-DATE
+> Task :blocking:blocking-overlay:mergeDebugJniLibFolders UP-TO-DATE
+> Task :core:core-data:mergeDebugJniLibFolders UP-TO-DATE
+> Task :blocking:blocking-overlay:mergeDebugNativeLibs NO-SOURCE
+> Task :blocking:blocking-usagestats:mergeDebugJniLibFolders UP-TO-DATE
+> Task :core:core-datastore:mergeDebugJniLibFolders UP-TO-DATE
+> Task :core:core-data:mergeDebugNativeLibs NO-SOURCE
+> Task :blocking:blocking-resilience:copyDebugJniLibsProjectOnly UP-TO-DATE
+> Task :feature:feature-blocklist:mergeDebugJniLibFolders UP-TO-DATE
+> Task :core:core-datastore:mergeDebugNativeLibs NO-SOURCE
+> Task :feature:feature-blockscreen:mergeDebugJniLibFolders UP-TO-DATE
+> Task :blocking:blocking-usagestats:mergeDebugNativeLibs NO-SOURCE
+> Task :core:core-common:mergeDebugJniLibFolders UP-TO-DATE
+> Task :feature:feature-blocklist:mergeDebugNativeLibs NO-SOURCE
+> Task :core:core-data:copyDebugJniLibsProjectOnly UP-TO-DATE
+> Task :blocking:blocking-overlay:copyDebugJniLibsProjectOnly UP-TO-DATE
+> Task :feature:feature-blockscreen:mergeDebugNativeLibs NO-SOURCE
+> Task :core:core-common:mergeDebugNativeLibs NO-SOURCE
+> Task :feature:feature-connected:mergeDebugJniLibFolders UP-TO-DATE
+> Task :core:core-datastore:copyDebugJniLibsProjectOnly UP-TO-DATE
+> Task :blocking:blocking-usagestats:copyDebugJniLibsProjectOnly UP-TO-DATE
+> Task :feature:feature-blocklist:copyDebugJniLibsProjectOnly UP-TO-DATE
+> Task :feature:feature-settings:mergeDebugJniLibFolders UP-TO-DATE
+> Task :feature:feature-blockscreen:copyDebugJniLibsProjectOnly UP-TO-DATE
+> Task :feature:feature-connected:mergeDebugNativeLibs NO-SOURCE
+> Task :feature:feature-onboarding:mergeDebugJniLibFolders UP-TO-DATE
+> Task :core:core-common:copyDebugJniLibsProjectOnly UP-TO-DATE
+> Task :feature:feature-settings:mergeDebugNativeLibs NO-SOURCE
+> Task :feature:feature-stats:mergeDebugJniLibFolders UP-TO-DATE
+> Task :permissions:permissions-special:mergeDebugJniLibFolders UP-TO-DATE
+> Task :app:compileDebugKotlin UP-TO-DATE
+> Task :app:writeDebugAppMetadata UP-TO-DATE
+> Task :feature:feature-settings:copyDebugJniLibsProjectOnly UP-TO-DATE
+> Task :feature:feature-stats:mergeDebugNativeLibs NO-SOURCE
+> Task :app:validateSigningDebug UP-TO-DATE
+> Task :feature:feature-stats:copyDebugJniLibsProjectOnly UP-TO-DATE
+> Task :app:processDebugJavaRes UP-TO-DATE
+> Task :app:writeDebugSigningConfigVersions UP-TO-DATE
+> Task :blocking:blocking-accessibility:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :blocking:blocking-accessibility:stripDebugDebugSymbols NO-SOURCE
+> Task :blocking:blocking-accessibility:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :permissions:permissions-special:mergeDebugNativeLibs NO-SOURCE
+> Task :blocking:blocking-accessibility:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :blocking:blocking-accessibility:prepareDebugArtProfile UP-TO-DATE
+> Task :blocking:blocking-accessibility:prepareLintJarForPublish UP-TO-DATE
+> Task :feature:feature-onboarding:mergeDebugNativeLibs NO-SOURCE
+> Task :feature:feature-connected:copyDebugJniLibsProjectOnly UP-TO-DATE
+> Task :permissions:permissions-special:copyDebugJniLibsProjectOnly UP-TO-DATE
+> Task :blocking:blocking-overlay:stripDebugDebugSymbols NO-SOURCE
+> Task :blocking:blocking-accessibility:extractDebugAnnotations UP-TO-DATE
+> Task :app:compileDebugJavaWithJavac UP-TO-DATE
+> Task :blocking:blocking-accessibility:copyDebugJniLibsProjectAndLocalJars UP-TO-DATE
+> Task :blocking:blocking-overlay:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :blocking:blocking-overlay:copyDebugJniLibsProjectAndLocalJars UP-TO-DATE
+> Task :feature:feature-onboarding:copyDebugJniLibsProjectOnly UP-TO-DATE
+> Task :blocking:blocking-accessibility:mergeDebugJavaResource UP-TO-DATE
+> Task :blocking:blocking-overlay:prepareLintJarForPublish UP-TO-DATE
+> Task :blocking:blocking-overlay:prepareDebugArtProfile UP-TO-DATE
+> Task :blocking:blocking-overlay:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :blocking:blocking-overlay:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :app:processDebugMainManifest UP-TO-DATE
+> Task :app:mergeDebugJavaResource UP-TO-DATE
+> Task :blocking:blocking-resilience:stripDebugDebugSymbols NO-SOURCE
+> Task :blocking:blocking-overlay:mergeDebugJavaResource UP-TO-DATE
+> Task :blocking:blocking-accessibility:syncDebugLibJars UP-TO-DATE
+> Task :blocking:blocking-accessibility:checkDebugAarMetadata UP-TO-DATE
+> Task :blocking:blocking-resilience:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :blocking:blocking-resilience:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :blocking:blocking-resilience:prepareDebugArtProfile UP-TO-DATE
+> Task :blocking:blocking-resilience:checkDebugAarMetadata UP-TO-DATE
+> Task :blocking:blocking-resilience:prepareLintJarForPublish UP-TO-DATE
+> Task :app:processDebugManifest UP-TO-DATE
+> Task :blocking:blocking-resilience:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :blocking:blocking-resilience:copyDebugJniLibsProjectAndLocalJars UP-TO-DATE
+> Task :blocking:blocking-accessibility:bundleDebugAar UP-TO-DATE
+> Task :blocking:blocking-overlay:extractDebugAnnotations UP-TO-DATE
+> Task :blocking:blocking-usagestats:stripDebugDebugSymbols NO-SOURCE
+> Task :blocking:blocking-accessibility:assembleDebug UP-TO-DATE
+> Task :blocking:blocking-resilience:extractDebugAnnotations UP-TO-DATE
+> Task :blocking:blocking-usagestats:copyDebugJniLibsProjectAndLocalJars UP-TO-DATE
+> Task :app:processDebugManifestForPackage UP-TO-DATE
+> Task :blocking:blocking-overlay:checkDebugAarMetadata UP-TO-DATE
+> Task :blocking:blocking-usagestats:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :blocking:blocking-usagestats:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :blocking:blocking-usagestats:prepareDebugArtProfile UP-TO-DATE
+> Task :blocking:blocking-usagestats:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :core:core-common:stripDebugDebugSymbols NO-SOURCE
+> Task :blocking:blocking-usagestats:prepareLintJarForPublish UP-TO-DATE
+> Task :blocking:blocking-resilience:mergeDebugJavaResource UP-TO-DATE
+> Task :core:core-common:copyDebugJniLibsProjectAndLocalJars UP-TO-DATE
+> Task :core:core-common:extractDebugAnnotations UP-TO-DATE
+> Task :core:core-common:checkDebugAarMetadata UP-TO-DATE
+> Task :blocking:blocking-usagestats:extractDebugAnnotations UP-TO-DATE
+> Task :blocking:blocking-overlay:syncDebugLibJars UP-TO-DATE
+> Task :blocking:blocking-usagestats:mergeDebugJavaResource UP-TO-DATE
+> Task :blocking:blocking-resilience:syncDebugLibJars UP-TO-DATE
+> Task :core:core-common:prepareLintJarForPublish UP-TO-DATE
+> Task :core:core-common:prepareDebugArtProfile UP-TO-DATE
+> Task :core:core-common:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :core:core-common:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :core:core-data:stripDebugDebugSymbols NO-SOURCE
+> Task :core:core-common:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :blocking:blocking-usagestats:checkDebugAarMetadata UP-TO-DATE
+> Task :core:core-data:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :core:core-data:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :blocking:blocking-overlay:bundleDebugAar UP-TO-DATE
+> Task :blocking:blocking-overlay:assembleDebug UP-TO-DATE
+> Task :core:core-data:prepareDebugArtProfile UP-TO-DATE
+> Task :core:core-data:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :core:core-data:prepareLintJarForPublish UP-TO-DATE
+> Task :core:core-data:copyDebugJniLibsProjectAndLocalJars UP-TO-DATE
+> Task :core:core-data:extractDebugAnnotations UP-TO-DATE
+> Task :core:core-data:checkDebugAarMetadata UP-TO-DATE
+> Task :blocking:blocking-resilience:bundleDebugAar UP-TO-DATE
+> Task :blocking:blocking-usagestats:syncDebugLibJars UP-TO-DATE
+> Task :blocking:blocking-resilience:assembleDebug UP-TO-DATE
+> Task :core:core-datastore:stripDebugDebugSymbols NO-SOURCE
+> Task :core:core-common:mergeDebugJavaResource UP-TO-DATE
+> Task :core:core-datastore:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :core:core-datastore:checkDebugAarMetadata UP-TO-DATE
+> Task :core:core-datastore:prepareLintJarForPublish UP-TO-DATE
+> Task :core:core-datastore:prepareDebugArtProfile UP-TO-DATE
+> Task :core:core-datastore:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :core:core-datastore:copyDebugJniLibsProjectAndLocalJars UP-TO-DATE
+> Task :feature:feature-blocklist:stripDebugDebugSymbols NO-SOURCE
+> Task :core:core-datastore:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :blocking:blocking-usagestats:bundleDebugAar UP-TO-DATE
+> Task :blocking:blocking-usagestats:assembleDebug UP-TO-DATE
+> Task :feature:feature-blocklist:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :core:core-data:mergeDebugJavaResource UP-TO-DATE
+> Task :feature:feature-blocklist:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :app:mergeDebugNativeLibs UP-TO-DATE
+> Task :feature:feature-blocklist:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :feature:feature-blocklist:prepareDebugArtProfile UP-TO-DATE
+> Task :feature:feature-blocklist:prepareLintJarForPublish UP-TO-DATE
+> Task :core:core-datastore:extractDebugAnnotations UP-TO-DATE
+> Task :feature:feature-blocklist:copyDebugJniLibsProjectAndLocalJars UP-TO-DATE
+> Task :feature:feature-blockscreen:stripDebugDebugSymbols NO-SOURCE
+> Task :core:core-common:syncDebugLibJars UP-TO-DATE
+> Task :core:core-datastore:mergeDebugJavaResource UP-TO-DATE
+> Task :app:stripDebugDebugSymbols UP-TO-DATE
+> Task :feature:feature-blockscreen:copyDebugJniLibsProjectAndLocalJars UP-TO-DATE
+> Task :feature:feature-blocklist:extractDebugAnnotations UP-TO-DATE
+> Task :core:core-data:syncDebugLibJars UP-TO-DATE
+> Task :core:core-common:bundleDebugAar UP-TO-DATE
+> Task :core:core-common:assembleDebug UP-TO-DATE
+> Task :feature:feature-blockscreen:prepareDebugArtProfile UP-TO-DATE
+> Task :feature:feature-blocklist:mergeDebugJavaResource UP-TO-DATE
+> Task :feature:feature-blockscreen:prepareLintJarForPublish UP-TO-DATE
+> Task :feature:feature-blockscreen:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :feature:feature-blockscreen:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :feature:feature-blockscreen:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :feature:feature-connected:stripDebugDebugSymbols NO-SOURCE
+> Task :feature:feature-blocklist:checkDebugAarMetadata UP-TO-DATE
+> Task :core:core-data:bundleDebugAar UP-TO-DATE
+> Task :core:core-data:assembleDebug UP-TO-DATE
+> Task :feature:feature-connected:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :feature:feature-connected:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :core:core-datastore:syncDebugLibJars UP-TO-DATE
+> Task :feature:feature-connected:copyDebugJniLibsProjectAndLocalJars UP-TO-DATE
+> Task :app:processDebugResources UP-TO-DATE
+> Task :feature:feature-connected:prepareDebugArtProfile UP-TO-DATE
+> Task :feature:feature-connected:prepareLintJarForPublish UP-TO-DATE
+> Task :feature:feature-blocklist:syncDebugLibJars UP-TO-DATE
+> Task :feature:feature-connected:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :feature:feature-blockscreen:extractDebugAnnotations UP-TO-DATE
+> Task :feature:feature-onboarding:stripDebugDebugSymbols NO-SOURCE
+> Task :core:core-datastore:bundleDebugAar UP-TO-DATE
+> Task :core:core-datastore:assembleDebug UP-TO-DATE
+> Task :feature:feature-connected:extractDebugAnnotations UP-TO-DATE
+> Task :feature:feature-blockscreen:mergeDebugJavaResource UP-TO-DATE
+> Task :feature:feature-onboarding:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :feature:feature-blocklist:bundleDebugAar UP-TO-DATE
+> Task :feature:feature-blocklist:assembleDebug UP-TO-DATE
+> Task :feature:feature-blockscreen:checkDebugAarMetadata UP-TO-DATE
+> Task :feature:feature-onboarding:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :feature:feature-onboarding:copyDebugJniLibsProjectAndLocalJars UP-TO-DATE
+> Task :feature:feature-onboarding:prepareDebugArtProfile UP-TO-DATE
+> Task :feature:feature-connected:mergeDebugJavaResource UP-TO-DATE
+> Task :feature:feature-onboarding:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :feature:feature-onboarding:prepareLintJarForPublish UP-TO-DATE
+> Task :feature:feature-settings:stripDebugDebugSymbols NO-SOURCE
+> Task :feature:feature-onboarding:extractDebugAnnotations UP-TO-DATE
+> Task :feature:feature-blockscreen:syncDebugLibJars UP-TO-DATE
+> Task :feature:feature-settings:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :feature:feature-settings:copyDebugJniLibsProjectAndLocalJars UP-TO-DATE
+> Task :feature:feature-onboarding:mergeDebugJavaResource UP-TO-DATE
+> Task :feature:feature-connected:syncDebugLibJars UP-TO-DATE
+> Task :feature:feature-settings:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :feature:feature-settings:prepareLintJarForPublish UP-TO-DATE
+> Task :feature:feature-onboarding:checkDebugAarMetadata UP-TO-DATE
+> Task :feature:feature-settings:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :feature:feature-settings:prepareDebugArtProfile UP-TO-DATE
+> Task :feature:feature-blockscreen:bundleDebugAar UP-TO-DATE
+> Task :feature:feature-connected:checkDebugAarMetadata UP-TO-DATE
+> Task :feature:feature-blockscreen:assembleDebug UP-TO-DATE
+> Task :feature:feature-onboarding:syncDebugLibJars UP-TO-DATE
+> Task :feature:feature-settings:extractDebugAnnotations UP-TO-DATE
+> Task :feature:feature-stats:stripDebugDebugSymbols NO-SOURCE
+> Task :feature:feature-stats:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :feature:feature-stats:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :feature:feature-stats:prepareDebugArtProfile UP-TO-DATE
+> Task :feature:feature-stats:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :feature:feature-stats:prepareLintJarForPublish UP-TO-DATE
+> Task :feature:feature-onboarding:bundleDebugAar UP-TO-DATE
+> Task :feature:feature-onboarding:assembleDebug UP-TO-DATE
+> Task :permissions:permissions-special:stripDebugDebugSymbols NO-SOURCE
+> Task :feature:feature-connected:bundleDebugAar UP-TO-DATE
+> Task :feature:feature-settings:mergeDebugJavaResource UP-TO-DATE
+> Task :feature:feature-connected:assembleDebug UP-TO-DATE
+> Task :feature:feature-stats:extractDebugAnnotations UP-TO-DATE
+> Task :feature:feature-stats:copyDebugJniLibsProjectAndLocalJars UP-TO-DATE
+> Task :permissions:permissions-special:checkDebugAarMetadata UP-TO-DATE
+> Task :feature:feature-settings:checkDebugAarMetadata UP-TO-DATE
+> Task :permissions:permissions-special:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :permissions:permissions-special:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :permissions:permissions-special:prepareLintJarForPublish UP-TO-DATE
+> Task :feature:feature-stats:checkDebugAarMetadata UP-TO-DATE
+> Task :permissions:permissions-special:prepareDebugArtProfile UP-TO-DATE
+> Task :feature:feature-stats:mergeDebugJavaResource UP-TO-DATE
+> Task :permissions:permissions-special:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :permissions:permissions-special:copyDebugJniLibsProjectAndLocalJars UP-TO-DATE
+> Task :feature:feature-settings:syncDebugLibJars UP-TO-DATE
+> Task :permissions:permissions-special:extractDebugAnnotations UP-TO-DATE
+> Task :permissions:permissions-special:mergeDebugJavaResource UP-TO-DATE
+> Task :feature:feature-stats:syncDebugLibJars UP-TO-DATE
+> Task :feature:feature-settings:bundleDebugAar UP-TO-DATE
+> Task :app:dexBuilderDebug UP-TO-DATE
+> Task :feature:feature-settings:assembleDebug UP-TO-DATE
+> Task :app:mergeProjectDexDebug UP-TO-DATE
+> Task :permissions:permissions-special:syncDebugLibJars UP-TO-DATE
+> Task :feature:feature-stats:bundleDebugAar UP-TO-DATE
+> Task :feature:feature-stats:assembleDebug UP-TO-DATE
+> Task :permissions:permissions-special:bundleDebugAar UP-TO-DATE
+> Task :permissions:permissions-special:assembleDebug UP-TO-DATE
+> Task :app:packageDebug UP-TO-DATE
+> Task :app:assembleDebug UP-TO-DATE
+> Task :app:createDebugApkListingFileRedirect UP-TO-DATE
+
+BUILD SUCCESSFUL in 529ms
+449 actionable tasks: 449 up-to-date
+Configuration cache entry reused.
+cd "$ANDROID_DIR" && ./gradlew :app:assembleRelease
+Calculating task graph as no cached configuration is available for tasks: :app:assembleRelease
+
+> Configure project :app
+WARNING: The option setting 'android.builtInKotlin=false' is deprecated.
+The current default is 'true'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+Add android.sync.suppressAgpWarnings=UNSUPPORTED_PROJECT_OPTION_USE to the gradle.properties file to suppress this warning.
+WARNING: The option setting 'android.newDsl=false' is deprecated.
+The current default is 'true'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+Add android.sync.suppressAgpWarnings=UNSUPPORTED_PROJECT_OPTION_USE to the gradle.properties file to suppress this warning.
+WARNING: API 'applicationVariants' is obsolete and has been replaced with 'AndroidComponentsExtension'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+The legacy variant API is disabled by default in AGP 9.0, but can be re-enabled by adding 
+    android.newDsl=false
+to this project's gradle.properties file.
+For more information, see http://developer.android.com/build/r/new-dsl.
+
+To determine what is calling applicationVariants, use -Pandroid.debug.obsoleteApi=true on the command line to display more information.
+Add android.sync.suppressAgpWarnings=DEPRECATED_DSL to the gradle.properties file to suppress this warning.
+WARNING: API 'testVariants' is obsolete and has been replaced with 'AndroidComponentsExtension'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+The legacy variant API is disabled by default in AGP 9.0, but can be re-enabled by adding 
+    android.newDsl=false
+to this project's gradle.properties file.
+For more information, see http://developer.android.com/build/r/new-dsl.
+
+To determine what is calling testVariants, use -Pandroid.debug.obsoleteApi=true on the command line to display more information.
+Add android.sync.suppressAgpWarnings=DEPRECATED_DSL to the gradle.properties file to suppress this warning.
+WARNING: API 'unitTestVariants' is obsolete and has been replaced with 'AndroidComponentsExtension'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+The legacy variant API is disabled by default in AGP 9.0, but can be re-enabled by adding 
+    android.newDsl=false
+to this project's gradle.properties file.
+For more information, see http://developer.android.com/build/r/new-dsl.
+
+To determine what is calling unitTestVariants, use -Pandroid.debug.obsoleteApi=true on the command line to display more information.
+Add android.sync.suppressAgpWarnings=DEPRECATED_DSL to the gradle.properties file to suppress this warning.
+
+> Configure project :blocking:blocking-accessibility
+WARNING: API 'libraryVariants' is obsolete and has been replaced with 'AndroidComponentsExtension'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+The legacy variant API is disabled by default in AGP 9.0, but can be re-enabled by adding 
+    android.newDsl=false
+to this project's gradle.properties file.
+For more information, see http://developer.android.com/build/r/new-dsl.
+
+To determine what is calling libraryVariants, use -Pandroid.debug.obsoleteApi=true on the command line to display more information.
+Add android.sync.suppressAgpWarnings=DEPRECATED_DSL to the gradle.properties file to suppress this warning.
+
+> Task :blocking:blocking-resilience:preBuild UP-TO-DATE
+> Task :blocking:blocking-engine:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:core-common:preBuild UP-TO-DATE
+> Task :blocking:blocking-accessibility:preBuild UP-TO-DATE
+> Task :blocking:blocking-usagestats:preBuild UP-TO-DATE
+> Task :core:core-model:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :blocking:blocking-overlay:preBuild UP-TO-DATE
+> Task :blocking:blocking-usagestats:preReleaseBuild UP-TO-DATE
+> Task :blocking:blocking-accessibility:preReleaseBuild UP-TO-DATE
+> Task :blocking:blocking-overlay:preReleaseBuild UP-TO-DATE
+> Task :app:preBuild UP-TO-DATE
+> Task :blocking:blocking-resilience:preReleaseBuild UP-TO-DATE
+> Task :core:core-common:preReleaseBuild UP-TO-DATE
+> Task :blocking:blocking-engine:processResources NO-SOURCE
+> Task :core:core-datastore:preBuild UP-TO-DATE
+> Task :core:core-data:preBuild UP-TO-DATE
+> Task :core:core-model:processResources NO-SOURCE
+> Task :app:preReleaseBuild UP-TO-DATE
+> Task :core:core-data:preReleaseBuild UP-TO-DATE
+> Task :core:core-datastore:preReleaseBuild UP-TO-DATE
+> Task :feature:feature-blocklist:preBuild UP-TO-DATE
+> Task :feature:feature-blocklist:preReleaseBuild UP-TO-DATE
+> Task :core:core-model:compileKotlin UP-TO-DATE
+> Task :core:core-model:compileJava NO-SOURCE
+> Task :core:core-model:classes UP-TO-DATE
+> Task :core:core-model:jar UP-TO-DATE
+> Task :blocking:blocking-engine:compileKotlin UP-TO-DATE
+> Task :blocking:blocking-engine:compileJava NO-SOURCE
+> Task :blocking:blocking-engine:classes UP-TO-DATE
+> Task :blocking:blocking-resilience:mergeReleaseJniLibFolders
+> Task :core:core-common:mergeReleaseJniLibFolders
+> Task :blocking:blocking-overlay:mergeReleaseJniLibFolders
+> Task :blocking:blocking-engine:jar UP-TO-DATE
+> Task :blocking:blocking-usagestats:mergeReleaseJniLibFolders
+> Task :blocking:blocking-accessibility:mergeReleaseJniLibFolders
+> Task :core:core-data:mergeReleaseJniLibFolders
+> Task :feature:feature-blockscreen:preBuild UP-TO-DATE
+> Task :feature:feature-blockscreen:preReleaseBuild UP-TO-DATE
+> Task :app:mergeReleaseJniLibFolders
+> Task :feature:feature-onboarding:preBuild UP-TO-DATE
+> Task :feature:feature-onboarding:preReleaseBuild UP-TO-DATE
+> Task :feature:feature-blocklist:mergeReleaseJniLibFolders
+> Task :core:core-datastore:mergeReleaseJniLibFolders
+> Task :core:core-common:mergeReleaseNativeLibs NO-SOURCE
+> Task :blocking:blocking-overlay:mergeReleaseNativeLibs NO-SOURCE
+> Task :blocking:blocking-resilience:mergeReleaseNativeLibs NO-SOURCE
+> Task :feature:feature-onboarding:mergeReleaseJniLibFolders
+> Task :blocking:blocking-usagestats:mergeReleaseNativeLibs NO-SOURCE
+> Task :core:core-data:mergeReleaseNativeLibs NO-SOURCE
+> Task :blocking:blocking-accessibility:mergeReleaseNativeLibs NO-SOURCE
+> Task :core:core-datastore:mergeReleaseNativeLibs NO-SOURCE
+> Task :feature:feature-blocklist:mergeReleaseNativeLibs NO-SOURCE
+> Task :feature:feature-blockscreen:mergeReleaseJniLibFolders
+> Task :feature:feature-blockscreen:mergeReleaseNativeLibs NO-SOURCE
+> Task :feature:feature-onboarding:mergeReleaseNativeLibs NO-SOURCE
+> Task :core:core-common:copyReleaseJniLibsProjectOnly
+> Task :blocking:blocking-usagestats:copyReleaseJniLibsProjectOnly
+> Task :feature:feature-blocklist:copyReleaseJniLibsProjectOnly
+> Task :blocking:blocking-overlay:copyReleaseJniLibsProjectOnly
+> Task :permissions:permissions-special:preBuild UP-TO-DATE
+> Task :permissions:permissions-special:preReleaseBuild UP-TO-DATE
+> Task :feature:feature-stats:preBuild UP-TO-DATE
+> Task :feature:feature-settings:preBuild UP-TO-DATE
+> Task :blocking:blocking-resilience:copyReleaseJniLibsProjectOnly
+> Task :core:core-data:copyReleaseJniLibsProjectOnly
+> Task :blocking:blocking-accessibility:copyReleaseJniLibsProjectOnly
+> Task :feature:feature-stats:preReleaseBuild UP-TO-DATE
+> Task :feature:feature-settings:preReleaseBuild UP-TO-DATE
+> Task :core:core-datastore:copyReleaseJniLibsProjectOnly
+> Task :feature:feature-blockscreen:copyReleaseJniLibsProjectOnly
+> Task :feature:feature-onboarding:copyReleaseJniLibsProjectOnly
+> Task :blocking:blocking-usagestats:prepareReleaseArtProfile
+> Task :core:core-common:prepareReleaseArtProfile
+> Task :blocking:blocking-resilience:prepareReleaseArtProfile
+> Task :blocking:blocking-accessibility:prepareReleaseArtProfile
+> Task :core:core-data:prepareReleaseArtProfile
+> Task :core:core-datastore:prepareReleaseArtProfile
+> Task :blocking:blocking-overlay:prepareReleaseArtProfile
+> Task :blocking:blocking-accessibility:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :feature:feature-stats:mergeReleaseJniLibFolders
+> Task :permissions:permissions-special:mergeReleaseJniLibFolders
+> Task :feature:feature-settings:mergeReleaseJniLibFolders
+> Task :feature:feature-blocklist:prepareReleaseArtProfile
+> Task :feature:feature-settings:prepareReleaseArtProfile
+> Task :blocking:blocking-overlay:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :feature:feature-onboarding:prepareReleaseArtProfile
+> Task :feature:feature-blockscreen:prepareReleaseArtProfile
+> Task :core:core-common:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :feature:feature-stats:prepareReleaseArtProfile
+> Task :permissions:permissions-special:prepareReleaseArtProfile
+> Task :permissions:permissions-special:mergeReleaseNativeLibs NO-SOURCE
+> Task :feature:feature-settings:mergeReleaseNativeLibs NO-SOURCE
+> Task :feature:feature-stats:mergeReleaseNativeLibs NO-SOURCE
+> Task :blocking:blocking-overlay:processReleaseNavigationResources FROM-CACHE
+> Task :blocking:blocking-accessibility:processReleaseNavigationResources FROM-CACHE
+> Task :core:core-common:processReleaseNavigationResources FROM-CACHE
+> Task :core:core-datastore:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:core-common:generateReleaseResources FROM-CACHE
+> Task :blocking:blocking-accessibility:generateReleaseResources FROM-CACHE
+> Task :blocking:blocking-overlay:generateReleaseResources FROM-CACHE
+> Task :core:core-datastore:processReleaseNavigationResources FROM-CACHE
+> Task :core:core-datastore:generateReleaseResources FROM-CACHE
+> Task :core:core-common:javaPreCompileRelease FROM-CACHE
+> Task :permissions:permissions-special:copyReleaseJniLibsProjectOnly
+> Task :feature:feature-blockscreen:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:core-datastore:javaPreCompileRelease FROM-CACHE
+> Task :feature:feature-blockscreen:generateReleaseResources FROM-CACHE
+> Task :feature:feature-blockscreen:processReleaseNavigationResources FROM-CACHE
+> Task :feature:feature-blockscreen:javaPreCompileRelease FROM-CACHE
+> Task :core:core-data:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :blocking:blocking-overlay:javaPreCompileRelease FROM-CACHE
+> Task :core:core-data:generateReleaseResources FROM-CACHE
+> Task :core:core-datastore:packageReleaseResources FROM-CACHE
+> Task :core:core-data:processReleaseNavigationResources FROM-CACHE
+> Task :feature:feature-blockscreen:packageReleaseResources FROM-CACHE
+> Task :blocking:blocking-accessibility:packageReleaseResources FROM-CACHE
+> Task :blocking:blocking-overlay:packageReleaseResources FROM-CACHE
+> Task :core:core-datastore:parseReleaseLocalResources FROM-CACHE
+> Task :core:core-data:javaPreCompileRelease FROM-CACHE
+> Task :feature:feature-blockscreen:parseReleaseLocalResources FROM-CACHE
+> Task :blocking:blocking-overlay:parseReleaseLocalResources FROM-CACHE
+> Task :blocking:blocking-accessibility:javaPreCompileRelease FROM-CACHE
+> Task :blocking:blocking-usagestats:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :feature:feature-settings:copyReleaseJniLibsProjectOnly
+> Task :feature:feature-stats:copyReleaseJniLibsProjectOnly
+> Task :core:core-common:packageReleaseResources FROM-CACHE
+> Task :core:core-data:packageReleaseResources FROM-CACHE
+> Task :core:core-datastore:generateReleaseRFile FROM-CACHE
+> Task :blocking:blocking-accessibility:parseReleaseLocalResources FROM-CACHE
+> Task :blocking:blocking-usagestats:processReleaseNavigationResources FROM-CACHE
+> Task :core:core-data:parseReleaseLocalResources FROM-CACHE
+> Task :blocking:blocking-usagestats:generateReleaseResources FROM-CACHE
+> Task :core:core-common:parseReleaseLocalResources FROM-CACHE
+> Task :blocking:blocking-usagestats:javaPreCompileRelease FROM-CACHE
+> Task :blocking:blocking-resilience:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :blocking:blocking-overlay:generateReleaseRFile FROM-CACHE
+> Task :feature:feature-blockscreen:generateReleaseRFile FROM-CACHE
+> Task :permissions:permissions-special:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :blocking:blocking-accessibility:generateReleaseRFile FROM-CACHE
+> Task :blocking:blocking-resilience:processReleaseNavigationResources FROM-CACHE
+> Task :permissions:permissions-special:processReleaseNavigationResources FROM-CACHE
+> Task :permissions:permissions-special:generateReleaseResources FROM-CACHE
+> Task :blocking:blocking-resilience:generateReleaseResources FROM-CACHE
+> Task :app:mergeReleaseArtProfile
+> Task :permissions:permissions-special:javaPreCompileRelease FROM-CACHE
+> Task :feature:feature-onboarding:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:core-data:generateReleaseRFile FROM-CACHE
+> Task :blocking:blocking-usagestats:packageReleaseResources FROM-CACHE
+> Task :core:core-common:generateReleaseRFile FROM-CACHE
+> Task :blocking:blocking-resilience:javaPreCompileRelease FROM-CACHE
+> Task :app:mergeReleaseNativeLibs
+> Task :feature:feature-onboarding:processReleaseNavigationResources FROM-CACHE
+> Task :feature:feature-onboarding:generateReleaseResources FROM-CACHE
+> Task :blocking:blocking-usagestats:parseReleaseLocalResources FROM-CACHE
+> Task :feature:feature-onboarding:javaPreCompileRelease FROM-CACHE
+> Task :feature:feature-settings:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :permissions:permissions-special:packageReleaseResources FROM-CACHE
+> Task :blocking:blocking-resilience:packageReleaseResources FROM-CACHE
+> Task :feature:feature-settings:generateReleaseResources FROM-CACHE
+> Task :permissions:permissions-special:parseReleaseLocalResources FROM-CACHE
+> Task :core:core-data:compileReleaseKotlin FROM-CACHE
+> Task :blocking:blocking-resilience:parseReleaseLocalResources FROM-CACHE
+> Task :feature:feature-onboarding:packageReleaseResources FROM-CACHE
+> Task :feature:feature-onboarding:parseReleaseLocalResources FROM-CACHE
+> Task :core:core-data:compileReleaseJavaWithJavac NO-SOURCE
+
+> Task :app:stripReleaseDebugSymbols
+Unable to strip the following libraries, packaging them as they are: libandroidx.graphics.path.so, libdatastore_shared_counter.so. Run with --info option to learn more.
+
+> Task :app:expandReleaseL8ArtProfileWildcards FROM-CACHE
+> Task :feature:feature-settings:packageReleaseResources FROM-CACHE
+> Task :blocking:blocking-usagestats:generateReleaseRFile FROM-CACHE
+> Task :permissions:permissions-special:generateReleaseRFile FROM-CACHE
+> Task :core:core-common:compileReleaseKotlin FROM-CACHE
+> Task :feature:feature-settings:processReleaseNavigationResources FROM-CACHE
+> Task :core:core-datastore:compileReleaseKotlin FROM-CACHE
+> Task :feature:feature-settings:javaPreCompileRelease FROM-CACHE
+> Task :feature:feature-settings:parseReleaseLocalResources FROM-CACHE
+> Task :feature:feature-blocklist:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:extractReleaseNativeSymbolTables FROM-CACHE
+> Task :core:core-data:bundleLibCompileToJarRelease
+> Task :blocking:blocking-resilience:generateReleaseRFile FROM-CACHE
+> Task :core:core-data:bundleLibRuntimeToJarRelease
+> Task :core:core-datastore:compileReleaseJavaWithJavac NO-SOURCE
+> Task :core:core-common:compileReleaseJavaWithJavac NO-SOURCE
+> Task :app:mergeReleaseNativeDebugMetadata NO-SOURCE
+> Task :feature:feature-blocklist:processReleaseNavigationResources FROM-CACHE
+> Task :feature:feature-onboarding:generateReleaseRFile FROM-CACHE
+> Task :feature:feature-blocklist:javaPreCompileRelease FROM-CACHE
+> Task :feature:feature-stats:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :feature:feature-blocklist:generateReleaseResources FROM-CACHE
+> Task :core:core-common:bundleLibRuntimeToJarRelease
+> Task :feature:feature-stats:processReleaseNavigationResources FROM-CACHE
+> Task :feature:feature-stats:generateReleaseResources FROM-CACHE
+> Task :core:core-common:bundleLibCompileToJarRelease
+> Task :feature:feature-settings:generateReleaseRFile FROM-CACHE
+> Task :feature:feature-stats:javaPreCompileRelease FROM-CACHE
+> Task :core:core-datastore:bundleLibCompileToJarRelease
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :permissions:permissions-special:compileReleaseKotlin FROM-CACHE
+> Task :app:generateReleaseBuildConfig FROM-CACHE
+> Task :core:core-datastore:bundleLibRuntimeToJarRelease
+> Task :app:buildKotlinToolingMetadata
+> Task :feature:feature-blocklist:packageReleaseResources FROM-CACHE
+> Task :feature:feature-stats:packageReleaseResources FROM-CACHE
+> Task :app:javaPreCompileRelease FROM-CACHE
+> Task :permissions:permissions-special:compileReleaseJavaWithJavac NO-SOURCE
+> Task :app:processReleaseNavigationResources FROM-CACHE
+> Task :app:generateReleaseResources FROM-CACHE
+> Task :feature:feature-blocklist:parseReleaseLocalResources FROM-CACHE
+> Task :blocking:blocking-accessibility:writeReleaseAarMetadata
+> Task :feature:feature-stats:parseReleaseLocalResources FROM-CACHE
+> Task :blocking:blocking-resilience:writeReleaseAarMetadata
+> Task :blocking:blocking-overlay:writeReleaseAarMetadata
+> Task :permissions:permissions-special:bundleLibRuntimeToJarRelease
+> Task :permissions:permissions-special:bundleLibCompileToJarRelease
+> Task :blocking:blocking-usagestats:writeReleaseAarMetadata
+> Task :core:core-common:writeReleaseAarMetadata
+> Task :feature:feature-stats:generateReleaseRFile FROM-CACHE
+> Task :feature:feature-blocklist:generateReleaseRFile FROM-CACHE
+> Task :app:packageReleaseResources FROM-CACHE
+> Task :app:parseReleaseLocalResources FROM-CACHE
+> Task :core:core-datastore:writeReleaseAarMetadata
+> Task :core:core-data:writeReleaseAarMetadata
+> Task :feature:feature-blocklist:writeReleaseAarMetadata
+> Task :feature:feature-blockscreen:writeReleaseAarMetadata
+> Task :feature:feature-onboarding:writeReleaseAarMetadata
+> Task :feature:feature-stats:writeReleaseAarMetadata
+> Task :feature:feature-settings:writeReleaseAarMetadata
+> Task :permissions:permissions-special:writeReleaseAarMetadata
+> Task :feature:feature-blockscreen:compileReleaseKotlin FROM-CACHE
+> Task :app:createReleaseCompatibleScreenManifests
+> Task :app:mapReleaseSourceSetPaths
+> Task :app:generateReleaseRFile FROM-CACHE
+> Task :feature:feature-blockscreen:compileReleaseJavaWithJavac NO-SOURCE
+> Task :app:compileReleaseNavigationResources FROM-CACHE
+> Task :blocking:blocking-accessibility:extractDeepLinksRelease FROM-CACHE
+> Task :app:extractDeepLinksRelease FROM-CACHE
+> Task :app:checkReleaseDuplicateClasses
+> Task :feature:feature-blockscreen:bundleLibCompileToJarRelease
+> Task :blocking:blocking-overlay:extractDeepLinksRelease FROM-CACHE
+> Task :blocking:blocking-resilience:compileReleaseKotlin FROM-CACHE
+> Task :feature:feature-blockscreen:bundleLibRuntimeToJarRelease
+> Task :feature:feature-stats:compileReleaseKotlin FROM-CACHE
+> Task :app:checkReleaseAarMetadata
+> Task :blocking:blocking-resilience:extractDeepLinksRelease FROM-CACHE
+> Task :blocking:blocking-accessibility:processReleaseManifest FROM-CACHE
+> Task :blocking:blocking-resilience:compileReleaseJavaWithJavac NO-SOURCE
+> Task :feature:feature-stats:compileReleaseJavaWithJavac NO-SOURCE
+> Task :blocking:blocking-usagestats:extractDeepLinksRelease FROM-CACHE
+> Task :blocking:blocking-resilience:bundleLibRuntimeToJarRelease
+> Task :blocking:blocking-resilience:bundleLibCompileToJarRelease
+> Task :blocking:blocking-overlay:processReleaseManifest FROM-CACHE
+> Task :blocking:blocking-usagestats:processReleaseManifest FROM-CACHE
+> Task :blocking:blocking-resilience:processReleaseManifest FROM-CACHE
+> Task :core:core-common:extractDeepLinksRelease FROM-CACHE
+> Task :blocking:blocking-overlay:compileReleaseKotlin FROM-CACHE
+> Task :feature:feature-stats:bundleLibRuntimeToJarRelease
+> Task :feature:feature-stats:bundleLibCompileToJarRelease
+> Task :core:core-data:extractDeepLinksRelease FROM-CACHE
+> Task :app:mergeReleaseResources FROM-CACHE
+> Task :blocking:blocking-overlay:compileReleaseJavaWithJavac NO-SOURCE
+> Task :feature:feature-blocklist:extractDeepLinksRelease FROM-CACHE
+> Task :core:core-datastore:extractDeepLinksRelease FROM-CACHE
+> Task :core:core-common:processReleaseManifest FROM-CACHE
+> Task :core:core-data:processReleaseManifest FROM-CACHE
+> Task :feature:feature-blocklist:compileReleaseKotlin FROM-CACHE
+> Task :feature:feature-blocklist:compileReleaseJavaWithJavac NO-SOURCE
+> Task :feature:feature-onboarding:extractDeepLinksRelease FROM-CACHE
+> Task :feature:feature-blockscreen:extractDeepLinksRelease FROM-CACHE
+> Task :core:core-datastore:processReleaseManifest FROM-CACHE
+> Task :blocking:blocking-overlay:bundleLibCompileToJarRelease
+> Task :feature:feature-settings:extractDeepLinksRelease FROM-CACHE
+> Task :feature:feature-onboarding:compileReleaseKotlin FROM-CACHE
+> Task :blocking:blocking-overlay:bundleLibRuntimeToJarRelease
+> Task :feature:feature-blocklist:processReleaseManifest FROM-CACHE
+> Task :feature:feature-blockscreen:processReleaseManifest FROM-CACHE
+> Task :feature:feature-settings:compileReleaseKotlin FROM-CACHE
+> Task :feature:feature-blocklist:bundleLibRuntimeToJarRelease
+> Task :feature:feature-onboarding:compileReleaseJavaWithJavac NO-SOURCE
+> Task :feature:feature-settings:compileReleaseJavaWithJavac NO-SOURCE
+> Task :feature:feature-stats:extractDeepLinksRelease FROM-CACHE
+> Task :feature:feature-settings:processReleaseManifest FROM-CACHE
+> Task :feature:feature-onboarding:processReleaseManifest FROM-CACHE
+> Task :feature:feature-onboarding:bundleLibRuntimeToJarRelease
+> Task :feature:feature-blocklist:bundleLibCompileToJarRelease
+> Task :permissions:permissions-special:extractDeepLinksRelease FROM-CACHE
+> Task :feature:feature-onboarding:bundleLibCompileToJarRelease
+> Task :feature:feature-settings:bundleLibRuntimeToJarRelease
+> Task :feature:feature-settings:bundleLibCompileToJarRelease
+> Task :blocking:blocking-accessibility:compileReleaseKotlin FROM-CACHE
+> Task :blocking:blocking-accessibility:compileReleaseJavaWithJavac NO-SOURCE
+> Task :blocking:blocking-resilience:mapReleaseSourceSetPaths
+> Task :blocking:blocking-accessibility:mapReleaseSourceSetPaths
+> Task :blocking:blocking-overlay:mapReleaseSourceSetPaths
+> Task :feature:feature-stats:processReleaseManifest FROM-CACHE
+> Task :permissions:permissions-special:processReleaseManifest FROM-CACHE
+> Task :blocking:blocking-usagestats:mapReleaseSourceSetPaths
+> Task :blocking:blocking-accessibility:bundleLibRuntimeToJarRelease
+> Task :blocking:blocking-overlay:compileReleaseLibraryResources FROM-CACHE
+> Task :core:core-data:mapReleaseSourceSetPaths
+> Task :blocking:blocking-usagestats:compileReleaseKotlin FROM-CACHE
+> Task :blocking:blocking-resilience:compileReleaseLibraryResources FROM-CACHE
+> Task :core:core-common:mapReleaseSourceSetPaths
+> Task :blocking:blocking-accessibility:bundleLibCompileToJarRelease
+> Task :blocking:blocking-accessibility:compileReleaseLibraryResources FROM-CACHE
+> Task :blocking:blocking-usagestats:compileReleaseLibraryResources FROM-CACHE
+> Task :core:core-data:compileReleaseLibraryResources FROM-CACHE
+> Task :blocking:blocking-usagestats:compileReleaseJavaWithJavac NO-SOURCE
+> Task :core:core-datastore:mapReleaseSourceSetPaths
+> Task :feature:feature-settings:mapReleaseSourceSetPaths
+> Task :feature:feature-blockscreen:mapReleaseSourceSetPaths
+> Task :feature:feature-onboarding:mapReleaseSourceSetPaths
+> Task :feature:feature-blocklist:mapReleaseSourceSetPaths
+> Task :feature:feature-stats:mapReleaseSourceSetPaths
+> Task :blocking:blocking-usagestats:bundleLibRuntimeToJarRelease
+> Task :core:core-common:compileReleaseLibraryResources FROM-CACHE
+> Task :blocking:blocking-usagestats:bundleLibCompileToJarRelease
+> Task :feature:feature-settings:compileReleaseLibraryResources FROM-CACHE
+> Task :core:core-datastore:compileReleaseLibraryResources FROM-CACHE
+> Task :feature:feature-onboarding:compileReleaseLibraryResources FROM-CACHE
+> Task :feature:feature-blockscreen:compileReleaseLibraryResources FROM-CACHE
+> Task :feature:feature-blocklist:compileReleaseLibraryResources FROM-CACHE
+> Task :feature:feature-stats:compileReleaseLibraryResources FROM-CACHE
+> Task :permissions:permissions-special:mapReleaseSourceSetPaths
+> Task :app:processReleaseMainManifest FROM-CACHE
+> Task :app:generateReleaseAssets UP-TO-DATE
+> Task :blocking:blocking-accessibility:generateReleaseAssets UP-TO-DATE
+> Task :app:mergeReleaseStartupProfile
+> Task :blocking:blocking-resilience:generateReleaseAssets UP-TO-DATE
+> Task :blocking:blocking-overlay:generateReleaseAssets UP-TO-DATE
+> Task :blocking:blocking-usagestats:generateReleaseAssets UP-TO-DATE
+> Task :core:core-common:generateReleaseAssets UP-TO-DATE
+> Task :core:core-data:generateReleaseAssets UP-TO-DATE
+> Task :permissions:permissions-special:compileReleaseLibraryResources FROM-CACHE
+> Task :blocking:blocking-accessibility:mergeReleaseAssets
+> Task :feature:feature-blocklist:generateReleaseAssets UP-TO-DATE
+> Task :core:core-datastore:generateReleaseAssets UP-TO-DATE
+> Task :blocking:blocking-resilience:mergeReleaseAssets
+> Task :feature:feature-blockscreen:generateReleaseAssets UP-TO-DATE
+> Task :blocking:blocking-usagestats:mergeReleaseAssets
+> Task :blocking:blocking-overlay:mergeReleaseAssets
+> Task :app:processReleaseManifest FROM-CACHE
+> Task :feature:feature-onboarding:generateReleaseAssets UP-TO-DATE
+> Task :app:desugarReleaseFileDependencies FROM-CACHE
+> Task :feature:feature-settings:generateReleaseAssets UP-TO-DATE
+> Task :core:core-common:mergeReleaseAssets
+> Task :feature:feature-stats:generateReleaseAssets UP-TO-DATE
+> Task :feature:feature-settings:mergeReleaseAssets
+> Task :permissions:permissions-special:generateReleaseAssets UP-TO-DATE
+> Task :core:core-data:mergeReleaseAssets
+> Task :app:processReleaseManifestForPackage FROM-CACHE
+> Task :app:extractReleaseVersionControlInfo
+> Task :app:extractProguardFiles
+> Task :blocking:blocking-accessibility:processReleaseJavaRes
+> Task :blocking:blocking-accessibility:createFullJarRelease
+> Task :blocking:blocking-accessibility:extractProguardFiles
+> Task :permissions:permissions-special:mergeReleaseAssets
+> Task :feature:feature-stats:mergeReleaseAssets
+> Task :core:core-datastore:mergeReleaseAssets
+> Task :feature:feature-onboarding:mergeReleaseAssets
+> Task :feature:feature-blocklist:mergeReleaseAssets
+> Task :core:core-common:prepareLintJarForPublish UP-TO-DATE
+> Task :feature:feature-blockscreen:mergeReleaseAssets
+> Task :blocking:blocking-overlay:extractProguardFiles
+> Task :core:core-datastore:prepareLintJarForPublish UP-TO-DATE
+> Task :core:core-datastore:extractProguardFiles
+> Task :app:mergeReleaseAssets
+> Task :core:core-common:extractProguardFiles
+> Task :blocking:blocking-overlay:processReleaseJavaRes
+> Task :core:core-common:processReleaseJavaRes
+> Task :core:core-datastore:processReleaseJavaRes
+> Task :feature:feature-blockscreen:processReleaseJavaRes
+> Task :app:processReleaseResources FROM-CACHE
+> Task :app:compressReleaseAssets FROM-CACHE
+> Task :feature:feature-blockscreen:prepareLintJarForPublish UP-TO-DATE
+> Task :feature:feature-blockscreen:extractProguardFiles
+> Task :app:compileReleaseKotlin FROM-CACHE
+> Task :core:core-common:createFullJarRelease
+> Task :feature:feature-blockscreen:createFullJarRelease
+> Task :blocking:blocking-overlay:prepareLintJarForPublish UP-TO-DATE
+> Task :core:core-data:prepareLintJarForPublish UP-TO-DATE
+> Task :blocking:blocking-accessibility:prepareLintJarForPublish UP-TO-DATE
+> Task :core:core-datastore:createFullJarRelease
+> Task :blocking:blocking-overlay:createFullJarRelease
+> Task :core:core-data:extractProguardFiles
+> Task :core:core-data:processReleaseJavaRes
+> Task :blocking:blocking-resilience:processReleaseJavaRes
+> Task :blocking:blocking-resilience:extractProguardFiles
+> Task :permissions:permissions-special:prepareLintJarForPublish UP-TO-DATE
+> Task :blocking:blocking-resilience:prepareLintJarForPublish UP-TO-DATE
+> Task :permissions:permissions-special:processReleaseJavaRes
+> Task :permissions:permissions-special:extractProguardFiles
+> Task :blocking:blocking-resilience:createFullJarRelease
+> Task :core:core-data:createFullJarRelease
+> Task :permissions:permissions-special:createFullJarRelease
+> Task :blocking:blocking-usagestats:prepareLintJarForPublish UP-TO-DATE
+> Task :blocking:blocking-usagestats:processReleaseJavaRes
+> Task :blocking:blocking-usagestats:extractProguardFiles
+> Task :feature:feature-blocklist:prepareLintJarForPublish UP-TO-DATE
+> Task :core:core-data:generateReleaseLintModel
+> Task :feature:feature-blocklist:extractProguardFiles
+> Task :permissions:permissions-special:generateReleaseLintModel
+> Task :feature:feature-onboarding:prepareLintJarForPublish UP-TO-DATE
+> Task :blocking:blocking-usagestats:createFullJarRelease
+> Task :feature:feature-settings:prepareLintJarForPublish UP-TO-DATE
+> Task :core:core-datastore:generateReleaseLintModel
+> Task :feature:feature-onboarding:processReleaseJavaRes
+> Task :feature:feature-blocklist:processReleaseJavaRes
+> Task :feature:feature-onboarding:extractProguardFiles
+> Task :feature:feature-settings:extractProguardFiles
+> Task :feature:feature-stats:prepareLintJarForPublish UP-TO-DATE
+> Task :feature:feature-onboarding:createFullJarRelease
+> Task :feature:feature-settings:processReleaseJavaRes
+> Task :feature:feature-stats:extractProguardFiles
+> Task :feature:feature-stats:processReleaseJavaRes
+> Task :blocking:blocking-accessibility:extractDeepLinksForAarRelease FROM-CACHE
+> Task :feature:feature-settings:createFullJarRelease
+> Task :feature:feature-blocklist:createFullJarRelease
+> Task :blocking:blocking-accessibility:checkReleaseAarMetadata
+> Task :blocking:blocking-resilience:generateReleaseLintModel
+> Task :blocking:blocking-accessibility:mergeReleaseGeneratedProguardFiles
+> Task :blocking:blocking-usagestats:checkReleaseAarMetadata
+> Task :blocking:blocking-usagestats:extractDeepLinksForAarRelease FROM-CACHE
+> Task :feature:feature-stats:createFullJarRelease
+> Task :blocking:blocking-usagestats:mergeReleaseGeneratedProguardFiles
+> Task :blocking:blocking-accessibility:mergeReleaseConsumerProguardFiles
+> Task :core:core-common:generateReleaseLintModel
+> Task :blocking:blocking-accessibility:extractReleaseAnnotations FROM-CACHE
+> Task :blocking:blocking-usagestats:mergeReleaseConsumerProguardFiles
+> Task :feature:feature-onboarding:extractDeepLinksForAarRelease FROM-CACHE
+> Task :blocking:blocking-accessibility:mergeReleaseJavaResource
+> Task :blocking:blocking-usagestats:extractReleaseAnnotations FROM-CACHE
+> Task :blocking:blocking-usagestats:mergeReleaseJavaResource
+> Task :app:compileReleaseJavaWithJavac FROM-CACHE
+> Task :feature:feature-onboarding:checkReleaseAarMetadata
+> Task :feature:feature-blockscreen:generateReleaseLintModel
+> Task :feature:feature-onboarding:generateReleaseLintModel
+> Task :blocking:blocking-accessibility:syncReleaseLibJars FROM-CACHE
+> Task :blocking:blocking-usagestats:syncReleaseLibJars FROM-CACHE
+> Task :feature:feature-onboarding:extractReleaseAnnotations FROM-CACHE
+> Task :feature:feature-settings:generateReleaseLintModel
+> Task :feature:feature-onboarding:mergeReleaseGeneratedProguardFiles
+> Task :feature:feature-blocklist:generateReleaseLintModel
+> Task :feature:feature-stats:generateReleaseLintModel
+> Task :feature:feature-onboarding:mergeReleaseConsumerProguardFiles
+> Task :blocking:blocking-accessibility:bundleReleaseLocalLintAar
+> Task :feature:feature-settings:checkReleaseAarMetadata
+> Task :blocking:blocking-overlay:generateReleaseLintModel
+> Task :feature:feature-settings:mergeReleaseGeneratedProguardFiles
+> Task :feature:feature-settings:extractDeepLinksForAarRelease FROM-CACHE
+> Task :blocking:blocking-usagestats:bundleReleaseLocalLintAar
+> Task :feature:feature-onboarding:mergeReleaseJavaResource
+> Task :feature:feature-settings:mergeReleaseConsumerProguardFiles
+> Task :feature:feature-settings:mergeReleaseJavaResource
+> Task :blocking:blocking-resilience:extractDeepLinksForAarRelease FROM-CACHE
+> Task :blocking:blocking-resilience:mergeReleaseGeneratedProguardFiles
+> Task :blocking:blocking-resilience:checkReleaseAarMetadata
+> Task :feature:feature-settings:extractReleaseAnnotations FROM-CACHE
+> Task :feature:feature-onboarding:syncReleaseLibJars FROM-CACHE
+> Task :blocking:blocking-resilience:mergeReleaseConsumerProguardFiles
+> Task :core:core-data:extractDeepLinksForAarRelease FROM-CACHE
+> Task :blocking:blocking-accessibility:generateReleaseLintModel
+> Task :core:core-data:checkReleaseAarMetadata
+> Task :feature:feature-settings:syncReleaseLibJars FROM-CACHE
+> Task :blocking:blocking-usagestats:generateReleaseLintModel
+> Task :feature:feature-onboarding:bundleReleaseLocalLintAar
+> Task :blocking:blocking-resilience:mergeReleaseJavaResource
+> Task :blocking:blocking-resilience:extractReleaseAnnotations FROM-CACHE
+> Task :core:core-data:mergeReleaseGeneratedProguardFiles
+> Task :core:core-data:extractReleaseAnnotations FROM-CACHE
+> Task :blocking:blocking-overlay:extractDeepLinksForAarRelease FROM-CACHE
+> Task :core:core-data:mergeReleaseConsumerProguardFiles
+> Task :feature:feature-settings:bundleReleaseLocalLintAar
+> Task :core:core-data:mergeReleaseJavaResource
+> Task :blocking:blocking-overlay:mergeReleaseGeneratedProguardFiles
+> Task :blocking:blocking-overlay:checkReleaseAarMetadata
+> Task :blocking:blocking-resilience:syncReleaseLibJars FROM-CACHE
+> Task :blocking:blocking-overlay:mergeReleaseConsumerProguardFiles
+> Task :app:dexBuilderRelease FROM-CACHE
+> Task :feature:feature-blocklist:extractDeepLinksForAarRelease FROM-CACHE
+> Task :core:core-data:syncReleaseLibJars FROM-CACHE
+> Task :feature:feature-blocklist:mergeReleaseGeneratedProguardFiles
+> Task :blocking:blocking-resilience:bundleReleaseLocalLintAar
+> Task :blocking:blocking-overlay:mergeReleaseJavaResource
+> Task :feature:feature-blocklist:mergeReleaseConsumerProguardFiles
+> Task :core:core-data:bundleReleaseLocalLintAar
+> Task :core:core-datastore:extractDeepLinksForAarRelease FROM-CACHE
+> Task :core:core-datastore:mergeReleaseGeneratedProguardFiles
+> Task :core:core-datastore:checkReleaseAarMetadata
+> Task :blocking:blocking-overlay:extractReleaseAnnotations FROM-CACHE
+> Task :core:core-datastore:mergeReleaseConsumerProguardFiles
+> Task :feature:feature-blocklist:checkReleaseAarMetadata
+> Task :blocking:blocking-overlay:syncReleaseLibJars FROM-CACHE
+> Task :blocking:blocking-overlay:bundleReleaseLocalLintAar
+> Task :app:mergeReleaseGlobalSynthetics FROM-CACHE
+> Task :feature:feature-stats:checkReleaseAarMetadata
+> Task :feature:feature-stats:mergeReleaseGeneratedProguardFiles
+> Task :feature:feature-blocklist:mergeReleaseJavaResource
+> Task :feature:feature-stats:mergeReleaseConsumerProguardFiles
+> Task :feature:feature-blockscreen:extractDeepLinksForAarRelease FROM-CACHE
+> Task :feature:feature-stats:mergeReleaseJavaResource
+> Task :feature:feature-blockscreen:mergeReleaseGeneratedProguardFiles
+> Task :core:core-datastore:mergeReleaseJavaResource
+> Task :feature:feature-blocklist:extractReleaseAnnotations FROM-CACHE
+> Task :feature:feature-blockscreen:mergeReleaseConsumerProguardFiles
+> Task :feature:feature-blockscreen:extractReleaseAnnotations FROM-CACHE
+> Task :feature:feature-stats:extractDeepLinksForAarRelease FROM-CACHE
+> Task :feature:feature-stats:extractReleaseAnnotations FROM-CACHE
+> Task :core:core-common:extractDeepLinksForAarRelease FROM-CACHE
+> Task :core:core-common:mergeReleaseGeneratedProguardFiles
+> Task :core:core-common:mergeReleaseConsumerProguardFiles
+> Task :core:core-common:checkReleaseAarMetadata
+> Task :app:generateReleaseLintVitalReportModel
+> Task :feature:feature-blocklist:syncReleaseLibJars FROM-CACHE
+> Task :core:core-common:mergeReleaseJavaResource
+> Task :app:mergeExtDexRelease FROM-CACHE
+> Task :permissions:permissions-special:extractDeepLinksForAarRelease FROM-CACHE
+> Task :feature:feature-stats:syncReleaseLibJars FROM-CACHE
+> Task :permissions:permissions-special:checkReleaseAarMetadata
+> Task :permissions:permissions-special:mergeReleaseGeneratedProguardFiles
+> Task :permissions:permissions-special:mergeReleaseConsumerProguardFiles
+> Task :feature:feature-blocklist:bundleReleaseLocalLintAar
+> Task :blocking:blocking-overlay:writeReleaseLintModelMetadata
+> Task :feature:feature-stats:bundleReleaseLocalLintAar
+> Task :permissions:permissions-special:extractReleaseAnnotations FROM-CACHE
+> Task :permissions:permissions-special:mergeReleaseJavaResource
+> Task :permissions:permissions-special:syncReleaseLibJars FROM-CACHE
+> Task :core:core-common:extractReleaseAnnotations FROM-CACHE
+> Task :permissions:permissions-special:bundleReleaseLocalLintAar
+> Task :core:core-common:writeReleaseLintModelMetadata
+> Task :core:core-data:writeReleaseLintModelMetadata
+> Task :core:core-datastore:writeReleaseLintModelMetadata
+> Task :feature:feature-blockscreen:writeReleaseLintModelMetadata
+> Task :blocking:blocking-accessibility:writeReleaseLintModelMetadata
+> Task :feature:feature-blockscreen:checkReleaseAarMetadata
+> Task :blocking:blocking-usagestats:writeReleaseLintModelMetadata
+> Task :permissions:permissions-special:writeReleaseLintModelMetadata
+> Task :core:core-data:lintVitalAnalyzeRelease FROM-CACHE
+> Task :feature:feature-blocklist:writeReleaseLintModelMetadata
+> Task :feature:feature-blockscreen:mergeReleaseJavaResource
+> Task :feature:feature-onboarding:writeReleaseLintModelMetadata
+> Task :feature:feature-settings:writeReleaseLintModelMetadata
+> Task :feature:feature-stats:writeReleaseLintModelMetadata
+> Task :core:core-common:lintVitalAnalyzeRelease FROM-CACHE
+> Task :feature:feature-blockscreen:syncReleaseLibJars FROM-CACHE
+> Task :core:core-common:syncReleaseLibJars FROM-CACHE
+> Task :permissions:permissions-special:lintVitalAnalyzeRelease FROM-CACHE
+> Task :feature:feature-blockscreen:bundleReleaseLocalLintAar
+> Task :core:core-common:bundleReleaseLocalLintAar
+> Task :blocking:blocking-resilience:writeReleaseLintModelMetadata
+> Task :core:core-datastore:extractReleaseAnnotations FROM-CACHE
+> Task :blocking:blocking-accessibility:generateReleaseLintVitalModel
+> Task :blocking:blocking-resilience:generateReleaseLintVitalModel
+> Task :core:core-datastore:syncReleaseLibJars FROM-CACHE
+> Task :feature:feature-blockscreen:lintVitalAnalyzeRelease FROM-CACHE
+> Task :feature:feature-stats:lintVitalAnalyzeRelease FROM-CACHE
+> Task :core:core-datastore:bundleReleaseLocalLintAar
+> Task :core:core-common:generateReleaseLintVitalModel
+> Task :core:core-data:generateReleaseLintVitalModel
+> Task :core:core-datastore:generateReleaseLintVitalModel
+> Task :blocking:blocking-usagestats:generateReleaseLintVitalModel
+> Task :blocking:blocking-resilience:lintVitalAnalyzeRelease FROM-CACHE
+> Task :blocking:blocking-accessibility:lintVitalAnalyzeRelease FROM-CACHE
+> Task :blocking:blocking-usagestats:lintVitalAnalyzeRelease FROM-CACHE
+> Task :feature:feature-blocklist:lintVitalAnalyzeRelease FROM-CACHE
+> Task :feature:feature-onboarding:lintVitalAnalyzeRelease FROM-CACHE
+> Task :feature:feature-onboarding:generateReleaseLintVitalModel
+> Task :feature:feature-blocklist:generateReleaseLintVitalModel
+> Task :feature:feature-settings:lintVitalAnalyzeRelease FROM-CACHE
+> Task :feature:feature-stats:generateReleaseLintVitalModel
+> Task :feature:feature-settings:generateReleaseLintVitalModel
+> Task :app:processReleaseJavaRes
+> Task :feature:feature-blockscreen:generateReleaseLintVitalModel
+> Task :permissions:permissions-special:generateReleaseLintVitalModel
+> Task :app:optimizeReleaseResources FROM-CACHE
+> Task :app:writeReleaseAppMetadata
+> Task :app:writeReleaseSigningConfigVersions
+> Task :blocking:blocking-overlay:generateReleaseLintVitalModel
+> Task :app:validateSigningRelease
+> Task :core:core-datastore:lintVitalAnalyzeRelease FROM-CACHE
+> Task :blocking:blocking-overlay:lintVitalAnalyzeRelease FROM-CACHE
+> Task :app:lintVitalAnalyzeRelease FROM-CACHE
+> Task :app:collectReleaseDependencies
+> Task :app:sdkReleaseDependencyData
+> Task :app:mergeDexRelease FROM-CACHE
+> Task :app:l8DexDesugarLibRelease FROM-CACHE
+> Task :app:compileReleaseArtProfile FROM-CACHE
+> Task :app:mergeReleaseJavaResource
+> Task :app:lintVitalReportRelease
+> Task :app:lintVitalRelease
+> Task :app:packageRelease
+> Task :app:assembleRelease
+> Task :app:createReleaseApkListingFileRedirect
+
+[Incubating] Problems report is available at: file:///Users/prakash/orca/workspaces/flint/ws-android/android-app/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.8.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 3s
+499 actionable tasks: 272 executed, 210 from cache, 17 up-to-date
+Configuration cache entry stored.
+python3 scripts/verify_local_first_apk.py "$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk"
+Release APK verified: no connected account code or network permissions.
+cd "$ANDROID_DIR" && ./gradlew test
+Calculating task graph as no cached configuration is available for tasks: test
+
+> Configure project :app
+WARNING: The option setting 'android.builtInKotlin=false' is deprecated.
+The current default is 'true'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+Add android.sync.suppressAgpWarnings=UNSUPPORTED_PROJECT_OPTION_USE to the gradle.properties file to suppress this warning.
+WARNING: The option setting 'android.newDsl=false' is deprecated.
+The current default is 'true'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+Add android.sync.suppressAgpWarnings=UNSUPPORTED_PROJECT_OPTION_USE to the gradle.properties file to suppress this warning.
+WARNING: API 'applicationVariants' is obsolete and has been replaced with 'AndroidComponentsExtension'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+The legacy variant API is disabled by default in AGP 9.0, but can be re-enabled by adding 
+    android.newDsl=false
+to this project's gradle.properties file.
+For more information, see http://developer.android.com/build/r/new-dsl.
+
+To determine what is calling applicationVariants, use -Pandroid.debug.obsoleteApi=true on the command line to display more information.
+Add android.sync.suppressAgpWarnings=DEPRECATED_DSL to the gradle.properties file to suppress this warning.
+WARNING: API 'testVariants' is obsolete and has been replaced with 'AndroidComponentsExtension'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+The legacy variant API is disabled by default in AGP 9.0, but can be re-enabled by adding 
+    android.newDsl=false
+to this project's gradle.properties file.
+For more information, see http://developer.android.com/build/r/new-dsl.
+
+To determine what is calling testVariants, use -Pandroid.debug.obsoleteApi=true on the command line to display more information.
+Add android.sync.suppressAgpWarnings=DEPRECATED_DSL to the gradle.properties file to suppress this warning.
+WARNING: API 'unitTestVariants' is obsolete and has been replaced with 'AndroidComponentsExtension'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+The legacy variant API is disabled by default in AGP 9.0, but can be re-enabled by adding 
+    android.newDsl=false
+to this project's gradle.properties file.
+For more information, see http://developer.android.com/build/r/new-dsl.
+
+To determine what is calling unitTestVariants, use -Pandroid.debug.obsoleteApi=true on the command line to display more information.
+Add android.sync.suppressAgpWarnings=DEPRECATED_DSL to the gradle.properties file to suppress this warning.
+
+> Configure project :blocking:blocking-accessibility
+WARNING: API 'libraryVariants' is obsolete and has been replaced with 'AndroidComponentsExtension'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+The legacy variant API is disabled by default in AGP 9.0, but can be re-enabled by adding 
+    android.newDsl=false
+to this project's gradle.properties file.
+For more information, see http://developer.android.com/build/r/new-dsl.
+
+To determine what is calling libraryVariants, use -Pandroid.debug.obsoleteApi=true on the command line to display more information.
+Add android.sync.suppressAgpWarnings=DEPRECATED_DSL to the gradle.properties file to suppress this warning.
+
+> Task :blocking:blocking-resilience:preBuild UP-TO-DATE
+> Task :blocking:blocking-accessibility:preBuild UP-TO-DATE
+> Task :blocking:blocking-resilience:preDebugBuild UP-TO-DATE
+> Task :core:core-model:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :blocking:blocking-overlay:preBuild UP-TO-DATE
+> Task :blocking:blocking-overlay:preDebugBuild UP-TO-DATE
+> Task :blocking:blocking-engine:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:core-data:preBuild UP-TO-DATE
+> Task :core:core-common:preBuild UP-TO-DATE
+> Task :blocking:blocking-resilience:processDebugNavigationResources UP-TO-DATE
+> Task :core:core-data:preDebugBuild UP-TO-DATE
+> Task :blocking:blocking-accessibility:preDebugBuild UP-TO-DATE
+> Task :core:core-datastore:preBuild UP-TO-DATE
+> Task :core:core-datastore:preDebugBuild UP-TO-DATE
+> Task :core:core-model:processResources NO-SOURCE
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :blocking:blocking-usagestats:preBuild UP-TO-DATE
+> Task :feature:feature-blocklist:preBuild UP-TO-DATE
+> Task :blocking:blocking-usagestats:preDebugBuild UP-TO-DATE
+> Task :blocking:blocking-overlay:processDebugNavigationResources UP-TO-DATE
+> Task :feature:feature-blocklist:preDebugBuild UP-TO-DATE
+> Task :blocking:blocking-engine:processResources NO-SOURCE
+> Task :core:core-common:preDebugBuild UP-TO-DATE
+> Task :core:core-data:processDebugNavigationResources UP-TO-DATE
+> Task :blocking:blocking-accessibility:processDebugNavigationResources UP-TO-DATE
+> Task :core:core-datastore:processDebugNavigationResources UP-TO-DATE
+> Task :app:generateDebugBuildConfig UP-TO-DATE
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :feature:feature-onboarding:preBuild UP-TO-DATE
+> Task :feature:feature-settings:preBuild UP-TO-DATE
+> Task :feature:feature-onboarding:preDebugBuild UP-TO-DATE
+> Task :blocking:blocking-usagestats:processDebugNavigationResources UP-TO-DATE
+> Task :feature:feature-stats:preBuild UP-TO-DATE
+> Task :feature:feature-connected:preBuild UP-TO-DATE
+> Task :feature:feature-blocklist:processDebugNavigationResources UP-TO-DATE
+> Task :feature:feature-stats:preDebugBuild UP-TO-DATE
+> Task :core:core-common:processDebugNavigationResources UP-TO-DATE
+> Task :feature:feature-blockscreen:preBuild UP-TO-DATE
+> Task :feature:feature-connected:preDebugBuild UP-TO-DATE
+> Task :feature:feature-settings:preDebugBuild UP-TO-DATE
+> Task :blocking:blocking-accessibility:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :feature:feature-settings:processDebugNavigationResources UP-TO-DATE
+> Task :blocking:blocking-overlay:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :blocking:blocking-accessibility:generateDebugResources UP-TO-DATE
+> Task :feature:feature-stats:processDebugNavigationResources UP-TO-DATE
+> Task :blocking:blocking-overlay:generateDebugResources UP-TO-DATE
+> Task :feature:feature-blockscreen:preDebugBuild UP-TO-DATE
+> Task :core:core-common:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :feature:feature-connected:processDebugNavigationResources UP-TO-DATE
+> Task :feature:feature-blockscreen:processDebugNavigationResources UP-TO-DATE
+> Task :permissions:permissions-special:preBuild UP-TO-DATE
+> Task :core:core-datastore:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :permissions:permissions-special:preDebugBuild UP-TO-DATE
+> Task :blocking:blocking-overlay:packageDebugResources UP-TO-DATE
+> Task :core:core-common:generateDebugResources UP-TO-DATE
+> Task :feature:feature-onboarding:processDebugNavigationResources UP-TO-DATE
+> Task :feature:feature-blockscreen:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :blocking:blocking-accessibility:packageDebugResources UP-TO-DATE
+> Task :core:core-common:javaPreCompileDebug UP-TO-DATE
+> Task :permissions:permissions-special:processDebugNavigationResources UP-TO-DATE
+> Task :feature:feature-blockscreen:generateDebugResources UP-TO-DATE
+> Task :core:core-datastore:generateDebugResources UP-TO-DATE
+> Task :core:core-datastore:javaPreCompileDebug UP-TO-DATE
+> Task :feature:feature-blockscreen:javaPreCompileDebug UP-TO-DATE
+> Task :app:packageDebugResources UP-TO-DATE
+> Task :core:core-data:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :blocking:blocking-accessibility:parseDebugLocalResources UP-TO-DATE
+> Task :core:core-model:compileKotlin UP-TO-DATE
+> Task :blocking:blocking-overlay:parseDebugLocalResources UP-TO-DATE
+> Task :blocking:blocking-overlay:javaPreCompileDebug UP-TO-DATE
+> Task :core:core-data:generateDebugResources UP-TO-DATE
+> Task :core:core-model:compileJava NO-SOURCE
+> Task :core:core-model:classes UP-TO-DATE
+> Task :core:core-data:javaPreCompileDebug UP-TO-DATE
+> Task :blocking:blocking-resilience:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:core-datastore:packageDebugResources UP-TO-DATE
+> Task :blocking:blocking-resilience:generateDebugResources UP-TO-DATE
+> Task :core:core-common:packageDebugResources UP-TO-DATE
+> Task :blocking:blocking-accessibility:javaPreCompileDebug UP-TO-DATE
+> Task :permissions:permissions-special:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:core-model:jar UP-TO-DATE
+> Task :core:core-common:parseDebugLocalResources UP-TO-DATE
+> Task :blocking:blocking-accessibility:generateDebugRFile UP-TO-DATE
+> Task :permissions:permissions-special:generateDebugResources UP-TO-DATE
+> Task :core:core-datastore:parseDebugLocalResources UP-TO-DATE
+> Task :feature:feature-blockscreen:packageDebugResources UP-TO-DATE
+> Task :core:core-data:packageDebugResources UP-TO-DATE
+> Task :blocking:blocking-overlay:generateDebugRFile UP-TO-DATE
+> Task :permissions:permissions-special:javaPreCompileDebug UP-TO-DATE
+> Task :core:core-data:parseDebugLocalResources UP-TO-DATE
+> Task :feature:feature-blockscreen:parseDebugLocalResources UP-TO-DATE
+> Task :blocking:blocking-resilience:javaPreCompileDebug UP-TO-DATE
+> Task :blocking:blocking-usagestats:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:core-common:generateDebugRFile UP-TO-DATE
+> Task :core:core-datastore:generateDebugRFile UP-TO-DATE
+> Task :blocking:blocking-usagestats:generateDebugResources UP-TO-DATE
+> Task :app:processDebugNavigationResources UP-TO-DATE
+> Task :blocking:blocking-resilience:packageDebugResources UP-TO-DATE
+> Task :core:core-data:generateDebugRFile UP-TO-DATE
+> Task :blocking:blocking-usagestats:javaPreCompileDebug UP-TO-DATE
+> Task :permissions:permissions-special:packageDebugResources UP-TO-DATE
+> Task :feature:feature-blocklist:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:parseDebugLocalResources UP-TO-DATE
+> Task :blocking:blocking-resilience:parseDebugLocalResources UP-TO-DATE
+> Task :feature:feature-blocklist:generateDebugResources UP-TO-DATE
+> Task :permissions:permissions-special:parseDebugLocalResources UP-TO-DATE
+> Task :feature:feature-blockscreen:generateDebugRFile UP-TO-DATE
+> Task :blocking:blocking-engine:compileKotlin UP-TO-DATE
+> Task :feature:feature-blocklist:javaPreCompileDebug UP-TO-DATE
+> Task :blocking:blocking-usagestats:packageDebugResources UP-TO-DATE
+> Task :feature:feature-connected:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:generateDebugRFile UP-TO-DATE
+> Task :blocking:blocking-resilience:generateDebugRFile UP-TO-DATE
+> Task :feature:feature-onboarding:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:core-data:compileDebugKotlin UP-TO-DATE
+> Task :permissions:permissions-special:generateDebugRFile UP-TO-DATE
+> Task :core:core-datastore:compileDebugKotlin UP-TO-DATE
+> Task :blocking:blocking-engine:compileJava NO-SOURCE
+> Task :blocking:blocking-engine:classes UP-TO-DATE
+> Task :blocking:blocking-usagestats:parseDebugLocalResources UP-TO-DATE
+> Task :feature:feature-connected:generateDebugResources UP-TO-DATE
+> Task :core:core-data:compileDebugJavaWithJavac NO-SOURCE
+> Task :feature:feature-connected:javaPreCompileDebug UP-TO-DATE
+> Task :core:core-datastore:compileDebugJavaWithJavac NO-SOURCE
+> Task :feature:feature-onboarding:generateDebugResources UP-TO-DATE
+> Task :core:core-data:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :feature:feature-onboarding:javaPreCompileDebug UP-TO-DATE
+> Task :blocking:blocking-engine:jar UP-TO-DATE
+> Task :core:core-datastore:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :feature:feature-settings:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :feature:feature-blocklist:packageDebugResources UP-TO-DATE
+> Task :blocking:blocking-usagestats:generateDebugRFile UP-TO-DATE
+> Task :feature:feature-connected:packageDebugResources UP-TO-DATE
+> Task :core:core-common:compileDebugKotlin UP-TO-DATE
+> Task :feature:feature-stats:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :permissions:permissions-special:compileDebugKotlin UP-TO-DATE
+> Task :feature:feature-settings:generateDebugResources UP-TO-DATE
+> Task :feature:feature-settings:javaPreCompileDebug UP-TO-DATE
+> Task :feature:feature-connected:parseDebugLocalResources UP-TO-DATE
+> Task :feature:feature-stats:javaPreCompileDebug UP-TO-DATE
+> Task :feature:feature-stats:generateDebugResources UP-TO-DATE
+> Task :permissions:permissions-special:compileDebugJavaWithJavac NO-SOURCE
+> Task :feature:feature-blocklist:parseDebugLocalResources UP-TO-DATE
+> Task :core:core-common:compileDebugJavaWithJavac NO-SOURCE
+> Task :feature:feature-onboarding:packageDebugResources UP-TO-DATE
+> Task :app:javaPreCompileDebug UP-TO-DATE
+> Task :permissions:permissions-special:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :core:core-common:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :feature:feature-settings:packageDebugResources UP-TO-DATE
+> Task :feature:feature-connected:generateDebugRFile UP-TO-DATE
+> Task :feature:feature-blocklist:generateDebugRFile UP-TO-DATE
+> Task :feature:feature-stats:packageDebugResources UP-TO-DATE
+> Task :feature:feature-settings:parseDebugLocalResources UP-TO-DATE
+> Task :blocking:blocking-accessibility:writeDebugAarMetadata UP-TO-DATE
+> Task :blocking:blocking-overlay:writeDebugAarMetadata UP-TO-DATE
+> Task :feature:feature-stats:parseDebugLocalResources UP-TO-DATE
+> Task :blocking:blocking-resilience:writeDebugAarMetadata UP-TO-DATE
+> Task :blocking:blocking-usagestats:writeDebugAarMetadata UP-TO-DATE
+> Task :core:core-data:writeDebugAarMetadata UP-TO-DATE
+> Task :core:core-datastore:writeDebugAarMetadata UP-TO-DATE
+> Task :feature:feature-settings:generateDebugRFile UP-TO-DATE
+> Task :core:core-common:writeDebugAarMetadata UP-TO-DATE
+> Task :feature:feature-onboarding:parseDebugLocalResources UP-TO-DATE
+> Task :feature:feature-blocklist:writeDebugAarMetadata UP-TO-DATE
+> Task :feature:feature-onboarding:writeDebugAarMetadata UP-TO-DATE
+> Task :feature:feature-blockscreen:writeDebugAarMetadata UP-TO-DATE
+> Task :feature:feature-connected:writeDebugAarMetadata UP-TO-DATE
+> Task :feature:feature-settings:writeDebugAarMetadata UP-TO-DATE
+> Task :feature:feature-stats:writeDebugAarMetadata UP-TO-DATE
+> Task :feature:feature-stats:generateDebugRFile UP-TO-DATE
+> Task :feature:feature-onboarding:generateDebugRFile UP-TO-DATE
+> Task :permissions:permissions-special:writeDebugAarMetadata UP-TO-DATE
+> Task :app:mapDebugSourceSetPaths UP-TO-DATE
+> Task :feature:feature-blocklist:compileDebugKotlin UP-TO-DATE
+> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE
+> Task :app:extractDeepLinksDebug UP-TO-DATE
+> Task :feature:feature-blocklist:compileDebugJavaWithJavac NO-SOURCE
+> Task :blocking:blocking-resilience:compileDebugKotlin UP-TO-DATE
+> Task :blocking:blocking-resilience:compileDebugJavaWithJavac NO-SOURCE
+> Task :blocking:blocking-accessibility:extractDeepLinksDebug UP-TO-DATE
+> Task :feature:feature-connected:compileDebugKotlin UP-TO-DATE
+> Task :feature:feature-blocklist:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :feature:feature-connected:compileDebugJavaWithJavac NO-SOURCE
+> Task :app:compileDebugNavigationResources UP-TO-DATE
+> Task :blocking:blocking-resilience:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :feature:feature-connected:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :blocking:blocking-overlay:extractDeepLinksDebug UP-TO-DATE
+> Task :blocking:blocking-resilience:extractDeepLinksDebug UP-TO-DATE
+> Task :app:checkDebugAarMetadata UP-TO-DATE
+> Task :blocking:blocking-accessibility:processDebugManifest UP-TO-DATE
+> Task :feature:feature-stats:compileDebugKotlin UP-TO-DATE
+> Task :feature:feature-blockscreen:compileDebugKotlin UP-TO-DATE
+> Task :feature:feature-stats:compileDebugJavaWithJavac NO-SOURCE
+> Task :core:core-common:extractDeepLinksDebug UP-TO-DATE
+> Task :blocking:blocking-overlay:processDebugManifest UP-TO-DATE
+> Task :blocking:blocking-usagestats:extractDeepLinksDebug UP-TO-DATE
+> Task :feature:feature-stats:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :feature:feature-blockscreen:compileDebugJavaWithJavac NO-SOURCE
+> Task :core:core-data:extractDeepLinksDebug UP-TO-DATE
+> Task :app:mergeDebugResources UP-TO-DATE
+> Task :blocking:blocking-resilience:processDebugManifest UP-TO-DATE
+> Task :core:core-datastore:extractDeepLinksDebug UP-TO-DATE
+> Task :blocking:blocking-usagestats:processDebugManifest UP-TO-DATE
+> Task :feature:feature-blockscreen:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :feature:feature-blocklist:extractDeepLinksDebug UP-TO-DATE
+> Task :feature:feature-blockscreen:extractDeepLinksDebug UP-TO-DATE
+> Task :core:core-data:processDebugManifest UP-TO-DATE
+> Task :core:core-common:processDebugManifest UP-TO-DATE
+> Task :feature:feature-connected:extractDeepLinksDebug UP-TO-DATE
+> Task :feature:feature-onboarding:extractDeepLinksDebug UP-TO-DATE
+> Task :core:core-datastore:processDebugManifest UP-TO-DATE
+> Task :feature:feature-stats:extractDeepLinksDebug UP-TO-DATE
+> Task :feature:feature-settings:extractDeepLinksDebug UP-TO-DATE
+> Task :feature:feature-blocklist:processDebugManifest UP-TO-DATE
+> Task :feature:feature-blockscreen:processDebugManifest UP-TO-DATE
+> Task :feature:feature-connected:processDebugManifest UP-TO-DATE
+> Task :permissions:permissions-special:extractDeepLinksDebug UP-TO-DATE
+> Task :blocking:blocking-accessibility:mapDebugSourceSetPaths UP-TO-DATE
+> Task :feature:feature-onboarding:processDebugManifest UP-TO-DATE
+> Task :feature:feature-onboarding:compileDebugKotlin UP-TO-DATE
+> Task :blocking:blocking-resilience:mapDebugSourceSetPaths UP-TO-DATE
+> Task :feature:feature-settings:processDebugManifest UP-TO-DATE
+> Task :blocking:blocking-usagestats:mapDebugSourceSetPaths UP-TO-DATE
+> Task :blocking:blocking-overlay:mapDebugSourceSetPaths UP-TO-DATE
+> Task :feature:feature-stats:processDebugManifest UP-TO-DATE
+> Task :blocking:blocking-resilience:compileDebugLibraryResources UP-TO-DATE
+> Task :blocking:blocking-accessibility:compileDebugLibraryResources UP-TO-DATE
+> Task :feature:feature-settings:compileDebugKotlin UP-TO-DATE
+> Task :core:core-common:mapDebugSourceSetPaths UP-TO-DATE
+> Task :feature:feature-onboarding:compileDebugJavaWithJavac NO-SOURCE
+> Task :blocking:blocking-overlay:compileDebugLibraryResources UP-TO-DATE
+> Task :permissions:permissions-special:processDebugManifest UP-TO-DATE
+> Task :blocking:blocking-usagestats:compileDebugLibraryResources UP-TO-DATE
+> Task :feature:feature-settings:compileDebugJavaWithJavac NO-SOURCE
+> Task :core:core-data:mapDebugSourceSetPaths UP-TO-DATE
+> Task :core:core-common:compileDebugLibraryResources UP-TO-DATE
+> Task :feature:feature-blocklist:mapDebugSourceSetPaths UP-TO-DATE
+> Task :feature:feature-onboarding:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :core:core-datastore:mapDebugSourceSetPaths UP-TO-DATE
+> Task :feature:feature-blockscreen:mapDebugSourceSetPaths UP-TO-DATE
+> Task :feature:feature-connected:mapDebugSourceSetPaths UP-TO-DATE
+> Task :core:core-data:compileDebugLibraryResources UP-TO-DATE
+> Task :feature:feature-settings:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :feature:feature-onboarding:mapDebugSourceSetPaths UP-TO-DATE
+> Task :feature:feature-blocklist:compileDebugLibraryResources UP-TO-DATE
+> Task :core:core-datastore:compileDebugLibraryResources UP-TO-DATE
+> Task :app:preDebugUnitTestBuild UP-TO-DATE
+> Task :feature:feature-settings:mapDebugSourceSetPaths UP-TO-DATE
+> Task :blocking:blocking-overlay:compileDebugKotlin UP-TO-DATE
+> Task :feature:feature-blockscreen:compileDebugLibraryResources UP-TO-DATE
+> Task :feature:feature-connected:compileDebugLibraryResources UP-TO-DATE
+> Task :feature:feature-stats:mapDebugSourceSetPaths UP-TO-DATE
+> Task :feature:feature-onboarding:compileDebugLibraryResources UP-TO-DATE
+> Task :blocking:blocking-overlay:compileDebugJavaWithJavac NO-SOURCE
+> Task :permissions:permissions-special:mapDebugSourceSetPaths UP-TO-DATE
+> Task :blocking:blocking-resilience:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :feature:feature-settings:compileDebugLibraryResources UP-TO-DATE
+> Task :feature:feature-stats:compileDebugLibraryResources UP-TO-DATE
+> Task :core:core-common:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :permissions:permissions-special:compileDebugLibraryResources UP-TO-DATE
+> Task :blocking:blocking-overlay:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :blocking:blocking-overlay:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :core:core-datastore:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :core:core-data:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :blocking:blocking-overlay:processDebugJavaRes UP-TO-DATE
+> Task :blocking:blocking-resilience:processDebugJavaRes UP-TO-DATE
+> Task :core:core-common:processDebugJavaRes UP-TO-DATE
+> Task :core:core-data:processDebugJavaRes UP-TO-DATE
+> Task :feature:feature-blocklist:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :feature:feature-blockscreen:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :feature:feature-connected:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :feature:feature-onboarding:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :core:core-datastore:processDebugJavaRes UP-TO-DATE
+> Task :feature:feature-blockscreen:processDebugJavaRes UP-TO-DATE
+> Task :feature:feature-settings:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :feature:feature-blocklist:processDebugJavaRes UP-TO-DATE
+> Task :feature:feature-connected:processDebugJavaRes UP-TO-DATE
+> Task :feature:feature-stats:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :permissions:permissions-special:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :app:preReleaseBuild UP-TO-DATE
+> Task :app:generateReleaseBuildConfig UP-TO-DATE
+> Task :feature:feature-onboarding:processDebugJavaRes UP-TO-DATE
+> Task :feature:feature-settings:processDebugJavaRes UP-TO-DATE
+> Task :feature:feature-stats:processDebugJavaRes UP-TO-DATE
+> Task :blocking:blocking-overlay:preReleaseBuild UP-TO-DATE
+> Task :app:buildKotlinToolingMetadata UP-TO-DATE
+> Task :blocking:blocking-resilience:preReleaseBuild UP-TO-DATE
+> Task :permissions:permissions-special:processDebugJavaRes UP-TO-DATE
+> Task :blocking:blocking-accessibility:preReleaseBuild UP-TO-DATE
+> Task :blocking:blocking-usagestats:preReleaseBuild UP-TO-DATE
+> Task :core:core-common:preReleaseBuild UP-TO-DATE
+> Task :blocking:blocking-accessibility:compileDebugKotlin UP-TO-DATE
+> Task :blocking:blocking-overlay:processReleaseNavigationResources UP-TO-DATE
+> Task :blocking:blocking-usagestats:compileDebugKotlin UP-TO-DATE
+> Task :app:generateReleaseResources UP-TO-DATE
+> Task :core:core-common:processReleaseNavigationResources UP-TO-DATE
+> Task :blocking:blocking-accessibility:processReleaseNavigationResources UP-TO-DATE
+> Task :core:core-data:preReleaseBuild UP-TO-DATE
+> Task :blocking:blocking-resilience:processReleaseNavigationResources UP-TO-DATE
+> Task :blocking:blocking-usagestats:processReleaseNavigationResources UP-TO-DATE
+> Task :core:core-datastore:preReleaseBuild UP-TO-DATE
+> Task :feature:feature-blocklist:preReleaseBuild UP-TO-DATE
+> Task :blocking:blocking-accessibility:processDebugJavaRes UP-TO-DATE
+> Task :blocking:blocking-usagestats:processDebugJavaRes UP-TO-DATE
+> Task :feature:feature-onboarding:preReleaseBuild UP-TO-DATE
+> Task :core:core-datastore:processReleaseNavigationResources UP-TO-DATE
+> Task :feature:feature-settings:preReleaseBuild UP-TO-DATE
+> Task :core:core-data:processReleaseNavigationResources UP-TO-DATE
+> Task :feature:feature-onboarding:processReleaseNavigationResources UP-TO-DATE
+> Task :permissions:permissions-special:preReleaseBuild UP-TO-DATE
+> Task :feature:feature-stats:preReleaseBuild UP-TO-DATE
+> Task :blocking:blocking-usagestats:compileDebugJavaWithJavac NO-SOURCE
+> Task :feature:feature-settings:processReleaseNavigationResources UP-TO-DATE
+> Task :app:packageReleaseResources UP-TO-DATE
+> Task :blocking:blocking-accessibility:compileDebugJavaWithJavac NO-SOURCE
+> Task :blocking:blocking-usagestats:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :blocking:blocking-usagestats:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :permissions:permissions-special:processReleaseNavigationResources UP-TO-DATE
+> Task :feature:feature-blocklist:processReleaseNavigationResources UP-TO-DATE
+> Task :blocking:blocking-accessibility:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :feature:feature-blockscreen:preReleaseBuild UP-TO-DATE
+> Task :blocking:blocking-accessibility:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :feature:feature-blockscreen:processReleaseNavigationResources UP-TO-DATE
+> Task :blocking:blocking-accessibility:generateReleaseResources UP-TO-DATE
+> Task :feature:feature-stats:processReleaseNavigationResources UP-TO-DATE
+> Task :blocking:blocking-overlay:generateReleaseResources UP-TO-DATE
+> Task :core:core-datastore:javaPreCompileRelease UP-TO-DATE
+> Task :core:core-datastore:generateReleaseResources UP-TO-DATE
+> Task :core:core-common:generateReleaseResources UP-TO-DATE
+> Task :app:processReleaseNavigationResources UP-TO-DATE
+> Task :core:core-common:packageReleaseResources UP-TO-DATE
+> Task :core:core-common:javaPreCompileRelease UP-TO-DATE
+> Task :core:core-common:parseReleaseLocalResources UP-TO-DATE
+> Task :app:parseReleaseLocalResources UP-TO-DATE
+> Task :core:core-common:generateReleaseRFile UP-TO-DATE
+> Task :feature:feature-blockscreen:generateReleaseResources UP-TO-DATE
+> Task :app:generateReleaseRFile UP-TO-DATE
+> Task :core:core-datastore:packageReleaseResources UP-TO-DATE
+> Task :blocking:blocking-accessibility:packageReleaseResources UP-TO-DATE
+> Task :feature:feature-blockscreen:javaPreCompileRelease UP-TO-DATE
+> Task :feature:feature-blockscreen:packageReleaseResources UP-TO-DATE
+> Task :blocking:blocking-overlay:javaPreCompileRelease UP-TO-DATE
+> Task :blocking:blocking-overlay:packageReleaseResources UP-TO-DATE
+> Task :core:core-datastore:parseReleaseLocalResources UP-TO-DATE
+> Task :feature:feature-blockscreen:parseReleaseLocalResources UP-TO-DATE
+> Task :blocking:blocking-overlay:parseReleaseLocalResources UP-TO-DATE
+> Task :blocking:blocking-accessibility:parseReleaseLocalResources UP-TO-DATE
+> Task :app:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :core:core-data:javaPreCompileRelease UP-TO-DATE
+> Task :core:core-data:generateReleaseResources UP-TO-DATE
+> Task :core:core-datastore:generateReleaseRFile UP-TO-DATE
+> Task :blocking:blocking-accessibility:generateReleaseRFile UP-TO-DATE
+> Task :blocking:blocking-accessibility:javaPreCompileRelease UP-TO-DATE
+> Task :blocking:blocking-overlay:generateReleaseRFile UP-TO-DATE
+> Task :blocking:blocking-resilience:generateReleaseResources UP-TO-DATE
+> Task :core:core-common:compileReleaseKotlin UP-TO-DATE
+> Task :feature:feature-blockscreen:generateReleaseRFile UP-TO-DATE
+> Task :blocking:blocking-resilience:javaPreCompileRelease UP-TO-DATE
+> Task :app:compileDebugKotlin UP-TO-DATE
+> Task :permissions:permissions-special:javaPreCompileRelease UP-TO-DATE
+> Task :app:processDebugMainManifest UP-TO-DATE
+> Task :core:core-common:compileReleaseJavaWithJavac NO-SOURCE
+> Task :permissions:permissions-special:generateReleaseResources UP-TO-DATE
+> Task :app:processDebugManifest UP-TO-DATE
+> Task :core:core-common:bundleLibCompileToJarRelease UP-TO-DATE
+> Task :app:processDebugManifestForPackage UP-TO-DATE
+> Task :app:processDebugJavaRes UP-TO-DATE
+> Task :blocking:blocking-usagestats:generateReleaseResources UP-TO-DATE
+> Task :core:core-datastore:compileReleaseKotlin UP-TO-DATE
+> Task :blocking:blocking-usagestats:javaPreCompileRelease UP-TO-DATE
+> Task :core:core-data:packageReleaseResources UP-TO-DATE
+> Task :blocking:blocking-resilience:packageReleaseResources UP-TO-DATE
+> Task :core:core-datastore:compileReleaseJavaWithJavac NO-SOURCE
+> Task :core:core-data:parseReleaseLocalResources UP-TO-DATE
+> Task :feature:feature-blocklist:generateReleaseResources UP-TO-DATE
+> Task :blocking:blocking-usagestats:packageReleaseResources UP-TO-DATE
+> Task :blocking:blocking-resilience:parseReleaseLocalResources UP-TO-DATE
+> Task :feature:feature-blocklist:javaPreCompileRelease UP-TO-DATE
+> Task :core:core-datastore:bundleLibCompileToJarRelease UP-TO-DATE
+> Task :permissions:permissions-special:packageReleaseResources UP-TO-DATE
+> Task :blocking:blocking-usagestats:parseReleaseLocalResources UP-TO-DATE
+> Task :app:compileDebugJavaWithJavac UP-TO-DATE
+> Task :feature:feature-onboarding:generateReleaseResources UP-TO-DATE
+> Task :feature:feature-onboarding:javaPreCompileRelease UP-TO-DATE
+> Task :blocking:blocking-resilience:generateReleaseRFile UP-TO-DATE
+> Task :core:core-data:generateReleaseRFile UP-TO-DATE
+> Task :permissions:permissions-special:parseReleaseLocalResources UP-TO-DATE
+> Task :feature:feature-blockscreen:compileReleaseKotlin UP-TO-DATE
+> Task :blocking:blocking-usagestats:generateReleaseRFile UP-TO-DATE
+> Task :feature:feature-blockscreen:compileReleaseJavaWithJavac NO-SOURCE
+> Task :feature:feature-settings:javaPreCompileRelease UP-TO-DATE
+> Task :feature:feature-blockscreen:bundleLibCompileToJarRelease UP-TO-DATE
+> Task :feature:feature-settings:generateReleaseResources UP-TO-DATE
+> Task :app:javaPreCompileRelease UP-TO-DATE
+> Task :feature:feature-stats:generateReleaseResources UP-TO-DATE
+> Task :permissions:permissions-special:generateReleaseRFile UP-TO-DATE
+> Task :blocking:blocking-accessibility:writeReleaseAarMetadata UP-TO-DATE
+> Task :feature:feature-stats:javaPreCompileRelease UP-TO-DATE
+> Task :core:core-data:compileReleaseKotlin UP-TO-DATE
+> Task :blocking:blocking-overlay:writeReleaseAarMetadata UP-TO-DATE
+> Task :blocking:blocking-resilience:writeReleaseAarMetadata UP-TO-DATE
+> Task :feature:feature-blocklist:packageReleaseResources UP-TO-DATE
+> Task :blocking:blocking-usagestats:writeReleaseAarMetadata UP-TO-DATE
+> Task :core:core-common:writeReleaseAarMetadata UP-TO-DATE
+> Task :core:core-data:compileReleaseJavaWithJavac NO-SOURCE
+> Task :feature:feature-onboarding:packageReleaseResources UP-TO-DATE
+> Task :core:core-data:writeReleaseAarMetadata UP-TO-DATE
+> Task :core:core-datastore:writeReleaseAarMetadata UP-TO-DATE
+> Task :feature:feature-stats:packageReleaseResources UP-TO-DATE
+> Task :feature:feature-blocklist:parseReleaseLocalResources UP-TO-DATE
+> Task :blocking:blocking-overlay:compileReleaseKotlin UP-TO-DATE
+> Task :core:core-data:bundleLibCompileToJarRelease UP-TO-DATE
+> Task :feature:feature-blockscreen:writeReleaseAarMetadata UP-TO-DATE
+> Task :feature:feature-blocklist:writeReleaseAarMetadata UP-TO-DATE
+> Task :feature:feature-onboarding:parseReleaseLocalResources UP-TO-DATE
+> Task :feature:feature-settings:packageReleaseResources UP-TO-DATE
+> Task :feature:feature-stats:parseReleaseLocalResources UP-TO-DATE
+> Task :feature:feature-onboarding:writeReleaseAarMetadata UP-TO-DATE
+> Task :feature:feature-blocklist:generateReleaseRFile UP-TO-DATE
+> Task :feature:feature-settings:writeReleaseAarMetadata UP-TO-DATE
+> Task :feature:feature-settings:parseReleaseLocalResources UP-TO-DATE
+> Task :blocking:blocking-overlay:compileReleaseJavaWithJavac NO-SOURCE
+> Task :feature:feature-stats:writeReleaseAarMetadata UP-TO-DATE
+> Task :permissions:permissions-special:writeReleaseAarMetadata UP-TO-DATE
+> Task :blocking:blocking-overlay:bundleLibCompileToJarRelease UP-TO-DATE
+> Task :feature:feature-onboarding:generateReleaseRFile UP-TO-DATE
+> Task :feature:feature-stats:generateReleaseRFile UP-TO-DATE
+> Task :feature:feature-settings:generateReleaseRFile UP-TO-DATE
+> Task :permissions:permissions-special:compileReleaseKotlin UP-TO-DATE
+> Task :app:mapReleaseSourceSetPaths UP-TO-DATE
+> Task :app:createReleaseCompatibleScreenManifests UP-TO-DATE
+> Task :permissions:permissions-special:compileReleaseJavaWithJavac NO-SOURCE
+> Task :app:extractDeepLinksRelease UP-TO-DATE
+> Task :app:checkReleaseAarMetadata UP-TO-DATE
+> Task :app:compileReleaseNavigationResources UP-TO-DATE
+> Task :blocking:blocking-accessibility:extractDeepLinksRelease UP-TO-DATE
+> Task :permissions:permissions-special:bundleLibCompileToJarRelease UP-TO-DATE
+> Task :blocking:blocking-overlay:extractDeepLinksRelease UP-TO-DATE
+> Task :blocking:blocking-resilience:extractDeepLinksRelease UP-TO-DATE
+> Task :feature:feature-blocklist:compileReleaseKotlin UP-TO-DATE
+> Task :feature:feature-blocklist:compileReleaseJavaWithJavac NO-SOURCE
+> Task :feature:feature-blocklist:bundleLibCompileToJarRelease UP-TO-DATE
+> Task :blocking:blocking-usagestats:extractDeepLinksRelease UP-TO-DATE
+> Task :app:mergeReleaseResources UP-TO-DATE
+> Task :blocking:blocking-accessibility:compileReleaseKotlin UP-TO-DATE
+> Task :blocking:blocking-usagestats:compileReleaseKotlin UP-TO-DATE
+> Task :core:core-common:extractDeepLinksRelease UP-TO-DATE
+> Task :blocking:blocking-usagestats:compileReleaseJavaWithJavac NO-SOURCE
+> Task :blocking:blocking-overlay:processReleaseManifest UP-TO-DATE
+> Task :blocking:blocking-resilience:processReleaseManifest UP-TO-DATE
+> Task :blocking:blocking-accessibility:compileReleaseJavaWithJavac NO-SOURCE
+> Task :blocking:blocking-accessibility:processReleaseManifest UP-TO-DATE
+> Task :blocking:blocking-usagestats:bundleLibCompileToJarRelease UP-TO-DATE
+> Task :blocking:blocking-resilience:compileReleaseKotlin UP-TO-DATE
+> Task :blocking:blocking-accessibility:bundleLibCompileToJarRelease UP-TO-DATE
+> Task :core:core-data:extractDeepLinksRelease UP-TO-DATE
+> Task :core:core-datastore:extractDeepLinksRelease UP-TO-DATE
+> Task :feature:feature-blocklist:extractDeepLinksRelease UP-TO-DATE
+> Task :blocking:blocking-resilience:compileReleaseJavaWithJavac NO-SOURCE
+> Task :feature:feature-stats:compileReleaseKotlin UP-TO-DATE
+> Task :blocking:blocking-usagestats:processReleaseManifest UP-TO-DATE
+> Task :feature:feature-stats:compileReleaseJavaWithJavac NO-SOURCE
+> Task :feature:feature-blockscreen:extractDeepLinksRelease UP-TO-DATE
+> Task :blocking:blocking-resilience:bundleLibCompileToJarRelease UP-TO-DATE
+> Task :feature:feature-onboarding:extractDeepLinksRelease UP-TO-DATE
+> Task :feature:feature-stats:bundleLibCompileToJarRelease UP-TO-DATE
+> Task :core:core-common:processReleaseManifest UP-TO-DATE
+> Task :core:core-datastore:processReleaseManifest UP-TO-DATE
+> Task :app:processDebugResources UP-TO-DATE
+> Task :feature:feature-blocklist:processReleaseManifest UP-TO-DATE
+> Task :feature:feature-stats:extractDeepLinksRelease UP-TO-DATE
+> Task :feature:feature-settings:extractDeepLinksRelease UP-TO-DATE
+> Task :feature:feature-blockscreen:processReleaseManifest UP-TO-DATE
+> Task :core:core-data:processReleaseManifest UP-TO-DATE
+> Task :feature:feature-onboarding:processReleaseManifest UP-TO-DATE
+> Task :permissions:permissions-special:extractDeepLinksRelease UP-TO-DATE
+> Task :blocking:blocking-resilience:mapReleaseSourceSetPaths UP-TO-DATE
+> Task :feature:feature-onboarding:compileReleaseKotlin UP-TO-DATE
+> Task :blocking:blocking-resilience:compileReleaseLibraryResources UP-TO-DATE
+> Task :blocking:blocking-accessibility:mapReleaseSourceSetPaths UP-TO-DATE
+> Task :blocking:blocking-overlay:mapReleaseSourceSetPaths UP-TO-DATE
+> Task :blocking:blocking-usagestats:mapReleaseSourceSetPaths UP-TO-DATE
+> Task :permissions:permissions-special:processReleaseManifest UP-TO-DATE
+> Task :feature:feature-onboarding:compileReleaseJavaWithJavac NO-SOURCE
+> Task :blocking:blocking-accessibility:compileReleaseLibraryResources UP-TO-DATE
+> Task :core:core-common:mapReleaseSourceSetPaths UP-TO-DATE
+> Task :blocking:blocking-overlay:compileReleaseLibraryResources UP-TO-DATE
+> Task :feature:feature-settings:compileReleaseKotlin UP-TO-DATE
+> Task :feature:feature-stats:processReleaseManifest UP-TO-DATE
+> Task :blocking:blocking-usagestats:compileReleaseLibraryResources UP-TO-DATE
+> Task :core:core-common:compileReleaseLibraryResources UP-TO-DATE
+> Task :feature:feature-settings:processReleaseManifest UP-TO-DATE
+> Task :core:core-datastore:mapReleaseSourceSetPaths UP-TO-DATE
+> Task :core:core-data:mapReleaseSourceSetPaths UP-TO-DATE
+> Task :feature:feature-onboarding:bundleLibCompileToJarRelease UP-TO-DATE
+> Task :feature:feature-blocklist:mapReleaseSourceSetPaths UP-TO-DATE
+> Task :feature:feature-blockscreen:mapReleaseSourceSetPaths UP-TO-DATE
+> Task :core:core-data:compileReleaseLibraryResources UP-TO-DATE
+> Task :feature:feature-onboarding:mapReleaseSourceSetPaths UP-TO-DATE
+> Task :feature:feature-settings:compileReleaseJavaWithJavac NO-SOURCE
+> Task :feature:feature-settings:mapReleaseSourceSetPaths UP-TO-DATE
+> Task :feature:feature-blocklist:compileReleaseLibraryResources UP-TO-DATE
+> Task :core:core-datastore:compileReleaseLibraryResources UP-TO-DATE
+> Task :feature:feature-settings:bundleLibCompileToJarRelease UP-TO-DATE
+> Task :feature:feature-blockscreen:compileReleaseLibraryResources UP-TO-DATE
+> Task :feature:feature-settings:compileReleaseLibraryResources UP-TO-DATE
+> Task :feature:feature-stats:mapReleaseSourceSetPaths UP-TO-DATE
+> Task :permissions:permissions-special:mapReleaseSourceSetPaths UP-TO-DATE
+> Task :app:processReleaseMainManifest UP-TO-DATE
+> Task :feature:feature-onboarding:compileReleaseLibraryResources UP-TO-DATE
+> Task :blocking:blocking-accessibility:bundleLibRuntimeToJarRelease UP-TO-DATE
+> Task :app:preReleaseUnitTestBuild UP-TO-DATE
+> Task :feature:feature-stats:compileReleaseLibraryResources UP-TO-DATE
+> Task :app:processReleaseManifest UP-TO-DATE
+> Task :blocking:blocking-overlay:bundleLibRuntimeToJarRelease UP-TO-DATE
+> Task :permissions:permissions-special:compileReleaseLibraryResources UP-TO-DATE
+> Task :blocking:blocking-resilience:bundleLibRuntimeToJarRelease UP-TO-DATE
+> Task :app:processReleaseManifestForPackage UP-TO-DATE
+> Task :blocking:blocking-usagestats:bundleLibRuntimeToJarRelease UP-TO-DATE
+> Task :blocking:blocking-accessibility:processReleaseJavaRes UP-TO-DATE
+> Task :blocking:blocking-resilience:processReleaseJavaRes UP-TO-DATE
+> Task :blocking:blocking-usagestats:processReleaseJavaRes UP-TO-DATE
+> Task :core:core-data:bundleLibRuntimeToJarRelease UP-TO-DATE
+> Task :core:core-common:processReleaseJavaRes UP-TO-DATE
+> Task :core:core-common:bundleLibRuntimeToJarRelease UP-TO-DATE
+> Task :blocking:blocking-overlay:processReleaseJavaRes UP-TO-DATE
+> Task :core:core-datastore:bundleLibRuntimeToJarRelease UP-TO-DATE
+> Task :core:core-data:processReleaseJavaRes UP-TO-DATE
+> Task :feature:feature-blocklist:bundleLibRuntimeToJarRelease UP-TO-DATE
+> Task :feature:feature-blockscreen:bundleLibRuntimeToJarRelease UP-TO-DATE
+> Task :feature:feature-blockscreen:processReleaseJavaRes UP-TO-DATE
+> Task :feature:feature-onboarding:bundleLibRuntimeToJarRelease UP-TO-DATE
+> Task :feature:feature-settings:bundleLibRuntimeToJarRelease UP-TO-DATE
+> Task :feature:feature-blocklist:processReleaseJavaRes UP-TO-DATE
+> Task :feature:feature-stats:bundleLibRuntimeToJarRelease UP-TO-DATE
+> Task :core:core-datastore:processReleaseJavaRes UP-TO-DATE
+> Task :permissions:permissions-special:bundleLibRuntimeToJarRelease UP-TO-DATE
+> Task :feature:feature-stats:processReleaseJavaRes UP-TO-DATE
+> Task :feature:feature-onboarding:processReleaseJavaRes UP-TO-DATE
+> Task :blocking:blocking-accessibility:preDebugUnitTestBuild UP-TO-DATE
+> Task :blocking:blocking-accessibility:preReleaseUnitTestBuild UP-TO-DATE
+> Task :feature:feature-settings:processReleaseJavaRes UP-TO-DATE
+> Task :permissions:permissions-special:processReleaseJavaRes UP-TO-DATE
+> Task :app:processReleaseResources UP-TO-DATE
+> Task :app:compileReleaseKotlin UP-TO-DATE
+> Task :blocking:blocking-engine:processTestResources NO-SOURCE
+> Task :app:compileReleaseJavaWithJavac UP-TO-DATE
+> Task :app:processReleaseJavaRes UP-TO-DATE
+> Task :blocking:blocking-accessibility:javaPreCompileReleaseUnitTest FROM-CACHE
+> Task :app:javaPreCompileReleaseUnitTest FROM-CACHE
+> Task :blocking:blocking-overlay:preDebugUnitTestBuild UP-TO-DATE
+> Task :blocking:blocking-accessibility:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :blocking:blocking-overlay:preReleaseUnitTestBuild UP-TO-DATE
+> Task :blocking:blocking-overlay:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :blocking:blocking-accessibility:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :blocking:blocking-accessibility:generateReleaseUnitTestStubRFile FROM-CACHE
+> Task :blocking:blocking-overlay:javaPreCompileReleaseUnitTest FROM-CACHE
+> Task :blocking:blocking-resilience:preDebugUnitTestBuild UP-TO-DATE
+> Task :blocking:blocking-accessibility:compileDebugUnitTestKotlin NO-SOURCE
+> Task :blocking:blocking-accessibility:compileReleaseUnitTestKotlin NO-SOURCE
+> Task :blocking:blocking-overlay:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :blocking:blocking-accessibility:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :blocking:blocking-accessibility:compileReleaseUnitTestJavaWithJavac NO-SOURCE
+> Task :blocking:blocking-overlay:generateReleaseUnitTestStubRFile FROM-CACHE
+> Task :app:bundleReleaseClassesToRuntimeJar
+> Task :app:bundleReleaseClassesToCompileJar
+> Task :blocking:blocking-accessibility:processReleaseUnitTestJavaRes NO-SOURCE
+> Task :blocking:blocking-resilience:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :blocking:blocking-resilience:preReleaseUnitTestBuild UP-TO-DATE
+> Task :blocking:blocking-accessibility:testReleaseUnitTest NO-SOURCE
+> Task :blocking:blocking-accessibility:processDebugUnitTestJavaRes NO-SOURCE
+> Task :blocking:blocking-resilience:javaPreCompileReleaseUnitTest FROM-CACHE
+> Task :blocking:blocking-usagestats:preDebugUnitTestBuild UP-TO-DATE
+> Task :blocking:blocking-resilience:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :blocking:blocking-resilience:generateReleaseUnitTestStubRFile FROM-CACHE
+> Task :blocking:blocking-accessibility:testDebugUnitTest NO-SOURCE
+> Task :blocking:blocking-accessibility:test UP-TO-DATE
+> Task :blocking:blocking-usagestats:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :app:bundleDebugClassesToCompileJar
+> Task :app:bundleDebugClassesToRuntimeJar
+> Task :blocking:blocking-usagestats:preReleaseUnitTestBuild UP-TO-DATE
+> Task :core:core-common:preDebugUnitTestBuild UP-TO-DATE
+> Task :blocking:blocking-usagestats:javaPreCompileReleaseUnitTest FROM-CACHE
+> Task :blocking:blocking-usagestats:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :blocking:blocking-usagestats:generateReleaseUnitTestStubRFile FROM-CACHE
+> Task :app:compileReleaseUnitTestKotlin FROM-CACHE
+> Task :blocking:blocking-resilience:compileReleaseUnitTestKotlin FROM-CACHE
+> Task :app:compileDebugUnitTestKotlin FROM-CACHE
+> Task :blocking:blocking-overlay:compileDebugUnitTestKotlin FROM-CACHE
+> Task :blocking:blocking-overlay:compileReleaseUnitTestKotlin FROM-CACHE
+> Task :blocking:blocking-resilience:compileDebugUnitTestKotlin FROM-CACHE
+> Task :blocking:blocking-usagestats:compileDebugUnitTestKotlin FROM-CACHE
+> Task :core:core-common:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :blocking:blocking-engine:compileTestKotlin FROM-CACHE
+> Task :app:processReleaseUnitTestJavaRes
+> Task :blocking:blocking-overlay:processDebugUnitTestJavaRes
+> Task :blocking:blocking-resilience:compileReleaseUnitTestJavaWithJavac NO-SOURCE
+> Task :blocking:blocking-overlay:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :app:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :blocking:blocking-engine:compileTestJava NO-SOURCE
+> Task :blocking:blocking-engine:testClasses UP-TO-DATE
+> Task :app:compileReleaseUnitTestJavaWithJavac NO-SOURCE
+> Task :blocking:blocking-overlay:compileReleaseUnitTestJavaWithJavac NO-SOURCE
+> Task :app:processDebugUnitTestJavaRes
+> Task :blocking:blocking-resilience:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :blocking:blocking-usagestats:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :blocking:blocking-overlay:processReleaseUnitTestJavaRes
+> Task :blocking:blocking-usagestats:processDebugUnitTestJavaRes
+> Task :blocking:blocking-usagestats:compileReleaseUnitTestKotlin FROM-CACHE
+> Task :blocking:blocking-engine:test FROM-CACHE
+> Task :app:testDebugUnitTest FROM-CACHE
+> Task :blocking:blocking-overlay:testDebugUnitTest FROM-CACHE
+> Task :core:core-common:preReleaseUnitTestBuild UP-TO-DATE
+> Task :blocking:blocking-usagestats:compileReleaseUnitTestJavaWithJavac NO-SOURCE
+> Task :core:core-common:javaPreCompileReleaseUnitTest FROM-CACHE
+> Task :core:core-data:preDebugUnitTestBuild UP-TO-DATE
+> Task :core:core-common:generateReleaseUnitTestStubRFile FROM-CACHE
+> Task :blocking:blocking-overlay:testReleaseUnitTest FROM-CACHE
+> Task :blocking:blocking-overlay:test UP-TO-DATE
+> Task :blocking:blocking-usagestats:processReleaseUnitTestJavaRes
+> Task :core:core-data:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :core:core-common:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :core:core-data:preReleaseUnitTestBuild UP-TO-DATE
+> Task :core:core-data:compileDebugUnitTestKotlin NO-SOURCE
+> Task :blocking:blocking-resilience:processDebugUnitTestJavaRes
+> Task :core:core-data:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :core:core-data:processDebugUnitTestJavaRes NO-SOURCE
+> Task :core:core-data:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :core:core-data:javaPreCompileReleaseUnitTest FROM-CACHE
+> Task :core:core-datastore:preDebugUnitTestBuild UP-TO-DATE
+> Task :blocking:blocking-usagestats:testDebugUnitTest FROM-CACHE
+> Task :core:core-data:testDebugUnitTest NO-SOURCE
+> Task :core:core-datastore:preReleaseUnitTestBuild UP-TO-DATE
+> Task :core:core-datastore:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :core:core-datastore:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :core:core-datastore:generateReleaseUnitTestStubRFile FROM-CACHE
+> Task :blocking:blocking-usagestats:testReleaseUnitTest FROM-CACHE
+> Task :core:core-datastore:javaPreCompileReleaseUnitTest FROM-CACHE
+> Task :blocking:blocking-usagestats:test UP-TO-DATE
+> Task :core:core-model:processTestResources NO-SOURCE
+> Task :feature:feature-blocklist:preDebugUnitTestBuild UP-TO-DATE
+> Task :core:core-common:compileReleaseUnitTestKotlin FROM-CACHE
+> Task :blocking:blocking-resilience:testDebugUnitTest FROM-CACHE
+> Task :core:core-common:compileReleaseUnitTestJavaWithJavac NO-SOURCE
+> Task :blocking:blocking-resilience:processReleaseUnitTestJavaRes
+> Task :feature:feature-blocklist:mapDebugUnitTestSourceSetPaths
+> Task :core:core-common:processReleaseUnitTestJavaRes
+> Task :feature:feature-blocklist:generateDebugUnitTestResources FROM-CACHE
+> Task :app:testReleaseUnitTest FROM-CACHE
+> Task :app:test UP-TO-DATE
+> Task :core:core-model:compileTestKotlin FROM-CACHE
+> Task :core:core-model:compileTestJava NO-SOURCE
+> Task :core:core-model:testClasses UP-TO-DATE
+> Task :core:core-data:generateReleaseUnitTestStubRFile FROM-CACHE
+> Task :core:core-data:compileReleaseUnitTestKotlin NO-SOURCE
+> Task :feature:feature-blocklist:checkDebugUnitTestAarMetadata
+> Task :core:core-model:test FROM-CACHE
+> Task :core:core-data:compileReleaseUnitTestJavaWithJavac NO-SOURCE
+> Task :core:core-common:generateDebugAssets UP-TO-DATE
+> Task :core:core-data:processReleaseUnitTestJavaRes NO-SOURCE
+> Task :core:core-common:mergeDebugAssets UP-TO-DATE
+> Task :core:core-datastore:generateDebugAssets UP-TO-DATE
+> Task :core:core-datastore:mergeDebugAssets UP-TO-DATE
+> Task :feature:feature-blocklist:generateDebugUnitTestAssets UP-TO-DATE
+> Task :feature:feature-blocklist:generateDebugAssets UP-TO-DATE
+> Task :feature:feature-blocklist:mergeDebugAssets UP-TO-DATE
+> Task :feature:feature-blocklist:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :feature:feature-blocklist:preReleaseUnitTestBuild UP-TO-DATE
+> Task :blocking:blocking-resilience:testReleaseUnitTest FROM-CACHE
+> Task :blocking:blocking-resilience:test UP-TO-DATE
+> Task :core:core-data:testReleaseUnitTest NO-SOURCE
+> Task :core:core-data:test UP-TO-DATE
+> Task :feature:feature-blocklist:mapReleaseUnitTestSourceSetPaths
+> Task :core:core-common:compileDebugUnitTestKotlin FROM-CACHE
+> Task :core:core-common:testReleaseUnitTest FROM-CACHE
+> Task :core:core-common:processDebugUnitTestJavaRes
+> Task :core:core-datastore:compileDebugUnitTestKotlin FROM-CACHE
+> Task :core:core-common:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :core:core-datastore:compileReleaseUnitTestKotlin FROM-CACHE
+> Task :feature:feature-blocklist:generateReleaseUnitTestResources FROM-CACHE
+> Task :feature:feature-blocklist:javaPreCompileReleaseUnitTest FROM-CACHE
+> Task :core:core-datastore:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :core:core-datastore:processDebugUnitTestJavaRes
+> Task :core:core-common:testDebugUnitTest FROM-CACHE
+> Task :core:core-datastore:processReleaseUnitTestJavaRes
+> Task :core:core-common:generateReleaseAssets UP-TO-DATE
+> Task :core:core-common:test UP-TO-DATE
+> Task :core:core-datastore:generateReleaseAssets UP-TO-DATE
+> Task :core:core-datastore:mergeReleaseAssets UP-TO-DATE
+> Task :core:core-common:mergeReleaseAssets UP-TO-DATE
+> Task :feature:feature-blocklist:generateReleaseAssets UP-TO-DATE
+> Task :feature:feature-blocklist:generateReleaseUnitTestAssets UP-TO-DATE
+> Task :feature:feature-blockscreen:preDebugUnitTestBuild UP-TO-DATE
+> Task :feature:feature-blocklist:mergeReleaseAssets UP-TO-DATE
+> Task :feature:feature-blockscreen:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :feature:feature-blocklist:mergeReleaseUnitTestAssets
+> Task :feature:feature-blockscreen:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :feature:feature-blockscreen:preReleaseUnitTestBuild UP-TO-DATE
+> Task :core:core-datastore:testDebugUnitTest FROM-CACHE
+> Task :feature:feature-blockscreen:javaPreCompileReleaseUnitTest FROM-CACHE
+> Task :feature:feature-connected:preDebugUnitTestBuild UP-TO-DATE
+> Task :feature:feature-blockscreen:generateReleaseUnitTestStubRFile FROM-CACHE
+> Task :feature:feature-blockscreen:compileDebugUnitTestKotlin FROM-CACHE
+> Task :feature:feature-blockscreen:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :feature:feature-blockscreen:processDebugUnitTestJavaRes
+> Task :core:core-datastore:compileReleaseUnitTestJavaWithJavac NO-SOURCE
+> Task :feature:feature-blocklist:mergeDebugUnitTestAssets
+> Task :feature:feature-blockscreen:compileReleaseUnitTestKotlin FROM-CACHE
+> Task :feature:feature-blockscreen:compileReleaseUnitTestJavaWithJavac NO-SOURCE
+> Task :feature:feature-blocklist:mergeDebugUnitTestResources FROM-CACHE
+> Task :feature:feature-connected:preReleaseBuild UP-TO-DATE
+> Task :feature:feature-blockscreen:processReleaseUnitTestJavaRes
+> Task :feature:feature-blockscreen:testDebugUnitTest FROM-CACHE
+> Task :core:core-datastore:testReleaseUnitTest FROM-CACHE
+> Task :core:core-datastore:test UP-TO-DATE
+> Task :feature:feature-connected:generateReleaseResources FROM-CACHE
+> Task :feature:feature-connected:javaPreCompileRelease FROM-CACHE
+> Task :feature:feature-connected:preReleaseUnitTestBuild UP-TO-DATE
+> Task :feature:feature-connected:processReleaseNavigationResources FROM-CACHE
+> Task :feature:feature-onboarding:preDebugUnitTestBuild UP-TO-DATE
+> Task :feature:feature-connected:javaPreCompileReleaseUnitTest FROM-CACHE
+> Task :feature:feature-onboarding:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :feature:feature-onboarding:preReleaseUnitTestBuild UP-TO-DATE
+> Task :feature:feature-connected:packageReleaseResources FROM-CACHE
+> Task :feature:feature-blockscreen:testReleaseUnitTest FROM-CACHE
+> Task :feature:feature-blockscreen:test UP-TO-DATE
+> Task :feature:feature-connected:parseReleaseLocalResources FROM-CACHE
+> Task :feature:feature-onboarding:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :feature:feature-onboarding:javaPreCompileReleaseUnitTest FROM-CACHE
+> Task :feature:feature-settings:preDebugUnitTestBuild UP-TO-DATE
+> Task :feature:feature-onboarding:generateReleaseUnitTestStubRFile FROM-CACHE
+> Task :feature:feature-connected:generateReleaseRFile FROM-CACHE
+> Task :feature:feature-connected:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :feature:feature-connected:generateReleaseUnitTestStubRFile FROM-CACHE
+> Task :feature:feature-onboarding:compileReleaseUnitTestKotlin FROM-CACHE
+> Task :feature:feature-settings:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :feature:feature-onboarding:compileReleaseUnitTestJavaWithJavac NO-SOURCE
+> Task :feature:feature-settings:preReleaseUnitTestBuild UP-TO-DATE
+> Task :feature:feature-onboarding:processReleaseUnitTestJavaRes
+> Task :feature:feature-blocklist:mergeDebugUnitTestManifest
+> Task :feature:feature-settings:generateReleaseUnitTestStubRFile FROM-CACHE
+> Task :feature:feature-blocklist:checkReleaseUnitTestAarMetadata
+> Task :feature:feature-blocklist:processDebugUnitTestManifest
+> Task :feature:feature-settings:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :feature:feature-onboarding:testReleaseUnitTest FROM-CACHE
+> Task :feature:feature-stats:preDebugUnitTestBuild UP-TO-DATE
+> Task :feature:feature-settings:javaPreCompileReleaseUnitTest FROM-CACHE
+> Task :feature:feature-connected:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :feature:feature-stats:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :feature:feature-stats:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :feature:feature-stats:preReleaseUnitTestBuild UP-TO-DATE
+> Task :feature:feature-blocklist:mergeReleaseUnitTestManifest
+> Task :feature:feature-settings:compileReleaseUnitTestKotlin FROM-CACHE
+> Task :feature:feature-settings:compileReleaseUnitTestJavaWithJavac NO-SOURCE
+> Task :feature:feature-blocklist:processReleaseUnitTestManifest
+> Task :feature:feature-stats:generateReleaseUnitTestStubRFile FROM-CACHE
+> Task :feature:feature-settings:processReleaseUnitTestJavaRes
+> Task :feature:feature-onboarding:compileDebugUnitTestKotlin FROM-CACHE
+> Task :feature:feature-stats:javaPreCompileReleaseUnitTest FROM-CACHE
+> Task :feature:feature-onboarding:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :permissions:permissions-special:preDebugUnitTestBuild UP-TO-DATE
+> Task :feature:feature-onboarding:processDebugUnitTestJavaRes
+> Task :permissions:permissions-special:generateDebugUnitTestStubRFile FROM-CACHE
+> Task :permissions:permissions-special:compileDebugUnitTestKotlin NO-SOURCE
+> Task :permissions:permissions-special:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :permissions:permissions-special:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :permissions:permissions-special:processDebugUnitTestJavaRes NO-SOURCE
+> Task :permissions:permissions-special:testDebugUnitTest NO-SOURCE
+> Task :permissions:permissions-special:preReleaseUnitTestBuild UP-TO-DATE
+> Task :feature:feature-settings:compileDebugUnitTestKotlin FROM-CACHE
+> Task :permissions:permissions-special:generateReleaseUnitTestStubRFile FROM-CACHE
+> Task :feature:feature-stats:compileReleaseUnitTestKotlin FROM-CACHE
+> Task :feature:feature-stats:compileDebugUnitTestKotlin FROM-CACHE
+> Task :feature:feature-settings:processDebugUnitTestJavaRes
+> Task :feature:feature-blocklist:processDebugUnitTestResources FROM-CACHE
+> Task :feature:feature-settings:testReleaseUnitTest FROM-CACHE
+> Task :feature:feature-settings:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :feature:feature-onboarding:testDebugUnitTest FROM-CACHE
+> Task :feature:feature-onboarding:test UP-TO-DATE
+> Task :feature:feature-stats:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :permissions:permissions-special:compileReleaseUnitTestKotlin NO-SOURCE
+> Task :feature:feature-stats:compileReleaseUnitTestJavaWithJavac NO-SOURCE
+> Task :permissions:permissions-special:processReleaseUnitTestJavaRes NO-SOURCE
+> Task :permissions:permissions-special:javaPreCompileReleaseUnitTest FROM-CACHE
+> Task :feature:feature-stats:processDebugUnitTestJavaRes
+> Task :feature:feature-blocklist:packageDebugUnitTestForUnitTest
+> Task :feature:feature-settings:testDebugUnitTest FROM-CACHE
+> Task :feature:feature-settings:test UP-TO-DATE
+> Task :feature:feature-stats:processReleaseUnitTestJavaRes
+> Task :permissions:permissions-special:compileReleaseUnitTestJavaWithJavac NO-SOURCE
+> Task :permissions:permissions-special:testReleaseUnitTest NO-SOURCE
+> Task :permissions:permissions-special:test UP-TO-DATE
+> Task :feature:feature-blocklist:generateDebugUnitTestConfig
+> Task :feature:feature-stats:testDebugUnitTest FROM-CACHE
+> Task :feature:feature-stats:testReleaseUnitTest FROM-CACHE
+> Task :feature:feature-stats:test UP-TO-DATE
+> Task :feature:feature-connected:compileReleaseKotlin FROM-CACHE
+> Task :feature:feature-connected:compileDebugUnitTestKotlin FROM-CACHE
+> Task :feature:feature-connected:compileReleaseJavaWithJavac NO-SOURCE
+> Task :feature:feature-connected:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :feature:feature-blocklist:mergeReleaseUnitTestResources FROM-CACHE
+> Task :feature:feature-connected:processDebugUnitTestJavaRes
+> Task :feature:feature-connected:bundleLibCompileToJarRelease
+> Task :feature:feature-connected:bundleLibRuntimeToJarRelease
+> Task :feature:feature-blocklist:processReleaseUnitTestResources FROM-CACHE
+> Task :feature:feature-connected:processReleaseJavaRes
+> Task :feature:feature-blocklist:compileDebugUnitTestKotlin FROM-CACHE
+> Task :feature:feature-blocklist:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :feature:feature-connected:testDebugUnitTest FROM-CACHE
+> Task :feature:feature-blocklist:processDebugUnitTestJavaRes
+> Task :feature:feature-blocklist:packageReleaseUnitTestForUnitTest
+> Task :feature:feature-blocklist:generateReleaseUnitTestConfig
+> Task :feature:feature-blocklist:compileReleaseUnitTestKotlin FROM-CACHE
+> Task :feature:feature-blocklist:testDebugUnitTest FROM-CACHE
+> Task :feature:feature-blocklist:compileReleaseUnitTestJavaWithJavac NO-SOURCE
+> Task :feature:feature-blocklist:processReleaseUnitTestJavaRes
+> Task :feature:feature-blocklist:testReleaseUnitTest FROM-CACHE
+> Task :feature:feature-blocklist:test UP-TO-DATE
+> Task :feature:feature-connected:compileReleaseUnitTestKotlin FROM-CACHE
+> Task :feature:feature-connected:compileReleaseUnitTestJavaWithJavac NO-SOURCE
+> Task :feature:feature-connected:processReleaseUnitTestJavaRes
+> Task :feature:feature-connected:testReleaseUnitTest FROM-CACHE
+> Task :feature:feature-connected:test UP-TO-DATE
+
+[Incubating] Problems report is available at: file:///Users/prakash/orca/workspaces/flint/ws-android/android-app/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.8.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 2s
+622 actionable tasks: 45 executed, 121 from cache, 456 up-to-date
+Configuration cache entry stored.
+Android gate passed.

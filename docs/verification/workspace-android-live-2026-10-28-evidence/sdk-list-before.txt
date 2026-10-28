@@ -1,0 +1,4 @@
+Warning: This version only understands SDK XML versions up to 3 but an SDK XML file of version 4 was encountered. This can happen if you use versions of Android Studio and the command-line tools that were released at different times.
+Installed packages:
+Available Packages:
+  system-images;android-35;google_apis;arm64-v8a                                  | 9                 | Google APIs ARM 64 v8a System Image                                      

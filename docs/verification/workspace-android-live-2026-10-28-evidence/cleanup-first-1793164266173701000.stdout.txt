@@ -1,0 +1,2 @@
+KEEP unproven helper for emulator-5554; no matching helper PID/start provenance
+2026-10-28T05:11:07.808233+00:00 RUN adb -s emulator-5554 emu kill

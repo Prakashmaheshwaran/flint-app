@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "flint_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; exec /bin/bash \"$flint_root/scripts/clean-session.sh\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}

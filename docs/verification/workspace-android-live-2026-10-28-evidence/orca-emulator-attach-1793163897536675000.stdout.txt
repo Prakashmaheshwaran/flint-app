@@ -1,0 +1,11 @@
+{
+  "id": "f3bd83d4-9cbf-41ca-adcb-0f5fa0feb551",
+  "ok": false,
+  "error": {
+    "code": "runtime_error",
+    "message": "scrcpy server exited before the video stream started"
+  },
+  "_meta": {
+    "runtimeId": "cab26e39-2703-435c-b1e3-757b327d33d8"
+  }
+}

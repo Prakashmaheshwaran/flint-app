@@ -1,0 +1,42 @@
+Task K N2/M4 and N4 focused evidence
+
+Base: 0b168eb0c698e4f59ec8ea17fb8733f257639664
+Fix: 844a119 (Bound selftest process trees and pin Apple Make)
+
+Baseline command before implementation:
+  source scripts/flint-env.sh
+  PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s scripts -p test_selftest_followups.py -v
+The five inherited methods produced five assertion failure records, including
+CLT/symlink Make resolution failures and the outer-deadline regression. The
+actual run_cmd child, grandchild and separately sessioned grandchild were alive
+at outer fixture teardown; their escaped sentinels appeared. The test explicitly
+killed each exact test-owned PID before removing its isolated fixture.
+
+Final focused followup suite:
+  python3 -B -m unittest discover -s scripts -p test_selftest_followups.py -v
+All eleven methods passed in 3.149s, including concurrent command groups,
+reparented descendants after an exited session leader, cancellation denial
+retaining fixtures, stale PID identity, bounded lock waits and sealed registry.
+
+Existing agent suite:
+  python3 -B scripts/agent/selftest.py
+All 44 methods passed in 60.578s. Four targeted checks passed in 7.000s after
+final review replaced numeric-only fake emulator teardown with verified registry
+cleanup and tracked unresolved owners across later commands.
+
+Full normal-PATH and CLT-first gate logs are recorded separately by the lead.
+All tests use isolated fake-device tools and bounded output. No raw host process
+environment contents are logged. Inherited random process tokens support ordinary
+test descendants, including detached/reparented children; they are not containment
+for hostile commands that deliberately remove their provenance environment.
+
+CLT-first interpreter integration followup (lead commit 62f26e4):
+The first full CLT-first run selected Apple Python 3.9.6 and failed 20 cleanup
+assertions in 61.046s because fd-safe shutil.rmtree(dir_fd) is unavailable.
+That refused deletion as designed; selftest-clt-initial.txt retains the failure.
+The entrypoint now selects a capable python3 on PATH before starting suites,
+or fails clearly with exit 2 when none exists. Two real CLT-Python regressions
+failed before the selector was added; all thirteen followups then passed in
+3.431s. Both full variants passed after this integration change: normal PATH
+168.435s and CLT-first PATH 164.692s, each with 153 Python tests and 117 shell
+checks. The final native build and cleanup results are in commands.jsonl.

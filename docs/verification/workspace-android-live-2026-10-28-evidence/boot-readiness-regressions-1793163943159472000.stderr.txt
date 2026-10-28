@@ -1,0 +1,8 @@
+test_android_framework_readiness_precedes_attach (__main__.AgentCommands.test_android_framework_readiness_precedes_attach) ... ok
+test_android_failed_attach_preserves_real_json_diagnostic (__main__.AgentCommands.test_android_failed_attach_preserves_real_json_diagnostic) ... ok
+test_android_run_composes_attach_build_reinstall_launch (__main__.AgentCommands.test_android_run_composes_attach_build_reinstall_launch) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 5.606s
+
+OK

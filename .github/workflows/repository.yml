@@ -16,5 +16,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Install zsh for shell regression tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y zsh
       - name: Verify device-free scripts
         run: make selftest

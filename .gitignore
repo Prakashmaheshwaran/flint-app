@@ -47,7 +47,13 @@ __pycache__/
 *.py[cod]
 
 # ── Harness / session scratch (Claude worktrees, etc.) ──
-.claude/
+# Ignore Claude's per-session scratch, but track project-level skills (shared with
+# Codex through .agents/skills/, installed by `orca skills install --local`).
+.claude/*
+!.claude/skills/
+!.claude/settings.json
+.codex/*
+!.codex/hooks.json
 
 # ── Fleet coordination ledger (atomic claims; lives in the main checkout) ──
 .flint-fleet/

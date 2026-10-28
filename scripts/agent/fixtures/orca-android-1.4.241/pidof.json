@@ -1,0 +1,8 @@
+{
+  "id": "capture-pidof",
+  "ok": true,
+  "result": "123\n",
+  "_meta": {
+    "runtimeId": "capture-runtime"
+  }
+}

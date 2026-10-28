@@ -1,0 +1,176 @@
+{
+  "utc": "2026-10-28T05:15:19.570366+00:00",
+  "steps": [
+    {
+      "screen": "before",
+      "ax": "orca-emulator-ax-1793164109648488000.stdout.txt",
+      "screenshot": "ui-before.png",
+      "axSeconds": 16.673,
+      "size": [
+        1080,
+        2400
+      ],
+      "texts": [
+        "WEDNESDAY \u00b7 28 OCTOBER",
+        "Blocking is on (backup path).",
+        "Flint is blocking through the usage-stats backup path, which reacts a moment later and cannot block websites.",
+        "30m",
+        "YOUR NEXT SESSION",
+        "Enable accessibility service",
+        "Deep study",
+        "1h 30m",
+        "Reading",
+        "30m",
+        "Workout",
+        "1h",
+        "Start focus",
+        "Today",
+        "Rules",
+        "Insights",
+        "You"
+      ],
+      "pixelsInspected": true
+    },
+    {
+      "screen": "after-tap",
+      "ax": "orca-emulator-ax-1793164147284063000.stdout.txt",
+      "screenshot": "ui-after-tap.png",
+      "axSeconds": 3.822,
+      "size": [
+        1080,
+        2400
+      ],
+      "texts": [
+        "Rules",
+        "Quick block list",
+        "Apps blocked whenever Flint is on",
+        "BLOCK RULES",
+        "Nothing blocked yet",
+        "A rule picks apps or websites and decides when they're off-limits.",
+        "New block rule",
+        "Start from a template",
+        "START FROM A TEMPLATE",
+        "Laser Focus",
+        "Weekdays \u00b7 09:00\u201312:00",
+        "Deep-work mornings on weekdays. Breaks take friction.",
+        "HARDER",
+        "Rise and Shine",
+        "Every day \u00b7 06:00\u201309:00",
+        "Own the morning before the feed does, 6 to 9.",
+        "EASY",
+        "SLEEP",
+        "Today",
+        "Rules",
+        "Insights",
+        "You"
+      ],
+      "pixelsInspected": true
+    },
+    {
+      "screen": "after-back",
+      "ax": "orca-emulator-ax-1793164155348136000.stdout.txt",
+      "screenshot": "ui-after-back.png",
+      "axSeconds": 6.652,
+      "size": [
+        1080,
+        2400
+      ],
+      "texts": [
+        "WEDNESDAY \u00b7 28 OCTOBER",
+        "Blocking is on (backup path).",
+        "Flint is blocking through the usage-stats backup path, which reacts a moment later and cannot block websites.",
+        "30m",
+        "YOUR NEXT SESSION",
+        "Enable accessibility service",
+        "Deep study",
+        "1h 30m",
+        "Reading",
+        "30m",
+        "Workout",
+        "1h",
+        "Start focus",
+        "Today",
+        "Rules",
+        "Insights",
+        "You"
+      ],
+      "pixelsInspected": true
+    },
+    {
+      "screen": "final-cold",
+      "ax": "orca-emulator-ax-1793164392660385000.stdout.txt",
+      "screenshot": "ui-final-cold.png",
+      "axSeconds": 22.736,
+      "size": [
+        1080,
+        2400
+      ],
+      "texts": [
+        "WEDNESDAY \u00b7 28 OCTOBER",
+        "Blocking is on (backup path).",
+        "Flint is blocking through the usage-stats backup path, which reacts a moment later and cannot block websites.",
+        "30m",
+        "YOUR NEXT SESSION",
+        "Enable accessibility service",
+        "Deep study",
+        "1h 30m",
+        "Reading",
+        "30m",
+        "Workout",
+        "1h",
+        "Start focus",
+        "Today",
+        "Rules",
+        "Insights",
+        "You"
+      ],
+      "pixelsInspected": true
+    }
+  ],
+  "tap": {
+    "normalized": [
+      0.388889,
+      0.92125
+    ],
+    "target": "Rules",
+    "bounds": {
+      "left": 301,
+      "top": 2127,
+      "right": 539,
+      "bottom": 2295
+    },
+    "count": 1
+  },
+  "back": {
+    "verb": "button back",
+    "count": 1,
+    "verifiedDestination": "Today"
+  },
+  "ownedBoot": {
+    "platform": "android",
+    "id": "emulator-5554",
+    "created": false,
+    "booted": true,
+    "avd": "flint-test",
+    "name": "",
+    "claimant": "structworker_42a5bdee-c3b0-47ab-9a9f-c6ce060aac7c",
+    "claimed_at": "2026-10-28T05:12:40.935843+00:00",
+    "incarnation": "v1:287a74179966fb477afc00f3bd2068f92a9ba3e25bd68e2308eb311ca2967144",
+    "incarnation_evidence": {
+      "platform": "android",
+      "id": "emulator-5554",
+      "avd": "flint-test",
+      "kind": "emulator-process",
+      "pid": 84120,
+      "process_group": 84120,
+      "start": "Wed Oct 28 01:12:01 2026",
+      "boot_id": "8ae46531-cfa7-46cd-a7d1-d9921fab36e1"
+    },
+    "helper": null
+  },
+  "finalClaims": [],
+  "adbEmpty": true,
+  "allInitialDeviceStatesPreserved": true,
+  "sensitivePermissionsGranted": false,
+  "systemPermissionPromptsEntered": false
+}

@@ -1,0 +1,87 @@
+test_m_cheap_commands_keep_short_default_and_name_command (test_device_timeouts.DeviceTimeouts.test_m_cheap_commands_keep_short_default_and_name_command) ... FAIL
+test_m_five_second_inventory_succeeds (test_device_timeouts.DeviceTimeouts.test_m_five_second_inventory_succeeds) ... FAIL
+test_m_five_second_nonblocking_bootstatus_query_succeeds (test_device_timeouts.DeviceTimeouts.test_m_five_second_nonblocking_bootstatus_query_succeeds) ... FAIL
+test_m_five_second_springboard_query_succeeds (test_device_timeouts.DeviceTimeouts.test_m_five_second_springboard_query_succeeds) ... FAIL
+test_m_hung_inventory_stops_at_thirty_seconds (test_device_timeouts.DeviceTimeouts.test_m_hung_inventory_stops_at_thirty_seconds) ... FAIL
+test_m_springboard_query_respects_shorter_readiness_deadline (test_device_timeouts.DeviceTimeouts.test_m_springboard_query_respects_shorter_readiness_deadline) ... ok
+
+======================================================================
+FAIL: test_m_cheap_commands_keep_short_default_and_name_command (test_device_timeouts.DeviceTimeouts.test_m_cheap_commands_keep_short_default_and_name_command)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-final-patch/scripts/test_device_timeouts.py", line 87, in test_m_cheap_commands_keep_short_default_and_name_command
+    self.assertIn("python3 -c 'import time; time.sleep(60)' timed out after 3s", result.stdout)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: "python3 -c 'import time; time.sleep(60)' timed out after 3s" not found in 'python3 -c import time; time.sleep(60) timed out after 3s\n'
+
+======================================================================
+FAIL: test_m_five_second_inventory_succeeds (test_device_timeouts.DeviceTimeouts.test_m_five_second_inventory_succeeds)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-final-patch/scripts/test_device_timeouts.py", line 47, in test_m_five_second_inventory_succeeds
+    self.h.assert_ok(result)
+    ~~~~~~~~~~~~~~~~^^^^^^^^
+  File "/Users/prakash/orca/workspaces/flint/ws-final-patch/scripts/agent/selftest.py", line 308, in assert_ok
+    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 2 != 0 : Device run stopped: xcrun simctl list timed out after 3s
+
+
+======================================================================
+FAIL: test_m_five_second_nonblocking_bootstatus_query_succeeds (test_device_timeouts.DeviceTimeouts.test_m_five_second_nonblocking_bootstatus_query_succeeds)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-final-patch/scripts/test_device_timeouts.py", line 77, in test_m_five_second_nonblocking_bootstatus_query_succeeds
+    self.h.assert_ok(result)
+    ~~~~~~~~~~~~~~~~^^^^^^^^
+  File "/Users/prakash/orca/workspaces/flint/ws-final-patch/scripts/agent/selftest.py", line 308, in assert_ok
+    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 1 != 0 : Traceback (most recent call last):
+  File "/private/var/folders/rp/2kj3kz19101cywzlww95b36w0000gn/T/flint-agent-selftest-a6asx9s0/project with spaces/scripts/agent/device-run.py", line 46, in run
+    child.wait(timeout=timeout)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py", line 1279, in wait
+    return self._wait(timeout=timeout)
+           ~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py", line 2076, in _wait
+    raise TimeoutExpired(self.args, timeout)
+subprocess.TimeoutExpired: Command '['xcrun', 'simctl', 'bootstatus', '11111111-2222-3333-4444-555555555555']' timed out after 3 seconds
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import importlib.util; s = importlib.util.spec_from_file_location('device_run', 'scripts/agent/device-run.py'); m = importlib.util.module_from_spec(s); s.loader.exec_module(m); m.run(['xcrun', 'simctl', 'bootstatus', '11111111-2222-3333-4444-555555555555'])
+                                                                                                                                                                                     ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/var/folders/rp/2kj3kz19101cywzlww95b36w0000gn/T/flint-agent-selftest-a6asx9s0/project with spaces/scripts/agent/device-run.py", line 50, in run
+    raise CommandTimeout(f"{Path(args[0]).name} {' '.join(args[1:3])} timed out after {timeout:g}s")
+device_run.CommandTimeout: xcrun simctl bootstatus timed out after 3s
+
+
+======================================================================
+FAIL: test_m_five_second_springboard_query_succeeds (test_device_timeouts.DeviceTimeouts.test_m_five_second_springboard_query_succeeds)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-final-patch/scripts/test_device_timeouts.py", line 62, in test_m_five_second_springboard_query_succeeds
+    self.h.assert_ok(self.ios(SLOW_SIMCTL_QUERY="spawn"))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/prakash/orca/workspaces/flint/ws-final-patch/scripts/agent/selftest.py", line 308, in assert_ok
+    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 2 != 0 : Device run stopped: Simulator 11111111-2222-3333-4444-555555555555 SpringBoard readiness timed out after 15s; stopping before any further app launch
+
+
+======================================================================
+FAIL: test_m_hung_inventory_stops_at_thirty_seconds (test_device_timeouts.DeviceTimeouts.test_m_hung_inventory_stops_at_thirty_seconds)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-final-patch/scripts/test_device_timeouts.py", line 54, in test_m_hung_inventory_stops_at_thirty_seconds
+    self.assertGreaterEqual(elapsed, 29)
+    ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+AssertionError: 3.22347379202256 not greater than or equal to 29
+
+----------------------------------------------------------------------
+Ran 6 tests in 28.879s
+
+FAILED (failures=5)

@@ -1,0 +1,80 @@
+Task K device regression evidence
+=================================
+Device commit: 96021d3fdf11263e6d7aafde3d5bb083831691a8
+Baseline: 0b168eb0c698e4f59ec8ea17fb8733f257639664
+Worktree: /Users/prakash/orca/workspaces/flint/ws-fixes2
+Run date: 2026-10-27 America/New_York (2026-10-28 UTC)
+
+Only disposable fake-device fixtures were exercised. Their HOME, SDK, Git
+configuration and native/Orca tools were isolated by AgentCommands. TMPDIR was
+inside .codex/task-k-device/tmp in this worktree; bytecode was disabled. No live
+device calls, native builds, host cleanup, pushes or PR actions were performed.
+
+Baseline differential
+---------------------
+Loaded scripts/test_device_followups.py and its composed AgentCommands harness.
+After each fixture setup, replaced only these fixture files with git show
+0b168eb:<path> bytes, leaving the real worktree untouched:
+  scripts/agent/device-run.py
+  scripts/agent/android-run.sh
+  scripts/agent/ios-run.sh
+Ran the full DeviceFollowups unittest case using TextTestRunner.
+
+Ran 22 test methods: 18 failing methods, 20 failure records including subtests,
+0 errors. Four methods already passed as compatibility/control cases.
+Failing methods:
+  test_android_missing_process_evidence_aborts_install
+  test_android_restart_during_attach_cannot_replace_selected_incarnation
+  test_android_same_avd_new_incarnation_after_install_aborts_launch
+  test_android_same_avd_new_pid_after_build_aborts_install
+  test_android_same_pid_new_start_after_build_aborts_install
+  test_j1_malformed_fresh_inventory_fails_without_claim_or_traceback
+  test_j1_missing_and_null_backend_accept_only_exact_verified_simulator
+  test_j1_missing_backend_requires_fresh_simctl_membership
+  test_j1_rejects_non_uuid_even_if_inventory_and_backend_match
+  test_j2_code5_then_success_retries_once
+  test_j2_code5_twice_fails_after_exactly_two_attempts
+  test_j2_readiness_loss_after_code5_aborts_retry_within_deadline
+  test_j2_springboard_readiness_follows_bootstatus_and_precedes_install
+  test_j2_springboard_requires_positive_pid
+  test_j2_unready_springboard_is_bounded_and_never_installs
+  test_j3_absent_sdkmanager_prints_generic_guidance
+  test_j3_missing_image_hint_uses_executable_path_and_resolved_sdk
+  test_n3_ambiguous_boot_timeout_warns_exact_udid_without_claim_or_shutdown
+
+Final verification
+------------------
+After sourcing scripts/flint-env.sh, ran with the scoped TMPDIR above and
+PYTHONDONTWRITEBYTECODE=1:
+  python3 -B -m unittest discover -s scripts -p test_device_followups.py -v
+  Ran 22 tests in 62.075s: OK
+
+Existing agent suite, including the sibling helper's updated fake tool fixtures:
+  python3 -B scripts/agent/selftest.py
+  Ran 44 tests in 58.034s: OK
+
+Also passed:
+  bash -n scripts/agent/android-run.sh scripts/agent/ios-run.sh
+  git diff --check -- scripts/agent/device-run.py scripts/agent/android-run.sh
+    scripts/agent/ios-run.sh scripts/test_device_followups.py
+
+Limits
+------
+The SpringBoard launchctl readiness probe and launch retry are fake-verified;
+the live FBS code-5 root cause remains unproven. Read-only searches found no
+installed iOS runtime plist at the standard locations (only a mounted watchOS
+volume), so no live service-label or simulator behavior claim is made. Live
+device acceptance, native gates, real device cleanup and integration belong to
+the lead; this worker did not run them.
+
+Independent N1 read-only review
+------------------------------
+Reviewed 79db42137988470d9bd4a86751a5327a68a9c3ff (cleanup implementation and
+N1 tests); no concrete safety regression found. Recovery persists/fsyncs
+provenance before rename, rechecks held identities, uses an atomic exclusive
+rename to preserve new builds, and retains/defer-detects ambiguous quarantines.
+The exception path inspects the quarantine rather than relying on the moved
+assignment, covering deadline delivery immediately after rename. Tests exercise
+real immutable denial, partial deletion, deadline, empty/nonempty replacement
+builds, hard stop, legacy quarantines and orphan deferral. This was a static
+review only: no N1 edits, live cleanup, or additional broad suite was performed.

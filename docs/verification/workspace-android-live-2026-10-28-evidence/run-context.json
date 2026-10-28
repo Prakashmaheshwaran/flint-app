@@ -1,0 +1,24 @@
+{
+  "utc": "2026-10-28T05:19:24.505939+00:00",
+  "taskId": "task_cefddad7f7bb",
+  "dispatchId": "ctx_57a8705bbf35",
+  "base": "19baf90",
+  "implementationCommit": "8b0857953129df67be692a856859298457fa113f",
+  "worktree": "/Users/prakash/orca/workspaces/flint/ws-android",
+  "orcaExecutable": "/Applications/Orca.app/Contents/Resources/bin/orca",
+  "orcaVersion": "1.4.241",
+  "captureLimitPerStreamBytes": 2097152,
+  "screenshotLimitBytes": 4194304,
+  "screenshots": 4,
+  "licenseAccepted": "android-sdk-arm-dbt-license",
+  "licenseAcceptanceCount": 1,
+  "otherPackagesInstalled": false,
+  "sensitivePermissionGrants": 0,
+  "rawAdbUiInputs": 0,
+  "remoteWrites": 0,
+  "coordinatorApprovals": [
+    "Explicit user approval relayed by coordinator for exactly android-sdk-arm-dbt-license; one y only; no --licenses or yes piping.",
+    "Android-only logs-android.py/clean-worktree.py parser scope extension if required.",
+    "Read-only SDK adb exec-out screencap -p after exact flint-test AVD identity verification; button back accepted as the key/back verb."
+  ]
+}
