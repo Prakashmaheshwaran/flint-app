@@ -5,9 +5,6 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths: ['ios-app/**', 'Makefile', 'scripts/ios-ui.sh', 'scripts/agent/**', 'scripts/flint-env.sh', '.github/workflows/ios-ui.yml']
-  push:
-    branches: [integration/v1, main]
-    paths: ['ios-app/**', 'Makefile', 'scripts/ios-ui.sh', 'scripts/agent/**', 'scripts/flint-env.sh', '.github/workflows/ios-ui.yml']
   workflow_dispatch:
 
 permissions:

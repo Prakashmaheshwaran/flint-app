@@ -5,7 +5,7 @@ iPhone simulator. It uses existing `-FlintUIPreview` authorization fixtures; it
 does not request system access, choose actual apps, or save/arm a schedule.
 This is fixture UI evidence, never Screen Time or physical-device proof.
 To conserve hosted macOS capacity, the job runs for ready PRs, the standing
-`integration/v1` PR, pushes to integration/main, and explicit workflow dispatches;
+`integration/v1` PR, and explicit workflow dispatches;
 ordinary draft PRs skip it until marked ready for review.
 
 The separate `FlintUI` scheme leaves the existing `Flint` unit-test scheme intact.
