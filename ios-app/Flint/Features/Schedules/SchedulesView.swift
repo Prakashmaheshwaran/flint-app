@@ -7,15 +7,34 @@ final class SchedulesViewModel: ObservableObject {
     @Published private(set) var rules: [FlintScheduleRule] = []
     /// Enabled rules iOS would not register — shown, never swallowed. See `armFailuresSection`.
     @Published private(set) var armFailures: [FlintScheduleArmFailure] = []
+    @Published private(set) var health = FlintArmingHealth()
+    @Published private(set) var observation: FlintProtectionObservation?
     private let controller = FlintSchedulesController()
 
     init() {
-        refresh(armFailures: controller.reload()) // re-arm monitoring on launch
+        refresh()
     }
 
     func refresh(armFailures: [FlintScheduleArmFailure]? = nil) {
         rules = controller.rules()
-        if let armFailures { self.armFailures = armFailures }
+        health = FlintGroupStore()?.loadArmingHealth() ?? FlintArmingHealth()
+        observation = FlintProtectionObservation.load()
+        if let armFailures {
+            self.armFailures = armFailures
+        } else {
+            self.armFailures = rules.compactMap { rule in
+                guard rule.enabled,
+                      health.domains["schedules"]?.failures.contains(where: { $0.activityName == rule.monitorName }) == true
+                else { return nil }
+                return FlintScheduleArmFailure(ruleID: rule.id, ruleName: rule.name, issue: rule.schedule.issues.first,
+                    selectionIssue: FlintSelectionValidation.issue(for: rule.selection,
+                        context: rule.allowListMode ? .allowList : .blockList),
+                    selectionContext: rule.allowListMode ? .allowList : .blockList,
+                    registrationReason: health.domains["schedules"]?.failures.first(where: {
+                        $0.activityName == rule.monitorName
+                    })?.reason)
+            }
+        }
     }
 
     func save(_ rule: FlintScheduleRule) { refresh(armFailures: controller.upsert(rule)) }
@@ -53,7 +72,8 @@ struct RulesView: View {
                     }
                     .padding(.top, 14)
 
-                    TodayTimeline(rules: vm.rules, now: now).padding(.top, 20)
+                    TodayTimeline(rules: vm.rules, now: now, health: vm.health,
+                                  observation: vm.observation).padding(.top, 20)
 
                     if !vm.armFailures.isEmpty { armFailures.padding(.top, 22) }
 
@@ -119,6 +139,10 @@ struct RulesView: View {
                 limitCount = FlintLimitsController().limits().count
                 openLimitCount = FlintOpenLimitsController().rules().count
             }
+            .onReceive(NotificationCenter.default.publisher(for: .flintProtectionReconciled)) { _ in
+                vm.refresh()
+                now = Date()
+            }
         }
     }
 
@@ -141,7 +165,7 @@ struct RulesView: View {
     /// Say so out loud, above the toggle that claims otherwise, and open the editor on a tap.
     private var armFailures: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Not blocking anything", systemImage: "exclamationmark.triangle")
+            Label("Needs attention", systemImage: "exclamationmark.triangle")
                 .font(FlintFont.text(13, weight: .medium))
                 .foregroundStyle(FlintBrand.ember)
             ForEach(vm.armFailures, id: \.ruleID) { failure in
@@ -174,6 +198,14 @@ struct RulesView: View {
                             .monospacedDigit()
                     }
                     Text(meta(rule)).font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
+                    let status = FlintRuleProtectionStatus.status(enabled: rule.enabled,
+                        activityName: rule.monitorName, domain: "schedules", health: vm.health,
+                        observation: vm.observation,
+                        authorized: AuthorizationCenter.shared.authorizationStatus == .approved)
+                    if rule.enabled {
+                        Text(status.label).font(FlintFont.text(12))
+                            .foregroundStyle(status == .needsAttention ? FlintBrand.danger : FlintBrand.stone)
+                    }
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -231,12 +263,18 @@ struct RulesView: View {
 struct TodayTimeline: View {
     let rules: [FlintScheduleRule]
     let now: Date
+    var health = FlintArmingHealth()
+    var observation: FlintProtectionObservation?
 
     var body: some View {
         let cal = Calendar.current
         let weekday = cal.component(.weekday, from: now)
         let nowMinute = Double(cal.component(.hour, from: now) * 60 + cal.component(.minute, from: now))
-        let current = FlintTodaySchedule.current(in: rules, at: now)
+        let current = FlintTodaySchedule.current(in: rules.filter {
+            FlintRuleProtectionStatus.status(enabled: $0.enabled, activityName: $0.monitorName,
+                domain: "schedules", health: health, observation: observation, at: now,
+                authorized: AuthorizationCenter.shared.authorizationStatus == .approved) == .registered
+        }, at: now)
         VStack(spacing: 8) {
             ViewThatFits(in: .horizontal) {
                 HStack {
@@ -279,7 +317,8 @@ struct TodayTimeline: View {
             .monospacedDigit()
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(current.map { "Now: \($0.name)" } ?? "No schedule running now")
+        .accessibilityLabel(current.map { "Scheduled now: \($0.name), registered with iOS" }
+                             ?? "No verified schedule registration running now")
     }
 
     private struct Segment { let id: String; let ruleID: String; let start: Double; let end: Double }
@@ -447,6 +486,11 @@ struct ScheduleEditor: View {
                         .toggleStyle(EmberToggleStyle())
                         .frame(minHeight: 58)
                         .overlay(alignment: .bottom) { FlintHairline() }
+
+                        if allowList {
+                            Text("Only individually picked apps stay open. Website and category picks are ignored; websites remain blocked.")
+                                .flintSecondary(12).padding(.top, 8)
+                        }
 
                         Text("Break level").flintEyebrow().padding(.top, 24)
                         FlintSegmented(options: [(BreakLevel.easy, "Easy"), (.harder, "Harder"), (.hardcore, "Hardcore")],

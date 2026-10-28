@@ -13,9 +13,11 @@ struct SettingsView: View {
     @State private var armingHealth = FlintGroupStore()?.loadArmingHealth() ?? FlintArmingHealth()
     @State private var authStatus = AuthorizationCenter.shared.authorizationStatus
     @State private var passAvailable = FlintSessionController().emergencyPassAvailable()
-    @State private var checkedAt = Date()
     @State private var confirmClearHistory = false
     @State private var historyFeedback: String?
+    @State private var observation = FlintProtectionObservation.load()
+    @State private var sessionHealth = FlintSessionHealth.load()
+    @State private var activeSession = FlintSessionController().activeSession
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
@@ -76,6 +78,7 @@ struct SettingsView: View {
             .flintTabBarInset()
             .toolbar(.hidden, for: .navigationBar)
             .onAppear(perform: refresh)
+            .onReceive(NotificationCenter.default.publisher(for: .flintProtectionReconciled)) { _ in refresh() }
             .confirmationDialog("Clear focus history?", isPresented: $confirmClearHistory, titleVisibility: .visible) {
                 Button("Clear focus history", role: .destructive) {
                     FocusHistoryModel.shared.clear { success, keptRunningSession in
@@ -133,10 +136,41 @@ struct SettingsView: View {
         armingHealth = FlintGroupStore()?.loadArmingHealth() ?? FlintArmingHealth()
         authStatus = AuthorizationCenter.shared.authorizationStatus
         passAvailable = FlintSessionController().emergencyPassAvailable()
-        checkedAt = Date()
+        observation = FlintProtectionObservation.load()
+        sessionHealth = FlintSessionHealth.load()
+        activeSession = FlintSessionController().activeSession
     }
 
-    private var healthy: Bool { authStatus == .approved && armingHealth.isHealthy }
+    private var health: FlintArmingHealth {
+        var domains = observation?.domains ?? [:]
+        for (name, report) in armingHealth.domains {
+            if domains[name] == nil || report.updatedAt >= domains[name]!.updatedAt { domains[name] = report }
+        }
+        return FlintArmingHealth(domains: domains)
+    }
+
+    private var stale: Bool { observation?.isStale() ?? true }
+    private var healthy: Bool {
+        let currentFailures = health.domains.flatMap { domain, report in
+            report.failures.filter {
+                domain != "session" || $0.activityName == "session"
+                    || (activeSession != nil && $0.activityName != "session.lastAttempt")
+            }
+        }
+        return authStatus == .approved && currentFailures.isEmpty && !stale
+            && !FlintSessionHealthPresentation.hasCurrentIssue(health: sessionHealth, active: activeSession,
+                                                               report: health.domains["session"])
+    }
+
+    private var authorizationCopy: String {
+        switch authStatus {
+        case .approved: return "Screen Time access allowed"
+        case .denied: return "Screen Time access denied or revoked"
+        case .notDetermined: return "Screen Time access not requested"
+        // SDKs add authorization modes; preserve an honest fallback on older builds too.
+        default: return "Screen Time access state unknown"
+        }
+    }
 
     /// Whether every enabled schedule, Time Limit, and Open Limit passed Flint's checks and was
     /// accepted by iOS at the last re-arm. iOS provides a finite, undocumented registration pool
@@ -156,22 +190,40 @@ struct SettingsView: View {
                 }
             }
             VStack(alignment: .leading, spacing: 8) {
-                check(authStatus == .approved, authStatus == .approved ? "Screen Time access allowed" : "Screen Time access not allowed")
-                if armingHealth.enabledTotal > 0 || !armingHealth.isHealthy {
-                    check(armingHealth.isHealthy, armingHealth.isHealthy
-                          ? "All \(armingHealth.armedTotal) enabled \(armingHealth.armedTotal == 1 ? "rule" : "rules") armed with iOS"
-                          : "\(armingHealth.armedTotal) of \(armingHealth.enabledTotal) enabled \(armingHealth.enabledTotal == 1 ? "rule" : "rules") armed")
-                    ForEach(armingHealth.failures, id: \.activityName) { failure in
-                        Text("\(failure.activityName) — \(failure.reason)")
-                            .font(.caption2.monospaced())
-                            .foregroundStyle(FlintBrand.mist)
-                    }
-                } else {
-                    check(true, "No rules switched on yet")
+                check(authStatus == .approved, authorizationCopy)
+                if stale {
+                    check(false, observation == nil ? "Protection has never been checked by Flint."
+                        : "The last protection check is stale. Reopen Flint to check again.")
                 }
+                ForEach(health.domains.keys.sorted(), id: \.self) { domain in
+                    if let report = health.domains[domain] {
+                        let summary = "\(domainTitle(domain)): \(report.enabled) enabled · \(report.attempted) attempted · \(report.armed) armed · "
+                            + (report.observed.map { "\($0) observed registered" } ?? "registration not observed")
+                        let currentFailure = report.failures.contains {
+                            domain != "session" || $0.activityName == "session"
+                                || (activeSession != nil && $0.activityName != "session.lastAttempt")
+                        }
+                        if !currentFailure && (report.enabled == 0 || (domain == "session" && !sessionHasCurrentIssue)) {
+                            Text(summary).font(FlintFont.text(13)).foregroundStyle(FlintBrand.stone)
+                        } else {
+                            check(!currentFailure && report.observed != nil, summary)
+                        }
+                        ForEach(Array(report.failures.enumerated()), id: \.offset) { _, failure in
+                            Text("\(causeTitle(failure.activityName, domain: domain)) — \(failure.reason)")
+                                .font(FlintFont.text(12))
+                                .foregroundStyle(FlintBrand.mist)
+                        }
+                    }
+                }
+                ForEach(Array(FlintSessionHealthPresentation.messages(health: sessionHealth,
+                    report: health.domains["session"], active: activeSession).enumerated()), id: \.offset) { _, message in
+                    Text(message).font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
+                }
+                Text("Registration does not verify that a shield or background callback took effect.")
+                    .font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
                 check(passAvailable, passAvailable ? "Emergency Pass ready · 1 this week" : "Emergency Pass used this week")
-                if armingHealth.isNearCap {
-                    Text("Flint last armed \(armingHealth.armedTotal) background registrations. iOS does not publish a fixed "
+                if health.isNearCap {
+                    Text("Flint last armed \(health.armedTotal) protection activities. iOS does not publish a fixed "
                          + "limit; refusals have been observed around \(FlintArmingHealth.observedActivityThreshold). "
                          + "Consider merging schedules or removing unused rules before adding more.")
                         .font(FlintFont.text(12))
@@ -195,14 +247,40 @@ struct SettingsView: View {
                 Circle().fill(healthy ? FlintBrand.ember : FlintBrand.danger).frame(width: 12, height: 12)
             }
             .accessibilityHidden(true)
-            Text(healthy ? "Protection is healthy" : "Protection needs attention")
+            Text(healthy ? "No recorded protection issues" : "Protection needs attention")
                 .font(FlintFont.text(16, weight: .medium)).foregroundStyle(FlintBrand.bone)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
+    private var sessionHasCurrentIssue: Bool {
+        FlintSessionHealthPresentation.hasCurrentIssue(health: sessionHealth, active: activeSession,
+                                                        report: health.domains["session"])
+    }
+
+    private func domainTitle(_ domain: String) -> String {
+        switch domain {
+        case "session": return "Focus session"
+        case "schedules": return "Schedules"
+        case "limits": return "Time Limits"
+        case "openLimits": return "Open Limits"
+        case "webRestrictions": return "Website rules"
+        default: return "Protection"
+        }
+    }
+
+    private func causeTitle(_ name: String, domain: String) -> String {
+        if name == "session.lastAttempt" { return "Last session attempt" }
+        if domain == "session" { return activeSession?.name ?? "Focus session" }
+        if let rule = FlintGroupStore()?.loadRules().first(where: { $0.monitorName == name }) { return rule.name }
+        if let rule = FlintGroupStore()?.loadLimits().first(where: { $0.activityName == name }) { return rule.name }
+        if let rule = FlintOpenLimitRule.loadAll().first(where: { $0.activityName == name }) { return rule.name }
+        return domainTitle(domain)
+    }
+
     private var checkedTime: some View {
-        Text("Checked \(checkedAt.formatted(date: .omitted, time: .shortened))")
+        Text(observation.map { "Checked by Flint at \($0.observedAt.formatted(date: .abbreviated, time: .shortened))" }
+             ?? "Never checked by Flint")
             .font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
             .fixedSize(horizontal: false, vertical: true)
     }

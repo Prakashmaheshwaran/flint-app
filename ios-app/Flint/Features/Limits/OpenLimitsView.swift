@@ -5,14 +5,19 @@ import FlintCore
 @MainActor
 final class OpenLimitsViewModel: ObservableObject {
     @Published private(set) var rules: [FlintOpenLimitRule] = []
+    @Published private(set) var health = FlintArmingHealth()
+    @Published private(set) var observation: FlintProtectionObservation?
     private let controller = FlintOpenLimitsController()
 
     init() {
-        controller.reload() // re-arm shields + day-boundary activities when the screen opens
         refresh()
     }
 
-    func refresh() { rules = controller.rules() }
+    func refresh() {
+        rules = controller.rules()
+        health = FlintGroupStore()?.loadArmingHealth() ?? FlintArmingHealth()
+        observation = FlintProtectionObservation.load()
+    }
     func save(_ rule: FlintOpenLimitRule) { controller.upsert(rule); refresh() }
     func delete(_ id: String) { controller.delete(id); refresh() }
     func toggle(_ rule: FlintOpenLimitRule) { controller.setEnabled(rule.id, !rule.enabled); refresh() }
@@ -54,6 +59,7 @@ struct OpenLimitsView: View {
         .sheet(isPresented: $showAdd) { OpenLimitEditor(rule: nil) { vm.save($0) } }
         .sheet(item: $editing) { rule in OpenLimitEditor(rule: rule) { vm.save($0) } }
         .onAppear { vm.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: .flintProtectionReconciled)) { _ in vm.refresh() }
     }
 
     private var emptyState: some View {
@@ -76,6 +82,12 @@ struct OpenLimitsView: View {
                 Text(rule.name).font(.body.weight(.medium))
                 Text("\(rule.opensAllowed) \(rule.opensAllowed == 1 ? "open" : "opens")/day")
                     .font(.caption).foregroundStyle(.secondary)
+                if rule.enabled {
+                    Text(FlintRuleProtectionStatus.status(enabled: rule.enabled, activityName: rule.activityName,
+                        domain: "openLimits", health: vm.health, observation: vm.observation,
+                        authorized: AuthorizationCenter.shared.authorizationStatus == .approved).label)
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             Spacer()
             Toggle("", isOn: Binding(get: { rule.enabled }, set: { _ in vm.toggle(rule) }))
@@ -162,7 +174,7 @@ struct OpenLimitEditor: View {
 
     private var footerText: Text {
         if let issue = selectionIssue {
-            return Text(issue.message(for: .openLimit) + (!selection.categoryTokens.isEmpty
+            return Text(issue.message(for: .openLimit) + (issue == .emptySelection && !selection.categoryTokens.isEmpty
                 ? " Open Limits require specific apps or websites; categories cannot be open-limited." : ""))
         }
         if !selection.categoryTokens.isEmpty {

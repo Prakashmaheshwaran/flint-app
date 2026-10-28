@@ -46,6 +46,24 @@ struct RootView: View {
         .onAppear { updateScenePhase(scenePhase) }
         .onChange(of: scenePhase, perform: updateScenePhase)
         .modifier(FlintGlanceObservation())
+        .onChange(of: auth.status) { _ in reconcile(.configEdit) }
+        .task { await FlintProtectionReconciler.shared.reconcile(trigger: .launch) }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
+            reconcile(.significantTimeChange)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name.NSSystemTimeZoneDidChange)) { _ in
+            reconcile(.timeZoneChange)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name.NSSystemClockDidChange)) { _ in
+            reconcile(.significantTimeChange)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .flintProtectionConfigurationChanged)) { _ in
+            reconcile(.configEdit)
+        }
+    }
+
+    private func reconcile(_ trigger: FlintProtectionTrigger) {
+        Task { await FlintProtectionReconciler.shared.reconcile(trigger: trigger) }
     }
 
     private func updateScenePhase(_ phase: ScenePhase) {
@@ -55,6 +73,7 @@ struct RootView: View {
         case .active:
             appLock.transition(to: .active)
             auth.refresh()
+            reconcile(.foreground)
         case .inactive: appLock.transition(to: .inactive)
         case .background:
             // SwiftUI can deliver this late, after the scene has reactivated. The live
@@ -104,17 +123,6 @@ struct RootView: View {
                 tab = .today
                 showStart = true
             })
-        }
-        .task {
-            // Re-arm Open-Limit shields (+ their day-boundary activities) on every launch —
-            // that's what puts tokens released by yesterday's grants back behind the shield.
-            // Schedules/Time Limits re-arm in their tab view models; Open Limits' screen sits
-            // a level deeper, so its view model may never init in a given run.
-            FlintOpenLimitsController().reload()
-            // Reconcile the Hardcore uninstall guard with reality on every launch:
-            // re-assert it while a Hardcore session is still running, drop it if the
-            // session ended while Flint was dead (e.g. the monitor never got to fire).
-            FlintSessionController().reconcileUninstallGuard()
         }
     }
 }
