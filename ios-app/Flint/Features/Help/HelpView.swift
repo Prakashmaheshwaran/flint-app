@@ -22,13 +22,13 @@ struct HelpView: View {
                 HelpSection(title: "Strictness") {
                     HelpParagraph("Each focus session you start in Flint has a strictness level. It decides how you can end that session early.")
                     HelpItem(title: "Easy", text: "End the session whenever you choose.")
-                    HelpItem(title: "Harder", text: "Ending early asks you to wait first, so the urge has time to pass.")
-                    HelpItem(title: "Hardcore", text: "Flint won’t end the session early. It runs until the end time you chose, unless you use an Emergency Pass.")
+                    HelpItem(title: "Harder", text: "Ending early from the session screen asks you to wait first, so the urge has time to pass.")
+                    HelpItem(title: "Hardcore", text: "The session screen has no way to end it early. An Emergency Pass can end it.")
                     HelpParagraph("A session started by a Focus mode ends when that Focus turns off.")
                 }
 
                 HelpSection(title: "Emergency Pass") {
-                    HelpParagraph("An Emergency Pass ends a running Hardcore session early. It’s free. After you use one, the next becomes available seven days later.")
+                    HelpParagraph("An Emergency Pass ends a running Hardcore focus session early. It doesn’t end schedules, Sleep or limits. It’s free. After you use one, the next becomes available seven days later.")
                     HelpStatusLine(pass: pass)
                 }
 
@@ -36,13 +36,13 @@ struct HelpView: View {
                     HelpItem(title: "Turning off Screen Time access",
                              text: "Flint’s Screen Time access can be turned off in Settings. Flint’s blocking stops while it’s off.")
                     HelpItem(title: "Emergency calls",
-                             text: "Emergency SOS and emergency calls from the Lock Screen are never blocked by Flint.")
+                             text: "Emergency SOS and emergency calls from the Lock Screen are iOS features outside Flint’s blocks. Apps you use for calls can be blocked like any other app, so make sure the ones you rely on stay allowed.")
                     HelpItem(title: "Deleting apps",
-                             text: "A Hardcore session can restrict deleting apps until it ends. iOS applies this to every app on this iPhone, not only Flint.")
+                             text: "A Hardcore session restricts deleting apps until it ends. iOS applies this to every app on this iPhone, not only Flint.")
                     HelpItem(title: "Changing the clock",
                              text: "Flint can’t stop the date or time being changed, and may not notice every change while it isn’t running.")
                     HelpItem(title: "Timing",
-                             text: "iOS starts and ends blocks for Flint. It can take a moment, especially if Flint hasn’t been opened in a while.")
+                             text: "Flint applies a session’s block when it starts. iOS ends it, and starts and ends scheduled rules, even when Flint is closed. That can take a moment.")
                     HelpItem(title: "Websites",
                              text: "Website blocks use Screen Time. Coverage in browsers other than Safari depends on iOS and the browser.")
                 }
@@ -51,7 +51,7 @@ struct HelpView: View {
                     HelpParagraph("iOS has its own Screen Time passcode and Content & Privacy Restrictions in Settings → Screen Time. They’re separate from Flint: Flint can’t set, see or enforce them. Some people ask someone they trust to set the passcode.")
                 }
 
-                FlintPrivacyNote(text: "No account. No analytics. Your lists, rules and history stay on this iPhone.",
+                FlintPrivacyNote(text: String(localized: "No account. No analytics. Your lists, rules and history stay on this iPhone."),
                                  color: FlintBrand.stone)
                     .padding(.top, 28)
             }
@@ -78,8 +78,8 @@ enum HelpPassStatus: Equatable {
     }
 
     static func status(lastUsed: Date?, now: Date) -> HelpPassStatus {
-        if FlintEmergencyPass.isAvailable(lastUsed: lastUsed, now: now) { return .available }
-        return FlintEmergencyPass.nextAvailable(lastUsed: lastUsed).map(HelpPassStatus.next) ?? .available
+        guard let lastUsed, !FlintEmergencyPass.isAvailable(lastUsed: lastUsed, now: now) else { return .available }
+        return .next(lastUsed.addingTimeInterval(FlintEmergencyPass.period))
     }
 }
 
@@ -101,12 +101,16 @@ private struct HelpStatusLine: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// Date, time and zone: eligibility is an elapsed-time estimate, so the zone is shown.
+    private static let nextPassFormat = Date.FormatStyle.dateTime
+        .weekday(.abbreviated).month(.abbreviated).day().hour().minute().timeZone()
+
     @ViewBuilder private var label: some View {
         switch pass {
         case .available:
             Text("Emergency Pass available now")
         case .next(let date):
-            Text("Next Emergency Pass: \(date.formatted(date: .abbreviated, time: .shortened))")
+            Text("Next Emergency Pass: \(date, format: Self.nextPassFormat)")
         case .unknown:
             Text("Emergency Pass status is unavailable right now.")
         }
@@ -142,7 +146,7 @@ private struct HelpParagraph: View {
     }
 }
 
-/// A titled fact. VoiceOver reads the title and text as one element.
+/// A titled fact. The title is a heading, so VoiceOver's headings rotor can jump between facts.
 private struct HelpItem: View {
     let title: LocalizedStringKey
     let text: LocalizedStringKey
@@ -150,6 +154,7 @@ private struct HelpItem: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title).flintRowTitle()
+                .accessibilityAddTraits(.isHeader)
             Text(text)
                 .font(FlintFont.text(14))
                 .foregroundStyle(FlintBrand.mist)
@@ -157,6 +162,5 @@ private struct HelpItem: View {
         }
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
     }
 }
