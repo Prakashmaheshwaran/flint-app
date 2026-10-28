@@ -116,15 +116,15 @@ struct AppLockWindow: UIViewRepresentable {
                 // scene notifications. Preserve the pre-snapshot timing while making
                 // that existing executor guarantee visible to Swift's actor checker.
                 MainActor.assumeIsolated {
-                guard let self else { return }
-                // Cross-check the notification's implied phase against the scene's live
-                // activation state: a late/coalesced background report must not lock a
-                // foregrounded app into an unusable gate.
-                let observed = FlintAppLock.Phase(sceneActivationState: scene.activationState)
-                self.lock.transition(to: phase, ifSceneIs: observed)
-                // Snapshot protection still happens synchronously before UIKit returns
-                // from a background/deactivation notification.
-                self.render(self.lock.state)
+                    guard let self else { return }
+                    // Cross-check the notification's implied phase against the scene's live
+                    // activation state: a late/coalesced background report must not lock a
+                    // foregrounded app into an unusable gate.
+                    let observed = FlintAppLock.Phase(sceneActivationState: scene.activationState)
+                    self.lock.transition(to: phase, ifSceneIs: observed)
+                    // Snapshot protection still happens synchronously before UIKit returns
+                    // from a background/deactivation notification.
+                    self.render(self.lock.state)
                 }
             })
         }

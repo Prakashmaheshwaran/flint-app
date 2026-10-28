@@ -1,5 +1,8 @@
 import DeviceActivity
 import SwiftUI
+#if canImport(ExtensionKit)
+import ExtensionKit
+#endif
 
 /// The DeviceActivityReport extension — the ONLY supported source of per-app/website usage data
 /// and localized app names. The host app embeds a `DeviceActivityReport` view that renders this
