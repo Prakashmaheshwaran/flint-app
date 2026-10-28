@@ -123,6 +123,25 @@ class DurableCoordinatorTest {
         assertEquals(BreakLevel.HARDCORE, c.currentDefaultBreakLevel())
     }
 
+    @Test fun PC_15_PC_25_loadingOrUnreadableStoredTimeTierCannotBorrowAnOrdinaryExemption() = runBlocking {
+        for (state in listOf(StorageState.Loading, StorageState.Unavailable(StorageFailure.IO))) {
+            BlockExemptions.clearAll()
+            val focus = InMemoryFocusStateStore()
+            val configured = InMemoryLimitsStore(initialTimeLimits = listOf(TimeLimit(pkg, 0, BreakLevel.HARDCORE)))
+            val limits = object : LimitsStore by configured {
+                override val timeLimitsState = flowOf<StorageState<List<TimeLimit>>>(state)
+            }
+            val c = coordinator(focus, rules = emptyList(), limits = limits)
+            BlockExemptions.grant(pkg, now + 60_000)
+            val cause = c.evaluateBlockCause(null, pkg, null, timeLimitSpent = true)!!
+            assertEquals(BreakLevel.HARDCORE, c.currentTimeLimitBreakLevel(pkg))
+            assertEquals(BreakLevel.HARDCORE, cause.breakLevel)
+            assertFalse(c.isExempt(pkg, cause))
+            assertTrue(c.requestBreak(pkg, cause, GrantRequestId.issue(now)) is GrantResult.Unavailable)
+            assertTrue(focus.state.snapshotOrNull()!!.exemptions.isEmpty())
+        }
+    }
+
     @Test fun acceptedGrantHooksOnlyFireAfterCommitAndNeverForAnIdempotentRetry() = runBlocking {
         val focus = PausedFocus()
         val coordinator = coordinator(focus)

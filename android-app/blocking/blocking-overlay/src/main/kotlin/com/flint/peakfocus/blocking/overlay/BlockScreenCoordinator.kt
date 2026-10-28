@@ -38,6 +38,9 @@ import java.util.TimeZone
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -158,8 +161,8 @@ class BlockScreenCoordinator(
     private val rulesState = MutableStateFlow<StorageState<List<BlockRule>>>(StorageState.Loading)
     private val editorState = MutableStateFlow<StorageState<EditorCommitmentState>>(StorageState.Loading)
     private val statusLock = Any()
-    @Volatile private var statusClockReady = false
     private var lastPolicyStatus: ProtectionStatus? = null
+    private val statusInvalidations = Channel<Unit>(Channel.CONFLATED)
     // Lists are last-known-good only, never a replacement emitted because a read failed.
     @Volatile private var openLimits: List<OpenLimit> = emptyList()
     @Volatile private var timeLimits: List<TimeLimit> = emptyList()
@@ -202,16 +205,16 @@ class BlockScreenCoordinator(
         scope.launch { limitsStore.openLimitsState.collect { state ->
             if (state is StorageState.Ready) openLimits = state.value
             openState.value = state
-            publishProtectionStatus()
+            invalidateProtectionStatus()
         } }
         scope.launch { limitsStore.timeLimitsState.collect { state ->
             if (state is StorageState.Ready) timeLimits = state.value
             timeState.value = state
-            publishProtectionStatus()
+            invalidateProtectionStatus()
         } }
-        scope.launch { rulesStore.rulesState.collect { rulesState.value = it; publishProtectionStatus() } }
-        scope.launch { editorStore.state.collect { editorState.value = it; publishProtectionStatus() } }
-        scope.launch { safetyFloor.runtimeResolution.collect { publishProtectionStatus() } }
+        scope.launch { rulesStore.rulesState.collect { rulesState.value = it; invalidateProtectionStatus() } }
+        scope.launch { editorStore.state.collect { editorState.value = it; invalidateProtectionStatus() } }
+        scope.launch { safetyFloor.runtimeResolution.collect { invalidateProtectionStatus() } }
         scope.launch {
             val unsubscribe = EnforcementSignals.detectors.subscribe(::publishPathAHealth)
             try { kotlinx.coroutines.awaitCancellation() } finally { unsubscribe() }
@@ -219,12 +222,15 @@ class BlockScreenCoordinator(
         scope.launch(statusDispatcher) {
             // ProtectionClock resolves the OS boot identity lazily. Initialize it here so
             // status publication on an accessibility/main callback never opens /proc.
-            statusClock()
-            statusClockReady = true
+            var first = true
             while (isActive) {
-                safetyFloor.refreshSoonIfOlderThan(SafetyFloorGate.DEFAULT_REFRESH_INTERVAL_MS)
+                if (!first) {
+                    withTimeoutOrNull(ProtectionStatusProjection.TICK_MS) { statusInvalidations.receive() }
+                    delay(STATUS_COALESCE_MS)
+                    statusInvalidations.tryReceive() // one conflated signal represents every latest input
+                }
+                first = false
                 publishProtectionStatus()
-                delay(ProtectionStatusProjection.FRESHNESS_MS)
             }
         }
         scope.launch { grants.state.collect { state ->
@@ -234,7 +240,7 @@ class BlockScreenCoordinator(
                 }
             }
             rerenderNow()
-            publishProtectionStatus()
+            invalidateProtectionStatus()
         } }
         scope.launch {
             // Include readiness (and recovery), but exclude counters/receipts from the config
@@ -249,15 +255,36 @@ class BlockScreenCoordinator(
         }
     }
 
+    /** Cheap invalidation on each collector; policy work runs once on statusDispatcher. */
+    private fun invalidateProtectionStatus() { statusInvalidations.trySend(Unit) }
+
     /** Real policy evaluation; display reads and detector-health callbacks never invoke this. */
     private fun publishProtectionStatus() {
-        if (!statusClockReady) return
-        val snapshot = ProtectionStatusProjection.evaluate(grants.state.value, rulesState.value,
-            timeState.value, openState.value, editorState.value, ActiveRulesHolder.rulesOutside(ActiveRulesHolder.SOURCE_DATASTORE),
-            safetyFloor.runtimeResolution.value, EnforcementSignals.detectors.pathAConnected, statusClock())
-        synchronized(statusLock) {
-            lastPolicyStatus = snapshot
-            ProtectionStatusHub.publish(snapshot)
+        try {
+            safetyFloor.refreshSoonIfOlderThan(SafetyFloorGate.DEFAULT_REFRESH_INTERVAL_MS)
+            val now = statusClock() // first call stays off main, including lazy OS boot identity lookup
+            val snapshot = ProtectionStatusProjection.evaluate(grants.state.value, rulesState.value,
+                timeState.value, openState.value, editorState.value, ActiveRulesHolder.rulesOutside(ActiveRulesHolder.SOURCE_DATASTORE),
+                safetyFloor.runtimeResolution.value, EnforcementSignals.detectors.pathAConnected, now)
+            synchronized(statusLock) {
+                val connected = EnforcementSignals.detectors.pathAConnected
+                val health = snapshot.detectors.copy(accessibilityConnected = connected,
+                    degradedReasons = snapshot.detectors.degradedReasons - "path-a-disconnected" + if (connected) emptySet() else setOf("path-a-disconnected"))
+                lastPolicyStatus = snapshot.copy(detectors = health)
+                ProtectionStatusHub.publish(checkNotNull(lastPolicyStatus))
+            }
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            synchronized(statusLock) {
+                val previous = lastPolicyStatus
+                val failure = ProtectionStatus.UNKNOWN.copy(observedAt = previous?.observedAt,
+                    validUntilElapsedRealtimeMs = previous?.validUntilElapsedRealtimeMs,
+                    detectors = ProtectionStatus.DetectorHealth(EnforcementSignals.detectors.pathAConnected,
+                        ProtectionStatus.PathBState.UNKNOWN, setOf("policy-check-failed")))
+                lastPolicyStatus = failure
+                ProtectionStatusHub.publish(failure)
+            }
         }
     }
 
@@ -288,9 +315,14 @@ class BlockScreenCoordinator(
     /** Loaded tier for Time Limit displays; unknown accounting has no grant affordance. */
     fun currentDefaultBreakLevel(): BreakLevel = grants.lastGood?.defaultBreakLevel ?: BreakLevel.HARDCORE
 
-    /** A saved limit owns its tier; the default only supplies the legacy SharedPreferences budget. */
+    /**
+     * A saved limit owns its tier, also read directly by the read-only status projection.
+     * Unknown limit storage cannot borrow ordinary default-tier rights. The default only
+     * supplies a proven Ready legacy SharedPreferences budget without a DataStore record.
+     */
     fun currentTimeLimitBreakLevel(packageName: String): BreakLevel =
-        timeLimits.firstOrNull { it.packageName == packageName }?.breakLevel ?: currentDefaultBreakLevel()
+        if (timeState.value !is StorageState.Ready) BreakLevel.HARDCORE
+        else timeLimits.firstOrNull { it.packageName == packageName }?.breakLevel ?: currentDefaultBreakLevel()
 
     /**
      * The Limit editor's daily Time Limit for [packageName] (minutes), or null. Synchronous
@@ -832,5 +864,7 @@ class BlockScreenCoordinator(
 
         /** Policy stays blocked while IO is pending; avoid flashing a full screen for fast edits. */
         internal const val PENDING_OPEN_SURFACE_GRACE_MS: Long = 100L
+
+        internal const val STATUS_COALESCE_MS: Long = 25L
     }
 }

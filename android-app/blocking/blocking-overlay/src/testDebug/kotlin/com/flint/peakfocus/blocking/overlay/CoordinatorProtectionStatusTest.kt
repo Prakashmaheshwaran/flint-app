@@ -80,14 +80,79 @@ class CoordinatorProtectionStatusTest {
             safetyFloorGate = SafetyFloorGate(app.packageName, { mapOf("home" to emptySet()) }, { clock().elapsedRealtimeMs }, requiredRuntimeSources = setOf("home")))
         runCurrent()
         assertEquals(1, ProtectionStatusHub.status.value.activeCauses.size)
-        advanceTimeBy(4_000)
+        advanceTimeBy(4_000 + ProtectionStatusProjection.TICK_MS + BlockScreenCoordinator.STATUS_COALESCE_MS)
         runCurrent()
         assertTrue(ProtectionStatusHub.status.value.activeCauses.isEmpty())
-        assertEquals(initial.wallEpochMs + 4_000, ProtectionStatusHub.status.value.lastCheckedEpochMs)
+        assertTrue(ProtectionStatusHub.status.value.lastCheckedEpochMs!! >= initial.wallEpochMs + 4_000)
         states.value = StorageState.Unavailable(StorageFailure.IO)
+        runCurrent()
+        advanceTimeBy(BlockScreenCoordinator.STATUS_COALESCE_MS)
         runCurrent()
         assertEquals(ProtectionStatus.Readiness.UNAVAILABLE, ProtectionStatusHub.status.value.readiness)
         assertEquals(ProtectionStatus.PassStatus.Unavailable, ProtectionStatusHub.status.value.pass)
+    }
+
+    @Test fun PC_73_eachOwnedTickReplacesPolicyBeforeTheFreshnessHorizon() = runTest {
+        val app: Context = ApplicationProvider.getApplicationContext()
+        fun clock() = initial.copy(wallEpochMs = initial.wallEpochMs + testScheduler.currentTime,
+            elapsedRealtimeMs = initial.elapsedRealtimeMs + testScheduler.currentTime)
+        ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, listOf(rule))
+        BlockScreenCoordinator(app, backgroundScope, host, focusStateStore = InMemoryFocusStateStore(),
+            configuredLimitsStore = InMemoryLimitsStore(), blockRulesStore = InMemoryBlockRulesStore(listOf(rule)), editorCommitmentStore = editor,
+            statusClock = ::clock, statusDispatcher = StandardTestDispatcher(testScheduler),
+            safetyFloorGate = SafetyFloorGate(app.packageName, { mapOf("home" to emptySet()) }, { clock().elapsedRealtimeMs }, requiredRuntimeSources = setOf("home")))
+        runCurrent()
+        val first = ProtectionStatusHub.status.value.observedAt!!
+        advanceTimeBy(ProtectionStatusProjection.TICK_MS + BlockScreenCoordinator.STATUS_COALESCE_MS)
+        runCurrent()
+        val tick = ProtectionStatusHub.status.value
+        assertTrue(tick.observedAt!!.elapsedRealtimeMs > first.elapsedRealtimeMs)
+        assertTrue(tick.validUntilElapsedRealtimeMs!! > clock().elapsedRealtimeMs)
+    }
+
+    @Test fun PC_47_PC_73_projectionFailurePublishesUnavailableAndTheOwnedLoopCanRecover() = runTest {
+        val app: Context = ApplicationProvider.getApplicationContext()
+        var fail = true
+        ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, listOf(rule))
+        BlockScreenCoordinator(app, backgroundScope, host, focusStateStore = InMemoryFocusStateStore(),
+            configuredLimitsStore = InMemoryLimitsStore(), blockRulesStore = InMemoryBlockRulesStore(listOf(rule)), editorCommitmentStore = editor,
+            statusClock = { check(!fail); initial }, statusDispatcher = StandardTestDispatcher(testScheduler),
+            safetyFloorGate = SafetyFloorGate(app.packageName, { mapOf("home" to emptySet()) }, { initial.elapsedRealtimeMs }, requiredRuntimeSources = setOf("home")))
+        runCurrent()
+        assertEquals(ProtectionStatus.Readiness.UNAVAILABLE, ProtectionStatusHub.status.value.readiness)
+        assertTrue("policy-check-failed" in ProtectionStatusHub.status.value.detectors.degradedReasons)
+        assertNull(ProtectionStatusHub.status.value.observedAt)
+        fail = false
+        advanceTimeBy(ProtectionStatusProjection.TICK_MS + BlockScreenCoordinator.STATUS_COALESCE_MS)
+        runCurrent()
+        assertEquals(ProtectionStatus.Readiness.READY, ProtectionStatusHub.status.value.readiness)
+        assertEquals(initial, ProtectionStatusHub.status.value.observedAt)
+    }
+
+    @Test fun PC_73_multipleStoreInvalidationsCoalesceBeforeProjectionInsteadOfRunningOnEachCollector() = runTest {
+        val app: Context = ApplicationProvider.getApplicationContext()
+        val focus = InMemoryFocusStateStore()
+        val rules = InMemoryBlockRulesStore(listOf(rule))
+        var checks = 0
+        ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, listOf(rule))
+        BlockScreenCoordinator(app, backgroundScope, host, focusStateStore = focus,
+            configuredLimitsStore = InMemoryLimitsStore(), blockRulesStore = rules, editorCommitmentStore = editor,
+            statusClock = { checks++; initial }, statusDispatcher = StandardTestDispatcher(testScheduler),
+            safetyFloorGate = SafetyFloorGate(app.packageName, { mapOf("home" to emptySet()) }, { initial.elapsedRealtimeMs }, requiredRuntimeSources = setOf("home")))
+        runCurrent()
+        advanceTimeBy(BlockScreenCoordinator.STATUS_COALESCE_MS)
+        runCurrent()
+        val before = checks
+        focus.setDefaultBreakLevel(BreakLevel.HARDER)
+        rules.upsert(rule.copy(name = "Updated"))
+        val old = (editor.state.value as StorageState.Ready).value
+        editor.state.value = StorageState.Ready(old.copy(migrationNotice = true))
+        runCurrent()
+        assertEquals(before, checks)
+        advanceTimeBy(BlockScreenCoordinator.STATUS_COALESCE_MS)
+        runCurrent()
+        assertEquals(before + 1, checks)
+        assertEquals("Updated", ProtectionStatusHub.status.value.activeCauses.single().displayName)
     }
 
     private class PublishedEditor(initial: EditorCommitmentState) : EditorCommitmentStore {

@@ -13,6 +13,7 @@ import java.util.TimeZone
 /** A read-only evaluation of actual store snapshots, never consulted to grant access. */
 internal object ProtectionStatusProjection {
     const val FRESHNESS_MS = 2_000L
+    const val TICK_MS = FRESHNESS_MS / 2
 
     fun evaluate(
         focus: StorageState<FocusSnapshot>,
@@ -24,6 +25,7 @@ internal object ProtectionStatusProjection {
         floor: SafetyFloorGate.RuntimeResolution,
         pathAConnected: Boolean,
         now: AccessClockStamp,
+        legacyZone: String = TimeZone.getDefault().id,
     ): ProtectionStatus {
         val inputs = listOf(focus, rulesReadiness, times, opens, editor)
         val readiness = when {
@@ -48,13 +50,10 @@ internal object ProtectionStatusProjection {
         val configuredIds = configured.map { it.id }.toSet()
         val currentRules = configured + effectiveRules.filter { it.id !in configuredIds }
         if (readiness == ProtectionStatus.Readiness.READY && sidecar != null) {
-            fun add(key: String, ruleId: String?, name: String, kind: ProtectionStatus.CauseKind, tier: BreakLevel,
-                legacyOpenEnded: Boolean = false) {
+            fun add(key: String, ruleId: String?, name: String, kind: ProtectionStatus.CauseKind, tier: BreakLevel) {
                 val occurrence = sidecar.causes[key]
                 if (occurrence == null) {
-                    if (legacyOpenEnded) causes += ProtectionStatus.ActiveCause(ruleId, ProtectionStatus.sanitizeDisplayName(name),
-                        kind, tier, null, null, null, true)
-                    else reasons += "occurrence-state-unavailable"
+                    reasons += "occurrence-state-unavailable"
                     return
                 }
                 if (occurrence.occurrenceId == "inactive") return
@@ -74,8 +73,13 @@ internal object ProtectionStatusProjection {
                     rule.expiresAtEpochMs != null && !rule.id.startsWith(BlockRule.SESSION_ID_PREFIX) -> ProtectionStatus.CauseKind.SCHEDULE
                     else -> ProtectionStatus.CauseKind.SESSION
                 }
-                add(ruleCauseKey(rule.id), rule.id, rule.name, kind, rule.breakLevel,
-                    legacyOpenEnded = rule.schedule == null && rule.expiresAtEpochMs == null)
+                if (rule.id in configuredIds) add(ruleCauseKey(rule.id), rule.id, rule.name, kind, rule.breakLevel)
+                else foreignActivity(rule, now, legacyZone)?.let { activity ->
+                    causes += ProtectionStatus.ActiveCause(rule.id, ProtectionStatus.sanitizeDisplayName(rule.name), kind, rule.breakLevel,
+                        activity.end?.let { (it - now.wallEpochMs).coerceAtLeast(0) },
+                        // The foreign legacy source has no durable elapsed occurrence anchor.
+                        null, activity.end, true)
+                }
             }
             (times as StorageState.Ready).value.forEach { limit ->
                 add(timeCauseKey(limit.packageName), null, "Time limit", ProtectionStatus.CauseKind.TIME_LIMIT, limit.breakLevel)
@@ -86,7 +90,8 @@ internal object ProtectionStatusProjection {
         }
         val derivedReadiness = if (readiness == ProtectionStatus.Readiness.READY && "occurrence-state-unavailable" in reasons)
             ProtectionStatus.Readiness.UNAVAILABLE else readiness
-        val next = if (derivedReadiness == ProtectionStatus.Readiness.READY && sidecar != null) nextOccurrence(currentRules, sidecar, now) else null
+        val next = if (derivedReadiness == ProtectionStatus.Readiness.READY && sidecar != null)
+            nextOccurrence(currentRules, configuredIds, sidecar, now, legacyZone) else null
         val deadline = (causes.mapNotNull { it.logicalEndElapsedRealtimeMs } + listOfNotNull(
             next?.let { addBounded(now.elapsedRealtimeMs, (it.startWallEstimateEpochMs - now.wallEpochMs).coerceAtLeast(0)) },
             addBounded(now.elapsedRealtimeMs, FRESHNESS_MS),
@@ -100,25 +105,52 @@ internal object ProtectionStatusProjection {
                 floor.degraded || floorStale))
     }
 
-    private fun nextOccurrence(rules: List<BlockRule>, editor: EditorCommitmentState, now: AccessClockStamp): ProtectionStatus.NextOccurrence? {
+    private data class ForeignActivity(val end: Long?)
+
+    /** Legacy quick-block scheduling follows device wall time, not the editor's saved-zone ledger. */
+    private fun foreignActivity(rule: BlockRule, now: AccessClockStamp, zone: String): ForeignActivity? {
+        val expiry = rule.expiresAtEpochMs
+        if (expiry != null && expiry <= now.wallEpochMs) return null
+        val schedule = rule.schedule ?: return ForeignActivity(expiry)
+        val cal = Calendar.getInstance(TimeZone.getTimeZone(zone)).apply { timeInMillis = now.wallEpochMs }
+        val minute = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+        val day = ((cal.get(Calendar.DAY_OF_WEEK) + 5) % 7) + 1
+        val overnight = schedule.startMinuteOfDay > schedule.endMinuteOfDay
+        val occurrenceDay = if (overnight && minute < schedule.endMinuteOfDay) if (day == 1) 7 else day - 1 else day
+        val inside = if (overnight) minute >= schedule.startMinuteOfDay || minute < schedule.endMinuteOfDay
+            else minute in schedule.startMinuteOfDay until schedule.endMinuteOfDay
+        if (!inside || (schedule.daysOfWeek.isNotEmpty() && occurrenceDay !in schedule.daysOfWeek)) return null
+        val end = (cal.clone() as Calendar).apply {
+            if (overnight && minute >= schedule.startMinuteOfDay) add(Calendar.DATE, 1)
+            set(Calendar.HOUR_OF_DAY, schedule.endMinuteOfDay / 60); set(Calendar.MINUTE, schedule.endMinuteOfDay % 60)
+            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        return ForeignActivity(minOf(end, expiry ?: Long.MAX_VALUE))
+    }
+
+    private fun nextOccurrence(rules: List<BlockRule>, configuredIds: Set<String>, editor: EditorCommitmentState,
+        now: AccessClockStamp, legacyZone: String): ProtectionStatus.NextOccurrence? {
         val anchor = editor.timeline
         val elapsed = anchor?.let { trustedElapsedMs(it, now) }
         val logicalWall = if (anchor != null && elapsed != null) addBounded(anchor.wallEpochMs, elapsed) else now.wallEpochMs
         return rules.filter { it.enabled && it.schedule != null && it.expiresAtEpochMs == null }.mapNotNull { rule ->
             // The saved occurrence owns its zone, including when the device travels.
-            val saved = editor.causes[ruleCauseKey(rule.id)] ?: return@mapNotNull null
+            val owned = rule.id in configuredIds
+            val saved = editor.causes[ruleCauseKey(rule.id)]
+            if (owned && saved == null) return@mapNotNull null
             val schedule = checkNotNull(rule.schedule)
-            val today = Calendar.getInstance(TimeZone.getTimeZone(saved.zoneId)).apply { timeInMillis = logicalWall }
+            val ruleWall = if (owned) logicalWall else now.wallEpochMs
+            val today = Calendar.getInstance(TimeZone.getTimeZone(saved?.zoneId ?: legacyZone)).apply { timeInMillis = ruleWall }
             val start = (0..7).firstNotNullOfOrNull { offset ->
                 (today.clone() as Calendar).apply {
                     add(Calendar.DATE, offset); set(Calendar.HOUR_OF_DAY, schedule.startMinuteOfDay / 60)
                     set(Calendar.MINUTE, schedule.startMinuteOfDay % 60); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-                }.takeIf { c -> c.timeInMillis > logicalWall &&
+                }.takeIf { c -> c.timeInMillis > ruleWall &&
                     (schedule.daysOfWeek.isEmpty() || ((c.get(Calendar.DAY_OF_WEEK) + 5) % 7) + 1 in schedule.daysOfWeek) }
             } ?: return@mapNotNull null
             ProtectionStatus.NextOccurrence(rule.id, ProtectionStatus.sanitizeDisplayName(rule.name),
                 if (rule.id.startsWith("sleep-")) ProtectionStatus.CauseKind.SLEEP else ProtectionStatus.CauseKind.SCHEDULE,
-                addBounded(now.wallEpochMs, start.timeInMillis - logicalWall))
+                addBounded(now.wallEpochMs, start.timeInMillis - ruleWall))
         }.minByOrNull { it.startWallEstimateEpochMs }
     }
 
