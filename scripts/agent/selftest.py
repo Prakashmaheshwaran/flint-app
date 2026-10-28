@@ -6,23 +6,28 @@ import os
 from pathlib import Path
 import resource
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+import uuid
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'scripts'))
+from selftest_processes import ProcessRegistry, REGISTRY_ENV
 
 
 def real_tool(name):
     found = shutil.which(name)
-    # macOS /usr/bin/git and make are xcrun launchers, not the actual tools.
+    # macOS system/CLT make paths are xcrun launchers, not the actual tools.
     # Pin their binaries so an isolated DEVELOPER_DIR cannot select live tools.
     native = Path('/Library/Developer/CommandLineTools/usr/bin') / ('gnumake' if name == 'make' else name)
-    return str(native) if found == f'/usr/bin/{name}' and native.is_file() else found
+    launchers = {Path(f'/usr/bin/{name}')}
+    if name == 'make':
+        launchers.add(Path('/Library/Developer/CommandLineTools/usr/bin/make'))
+    return str(native) if found and Path(found).resolve() in launchers and native.is_file() else found
 
 
 REAL_GIT = real_tool('git')
@@ -60,7 +65,7 @@ elif name == "xcodebuild" and not os.environ.get("NO_APP"):
     d = pathlib.Path(args[args.index("-derivedDataPath") + 1])
     (d / "Build/Products/Debug-iphonesimulator/Flint.app").mkdir(parents=True, exist_ok=True)
     if os.environ.get("OTHER_ACTOR_BOOTS_DURING_BUILD"):
-        pathlib.Path('booted-TEST-UDID').touch()
+        pathlib.Path('booted-11111111-2222-3333-4444-555555555555').touch()
 elif name == 'xcrun' and args[:2] == ['simctl', 'boot']:
     pathlib.Path('booted-' + args[2]).touch()
     if os.environ.get('BOOT_RACE'):
@@ -71,6 +76,14 @@ elif name == 'flint-devices.sh' and args[0] == 'incarnation':
     if not os.environ.get('NO_INCARNATION'):
         token = 'b' if os.environ.get('CHANGE_INCARNATION_AFTER_ATTACH') and pathlib.Path('attached').exists() else 'a'
         print('v1:' + token * 64)
+elif name == 'flint-devices.sh' and args[0] == 'claim':
+    entry = {'platform': args[1], 'id': args[2],
+             'incarnation': 'v1:' + 'a' * 64}
+    if '--avd' in args:
+        entry['avd'] = args[args.index('--avd') + 1]
+    pathlib.Path('fake-claims.json').write_text(json.dumps([entry]))
+elif name == 'flint-devices.sh' and args == ['list', '--json']:
+    print(pathlib.Path('fake-claims.json').read_text())
 elif name == 'flint-devices.sh' and args[0] == 'rollback':
     if os.environ.get('PEER_CLAIM'):
         sys.exit('rollback refused: device/AVD is claimed; preserve peers')
@@ -106,7 +119,7 @@ elif name == "orca":
         else:
             ident = args[2]
             if ident == 'iPhone 17':
-                ident = 'TEST-UDID'
+                ident = '11111111-2222-3333-4444-555555555555'
             if ident == 'flint-test':
                 ident = 'emulator-5554'
             backend = 'android' if ident.startswith('emulator-') else 'ios'
@@ -147,12 +160,16 @@ elif name == "adb":
         print("app event via adb")
 elif name == 'xcrun' and args[:2] == ['simctl', 'spawn'] and args[-2:] == ['launchctl', 'managerpid']:
     print('43210')
+elif name == 'xcrun' and args[:2] == ['simctl', 'spawn'] and args[3:] == ['launchctl', 'print', 'system/com.apple.SpringBoard']:
+    print('state = running\npid = 43211')
 elif name == 'ps':
     if args == ['-axo', 'pid=,pgid=,lstart=,command=']:
         if pathlib.Path('emulator-group').exists():
             group = pathlib.Path('emulator-group').read_text()
             port = pathlib.Path('emulator-serial').read_text().removeprefix('emulator-')
             print(group + ' ' + group + ' Tue Oct 27 01:00:00 2026 /fake/emulator -avd flint-test -port ' + port)
+        elif os.environ.get('AVD_BOOTED'):
+            print('501 501 Tue Oct 27 01:00:00 2026 /fake/emulator -avd flint-test -port 5554')
     elif args == ['-p', '43210', '-o', 'lstart=,comm=']:
         print('Tue Oct 27 01:00:00 2026 /fake/launchd_sim')
     elif args == ['-p', '12345', '-o', 'lstart=,comm=']:
@@ -173,7 +190,9 @@ class AgentCommands(unittest.TestCase):
         if os.environ.get("FLINT_AGENT_SELFTEST_KEEP") == "1":
             print(f"Preserving selftest evidence: {temp}", flush=True)
         else:
-            self.addCleanup(shutil.rmtree, temp)
+            self.addCleanup(self.remove_fixture, temp)
+        self.active_commands = set()
+        self.registry = ProcessRegistry(os.environ.get(REGISTRY_ENV, str(Path(temp) / 'processes.json')))
         self.root = Path(temp).resolve() / "project with spaces"
         self.root.mkdir()
         shutil.copy(ROOT / "Makefile", self.root / "Makefile")
@@ -202,6 +221,9 @@ class AgentCommands(unittest.TestCase):
                                     'ORPHAN_PLAN', 'ORPHAN_DIGEST', 'TAG')}
         self.env.update(
             HOME=str(self.home),
+            # This is a private test-owned registry, deliberately forwarded even
+            # through otherwise sanitized nested AgentCommands environments.
+            **{REGISTRY_ENV: str(self.registry.path)},
             XDG_CONFIG_HOME=str(self.home / '.config'),
             XDG_CACHE_HOME=str(self.home / '.cache'),
             XDG_DATA_HOME=str(self.home / '.local/share'),
@@ -217,8 +239,8 @@ class AgentCommands(unittest.TestCase):
             BINARY_PATHS=str(self.root / "binary-paths.jsonl"),
             FLINT_MAKE=str(self.bin / "fake-make"),
             SIM_DEVICES=json.dumps({"devices": {"runtime": [
-                {"name": "iPhone 17", "udid": "TEST-UDID", "isAvailable": True, "state": "Shutdown"},
-                {"name": "Other phone", "udid": "OTHER-UDID", "isAvailable": True, "state": "Booted"},
+                {"name": "iPhone 17", "udid": "11111111-2222-3333-4444-555555555555", "isAvailable": True, "state": "Shutdown"},
+                {"name": "Other phone", "udid": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", "isAvailable": True, "state": "Booted"},
             ]}}),
         )
         # A merged shared env wrapper may prepend the SDK tools to PATH. Pin those
@@ -244,26 +266,31 @@ class AgentCommands(unittest.TestCase):
 
     def run_cmd(self, args, command_timeout=20, **env):
         with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
-            child = subprocess.Popen(args, cwd=self.root, env={**self.env, **env},
-                                     stdout=out, stderr=err, start_new_session=True)
+            owner = uuid.uuid4().hex
+            self.active_commands.add(owner)
+            child = self.registry.spawn(args, owner=owner, cwd=self.root, env={**self.env, **env},
+                                        stdout=out, stderr=err)
             try:
                 code = child.wait(timeout=command_timeout)
             except subprocess.TimeoutExpired:
-                os.killpg(child.pid, signal.SIGKILL)
-                child.wait(timeout=2)
                 code = 124
+            finally:
+                self.registry.finish(owner)
+                child.wait(timeout=2)
+                self.active_commands.discard(owner)
             out.seek(0)
             err.seek(0)
             return subprocess.CompletedProcess(args, code, out.read(FILE_LIMIT).decode(errors='replace'),
                                                err.read(FILE_LIMIT).decode(errors='replace'))
 
+    def remove_fixture(self, temporary):
+        if self.active_commands:
+            raise RuntimeError(f'Selftest process termination unverified; fixture retained: {temporary}')
+        shutil.rmtree(temporary)
+
     def tearDown(self):
-        group = self.root / 'emulator-group'
-        if group.exists():
-            try:
-                os.killpg(int(group.read_text()), signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+        # run_cmd already stopped every verified descendant. A saved numeric
+        # group alone must never authorize another signal after PID reuse.
         paths = self.root / "binary-paths.jsonl"
         if paths.exists():
             for line in paths.read_text().splitlines():
@@ -376,18 +403,18 @@ class AgentCommands(unittest.TestCase):
         self.assertEqual(self.calls("fake-make"), [])
 
     def test_ios_run_composes_scoped_build_install_and_launch(self):
-        result = self.make("ios-run", "IOS_DERIVED_DATA=ios-app/Custom Data", "IOS_SIM=TEST-UDID")
+        result = self.make("ios-run", "IOS_DERIVED_DATA=ios-app/Custom Data", "IOS_SIM=11111111-2222-3333-4444-555555555555")
         self.assert_ok(result)
         build = self.calls("xcodebuild")[0]
         self.assertEqual(build[build.index("-derivedDataPath") + 1], "ios-app/Custom Data")
         self.assertIn("CODE_SIGNING_ALLOWED=NO", build)
         self.assertEqual(self.calls("xcodegen"), [["generate"]])
-        self.assertEqual(self.calls("orca"), [["emulator", "attach", "TEST-UDID", "--worktree", f"path:{self.root}", "--json"]])
+        self.assertEqual(self.calls("orca"), [["emulator", "attach", "11111111-2222-3333-4444-555555555555", "--worktree", f"path:{self.root}", "--json"]])
         self.assertEqual([a for a in self.calls('flint-devices.sh') if a[0] == 'claim'],
-                         [["claim", "ios", "TEST-UDID", "--booted", '--incarnation', 'v1:' + 'a' * 64, '--helper-pid', '12345']])
+                         [["claim", "ios", "11111111-2222-3333-4444-555555555555", "--booted", '--incarnation', 'v1:' + 'a' * 64, '--helper-pid', '12345']])
         calls = self.calls("xcrun")
-        self.assertIn(["simctl", "install", "TEST-UDID", "ios-app/Custom Data/Build/Products/Debug-iphonesimulator/Flint.app"], calls)
-        self.assertIn(["simctl", "launch", "TEST-UDID", "com.flint.peakfocus"], calls)
+        self.assertIn(["simctl", "install", "11111111-2222-3333-4444-555555555555", "ios-app/Custom Data/Build/Products/Debug-iphonesimulator/Flint.app"], calls)
+        self.assertIn(["simctl", "launch", "11111111-2222-3333-4444-555555555555", "com.flint.peakfocus"], calls)
         self.assertFalse(any("booted" in args for _, args in self.calls()))
         self.assertIn("bundle=com.flint.peakfocus", result.stdout)
 
@@ -397,9 +424,9 @@ class AgentCommands(unittest.TestCase):
         self.assertEqual(self.calls("orca"), [])
 
     def test_ios_claim_does_not_own_shutdown_for_an_already_booted_device(self):
-        result = self.make("ios-run", "IOS_SIM=OTHER-UDID")
+        result = self.make("ios-run", "IOS_SIM=AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")
         self.assert_ok(result)
-        self.assertEqual(self.calls("flint-devices.sh"), [["claim", "ios", "OTHER-UDID", '--helper-pid', '12345']])
+        self.assertEqual(self.calls("flint-devices.sh"), [["claim", "ios", "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", '--helper-pid', '12345']])
 
     def test_missing_app_prevents_attach(self):
         result = self.make("ios-run", NO_APP="1")
@@ -497,7 +524,8 @@ class AgentCommands(unittest.TestCase):
     def test_android_running_device_claim_does_not_own_shutdown(self):
         result = self.make("android-run", AVD_BOOTED="1")
         self.assert_ok(result)
-        self.assertEqual(self.calls("flint-devices.sh"), [["claim", "android", "emulator-5554", "--avd", "flint-test", '--helper-pid', '12345']])
+        self.assertEqual([args for args in self.calls("flint-devices.sh") if args[0] == 'claim'],
+                         [["claim", "android", "emulator-5554", "--avd", "flint-test", '--helper-pid', '12345']])
 
     def test_android_attach_or_build_failure_stops_before_install(self):
         for failing in ("orca", "fake-make"):
@@ -509,18 +537,18 @@ class AgentCommands(unittest.TestCase):
     def test_m1_ios_other_actor_boots_during_build_gets_use_only_claim(self):
         self.assert_ok(self.make('ios-run', OTHER_ACTOR_BOOTS_DURING_BUILD='1'))
         claims = [a for a in self.calls('flint-devices.sh') if a[0] == 'claim']
-        self.assertEqual(claims, [['claim', 'ios', 'TEST-UDID', '--helper-pid', '12345']])
-        self.assertNotIn(['simctl', 'boot', 'TEST-UDID'], self.calls('xcrun'))
+        self.assertEqual(claims, [['claim', 'ios', '11111111-2222-3333-4444-555555555555', '--helper-pid', '12345']])
+        self.assertNotIn(['simctl', 'boot', '11111111-2222-3333-4444-555555555555'], self.calls('xcrun'))
 
     def test_m1_ios_failed_boot_race_gets_use_only_claim(self):
         self.assert_ok(self.make('ios-run', BOOT_RACE='1'))
-        self.assertIn(['simctl', 'boot', 'TEST-UDID'], self.calls('xcrun'))
+        self.assertIn(['simctl', 'boot', '11111111-2222-3333-4444-555555555555'], self.calls('xcrun'))
         claims = [a for a in self.calls('flint-devices.sh') if a[0] == 'claim']
-        self.assertEqual(claims, [['claim', 'ios', 'TEST-UDID', '--helper-pid', '12345']])
+        self.assertEqual(claims, [['claim', 'ios', '11111111-2222-3333-4444-555555555555', '--helper-pid', '12345']])
 
     def test_m1_ios_cold_boot_requires_explicit_boot_and_incarnation(self):
         self.assert_ok(self.make('ios-run'))
-        self.assertIn(['simctl', 'boot', 'TEST-UDID'], self.calls('xcrun'))
+        self.assertIn(['simctl', 'boot', '11111111-2222-3333-4444-555555555555'], self.calls('xcrun'))
         claim, = [a for a in self.calls('flint-devices.sh') if a[0] == 'claim']
         self.assertIn('--booted', claim)
         self.assertEqual(claim[claim.index('--incarnation') + 1], 'v1:' + 'a' * 64)
@@ -532,30 +560,30 @@ class AgentCommands(unittest.TestCase):
 
     def test_e2e1_exact_name_attaches_resolved_udid(self):
         devices = json.loads(self.env['SIM_DEVICES'])
-        devices['devices']['runtime'].insert(0, {'name': 'iPhone 17e', 'udid': 'PREFIX-OTHER', 'state': 'Shutdown'})
+        devices['devices']['runtime'].insert(0, {'name': 'iPhone 17e', 'udid': 'BBBBBBBB-CCCC-DDDD-EEEE-FFFFFFFFFFFF', 'state': 'Shutdown'})
         self.assert_ok(self.make('ios-run', 'IOS_SIM=iPhone 17', SIM_DEVICES=json.dumps(devices)))
         attach, = [a for a in self.calls('orca') if a[1] == 'attach']
-        self.assertEqual(attach[2], 'TEST-UDID')
+        self.assertEqual(attach[2], '11111111-2222-3333-4444-555555555555')
 
     def test_e2e1_mismatch_rolls_back_only_proven_own_boot(self):
-        result = self.make('ios-run', ATTACH_DEVICE='OTHER-UDID')
+        result = self.make('ios-run', ATTACH_DEVICE='AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('expected ios', result.stderr)
-        self.assertIn('OTHER-UDID', result.stderr)
+        self.assertIn('AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE', result.stderr)
         self.assertEqual([a for a in self.calls('flint-devices.sh') if a[0] == 'claim'], [])
         self.assertFalse(any(a[1] in ('install', 'launch') for a in self.calls('xcrun')))
         self.assertEqual([a for a in self.calls('xcrun') if a[1] == 'shutdown'],
-                         [['simctl', 'shutdown', 'TEST-UDID']])
+                         [['simctl', 'shutdown', '11111111-2222-3333-4444-555555555555']])
         self.assertFalse(any(a[1] in ('kill', 'shutdown') for a in self.calls('orca')))
 
     def test_e2e1_mismatch_preserves_rebooted_or_shared_devices(self):
-        result = self.make('ios-run', ATTACH_DEVICE='OTHER-UDID', CHANGE_INCARNATION_AFTER_ATTACH='1')
+        result = self.make('ios-run', ATTACH_DEVICE='AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE', CHANGE_INCARNATION_AFTER_ATTACH='1')
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(any(a[1] in ('shutdown', 'install', 'launch') for a in self.calls('xcrun')))
         self.assertFalse(any(a[1] in ('kill', 'shutdown') for a in self.calls('orca')))
 
     def test_e2e1_malformed_attach_never_claims_or_installs(self):
-        for info in ({}, None, [], {'deviceUdid': 'TEST-UDID', 'backend': 'ios', 'helperPid': True}):
+        for info in ({}, None, [], {'deviceUdid': '11111111-2222-3333-4444-555555555555', 'backend': 'ios', 'helperPid': True}):
             with self.subTest(info=info):
                 result = self.make('ios-run', ATTACH_JSON=json.dumps({'ok': True, 'result': {'attached': True, 'info': info}}))
                 self.assertNotEqual(result.returncode, 0)
@@ -564,7 +592,7 @@ class AgentCommands(unittest.TestCase):
                 self.assertFalse(any(a[1] in ('install', 'launch') for a in self.calls('xcrun')))
 
     def test_e2e1_mismatch_rollback_preserves_peer_claim(self):
-        result = self.make('ios-run', ATTACH_DEVICE='OTHER-UDID', PEER_CLAIM='1')
+        result = self.make('ios-run', ATTACH_DEVICE='AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE', PEER_CLAIM='1')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('preserve peers', result.stderr)
         self.assertTrue(any(a[0] == 'rollback' for a in self.calls('flint-devices.sh')))
@@ -690,7 +718,7 @@ class AgentCommands(unittest.TestCase):
     def test_ios_logs_use_exact_device_and_process_without_boot(self):
         result = self.make("logs-ios")
         self.assert_ok(result)
-        self.assertEqual(self.calls("xcrun")[-1], ["simctl", "spawn", "TEST-UDID", "log", "stream", "--level", "debug", "--style", "compact", "--predicate", 'process == "Flint"'])
+        self.assertEqual(self.calls("xcrun")[-1], ["simctl", "spawn", "11111111-2222-3333-4444-555555555555", "log", "stream", "--level", "debug", "--style", "compact", "--predicate", 'process == "Flint"'])
         self.assertFalse(any("bootstatus" in args for _, args in self.calls()))
 
     def test_android_logs_filter_pids_and_sdk_fallback(self):
