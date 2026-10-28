@@ -134,7 +134,7 @@ struct PINGateView: View {
             EmberLandscape(horizonOffset: 20, orbCenter: CGPoint(x: 195, y: 480), orbRadius: 64)
             // Scrolls at accessibility sizes so the PIN field and Unlock stay reachable.
             GeometryReader { geometry in
-                ScrollView {
+                ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 14) {
                         FlintMark(size: 40)
                         Text("Flint").font(FlintFont.display(48)).tracking(-0.8).foregroundStyle(FlintBrand.bone)
@@ -156,9 +156,12 @@ struct PINGateView: View {
                             if !lock.unlock(with: pin) {
                                 showError = true
                                 pin = ""
-                                // The error appears without moving focus; say it.
-                                UIAccessibility.post(notification: .announcement,
-                                                     argument: String(localized: "Incorrect PIN"))
+                                // The error appears without moving focus; say it after the field's
+                                // own value-change announcement so it isn't clipped.
+                                DispatchQueue.main.async {
+                                    UIAccessibility.post(notification: .announcement,
+                                                         argument: String(localized: "Incorrect PIN"))
+                                }
                             }
                         }
                         .buttonStyle(EmberButtonStyle())
