@@ -29,6 +29,8 @@ data class FocusSnapshot(
     val revision: Long = 0,
     /** Monotonic retention watermark: clock rollback cannot make a pruned request fresh. */
     val minimumRequestEpochMs: Long = 0,
+    /** Null only before the one-time validated ADR-012 migration. */
+    val protection: ProtectionLedger? = null,
 )
 
 data class FocusMutation<R>(val next: FocusSnapshot, val result: R)
