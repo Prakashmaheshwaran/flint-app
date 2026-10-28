@@ -56,16 +56,19 @@ struct SleepModeView: View {
 
     @ViewBuilder
     private var statusRow: some View {
-        if vm.nightWindowActiveNow {
-            Label("Bedtime window is on right now", systemImage: "moon.zzz.fill")
+        if let issue = vm.protectionIssue {
+            Label("Needs attention — \(issue)", systemImage: "exclamationmark.triangle")
+                .font(.footnote).foregroundStyle(FlintBrand.danger)
+        } else if vm.nightWindowActiveNow {
+            Label("Bedtime window is scheduled now", systemImage: "moon.zzz.fill")
                 .font(.footnote)
                 .foregroundStyle(FlintBrand.spark)
         } else if vm.morningWindowActiveNow {
-            Label("Morning wind-up is on right now", systemImage: "sunrise.fill")
+            Label("Morning wind-up is scheduled now", systemImage: "sunrise.fill")
                 .font(.footnote)
                 .foregroundStyle(FlintBrand.spark)
         } else if vm.nightArmed || vm.morningArmed {
-            Label("Armed — the next window starts on schedule", systemImage: "moon.stars")
+            Label("Sleep windows registered with iOS", systemImage: "moon.stars")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         } else {
@@ -262,6 +265,7 @@ final class SleepModeViewModel: ObservableObject {
         }
     }
     @Published private(set) var savedGroups: [FlintAppGroup]
+    @Published private(set) var armingReport: FlintArmingHealth.DomainReport?
 
     private let controller = SleepModeController()
     private var applyTask: Task<Void, Never>?
@@ -270,6 +274,7 @@ final class SleepModeViewModel: ObservableObject {
         config = FlintSleepConfig.load()
         savedGroups = FlintGroupStore()?.loadAppGroups() ?? []
         controller.apply(config) // re-arm on entry; also self-heals rules deleted elsewhere
+        refreshHealth()
     }
 
     /// Refresh the preset list (it changes in Block Now) and re-assert the rules.
@@ -283,6 +288,7 @@ final class SleepModeViewModel: ObservableObject {
         applyTask?.cancel()
         applyTask = nil
         controller.apply(config)
+        refreshHealth()
     }
 
     private func scheduleApply() {
@@ -292,6 +298,7 @@ final class SleepModeViewModel: ObservableObject {
             try? await Task.sleep(nanoseconds: 800_000_000)
             guard !Task.isCancelled else { return }
             controller.apply(snapshot)
+            self.refreshHealth()
         }
     }
 
@@ -299,6 +306,26 @@ final class SleepModeViewModel: ObservableObject {
 
     var nightArmed: Bool { SleepModeController.nightWindow(for: config) != nil }
     var morningArmed: Bool { SleepModeController.morningWindow(for: config) != nil }
+
+    var protectionIssue: String? {
+        if config.enabled, config.sleepAssist != .off, let issue = config.schedule.issues.first {
+            return issue.message
+        }
+        let names = [(nightArmed, SleepModeController.nightRuleID),
+                     (morningArmed, SleepModeController.morningRuleID)]
+            .filter(\.0).map { "flint.rule.\($0.1)" }
+        guard !names.isEmpty else { return nil }
+        let selection = savedGroups.first { $0.id == config.allowGroupID }?.selection ?? FamilyActivitySelection()
+        if let issue = FlintSelectionValidation.issue(for: selection, context: .allowList) {
+            return issue.message(for: .allowList)
+        }
+        return FlintSleepProtectionStatus.issue(activityNames: names, report: armingReport,
+            authorized: AuthorizationCenter.shared.authorizationStatus == .approved)
+    }
+
+    private func refreshHealth() {
+        armingReport = FlintGroupStore()?.loadArmingHealth().domains["schedules"]
+    }
 
     var nightWindowActiveNow: Bool {
         guard let window = SleepModeController.nightWindow(for: config) else { return false }
@@ -350,5 +377,25 @@ final class SleepModeViewModel: ObservableObject {
 
     private static func date(hour: Int, minute: Int) -> Date {
         Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: Date()) ?? Date()
+    }
+}
+
+/// Pure presentation seam: a usable window expresses intent, not successful arming.
+enum FlintSleepProtectionStatus {
+    static func issue(activityNames: [String], report: FlintArmingHealth.DomainReport?,
+                      authorized: Bool, now: Date = Date()) -> String? {
+        guard !activityNames.isEmpty else { return nil }
+        guard authorized else { return "Screen Time access is not allowed." }
+        guard let report, report.updatedAt <= now,
+              now.timeIntervalSince(report.updatedAt) <= 24 * 3600 else {
+            return "Sleep registration has not been checked recently."
+        }
+        if let failure = report.failures.first(where: { activityNames.contains($0.activityName) }) {
+            return failure.reason
+        }
+        guard report.enabled >= activityNames.count, report.armed >= activityNames.count else {
+            return "Sleep registration has not been verified."
+        }
+        return nil
     }
 }

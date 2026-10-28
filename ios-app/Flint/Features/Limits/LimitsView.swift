@@ -127,7 +127,7 @@ struct LimitEditor: View {
                     Spacer()
                     Button("Save") { save() }
                         .buttonStyle(BoneButtonStyle(height: 36))
-                        .disabled(selectionCount == 0)
+                        .disabled(selectionIssue != nil)
                 }
                 .padding(.top, 14)
 
@@ -161,6 +161,11 @@ struct LimitEditor: View {
                         }
                         .buttonStyle(.plain)
                         .padding(.top, 22)
+
+                        if let issue = selectionIssue {
+                            Text(issue.message).font(FlintFont.text(13))
+                                .foregroundStyle(FlintBrand.danger).padding(.top, 8)
+                        }
 
                         ZStack {
                             Circle().stroke(FlintBrand.bone(0.1), lineWidth: 10)
@@ -230,6 +235,7 @@ struct LimitEditor: View {
     }
 
     private func save() {
+        guard selectionIssue == nil else { return }
         let limit = FlintLimitRule(
             id: existingID ?? String(UUID().uuidString.prefix(8)),
             name: name.isEmpty ? "Limit" : name,
@@ -240,5 +246,9 @@ struct LimitEditor: View {
         )
         onSave(limit)
         dismiss()
+    }
+
+    private var selectionIssue: FlintSelectionIssue? {
+        FlintSelectionValidation.issue(for: selection)
     }
 }
