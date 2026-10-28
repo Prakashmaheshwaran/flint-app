@@ -253,7 +253,7 @@ class BlockScreenCoordinator(
     private fun publishProtectionStatus() {
         if (!statusClockReady) return
         val snapshot = ProtectionStatusProjection.evaluate(grants.state.value, rulesState.value,
-            timeState.value, openState.value, editorState.value, ActiveRulesHolder.rules,
+            timeState.value, openState.value, editorState.value, ActiveRulesHolder.rulesOutside(ActiveRulesHolder.SOURCE_DATASTORE),
             safetyFloor.runtimeResolution.value, EnforcementSignals.detectors.pathAConnected, statusClock())
         synchronized(statusLock) {
             lastPolicyStatus = snapshot
