@@ -27,6 +27,8 @@ class HistoryReconciler(
     private var firstSuccessfulSnapshot = true
     private val active = MutableStateFlow<Set<String>>(emptySet())
     val activeSessionIds: StateFlow<Set<String>> = active.asStateFlow()
+    private val readiness = MutableStateFlow(false)
+    val ready: StateFlow<Boolean> = readiness.asStateFlow()
     private val diagnostics = MutableStateFlow<String?>(null)
     val diagnostic: StateFlow<String?> = diagnostics.asStateFlow()
 
@@ -55,6 +57,7 @@ class HistoryReconciler(
         val now = clock.millis()
         val sessions = rules.filter { it.id.startsWith("session-") }.associateBy { it.id }
         val current = sessions.filterValues { it.plannedEnd == null || it.plannedEnd > now }.keys
+        active.value = current
         val coldStart = firstSuccessfulSnapshot
         val success = store.update { snapshot ->
             val events = mutableListOf<HistoryEvent>()
@@ -104,8 +107,8 @@ class HistoryReconciler(
             events
         }
         if (success) {
-            active.value = current
             firstSuccessfulSnapshot = false
+            readiness.value = true
             diagnostics.value = null
         } else diagnostics.value = "History write unavailable"
     }

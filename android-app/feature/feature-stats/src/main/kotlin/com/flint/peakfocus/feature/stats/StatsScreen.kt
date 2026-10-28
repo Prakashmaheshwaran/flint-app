@@ -190,6 +190,7 @@ private fun LoadingState() {
             .verticalScroll(rememberScrollState())
             .padding(FlintSpacing.gutter),
     ) {
+        FocusSessionsSection()
         FlintSkeletonBlock(Modifier.fillMaxWidth(0.45f), height = 28.dp)
         Spacer(Modifier.height(FlintSpacing.sm))
         FlintSkeletonBlock(Modifier.width(96.dp), height = 10.dp)
@@ -231,6 +232,7 @@ private fun UsageAccessPrompt(onOpenSettings: () -> Unit) {
     ) {
         FlintScreenHeader(title = "Insights", eyebrow = "See where your time goes")
         Spacer(Modifier.height(FlintSpacing.md))
+        FocusSessionsSection()
         FlintCard {
             Text(
                 text = "To show screen-time reports, Flint needs Android's Usage Access. It reads " +
@@ -298,10 +300,11 @@ private fun StatsReport(report: UsageReport) {
     ) {
         FlintScreenHeader(
             title = "Insights",
-            eyebrow = "Screen time · last 7 days",
+            eyebrow = "Focus sessions and screen usage",
             modifier = Modifier.cardEntrance(revealed, 0),
         )
         Spacer(Modifier.height(FlintSpacing.md))
+        FocusSessionsSection()
         TodayCard(
             todayTotalMillis = report.todayTotalMillis,
             shareOfTypical = report.todayShareOfTypical,

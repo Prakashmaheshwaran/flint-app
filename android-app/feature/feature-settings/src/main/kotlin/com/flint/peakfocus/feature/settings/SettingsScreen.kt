@@ -154,6 +154,8 @@ internal fun SettingsContent(
             }
             HealthBannerCard(BlockingHealthUi.banner(health))
             Spacer(Modifier.height(FlintSpacing.md))
+            ClearFocusHistoryRow()
+            Spacer(Modifier.height(FlintSpacing.md))
             BlockingHealthUi.rows(health).forEach { row ->
                 PermissionCard(row = row, onFix = { onFix(row.kind) })
                 Spacer(Modifier.height(FlintSpacing.cardGap))

@@ -85,6 +85,9 @@ import com.flint.peakfocus.core.common.ui.SunArc
 import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BreakLevel
+import com.flint.peakfocus.core.history.FocusHistoryText
+import com.flint.peakfocus.core.history.FocusSession
+import com.flint.peakfocus.core.history.FocusSummary
 import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -110,6 +113,8 @@ fun TimerScreen(
     val context = LocalContext.current
     val viewModel: TimerViewModel = viewModel(factory = remember(context) { TimerViewModel.factory(context) })
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val historyViewModel: TimerHistoryViewModel = viewModel(factory = remember(context) { TimerHistoryViewModel.factory(context) })
+    val history by historyViewModel.state.collectAsStateWithLifecycle()
     val owner = LocalLifecycleOwner.current
     DisposableEffect(owner, viewModel) {
         val observer = LifecycleEventObserver { _, event ->
@@ -132,19 +137,11 @@ fun TimerScreen(
     var pickingApps by rememberSaveable { mutableStateOf(false) }
     var cancellingId by remember { mutableStateOf<String?>(null) }
     var viewingId by remember { mutableStateOf<String?>(null) }
-    var finished by remember { mutableStateOf<BlockRule?>(null) }
-    var lastSession by remember { mutableStateOf<BlockRule?>(null) }
     LaunchedEffect(state.sessions) {
         val running = state.sessions.firstOrNull()
         if (running != null) {
             starting = false
             pickingApps = false
-            lastSession = running
-        } else {
-            // A session that ran out its clock (not one ended early) gets its moment.
-            val previous = lastSession
-            if (previous != null && previous.isExpired(state.nowEpochMs)) finished = previous
-            lastSession = null
         }
     }
 
@@ -173,15 +170,17 @@ fun TimerScreen(
             canEnd = canEndNativeTimer(running) || canCancelTimer(running),
             modifier = modifier,
         )
-        finished != null -> CompleteScene(
-            session = finished!!,
+        history.completion != null -> CompleteScene(
+            session = history.completion!!,
+            summary = history.summary,
             contentPadding = contentPadding,
-            onDone = { finished = null },
-            onAgain = { finished = null; starting = true },
+            onDone = { historyViewModel.dismissCompletion(history.completion!!.id) },
+            onAgain = { historyViewModel.dismissCompletion(history.completion!!.id); starting = true },
             modifier = modifier,
         )
         else -> TodayScene(
             state = state,
+            history = history.summary,
             headline = headline,
             subline = subline,
             setupLabel = setupLabel,
@@ -280,6 +279,7 @@ internal fun TimerAppPicker(
 @Composable
 private fun TodayScene(
     state: TimerUiState,
+    history: FocusSummary?,
     headline: String?,
     subline: String?,
     setupLabel: String?,
@@ -325,8 +325,14 @@ private fun TodayScene(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        Text(timerDurationLabel(state.draft.durationMinutes), style = MaterialTheme.typography.displaySmall.merge(FlintNumerals))
-                        FlintEyebrow("Your next session")
+                        Text(FocusHistoryText.today(history), style = if (history?.days?.lastOrNull()?.focusedMs != null && history.sessions.isNotEmpty())
+                            MaterialTheme.typography.displaySmall.merge(FlintNumerals) else MaterialTheme.typography.titleLarge,
+                            textAlign = TextAlign.Center)
+                        FlintEyebrow("Focused today")
+                        FocusHistoryText.note(history)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = FlintPalette.Mist) }
+                        Text("Your next session · ${timerDurationLabel(state.draft.durationMinutes)}",
+                            style = MaterialTheme.typography.bodySmall, color = FlintPalette.Mist,
+                            modifier = Modifier.padding(top = 12.dp))
                     }
                 }
 
@@ -624,30 +630,32 @@ private fun SessionScene(
 /** E08 — the ember has set. */
 @Composable
 private fun CompleteScene(
-    session: BlockRule,
+    session: FocusSession,
+    summary: FocusSummary?,
     contentPadding: PaddingValues,
     onDone: () -> Unit,
     onAgain: () -> Unit,
     modifier: Modifier,
 ) {
-    val minutes = session.createdAtEpochMsOrNull()?.let { start ->
-        session.expiresAtEpochMs?.let { ((it - start) / 60_000L).toInt() }
-    }
     Box(modifier.fillMaxSize()) {
         EmberLandscape(horizonOffset = 8f, orbCenter = null, showsMist = false)
         SunArc(1f, complete = true)
         Column(
-            Modifier.fillMaxSize().padding(contentPadding).padding(horizontal = FlintSpacing.gutter),
+            Modifier.fillMaxSize().padding(contentPadding).verticalScroll(rememberScrollState()).padding(horizontal = FlintSpacing.gutter),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             FlintEyebrow("${session.name} · Complete", Modifier.padding(top = 52.dp))
             Text("The ember has set.", style = MaterialTheme.typography.headlineLarge, textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 18.dp))
-            if (minutes != null && minutes > 0) {
-                Text("${timerDurationLabel(minutes)}, start to finish.", style = MaterialTheme.typography.bodyMedium,
+            Text("${FocusHistoryText.duration(session.focusedMs)} focused", style = MaterialTheme.typography.bodyMedium,
                     color = FlintPalette.Mist, modifier = Modifier.padding(top = 10.dp))
-            }
-            Spacer(Modifier.weight(1f))
+            Text("Today · ${FocusHistoryText.today(summary)}", style = MaterialTheme.typography.bodyMedium,
+                color = FlintPalette.Mist, modifier = Modifier.padding(top = 10.dp))
+            session.breaks?.let { Text("$it breaks", modifier = Modifier.padding(top = 10.dp)) }
+            session.opensIntercepted?.let { Text("$it opens stopped", modifier = Modifier.padding(top = 10.dp)) }
+            FocusHistoryText.note(summary)?.let { Text(it, style = MaterialTheme.typography.bodySmall,
+                color = FlintPalette.Mist, modifier = Modifier.padding(top = 10.dp)) }
+            Spacer(Modifier.height(48.dp))
             BoneButton("Done", onDone)
             QuietButton("Start another", onAgain, modifier = Modifier.padding(top = 8.dp, bottom = 12.dp))
         }
