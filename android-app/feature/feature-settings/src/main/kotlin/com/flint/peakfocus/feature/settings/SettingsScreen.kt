@@ -96,26 +96,29 @@ fun SettingsScreen(modifier: Modifier = Modifier, onAccount: (() -> Unit)? = nul
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    SettingsContent(
-        health = health,
-        exits = exits,
-        oemGuidance = OemGuidanceCatalog.forOem(OemUtil.current),
-        exitsSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R,
-        nowMillis = System.currentTimeMillis(),
-        onAccount = onAccount,
-        onFix = { kind ->
-            // User-initiated only (ADR-007): reached exclusively via the row's fix button.
-            val intent = when (kind) {
-                PermissionKind.ACCESSIBILITY -> AccessibilityPermission.settingsIntent()
-                PermissionKind.USAGE_ACCESS -> UsageAccess.settingsIntent()
-                PermissionKind.OVERLAY -> OverlayPermission.settingsIntent(context)
-                PermissionKind.BATTERY_EXEMPTION -> BatteryOptimization.requestIntent(context)
-                PermissionKind.NOTIFICATIONS -> NotificationPermission.settingsIntent(context)
-            }
-            context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        },
-        modifier = modifier,
-    )
+    SettingsLegalNavigation(modifier = modifier) { openLegal ->
+        SettingsContent(
+            health = health,
+            exits = exits,
+            oemGuidance = OemGuidanceCatalog.forOem(OemUtil.current),
+            exitsSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R,
+            nowMillis = System.currentTimeMillis(),
+            onAccount = onAccount,
+            onOpenLegal = openLegal,
+            onFix = { kind ->
+                // User-initiated only (ADR-007): reached exclusively via the row's fix button.
+                val intent = when (kind) {
+                    PermissionKind.ACCESSIBILITY -> AccessibilityPermission.settingsIntent()
+                    PermissionKind.USAGE_ACCESS -> UsageAccess.settingsIntent()
+                    PermissionKind.OVERLAY -> OverlayPermission.settingsIntent(context)
+                    PermissionKind.BATTERY_EXEMPTION -> BatteryOptimization.requestIntent(context)
+                    PermissionKind.NOTIFICATIONS -> NotificationPermission.settingsIntent(context)
+                }
+                context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            },
+            modifier = modifier,
+        )
+    }
 }
 
 /** Stateless body — previewable without touching system services. */
@@ -129,6 +132,7 @@ internal fun SettingsContent(
     onFix: (PermissionKind) -> Unit,
     modifier: Modifier = Modifier,
     onAccount: (() -> Unit)? = null,
+    onOpenLegal: (LegalDocument) -> Unit = {},
 ) {
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
@@ -161,6 +165,8 @@ internal fun SettingsContent(
                 supported = exitsSupported,
                 nowMillis = nowMillis,
             )
+            Spacer(Modifier.height(FlintSpacing.lg))
+            LegalSettingsLinks(onOpen = onOpenLegal)
             Spacer(Modifier.height(FlintSpacing.lg))
         }
     }

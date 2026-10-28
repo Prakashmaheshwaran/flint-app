@@ -1,0 +1,47 @@
+{
+  "families": {
+    "Apache-2.0": "licenses/Apache-2.0.txt",
+    "GPL-2.0-with-classpath-exception": "licenses/desugar-2.1.5/LICENSE"
+  },
+  "supplements": [
+    {
+      "coordinate": "androidx\\.datastore:datastore-preferences-external-protobuf:1\\.2\\.1",
+      "source": "https://github.com/protocolbuffers/protobuf/tree/v28.2",
+      "files": ["licenses/protobuf-28.2-LICENSE.txt"]
+    },
+    {
+      "coordinate": "com\\.android\\.tools:desugar_jdk_libs:2\\.1\\.5",
+      "source": "https://github.com/google/desugar_jdk_libs/tree/73170c345e6a762fc6a1f0301bb15218850023ef",
+      "files": ["licenses/desugar-2.1.5/ADDITIONAL_LICENSE_INFO", "licenses/desugar-2.1.5/ASSEMBLY_EXCEPTION", "licenses/desugar-2.1.5/SOURCE-NOTICES.txt"]
+    },
+    {
+      "coordinate": "org\\.jetbrains\\.kotlinx:kotlinx-coroutines-[^:]+:1\\.10\\.2",
+      "source": "https://github.com/Kotlin/kotlinx.coroutines/tree/1.10.2/license",
+      "files": ["licenses/coroutines-1.10.2-NOTICE.txt"]
+    },
+    {
+      "coordinate": "org\\.jetbrains\\.kotlinx:kotlinx-serialization-[^:]+:1\\.7\\.3",
+      "source": "https://github.com/Kotlin/kotlinx.serialization/tree/v1.7.3/license",
+      "files": ["licenses/serialization-1.7.3-NOTICE.txt"]
+    },
+    {
+      "coordinate": "org\\.jetbrains\\.kotlin:kotlin-stdlib(?:-jdk[78])?:2\\.2\\.10",
+      "source": "https://github.com/JetBrains/kotlin/tree/v2.2.10/license",
+      "files": ["licenses/kotlin-2.2.10-COPYRIGHT.txt"]
+    }
+  ],
+  "fonts": [
+    {
+      "name": "Hanken Grotesk (static instances, weights 400/500/600)",
+      "source": "https://github.com/google/fonts/tree/main/ofl/hankengrotesk",
+      "license": "design/fonts/HankenGrotesk-OFL.txt",
+      "files": ["hanken_grotesk_regular.ttf", "hanken_grotesk_medium.ttf", "hanken_grotesk_semibold.ttf"]
+    },
+    {
+      "name": "Shippori Mincho (Latin subset, tabular digits and adjusted vertical metrics)",
+      "source": "https://github.com/google/fonts/tree/main/ofl/shipporimincho",
+      "license": "design/fonts/ShipporiMincho-OFL.txt",
+      "files": ["shippori_mincho_regular.ttf"]
+    }
+  ]
+}
