@@ -83,6 +83,28 @@ class DurableCoordinatorTest {
         assertEquals(listOf("break"), events)
     }
 
+    @Test fun PC_22_breakStartUsesTheDurableReceiptIdentityOnlyAfterAcknowledgement() = runBlocking {
+        val ids = mutableListOf<String>()
+        val observer = object : BlockEventHooks.Listener {
+            override fun onBreakGranted(ruleId: String?, grantId: String, untilEpochMs: Long, atEpochMs: Long) { ids += grantId }
+        }
+        BlockEventHooks.register(observer)
+        try {
+            val focus = PausedFocus()
+            val c = coordinator(focus)
+            val cause = ruleBlockCause(rule(BreakLevel.EASY), now, 0)
+            val id = GrantRequestId.issue(now)
+            val pending = async { c.requestBreak(pkg, cause, id) }
+            focus.started.await()
+            assertTrue(ids.isEmpty())
+            focus.release.complete(Unit)
+            assertTrue(pending.await() is GrantResult.Granted)
+            assertEquals(focus.backing.state.snapshotOrNull()!!.exemptions.keys.toList(), ids)
+            c.requestBreak(pkg, cause, id)
+            assertEquals(1, ids.size)
+        } finally { BlockEventHooks.unregister(observer) }
+    }
+
     @Test fun aFailedPassKeepsTheShieldAndShowsFailureWithoutCallingHistory() = runBlocking {
         val focus = PausedFocus().apply { fail = true }
         val coordinator = coordinator(focus, rules = listOf(rule(BreakLevel.HARDCORE)))

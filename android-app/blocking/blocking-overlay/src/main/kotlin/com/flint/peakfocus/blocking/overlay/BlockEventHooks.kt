@@ -29,7 +29,14 @@ object BlockEventHooks {
 
     interface Listener {
         fun onOpenIntercepted(ruleId: String?, atEpochMs: Long) = Unit
+        @Deprecated("Use the overload with grantId to pair start and end of each durable grant")
         fun onBreakGranted(ruleId: String?, untilEpochMs: Long, atEpochMs: Long) = Unit
+
+        /** Stable id from the committed receipt; legacy observers receive the old hook once. */
+        @Suppress("DEPRECATION")
+        fun onBreakGranted(ruleId: String?, grantId: String, untilEpochMs: Long, atEpochMs: Long) {
+            onBreakGranted(ruleId, untilEpochMs, atEpochMs)
+        }
         @Deprecated("Use onEmergencyPassCommitted for global recovery scope and operation identity")
         fun onEmergencyPassUsed(ruleId: String?, atEpochMs: Long) = Unit
 
@@ -56,8 +63,12 @@ object BlockEventHooks {
     internal fun openIntercepted(ruleId: String?, atEpochMs: Long) =
         each { it.onOpenIntercepted(ruleId, atEpochMs) }
 
+    @Suppress("DEPRECATION")
     internal fun breakGranted(ruleId: String?, untilEpochMs: Long, atEpochMs: Long) =
         each { it.onBreakGranted(ruleId, untilEpochMs, atEpochMs) }
+
+    internal fun breakGranted(ruleId: String?, grantId: String, untilEpochMs: Long, atEpochMs: Long) =
+        each { it.onBreakGranted(ruleId, grantId, untilEpochMs, atEpochMs) }
 
     @Suppress("DEPRECATION")
     internal fun emergencyPassUsed(ruleId: String?, atEpochMs: Long) =

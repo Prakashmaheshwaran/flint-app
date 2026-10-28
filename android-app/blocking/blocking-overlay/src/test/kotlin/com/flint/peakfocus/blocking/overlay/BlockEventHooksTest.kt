@@ -106,4 +106,31 @@ class BlockEventHooksTest {
             BlockEventHooks.unregister(good)
         }
     }
+
+    @Test fun PC_22_sequentialBreaksPairTheirStartAndEndByDurableGrantId() {
+        val started = linkedMapOf<String, Long>()
+        val ended = linkedMapOf<String, BlockEventHooks.BreakEndReason>()
+        var oldCalls = 0
+        val modern = object : BlockEventHooks.Listener {
+            override fun onBreakGranted(ruleId: String?, untilEpochMs: Long, atEpochMs: Long) { oldCalls++ }
+            override fun onBreakGranted(ruleId: String?, grantId: String, untilEpochMs: Long, atEpochMs: Long) {
+                started[grantId] = untilEpochMs
+            }
+            override fun onBreakEnded(ruleId: String?, grantId: String, reason: BlockEventHooks.BreakEndReason, atEpochMs: Long) {
+                ended[grantId] = reason
+            }
+        }
+        BlockEventHooks.register(modern)
+        BlockEventHooks.register(recorder)
+        try {
+            BlockEventHooks.breakGranted("rule", "g1", 300, 0)
+            BlockEventHooks.breakEnded("rule", "g1", BlockEventHooks.BreakEndReason.EXPIRED, 300)
+            BlockEventHooks.breakGranted("rule", "g2", 600, 300)
+            BlockEventHooks.breakEnded("rule", "g2", BlockEventHooks.BreakEndReason.RESUMED, 400)
+            assertEquals(mapOf("g1" to 300L, "g2" to 600L), started)
+            assertEquals(mapOf("g1" to BlockEventHooks.BreakEndReason.EXPIRED, "g2" to BlockEventHooks.BreakEndReason.RESUMED), ended)
+            assertEquals(0, oldCalls)
+            assertEquals(listOf("break:rule:300@0", "break:rule:600@300"), events)
+        } finally { BlockEventHooks.unregister(modern) }
+    }
 }
