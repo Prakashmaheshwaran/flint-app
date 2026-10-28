@@ -51,7 +51,7 @@ class ForegroundEventCursor(
     private val overlapMs: Long = 2_000L,
 ) {
     private var queriedThrough: Long? = null
-    private val seen = mutableSetOf<ForegroundEvent>()
+    private val seenCounts = mutableMapOf<ForegroundEvent, Int>()
 
     init { require(initialLookbackMs > 0 && overlapMs >= 0) }
 
@@ -64,14 +64,22 @@ class ForegroundEventCursor(
     fun commit(nowMs: Long, events: List<ForegroundEvent>): List<ForegroundEvent> {
         if (needsReset(nowMs)) reset()
         val start = queryStart(nowMs)
+        val batchCounts = mutableMapOf<ForegroundEvent, Int>()
         val fresh = events.asSequence().filter { it.timestampMs in start..nowMs }
-            .sortedBy { it.timestampMs }.filter { seen.add(it) }.toList()
+            .sortedBy { it.timestampMs }.filter { event ->
+                // Public events have no unique id. Occurrence counts preserve a legitimate
+                // resume/pause/resume sequence sharing a timestamp, while de-duping overlap.
+                val count = (batchCounts[event] ?: 0) + 1
+                batchCounts[event] = count
+                count > (seenCounts[event] ?: 0)
+            }.toList()
+        batchCounts.forEach { (event, count) -> seenCounts[event] = maxOf(count, seenCounts[event] ?: 0) }
         queriedThrough = nowMs
-        seen.removeAll { it.timestampMs < nowMs - overlapMs }
+        seenCounts.keys.removeAll { it.timestampMs < nowMs - overlapMs }
         return fresh
     }
 
-    fun reset() { queriedThrough = null; seen.clear() }
+    fun reset() { queriedThrough = null; seenCounts.clear() }
 }
 
 /**
@@ -94,7 +102,7 @@ object ForegroundUsage {
             resumed.clear()
         }
 
-        for (event in events.distinct().sortedBy { it.timestampMs }) {
+        for (event in events.sortedBy { it.timestampMs }) {
             if (event.timestampMs > nowMs) break
             when (event.kind) {
                 ForegroundEvent.Kind.SHUTDOWN -> { close(event.timestampMs); shutdown = true }

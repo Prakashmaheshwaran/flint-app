@@ -63,7 +63,7 @@ class UsageTimelineTest {
         assertEquals(listOf(resume), cursor.commit(10_000, listOf(resume)))
         val pause = event(9_500, PAUSED)
         val next = event(10_500, pkg = "next")
-        assertEquals(listOf(pause, next), cursor.commit(11_000, listOf(next, resume, pause, pause)))
+        assertEquals(listOf(pause, next), cursor.commit(11_000, listOf(next, resume, pause)))
         assertTrue(cursor.commit(11_500, listOf(resume, pause, next)).isEmpty())
     }
 
