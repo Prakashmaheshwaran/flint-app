@@ -21,6 +21,9 @@ object UnavailableProtectionReader : GlanceProtectionReader {
 
 enum class ProtectionStatus { UNAVAILABLE, DEGRADED, INACTIVE, ACTIVE, PASS_RECOVERY }
 enum class GlanceTier(val label: String) { EASY("Easy"), HARDER("Harder"), HARDCORE("Hardcore") }
+enum class GlanceCauseKind { FOCUS_SESSION, SCHEDULE, SLEEP, TIME_LIMIT, OPEN_LIMIT, UNKNOWN }
+/** PATH_A requires positively live A AND positively absent Path B FGS, not permission bits. */
+enum class GlanceDetector { UNKNOWN, PATH_A_CONFIRMED, PATH_B_FOREGROUND }
 
 /** Deadlines are same-boot elapsedRealtime, supplied by the authority, never inferred from rules. */
 data class ProtectionReading(
@@ -32,6 +35,7 @@ data class ProtectionReading(
     val next: NextGlanceSession? = null,
     val sameBootVerified: Boolean = false,
     val timeUncertain: Boolean = false,
+    val detector: GlanceDetector = GlanceDetector.UNKNOWN,
 )
 
 data class ActiveGlanceCause(
@@ -39,6 +43,7 @@ data class ActiveGlanceCause(
     val name: String,
     val tier: GlanceTier,
     val logicalEndElapsedMs: Long?,
+    val kind: GlanceCauseKind = GlanceCauseKind.UNKNOWN,
 )
 
 data class NextGlanceSession(val name: String, val startsAtEpochMs: Long)
@@ -60,7 +65,11 @@ data class GlanceDisplay(
     val countdownEndElapsedMs: Long? = null,
     val refreshAtElapsedMs: Long? = null,
     val focusedTodayLabel: String = "Focused today",
+    val detector: GlanceDetector = GlanceDetector.UNKNOWN,
+    val session: GlanceOngoingSession? = null,
 )
+
+data class GlanceOngoingSession(val occurrenceId: String, val logicalEndElapsedMs: Long?)
 
 /** Pure display projection: no mutation, release, lifecycle event or completion inference. */
 object GlanceDisplayMapper {
@@ -108,7 +117,7 @@ object GlanceDisplayMapper {
             nowElapsedMs + (it.startsAtEpochMs - nowEpochMs)
         }
         val refresh = listOfNotNull(checked!! + MAX_AGE_MS, validUntil, historyBoundary, nextBoundary).min()
-        val available = base.copy(next = next, refreshAtElapsedMs = refresh)
+        val available = base.copy(next = next, refreshAtElapsedMs = refresh, detector = reading.detector)
         return when (reading.status) {
             ProtectionStatus.UNAVAILABLE -> base
             ProtectionStatus.DEGRADED -> available.copy(
@@ -137,8 +146,10 @@ object GlanceDisplayMapper {
                     status = "Protection active at last check",
                     detail = "${cause.name.take(64)} · ${cause.tier.label}" +
                         (end?.let { " · Until ${atElapsed(it)}" } ?: " · Until ended in Flint"),
-                    countdownEndElapsedMs = end,
+                    countdownEndElapsedMs = end.takeIf { cause.kind == GlanceCauseKind.FOCUS_SESSION },
                     refreshAtElapsedMs = end?.let { minOf(refresh, it) } ?: refresh,
+                    session = if (cause.kind == GlanceCauseKind.FOCUS_SESSION)
+                        GlanceOngoingSession(cause.occurrenceId, end) else null,
                 )
             }
         }

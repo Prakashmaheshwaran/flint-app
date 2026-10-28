@@ -8,7 +8,8 @@ import org.junit.Test
 
 class GlanceDisplayMapperTest {
     private val now = 100_000L
-    private val cause = ActiveGlanceCause("occurrence-1", "Focus", GlanceTier.HARDCORE, now + 300_000)
+    private val cause = ActiveGlanceCause("occurrence-1", "Focus", GlanceTier.HARDCORE, now + 300_000,
+        GlanceCauseKind.FOCUS_SESSION)
     private val active = ProtectionReading(ProtectionStatus.ACTIVE, now, now + 60_000, cause,
         sameBootVerified = true)
     private fun display(reading: ProtectionReading, focus: FocusTodayReading = FocusTodayReading()) =
@@ -103,5 +104,15 @@ class GlanceDisplayMapperTest {
         assertTrue(display(active.copy(next = NextGlanceSession("Study", epoch + 60_000))).next.startsWith("Next: Study"))
         assertEquals("Next session needs a new check", display(active.copy(next = NextGlanceSession("Old", epoch))).next)
         assertEquals("No upcoming session", display(active).next)
+    }
+
+    @Test fun schedulesSleepAndLimitsNeverBecomeFocusSessionCountdowns() {
+        GlanceCauseKind.entries.filter { it != GlanceCauseKind.FOCUS_SESSION }.forEach { kind ->
+            val result = display(active.copy(cause = cause.copy(kind = kind)))
+            assertEquals("Protection active at last check", result.status)
+            assertTrue(result.detail.contains("Until"))
+            assertNull(result.countdownEndElapsedMs)
+            assertNull(result.session)
+        }
     }
 }

@@ -19,6 +19,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onStart
@@ -42,12 +44,17 @@ object GlanceSurfaceBridge {
     private var protection: GlanceProtectionReader = UnavailableProtectionReader
     private var focus: GlanceFocusReader = UnavailableFocusReader
     private val lock = Mutex()
+    private var notifier: SessionStatusNotifier? = null
+    private var delivery: GlanceSurfaceDelivery? = null
     private var observer: Job? = null
+    private var renderer: Job? = null
+    private val renderRequests = MutableStateFlow(0L)
     private var boundary: Job? = null
     private val mutableDisplay = MutableStateFlow(GlanceDisplayMapper.map(
         ProtectionReading(), FocusTodayReading(), 0, 0,
     ))
     val display: StateFlow<GlanceDisplay> = mutableDisplay.asStateFlow()
+    internal val widgetDisplay = display.distinctUntilChangedBy { it.widgetKey() }
 
     fun start(
         context: Context,
@@ -56,10 +63,23 @@ object GlanceSurfaceBridge {
         focusReader: GlanceFocusReader = UnavailableFocusReader,
     ) {
         observer?.cancel()
+        renderer?.cancel()
         boundary?.cancel()
         protection = protectionReader
         focus = focusReader
         val app = context.applicationContext
+        notifier = SessionStatusNotifier(app)
+        delivery = GlanceSurfaceDelivery(
+            notify = { state -> notifier?.update(state) },
+            schedule = { at -> scheduleRefresh(app, at) },
+            render = { renderRequests.value += 1 },
+            nowElapsed = SystemClock::elapsedRealtime,
+        )
+        renderer = scope.launch {
+            renderRequests.collectLatest {
+                guardedGlanceRead({ Unit }, timeoutMs = 8_000) { FlintGlanceWidget().updateAll(app) }
+            }
+        }
         observer = scope.launch {
             merge(protection.changes.catch { emit(Unit) }, focus.changes.catch { emit(Unit) })
                 .onStart { emit(Unit) }.conflate().collect {
@@ -84,8 +104,7 @@ object GlanceSurfaceBridge {
         val state = readDisplay()
         // Widget/launcher failures must not cancel the app's independent observation job.
         guardedGlanceRead({ Unit }, timeoutMs = 8_000) {
-            scheduleRefresh(context, state.refreshAtElapsedMs)
-            FlintGlanceWidget().updateAll(context)
+            delivery?.publish(state)
         }
     }
 

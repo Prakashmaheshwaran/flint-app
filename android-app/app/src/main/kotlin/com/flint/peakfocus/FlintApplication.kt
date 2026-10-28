@@ -5,6 +5,9 @@ import com.flint.peakfocus.blocking.overlay.PathBFallbackActivityHandoff
 import com.flint.peakfocus.blocking.resilience.BootReceiver
 import com.flint.peakfocus.blocking.resilience.TimeChangeReceiver
 import com.flint.peakfocus.glance.GlanceSurfaceBridge
+import com.flint.peakfocus.glance.CoordinatorGlanceReader
+import com.flint.peakfocus.glance.OngoingSessionNotification
+import com.flint.peakfocus.blocking.overlay.PathBNotification
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -32,7 +35,8 @@ class FlintApplication : Application() {
         PathBFallbackActivityHandoff(this)
         ActiveRulesBridge.start(this, appScope)
         FocusHistoryEventAdapter.start(this, appScope)
-        GlanceSurfaceBridge.start(this, appScope)
+        GlanceSurfaceBridge.start(this, appScope, protectionReader = CoordinatorGlanceReader())
+        PathBNotification.register(OngoingSessionNotification::customize)
         BootReceiver.registerRearmAction { context -> PathBServiceGate.sync(context) }
         TimeChangeReceiver.baselineAnchor(this)
         TimeChangeReceiver.registerRearmAction { context -> PathBServiceGate.sync(context) }

@@ -36,7 +36,7 @@ class FlintGlanceWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         GlanceSurfaceBridge.readDisplay()
         provideContent {
-            val display by GlanceSurfaceBridge.display.collectAsState()
+            val display by GlanceSurfaceBridge.widgetDisplay.collectAsState(initial = GlanceSurfaceBridge.display.value)
             val open = actionStartActivity(Intent(context, MainActivity::class.java))
             val primary = TextStyle(color = ColorProvider(Color(0xFFF1EFE8)), fontSize = 14.sp)
             val secondary = TextStyle(color = ColorProvider(Color(0xFFFAC775)), fontSize = 12.sp)
