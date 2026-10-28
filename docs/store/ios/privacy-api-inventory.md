@@ -12,6 +12,7 @@ calls discussed below.
 | --- | --- | --- |
 | `com.flint.peakfocus` | `@AppStorage("flint.onboarded")` in `Flint/FlintApp.swift`, private onboarding preference | UserDefaults, `CA92.1` |
 | Host, `.monitor`, `.shield-config`, `.shield-action` | `FlintGroupStore` and `UserDefaults.flintGroup` in `Packages/FlintCore/Sources/FlintCore/{FlintGroupStore,FlintModel}.swift`; selections, rules, session, PIN, pass and counters shared only inside `group.com.flint.peakfocus` | UserDefaults, `1C8F.1` |
+| All five bundles | Focus history (`Packages/FlintCore/Sources/FlintCore/FlintHistoryStore.swift`) reads file size (`attributesOfItem`), `contentModificationDateKey` and `creationDateKey` for its own files under `group.com.flint.peakfocus/FlintHistory` (bounded reads, temp-file reclaim, quarantine pruning). FlintCore is linked into every bundle; the monitor publishes history there | FileTimestamp, `C617.1` |
 | `.report` | FlintCore is linked for brand/UI types. Its shared-suite defaults implementation remains in the optimized Release report binary, although report source makes no defaults call | UserDefaults, `1C8F.1` |
 
 Shared defaults are also used by `FlintOpenLimit.swift` and
@@ -29,9 +30,13 @@ All five bundles have their own manifest and no tracking, tracking domains or
 collected data types. No third-party Swift SDK dependency is declared in
 `project.yml`; FlintCore is a local static Swift package.
 
-The 2026-10-28 production Swift-source search (host, extensions and FlintCore,
-excluding Tests) found no direct file timestamp API (`stat`/`fstat`/`lstat`,
-`getattrlist`, `creationDate`, `modificationDate`, related URL resource keys),
+Focus history (#90, lane F) added file-metadata reads inside the App Group
+container, declared above as FileTimestamp `C617.1` in all five manifests; values
+are used only to size, order and reclaim Flint's own history files and never
+leave the device. Apart from that, the 2026-10-28 production Swift-source search
+(host, extensions and FlintCore, excluding Tests) found no other direct file
+timestamp API (`stat`/`fstat`/`lstat`, `getattrlist`, `creationDate`,
+`modificationDate`, related URL resource keys),
 system boot-time API (`systemUptime`, `mach_absolute_time`), disk-space API
 (`statfs`/`statvfs`, volume capacity keys, `systemFreeSize`/`systemSize`), or
 active-keyboard API (`activeInputModes`). `Date`, calendar arithmetic and timers
