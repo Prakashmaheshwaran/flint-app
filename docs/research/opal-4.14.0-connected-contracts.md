@@ -1,5 +1,14 @@
 # Opal Android 4.14.0 connected-service contracts
 
+> **Historical research — original scope and status claims retained (2026-10-28).**
+> Use the [v1 capability acceptance ledger](../acceptance/v1-capability-ledger.md) for
+> current Flint implementation/evidence and [ADR-012](../architecture/protection-contract.md)
+> for personal protection requirements. Old future-date, launch-count, pass, anti-removal,
+> competitor and expanded connected-scope claims below are historical planning inputs,
+> not current release promises. The Android connected backend remains debug-only;
+> release is local-first, no-account and without analytics. No physical-device result
+> follows from an old status column.
+
 Investigated 2026-10-11 against the user-supplied `opal.apkm`. This is an evidence map for an independent Flint implementation. It does not establish a working clone of Opal's servers.
 
 ## Evidence boundary

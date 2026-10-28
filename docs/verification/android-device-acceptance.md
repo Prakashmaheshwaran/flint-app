@@ -1,5 +1,10 @@
 # Android physical-device acceptance checklist
 
+> **Run order and shared results:** use the [consolidated device acceptance plan](../acceptance/device-acceptance-plan.md)
+> first. This platform detail was drafted in PR #108 before all ADR-012 runtime work landed;
+> its unchecked expectations are not results. The consolidated plan's D13 / ADR-012 §9
+> supersede the older §7 wall-clock-following/reset wording below. No device run is claimed.
+
 Human-run acceptance for Flint's Android enforcement on **real hardware**, against the protection
 contract `docs/architecture/protection-contract.md` (ADR-012); `PC-xx` references are its §14
 acceptance cases. Emulator runs

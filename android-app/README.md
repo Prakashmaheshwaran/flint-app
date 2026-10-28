@@ -1,310 +1,104 @@
 # Flint — Android
 
-## Build toolchain compatibility
+Native Kotlin/Jetpack Compose focus app. Minimum API 23, compile/target API 36.
+The [v1 acceptance ledger](../docs/acceptance/v1-capability-ledger.md) is the current
+capability/evidence record; stock/OEM hardware acceptance is pending.
 
-AGP 9.3.2 retains Flint's Kotlin 2.1/Compose plugin using Google's supported
-`android.builtInKotlin=false` and `android.newDsl=false` compatibility settings.
-Both debug and release unit suites stay enabled explicitly. This is an AGP 9 compatibility
-upgrade; migrating to built-in Kotlin and the new DSL remains required before AGP 10.
+## Build and verify
 
-Native Android app (Kotlin + Jetpack Compose), multi-module. The enforcement engine is isolated
-from the UI so it can run headless and survive process death. Strategy & rationale:
-[`../docs/research/03-android-technical-strategy.md`](../docs/research/03-android-technical-strategy.md).
-
-## Build
-
-```bash
-# from repo root
-make android          # assemble debug APK  (JAVA_HOME defaults to openjdk@21)
-make android-test     # run unit tests (pure-Kotlin: engine, drafts, codecs, policies)
-# or directly:
-cd android-app && ./gradlew assembleDebug
+```sh
+# repository root; JDK 21 and Android SDK required
+make env
+make android
+make verify-android
+make android-release
+make android-bundle
 ```
 
-Requires JDK 21 and an Android SDK (API 35). `minSdk = 23`, `targetSdk = 35`,
-`applicationId = com.flint.peakfocus`.
+`scripts/flint-env.sh` resolves SDK/JDK tools; existing environment wins.
+[Signing](../docs/store/android/signing.md) is owner-controlled. Without private upload-key
+configuration, release artifacts are explicitly development-signed previews.
+[Bundle/exclusion checks](../docs/store/android/bundles.md) inspect the actual APK/AAB,
+including no release Internet/network-state permission or connected/Firebase account code.
 
-## Architecture in one line
+## Enforcement paths and safety
 
-Two detection paths — **AccessibilityService** (primary, real-time, the only URL source) and
-**UsageStatsManager** (fallback + daily budgets) — feed one pure-Kotlin **`BlockDecisionEngine`**,
-which drives one shared enforcement seam (`BlockScreenCoordinator` → a11y overlay /
-`SYSTEM_ALERT_WINDOW` overlay / full-screen `BlockActivity`), kept alive by a foreground service
-and a resilience layer.
+Path A uses AccessibilityService foreground events and known-browser address-bar adapters.
+Path B uses UsageStats plus the specialUse foreground service, with overlay/Activity
+handoff; it has **app-only**, not equivalent domain coverage. Actual Accessibility binding,
+rather than a permission bit alone, determines failover. The safety floor applies before
+every cause: emergency/calling, default dialer and Home, system/permission recovery,
+the uninstaller and Flint remain reachable.
 
-## Status — honest, current
+Android no longer intercepts Settings, uninstall, Accessibility disable, force-stop or
+permission revocation at any tier. No pass, readable Settings text or special exception
+is required for those OS controls. Enabling/re-enabling Accessibility goes through the
+same affirmative prominent disclosure; declining leaves the alternate setup path available.
+Flint does not claim guardian/device-owner authority or Play approval.
 
-**Verified earlier on an Android 35 emulator (pre-fleet MVP path):** the end-to-end block —
-pick an app → enable the Flint accessibility service (behind the prominent-disclosure consent) →
-the blocked app is covered by a full-screen accessibility-overlay block screen within ~1s.
-Schedule-window gating, per-app daily Time Limits, and survive-reboot (the OS rebinds an enabled
-a11y service) were verified the same way. Those runs predate the feature merges below.
+Merged continuous-evaluation work retains quiet foreground observations, reevaluates at
+schedule/expiry/budget boundaries and recovers detector handoff. Positive budgets require
+measured Usage Access; zero budgets are immediately exhausted. The
+[local emulator evidence](../docs/verification/android-continuous-eval-2026-10-28/README.md)
+records separate Path A/B schedule and growing-budget observations. Path B budget's
+first-visible-window upper bound was +20.608 s, and a cold-start ANR under heavy load remains
+an observed unresolved limit. These observations do not establish low-end/OEM resilience.
 
-**Merged since (fleet waves, per-task verifies green at merge time):** rich blocklist UI
-(rules/schedules/limits/break levels — `feature-blocklist`), screen-time stats
-(`feature-stats`), blocking-health settings (`feature-settings`), branded shared block screen
-(`feature-blockscreen`), breaks/Emergency Pass/Open Limits policies (engine + overlay), DataStore
-persistence (`core-datastore`), and the resilience layer (`blocking-resilience`).
+Same-boot measured clock discrepancies cannot be treated as a clock-edit veto. Durable
+grant receipts bind access to the boot and preserve consumption; process restart and reboot
+are distinct. Persisted quota-zone/reset and the full ADR-012 migration/runtime policy must
+be checked in the ledger. Unmeasured clock changes across reboot remain uncertain.
 
-**Integration pass (A-VERIFY) — wired in a session with no Android toolchain, so `make android`
-/ `make android-test` were the outstanding gates; both have since gone green and the integrated
-app was emulator-driven (see the 2026-07-06 and 2026-07-08 runs below).**
-What it wired, verified by inspection at the time:
+## Sessions, rules and local outcomes
 
-- **Navigation:** `MainActivity` hosts four state-switched tabs behind a Material3 bottom bar —
-  Home (quick blocklist + service status), Blocklist, Stats, Settings. No nav library (none in
-  the version catalog); same state-driven pattern the shell already used. The ADR-007 consent
-  screen renders full-screen *instead of* the tab shell; Accept is the only route to the
-  accessibility-settings hand-off.
-- **Path B handoff:** `UsageStatsForegroundService.tick()` now routes **every** poll observation
-  through `PathBBlockHandoff.onForegroundPolled(...)` (the overlay module's documented one-line
-  call site) — Block renders the shared screen, Allow drives open-limit counting and overlay
-  stand-down.
-- **Rules actually reach the engine:** `ActiveRulesBridge` (app) feeds `ActiveRulesHolder` from
-  *both* the legacy quick blocklist and the DataStore rules the Blocklist tab writes — the bridge
-  `BlockRulesStore`'s KDoc deferred to an integration task.
-- **Path B lifecycle:** `PathBServiceGate` (app) starts the poll service only when usage access
-  is granted *and* the a11y service is off (running both would double-enforce), stops it
-  otherwise; re-checked on every app resume and from the boot re-arm hook `FlintApplication`
-  registers with `BootReceiver`.
+The Today / Rules / Insights / You shell includes finite Timers, app block/allow rules,
+weekday schedules, Time/Open Limits, Sleep/Morning Assist, named app groups and five routine
+presets. [ADR-012](../docs/architecture/protection-contract.md) defines the intended shared
+tier and pass rights; the ledger records which live routes implement them.
 
-**Time-change guard (`feat/android-time-change-guard`) — implemented; CI-verified build/tests;
-emulator re-run pending.** Changing the device clock, date, or timezone no longer resets what
-was already consumed: `TimeChangeReceiver` (blocking-resilience) catches
-TIME_SET / TIMEZONE_CHANGED / DATE_CHANGED, re-warms the rules cache, runs the same re-arm
-hooks as `BootReceiver`, and applies the pure `ClockChangeGuard` (blocking-engine, JVM-tested)
-to the persisted focus state. Fail-closed semantics: day/week keys only roll *forward*
-(enforced unconditionally inside `OpenLimitPolicy.rolledOver` / `EmergencyPassPolicy.refreshed`
-on every evaluation, so a clock set back never re-grants consumed opens or a spent Emergency
-Pass — even if the broadcast never arrives); detected forward jumps and timezone hops carry
-consumed state into the new day/week instead of resetting it; a pending HARDER friction wait
-keeps the same real length under any wall-clock jump. Honest limits: schedule windows and
-Path-A Time Limits read the OS clock / UsageStats daily buckets, so a changed clock still
-moves them (the receiver forces immediate re-evaluation; it cannot veto the OS clock), and a
-clock set back during an *already granted* break stretches that break's exemption window —
-HARDCORE is unaffected (it never grants breaks).
+Merged [#139](https://github.com/Prakashmaheshwaran/flint-app/pull/139) adds durable
+editor confirmations, occurrence-scoped Harder waits, future-only Hardcore weakening,
+per-Time-Limit tiers and new-versus-legacy Timer exit rights. Its source/tests do not
+prove every enforcement runtime caller consumes that policy. Rolling/global pass recovery
+and explicit five-minute Open-credit access still need separate live integration evidence.
+Legacy Timer hold-to-end evidence remains dated; the ledger keeps the two contracts distinct.
+Arbitrary future date-specific schedules, repeated Pomodoro chains, Timer Allow List/sites,
+Android automation, browser private-mode/history lockdown and app-open PIN are absent at
+this checkpoint.
 
-**Uninstall guard — removed (2026-10-28, protection contract ADR-012 §10).** Android release
-and debug enforcement never intercept uninstallers, Settings, Accessibility disable, app info,
-force-stop or permission revocation, and Path A no longer reads Settings window text; the
-uninstaller and permission/Settings surfaces are on the safety floor instead. Turning access off
-reduces or stops protection and stays the user's choice (Play Accessibility API policy).
-**Stats insights:** the Stats tab adds a "Week in review" card (typical completed day, busiest day)
-and a today-vs-typical line (`UsageReport` derivations, JVM-tested).
+History is local and independent of UsageStats. Today/Complete/Insights derive focus time,
+outcomes and streaks from Timer events; usage rankings stay separate. A
+[hosted real five-minute Timer run](../docs/verification/f-android-history-2026-10-28/README.md)
+proves completion/early-end persistence and presentation with blocking off. It does not prove
+all measured intercepted-open/break/pass/coverage producers or history-clear UI.
 
-**Premium UI overhaul — implemented; build + unit tests green; emulator-verified 2026-07-06
-(see below).** One design direction ("warm charcoal, one ember") across every screen, grounded in
-`design/tokens.json` extensions (tonal surfaceContainer ladder, brand danger/outline roles,
-type ramp, radius/spacing scales, motion vocabulary) bound in `FlintTheme` (typography + shapes
-now passed to MaterialTheme) plus a shared component kit (`core-common` `ui.FlintKit`:
-FlintScreenHeader/FlintCard/FlintStatusDot/FlintBadge/FlintInfoPill/FlintSectionLabel) and the
-tri-color brand mark as a dependency-free ImageVector (`FlintIcons`). All six surfaces rebuilt
-on the kit — shell (tonal nav bar, tab crossfades), Home (status dashboard, M3 time pickers),
-block screen (breathing spark mark, radial ember glow, tabular-numeral pills), stats (animated
-bars, today gradient), blocklist + editors (sectioned cards, push/pop motion), settings
-(brand-colored health states) — with the ADR-007 consent disclosure byte-identical (visual
-container only, verified by a dedicated review lens).
+Optional planned-focus-end reminders use an inexact alarm and the `focus_sessions`
+**Focus end reminders** channel. Read-only Glance widgets and optional Path A ongoing status
+use public status/history readers, with stale/unavailable fallback; current producer/service
+wiring and actual launcher/notification delivery must be evidenced separately. Path A uses
+`flint_ongoing_session` / **Focus in progress**; mandatory Path B FGS uses
+`flint_enforcement`. Notification denial affects visibility, not authority to block.
 
-**Block Now sessions — implemented; build + unit tests green; emulator-verified end-to-end
-2026-07-06 (see below).** One-tap timed focus sessions from Home (duration + difficulty chips
-over the quick blocklist): a session is a one-shot rule whose `expiresAtEpochMs` the **engine
-itself** checks
-— it can never outlive its timer or re-fire weekly the way a same-day schedule would, even if
-cleanup never runs (expired rows are swept lazily by the rules bridge). Live countdown card,
-early stop gated by tier (EASY only; HARDER/HARDCORE get honest copy), sessions hidden from
-the rule-authoring UI so editing can't quietly strip an expiry, block screen counts down to
-the session's end. Codec appends a backward-compatible 11th field (pre-expiry lines still
-decode); engine/guard/codec/cause paths all JVM-tested. Session expiry is wall-clock, but the
-time-change guard shifts it by the measured jump (`ClockChangeGuard.guardedSessionRules` —
-same elapsedRealtime-anchored delta as the HARDER-wait guard), so setting the clock forward
-cannot end a Hardcore session early nor a set-back stretch one. Honest limit: a jump the
-anchor cannot measure (clock changed across a reboot/power-off) leaves expiry at face value —
-same class of limitation the guard already documents for schedule windows.
+You includes native offline Privacy Policy and open-source license screens. The release
+policy is [docs/privacy-policy.md](../docs/privacy-policy.md); the generated notices come
+from actual release dependencies and fonts. No network WebView is required.
 
-Android 13+'s `POST_NOTIFICATIONS` permission also surfaces as its own blocking-health row
-in Settings. It is visibility-only, so it never changes the enforcement health level; the
-degraded banner names the hidden notification only when Path B is actively enforcing.
+## Verification boundaries and release
 
-**Sleep Mode, preset routines & named groups — implemented; JVM-tested; emulator run pending.**
-Sleep Mode: bedtime→wake windows on chosen nights (post-midnight bedtimes day-shift correctly),
-Wind Down / free Full Assist materialized as allow-list rules on the schedules engine (the same
-approach as iOS), an optional enforced Morning Assist window, and one saved app group allowed
-overnight (`SleepRules` + `SleepEditorScreen`); the engine's telephony safety floor and a
-runtime launcher/dialer exemption keep emergency calling and Home reachable. Preset routines:
-five free Opal-style templates prefill rule drafts — targets stay the user's to pick
-(`RoutinePresets`). Named groups: DataStore-persisted app groups (`GroupsStore`) applied into
-rule drafts in one tap, with name-upsert and delete.
+[Hosted Android E2E](../docs/verification/android-e2e.md) covers consent, UI-authored rule
+persistence, real Accessibility shield/Easy release, a legacy pass and an exhausted budget.
+A separate installed-release smoke exercises the minified release-code APK. These do not
+certify reboot/Doze/OEM survival, full break/credit/pass expiry, web coverage, TalkBack/Switch
+Access, current-device safety or store approval. The
+[consolidated hardware plan](../docs/acceptance/device-acceptance-plan.md) orders those checks.
 
-**Also fixed in this wave:** DataStore-authored Time Limits (Limit editor) now actually
-enforce — they previously had **zero** enforcement readers (only the debug receiver's legacy
-store did); both paths now take the stricter of the two stores via a coordinator snapshot.
-Path A also arms a one-shot budget re-check while a time-limited app sits in front, so the
-block lands when the budget crosses mid-session instead of on the next app switch (Path B's
-1s poll already caught this). The Path B FGS notification re-posts on every service start so
-a post-hoc POST_NOTIFICATIONS grant takes effect. A delete-mid-animation flash in the rule
-editor was fixed by snapshotting editor inputs per destination. Accessibility/insets pass:
-the HARDER hold-to-request control now exposes a TalkBack action (hold friction is a *touch*
-affordance, not an accessibility barrier), schedule day pills got 48dp touch targets +
-checkbox semantics, and the block screen self-insets (`safeDrawingPadding`) since none of its
-three hosts do. The HARDCORE block screen now reflects a spent weekly Emergency Pass (inert
-"used — a new one arrives Monday" notice instead of a button whose tap silently no-oped;
-threaded from the coordinator's pass snapshot, JVM-tested). Home rows show real app icons
-(small pre-decoded bitmaps) with letter-avatar fallback, plus skeleton loading rows and an
-empty state.
+AAB/release-code CI, target API 36, release exclusions and store drafts are implemented;
+owner key custody, Play App Signing, Play-delivered update/data preservation, declarations,
+public support/privacy URLs, real screenshots/video and submission remain
+[human-owned](../docs/store/README.md). App backup is disabled; uninstall can erase local data.
 
-## Emulator verification (2026-07-06, `flint-test` AVD — API 35 google_apis arm64, headless)
-
-The integrated app was installed and driven end-to-end via adb (evidence stayed session-local;
-the archived-evidence convention under `docs/verification/` began with the 2026-07-08 run).
-**Verified live, with screenshots reviewed in-session:** the MVP block flow (enable the a11y
-service → quick-blocklist Chrome → the
-branded block screen covers Chrome within ~1s); **Block Now** end-to-end (Hardcore session
-started from the Home UI → live countdown card → Deep Focus block screen with the "Unblocks
-in …" pill and the Emergency-Pass-only affordance **while an EASY legacy rule shared the same
-target** — the strictest-match engine fix observed working); the Hardcore pre-commitment
-disclosure; a running session surviving an app reinstall; the premium UI on Home (idle + ON),
-Stats (permission prompt), Settings (DEGRADED health banner, status dots), and the dark block
-screen. Two findings came out of the run: selected chips rendered M3's baseline lavender
-(unmapped `secondaryContainer` — fixed as tokens.json `selectedContainer` → Ember, re-verified
-on-device) and the a11y overlay lingered over Flint's own UI when the app was opened externally
-while a shield was up — fixed (a self-window event naming the package-derived MainActivity
-class hides the shield; the overlay's own attach events never match) and re-verified live:
-external open lands on Home, and the blocked app still re-shields immediately after.
-
-**Closed by the two 2026-07-08 runs below:** Path B fallback flow, daily Time Limit fallback,
-Easy break consumption, self-surface stand-down/re-shield, and Open Limits end-to-end on Path B.
-Still pending: Path A open counting, sleep windows, boot re-arm, and
-the time-change-guard broadcast path. Device-only proof (OEM kill behavior, real-world
-resilience) stays in the board's `H-*` tasks.
-
-## Emulator verification (2026-07-08, `flint-test` AVD — API 35 google_apis arm64, headless)
-
-`make android-test` and `make android` both passed locally, then
-[`scripts/android-pathb-verify.sh`](../scripts/android-pathb-verify.sh) installed the debug APK
-and drove Path B with AccessibilityService forced off, usage access allowed, and overlay access
-allowed. **Verified live, with screenshots and window dumps:** `UsageStatsForegroundService`
-starts as a foreground service; a debug-seeded Clock block renders the Path B overlay; `Open
-Flint` stands the overlay down on Flint's own UI; relaunching Clock re-shields it; the Easy
-`Take a break` action grants an exemption and drops the shield; and a debug-seeded `0` minute
-Contacts daily Time Limit renders the `TIME LIMIT` block screen through Path B. Evidence:
-[`docs/verification/android-pathb-2026-07-08/`](../docs/verification/android-pathb-2026-07-08/).
-
-**Not exercised in this run:** Path A-only uninstall-guard shielding (Path B cannot read
-Settings/uninstaller window text and the run deliberately kept a11y off), Open Limits, sleep
-windows, boot re-arm, the time-change-guard broadcast path, OEM kill behavior, and real-device
-resilience.
-
-## Emulator verification (2026-07-08, Open Limits — `flint-test` AVD, API 35 google_apis arm64, headless)
-
-A second same-day run closed the Open Limits entry above on Path B. `make android-test` and
-`make android` passed, then a UI-driving script (archived with the evidence) installed the debug
-APK and exercised Open Limits with AccessibilityService off, usage access allowed, overlay access
-allowed, and `pm clear` first. The debug seed receiver has no Open-Limit hook, so the run authors
-the limit through the real UI — deliberately verifying the whole chain **Blocklist tab → New app
-limit → app picker → limit editor → DataStore `LimitsStore` → `BlockScreenCoordinator` →
-`OpenLimitPolicy` → shield**. **Verified live, with screenshots, window dumps, and UI dumps
-(Clock · 2 opens/day · EASY):** open #1 allowed unshielded across ~5 poll ticks; open #2 hits
-the quota with a branded `OPEN LIMIT` shield and next-local-midnight countdown; HOME stands the
-shield down; an over-quota reopen re-shields; the EASY `Take a break` action stands the shield
-down; and open counts survive `am force-stop` — relaunching re-shields in 0.77 s with the
-`OPEN LIMIT` cause still attached. Evidence:
-[`docs/verification/android-openlimits-2026-07-08/`](../docs/verification/android-openlimits-2026-07-08/).
-
-**Known nuance (product decision pending):** the *last* allowed open is truncated — with
-"2 opens/day", open #2 is granted and then shielded **~1.8 s after launch** (measured 1.83 s),
-because the coordinator re-decides on every 1 s poll tick and `OpenLimitPolicy` blocks at
-`used >= dailyOpens` once the entry tick has recorded the second open. In practice "N opens/day"
-is N−1 full opens plus one ~2-second open. The engine test `atQuotaBlocksAndCarriesTheLimit`
-asserts at-quota blocking and the model KDoc says the block appears "after the quota", so this
-may be intended — but a user may expect N *usable* opens. Path A shares the same
-coordinator/policy and would behave the same on its event-driven cadence. If unwanted, the fix
-belongs in the coordinator/policy seam; the drafted policy patch in `/tmp` explores entry
-semantics.
-
-**Not exercised in this run:** Path A open counting (a11y deliberately off), HARDER/HARDCORE
-open-limit tiers, the observable effect of the break's extra spent open after the 5-minute
-exemption lapses, real-midnight rollover, and the "system-surface bounces don't count as opens"
-heuristic (JVM-tested only).
-
-## Known gaps
-
-**Fixed since the 2026-07 integration audit:**
-
-- *Weekday convention bug (was gap 1):* the service feed now converts `Calendar.DAY_OF_WEEK`
-  to ISO before calling the engine (`A-FIX-WEEKDAY`); engine KDoc + test fixture restated in
-  ISO terms.
-- *Legacy-writer clobber window (was gap 2):* `ActiveRulesHolder` is now **source-keyed** —
-  each writer publishes only its own contribution (`legacy-blocklist` vs `datastore`) and can
-  no longer overwrite the other's, so DataStore-authored rules stay in enforcement across
-  service connects / boot warm-ups / legacy setters. JVM-tested (`ActiveRulesHolderTest`);
-  `ActiveRulesBridge` shrank to the DataStore stream + a legacy re-sync helper.
-- *Test-gate hole (found fixing the above):* `make android-test` ran `testDebugUnitTest`,
-  which does not exist on the pure-Kotlin modules — the engine/core-model tests were silently
-  skipped locally. The target now runs `./gradlew test`, matching CI.
-- *Continuous Time Limits and schedules (R1/R6):* both paths use the larger of event-derived
-  usage (including the ongoing interval), aggregate daily buckets, and already observed usage.
-  A pruned/failed event query cannot erase aggregate consumption; with Usage Access granted,
-  two failed measurements fail closed for that decision. Without the grant, positive Path A time
-  limits are unmeasured and do not block; independent rule/open-limit causes still apply.
-  Configured zero/nonpositive budgets are immediately exhausted and need no usage read. Path A checks
-  AppOps on IO with a one-second cache and retries unmeasured limits while awake. Queries run on
-  IO, with one aggregate read alongside each event measurement; the ordered event timeline is
-  reused across measurements. Path B retains foreground across quiet polls; budget validity is bounded
-  by the smaller of 15 seconds and the remaining budget. The safety floor precedes all causes.
-  Path A owns one schedule/expiry/budget/midnight timer and wakes on rule/limit/clock changes.
-  Screen-off removes budget and 60-second recovery polling deadlines; screen-on/unlock
-  re-evaluates. While awake, a floor/system window keeps the previous app's earlier boundary or
-  a 60-second recovery check. Missing Usage Access is degraded protection; publishing that
-  reason to status surfaces is tracked in the separate ProtectionStatus follow-up.
-- *Detector failover:* Path B's existing specialUse foreground service stays in standby while
-  Accessibility is actually connected. Standby probes permission health once a minute, with
-  immediate channel wakeups for binding/rule/clock changes; active fallback polls each second.
-  Notifications distinguish standby from enforcement, and handoff removes the previous shield.
-- *Quota timezone deviation (tracked for C4d):* persisted `quotaZone` does not exist yet.
-  Midnight currently follows the device zone. A zone change retains the process's larger
-  already-measured usage until the next midnight in the new zone, so re-clipping cannot lower
-  today's observed quota. This protection is not durable across process death and is not a
-  substitute for C4d's persisted clock/zone contract. Conservative aggregate/high-water totals
-  can over-count when platform buckets span a changed zone or late events revise an interval.
-- *`POST_NOTIFICATIONS` never requested (was gap 2):* the app shell now asks **once**, on
-  resume, and only when Path B is actually in play (usage access granted, a11y off — the
-  original prompt condition); a decline is respected, never re-prompted.
-  Enforcement never depended on the grant — only the FGS notification's visibility does.
-
-Emulator-verifiable next: Path A open counting, sleep windows, boot re-arm, the
-time-change-guard broadcast path (the uninstall guard was removed, ADR-012 §10). Device-only proof (OEM
-kill behavior, real-world resilience) stays in the board's `H-*` tasks.
-
-## Module map (all implemented; `make android` + `make android-test` green as of 2026-07-08)
-
-| Module | Kind | What it holds |
-|---|---|---|
-| `app` | app | `FlintApplication` (bridge + boot hook), `MainActivity` (tab shell + Home), `ActiveRulesBridge`, `PathBServiceGate`, manifest (permissions + queries), debug `SetBlocklistReceiver` |
-| `core:core-model` | kotlin-jvm | Pure data: `BlockRule`, `Schedule` (ISO days), `BreakLevel`, `Verdict`, limits/breaks models, `ActiveRulesHolder` |
-| `core:core-common` | android-lib | `FlintTheme` (brand tokens → Material3), `OemUtil` |
-| `core:core-data` | android-lib | Legacy synchronous stores: `BlocklistStore`, `LimitStore`, `UsageQuery` |
-| `core:core-datastore` | android-lib | Preferences DataStore: `BlockRulesStore`, `LimitsStore`, `FocusStateStore`, `GroupsStore` + codecs (unit-tested) |
-| `blocking:blocking-engine` | kotlin-jvm | `BlockDecisionEngine` + break/pass/open-limit policies + `ClockChangeGuard` (fail-closed time-change policy) + `DayMath` (unit-tested) |
-| `blocking:blocking-accessibility` | android-lib | `FlintAccessibilityService` — Path A detector + a11y-overlay enforcement (no `isAccessibilityTool`) |
-| `blocking:blocking-usagestats` | android-lib | `UsageStatsForegroundService` (poll loop → Path B handoff), `UsagePoller`, `DailyLimitTracker` |
-| `blocking:blocking-overlay` | android-lib | `BlockScreenCoordinator` (shared seam), `PathBBlockHandoff`, `OverlayController`, `BlockActivity` |
-| `blocking:blocking-resilience` | android-lib | `BootReceiver` (+ re-arm hooks), `TimeChangeReceiver` (clock/timezone-change guard), `ExitReasonReporter`, `PermissionHealthChecker` |
-| `permissions:permissions-special` | android-lib | `UsageAccess`, `OverlayPermission`, `AccessibilityPermission`, `BatteryOptimization` |
-| `feature:feature-onboarding` | android-lib | `AccessibilityConsentScreen` — **prominent-disclosure consent (Play gate, ADR-007)** |
-| `feature:feature-blocklist` | android-lib | Rule/limit/sleep editors, preset routines + named groups, app picker, domain input (draft logic unit-tested) |
-| `feature:feature-stats` | android-lib | 7-day screen-time report from `UsageStatsManager` (aggregation unit-tested) |
-| `feature:feature-blockscreen` | android-lib | The shared branded "blocked" UI (hosted by overlay window or `BlockActivity`) |
-| `feature:feature-settings` | android-lib | Blocking-health rows, battery exemption, OEM auto-start guidance, exit diagnostics |
-
-## Compliance gates (do not skip)
-
-- **No** `android:isAccessibilityTool="true"` — Flint is a "monitoring app" and is ineligible.
-  (Audited this pass: the flag appears nowhere in the merged manifests.)
-- The `AccessibilityConsentScreen` must be shown **before** sending the user to enable the
-  service. (Audited this pass: the shell's Enable button opens the consent full-screen; only
-  Accept fires the Settings intent. `feature-settings` re-states the disclosure and never
-  auto-redirects.)
-- `foregroundServiceType=specialUse` needs a Play Console justification at submission.
-- Don't depend on `USE_FULL_SCREEN_INTENT` (auto-revoked for non-call/alarm apps on Android 14+).
-
-Full ship checklist: strategy doc §10.
+The optional connected account/group/managed-authoring client and Firebase account SDK exist
+only in debug and talk to a local test service. Managed enforcement, production accounts,
+cloud sync, billing, analytics and personal usage uploads are not activated by this work.
+The [older parity investigation](../docs/research/06-opal-android-parity.md) retains its
+historical expanded scope and is superseded by the v1 acceptance ledger for release claims.

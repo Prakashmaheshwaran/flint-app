@@ -1,51 +1,48 @@
-# Flint — Documentation
+# Flint documentation
 
-Start here. These docs are the source of truth for *what* Flint is and *how* it's built.
+Use the [v1 capability acceptance ledger](acceptance/v1-capability-ledger.md) for current
+merged behavior and evidence, and [ADR-012](architecture/protection-contract.md) for
+the required protection contract. A requirement, model or green build alone is not proof
+that a capability works on hardware.
+
+## Acceptance and release
+
+- [Capability ledger](acceptance/v1-capability-ledger.md): every original inventory capability
+  per platform, source/PR/run links, tested scope, gaps and PC-case mappings.
+- [Physical-device acceptance](acceptance/device-acceptance-plan.md): one risk-ordered runnable
+  checklist, shared result fields and links to platform details. No device pass is claimed.
+- [Store package index](store/README.md): iOS/Android drafts and the single list of human-owned
+  signing, hardware, declaration, upload/review and publication steps.
+- [Privacy policy draft](privacy-policy.md): local data and OS-surface inventory; a repository
+  document is not a deployed public URL or completed store declaration.
+- [v1 build plan](roadmap/v1-build-plan.md): integration lanes and product boundaries.
+- [UX audit](ux/v1-screen-audit.md): dated E01–E16 findings and ownership, preserved as history.
+- [Verification](verification/): dated artifacts with exact source/platform boundaries.
+  [Android hosted E2E](verification/android-e2e.md) and
+  [real Timer history](verification/f-android-history-2026-10-28/README.md) have different scopes.
 
 ## Architecture
 
-- [`architecture/00-architecture-decisions.md`](architecture/00-architecture-decisions.md) —
-  the decision log: native-vs-cross-platform, local-first/no-backend, min OS versions, monorepo
-  tooling, XcodeGen, license, and per-platform architecture. Read this first.
-- [`architecture/android-managed-authority.md`](architecture/android-managed-authority.md) —
-  owner/member data flow, identity fences, conflict handling, time policy, and the explicit
-  boundary before managed enforcement can be activated.
+- [Decision log](architecture/00-architecture-decisions.md): native platforms, local-first
+  release, tooling and later debug connected/access foundations.
+- [Protection contract](architecture/protection-contract.md): per-cause tier actions, overlap,
+  bounded access, rolling pass, safety floor, time/migration and PC-01–PC-84 requirements.
+- [Focus history](architecture/focus-history.md): event/total/privacy/retention definitions.
+- [Android managed authority](architecture/android-managed-authority.md): dormant foundation;
+  no production managed enforcement is authorized.
 
-## Research (the evidence behind the decisions)
+## Historical research and design
 
-Produced by a multi-agent, adversarially-verified research pass.
+Research files preserve their original claims and dates. Their status columns, old competitor
+pricing/omissions and expanded connected scope are not current v1 completion evidence.
 
-- [`research/06-opal-android-parity.md`](research/06-opal-android-parity.md) —
-  current **all-features Android parity scope**, evidence index, implementation ledger,
-  connected-service boundary and completion gates. Supersedes the earlier local-only scope
-  for this investigation; clearly separates completed milestones from pending work.
-- [`research/05-opal-4.14.0-apkm-analysis.md`](research/05-opal-4.14.0-apkm-analysis.md) —
-  **2026-10-11 package analysis:** hashes, recovered Android behavior, source/bytecode anchors,
-  runtime limitations, and Flint's historical app insights. Prefer this for claims about the
-  supplied Opal Android 4.14.0 build.
-- [`research/01-opal-feature-inventory.md`](research/01-opal-feature-inventory.md) —
-  **product spec.** Every Opal feature, free vs. paid, mapped to Flint's free plan + mechanism.
-  Ends with the prioritized Minimum-Viable v1 set.
-- [`research/02-ios-technical-strategy.md`](research/02-ios-technical-strategy.md) —
-  the iOS Screen Time API implementation plan: framework stack, the app + 4 extensions, the
-  entitlement reality for open source, what's possible vs. impossible, target layout.
-- [`research/03-android-technical-strategy.md`](research/03-android-technical-strategy.md) —
-  the Android plan: AccessibilityService + UsageStatsManager + overlay, Play policy compliance,
-  permissions, OEM/battery survival, module layout.
-- [`research/04-oss-landscape.md`](research/04-oss-landscape.md) —
-  existing open-source blockers on both platforms and what Flint should borrow.
-
-## Design
-
-- [`../design/`](../design) — brand tokens, palette, logo. Single source of truth for theming.
-
-## Verification
-
-- [`verification/`](verification/) — dated build/test and device/emulator evidence for claims
-  that need runtime proof.
-- [`verification/android-managed-2026-10-11/README.md`](verification/android-managed-2026-10-11/README.md) —
-  connected owner/member flow, network failure, restart, and actual
-  Timer blocking/expiry. Includes exact APK, test results, screenshots and source hashes.
-- [`verification/android-timer-exit-2026-10-11/README.md`](verification/android-timer-exit-2026-10-11/README.md) —
-  subsequent Android build with the APK-backed hold-to-end Timer flow, exact confirmation
-  timing tests, short-release cancellation and preservation of other blocking rules.
+- [01 inventory](research/01-opal-feature-inventory.md): capability IDs and original product plan.
+- [02 iOS strategy](research/02-ios-technical-strategy.md) and
+  [03 Android strategy](research/03-android-technical-strategy.md): original implementation research.
+- [04 OSS landscape](research/04-oss-landscape.md): dated alternatives research.
+- [05 Opal 4.14.0 package investigation](research/05-opal-4.14.0-apkm-analysis.md): version-bound
+  shipped-artifact evidence; static/runtime limits are explicit.
+- [06 Android parity investigation](research/06-opal-android-parity.md): historical expanded
+  scope and debug milestones, superseded by the local v1 ledger for release acceptance.
+- [Original gap assessment](research/opal-flint-parity-gaps.md): historical semantic/migration gaps.
+- [Design](../design/): brand tokens and Ember & Mist references; design mockups are not runtime proof.
