@@ -21,7 +21,7 @@ explicitly preserves accessibility services during the test session.
 | --- | --- | --- |
 | Consent | Welcome, disclosure, accept/decline controls render; declining returns to Today without granting accessibility | No Play approval or OEM Settings handoff proof |
 | Rule and restart | Author rule through UI, enable real service via secure settings, launch target, see shield; stop/relaunch Flint and see saved rule plus shield; Easy break dismisses shield | Service is explicitly re-enabled after restart; no automatic OS recovery, break expiry or reboot claim |
-| Emergency Pass | Hardcore rule shows shield, omits ordinary break, explicit pass opens target | No weekly reset, overlap or durable grant proof |
+| Emergency Pass | Hardcore rule shows shield, omits ordinary break, explicit pass opens target | No pass reset, overlap or durable grant proof |
 | Budget | Existing DEBUG receiver seeds a zero-minute legacy budget, real service shows Time limit shield | Does not prove elapsed UsageStats measurement, modern limit authoring or cross-midnight reset |
 
 These are emulator integration checks, not hardware/OEM, anti-removal, web

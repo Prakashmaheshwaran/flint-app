@@ -218,8 +218,11 @@ class FlintSmokeTest {
     private fun scrollTo(text: String): UiObject2 {
         repeat(8) {
             device.findObject(By.text(text))?.let { return it }
-            device.swipe(device.displayWidth / 2, device.displayHeight * 3 / 4,
-                device.displayWidth / 2, device.displayHeight / 3, 35)
+            // Editors have a fixed footer; a screen-relative swipe can start
+            // outside the LazyColumn and never move it. Use its actual viewport.
+            val bounds = visible(By.scrollable(true)).visibleBounds
+            device.swipe(bounds.centerX(), bounds.bottom - bounds.height() / 4,
+                bounds.centerX(), bounds.top + bounds.height() / 4, 35)
             SystemClock.sleep(250)
         }
         return visible(By.text(text))
