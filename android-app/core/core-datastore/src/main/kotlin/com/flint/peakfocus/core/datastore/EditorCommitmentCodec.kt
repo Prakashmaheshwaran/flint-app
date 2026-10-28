@@ -23,7 +23,7 @@ internal object EditorCommitmentCodec {
             val boundaries = q.boundaries.toSortedMap().entries.joinToString("\n") { (key, value) ->
                 "${wireAtom(key)}|${interval(value)}"
             }
-            add("Q|${q.id}|${wireAtom(change(q.change))}|${wireAtom(expected(q.expected))}|${wireAtom(boundaries)}")
+            add("Q|${q.id}|${wireAtom(change(q.change))}|${wireAtom(expected(q.expected))}|${wireAtom(boundaries)}|${q.needsReview}")
         }
     }.joinToString("\n").also { decode(it) }
 
@@ -50,13 +50,14 @@ internal object EditorCommitmentCodec {
                     pending = PendingEditorChange(wireLong(f[1]), readChange(readWireAtom(f[3])), readExpected(readWireAtom(f[4])), outcome, wait)
                 }
                 "Q" -> {
-                    wireRequire(f.size == 5)
+                    wireRequire(f.size in 5..6)
                     val boundaries = linkedMapOf<String, AnchoredInterval>()
                     readWireAtom(f[4]).split('\n').forEach { line ->
                         val b = line.split('|'); wireRequire(b.size == 7)
                         wireRequire(boundaries.put(readWireAtom(b[0]), readInterval(b.drop(1)) ?: wireCorrupt()) == null)
                     }
-                    queued += QueuedEditorChange(wireLong(f[1]), readChange(readWireAtom(f[2])), readExpected(readWireAtom(f[3])), boundaries)
+                    queued += QueuedEditorChange(wireLong(f[1]), readChange(readWireAtom(f[2])), readExpected(readWireAtom(f[3])), boundaries,
+                        f.getOrNull(5)?.let(::bool) ?: false)
                 }
                 else -> wireFuture()
             }

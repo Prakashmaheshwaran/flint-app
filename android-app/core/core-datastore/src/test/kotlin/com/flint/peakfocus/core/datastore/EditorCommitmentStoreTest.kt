@@ -242,4 +242,44 @@ class EditorCommitmentStoreTest {
         DataStoreFocusStateStore(disk).setDefaultBreakLevel(BreakLevel.EASY)
         assertEquals(BreakLevel.HARDER, store.timeLimits.first().single().breakLevel)
     }
+
+    @Test fun `PC-54 PC-64 a shifted display deadline cannot rematerialize an elapsed Timer`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk); val rules = DataStoreBlockRulesStore(disk)
+        val timer = rule().copy(id = CONTRACT_TIMER_ID_PREFIX + "clock", schedule = null, expiresAtEpochMs = at + 300_000)
+        store.startTimer(timer, clock())
+        // The existing time-change guard rewrites the raw wall estimate after a forward jump.
+        rules.upsert(timer.copy(expiresAtEpochMs = timer.expiresAtEpochMs!! + 3_600_000))
+        val actualEnd = clock(300_000, wall = 3_900_000)
+        repeat(2) {
+            val effective = store.reconcileRules(actualEnd).single()
+            assertTrue(effective.expiresAtEpochMs!! <= actualEnd.wallEpochMs)
+            assertEquals(0, snapshot(store).causes.getValue(ruleCauseKey(timer.id)).interval!!.remainingMs(actualEnd))
+        }
+    }
+
+    @Test fun `PC-12 confirmed schedule extension arms the longer snapshot before the old boundary`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk); val rules = DataStoreBlockRulesStore(disk)
+        val old = rule(); rules.upsert(old)
+        val longer = old.copy(schedule = old.schedule!!.copy(endMinuteOfDay = 12 * 60))
+        assertEquals(EditorCommitResult.Applied(), confirm(store, EditorChange("Extend", upserts = listOf(longer))))
+        val effective = store.reconcileRules(clock()).single()
+        assertEquals(at + 2 * 3_600_000, effective.expiresAtEpochMs)
+        assertEquals(2 * 3_600_000L, snapshot(store).causes.getValue(ruleCauseKey(old.id)).interval!!.remainingMs(clock()))
+    }
+
+    @Test fun `PC-10 PC-14 stale queued changes keep their draft and never delete another revision`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk); val rules = DataStoreBlockRulesStore(disk)
+        val old = rule(); rules.upsert(old)
+        confirm(store, EditorChange("Delete", deleteIds = setOf(old.id)))
+        val changed = old.copy(name = "Changed elsewhere")
+        rules.upsert(changed)
+        store.reconcile(clock(3_600_000))
+        assertEquals(listOf(changed), rules.rules.first())
+        assertTrue(snapshot(store).queued.single().needsReview)
+        assertEquals(setOf(old.id), snapshot(store).queued.single().change.deleteIds)
+        val recreated = DataStoreEditorCommitmentStore(disk) { "UTC" }
+        recreated.reconcile(clock(3_600_001))
+        assertTrue(snapshot(recreated).queued.single().needsReview)
+        assertEquals(listOf(changed), rules.rules.first())
+    }
 }

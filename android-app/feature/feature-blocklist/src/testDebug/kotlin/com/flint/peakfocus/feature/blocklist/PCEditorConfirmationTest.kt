@@ -6,6 +6,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.flint.peakfocus.blocking.engine.CommitmentPolicy
 import com.flint.peakfocus.core.datastore.*
+import com.flint.peakfocus.blocking.engine.AnchoredInterval
+import com.flint.peakfocus.core.model.*
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -41,5 +43,14 @@ class PCEditorConfirmationTest {
     @Test fun `PC-53 missing wait state cannot enable confirmation`() {
         compose.setContent { EditorCommitmentDialog(state(CommitmentPolicy.Outcome.WAIT), null, false, null, {}, {}) }
         compose.onNodeWithText("Confirm").assertIsNotEnabled()
+    }
+
+    @Test fun `PC-11 queued future values and stale status are displayed separately`() {
+        val queued = QueuedEditorChange(1, EditorChange("Save limits", limits = EditorLimitsChange("app", TimeLimit("app", 60), null)),
+            EditorExpected(emptyList(), TimeLimit("app", 30, BreakLevel.HARDCORE), null, emptyMap()),
+            mapOf("time:app" to AnchoredInterval(AccessClockStamp(0, 0, "boot"), 60_000, 60_000)), needsReview = true)
+        compose.setContent { QueuedEditorChanges(listOf(queued)) }
+        compose.onNodeWithText("Future limits: 1h/day (Easy)").assertExists()
+        compose.onNodeWithText("Queued change needs review:", substring = true).assertExists()
     }
 }

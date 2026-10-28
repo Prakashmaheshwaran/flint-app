@@ -38,7 +38,7 @@ data class EditorCause(
 data class PendingEditorChange(val id: Long, val change: EditorChange, val expected: EditorExpected,
     val outcome: CommitmentPolicy.Outcome, val wait: HarderWaitPolicy.Operation? = null)
 data class QueuedEditorChange(val id: Long, val change: EditorChange, val expected: EditorExpected,
-    val boundaries: Map<String, AnchoredInterval>)
+    val boundaries: Map<String, AnchoredInterval>, val needsReview: Boolean = false)
 data class EditorCommitmentState(
     val nextId: Long = 1,
     val causes: Map<String, EditorCause> = emptyMap(),

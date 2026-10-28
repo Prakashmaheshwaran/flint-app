@@ -68,6 +68,14 @@ internal fun editorEndLabel(epochMs: Long): String = DateFormat.getDateTimeInsta
 internal fun QueuedEditorChanges(changes: List<QueuedEditorChange>) {
     changes.forEach { queued ->
         val end = queued.boundaries.values.maxOf { it.wallEndEpochMs }
-        Text("Queued separately: ${queued.change.label}. Applies after ${editorEndLabel(end)}.", style = MaterialTheme.typography.bodySmall)
+        Text(if (queued.needsReview) "Queued change needs review: ${queued.change.label}. Protection changed, so this draft was kept without applying it."
+            else "Queued separately: ${queued.change.label}. Applies after ${editorEndLabel(end)}.", style = MaterialTheme.typography.bodySmall)
+        queued.change.upserts.forEach { rule ->
+            Text("Future ${rule.name}: ${breakLevelLabel(rule.breakLevel)} · ${scheduleSummary(rule.schedule)} · ${targetsSummary(rule.targets)}", style = MaterialTheme.typography.bodySmall)
+        }
+        queued.change.deleteIds.forEach { id ->
+            Text("Future deletion: ${queued.expected.rules.firstOrNull { it.id == id }?.name ?: id}", style = MaterialTheme.typography.bodySmall)
+        }
+        queued.change.limits?.let { limits -> Text("Future limits: ${limitSummary(limits.time, limits.open)}", style = MaterialTheme.typography.bodySmall) }
     }
 }

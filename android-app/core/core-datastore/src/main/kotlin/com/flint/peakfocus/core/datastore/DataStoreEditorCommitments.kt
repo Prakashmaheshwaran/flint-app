@@ -36,7 +36,7 @@ class DataStoreEditorCommitmentStore(
         val state = prepare(prefs, now)
         prefs.editorRules().map { rule ->
             val cause = state.causes[ruleCauseKey(rule.id)]
-            val boundary = state.queued.firstOrNull { ruleCauseKey(rule.id) in it.change.keys }
+            val boundary = state.queued.firstOrNull { !it.needsReview && ruleCauseKey(rule.id) in it.change.keys }
                 ?.boundaries?.get(ruleCauseKey(rule.id))
             val interval = boundary ?: cause?.interval
             if (!rule.enabled) rule
@@ -116,6 +116,21 @@ class DataStoreEditorCommitmentStore(
             state = state.copy(queued = retained + QueuedEditorChange(id, change, pending.expected, boundaries))
         } else {
             apply(prefs, change)
+            // Only an explicitly confirmed strengthening may extend an active snapshot.
+            // Reconciliation and clock-display rewrites never acquire that authority.
+            val causes = state.causes.toMutableMap()
+            change.upserts.forEach { rule ->
+                val key = ruleCauseKey(rule.id)
+                val cause = causes[key] ?: return@forEach
+                val interval = cause.interval ?: return@forEach
+                if (!rule.enabled || interval.remainingMs(now) == 0L) return@forEach
+                val candidateRemaining = if (rule.expiresAtEpochMs != null) rule.expiresAtEpochMs!! - now.wallEpochMs
+                    else ruleOccurrence(rule, cause.zoneId, logicalClock(state, now))?.interval?.remainingAtAnchorMs ?: 0
+                if (candidateRemaining > interval.remainingMs(now)) {
+                    causes[key] = cause.copy(interval = AnchoredInterval(now, candidateRemaining, now.wallEpochMs + candidateRemaining))
+                }
+            }
+            state = state.copy(causes = causes.toMap())
         }
         prefs.putEditorState(materialize(prefs, state, now))
         EditorCommitResult.Applied(queued = isDeferred)
@@ -190,12 +205,15 @@ class DataStoreEditorCommitmentStore(
             state = readEditorState(prefs)
             readHarderWait(prefs) // Missing initialized friction state is not a fresh occurrence.
         }
-        val due = state.queued.filter { q -> q.boundaries.values.all { it.remainingMs(now) == 0L } }
+        val due = state.queued.filter { q -> !q.needsReview && q.boundaries.values.all { it.remainingMs(now) == 0L } }
+        val stale = mutableSetOf<Long>()
         for (q in due) {
             // Exact records: an unrelated writer cannot make an old queue delete a new revision.
             if (records(prefs, q.change) == q.expected.copy(occurrences = emptyMap())) apply(prefs, q.change)
+            else stale += q.id
         }
-        state = state.copy(queued = state.queued - due.toSet())
+        state = state.copy(queued = state.queued.filter { it !in due || it.id in stale }
+            .map { if (it.id in stale) it.copy(needsReview = true) else it })
         val terminal = state.causes.filterValues { it.occurrenceId != "inactive" && it.interval?.remainingMs(now) == 0L }
             .map { (key, cause) -> editorOccurrence(key, cause) }.toSet()
         if (terminal.isNotEmpty()) prefs.putHarderWait(harder.withoutTerminated(readHarderWait(prefs), terminal))
@@ -206,8 +224,7 @@ class DataStoreEditorCommitmentStore(
 
     private fun materialize(prefs: Preferences, state: EditorCommitmentState, now: AccessClockStamp): EditorCommitmentState {
         val timeline = state.timeline ?: now
-        val elapsed = trustedElapsedMs(timeline, now)
-        val logical = if (elapsed != null && timeline.wallEpochMs <= Long.MAX_VALUE - elapsed) now.copy(wallEpochMs = timeline.wallEpochMs + elapsed) else now
+        val logical = logicalClock(state, now)
         val causes = state.causes.toMutableMap()
         fun keepOrResolve(key: String, resolve: (String) -> EditorCause?) {
             val old = causes[key]
@@ -222,7 +239,14 @@ class DataStoreEditorCommitmentStore(
                 AnchoredInterval(now, remaining, now.wallEpochMs + remaining)
             })
         }
-        prefs.editorRules().forEach { rule -> keepOrResolve(ruleCauseKey(rule.id)) { zone -> ruleOccurrence(rule, zone, logical) } }
+        prefs.editorRules().forEach { rule ->
+            val key = ruleCauseKey(rule.id)
+            val old = causes[key]
+            // A finite occurrence is materialized once. A later wall-clock estimate rewrite
+            // cannot resurrect it when its anchored duration has already elapsed.
+            if (rule.expiresAtEpochMs != null && old?.occurrenceId == rule.id && old.interval?.remainingMs(now) == 0L) return@forEach
+            keepOrResolve(key) { zone -> ruleOccurrence(rule, zone, logical) }
+        }
         prefs.editorTimes().forEach { limit -> keepOrResolve(timeCauseKey(limit.packageName)) { zone -> dailyOccurrence(zone, logical) } }
         prefs.editorOpens().forEach { limit -> keepOrResolve(openCauseKey(limit.packageName)) { zone -> dailyOccurrence(zone, logical) } }
         // Retain tombstones only until their natural boundary, preventing mid-period count resets.
@@ -231,6 +255,12 @@ class DataStoreEditorCommitmentStore(
         causes.entries.removeAll { (key, c) -> key !in liveKeys && c.interval?.remainingMs(now) == 0L }
         require(causes.size <= 2_000) { "Too many commitments" }
         return state.copy(causes = causes.toMap(), timeline = timeline)
+    }
+
+    private fun logicalClock(state: EditorCommitmentState, now: AccessClockStamp): AccessClockStamp {
+        val timeline = state.timeline ?: return now
+        val elapsed = trustedElapsedMs(timeline, now) ?: return now
+        return if (timeline.wallEpochMs <= Long.MAX_VALUE - elapsed) now.copy(wallEpochMs = timeline.wallEpochMs + elapsed) else now
     }
 
     private fun expected(prefs: Preferences, state: EditorCommitmentState, change: EditorChange, now: AccessClockStamp): EditorExpected =
