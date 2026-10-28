@@ -7,4 +7,25 @@
     <string name="legal_loading">Loading document…</string>
     <string name="legal_load_error">This bundled document could not be opened.</string>
     <string name="legal_retry">Try again</string>
+    <!-- How Flint works (HelpScreen.kt). Keep every sentence true of the shipped code and ADR-012. -->
+    <string name="help_section_label">Help</string>
+    <string name="help_title">How Flint works</string>
+    <string name="help_back">Back to settings</string>
+    <string name="help_intro">What Flint does on this phone, and what it can\'t do.</string>
+    <string name="help_section_limits">What Flint can\'t prevent</string>
+    <string name="help_access_title">Turning off Flint\'s access</string>
+    <string name="help_access_text">You can turn off Accessibility, Usage Access or display over other apps for Flint in Android Settings. Flint doesn\'t block those settings. Blocking stops or becomes less reliable while they\'re off.</string>
+    <string name="help_safety_title">Calls, Home and Settings</string>
+    <string name="help_safety_text">Flint\'s rules never block your phone app, emergency calling, your Home screen or Settings. If you make calls with another app, keep it allowed.</string>
+    <string name="help_uninstall_title">Uninstalling Flint</string>
+    <string name="help_uninstall_text">Flint\'s rules never block Android\'s uninstall screens, so you can remove Flint at any time.</string>
+    <string name="help_clock_title">Changing the clock</string>
+    <string name="help_clock_text">Flint can\'t stop the date or time being changed. It accounts for changes it measures while running, but after a restart it can\'t always tell how much time really passed.</string>
+    <string name="help_section_websites">Websites</string>
+    <string name="help_websites_title">Supported browsers only</string>
+    <string name="help_websites_text">Website rules need Accessibility and a browser whose address bar Flint can read. Browser updates can reduce coverage. Without Accessibility, Flint can still block apps but not websites.</string>
+    <string name="help_section_running">Keeping Flint running</string>
+    <string name="help_battery_title">Battery savers</string>
+    <string name="help_battery_text">Some phones stop background apps to save battery. If blocking stops, the checks on You show what Flint needs.</string>
+    <string name="help_privacy">No account. No analytics. Your lists, rules and history stay on this phone.</string>
 </resources>
