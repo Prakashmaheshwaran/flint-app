@@ -22,9 +22,10 @@ were checked 2026-10-28; the latter explicitly retains legacy DSL support in AGP
   after optimization, even though runtime app code does not branch on it.
 - Accessibility's XML metadata resource has an explicit resource-shrinker keep.
   The final APK must retain the service, its metadata reference and XML flags.
-- Firebase/connected-feature names are protected from renaming if accidental
-  live code reaches release, preserving the descriptor exclusion scan. Unused
-  code may still be removed. These packages remain debug-only dependencies.
+- Firebase/connected-feature classes and members are protected from renaming or
+  optimization if accidental live code reaches release, preserving the descriptor
+  exclusion scan even against helper-method inlining. Dead classes/members may
+  still be removed. These packages remain debug-only dependencies.
 - R8 assertions require design-time Compose tooling and Flint Preview methods
   to be discarded. The release has no tooling UI dependency.
 

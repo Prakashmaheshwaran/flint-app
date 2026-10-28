@@ -20,10 +20,10 @@
 }
 
 # Preserve the meaning of the packaged local-first descriptor scan under R8.
-# These names stay recognizable IF an accidental connected dependency is live;
-# unused code may still be removed. Neither package belongs in release.
--keepnames class com.google.firebase.**
--keepnames class com.flint.peakfocus.feature.connected.**
+# Live members cannot inline into allowed callers and erase their original
+# holder. Dead classes/members may be removed. Neither package belongs in release.
+-keep,allowshrinking class com.google.firebase.** { *; }
+-keep,allowshrinking class com.flint.peakfocus.feature.connected.** { *; }
 
 # Design-time preview entry points/tooling must not survive the release graph.
 -checkdiscard class androidx.compose.ui.tooling.**
