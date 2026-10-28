@@ -66,13 +66,21 @@ single tap. Scroll drags stay in the visible scroll view's padding and above
 the keyboard so they do not invoke secure-field text selection.
 Before testing, CI boots the selected exact UDID once if needed and uses the
 existing bounded device helpers to wait for boot completion and a running
-SpringBoard with a positive PID. It saves `simulator-readiness.log` and fails
+SpringBoard with a positive PID. It saves `simulator-readiness.log` and the
+direct CLI output in `simulator-bootstatus.log`, including on timeout, and fails
 before Xcode tests if readiness is not established; it never launches the app
 as a warmup or retries a failed test. Local runs already use this readiness
 check through the device claim/attach path. A failed preflight retains bounded,
 read-only post-failure queries for the SpringBoard service, system launchctl
 domain and simulator inventory, including exit status, stdout and stderr.
 These diagnostic observations cannot resume the tests.
+CI allows one boot command up to 30 seconds, one boot-status wait up to 600
+seconds, then 30 seconds for SpringBoard. The [green unit job in run
+40771331381](https://github.com/Prakashmaheshwaran/flint-app/actions/runs/40771331381) took 6m30
+between completed build validation and its first app log; that interval includes
+startup/install and does not isolate boot time. The longer bounded CI wait is
+based on that observed latency. Local ownership/readiness limits, UI assertions,
+and the 35-minute CI job cap are unchanged; no failed wait or test is rerun.
 
 Current run/commit evidence is recorded in the PR and worker report after CI
 completes. This gate does not establish minimum-iOS/iPad coverage, full VoiceOver,

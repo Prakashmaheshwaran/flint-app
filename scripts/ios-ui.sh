@@ -40,8 +40,9 @@ else
   # Xcode's first two app launches failed on a cold hosted simulator.
   # Match local ios-run's boot readiness before starting any tests. These are
   # bounded system-state checks, never app launches or test/action retries.
-  python3 - "$device" 2>&1 <<'PY' | tee "$results/simulator-readiness.log"
+  python3 - "$device" "$results/simulator-bootstatus.log" 2>&1 <<'PY' | tee "$results/simulator-readiness.log"
 import importlib.util
+from pathlib import Path
 import subprocess
 import sys
 import traceback
@@ -50,15 +51,22 @@ spec = importlib.util.spec_from_file_location("flint_device_run", "scripts/agent
 runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
 device = sys.argv[1]
+bootstatus_log = Path(sys.argv[2])
 try:
     state = runner.ios_state(device)
     print(f"simulator={device} initial_state={state}", flush=True)
     if state == "Shutdown":
         print("boot_begin timeout=30", flush=True)
         runner.run(["xcrun", "simctl", "boot", device], timeout=30)
-    print("bootstatus_begin timeout=180", flush=True)
-    result = runner.run(["xcrun", "simctl", "bootstatus", device, "-b"], timeout=180)
-    print(result.stdout, end="", flush=True)
+    print("bootstatus_begin timeout=600", flush=True)
+    try:
+        # exec keeps the CLI's exit status/process group; quoted positional
+        # arguments preserve paths and retain output even if the wrapper times out.
+        runner.run(["bash", "-c", 'exec xcrun simctl bootstatus "$1" -b > "$2" 2>&1',
+                    "flint-ui-bootstatus", device, str(bootstatus_log)], timeout=600)
+    finally:
+        if bootstatus_log.exists():
+            print(bootstatus_log.read_text(errors="replace"), end="", flush=True)
     print("springboard_check timeout=30", flush=True)
     runner.springboard_ready(device, timeout=30)
     print("springboard_ready=true (running with positive PID)", flush=True)
