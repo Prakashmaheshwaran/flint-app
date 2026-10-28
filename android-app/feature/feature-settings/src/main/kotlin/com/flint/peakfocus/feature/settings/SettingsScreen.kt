@@ -59,7 +59,6 @@ import com.flint.peakfocus.core.common.ui.FlintCard
 import com.flint.peakfocus.core.common.ui.FlintScreenHeader
 import com.flint.peakfocus.core.common.ui.FlintSectionLabel
 import com.flint.peakfocus.core.common.ui.FlintStatusDot
-import com.flint.peakfocus.permissions.AccessibilityPermission
 import com.flint.peakfocus.permissions.BatteryOptimization
 import com.flint.peakfocus.permissions.NotificationPermission
 import com.flint.peakfocus.permissions.OverlayPermission
@@ -72,12 +71,15 @@ import com.flint.peakfocus.permissions.UsageAccess
  * this module does not touch the nav graph.
  *
  * ADR-007 in practice: nothing here auto-redirects — every Settings hand-off happens only from
- * an explicit button tap, and each hand-off button sits below disclosure copy consistent with
- * the onboarding consent screen. The prominent-disclosure consent gate itself (before the very
- * first accessibility enable) lives in feature-onboarding.
+ * an explicit button tap. Every Accessibility fix calls the app's shared prominent-disclosure
+ * gate, including repeat enables; this module never opens Accessibility Settings directly.
  */
 @Composable
-fun SettingsScreen(modifier: Modifier = Modifier, onAccount: (() -> Unit)? = null) {
+fun SettingsScreen(
+    modifier: Modifier = Modifier,
+    onEnableAccessibility: () -> Unit,
+    onAccount: (() -> Unit)? = null,
+) {
     val context = LocalContext.current
     var health by remember { mutableStateOf(PermissionHealthChecker.check(context)) }
     var exits by remember { mutableStateOf(ExitReasonReporter.lastExits(context)) }
@@ -106,15 +108,16 @@ fun SettingsScreen(modifier: Modifier = Modifier, onAccount: (() -> Unit)? = nul
             onAccount = onAccount,
             onOpenLegal = openLegal,
             onFix = { kind ->
-                // User-initiated only (ADR-007): reached exclusively via the row's fix button.
-                val intent = when (kind) {
-                    PermissionKind.ACCESSIBILITY -> AccessibilityPermission.settingsIntent()
-                    PermissionKind.USAGE_ACCESS -> UsageAccess.settingsIntent()
-                    PermissionKind.OVERLAY -> OverlayPermission.settingsIntent(context)
-                    PermissionKind.BATTERY_EXEMPTION -> BatteryOptimization.requestIntent(context)
-                    PermissionKind.NOTIFICATIONS -> NotificationPermission.settingsIntent(context)
+                routePermissionFix(kind, discloseAccessibility = onEnableAccessibility) { otherKind ->
+                    val intent = when (otherKind) {
+                        PermissionKind.ACCESSIBILITY -> error("Accessibility requires disclosure")
+                        PermissionKind.USAGE_ACCESS -> UsageAccess.settingsIntent()
+                        PermissionKind.OVERLAY -> OverlayPermission.settingsIntent(context)
+                        PermissionKind.BATTERY_EXEMPTION -> BatteryOptimization.requestIntent(context)
+                        PermissionKind.NOTIFICATIONS -> NotificationPermission.settingsIntent(context)
+                    }
+                    context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 }
-                context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             },
             modifier = modifier,
         )
