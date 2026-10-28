@@ -1,12 +1,21 @@
 # Flint iOS review notes and device review script — draft
 
-Prepared 2026-10-28, source baseline
-`fa190e9df96f61c13ea651ee39cae6f68057f0c6`. Companion:
+Prepared 2026-10-28; lane J source refresh at `integration/v1` `32a8d6b`.
+Original D6 baseline was `fa190e9df96f61c13ea651ee39cae6f68057f0c6`. Companion:
 [store metadata, privacy justification, age-rating rationale, and shot-list](store-package.md).
 No Apple account was accessed, no entitlement request was submitted, and no
 signed build, TestFlight upload, or physical-device behavior was verified by D6.
 All unchecked gates below remain open. Human-owned identity/contact information,
 credentials, certificates, profiles, and account evidence must stay out of git.
+Use the [central owner checklist](../README.md) and
+[single risk-ordered physical-device plan](../../acceptance/device-acceptance-plan.md).
+The R-steps below are platform review detail, not a second set of completed results.
+
+**Not submission-ready:** automatic deletion denial on Hardcore start, session-only pass
+redemption and incomplete bounded Open-credit integration still differ from ADR-012 at
+this checkpoint. The script's contract expectations remain blocked until actual live
+implementation and signed-device acceptance are linked. The proposed field below omits
+those unverified promises; do not submit the app while the underlying blockers remain.
 
 ## Before these notes can be submitted
 
@@ -49,9 +58,9 @@ Please review Screen Time behavior on a physical device. Launch Flint, tap Begin
 
 For a short review: open Today > Start focus, use Apple's picker to select one nonessential test app, choose 25 minutes, press minus twice for 15 minutes, choose Easy, then begin. Open the chosen app to see the system shield. Return to Flint and use End session; confirm that the test app opens again. Keep essential calling, Settings, and safety apps out of the selection.
 
-The host uses Family Controls and Managed Settings. Four embedded extensions monitor activity boundaries, configure the shield, respond to shield buttons, and render Device Activity reports. Selection tokens and settings are shared locally through group.com.flint.peakfocus. Report values are rendered inside the report extension, not exported to a Flint server. New installs may have no report data; a missing report must not be read as zero activity.
+The host uses Family Controls and Managed Settings. Four Screen Time extensions monitor activity boundaries, configure the shield, respond to shield buttons, and render Device Activity reports. A separate WidgetKit extension supplies read-only widgets and the opt-in Live Activity. Selection tokens and settings are shared locally through group.com.flint.peakfocus. Local focus events drive session history separately from report values, which stay in the report extension. New installs may have no report data; a missing report must not be read as zero activity.
 
-Start with Easy. Hardcore prevents ordinary early changes inside Flint until the shown end, subject to verified platform limits. Restricting app deletion is a separate opt-in: it can apply device-wide, not just to Flint, only while an eligible armed, finite Hardcore commitment owns it. Screen Time permission remains revocable in iOS Settings. Before opting in, read the exact end, pass availability and recovery instructions. An eligible, explicitly confirmed Emergency Pass provides 60 minutes of global personal-protection recovery; its confirmation lists affected sessions/rules and what resumes. The next pass becomes available seven days after you use it, with any clock uncertainty shown. Home, emergency calling and OS permission controls never require a pass. The app-open PIN is separate from Apple's Screen Time passcode; no preconfigured PIN is supplied.
+Use Easy for this short review. Screen Time permission remains revocable in iOS Settings. Review the final in-app tier, end-time and recovery disclosures before testing other protection levels. The app-open PIN is separate from Apple's Screen Time passcode; no preconfigured PIN is supplied. Optional focus reminders describe the planned end time, not proof of completion or uninterrupted protection. Widgets and Live Activity open Flint and do not change protection.
 
 The About link opens an external browser. Core focus behavior does not require a Flint server. Public support/privacy destinations and the App Review contact are supplied in their dedicated App Store Connect fields.
 ```
@@ -63,7 +72,7 @@ Use the dedicated human-owned contact fields. No attachment or review video is
 claimed; if Apple requests one, the owner can capture the actual candidate and
 review its privacy before supplying it.
 
-D6 measured this exact Notes block as recorded in the PR validation evidence.
+Lane J measured the refreshed Notes block as **2,277 UTF-8 bytes**.
 Any edits require a fresh byte count; the block is ASCII.
 
 ## Real-device review and acceptance script — not executed
@@ -100,9 +109,9 @@ may vary by OS. Return and choose Check access again. With explicit device-owner
 approval, allow **individual** access and confirm the actual status updates.
 Test the optional Not now path separately; no server login should appear.
 Source entry points:
-[onboarding](../../../ios-app/Flint/Features/Onboarding/OnboardingView.swift#L73-L109),
-[authorization](../../../ios-app/Flint/Features/Authorization/AuthorizationModel.swift#L30-L40),
-[denied recovery](../../../ios-app/Flint/Features/Authorization/AuthorizationControls.swift#L15-L34).
+[onboarding](../../../ios-app/Flint/Features/Onboarding/OnboardingView.swift),
+[authorization](../../../ios-app/Flint/Features/Authorization/AuthorizationModel.swift),
+[denied recovery](../../../ios-app/Flint/Features/Authorization/AuthorizationControls.swift).
 Never classify a fake authorized UI as system approval.
 
 ### R3 — Real selection and a stoppable session
@@ -114,11 +123,11 @@ minus control reduces duration by five minutes per press. Record countdown, actu
 app shield, and access to the unselected app. End session in Flint and verify
 the selected app is accessible. Reopen Flint and confirm the saved selection
 and group persist. A selected website token is a separate test in R6.
-Source: [duration presets](../../../ios-app/Flint/Features/Today/StartFocusSheet.swift#L16),
-[duration decrement](../../../ios-app/Flint/Features/Today/StartFocusSheet.swift#L144-L150),
-[start sheet](../../../ios-app/Flint/Features/Today/StartFocusSheet.swift#L18-L164),
-[saved groups](../../../ios-app/Flint/Features/Sessions/SessionViewModel.swift#L49-L70),
-[session exits](../../../ios-app/Flint/Features/Today/SessionView.swift#L83-L94).
+Source: [duration presets](../../../ios-app/Flint/Features/Today/StartFocusSheet.swift),
+[duration decrement](../../../ios-app/Flint/Features/Today/StartFocusSheet.swift),
+[start sheet](../../../ios-app/Flint/Features/Today/StartFocusSheet.swift),
+[saved groups](../../../ios-app/Flint/Features/Sessions/SessionViewModel.swift),
+[session exits](../../../ios-app/Flint/Features/Today/SessionView.swift).
 
 ### R4 — Extension behavior and timed expiry with the host closed
 
@@ -130,9 +139,9 @@ the test app opens **before relaunching Flint**. Also test reboot across expiry
 on dedicated hardware and after relaunch; distinguish background release from
 foreground reconciliation. Verify no stale restriction/removal guard remains.
 Source roles:
-[monitor](../../../ios-app/Extensions/DeviceActivityMonitorExtension/FlintMonitor.swift#L1-L30),
-[shield configuration](../../../ios-app/Extensions/ShieldConfigurationExtension/FlintShieldConfiguration.swift#L16-L48),
-[shield action](../../../ios-app/Extensions/ShieldActionExtension/FlintShieldAction.swift#L22-L37).
+[monitor](../../../ios-app/Extensions/DeviceActivityMonitorExtension/FlintMonitor.swift),
+[shield configuration](../../../ios-app/Extensions/ShieldConfigurationExtension/FlintShieldConfiguration.swift),
+[shield action](../../../ios-app/Extensions/ShieldActionExtension/FlintShieldAction.swift).
 Actual reliable expiry remains lane B + physical evidence, not a D6 finding.
 
 ### R5 — Optional stronger protection and controlled exit
@@ -170,9 +179,9 @@ OS applied or released deletion restriction.
 Confirm Settings withdrawal of authorization and subsequent honest UI state as
 an owner-approved recovery test. Never rely on an unverified PIN bypass or an
 unproven claim that withdrawal instantly clears every restriction.
-Source: [guard scope](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintUninstallGuard.swift#L16-L28),
-[pass implementation](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintSessionController.swift#L136-L152),
-[app PIN](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintPIN.swift#L4-L6).
+Source: [guard scope](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintUninstallGuard.swift),
+[pass implementation](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintSessionController.swift),
+[app PIN](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintPIN.swift).
 
 ### R6 — Every additional enforcement claim
 
@@ -195,9 +204,10 @@ the DeviceActivityReport extension. Record whether data actually appears and
 which range is displayed. Exercise a real session completion, interrupted/early
 stop, and relaunch; compare Today/Complete/history with lane F's local events.
 Do not seed statistics to make screenshots attractive. Source at this baseline:
-[report aggregation](../../../ios-app/Extensions/DeviceActivityReportExtension/TotalActivityReport.swift#L14-L38),
-[report-private model](../../../ios-app/Extensions/DeviceActivityReportExtension/ActivitySummary.swift#L3-L22),
-[in-memory completion](../../../ios-app/Flint/Features/Sessions/SessionViewModel.swift#L156-L169).
+[report aggregation](../../../ios-app/Extensions/DeviceActivityReportExtension/TotalActivityReport.swift),
+[report-private model](../../../ios-app/Extensions/DeviceActivityReportExtension/ActivitySummary.swift),
+[durable focus history](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintHistoryStore.swift),
+[history-driven completion](../../../ios-app/Flint/Features/Sessions/SessionViewModel.swift).
 With network unavailable, verify core focus/exit and local-state behavior; test
 public support/privacy links separately online. Use final archive inspection and
 appropriate runtime observations to check that no Flint data-upload path was
@@ -213,7 +223,7 @@ to lane B/owner with the exact state. Do not blindly repeat state-changing input
 Record final permission state agreed with the owner. Repeat relevant steps on
 iPad and minimum/current supported iOS, plus compact/large layout, VoiceOver,
 and large text; source currently targets iOS 16+ and iPhone/iPad
-([project.yml](../../../ios-app/project.yml#L18-L31)). Capture only approved real
+([project.yml](../../../ios-app/project.yml)). Capture only approved real
 screens from the companion shot-list. Human archive/export validation, upload,
 processed TestFlight installation and store submission remain separate gates.
 
@@ -229,24 +239,24 @@ No turnaround time or approval outcome is predicted.
 ### Exact request inventory
 
 1. **Flint host:** `com.flint.peakfocus` —
-   [project.yml](../../../ios-app/project.yml#L48-L49);
-   [host entitlements](../../../ios-app/Flint/Flint.entitlements#L5-L9).
+   [project.yml](../../../ios-app/project.yml);
+   [host entitlements](../../../ios-app/Flint/Flint.entitlements).
    Requests individual authorization, presents the picker, and stores user rules.
 2. **DeviceActivityMonitorExtension:** `com.flint.peakfocus.monitor` —
-   [project.yml](../../../ios-app/project.yml#L73-L75);
-   [monitor entitlements](../../../ios-app/Extensions/DeviceActivityMonitorExtension/Monitor.entitlements#L5-L9).
+   [project.yml](../../../ios-app/project.yml);
+   [monitor entitlements](../../../ios-app/Extensions/DeviceActivityMonitorExtension/Monitor.entitlements).
    Handles activity intervals/thresholds and intended shield lifecycle.
 3. **ShieldConfigurationExtension:** `com.flint.peakfocus.shield-config` —
-   [project.yml](../../../ios-app/project.yml#L87-L89);
-   [shield configuration entitlements](../../../ios-app/Extensions/ShieldConfigurationExtension/ShieldConfig.entitlements#L5-L9).
+   [project.yml](../../../ios-app/project.yml);
+   [shield configuration entitlements](../../../ios-app/Extensions/ShieldConfigurationExtension/ShieldConfig.entitlements).
    Supplies the system shield's appearance and text.
 4. **ShieldActionExtension:** `com.flint.peakfocus.shield-action` —
-   [project.yml](../../../ios-app/project.yml#L101-L103);
-   [shield action entitlements](../../../ios-app/Extensions/ShieldActionExtension/ShieldAction.entitlements#L5-L9).
+   [project.yml](../../../ios-app/project.yml);
+   [shield action entitlements](../../../ios-app/Extensions/ShieldActionExtension/ShieldAction.entitlements).
    Responds to shield actions under the user's local rules.
 5. **DeviceActivityReportExtension:** `com.flint.peakfocus.report` —
-   [project.yml](../../../ios-app/project.yml#L118-L120);
-   [report entitlements](../../../ios-app/Extensions/DeviceActivityReportExtension/Report.entitlements#L5-L9).
+   [project.yml](../../../ios-app/project.yml);
+   [report entitlements](../../../ios-app/Extensions/DeviceActivityReportExtension/Report.entitlements).
    Renders Apple-supplied usage information inside the report extension.
 
 6. **FlintWidgetsExtension:** `com.flint.peakfocus.widgets` — the display-only
@@ -271,7 +281,7 @@ The host app (com.flint.peakfocus) presents Apple's activity picker and lets the
 
 Opaque selections and app-defined settings are shared locally using group.com.flint.peakfocus. The iOS source has no Flint account, analytics SDK, advertising SDK, or app-owned data-upload client. Screen Time report values are not exported to the host or a Flint server. All protection levels are available without a payment gate.
 
-Managed Settings implements the restrictions selected by the user. A separately disclosed opt-in can request device-wide app-deletion restriction only while an eligible active, armed, finite Hardcore commitment owns it. Screen Time permission remains revocable in iOS Settings; finite expiry and eligible pass recovery release the corresponding guard ownership. We will supply final signed-device demonstration steps, verified scope and recovery behavior, public privacy/support destinations, and any further information requested during review.
+Managed Settings implements the restrictions selected by the user. Screen Time permission remains revocable in iOS Settings. We will supply final signed-device demonstration steps, the actual verified restriction and recovery scope, public privacy/support destinations, and any further information requested during review. This purpose text must be reconciled with the selected release's completed protection acceptance before it is sent.
 ```
 
 This is preparatory purpose text, not a statement that the stronger-session
@@ -284,22 +294,10 @@ for extensions follows automatically from approval for the host.
 
 ### Human-owned account and signing follow-through
 
-1. Account Holder checks membership/team and existing capability request status
-   for each exact ID; record unknown/pending/assigned/rejected from actual portal
-   evidence. Confirm distribution methods/profile support and actual App Group
-   association. Keep private identifiers/contact evidence outside this repo.
-2. If needed, the human submits the reviewed request for each ID and records
-   submission date/reference. This draft authorizes no portal mutation.
-3. After approval, the owner configures distribution signing/profiles for all
-   six bundles, inspects entitlements in the signed archive, and validates
-   resources/privacy manifests/Release fixture exclusion with lane D. Do not
-   hand-edit the generated Xcode project; the source is `ios-app/project.yml`.
-4. The human creates/confirms the App Store Connect record, chooses final
-   version/build/category/age ratings/privacy/contact/URLs/screenshots, validates
-   and uploads the archive, and verifies processing and TestFlight installation
-   before running the release acceptance script on that exact binary.
-5. Submission, TestFlight distribution, and App Store publication are explicit
-   owner actions after review. D6's branch/PR does not perform or authorize them.
+Follow the [single owner checklist](../README.md#one-human-owned-submission-checklist),
+using the six-bundle inventory above and the [signing runbook](signing-and-release.md).
+No portal mutation, signed archive, upload, review submission or publication is performed
+or authorized by this draft.
 
 ## D6 validation boundary
 

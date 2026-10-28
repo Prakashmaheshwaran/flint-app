@@ -8,8 +8,9 @@ maintainers through [Flint support](https://github.com/Prakashmaheshwaran/flint-
 
 ## Your data stays on your device
 
-Flint does not collect, sell or share your personal data with its developers or
-third parties. It has no accounts, analytics, advertising or cloud sync. You can
+Flint does not send your personal data to developer servers or analytics or
+advertising services. It has no accounts or cloud sync. Local system-display
+features and external support choices are described below. You can
 use the app without registering. The Android release does not request network
 access. Experimental developer builds and their local test services are outside
 this policy and are not included in the release app.
@@ -19,6 +20,32 @@ preferences and session information needed for your focus features on your
 device. Local state can include usage/open counters, break or pass use and focus
 history. This information is used to apply your choices and display local
 summaries. It is not sent to the developers.
+
+## Local focus history and visible reminders
+
+Flint keeps a local focus-session event history for Today, completion and Insights.
+It can contain session/operation identifiers, names you enter, protection level, start
+and end times, outcome, origin, and available break/intercepted-open or coverage information.
+This focus log does not store selected app/package identifiers, Screen Time tokens,
+website domains, raw browsing URLs or Apple's usage-report values. Screen usage and
+focus-session totals are separate; missing information is not a measured zero.
+
+Focus history uses a rolling 400-day retention target with bounded local storage;
+size limits can remove older records sooner. Active session and bounded recovery records
+may be kept so interrupted writes or unreadable history can be handled safely.
+The in-app clear-history control clears the displayed historical session log while
+preserving an active session. It does not cancel protection, reset quota/pass use,
+or promise to erase every local recovery/diagnostic copy or notification bookkeeping record.
+Use the OS app-data/deletion controls below for the broader local-data removal route.
+
+If enabled, focus-end reminders use the planned end time; they do not prove a completed
+or uninterrupted focus session. Widgets, notifications and the opt-in iOS Live Activity
+may display names you choose, protection level, end/next-time estimates, observation time
+and local focus summaries. The launcher and operating system can retain these visible
+copies until refreshed or removed. The optional iOS app PIN does not promise to hide
+those OS surfaces; review notification and lock-screen settings and remove or disable
+displays you do not want. Planned-end reminders use generic text rather than session names.
+No account or developer upload is added by these features.
 
 ## Android permissions and local processing
 
@@ -57,6 +84,10 @@ to check it; the PIN is not sent to a server. Apple's Screen Time permissions,
 system passcode, device backups and system usage records are controlled by iOS
 and your Apple settings.
 
+Apple's usage report is rendered within Flint's report extension and is not exported
+to the host focus-history log or a Flint service. Flint's widgets read only local
+status/history summaries. iOS Live Activity is optional and defaults off.
+
 ## Retention and deletion
 
 Your saved rules and preferences remain on the device until you edit/delete
@@ -79,6 +110,8 @@ from Apple's system services or an existing device backup.
 If you choose to contact support or open an external website, that service
 handles the information you provide under its own policy. Flint does not
 automatically attach your local rules, app inventory, usage or browsing data.
+Support issues posted on GitHub are public; do not include personal app selections,
+browsing information or other sensitive data in an issue.
 
 We will update this page if Flint's data practices change and show a new
 effective date. New data uses requiring permission will be explained before

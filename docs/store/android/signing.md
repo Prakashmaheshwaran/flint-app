@@ -53,8 +53,8 @@ credentials; do not attach them to a report.
    offline copy. Record certificate SHA-256/SHA-1 fingerprints and test restoring
    the backup before relying on it. Never send the private key to a reviewer.
 3. Populate the untracked properties or a secret-injected local environment.
-   Build with `FLINT_REQUIRE_UPLOAD_SIGNING=1 make android-release` and, once the
-   bundle target is available, `FLINT_REQUIRE_UPLOAD_SIGNING=1 make android-bundle`.
+   Build with `FLINT_REQUIRE_UPLOAD_SIGNING=1 make android-release` and
+   `FLINT_REQUIRE_UPLOAD_SIGNING=1 make android-bundle`.
    Inspect APK certificate fingerprints with SDK `apksigner verify --print-certs`;
    inspect AAB signing with `jarsigner -verify -verbose -certs`. Match the signer
    to the intended upload certificate, not merely the fact that it is signed.
