@@ -102,6 +102,26 @@ final class FlintSessionLifecycleTests: XCTestCase {
         XCTAssertEqual(FlintSessionEndRoute.focusFilterOff.rawValue, "focus_filter_off")
     }
 
+    func testOriginalExactFunctionReferencesAndGlobalPassOverloadRemainCompatible() {
+        let start: (FlintActiveSession, FlintActiveSession?, FlintSessionSource, Date) -> Void =
+            FlintSessionLifecycle.didStart(_:replacing:source:at:)
+        let end: (FlintActiveSession, FlintSessionEndRoute, Date) -> Void = FlintSessionLifecycle.didEnd(_:route:at:)
+        let pass: (FlintActiveSession, Date) -> Void = FlintSessionLifecycle.didUsePass(_:at:)
+        let failure: (FlintActiveSession, String, Date) -> Void = FlintSessionLifecycle.didFailToArm(_:reason:at:)
+        let globalPass: (String, [FlintActiveSession], Date?, Date) -> Void =
+            FlintSessionLifecycle.didUsePass(operationID:sessions:recoveryEnd:at:)
+        let s = session("a", start: 0, end: 1800)
+        start(s, nil, .manual, t0); end(s, .manualStop, t0); pass(s, t0)
+        failure(s, "registration_failed", t0); globalPass("operation", [s], nil, t0)
+        XCTAssertEqual(sink.events.count, 5)
+        FlintSessionLifecycle.didStart(s, replacing: nil, source: .manual)
+        FlintSessionLifecycle.didEnd(s, route: .manualStop)
+        FlintSessionLifecycle.didUsePass(s)
+        FlintSessionLifecycle.didFailToArm(s, reason: "registration_failed")
+        FlintSessionLifecycle.didUsePass(operationID: "operation2", sessions: [s], recoveryEnd: nil)
+        XCTAssertEqual(sink.events.count, 10)
+    }
+
     func testGlobalPassCarriesOperationAndRecoveryWithoutPerSessionCopies() {
         let a = session("a", start: 0, end: 1800), b = session("b", start: 0, end: 3600)
         FlintSessionLifecycle.didUsePass(operationID: "operation", sessions: [a, b],

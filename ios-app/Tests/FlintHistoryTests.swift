@@ -242,6 +242,19 @@ final class FlintHistoryTests: XCTestCase {
         s.append(pass)
         XCTAssertTrue(store(now: t.addingTimeInterval(900)).clear(keepingRunningSession: "a"))
         XCTAssertTrue(s.read().events.contains(pass))
+        XCTAssertEqual(summary(s.read().events, now: t.addingTimeInterval(900), active: "a").focusedSeconds, 600)
+    }
+    func testCompactionKeepsPassEvidenceConnectedToRunningSession() {
+        let old = t.addingTimeInterval(-401 * 86400)
+        let start = FlintHistoryEvent(type: .started, session: "running", at: old,
+            tier: "easy", source: "manual", name: "Focus")
+        let pass = FlintHistoryEvent(type: .passUsed, session: "operation", at: old.addingTimeInterval(60),
+                                    sessions: ["running"], recoveryEnd: old.addingTimeInterval(120))
+        let s = FlintHistoryStore(directory: directory, clock: { self.t }, calendar: utc, currentSessionID: { "running" })
+        s.append(start); s.append(pass)
+        XCTAssertTrue(s.compactIfNeeded())
+        XCTAssertEqual(s.read().events, [start, pass])
+        XCTAssertEqual(summary(s.read().events, now: old.addingTimeInterval(300), active: "running", start: old).focusedSeconds, 240)
     }
     func testCompletionSinkRejectsBeforeLogicalDeadline() {
         let s = store(), session = FlintActiveSession(id: "a", name: "Focus", startedAt: t,
@@ -314,6 +327,78 @@ final class FlintHistoryTests: XCTestCase {
         XCTAssertEqual(recovered.events.map(\.session), ["b", "b"])
         XCTAssertEqual(recovered.events.last, terminal)
         XCTAssertNil(recovered.events.last?.inferred)
+    }
+    func testPendingClearMetadataCommitFailureKeepsPostClearInboxAcrossRestart() throws {
+        let s = store(); s.append(event(.started, 0, id: "b")); _ = s.read()
+        let metadataURL = directory.appendingPathComponent("metadata.json")
+        let metadata = "{\"v\":1,\"createdAt\":1800000000000,\"clearedAt\":1800000001000,\"pendingClear\":true,\"keepSession\":\"b\"}"
+        try Data(metadata.utf8).write(to: metadataURL)
+        let c = [event(.started, 2, id: "c"), event(.completed, 3600, id: "c")]
+        let extensionStore = FlintHistoryStore(directory: directory, isHost: false)
+        for record in c { XCTAssertTrue(extensionStore.append(record)) }
+        for _ in 0..<2 {
+            // New instances model restart; only metadata replacement fails, log writes succeed.
+            let failing = FlintHistoryStore(directory: directory, clock: { self.t }, metadataWriteHook: {
+                throw CocoaError(.fileWriteNoPermission)
+            })
+            let snapshot = failing.read()
+            XCTAssertEqual(snapshot.availability, .degraded)
+            XCTAssertEqual(snapshot.events.filter { $0.session == "c" }, c)
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.appendingPathComponent("inbox").path).count, 2)
+            let durable = try JSONSerialization.jsonObject(with: Data(contentsOf: metadataURL)) as! [String: Any]
+            XCTAssertEqual(durable["pendingClear"] as? Bool, true)
+        }
+        XCTAssertEqual(store().read().events.filter { $0.session == "c" }, c)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.appendingPathComponent("inbox").path).count, 0)
+        XCTAssertEqual(store().read().events.filter { $0.session == "c" }, c)
+    }
+    func testOrphanTempsDoNotConsumeInboxCapacityAndHostReclaimsOnlyOldFiles() throws {
+        let s = store(); _ = s.read()
+        let inbox = directory.appendingPathComponent("inbox")
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        for i in 0..<FlintHistoryStore.inboxLimit {
+            let file = inbox.appendingPathComponent(".tmp-orphan-\(i)")
+            try Data("partial".utf8).write(to: file)
+            try FileManager.default.setAttributes([.modificationDate: t.addingTimeInterval(-601)], ofItemAtPath: file.path)
+        }
+        let rootOrphan = directory.appendingPathComponent(".tmp-old-root")
+        let recent = inbox.appendingPathComponent(".tmp-in-flight")
+        try Data("partial".utf8).write(to: rootOrphan); try Data("partial".utf8).write(to: recent)
+        try FileManager.default.setAttributes([.modificationDate: t.addingTimeInterval(-601)], ofItemAtPath: rootOrphan.path)
+        try FileManager.default.setAttributes([.modificationDate: t.addingTimeInterval(-599)], ofItemAtPath: recent.path)
+        let terminal = event(.completed, 3600)
+        XCTAssertTrue(FlintHistoryStore(directory: directory, isHost: false).append(terminal))
+        XCTAssertEqual(s.read().events, [terminal])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: rootOrphan.path))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: inbox.path), [".tmp-in-flight"])
+        XCTAssertTrue(s.append(event(.started, 0)))
+    }
+    func testUnreadableRegularMetadataIsQuarantinedAndClearRecovers() throws {
+        let s = store(); s.append(event(.started, -100)); _ = s.read()
+        let metadata = directory.appendingPathComponent("metadata.json")
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: metadata.path)
+        XCTAssertThrowsError(try Data(contentsOf: metadata))
+        let snapshot = s.read()
+        XCTAssertEqual(snapshot.availability, .degraded)
+        XCTAssertEqual(snapshot.historyStart, t.addingTimeInterval(-100))
+        XCTAssertEqual(snapshot.events.count, 1)
+        XCTAssertTrue(s.clear(keepingRunningSession: nil))
+        XCTAssertEqual(s.read().availability, .empty)
+    }
+    func testHostIngressSurvivesActivityExpirationBeforeMaintenanceBegins() throws {
+        let expired = expectation(description: "activity expired before work")
+        let sink = FlintHistorySink(store: store(), isExtension: false, activity: { callback in
+            callback(true); expired.fulfill()
+        })
+        let session = FlintActiveSession(id: "host", name: "Focus", startedAt: t, endsAt: nil,
+                                         breakLevel: .easy, monitorName: "unused")
+        sink.handle(.ended(session, route: .manualStop, at: t.addingTimeInterval(60)))
+        let inbox = try FileManager.default.contentsOfDirectory(at: directory.appendingPathComponent("inbox"), includingPropertiesForKeys: nil)
+        let exact = try JSONDecoder().decode(FlintHistoryEvent.self, from: Data(contentsOf: XCTUnwrap(inbox.first)))
+        XCTAssertEqual(exact.type, .endedEarly); XCTAssertEqual(exact.route, "manual_stop")
+        sink.perform { _ in XCTFail("expired maintenance must not begin") }
+        wait(for: [expired], timeout: 2)
+        XCTAssertEqual(store().read().events, [exact])
     }
     func testExtensionTerminalSurvivesSlowHostMaintenanceWithoutRetry() {
         let entered = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)

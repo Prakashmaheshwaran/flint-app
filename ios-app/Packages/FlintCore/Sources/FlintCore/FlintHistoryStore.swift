@@ -34,6 +34,7 @@ public final class FlintHistoryStore: @unchecked Sendable {
     private let calendar: Calendar
     private let currentSessionID: () -> String?
     private let maintenanceHook: () -> Void
+    private let metadataWriteHook: () throws -> Void
     private let mutex: NSLock
     private let fm = FileManager.default
     private enum Failure: Error { case unavailable, io, capacity }
@@ -70,12 +71,13 @@ public final class FlintHistoryStore: @unchecked Sendable {
     private struct InboxEntry { let url: URL; let line: Line }
     private typealias Inbox = (entries: [InboxEntry], bad: Bool)
 
-    /// maintenanceHook is a test seam for pausing host work while another instance publishes.
+    /// Hooks let tests pause maintenance or inject destination-specific metadata failures.
     public init(directory: URL?, clock: @escaping () -> Date = Date.init, calendar: Calendar = .current,
                 isHost: Bool = true, currentSessionID: @escaping () -> String? = { nil },
-                maintenanceHook: @escaping () -> Void = {}) {
+                maintenanceHook: @escaping () -> Void = {}, metadataWriteHook: @escaping () throws -> Void = {}) {
         self.directory = directory; self.clock = clock; self.calendar = calendar; self.isHost = isHost
         self.currentSessionID = currentSessionID; self.maintenanceHook = maintenanceHook
+        self.metadataWriteHook = metadataWriteHook
         mutex = FlintHistoryHostLocks.lock(for: directory?.standardizedFileURL.path ?? "unavailable")
     }
 
@@ -86,7 +88,9 @@ public final class FlintHistoryStore: @unchecked Sendable {
             try ensureDirectory(directory!)
             let inbox = path("inbox")
             try ensureDirectory(inbox)
-            guard try fm.contentsOfDirectory(atPath: inbox.path).count < Self.inboxLimit else { throw Failure.capacity }
+            let committed = try fm.contentsOfDirectory(at: inbox, includingPropertiesForKeys: nil)
+                .filter { $0.pathExtension == "json" }
+            guard committed.count < Self.inboxLimit else { throw Failure.capacity }
             let data = try encodedLine(event)
             guard data.count <= Self.recordLimit else { throw Failure.capacity }
             // A publication-order suffix resolves same-millisecond events before drain.
@@ -158,7 +162,23 @@ public final class FlintHistoryStore: @unchecked Sendable {
         guard isHost, let directory else { return fallback }
         mutex.lock(); defer { mutex.unlock() }
         do { try ensureDirectory(directory) } catch { return fallback }
+        reclaimAbandonedTemps()
         return body()
+    }
+
+    /// Only the host reclaims crash-left staging files. Recent staging files may belong to
+    /// another live publisher, and never consume the committed-record inbox quota.
+    private func reclaimAbandonedTemps() {
+        let cutoff = clock().addingTimeInterval(-600)
+        for folder in [directory!, path("inbox"), path("diagnostics"), path("quarantine")] {
+            let files = (try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey])) ?? []
+            for file in files where file.lastPathComponent.hasPrefix(".tmp-") {
+                guard let values = try? file.resourceValues(forKeys: [.contentModificationDateKey, .isRegularFileKey]),
+                      values.isRegularFile == true, let modified = values.contentModificationDate,
+                      modified < cutoff else { continue }
+                try? fm.removeItem(at: file)
+            }
+        }
     }
 
     private func recoverMetadata(lines: [Line], inbox: Inbox) -> Metadata {
@@ -188,9 +208,11 @@ public final class FlintHistoryStore: @unchecked Sendable {
         let kept = loaded.lines.filter { belongs($0, to: metadata.keepSession) }
         do {
             try replaceLog(kept)
+            var committed = metadata
+            committed.pendingClear = nil; committed.degraded = false; committed.lostAllReadableEvents = nil
+            try saveMetadata(committed)
+            metadata = committed
             loaded = Loaded(lines: kept, bad: false, canRewrite: true)
-            metadata.pendingClear = nil; metadata.degraded = false; metadata.lostAllReadableEvents = nil
-            try saveMetadata(metadata)
         } catch {
             // Display only the retained generation even if the clear cannot commit yet.
             loaded.lines = kept; loaded.bad = true; loaded.canRewrite = false
@@ -359,6 +381,7 @@ public final class FlintHistoryStore: @unchecked Sendable {
     }
     private func saveMetadata(_ metadata: Metadata) throws {
         guard metadata.canPersist else { throw Failure.io }
+        try metadataWriteHook()
         try atomicWrite(JSONEncoder().encode(metadata), to: path("metadata.json"))
     }
     private func replaceLog(_ lines: [Line]) throws {
@@ -464,35 +487,44 @@ public final class FlintHistorySink: FlintSessionEventSink, @unchecked Sendable 
     public let store: FlintHistoryStore
     private let isExtension: Bool
     private let clock: () -> Date
+    private let activity: ((@escaping (Bool) -> Void) -> Void)?
     private let queue = DispatchQueue(label: "app.flint.history", qos: .utility)
     public init(store: FlintHistoryStore, isExtension: Bool = Bundle.main.bundlePath.hasSuffix(".appex"),
-                clock: @escaping () -> Date = Date.init) {
+                clock: @escaping () -> Date = Date.init,
+                activity: ((@escaping (Bool) -> Void) -> Void)? = nil) {
         self.store = store; self.isExtension = isExtension; self.clock = clock
+        self.activity = activity
     }
     public func handle(_ event: FlintSessionLifecycleEvent) {
         if case let .ended(session, route, _) = event.unannotated, route == .completed {
             guard let deadline = session.endsAt, deadline <= clock() else { return }
         }
         let record = FlintHistoryEvent(event)
-        if isExtension { store.append(record) }
-        else { perform { $0.append(record) } }
+        // Durable ingress precedes return in every process. Expiration can skip later
+        // maintenance, but cannot discard this accepted lifecycle transition.
+        store.append(record)
     }
     /// Host work is ordered and off the enforcement/UI thread. Activity protection improves
     /// completion odds only; atomic inbox publication and idempotent drain provide correctness.
     public func perform(_ operation: @escaping (FlintHistoryStore) -> Void) {
-        queue.async { [store] in
-            #if os(iOS)
+        guard !isExtension else { return }
+        queue.async { [store, activity] in
             let done = DispatchSemaphore(value: 0)
-            let activity = FlintHistoryActivity()
-            ProcessInfo.processInfo.performExpiringActivity(withReason: "Save local focus history") { expired in
-                if expired { if activity.cancelBeforeStart() { done.signal() }; return }
-                guard activity.begin() else { return }
+            let state = FlintHistoryActivity()
+            let body: (Bool) -> Void = { expired in
+                if expired { if state.cancelBeforeStart() { done.signal() }; return }
+                guard state.begin() else { return }
                 operation(store); done.signal()
             }
+            if let activity { activity(body) }
+            else {
+                #if os(iOS)
+                ProcessInfo.processInfo.performExpiringActivity(withReason: "Maintain local focus history", using: body)
+                #else
+                body(false)
+                #endif
+            }
             done.wait() // worker queue only; no cross-process resource is locked
-            #else
-            operation(store)
-            #endif
         }
     }
 }
