@@ -1,0 +1,105 @@
+package com.flint.peakfocus.blocking.usagestats
+
+import com.flint.peakfocus.blocking.overlay.ProtectionStatus.PathBState
+import com.flint.peakfocus.core.model.FallbackMode
+import org.junit.Assert.*
+import org.junit.Test
+
+class PathBServiceLifecycleTest {
+    private data class Published(val state: PathBState, val reasons: Set<String>, val until: Long?)
+    private var now = 1_000L
+    private val events = mutableListOf<Published>()
+    private val health = PathBServiceLifecycle(nowElapsed = { now }, leaseMs = 90_000L) { state, reasons, until ->
+        events += Published(state, reasons, until)
+    }
+    private val owner = Any()
+
+    @Test fun `an accepted start request is unknown and cannot overwrite a live owner`() {
+        health.stopRequested(false, emptySet())
+        health.startRequested()
+        assertEquals(PathBState.UNKNOWN, events.last().state)
+        health.starting(owner); health.foregroundStarted(owner)
+        health.mode(owner, FallbackMode.STANDBY)
+        val count = events.size
+        health.startRequested()
+        assertEquals(count, events.size)
+    }
+
+    @Test fun `startup is unknown until foreground publication succeeds`() {
+        health.starting(owner)
+        health.mode(owner, FallbackMode.ENFORCING)
+        assertEquals(PathBState.UNKNOWN, events.last().state)
+        health.foregroundStarted(owner)
+        health.mode(owner, FallbackMode.ENFORCING)
+        assertEquals(Published(PathBState.ENFORCING, emptySet(), 91_000L), events.last())
+    }
+
+    @Test fun `standby is live but handoff is unknown`() {
+        health.starting(owner); health.foregroundStarted(owner)
+        health.mode(owner, FallbackMode.STANDBY)
+        assertEquals(PathBState.STANDBY, events.last().state)
+        health.handoff(owner)
+        assertEquals(PathBState.UNKNOWN, events.last().state)
+        health.mode(owner, FallbackMode.ENFORCING)
+        assertEquals(PathBState.ENFORCING, events.last().state)
+    }
+
+    @Test fun `permission loss does not claim stopped before lifecycle termination`() {
+        health.starting(owner); health.foregroundStarted(owner)
+        health.mode(owner, FallbackMode.ENFORCING)
+        health.unavailable(owner, "usage-access-missing")
+        assertEquals(PathBState.UNKNOWN, events.last().state)
+        health.stopped(owner)
+        assertEquals(Published(PathBState.OFF, setOf("usage-access-missing"), null), events.last())
+    }
+
+    @Test fun `clean destruction is off and has no live lease`() {
+        health.starting(owner); health.foregroundStarted(owner)
+        health.mode(owner, FallbackMode.STANDBY); health.stopped(owner)
+        assertEquals(Published(PathBState.OFF, emptySet(), null), events.last())
+    }
+
+    @Test fun `a stop request is unknown until the running instance ends`() {
+        health.starting(owner); health.foregroundStarted(owner)
+        health.mode(owner, FallbackMode.ENFORCING)
+        health.stopRequested(true, setOf("usage-access-missing"))
+        assertEquals(Published(PathBState.UNKNOWN, setOf("usage-access-missing"), null), events.last())
+        health.stopped(owner)
+        assertEquals(PathBState.OFF, events.last().state)
+    }
+
+    @Test fun `only an observed absent service without a local owner is off`() {
+        health.stopRequested(true, emptySet())
+        assertEquals(PathBState.UNKNOWN, events.last().state)
+        health.stopRequested(false, emptySet())
+        assertEquals(PathBState.OFF, events.last().state)
+        health.starting(owner)
+        health.stopRequested(false, emptySet())
+        assertEquals(PathBState.UNKNOWN, events.last().state)
+    }
+
+    @Test fun `failed permission or stop observations never infer off`() {
+        health.gateFailed("usage-access-check-failed")
+        assertEquals(Published(PathBState.UNKNOWN, setOf("usage-access-check-failed"), null), events.last())
+        health.gateFailed("foreground-stop-failed")
+        assertEquals(PathBState.UNKNOWN, events.last().state)
+    }
+
+    @Test fun `replacement rejects old instance completion and destruction`() {
+        health.starting(owner); health.foregroundStarted(owner)
+        val replacement = Any()
+        health.starting(replacement)
+        val count = events.size
+        health.mode(owner, FallbackMode.ENFORCING); health.stopped(owner)
+        assertEquals(count, events.size)
+        health.foregroundStarted(replacement); health.mode(replacement, FallbackMode.STANDBY)
+        assertEquals(PathBState.STANDBY, events.last().state)
+    }
+
+    @Test fun `successful recheck clears previous service reasons`() {
+        health.starting(owner); health.foregroundStarted(owner)
+        health.unavailable(owner, "usage-access-check-failed")
+        health.mode(owner, FallbackMode.ENFORCING)
+        assertTrue(events.last().reasons.isEmpty())
+    }
+}
