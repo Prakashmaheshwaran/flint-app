@@ -9,7 +9,7 @@ package com.flint.peakfocus.core.model
  * where Flint's own grants are recovered, and Flint itself hosts the exit paths.
  *
  * [STATIC_PACKAGES] is the build-time, best-effort OEM list. Detectors add the device's
- * *runtime* surfaces — the resolved default dialer, system dialer and home apps — because a
+ * *runtime* surfaces — the resolved default dialer, system dialer and default home app — because a
  * custom default dialer or launcher can be any package. Both sets go through [isProtected], so
  * the engine, the shared block coordinator and the app pickers all ask the same question.
  *
@@ -76,11 +76,4 @@ object SafetyFloor {
             packageName == selfPackage ||
             packageName in STATIC_PACKAGES ||
             packageName in runtimeSurfaces
-
-    /** [packages] without any floor package — for pickers and editor drafts. */
-    fun withoutProtected(
-        packages: Collection<String>,
-        selfPackage: String,
-        runtimeSurfaces: Set<String> = emptySet(),
-    ): Set<String> = packages.filterNotTo(LinkedHashSet()) { isProtected(it, selfPackage, runtimeSurfaces) }
 }

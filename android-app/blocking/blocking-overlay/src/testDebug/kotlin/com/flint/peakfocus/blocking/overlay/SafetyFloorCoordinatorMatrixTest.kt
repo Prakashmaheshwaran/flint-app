@@ -11,6 +11,7 @@ import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BlockTargets
 import com.flint.peakfocus.core.model.BreakLevel
+import com.flint.peakfocus.core.model.OpenCountState
 import com.flint.peakfocus.core.model.OpenLimit
 import com.flint.peakfocus.core.model.Schedule
 import com.flint.peakfocus.feature.blockscreen.BlockScreenReason
@@ -21,7 +22,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -85,7 +85,7 @@ class SafetyFloorCoordinatorMatrixTest {
             },
             safetyFloorGate = SafetyFloorGate(
                 selfPackage = app.packageName,
-                resolveRuntime = { setOf(customDialer, customHome) },
+                resolveRuntime = { mapOf("default-dialer" to setOf(customDialer), "home" to setOf(customHome)) },
                 nowElapsedMs = { 0L },
             ),
         )
@@ -94,6 +94,13 @@ class SafetyFloorCoordinatorMatrixTest {
     @After fun tearDown() {
         ActiveRulesHolder.publish(TEST_SOURCE, emptyList())
         BlockExemptions.clearAll()
+        // FlintPreferences is one process-wide DataStore: undo every write so no test depends
+        // on another's limits or counts (JUnit method order is not a contract).
+        runBlocking {
+            val limits = FlintPreferences.limits(app)
+            (floor + control + listOf(COUNTED, SENTINEL)).forEach { limits.clearOpenLimit(it) }
+            FlintPreferences.focusState(app).setOpenCounts(OpenCountState())
+        }
         scope.cancel()
     }
 
@@ -112,7 +119,7 @@ class SafetyFloorCoordinatorMatrixTest {
         )
         for (r in rules) {
             val cause = ruleBlockCause(r, now, 0L)
-            assertNotNull("${r.id} live on control", coordinator.evaluateBlockCause(other, control, cause, timeLimitSpent = false))
+            assertEquals("${r.id} live on control", cause, coordinator.evaluateBlockCause(other, control, cause, timeLimitSpent = false))
             for (pkg in floor) {
                 assertNull("${r.id} on $pkg", coordinator.evaluateBlockCause(other, pkg, cause, timeLimitSpent = false))
             }
@@ -120,7 +127,10 @@ class SafetyFloorCoordinatorMatrixTest {
     }
 
     @Test fun `daily time limit never shields a floor surface`() {
-        assertNotNull(coordinator.evaluateBlockCause(other, control, ruleCause = null, timeLimitSpent = true))
+        assertEquals(
+            BlockScreenReason.TIME_LIMIT,
+            coordinator.evaluateBlockCause(other, control, ruleCause = null, timeLimitSpent = true)?.reason,
+        )
         for (pkg in floor) {
             assertNull(pkg, coordinator.evaluateBlockCause(other, pkg, ruleCause = null, timeLimitSpent = true))
         }
@@ -128,11 +138,13 @@ class SafetyFloorCoordinatorMatrixTest {
 
     @Test fun `open limit never shields a floor surface, including the Path B Allow route`() {
         // Legacy/odd stored data: zero-open limits on the control and on every floor surface.
-        val limits = (floor + control).map { OpenLimit(it, dailyOpens = 0, breakLevel = BreakLevel.HARDCORE) }
+        val limits = (floor + control + SENTINEL).map { OpenLimit(it, dailyOpens = 0, breakLevel = BreakLevel.HARDCORE) }
         runBlocking { limits.forEach { FlintPreferences.limits(app).setOpenLimit(it) } }
+        // Poll a sentinel, not the control, so waiting never records opens for the control.
         awaitTrue("open limits snapshot loaded") {
-            coordinator.evaluateBlockCause(other, control, null, false)?.reason == BlockScreenReason.OPEN_LIMIT
+            coordinator.evaluateBlockCause(other, SENTINEL, null, false)?.reason == BlockScreenReason.OPEN_LIMIT
         }
+        assertEquals(BlockScreenReason.OPEN_LIMIT, coordinator.evaluateBlockCause(other, control, null, false)?.reason)
         for (pkg in floor) {
             // Path B routes floor surfaces as Verdict.Allow (null rule cause, no budget).
             assertNull(pkg, coordinator.evaluateBlockCause(other, pkg, null, timeLimitSpent = false))
@@ -142,10 +154,11 @@ class SafetyFloorCoordinatorMatrixTest {
 
     @Test fun `a non-zero open limit on a custom dialer never trips after repeated opens`() {
         runBlocking { FlintPreferences.limits(app).setOpenLimit(OpenLimit(customDialer, dailyOpens = 1)) }
-        runBlocking { FlintPreferences.limits(app).setOpenLimit(OpenLimit("com.example.counted", dailyOpens = 1)) }
+        runBlocking { FlintPreferences.limits(app).setOpenLimit(OpenLimit(COUNTED, dailyOpens = 1)) }
+        // The ordinary app with the same limit is blocked on its second open (proves it is live).
         awaitTrue("limit loaded") {
-            coordinator.evaluateBlockCause(other, "com.example.counted", null, false)
-            coordinator.evaluateBlockCause(other, "com.example.counted", null, false)?.reason == BlockScreenReason.OPEN_LIMIT
+            coordinator.evaluateBlockCause(other, COUNTED, null, false)
+            coordinator.evaluateBlockCause(other, COUNTED, null, false)?.reason == BlockScreenReason.OPEN_LIMIT
         }
         repeat(5) {
             assertNull(coordinator.evaluateBlockCause(other, customDialer, null, false))
@@ -157,7 +170,8 @@ class SafetyFloorCoordinatorMatrixTest {
         val now = System.currentTimeMillis()
         ActiveRulesHolder.publish(TEST_SOURCE, listOf(rule("hardcore", BreakLevel.HARDCORE, allowList = true)))
         val displayed = ruleBlockCause(ActiveRulesHolder.rules.first { it.id == "hardcore" }, now, 0L)
-        assertNotNull(coordinator.currentBlockCause(control, displayed))
+        // No displayed cause passed: the rule itself must re-derive the block for the control.
+        assertEquals(BlockScreenReason.DEEP_FOCUS, coordinator.currentBlockCause(control, null)?.reason)
         for (pkg in floor) assertNull(pkg, coordinator.currentBlockCause(pkg, displayed))
         val guard = BlockCause(BlockScreenReason.UNINSTALL_GUARD, BreakLevel.HARDCORE, endsAtEpochMs = null)
         assertEquals(guard, coordinator.currentBlockCause("com.android.settings", guard))
@@ -171,6 +185,15 @@ class SafetyFloorCoordinatorMatrixTest {
             assertTrue(pkg, attached.isEmpty())
         }
         coordinator.showBlocked(control, null, cause)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(1, attached.size)
+        coordinator.hideIfShown()
+        shadowOf(Looper.getMainLooper()).idle()
+    }
+
+    @Test fun `the uninstall guard still mounts on Settings`() {
+        val guard = BlockCause(BlockScreenReason.UNINSTALL_GUARD, BreakLevel.HARDCORE, endsAtEpochMs = null)
+        coordinator.showBlocked("com.android.settings", null, guard)
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(1, attached.size)
         coordinator.hideIfShown()
@@ -200,5 +223,7 @@ class SafetyFloorCoordinatorMatrixTest {
 
     private companion object {
         const val TEST_SOURCE = "safety-floor-test"
+        const val COUNTED = "com.example.counted"
+        const val SENTINEL = "com.example.sentinel"
     }
 }

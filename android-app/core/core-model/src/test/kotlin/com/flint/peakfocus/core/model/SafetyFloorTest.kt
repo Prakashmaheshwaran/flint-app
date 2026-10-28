@@ -44,13 +44,4 @@ class SafetyFloorTest {
         assertFalse(SafetyFloor.isProtected("com.instagram.android", self))
         assertFalse(SafetyFloor.isProtected("com.android.chrome", self, setOf("com.custom.launcher")))
     }
-
-    @Test fun `withoutProtected keeps order and drops floor packages`() {
-        val kept = SafetyFloor.withoutProtected(
-            listOf("com.instagram.android", "com.android.dialer", self, "com.custom.home", "com.reddit.frontpage"),
-            self,
-            setOf("com.custom.home"),
-        )
-        assertEquals(listOf("com.instagram.android", "com.reddit.frontpage"), kept.toList())
-    }
 }

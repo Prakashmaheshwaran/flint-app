@@ -259,3 +259,31 @@ class SafetyFloorEngineMatrixTest {
         assertTrue(engine.decide(control, null, listOf(onlyDialer), self) is Verdict.Block)
     }
 }
+
+/** The Open-Limit "dip" set stays narrower than the safety floor (no free re-entry bounces). */
+class OpenLimitDipSurfacesTest {
+
+    private val policy = OpenLimitPolicy()
+    private val self = "com.flint.peakfocus"
+
+    @Test fun `every dip surface is on the safety floor`() {
+        assertTrue(SYSTEM_SURFACE_PACKAGES.all { com.flint.peakfocus.core.model.SafetyFloor.isProtected(it, self) })
+    }
+
+    @Test fun `returning from a launchable floor app counts as a new open`() {
+        for (via in listOf(
+            "com.google.android.apps.safetyhub",
+            "com.miui.securitycenter",
+            "com.samsung.android.lool",
+            "com.google.android.cellbroadcastreceiver",
+        )) {
+            assertTrue(via, policy.countsAsOpen(via, "com.instagram.android", self))
+        }
+    }
+
+    @Test fun `system dips such as Settings and the shade are still not re-opens`() {
+        for (via in listOf("com.android.settings", "com.android.systemui", "com.google.android.permissioncontroller")) {
+            assertFalse(via, policy.countsAsOpen(via, "com.instagram.android", self))
+        }
+    }
+}

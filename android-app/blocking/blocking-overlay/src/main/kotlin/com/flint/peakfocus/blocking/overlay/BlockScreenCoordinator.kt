@@ -99,9 +99,14 @@ class BlockScreenCoordinator(
     private val appContext = context.applicationContext
     private val safetyFloor = safetyFloorGate ?: SafetyFloorGate(
         selfPackage = appContext.packageName,
-        resolveRuntime = { NeverBlockSurfaces.resolve(appContext) },
+        resolveRuntime = { NeverBlockSurfaces.resolveBySource(appContext) },
         nowElapsedMs = SystemClock::elapsedRealtime,
+        // Binder lookups stay off the accessibility event (main) thread.
+        refreshInBackground = { refresh -> scope.launch(Dispatchers.Default) { refresh() } },
     )
+
+    /** Package whose newest mount already force-resolved the floor (cleared on hide). */
+    private var mountCheckedPackage: String? = null
     private val focusStore: FocusStateStore = FlintPreferences.focusState(appContext)
     private val limitsStore: LimitsStore = FlintPreferences.limits(appContext)
 
@@ -324,10 +329,21 @@ class BlockScreenCoordinator(
             hideLocked()
             return@runOnMain
         }
-        if (cause.reason != BlockScreenReason.UNINSTALL_GUARD && safetyFloor.protectsFresh(packageName)) {
+        if (cause.reason != BlockScreenReason.UNINSTALL_GUARD) {
             // Defense in depth for any caller: never mount an ordinary shield on a floor surface.
-            if (visiblePackage == packageName) hideLocked()
-            return@runOnMain
+            // A new mount force-resolves the runtime floor once (a launcher or dialer made default
+            // seconds ago); refreshes of the same surface use the short fresh window.
+            val firstMount = mountCheckedPackage != packageName
+            mountCheckedPackage = packageName
+            val onFloor = if (firstMount) {
+                safetyFloor.protectsFresh(packageName, maxAgeMs = 0L)
+            } else {
+                safetyFloor.protectsFresh(packageName)
+            }
+            if (onFloor) {
+                hideLocked()
+                return@runOnMain
+            }
         }
         val existing = shownView
         if (existing != null && visiblePackage == packageName) {
@@ -468,6 +484,7 @@ class BlockScreenCoordinator(
     private fun hideLocked() {
         ticker?.cancel()
         ticker = null
+        mountCheckedPackage = null
         val view = shownView ?: return
         shownView = null
         visiblePackage = null
@@ -494,6 +511,9 @@ class BlockScreenCoordinator(
             while (isActive) {
                 delay(1_000L)
                 val pkg = visiblePackage ?: break
+                // Keep the runtime floor current while a shield is up (background refresh), so a
+                // launcher/dialer that became default under the shield drops it within seconds.
+                safetyFloor.refreshSoonIfOlderThan(SHOWN_FLOOR_REFRESH_MS)
                 val cause = currentBlockCause(pkg, shownCause)
                 val now = nowEpochMs()
                 if (cause == null) {
@@ -542,6 +562,9 @@ class BlockScreenCoordinator(
          * seam can reach — actually stopping the rule/session is app-layer work.
          */
         const val EMERGENCY_PASS_OPEN_ENDED_EXEMPTION_MS: Long = 30 * 60_000L
+
+        /** Runtime-floor refresh age while a shield is visible (background, off the main thread). */
+        private const val SHOWN_FLOOR_REFRESH_MS: Long = 5_000L
 
         /** Re-check a hair after expiry so the re-evaluation never races the ledger. */
         private const val EXPIRY_SLACK_MS: Long = 250L

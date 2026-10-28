@@ -71,6 +71,12 @@ class BlockActivity : ComponentActivity() {
             finish()
             return
         }
+        // Revalidate before the first frame: a stale or safety-floor launch (dialer, home app,
+        // Settings…) never shows even for the first tick.
+        if (PathBBlockHandoff.coordinator(applicationContext).currentBlockCause(initial.packageName, initial.cause) == null) {
+            finish()
+            return
+        }
         target = initial
 
         // Back must not leave the block screen. A dispatcher callback (predictive-back safe)
@@ -168,7 +174,15 @@ class BlockActivity : ComponentActivity() {
         // observable target crossfades the words in place — no recreate(), so the glow and
         // the breathing mark never restart. A malformed re-launch keeps the current block.
         setIntent(intent)
-        intent.toBlockedTarget()?.let { target = it }
+        val next = intent.toBlockedTarget() ?: return
+        // A re-launch for a floor surface or an already-ended cause means the user is not on a
+        // blocked app now: leave rather than cover what is in front (the detector re-launches
+        // within a tick if a block is still due).
+        if (PathBBlockHandoff.coordinator(applicationContext).currentBlockCause(next.packageName, next.cause) == null) {
+            finish()
+            return
+        }
+        target = next
     }
 
     /** Parses a launch/re-launch intent; null when there's no package to account against. */
