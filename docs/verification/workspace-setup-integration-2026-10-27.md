@@ -8,6 +8,13 @@ test-host launch. The final tree has no build artifacts or booted simulators.
 The [command ledger](workspace-setup-integration-evidence-2026-10-27.jsonl)
 retains exact starts, durations, exits, recovery commands, and cleanup output.
 
+The later [Task G fixes report](workspace-setup-fixes-2026-10-27.md) supersedes
+this snapshot's cleanup and cold-start ownership assurances. It records the
+review regressions, canonical fd-based deletion, incarnation-bound ownership,
+exact device attachment, literal Make arguments, isolated selftests, and new
+gate results. Task H's readiness procedure is now in `flint-dev`; the historical
+late-tap failures are not claimed fixed.
+
 ## History and conflict resolution
 
 - A: `a9525da` merges `da72705` and `39da125` with `--no-ff`.

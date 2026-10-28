@@ -13,25 +13,40 @@ for current targets and override options rather than duplicating their mechanics
    never hand-edit `ios-app/Flint.xcodeproj`.
 2. When device use is authorized and available, run `make ios-run IOS_SIM="<name or UDID>"`
    or `make android-run AVD="<name or serial>"`. These attach the selected device to
-   this worktree and install/launch Flint. Load the project `orca-emulator` skill
+   this worktree and install/launch Flint. Names resolve exactly; direct iOS
+   commands should use exact UDIDs. Both run targets validate the attach identity
+   before installation. Load the project `orca-emulator` skill
    for iOS interaction or `orca-emulator-android` for Android interaction. Use
    `make logs-ios` / `make logs-android` with the same selector for app logs.
    Drive one platform per worktree at a time: attaching Android in the same
    worktree shut down the active iOS simulator during verification. If
    `orca emulator ax` times out with `emulator_helper_failed`, run
-   `orca emulator kill --device <id>`, then attach that device again.
-   Android AVDs need their configured system image installed; the Android 35
-   Google APIs ARM64 image is currently missing on this host.
+   `orca emulator kill --device <UDID>`, then attach that exact UDID again and
+   recheck `deviceUdid`. This recovers AX availability, not tap delivery.
+   Before iOS input, require two fresh AX samples about one second apart showing
+   Flint and an enabled target with a nonzero frame; bound readiness to eight
+   polls and confirm the screenshot agrees. Tap once at the current frame center,
+   then inspect a screenshot and AX for the intended destination. AX may time out
+   after a successful transition; never blindly repeat a tap. Persistent late
+   tap failures remain unresolved; retain evidence using the
+   [Task H upstream issue guidance](/Users/prakash/flint-planning/2026-10-27/workspace-setup/ios-tap-investigation.md#upstream-issue-wording-if-the-persistent-failure-recurs).
+   Android AVDs need their configured image; the run target fails before attach
+   with the exact missing package and sdkmanager command. The Android 35 Google
+   APIs ARM64 image is currently missing on this host.
 3. Review `make gates DRY_RUN=1`, then run `make gates` for the AGENTS.md path-based
    checks against the local `origin/main` merge-base, including uncommitted work.
    `make ancestry` refreshes main and reports divergence; `make pr-status` reads
    the current branch's PR and CI state. Neither writes to the remote.
 4. `orca emulator list --worktree` is not worktree-scoped. Claim devices through
    `scripts/flint-devices.sh` or the run targets above; the ledger inherits the
-   same session identity as cleanup. Use `--booted` only for a cold start,
+   same session identity as cleanup. Run targets explicitly boot cold devices;
+   only a proven own boot with a matching `--incarnation` token earns `--booted`.
+   Helper cleanup also requires matching PID/start-time provenance. Use
    `--avd NAME` for Android, and `--created` only for a simulator you created
    using the prefix from `scripts/flint-devices.sh prefix`.
    Run `make clean-devices` before finishing, following its ownership safeguards.
+   Orphan cleanup requires a saved reviewed plan plus its digest; `CONFIRM=1`
+   alone never authorizes deletion, and a simulator name is only a preview hint.
    Report what changed, what actually passed, and any unavailable verification.
 
 Keep Flint local-first, account-free, and analytics-free. Treat Screen Time,

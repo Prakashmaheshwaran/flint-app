@@ -22,6 +22,8 @@ intentional alternate installations are preserved. A missing JDK keeps the
 Homebrew default visible in diagnostics; missing Xcode produces an empty path.
 `sdk.dir` is read as single-line Java properties data, including Android Studio's
 escaped spaces, backslashes and punctuation; it is never executed as shell code.
+Unsupported Unicode/control escapes and continuation lines now fail explicitly;
+setup rejects SDK paths containing control characters before creating the file.
 A relative `sdk.dir` is relative to `android-app`.
 
 The SDK platform-tools, emulator and cmdline-tools/latest/bin directories and the
@@ -111,7 +113,8 @@ if [ -z "${ANDROID_HOME:-}" ]; then
 fi
 if [ -n "${ANDROID_HOME:-}" ]; then
   export ANDROID_HOME
-  case ":$PATH:" in *":$ANDROID_HOME/platform-tools:"*) ;; *) PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH" ;; esac
+  case ":$PATH:" in *":$ANDROID_HOME/emulator:"*) ;; *) PATH="$ANDROID_HOME/emulator:$PATH" ;; esac
+  case ":$PATH:" in *":$ANDROID_HOME/platform-tools:"*) ;; *) PATH="$ANDROID_HOME/platform-tools:$PATH" ;; esac
   export PATH
 fi
 if [ -z "${JAVA_HOME:-}" ] && [ -x /opt/homebrew/opt/openjdk@21/bin/java ]; then
@@ -119,6 +122,11 @@ if [ -z "${JAVA_HOME:-}" ] && [ -x /opt/homebrew/opt/openjdk@21/bin/java ]; then
 fi
 # <<< Flint toolchain paths <<<
 ```
+
+The coordinator subsequently approved Task G to apply the independent PATH checks shown
+above, with an exclusive backup of the previous block. The maintained copy is
+`scripts/flint-zshenv.example`; `make env` reports either missing incoming PATH
+entry independently. See the fixes report for the approval and fresh-shell proof.
 
 Fresh `zsh -c`, `-lc`, `-ic` and `-lic` probes from a minimal environment all
 resolved `adb`, `emulator`, `java` and `xcodegen`; `java -version` reported

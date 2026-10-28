@@ -10,8 +10,10 @@
 - Run `make env` (or `make doctor`) for paths, sources, and missing tools. Worktree setup comes from the committed `orca.yaml`.
 - Drive devices through the project `orca-emulator` / `orca-emulator-android` skills, not raw `adb` / `simctl` UI input.
 - Drive one platform per worktree at a time; attaching Android in the same worktree shut down the active iOS simulator during verification.
-- If `orca emulator ax` times out with `emulator_helper_failed`, run `orca emulator kill --device <id>`, then attach that device again.
+- If `orca emulator ax` times out with `emulator_helper_failed`, recover the authorized helper using `orca emulator kill --device <UDID>`, then attach that exact UDID again and verify the returned `deviceUdid`.
 - Android AVDs require their system image; the configured Android 35 Google APIs ARM64 image is currently missing on this host.
+- Run targets validate exact returned device identity. iOS names resolve exactly to a UDID; prefer exact UDIDs for direct Orca commands. Android preflights the AVD image before boot/attach and prints the missing SDK package command.
+- Before iOS input, require two fresh AX samples about one second apart showing Flint and an enabled target with a nonzero frame, plus an agreeing screenshot (bound readiness to eight polls). Tap once, then verify pixels and AX; a transition-time AX timeout is not a failed tap. Helper restart recovers AX availability only; never repeat taps blindly.
 
 ## Verification
 - iOS changes: run `make verify-ios` when the toolchain is available.
@@ -45,7 +47,7 @@ Start with `make help` and the project `flint-dev` skill (`.agents/skills/flint-
 - Treat Screen Time, accessibility, device-owner, and anti-removal behavior as security-sensitive.
 
 ## Cleanup
-- Claim devices used by this worktree with `scripts/flint-devices.sh claim`; use `--booted` only after starting a previously stopped device, `--created` only for a simulator you created with the prefix from `scripts/flint-devices.sh prefix`, and `--avd NAME` for Android.
+- Claim devices used by this worktree with `scripts/flint-devices.sh claim`; `--booted` requires proof this invocation booted it and a matching `--incarnation` token. Run targets manage this proof. Use `--created` only for a simulator you created with the prefix from `scripts/flint-devices.sh prefix`, and `--avd NAME` for Android. Stale or unverifiable incarnations never authorize shutdown.
 - `orca emulator list --worktree` is not worktree-scoped. Use the claim ledger (or `make ios-run` / `make android-run`), which inherits the session identity used by cleanup; list output is not ownership evidence.
 - Run `make clean-devices` before `worker_done` or ending an agent session; unclaimed/shared devices are preserved. Project `SessionEnd` hooks provide best-effort cleanup when enabled/trusted; they do not run after every turn.
-- Keep build outputs while a human may continue work. `make clean` removes worktree artifacts; the Orca archive hook releases devices and artifacts before removal. `make clean-orphans` is a host-wide preview unless explicitly confirmed with `CONFIRM=1`.
+- Keep build outputs while a human may continue work. `make clean` removes worktree artifacts; the Orca archive hook releases devices and artifacts before removal. Cleanup rejects noncanonical paths and symlink ancestors. `make clean-orphans ORPHAN_PLAN=plan.json` previews; deletion requires the reviewed plan and its digest (`CONFIRM=1 ORPHAN_PLAN=plan.json ORPHAN_DIGEST=...`). Names alone never authorize simulator deletion; legacy exceptions require explicitly reviewed exact UDIDs in the plan.
