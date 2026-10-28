@@ -27,7 +27,9 @@ final class SchedulesViewModel: ObservableObject {
                       health.domains["schedules"]?.failures.contains(where: { $0.activityName == rule.monitorName }) == true
                 else { return nil }
                 return FlintScheduleArmFailure(ruleID: rule.id, ruleName: rule.name, issue: rule.schedule.issues.first,
-                    selectionIssue: FlintSelectionValidation.issue(for: rule.selection, requiresSelection: !rule.allowListMode))
+                    selectionIssue: FlintSelectionValidation.issue(for: rule.selection,
+                        context: rule.allowListMode ? .allowList : .blockList),
+                    selectionContext: rule.allowListMode ? .allowList : .blockList)
             }
         }
     }
