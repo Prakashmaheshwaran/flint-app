@@ -1,0 +1,32 @@
+name: Prepare Android emulator cache
+description: Cache a verified API 36 image and an AVD saved before its first boot
+runs:
+  using: composite
+  steps:
+    - name: Resolve stable image revision and cache provenance
+      id: image
+      shell: bash
+      run: python3 scripts/ci_android_emulator.py resolve
+    - name: Restore exact image and pristine AVD
+      id: cache
+      uses: actions/cache/restore@v5
+      with:
+        key: ${{ steps.image.outputs.key }}
+        path: |
+          ${{ steps.image.outputs.image-path }}
+          ~/.android/avd/flint-ci-api36.avd
+          ~/.android/avd/flint-ci-api36.ini
+    - name: Verify image, retry only image installation, and create unbooted AVD
+      shell: bash
+      run: python3 scripts/ci_android_emulator.py prepare
+    # Save before emulator-runner can install an APK, grant a service, or change userdata.
+    # No adb keys or post-test snapshots enter this cache.
+    - name: Save pristine cache before emulator boot
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        key: ${{ steps.image.outputs.key }}
+        path: |
+          ${{ steps.image.outputs.image-path }}
+          ~/.android/avd/flint-ci-api36.avd
+          ~/.android/avd/flint-ci-api36.ini

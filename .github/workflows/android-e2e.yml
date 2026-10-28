@@ -3,7 +3,7 @@ name: Android emulator E2E
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    paths: ['android-app/**', 'scripts/android-e2e.sh', 'Makefile', '.github/workflows/android-e2e.yml']
+    paths: ['android-app/**', 'scripts/android-e2e.sh', 'scripts/ci_android_emulator.py', '.github/actions/android-emulator-cache/**', 'Makefile', '.github/workflows/android-e2e.yml']
   workflow_dispatch:
 
 permissions:
@@ -45,6 +45,7 @@ jobs:
           target = root.find('instrumentation').get('{http://schemas.android.com/apk/res/android}targetPackage')
           assert target == root.get('package') == 'com.flint.peakfocus.test', (target, root.get('package'))
           PY
+      - uses: ./.github/actions/android-emulator-cache
       - name: Real accessibility smoke (disposable emulator)
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -52,6 +53,8 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_2
+          avd-name: flint-ci-api36
+          force-avd-creation: false
           ram-size: 2048M
           emulator-boot-timeout: 300
           disable-animations: true
