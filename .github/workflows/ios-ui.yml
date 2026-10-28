@@ -3,6 +3,7 @@ name: iOS UI fixtures
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths: ['ios-app/**', 'Makefile', 'scripts/ios-ui.sh', 'scripts/agent/**', 'scripts/flint-env.sh', '.github/workflows/ios-ui.yml']
   push:
     branches: [integration/v1, main]
@@ -18,6 +19,7 @@ concurrency:
 
 jobs:
   fixture-ui:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false || github.head_ref == 'integration/v1'
     runs-on: macos-latest
     timeout-minutes: 35
     env:
