@@ -1,0 +1,16 @@
+# >>> Flint toolchain paths (generic; the per-checkout source of truth is scripts/flint-env.sh) >>>
+if [ -z "${ANDROID_HOME:-}" ]; then
+  if [ -n "${ANDROID_SDK_ROOT:-}" ]; then ANDROID_HOME=$ANDROID_SDK_ROOT
+  elif [ -d "$HOME/Library/Android/sdk" ]; then ANDROID_HOME=$HOME/Library/Android/sdk
+  fi
+fi
+if [ -n "${ANDROID_HOME:-}" ]; then
+  export ANDROID_HOME
+  case ":$PATH:" in *":$ANDROID_HOME/emulator:"*) ;; *) PATH="$ANDROID_HOME/emulator:$PATH" ;; esac
+  case ":$PATH:" in *":$ANDROID_HOME/platform-tools:"*) ;; *) PATH="$ANDROID_HOME/platform-tools:$PATH" ;; esac
+  export PATH
+fi
+if [ -z "${JAVA_HOME:-}" ] && [ -x /opt/homebrew/opt/openjdk@21/bin/java ]; then
+  export JAVA_HOME=/opt/homebrew/opt/openjdk@21
+fi
+# <<< Flint toolchain paths <<<

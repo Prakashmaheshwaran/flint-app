@@ -32,6 +32,7 @@ LIB="${LIB:-$HERE/lib/android-verify.sh}"
 KEEP_WORK="${AV_SELFTEST_WORK:-}"
 WORK="${AV_SELFTEST_WORK:-$(mktemp -d "${TMPDIR:-/tmp}/av-selftest.XXXXXX")}"
 mkdir -p "$WORK"
+. "$HERE/selftest-isolation.sh"
 
 # ---------------------------------------------------------------------------
 # stub adb: serves canned dumps / window tables, records input events.

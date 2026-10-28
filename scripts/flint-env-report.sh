@@ -3,6 +3,7 @@
 # shellcheck disable=SC2031
 set -eu
 FLINT_ENV_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+incoming_path=${PATH:-}
 . "$FLINT_ENV_ROOT/scripts/flint-env.sh"
 
 sdk_conflict() {
@@ -36,6 +37,12 @@ for tool in xcodebuild xcodegen java adb emulator sdkmanager avdmanager orca; do
 done
 # A generic shell-startup shim may outlive this checkout's defaults. Preserve its
 # exports, but make drift visible without maintaining a second path resolver.
+for entry in "$ANDROID_HOME/platform-tools" "$ANDROID_HOME/emulator"; do
+    case ":$incoming_path:" in
+        *":$entry:"*) ;;
+        *) printf '%s\n' "WARNING: shell PATH lacked $entry; the checkout resolver restored it (see scripts/flint-zshenv.example)." >&2 ;;
+    esac
+done
 fallback_sdk=$(
     unset ANDROID_HOME ANDROID_SDK_ROOT
     . "$FLINT_ENV_ROOT/scripts/flint-env.sh"

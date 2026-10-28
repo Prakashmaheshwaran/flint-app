@@ -27,6 +27,7 @@ SCRIPT="${SCRIPT:-$HERE/check-release-version.sh}"
 KEEP_WORK="${CRV_SELFTEST_WORK:-}"
 WORK="${CRV_SELFTEST_WORK:-$(mktemp -d "${TMPDIR:-/tmp}/crv-selftest.XXXXXX")}"
 mkdir -p "$WORK"
+. "$HERE/selftest-isolation.sh"
 
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS + 1)); echo "ok   - $*"; }

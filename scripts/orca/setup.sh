@@ -8,6 +8,10 @@ cd "$FLINT_ENV_ROOT"
 
 if [ ! -f android-app/local.properties ]; then
     if [ -d "$ANDROID_HOME" ]; then
+        if [ "$(printf '%s' "$ANDROID_HOME" | LC_ALL=C tr -d '[:cntrl:]')" != "$ANDROID_HOME" ]; then
+            printf '%s\n' 'ERROR: SDK path contains unsupported control characters; local.properties was not written.' >&2
+            exit 1
+        fi
         # Escape Java properties metacharacters, including spaces in an SDK path.
         sdk_property=$(printf '%s' "$ANDROID_HOME" | sed 's/\\/\\\\/g; s/ /\\ /g; s/:/\\:/g; s/=/\\=/g; s/#/\\#/g; s/!/\\!/g')
         # Noclobber also protects a file created concurrently by Android Studio.

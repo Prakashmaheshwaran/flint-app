@@ -11,6 +11,7 @@ ulimit -f 1024
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/flint-setup-selftest.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
+. "$ROOT/scripts/selftest-isolation.sh"
 SEED="$WORK/seed"
 CHECKOUT="$WORK/worktree"
 TEST_HOME="$WORK/home"

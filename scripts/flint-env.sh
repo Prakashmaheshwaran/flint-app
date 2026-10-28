@@ -1,33 +1,68 @@
 #!/bin/bash
 # Source from a Flint checkout (or set FLINT_ENV_ROOT). Bash 3.2 and zsh compatible.
-# No installs, writes, output, cwd/options changes, or tool requirements beyond awk.
+# No installs, writes, cwd/options changes, or tool requirements beyond awk.
+# Successful resolution is silent; unsupported properties fail with a diagnostic.
 # Android: ANDROID_HOME > ANDROID_SDK_ROOT > local.properties > macOS default.
 _flint_resolve_env() {
     local root sdk java_source xcode_source android_source rest entry resolved candidate
     root=${FLINT_ENV_ROOT:-$PWD}
+    case "$root" in /*) ;; *) root="$PWD/$root" ;; esac
+    # Walk lexically even when the supplied directory does not exist. Starting
+    # absolute guarantees every iteration advances and eventually reaches /.
     while [ "$root" != / ] && [ ! -f "$root/android-app/settings.gradle.kts" ]; do
         root=${root%/*}
         [ -n "$root" ] || root=/
     done
     sdk=
     if [ -r "$root/android-app/local.properties" ]; then
-        # Read data, never source it. Android Studio escapes spaces, colons and '\'.
+        # Read data, never source it. Support ordinary Properties escaping;
+        # reject Unicode/control/continuation syntax rather than misdecode it.
         # Last matching key wins, as in java.util.Properties.
         sdk=$(awk '
-            /^[ \t]*sdk[.]dir([ \t]*[=:]|[ \t]+)/ {
-                sub(/^[ \t]*sdk[.]dir[ \t]*/, "")
-                sub(/^[=:][ \t]*/, "")
+            function unsupported() {
+                print "ERROR: unsupported escape/control character in local.properties; use a single-line sdk.dir with literal characters or escaped spaces, backslashes and separators." > "/dev/stderr"
+                failed = 1
+                exit 1
+            }
+            function decode(s,    j,c,out) {
+                out = ""
+                for (j = 1; j <= length(s); j++) {
+                    c = substr(s,j,1)
+                    if (c == "\\") {
+                        if (++j > length(s)) unsupported()
+                        c = substr(s,j,1)
+                        if (c !~ /^[ \\:=#!]$/) unsupported()
+                    }
+                    if (c ~ /[[:cntrl:]]/) unsupported()
+                    out = out c
+                }
+                return out
+            }
+            {
                 sub(/\r$/, "")
-                value = ""
+                sub(/^[ \t\f]*/, "")
+                if ($0 == "" || $0 ~ /^[#!]/) next
+                key = ""
                 for (i = 1; i <= length($0); i++) {
                     c = substr($0, i, 1)
-                    if (c == "\\" && i < length($0)) c = substr($0, ++i, 1)
-                    value = value c
+                    if (c ~ /[ \t\f=:]/) break
+                    key = key c
+                    if (c == "\\") key = key substr($0, ++i, 1)
                 }
-                sdk = value
+                key = decode(key)
+                value = substr($0,i)
+                sub(/^[ \t\f]*/, "", value)
+                sub(/^[=:][ \t\f]*/, "", value)
+                # Even an unrelated continuation could consume the sdk.dir line.
+                if (value ~ /\\$/) {
+                    n = 0
+                    for (j = length(value); j > 0 && substr(value,j,1) == "\\"; j--) n++
+                    if (n % 2) unsupported()
+                }
+                if (key == "sdk.dir") sdk = decode(value)
             }
-            END { printf "%s", sdk }
-        ' "$root/android-app/local.properties")
+            END { if (!failed) printf "%s", sdk }
+        ' "$root/android-app/local.properties") || return 1
         case "$sdk" in ''|/*) ;; *) sdk="$root/android-app/$sdk" ;; esac
     fi
     export FLINT_ENV_LOCAL_SDK="$sdk"
@@ -102,5 +137,9 @@ _flint_resolve_env() {
     done
     export PATH="$resolved"
 }
-_flint_resolve_env
-unset -f _flint_resolve_env
+if _flint_resolve_env; then
+    unset -f _flint_resolve_env
+else
+    unset -f _flint_resolve_env
+    return 1
+fi
