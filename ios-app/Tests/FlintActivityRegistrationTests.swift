@@ -2,7 +2,7 @@ import XCTest
 import DeviceActivity
 @testable import FlintCore
 
-private final class FakeActivityCenter: FlintActivityRegistering {
+final class FakeActivityCenter: FlintActivityRegistering {
     var held: [DeviceActivityName: FlintActivityRegistration] = [:]
     var starts: [String] = []
     var stops: [[String]] = []
@@ -52,7 +52,7 @@ final class FlintActivityRegistrationTests: XCTestCase {
         var cleared: [String] = []
         let report = FlintActivityRegistration.reconcile(
             [unchanged, changed, activity("flint.rule.new")], prefix: "flint.rule.", enabled: 3,
-            validationFailures: [], center: center, onRemove: { cleared.append($0) })
+            validationFailures: [], center: center, defaults: nil, onRemove: { cleared.append($0) })
         XCTAssertEqual(center.starts, [changed.name, "flint.rule.new"])
         XCTAssertEqual(center.stops, [[removed.name]])
         XCTAssertEqual(cleared, [removed.name])
@@ -110,18 +110,15 @@ final class FlintActivityRegistrationTests: XCTestCase {
         request.configurationChanged = true
         center.refused.insert(request.name)
         var cleared: [String] = []
-        var heldWhenCleared = false
         let report = FlintActivityRegistration.reconcile([request], prefix: "flint.rule.", enabled: 1,
-            validationFailures: [], center: center, onRemove: {
+            validationFailures: [], center: center, defaults: nil, onRemove: {
                 cleared.append($0)
-                heldWhenCleared = center.activities.contains(.init($0))
             })
         XCTAssertEqual(report.observed, 0)
         XCTAssertEqual(report.failures.count, 1)
-        XCTAssertEqual(cleared, [request.name])
-        XCTAssertTrue(heldWhenCleared, "clear the shield before removing its old end registration")
-        XCTAssertEqual(center.stops, [[request.name]])
-        XCTAssertTrue(center.activities.isEmpty, "no old registration may reapply the failed rule")
+        XCTAssertTrue(cleared.isEmpty, "a refusal must preserve the last-good shield")
+        XCTAssertTrue(center.stops.isEmpty)
+        XCTAssertEqual(center.activities, [.init(request.name)], "retain the last-good finite end")
     }
 
     private func activity(_ name: String, hour: Int = 9) -> FlintActivityRegistration {
@@ -131,6 +128,6 @@ final class FlintActivityRegistrationTests: XCTestCase {
     private func reconcile(_ requests: [FlintActivityRegistration], _ center: FakeActivityCenter)
         -> FlintArmingHealth.DomainReport {
         FlintActivityRegistration.reconcile(requests, prefix: "flint.rule.", enabled: requests.count,
-                                             validationFailures: [], center: center)
+                                             validationFailures: [], center: center, defaults: nil)
     }
 }

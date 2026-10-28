@@ -20,6 +20,7 @@ struct FlintActivityRegistration {
     var events: [DeviceActivityEvent.Name: DeviceActivityEvent] = [:]
     // Schedule selection/day/allow-list edits are not represented in OS schedules/events.
     var configurationChanged = false
+    var definition: FlintActivityDefinition { .init(schedule: schedule, events: events) }
 
     static func reconcile(
         _ desired: [Self],
@@ -27,28 +28,34 @@ struct FlintActivityRegistration {
         enabled: Int,
         validationFailures: [FlintArmingHealth.Failure],
         center: FlintActivityRegistering = DeviceActivityCenter(),
+        defaults: UserDefaults? = .flintGroup,
         onRemove: (String) -> Void = { _ in }
     ) -> FlintArmingHealth.DomainReport {
         let wanted = Set(desired.map { DeviceActivityName($0.name) })
         let before = Set(center.activities)
+        var definitions = FlintActivityDefinition.load(from: defaults)
         let removed = before.filter { $0.rawValue.hasPrefix(prefix) && !wanted.contains($0) }
         // Never forward [] to Apple's stop-all default.
         if !removed.isEmpty {
             removed.forEach { onRemove($0.rawValue) }
             center.stopMonitoring(Array(removed))
         }
+        definitions = definitions.filter { !$0.key.hasPrefix(prefix) || wanted.contains(.init($0.key)) }
         var attempted = 0
         var armed = 0
         var failures = validationFailures
         var accepted: Set<String> = []
         for request in desired {
             let name = DeviceActivityName(request.name)
+            let matchesNative = center.schedule(for: name).map {
+                FlintActivityDefinition(schedule: $0, events: center.events(for: name)) == request.definition
+            } ?? false
             if before.contains(name), !request.configurationChanged,
-               center.schedule(for: name) == request.schedule,
-               center.events(for: name) == request.events {
+               matchesNative || definitions[request.name] == request.definition {
                 // Already held by iOS, with the requested definition. No restart/callback churn.
                 armed += 1
                 accepted.insert(request.name)
+                definitions[request.name] = request.definition
                 continue
             }
             attempted += 1
@@ -56,12 +63,11 @@ struct FlintActivityRegistration {
                 try center.startMonitoring(name, during: request.schedule, events: request.events)
                 armed += 1
                 accepted.insert(request.name)
+                definitions[request.name] = request.definition
             } catch {
-                // A refused replacement can leave the old registration/store behind, while
-                // Open Limits may already have applied its launch shield. Release this cause
-                // explicitly: a failed arm must not leave a shield with no dependable end.
-                onRemove(request.name)
-                center.stopMonitoring([name])
+                // A refused replacement is not authority to erase a last-good registration or
+                // shield (including a spent Time Limit or non-expiring Open-Limit shield).
+                // A refused new attempt has no newly applied shield to clear. Report the fault.
                 failures.append(.init(activityName: request.name, reason: String(describing: error)))
             }
         }
@@ -69,14 +75,22 @@ struct FlintActivityRegistration {
         let after = Set(center.activities)
         let observed = desired.filter {
             let name = DeviceActivityName($0.name)
-            return accepted.contains($0.name) && after.contains(name) && center.schedule(for: name) == $0.schedule
-                && center.events(for: name) == $0.events
+            // Real name observation + accepted/persisted definition also tolerates OS
+            // normalization beyond the fields above. This is registration evidence only.
+            return accepted.contains($0.name) && after.contains(name)
+                && definitions[$0.name] == $0.definition
         }.map(\.name).sorted()
         for request in desired where !observed.contains(request.name)
             && !failures.contains(where: { $0.activityName == request.name }) {
             failures.append(.init(activityName: request.name,
                                   reason: "The requested registration was not observed in iOS after reconciliation."))
         }
+        // Do not cache accepted-but-unobserved requests as a later no-churn baseline.
+        let previous = FlintActivityDefinition.load(from: defaults)
+        for request in desired where !observed.contains(request.name) {
+            definitions[request.name] = previous[request.name]
+        }
+        FlintActivityDefinition.save(definitions, to: defaults)
         return .init(enabled: enabled, attempted: attempted, armed: armed, failures: failures,
                      observedActivities: observed)
     }
@@ -93,10 +107,19 @@ enum FlintScheduleRegistrationState {
         return rules
     }
 
+    static func changed(_ rule: FlintScheduleRule, previous: FlintScheduleRule?) -> Bool {
+        // Seed an upgrade's baseline from its first matching native observation. Renaming or
+        // changing break difficulty does not change monitoring or the callback's selection.
+        guard let previous else { return false }
+        return previous.schedule != rule.schedule || previous.selection != rule.selection
+            || previous.allowListMode != rule.allowListMode
+    }
+
     static func save(_ rules: [FlintScheduleRule], observed: [String],
                      to defaults: UserDefaults? = .flintGroup) {
-        let accepted = rules.filter { observed.contains($0.monitorName) }
-        let byName = Dictionary(accepted.map { ($0.monitorName, $0) }, uniquingKeysWith: { _, last in last })
+        let names = Set(rules.map(\.monitorName))
+        var byName = load(from: defaults).filter { names.contains($0.key) }
+        for rule in rules where observed.contains(rule.monitorName) { byName[rule.monitorName] = rule }
         defaults?.set(try? JSONEncoder().encode(byName), forKey: key)
     }
 }

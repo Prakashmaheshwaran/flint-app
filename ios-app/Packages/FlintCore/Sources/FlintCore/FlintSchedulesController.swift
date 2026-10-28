@@ -4,7 +4,8 @@ import FamilyControls
 import ManagedSettings
 import DeviceActivity
 
-/// An enabled rule that is **not enforcing**, because its window can't be registered.
+/// An enabled rule whose requested monitoring is not verified. A refused replacement can
+/// retain last-good protection, but must never be presented as successfully re-armed.
 ///
 /// A blocking app must never let a rule look armed when it isn't, so `reload()` hands these back
 /// instead of dropping them on the floor. `issue == nil` means the window passed Flint's checks
@@ -16,20 +17,21 @@ public struct FlintScheduleArmFailure: Equatable, Sendable {
     public let issue: FlintScheduleIssue?
     public let selectionIssue: FlintSelectionIssue?
     public let selectionContext: FlintSelectionContext
+    public let registrationReason: String?
 
     public init(ruleID: String, ruleName: String, issue: FlintScheduleIssue?, selectionIssue: FlintSelectionIssue? = nil,
-                selectionContext: FlintSelectionContext = .blockList) {
+                selectionContext: FlintSelectionContext = .blockList, registrationReason: String? = nil) {
         self.ruleID = ruleID
         self.ruleName = ruleName
         self.issue = issue
         self.selectionIssue = selectionIssue
         self.selectionContext = selectionContext
+        self.registrationReason = registrationReason
     }
 
-    /// The user-facing reason this rule isn't blocking anything. The fallback stays vague on
-    /// purpose: `startMonitoring` throws without telling us which of its limits we hit.
+    /// Why the requested monitoring is not verified. A prior shield can still be present.
     public var message: String {
-        issue?.message ?? selectionIssue?.message(for: selectionContext) ?? "iOS refused to register this schedule. Edit its window, or remove "
+        issue?.message ?? selectionIssue?.message(for: selectionContext) ?? registrationReason ?? "iOS refused to register this schedule. Edit its window, or remove "
             + "another schedule and try again."
     }
 }
@@ -40,7 +42,9 @@ public struct FlintScheduleArmFailure: Equatable, Sendable {
 /// each rule's selection into the rule's own store on `intervalDidStart`, gated by day-of-week.
 public final class FlintSchedulesController {
 
-    public init() {}
+    private let environment: FlintRuleReloadEnvironment
+    public init() { environment = .live }
+    init(environment: FlintRuleReloadEnvironment) { self.environment = environment }
 
     public func rules() -> [FlintScheduleRule] {
         FlintGroupStore()?.loadRules() ?? []
@@ -50,7 +54,10 @@ public final class FlintSchedulesController {
     @discardableResult
     public func upsert(_ rule: FlintScheduleRule) -> [FlintScheduleArmFailure] {
         guard let group = FlintGroupStore() else { return [] }
-        var all = group.loadRules()
+        guard var all = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: environment.defaults) else {
+            environment.record("schedules", FlintDesiredRules.unavailable("schedules", previous: environment.loadHealth()))
+            return []
+        }
         if let index = all.firstIndex(where: { $0.id == rule.id }) {
             all[index] = rule
         } else {
@@ -65,7 +72,10 @@ public final class FlintSchedulesController {
     @discardableResult
     public func delete(_ ruleID: String) -> [FlintScheduleArmFailure] {
         guard let group = FlintGroupStore() else { return [] }
-        var all = group.loadRules()
+        guard var all = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: environment.defaults) else {
+            environment.record("schedules", FlintDesiredRules.unavailable("schedules", previous: environment.loadHealth()))
+            return []
+        }
         all.removeAll { $0.id == ruleID }
         group.saveRules(all)
         ManagedSettingsStore(named: ManagedSettingsStore.Name("flint.\(ruleID)")).clearAllSettings()
@@ -78,7 +88,10 @@ public final class FlintSchedulesController {
     @discardableResult
     public func setEnabled(_ ruleID: String, _ enabled: Bool) -> [FlintScheduleArmFailure] {
         guard let group = FlintGroupStore() else { return [] }
-        var all = group.loadRules()
+        guard var all = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: environment.defaults) else {
+            environment.record("schedules", FlintDesiredRules.unavailable("schedules", previous: environment.loadHealth()))
+            return []
+        }
         guard let index = all.firstIndex(where: { $0.id == ruleID }) else { return [] }
         all[index].enabled = enabled
         group.saveRules(all)
@@ -153,19 +166,21 @@ public final class FlintSchedulesController {
     /// `try?` that hides the refusal and leaves the rule's toggle lying about it.
     @discardableResult
     public func reload() -> [FlintScheduleArmFailure] {
-        guard let group = FlintGroupStore() else { return [] }
-        let all = group.loadRules()
+        guard let all = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: environment.defaults) else {
+            environment.record("schedules", FlintDesiredRules.unavailable("schedules", previous: environment.loadHealth()))
+            return []
+        }
         let plan = Self.armPlan(for: all)
         for name in plan.storesToClear {
-            ManagedSettingsStore(named: .init(name)).clearAllSettings()
+            environment.clearStore(name)
         }
-        let previous = FlintScheduleRegistrationState.load()
+        let previous = FlintScheduleRegistrationState.load(from: environment.defaults)
         let requests = plan.arm.map { rule in
             FlintActivityRegistration(name: rule.monitorName, schedule: DeviceActivitySchedule(
                 intervalStart: DateComponents(hour: rule.schedule.startHour, minute: rule.schedule.startMinute),
                 intervalEnd: DateComponents(hour: rule.schedule.endHour, minute: rule.schedule.endMinute),
                 repeats: true
-            ), configurationChanged: previous[rule.monitorName] != rule)
+            ), configurationChanged: FlintScheduleRegistrationState.changed(rule, previous: previous[rule.monitorName]))
         }
         let validationFailures = plan.failures.map {
             FlintArmingHealth.Failure(activityName: "flint.rule.\($0.ruleID)", reason: $0.message)
@@ -173,19 +188,17 @@ public final class FlintSchedulesController {
         let report = FlintActivityRegistration.reconcile(
             requests, prefix: "flint.rule.",
             enabled: plan.enabled,
-            validationFailures: validationFailures,
+            validationFailures: validationFailures, center: environment.center, defaults: environment.defaults,
             onRemove: { name in
                 let id = name.dropFirst("flint.rule.".count)
-                ManagedSettingsStore(named: .init("flint.\(id)")).clearAllSettings()
+                environment.clearStore("flint.\(id)")
             })
-        FlintScheduleRegistrationState.save(plan.arm, observed: report.observedActivities ?? [])
-        FlintArmingHealth.record(
-            domain: "schedules", enabled: report.enabled, attempted: report.attempted,
-            armed: report.armed, failures: report.failures, in: group,
-            observedActivities: report.observedActivities)
+        FlintScheduleRegistrationState.save(plan.arm, observed: report.observedActivities ?? [], to: environment.defaults)
+        environment.record("schedules", report)
         return plan.failures + plan.arm.compactMap { rule in
-            guard report.failures.contains(where: { $0.activityName == rule.monitorName }) else { return nil }
-            return FlintScheduleArmFailure(ruleID: rule.id, ruleName: rule.name, issue: nil)
+            guard let failure = report.failures.first(where: { $0.activityName == rule.monitorName }) else { return nil }
+            return FlintScheduleArmFailure(ruleID: rule.id, ruleName: rule.name, issue: nil,
+                                           registrationReason: failure.reason)
         }
     }
 }

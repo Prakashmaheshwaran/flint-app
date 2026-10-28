@@ -139,6 +139,7 @@ final class SessionViewModel: ObservableObject {
     @Published var confirmingHardcore = false
 
     func start(confirmed: Bool = false) {
+        defer { NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil) }
         errorText = nil
         do {
             active = try controller.startBlockNow(
@@ -179,6 +180,7 @@ final class SessionViewModel: ObservableObject {
     private func apply(_ outcome: FlintSessionStopOutcome) {
         switch outcome {
         case .stopped:
+            NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
             active = nil
             remaining = 0
             harderStop = nil
@@ -208,6 +210,7 @@ final class SessionViewModel: ObservableObject {
     func useEmergencyPass() {
         errorText = nil
         if controller.useEmergencyPass() {
+            NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
             active = nil
             remaining = 0
             timer?.invalidate()
@@ -232,6 +235,7 @@ final class SessionViewModel: ObservableObject {
             // On a real device the monitor clears the shield; mirror that here for the UI and as
             // a fallback (the Simulator doesn't run the monitor extension).
             controller.finishIfExpired()
+            NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
             self.active = nil
             remaining = 0
             timer?.invalidate()

@@ -41,11 +41,11 @@ extension FlintProtectionReconciler {
             FlintLimitsController().reload()
             return group.loadArmingHealth().domains["limits"] ?? missingReport("limits")
         },
-        FlintLiveProtectionLayer(domain: "openLimits") { trigger in
+        FlintOpenLimitProtectionLayer { reapplyShields in
             guard let group = FlintGroupStore() else { throw FlintSessionError.appGroupUnavailable }
             // Preserve launch re-shielding. Foreground/time/config reconciliation must not
             // revoke a released grant by blindly applying the full selection (B5 owns grants).
-            FlintOpenLimitsController().reload(reapplyShields: trigger.reappliesOpenLimitShields)
+            FlintOpenLimitsController().reload(reapplyShields: reapplyShields)
             return group.loadArmingHealth().domains["openLimits"] ?? missingReport("openLimits")
         },
         FlintLiveProtectionLayer(domain: "webRestrictions") { _ in

@@ -17,7 +17,19 @@ import DeviceActivity
 ///     `FlintOpenLimitState.dayStart` — no schedule needed for that.
 public final class FlintOpenLimitsController {
 
-    public init() {}
+    private let environment: FlintRuleReloadEnvironment
+    private let selectionIssue: (FlintOpenLimitRule) -> FlintSelectionIssue?
+    public init() {
+        environment = .live
+        selectionIssue = { FlintSelectionValidation.issue(for: $0.selection, context: .openLimit) }
+    }
+    init(environment: FlintRuleReloadEnvironment,
+         selectionIssue: @escaping (FlintOpenLimitRule) -> FlintSelectionIssue? = {
+             FlintSelectionValidation.issue(for: $0.selection, context: .openLimit)
+         }) {
+        self.environment = environment
+        self.selectionIssue = selectionIssue
+    }
 
     public static func armPlan(
         for rules: [FlintOpenLimitRule]
@@ -50,7 +62,10 @@ public final class FlintOpenLimitsController {
     }
 
     public func upsert(_ rule: FlintOpenLimitRule) {
-        var all = FlintOpenLimitRule.loadAll()
+        guard var all = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: environment.defaults) else {
+            environment.record("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
+            return
+        }
         if let index = all.firstIndex(where: { $0.id == rule.id }) {
             all[index] = rule
         } else {
@@ -62,7 +77,10 @@ public final class FlintOpenLimitsController {
     }
 
     public func delete(_ ruleID: String) {
-        var all = FlintOpenLimitRule.loadAll()
+        guard var all = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: environment.defaults) else {
+            environment.record("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
+            return
+        }
         guard let index = all.firstIndex(where: { $0.id == ruleID }) else { return }
         let removed = all.remove(at: index)
         FlintOpenLimitRule.saveAll(all)
@@ -73,7 +91,10 @@ public final class FlintOpenLimitsController {
     }
 
     public func setEnabled(_ ruleID: String, _ enabled: Bool) {
-        var all = FlintOpenLimitRule.loadAll()
+        guard var all = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: environment.defaults) else {
+            environment.record("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
+            return
+        }
         guard let index = all.firstIndex(where: { $0.id == ruleID }) else { return }
         all[index].enabled = enabled
         FlintOpenLimitRule.saveAll(all)
@@ -87,10 +108,13 @@ public final class FlintOpenLimitsController {
     /// Re-arm every enabled rule: shield its selection and (re)register its day-boundary
     /// activity. Idempotent; call on launch and after edits.
     public func reload(reapplyShields: Bool = true) {
-        let all = FlintOpenLimitRule.loadAll()
-        let plan = Self.armPlan(for: all)
+        guard let all = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: environment.defaults) else {
+            environment.record("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
+            return
+        }
+        let plan = Self.armPlan(for: all, selectionIssue: selectionIssue)
         for rule in all where plan.storesToClear.contains(rule.storeName) {
-            FlintOpenLimitEnforcer.clearShield(for: rule)
+            environment.clearStore(rule.storeName)
         }
         let requests = plan.arm.map { rule in
             let schedule = DeviceActivitySchedule(
@@ -102,20 +126,17 @@ public final class FlintOpenLimitsController {
         }
         let report = FlintActivityRegistration.reconcile(
             requests, prefix: "flint.openLimit.", enabled: plan.enabled,
-            validationFailures: plan.failures,
+            validationFailures: plan.failures, center: environment.center, defaults: environment.defaults,
             onRemove: { name in
                 let id = name.dropFirst("flint.openLimit.".count)
-                ManagedSettingsStore(named: .init("flintO.\(id)")).clearAllSettings()
+                environment.clearStore("flintO.\(id)")
             })
         if reapplyShields {
             for rule in plan.arm where report.observedActivities?.contains(rule.activityName) == true {
-                FlintOpenLimitEnforcer.applyShield(for: rule)
+                environment.applyOpenShield(rule)
             }
         }
-        FlintArmingHealth.record(
-            domain: "openLimits", enabled: report.enabled, attempted: report.attempted,
-            armed: report.armed, failures: report.failures,
-            observedActivities: report.observedActivities)
+        environment.record("openLimits", report)
     }
 }
 #endif

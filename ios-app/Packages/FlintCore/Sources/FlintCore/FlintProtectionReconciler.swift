@@ -12,6 +12,16 @@ public protocol FlintProtectionLayer {
     func reconcile(trigger: FlintProtectionTrigger) async throws -> FlintArmingHealth.DomainReport
 }
 
+@MainActor
+struct FlintOpenLimitProtectionLayer: FlintProtectionLayer {
+    let domain = "openLimits"
+    let reload: (Bool) throws -> FlintArmingHealth.DomainReport
+
+    func reconcile(trigger: FlintProtectionTrigger) async throws -> FlintArmingHealth.DomainReport {
+        try reload(trigger.reappliesOpenLimitShields)
+    }
+}
+
 /// One lifecycle entry point for every layer. Task chaining also serializes across suspension
 /// points: a foreground request during launch waits for every launch layer to finish.
 @MainActor

@@ -17,6 +17,7 @@ struct SettingsView: View {
     @State private var historyFeedback: String?
     @State private var observation = FlintProtectionObservation.load()
     @State private var sessionHealth = FlintSessionHealth.load()
+    @State private var activeSession = FlintSessionController().activeSession
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
@@ -137,6 +138,7 @@ struct SettingsView: View {
         passAvailable = FlintSessionController().emergencyPassAvailable()
         observation = FlintProtectionObservation.load()
         sessionHealth = FlintSessionHealth.load()
+        activeSession = FlintSessionController().activeSession
     }
 
     private var health: FlintArmingHealth {
@@ -149,9 +151,15 @@ struct SettingsView: View {
 
     private var stale: Bool { observation?.isStale() ?? true }
     private var healthy: Bool {
-        authStatus == .approved && health.isHealthy && !stale
-            && sessionHealth.lastArmFailure == nil && sessionHealth.lastTimeAnomaly == nil
-            && sessionHealth.unauthorizedSince == nil
+        let currentFailures = health.domains.flatMap { domain, report in
+            report.failures.filter {
+                domain != "session" || $0.activityName == "session"
+                    || (activeSession != nil && $0.activityName != "session.lastAttempt")
+            }
+        }
+        return authStatus == .approved && currentFailures.isEmpty && !stale
+            && !FlintSessionHealthPresentation.hasCurrentIssue(health: sessionHealth, active: activeSession,
+                                                               report: health.domains["session"])
     }
 
     private var authorizationCopy: String {
@@ -189,19 +197,27 @@ struct SettingsView: View {
                 }
                 ForEach(health.domains.keys.sorted(), id: \.self) { domain in
                     if let report = health.domains[domain] {
-                        check(report.failures.isEmpty,
-                              "\(domain): \(report.enabled) enabled · \(report.attempted) attempted · \(report.armed) armed · "
-                              + (report.observed.map { "\($0) observed registered" } ?? "registration not observed"))
+                        let summary = "\(domainTitle(domain)): \(report.enabled) enabled · \(report.attempted) attempted · \(report.armed) armed · "
+                            + (report.observed.map { "\($0) observed registered" } ?? "registration not observed")
+                        let currentFailure = report.failures.contains {
+                            domain != "session" || $0.activityName == "session"
+                                || (activeSession != nil && $0.activityName != "session.lastAttempt")
+                        }
+                        if !currentFailure && (report.enabled == 0 || (domain == "session" && !sessionHasCurrentIssue)) {
+                            Text(summary).font(FlintFont.text(13)).foregroundStyle(FlintBrand.stone)
+                        } else {
+                            check(!currentFailure && report.observed != nil, summary)
+                        }
                         ForEach(Array(report.failures.enumerated()), id: \.offset) { _, failure in
-                            Text("\(failure.activityName) — \(failure.reason)")
+                            Text("\(causeTitle(failure.activityName, domain: domain)) — \(failure.reason)")
                                 .font(FlintFont.text(12))
                                 .foregroundStyle(FlintBrand.mist)
                         }
                     }
                 }
                 ForEach(Array(FlintSessionHealthPresentation.messages(health: sessionHealth,
-                    report: observation?.domains["session"]).enumerated()), id: \.offset) { _, message in
-                    check(false, message)
+                    report: health.domains["session"]).enumerated()), id: \.offset) { _, message in
+                    Text(message).font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
                 }
                 Text("Registration does not verify that a shield or background callback took effect.")
                     .font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
@@ -235,6 +251,31 @@ struct SettingsView: View {
                 .font(FlintFont.text(16, weight: .medium)).foregroundStyle(FlintBrand.bone)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private var sessionHasCurrentIssue: Bool {
+        FlintSessionHealthPresentation.hasCurrentIssue(health: sessionHealth, active: activeSession,
+                                                        report: health.domains["session"])
+    }
+
+    private func domainTitle(_ domain: String) -> String {
+        switch domain {
+        case "session": return "Focus session"
+        case "schedules": return "Schedules"
+        case "limits": return "Time Limits"
+        case "openLimits": return "Open Limits"
+        case "webRestrictions": return "Website rules"
+        default: return "Protection"
+        }
+    }
+
+    private func causeTitle(_ name: String, domain: String) -> String {
+        if name == "session.lastAttempt" { return "Last session attempt" }
+        if domain == "session" { return activeSession?.name ?? "Focus session" }
+        if let rule = FlintGroupStore()?.loadRules().first(where: { $0.monitorName == name }) { return rule.name }
+        if let rule = FlintGroupStore()?.loadLimits().first(where: { $0.activityName == name }) { return rule.name }
+        if let rule = FlintOpenLimitRule.loadAll().first(where: { $0.activityName == name }) { return rule.name }
+        return domainTitle(domain)
     }
 
     private var checkedTime: some View {

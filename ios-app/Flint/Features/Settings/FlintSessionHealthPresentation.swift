@@ -3,6 +3,16 @@ import FlintCore
 
 /// Shared, pure copy mapping so every persisted session failure is visible in Settings.
 enum FlintSessionHealthPresentation {
+    static func hasCurrentIssue(health: FlintSessionHealth, active: FlintActiveSession?,
+                                report: FlintArmingHealth.DomainReport?) -> Bool {
+        guard let active else { return false }
+        if report?.notAuthorized == true || report?.rearmFailed == true || health.unauthorizedSince != nil { return true }
+        if health.lastTimeAnomaly?.sessionID == active.id { return true }
+        if let failure = health.lastArmFailure, failure.sessionName == active.name, failure.at >= active.startedAt,
+           report?.observedActivities?.contains(active.monitorName) != true { return true }
+        return false
+    }
+
     static func messages(health: FlintSessionHealth, report: FlintArmingHealth.DomainReport?) -> [String] {
         var messages: [String] = []
         if let failure = health.lastArmFailure {
@@ -18,7 +28,9 @@ enum FlintSessionHealthPresentation {
             case .prematureEnd: description = "iOS delivered a session end early"
             case .missedEndWarning: description = "A short session's end warning did not arrive"
             }
-            messages.append("\(description) (\(Int(anomaly.seconds.rounded())) seconds). "
+            let amount = anomaly.kind == .timeZoneChanged && anomaly.seconds == 0
+                ? "" : " (\(Int(anomaly.seconds.rounded())) seconds)"
+            messages.append("\(description)\(amount). "
                 + "Recorded at \(timestamp(anomaly.detectedAt)).")
         }
         if let since = health.unauthorizedSince {
@@ -29,7 +41,9 @@ enum FlintSessionHealthPresentation {
             messages.append("At the last check, the running session did not have Screen Time access.")
         }
         if report?.rearmFailed == true {
-            messages.append("At the last check, iOS refused to re-register the session's end.")
+            let reason = report?.failures.last { $0.activityName != "session.lastAttempt" }?.reason
+            messages.append("At the last check, the session's end could not be re-registered. "
+                + (reason ?? "See the session failure above."))
         }
         return messages
     }

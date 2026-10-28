@@ -29,7 +29,10 @@ final class SchedulesViewModel: ObservableObject {
                 return FlintScheduleArmFailure(ruleID: rule.id, ruleName: rule.name, issue: rule.schedule.issues.first,
                     selectionIssue: FlintSelectionValidation.issue(for: rule.selection,
                         context: rule.allowListMode ? .allowList : .blockList),
-                    selectionContext: rule.allowListMode ? .allowList : .blockList)
+                    selectionContext: rule.allowListMode ? .allowList : .blockList,
+                    registrationReason: health.domains["schedules"]?.failures.first(where: {
+                        $0.activityName == rule.monitorName
+                    })?.reason)
             }
         }
     }

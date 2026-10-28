@@ -9,7 +9,9 @@ import DeviceActivity
 /// limit's apps when the event fires and clears them at the daily boundary (the reset).
 public final class FlintLimitsController {
 
-    public init() {}
+    private let environment: FlintRuleReloadEnvironment
+    public init() { environment = .live }
+    init(environment: FlintRuleReloadEnvironment) { self.environment = environment }
 
     public static func armPlan(
         for rules: [FlintLimitRule]
@@ -41,7 +43,10 @@ public final class FlintLimitsController {
 
     public func upsert(_ limit: FlintLimitRule) {
         guard let group = FlintGroupStore() else { return }
-        var all = group.loadLimits()
+        guard var all = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: environment.defaults) else {
+            environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
+            return
+        }
         if let index = all.firstIndex(where: { $0.id == limit.id }) {
             all[index] = limit
         } else {
@@ -54,7 +59,10 @@ public final class FlintLimitsController {
 
     public func delete(_ limitID: String) {
         guard let group = FlintGroupStore() else { return }
-        var all = group.loadLimits()
+        guard var all = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: environment.defaults) else {
+            environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
+            return
+        }
         all.removeAll { $0.id == limitID }
         group.saveLimits(all)
         ManagedSettingsStore(named: ManagedSettingsStore.Name("flintL.\(limitID)")).clearAllSettings()
@@ -65,7 +73,10 @@ public final class FlintLimitsController {
 
     public func setEnabled(_ limitID: String, _ enabled: Bool) {
         guard let group = FlintGroupStore() else { return }
-        var all = group.loadLimits()
+        guard var all = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: environment.defaults) else {
+            environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
+            return
+        }
         guard let index = all.firstIndex(where: { $0.id == limitID }) else { return }
         all[index].enabled = enabled
         group.saveLimits(all)
@@ -80,11 +91,13 @@ public final class FlintLimitsController {
     /// are recorded in `FlintArmingHealth` — each limit holds an OS activity slot, and a
     /// rejected registration is a budget that never trips.
     public func reload() {
-        guard let group = FlintGroupStore() else { return }
-        let all = group.loadLimits()
+        guard let all = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: environment.defaults) else {
+            environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
+            return
+        }
         let plan = Self.armPlan(for: all)
         for name in plan.storesToClear {
-            ManagedSettingsStore(named: .init(name)).clearAllSettings()
+            environment.clearStore(name)
         }
         let requests = plan.arm.map { limit in
             let schedule = DeviceActivitySchedule(
@@ -103,15 +116,12 @@ public final class FlintLimitsController {
         }
         let report = FlintActivityRegistration.reconcile(
             requests, prefix: "flint.limit.", enabled: plan.enabled,
-            validationFailures: plan.failures,
+            validationFailures: plan.failures, center: environment.center, defaults: environment.defaults,
             onRemove: { name in
                 let id = name.dropFirst("flint.limit.".count)
-                ManagedSettingsStore(named: .init("flintL.\(id)")).clearAllSettings()
+                environment.clearStore("flintL.\(id)")
             })
-        FlintArmingHealth.record(
-            domain: "limits", enabled: report.enabled, attempted: report.attempted,
-            armed: report.armed, failures: report.failures, in: group,
-            observedActivities: report.observedActivities)
+        environment.record("limits", report)
     }
 }
 #endif

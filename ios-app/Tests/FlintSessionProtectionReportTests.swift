@@ -90,10 +90,25 @@ final class FlintSessionProtectionReportTests: XCTestCase {
             XCTAssertFalse(messages.joined().contains("private-id"))
             XCTAssertTrue(messages[1].contains("iOS isn't blocking it"))
             XCTAssertTrue(messages[2].contains("last check"))
-            XCTAssertTrue(messages[3].contains("refused"))
+            XCTAssertTrue(messages[3].contains("could not be re-registered"))
             descriptions.insert(messages[0])
         }
         XCTAssertEqual(descriptions.count, kinds.count)
+    }
+
+    func testDatedSessionHistoryDoesNotKeepProtectionInAttentionAfterItEnds() {
+        let health = FlintSessionHealth(lastArmFailure: .init(sessionName: "Focus", reason: "old refusal", at: now),
+            lastTimeAnomaly: .init(kind: .timeZoneChanged, seconds: 0, sessionID: "older", detectedAt: now))
+        let report = FlintArmingHealth.DomainReport(enabled: 1, attempted: 0, armed: 1,
+            failures: [], observedActivities: [session().monitorName])
+        XCTAssertFalse(FlintSessionHealthPresentation.hasCurrentIssue(health: health, active: nil, report: report))
+        XCTAssertFalse(FlintSessionHealthPresentation.hasCurrentIssue(health: health, active: session(), report: report))
+        let messages = FlintSessionHealthPresentation.messages(health: health, report: report)
+        XCTAssertTrue(messages[0].contains("old refusal"))
+        XCTAssertFalse(messages[1].contains("0 seconds"))
+        var current = health
+        current.lastTimeAnomaly = .init(kind: .wallBehind, seconds: 10, sessionID: session().id, detectedAt: now)
+        XCTAssertTrue(FlintSessionHealthPresentation.hasCurrentIssue(health: current, active: session(), report: report))
     }
 
     private func session(timed: Bool = true) -> FlintActiveSession {
