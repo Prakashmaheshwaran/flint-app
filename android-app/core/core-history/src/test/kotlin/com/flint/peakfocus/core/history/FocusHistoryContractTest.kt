@@ -207,10 +207,15 @@ class FocusHistoryContractTest {
     }
     @Test fun hardCapDropsOldestWholeSessionsAndDailyCompactionSurvivesRestart() = runTest {
         val dir = temporary.newFolder(); val store = store(dir = dir)
-        assertTrue(store.update { (1..6).flatMap { id -> listOf(
+        store.load()
+        val external = (1..6).flatMap { id -> listOf(
             started(start + id, "$id"),
             HistoryEvent(type = "future", session = "$id", at = start + id, tz = "UTC", reason = "x".repeat(1_048_576)),
-        ) } })
+        ) }
+        File(dir, "events.v1.jsonl").bufferedWriter().use { writer -> external.forEach {
+            writer.write(HistoryCodec.encode(it)); writer.write("\n")
+        } }
+        assertTrue(store.compact())
         assertTrue(File(dir, "events.v1.jsonl").length() <= FocusHistoryStore.HARD_CAP)
         val grouped = store.snapshots.value.events.groupBy { it.session }
         assertFalse(grouped.containsKey("1"))

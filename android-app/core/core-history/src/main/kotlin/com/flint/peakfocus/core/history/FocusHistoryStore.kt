@@ -2,7 +2,6 @@ package com.flint.peakfocus.core.history
 
 import java.io.File
 import java.io.FileOutputStream
-import java.io.RandomAccessFile
 import java.security.MessageDigest
 import java.time.Clock
 import java.time.ZoneId
@@ -41,26 +40,37 @@ class FocusHistoryStore(
     /** Reconcile against disk while holding the same lock used by every append/clear. */
     suspend fun update(events: (HistorySnapshot) -> List<HistoryEvent>): Boolean = operation {
         var snapshot = readLocked()
-        // Repair a truncated tail before appending, otherwise the next event would join that tail.
-        if (snapshot.degraded) rewriteLog(snapshot.events)
         val existing = snapshot.events.mapTo(mutableSetOf()) { it.id }
         val additions = events(snapshot).filter { existing.add(it.id) }
         val accepted = snapshot.events.toMutableList()
-        additions.forEach { event ->
+        var total = 0L
+        val writes = additions.map { original ->
+            val encoded = HistoryCodec.encode(original)
+            require(utf8Size(encoded) + 1 <= MAX_RECORD_BYTES) { "Event exceeds append budget" }
+            val bytes = (encoded + "\n").toByteArray(Charsets.UTF_8)
+            total += bytes.size
+            require(total <= MAX_BATCH_BYTES) { "Batch exceeds append budget" }
+            val event = HistoryCodec.decode(encoded, forAppend = true)
             if (event.knownType == HistoryEventType.COMPLETED) {
                 require(event.at <= clock.millis()) { "Completion cannot be in the future" }
-                val plan = accepted.filter { it.session == event.session && it.knownType in setOf(
+                val plan = accepted.filter { it.session == event.session && it.at <= event.at && it.knownType in setOf(
                     HistoryEventType.STARTED, HistoryEventType.RESCHEDULED) }.sortedBy { it.at }.lastOrNull()
                 require(plan == null || (plan.plannedEnd != null && event.at >= plan.plannedEnd)) {
                     "Completion cannot precede its effective logical deadline"
                 }
             }
-            val encoded = HistoryCodec.encode(event)
-            HistoryCodec.decode(encoded) // reject invalid writes; never corrupt the durable log
-            val bytes = (encoded + "\n").toByteArray(Charsets.UTF_8)
-            require(bytes.size <= HARD_CAP) { "Event exceeds log cap" }
-            FileOutputStream(log, true).use { stream -> stream.write(bytes); stream.flush(); stream.fd.sync() }
             accepted += event
+            bytes
+        }
+        require(accepted.size <= MAX_RECORDS) { "History record budget exceeded" }
+        require(accepted.sumOf { it.sessions?.size ?: 0 } <= MAX_REFERENCES_TOTAL) { "History reference budget exceeded" }
+        // Validation is all-or-nothing. Repair only after every candidate passed validation.
+        if (snapshot.degraded) rewriteLog(snapshot.events)
+        if (writes.size > 1) atomicWrite(log) { stream ->
+            log.inputStream().use { it.copyTo(stream) }
+            writes.forEach(stream::write)
+        } else if (writes.isNotEmpty()) FileOutputStream(log, true).use { stream ->
+            stream.write(writes.single()); stream.flush(); stream.fd.sync()
         }
         snapshot = readLocked()
         compactIfNeeded(snapshot)
@@ -99,7 +109,7 @@ class FocusHistoryStore(
 
     private fun readLocked(): HistorySnapshot {
         check(directory.isDirectory || directory.mkdirs()) { "History directory unavailable" }
-        var meta = readMetadata()
+        val meta = readMetadata()
         val createdAt = meta.created
         val clearedAt = meta.cleared
         lastCompaction = meta.compactedDay
@@ -107,31 +117,48 @@ class FocusHistoryStore(
         if (!log.exists()) syncWrite(log, byteArrayOf())
         if (log.length() > READ_CAP) {
             // Preserve the original before resetting. Never allocate an unbounded external file.
-            quarantine(log)
-            atomicWrite(log, byteArrayOf())
-            degraded = true
-            meta = meta.copy(degraded = true, pendingClear = null, keepSessions = emptySet())
-            writeMetadata(meta)
+            return resetOverBudgetLog(meta)
         }
         val events = mutableListOf<HistoryEvent>()
         var bad = false
-        val terminated = log.length() == 0L || RandomAccessFile(log, "r").use {
-            it.seek(it.length() - 1); it.read() == '\n'.code
-        }
-        log.bufferedReader().use { reader ->
-            var line = reader.readLine()
-            while (line != null) {
-                val next = reader.readLine()
-                if (next == null && !terminated) bad = true else {
-                    try {
-                        val event = HistoryCodec.decode(line)
-                        events += event
-                        if (event.opaque && event.v == 1 && HistoryEventType.fromWire(event.type) != null) bad = true
-                    } catch (_: Exception) { bad = true }
-                }
-                line = next
+        // Count before materializing any record/ownership graph. Quarantine externally
+        // dense logs before a degraded reset, so subsequent sessions can still be recorded.
+        var records = 0
+        log.inputStream().buffered().use { stream ->
+            val buffer = ByteArray(8192)
+            while (true) {
+                val count = stream.read(buffer); if (count < 0) break
+                repeat(count) { if (buffer[it] == '\n'.code.toByte()) records++ }
             }
         }
+        if (records > MAX_RECORDS) {
+            return resetOverBudgetLog(meta)
+        }
+        // JSONL is LF-delimited. Raw CR is valid JSON whitespace and must survive verbatim.
+        var references = 0
+        try { log.bufferedReader().use { reader ->
+            val buffer = CharArray(8192); val line = StringBuilder()
+            while (true) {
+                val count = reader.read(buffer); if (count < 0) break
+                var start = 0
+                repeat(count) { index ->
+                    if (buffer[index] == '\n') {
+                        line.append(buffer, start, index - start)
+                        try {
+                            val event = HistoryCodec.decode(line.toString())
+                            references += event.sessions?.size ?: 0
+                            if (references > MAX_REFERENCES_TOTAL) throw ReferenceBudgetExceeded()
+                            events += event
+                            if (event.opaque && event.v == 1 && HistoryEventType.fromWire(event.type) != null) bad = true
+                        } catch (e: ReferenceBudgetExceeded) { throw e } catch (_: Exception) { bad = true }
+                        line.setLength(0); start = index + 1
+                    }
+                }
+                line.append(buffer, start, count - start)
+                check(line.length <= READ_CAP)
+            }
+            if (line.isNotEmpty()) bad = true
+        } } catch (_: ReferenceBudgetExceeded) { return resetOverBudgetLog(meta) }
         if (bad) {
             degraded = true
             quarantine(log)
@@ -153,6 +180,15 @@ class FocusHistoryStore(
         val created: Long, val cleared: Long? = null, val compactedDay: Long? = null, val degraded: Boolean = false,
         val pendingClear: Long? = null, val keepSessions: Set<String> = emptySet(),
     )
+
+    private class ReferenceBudgetExceeded : Exception()
+    private fun resetOverBudgetLog(meta: Metadata): HistorySnapshot {
+        quarantine(log)
+        atomicWrite(log, byteArrayOf())
+        degraded = true
+        writeMetadata(meta.copy(degraded = true, pendingClear = null, keepSessions = emptySet()))
+        return readLocked()
+    }
 
     private fun readMetadata(): Metadata {
         if (!metadata.exists()) {
@@ -203,20 +239,20 @@ class FocusHistoryStore(
         val retainedIds = groups.filterValues { events -> events.maxOf { it.at } >= cutoff }.keys.toMutableSet()
         // A global pass belongs to its operation and every affected session. Keep that
         // shared record until all retained owners disappear, including during hard-cap trim.
-        val groupOwners = groupOwners(snapshot.events)
-        val owners = snapshot.events.map { groupOwners.getValue(it.session) }
-        val dependents = mutableMapOf<String, MutableList<Int>>()
-        owners.forEachIndexed { index, ids -> ids.forEach { dependents.getOrPut(it) { mutableListOf() }.add(index) } }
-        val references = owners.map { ids -> ids.count { it in retainedIds } }.toIntArray()
-        val sizes = snapshot.events.map { utf8Size(HistoryCodec.encode(it)) + 1 }
-        var size = snapshot.events.indices.sumOf { if (references[it] > 0) sizes[it] else 0 }
+        val owners = groupOwners(groups)
+        val dependents = mutableMapOf<String, MutableList<String>>()
+        owners.forEach { (group, ids) -> ids.forEach { dependents.getOrPut(it) { mutableListOf() }.add(group) } }
+        val references = owners.mapValues { (_, ids) -> ids.count { it in retainedIds } }.toMutableMap()
+        val sizes = groups.mapValues { (_, events) -> events.sumOf { utf8Size(HistoryCodec.encode(it)) + 1 } }
+        var size = groups.keys.sumOf { if (references.getValue(it) > 0) sizes.getValue(it) else 0 }
         groups.entries.sortedBy { (_, events) -> events.maxOf { it.at } }.forEach { (id, _) ->
-            if (size > HARD_CAP && retainedIds.remove(id)) dependents[id].orEmpty().forEach { index ->
-                references[index]--
-                if (references[index] == 0) size -= sizes[index]
+            if (size > HARD_CAP && retainedIds.remove(id)) dependents[id].orEmpty().forEach { group ->
+                val remaining = references.getValue(group) - 1
+                references[group] = remaining
+                if (remaining == 0) size -= sizes.getValue(group)
             }
         }
-        rewriteLog(snapshot.events.filterIndexed { index, _ -> references[index] > 0 })
+        rewriteLog(snapshot.events.filter { references.getValue(it.session) > 0 })
         lastCompaction = clock.instant().atZone(zone()).toLocalDate().toEpochDay()
         val meta = readMetadata()
         writeMetadata(meta.copy(compactedDay = lastCompaction, degraded = degraded))
@@ -229,13 +265,13 @@ class FocusHistoryStore(
         }
     }
 
-    private fun groupOwners(events: List<HistoryEvent>): Map<String, Set<String>> =
-        events.groupBy { it.session }.mapValues { (id, group) -> buildSet {
+    private fun groupOwners(groups: Map<String, List<HistoryEvent>>): Map<String, Set<String>> =
+        groups.mapValues { (id, group) -> buildSet {
             add(id)
             group.filter { it.knownType == HistoryEventType.PASS_USED }.forEach { addAll(it.sessions.orEmpty()) }
         } }
     private fun retainForSessions(events: List<HistoryEvent>, retained: Set<String>): List<HistoryEvent> {
-        val owners = groupOwners(events)
+        val owners = groupOwners(events.groupBy { it.session })
         return events.filter { event -> owners.getValue(event.session).any { it in retained } }
     }
 
@@ -304,5 +340,9 @@ class FocusHistoryStore(
         const val SOFT_CAP = 1024 * 1024
         const val HARD_CAP = 5 * 1024 * 1024
         const val READ_CAP = 2L * HARD_CAP
+        const val MAX_RECORD_BYTES = 64 * 1024
+        const val MAX_BATCH_BYTES = 1024 * 1024
+        const val MAX_RECORDS = 20_000
+        const val MAX_REFERENCES_TOTAL = 20_000
     }
 }

@@ -24,8 +24,8 @@ object HistoryCodec {
         event.recoveryEnd?.let { put("recoveryEnd", it) }
     })
 
-    fun decode(line: String): HistoryEvent {
-        val envelope = HistoryEnvelope.read(line)
+    @JvmOverloads fun decode(line: String, forAppend: Boolean = false): HistoryEvent {
+        val envelope = HistoryEnvelope.read(line, forAppend)
         if (envelope.v > 1 || HistoryEventType.fromWire(envelope.type) == null || envelope.opaque || line.length > MATERIALIZATION_LIMIT) return envelope.copy(opaque = true)
         val fields = FlatJson.decode(line)
         fun string(key: String): String = (fields[key] as? String)?.takeIf { it.isNotBlank() }

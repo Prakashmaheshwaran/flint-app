@@ -140,18 +140,45 @@ class FocusHistoryIntegrityTest {
         val classes = listOf(FocusHistoryStore::class.java, HistoryResourceProbe::class.java,
             kotlin.Unit::class.java, kotlinx.coroutines.Job::class.java)
         val classpath = classes.map { File(requireNotNull(it.protectionDomain).codeSource.location.toURI()).absolutePath }.distinct().joinToString(File.pathSeparator)
-        val process = ProcessBuilder(File(System.getProperty("java.home"), "bin/java").path,
-            "-Xmx64m", "-cp", classpath, HistoryResourceProbe::class.java.name, dir.path).redirectErrorStream(true).start()
-        val output = process.inputStream.bufferedReader().readText()
-        assertEquals(output, 0, process.waitFor()); assertTrue(output, output.contains("BOUNDED_LOAD_OK"))
+        for (mode in listOf("shallow", "owners", "many")) {
+            val process = ProcessBuilder(File(System.getProperty("java.home"), "bin/java").path,
+                "-Xmx64m", "-cp", classpath, HistoryResourceProbe::class.java.name, File(dir, mode).path, mode).redirectErrorStream(true).start()
+            val output = process.inputStream.bufferedReader().readText()
+            assertEquals(output, 0, process.waitFor()); assertTrue(output, output.contains("BOUNDED_LOAD_OK"))
+        }
     }
 }
 
 /** Separate JVM prevents the normal Gradle worker heap from masking allocation amplification. */
 object HistoryResourceProbe {
     @JvmStatic fun main(args: Array<String>) = runBlocking {
-        val dir = File(args.single()); val now = 1_793_196_000_000L
+        val dir = File(args.first()); val now = 1_793_196_000_000L
         val store = FocusHistoryStore(dir, Clock.fixed(Instant.ofEpochMilli(now), ZoneOffset.UTC)); store.load()
+        val mode = args.getOrElse(1) { "shallow" }
+        if (mode == "owners") {
+            File(dir, "events.v1.jsonl").bufferedWriter().use { writer ->
+                val refs = (0..7000).joinToString(",", "[", "]") { "\"session-$it\"" }
+                writer.write("{\"v\":1,\"id\":\"pass\",\"type\":\"pass_used\",\"session\":\"operation\",\"at\":$now,\"tz\":\"UTC\",\"sessions\":$refs,\"recoveryEnd\":${now + 1000}}\n")
+                repeat(3000) { writer.write("{\"v\":2,\"id\":\"detail-$it\",\"type\":\"future\",\"session\":\"operation\",\"at\":$now,\"tz\":\"UTC\"}\n") }
+            }
+            check(store.compact()); check(store.load().events.size == 3001)
+            check(store.load().events.first().knownType == null)
+            println("BOUNDED_LOAD_OK owners"); return@runBlocking
+        }
+        if (mode == "many") {
+            val log = File(dir, "events.v1.jsonl")
+            log.bufferedWriter().use { writer -> repeat(85_000) {
+                writer.write("{\"v\":2,\"id\":\"e$it\",\"type\":\"future\",\"session\":\"s$it\",\"at\":$now,\"tz\":\"UTC\",\"payload\":null}\n")
+            } }
+            val size = log.length()
+            val snapshot = store.load(); check(snapshot.degraded); check(snapshot.events.isEmpty())
+            check(File(dir, "quarantine").listFiles()!!.any { it.length() == size })
+            val reopened = FocusHistoryStore(dir, Clock.fixed(Instant.ofEpochMilli(now), ZoneOffset.UTC))
+            check(reopened.append(HistoryEvent(type = "started", session = "session-new", at = now, tz = "UTC",
+                plannedEnd = now + 60_000, tier = "easy", source = "manual", name = "Focus")))
+            check(reopened.clear(emptySet())); check(!FocusHistoryStore(dir).load().degraded)
+            println("BOUNDED_LOAD_OK many"); return@runBlocking
+        }
         File(dir, "events.v1.jsonl").bufferedWriter().use { writer ->
             writer.write("{\"v\":2,\"id\":\"huge\",\"type\":\"future\",\"session\":\"session-huge\",\"at\":$now,\"tz\":\"UTC\",\"payload\":[")
             repeat(2_000_000) { if (it != 0) writer.write(","); writer.write("[]") }; writer.write("]}\n")

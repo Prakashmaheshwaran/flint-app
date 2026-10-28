@@ -2,7 +2,8 @@ package com.flint.peakfocus.core.history
 
 /** Validates JSON iteratively. Only the six common envelope fields are materialized. */
 internal object HistoryEnvelope {
-    fun read(line: String): HistoryEvent = Scanner(line).read()
+    const val MAX_REFERENCES = 256
+    fun read(line: String, forAppend: Boolean = false): HistoryEvent = Scanner(line).read(forAppend)
 
     private class Scanner(private val input: String) {
         private var i = 0
@@ -35,7 +36,7 @@ internal object HistoryEnvelope {
                     }
                 }
                 if (bounded) {
-                    if (value!!.length < 4096) value.append(c) else bounded = false
+                    if (value!!.length < HistoryCodec.MATERIALIZATION_LIMIT) value.append(c) else bounded = false
                 }
             }
         }
@@ -81,7 +82,10 @@ internal object HistoryEnvelope {
                 else -> number()
             }
         }
-        private fun skipValue() {
+        private fun skipValue(): Int {
+            whitespace()
+            val rootArray = i < input.length && input[i] == '['
+            var elements = 0
             value()
             while (depth > 0) {
                 whitespace(); require(i < input.length)
@@ -94,22 +98,28 @@ internal object HistoryEnvelope {
                     2 -> when (input[i++]) { ',' -> stack[depth - 1] = 1; '}' -> depth--; else -> error("Invalid object") }
                     3, 4 -> {
                         if (stack[depth - 1].toInt() == 3 && input[i] == ']') { i++; depth-- } else {
+                            if (rootArray && depth == 1) elements++
                             stack[depth - 1] = 5; value()
                         }
                     }
                     5 -> when (input[i++]) { ',' -> stack[depth - 1] = 4; ']' -> depth--; else -> error("Invalid array") }
                 }
             }
+            return elements
         }
-        fun read(): HistoryEvent {
+        fun read(forAppend: Boolean): HistoryEvent {
             val fields = mutableMapOf<String, Any?>()
+            var excessiveReferences = false
             take('{'); whitespace()
             if (i < input.length && input[i] != '}') while (true) {
                 val key = string(true); take(':'); whitespace()
                 if (key in setOf("v", "id", "type", "session", "at", "tz")) {
                     require(!fields.containsKey(key))
                     fields[key!!] = if (key == "v" || key == "at") number() else string(true)
-                } else skipValue()
+                } else {
+                    val count = skipValue()
+                    if (key == "sessions" && count > MAX_REFERENCES) excessiveReferences = true
+                }
                 whitespace(); require(i < input.length)
                 if (input[i] == '}') break
                 take(',')
@@ -117,8 +127,10 @@ internal object HistoryEnvelope {
             take('}'); whitespace(); require(i == input.length)
             fun text(key: String) = (fields[key] as? String)?.takeIf { it.isNotBlank() } ?: error(key)
             val version = (fields["v"] as? Long)?.takeIf { it in 1..Int.MAX_VALUE }?.toInt() ?: error("v")
+            require(!forAppend || !excessiveReferences || version != 1 || text("type") != "pass_used") { "Too many session references" }
             return HistoryEvent(v = version, id = text("id"), type = text("type"), session = text("session"),
-                at = fields["at"] as? Long ?: error("at"), tz = text("tz"), originalLine = input, opaque = maximumDepth > 128)
+                at = fields["at"] as? Long ?: error("at"), tz = text("tz"), originalLine = input,
+                opaque = maximumDepth > 128 || excessiveReferences)
         }
     }
 }
