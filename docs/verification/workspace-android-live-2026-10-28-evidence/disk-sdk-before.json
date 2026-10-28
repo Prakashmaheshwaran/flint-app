@@ -1,0 +1,13 @@
+{
+  "utc": "2026-10-28T05:00:52Z",
+  "disk": {
+    "total": 245107195904,
+    "used": 206496178176,
+    "free": 38611017728
+  },
+  "freeGiB": 35.959312438964844,
+  "licenses": [
+    "android-sdk-license"
+  ],
+  "imagePresent": false
+}

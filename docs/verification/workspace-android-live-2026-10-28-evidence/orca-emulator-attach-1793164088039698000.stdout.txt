@@ -1,0 +1,16 @@
+{
+  "id": "5e8a9e0d-54ed-43af-9692-0049a5973bfc",
+  "ok": true,
+  "result": {
+    "attached": true,
+    "info": {
+      "deviceUdid": "emulator-5554",
+      "wsUrl": "",
+      "streamUrl": "scrcpy://emulator-5554",
+      "streamCodec": "h264"
+    }
+  },
+  "_meta": {
+    "runtimeId": "cab26e39-2703-435c-b1e3-757b327d33d8"
+  }
+}

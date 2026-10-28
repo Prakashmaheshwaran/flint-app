@@ -1,0 +1,2 @@
+Claimed android emulator-5554; created=False booted=True
+make: *** [android-run] Error 1

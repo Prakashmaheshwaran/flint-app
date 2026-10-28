@@ -1,0 +1,6 @@
+test_android_logs_reject_pidless_orca_entries_and_use_scoped_sdk (__main__.AgentCommands.test_android_logs_reject_pidless_orca_entries_and_use_scoped_sdk) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 1.394s
+
+OK

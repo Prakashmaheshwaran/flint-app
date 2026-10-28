@@ -1,0 +1,3 @@
+Rolled back only our verified android boot: emulator-5554; Orca helpers were not killed.
+Device run stopped: flint-android-orca failed (1): 
+make: *** [android-run] Error 2

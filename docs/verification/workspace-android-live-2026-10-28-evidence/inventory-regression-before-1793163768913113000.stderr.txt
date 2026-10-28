@@ -1,0 +1,20 @@
+test_android_inventory_uses_captured_backend_array (__main__.AgentCommands.test_android_inventory_uses_captured_backend_array) ... FAIL
+
+======================================================================
+FAIL: test_android_inventory_uses_captured_backend_array (__main__.AgentCommands.test_android_inventory_uses_captured_backend_array)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-android/scripts/agent/selftest.py", line 470, in test_android_inventory_uses_captured_backend_array
+    self.assert_ok(result)
+    ~~~~~~~~~~~~~~^^^^^^^^
+  File "/Users/prakash/orca/workspaces/flint/ws-android/scripts/agent/selftest.py", line 311, in assert_ok
+    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 2 != 0 : Device run stopped: AVD='flint-test' matches 0 Android devices; use a unique AVD name or serial
+gnumake: *** [android-run] Error 2
+
+
+----------------------------------------------------------------------
+Ran 1 test in 0.400s
+
+FAILED (failures=1)

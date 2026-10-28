@@ -1,0 +1,129 @@
+{
+  "id": "0f982300-9bb0-478a-a487-607313d5eceb",
+  "ok": true,
+  "result": [
+    {
+      "backend": "ios",
+      "id": "4EFE51A2-0AE4-4C5B-AEEA-18964DABFF78",
+      "name": "Apple Watch Series 12 (46mm)",
+      "state": "shutdown",
+      "detail": "com.apple.CoreSimulator.SimRuntime.watchOS-27-0",
+      "isAvailable": true
+    },
+    {
+      "backend": "ios",
+      "id": "DB816443-8020-48ED-98CC-87FA0655E4EC",
+      "name": "Apple Watch Series 12 (42mm)",
+      "state": "shutdown",
+      "detail": "com.apple.CoreSimulator.SimRuntime.watchOS-27-0",
+      "isAvailable": true
+    },
+    {
+      "backend": "ios",
+      "id": "8643B168-2575-4E0F-A59A-4252EEF9D989",
+      "name": "Apple Watch Ultra 4 (49mm)",
+      "state": "shutdown",
+      "detail": "com.apple.CoreSimulator.SimRuntime.watchOS-27-0",
+      "isAvailable": true
+    },
+    {
+      "backend": "ios",
+      "id": "1F9252E4-8710-44F1-860B-BACF373370C4",
+      "name": "Apple Watch SE 3 (44mm)",
+      "state": "shutdown",
+      "detail": "com.apple.CoreSimulator.SimRuntime.watchOS-27-0",
+      "isAvailable": true
+    },
+    {
+      "backend": "ios",
+      "id": "929C9710-6546-4253-9732-EABFD551924A",
+      "name": "Apple Watch SE 3 (40mm)",
+      "state": "shutdown",
+      "detail": "com.apple.CoreSimulator.SimRuntime.watchOS-27-0",
+      "isAvailable": true
+    },
+    {
+      "backend": "ios",
+      "id": "645A2204-ED7C-4253-B298-2749820B1B7E",
+      "name": "iPhone 17e",
+      "state": "shutdown",
+      "detail": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+      "isAvailable": true
+    },
+    {
+      "backend": "ios",
+      "id": "3778F0ED-7866-496F-926E-8A98B8AFFB93",
+      "name": "iPhone Air",
+      "state": "shutdown",
+      "detail": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+      "isAvailable": true
+    },
+    {
+      "backend": "ios",
+      "id": "1BD4732B-EC1A-4074-8C70-6AC369607185",
+      "name": "iPhone 17",
+      "state": "shutdown",
+      "detail": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+      "isAvailable": true
+    },
+    {
+      "backend": "ios",
+      "id": "1B649E8D-AFE1-4646-871D-1285ED090145",
+      "name": "iPad Pro 11-inch (M5)",
+      "state": "shutdown",
+      "detail": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+      "isAvailable": true
+    },
+    {
+      "backend": "ios",
+      "id": "150B38E3-DA15-4BC1-9E9B-8C530DB49264",
+      "name": "iPad mini (A17 Pro)",
+      "state": "shutdown",
+      "detail": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+      "isAvailable": true
+    },
+    {
+      "backend": "ios",
+      "id": "DE6BC42E-21AE-4AEE-BF76-77987655A8F4",
+      "name": "iPad Air 13-inch (M4)",
+      "state": "shutdown",
+      "detail": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+      "isAvailable": true
+    },
+    {
+      "backend": "ios",
+      "id": "7EBF0851-E3E8-47D1-ADA0-92FA3D0D767F",
+      "name": "iPad Air 11-inch (M4)",
+      "state": "shutdown",
+      "detail": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+      "isAvailable": true
+    },
+    {
+      "backend": "ios",
+      "id": "E98E046C-8E17-4FE5-AFB1-33DEA229B260",
+      "name": "iPad (A16)",
+      "state": "shutdown",
+      "detail": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+      "isAvailable": true
+    },
+    {
+      "backend": "android",
+      "id": "emulator-5554",
+      "name": "flint-test",
+      "state": "booted",
+      "detail": "emulator",
+      "isAvailable": true
+    },
+    {
+      "backend": "android",
+      "id": "flint-opal-reference",
+      "name": "flint-opal-reference",
+      "state": "shutdown",
+      "detail": "avd",
+      "isAvailable": true
+    }
+  ],
+  "_meta": {
+    "runtimeId": "cab26e39-2703-435c-b1e3-757b327d33d8"
+  }
+}

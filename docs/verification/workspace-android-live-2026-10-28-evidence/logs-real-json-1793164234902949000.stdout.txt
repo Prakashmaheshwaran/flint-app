@@ -1,0 +1,210 @@
+Flint logs: device=flint-test package=com.flint.peakfocus
+--------- beginning of main
+10-28 01:08:14.572  4660  4660 I flint.peakfocus: Late-enabling -Xcheck:jni
+10-28 01:08:15.307  4660  4660 I flint.peakfocus: Using CollectorTypeCMC GC.
+10-28 01:08:15.646  4660  4660 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+10-28 01:08:16.056  4660  4660 W ziparchive: Unable to open '/data/app/~~ZwLrnGFlGcfb4XGI9ZfJOQ==/com.flint.peakfocus-4-SLepXc26nMlrQHDQ0d9Q==/base.dm': No such file or directory
+10-28 01:08:16.057  4660  4660 W ziparchive: Unable to open '/data/app/~~ZwLrnGFlGcfb4XGI9ZfJOQ==/com.flint.peakfocus-4-SLepXc26nMlrQHDQ0d9Q==/base.dm': No such file or directory
+10-28 01:08:16.738  4660  4660 D nativeloader: Configuring clns-7 for other apk /data/app/~~ZwLrnGFlGcfb4XGI9ZfJOQ==/com.flint.peakfocus-4-SLepXc26nMlrQHDQ0d9Q==/base.apk. target_sdk_version=35, uses_libraries=, library_path=/data/app/~~ZwLrnGFlGcfb4XGI9ZfJOQ==/com.flint.peakfocus-4-SLepXc26nMlrQHDQ0d9Q==/lib/arm64:/data/app/~~ZwLrnGFlGcfb4XGI9ZfJOQ==/com.flint.peakfocus-4-SLepXc26nMlrQHDQ0d9Q==/base.apk!/lib/arm64-v8a, permitted_path=/data:/mnt/expand:/data/user/0/com.flint.peakfocus
+10-28 01:08:16.742  4660  4660 D CompatChangeReporter: Compat change id reported: 202956589; UID 10207; state: ENABLED
+10-28 01:08:16.775  4660  4660 V GraphicsEnvironment: Currently set values for:
+10-28 01:08:16.777  4660  4660 V GraphicsEnvironment:   angle_gl_driver_selection_pkgs=[]
+10-28 01:08:16.777  4660  4660 V GraphicsEnvironment:   angle_gl_driver_selection_values=[]
+10-28 01:08:16.777  4660  4660 V GraphicsEnvironment: Global.Settings values are invalid: number of packages: 0, number of values: 0
+10-28 01:08:16.778  4660  4660 V GraphicsEnvironment: Neither updatable production driver nor prerelease driver is supported.
+10-28 01:08:16.837  4660  4660 W FirebaseApp: Default FirebaseApp failed to initialize because no default options were found. This usually means that com.google.gms:google-services was not applied to your gradle project.
+10-28 01:08:16.837  4660  4660 I FirebaseInitProvider: FirebaseApp initialization unsuccessful
+10-28 01:08:16.858  4660  4660 D CompatChangeReporter: Compat change id reported: 279646685; UID 10207; state: ENABLED
+10-28 01:08:17.041  4660  4755 D CompatChangeReporter: Compat change id reported: 312399441; UID 10207; state: ENABLED
+10-28 01:08:17.145  4660  4660 D CompatChangeReporter: Compat change id reported: 309578419; UID 10207; state: ENABLED
+10-28 01:08:17.278  4660  4660 W HWUI    : Unknown dataspace 0
+10-28 01:08:17.927  4660  4668 I flint.peakfocus: Compiler allocated 5250KB to compile void android.view.ViewRootImpl.performTraversals()
+10-28 01:08:18.607  4660  4764 I EGL_emulation: Opening libGLESv1_CM_emulation.so
+10-28 01:08:18.611  4660  4764 I EGL_emulation: Opening libGLESv2_emulation.so
+10-28 01:08:18.771  4660  4764 W HWUI    : Failed to choose config with EGL_SWAP_BEHAVIOR_PRESERVED, retrying without...
+10-28 01:08:18.772  4660  4764 W HWUI    : Failed to initialize 101010-2 format, error = EGL_SUCCESS
+10-28 01:08:18.884  4660  4764 I Gralloc4: mapper 4.x is not supported
+10-28 01:08:19.525  4660  4660 I Choreographer: Skipped 122 frames!  The application may be doing too much work on its main thread.
+10-28 01:08:20.586  4660  4674 I HWUI    : Davey! duration=3110ms; Flags=1, FrameTimelineVsyncId=9084, IntendedVsync=142833690475, Vsync=142950357137, InputEventId=0, HandleInputStart=142954992901, AnimationStart=142954997609, PerformTraversalsStart=142954999193, DrawStart=144528308443, FrameDeadline=142850357141, FrameInterval=142954657443, FrameStartTime=16666666, SyncQueued=144585888193, SyncStart=144588719110, IssueDrawCommandsStart=144590826068, SwapBuffers=144973303985, FrameCompleted=145946566361, DequeueBufferDuration=3250, QueueBufferDuration=398416, GpuCompleted=145946566361, SwapBuffersCompleted=144979614735, DisplayPresentTime=72904372626980942, CommandSubmissionCompleted=144973303985, 
+10-28 01:08:20.835  4660  4660 I Choreographer: Skipped 41 frames!  The application may be doing too much work on its main thread.
+10-28 01:08:21.254  4660  4674 I HWUI    : Davey! duration=1520ms; Flags=0, FrameTimelineVsyncId=9190, IntendedVsync=145083690385, Vsync=145417023705, InputEventId=0, HandleInputStart=145440933735, AnimationStart=145440935444, PerformTraversalsStart=145563719402, DrawStart=145563828319, FrameDeadline=145967023683, FrameInterval=145431035944, FrameStartTime=16666666, SyncQueued=145611555402, SyncStart=145617272152, IssueDrawCommandsStart=145618966069, SwapBuffers=146367468528, FrameCompleted=146610168528, DequeueBufferDuration=4625, QueueBufferDuration=2457542, GpuCompleted=146610168528, SwapBuffersCompleted=146370377028, DisplayPresentTime=144115222452437076, CommandSubmissionCompleted=146367468528, 
+10-28 01:08:21.448  4660  4660 I Choreographer: Skipped 31 frames!  The application may be doing too much work on its main thread.
+10-28 01:08:21.574  4660  4673 I HWUI    : Davey! duration=1028ms; Flags=0, FrameTimelineVsyncId=9218, IntendedVsync=145683690361, Vsync=146367023667, InputEventId=0, HandleInputStart=146450902778, AnimationStart=146450904236, PerformTraversalsStart=146486183278, DrawStart=146486629278, FrameDeadline=146833690315, FrameInterval=146374813361, FrameStartTime=16666666, SyncQueued=146501845111, SyncStart=146798173819, IssueDrawCommandsStart=146798428986, SwapBuffers=146801173944, FrameCompleted=147008563695, DequeueBufferDuration=206711834, QueueBufferDuration=157500, GpuCompleted=146959507486, SwapBuffersCompleted=147008563695, DisplayPresentTime=0, CommandSubmissionCompleted=146801173944, 
+10-28 01:08:21.986  4660  4764 D EGL_emulation: app_time_stats: avg=349.92ms min=5.53ms max=1390.77ms count=6
+10-28 01:08:22.296  4660  4875 D ProfileInstaller: Installing profile for com.flint.peakfocus
+10-28 01:08:23.079  4660  4764 D EGL_emulation: app_time_stats: avg=76.65ms min=22.00ms max=147.69ms count=8
+10-28 01:08:23.297  4660  4668 I flint.peakfocus: Compiler allocated 4855KB to compile kotlin.Unit com.flint.peakfocus.feature.blocklist.TimerScreenKt.TodayScene$lambda$113$lambda$112(java.lang.String, java.lang.String, com.flint.peakfocus.feature.blocklist.TimerUiState, java.lang.String, kotlin.jvm.functions.Function0, kotlin.jvm.functions.Function0, kotlin.jvm.functions.Function0, kotlin.jvm.functions.Function0, kotlin.jvm.functions.Function1, androidx.compose.foundation.layout.BoxWithConstraintsScope, androidx.compose.runtime.Composer, int)
+10-28 01:08:24.149  4660  4764 D EGL_emulation: app_time_stats: avg=65.92ms min=18.83ms max=122.18ms count=8
+10-28 01:08:25.342  4660  4764 D EGL_emulation: app_time_stats: avg=66.84ms min=2.56ms max=117.34ms count=8
+10-28 01:08:25.710  4660  4669 W flint.peakfocus: Cleared Reference was only reachable from finalizer (only reported once)
+10-28 01:08:26.373  4660  4669 I flint.peakfocus: Background concurrent mark compact GC freed 4214KB AllocSpace bytes, 11(284KB) LOS objects, 49% free, 5482KB/10MB, paused 924us,3.220ms total 901.517ms
+10-28 01:08:26.382  4660  4764 D EGL_emulation: app_time_stats: avg=61.99ms min=9.07ms max=150.23ms count=8
+10-28 01:08:26.491  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/Camera2/Camera2.apk' with 1 weak references
+10-28 01:08:26.492  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~kabdQfNNcrcpIY0FmwHTvw==/com.android.chrome-bmTD5zums7BgBSqSf7_sAA==/Chrome.apk' with 1 weak references
+10-28 01:08:26.492  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~DdtVmdRhdOuZuCKrgRlr7g==/com.google.android.trichromelibrary_636771932-xwHPiICLhIytgWED7vA2BQ==/TrichromeLibrary.apk' with 1 weak references
+10-28 01:08:26.522  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/priv-app/SettingsGoogle/SettingsGoogle.apk' with 1 weak references
+10-28 01:08:26.523  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '/product/overlay/SettingsGoogle__sdk_gphone64_arm64__auto_generated_rro_product.apk' with 1 weak references
+10-28 01:08:26.523  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/Drive/Drive.apk' with 1 weak references
+10-28 01:08:26.529  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/Maps/Maps.apk' with 1 weak references
+10-28 01:08:26.530  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/priv-app/PrebuiltBugle/PrebuiltBugle.apk' with 1 weak references
+10-28 01:08:26.540  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/Photos/Photos.apk' with 1 weak references
+10-28 01:08:26.541  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/YouTubeMusicPrebuilt/YouTubeMusicPrebuilt.apk' with 1 weak references
+10-28 01:08:26.542  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/CalendarGooglePrebuilt/CalendarGooglePrebuilt.apk' with 1 weak references
+10-28 01:08:26.554  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/GoogleContacts/GoogleContacts.apk' with 1 weak references
+10-28 01:08:26.555  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/PrebuiltDeskClockGoogle/PrebuiltDeskClockGoogle.apk' with 1 weak references
+10-28 01:08:26.572  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/priv-app/GoogleDialer/GoogleDialer.apk' with 1 weak references
+10-28 01:08:26.573  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/PrebuiltGmail/PrebuiltGmail.apk' with 1 weak references
+10-28 01:08:26.574  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/YouTube/YouTube.apk' with 1 weak references
+10-28 01:08:26.574  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /system/app/Stk/Stk.apk' with 1 weak references
+10-28 01:08:26.576  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/priv-app/SafetyHubPrebuilt/SafetyHubPrebuilt.apk' with 1 weak references
+10-28 01:08:26.577  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /system/priv-app/DocumentsUIGoogle/DocumentsUIGoogle.apk' with 1 weak references
+10-28 01:08:26.577  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/priv-app/Velvet/Velvet.apk' with 1 weak references
+10-28 01:08:26.578  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~drWag-u3vWrqsqtXIVgekg==/com.withopal.opal-OFJ1BV6MpVPHDG3O2g_IPA==/base.apk' with 1 weak references
+10-28 01:08:26.578  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~drWag-u3vWrqsqtXIVgekg==/com.withopal.opal-OFJ1BV6MpVPHDG3O2g_IPA==/split_config.arm64_v8a.apk' with 1 weak references
+10-28 01:08:26.578  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~drWag-u3vWrqsqtXIVgekg==/com.withopal.opal-OFJ1BV6MpVPHDG3O2g_IPA==/split_config.en.apk' with 1 weak references
+10-28 01:08:26.578  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~drWag-u3vWrqsqtXIVgekg==/com.withopal.opal-OFJ1BV6MpVPHDG3O2g_IPA==/split_config.xxhdpi.apk' with 1 weak references
+10-28 01:08:27.411  4660  4764 D EGL_emulation: app_time_stats: avg=46.91ms min=2.39ms max=89.93ms count=8
+10-28 01:08:28.528  4660  4764 D EGL_emulation: app_time_stats: avg=70.97ms min=12.37ms max=134.47ms count=7
+10-28 01:08:29.613  4660  4764 D EGL_emulation: app_time_stats: avg=74.28ms min=36.19ms max=162.49ms count=8
+10-28 01:08:30.656  4660  4764 D EGL_emulation: app_time_stats: avg=80.90ms min=11.16ms max=216.21ms count=7
+10-28 01:08:31.712  4660  4764 D EGL_emulation: app_time_stats: avg=68.72ms min=21.45ms max=144.07ms count=8
+10-28 01:08:32.745  4660  4764 D EGL_emulation: app_time_stats: avg=74.00ms min=11.03ms max=154.74ms count=6
+10-28 01:08:33.746  4660  4764 D EGL_emulation: app_time_stats: avg=55.58ms min=19.22ms max=113.88ms count=7
+10-28 01:08:34.804  4660  4764 D EGL_emulation: app_time_stats: avg=91.41ms min=44.43ms max=149.69ms count=8
+10-28 01:08:35.804  4660  4764 D EGL_emulation: app_time_stats: avg=72.04ms min=22.63ms max=162.35ms count=7
+10-28 01:08:36.831  4660  4764 D EGL_emulation: app_time_stats: avg=57.35ms min=38.53ms max=84.45ms count=7
+10-28 01:08:37.993  4660  4764 D EGL_emulation: app_time_stats: avg=96.30ms min=27.31ms max=167.81ms count=8
+10-28 01:08:39.021  4660  4764 D EGL_emulation: app_time_stats: avg=78.19ms min=31.00ms max=118.12ms count=8
+10-28 01:08:40.087  4660  4764 D EGL_emulation: app_time_stats: avg=88.93ms min=40.83ms max=177.38ms count=8
+10-28 01:08:41.143  4660  4764 D EGL_emulation: app_time_stats: avg=54.80ms min=15.37ms max=109.95ms count=9
+10-28 01:08:42.237  4660  4764 D EGL_emulation: app_time_stats: avg=60.11ms min=9.39ms max=128.80ms count=8
+10-28 01:08:43.353  4660  4764 D EGL_emulation: app_time_stats: avg=72.84ms min=4.00ms max=158.49ms count=7
+10-28 01:08:44.431  4660  4764 D EGL_emulation: app_time_stats: avg=73.46ms min=43.43ms max=110.19ms count=8
+10-28 01:08:45.452  4660  4764 D EGL_emulation: app_time_stats: avg=78.48ms min=48.93ms max=109.35ms count=7
+10-28 01:08:46.639  4660  4764 D EGL_emulation: app_time_stats: avg=66.90ms min=7.03ms max=172.35ms count=9
+10-28 01:08:47.671  4660  4764 D EGL_emulation: app_time_stats: avg=49.19ms min=21.68ms max=119.10ms count=8
+10-28 01:08:48.766  4660  4764 D EGL_emulation: app_time_stats: avg=71.20ms min=45.42ms max=155.23ms count=7
+10-28 01:08:49.887  4660  4764 D EGL_emulation: app_time_stats: avg=59.87ms min=34.64ms max=87.47ms count=9
+10-28 01:08:50.952  4660  4764 D EGL_emulation: app_time_stats: avg=51.37ms min=39.99ms max=78.26ms count=8
+10-28 01:08:51.970  4660  4764 D EGL_emulation: app_time_stats: avg=79.73ms min=4.40ms max=210.43ms count=7
+10-28 01:08:53.055  4660  4764 D EGL_emulation: app_time_stats: avg=44.00ms min=4.45ms max=103.53ms count=9
+10-28 01:08:54.144  4660  4764 D EGL_emulation: app_time_stats: avg=63.97ms min=32.91ms max=103.18ms count=8
+10-28 01:08:55.250  4660  4660 I Choreographer: Skipped 34 frames!  The application may be doing too much work on its main thread.
+10-28 01:08:55.387  4660  4764 D EGL_emulation: app_time_stats: avg=120.31ms min=38.94ms max=412.27ms count=6
+10-28 01:08:56.422  4660  4764 D EGL_emulation: app_time_stats: avg=65.59ms min=15.35ms max=135.86ms count=8
+10-28 01:08:57.454  4660  4764 D EGL_emulation: app_time_stats: avg=48.80ms min=11.44ms max=85.09ms count=8
+10-28 01:08:58.554  4660  4764 D EGL_emulation: app_time_stats: avg=58.94ms min=24.69ms max=99.34ms count=8
+10-28 01:08:59.656  4660  4764 D EGL_emulation: app_time_stats: avg=68.45ms min=34.87ms max=92.53ms count=8
+10-28 01:09:00.711  4660  4764 D EGL_emulation: app_time_stats: avg=46.11ms min=5.35ms max=83.82ms count=8
+10-28 01:09:01.811  4660  4764 D EGL_emulation: app_time_stats: avg=56.75ms min=21.92ms max=113.01ms count=9
+10-28 01:09:02.890  4660  4764 D EGL_emulation: app_time_stats: avg=67.73ms min=34.15ms max=128.92ms count=8
+10-28 01:09:03.991  4660  4764 D EGL_emulation: app_time_stats: avg=58.39ms min=35.02ms max=114.78ms count=9
+10-28 01:09:05.009  4660  4764 D EGL_emulation: app_time_stats: avg=51.27ms min=1.55ms max=97.39ms count=9
+10-28 01:09:06.016  4660  4764 D EGL_emulation: app_time_stats: avg=44.51ms min=12.72ms max=73.71ms count=8
+10-28 01:09:07.114  4660  4764 D EGL_emulation: app_time_stats: avg=43.95ms min=2.98ms max=85.39ms count=8
+10-28 01:09:07.972  4660  4669 I flint.peakfocus: Background concurrent mark compact GC freed 4896KB AllocSpace bytes, 3(60KB) LOS objects, 49% free, 6328KB/12MB, paused 5.759ms,18.652ms total 199.228ms
+10-28 01:09:07.977  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/Camera2/Camera2.apk' with 1 weak references
+10-28 01:09:07.977  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~kabdQfNNcrcpIY0FmwHTvw==/com.android.chrome-bmTD5zums7BgBSqSf7_sAA==/Chrome.apk' with 1 weak references
+10-28 01:09:07.977  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~DdtVmdRhdOuZuCKrgRlr7g==/com.google.android.trichromelibrary_636771932-xwHPiICLhIytgWED7vA2BQ==/TrichromeLibrary.apk' with 1 weak references
+10-28 01:09:07.978  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/priv-app/SettingsGoogle/SettingsGoogle.apk' with 1 weak references
+10-28 01:09:07.978  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '/product/overlay/SettingsGoogle__sdk_gphone64_arm64__auto_generated_rro_product.apk' with 1 weak references
+10-28 01:09:07.978  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/Drive/Drive.apk' with 1 weak references
+10-28 01:09:07.979  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/Maps/Maps.apk' with 1 weak references
+10-28 01:09:07.979  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/priv-app/PrebuiltBugle/PrebuiltBugle.apk' with 1 weak references
+10-28 01:09:07.979  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/Photos/Photos.apk' with 1 weak references
+10-28 01:09:07.980  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/YouTubeMusicPrebuilt/YouTubeMusicPrebuilt.apk' with 1 weak references
+10-28 01:09:07.980  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/CalendarGooglePrebuilt/CalendarGooglePrebuilt.apk' with 1 weak references
+10-28 01:09:08.311  4660  4764 D EGL_emulation: app_time_stats: avg=266.40ms min=44.57ms max=635.13ms count=4
+10-28 01:09:08.400  4660  4858 I HWUI    : Davey! duration=1157ms; Flags=0, FrameTimelineVsyncId=13941, IntendedVsync=192683688481, Vsync=193050355133, InputEventId=-809832731, HandleInputStart=193050751467, AnimationStart=193050752842, PerformTraversalsStart=193162436800, DrawStart=193162829842, FrameDeadline=192983688469, FrameInterval=193050560800, FrameStartTime=16666666, SyncQueued=193505774050, SyncStart=193505949800, IssueDrawCommandsStart=193506942758, SwapBuffers=193539459008, FrameCompleted=193841195842, DequeueBufferDuration=38333, QueueBufferDuration=13929916, GpuCompleted=193841195842, SwapBuffersCompleted=193556585008, DisplayPresentTime=0, CommandSubmissionCompleted=193539459008, 
+10-28 01:09:08.459  4660  4759 I HWUI    : Davey! duration=842ms; Flags=0, FrameTimelineVsyncId=13960, IntendedVsync=193067021799, Vsync=193517021781, InputEventId=0, HandleInputStart=193524313717, AnimationStart=193524315050, PerformTraversalsStart=193525300133, DrawStart=193525378592, FrameDeadline=193867021767, FrameInterval=193523754758, FrameStartTime=16666666, SyncQueued=193525506008, SyncStart=193556741217, IssueDrawCommandsStart=193556942633, SwapBuffers=193845906175, FrameCompleted=193940544467, DequeueBufferDuration=89388167, QueueBufferDuration=926500, GpuCompleted=193939808800, SwapBuffersCompleted=193940544467, DisplayPresentTime=0, CommandSubmissionCompleted=193845906175, 
+10-28 01:09:09.348  4660  4764 D EGL_emulation: app_time_stats: avg=145.97ms min=11.35ms max=502.66ms count=6
+10-28 01:09:15.603  4660  4660 W WindowOnBackDispatcher: sendCancelIfRunning: isInProgress=false callback=androidx.activity.OnBackPressedDispatcher$Api34Impl$createOnBackAnimationCallback$1@702c0e4
+10-28 01:09:15.666  4660  4764 D EGL_emulation: app_time_stats: avg=3144.18ms min=57.50ms max=6230.86ms count=2
+10-28 01:09:16.846  4660  4764 D EGL_emulation: app_time_stats: avg=78.91ms min=5.42ms max=134.71ms count=8
+10-28 01:09:17.851  4660  4764 D EGL_emulation: app_time_stats: avg=91.68ms min=11.58ms max=200.47ms count=6
+10-28 01:09:18.891  4660  4764 D EGL_emulation: app_time_stats: avg=48.29ms min=7.76ms max=97.29ms count=8
+10-28 01:09:19.956  4660  4764 D EGL_emulation: app_time_stats: avg=59.55ms min=9.69ms max=115.03ms count=9
+10-28 01:09:21.029  4660  4764 D EGL_emulation: app_time_stats: avg=48.64ms min=30.39ms max=92.80ms count=8
+10-28 01:09:22.199  4660  4764 D EGL_emulation: app_time_stats: avg=43.58ms min=9.76ms max=88.21ms count=9
+10-28 01:09:23.318  4660  4764 D EGL_emulation: app_time_stats: avg=63.99ms min=8.41ms max=119.70ms count=9
+10-28 01:09:24.407  4660  4764 D EGL_emulation: app_time_stats: avg=73.13ms min=9.52ms max=141.80ms count=6
+10-28 01:09:25.540  4660  4764 D EGL_emulation: app_time_stats: avg=62.76ms min=11.62ms max=165.68ms count=8
+10-28 01:09:26.563  4660  4764 D EGL_emulation: app_time_stats: avg=87.21ms min=43.73ms max=126.61ms count=6
+10-28 01:09:27.608  4660  4764 D EGL_emulation: app_time_stats: avg=62.90ms min=7.95ms max=127.94ms count=7
+10-28 01:09:28.678  4660  4764 D EGL_emulation: app_time_stats: avg=53.69ms min=21.09ms max=92.64ms count=8
+10-28 01:09:29.782  4660  4764 D EGL_emulation: app_time_stats: avg=95.71ms min=46.15ms max=209.46ms count=7
+10-28 01:09:30.855  4660  4764 D EGL_emulation: app_time_stats: avg=77.45ms min=26.63ms max=193.84ms count=8
+10-28 01:09:31.869  4660  4764 D EGL_emulation: app_time_stats: avg=52.12ms min=19.29ms max=93.08ms count=7
+10-28 01:09:32.930  4660  4764 D EGL_emulation: app_time_stats: avg=65.63ms min=39.18ms max=136.34ms count=7
+10-28 01:09:34.005  4660  4764 D EGL_emulation: app_time_stats: avg=44.03ms min=3.97ms max=87.80ms count=8
+10-28 01:09:35.038  4660  4764 D EGL_emulation: app_time_stats: avg=45.63ms min=30.92ms max=77.92ms count=8
+10-28 01:09:36.139  4660  4764 D EGL_emulation: app_time_stats: avg=59.41ms min=2.15ms max=134.69ms count=8
+10-28 01:09:37.193  4660  4764 D EGL_emulation: app_time_stats: avg=70.64ms min=2.42ms max=137.66ms count=8
+10-28 01:09:38.259  4660  4764 D EGL_emulation: app_time_stats: avg=47.76ms min=3.48ms max=105.97ms count=8
+10-28 01:09:39.294  4660  4764 D EGL_emulation: app_time_stats: avg=46.00ms min=13.84ms max=84.34ms count=8
+10-28 01:09:40.367  4660  4764 D EGL_emulation: app_time_stats: avg=59.19ms min=7.62ms max=148.41ms count=7
+10-28 01:09:41.441  4660  4764 D EGL_emulation: app_time_stats: avg=67.32ms min=8.49ms max=197.56ms count=7
+10-28 01:09:42.518  4660  4764 D EGL_emulation: app_time_stats: avg=77.65ms min=48.16ms max=115.00ms count=6
+10-28 01:09:43.623  4660  4764 D EGL_emulation: app_time_stats: avg=49.82ms min=6.94ms max=93.31ms count=9
+10-28 01:09:44.634  4660  4764 D EGL_emulation: app_time_stats: avg=67.57ms min=35.10ms max=115.38ms count=7
+10-28 01:09:45.669  4660  4764 D EGL_emulation: app_time_stats: avg=60.94ms min=31.00ms max=169.26ms count=9
+10-28 01:09:46.863  4660  4764 D EGL_emulation: app_time_stats: avg=55.14ms min=33.86ms max=103.71ms count=8
+10-28 01:09:47.931  4660  4764 D EGL_emulation: app_time_stats: avg=92.62ms min=11.83ms max=218.46ms count=7
+10-28 01:09:48.971  4660  4764 D EGL_emulation: app_time_stats: avg=50.90ms min=16.93ms max=81.04ms count=8
+10-28 01:09:50.063  4660  4764 D EGL_emulation: app_time_stats: avg=47.18ms min=28.38ms max=81.13ms count=8
+10-28 01:09:51.206  4660  4764 D EGL_emulation: app_time_stats: avg=47.24ms min=3.07ms max=88.05ms count=9
+10-28 01:09:52.303  4660  4764 D EGL_emulation: app_time_stats: avg=59.51ms min=7.16ms max=158.80ms count=8
+10-28 01:09:53.497  4660  4764 D EGL_emulation: app_time_stats: avg=50.66ms min=11.12ms max=74.81ms count=9
+10-28 01:09:54.644  4660  4764 D EGL_emulation: app_time_stats: avg=84.92ms min=25.37ms max=126.93ms count=6
+10-28 01:09:55.705  4660  4764 D EGL_emulation: app_time_stats: avg=56.78ms min=7.81ms max=118.81ms count=9
+10-28 01:09:56.817  4660  4764 D EGL_emulation: app_time_stats: avg=56.76ms min=8.39ms max=117.46ms count=9
+10-28 01:09:57.887  4660  4764 D EGL_emulation: app_time_stats: avg=45.35ms min=8.52ms max=81.47ms count=8
+10-28 01:09:58.936  4660  4764 D EGL_emulation: app_time_stats: avg=54.55ms min=7.63ms max=98.06ms count=8
+10-28 01:09:59.998  4660  4764 D EGL_emulation: app_time_stats: avg=67.04ms min=39.85ms max=97.69ms count=8
+10-28 01:10:01.040  4660  4764 D EGL_emulation: app_time_stats: avg=61.76ms min=34.71ms max=92.78ms count=6
+10-28 01:10:02.151  4660  4764 D EGL_emulation: app_time_stats: avg=113.80ms min=20.23ms max=238.86ms count=6
+10-28 01:10:02.609  4660  4669 I flint.peakfocus: Background concurrent mark compact GC freed 6378KB AllocSpace bytes, 0(0B) LOS objects, 49% free, 5975KB/11MB, paused 455us,76.439ms total 1.016s
+10-28 01:10:02.665  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/PrebuiltDeskClockGoogle/PrebuiltDeskClockGoogle.apk' with 1 weak references
+10-28 01:10:02.666  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/priv-app/GoogleDialer/GoogleDialer.apk' with 1 weak references
+10-28 01:10:02.667  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/PrebuiltGmail/PrebuiltGmail.apk' with 1 weak references
+10-28 01:10:02.668  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/YouTube/YouTube.apk' with 1 weak references
+10-28 01:10:02.669  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /system/app/Stk/Stk.apk' with 1 weak references
+10-28 01:10:02.669  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/priv-app/SafetyHubPrebuilt/SafetyHubPrebuilt.apk' with 1 weak references
+10-28 01:10:02.669  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /system/priv-app/DocumentsUIGoogle/DocumentsUIGoogle.apk' with 1 weak references
+10-28 01:10:02.683  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /product/priv-app/Velvet/Velvet.apk' with 1 weak references
+10-28 01:10:02.684  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~drWag-u3vWrqsqtXIVgekg==/com.withopal.opal-OFJ1BV6MpVPHDG3O2g_IPA==/base.apk' with 1 weak references
+10-28 01:10:02.716  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~drWag-u3vWrqsqtXIVgekg==/com.withopal.opal-OFJ1BV6MpVPHDG3O2g_IPA==/split_config.arm64_v8a.apk' with 1 weak references
+10-28 01:10:02.716  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~drWag-u3vWrqsqtXIVgekg==/com.withopal.opal-OFJ1BV6MpVPHDG3O2g_IPA==/split_config.en.apk' with 1 weak references
+10-28 01:10:02.716  4660  4671 W flint.peakfocus: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~drWag-u3vWrqsqtXIVgekg==/com.withopal.opal-OFJ1BV6MpVPHDG3O2g_IPA==/split_config.xxhdpi.apk' with 1 weak references
+10-28 01:10:03.165  4660  4764 D EGL_emulation: app_time_stats: avg=65.57ms min=8.08ms max=174.32ms count=7
+10-28 01:10:04.168  4660  4764 D EGL_emulation: app_time_stats: avg=48.51ms min=33.90ms max=111.25ms count=8
+10-28 01:10:05.303  4660  4764 D EGL_emulation: app_time_stats: avg=57.72ms min=8.69ms max=128.88ms count=8
+10-28 01:10:06.364  4660  4764 D EGL_emulation: app_time_stats: avg=53.08ms min=34.57ms max=101.34ms count=8
+10-28 01:10:07.372  4660  4764 D EGL_emulation: app_time_stats: avg=60.61ms min=36.27ms max=109.29ms count=8
+10-28 01:10:08.378  4660  4764 D EGL_emulation: app_time_stats: avg=69.56ms min=44.09ms max=106.39ms count=6
+10-28 01:10:09.541  4660  4764 D EGL_emulation: app_time_stats: avg=50.67ms min=34.97ms max=75.81ms count=9
+10-28 01:10:10.591  4660  4764 D EGL_emulation: app_time_stats: avg=83.55ms min=23.98ms max=238.45ms count=8
+10-28 01:10:11.703  4660  4764 D EGL_emulation: app_time_stats: avg=59.08ms min=22.33ms max=119.62ms count=9
+10-28 01:10:12.722  4660  4764 D EGL_emulation: app_time_stats: avg=69.20ms min=36.50ms max=119.63ms count=8
+10-28 01:10:13.764  4660  4764 D EGL_emulation: app_time_stats: avg=65.76ms min=19.81ms max=93.94ms count=8
+10-28 01:10:14.850  4660  4764 D EGL_emulation: app_time_stats: avg=58.56ms min=32.72ms max=93.11ms count=8
+10-28 01:10:15.900  4660  4764 D EGL_emulation: app_time_stats: avg=61.29ms min=32.72ms max=91.82ms count=8
+10-28 01:10:16.905  4660  4764 D EGL_emulation: app_time_stats: avg=55.05ms min=10.28ms max=95.85ms count=9
+10-28 01:10:17.982  4660  4764 D EGL_emulation: app_time_stats: avg=60.11ms min=8.57ms max=125.07ms count=9
+10-28 01:10:19.007  4660  4764 D EGL_emulation: app_time_stats: avg=62.77ms min=40.79ms max=105.82ms count=7
+10-28 01:10:20.140  4660  4764 D EGL_emulation: app_time_stats: avg=52.30ms min=7.14ms max=84.82ms count=7
+10-28 01:10:21.161  4660  4764 D EGL_emulation: app_time_stats: avg=56.52ms min=13.34ms max=100.34ms count=7
+10-28 01:10:22.306  4660  4764 D EGL_emulation: app_time_stats: avg=46.21ms min=16.80ms max=88.53ms count=9
+10-28 01:10:23.384  4660  4764 D EGL_emulation: app_time_stats: avg=48.25ms min=2.68ms max=128.00ms count=9
+10-28 01:10:24.451  4660  4764 D EGL_emulation: app_time_stats: avg=76.64ms min=24.43ms max=133.27ms count=6
+10-28 01:10:25.593  4660  4764 D EGL_emulation: app_time_stats: avg=40.14ms min=2.46ms max=71.75ms count=9
+10-28 01:10:26.631  4660  4764 D EGL_emulation: app_time_stats: avg=57.62ms min=8.76ms max=100.00ms count=7
+10-28 01:10:27.661  4660  4764 D EGL_emulation: app_time_stats: avg=60.71ms min=2.00ms max=103.56ms count=9
+10-28 01:10:28.677  4660  4764 D EGL_emulation: app_time_stats: avg=49.41ms min=11.10ms max=87.62ms count=8
+10-28 01:10:29.770  4660  4764 D EGL_emulation: app_time_stats: avg=54.81ms min=22.11ms max=75.60ms count=8
+10-28 01:10:30.834  4660  4764 D EGL_emulation: app_time_stats: avg=60.14ms min=36.95ms max=117.78ms count=7
+10-28 01:10:31.955  4660  4764 D EGL_emulation: app_time_stats: avg=52.85ms min=23.09ms max=89.97ms count=7
+10-28 01:10:33.033  4660  4764 D EGL_emulation: app_time_stats: avg=68.94ms min=32.01ms max=132.67ms count=8
+10-28 01:10:34.138  4660  4764 D EGL_emulation: app_time_stats: avg=46.46ms min=1.66ms max=108.35ms count=9
+10-28 01:10:35.233  4660  4764 D EGL_emulation: app_time_stats: avg=51.37ms min=24.34ms max=75.26ms count=7
+10-28 01:10:36.246  4660  4764 D EGL_emulation: app_time_stats: avg=66.46ms min=4.40ms max=101.97ms count=7

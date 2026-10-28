@@ -1,0 +1,24 @@
+[
+  {
+    "platform": "android",
+    "id": "emulator-5554",
+    "created": false,
+    "booted": true,
+    "avd": "flint-test",
+    "name": "",
+    "claimant": "structworker_42a5bdee-c3b0-47ab-9a9f-c6ce060aac7c",
+    "claimed_at": "2026-10-28T05:12:40.935843+00:00",
+    "incarnation": "v1:287a74179966fb477afc00f3bd2068f92a9ba3e25bd68e2308eb311ca2967144",
+    "incarnation_evidence": {
+      "platform": "android",
+      "id": "emulator-5554",
+      "avd": "flint-test",
+      "kind": "emulator-process",
+      "pid": 84120,
+      "process_group": 84120,
+      "start": "Wed Oct 28 01:12:01 2026",
+      "boot_id": "8ae46531-cfa7-46cd-a7d1-d9921fab36e1"
+    },
+    "helper": null
+  }
+]

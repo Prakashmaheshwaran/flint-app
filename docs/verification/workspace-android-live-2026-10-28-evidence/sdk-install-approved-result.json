@@ -1,0 +1,21 @@
+{
+  "utc": "2026-10-28T05:03:33.888390+00:00",
+  "argv": [
+    "/opt/homebrew/bin/sdkmanager",
+    "--sdk_root=/Users/prakash/Library/Android/sdk",
+    "--install",
+    "system-images;android-35;google_apis;arm64-v8a"
+  ],
+  "cwd": "/Users/prakash/orca/workspaces/flint/ws-android",
+  "env": {
+    "JAVA_HOME": "/opt/homebrew/opt/openjdk@21"
+  },
+  "returncode": 0,
+  "seconds": 42.902,
+  "log": "sdk-install-approved.log",
+  "logBytes": 17693,
+  "truncated": false,
+  "acceptedLicense": true,
+  "rejectedLicenses": [],
+  "imagePresent": true
+}

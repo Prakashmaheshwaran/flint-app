@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "/Users/prakash/orca/workspaces/flint/ws-android/scripts/agent/logs-android.py", line 83, in <module>
+    main()
+    ~~~~^^
+  File "/Users/prakash/orca/workspaces/flint/ws-android/scripts/agent/logs-android.py", line 73, in main
+    output = orca_logs(os.environ.get("ORCA_CLI_COMMAND", "orca"), target, lines)
+  File "/Users/prakash/orca/workspaces/flint/ws-android/scripts/agent/logs-android.py", line 29, in orca_logs
+    pids = process_ids(result.get("stdout", result.get("output", "")))
+                       ^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+make: *** [logs-android] Error 1

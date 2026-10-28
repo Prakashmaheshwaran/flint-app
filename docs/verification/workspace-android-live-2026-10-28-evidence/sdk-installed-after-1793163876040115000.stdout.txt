@@ -1,0 +1,11 @@
+Installed packages:
+  Path                                           | Version | Description                         | Location                                      
+  -------                                        | ------- | -------                             | -------                                       
+  build-tools;36.0.0                             | 36.0.0  | Android SDK Build-Tools 36          | build-tools/36.0.0                            
+  emulator                                       | 37.2.12 | Android Emulator                    | emulator                                      
+  platform-tools                                 | 37.0.1  | Android SDK Platform-Tools          | platform-tools                                
+  platforms;android-35                           | 2       | Android SDK Platform 35             | platforms/android-35                          
+  platforms;android-37.0                         | 2       | Android SDK Platform 37.0           | platforms/android-37.0                        
+  sources;android-37.0                           | 2       | Sources for Android 37.0            | sources/android-37.0                          
+  system-images;android-35;google_apis;arm64-v8a | 9       | Google APIs ARM 64 v8a System Image | system-images/android-35/google_apis/arm64-v8a
+

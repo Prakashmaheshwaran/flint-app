@@ -1,0 +1,11 @@
+{
+  "id": "64f69e48-888e-4a11-8e54-886faf22833f",
+  "ok": false,
+  "error": {
+    "code": "emulator_error",
+    "message": "adb launch failed: args: [-p, com.flint.peakfocus, -c, android.intent.category.LAUNCHER, 1]\n arg: \"-p\"\n arg: \"com.flint.peakfocus\"\n arg: \"-c\"\n arg: \"android.intent.category.LAUNCHER\"\n arg: \"1\"\ndata=\"com.flint.peakfocus\"\ndata=\"android.intent.category.LAUNCHER\"\n** SYS_KEYS has no physical keys but with factor 2.0%."
+  },
+  "_meta": {
+    "runtimeId": "cab26e39-2703-435c-b1e3-757b327d33d8"
+  }
+}
