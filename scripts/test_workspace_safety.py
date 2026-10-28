@@ -139,6 +139,9 @@ class WorkspaceSafety(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout)
 
     def test_l2_zsh_shim_repairs_each_path_independently(self):
+        zsh = shutil.which("zsh")
+        if zsh is None:
+            self.skipTest("zsh not installed; shim regression needs zsh")
         template = SOURCE / "scripts/flint-zshenv.example"
         # At the reviewed base the only copy was in the bootstrap report.
         if template.exists():
@@ -150,7 +153,7 @@ class WorkspaceSafety(unittest.TestCase):
         shim = self.base / "shim"
         shim.write_text(block)
         for initial in ("/sdk/platform-tools:/usr/bin:/bin", "/sdk/emulator:/usr/bin:/bin", "/usr/bin:/bin"):
-            result = self.run_cmd(["/bin/zsh", "-f", "-c", '. "$1"; . "$1"; print -r -- "$PATH"', "zsh", str(shim)],
+            result = self.run_cmd([zsh, "-f", "-c", '. "$1"; . "$1"; print -r -- "$PATH"', "zsh", str(shim)],
                                   env={**self.env, "ANDROID_HOME": "/sdk", "PATH": initial})
             self.assertEqual(result.returncode, 0, result.stdout)
             entries = result.stdout.strip().split(":")
