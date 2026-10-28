@@ -1,9 +1,14 @@
 # iOS warning policy
 
 All XcodeGen-owned Swift targets inherit `SWIFT_TREAT_WARNINGS_AS_ERRORS=YES`
-in Debug and Release. CI builds and tests those configurations, so a new
-Swift compiler warning in the app, extensions or Xcode test targets fails its
-compile. Swift language mode remains 5 and the minimum iOS version remains 16.
+in Debug and Release. CI runs Debug builds/unit tests; the separate D3 Release
+gate compiles Release without signing. A new Swift compiler warning in the app,
+extensions or Xcode test targets fails its compile. Swift language mode remains
+5 and the minimum iOS version remains 16. Local builds require Xcode 15.3+
+(Swift 5.10+) so `MainActor.assumeIsolated` back-deploys to iOS 16. The
+[Swift 5.10 back-deployment change](https://github.com/swiftlang/swift/pull/70474)
+is the reason for this compiler prerequisite; it does not raise the device OS
+minimum or enable Swift 6 language mode. CI uses its current macOS runner Xcode.
 
 `AppLockWindow`'s scene observer uses NotificationCenter's explicit `.main`
 queue. `MainActor.assumeIsolated` makes this existing executor guarantee
