@@ -101,6 +101,22 @@ class FlintSmokeTest : FlintE2EFixture() {
     }
 
     private fun createRule(name: String, hardcore: Boolean = false) {
+        if (hardcore) {
+            // ADR-012 requires a finite new Hardcore commitment. The pass smoke can
+            // use the native Timer without depending on the runner's local clock/zone.
+            clickTab("Today")
+            scrollTo("Start focus").click()
+            visible(By.desc("25 minutes")).click()
+            scrollTo("Choose what rests").click()
+            visible(By.text("What rests"))
+            scrollTo(target).click()
+            click("Add · 1")
+            scrollTo("Hardcore").click()
+            scrollTo("Begin 25m").click()
+            visible(By.textStartsWith("ends at "))
+            screenshot("saved-rule")
+            return
+        }
         clickTab("Rules")
         visible(By.desc("New block rule")).click()
         visible(By.text("Rule name"))
@@ -117,8 +133,8 @@ class FlintSmokeTest : FlintE2EFixture() {
         visible(By.text("Choose apps to block"))
         scrollTo(target).click()
         click("Add · 1")
-        if (hardcore) scrollTo("Hardcore").click()
         scrollTo("Save rule").click()
+        click("Confirm")
         visible(By.desc("New block rule"))
         visible(By.text(name))
         screenshot("saved-rule")

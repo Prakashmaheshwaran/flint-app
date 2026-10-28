@@ -90,6 +90,8 @@ import com.flint.peakfocus.core.model.DomainRef
 import com.flint.peakfocus.core.model.OpenLimit
 import com.flint.peakfocus.core.model.Schedule
 import com.flint.peakfocus.core.model.TimeLimit
+import com.flint.peakfocus.core.model.StorageState
+import com.flint.peakfocus.core.datastore.EditorCommitmentState
 import kotlinx.coroutines.launch
 
 /** Where inside the feature the user currently is. Internal navigation only — no nav graph.
@@ -169,6 +171,9 @@ fun BlocklistScreen(
     val defaultBreakLevel by blocklistViewModel.defaultBreakLevel.collectAsStateWithLifecycle()
     val groups by blocklistViewModel.groups.collectAsStateWithLifecycle()
     val saveState by blocklistViewModel.editorSave.collectAsStateWithLifecycle()
+    val commitmentStorage by blocklistViewModel.commitmentState.collectAsStateWithLifecycle()
+    val waitRemaining by blocklistViewModel.waitRemaining.collectAsStateWithLifecycle()
+    val commitmentState = (commitmentStorage as? StorageState.Ready)?.value
 
     // Editor state (which rule, half-built drafts) intentionally lives in composition, not
     // SavedState — process death drops back to the overview, never to a corrupt half-draft.
@@ -235,7 +240,10 @@ fun BlocklistScreen(
                         destination = BlocklistDestination.EditSleep(visit = ++editorVisits)
                     },
                     onToggleSleep = blocklistViewModel::setSleepEnabled,
-                    saveError = saveState.error,
+                    saveError = saveState.error ?: if (commitmentStorage is StorageState.Unavailable) "Protection state unavailable. Open recovery or retry." else null,
+                    commitmentState = commitmentState,
+                    saveResult = saveState.result,
+                    onDismissMigrationNotice = blocklistViewModel::dismissMigrationNotice,
                     contentPadding = contentPadding,
                     quickBlockSummary = quickBlockSummary,
                     onQuickBlock = onQuickBlock,
@@ -329,6 +337,8 @@ fun BlocklistScreen(
             }
         }
     }
+    commitmentState?.let { EditorCommitmentDialog(it, waitRemaining, saveState.busy, saveState.error,
+        blocklistViewModel::confirmChange, blocklistViewModel::cancelChange) }
 }
 
 @OptIn(ExperimentalFoundationApi::class) // rememberSnapFlingBehavior on older foundation lines.
@@ -349,6 +359,9 @@ private fun BlocklistOverview(
     quickBlockSummary: String? = null,
     onQuickBlock: (() -> Unit)? = null,
     saveError: String? = null,
+    saveResult: String? = null,
+    commitmentState: EditorCommitmentState? = null,
+    onDismissMigrationNotice: () -> Unit = {},
 ) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -396,6 +409,16 @@ private fun BlocklistOverview(
         item(key = "rules-label") {
             SectionLabelItem("Block rules")
             ErrorMessages(listOfNotNull(saveError))
+            saveResult?.let { Text(it, Modifier.padding(horizontal = FlintSpacing.gutter)) }
+            commitmentState?.let { state ->
+                Column(Modifier.padding(horizontal = FlintSpacing.gutter)) {
+                    if (state.migrationNotice) {
+                        Text("Existing occurrences keep their previous exit rights until they end. New occurrences use the displayed tier.", style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = onDismissMigrationNotice) { Text("Got it") }
+                    }
+                    QueuedEditorChanges(state.queued)
+                }
+            }
         }
         when {
             rulesState is RulesUiState.Unavailable -> item(key = "rules-unavailable") {
@@ -526,7 +549,7 @@ private fun BlocklistOverview(
             limitRows.isEmpty() -> item(key = "limits-empty") {
                 EmptyCard(
                     heading = "No app limits yet",
-                    message = "Cap how long — or how many times — an app gets used each day.",
+                    message = "Set a daily time budget, or choose how many 5-minute access credits you can use each day.",
                     modifier = animatedRow()
                         .padding(horizontal = FlintSpacing.gutter)
                         .padding(bottom = FlintSpacing.cardGap),

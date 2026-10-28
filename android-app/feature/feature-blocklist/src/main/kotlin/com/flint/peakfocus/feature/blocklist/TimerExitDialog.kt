@@ -52,8 +52,13 @@ internal fun TimerExitDialog(confirmation: TimerExitConfirmation, viewModel: Tim
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("End ${confirmation.expected.name}? Other block rules and limits will stay active.")
-                Text("Hold for 2 seconds. Release before it fills to keep focusing.", style = MaterialTheme.typography.bodySmall)
-                HoldToEndControl(confirmation, viewModel)
+                if (confirmation.phase == TimerExitPhase.WAITING) {
+                    Text(confirmation.waitRemainingMs?.let { "Available in ${(it + 59_999) / 60_000} minutes. Then hold for 2 seconds to confirm." }
+                        ?: "Wait unavailable. Cancel and start a new request; the Timer is still active.")
+                } else {
+                    Text("Hold for 2 seconds. Release before it fills to keep focusing.", style = MaterialTheme.typography.bodySmall)
+                    HoldToEndControl(confirmation, viewModel)
+                }
             }
         },
         confirmButton = {},

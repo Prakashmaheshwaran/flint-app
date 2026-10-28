@@ -274,12 +274,17 @@ private fun LimitEditorContent(
         }
         Spacer(Modifier.height(FlintSpacing.lg))
 
+        if (draft.timeEnabled) {
+            SectionLabel("Time-limit difficulty")
+            BreakLevelSelector(selected = draft.timeBreakLevel, onSelect = { draft = draft.copy(timeBreakLevel = it) })
+            Spacer(Modifier.height(FlintSpacing.lg))
+        }
         SectionLabel("Open limit")
         Spacer(Modifier.height(FlintSpacing.sm))
         FlintCard {
             LabeledSwitchRow(
                 title = "Daily open limit",
-                description = "Block it after opening it this many times in a day.",
+                description = "Choose how many 5-minute access credits you can use each day.",
                 checked = draft.openEnabled,
                 onCheckedChange = { draft = draft.copy(openEnabled = it) },
             )
@@ -294,7 +299,7 @@ private fun LimitEditorContent(
                         value = draft.opensText,
                         onValueChange = { draft = draft.copy(opensText = it) },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Opens per day") },
+                        label = { Text("5-minute credits per day") },
                         placeholder = { Text("5") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),

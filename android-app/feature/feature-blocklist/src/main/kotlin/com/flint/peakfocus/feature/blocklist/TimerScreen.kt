@@ -617,7 +617,7 @@ private fun SessionScene(
                 Icon(FlintGlyphs.lock, contentDescription = null, tint = FlintPalette.Mist, modifier = Modifier.size(20.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(timerBreakLabel(session.breakLevel), style = MaterialTheme.typography.titleSmall.copy(fontSize = MaterialTheme.typography.titleSmall.fontSize * (14f / 15f)))
-                    Text(if (canEndNativeTimer(session)) "Hold to end early" else timerBreakHint(session.breakLevel),
+                    Text(timerExitHint(session),
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = MaterialTheme.typography.bodySmall.fontSize * (12f / 13f)),
                         color = FlintPalette.Mist)
                 }
@@ -698,6 +698,13 @@ private fun timerBreakHint(level: BreakLevel): String = when (level) {
 
 private fun timerBreakDisclosure(level: BreakLevel): String = when (level) {
     BreakLevel.EASY -> "Ordinary breaks are available. Hold to end this timer early."
-    BreakLevel.HARDER -> "Each break waits a few minutes first. Hold to end this timer early."
-    BreakLevel.HARDCORE -> "No ordinary breaks. Hold to end this timer early; other rules stay active."
+    BreakLevel.HARDER -> "Early changes wait 1, 5, then 15 minutes. After the wait, hold for 2 seconds to end this Timer."
+    BreakLevel.HARDCORE -> "No ordinary breaks or hold-to-end. This Timer ends at expiry, or with an available Emergency Pass."
+}
+
+private fun timerExitHint(rule: BlockRule): String = when {
+    canEndNativeTimer(rule) && !rule.id.startsWith(com.flint.peakfocus.core.datastore.CONTRACT_TIMER_ID_PREFIX) -> "Legacy Timer: hold to end early"
+    rule.breakLevel == BreakLevel.HARDER -> "Wait, then hold to end early"
+    rule.breakLevel == BreakLevel.HARDCORE -> "Expiry or an available Emergency Pass"
+    else -> "Hold to end early"
 }

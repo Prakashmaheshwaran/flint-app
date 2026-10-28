@@ -19,8 +19,7 @@ import com.flint.peakfocus.core.model.Schedule
  *
  * The config is *parsed back* from those rules ([sleepConfigFrom]) rather than stored twice —
  * the rules are the single persisted truth. On/off is [SleepConfig.enabled] alone; the assist
- * level maps to the break tier (Wind Down = EASY, Full Assist = HARDER — deliberately never
- * HARDCORE: sleep is a routine, not a vow, and the block screen's break flow stays reachable).
+ * level supplies a default tier; the saved tier is explicit and survives later edits.
  */
 internal const val SLEEP_RULE_PREFIX = "sleep-"
 internal const val SLEEP_WINDOW_RULE_ID = "sleep-window"
@@ -40,6 +39,7 @@ internal data class SleepConfig(
     val allowedApps: Set<AppRef> = emptySet(),
     val morningEnabled: Boolean = false,
     val morningEndMinute: Int = 8 * 60,
+    val breakLevel: BreakLevel = if (assist == SleepAssist.WIND_DOWN) BreakLevel.EASY else BreakLevel.HARDER,
 ) {
     companion object {
         val DEFAULT = SleepConfig()
@@ -64,7 +64,7 @@ internal fun nightsBefore(days: Set<Int>): Set<Int> = days.map { ((it + 5) % 7) 
  */
 internal fun SleepConfig.toRules(): List<BlockRule> {
     val targets = BlockTargets(apps = allowedApps, allowListMode = true)
-    val tier = assist.toBreakLevel()
+    val tier = breakLevel
     // A post-midnight bedtime (bed < wake, e.g. 00:30 → 07:00) is a *same-day* window to the
     // engine, and that whole window falls on the morning AFTER the chosen night — its day
     // gate must shift forward one day, or "Friday night" would block Friday's own small
@@ -133,6 +133,7 @@ internal fun sleepConfigFrom(rules: List<BlockRule>): SleepConfig? {
         morningEnabled = morning != null,
         morningEndMinute = morning?.schedule?.endMinuteOfDay
             ?: SleepConfig.DEFAULT.morningEndMinute,
+        breakLevel = window.breakLevel,
     )
 }
 
@@ -180,5 +181,5 @@ internal fun sleepSummary(config: SleepConfig): String {
     } else {
         ""
     }
-    return "$nights · $window$morning"
+    return "$nights · $window$morning · ${breakLevelLabel(config.breakLevel)}"
 }

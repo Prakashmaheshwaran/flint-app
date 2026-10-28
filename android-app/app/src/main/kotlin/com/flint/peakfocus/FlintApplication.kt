@@ -39,8 +39,9 @@ class FlintApplication : Application() {
         GlanceSurfaceBridge.start(this, appScope, protectionReader = CoordinatorGlanceReader(),
             focusReader = FocusHistoryGlanceReader(this, appScope))
         PathBNotification.register(OngoingSessionNotification::customize)
-        BootReceiver.registerRearmAction { context -> PathBServiceGate.sync(context) }
+        EditorReconciler.rearm(this, appScope)
+        BootReceiver.registerRearmAction { context -> EditorReconciler.rearm(context, appScope); PathBServiceGate.sync(context) }
         TimeChangeReceiver.baselineAnchor(this)
-        TimeChangeReceiver.registerRearmAction { context -> PathBServiceGate.sync(context) }
+        TimeChangeReceiver.registerRearmAction { context -> EditorReconciler.rearm(context, appScope); PathBServiceGate.sync(context) }
     }
 }

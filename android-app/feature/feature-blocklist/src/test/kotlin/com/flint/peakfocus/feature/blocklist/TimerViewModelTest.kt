@@ -47,7 +47,9 @@ class TimerViewModelTest {
     }
 
     private fun model(store: BlockRulesStore, apps: () -> List<InstalledApp> = { listOf(app, otherApp) }): TimerViewModel {
-        val vm = TimerViewModel(store, apps, now = { clock }, newId = { "test-id" }, ioDispatcher = dispatcher)
+        val vm = TimerViewModel(store, apps, EditorTestStore(store, now = { clock }), TestHarderWaitStore(),
+            now = { clock }, newId = { "test-id" }, ioDispatcher = dispatcher,
+            protectionClock = { com.flint.peakfocus.core.model.AccessClockStamp(clock, dispatcher.scheduler.currentTime, "boot") })
         ViewModelStore().also { it.put("timer", vm); owners += it }
         return vm
     }
@@ -87,7 +89,7 @@ class TimerViewModelTest {
         val saved = vm.uiState.value.sessions.single()
         assertEquals(1, store.startCalls)
         assertEquals("Digital Sabbath", saved.name)
-        assertEquals(clock + 2880 * 60_000L, saved.expiresAtEpochMs)
+        assertEquals(clock + 1440 * 60_000L, saved.expiresAtEpochMs)
         assertEquals(BreakLevel.HARDER, saved.breakLevel)
         assertEquals(setOf(AppRef(app.packageName, app.label)), saved.targets.apps)
         assertTrue(work in store.rules.first())
@@ -302,7 +304,7 @@ class TimerViewModelTest {
         }
         runCurrent()
         assertNotNull(vm.uiState.value.appsError)
-        assertTrue(vm.uiState.value.appsState is InstalledAppsUiState.Loading)
+        assertTrue(vm.uiState.value.appsState is InstalledAppsUiState.Error)
         failApps = false
         vm.retryApps()
         runCurrent()
@@ -330,7 +332,7 @@ class TimerViewModelTest {
         val store = ControlledStore(listOf(timer, overlap))
         val vm = model(store)
         runCurrent()
-        vm.requestExit(timer.id)
+        vm.requestExit(timer.id); runCurrent()
         assertTrue(vm.beginExitHold())
         assertFalse(vm.beginExitHold())
         advanceTimeBy(1999); runCurrent()
@@ -355,7 +357,7 @@ class TimerViewModelTest {
         val timer = session("session-timer-native")
         val store = ControlledStore(listOf(timer))
         val vm = model(store)
-        runCurrent(); vm.requestExit(timer.id)
+        runCurrent(); vm.requestExit(timer.id); runCurrent()
         repeat(5) {
             assertTrue(vm.beginExitHold())
             advanceTimeBy(1999); runCurrent()
@@ -373,11 +375,11 @@ class TimerViewModelTest {
         val store = ControlledStore(listOf(timer))
         val vm = model(store)
         runCurrent()
-        vm.requestExit(timer.id); vm.beginExitHold()
+        vm.requestExit(timer.id); runCurrent(); vm.beginExitHold()
         advanceTimeBy(1000); runCurrent(); vm.dismissExit()
         advanceTimeBy(3000); runCurrent()
         assertNull(vm.uiState.value.exit)
-        vm.requestExit(timer.id); vm.beginExitHold()
+        vm.requestExit(timer.id); runCurrent(); vm.beginExitHold()
         advanceTimeBy(1000); runCurrent(); vm.setVisible(false)
         advanceTimeBy(3000); runCurrent()
         assertNull(vm.uiState.value.exit)
@@ -388,7 +390,7 @@ class TimerViewModelTest {
         val timer = session("session-timer-native", BreakLevel.HARDER)
         val store = ControlledStore(listOf(timer))
         val vm = model(store)
-        runCurrent(); vm.requestExit(timer.id); vm.beginExitHold()
+        runCurrent(); vm.requestExit(timer.id); runCurrent(); vm.beginExitHold()
         advanceTimeBy(2000); runCurrent()
         vm.setVisible(false)
         advanceTimeBy(800); runCurrent()
@@ -402,7 +404,7 @@ class TimerViewModelTest {
         val changed = timer.copy(breakLevel = BreakLevel.HARDCORE, name = "Changed")
         val store = ControlledStore(listOf(timer))
         val vm = model(store)
-        runCurrent(); vm.requestExit(timer.id); vm.beginExitHold()
+        runCurrent(); vm.requestExit(timer.id); runCurrent(); vm.beginExitHold()
         advanceTimeBy(1000); runCurrent(); store.upsert(changed)
         advanceTimeBy(1800); runCurrent()
         assertEquals(listOf(changed), store.rules.first())
@@ -415,7 +417,7 @@ class TimerViewModelTest {
         val timer = session("session-timer-native")
         val store = ControlledStore(listOf(timer))
         val vm = model(store)
-        runCurrent(); vm.requestExit(timer.id); vm.beginExitHold()
+        runCurrent(); vm.requestExit(timer.id); runCurrent(); vm.beginExitHold()
         clock = timer.expiresAtEpochMs!!
         advanceTimeBy(2800); runCurrent()
         assertEquals(listOf(timer), store.rules.first())
@@ -427,7 +429,7 @@ class TimerViewModelTest {
         val timer = session("session-timer-native")
         val store = ControlledStore(listOf(timer)).apply { failEnd = true }
         val vm = model(store)
-        runCurrent(); vm.requestExit(timer.id); vm.beginExitHold()
+        runCurrent(); vm.requestExit(timer.id); runCurrent(); vm.beginExitHold()
         advanceTimeBy(2800); runCurrent()
         assertEquals(listOf(timer), store.rules.first())
         assertNull(vm.uiState.value.message)
@@ -436,7 +438,7 @@ class TimerViewModelTest {
         assertFalse(vm.uiState.value.busy)
         store.failEnd = false
         assertFalse(vm.beginExitHold())
-        vm.requestExit(timer.id); vm.beginExitHold()
+        vm.requestExit(timer.id); runCurrent(); vm.beginExitHold()
         advanceTimeBy(2800); runCurrent()
         assertTrue(store.rules.first().isEmpty())
     }
@@ -446,12 +448,12 @@ class TimerViewModelTest {
         val gate = CompletableDeferred<Unit>()
         val store = ControlledStore(listOf(timer)).apply { beforeEnd = { gate.await() } }
         val vm = model(store)
-        runCurrent(); vm.requestExit(timer.id); vm.beginExitHold()
+        runCurrent(); vm.requestExit(timer.id); runCurrent(); vm.beginExitHold()
         advanceTimeBy(2800); runCurrent()
         assertTrue(vm.uiState.value.busy)
         assertEquals(TimerExitPhase.SAVING, vm.uiState.value.exit?.phase)
         assertFalse(vm.beginExitHold())
-        vm.requestExit(timer.id); vm.start(); vm.dismissExit()
+        vm.requestExit(timer.id); runCurrent(); vm.start(); vm.dismissExit()
         assertEquals(1, store.endCalls)
         gate.complete(Unit); runCurrent()
         assertTrue(store.rules.first().isEmpty())
@@ -471,7 +473,7 @@ class TimerViewModelTest {
         val timer = session("session-timer-native")
         val store = ControlledStore(listOf(timer))
         val first = model(store)
-        runCurrent(); first.requestExit(timer.id); first.beginExitHold()
+        runCurrent(); first.requestExit(timer.id); runCurrent(); first.beginExitHold()
         advanceTimeBy(1000); runCurrent()
         owners.last().clear()
         val restored = model(store)

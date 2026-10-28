@@ -102,8 +102,8 @@ internal fun breakLevelLabel(level: BreakLevel): String = when (level) {
 /** One-line explanation of what each tier means, shown under the selector. */
 internal fun breakLevelDescription(level: BreakLevel): String = when (level) {
     BreakLevel.EASY -> "Take a break or stop the block whenever you like."
-    BreakLevel.HARDER -> "Breaks arrive after a growing wait, and only from inside Flint."
-    BreakLevel.HARDCORE -> "No breaks, no early stop — one Emergency Pass per week."
+    BreakLevel.HARDER -> "Early changes wait 1, 5, then 15 minutes and need confirmation."
+    BreakLevel.HARDCORE -> "No ordinary breaks or early weakening. Expiry or an available Emergency Pass provides an exit; planned credits and rests still apply. A pass renews seven days after use."
 }
 
 /** "45m", "1h", "1h 30m" — same duration style the block screen uses. */
@@ -118,12 +118,12 @@ internal fun formatDailyMinutes(minutes: Int): String {
     }
 }
 
-/** One line for an app's limits: "1h 30m/day · 5 opens/day (Hardcore)". */
+/** Time budgets and timed credits each display their own saved tier. */
 internal fun limitSummary(timeLimit: TimeLimit?, openLimit: OpenLimit?): String {
     val parts = mutableListOf<String>()
-    if (timeLimit != null) parts += "${formatDailyMinutes(timeLimit.dailyMinutes)}/day"
+    if (timeLimit != null) parts += "${formatDailyMinutes(timeLimit.dailyMinutes)}/day (${breakLevelLabel(timeLimit.breakLevel)})"
     if (openLimit != null) {
-        val noun = if (openLimit.dailyOpens == 1) "open" else "opens"
+        val noun = if (openLimit.dailyOpens == 1) "5-minute credit" else "5-minute credits"
         parts += "${openLimit.dailyOpens} $noun/day (${breakLevelLabel(openLimit.breakLevel)})"
     }
     return if (parts.isEmpty()) "No limits" else parts.joinToString(" · ")

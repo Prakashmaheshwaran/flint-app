@@ -20,6 +20,17 @@ strictly inside `edit`, refuse the write, and leave the original preference
 bytes intact. There is no destructive repair or corruption handler. Existing
 10/11-field rules and v1 accounting keys keep their wire formats.
 
+ADR-012 Time Limits extend each `time_limits_v1` row from `package~minutes` to
+`package~minutes~tier`. First-load migration durably snapshots
+`default_break_level_v1` for tierless rows and archives the original bytes in
+`editor_migration_time_limits_v1`; explicit tiers then remain independent of the
+global default. Both row shapes are readable here. Unknown tiers or additional
+fields report `Unavailable(UNSUPPORTED_VERSION)` and preserve the complete value.
+Pre-tier builds with the strict two-field reader likewise report a three-field
+row as `UNSUPPORTED_VERSION`; use a compatible newer build to recover. Historical
+lenient readers are not safe downgrade targets: there is no automatic downgrade
+rewrite that discards a selected tier, and the archive is not a live fallback.
+
 `FocusStateStore.transact` atomically reads current v1 accounting, applies a pure
 reducer, and commits both accounting and additive `focus_exemptions_v1` receipts
 in one `edit`. Only its returned `Committed` acknowledges durability. Receipts

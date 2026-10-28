@@ -27,6 +27,7 @@ dependencies {
     implementation(project(":core:core-model"))
     implementation(project(":core:core-datastore"))
     implementation(project(":core:core-history"))
+    implementation(project(":blocking:blocking-engine"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.tooling.preview)
@@ -40,6 +41,7 @@ dependencies {
     debugImplementation(libs.androidx.ui.test.manifest)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.androidx.datastore.preferences)
     // Compose UI tests need the test-only ComponentActivity manifest, which is debug-only, so
     // this source set and these dependencies are limited to the debug unit-test variant.
     testDebugImplementation(libs.androidx.junit)

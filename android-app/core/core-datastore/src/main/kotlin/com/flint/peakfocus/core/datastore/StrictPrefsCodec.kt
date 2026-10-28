@@ -4,7 +4,8 @@ import androidx.datastore.preferences.core.Preferences
 import com.flint.peakfocus.core.model.*
 
 /**
- * The v1 wire format is unchanged. Unlike the historical lenient decoder, live reads and
+ * Legacy v1 formats remain readable; Time Limits append an explicit tier (see README).
+ * Unlike the historical lenient decoder, live reads and
  * read/modify/write operations refuse the WHOLE affected value if any record is unknown or
  * malformed. This prevents a later unrelated upsert from erasing undecodable records.
  */
@@ -96,7 +97,19 @@ internal object StrictPrefsCodec {
         check(packages.distinct().size == packages.size)
     }
 
-    fun timeLimits(encoded: String): List<TimeLimit> { limits(encoded, 2); return PrefsCodec.decodeTimeLimits(encoded) }
+    fun timeLimits(encoded: String, legacyTier: BreakLevel = BreakLevel.EASY): List<TimeLimit> {
+        rows(encoded).forEach { row ->
+            val fields = row.split('~')
+            if (fields.size > 3) future()
+            check(fields.size in 2..3)
+            atom(fields[0], true)
+            check(fields[1].toIntOrNull()?.let { it >= 0 } == true)
+            if (fields.size == 3) level(fields[2])
+        }
+        return PrefsCodec.decodeTimeLimits(encoded, legacyTier).also {
+            check(it.map(TimeLimit::packageName).distinct().size == it.size)
+        }
+    }
     fun openLimits(encoded: String): List<OpenLimit> { limits(encoded, 3); return PrefsCodec.decodeOpenLimits(encoded) }
     fun counts(encoded: String): Map<String, Int> { limits(encoded, 2); return PrefsCodec.decodeOpenCounts(encoded) }
 
