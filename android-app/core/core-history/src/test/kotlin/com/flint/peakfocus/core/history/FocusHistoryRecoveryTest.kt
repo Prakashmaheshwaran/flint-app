@@ -203,4 +203,18 @@ class FocusHistoryRecoveryTest {
         clock.value += hour
         assertTrue(store.append(complete))
     }
+    @Test fun S1_unavailableStrictSnapshotAndLoadingNeverBecomeDisappearance() = runTest {
+        val clock = MutableClock(begin); val store = FocusHistoryStore(temporary.newFolder(), clock)
+        val rule = HistoryRule("session-a", "Focus", "easy", begin + hour)
+        val bridge = HistoryReconciler(store, clock)
+        bridge.collectSnapshots(flow {
+            emit(HistoryRulesSnapshot.Loading)
+            emit(HistoryRulesSnapshot.Ready(listOf(rule)))
+            emit(HistoryRulesSnapshot.Unavailable("CORRUPT"))
+            assertEquals(1, store.snapshots.value.events.size)
+            emit(HistoryRulesSnapshot.Loading)
+            emit(HistoryRulesSnapshot.Ready(listOf(rule)))
+        })
+        assertEquals(1, store.snapshots.value.events.size)
+    }
 }

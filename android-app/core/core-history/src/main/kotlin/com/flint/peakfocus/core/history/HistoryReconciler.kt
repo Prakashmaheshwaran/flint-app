@@ -8,9 +8,16 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 
 /** Contains no target identifiers and never mutates the rules store. */
 data class HistoryRule(val id: String, val name: String, val tier: String, val plannedEnd: Long?)
+
+sealed interface HistoryRulesSnapshot {
+    data class Ready(val rules: List<HistoryRule>) : HistoryRulesSnapshot
+    data class Unavailable(val reason: String) : HistoryRulesSnapshot
+    data object Loading : HistoryRulesSnapshot
+}
 
 class HistoryReconciler(
     private val store: FocusHistoryStore,
@@ -24,10 +31,18 @@ class HistoryReconciler(
     val diagnostic: StateFlow<String?> = diagnostics.asStateFlow()
 
     /** Retry only errors, never synthesize an empty snapshot on a read failure. */
-    suspend fun collect(rules: Flow<List<HistoryRule>>) {
+    suspend fun collect(rules: Flow<List<HistoryRule>>) = collectSnapshots(rules.map { HistoryRulesSnapshot.Ready(it) })
+
+    suspend fun collectSnapshots(rules: Flow<HistoryRulesSnapshot>) {
         while (true) {
             try {
-                rules.collect { observe(it) }
+                rules.collect { snapshot ->
+                    when (snapshot) {
+                        is HistoryRulesSnapshot.Ready -> observe(snapshot.rules)
+                        is HistoryRulesSnapshot.Unavailable -> diagnostics.value = "Rules unavailable: ${snapshot.reason}"
+                        HistoryRulesSnapshot.Loading -> Unit
+                    }
+                }
                 return
             } catch (e: CancellationException) { throw e } catch (e: Exception) {
                 diagnostics.value = "Rules unavailable: ${e.javaClass.simpleName}"
