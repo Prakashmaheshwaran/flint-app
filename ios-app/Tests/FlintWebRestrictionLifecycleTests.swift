@@ -126,6 +126,55 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
         XCTAssertEqual(Set(writer.web.keys), ["flint"])
     }
 
+    func testRecoveryAndUnavailableSuppressEverySafariApplyWithoutAuthorizingCleanup() {
+        let writer = RecordingWebWriter()
+        var gate = FlintPassRecoveryGate.suspended(until: now.addingTimeInterval(3600))
+        let lifecycle = FlintWebRestrictionLifecycle(writer: writer, recoveryGate: { gate })
+        let adapter = FlintSessionWebRestrictionAdapter(writer: writer,
+            configuration: { FlintWebRestrictions(enabled: true) }, recoveryGate: { gate })
+        let config = FlintWebRestrictions(enabled: true, applyDuringSchedules: true)
+        writer.web["flint.web"] = config
+        for value in [gate, .unavailable] {
+            gate = value
+            lifecycle.reconcileSession(session(), config: config, now: now)
+            lifecycle.reconcileRule(rule("a"), config: config, now: now, calendar: calendar)
+            lifecycle.reconcile(activeSession: session(), rules: [rule("a")], config: config, now: now, calendar: calendar)
+            adapter.reconcile(session(), now: now)
+        }
+        XCTAssertTrue(writer.applied.isEmpty)
+        XCTAssertTrue(writer.cleared.isEmpty)
+        gate = .enforcing
+        lifecycle.reconcile(activeSession: nil, rules: [rule("a")], config: config, now: now, calendar: calendar)
+        XCTAssertEqual(writer.applied, ["flint.a"])
+    }
+
+    func testSafariDoesNotExpireALiveSessionBecauseTheWallClockMovedForward() {
+        let writer = RecordingWebWriter()
+        let shifted = now.addingTimeInterval(86400)
+        let clock = FlintClock(now: { shifted }, monotonic: { 1060 }, bootSessionID: { "boot" }, calendar: { self.calendar })
+        let lifecycle = FlintWebRestrictionLifecycle(writer: writer, clock: clock)
+        let active = FlintActiveSession(name: "Focus", startedAt: now, endsAt: now.addingTimeInterval(3600),
+            breakLevel: .hardcore, monitorName: "session", monotonicStart: 1000, bootSessionID: "boot")
+        let config = FlintWebRestrictions(enabled: true)
+        lifecycle.reconcileSession(active, config: config, now: shifted)
+        XCTAssertEqual(writer.web["flint"], config)
+        XCTAssertTrue(writer.cleared.isEmpty)
+    }
+
+    func testSafariResumeHonorsSavedOneShotEndRatherThanRecurringTemplate() {
+        let writer = RecordingWebWriter()
+        let lifecycle = FlintWebRestrictionLifecycle(writer: writer)
+        let config = FlintWebRestrictions(applyDuringSchedules: true)
+        var oneShot = rule("one-shot")
+        oneShot.protection = .init(timeZoneID: "America/New_York")
+        oneShot.oneShot = .init(start: now.addingTimeInterval(-60), end: now.addingTimeInterval(1800))
+        lifecycle.reconcileRule(oneShot, config: config, now: now, calendar: calendar)
+        XCTAssertEqual(writer.applied, [oneShot.storeName])
+        lifecycle.reconcileRule(oneShot, config: config, now: now.addingTimeInterval(3600), calendar: calendar)
+        XCTAssertNil(writer.web[oneShot.storeName])
+        XCTAssertEqual(writer.applied, [oneShot.storeName])
+    }
+
     func testDisableBothScopesClearsAllKnownOwnersAndLegacy() {
         let writer = RecordingWebWriter()
         let lifecycle = FlintWebRestrictionLifecycle(writer: writer)
@@ -508,7 +557,7 @@ final class FlintSessionWebRestrictionTests: XCTestCase {
     }
 
     func testPC72EverySessionEndClearsItsWholeStoreAndLeavesTwoRuleOwners() throws {
-        for end in ["manual", "shortcut", "focusOff", "pass", "expiry", "monitor", "warning", "carrier", "noSession"] {
+        for end in ["manual", "shortcut", "focusOff", "expiry", "monitor", "warning", "carrier", "noSession"] {
             let h = WebSessionHarness()
             let controller = h.controller()
             let session = try h.start(controller, duration: end == "warning" || end == "carrier" ? 300 : 1800,
@@ -521,7 +570,6 @@ final class FlintSessionWebRestrictionTests: XCTestCase {
             case "manual": XCTAssertEqual(controller.requestStop(confirmed: true), .stopped)
             case "shortcut": XCTAssertEqual(controller.requestStop(route: .shortcutStop, confirmed: true), .stopped)
             case "focusOff": XCTAssertEqual(controller.requestStop(route: .focusFilterOff, confirmed: true), .stopped)
-            case "pass": XCTAssertTrue(controller.useEmergencyPass())
             case "expiry":
                 h.now = session.endsAt!
                 controller.finishIfExpired()
@@ -541,6 +589,37 @@ final class FlintSessionWebRestrictionTests: XCTestCase {
             XCTAssertNil(h.store.active, end)
         }
     }
+
+    func testPC41PC72PassReleasesSessionAndAllSafariRuleOwnersAfterCommit() throws {
+        let h = WebSessionHarness()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("FlintWebPass-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let clock = FlintClock(now: { h.now }, monotonic: { 50000 }, bootSessionID: { "test-boot" },
+                               calendar: { Calendar(identifier: .gregorian) })
+        let ledger = FlintProtectionLedger(directory: directory, clock: clock,
+            initializedMarker: { nil }, setInitializedMarker: { _ in }, migrate: { $0.importLegacyPass(.absent, at: $1) })
+        let sessionController = h.controller(ledger: ledger)
+        let session = try h.start(sessionController)
+        h.writer.web["flint.rule-a"] = h.config
+        h.writer.web["flint.rule-b"] = h.config
+        let stores = ["flint", "flint.rule-a", "flint.rule-b"]
+        let pass = FlintEmergencyPassController(environment: .init(ledger: { ledger }, clock: clock,
+            scope: { _, _ in .init(revision: "scope", sessions: [session], rules: [], stores: stores) },
+            registerCarrier: { _, _, _ in }, terminate: { sessions, at in
+                for ended in sessions { XCTAssertTrue(sessionController.endCommittedEmergencyPass(ended, at: at)) }
+            }, release: { scope in
+                XCTAssertEqual(try ledger.peek().get().pass.usage, .used)
+                for store in scope.stores { h.writer.clearAllSettings(store: store) }
+            }, resume: { _, _ in }, emit: { recovery in
+                FlintSessionLifecycle.didUsePass(operationID: recovery.operationID, sessions: recovery.scope.sessions,
+                    recoveryEnd: recovery.recoveryEnd, at: recovery.acceptedAt.wall)
+            }))
+        let preview = try pass.preview().get()
+        _ = try pass.use(previewRevision: preview.revision, operationID: "web-pass").get()
+        XCTAssertTrue(h.writer.web.isEmpty)
+        XCTAssertEqual(Set(h.writer.wholeStoresCleared), Set(stores))
+        XCTAssertNil(h.store.active)
+    }
 }
 
 private final class WebSessionHarness {
@@ -554,7 +633,7 @@ private final class WebSessionHarness {
     lazy var shield = WebSessionShield(writer: writer)
     lazy var registrar = WebSessionRegistrar(writer: writer)
 
-    func controller() -> FlintSessionController {
+    func controller(ledger: FlintProtectionLedger? = nil) -> FlintSessionController {
         FlintSessionController(environment: FlintSessionEnvironment(
             store: { [self] in store }, shield: shield,
             webRestrictions: FlintSessionWebRestrictionAdapter(writer: writer, configuration: { [self] in config }),
@@ -566,7 +645,7 @@ private final class WebSessionHarness {
                                   calendar.timeZone = TimeZone(identifier: "America/New_York")!
                                   return calendar
                               }),
-            healthDefaults: { nil }
+            healthDefaults: { nil }, ledger: { ledger }
         ))
     }
 

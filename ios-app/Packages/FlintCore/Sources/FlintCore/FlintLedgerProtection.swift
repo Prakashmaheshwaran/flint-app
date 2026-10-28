@@ -21,12 +21,18 @@ extension FlintLedgerState.Pass {
     /// powered-off interval never shortens the cooldown.
     public mutating func checkpoint(at now: FlintLedgerInstant) {
         if let last = checkpoint {
+            if last.bootID == nil || now.bootID == nil || last.bootID != now.bootID
+                || last.elapsed(until: now).map({ abs(now.wall.timeIntervalSince(last.wall) - $0) > 5 }) != false {
+                timeUncertain = true
+            }
             // Cooldown credits only time that surely passed (after a reboot it keeps its
             // remainder); recovery — a release — only ends early, never late (§9).
             if let elapsed = last.elapsed(until: now) {
                 cooldownRemaining = max(0, cooldownRemaining - elapsed)
             }
-            if let released = last.elapsedForRelease(until: now) {
+            // Global recovery requires a positively identified boot. An unavailable boot
+            // identity closes access conservatively (§9), even if uptime still increased.
+            if last.bootID != nil, now.bootID != nil, let released = last.elapsedForRelease(until: now) {
                 recoveryRemaining = max(0, recoveryRemaining - released)
             } else {
                 recoveryRemaining = 0
@@ -85,6 +91,7 @@ extension FlintLedgerState {
             pass.usage = .used
             pass.cooldownRemaining = FlintProtectionConstants.passPeriod
             pass.recoveryRemaining = FlintProtectionConstants.passRecovery
+            pass.timeUncertain = now.bootID == nil
             pass.lastOperationID = operationID
             remember(Operation(id: operationID, kind: "pass", result: "consumed", at: now.wall))
             return .success(FlintPassReceipt(operationID: operationID,

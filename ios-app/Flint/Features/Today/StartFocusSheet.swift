@@ -102,6 +102,9 @@ struct StartFocusSheet: View {
                     .frame(maxWidth: .infinity)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
+                if vm.needsProtectionResume {
+                    Button("Resume protection now", action: vm.resumeProtectionNow).buttonStyle(QuietButtonStyle())
+                }
             } else if vm.selectionCount == 0 {
                 Text("Choose what rests first.")
                     .flintSecondary()

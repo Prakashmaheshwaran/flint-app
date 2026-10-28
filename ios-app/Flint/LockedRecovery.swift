@@ -14,12 +14,17 @@ struct LockedRecoveryState: Equatable {
     }
 
     var running: Running
-    var passAvailable: Bool
+    var eligibility: FlintPassEligibility?
     var nextPass: Date?
+    var recoveryUntil: Date?
+    var timeUncertain: Bool
+    var needsApplication: Bool
 
     /// With a `clock`, the running block and its end follow logical time (ADR-012 §9).
-    static func make(active: FlintActiveSession?, hasRecord: Bool, passAvailable: Bool,
-                     passLastUsed: Date?, now: Date, clock: FlintClock? = nil) -> Self {
+    static func make(active: FlintActiveSession?, hasRecord: Bool, pass: FlintPassStatus?,
+                     nextPass: Date? = nil, recoveryUntil: Date? = nil,
+                     timeUncertain: Bool = false, needsApplication: Bool = false,
+                     now: Date, clock: FlintClock? = nil) -> Self {
         let running: Running
         if let active, active.isEnforcing(at: now, clock: clock) {
             running = .session(tier: active.breakLevel, until: clock.flatMap(active.stableLogicalEnd) ?? active.endsAt)
@@ -28,29 +33,31 @@ struct LockedRecoveryState: Equatable {
         } else {
             running = .none
         }
-        let next = FlintEmergencyPass.nextAvailable(lastUsed: passLastUsed).flatMap { $0 > now ? $0 : nil }
-        return Self(running: running, passAvailable: passAvailable, nextPass: passAvailable ? nil : next)
+        return Self(running: running, eligibility: pass?.eligibility, nextPass: nextPass,
+                    recoveryUntil: recoveryUntil, timeUncertain: timeUncertain, needsApplication: needsApplication)
     }
 
     static func current(now: Date = Date()) -> Self {
         let controller = FlintSessionController()
         let store = FlintGroupStore()
         // Without the App Group nothing can be read — a block may still be enforced, so say so.
+        let status = try? FlintEmergencyPassController().status().get()
         return make(active: controller.activeSession, hasRecord: store?.hasActiveSessionRecord() ?? true,
-                    passAvailable: controller.emergencyPassAvailable(now: now),
-                    passLastUsed: store?.emergencyPassLastUsed(), now: now, clock: .system)
+                    pass: status?.pass, nextPass: status?.nextAvailableAt,
+                    recoveryUntil: status?.recoveryUntil, timeUncertain: status?.timeUncertain ?? false,
+                    needsApplication: status?.needsApplication ?? false, now: now, clock: .system)
     }
 
-    /// The pass ends a running Hardcore block (the only block the app can't end otherwise).
+    /// Any known active personal commitment can recover, including rules without a session.
     var canUsePass: Bool {
-        guard passAvailable, case .session(.hardcore, _) = running else { return false }
-        return true
+        eligibility == .available && running != .unreadable && recoveryUntil == nil && !needsApplication
     }
 
     var headline: String {
         switch running {
         case .none:
-            return String(localized: "No Flint block is running.")
+            if recoveryUntil != nil { return "Personal protection is suspended for recovery." }
+            return canUsePass ? "Personal commitments are active." : "No active focus session is recorded."
         case .unreadable:
             return String(localized: "Flint couldn't read the block that's running, so it keeps it in place.")
         case let .session(tier, nil):
@@ -70,15 +77,13 @@ struct LockedRecoveryState: Equatable {
     }
 
     var passLine: String {
-        if passAvailable {
-            return running == .none
-                ? String(localized: "Emergency Pass: available for a running Hardcore block")
-                : String(localized: "Emergency Pass: available")
+        if needsApplication { return "Saved recovery needs to finish applying" }
+        if let recoveryUntil { return "Recovery until \(FlintEmergencyPassStatus.dateText(recoveryUntil))" }
+        guard let eligibility, eligibility != .unavailable else { return "Protection state unavailable" }
+        if let nextPass {
+            return "Next pass: \(FlintEmergencyPassStatus.dateText(nextPass))\(timeUncertain ? " (adjusted estimate after restart or clock change)" : "")"
         }
-        guard let nextPass else { return String(localized: "Emergency Pass: not available right now") }
-        // Date, time and zone (ADR-012 §6).
-        let when = nextPass.formatted(.dateTime.month(.abbreviated).day().hour().minute().timeZone(.specificName(.short)))
-        return String(localized: "Emergency Pass: available again \(when)")
+        return "Emergency Pass: Available"
     }
 }
 
@@ -86,7 +91,6 @@ struct LockedRecoveryState: Equatable {
 struct LockedRecoveryView: View {
     @State private var state = LockedRecoveryState.current()
     @State private var showPass = false
-    @State private var passFailed = false
     let onClose: () -> Void
 
     var body: some View {
@@ -99,13 +103,8 @@ struct LockedRecoveryView: View {
                     Text(state.passLine)
                         .font(FlintFont.text(13, weight: .medium))
                         .foregroundStyle(FlintBrand.flame)
-                    if state.canUsePass {
-                        Button("Use Emergency Pass") { showPass = true }.buttonStyle(EmberButtonStyle())
-                    }
-                    if passFailed {
-                        Text("The pass couldn't be used. Nothing changed.")
-                            .font(FlintFont.text(13)).foregroundStyle(FlintBrand.danger)
-                    }
+                    Button(state.recoveryUntil == nil ? "Emergency Pass" : "Manage recovery") { showPass = true }
+                        .buttonStyle(EmberButtonStyle())
                     Text("To lift every Flint block yourself, turn off Flint's access in Settings → Screen Time. Flint can't prevent that, and it doesn't need your PIN.")
                         .flintSecondary(13).fixedSize(horizontal: false, vertical: true)
                     Button("Back to PIN", action: onClose).buttonStyle(BoneButtonStyle())
@@ -117,26 +116,13 @@ struct LockedRecoveryView: View {
             .accessibilityHidden(showPass)
             if showPass {
                 EmergencyPassSheet(
-                    sessionName: "the running Hardcore block",
-                    available: state.canUsePass,
                     onKeep: { showPass = false },
-                    onUse: {
-                        showPass = false
-                        passFailed = false
-                        guard state.canUsePass else { return }
-                        let used = FlintSessionController().useEmergencyPass()
-                        if used {
-                            NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
-                        }
-                        passFailed = !used
+                    onApplied: {
                         state = LockedRecoveryState.current()
-                        // Focus doesn't move when the state refreshes: say what happened.
-                        let message = used ? String(localized: "Emergency Pass used. The block has ended.")
-                                           : String(localized: "The pass couldn't be used. Nothing changed.")
                         DispatchQueue.main.async {
-                            UIAccessibility.post(notification: .announcement, argument: message)
+                            UIAccessibility.post(notification: .announcement, argument: "Protection state updated.")
                         }
-                    }
+                    }, redacted: true
                 )
             }
         }

@@ -27,6 +27,15 @@ public enum FlintWebRestrictionPolicy {
             return false
         }
     }
+
+    #if canImport(FamilyControls)
+    public static func shouldApply(to rule: FlintScheduleRule, config: FlintWebRestrictions,
+                                  now: Date, calendar: Calendar = .current) -> Bool {
+        guard config.applyDuringSchedules, rule.enabled else { return false }
+        if rule.protection != nil || rule.oneShot != nil { return rule.occurrence(at: now) != nil }
+        return rule.schedule.isWindowActive(at: now, calendar: calendar)
+    }
+    #endif
 }
 
 /// `apply` receives an eligible cause; implementations must not treat the session toggle as a
@@ -43,9 +52,15 @@ public final class FlintWebRestrictionLifecycle {
     public static let legacyStoreName = "flint.web"
 
     private let writer: any FlintWebRestrictionWriting
+    private let recoveryGate: () -> FlintPassRecoveryGate
+    private let clock: FlintClock?
 
-    public init(writer: any FlintWebRestrictionWriting) {
+    public init(writer: any FlintWebRestrictionWriting,
+                recoveryGate: @escaping () -> FlintPassRecoveryGate = { .enforcing },
+                clock: FlintClock? = nil) {
         self.writer = writer
+        self.recoveryGate = recoveryGate
+        self.clock = clock
     }
 
     public func reconcileSession(
@@ -53,7 +68,7 @@ public final class FlintWebRestrictionLifecycle {
         clock: FlintClock? = nil
     ) {
         update(store: Self.sessionStoreName, shouldApply: FlintWebRestrictionPolicy.shouldApply(
-            to: .session(session), config: config, now: now, clock: clock
+            to: .session(session), config: config, now: now, clock: clock ?? self.clock
         ), config: config)
     }
 
@@ -63,7 +78,7 @@ public final class FlintWebRestrictionLifecycle {
         now: Date = Date(), calendar: Calendar = .current
     ) {
         update(store: rule.storeName, shouldApply: FlintWebRestrictionPolicy.shouldApply(
-            to: .schedule(rule.schedule, enabled: rule.enabled), config: config, now: now, calendar: calendar
+            to: rule, config: config, now: now, calendar: calendar
         ), config: config)
     }
 
@@ -79,7 +94,7 @@ public final class FlintWebRestrictionLifecycle {
         now: Date = Date(), calendar: Calendar = .current, preservingStores: Set<String> = [],
         clock: FlintClock? = nil
     ) {
-        guard config.validationMessage == nil else { return }
+        guard config.validationMessage == nil, recoveryGate().permitsApplication else { return }
         if !preservingStores.contains(Self.sessionStoreName) {
             reconcileSession(activeSession, config: config, now: now, clock: clock)
         }
@@ -91,7 +106,9 @@ public final class FlintWebRestrictionLifecycle {
     #endif
 
     private func update(store: String, shouldApply: Bool, config: FlintWebRestrictions) {
-        guard config.validationMessage == nil else { return }
+        // The committed pass outbox owns global release. Callback suppression itself never
+        // grants cleanup authority, especially when the ledger is unreadable.
+        guard config.validationMessage == nil, recoveryGate().permitsApplication else { return }
         if shouldApply {
             writer.apply(config, toStore: store)
         } else {
@@ -114,8 +131,10 @@ public struct FlintSessionWebRestrictionAdapter: FlintSessionWebRestricting {
     private let configuration: () -> FlintWebRestrictions?
 
     public init(writer: any FlintWebRestrictionWriting,
-                configuration: @escaping () -> FlintWebRestrictions?) {
-        self.lifecycle = FlintWebRestrictionLifecycle(writer: writer)
+                configuration: @escaping () -> FlintWebRestrictions?,
+                recoveryGate: @escaping () -> FlintPassRecoveryGate = { .enforcing },
+                clock: FlintClock? = nil) {
+        self.lifecycle = FlintWebRestrictionLifecycle(writer: writer, recoveryGate: recoveryGate, clock: clock)
         self.configuration = configuration
     }
 
@@ -141,7 +160,7 @@ public struct FlintManagedWebRestrictionWriter: FlintWebRestrictionWriting {
 
 extension FlintWebRestrictionLifecycle {
     public convenience init() {
-        self.init(writer: FlintManagedWebRestrictionWriter())
+        self.init(writer: FlintManagedWebRestrictionWriter(), recoveryGate: { .read() }, clock: .system)
     }
 }
 #endif

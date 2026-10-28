@@ -230,9 +230,12 @@ public final class FlintWebRestrictionStore {
     /// Enforce an already-authorized cause's configuration now.
     public func apply(_ restrictions: FlintWebRestrictions) {
         guard restrictions.validationMessage == nil else { return } // preserve last-good keys
-        store.webContent.blockedByFilter = Self.filterPolicy(for: restrictions)
-        // nil = no assertion from this cause; another cause may still deny explicit content.
-        store.media.denyExplicitContent = restrictions.denyExplicitMedia ? true : nil
+        _ = FlintSessionController().withTransition {
+            guard FlintPassRecoveryGate.read().permitsApplication else { return }
+            store.webContent.blockedByFilter = Self.filterPolicy(for: restrictions)
+            // nil = no assertion from this cause; another cause may still deny explicit content.
+            store.media.denyExplicitContent = restrictions.denyExplicitMedia ? true : nil
+        }
     }
 
     static func filterPolicy(for restrictions: FlintWebRestrictions) -> WebContentSettings.FilterPolicy {

@@ -127,25 +127,6 @@ final class FlintCoreTests: XCTestCase {
         XCTAssertTrue(everyDay.appliesOn(sunday, calendar: cal))
     }
 
-    func testEmergencyPassWeeklyAvailability() {
-        let now = Date()
-        XCTAssertTrue(FlintEmergencyPass.isAvailable(lastUsed: nil, now: now), "Never used → available")
-        XCTAssertFalse(
-            FlintEmergencyPass.isAvailable(lastUsed: now.addingTimeInterval(-3 * 24 * 3600), now: now),
-            "Used 3 days ago → not available"
-        )
-        XCTAssertTrue(
-            FlintEmergencyPass.isAvailable(lastUsed: now.addingTimeInterval(-8 * 24 * 3600), now: now),
-            "Used 8 days ago → available again"
-        )
-        let lastUsed = now.addingTimeInterval(-2 * 24 * 3600)
-        XCTAssertEqual(
-            FlintEmergencyPass.nextAvailable(lastUsed: lastUsed)!.timeIntervalSince1970,
-            lastUsed.addingTimeInterval(7 * 24 * 3600).timeIntervalSince1970,
-            accuracy: 0.01
-        )
-    }
-
     func testLimitRuleRoundTripsAndNames() throws {
         let limit = FlintLimitRule(name: "Social", thresholdMinutes: 30, breakLevel: .harder,
             protection: .init(incarnation: "00000000-0000-0000-0000-000000000001"))

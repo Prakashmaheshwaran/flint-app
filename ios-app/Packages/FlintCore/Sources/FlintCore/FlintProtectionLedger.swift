@@ -94,6 +94,14 @@ public struct FlintLedgerState: Codable, Equatable, Sendable {
     public var operations: [Operation]
     /// Shared target quotas and bounded access, never stored in UserDefaults (§5).
     public var openCredits: FlintOpenCreditState
+    /// ADR-012 §6: the committed termination/suspension intent survives a crash before release.
+    /// Optional for compatibility with the original ledger; absence never authorizes release.
+    public var emergencyRecovery: FlintPassRecovery?
+    /// Time Limit thresholds observed by the monitor, bounded to their natural daily interval.
+    /// Recovery suspends enforcement, not usage, so thresholds reached inside it remain due.
+    public var passLimitThresholds: [String: FlintPassLimitThreshold]?
+    /// A pass-ended Focus cannot recreate its occurrence until an observed off→on cycle.
+    public var passSuppressedFocusOwners: Set<String>?
 
     public init(initializedAt: Date) {
         version = Self.currentVersion
@@ -103,10 +111,14 @@ public struct FlintLedgerState: Codable, Equatable, Sendable {
         harder = [:]
         operations = []
         openCredits = FlintOpenCreditState()
+        emergencyRecovery = nil
+        passLimitThresholds = nil
+        passSuppressedFocusOwners = nil
     }
 
     private enum CodingKeys: String, CodingKey {
         case version, initializedAt, migrations, pass, harder, operations, openCredits
+        case emergencyRecovery, passLimitThresholds, passSuppressedFocusOwners
     }
 
     public init(from decoder: Decoder) throws {
@@ -123,6 +135,9 @@ public struct FlintLedgerState: Codable, Equatable, Sendable {
         operations = try values.decode([Operation].self, forKey: .operations)
         // Only the known v1 schema may lack this field. A missing v2 quota is corruption.
         openCredits = oldVersion == 1 ? FlintOpenCreditState() : try values.decode(FlintOpenCreditState.self, forKey: .openCredits)
+        emergencyRecovery = try values.decodeIfPresent(FlintPassRecovery.self, forKey: .emergencyRecovery)
+        passLimitThresholds = try values.decodeIfPresent([String: FlintPassLimitThreshold].self, forKey: .passLimitThresholds)
+        passSuppressedFocusOwners = try values.decodeIfPresent(Set<String>.self, forKey: .passSuppressedFocusOwners)
     }
 
     // MARK: Emergency Pass (§6)
@@ -148,6 +163,8 @@ public struct FlintLedgerState: Codable, Equatable, Sendable {
         public var lastOperationID: String?
         /// Global recovery remaining, in elapsed seconds, as of `checkpoint`.
         public var recoveryRemaining: TimeInterval
+        /// Estimates can be delayed after reboot or a clock discontinuity (§9).
+        public var timeUncertain: Bool?
 
         public init() {
             usage = .pendingImport
@@ -155,6 +172,7 @@ public struct FlintLedgerState: Codable, Equatable, Sendable {
             checkpoint = nil
             lastOperationID = nil
             recoveryRemaining = 0
+            timeUncertain = nil
         }
     }
 
@@ -382,7 +400,13 @@ public final class FlintProtectionLedger {
             return .failure(.unavailable("ledger schema \(header.version) is newer than this build"))
         }
         do {
-            return .success(try makeDecoder().decode(FlintLedgerState.self, from: data))
+            let state = try makeDecoder().decode(FlintLedgerState.self, from: data)
+            // Reject unknown/invalid recovery intent before ANY ledger writer can decode then
+            // re-encode it and discard fields it doesn't understand. Original bytes stay intact.
+            if state.emergencyRecovery != nil && !state.hasValidPassRecovery {
+                return .failure(.unavailable("Emergency Pass recovery record is unavailable"))
+            }
+            return .success(state)
         } catch {
             onCorrupt()
             return .failure(.unavailable("ledger is corrupt"))

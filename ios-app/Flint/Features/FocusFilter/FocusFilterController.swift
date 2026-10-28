@@ -27,6 +27,16 @@ struct FocusFilterController {
     /// when its own block already runs. A refusal is recorded for Settings, never silent.
     @discardableResult
     func activate(_ request: FlintSessionRequest) -> Bool {
+        controller.withTransition { activateLocked(request) } ?? false
+    }
+
+    private func activateLocked(_ request: FlintSessionRequest) -> Bool {
+        // Check before the idempotent-owned-session return: a committed pass may still need
+        // to project its termination, and a still-on filter must not resurrect that block.
+        if case let .failure(error) = FlintEmergencyPassController().prepareForNewSession(focusOwnerID: Self.ownerID) {
+            FlintSessionHealth.recordRefusal(action: .start, name: Self.sessionName, reason: error.localizedDescription)
+            return false
+        }
         if let active = controller.activeSession, controller.isOwnedByFocusFilter(active) { return true }
 
         guard let selection = resolveSelection(for: request.appGroupID),
@@ -65,6 +75,17 @@ struct FocusFilterController {
     /// persisted wait (finish ending it in Flint after the wait); a finite Hardcore block keeps
     /// running until its end. Blocks from an older build keep their old Focus-off exit (§12).
     func deactivate() {
+        _ = controller.withTransition {
+            guard case .success = FlintEmergencyPassController().acknowledgeFocusOff(ownerID: Self.ownerID) else {
+                FlintSessionHealth.recordRefusal(action: .stop, name: Self.sessionName,
+                    reason: "Focus turned off, but Flint couldn't save its recovery state. Open Flint to check.")
+                return
+            }
+            deactivateLocked()
+        }
+    }
+
+    private func deactivateLocked() {
         let outcome = controller.requestStop(route: .focusFilterOff, confirmed: true)
         let reason: String
         switch outcome {

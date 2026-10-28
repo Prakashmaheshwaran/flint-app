@@ -1,6 +1,6 @@
 import XCTest
 import FamilyControls
-import FlintCore
+@testable import FlintCore
 
 /// Session start/stop/expiry/reconcile paths against fake OS seams: no Screen Time needed, and
 /// the order of every registration, shield write and persisted record is observable.
@@ -918,13 +918,24 @@ final class FlintSessionControllerTests: XCTestCase {
         let c = controller()
         let session = try start(c, minutes: 60, level: .hardcore)
         XCTAssertFalse(c.canStop(session))
-        XCTAssertTrue(c.useEmergencyPass())
+        let ledger = FlintProtectionLedger(directory: ledgerDirectory, clock: clock.flintClock,
+            initializedMarker: { nil }, setInitializedMarker: { _ in },
+            migrate: { $0.importLegacyPass(.absent, at: $1) })
+        let pass = FlintEmergencyPassController(environment: .init(ledger: { ledger }, clock: clock.flintClock,
+            scope: { _, _ in .init(revision: "scope", sessions: self.store.active.map { [$0] } ?? [], rules: [], stores: ["flint"]) },
+            registerCarrier: { _, _, _ in }, terminate: { sessions, at in
+                for ended in sessions { XCTAssertTrue(c.endCommittedEmergencyPass(ended, at: at)) }
+            }, release: { _ in }, resume: { _, _ in }, emit: { recovery in
+                FlintSessionLifecycle.didUsePass(operationID: recovery.operationID, sessions: recovery.scope.sessions,
+                    recoveryEnd: recovery.recoveryEnd, at: recovery.acceptedAt.wall)
+            }))
+        let preview = try pass.preview().get()
+        XCTAssertTrue(try pass.use(previewRevision: preview.revision, operationID: "test-pass").get().pass.isRecovering)
         XCTAssertNil(store.active)
-        XCTAssertEqual(store.passUsed, clock.now)
-        XCTAssertEqual(events.kinds.suffix(2), ["passUsed", "ended"])
-        XCTAssertEqual(events.log.last, .ended(session, route: .emergencyPass, at: clock.now))
-        _ = try start(c, minutes: 60, level: .hardcore)
-        XCTAssertFalse(c.useEmergencyPass(), "one per rolling week")
+        XCTAssertNil(store.passUsed, "the legacy UserDefaults path must never be written")
+        XCTAssertEqual(events.kinds.suffix(2), ["ended", "globalPassUsed"])
+        XCTAssertTrue(events.log.contains(.ended(session, route: .emergencyPass, at: clock.now)))
+        XCTAssertEqual(pass.use(previewRevision: preview.revision, operationID: "second-pass"), .failure(.resumeProtectionFirst))
     }
 
     // MARK: Reconcile

@@ -12,7 +12,8 @@ struct SettingsView: View {
     @State private var openSetupAfterAuthentication = false
     @State private var armingHealth = FlintGroupStore()?.loadArmingHealth() ?? FlintArmingHealth()
     @State private var authStatus = AuthorizationCenter.shared.authorizationStatus
-    @State private var passAvailable = FlintSessionController().emergencyPassAvailable()
+    @State private var passStatus = try? FlintEmergencyPassController().status().get()
+    @State private var showPass = false
     @State private var confirmClearHistory = false
     @State private var historyFeedback: String?
     @State private var observation = FlintProtectionObservation.load()
@@ -29,6 +30,12 @@ struct SettingsView: View {
                     healthCard.padding(.top, 20)
 
                     FlintLiveActivitySetting()
+
+                    Button { showPass = true } label: {
+                        FlintRow(title: "Emergency Pass", subtitle: passStatus?.label ?? "Protection state unavailable", chevron: true)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("settings.emergencyPass")
 
                     VStack(spacing: 0) {
                         Button {
@@ -83,6 +90,9 @@ struct SettingsView: View {
             .toolbar(.hidden, for: .navigationBar)
             .onAppear(perform: refresh)
             .onReceive(NotificationCenter.default.publisher(for: .flintProtectionReconciled)) { _ in refresh() }
+            .sheet(isPresented: $showPass, onDismiss: refresh) {
+                EmergencyPassSheet(onKeep: { showPass = false }, onApplied: refresh)
+            }
             .confirmationDialog("Clear focus history?", isPresented: $confirmClearHistory, titleVisibility: .visible) {
                 Button("Clear focus history", role: .destructive) {
                     FocusHistoryModel.shared.clear { success, keptRunningSession in
@@ -139,7 +149,7 @@ struct SettingsView: View {
         appLock.refresh()
         armingHealth = FlintGroupStore()?.loadArmingHealth() ?? FlintArmingHealth()
         authStatus = AuthorizationCenter.shared.authorizationStatus
-        passAvailable = FlintSessionController().emergencyPassAvailable()
+        passStatus = try? FlintEmergencyPassController().status().get()
         observation = FlintProtectionObservation.load()
         sessionHealth = FlintSessionHealth.load()
         activeSession = FlintSessionController().activeSession
@@ -230,7 +240,7 @@ struct SettingsView: View {
                 }
                 Text("Registration does not verify that a shield or background callback took effect.")
                     .font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
-                check(passAvailable, passAvailable ? "Emergency Pass ready · 1 this week" : "Emergency Pass used this week")
+                check(passStatus?.isAvailable == true, "Emergency Pass · \(passStatus?.label ?? "Protection state unavailable")")
                 if health.isNearCap {
                     Text("Flint last armed \(health.armedTotal) protection activities. iOS does not publish a fixed "
                          + "limit; refusals have been observed around \(FlintArmingHealth.observedActivityThreshold). "

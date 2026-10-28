@@ -34,6 +34,7 @@ final class SessionViewModel: ObservableObject {
         }
     }
     @Published var errorText: String?
+    @Published private(set) var needsProtectionResume = false
     /// A Harder early stop in progress: the persisted wait (ADR-012 §4) and its end.
     @Published private(set) var harderStop: HarderStop?
 
@@ -165,6 +166,7 @@ final class SessionViewModel: ObservableObject {
     func start(confirmed: Bool = false) {
         defer { NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil) }
         errorText = nil
+        needsProtectionResume = false
         do {
             active = try controller.startBlockNow(
                 selection: selection,
@@ -180,6 +182,9 @@ final class SessionViewModel: ObservableObject {
             startTicking()
         } catch FlintSessionError.needsConfirmation {
             confirmingHardcore = true
+        } catch FlintSessionError.resumeProtectionFirst {
+            needsProtectionResume = true
+            errorText = "Resume protection first"
         } catch {
             errorText = (error as? LocalizedError)?.errorDescription ?? "\(error)"
         }
@@ -231,20 +236,22 @@ final class SessionViewModel: ObservableObject {
         }
     }
 
-    var emergencyPassAvailable: Bool { controller.emergencyPassAvailable() }
-
-    func useEmergencyPass() {
+    /// The shared pass sheet already committed/released through the ledger controller.
+    func emergencyPassDidApply() {
         errorText = nil
-        if controller.useEmergencyPass() {
+        NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
+        active = controller.activeSession
+        remaining = 0
+        timer?.invalidate()
+    }
+
+    func resumeProtectionNow() {
+        switch FlintEmergencyPassController().resumeNow() {
+        case .success:
+            needsProtectionResume = false
+            errorText = nil
             NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
-            active = nil
-            remaining = 0
-            timer?.invalidate()
-        } else if controller.emergencyPassAvailable() {
-            // Available but not used: another part of Flint was mid-change. Nothing was spent.
-            errorText = "Flint couldn't use the Emergency Pass just now. Nothing was spent — try again."
-        } else {
-            errorText = "Emergency Pass isn't available yet — it renews seven days after you use it."
+        case let .failure(error): errorText = error.localizedDescription
         }
     }
 

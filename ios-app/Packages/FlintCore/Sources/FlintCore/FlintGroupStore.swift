@@ -75,11 +75,13 @@ public final class FlintGroupStore {
 
     // MARK: Emergency pass
 
+    @available(*, unavailable, message: "Use FlintEmergencyPassController.status(); legacy timestamps are imported by the ledger only.")
     public func emergencyPassLastUsed() -> Date? {
         let t = defaults.double(forKey: Key.emergencyPassLastUsed)
         return t > 0 ? Date(timeIntervalSince1970: t) : nil
     }
 
+    @available(*, unavailable, message: "Use FlintEmergencyPassController.use(previewRevision:operationID:); only the ledger may consume a pass.")
     public func recordEmergencyPassUse(_ date: Date = Date()) {
         defaults.set(date.timeIntervalSince1970, forKey: Key.emergencyPassLastUsed)
     }

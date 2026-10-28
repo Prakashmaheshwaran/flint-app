@@ -72,7 +72,23 @@ final class FlintCompletionControllerIntegrationTests: XCTestCase {
         drain()
         XCTAssertEqual(center.pending, [FlintCompletionNotifier.identifierPrefix + second.id])
         XCTAssertTrue(center.cancelled.contains(FlintCompletionNotifier.identifierPrefix + first.id))
-        XCTAssertTrue(controller.useEmergencyPass())
+        let clock = FlintClock(now: { self.now }, monotonic: { 10_000 }, bootSessionID: { "notification-integration" },
+                               calendar: { Calendar(identifier: .gregorian) })
+        let ledger = FlintProtectionLedger(directory: directory.appendingPathComponent("pass"), clock: clock,
+            initializedMarker: { nil }, setInitializedMarker: { _ in }, migrate: { $0.importLegacyPass(.absent, at: $1) })
+        let pass = FlintEmergencyPassController(environment: .init(ledger: { ledger }, clock: clock,
+            scope: { _, _ in .init(revision: "scope", sessions: [second], rules: [], stores: ["flint"]) },
+            registerCarrier: { _, _, _ in }, terminate: { _, at in
+                // The production terminal route is what cancels the pending notification;
+                // the global pass event then records the operation once.
+                self.controller.stop(route: .emergencyPass)
+                XCTAssertEqual(at, self.now)
+            }, release: { _ in }, resume: { _, _ in }, emit: { recovery in
+                FlintSessionLifecycle.didUsePass(operationID: recovery.operationID, sessions: recovery.scope.sessions,
+                    recoveryEnd: recovery.recoveryEnd, at: recovery.acceptedAt.wall)
+            }))
+        let preview = try pass.preview().get()
+        _ = try pass.use(previewRevision: preview.revision, operationID: "notification-pass").get()
         drain()
         XCTAssertTrue(center.pending.isEmpty)
         XCTAssertTrue(center.cancelled.contains(FlintCompletionNotifier.identifierPrefix + second.id))
