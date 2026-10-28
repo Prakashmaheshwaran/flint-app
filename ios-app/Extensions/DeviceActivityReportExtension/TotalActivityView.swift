@@ -194,9 +194,11 @@ enum ReportFont {
     }
 }
 
+#if DEBUG
 #Preview {
     TotalActivityView(summary: ActivitySummary(total: 51_600, days: [], apps: [
         .init(name: "Instagram", duration: 15_000, pickups: 61),
     ]))
     .background(FlintBrand.ground)
 }
+#endif

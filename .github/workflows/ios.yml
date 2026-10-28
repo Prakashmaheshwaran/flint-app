@@ -72,3 +72,25 @@ jobs:
           name: ios-unit-test-results
           retention-days: 14
           path: artifacts/
+
+  release-build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ios-app
+        run: xcodegen generate
+
+      - name: Build Release (Simulator, no signing)
+        run: |
+          xcodebuild -project ios-app/Flint.xcodeproj -scheme Flint \
+            -configuration Release -derivedDataPath ios-app/DerivedDataRelease \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+
+      - name: Reject DEBUG fixtures in every Release executable
+        run: python3 docs/store/ios/verify-release-binaries.py ios-app/DerivedDataRelease/Build/Products/Release-iphonesimulator/Flint.app
