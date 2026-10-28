@@ -14,12 +14,17 @@ internal fun Flow<HistoryRulesSnapshot>.withDeadlineObservations(
     clock: Clock = Clock.systemUTC(),
     hasTerminal: (String) -> Boolean = { false },
     retryEveryMs: Long = 30_000,
+    hasStarted: (String) -> Boolean = { true },
 ): Flow<HistoryRulesSnapshot> =
     transformLatest { snapshot ->
         emit(snapshot)
         if (snapshot is HistoryRulesSnapshot.Ready) {
             while (true) {
-                val pending = snapshot.rules.filter { it.plannedEnd != null && !hasTerminal(it.id) }
+                val pending = snapshot.rules.filter {
+                    it.plannedEnd != null && !hasTerminal(it.id) &&
+                        // A new future rule's initial start append can still be in flight.
+                        (it.plannedEnd > clock.millis() || hasStarted(it.id))
+                }
                 val deadline = pending.minOfOrNull { it.plannedEnd!! } ?: break
                 val remaining = deadline - clock.millis()
                 // A due wake is not an acknowledgement: a rollback or failed write can

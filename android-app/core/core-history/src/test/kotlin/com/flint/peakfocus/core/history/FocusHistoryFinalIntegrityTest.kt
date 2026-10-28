@@ -155,4 +155,24 @@ class FocusHistoryFinalIntegrityTest {
             assertEquals(1, completed.events.count { it.knownType == HistoryEventType.COMPLETED })
         } finally { collector.cancelAndJoin(); observations.close() }
     }
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun expiredRuleWithoutStartDoesNotRetryAndFutureStartAppendCanFinish() = runTest {
+        val clock = MutableClock(begin)
+        val rule = HistoryRule("session-a", "Focus", "easy", begin - 1)
+        val source = MutableStateFlow<HistoryRulesSnapshot>(HistoryRulesSnapshot.Ready(listOf(rule)))
+        var started = false; var terminal = false; var observations = 0
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            source.withDeadlineObservations(clock, hasTerminal = { terminal }, hasStarted = { started }).collect { snapshot ->
+                observations++
+                if (started && snapshot is HistoryRulesSnapshot.Ready && snapshot.rules.any { it.plannedEnd!! <= clock.now }) terminal = true
+            }
+        }
+        runCurrent(); advanceTimeBy(90_000); runCurrent()
+        assertEquals(1, observations)
+        source.value = HistoryRulesSnapshot.Ready(listOf(rule.copy(plannedEnd = begin + minute)))
+        runCurrent(); assertEquals(2, observations)
+        started = true; clock.now = begin + minute
+        advanceTimeBy(minute); runCurrent()
+        assertEquals(3, observations); assertTrue(terminal)
+    }
 }
