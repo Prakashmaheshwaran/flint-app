@@ -2,6 +2,7 @@ package com.flint.peakfocus.core.datastore
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -35,6 +36,11 @@ private fun Preferences.rules() = StrictPrefsCodec.rules(StrictPrefsCodec.string
 private fun Preferences.groups() = StrictPrefsCodec.groups(StrictPrefsCodec.string(this, PrefsKeys.APP_GROUPS).orEmpty())
 private fun Preferences.timeLimits() = StrictPrefsCodec.timeLimits(StrictPrefsCodec.string(this, PrefsKeys.TIME_LIMITS).orEmpty())
 private fun Preferences.openLimits() = StrictPrefsCodec.openLimits(StrictPrefsCodec.string(this, PrefsKeys.OPEN_LIMITS).orEmpty())
+private fun MutablePreferences.putRules(rules: List<BlockRule>) {
+    val encoded = PrefsCodec.encodeRules(rules)
+    StrictPrefsCodec.rules(encoded)
+    this[PrefsKeys.BLOCK_RULES] = encoded
+}
 
 class DataStoreBlockRulesStore(
     private val dataStore: DataStore<Preferences>,
@@ -61,7 +67,7 @@ class DataStoreBlockRulesStore(
         dataStore.edit { prefs ->
             val current = prefs.rules()
             started = current.canStartSession(rule.id, nowEpochMs)
-            if (started) prefs[PrefsKeys.BLOCK_RULES] = PrefsCodec.encodeRules(current + rule)
+            if (started) prefs.putRules(current + rule)
         }
         return started
     }
@@ -71,7 +77,7 @@ class DataStoreBlockRulesStore(
         dataStore.edit { prefs ->
             val current = prefs.rules()
             cancelled = current.canCancelEasySession(ruleId, nowEpochMs)
-            if (cancelled) prefs[PrefsKeys.BLOCK_RULES] = PrefsCodec.encodeRules(current.filterNot { it.id == ruleId })
+            if (cancelled) prefs.putRules(current.filterNot { it.id == ruleId })
         }
         return cancelled
     }
@@ -84,7 +90,7 @@ class DataStoreBlockRulesStore(
         dataStore.edit { prefs ->
             val current = prefs.rules()
             ended = current.canEndTimerSession(expected, nowEpochMs)
-            if (ended) prefs[PrefsKeys.BLOCK_RULES] = PrefsCodec.encodeRules(current.filterNot { it.id == expected.id })
+            if (ended) prefs.putRules(current.filterNot { it.id == expected.id })
         }
         return ended
     }
@@ -100,9 +106,7 @@ class DataStoreBlockRulesStore(
     private suspend fun mutate(transform: (List<BlockRule>) -> List<BlockRule>) {
         dataStore.edit { prefs ->
             val current = prefs.rules()
-            val encoded = PrefsCodec.encodeRules(transform(current))
-            StrictPrefsCodec.rules(encoded)
-            prefs[PrefsKeys.BLOCK_RULES] = encoded
+            prefs.putRules(transform(current))
         }
     }
 }
@@ -200,9 +204,13 @@ class DataStoreFocusStateStore(
             dataStore.edit { prefs ->
                 val current = readFocus(prefs)
                 val mutation = transform(current)
-                val next = mutation.next
+                require(mutation.next.revision == current.revision) { "Focus revision is store-owned" }
+                val next = if (mutation.next == current) current else {
+                    require(current.revision < Long.MAX_VALUE) { "Focus revision exhausted" }
+                    mutation.next.copy(revision = current.revision + 1)
+                }
                 // Validate ALL output before touching preferences, and freeze caller-owned maps.
-                val ledger = FocusLedgerCodec.encode(FocusLedgerCodec.Ledger(next.exemptions, next.breaksByCause))
+                val ledger = FocusLedgerCodec.encode(FocusLedgerCodec.Ledger(next.exemptions, next.breaksByCause, next.revision))
                 val session = PrefsCodec.encodeBreakSession(next.breakSession)
                 val counts = PrefsCodec.encodeOpenCounts(next.openCounts.opensByPackage)
                 StrictPrefsCodec.session(session); StrictPrefsCodec.counts(counts)
@@ -219,7 +227,7 @@ class DataStoreFocusStateStore(
                     prefs[PrefsKeys.OPEN_COUNTS_DAY] = next.openCounts.epochDay
                     prefs[PrefsKeys.OPEN_COUNTS] = counts
                 }
-                if (next.exemptions != current.exemptions || next.breaksByCause != current.breaksByCause) {
+                if (next.revision != current.revision) {
                     prefs[PrefsKeys.FOCUS_LEDGER] = ledger
                 }
                 committed = FocusCommit.Committed(readFocus(prefs), mutation.result)
@@ -260,5 +268,6 @@ private fun readFocus(prefs: Preferences): FocusSnapshot {
         ),
         exemptions = ledger.exemptions,
         breaksByCause = ledger.breaksByCause,
+        revision = ledger.revision,
     )
 }

@@ -18,6 +18,25 @@ class EditorWriteFeedbackTest {
     @get:Rule val compose = createComposeRule()
     private val error = "Couldn't save. Try again."
 
+    @Test fun loadingEditorOpensOnFirstReadySnapshotAndKeepsItsDraftThroughReadFailure() {
+        val state = mutableStateOf<LimitsUiState>(LimitsUiState.Loading)
+        val saved = mutableListOf<TimeLimit?>()
+        compose.setContent {
+            LimitEditorFlow(packageName = "app", appsState = InstalledAppsUiState.Ready(emptyList()),
+                limitsState = state.value, defaultBreakLevel = BreakLevel.EASY,
+                onSaveLimits = { _, time, _ -> saved += time }, onClearLimits = {}, onClose = {})
+        }
+        compose.onNodeWithText("Couldn't load. Try again.").assertDoesNotExist()
+        compose.onNodeWithText("Save limits").assertDoesNotExist()
+        compose.runOnIdle { state.value = LimitsUiState.Unavailable(StorageFailure.IO) }
+        compose.onNodeWithText("Couldn't load. Try again.").assertExists()
+        compose.runOnIdle { state.value = LimitsUiState.Ready(buildLimitRows(listOf(TimeLimit("app", 30)), emptyList()) { null }) }
+        compose.onNode(hasSetTextAction() and hasText("30")).performScrollTo().performTextReplacement("21")
+        compose.runOnIdle { state.value = LimitsUiState.Unavailable(StorageFailure.IO) }
+        compose.onNodeWithText("Save limits").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(listOf(TimeLimit("app", 21)), saved) }
+    }
+
     @Test fun ruleDraftSurvivesFailureRecompositionAndRetryUsesSameName() {
         val state = mutableStateOf(EditorSaveState())
         val saved = mutableListOf<RuleDraft>()

@@ -5,9 +5,12 @@ import com.flint.peakfocus.core.model.StorageFailure
 import com.flint.peakfocus.core.model.StorageState
 import java.io.IOException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.transform
@@ -32,11 +35,18 @@ internal fun <P, T> Flow<P>.storageStates(decode: (P) -> T): Flow<StorageState<T
         try { StorageState.Ready(decode(raw)) }
         catch (cause: StorageUnavailableException) { StorageState.Unavailable(cause.reason) }
     }.retryWhen { cause, _ ->
-        val failure = storageFailure(cause) ?: return@retryWhen false
-        emit(StorageState.Unavailable(failure))
+        if (storageFailure(cause) != StorageFailure.IO) return@retryWhen false
+        emit(StorageState.Unavailable(StorageFailure.IO))
         delay(1_000) // Retry reads; never write defaults or replace a corrupt file.
         true
-    }.onStart { emit(StorageState.Loading) }
+    }.catch { cause ->
+        emit(StorageState.Unavailable(storageFailure(cause) ?: throw cause))
+    }.onStart { emit(StorageState.Loading) }.distinctUntilChanged()
+
+/** For bounded work (for example goAsync receivers): never wait on a value-only flow. */
+suspend fun <T> Flow<StorageState<T>>.snapshotOrNull(timeoutMs: Long = 1_000): T? = withTimeoutOrNull(timeoutMs) {
+    (firstOrNull { it !is StorageState.Loading } as? StorageState.Ready)?.value
+}
 
 /** Legacy consumers keep their last value; new consumers observe the explicit state. */
 fun <T> Flow<StorageState<T>>.readyValues(throwOnUnavailable: Boolean = false): Flow<T> = transform {

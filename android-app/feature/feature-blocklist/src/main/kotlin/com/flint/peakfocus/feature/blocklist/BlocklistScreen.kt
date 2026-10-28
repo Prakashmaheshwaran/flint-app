@@ -242,9 +242,9 @@ fun BlocklistScreen(
                 )
 
                 is BlocklistDestination.EditRule -> {
-                    val initialRules = remember(dest) { rulesState as? RulesUiState.Ready }
+                    val initialRules = rememberEditorSnapshot(dest, rulesState as? RulesUiState.Ready)
                     if (initialRules == null) {
-                        StorageEditorUnavailable(onClose = { destination = BlocklistDestination.Overview })
+                        StorageEditorUnavailable(onClose = { destination = BlocklistDestination.Overview }, loading = rulesState is RulesUiState.Loading)
                         return@AnimatedContent
                     }
                     // Snapshotted once per destination: the exiting editor must keep rendering
@@ -304,9 +304,9 @@ fun BlocklistScreen(
                 )
 
                 is BlocklistDestination.EditSleep -> {
-                    val initialRules = remember(dest) { rulesState as? RulesUiState.Ready }
+                    val initialRules = rememberEditorSnapshot(dest, rulesState as? RulesUiState.Ready)
                     if (initialRules == null) {
-                        StorageEditorUnavailable(onClose = { destination = BlocklistDestination.Overview })
+                        StorageEditorUnavailable(onClose = { destination = BlocklistDestination.Overview }, loading = rulesState is RulesUiState.Loading)
                         return@AnimatedContent
                     }
                     // Same snapshot rationale as EditRule: the exiting editor keeps the
@@ -395,10 +395,12 @@ private fun BlocklistOverview(
         }
         item(key = "rules-label") {
             SectionLabelItem("Block rules")
-            ErrorMessages(listOfNotNull(saveError,
-                if (rulesState is RulesUiState.Unavailable) "Couldn't load. Try again." else null))
+            ErrorMessages(listOfNotNull(saveError))
         }
         when {
+            rulesState is RulesUiState.Unavailable -> item(key = "rules-unavailable") {
+                ErrorMessages(listOf("Couldn't load. Try again."), Modifier.padding(horizontal = FlintSpacing.gutter))
+            }
             authoredRules == null -> item(key = "rules-loading") {
                 LoadingRows(
                     modifier = animatedRow()
@@ -489,7 +491,8 @@ private fun BlocklistOverview(
                 label = "sleepSection",
             ) { loading ->
                 if (loading) {
-                    LoadingRows()
+                    if (rulesState is RulesUiState.Unavailable) ErrorMessages(listOf("Couldn't load. Try again."))
+                    else LoadingRows()
                 } else {
                     SleepCard(
                         config = sleepConfigFrom(
@@ -507,9 +510,11 @@ private fun BlocklistOverview(
 
         item(key = "limits-label") {
             SectionLabelItem("Daily app limits")
-            if (limitsState is LimitsUiState.Unavailable) ErrorMessages(listOf("Couldn't load. Try again."))
         }
         when {
+            limitsState is LimitsUiState.Unavailable -> item(key = "limits-unavailable") {
+                ErrorMessages(listOf("Couldn't load. Try again."), Modifier.padding(horizontal = FlintSpacing.gutter))
+            }
             limitRows == null -> item(key = "limits-loading") {
                 LoadingRows(
                     modifier = animatedRow()

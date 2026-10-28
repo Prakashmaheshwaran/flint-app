@@ -531,7 +531,7 @@ internal fun RuleEditorScreen(
                 }
                 Spacer(Modifier.height(FlintSpacing.lg))
 
-                ErrorMessages(errors.map { it.message } + listOfNotNull(saveState.error))
+                ErrorMessages(errors.map { it.message } + if (namingGroup || deletingGroup != null) emptyList() else listOfNotNull(saveState.error))
                 if (errors.isNotEmpty()) Spacer(Modifier.height(FlintSpacing.cardGap))
 
                 Button(
@@ -612,13 +612,17 @@ internal fun RuleEditorScreen(
                 onDismissRequest = { deletingGroup = null },
                 title = { Text("Delete “${group.name}”?") },
                 text = {
-                    Text(
-                        "Rules that already used this group keep their targets — only the " +
-                            "reusable group goes away.",
-                    )
+                    Column {
+                        ErrorMessages(listOfNotNull(saveState.error))
+                        Text(
+                            "Rules that already used this group keep their targets — only the " +
+                                "reusable group goes away.",
+                        )
+                    }
                 },
                 confirmButton = {
                     TextButton(
+                        enabled = !saveState.busy,
                         onClick = {
                             onDeleteGroup(group.id) { deletingGroup = null }
                         },
@@ -641,12 +645,12 @@ internal fun RuleEditorScreen(
                 Column {
                     ErrorMessages(listOfNotNull(saveState.error))
                     OutlinedTextField(
-                    value = groupName,
-                    onValueChange = { groupName = it },
-                    enabled = !saveState.busy,
-                    label = { Text("Group name") },
-                    placeholder = { Text("Social media") },
-                    singleLine = true,
+                        value = groupName,
+                        onValueChange = { groupName = it },
+                        enabled = !saveState.busy,
+                        label = { Text("Group name") },
+                        placeholder = { Text("Social media") },
+                        singleLine = true,
                     )
                 }
             },

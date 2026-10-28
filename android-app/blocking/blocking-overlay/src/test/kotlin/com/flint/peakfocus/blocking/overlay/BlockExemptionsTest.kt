@@ -14,6 +14,17 @@ import org.junit.Test
 /** JVM tests for the break/pass exemption ledger both detection paths consult. */
 class BlockExemptionsTest {
 
+    @Test fun delayedOlderReadCannotEraseANewerAcknowledgedGrant() {
+        val old = PersistedExemption("old", "com.old", "cause", ExemptionKind.BREAK, 2_000)
+        val granted = PersistedExemption("new", "com.new", "cause", ExemptionKind.EMERGENCY_PASS, 5_000)
+        BlockExemptions.restoreCommitted(listOf(old, granted), 1_000, revision = 2)
+        BlockExemptions.restoreCommitted(listOf(old), 1_000, revision = 1)
+        assertTrue(BlockExemptions.isExempt("com.new", 1_000, BreakLevel.HARDCORE))
+        assertEquals(5_000L, BlockExemptions.exemptUntil("com.new", 1_000))
+        BlockExemptions.restoreCommitted(emptyList(), 1_000, revision = 3)
+        assertFalse(BlockExemptions.isExempt("com.new", 1_000, BreakLevel.HARDCORE))
+    }
+
     @Test fun restoredReceiptsRespectPackageKindAndExactDeadline() {
         val ordinary = PersistedExemption("one", "com.x", "rule:one", ExemptionKind.BREAK, 2_000)
         val pass = PersistedExemption("two", "com.y", "rule:two", ExemptionKind.EMERGENCY_PASS, 3_000)

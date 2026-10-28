@@ -26,14 +26,20 @@ object BlockExemptions {
     private val exemptUntil = ConcurrentHashMap<String, Long>()
     private val emergencyUntil = ConcurrentHashMap<String, Long>()
 
-    @Volatile private var committed: List<PersistedExemption> = emptyList()
+    private data class Projection(val revision: Long, val receipts: List<PersistedExemption>)
+    private val projectionLock = Any()
+    @Volatile private var committed = Projection(-1, emptyList())
 
     /** Replace only the durable projection. Call ONLY with a Ready or acknowledged snapshot. */
-    fun restoreCommitted(receipts: Collection<PersistedExemption>, nowEpochMs: Long) {
-        committed = receipts.filter { it.untilEpochMs > nowEpochMs }.toList()
+    fun restoreCommitted(receipts: Collection<PersistedExemption>, nowEpochMs: Long, revision: Long = 0) {
+        require(revision >= 0)
+        synchronized(projectionLock) {
+            if (revision < committed.revision) return
+            committed = Projection(revision, receipts.filter { it.untilEpochMs > nowEpochMs }.toList())
+        }
     }
 
-    private fun durable(packageName: String, nowEpochMs: Long, emergency: Boolean): Boolean = committed.any {
+    private fun durable(packageName: String, nowEpochMs: Long, emergency: Boolean): Boolean = committed.receipts.any {
         (it.packageName == packageName || it.packageName == GLOBAL_PACKAGE) && it.untilEpochMs > nowEpochMs &&
             (it.kind == ExemptionKind.EMERGENCY_PASS) == emergency
     }
@@ -61,10 +67,10 @@ object BlockExemptions {
         hasEmergencyExemption(packageName, nowEpochMs) ||
             (level != BreakLevel.HARDCORE && hasOrdinaryExemption(packageName, nowEpochMs))
 
-    /** The exemption end for [packageName] specifically, or null if none/expired. */
+    /** The active exemption end for [packageName], including a durable global receipt. */
     fun exemptUntil(packageName: String, nowEpochMs: Long): Long? {
         return (listOfNotNull(exemptUntil[packageName], emergencyUntil[packageName]) +
-            committed.filter { it.packageName == packageName || it.packageName == GLOBAL_PACKAGE }.map { it.untilEpochMs })
+            committed.receipts.filter { it.packageName == packageName || it.packageName == GLOBAL_PACKAGE }.map { it.untilEpochMs })
             .filter { it > nowEpochMs }.maxOrNull()
     }
 
@@ -72,7 +78,7 @@ object BlockExemptions {
     fun clearAll() {
         exemptUntil.clear()
         emergencyUntil.clear()
-        committed = emptyList()
+        synchronized(projectionLock) { committed = Projection(-1, emptyList()) }
     }
 
     private fun active(ledger: ConcurrentHashMap<String, Long>, key: String, nowEpochMs: Long): Boolean {

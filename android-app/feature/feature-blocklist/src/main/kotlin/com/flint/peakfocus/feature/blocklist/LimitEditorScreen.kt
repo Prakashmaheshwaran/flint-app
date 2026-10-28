@@ -74,9 +74,9 @@ internal fun LimitEditorFlow(
     saveState: EditorSaveState = EditorSaveState(),
 ) {
     var chosenPackage by remember(packageName) { mutableStateOf(packageName) }
-    val initialLimits = remember(packageName) { limitsState as? LimitsUiState.Ready }
+    val initialLimits = rememberEditorSnapshot(packageName, limitsState as? LimitsUiState.Ready)
     if (initialLimits == null) {
-        StorageEditorUnavailable(onClose)
+        StorageEditorUnavailable(onClose, loading = limitsState is LimitsUiState.Loading)
         return
     }
 

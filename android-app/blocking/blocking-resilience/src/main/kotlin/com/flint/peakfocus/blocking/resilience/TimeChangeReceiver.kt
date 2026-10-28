@@ -8,13 +8,25 @@ import com.flint.peakfocus.blocking.engine.ClockChangeGuard
 import com.flint.peakfocus.blocking.engine.ClockShift
 import com.flint.peakfocus.core.data.BlocklistStore
 import com.flint.peakfocus.core.datastore.FlintPreferences
+import com.flint.peakfocus.core.datastore.FocusStateStore
+import com.flint.peakfocus.core.datastore.BlockRulesStore
+import com.flint.peakfocus.core.datastore.snapshotOrNull
+import com.flint.peakfocus.core.model.FocusSnapshot
+import com.flint.peakfocus.core.model.BlockRule
 import java.util.TimeZone
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
+
+/** A receiver cannot wait indefinitely for a Ready value from an unavailable store. */
+internal suspend fun clockGuardSnapshot(focus: FocusStateStore, rules: BlockRulesStore): Pair<FocusSnapshot, List<BlockRule>>? {
+    val focusSnapshot = focus.state.snapshotOrNull() ?: return null
+    val ruleSnapshot = rules.rulesState.snapshotOrNull() ?: return null
+    return focusSnapshot to ruleSnapshot
+}
 
 /**
  * Time-change re-arm (anti-bypass, spec 2.4/2.5): users can dodge schedules and daily limits
@@ -108,26 +120,29 @@ class TimeChangeReceiver : BroadcastReceiver() {
     private fun applyGuards(appContext: Context, shift: ClockShift, pending: PendingResult) {
         scope.launch {
             try {
-                val store = FlintPreferences.focusState(appContext)
-                val counts = store.openCounts.first()
-                guard.guardedOpenCounts(counts, shift)
-                    .takeIf { it != counts }
-                    ?.let { store.setOpenCounts(it) }
-                val pass = store.emergencyPass.first()
-                guard.guardedEmergencyPass(pass, shift)
-                    .takeIf { it != pass }
-                    ?.let { store.setEmergencyPass(it) }
-                val session = store.breakSession.first()
-                guard.guardedBreakSession(session, shift)
-                    .takeIf { it != session }
-                    ?.let { store.setBreakSession(it) }
-                // One-shot Block Now sessions measure DURATION, not a wall deadline: shift
-                // their expiry with the injected jump so a set-forward clock can't end a
-                // Hardcore session early (nor a set-back stretch one). Upserting also
-                // restores a session the lazy expiry sweep raced to delete after the jump.
-                val rulesStore = FlintPreferences.blockRules(appContext)
-                guard.guardedSessionRules(rulesStore.rules.first(), shift)
-                    .forEach { rulesStore.upsert(it) }
+                withTimeout(5_000) {
+                    val store = FlintPreferences.focusState(appContext)
+                    val rulesStore = FlintPreferences.blockRules(appContext)
+                    val (focus, rules) = clockGuardSnapshot(store, rulesStore) ?: return@withTimeout
+                    val counts = focus.openCounts
+                    guard.guardedOpenCounts(counts, shift)
+                        .takeIf { it != counts }
+                        ?.let { store.setOpenCounts(it) }
+                    val pass = focus.emergencyPass
+                    guard.guardedEmergencyPass(pass, shift)
+                        .takeIf { it != pass }
+                        ?.let { store.setEmergencyPass(it) }
+                    val session = focus.breakSession
+                    guard.guardedBreakSession(session, shift)
+                        .takeIf { it != session }
+                        ?.let { store.setBreakSession(it) }
+                    // One-shot Block Now sessions measure DURATION, not a wall deadline: shift
+                    // their expiry with the injected jump so a set-forward clock can't end a
+                    // Hardcore session early (nor a set-back stretch one). Upserting also
+                    // restores a session the lazy expiry sweep raced to delete after the jump.
+                    guard.guardedSessionRules(rules, shift)
+                        .forEach { rulesStore.upsert(it) }
+                }
             } catch (_: Exception) {
                 // Swallowed on purpose (see KDoc above): fail toward existing state, no crash
                 // loop from a broadcast. No telemetry — nothing leaves the device (ADR-002).

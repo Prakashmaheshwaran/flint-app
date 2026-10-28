@@ -266,7 +266,8 @@ class StorageReadinessTest {
         assertEquals(PersistedExemption("request|1", "*", "cause\n1", ExemptionKind.EMERGENCY_PASS, 1801000),
             decoded.exemptions["request|1"])
         assertEquals(BreakSessionState(2, BreakRequestState(1000, 301000)), decoded.breaksByCause["cause\n1"])
-        assertEquals(literal, FocusLedgerCodec.encode(decoded))
+        assertEquals(0L, decoded.revision)
+        assertEquals(literal.replaceFirst("H|1\n", "H|1|0\n"), FocusLedgerCodec.encode(decoded))
     }
 
     @Test fun recoveryFromCorruptValuePublishesReadyOnlyWhenBackingDataIsActuallyRepaired() = runBlocking {
@@ -286,6 +287,71 @@ class StorageReadinessTest {
             store.replaceAll(listOf(rule, expired, renewed))
             store.pruneExpired(1000)
             assertEquals(listOf(rule, renewed), store.rules.first())
+        }
+    }
+
+    @Test fun everyFocusChangeAdvancesOneDurableRevisionAndNoOpRetriesDoNotAdvanceIt() = runBlocking {
+        val disk = Disk()
+        val store = DataStoreFocusStateStore(disk)
+        store.setDefaultBreakLevel(BreakLevel.HARDER)
+        assertEquals(1L, snapshot(store).revision)
+        store.setOpenCounts(OpenCountState(20_000, mapOf("app" to 1)))
+        assertEquals(2L, snapshot(store).revision)
+        val granted = store.transact(::grant) as FocusCommit.Committed
+        assertEquals(3L, granted.snapshot.revision)
+        assertEquals(3L, (store.transact(::grant) as FocusCommit.Committed).snapshot.revision)
+        assertEquals(3L, snapshot(DataStoreFocusStateStore(disk)).revision)
+    }
+
+    @Test fun callerCannotRewindFocusRevisionAndFailedWritesDoNotAdvanceIt() = runBlocking {
+        val disk = Disk()
+        val store = DataStoreFocusStateStore(disk)
+        store.transact(::grant)
+        val before = disk.values.value.asMap().toMap()
+        try { store.transact { FocusMutation(it.copy(revision = 0), Unit) }; fail("Revision rewind accepted") }
+        catch (_: IllegalArgumentException) { }
+        disk.failWrite = true
+        assertEquals(FocusCommit.Unavailable(StorageFailure.IO), store.transact { FocusMutation(it.copy(defaultBreakLevel = BreakLevel.HARDER), Unit) })
+        assertEquals(before, disk.values.value.asMap())
+        assertEquals(1L, snapshot(store).revision)
+    }
+
+    @Test fun boundedSnapshotsFinishOnUnavailableCompletedOrNeverReadyFlows() = runBlocking {
+        for (reason in StorageFailure.entries) {
+            val state = flowOf<StorageState<Int>>(StorageState.Loading, StorageState.Unavailable(reason))
+            assertNull(withTimeout(500) { state.snapshotOrNull() })
+        }
+        assertNull(emptyFlow<StorageState<Int>>().snapshotOrNull())
+        assertNull(flow<StorageState<Int>> { emit(StorageState.Loading); awaitCancellation() }.snapshotOrNull(timeoutMs = 1))
+        assertEquals(42, flowOf<StorageState<Int>>(StorageState.Loading, StorageState.Ready(42)).snapshotOrNull())
+    }
+
+    @Test fun fileCorruptionEmitsUnavailableOnceWithoutPollingOrRetry() = runBlocking {
+        var reads = 0
+        val disk = object : DataStore<Preferences> {
+            override val data: Flow<Preferences> = flow { reads++; throw CorruptionException("bad file") }
+            override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences = error("No writes")
+        }
+        allStates(disk).forEach { states ->
+            assertEquals(listOf(StorageState.Loading, StorageState.Unavailable(StorageFailure.CORRUPT)),
+                withTimeout(500) { states.toList() })
+        }
+        assertEquals(5, reads)
+    }
+
+    @Test fun currentEncoderAndStrictValidatorAgreeOnHostileAtomsAndV1Literal() {
+        val hostile = BlockRule("id|~%,\n", "Name|~%,\n", BlockTargets(apps = setOf(AppRef("app", null)), allowListMode = true),
+            schedule = Schedule(emptySet(), 0, 1439), breakLevel = BreakLevel.HARDER)
+        val literal = "id%7C%7E%25%2C%0A|Name%7C%7E%25%2C%0A|true|HARDER|true|app~|||0|1439|-1"
+        assertEquals(literal, PrefsCodec.encodeRules(listOf(hostile)))
+        assertEquals(listOf(hostile), StrictPrefsCodec.rules(PrefsCodec.encodeRules(listOf(hostile))))
+        assertEquals(literal, PrefsCodec.encodeRules(StrictPrefsCodec.rules(literal)))
+    }
+
+    @Test fun blankAndTruncatedReceiptRowsAreCorruptRatherThanFutureVersions() {
+        for (payload in listOf("H|1|0\n", "H|1|0\nE", "H|1|0\nB", "H|1|")) {
+            val cause = assertThrows(StorageUnavailableException::class.java) { FocusLedgerCodec.decode(payload) }
+            assertEquals(StorageFailure.CORRUPT, cause.reason)
         }
     }
 }

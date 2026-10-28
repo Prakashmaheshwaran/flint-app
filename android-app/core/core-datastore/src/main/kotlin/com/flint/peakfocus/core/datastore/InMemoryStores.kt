@@ -151,9 +151,14 @@ class InMemoryFocusStateStore : FocusStateStore {
     override val openCounts: Flow<OpenCountState> = snapshot.map { it.openCounts }
 
     override suspend fun <R> transact(transform: (FocusSnapshot) -> FocusMutation<R>): FocusCommit<R> = mutex.withLock {
-        val mutation = transform(snapshot.value)
-        val next = mutation.next
-        val ledger = FocusLedgerCodec.decode(FocusLedgerCodec.encode(FocusLedgerCodec.Ledger(next.exemptions, next.breaksByCause)))
+        val current = snapshot.value
+        val mutation = transform(current)
+        require(mutation.next.revision == current.revision) { "Focus revision is store-owned" }
+        val next = if (mutation.next == current) current else {
+            require(current.revision < Long.MAX_VALUE) { "Focus revision exhausted" }
+            mutation.next.copy(revision = current.revision + 1)
+        }
+        val ledger = FocusLedgerCodec.decode(FocusLedgerCodec.encode(FocusLedgerCodec.Ledger(next.exemptions, next.breaksByCause, next.revision)))
         StrictPrefsCodec.session(PrefsCodec.encodeBreakSession(next.breakSession))
         StrictPrefsCodec.counts(PrefsCodec.encodeOpenCounts(next.openCounts.opensByPackage))
         val frozen = next.copy(exemptions = ledger.exemptions, breaksByCause = ledger.breaksByCause,

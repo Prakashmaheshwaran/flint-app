@@ -7,10 +7,12 @@ internal object FocusLedgerCodec {
     data class Ledger(
         val exemptions: Map<String, PersistedExemption> = emptyMap(),
         val breaksByCause: Map<String, BreakSessionState> = emptyMap(),
+        val revision: Long = 0,
     )
 
     fun encode(value: Ledger): String = buildList {
-        add("H|1")
+        require(value.revision >= 0)
+        add("H|1|${value.revision}")
         value.exemptions.toSortedMap().forEach { (id, grant) ->
             require(id == grant.requestId && grant.untilEpochMs >= 0)
             add(listOf("E", atom(id), atom(grant.packageName), atom(grant.causeKey), grant.kind.name,
@@ -30,8 +32,11 @@ internal object FocusLedgerCodec {
         if (encoded.length > 4_194_304) corrupt()
         val rows = encoded.split('\n')
         val header = rows.first().split('|')
-        if (header.size != 2 || header[0] != "H" || header[1].toIntOrNull() == null) corrupt()
+        if (header.size < 2 || header[0] != "H" || header[1].toIntOrNull() == null) corrupt()
         if (header[1] != "1") future()
+        if (header.size > 3) future()
+        // Initial additive-v1 fixtures without a revision migrate losslessly on first write.
+        val revision = if (header.size == 2) 0L else header[2].toLongOrNull()?.takeIf { it >= 0 } ?: corrupt()
         val exemptions = linkedMapOf<String, PersistedExemption>()
         val causes = linkedMapOf<String, BreakSessionState>()
         fun readAtom(raw: String): String {
@@ -40,6 +45,7 @@ internal object FocusLedgerCodec {
             return decoded
         }
         rows.drop(1).forEach { row ->
+            if (row.isBlank()) corrupt()
             val f = row.split('|')
             when (f[0]) {
                 "E" -> {
@@ -59,7 +65,7 @@ internal object FocusLedgerCodec {
                 else -> future()
             }
         }
-        return Ledger(exemptions.toMap(), causes.toMap())
+        return Ledger(exemptions.toMap(), causes.toMap(), revision)
     }
 
     private fun atom(raw: String): String {

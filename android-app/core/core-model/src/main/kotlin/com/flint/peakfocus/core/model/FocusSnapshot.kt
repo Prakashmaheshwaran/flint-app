@@ -23,6 +23,8 @@ data class FocusSnapshot(
     val openCounts: OpenCountState = OpenCountState(),
     val exemptions: Map<String, PersistedExemption> = emptyMap(),
     val breaksByCause: Map<String, BreakSessionState> = emptyMap(),
+    /** Store-owned monotonic revision, including changes to the legacy accounting keys. */
+    val revision: Long = 0,
 )
 
 data class FocusMutation<R>(val next: FocusSnapshot, val result: R)

@@ -2,14 +2,47 @@ package com.flint.peakfocus.blocking.resilience
 
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertEquals
 import org.junit.Test
+import com.flint.peakfocus.core.datastore.*
+import com.flint.peakfocus.core.model.*
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.flow.flowOf
 
 /**
- * Pure-JVM: exercises only the companion's action filters (string logic). The receiver itself
+ * Pure-JVM: exercises the action filters and bounded store snapshot reads. The receiver itself
  * needs the framework and is exercised on a device/emulator, not here; the guard decisions it
  * applies are pure and covered in blocking-engine's ClockChangeGuardTest.
  */
 class TimeChangeReceiverTest {
+
+    @Test fun unavailableFocusCompletesWithoutWaitingForAReadyValue() = runBlocking {
+        for (reason in StorageFailure.entries) {
+            val focus = object : FocusStateStore by InMemoryFocusStateStore() {
+                override val state = flowOf<StorageState<FocusSnapshot>>(StorageState.Loading, StorageState.Unavailable(reason))
+            }
+            assertNull(withTimeout(500) { clockGuardSnapshot(focus, InMemoryBlockRulesStore()) })
+        }
+    }
+
+    @Test fun unavailableRulesCompleteWithoutWaitingForAReadyValue() = runBlocking {
+        for (reason in StorageFailure.entries) {
+            val rules = object : BlockRulesStore by InMemoryBlockRulesStore() {
+                override val rulesState = flowOf<StorageState<List<BlockRule>>>(StorageState.Loading, StorageState.Unavailable(reason))
+            }
+            assertNull(withTimeout(500) { clockGuardSnapshot(InMemoryFocusStateStore(), rules) })
+        }
+    }
+
+    @Test fun completeSnapshotsRemainAvailableAfterInitialLoading() = runBlocking {
+        val focus = InMemoryFocusStateStore().also { it.setDefaultBreakLevel(BreakLevel.HARDER) }
+        val rule = BlockRule("rule", "Work", BlockTargets())
+        val snapshot = withTimeout(500) { clockGuardSnapshot(focus, InMemoryBlockRulesStore(listOf(rule))) }!!
+        assertEquals(BreakLevel.HARDER, snapshot.first.defaultBreakLevel)
+        assertEquals(listOf(rule), snapshot.second)
+    }
 
     @Test
     fun handlesClockTimezoneAndDateChanges() {
