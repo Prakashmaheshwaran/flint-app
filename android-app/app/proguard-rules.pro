@@ -13,6 +13,12 @@
 -keep class com.flint.peakfocus.core.datastore.** { *; }
 -keepattributes Signature,InnerClasses,EnclosingMethod,*Annotation*
 
+# Signing classification is packaged evidence even though app code does not
+# branch on it. Do not let shrinking erase or rename the preview marker.
+-keep class com.flint.peakfocus.BuildConfig {
+    public static final boolean DEVELOPMENT_SIGNED_PREVIEW;
+}
+
 # Preserve the meaning of the packaged local-first descriptor scan under R8.
 # These names stay recognizable IF an accidental connected dependency is live;
 # unused code may still be removed. Neither package belongs in release.

@@ -18,6 +18,8 @@ were checked 2026-10-28; the latter explicitly retains legacy DSL support in AGP
 - Core persisted models/enums and DataStore codecs are conservatively retained.
   Current serialization is explicit rather than reflective; persisted names and
   future serializer compatibility must still be reviewed when storage evolves.
+- The release BuildConfig development-preview classification remains readable
+  after optimization, even though runtime app code does not branch on it.
 - Accessibility's XML metadata resource has an explicit resource-shrinker keep.
   The final APK must retain the service, its metadata reference and XML flags.
 - Firebase/connected-feature names are protected from renaming if accidental
