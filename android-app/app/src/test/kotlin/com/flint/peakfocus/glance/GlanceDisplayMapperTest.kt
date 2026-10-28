@@ -115,4 +115,16 @@ class GlanceDisplayMapperTest {
             assertNull(result.session)
         }
     }
+
+    @Test fun passiveLimitsWithNoRuleIdRemainReadableButAnonymousTimerCannotNotify() {
+        for (kind in listOf(GlanceCauseKind.TIME_LIMIT, GlanceCauseKind.OPEN_LIMIT)) {
+            val result = display(active.copy(cause = cause.copy(occurrenceId = null, kind = kind)))
+            assertEquals("Protection active at last check", result.status)
+            assertNull(result.session)
+            assertNull(result.countdownEndElapsedMs)
+        }
+        val timer = display(active.copy(cause = cause.copy(occurrenceId = null)))
+        assertEquals("Protection state unavailable", timer.status)
+        assertNull(timer.session)
+    }
 }

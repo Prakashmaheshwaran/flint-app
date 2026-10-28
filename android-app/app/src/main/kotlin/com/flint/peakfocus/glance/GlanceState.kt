@@ -39,7 +39,7 @@ data class ProtectionReading(
 )
 
 data class ActiveGlanceCause(
-    val occurrenceId: String,
+    val occurrenceId: String?,
     val name: String,
     val tier: GlanceTier,
     val logicalEndElapsedMs: Long?,
@@ -136,7 +136,10 @@ object GlanceDisplayMapper {
                 )
             }
             ProtectionStatus.ACTIVE -> {
-                val cause = reading.cause?.takeIf { it.occurrenceId.isNotBlank() } ?: return base
+                val cause = reading.cause ?: return base
+                val id = cause.occurrenceId
+                if (cause.kind in setOf(GlanceCauseKind.FOCUS_SESSION, GlanceCauseKind.UNKNOWN) && id.isNullOrBlank())
+                    return base
                 val end = cause.logicalEndElapsedMs
                 if (end != null && end <= nowElapsedMs) return available.copy(
                     status = "Planned end reached", detail = "Open Flint to check protection",
@@ -148,8 +151,8 @@ object GlanceDisplayMapper {
                         (end?.let { " · Until ${atElapsed(it)}" } ?: " · Until ended in Flint"),
                     countdownEndElapsedMs = end.takeIf { cause.kind == GlanceCauseKind.FOCUS_SESSION },
                     refreshAtElapsedMs = end?.let { minOf(refresh, it) } ?: refresh,
-                    session = if (cause.kind == GlanceCauseKind.FOCUS_SESSION)
-                        GlanceOngoingSession(cause.occurrenceId, end) else null,
+                    session = if (cause.kind == GlanceCauseKind.FOCUS_SESSION && id != null)
+                        GlanceOngoingSession(id, end) else null,
                 )
             }
         }

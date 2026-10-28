@@ -57,4 +57,11 @@ class CoordinatorGlanceReaderTest {
         assertEquals(ProtectionStatus.INACTIVE, coordinatorGlanceReading(ready.copy(activeCauses = emptyList())).status)
         assertTrue(coordinatorGlanceReading(ready.copy(activeCauses = listOf(timer.copy(timeUncertain = true)))).timeUncertain)
     }
+
+    @Test fun nullRuleIdentityIsPreservedWithoutInventingAnOccurrenceId() {
+        val reading = coordinatorGlanceReading(ready.copy(activeCauses = listOf(
+            timer.copy(ruleId = null, kind = C.CauseKind.TIME_LIMIT))))
+        assertNull(reading.cause?.occurrenceId)
+        assertEquals(GlanceCauseKind.TIME_LIMIT, reading.cause?.kind)
+    }
 }

@@ -55,7 +55,7 @@ internal fun coordinatorGlanceReading(status: CoordinatorStatus): ProtectionRead
     }
     return base.copy(status = ProtectionStatus.ACTIVE,
         timeUncertain = status.activeCauses.any { it.timeUncertain },
-        cause = ActiveGlanceCause(selected.ruleId.orEmpty(), displayName(selected.displayName, selected.kind),
+        cause = ActiveGlanceCause(selected.ruleId, displayName(selected.displayName, selected.kind),
             when (selected.tier) {
                 BreakLevel.EASY -> GlanceTier.EASY
                 BreakLevel.HARDER -> GlanceTier.HARDER
