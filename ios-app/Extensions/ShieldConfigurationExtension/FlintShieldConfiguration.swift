@@ -36,19 +36,27 @@ final class FlintShieldConfiguration: ShieldConfigurationDataSource {
     }
 
     private func contributors(for targetKey: String, now: Date) -> FlintProtectionStatus.Contributors? {
-        guard let defaults = UserDefaults.flintGroup else { return nil }
-        // Never call ledger.read(): it can initialize/migrate storage. Lane B's #137 adds
-        // the read-only peek() seam; until then an unavailable pass keeps the copy neutral.
-        let inputs = FlintProtectionStatus.currentInputs(now: now, defaults: defaults)
+        // peek() reads only the last committed ledger. Never call read(), which can initialize
+        // or migrate storage. Missing/corrupt state cannot support a cause or release promise.
+        guard let defaults = UserDefaults.flintGroup,
+              let ledger = FlintProtectionLedger.appGroup(),
+              case let .success(state) = ledger.peek() else { return nil }
+        let inputs = FlintProtectionStatus.currentInputs(now: now, defaults: defaults, ledgerPass: state.pass)
         return FlintProtectionStatus.contributors(for: targetKey, inputs: inputs,
                                                   coverageByCauseID: coverage(for: inputs))
     }
 
     private func coverage(for inputs: FlintProtectionStatusBuilder.Inputs)
         -> [String: FlintProtectionStatus.TargetScope] {
-        // Replace with FlintProtectionStatus.coverageScopes(for: inputs) when lane B's #137
-        // publishes the read-only target coverage adapter. Missing coverage stays uncertain.
-        [:]
+        guard let group = FlintGroupStore() else { return [:] }
+        let selection = inputs.activeSession.flatMap { group.loadSessionSelection(sessionID: $0.session.id) }
+        // FlintSessionController currently applies block lists only. Read its frozen selection,
+        // never the mutable picker; schedules carry their own allow-list mode into the adapter.
+        return FlintProtectionStatus.coverageScopes(for: .init(
+            protection: inputs, sessionSelection: selection, sessionAllowListMode: false,
+            schedules: group.loadRules(), timeLimits: group.loadLimits(),
+            openLimits: FlintOpenLimitRule.loadAll()
+        ))
     }
 
     /// The ember orb inside its halo, drawn once (design/ember-mist/E07-Shield.dc.html).
