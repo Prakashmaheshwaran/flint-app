@@ -20,7 +20,8 @@ struct FlintActivityRegistration {
     var events: [DeviceActivityEvent.Name: DeviceActivityEvent] = [:]
     // Schedule selection/day/allow-list edits are not represented in OS schedules/events.
     var configurationChanged = false
-    /// nil for Open Limits, whose shields intentionally have no finite window.
+    /// End of the current or most recently started window (never a future window's end).
+    /// A future value therefore means that window contains now. nil for Open Limits.
     var retainedUntil: Date? = nil
     var definition: FlintActivityDefinition { .init(schedule: schedule, events: events) }
 
@@ -110,7 +111,10 @@ struct FlintActivityRegistration {
         var unbounded: Set<String> = []
         func clearRetained(_ name: String, reason: String) {
             if clearedThisPass.insert(name).inserted { onRemove(name) }
-            failures.append(.init(activityName: name, reason: reason))
+            let previousReasons = failures.filter { $0.activityName == name }.map(\.reason)
+            failures.removeAll { $0.activityName == name }
+            failures.append(.init(activityName: name,
+                reason: ([reason] + previousReasons.filter { $0 != reason }).joined(separator: " ")))
         }
         // Acceptance can be unobserved without throwing. Evaluate every finite cause only
         // after the native read, including whether an older registration still has an end.
@@ -120,9 +124,11 @@ struct FlintActivityRegistration {
             let name = DeviceActivityName(request.name)
             let hasEnd = after.contains(name) && center.schedule(for: name) != nil
             if isObserved {
-                // A late repair must clear the abandoned store BEFORE dropping its old bound.
-                // An edited/extended rule may under-protect until the next genuine callback.
-                if let receipt = retained[request.name], !receipt.cleared, now >= receipt.endsAt {
+                // Outside an active window, clear the abandoned store BEFORE dropping its
+                // expired bound. A repaired current window has its own observed native end;
+                // keep its shield even when an old window's receipt expired before this edit.
+                if let receipt = retained[request.name], !receipt.cleared,
+                   now >= receipt.endsAt, now >= end {
                     clearRetained(request.name,
                         reason: "The previous protection window ended before registration recovered. Its retained shield was cleared.")
                 }

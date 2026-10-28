@@ -23,6 +23,7 @@ final class FlintRetainedProtectionTests: XCTestCase {
                 let later = reconcile(request, center, defaults, at: end.addingTimeInterval(1)) { cleared.append($0) }
                 XCTAssertEqual(later.observed, 0)
                 XCTAssertEqual(cleared, [name])
+                XCTAssertEqual(later.failures.count, 1, "one row combines observation and cleanup failures")
                 XCTAssertEqual(receipts(defaults)[name]?.endsAt, end)
                 XCTAssertEqual(receipts(defaults)[name]?.cleared, true)
             }
@@ -33,10 +34,9 @@ final class FlintRetainedProtectionTests: XCTestCase {
         try withDefaults { defaults in
             let center = FakeActivityCenter()
             let name = "flint.rule.late"
-            var request = activity(name)
+            let request = activity(name)
             center.refused = [name]
             _ = reconcile(request, center, defaults, at: end.addingTimeInterval(-60)) { _ in XCTFail() }
-            request.retainedUntil = end.addingTimeInterval(3600)
             center.refused = []
             var cleared: [String] = []
             let report = reconcile(request, center, defaults, at: end.addingTimeInterval(60)) {
@@ -62,6 +62,34 @@ final class FlintRetainedProtectionTests: XCTestCase {
             let report = reconcile(request, center, defaults, at: end.addingTimeInterval(-60)) { _ in XCTFail() }
             XCTAssertEqual(report.observed, 1)
             XCTAssertNil(receipts(defaults)[request.name])
+        }
+    }
+
+    func testRepairOfEditedWindowContainingNowKeepsItsCurrentShield() throws {
+        try withDefaults { defaults in
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+            let now = try XCTUnwrap(calendar.date(from: .init(year: 2026, month: 10, day: 28, hour: 12)))
+            let oldEnd = now.addingTimeInterval(-3600)
+            let name = "flint.rule.editedActive"
+            let center = FakeActivityCenter()
+            var request = FlintActivityRegistration(name: name,
+                schedule: .init(intervalStart: .init(hour: 9), intervalEnd: .init(hour: 11), repeats: true),
+                retainedUntil: oldEnd)
+            center.refused = [name]
+            _ = reconcile(request, center, defaults, at: oldEnd.addingTimeInterval(-60)) { _ in XCTFail() }
+            request = .init(name: name,
+                schedule: .init(intervalStart: .init(hour: 10), intervalEnd: .init(hour: 17), repeats: true),
+                retainedUntil: FlintRetainedProtection.windowEnd(startHour: 10, startMinute: 0,
+                    endHour: 17, endMinute: 0, now: now, calendar: calendar))
+            XCTAssertGreaterThan(try XCTUnwrap(request.retainedUntil), now)
+            center.refused = []
+            let report = reconcile(request, center, defaults, at: now) { _ in
+                XCTFail("the repaired, now-active window should keep shielding")
+            }
+            XCTAssertEqual(report.observed, 1)
+            XCTAssertTrue(report.failures.isEmpty)
+            XCTAssertNil(receipts(defaults)[name], "its observed current end supersedes the old receipt")
         }
     }
 
