@@ -4,6 +4,7 @@ import XCTest
 /// Screen Time access, select real apps, save schedules, or claim OS enforcement.
 final class FlintFixtureUITests: XCTestCase {
     private var app: XCUIApplication!
+    private var needsLaunchReadiness = false
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -38,6 +39,7 @@ final class FlintFixtureUITests: XCTestCase {
         app.launchArguments += approved ? ["-FlintUIPreview"] : [
             "-FlintUIPreviewAuthorizationScenario", "transient"
         ]
+        needsLaunchReadiness = true
         app.launch()
     }
 
@@ -100,6 +102,7 @@ final class FlintFixtureUITests: XCTestCase {
             .waitForExistence(timeout: 5))
 
         app.terminate()
+        needsLaunchReadiness = true
         app.launch()
         XCTAssertTrue(app.staticTexts["Enter PIN"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["You"].exists, "The protected hierarchy must be hidden")
@@ -235,10 +238,13 @@ final class FlintFixtureUITests: XCTestCase {
             }
             let top = viewport.minY + viewport.height * 0.2
             let bottom = viewport.minY + viewport.height * 0.8
+            // A center drag on a focused secure field invokes text selection.
+            // Stay inside this scroll view's leading padding instead.
+            let x = viewport.minX + min(12, viewport.width * 0.1)
             let origin = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
-            let from = origin.withOffset(CGVector(dx: viewport.midX - window.minX,
+            let from = origin.withOffset(CGVector(dx: x - window.minX,
                 dy: (direction == .up ? bottom : top) - window.minY))
-            let to = origin.withOffset(CGVector(dx: viewport.midX - window.minX,
+            let to = origin.withOffset(CGVector(dx: x - window.minX,
                 dy: (direction == .up ? top : bottom) - window.minY))
             from.press(forDuration: 0.05, thenDragTo: to)
         }
@@ -251,8 +257,12 @@ final class FlintFixtureUITests: XCTestCase {
             predicate: NSPredicate(format: "exists == true AND hittable == true AND enabled == true"),
             object: element
         )
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 8), .completed,
+        // Cold simulator automation snapshots took 48s in retained CI evidence.
+        // Wait once for the same readiness predicate, then send exactly one tap.
+        let timeout: TimeInterval = needsLaunchReadiness ? 60 : 8
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: timeout), .completed,
                        "Target must be visible and enabled before input", file: file, line: line)
+        needsLaunchReadiness = false
         element.tap()
     }
 

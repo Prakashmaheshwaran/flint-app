@@ -54,6 +54,11 @@ The workflow uploads `FlintUI.xcresult`, the complete `xcodebuild.log`, and
 boundary) on success or failure. Test execution is serial with one iteration and
 test retries disabled. Bounded existence waits and scrolling handle UI readiness;
 no failed assertion or input action is retried.
+The first input after a launch allows up to 60 seconds for cold accessibility
+automation startup (a retained CI snapshot took 48 seconds); later inputs allow
+8 seconds. Both require the same existing, enabled, hittable target before a
+single tap. Scroll drags stay in the visible scroll view's padding and above
+the keyboard so they do not invoke secure-field text selection.
 
 Current run/commit evidence is recorded in the PR and worker report after CI
 completes. This gate does not establish minimum-iOS/iPad coverage, full VoiceOver,
