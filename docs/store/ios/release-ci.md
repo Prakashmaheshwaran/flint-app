@@ -2,7 +2,7 @@
 
 The iOS workflow builds the host and all four extensions with
 `-configuration Release`, without signing, in a separate derived-data directory.
-It scans each actual Mach-O executable's symbols and strings, requiring all
+It scans each bundle's Mach-O executable, dylibs and frameworks for symbols and strings, requiring all
 five exact bundle IDs and failing on tool errors or known authorization,
 session, SwiftUI and report preview fixtures. The report's `#Preview` is
 explicitly guarded by `#if DEBUG`; production report rendering is unchanged.

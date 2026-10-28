@@ -26,13 +26,31 @@ def verify(app: Path, expect_fixtures: bool = False) -> None:
         executable = bundle / info["CFBundleExecutable"]
         if not executable.is_file():
             raise SystemExit(f"Missing executable: {executable}")
-        # These tools parse every architecture of fat Mach-O products. Any tool
-        # error is fatal; a failed scan must never look like an empty result.
-        subprocess.run(["xcrun", "lipo", "-info", str(executable)], check=True, capture_output=True)
-        symbols = subprocess.run(["xcrun", "nm", "-a", str(executable)],
-                                 check=True, capture_output=True, text=True).stdout
-        strings = subprocess.run(["/usr/bin/strings", "-a", str(executable)],
-                                 check=True, capture_output=True, text=True).stdout
+        # Modern Xcode Debug builds can put code in Flint.debug.dylib while
+        # CFBundleExecutable points to a launcher stub. Scan every Mach-O in
+        # this bundle, including dylibs/frameworks, with each PlugIn handled
+        # separately below. Recognize both endiannesses and fat headers.
+        magic = {bytes.fromhex(value) for value in [
+            "feedface", "cefaedfe", "feedfacf", "cffaedfe",
+            "cafebabe", "bebafeca", "cafebabf", "bfbafeca",
+        ]}
+        binaries = []
+        for path in sorted(bundle.rglob("*")):
+            if not path.is_file() or "PlugIns" in path.relative_to(bundle).parts:
+                continue
+            with path.open("rb") as stream:
+                if stream.read(4) in magic:
+                    binaries.append(path)
+        if executable not in binaries:
+            raise SystemExit(f"Executable is not Mach-O: {executable}")
+        symbols, strings = "", ""
+        for binary in binaries:
+            # Parse every architecture. Tool failures must never look empty.
+            subprocess.run(["xcrun", "lipo", "-info", str(binary)], check=True, capture_output=True)
+            symbols += subprocess.run(["xcrun", "nm", "-a", str(binary)],
+                                      check=True, capture_output=True, text=True).stdout
+            strings += subprocess.run(["/usr/bin/strings", "-a", str(binary)],
+                                      check=True, capture_output=True, text=True).stdout
         matches = sorted(set(FIXTURES.findall(symbols + "\n" + strings)))
         # Known report preview sample; its display name must not ship either.
         if identifier.endswith(".report") and "Instagram" in strings:
