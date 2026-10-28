@@ -32,7 +32,7 @@ class BlockEventHooksTest {
         BlockEventHooks.register(recorder)
         BlockEventHooks.register(recorder) // idempotent
         BlockEventHooks.openIntercepted("session-1", 10L)
-        BlockEventHooks.breakGranted(null, 400L, 100L)
+        BlockEventHooks.breakGranted(null, "grant", 400L, 100L)
         BlockEventHooks.emergencyPassUsed("r2", 20L)
         assertEquals(listOf("open:session-1@10", "break:null:400@100", "pass:r2@20"), events)
     }
@@ -41,7 +41,7 @@ class BlockEventHooksTest {
         BlockEventHooks.register(throwing)
         BlockEventHooks.register(recorder)
         BlockEventHooks.openIntercepted("x", 1L)
-        BlockEventHooks.breakGranted("x", 2L, 1L)
+        BlockEventHooks.breakGranted("x", "grant", 2L, 1L)
         BlockEventHooks.emergencyPassUsed("x", 1L)
         assertEquals(3, events.size)
     }

@@ -31,7 +31,7 @@ class SafetyFloorGate(
     private val refreshInBackground: ((() -> Unit) -> Unit)? = null,
     private val refreshIntervalMs: Long = DEFAULT_REFRESH_INTERVAL_MS,
     private val freshIntervalMs: Long = DEFAULT_FRESH_INTERVAL_MS,
-    requiredRuntimeSources: Set<String> = setOf("home", "default-dialer", "system-dialer", "uninstaller"),
+    requiredRuntimeSources: Set<String>,
 ) {
     data class RuntimeResolution(
         val requiredSources: Set<String>,
@@ -39,6 +39,7 @@ class SafetyFloorGate(
         val failedSources: Set<String> = emptySet(),
         val checkedAtElapsedMs: Long? = null,
     ) {
+        /** Sticky provenance only; health consumers must also read degraded and checkedAtElapsedMs. */
         val hasResolvedEverySource: Boolean get() = resolvedSources.containsAll(requiredSources)
         val degraded: Boolean get() = !hasResolvedEverySource || failedSources.any { it in requiredSources }
     }

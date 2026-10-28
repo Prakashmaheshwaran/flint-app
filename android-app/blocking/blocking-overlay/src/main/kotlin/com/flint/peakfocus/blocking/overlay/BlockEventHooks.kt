@@ -63,10 +63,6 @@ object BlockEventHooks {
     internal fun openIntercepted(ruleId: String?, atEpochMs: Long) =
         each { it.onOpenIntercepted(ruleId, atEpochMs) }
 
-    @Suppress("DEPRECATION")
-    internal fun breakGranted(ruleId: String?, untilEpochMs: Long, atEpochMs: Long) =
-        each { it.onBreakGranted(ruleId, untilEpochMs, atEpochMs) }
-
     internal fun breakGranted(ruleId: String?, grantId: String, untilEpochMs: Long, atEpochMs: Long) =
         each { it.onBreakGranted(ruleId, grantId, untilEpochMs, atEpochMs) }
 

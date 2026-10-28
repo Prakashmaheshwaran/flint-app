@@ -586,7 +586,8 @@ class BlockScreenCoordinator(
             if (result is GrantResult.Unavailable || result == GrantResult.Unconfirmed) failures.add(packageName)
             if (result is GrantResult.Granted && result.newlyAccepted) {
                 // Observe-only history hooks happen strictly after the atomic edit returns.
-                if (emergency) BlockEventHooks.emergencyPassUsed(current.ruleId, result.atEpochMs)
+                if (emergency) BlockEventHooks.emergencyPassCommitted(result.receipts.first().requestId,
+                    setOfNotNull(current.ruleId), result.receipts.maxOf { it.untilEpochMs }, result.atEpochMs)
                 else BlockEventHooks.breakGranted(current.ruleId, result.receipts.first().requestId,
                     result.receipts.maxOf { it.untilEpochMs }, result.atEpochMs)
             }
