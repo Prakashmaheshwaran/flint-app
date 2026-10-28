@@ -100,6 +100,7 @@ dependencies {
     implementation(project(":core:core-common"))
     implementation(project(":core:core-data"))
     implementation(project(":core:core-datastore"))
+    implementation(project(":core:core-history"))
     implementation(project(":blocking:blocking-engine"))
     implementation(project(":blocking:blocking-accessibility"))
     implementation(project(":blocking:blocking-usagestats"))

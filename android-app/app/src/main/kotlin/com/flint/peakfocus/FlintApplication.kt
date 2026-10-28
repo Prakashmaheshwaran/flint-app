@@ -28,6 +28,7 @@ class FlintApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         ActiveRulesBridge.start(this, appScope)
+        com.flint.peakfocus.core.history.FocusHistoryBridge.start(this, appScope)
         BootReceiver.registerRearmAction { context -> PathBServiceGate.sync(context) }
         TimeChangeReceiver.baselineAnchor(this)
         TimeChangeReceiver.registerRearmAction { context -> PathBServiceGate.sync(context) }

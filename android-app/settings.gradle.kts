@@ -31,6 +31,7 @@ include(":core:core-model")
 include(":core:core-common")
 include(":core:core-data")
 include(":core:core-datastore")               // Jetpack DataStore: observable user preferences
+include(":core:core-history")                 // Local focus-session events and aggregation
 
 // blocking — the enforcement engine (UI-independent, headless-capable)
 include(":blocking:blocking-engine")          // pure-Kotlin decision core (unit-tested)
