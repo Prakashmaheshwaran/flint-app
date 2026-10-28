@@ -18,6 +18,8 @@ Automatic signing is the committed default. If a team requires an explicit
 identity, set it only in the local override. Confirm the effective settings for
 every shipping target before archiving; never edit the generated Xcode project.
 Do not put version overrides in this machine-local file.
+The host explicitly inherits its identity so XcodeGen's application preset
+cannot override the identity from the owner's local project configuration.
 
 ## Version policy
 
