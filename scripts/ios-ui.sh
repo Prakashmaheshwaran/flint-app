@@ -36,6 +36,33 @@ mkdir -p "$results"
 if [[ ${CI:-false} != true ]]; then
   trap 'bash "$root/scripts/clean-devices.sh"' EXIT
   agent_device ios "$device"
+else
+  # Xcode's first two app launches failed on a cold hosted simulator.
+  # Match local ios-run's boot readiness before starting any tests. These are
+  # bounded system-state checks, never app launches or test/action retries.
+  python3 - "$device" 2>&1 <<'PY' | tee "$results/simulator-readiness.log"
+import importlib.util
+import sys
+
+spec = importlib.util.spec_from_file_location("flint_device_run", "scripts/agent/device-run.py")
+runner = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(runner)
+device = sys.argv[1]
+try:
+    state = runner.ios_state(device)
+    print(f"simulator={device} initial_state={state}", flush=True)
+    if state == "Shutdown":
+        print("boot_begin timeout=30", flush=True)
+        runner.run(["xcrun", "simctl", "boot", device], timeout=30)
+    print("bootstatus_begin timeout=180", flush=True)
+    result = runner.run(["xcrun", "simctl", "bootstatus", device, "-b"], timeout=180)
+    print(result.stdout, end="", flush=True)
+    print("springboard_check timeout=30", flush=True)
+    runner.springboard_ready(device, timeout=30)
+    print("springboard_ready=true (running with positive PID)", flush=True)
+except ValueError as error:
+    sys.exit(str(error))
+PY
 fi
 
 (cd "$ios_dir" && xcodegen generate)
