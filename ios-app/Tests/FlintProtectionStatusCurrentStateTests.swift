@@ -78,9 +78,9 @@ final class FlintProtectionStatusCurrentStateTests: XCTestCase {
         XCTAssertTrue(inputs.timeIntegrityApplies)
     }
 
-    func testRecentRecordedClockAnomalyDegradesButOldDiagnosticDoesNot() throws {
+    func testRecentOrFutureRecordedClockAnomalyDegradesButOldDiagnosticDoesNot() throws {
         let (defaults, _) = try fixture()
-        for age in [60.0, 3600.0] {
+        for age in [-60.0, 60.0, 3600.0] {
             let data = try JSONSerialization.data(withJSONObject: ["lastTimeAnomaly": [
                 "kind": "wallAhead", "seconds": 30, "sessionID": "old",
                 "detectedAt": now.addingTimeInterval(-age).timeIntervalSinceReferenceDate

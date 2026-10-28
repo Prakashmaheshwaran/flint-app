@@ -149,7 +149,9 @@ extension FlintProtectionStatus {
         // A recent observed wall-clock anomaly remains relevant without a manual session.
         // Old diagnostic history and repaired zone/registration events are not clock verdicts.
         let anomaly = FlintSessionHealth.load(from: defaults).lastTimeAnomaly.flatMap { anomaly -> FlintTimeIntegrity.Verdict? in
-            guard anomaly.detectedAt <= now, now.timeIntervalSince(anomaly.detectedAt) <= 300 else { return nil }
+            // A future observation can itself reveal a backwards wall-clock change.
+            if anomaly.detectedAt > now { return .unverifiable }
+            guard now.timeIntervalSince(anomaly.detectedAt) <= 300 else { return nil }
             switch anomaly.kind {
             case .wallAhead: return .wallAhead(seconds: anomaly.seconds)
             case .wallBehind: return .wallBehind(seconds: anomaly.seconds)
