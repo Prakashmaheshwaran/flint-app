@@ -36,6 +36,11 @@ def verify(app: Path) -> None:
         reasons = [{
             "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
             "NSPrivacyAccessedAPITypeReasons": ["CA92.1", "1C8F.1"] if target == "Flint" else ["1C8F.1"],
+        }, {
+            # FlintCore focus history reads file size/modification/creation metadata
+            # inside the App Group container; every bundle links FlintCore.
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
+            "NSPrivacyAccessedAPITypeReasons": ["C617.1"],
         }]
         assert actual["NSPrivacyAccessedAPITypes"] == reasons, bundle
         print(f"Verified privacy manifest: {bundle_id}")
