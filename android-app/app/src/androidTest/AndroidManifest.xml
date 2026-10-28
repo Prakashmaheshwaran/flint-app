@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- :e2e generates self-instrumentation; the application plugin overrides targetPackage. -->
+    <application android:label="Flint E2E Target">
+        <!-- A deterministic, harmless app to block; no dependency on bundled OEM apps. -->
+        <activity android:name="com.flint.peakfocus.e2e.BlockedTestActivity"
+            android:exported="true" android:label="Flint E2E Target">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

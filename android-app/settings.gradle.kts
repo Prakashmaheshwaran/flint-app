@@ -23,6 +23,8 @@ dependencyResolutionManagement {
 rootProject.name = "Flint"
 
 include(":app")
+// Keep the standalone test APK out of ordinary assemble/test/release task graphs.
+if (providers.gradleProperty("flintE2E").orNull == "true") include(":e2e")
 
 // core — model + shared utilities + theme tokens + persistence
 include(":core:core-model")
