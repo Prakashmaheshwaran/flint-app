@@ -2,7 +2,7 @@ package com.flint.peakfocus.core.history
 
 import android.content.Context
 import com.flint.peakfocus.core.datastore.FlintPreferences
-import com.flint.peakfocus.core.model.BlockRule
+import com.flint.peakfocus.core.model.StorageState
 import java.io.File
 import java.time.ZoneId
 import kotlinx.coroutines.CoroutineScope
@@ -35,7 +35,7 @@ object FocusHistoryBridge {
 
     suspend fun clear(context: Context): Boolean {
         val observer = reconciler ?: return false
-        if (!observer.ready.value) return false
+        if (!observer.ready.value || observer.diagnostic.value != null) return false
         return store(context).clear(observer.activeSessionIds.value)
     }
 
@@ -43,15 +43,12 @@ object FocusHistoryBridge {
         val observer = reconciler ?: return@withContext false
         try {
             store(context).load()
-            observer.observe(project(FlintPreferences.blockRules(context).rulesOrError.first()))
-            observer.ready.value && store(context).snapshots.value.readable
+            val state = FlintPreferences.blockRules(context).rulesState.first { it !is StorageState.Loading }
+            observer.collectSnapshots(flowOf(historyRulesSnapshot(state)))
+            state is StorageState.Ready && observer.ready.value && store(context).snapshots.value.readable
         } catch (e: CancellationException) { throw e }
         catch (_: Exception) { false }
     }
-
-    private fun project(rules: List<BlockRule>): List<HistoryRule> = rules.filter {
-        it.id.startsWith("session-") && it.enabled && it.schedule == null
-    }.map { HistoryRule(it.id, it.name, it.breakLevel.name.lowercase(Locale.ROOT), it.expiresAtEpochMs) }
 
     /** UI clock ticks re-bucket at midnight and after travel without disk reads on main. */
     fun summaries(context: Context): Flow<FocusSummary?> {
@@ -62,7 +59,8 @@ object FocusHistoryBridge {
             when {
                 !ready && diagnostic == null -> null
                 !ready -> FocusSummary(HistoryAvailability.UNAVAILABLE, emptyList(), emptyList(), 0)
-                else -> FocusHistoryAggregator.summarize(snapshot, now, ZoneId.systemDefault(), active)
+                else -> FocusHistoryAggregator.summarize(
+                    snapshot.copy(degraded = snapshot.degraded || diagnostic != null), now, ZoneId.systemDefault(), active)
             }
         }.flowOn(Dispatchers.Default)
     }

@@ -82,7 +82,7 @@ internal fun FocusSessionsSection() {
             val totals = focusPeriodTotals(shown)
             Text(totals.focused, style = MaterialTheme.typography.headlineMedium)
             Text("${totals.completed} completed · ${totals.endedEarly} ended early", style = MaterialTheme.typography.bodyMedium)
-            Text(if (week) "Last 7 days" else selected?.date?.format(DateTimeFormatter.ofPattern("EEE, MMM d")) ?: "Today",
+            Text(if (week) FocusHistoryText.weekLabel(summary.days) else selected?.date?.format(DateTimeFormatter.ofPattern("EEE, MMM d")) ?: "Today",
                 style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
             Spacer(Modifier.height(16.dp))
             val maximum = maxOf(1L, summary.days.maxOfOrNull { it.focusedMs ?: 0 } ?: 0)
@@ -107,7 +107,7 @@ internal fun FocusSessionsSection() {
                 }
             }
             if (summary.streak > 0) Text("${summary.streak}-day completion streak", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 12.dp))
-            FocusHistoryText.note(summary)?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp)) }
+            FocusHistoryText.note(summary, shown)?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp)) }
         }
     }
     Spacer(Modifier.height(FlintSpacing.cardGap))

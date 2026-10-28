@@ -26,5 +26,16 @@ class FocusHistoryTextTest {
     @Test fun degradedAndInProgressAreExplicit() {
         assertEquals("In progress", FocusHistoryText.note(summary(HistoryAvailability.VALUE, 1000, true)))
         assertEquals("Some history couldn't be read", FocusHistoryText.note(summary(HistoryAvailability.DEGRADED, 1000)))
+        assertEquals("In progress · Some history couldn't be read", FocusHistoryText.note(summary(HistoryAvailability.DEGRADED, 1000, true)))
+        assertNull(FocusHistoryText.note(summary(HistoryAvailability.VALUE, 1000, true), listOf(FocusDay(today.minusDays(1), 0))))
+    }
+    @Test fun measuredOptionalCountsUseSingularAndPlural() {
+        assertEquals("1 break", FocusHistoryText.breaks(1)); assertEquals("2 breaks", FocusHistoryText.breaks(2))
+        assertEquals("1 open stopped", FocusHistoryText.opensStopped(1)); assertEquals("0 opens stopped", FocusHistoryText.opensStopped(0))
+    }
+    @Test fun partialWeekLabelsOnlyTheAvailableWindow() {
+        val days = (6L downTo 0L).map { FocusDay(today.minusDays(it), if (it > 0) null else 0) }
+        assertEquals("Since Wed, Oct 28", FocusHistoryText.weekLabel(days))
+        assertEquals("Last 7 days", FocusHistoryText.weekLabel(days.map { it.copy(focusedMs = 0) }))
     }
 }

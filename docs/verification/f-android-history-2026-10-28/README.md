@@ -66,3 +66,10 @@ device semaphore holder and its sleep child were stopped. The real-session
 evidence remains a follow-up for a healthy Orca driver or lane I's emulator
 integration workflow; OEM enforcement/Doze and real-hardware notification
 delivery are also unverified.
+
+The lead has authorized a follow-up instrumentation E2E using lane I's guarded
+disposable-emulator harness. It will start a real five-minute Timer, wait for its
+natural completion, end a second Timer through the app's hold interaction, and
+capture durable Today/Complete/Insights states after restart. That run has not
+been executed by this PR, and the two screenshots above remain empty-state
+evidence from the earlier APK only.

@@ -1,5 +1,7 @@
 package com.flint.peakfocus.core.history
 
+import java.time.format.DateTimeFormatter
+
 object FocusHistoryText {
     const val DEFINITION = "Timer focus sessions are counted; schedules and limits aren't counted."
     fun duration(milliseconds: Long): String {
@@ -17,9 +19,16 @@ object FocusHistoryText {
         HistoryAvailability.EMPTY -> "No focus sessions yet"
         else -> summary.days.lastOrNull()?.focusedMs?.let(::duration) ?: "No data"
     }
-    fun note(summary: FocusSummary?): String? = when {
-        summary?.availability == HistoryAvailability.DEGRADED -> "Some history couldn't be read"
-        summary?.days?.lastOrNull()?.inProgress == true -> "In progress"
-        else -> null
+    fun breaks(count: Int) = "$count ${if (count == 1) "break" else "breaks"}"
+    fun opensStopped(count: Int) = "$count ${if (count == 1) "open" else "opens"} stopped"
+    fun weekLabel(days: List<FocusDay>): String {
+        val first = days.firstOrNull { it.focusedMs != null } ?: return "Last 7 days"
+        return if (first.date > days.first().date) "Since ${first.date.format(DateTimeFormatter.ofPattern("EEE, MMM d"))}"
+            else "Last 7 days"
     }
+    fun note(summary: FocusSummary?, days: List<FocusDay> = summary?.days?.takeLast(1).orEmpty()): String? =
+        listOfNotNull(
+            "In progress".takeIf { days.any { it.inProgress } },
+            "Some history couldn't be read".takeIf { summary?.availability == HistoryAvailability.DEGRADED },
+        ).takeIf { it.isNotEmpty() }?.joinToString(" · ")
 }

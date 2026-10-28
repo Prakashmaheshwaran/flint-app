@@ -651,8 +651,8 @@ private fun CompleteScene(
                     color = FlintPalette.Mist, modifier = Modifier.padding(top = 10.dp))
             Text("Today · ${FocusHistoryText.today(summary)}", style = MaterialTheme.typography.bodyMedium,
                 color = FlintPalette.Mist, modifier = Modifier.padding(top = 10.dp))
-            session.breaks?.let { Text("$it breaks", modifier = Modifier.padding(top = 10.dp)) }
-            session.opensIntercepted?.let { Text("$it opens stopped", modifier = Modifier.padding(top = 10.dp)) }
+            session.breaks?.let { Text(FocusHistoryText.breaks(it), modifier = Modifier.padding(top = 10.dp)) }
+            session.opensIntercepted?.let { Text(FocusHistoryText.opensStopped(it), modifier = Modifier.padding(top = 10.dp)) }
             FocusHistoryText.note(summary)?.let { Text(it, style = MaterialTheme.typography.bodySmall,
                 color = FlintPalette.Mist, modifier = Modifier.padding(top = 10.dp)) }
             Spacer(Modifier.height(48.dp))
