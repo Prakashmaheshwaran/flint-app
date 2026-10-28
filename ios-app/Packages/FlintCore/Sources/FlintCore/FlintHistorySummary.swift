@@ -77,14 +77,19 @@ public enum FlintHistoryAggregator {
 
     public static func sessionSummaries(_ records: [FlintHistoryEvent], activeSessionID: String?,
                                        now: Date) -> [FlintHistorySessionSummary] {
-        let grouped = Dictionary(grouping: records.enumerated().filter { $0.element.isSupported }, by: { $0.element.session })
+        let supported = records.enumerated().filter { $0.element.isSupported }
+        let passes = supported.map(\.element).filter { $0.type == .passUsed && $0.sessions != nil }
+        let grouped = Dictionary(grouping: supported, by: { $0.element.session })
         return grouped.compactMap { id, indexed -> FlintHistorySessionSummary? in
             let events = indexed.sorted {
                 $0.element.at == $1.element.at ? $0.offset < $1.offset : $0.element.at < $1.element.at
             }.map(\.element)
             guard let start = events.first(where: { $0.type == .started }) else { return nil }
-            let terminal = events.first(where: { $0.type.isTerminal })
-            let plannedEnd = start.plannedEnd.map(FlintHistoryEvent.date)
+            let terminalIndex = events.firstIndex(where: { $0.type.isTerminal })
+            let terminal = terminalIndex.map { events[$0] }
+            let deadlineEvent = events.prefix(terminalIndex ?? events.count)
+                .last { $0.type == .started || $0.type == .rescheduled }
+            let plannedEnd = deadlineEvent?.plannedEnd.map(FlintHistoryEvent.date)
             let outcome: FlintHistoryOutcome
             let end: Date
             let inferred: Bool
@@ -106,9 +111,31 @@ public enum FlintHistoryAggregator {
                 let whole = DateInterval(start: start.date, end: clippedEnd)
                 var breaks: [DateInterval] = []
                 for (index, event) in events.enumerated() where event.type == .breakStarted {
-                    let explicitEnd = events.dropFirst(index + 1).first { $0.type == .breakEnded }?.date
+                    let nextBoundary = events.dropFirst(index + 1).first {
+                        if let grant = event.grant { return $0.type == .breakEnded && $0.grant == grant }
+                        return $0.type == .breakStarted || $0.type == .breakEnded
+                    }
+                    let explicitEnd = nextBoundary?.type == .breakEnded ? nextBoundary?.date : nil
                     let breakEnd = explicitEnd ?? event.breakEnd.map(FlintHistoryEvent.date) ?? clippedEnd
                     let a = max(event.date, whole.start), b = min(breakEnd, whole.end)
+                    if b > a { breaks.append(DateInterval(start: a, end: b)) }
+                }
+                // Repeated degraded observations do not close an existing coverage gap.
+                var gapStart: Date?
+                for event in events {
+                    if event.type == .protectionDegraded { gapStart = gapStart ?? event.date }
+                    if event.type == .protectionRestored, let gap = gapStart {
+                        let a = max(gap, whole.start), b = min(event.date, whole.end)
+                        if b > a { breaks.append(DateInterval(start: a, end: b)) }
+                        gapStart = nil
+                    }
+                }
+                if let gap = gapStart, max(gap, whole.start) < whole.end {
+                    breaks.append(DateInterval(start: max(gap, whole.start), end: whole.end))
+                }
+                for pass in passes where pass.sessions?.contains(id) == true {
+                    guard let recoveryEnd = pass.recoveryEnd else { continue }
+                    let a = max(pass.date, whole.start), b = min(FlintHistoryEvent.date(recoveryEnd), whole.end)
                     if b > a { breaks.append(DateInterval(start: a, end: b)) }
                 }
                 var cursor = whole.start

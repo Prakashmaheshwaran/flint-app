@@ -32,7 +32,14 @@ public enum FlintSessionLifecycleEvent: Equatable, Sendable {
     case ended(FlintActiveSession, route: FlintSessionEndRoute, at: Date)
     case superseded(FlintActiveSession, by: FlintActiveSession, at: Date)
     case passUsed(FlintActiveSession, at: Date)
+    case globalPassUsed(operationID: String, sessions: [FlintActiveSession], recoveryEnd: Date?, at: Date)
     case failedToArm(FlintActiveSession, reason: String, at: Date)
+    indirect case annotated(FlintSessionLifecycleEvent, origin: String?, reason: String?, observedAt: Date?)
+
+    public var unannotated: FlintSessionLifecycleEvent {
+        if case let .annotated(event, _, _, _) = self { return event.unannotated }
+        return self
+    }
 }
 
 /// Receives lifecycle events (focus history store, completion notifier). Sinks must be cheap,
@@ -53,16 +60,16 @@ public enum FlintSessionLifecycle {
         _ session: FlintActiveSession,
         replacing previous: FlintActiveSession?,
         source: FlintSessionSource,
-        at date: Date = Date()
+        at date: Date = Date(), origin: String? = nil, reason: String? = nil, observedAt: Date? = nil
     ) {
         if let previous, previous.id != session.id {
             if let endsAt = previous.endsAt, endsAt <= date {
-                emit(.ended(previous, route: .completed, at: endsAt))
+                emit(.ended(previous, route: .completed, at: endsAt), origin: origin, reason: reason, observedAt: observedAt)
             } else {
-                emit(.superseded(previous, by: session, at: date))
+                emit(.superseded(previous, by: session, at: date), origin: origin, reason: reason, observedAt: observedAt)
             }
         }
-        emit(.started(session, source: source, at: date))
+        emit(.started(session, source: source, at: date), origin: origin, reason: reason, observedAt: observedAt)
     }
 
     /// The session ended. Pass `.completed` only when it reached its planned end; a
@@ -70,21 +77,31 @@ public enum FlintSessionLifecycle {
     public static func didEnd(
         _ session: FlintActiveSession,
         route: FlintSessionEndRoute,
-        at date: Date = Date()
+        at date: Date = Date(), origin: String? = nil, reason: String? = nil, observedAt: Date? = nil
     ) {
+        guard route != .completed || session.endsAt.map({ $0 <= date }) == true else { return }
         let when = route == .completed ? (session.endsAt ?? date) : date
-        emit(.ended(session, route: route, at: when))
+        emit(.ended(session, route: route, at: when), origin: origin, reason: reason, observedAt: observedAt)
     }
 
-    /// An Emergency Pass was spent while `session` was active. The caller also reports the
-    /// resulting end with `didEnd(_:route: .emergencyPass)`.
-    public static func didUsePass(_ session: FlintActiveSession, at date: Date = Date()) {
-        emit(.passUsed(session, at: date))
+    /// Compatibility overload for a pass observed for one session. Prefer the operation-ID
+    /// overload to record the complete affected set and its known recovery window.
+    public static func didUsePass(_ session: FlintActiveSession, at date: Date = Date(),
+                                  origin: String? = nil, reason: String? = nil, observedAt: Date? = nil) {
+        emit(.passUsed(session, at: date), origin: origin, reason: reason, observedAt: observedAt)
+    }
+
+    public static func didUsePass(operationID: String, sessions: [FlintActiveSession], recoveryEnd: Date?,
+                                  at date: Date = Date(), origin: String? = nil, reason: String? = nil,
+                                  observedAt: Date? = nil) {
+        emit(.globalPassUsed(operationID: operationID, sessions: sessions, recoveryEnd: recoveryEnd, at: date),
+             origin: origin, reason: reason, observedAt: observedAt)
     }
 
     /// Arming the session's out-of-app teardown failed. Diagnostic only; not an end.
-    public static func didFailToArm(_ session: FlintActiveSession, reason: String, at date: Date = Date()) {
-        emit(.failedToArm(session, reason: reason, at: date))
+    public static func didFailToArm(_ session: FlintActiveSession, reason: String, at date: Date = Date(),
+                                    origin: String? = nil, observedAt: Date? = nil) {
+        emit(.failedToArm(session, reason: reason, at: date), origin: origin, observedAt: observedAt)
     }
 
     // MARK: Sinks
@@ -100,7 +117,10 @@ public enum FlintSessionLifecycle {
 
     private static let registry = SinkRegistry()
 
-    private static func emit(_ event: FlintSessionLifecycleEvent) {
+    private static func emit(_ raw: FlintSessionLifecycleEvent, origin: String? = nil,
+                             reason: String? = nil, observedAt: Date? = nil) {
+        let event = origin != nil || reason != nil || observedAt != nil
+            ? FlintSessionLifecycleEvent.annotated(raw, origin: origin, reason: reason, observedAt: observedAt) : raw
         FlintHistorySink.shared.handle(event)
         for sink in registry.snapshot() {
             sink.handle(event)

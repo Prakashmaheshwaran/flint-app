@@ -101,4 +101,38 @@ final class FlintSessionLifecycleTests: XCTestCase {
         XCTAssertEqual(FlintSessionEndRoute.shortcutStop.rawValue, "shortcut_stop")
         XCTAssertEqual(FlintSessionEndRoute.focusFilterOff.rawValue, "focus_filter_off")
     }
+
+    func testGlobalPassCarriesOperationAndRecoveryWithoutPerSessionCopies() {
+        let a = session("a", start: 0, end: 1800), b = session("b", start: 0, end: 3600)
+        FlintSessionLifecycle.didUsePass(operationID: "operation", sessions: [a, b],
+            recoveryEnd: t0.addingTimeInterval(300), at: t0, origin: "shield_action", reason: "emergency_pass")
+        XCTAssertEqual(sink.events.count, 1)
+        let record = FlintHistoryEvent(sink.events[0])
+        XCTAssertEqual(record.session, "operation")
+        XCTAssertEqual(record.sessions, ["a", "b"])
+        XCTAssertEqual(record.recoveryEnd, FlintHistoryEvent.milliseconds(t0.addingTimeInterval(300)))
+        XCTAssertEqual(record.originRoute, "shield_action")
+        XCTAssertEqual(record.reason, "emergency_pass")
+    }
+    func testCompletionBeforeDeadlineDoesNotEmit() {
+        FlintSessionLifecycle.didEnd(session("early", start: 0, end: 1800), route: .completed,
+                                     at: t0.addingTimeInterval(1799))
+        XCTAssertTrue(sink.events.isEmpty)
+    }
+
+    func testLegacyPassHasUnknownRecoveryAndAdditiveMetadataStaysOptional() {
+        let s = session("a", start: 0, end: 1800)
+        FlintSessionLifecycle.didUsePass(s, at: t0)
+        let record = FlintHistoryEvent(sink.events[0])
+        XCTAssertTrue(record.session.hasPrefix("pass-"))
+        XCTAssertEqual(record.sessions, ["a"])
+        XCTAssertNil(record.recoveryEnd)
+        FlintSessionLifecycle.didEnd(s, route: .manualStop, at: t0,
+                                    origin: "app_ui", reason: "stop", observedAt: t0.addingTimeInterval(1))
+        let end = FlintHistoryEvent(sink.events[1])
+        XCTAssertEqual(end.route, "manual_stop")
+        XCTAssertEqual(end.originRoute, "app_ui")
+        XCTAssertEqual(end.reason, "stop")
+        XCTAssertEqual(end.observedAt, FlintHistoryEvent.milliseconds(t0.addingTimeInterval(1)))
+    }
 }

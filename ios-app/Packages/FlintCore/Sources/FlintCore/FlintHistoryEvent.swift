@@ -3,8 +3,13 @@ import Foundation
 /// The only mapping between lifecycle event kinds and the on-disk vocabulary.
 public enum FlintHistoryEventType: Equatable, Sendable, Codable {
     case started, completed, endedEarly, superseded, breakStarted, breakEnded
-    case passUsed, failedToArm, openIntercepted
+    case passUsed, failedToArm, rescheduled, openIntercepted
+    case protectionDegraded, protectionRestored, accessStarted, accessEnded
     case unknown(String)
+
+    static let knownTypes: [Self] = [.started, .completed, .endedEarly, .superseded, .breakStarted,
+                                    .breakEnded, .passUsed, .failedToArm, .rescheduled, .openIntercepted,
+                                    .protectionDegraded, .protectionRestored, .accessStarted, .accessEnded]
 
     public var wireName: String {
         switch self {
@@ -16,6 +21,11 @@ public enum FlintHistoryEventType: Equatable, Sendable, Codable {
         case .breakEnded: return "break_ended"
         case .passUsed: return "pass_used"
         case .failedToArm: return "failed_to_arm"
+        case .rescheduled: return "rescheduled"
+        case .protectionDegraded: return "protection_degraded"
+        case .protectionRestored: return "protection_restored"
+        case .accessStarted: return "access_started"
+        case .accessEnded: return "access_ended"
         case .openIntercepted: return "open_intercepted"
         case .unknown(let name): return name
         }
@@ -23,8 +33,7 @@ public enum FlintHistoryEventType: Equatable, Sendable, Codable {
 
     public init(from decoder: Decoder) throws {
         let name = try decoder.singleValueContainer().decode(String.self)
-        self = [.started, .completed, .endedEarly, .superseded, .breakStarted,
-                .breakEnded, .passUsed, .failedToArm, .openIntercepted]
+        self = Self.knownTypes
             .first(where: { $0.wireName == name }) ?? .unknown(name)
     }
 
@@ -52,18 +61,29 @@ public struct FlintHistoryEvent: Codable, Equatable, Sendable, Identifiable {
     public var by: String?
     public var breakEnd: Int64?
     public var reason: String?
+    public var originRoute: String?
+    public var observedAt: Int64?
+    public var kind: String?
+    public var grant: String?
+    public var sessions: [String]?
+    public var recoveryEnd: Int64?
 
     public init(type: FlintHistoryEventType, session: String, at: Date,
                 id: String = UUID().uuidString, timeZone: TimeZone = .current,
                 inferred: Bool? = nil, plannedEnd: Date? = nil, tier: String? = nil,
                 source: String? = nil, name: String? = nil, route: String? = nil,
-                by: String? = nil, breakEnd: Date? = nil, reason: String? = nil, v: Int = 1) {
+                by: String? = nil, breakEnd: Date? = nil, reason: String? = nil, v: Int = 1,
+                originRoute: String? = nil, observedAt: Date? = nil, kind: String? = nil,
+                grant: String? = nil, sessions: [String]? = nil, recoveryEnd: Date? = nil) {
         self.v = v; self.id = id; self.type = type; self.session = session
         self.at = Self.milliseconds(at); tz = timeZone.identifier
         self.inferred = inferred; self.plannedEnd = plannedEnd.map(Self.milliseconds)
         self.tier = tier; self.source = source; self.name = name.map { String($0.prefix(64)) }
         self.route = route; self.by = by; self.breakEnd = breakEnd.map(Self.milliseconds)
         self.reason = reason
+        self.originRoute = originRoute; self.observedAt = observedAt.map(Self.milliseconds)
+        self.kind = kind; self.grant = grant; self.sessions = sessions
+        self.recoveryEnd = recoveryEnd.map(Self.milliseconds)
     }
 
     public var date: Date { Self.date(at) }
@@ -79,7 +99,7 @@ public struct FlintHistoryEvent: Codable, Equatable, Sendable, Identifiable {
     /// Dates outside Foundation's supported civil range cannot be bucketed safely.
     public var isSupported: Bool {
         guard v == 1, !session.isEmpty,
-              [at, plannedEnd, breakEnd].compactMap({ $0 }).allSatisfy({
+              [at, plannedEnd, breakEnd, observedAt, recoveryEnd].compactMap({ $0 }).allSatisfy({
                   $0 >= -62_135_596_800_000 && $0 <= 253_402_300_799_000
               }) else { return false }
         if case .unknown = type { return false }
@@ -99,9 +119,16 @@ public struct FlintHistoryEvent: Codable, Equatable, Sendable, Identifiable {
         case let .superseded(s, next, at):
             self.init(type: .superseded, session: s.id, at: at, timeZone: timeZone, by: next.id)
         case let .passUsed(s, at):
-            self.init(type: .passUsed, session: s.id, at: at, timeZone: timeZone)
+            self.init(type: .passUsed, session: "pass-\(UUID().uuidString)", at: at, timeZone: timeZone, sessions: [s.id])
+        case let .globalPassUsed(operationID, sessions, recoveryEnd, at):
+            self.init(type: .passUsed, session: operationID, at: at, id: operationID,
+                      timeZone: timeZone, sessions: sessions.map(\.id), recoveryEnd: recoveryEnd)
         case let .failedToArm(s, reason, at):
             self.init(type: .failedToArm, session: s.id, at: at, timeZone: timeZone, reason: reason)
+        case let .annotated(event, origin, reason, observedAt):
+            self.init(event, timeZone: timeZone)
+            self.originRoute = origin; self.reason = reason ?? self.reason
+            self.observedAt = observedAt.map(Self.milliseconds)
         }
     }
 }
