@@ -66,6 +66,14 @@ class RollingEmergencyPassPolicyTest {
         assertTrue(normal is Eligibility.CoolingDown && !normal.clockUncertain)
     }
 
+    @Test fun `PC-55 the uncertainty survives re-anchoring after a clock edit`() {
+        val state = spend(at(0L, wallMs = 1_000L))
+        val edited = at(60_000L, wallMs = 1_000L + 2 * 86_400_000L)
+        val reanchored = policy.checkpointed(state, edited)
+        val later = policy.eligibility(reanchored, at(120_000L, wallMs = 1_000L + 2 * 86_400_000L + 60_000L))
+        assertTrue(later is Eligibility.CoolingDown && later.clockUncertain)
+    }
+
     @Test fun `a finished cooldown clears on checkpoint`() {
         val state = spend(at(0L))
         assertNull((policy.checkpointed(state, at(604_800_000L)) as PassState.Known).cooldown)
@@ -259,6 +267,27 @@ class OpenCreditPolicyTest {
         assertEquals(OpenCreditPolicy.Acceptance.Duplicate("op-1", null), late)
     }
 
+    @Test fun `a duplicate just after the reset is still no charge`() {
+        val a = accept(counter(untilReset = 60_000L), op = "op-late") as OpenCreditPolicy.Acceptance.Accepted
+        val afterReset = accept(a.counter, now = at(65_000L), op = "op-late")
+        assertEquals(OpenCreditPolicy.Acceptance.Duplicate("op-late", null), afterReset)
+    }
+
+    @Test fun `an unknown next boundary never loops resets`() {
+        val c = counter(used = 2, untilReset = 0L)
+        val r1 = policy.rolled(c, at(10L), msUntilNextQuotaMidnight = 0L)
+        val r2 = policy.rolled(r1, at(20L), msUntilNextQuotaMidnight = 0L)
+        assertEquals(2, r2.used)
+        assertEquals(c.periodId, r2.periodId)
+    }
+
+    @Test fun `a counter for another target is unavailable, and remaining credits display`() {
+        val other = counter().copy(target = "com.other")
+        assertEquals(OpenCreditPolicy.Denial.UNAVAILABLE, (accept(other) as OpenCreditPolicy.Acceptance.Denied).reason)
+        assertEquals(1, policy.remainingCredits(listOf(3, 5), counter(used = 2), at(0L), 24 * hour))
+        assertNull(policy.remainingCredits(emptyList(), counter(), at(0L), 24 * hour))
+    }
+
     @Test fun `PC-32 no charge while another cause still blocks, naming it`() {
         val d = accept(counter(), others = listOf("Deep work (Hardcore)"))
         assertEquals(OpenCreditPolicy.Acceptance.Denied(OpenCreditPolicy.Denial.BLOCKED_BY_OTHER_CAUSE, listOf("Deep work (Hardcore)")), d)
@@ -328,8 +357,13 @@ class OpenCreditPolicyTest {
 
 class CommitmentPolicyTest {
     private val policy = CommitmentPolicy()
-    private val active = CommitmentPolicy.CauseActivity.ScheduledOccurrence(enabled = true, inOccurrence = true)
-    private val inactive = CommitmentPolicy.CauseActivity.ScheduledOccurrence(enabled = true, inOccurrence = false)
+    private val now0 = at(0L)
+    private val active = CommitmentPolicy.CauseActivity.ScheduledOccurrence(
+        enabled = true,
+        current = AnchoredInterval(now0, remainingAtAnchorMs = 3_600_000L, wallEndEpochMs = now0.wallEpochMs + 3_600_000L),
+        now = now0,
+    )
+    private val inactive = CommitmentPolicy.CauseActivity.ScheduledOccurrence(enabled = true, current = null, now = now0)
 
     @Test fun `active matrix follows ADR-012 section 2`() {
         for (a in listOf(Action.TOGGLE_OFF, Action.DELETE)) {
@@ -378,11 +412,23 @@ class CommitmentPolicyTest {
         assertEquals(Outcome.ALLOW, policy.decideEdit(limit, limit.copy(budget = 15), belowQuota))
     }
 
-    @Test fun `sessions are active until their end`() {
-        val running = CommitmentPolicy.CauseActivity.Session(started = true, endsAtEpochMs = 10L, nowEpochMs = 5L)
-        val over = running.copy(nowEpochMs = 10L)
-        assertTrue(running.isActive)
+    @Test fun `sessions are active until their anchored end`() {
+        val interval = AnchoredInterval(at(0L), remainingAtAnchorMs = 10_000L, wallEndEpochMs = at(0L).wallEpochMs + 10_000L)
+        assertTrue(CommitmentPolicy.CauseActivity.Session(interval, at(5_000L)).isActive)
+        val over = CommitmentPolicy.CauseActivity.Session(interval, at(10_000L))
         assertEquals(Outcome.NOT_APPLICABLE, policy.decide(Action.STOP_EARLY, BreakLevel.HARDCORE, over))
+    }
+
+    @Test fun `a same-boot wall-clock jump cannot end an active Hardcore session (section 9)`() {
+        val interval = AnchoredInterval(at(0L), remainingAtAnchorMs = 3_600_000L, wallEndEpochMs = at(0L).wallEpochMs + 3_600_000L)
+        // One real minute later the wall clock is pushed a day forward, same boot.
+        val jumped = CommitmentPolicy.CauseActivity.Session(interval, at(60_000L, wallMs = at(0L).wallEpochMs + 86_400_000L))
+        assertTrue(jumped.isActive)
+        assertEquals(Outcome.DENY, policy.decide(Action.STOP_EARLY, BreakLevel.HARDCORE, jumped))
+        assertEquals(Outcome.DEFER, policy.decideEdit(base, base.copy(apps = setOf("a")), jumped))
+        // After a reboot the bounded fallback can only shorten: wall end in the past expires it.
+        val rebooted = CommitmentPolicy.CauseActivity.Session(interval, at(5L, wallMs = at(0L).wallEpochMs + 4_000_000L, boot = "boot-2"))
+        assertTrue(!rebooted.isActive)
     }
 
     @Test fun `PC-11 weakening an active Hardcore occurrence defers, Harder waits, Easy allows`() {
@@ -391,6 +437,9 @@ class CommitmentPolicyTest {
         assertEquals(Outcome.WAIT, policy.decideEdit(base.copy(tier = BreakLevel.HARDER), weaker.copy(tier = BreakLevel.HARDER), active))
         assertEquals(Outcome.ALLOW, policy.decideEdit(base.copy(tier = BreakLevel.EASY), weaker.copy(tier = BreakLevel.EASY), active))
         assertEquals("PC-12 strengthening allowed", Outcome.ALLOW, policy.decideEdit(base, base.copy(apps = setOf("a", "b", "c")), active))
+        assertEquals("rename allowed", Outcome.ALLOW, policy.decideEdit(base, base.copy(name = "x"), active))
+        val harder = base.copy(tier = BreakLevel.HARDER)
+        assertEquals("raising the tier needs disclosure", Outcome.ALLOW_AFTER_DISCLOSURE, policy.decideEdit(harder, base, active))
     }
 
     @Test fun `PC-04 PC-05 PC-06 replacement must provably dominate`() {
@@ -399,6 +448,7 @@ class CommitmentPolicyTest {
         assertEquals("PC-06 drops B", Outcome.DENY, policy.decideReplacement(session, session.copy(apps = setOf("a"), endsAtEpochMs = 20_000L), active))
         assertEquals("PC-04 weaker tier", Outcome.DENY, policy.decideReplacement(session, session.copy(tier = BreakLevel.EASY), active))
         assertEquals(Outcome.WAIT, policy.decideReplacement(session.copy(tier = BreakLevel.HARDER), session.copy(tier = BreakLevel.EASY), active))
+        assertEquals(Outcome.NOT_APPLICABLE, policy.decideReplacement(session, session.copy(apps = setOf("a")), inactive))
     }
 
     private val base = ProtectionShape(
@@ -459,6 +509,11 @@ class CommitmentPolicyTest {
         assertTrue(isValidOccurrenceDuration(25 * 3_600_000L))
         assertTrue(!isValidOccurrenceDuration(26 * 3_600_000L + 1))
         assertTrue(!isValidNewSessionDuration(0L))
+    }
+
+    @Test fun `clock discontinuity threshold is 5 seconds`() {
+        assertTrue(!clockDiscontinuity(at(0L, wallMs = 1_000L), at(10_000L, wallMs = 16_000L)))
+        assertTrue(clockDiscontinuity(at(0L, wallMs = 1_000L), at(10_000L, wallMs = 16_001L)))
     }
 
     @Test fun `trusted elapsed rejects blank boots and backwards time`() {

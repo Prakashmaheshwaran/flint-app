@@ -55,6 +55,23 @@ fun clockDiscontinuity(from: AccessClockStamp, to: AccessClockStamp): Boolean {
     return kotlin.math.abs(wall - elapsed) > ProtectionContract.CLOCK_DISCONTINUITY_MS
 }
 
+/**
+ * A materialized interval on the anchored timeline (§9): [remainingAtAnchorMs] as of [anchor].
+ * In one boot the remaining time is monotonic (wall-clock edits cannot end it early or extend it);
+ * after a reboot it is `min(saved remaining, max(0, wallEnd - nowWall))` — the contract's bounded
+ * fallback, which can only shorten, never extend.
+ */
+data class AnchoredInterval(val anchor: AccessClockStamp, val remainingAtAnchorMs: Long, val wallEndEpochMs: Long) {
+    fun remainingMs(now: AccessClockStamp): Long {
+        val elapsed = trustedElapsedMs(anchor, now)
+        return if (elapsed != null) {
+            (remainingAtAnchorMs - elapsed).coerceAtLeast(0L)
+        } else {
+            minOf(remainingAtAnchorMs, (wallEndEpochMs - now.wallEpochMs).coerceAtLeast(0L))
+        }
+    }
+}
+
 /** §1: a new finite session / Pomodoro parent must be positive and at most 24 h. */
 fun isValidNewSessionDuration(durationMs: Long): Boolean =
     durationMs in 1..ProtectionContract.MAX_SESSION_MS

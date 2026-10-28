@@ -30,6 +30,8 @@ class RollingEmergencyPassPolicy {
         val usedAtWallEpochMs: Long,
         val checkpoint: AccessClockStamp,
         val remainingAtCheckpointMs: Long,
+        /** Sticky: a clock discontinuity or reboot was observed since the use (survives re-anchoring). */
+        val wallUncertain: Boolean = false,
     )
 
     /**
@@ -83,7 +85,7 @@ class RollingEmergencyPassPolicy {
             nextEligibleEstimateEpochMs = now.wallEpochMs + remaining,
             // A reboot, or a same-boot wall/elapsed discrepancy (a clock edit): the remaining time
             // is still exact, but the wall-clock date estimate is not (§9, PC-55).
-            clockUncertain = clockDiscontinuity(cooldown.checkpoint, now),
+            clockUncertain = cooldown.wallUncertain || clockDiscontinuity(cooldown.checkpoint, now),
         )
     }
 
@@ -96,7 +98,11 @@ class RollingEmergencyPassPolicy {
         val known = state as? PassState.Known ?: return state
         val cooldown = known.cooldown?.let { c ->
             val remaining = (eligibility(known, now) as? Eligibility.CoolingDown)?.remainingMs ?: return@let null
-            c.copy(checkpoint = now, remainingAtCheckpointMs = remaining)
+            c.copy(
+                checkpoint = now,
+                remainingAtCheckpointMs = remaining,
+                wallUncertain = c.wallUncertain || clockDiscontinuity(c.checkpoint, now),
+            )
         }
         val recovery = known.recovery?.takeIf { recoveryRemainingMs(it, now) > 0L }
         return PassState.Known(cooldown, recovery)

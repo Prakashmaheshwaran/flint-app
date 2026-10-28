@@ -1,5 +1,6 @@
 package com.flint.peakfocus.blocking.engine
 
+import com.flint.peakfocus.core.model.AccessClockStamp
 import com.flint.peakfocus.core.model.BreakLevel
 
 /**
@@ -20,18 +21,29 @@ import com.flint.peakfocus.core.model.BreakLevel
  */
 class CommitmentPolicy {
 
-    /** What the affected cause is doing now; [isActive] is derived, never passed in. */
+    /**
+     * What the affected cause is doing now; [isActive] is derived, never passed in. Session and
+     * occurrence ends are [AnchoredInterval]s, so a same-boot wall-clock edit cannot make an
+     * active commitment look inactive (§9) — never build these from `System.currentTimeMillis()`.
+     */
     sealed interface CauseActivity {
         val isActive: Boolean
 
-        /** Manual/Timer/Block Now session: active until its (finite) end once accepted. */
-        data class Session(val started: Boolean, val endsAtEpochMs: Long?, val nowEpochMs: Long) : CauseActivity {
-            override val isActive: Boolean get() = started && (endsAtEpochMs == null || nowEpochMs < endsAtEpochMs)
+        /**
+         * Manual / Timer / Block Now session or Pomodoro parent (planned rests included): active
+         * while its anchored remaining time is positive. A null [interval] is a *legacy* open-ended
+         * session only (§12); new strict sessions must be finite ([isValidNewSessionDuration]).
+         */
+        data class Session(val interval: AnchoredInterval?, val now: AccessClockStamp) : CauseActivity {
+            override val isActive: Boolean get() = interval == null || interval.remainingMs(now) > 0L
         }
 
-        /** Recurring/one-shot/Sleep occurrence: active from its start through its resolved end. */
-        data class ScheduledOccurrence(val enabled: Boolean, val inOccurrence: Boolean) : CauseActivity {
-            override val isActive: Boolean get() = enabled && inOccurrence
+        /**
+         * Recurring / one-shot / Sleep occurrence: [current] is the materialized occurrence the
+         * reconciler resolved for now (null = not inside one), anchored like a session.
+         */
+        data class ScheduledOccurrence(val enabled: Boolean, val current: AnchoredInterval?, val now: AccessClockStamp) : CauseActivity {
+            override val isActive: Boolean get() = enabled && current != null && current.remainingMs(now) > 0L
         }
 
         /** Time / Open Limit: an enabled limit is an active daily commitment, exhausted or not. */
@@ -108,13 +120,16 @@ class CommitmentPolicy {
     fun decideEdit(before: ProtectionShape, after: ProtectionShape, activity: CauseActivity): Outcome {
         if (!activity.isActive) return Outcome.ALLOW
         return when (classifyEdit(before, after)) {
-            EditKind.COSMETIC, EditKind.STRENGTHEN -> Outcome.ALLOW // raising a tier still needs explicit UI confirmation
+            EditKind.COSMETIC -> Outcome.ALLOW
+            // Raising the tier needs explicit confirmation of the new rights, automation included (§2).
+            EditKind.STRENGTHEN -> if (after.tier.ordinal > before.tier.ordinal) Outcome.ALLOW_AFTER_DISCLOSURE else Outcome.ALLOW
             EditKind.WEAKEN -> byTier(before.tier, hardcore = Outcome.DEFER)
         }
     }
 
     /**
      * Replacing a running session (§2/§3): allowed when [replacement] provably dominates [current]
+     * (not for Pomodoro parents: [ProtectionShape] has no round model, so route them elsewhere)
      * (every target, at least the tier, at least the remaining interval); otherwise Easy allows an
      * explicit exit, Harder waits, Hardcore denies (start independently or defer instead).
      */

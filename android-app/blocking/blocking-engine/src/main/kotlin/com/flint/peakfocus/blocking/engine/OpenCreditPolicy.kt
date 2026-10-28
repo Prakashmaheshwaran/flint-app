@@ -33,6 +33,8 @@ class OpenCreditPolicy {
         val used: Int,
         val reset: ResetClock,
         val consumedOperationIds: Set<String> = emptySet(),
+        /** The previous period's accepted ids, so a duplicate arriving just after a reset is still no charge. */
+        val previousPeriodOperationIds: Set<String> = emptySet(),
     )
 
     data class Grant(
@@ -89,11 +91,14 @@ class OpenCreditPolicy {
     fun rolled(counter: Counter, now: AccessClockStamp, msUntilNextQuotaMidnight: Long): Counter {
         val remaining = remainingToResetMs(counter.reset, now)
         if (remaining > 0L) return counter.copy(reset = ResetClock(now, remaining))
+        // Unknown next boundary: do not reset (no loop of resets); accept reports PERIOD_BOUNDARY.
+        if (msUntilNextQuotaMidnight <= 0L) return counter.copy(reset = ResetClock(now, 0L))
         return Counter(
             target = counter.target,
             periodId = counter.periodId + 1,
             used = 0,
-            reset = ResetClock(now, msUntilNextQuotaMidnight.coerceAtLeast(0L)),
+            reset = ResetClock(now, msUntilNextQuotaMidnight),
+            previousPeriodOperationIds = counter.consumedOperationIds,
         )
     }
 
@@ -119,7 +124,9 @@ class OpenCreditPolicy {
         val stored = counter?.takeIf { it.target == target } ?: return Acceptance.Denied(Denial.UNAVAILABLE)
         val current = rolled(stored, now, msUntilNextQuotaMidnight)
         val live = liveGrant?.takeIf { it.target == target && remainingMs(it, now) > 0L }
-        if (operationId in current.consumedOperationIds) return Acceptance.Duplicate(operationId, live)
+        if (operationId in current.consumedOperationIds || operationId in current.previousPeriodOperationIds) {
+            return Acceptance.Duplicate(operationId, live)
+        }
         if (live != null) return Acceptance.AlreadyActive(live, remainingMs(live, now))
         if (otherBlockingCauses.isNotEmpty()) {
             return Acceptance.Denied(Denial.BLOCKED_BY_OTHER_CAUSE, otherBlockingCauses)
