@@ -177,23 +177,28 @@ final class FlintFixtureUITests: XCTestCase {
     private func insights(accessibility: Bool) throws {
         launch(accessibility: accessibility)
         try tap(app.buttons["Insights"])
-        XCTAssertTrue(app.staticTexts["Insights needs a device"].waitForExistence(timeout: 5))
+        let unavailable = app.staticTexts["Screen Time needs a device"]
+        // Focus history precedes Screen Time; AX5 places this section offscreen.
+        try reveal(unavailable)
         XCTAssertFalse(app.staticTexts["No screen time recorded"].exists,
                        "Unavailable data must not be presented as measured zero usage")
         // SwiftUI propagates the identifier onto both segment buttons.
         let range = app.buttons.matching(identifier: "insights.range")
         let today = range.matching(NSPredicate(format: "label == 'Today'")).firstMatch
+        try reveal(today, direction: .down)
         try tap(today)
-        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'reports for today'"))
-            .firstMatch.waitForExistence(timeout: 5))
-        try tap(range.matching(NSPredicate(format: "label == '7 days'")).firstMatch)
-        XCTAssertTrue(app.staticTexts["Insights needs a device"].exists)
+        try reveal(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'reports for today'"))
+            .firstMatch)
+        let week = range.matching(NSPredicate(format: "label == '7 days'")).firstMatch
+        try reveal(week, direction: .down)
+        try tap(week)
+        try reveal(unavailable)
         capture("insights-approved-simulator-unavailable")
 
         app.terminate()
         launch(accessibility: accessibility, approved: false)
         try tap(app.buttons["Insights"])
-        XCTAssertTrue(app.staticTexts["Screen Time access needed"].waitForExistence(timeout: 5))
+        try reveal(app.staticTexts["Screen Time access needed"])
         XCTAssertFalse(app.staticTexts["No screen time recorded"].exists)
     }
 
