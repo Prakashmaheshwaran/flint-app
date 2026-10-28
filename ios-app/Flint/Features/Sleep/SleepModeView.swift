@@ -213,9 +213,9 @@ struct SleepModeView: View {
             Text("Allowed apps")
         } footer: {
             if vm.savedGroups.isEmpty {
-                Text("Save an app group in Block Now (alarm, podcasts, meditation…) to keep it reachable overnight. Until then the shield allows nothing extra — the system's own Always Allowed apps (like Phone) stay available regardless.")
+                Text("Save an app group in Block Now (alarm, podcasts, meditation…) to keep it reachable overnight. Until then the shield allows nothing extra. iOS's Always Allowed apps and emergency calling are expected to remain available; this hasn't been verified on a device yet.")
             } else {
-                Text("Individually-picked apps in this preset stay reachable during Wind Down and Full Assist; whole-category picks don't carry over to a night shield. The system's Always Allowed apps stay available regardless.")
+                Text("Individually-picked apps in this preset stay reachable during Wind Down and Full Assist; whole-category picks don't carry over to a night shield. iOS's Always Allowed apps and emergency calling are expected to remain available; this hasn't been verified on a device yet.")
             }
         }
     }
