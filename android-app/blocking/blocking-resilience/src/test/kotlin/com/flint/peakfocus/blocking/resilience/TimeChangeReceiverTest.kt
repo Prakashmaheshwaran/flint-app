@@ -7,6 +7,7 @@ import org.junit.Test
 import com.flint.peakfocus.core.datastore.*
 import com.flint.peakfocus.core.model.*
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flow
@@ -121,7 +122,7 @@ class TimeChangeReceiverTest {
         assertEquals(10L, guarded.snapshot.emergencyPass.usedAtEpochMs)
     }
 
-    @Test fun PC_55_stalledFocusCannotUseTheIndependentRulesGuardDeadline() = runBlocking {
+    @Test fun PC_55_stalledFocusCannotUseTheIndependentRulesGuardDeadline() = runTest {
         val focus = object : FocusStateStore by InMemoryFocusStateStore() {
             override suspend fun <R> transact(transform: (FocusSnapshot) -> FocusMutation<R>): FocusCommit<R> = awaitCancellation()
         }
@@ -131,7 +132,7 @@ class TimeChangeReceiverTest {
         assertEquals(400_000L, rules.rulesState.snapshotOrNull()!!.single().expiresAtEpochMs)
     }
 
-    @Test fun PC_55_stalledRulesReadCannotHoldTheFocusGuardPastItsOwnDeadline() = runBlocking {
+    @Test fun PC_55_stalledRulesReadCannotHoldTheFocusGuardPastItsOwnDeadline() = runTest {
         val focus = InMemoryFocusStateStore()
         val receipt = PersistedExemption("grant", "app", "cause", ExemptionKind.BREAK, 300_000, "boot")
         focus.transact { FocusMutation(it.copy(exemptions = mapOf("grant" to receipt)), Unit) }
