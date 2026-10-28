@@ -96,6 +96,13 @@ class WorkspaceSafety(unittest.TestCase):
         self.assertEqual(record["avd"], value)
         self.assertFalse((self.root / "injected").exists())
 
+    def test_h3_default_recursive_make_executable_is_resolved(self):
+        (self.root / "scripts/agent/gates.sh").write_text('printf "%s" "$FLINT_MAKE" > recursive-make\n')
+        result = self.run_cmd(["/usr/bin/make", "--no-print-directory", "gates"])
+        self.assertEqual(result.returncode, 0, result.stdout)
+        executable = (self.root / "recursive-make").read_text()
+        self.assertTrue(os.access(executable, os.X_OK), executable)
+
     def test_m5_relative_and_nonexistent_root_terminate(self):
         (self.root / "relative").mkdir()
         for value in ("relative", "relative-no-checkout", "./relative", "/nonexistent/flint-root"):

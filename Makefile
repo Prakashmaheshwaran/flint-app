@@ -45,7 +45,11 @@ override ANDROID_SDK_ROOT := $(value ANDROID_SDK_ROOT)
 override DEVELOPER_DIR := $(value DEVELOPER_DIR)
 export IOS_DIR ANDROID_DIR IOS_DERIVED_DATA IOS_SIM AVD DRY_RUN CONFIRM TAG
 export ORPHAN_PLAN ORPHAN_DIGEST
+ifeq ($(origin MAKE),default)
+export FLINT_MAKE := $(value MAKE_COMMAND)
+else
 export FLINT_MAKE := $(value MAKE)
+endif
 
 .DEFAULT_GOAL := help
 
