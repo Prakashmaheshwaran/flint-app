@@ -121,8 +121,14 @@ public enum FlintProtectionStatus {
             let stored = counterState.counts[targetKey] ?? 0
             if stored >= 0 { count = stored }
         }
-        let targetState: FlintProtectionStatusSnapshot.State = causes.isEmpty && !uncertain
-            ? .notProtected : snapshot.state
+        let targetState: FlintProtectionStatusSnapshot.State
+        if causes.isEmpty && !uncertain {
+            targetState = .notProtected
+        } else if snapshot.state == .protected && !causes.contains(where: \.enforcing) {
+            targetState = uncertain ? .degraded : .notProtected
+        } else {
+            targetState = snapshot.state
+        }
         return Contributors(state: targetState, causes: causes, openCount: count,
                             openCap: cap.map { max(0, $0) }, coverageUncertain: uncertain)
     }

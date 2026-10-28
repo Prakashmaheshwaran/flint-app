@@ -326,6 +326,17 @@ final class FlintProtectionStatusTests: XCTestCase {
         XCTAssertNil(uncovered.openCap)
     }
 
+    func testUnspentTargetBudgetDoesNotInheritProtectionFromAnUnrelatedCause() {
+        var budget = rule("budget", kind: .timeLimit); budget.thresholdReached = false
+        let value = inputs(rules: [budget, rule("elsewhere")])
+        XCTAssertEqual(Builder.make(value).state, .protected)
+        let result = FlintProtectionStatus.contributors(for: "target", inputs: value,
+            coverageByCauseID: ["budget": .only(["target"]), "elsewhere": .only(["other"])])
+        XCTAssertEqual(result.causes.map(\.id), ["budget"])
+        XCTAssertEqual(result.state, .notProtected)
+        XCTAssertFalse(result.causes[0].enforcing)
+    }
+
     func testProjectionDoesNotEncodeSelectionsMonitorNamesOrCallerTargetKeys() throws {
         let tokenBytes = Data("fictional-selection-token-sentinel".utf8)
         let tokenJSON = try JSONSerialization.data(withJSONObject: ["data": tokenBytes.base64EncodedString()])
