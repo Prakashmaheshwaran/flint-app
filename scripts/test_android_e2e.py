@@ -1,0 +1,89 @@
+"""Device-free guard and permission-ownership regression tests for the E2E runner."""
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+
+
+class AndroidE2ESafetyTests(unittest.TestCase):
+    def run_fixture(self, *, consent="1", serial="emulator-5554", mode="build-fails"):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "scripts").mkdir()
+            (root / "android-app").mkdir()
+            (root / "bin").mkdir()
+            shutil.copy(Path(__file__).with_name("android-e2e.sh"), root / "scripts/android-e2e.sh")
+            (root / "scripts/flint-env.sh").write_text("")
+            adb = root / "bin/adb"
+            adb.write_text(f"#!{sys.executable}\n" + r'''
+import json, os, pathlib, sys
+root = pathlib.Path(os.environ["FIXTURE_ROOT"])
+args = sys.argv[3:]
+with (root / "adb.jsonl").open("a") as f: f.write(json.dumps(args) + "\n")
+mode = os.environ["FIXTURE_MODE"]
+ran = (root / "ran").exists()
+service = "com.flint.peakfocus/com.flint.peakfocus.blocking.accessibility.FlintAccessibilityService"
+if args[:2] == ["shell", "getprop"]: print("1")
+elif args == ["shell", "cat", "/proc/sys/kernel/random/boot_id"]:
+    print("22222222-2222-2222-2222-222222222222" if ran and mode == "reboot" else "11111111-1111-1111-1111-111111111111")
+elif args[:3] == ["shell", "cat", "/sdcard/Android/data/com.flint.peakfocus.test/files/owned-service.txt"]:
+    if ran and mode in ("owned", "other-service"):
+        print(next(x.split("=", 1)[1] for x in (root / "artifacts/android-e2e/device.txt").read_text().splitlines() if x.startswith("run_token=")))
+    else: sys.exit(1)
+elif args[:4] == ["shell", "settings", "get", "secure"]:
+    if args[4] == "accessibility_enabled": print("0")
+    elif not ran: print("other.app/.Service" if mode == "preexisting" else "null")
+    elif mode == "other-service": print(service + ":other.app/.Service")
+    else: print(service)
+''')
+            adb.chmod(0o755)
+            gradle = root / "android-app/gradlew"
+            gradle.write_text('#!/bin/bash\ntouch "$FIXTURE_ROOT/ran"\nexit 7\n')
+            gradle.chmod(0o755)
+            env = {**os.environ, "CI": "true", "FLINT_E2E_DISPOSABLE": consent,
+                   "AVD": serial, "FIXTURE_ROOT": str(root), "FIXTURE_MODE": mode,
+                   "PATH": str(root / "bin") + os.pathsep + os.environ["PATH"]}
+            result = subprocess.run(["bash", "scripts/android-e2e.sh"], cwd=root,
+                                    env=env, capture_output=True, text=True, timeout=20)
+            log = root / "adb.jsonl"
+            calls = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+            return result, calls
+
+    def test_missing_consent_or_phone_selector_never_calls_adb(self):
+        for args in ({"consent": ""}, {"serial": "physical-phone"}):
+            result, calls = self.run_fixture(**args)
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(calls, [])
+
+    def test_existing_service_is_rejected_without_mutation(self):
+        result, calls = self.run_fixture(mode="preexisting")
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(any(call[:3] == ["shell", "settings", "put"] for call in calls))
+
+    def test_build_failure_without_ownership_does_not_touch_grants(self):
+        result, calls = self.run_fixture()
+        self.assertEqual(result.returncode, 7)
+        self.assertFalse(any(call[:3] == ["shell", "settings", "put"] for call in calls))
+
+    def test_owned_grant_is_removed_without_disabling_new_service(self):
+        result, calls = self.run_fixture(mode="other-service")
+        self.assertEqual(result.returncode, 7)
+        mutations = [c for c in calls if c[:3] == ["shell", "settings", "put"]]
+        self.assertEqual(mutations, [["shell", "settings", "put", "secure",
+                                     "enabled_accessibility_services", "other.app/.Service"]])
+
+    def test_changed_boot_is_not_collected_or_mutated(self):
+        result, calls = self.run_fixture(mode="reboot")
+        self.assertEqual(result.returncode, 7)
+        self.assertFalse(any(c[0] in ("logcat", "pull", "exec-out") for c in calls))
+        self.assertFalse(any(c[:3] == ["shell", "settings", "put"] for c in calls))
+
+    def test_owned_only_grant_restores_global_flag(self):
+        result, calls = self.run_fixture(mode="owned")
+        self.assertEqual(result.returncode, 7)
+        mutations = [c for c in calls if c[:3] == ["shell", "settings", "put"]]
+        self.assertEqual(mutations[-1], ["shell", "settings", "put", "secure", "accessibility_enabled", "0"])

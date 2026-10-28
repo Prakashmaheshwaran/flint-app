@@ -23,6 +23,10 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v6
+      - name: Record source provenance
+        run: |
+          mkdir -p artifacts/android-e2e
+          git rev-parse HEAD > artifacts/android-e2e/source-commit.txt
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -30,7 +34,15 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - name: Build app and instrumentation APKs before starting emulator
         working-directory: android-app
-        run: ./gradlew -PflintE2E=true :app:assembleDebug :e2e:assembleDebug
+        run: |
+          ./gradlew -PflintE2E=true :app:assembleDebug :e2e:assembleDebug 2>&1 | tee ../artifacts/android-e2e/build.log
+          "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest print e2e/build/outputs/apk/debug/e2e-debug.apk > ../artifacts/android-e2e/test-manifest.xml
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse('../artifacts/android-e2e/test-manifest.xml').getroot()
+          target = root.find('instrumentation').get('{http://schemas.android.com/apk/res/android}targetPackage')
+          assert target == root.get('package') == 'com.flint.peakfocus.test', (target, root.get('package'))
+          PY
       - name: Real accessibility smoke (disposable emulator)
         uses: reactivecircus/android-emulator-runner@v2
         with:
