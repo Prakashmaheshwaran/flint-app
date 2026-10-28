@@ -1,5 +1,8 @@
 package com.flint.peakfocus.core.model
 
+import java.time.Instant
+import java.time.ZoneId
+
 /**
  * Share an incremental event timeline across budget readers. The long carry-in query runs once
  * per local day (or clock rewind), not on every 15-second budget refresh. The buffer is bounded
@@ -21,5 +24,11 @@ class DailyUsageTimeline(private val read: (startMs: Long, endMs: Long) -> List<
         val incoming = read(cursor.queryStart(nowMs), nowMs)
         events += cursor.commit(nowMs, incoming)
         return ForegroundUsage.millis(packageName, events, startOfDayMs, nowMs)
+    }
+
+    companion object {
+        /** First valid instant of this local date, including skipped or repeated midnight. */
+        fun startOfDay(nowMs: Long, zone: ZoneId): Long =
+            Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate().atStartOfDay(zone).toInstant().toEpochMilli()
     }
 }

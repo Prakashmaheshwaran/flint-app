@@ -47,6 +47,17 @@ class DetectorSignalsTest {
         assertEquals(3, calls)
     }
 
+    @Test fun `one failing observer cannot prevent detector handoff`() {
+        val signals = DetectorSignals()
+        val owner = Any()
+        val observed = mutableListOf<Boolean>()
+        signals.subscribe { error("stale observer") }
+        signals.subscribe { observed += signals.pathAConnected }
+        signals.connected(owner)
+        signals.disconnected(owner)
+        assertEquals(listOf(true, false), observed)
+    }
+
     @Test fun `rule publication immediately notifies once and unsubscribe works`() {
         val source = "continuous-eval-test"
         var calls = 0

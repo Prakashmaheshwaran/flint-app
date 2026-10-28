@@ -96,4 +96,44 @@ class ActiveRulesHolderTest {
         rules.clear()
         assertEquals(listOf("ds"), ActiveRulesHolder.rules.map { it.id })
     }
+
+    @Test fun readinessChangesWakeObserversWithoutLosingLastGoodRules() {
+        val source = ActiveRulesHolder.SOURCE_DATASTORE
+        val expected = listOf(rule("ds"))
+        ActiveRulesHolder.publish(source, expected)
+        val states = mutableListOf<StorageState<List<BlockRule>>>()
+        val snapshots = mutableListOf<List<BlockRule>>()
+        val cancel = ActiveRulesHolder.subscribe {
+            states += ActiveRulesHolder.dataStoreState
+            snapshots += ActiveRulesHolder.rules
+        }
+        try {
+            val unavailable = StorageState.Unavailable(StorageFailure.IO)
+            ActiveRulesHolder.publishState(source, unavailable)
+            ActiveRulesHolder.publishState(source, unavailable)
+            ActiveRulesHolder.publishState(source, StorageState.Loading)
+            ActiveRulesHolder.publish(source, expected)
+            assertEquals(listOf(unavailable, StorageState.Loading, StorageState.Ready(expected)), states)
+            assertEquals(listOf(expected, expected, expected), snapshots)
+        } finally {
+            cancel()
+        }
+    }
+
+    @Test fun observerFailureDoesNotPreventOtherObserversOrPublication() {
+        val source = ActiveRulesHolder.SOURCE_DATASTORE
+        val expected = listOf(rule("ds"))
+        ActiveRulesHolder.publish(source, emptyList())
+        val fail = ActiveRulesHolder.subscribe { error("stale observer") }
+        var observed: List<BlockRule>? = null
+        val cancel = ActiveRulesHolder.subscribe { observed = ActiveRulesHolder.rules }
+        try {
+            ActiveRulesHolder.publish(source, expected)
+            assertEquals(expected, ActiveRulesHolder.rules)
+            assertEquals(expected, observed)
+        } finally {
+            fail()
+            cancel()
+        }
+    }
 }

@@ -3,7 +3,7 @@ package com.flint.peakfocus.core.data
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import com.flint.peakfocus.core.model.DailyUsageTimeline
-import java.util.Calendar
+import java.time.ZoneId
 
 /** Today's event-derived foreground time, including the ongoing session. Requires Usage Access. */
 object UsageQuery {
@@ -24,18 +24,11 @@ object UsageQuery {
             cachedManager = usm
             timeline = DailyUsageTimeline { start, end -> UsageEventReader.read(usm, start, end) }
         }
-        return timeline!!.millis(packageName, startOfDay(now), now)
+        return timeline!!.millis(packageName, DailyUsageTimeline.startOfDay(now, ZoneId.systemDefault()), now)
     }
 
     /** Called on explicit clock/permission re-evaluation, including timezone changes. */
     @Synchronized
     fun invalidate() { timeline = null; cachedManager = null }
 
-    private fun startOfDay(now: Long): Long = Calendar.getInstance().apply {
-        timeInMillis = now
-        set(Calendar.HOUR_OF_DAY, 0)
-        set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0)
-        set(Calendar.MILLISECOND, 0)
-    }.timeInMillis
 }

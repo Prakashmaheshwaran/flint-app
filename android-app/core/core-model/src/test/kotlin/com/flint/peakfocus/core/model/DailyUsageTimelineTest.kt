@@ -1,5 +1,8 @@
 package com.flint.peakfocus.core.model
 
+import java.time.Instant
+import java.time.ZoneId
+
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -69,5 +72,21 @@ class DailyUsageTimelineTest {
         cursor.commit(1_000, batch).forEach(tracker::accept)
         assertTrue(cursor.commit(2_000, batch).isEmpty())
         assertEquals("app", tracker.packageName)
+    }
+
+    @Test fun `repeated midnight clips carry in at the first midnight`() {
+        val now = Instant.parse("2020-11-01T05:30:00Z").toEpochMilli()
+        val start = DailyUsageTimeline.startOfDay(now, ZoneId.of("America/Havana"))
+        assertEquals(Instant.parse("2020-11-01T04:00:00Z").toEpochMilli(), start)
+        val timeline = DailyUsageTimeline { _, _ -> listOf(resume.copy(timestampMs = start - 60_000)) }
+        assertEquals(90 * 60_000L, timeline.millis("app", start, now))
+    }
+
+    @Test fun `missing midnight clips carry in at the first valid instant`() {
+        val now = Instant.parse("2018-11-04T05:30:00Z").toEpochMilli()
+        val start = DailyUsageTimeline.startOfDay(now, ZoneId.of("America/Sao_Paulo"))
+        assertEquals(Instant.parse("2018-11-04T03:00:00Z").toEpochMilli(), start)
+        val timeline = DailyUsageTimeline { _, _ -> listOf(resume.copy(timestampMs = start - 60_000)) }
+        assertEquals(150 * 60_000L, timeline.millis("app", start, now))
     }
 }

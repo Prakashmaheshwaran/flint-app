@@ -9,6 +9,8 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
 import com.flint.peakfocus.blocking.engine.BrowserAddressBars
+import com.flint.peakfocus.blocking.engine.EvaluationTimer
+import com.flint.peakfocus.blocking.engine.NextEvaluationBoundary
 import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.blocking.overlay.BlockScreenCoordinator
 import com.flint.peakfocus.blocking.overlay.ruleBlockCause
@@ -17,11 +19,12 @@ import com.flint.peakfocus.core.data.LimitStore
 import com.flint.peakfocus.core.data.UsageQuery
 import com.flint.peakfocus.core.model.ActiveRulesHolder
 import com.flint.peakfocus.core.model.Verdict
+import com.flint.peakfocus.core.model.EnforcementSignals
+import java.time.ZoneId
 import java.util.Calendar
 import java.util.TimeZone
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -60,21 +63,30 @@ class FlintAccessibilityService : AccessibilityService() {
     private var serviceScope: CoroutineScope? = null
     private var coordinator: BlockScreenCoordinator? = null
 
-    /** One-shot re-check armed while a time-limited app sits in front (see [armTimeLimitRecheck]). */
-    private var timeLimitRecheck: Job? = null
+    /** One independent deadline for schedules, expiry, budgets and local day rollover. */
+    private var boundaryTimer: EvaluationTimer? = null
+    private var stopSignals: (() -> Unit)? = null
+    private var stopRules: (() -> Unit)? = null
+    private var lastForegroundUrl: String? = null
 
     /** Last package seen in the foreground (Flint + system surfaces included — the open-limit
      *  policy interprets those transitions itself, e.g. shield bounces are not re-opens). */
     @Volatile private var lastForegroundPackage: String? = null
 
-    /** Class name from the last window event (recognises Flint's own MainActivity coming to front). */
-    @Volatile private var lastForegroundClassName: String? = null
-
     override fun onServiceConnected() {
         super.onServiceConnected()
+        releaseDetection()
         BlocklistStore(this).load()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         serviceScope = scope
+        boundaryTimer = EvaluationTimer(
+            nowMs = System::currentTimeMillis,
+            post = { delayMs, callback ->
+                val job = scope.launch { delay(delayMs); callback() }
+                ({ job.cancel() })
+            },
+            evaluate = ::reevaluateForeground,
+        )
         coordinator = BlockScreenCoordinator(
             context = this,
             scope = scope,
@@ -82,43 +94,57 @@ class FlintAccessibilityService : AccessibilityService() {
             // Event-driven path: when a break/pass runs out, re-check the app the user is
             // still sitting in — no window event fires just because time passed.
             onExemptionExpired = { reevaluateForeground() },
+            onEnforcementChanged = { scope.launch { reevaluateForeground() } },
         )
+        stopRules = ActiveRulesHolder.subscribe { scope.launch { reevaluateForeground() } }
+        stopSignals = EnforcementSignals.detectors.subscribe {
+            scope.launch {
+                UsageQuery.invalidate()
+                reevaluateForeground()
+            }
+        }
+        // Main-thread listeners stand Path B down synchronously before this path can shield.
+        EnforcementSignals.detectors.connected(this)
+        reevaluateForeground()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
         val previous = lastForegroundPackage
-        lastForegroundPackage = pkg
-        lastForegroundClassName = event.className?.toString()
+        val className = event.className?.toString()
         if (pkg == packageName) {
-            // Our own windows. The overlay's attach fires a self event too, so hiding on
-            // every self event would dismiss the shield the instant it shows — but the app's
-            // MAIN ACTIVITY coming to front (launcher, notification, adb) is a deliberate
-            // visit, and without this the shield lingers over Flint's own UI (seen live on
-            // the emulator). The activity class is package-derived, never hard-coded.
-            if (lastForegroundClassName == "$packageName.MainActivity") {
+            // Attaching our overlay must not replace its underlying foreground target. A real
+            // MainActivity visit is different: cancel its deadline and stand the shield down.
+            if (className == "$packageName.MainActivity") {
+                lastForegroundPackage = pkg
+                lastForegroundUrl = null
+                boundaryTimer?.cancel()
                 coordinator?.hideIfShown()
             }
             return
         }
+        if (pkg != previous) lastForegroundUrl = null
+        lastForegroundPackage = pkg
         evaluateForeground(previous, pkg)
     }
 
-    /** Re-run the decision pipeline for whatever is in front (used after exemption expiry). */
+    /** Re-run for the current app after a boundary, publication, boot or clock signal. */
     private fun reevaluateForeground() {
         val rootPkg = runCatching { rootInActiveWindow?.packageName?.toString() }.getOrNull()
-        val pkg = rootPkg
+        val pkg = rootPkg?.takeUnless { it == packageName }
             ?: lastForegroundPackage
             ?: return
-        if (pkg == packageName) return
-        // previous == pkg on purpose: a re-check is not a new "open" of the app.
+        if (pkg == packageName) { boundaryTimer?.cancel(); return }
+        if (pkg != lastForegroundPackage) lastForegroundUrl = null
+        lastForegroundPackage = pkg
+        // A recheck is not a new open; the shared policy keeps the current visit intact.
         evaluateForeground(previousPackage = pkg, pkg = pkg)
     }
 
     private fun evaluateForeground(previousPackage: String?, pkg: String) {
         val coordinator = coordinator ?: return // events never precede onServiceConnected
-        timeLimitRecheck?.cancel() // every fresh decision invalidates a pending budget re-check
+        boundaryTimer?.cancel() // each decision replaces the one pending deadline
         val now = System.currentTimeMillis()
         val utcOffset = TimeZone.getDefault().getOffset(now).toLong()
         val cal = Calendar.getInstance()
@@ -144,10 +170,15 @@ class FlintAccessibilityService : AccessibilityService() {
             LimitStore(this).limitMinutes(pkg),
             coordinator.timeLimitMinutes(pkg),
         ).minOrNull()
-        val timeLimitSpent = limitMin != null && UsageQuery.dailyForegroundMillis(this, pkg) >= limitMin * 60_000L
+        val remaining = limitMin?.let { it * 60_000L - UsageQuery.dailyForegroundMillis(this, pkg, now) }
+        val timeLimitSpent = remaining != null && remaining <= 0L
 
         // Inspect rules even when a weaker time limit or an old ordinary break applies.
-        val url = if (BrowserAddressBars.isBrowser(pkg)) readUrl(rootInActiveWindow, pkg) else null
+        val root = runCatching { rootInActiveWindow }.getOrNull()
+        val url = if (BrowserAddressBars.isBrowser(pkg)) {
+            if (root?.packageName?.toString() == packageName) lastForegroundUrl else readUrl(root, pkg)
+        } else null
+        lastForegroundUrl = url
         val verdict = engine.decide(pkg, url, ActiveRulesHolder.rules, packageName, nowMin, weekday, now)
         val ruleCause = (verdict as? Verdict.Block)?.let {
             ruleBlockCause(ActiveRulesHolder.rules.firstOrNull { rule -> rule.id == it.ruleId }, now, utcOffset)
@@ -157,27 +188,14 @@ class FlintAccessibilityService : AccessibilityService() {
             coordinator.showBlocked(pkg, labelFor(pkg), cause)
         } else {
             coordinator.hideIfShown()
-            if (limitMin != null && !timeLimitSpent) armTimeLimitRecheck(pkg, limitMin)
         }
+        armBoundary(pkg, now, remaining)
     }
 
-    /**
-     * Path A is event-driven: nothing fires when a daily budget crosses mid-session, so a
-     * user parked inside a time-limited app would only hit the block on their next app
-     * switch (Path B's 1s poll catches it when that path is active instead). Arm a one-shot
-     * re-check for the moment the remaining budget runs out (+ slack for UsageStats bucket
-     * lag). Battery-honest: at most one pending job, only while a limited app is in front,
-     * cancelled by the next foreground decision. If the bucket still reads under the budget
-     * at re-check time, the Allow path re-arms with the fresh remainder — a self-correcting
-     * loop whose steps are never shorter than the true remaining time.
-     */
-    private fun armTimeLimitRecheck(pkg: String, limitMin: Int) {
-        val remaining = limitMin * 60_000L - UsageQuery.dailyForegroundMillis(this, pkg)
-        if (remaining <= 0L) return // next event blocks anyway; don't spin
-        timeLimitRecheck = serviceScope?.launch {
-            delay(remaining + RECHECK_SLACK_MS)
-            reevaluateForeground()
-        }
+    private fun armBoundary(pkg: String, now: Long, remainingBudgetMs: Long?) {
+        boundaryTimer?.arm(NextEvaluationBoundary.next(
+            now, ZoneId.systemDefault(), pkg, ActiveRulesHolder.rules, remainingBudgetMs,
+        ))
     }
 
     // MARK: Enforcement surface (accessibility overlay window)
@@ -232,22 +250,30 @@ class FlintAccessibilityService : AccessibilityService() {
     override fun onInterrupt() = Unit
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
-        coordinator?.hideIfShown()
+        releaseDetection()
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
-        coordinator?.hideIfShown()
-        timeLimitRecheck?.cancel()
-        timeLimitRecheck = null
-        serviceScope?.cancel()
-        serviceScope = null
-        coordinator = null
+        releaseDetection()
         super.onDestroy()
     }
 
-    private companion object {
-        /** Slack past the computed budget expiry — UsageStats buckets update coarsely. */
-        const val RECHECK_SLACK_MS = 5_000L
+    private fun releaseDetection() {
+        stopSignals?.invoke()
+        stopRules?.invoke()
+        stopSignals = null
+        stopRules = null
+        boundaryTimer?.cancel()
+        boundaryTimer = null
+        coordinator?.hideIfShown()
+        serviceScope?.cancel()
+        serviceScope = null
+        coordinator = null
+        lastForegroundPackage = null
+        lastForegroundUrl = null
+        // Hide Path A before the synchronous wake allows Path B to enforce.
+        EnforcementSignals.detectors.disconnected(this)
     }
+
 }

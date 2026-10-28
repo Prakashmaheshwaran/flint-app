@@ -32,7 +32,7 @@ class DetectorSignals {
     }
 
     /** Boot and clock changes wake whichever detector currently owns enforcement. */
-    fun requestEvaluation() { listeners.forEach { it() } }
+    fun requestEvaluation() { listeners.forEach { runCatching(it) } }
 }
 
 object EnforcementSignals {
