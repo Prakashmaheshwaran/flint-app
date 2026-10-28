@@ -240,9 +240,10 @@ fun BlocklistScreen(
                         destination = BlocklistDestination.EditSleep(visit = ++editorVisits)
                     },
                     onToggleSleep = blocklistViewModel::setSleepEnabled,
-                    saveError = saveState.error,
+                    saveError = saveState.error ?: if (commitmentStorage is StorageState.Unavailable) "Protection state unavailable. Open recovery or retry." else null,
                     commitmentState = commitmentState,
                     saveResult = saveState.result,
+                    onDismissMigrationNotice = blocklistViewModel::dismissMigrationNotice,
                     contentPadding = contentPadding,
                     quickBlockSummary = quickBlockSummary,
                     onQuickBlock = onQuickBlock,
@@ -360,6 +361,7 @@ private fun BlocklistOverview(
     saveError: String? = null,
     saveResult: String? = null,
     commitmentState: EditorCommitmentState? = null,
+    onDismissMigrationNotice: () -> Unit = {},
 ) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -410,7 +412,10 @@ private fun BlocklistOverview(
             saveResult?.let { Text(it, Modifier.padding(horizontal = FlintSpacing.gutter)) }
             commitmentState?.let { state ->
                 Column(Modifier.padding(horizontal = FlintSpacing.gutter)) {
-                    if (state.migrationNotice) Text("Existing occurrences keep their previous exit rights until they end. New occurrences use the displayed tier.", style = MaterialTheme.typography.bodySmall)
+                    if (state.migrationNotice) {
+                        Text("Existing occurrences keep their previous exit rights until they end. New occurrences use the displayed tier.", style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = onDismissMigrationNotice) { Text("Got it") }
+                    }
                     QueuedEditorChanges(state.queued)
                 }
             }

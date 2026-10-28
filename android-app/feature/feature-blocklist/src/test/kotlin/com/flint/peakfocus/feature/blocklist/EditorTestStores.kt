@@ -29,9 +29,10 @@ internal class EditorTestStore(private val rules: BlockRulesStore, private val l
         if (pending?.second?.let { rules.endTimerSession(it, this.now()) } == true) EditorCommitResult.Applied()
         else EditorCommitResult.Rejected("This timer changed or finished. Review its current state.")
     override suspend fun cancel(id: Long) { pending = null }
+    override suspend fun dismissMigrationNotice() {}
     override suspend fun reconcile(now: AccessClockStamp) {}
     override suspend fun reconcileRules(now: AccessClockStamp) = rules.rulesOrError.first()
-    override suspend fun startTimer(rule: BlockRule, now: AccessClockStamp) = rules.startSessionIfIdle(rule, this.now())
+    override suspend fun startTimer(rule: BlockRule, now: AccessClockStamp, safety: EditorSafety) = rules.startSessionIfIdle(rule, this.now())
 }
 
 internal class TestHarderWaitStore : HarderWaitStore {

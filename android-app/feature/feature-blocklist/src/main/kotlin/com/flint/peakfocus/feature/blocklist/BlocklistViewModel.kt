@@ -143,6 +143,8 @@ internal class BlocklistViewModel(
         write { commitments.cancel(id); afterCommit = null }
     }
 
+    fun dismissMigrationNotice() = write { commitments.dismissMigrationNotice() }
+
     private val saveState = MutableStateFlow(EditorSaveState())
     val editorSave: StateFlow<EditorSaveState> = saveState.asStateFlow()
 

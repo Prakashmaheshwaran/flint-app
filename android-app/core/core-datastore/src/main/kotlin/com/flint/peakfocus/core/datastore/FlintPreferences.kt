@@ -23,7 +23,7 @@ object FlintPreferences {
         DataStoreHarderWaitStore(context.applicationContext.flintPreferencesDataStore)
 
     fun editorCommitments(context: Context): EditorCommitmentStore =
-        DataStoreEditorCommitmentStore(context.applicationContext.flintPreferencesDataStore)
+        DataStoreEditorCommitmentStore(context.applicationContext.flintPreferencesDataStore, clockAtCommit = ProtectionClock::now)
 
     fun blockRules(context: Context): BlockRulesStore =
         DataStoreBlockRulesStore(context.applicationContext.flintPreferencesDataStore)
@@ -32,7 +32,7 @@ object FlintPreferences {
         DataStoreGroupsStore(context.applicationContext.flintPreferencesDataStore)
 
     fun limits(context: Context): LimitsStore =
-        DataStoreLimitsStore(context.applicationContext.flintPreferencesDataStore)
+        EditorMigratingLimitsStore(context.applicationContext.flintPreferencesDataStore)
 
     fun focusState(context: Context): FocusStateStore =
         DataStoreFocusStateStore(context.applicationContext.flintPreferencesDataStore)

@@ -304,7 +304,7 @@ class TimerViewModelTest {
         }
         runCurrent()
         assertNotNull(vm.uiState.value.appsError)
-        assertTrue(vm.uiState.value.appsState is InstalledAppsUiState.Loading)
+        assertTrue(vm.uiState.value.appsState is InstalledAppsUiState.Error)
         failApps = false
         vm.retryApps()
         runCurrent()

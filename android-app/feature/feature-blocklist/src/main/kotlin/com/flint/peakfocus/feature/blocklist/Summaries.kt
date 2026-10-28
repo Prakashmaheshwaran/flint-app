@@ -118,12 +118,12 @@ internal fun formatDailyMinutes(minutes: Int): String {
     }
 }
 
-/** One line for an app's limits: "1h 30m/day · 5 opens/day (Hardcore)". */
+/** Time budgets and timed credits each display their own saved tier. */
 internal fun limitSummary(timeLimit: TimeLimit?, openLimit: OpenLimit?): String {
     val parts = mutableListOf<String>()
-    if (timeLimit != null) parts += "${formatDailyMinutes(timeLimit.dailyMinutes)}/day"
+    if (timeLimit != null) parts += "${formatDailyMinutes(timeLimit.dailyMinutes)}/day (${breakLevelLabel(timeLimit.breakLevel)})"
     if (openLimit != null) {
-        val noun = if (openLimit.dailyOpens == 1) "open" else "opens"
+        val noun = if (openLimit.dailyOpens == 1) "5-minute credit" else "5-minute credits"
         parts += "${openLimit.dailyOpens} $noun/day (${breakLevelLabel(openLimit.breakLevel)})"
     }
     return if (parts.isEmpty()) "No limits" else parts.joinToString(" · ")

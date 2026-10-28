@@ -43,6 +43,7 @@ internal class TimerViewModel(
     private val newId: () -> String = { UUID.randomUUID().toString() },
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val protectionClock: () -> AccessClockStamp = ProtectionClock::now,
+    private val safety: () -> EditorSafety = { EditorSafety(false) },
 ) : ViewModel() {
     private val state = MutableStateFlow(TimerUiState(nowEpochMs = now()))
     val uiState: StateFlow<TimerUiState> = state.asStateFlow()
@@ -182,7 +183,7 @@ internal class TimerViewModel(
             try {
                 val timestamp = now()
                 val rule = timerRule(draft, timestamp, newId())
-                if (commitments.startTimer(rule, protectionClock())) {
+                if (commitments.startTimer(rule, protectionClock(), withContext(ioDispatcher) { safety() })) {
                     // Persistence succeeded. Reflect it immediately even if the collector is
                     // still queued, preventing a second Start between write and flow emission.
                     if (latestRules.none { it.id == rule.id }) latestRules = latestRules + rule
@@ -339,6 +340,7 @@ internal class TimerViewModel(
                     loadInstalledApps = InstalledAppsSource(appContext)::loadLaunchable,
                     commitments = FlintPreferences.editorCommitments(appContext),
                     harderWaits = FlintPreferences.harderWait(appContext),
+                    safety = { loadEditorSafety(appContext) },
                     // The start instant rides the id so Today's sun arc can place the ember;
                     // see timerStartEpochMs.
                     newId = { "${System.currentTimeMillis()}-${UUID.randomUUID()}" },

@@ -60,11 +60,13 @@ interface EditorCommitmentStore {
     suspend fun request(change: EditorChange, now: AccessClockStamp, safety: EditorSafety): EditorCommitResult
     suspend fun confirm(id: Long, now: AccessClockStamp, safety: EditorSafety): EditorCommitResult
     suspend fun cancel(id: Long)
+    suspend fun dismissMigrationNotice()
     /** Apply due future-only changes BEFORE materializing an adjacent occurrence. */
     suspend fun reconcile(now: AccessClockStamp)
     /** Queued templates are clipped at their old end until the reconciler applies them. */
     suspend fun reconcileRules(now: AccessClockStamp): List<BlockRule>
-    suspend fun startTimer(rule: BlockRule, now: AccessClockStamp): Boolean
+    /** Called by the explicit Start action after the selected duration/tier disclosure. */
+    suspend fun startTimer(rule: BlockRule, now: AccessClockStamp, safety: EditorSafety = EditorSafety(false)): Boolean
 }
 
 /** A fresh resolution supplied by the adapter, never a permission bit or a visible shield. */

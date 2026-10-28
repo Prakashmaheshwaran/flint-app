@@ -64,6 +64,13 @@ internal object EditorCommitmentCodec {
         val ids = queued.map { it.id } + listOfNotNull(pending?.id)
         wireRequire(next != null && ids.all { it > 0 && it < next!! } && ids.distinct().size == ids.size)
         wireRequire(queued.flatMap { it.change.keys }.let { it.distinct().size == it.size })
+        pending?.let { p ->
+            wireRequire(p.change.keys.isNotEmpty() && p.outcome in setOf(CommitmentPolicy.Outcome.ALLOW,
+                CommitmentPolicy.Outcome.ALLOW_AFTER_DISCLOSURE, CommitmentPolicy.Outcome.WAIT, CommitmentPolicy.Outcome.DEFER))
+            wireRequire((p.wait != null) == (p.outcome == CommitmentPolicy.Outcome.WAIT))
+        }
+        queued.forEach { q -> wireRequire(q.boundaries.isNotEmpty() && q.boundaries.keys.all { it in q.change.keys }) }
+        causes.values.forEach { c -> wireRequire(java.util.TimeZone.getTimeZone(c.zoneId).id == c.zoneId) }
         return EditorCommitmentState(next!!, causes.toMap(), pending, queued.toList(), notice, timeline)
     }
 

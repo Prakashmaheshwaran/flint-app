@@ -19,19 +19,20 @@ private val ARCHIVE_TIMES = stringPreferencesKey("editor_migration_time_limits_v
 /** All checks, waits/counts, queue writes and effective rule/limit mutations share one commit. */
 class DataStoreEditorCommitmentStore(
     private val dataStore: DataStore<Preferences>,
+    private val clockAtCommit: (() -> AccessClockStamp)? = null,
     private val defaultZone: () -> String = { TimeZone.getDefault().id },
 ) : EditorCommitmentStore {
     override val state: Flow<StorageState<EditorCommitmentState>> = dataStore.data.storageStates {
-        readEditorState(it)
+        readEditorState(it).also { _ -> if (StrictPrefsCodec.string(it, EDITOR_COMMITMENTS_KEY) != null) readHarderWait(it) }
     }
     private val policy = CommitmentPolicy()
     private val harder = HarderWaitPolicy()
 
     override suspend fun reconcile(now: AccessClockStamp) {
-        dataStore.edit { prefs -> prepare(prefs, now) }
+        dataStore.edit { prefs -> prepare(prefs, clockAtCommit?.invoke() ?: now) }
     }
 
-    override suspend fun reconcileRules(now: AccessClockStamp): List<BlockRule> = transact { prefs ->
+    override suspend fun reconcileRules(now: AccessClockStamp): List<BlockRule> = transact(now) { prefs, now ->
         val state = prepare(prefs, now)
         prefs.editorRules().map { rule ->
             val cause = state.causes[ruleCauseKey(rule.id)]
@@ -45,13 +46,12 @@ class DataStoreEditorCommitmentStore(
                 val end = now.wallEpochMs + interval.remainingMs(now)
                 // The effective snapshot has a finite elapsed-derived end. It cannot roll
                 // into a neighboring occurrence before a queued off/delete has applied.
-                rule.copy(expiresAtEpochMs = minOf(rule.expiresAtEpochMs ?: Long.MAX_VALUE, end))
-                    .let { if (rule.schedule != null) it.copy(schedule = null, expiresAtEpochMs = end) else it.copy(expiresAtEpochMs = end) }
+                rule.copy(schedule = null, expiresAtEpochMs = end)
             }
         }
     }
 
-    override suspend fun request(change: EditorChange, now: AccessClockStamp, safety: EditorSafety): EditorCommitResult = transact { prefs ->
+    override suspend fun request(change: EditorChange, now: AccessClockStamp, safety: EditorSafety): EditorCommitResult = transact(now) { prefs, now ->
         var state = prepare(prefs, now)
         validation(prefs, change, now, safety)?.let { return@transact EditorCommitResult.Rejected(it) }
         val expected = expected(prefs, state, change, now)
@@ -83,7 +83,7 @@ class DataStoreEditorCommitmentStore(
         if (operation != null) EditorCommitResult.Waiting(pending, remaining) else EditorCommitResult.Preview(pending)
     }
 
-    override suspend fun confirm(id: Long, now: AccessClockStamp, safety: EditorSafety): EditorCommitResult = transact { prefs ->
+    override suspend fun confirm(id: Long, now: AccessClockStamp, safety: EditorSafety): EditorCommitResult = transact(now) { prefs, now ->
         var state = prepare(prefs, now)
         val pending = state.pending?.takeIf { it.id == id }
             ?: return@transact EditorCommitResult.Rejected("This confirmation changed. Review the current protection and try again.")
@@ -131,9 +131,14 @@ class DataStoreEditorCommitmentStore(
         }
     }
 
-    override suspend fun startTimer(rule: BlockRule, now: AccessClockStamp): Boolean = transact { prefs ->
+    override suspend fun dismissMigrationNotice() {
+        dataStore.edit { prefs -> prefs.putEditorState(readEditorState(prefs).copy(migrationNotice = false)) }
+    }
+
+    override suspend fun startTimer(rule: BlockRule, now: AccessClockStamp, safety: EditorSafety): Boolean = transact(now) { prefs, now ->
         var state = prepare(prefs, now)
         require(rule.id.startsWith(CONTRACT_TIMER_ID_PREFIX) && rule.schedule == null && rule.enabled)
+        require(!rule.targets.allowListMode && rule.targets.apps.isNotEmpty() && rule.targets.apps.none { it.packageName.isBlank() || it.packageName in floor(safety) })
         require(isValidNewSessionDuration((rule.expiresAtEpochMs ?: 0) - now.wallEpochMs))
         val current = prefs.editorRules()
         if (!current.canStartSession(rule.id, now.wallEpochMs)) return@transact false
@@ -145,9 +150,9 @@ class DataStoreEditorCommitmentStore(
         true
     }
 
-    private suspend fun <R> transact(action: (MutablePreferences) -> R): R {
+    private suspend fun <R> transact(requestedAt: AccessClockStamp, action: (MutablePreferences, AccessClockStamp) -> R): R {
         var result: Any? = null
-        dataStore.edit { result = action(it) }
+        dataStore.edit { result = action(it, clockAtCommit?.invoke() ?: requestedAt) }
         @Suppress("UNCHECKED_CAST") return result as R
     }
 
@@ -299,12 +304,12 @@ class DataStoreEditorCommitmentStore(
             if (rule.targets.allowListMode && !safety.resolved && (old == null || !old.enabled || old.targets != rule.targets || (!old.targets.allowListMode && rule.targets.allowListMode))) {
                 return "Calling or Home safety could not be checked. Protection health is degraded; try again before starting allow-list protection."
             }
-            if (rule.targets.apps.any { it.packageName in safety.excludedPackages }) return "Calling, Home, system recovery and Flint apps stay available. Remove those apps from this selection."
+            if (rule.targets.apps.any { it.packageName in floor(safety) }) return "Calling, Home, system recovery and Flint apps stay available. Remove those apps from this selection."
         }
         change.limits?.let { l ->
             require(l.time == null || (l.time.packageName == l.packageName && l.time.dailyMinutes in 0..1440))
             require(l.open == null || (l.open.packageName == l.packageName && l.open.dailyOpens in 0..500))
-            if ((l.time != null || l.open != null) && l.packageName in safety.excludedPackages) return "Safety and recovery apps stay available and cannot have limits."
+            if ((l.time != null || l.open != null) && l.packageName in floor(safety)) return "Safety and recovery apps stay available and cannot have limits."
         }
         if (change.timerExit && (change.deleteIds.size != 1 || current.singleOrNull { it.id in change.deleteIds }?.let {
             it.id.startsWith(NATIVE_TIMER_ID_PREFIX) && it.enabled && it.schedule == null && !it.isExpired(now.wallEpochMs)
@@ -315,7 +320,8 @@ class DataStoreEditorCommitmentStore(
     private fun denial(prefs: Preferences, state: EditorCommitmentState, change: EditorChange, now: AccessClockStamp): String {
         val rule = prefs.editorRules().firstOrNull { ruleCauseKey(it.id) in change.keys }
         val end = rule?.let { state.causes[ruleCauseKey(it.id)]?.interval?.let { now.wallEpochMs + it.remainingMs(now) } }
-        return "${rule?.name ?: "Protection"} · ${rule?.breakLevel ?: BreakLevel.HARDCORE} · Protected until ${end ?: "its end"}. Use recovery to check Emergency Pass availability."
+        val deadline = end?.let { java.text.DateFormat.getDateTimeInstance().format(java.util.Date(it)) } ?: "its end"
+        return "${rule?.name ?: "Protection"} · ${rule?.breakLevel ?: BreakLevel.HARDCORE} · Protected until $deadline. Emergency Pass status is unavailable here; check recovery."
     }
 
     private fun apply(prefs: MutablePreferences, change: EditorChange) {
@@ -332,6 +338,8 @@ class DataStoreEditorCommitmentStore(
         val ledger = readHarderWait(prefs)
         if (ledger.pending?.operation == operation) prefs.putHarderWait(harder.cancel(ledger))
     }
+
+    private fun floor(safety: EditorSafety) = SafetyFloor.STATIC_PACKAGES + "com.flint.peakfocus" + safety.excludedPackages
 }
 
 internal fun Preferences.editorRules() = StrictPrefsCodec.rules(StrictPrefsCodec.string(this, PrefsKeys.BLOCK_RULES).orEmpty())

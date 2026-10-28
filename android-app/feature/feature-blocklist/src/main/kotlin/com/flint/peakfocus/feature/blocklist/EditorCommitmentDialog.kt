@@ -32,7 +32,14 @@ internal fun EditorCommitmentDialog(state: EditorCommitmentState, remainingMs: L
                 pending.expected.rules.forEach { rule -> Text("${rule.name} · ${breakLevelLabel(rule.breakLevel)}") }
                 pending.expected.time?.let { Text("Time Limit · ${breakLevelLabel(it.breakLevel)} · ${it.dailyMinutes} minutes per day") }
                 pending.expected.open?.let { Text("Open Limit · ${breakLevelLabel(it.breakLevel)} · ${it.dailyOpens} daily credits") }
-                Text(if (end == null) "Applies until you stop." else "Current occurrence ends ${editorEndLabel(end)}.")
+                pending.change.upserts.forEach { rule ->
+                    val window = rule.expiresAtEpochMs?.let { "Until ${editorEndLabel(it)}" } ?: scheduleSummary(rule.schedule)
+                    Text("Save ${rule.name} · ${breakLevelLabel(rule.breakLevel)} · $window · ${targetsSummary(rule.targets)}")
+                }
+                pending.change.limits?.let { limits ->
+                    Text("Save: ${limitSummary(limits.time, limits.open)}")
+                }
+                if (end != null) Text("Current occurrence ends ${editorEndLabel(end)}.")
                 if (state.queued.any { it.change.keys.intersect(pending.change.keys).isNotEmpty() }) {
                     Text("Confirming replaces the earlier queued change for this item.")
                 }

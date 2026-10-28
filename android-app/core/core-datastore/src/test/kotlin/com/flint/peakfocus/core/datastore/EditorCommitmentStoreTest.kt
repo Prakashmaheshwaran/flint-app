@@ -115,6 +115,7 @@ class EditorCommitmentStoreTest {
         assertEquals(EditorCommitResult.Applied(), confirm(store, EditorChange("End legacy", deleteIds = setOf(legacy.id), timerExit = true)))
         val strict = legacy.copy(id = CONTRACT_TIMER_ID_PREFIX + "new")
         assertTrue(store.startTimer(strict, clock()))
+        assertFalse(DataStoreBlockRulesStore(disk).endTimerSession(strict, at))
         assertTrue(store.request(EditorChange("End new", deleteIds = setOf(strict.id), timerExit = true), clock(), safe) is EditorCommitResult.Rejected)
         assertEquals(listOf(strict), DataStoreBlockRulesStore(disk).rules.first())
     }
@@ -214,5 +215,31 @@ class EditorCommitmentStoreTest {
         assertTrue(store.request(EditorChange("New", upserts = listOf(open)), clock(), safe) is EditorCommitResult.Rejected)
         val long = open.copy(expiresAtEpochMs = at + 24 * 3_600_000L + 1)
         assertTrue(store.request(EditorChange("New", upserts = listOf(long)), clock(), safe) is EditorCommitResult.Rejected)
+    }
+
+    @Test fun `PC-10 commit uses the clock inside the transaction after a schedule starts`() = runBlocking {
+        val disk = Disk(); fresh(disk)
+        val old = rule().copy(schedule = Schedule(startMinuteOfDay = 11 * 60, endMinuteOfDay = 12 * 60))
+        DataStoreBlockRulesStore(disk).upsert(old)
+        var liveClock = clock()
+        val store = DataStoreEditorCommitmentStore(disk, clockAtCommit = { liveClock }) { "UTC" }
+        val beforeStart = store.request(EditorChange("Delete", deleteIds = setOf(old.id)), clock(), safe) as EditorCommitResult.Preview
+        assertEquals(CommitmentPolicy.Outcome.ALLOW, beforeStart.pending.outcome)
+        liveClock = clock(3_600_000)
+        // Caller still holds the old clock and preview; current occurrence wins at commit.
+        assertTrue(store.confirm(beforeStart.pending.id, clock(), safe) is EditorCommitResult.Rejected)
+        val active = store.request(EditorChange("Delete", deleteIds = setOf(old.id)), clock(), safe) as EditorCommitResult.Preview
+        assertEquals(CommitmentPolicy.Outcome.DEFER, active.pending.outcome)
+        assertEquals(listOf(old), DataStoreBlockRulesStore(disk).rules.first())
+    }
+
+    @Test fun `PC-70 first production limit read durably snapshots default before emitting a tier`() = runBlocking {
+        val disk = Disk(preferencesOf(PrefsKeys.TIME_LIMITS to "a~30", PrefsKeys.DEFAULT_BREAK_LEVEL to "HARDER"))
+        val store = EditorMigratingLimitsStore(disk) { clock() }
+        assertEquals(BreakLevel.HARDER, store.timeLimits.first().single().breakLevel)
+        assertEquals("a~30~HARDER", disk.values.value[PrefsKeys.TIME_LIMITS])
+        assertNotNull(disk.values.value[EDITOR_COMMITMENTS_KEY])
+        DataStoreFocusStateStore(disk).setDefaultBreakLevel(BreakLevel.EASY)
+        assertEquals(BreakLevel.HARDER, store.timeLimits.first().single().breakLevel)
     }
 }
