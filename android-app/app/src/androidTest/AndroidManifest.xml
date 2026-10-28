@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Run outside Flint so tests can really stop/restart its process. No app code hooks. -->
+    <instrumentation android:name="androidx.test.runner.AndroidJUnitRunner"
+        android:targetPackage="com.flint.peakfocus.test" tools:replace="android:targetPackage" />
+    <application>
+        <!-- A deterministic, harmless app to block; no dependency on bundled OEM apps. -->
+        <activity android:name="com.flint.peakfocus.e2e.BlockedTestActivity"
+            android:exported="true" android:label="Flint E2E Target">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

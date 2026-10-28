@@ -1,0 +1,54 @@
+name: Android emulator E2E
+
+on:
+  pull_request:
+    paths: ['android-app/**', 'scripts/android-e2e.sh', 'Makefile', '.github/workflows/android-e2e.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Build app and instrumentation APKs before starting emulator
+        working-directory: android-app
+        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Real accessibility smoke (disposable emulator)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          ram-size: 2048M
+          emulator-boot-timeout: 300
+          disable-animations: true
+          script: FLINT_E2E_DISPOSABLE=1 AVD=emulator-5554 bash scripts/android-e2e.sh
+      - name: Upload screenshots, hierarchy, logcat and JUnit
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-e2e-api36
+          retention-days: 14
+          path: |
+            artifacts/android-e2e/
+            android-app/app/build/reports/androidTests/
+            android-app/app/build/outputs/androidTest-results/
