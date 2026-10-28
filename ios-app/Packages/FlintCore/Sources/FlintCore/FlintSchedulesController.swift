@@ -57,7 +57,9 @@ public final class FlintSchedulesController {
             all.append(rule)
         }
         group.saveRules(all)
-        return reload()
+        let failures = reload()
+        NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
+        return failures
     }
 
     @discardableResult
@@ -68,7 +70,9 @@ public final class FlintSchedulesController {
         group.saveRules(all)
         ManagedSettingsStore(named: ManagedSettingsStore.Name("flint.\(ruleID)")).clearAllSettings()
         FlintScheduling.stopMonitoring(["flint.rule.\(ruleID)"])
-        return reload()
+        let failures = reload()
+        NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
+        return failures
     }
 
     @discardableResult
@@ -81,7 +85,9 @@ public final class FlintSchedulesController {
         if !enabled {
             ManagedSettingsStore(named: ManagedSettingsStore.Name("flint.\(ruleID)")).clearAllSettings()
         }
-        return reload()
+        let failures = reload()
+        NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
+        return failures
     }
 
     /// Which of `rules` can be handed to `DeviceActivityCenter`, and which can't and why. Disabled
@@ -149,48 +155,38 @@ public final class FlintSchedulesController {
     public func reload() -> [FlintScheduleArmFailure] {
         guard let group = FlintGroupStore() else { return [] }
         let all = group.loadRules()
-        FlintScheduling.stopMonitoring(all.map { $0.monitorName })
-
         let plan = Self.armPlan(for: all)
         for name in plan.storesToClear {
             ManagedSettingsStore(named: .init(name)).clearAllSettings()
         }
-        var failures = plan.failures
-        var registrationFailures: [FlintArmingHealth.Failure] = []
-        var attempted = 0
-        var armed = 0
-        for rule in plan.arm {
-            let schedule = DeviceActivitySchedule(
+        let previous = FlintScheduleRegistrationState.load()
+        let requests = plan.arm.map { rule in
+            FlintActivityRegistration(name: rule.monitorName, schedule: DeviceActivitySchedule(
                 intervalStart: DateComponents(hour: rule.schedule.startHour, minute: rule.schedule.startMinute),
                 intervalEnd: DateComponents(hour: rule.schedule.endHour, minute: rule.schedule.endMinute),
                 repeats: true
-            )
-            attempted += 1
-            do {
-                try FlintScheduling.startMonitoring(rule.monitorName, during: schedule)
-                armed += 1
-            } catch {
-                failures.append(FlintScheduleArmFailure(ruleID: rule.id, ruleName: rule.name, issue: nil))
-                registrationFailures.append(FlintArmingHealth.Failure(
-                    activityName: rule.monitorName, reason: String(describing: error)))
-            }
+            ), configurationChanged: previous[rule.monitorName] != rule)
         }
-        let healthReport = Self.armingHealthReport(
+        let validationFailures = plan.failures.map {
+            FlintArmingHealth.Failure(activityName: "flint.rule.\($0.ruleID)", reason: $0.message)
+        }
+        let report = FlintActivityRegistration.reconcile(
+            requests, prefix: "flint.rule.",
             enabled: plan.enabled,
-            attempted: attempted,
-            armed: armed,
-            validationFailures: plan.failures,
-            registrationFailures: registrationFailures
-        )
+            validationFailures: validationFailures,
+            onRemove: { name in
+                let id = name.dropFirst("flint.rule.".count)
+                ManagedSettingsStore(named: .init("flint.\(id)")).clearAllSettings()
+            })
+        FlintScheduleRegistrationState.save(plan.arm, observed: report.observedActivities ?? [])
         FlintArmingHealth.record(
-            domain: "schedules",
-            enabled: healthReport.enabled,
-            attempted: healthReport.attempted,
-            armed: healthReport.armed,
-            failures: healthReport.failures,
-            in: group
-        )
-        return failures
+            domain: "schedules", enabled: report.enabled, attempted: report.attempted,
+            armed: report.armed, failures: report.failures, in: group,
+            observedActivities: report.observedActivities)
+        return plan.failures + plan.arm.compactMap { rule in
+            guard report.failures.contains(where: { $0.activityName == rule.monitorName }) else { return nil }
+            return FlintScheduleArmFailure(ruleID: rule.id, ruleName: rule.name, issue: nil)
+        }
     }
 }
 #endif

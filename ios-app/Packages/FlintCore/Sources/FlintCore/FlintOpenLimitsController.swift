@@ -58,6 +58,7 @@ public final class FlintOpenLimitsController {
         }
         FlintOpenLimitRule.saveAll(all)
         reload()
+        NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
     }
 
     public func delete(_ ruleID: String) {
@@ -68,6 +69,7 @@ public final class FlintOpenLimitsController {
         FlintOpenLimitEnforcer.clearShield(for: removed)
         FlintScheduling.stopMonitoring([removed.activityName])
         reload()
+        NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
     }
 
     public func setEnabled(_ ruleID: String, _ enabled: Bool) {
@@ -79,51 +81,37 @@ public final class FlintOpenLimitsController {
             FlintOpenLimitEnforcer.clearShield(for: all[index])
         }
         reload()
+        NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
     }
 
     /// Re-arm every enabled rule: shield its selection and (re)register its day-boundary
     /// activity. Idempotent; call on launch and after edits.
-    public func reload() {
+    public func reload(reapplyShields: Bool = true) {
         let all = FlintOpenLimitRule.loadAll()
-        // `FlintScheduling.stopMonitoring([])` is a documented no-op (stop-everything now takes
-        // the explicit `stopAllMonitoring()`), but keep the local guard as belt-and-braces —
-        // this call site must never even flirt with the framework's stop-all overload.
-        let names = all.map { $0.activityName }
-        if !names.isEmpty {
-            FlintScheduling.stopMonitoring(names)
-        }
-        var attempted = 0
-        var armed = 0
         let plan = Self.armPlan(for: all)
         for rule in all where plan.storesToClear.contains(rule.storeName) {
             FlintOpenLimitEnforcer.clearShield(for: rule)
         }
-        var failures = plan.failures
-        for rule in plan.arm {
-            FlintOpenLimitEnforcer.applyShield(for: rule)
+        let requests = plan.arm.map { rule in
+            if reapplyShields { FlintOpenLimitEnforcer.applyShield(for: rule) }
             let schedule = DeviceActivitySchedule(
                 intervalStart: DateComponents(hour: 0, minute: 0),
                 intervalEnd: DateComponents(hour: 23, minute: 59),
                 repeats: true
             )
-            attempted += 1
-            do {
-                try FlintScheduling.startMonitoring(rule.activityName, during: schedule)
-                armed += 1
-            } catch {
-                // The shield half above still applied — the day-boundary re-arm is what's
-                // missing. Record it: without the activity, released tokens stay released.
-                failures.append(FlintArmingHealth.Failure(
-                    activityName: rule.activityName, reason: String(describing: error)))
-            }
+            return FlintActivityRegistration(name: rule.activityName, schedule: schedule)
         }
+        let report = FlintActivityRegistration.reconcile(
+            requests, prefix: "flint.openLimit.", enabled: plan.enabled,
+            validationFailures: plan.failures,
+            onRemove: { name in
+                let id = name.dropFirst("flint.openLimit.".count)
+                ManagedSettingsStore(named: .init("flintO.\(id)")).clearAllSettings()
+            })
         FlintArmingHealth.record(
-            domain: "openLimits",
-            enabled: plan.enabled,
-            attempted: attempted,
-            armed: armed,
-            failures: failures
-        )
+            domain: "openLimits", enabled: report.enabled, attempted: report.attempted,
+            armed: report.armed, failures: report.failures,
+            observedActivities: report.observedActivities)
     }
 }
 #endif

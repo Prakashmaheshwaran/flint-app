@@ -49,6 +49,7 @@ public final class FlintLimitsController {
         }
         group.saveLimits(all)
         reload()
+        NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
     }
 
     public func delete(_ limitID: String) {
@@ -59,6 +60,7 @@ public final class FlintLimitsController {
         ManagedSettingsStore(named: ManagedSettingsStore.Name("flintL.\(limitID)")).clearAllSettings()
         FlintScheduling.stopMonitoring(["flint.limit.\(limitID)"])
         reload()
+        NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
     }
 
     public func setEnabled(_ limitID: String, _ enabled: Bool) {
@@ -71,6 +73,7 @@ public final class FlintLimitsController {
             ManagedSettingsStore(named: ManagedSettingsStore.Name("flintL.\(limitID)")).clearAllSettings()
         }
         reload()
+        NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
     }
 
     /// Re-register all enabled limits. Idempotent; call on launch and after edits. Outcomes
@@ -79,17 +82,11 @@ public final class FlintLimitsController {
     public func reload() {
         guard let group = FlintGroupStore() else { return }
         let all = group.loadLimits()
-        FlintScheduling.stopMonitoring(all.map { $0.activityName })
-
-        let center = DeviceActivityCenter()
-        var attempted = 0
-        var armed = 0
         let plan = Self.armPlan(for: all)
         for name in plan.storesToClear {
             ManagedSettingsStore(named: .init(name)).clearAllSettings()
         }
-        var failures = plan.failures
-        for limit in plan.arm {
+        let requests = plan.arm.map { limit in
             let schedule = DeviceActivitySchedule(
                 intervalStart: DateComponents(hour: 0, minute: 0),
                 intervalEnd: DateComponents(hour: 23, minute: 59),
@@ -101,27 +98,20 @@ public final class FlintLimitsController {
                 webDomains: limit.selection.webDomainTokens,
                 threshold: DateComponents(minute: limit.thresholdMinutes)
             )
-            attempted += 1
-            do {
-                try center.startMonitoring(
-                    DeviceActivityName(limit.activityName),
-                    during: schedule,
-                    events: [DeviceActivityEvent.Name(limit.eventName): event]
-                )
-                armed += 1
-            } catch {
-                failures.append(FlintArmingHealth.Failure(
-                    activityName: limit.activityName, reason: String(describing: error)))
-            }
+            return FlintActivityRegistration(name: limit.activityName, schedule: schedule,
+                events: [DeviceActivityEvent.Name(limit.eventName): event])
         }
+        let report = FlintActivityRegistration.reconcile(
+            requests, prefix: "flint.limit.", enabled: plan.enabled,
+            validationFailures: plan.failures,
+            onRemove: { name in
+                let id = name.dropFirst("flint.limit.".count)
+                ManagedSettingsStore(named: .init("flintL.\(id)")).clearAllSettings()
+            })
         FlintArmingHealth.record(
-            domain: "limits",
-            enabled: plan.enabled,
-            attempted: attempted,
-            armed: armed,
-            failures: failures,
-            in: group
-        )
+            domain: "limits", enabled: report.enabled, attempted: report.attempted,
+            armed: report.armed, failures: report.failures, in: group,
+            observedActivities: report.observedActivities)
     }
 }
 #endif

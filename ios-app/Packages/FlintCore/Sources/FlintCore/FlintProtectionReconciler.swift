@@ -1,0 +1,51 @@
+import Foundation
+
+public enum FlintProtectionTrigger: String, Codable, CaseIterable {
+    case launch, foreground, significantTimeChange, timeZoneChange, configEdit
+}
+
+@MainActor
+public protocol FlintProtectionLayer {
+    var domain: String { get }
+    func reconcile(trigger: FlintProtectionTrigger) async throws -> FlintArmingHealth.DomainReport
+}
+
+/// One lifecycle entry point for every layer. Task chaining also serializes across suspension
+/// points: a foreground request during launch waits for every launch layer to finish.
+@MainActor
+public final class FlintProtectionReconciler {
+    private let layers: [any FlintProtectionLayer]
+    private let persist: (FlintProtectionObservation) -> Void
+    private let now: () -> Date
+    private var tail: Task<FlintProtectionObservation, Never>?
+
+    public init(layers: [any FlintProtectionLayer], now: @escaping () -> Date = Date.init,
+                persist: @escaping (FlintProtectionObservation) -> Void = { $0.save() }) {
+        self.layers = layers
+        self.now = now
+        self.persist = persist
+    }
+
+    @discardableResult
+    public func reconcile(trigger: FlintProtectionTrigger) async -> FlintProtectionObservation {
+        let previous = tail
+        let next = Task { @MainActor in
+            _ = await previous?.value
+            var domains: [String: FlintArmingHealth.DomainReport] = [:]
+            for layer in layers {
+                do {
+                    domains[layer.domain] = try await layer.reconcile(trigger: trigger)
+                } catch {
+                    domains[layer.domain] = .init(enabled: 0, attempted: 0, armed: 0,
+                        failures: [.init(activityName: layer.domain, reason: String(describing: error))])
+                }
+            }
+            let observation = FlintProtectionObservation(observedAt: now(), trigger: trigger, domains: domains)
+            persist(observation)
+            NotificationCenter.default.post(name: .flintProtectionReconciled, object: nil)
+            return observation
+        }
+        tail = next
+        return await next.value
+    }
+}

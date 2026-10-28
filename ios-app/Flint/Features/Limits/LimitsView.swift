@@ -5,14 +5,19 @@ import FlintCore
 @MainActor
 final class LimitsViewModel: ObservableObject {
     @Published private(set) var limits: [FlintLimitRule] = []
+    @Published private(set) var health = FlintArmingHealth()
+    @Published private(set) var observation: FlintProtectionObservation?
     private let controller = FlintLimitsController()
 
     init() {
-        controller.reload()
         refresh()
     }
 
-    func refresh() { limits = controller.limits() }
+    func refresh() {
+        limits = controller.limits()
+        health = FlintGroupStore()?.loadArmingHealth() ?? FlintArmingHealth()
+        observation = FlintProtectionObservation.load()
+    }
     func save(_ limit: FlintLimitRule) { controller.upsert(limit); refresh() }
     func delete(_ id: String) { controller.delete(id); refresh() }
     func toggle(_ limit: FlintLimitRule) { controller.setEnabled(limit.id, !limit.enabled); refresh() }
@@ -64,6 +69,7 @@ struct LimitsView: View {
         .sheet(isPresented: $showAdd) { LimitEditor(limit: nil) { vm.save($0) } }
         .sheet(item: $editing) { limit in LimitEditor(limit: limit, onDelete: { vm.delete(limit.id) }) { vm.save($0) } }
         .onAppear { vm.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: .flintProtectionReconciled)) { _ in vm.refresh() }
     }
 
     private func row(_ limit: FlintLimitRule) -> some View {
@@ -77,6 +83,11 @@ struct LimitsView: View {
                             .foregroundStyle(FlintBrand.mist).monospacedDigit()
                     }
                     Text("A day").font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
+                    if limit.enabled {
+                        Text(FlintRuleProtectionStatus.status(enabled: limit.enabled, activityName: limit.activityName,
+                            domain: "limits", health: vm.health, observation: vm.observation).label)
+                            .font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())

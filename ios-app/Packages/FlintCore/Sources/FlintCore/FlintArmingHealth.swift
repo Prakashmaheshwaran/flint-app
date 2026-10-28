@@ -37,19 +37,25 @@ public struct FlintArmingHealth: Codable, Equatable {
         public var armed: Int
         public var failures: [Failure]
         public var updatedAt: Date
+        /// A read of DeviceActivityCenter, not an inference from a successful start call.
+        /// nil means this report predates observations or the layer has no activity to observe.
+        public var observedActivities: [String]?
+        public var observed: Int? { observedActivities?.count }
 
         public init(
             enabled: Int,
             attempted: Int,
             armed: Int,
             failures: [Failure],
-            updatedAt: Date = Date()
+            updatedAt: Date = Date(),
+            observedActivities: [String]? = nil
         ) {
             self.enabled = enabled
             self.attempted = attempted
             self.armed = armed
             self.failures = failures
             self.updatedAt = updatedAt
+            self.observedActivities = observedActivities
         }
 
         /// Source-compatible initializer for callers that only know the pre-funnel model. Old
@@ -66,7 +72,7 @@ public struct FlintArmingHealth: Codable, Equatable {
         }
 
         private enum CodingKeys: String, CodingKey {
-            case enabled, attempted, armed, failures, updatedAt
+            case enabled, attempted, armed, failures, updatedAt, observedActivities
         }
 
         /// Existing installs persisted only `attempted`, `failures`, and `updatedAt`. Decode that
@@ -80,6 +86,7 @@ public struct FlintArmingHealth: Codable, Equatable {
             enabled = try values.decodeIfPresent(Int.self, forKey: .enabled) ?? attempted
             armed = try values.decodeIfPresent(Int.self, forKey: .armed)
                 ?? max(0, attempted - failures.count)
+            observedActivities = try values.decodeIfPresent([String].self, forKey: .observedActivities)
         }
     }
 
@@ -147,7 +154,8 @@ public struct FlintArmingHealth: Codable, Equatable {
         attempted: Int,
         armed: Int,
         failures: [Failure],
-        in store: FlintGroupStore? = FlintGroupStore()
+        in store: FlintGroupStore? = FlintGroupStore(),
+        observedActivities: [String]? = nil
     ) {
         guard let store else { return }
         let merged = store.loadArmingHealth()
@@ -155,7 +163,8 @@ public struct FlintArmingHealth: Codable, Equatable {
                 enabled: enabled,
                 attempted: attempted,
                 armed: armed,
-                failures: failures
+                failures: failures,
+                observedActivities: observedActivities
             ))
         store.saveArmingHealth(merged)
     }
