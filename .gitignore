@@ -11,6 +11,8 @@ ios-app/*.xcodeproj/
 ios-app/*.xcworkspace/
 ios-app/build/
 ios-app/DerivedData/
+ios-app/Config/Signing.local.xcconfig
+ios-app/Config/ExportOptions.local.plist
 **/xcuserdata/
 **/*.xcuserstate
 .swiftpm/

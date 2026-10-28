@@ -26,9 +26,12 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
     CODE_SIGN_STYLE: Automatic
-    # Set your Apple Developer Team here (or in Xcode) before building on device.
-    DEVELOPMENT_TEAM: ""
+    # Team/identity come only from the optional, untracked Config override below.
     TARGETED_DEVICE_FAMILY: "1,2" # iPhone + iPad
+
+configFiles:
+  Debug: Config/Signing.xcconfig
+  Release: Config/Signing.xcconfig
 
 packages:
   FlintCore:
@@ -49,6 +52,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Override XcodeGen's host-only identity preset; use the local project config.
+        CODE_SIGN_IDENTITY: "$(inherited)"
         CODE_SIGN_ENTITLEMENTS: Flint/Flint.entitlements
         GENERATE_INFOPLIST_FILE: "YES"
         INFOPLIST_KEY_CFBundleDisplayName: Flint
