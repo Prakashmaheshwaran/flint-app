@@ -33,6 +33,7 @@ class FocusNotificationState(private val file: File) : FocusCompletionDeliverySt
 
     private suspend fun <T> locked(block: (MutableMap<String, Long>) -> T): T = withContext(Dispatchers.IO) {
         mutex.withLock {
+            require(!file.exists() || file.length() <= 2 * 1024 * 1024) { "Notification state exceeds safety bound" }
             val fields = if (file.exists()) FlatJson.decode(file.readText(Charsets.UTF_8)).mapValues { (key, value) ->
                 require(key == "v" || key.startsWith("d:") || key.startsWith("s:"))
                 value as? Long ?: error("Unreadable notification state")

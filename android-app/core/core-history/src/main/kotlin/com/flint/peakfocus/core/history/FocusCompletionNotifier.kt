@@ -31,14 +31,12 @@ internal class FocusCompletionNotifier(private val context: Context) {
     suspend fun reconcile(snapshot: HistorySnapshot, now: Long) {
         createChannel()
         val delivered = state.delivered()
-        val targets = FocusCompletionPolicy.alarms(snapshot, delivered, now).associate { it.sessionId to it.at }
+        val schedule = FocusCompletionPolicy.schedule(snapshot, delivered, now)
+        val targets = schedule.alarms.associate { it.sessionId to it.at }
         val previous = state.scheduled()
         previous.keys.filter { it !in targets }.forEach { alarms.cancel(pending(context, it)) }
         // Persist stale outcomes without posting. A late resume cannot produce surprise reminders.
-        snapshot.events.map { it.session }.distinct().filter { it !in delivered }.forEach { id ->
-            if (FocusCompletionPolicy.decision(snapshot, id, now) == FocusCompletionDelivery.STALE)
-                state.markDelivered(id, now)
-        }
+        schedule.staleSessionIds.forEach { state.markDelivered(it, now) }
         targets.forEach { (id, end) ->
             if (firstSuccessfulSnapshot || previous[id] != end) {
                 alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, maxOf(end, now), pending(context, id))
@@ -51,7 +49,7 @@ internal class FocusCompletionNotifier(private val context: Context) {
     fun createChannel() {
         if (Build.VERSION.SDK_INT >= 26) notifications.createNotificationChannel(
             NotificationChannel(CHANNEL, "Focus sessions", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                description = "Timer completion reminders may arrive a few minutes late."
+                description = "Planned focus time alerts may arrive a few minutes late."
             },
         )
     }
@@ -69,8 +67,8 @@ internal class FocusCompletionNotifier(private val context: Context) {
         createChannel()
         val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(context, CHANNEL) else Notification.Builder(context)
         builder.setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-            .setContentTitle("Focus session complete")
-            .setContentText("Your focus timer reached its planned end.")
+            .setContentTitle("Planned focus time ended")
+            .setContentText("Your timer's planned time has ended. This alert may arrive a few minutes late.")
             .setAutoCancel(true)
         context.packageManager.getLaunchIntentForPackage(context.packageName)?.let { intent ->
             builder.setContentIntent(PendingIntent.getActivity(context, 0, intent,

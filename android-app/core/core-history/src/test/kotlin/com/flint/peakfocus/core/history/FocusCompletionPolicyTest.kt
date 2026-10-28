@@ -45,6 +45,39 @@ class FocusCompletionPolicyTest {
         assertEquals(FocusCompletionDelivery.SUPPRESS, FocusCompletionPolicy.decision(snapshot(started().copy(v = 2)), "session-a", end))
         assertEquals(FocusCompletionDelivery.SUPPRESS, FocusCompletionPolicy.decision(log, "missing", end))
     }
+    @Test fun FH20_reschedulesReplaceDeadlineAndOpenEndedEditsCancel() {
+        fun edit(deadline: Long?) = HistoryEvent(type = "rescheduled", session = "session-a", at = start + 60_000,
+            tz = "UTC", plannedEnd = deadline)
+        val extended = snapshot(started(), edit(end + 300_000))
+        assertEquals(listOf(FocusCompletionAlarm("session-a", end + 300_000)), FocusCompletionPolicy.alarms(extended, emptySet(), end))
+        assertEquals(FocusCompletionDelivery.WAIT, FocusCompletionPolicy.decision(extended, "session-a", end))
+        val shortened = snapshot(started(), edit(start + 120_000))
+        assertEquals(listOf(FocusCompletionAlarm("session-a", start + 120_000)), FocusCompletionPolicy.alarms(shortened, emptySet(), start + 120_000))
+        assertTrue(FocusCompletionPolicy.alarms(snapshot(started(), edit(null)), emptySet(), end).isEmpty())
+    }
+    @Test fun FH20_recoveredSameTimestampPlanPrecedesCompletionAndLaterEditsCannotReviveTerminal() {
+        val deadline = end + 300_000
+        val plan = HistoryEvent(type = "rescheduled", session = "session-a", at = deadline, tz = "UTC", plannedEnd = deadline, inferred = true)
+        val natural = terminal(HistoryEventType.COMPLETED, deadline)
+        assertEquals(FocusCompletionDelivery.POST, FocusCompletionPolicy.decision(snapshot(started(), plan, natural), "session-a", deadline))
+        val stopped = terminal(HistoryEventType.ENDED_EARLY, start + 60_000)
+        assertTrue(FocusCompletionPolicy.alarms(snapshot(started(), stopped, plan), emptySet(), deadline).isEmpty())
+    }
+    @Test fun FH20_receiverRechecksExtendedAndOpenEndedPlansBeforePosting() = runTest {
+        var posts = 0
+        val edited = HistoryEvent(type = "rescheduled", session = "session-a", at = start + 1, tz = "UTC", plannedEnd = end + 300_000)
+        var history = snapshot(started(), edited)
+        val state = FakeState()
+        val service = FocusCompletionDeliveryService(state, { history }, { true }) { posts++ }
+        assertEquals(FocusCompletionDelivery.WAIT, service.deliver("session-a", end))
+        assertFalse(state.wasDelivered("session-a")); assertEquals(0, posts)
+        history = snapshot(started(), edited.copy(plannedEnd = null))
+        assertEquals(FocusCompletionDelivery.SUPPRESS, service.deliver("session-a", end + 300_000))
+        assertFalse(state.wasDelivered("session-a")); assertEquals(0, posts)
+        history = snapshot(started(), edited, terminal(HistoryEventType.COMPLETED, end + 300_000))
+        service.deliver("session-a", end + 300_000)
+        assertEquals(1, posts)
+    }
     @Test fun receiverWorkPostsOnceAndDeniedPermissionNeverPromptsOrPostsLater() = runTest {
         var count = 0
         val state = FakeState()
