@@ -1,0 +1,50 @@
+# DEBUG fixtures exercise the shipped UI. Simulator results cannot prove Screen Time.
+name: iOS UI fixtures
+
+on:
+  pull_request:
+    paths: ['ios-app/**', 'scripts/ios-ui.sh', 'scripts/agent/**', 'scripts/flint-env.sh', '.github/workflows/ios-ui.yml']
+  push:
+    branches: [integration/v1, main]
+    paths: ['ios-app/**', 'scripts/ios-ui.sh', 'scripts/agent/**', 'scripts/flint-env.sh', '.github/workflows/ios-ui.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  fixture-ui:
+    runs-on: macos-latest
+    timeout-minutes: 35
+    env:
+      IOS_UI_RESULTS: ios-app/build/ios-ui
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Select a fresh runner's available iPhone by exact UDID
+        run: |
+          xcrun simctl list devices available --json > "$RUNNER_TEMP/devices.json"
+          python3 - "$RUNNER_TEMP/devices.json" >> "$GITHUB_ENV" <<'PY'
+          import json, sys
+          devices = json.load(open(sys.argv[1]))["devices"]
+          phones = [d for group in devices.values() for d in group
+                    if d.get("isAvailable", True) and d["name"].startswith("iPhone")]
+          if not phones:
+              sys.exit("No available iPhone simulator on this runner")
+          print("IOS_SIM=" + phones[0]["udid"])
+          PY
+      - name: Test DEBUG UI fixtures and report empty-state renders (no assertion retries)
+        run: bash scripts/ios-ui.sh
+      - name: Upload xcresult, screenshots, accessibility hierarchies and provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ui-fixtures-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ios-app/build/ios-ui/
+          if-no-files-found: error
+          retention-days: 14
