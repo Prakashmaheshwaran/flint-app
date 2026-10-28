@@ -210,6 +210,8 @@ public struct FlintSessionEnvironment {
     /// nil means the App Group is unavailable.
     public var store: () -> FlintSessionStateStoring?
     public var shield: FlintSessionShielding
+    /// Safari writes use the same "flint" owner; shield.clear() releases them on every end.
+    public var webRestrictions: FlintSessionWebRestricting
     public var registrar: FlintSessionActivityRegistering
     public var isAuthorized: () -> Bool
     public var clock: FlintClock
@@ -222,6 +224,7 @@ public struct FlintSessionEnvironment {
     public init(
         store: @escaping () -> FlintSessionStateStoring?,
         shield: FlintSessionShielding,
+        webRestrictions: FlintSessionWebRestricting,
         registrar: FlintSessionActivityRegistering,
         isAuthorized: @escaping () -> Bool,
         clock: FlintClock,
@@ -231,6 +234,7 @@ public struct FlintSessionEnvironment {
     ) {
         self.store = store
         self.shield = shield
+        self.webRestrictions = webRestrictions
         self.registrar = registrar
         self.isAuthorized = isAuthorized
         self.clock = clock
@@ -243,6 +247,9 @@ public struct FlintSessionEnvironment {
         FlintSessionEnvironment(
             store: { FlintGroupStore() },
             shield: LiveSessionShield(),
+            webRestrictions: FlintSessionWebRestrictionAdapter(
+                writer: FlintManagedWebRestrictionWriter(), configuration: { .load() }
+            ),
             registrar: LiveSessionRegistrar(),
             isAuthorized: { AuthorizationCenter.shared.authorizationStatus == .approved },
             clock: .system,
@@ -506,6 +513,10 @@ public final class FlintSessionController {
             throw error
         }
 
+        // The auto-end is armed and the shield succeeded. Safari belongs to this same cause's
+        // store, so every existing whole-store teardown releases it without a second clear.
+        env.webRestrictions.reconcile(session, now: now)
+
         // Uninstall guard: a Hardcore block also denies app removal (deleting Flint is otherwise
         // the one-tap escape). Same store as the shield, so every teardown path drops both
         // together via clearAllSettings(); non-Hardcore starts assert nil, so replacing a
@@ -761,13 +772,6 @@ public final class FlintSessionController {
             $0.unauthorizedSince = report.notAuthorized ? ($0.unauthorizedSince ?? now) : nil
         }
 
-        // Re-read right before writing: the monitor (another process) may have just ended this
-        // session, and re-shielding after that would leave a shield nothing ever clears.
-        if let store, store.loadActiveSession()?.id == session.id,
-           let selection = sessionSelection(for: session, in: store) {
-            try? env.shield.applyBlockList(selection)
-        }
-
         if let store, session.endsAt != nil {
             let zoneMoved = !FlintSessionAutoClearPlan.isCurrent(for: session, in: env.clock.calendar())
             let missing = !env.registrar.registeredActivityNames().contains(session.monitorName)
@@ -778,6 +782,16 @@ public final class FlintSessionController {
                 case .failed: report.rearmFailed = true
                 case .deferred: break
                 }
+            }
+        }
+
+        // Re-read after registration repair and right before writing: the monitor may have
+        // ended this session. Never re-apply Safari without a dependable end for a timed cause.
+        if let store, let current = store.loadActiveSession(), current.id == session.id,
+           let selection = sessionSelection(for: current, in: store) {
+            try? env.shield.applyBlockList(selection)
+            if current.endsAt == nil || env.registrar.registeredActivityNames().contains(current.monitorName) {
+                env.webRestrictions.reconcile(current, now: now)
             }
         }
 
@@ -906,6 +920,7 @@ public final class FlintSessionController {
         case .intervalDidStart:
             if let store, let selection = sessionSelection(for: session, in: store) {
                 try? env.shield.applyBlockList(selection)
+                env.webRestrictions.reconcile(session, now: now)
             }
             env.shield.setDenyAppRemoval(FlintUninstallGuard.shouldDeny(for: session, now: now))
 

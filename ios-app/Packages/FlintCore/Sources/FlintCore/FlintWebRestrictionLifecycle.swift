@@ -64,7 +64,10 @@ public final class FlintWebRestrictionLifecycle {
         ), config: config)
     }
 
-    /// Call after saving preferences and on launch/foreground with current persisted causes.
+    /// Call after saving preferences and on launch/foreground with current, armed causes.
+    /// The host must pass failed/unobserved schedule registrations as disabled rule copies,
+    /// and a timed session without an observed auto-end registration as nil. This function
+    /// decides scope and wall-clock eligibility; it cannot observe DeviceActivity registrations.
     /// Deleted rules are cleared by their controller before removal from persisted state.
     public func reconcile(
         activeSession: FlintActiveSession?, rules: [FlintScheduleRule], config: FlintWebRestrictions,
@@ -86,6 +89,30 @@ public final class FlintWebRestrictionLifecycle {
         }
     }
 }
+
+#if canImport(FamilyControls)
+/// One session-environment seam; ending a session still clears its entire owning shield store.
+public protocol FlintSessionWebRestricting {
+    func reconcile(_ session: FlintActiveSession, now: Date)
+}
+
+/// Uses the same policy/writer as host reconciliation. Config is loaded at the point of use,
+/// so edits and disabling a scope update running owners rather than leaving stale web keys.
+public struct FlintSessionWebRestrictionAdapter: FlintSessionWebRestricting {
+    private let lifecycle: FlintWebRestrictionLifecycle
+    private let configuration: () -> FlintWebRestrictions
+
+    public init(writer: any FlintWebRestrictionWriting,
+                configuration: @escaping () -> FlintWebRestrictions) {
+        self.lifecycle = FlintWebRestrictionLifecycle(writer: writer)
+        self.configuration = configuration
+    }
+
+    public func reconcile(_ session: FlintActiveSession, now: Date) {
+        lifecycle.reconcileSession(session, config: configuration(), now: now)
+    }
+}
+#endif
 
 #if canImport(ManagedSettings)
 public struct FlintManagedWebRestrictionWriter: FlintWebRestrictionWriting {

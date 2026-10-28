@@ -142,6 +142,20 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
         XCTAssertTrue(writer.applied.isEmpty)
     }
 
+    func testRuleWriterRequiresScheduleScopeRegardlessOfSessionScope() {
+        for sessions in [false, true] {
+            for schedules in [false, true] {
+                let writer = RecordingWebWriter()
+                let config = FlintWebRestrictions(enabled: sessions, applyDuringSchedules: schedules)
+                FlintWebRestrictionLifecycle(writer: writer).reconcileRule(
+                    rule("schedule"), config: config, now: now, calendar: calendar
+                )
+                XCTAssertEqual(writer.applied, schedules ? ["flint.schedule"] : [])
+                XCTAssertEqual(writer.web["flint.schedule"], schedules ? config : nil)
+            }
+        }
+    }
+
     func testSameDayWindowIncludesStartExcludesEndAndGatesWeekday() {
         let schedule = FlintSchedule(daysOfWeek: [2], startHour: 9, startMinute: 30, endHour: 17)
         for (instant, expected) in [
@@ -204,9 +218,12 @@ private final class RecordingWebWriter: FlintWebRestrictionWriting {
     var web: [String: FlintWebRestrictions] = [:]
     var applied: [String] = []
     var cleared: [String] = []
+    var wholeStoresCleared: [String] = []
+    var events: [String] = []
 
     func apply(_ config: FlintWebRestrictions, toStore storeName: String) {
         applied.append(storeName)
+        events.append("web:\(storeName)")
         web[storeName] = config
     }
 
@@ -214,4 +231,211 @@ private final class RecordingWebWriter: FlintWebRestrictionWriting {
         cleared.append(storeName)
         web.removeValue(forKey: storeName)
     }
+
+    /// Models the existing shield adapter's clearAllSettings(), not an extra Safari clear.
+    func clearAllSettings(store name: String) {
+        wholeStoresCleared.append(name)
+        web.removeValue(forKey: name)
+    }
+}
+
+/// PC-72: exercise the shipped session controller with the production Safari adapter and fake
+/// OS/store seams. Store composition here proves ownership, not iOS's cross-store filter union.
+final class FlintSessionWebRestrictionTests: XCTestCase {
+    func testEveryFocusEntryPointAppliesOnlyAfterRegistrationAndShield() throws {
+        for source in [FlintSessionSource.manual, .shortcut, .pomodoro, .focusFilter] {
+            let h = WebSessionHarness()
+            let controller = h.controller()
+            _ = try h.start(controller, source: source)
+            XCTAssertEqual(h.writer.web["flint"], h.config, source.rawValue)
+            XCTAssertEqual(h.writer.events.prefix(3), ["register", "shield", "web:flint"])
+        }
+    }
+
+    func testDisabledSessionScopeDoesNotApplyEvenWhenSchedulesOptIn() throws {
+        let h = WebSessionHarness()
+        h.config = FlintWebRestrictions(applyDuringSchedules: true)
+        _ = try h.start(h.controller())
+        XCTAssertTrue(h.writer.applied.isEmpty)
+        XCTAssertNil(h.writer.web["flint"])
+    }
+
+    func testUnarmedOrRejectedSessionNeverAppliesSafariAndKeepsPreviousOwner() throws {
+        let h = WebSessionHarness()
+        let controller = h.controller()
+        let first = try h.start(controller)
+        let original = h.writer.web["flint"]
+        h.registrar.refuse = true
+        h.config.filter = .allowedOnly
+        XCTAssertThrowsError(try h.start(controller))
+        XCTAssertEqual(h.writer.applied, ["flint"])
+        XCTAssertEqual(h.writer.web["flint"], original)
+        XCTAssertEqual(h.store.active, first)
+
+        let rejected = WebSessionHarness()
+        rejected.shield.refuse = true
+        XCTAssertThrowsError(try rejected.start(rejected.controller()))
+        XCTAssertTrue(rejected.writer.applied.isEmpty, "no Safari write after failed shielding")
+    }
+
+    func testMonitorStartRepairsMatchingSessionAndIgnoresReplacedCallback() throws {
+        let h = WebSessionHarness()
+        let controller = h.controller()
+        let session = try h.start(controller)
+        h.writer.web.removeValue(forKey: "flint") // crash / missing OS keys
+        controller.handleMonitorEvent(.intervalDidStart, activity: session.monitorName)
+        XCTAssertEqual(h.writer.web["flint"], h.config)
+        controller.handleMonitorEvent(.intervalDidStart, activity: "flint.session.replaced")
+        XCTAssertEqual(h.writer.applied, ["flint", "flint"])
+        h.config.enabled = false
+        controller.handleMonitorEvent(.intervalDidStart, activity: session.monitorName)
+        XCTAssertNil(h.writer.web["flint"])
+    }
+
+    func testReconcileReappliesOnlyAfterSuccessfulRegistrationRepair() throws {
+        let h = WebSessionHarness()
+        let controller = h.controller()
+        _ = try h.start(controller)
+        h.registrar.registered.removeAll()
+        h.registrar.refuse = true
+        XCTAssertTrue(controller.reconcile().rearmFailed)
+        XCTAssertEqual(h.writer.applied, ["flint"], "unarmed cause must not reapply Safari")
+        h.registrar.refuse = false
+        h.config.allowedDomains = ["example.com"]
+        h.config.filter = .allowedOnly
+        XCTAssertTrue(controller.reconcile().rearmed)
+        XCTAssertEqual(h.writer.web["flint"], h.config)
+        XCTAssertEqual(h.writer.applied, ["flint", "flint"])
+    }
+
+    func testReconcileDoesNotReapplyAfterConcurrentSessionEnd() throws {
+        let h = WebSessionHarness()
+        let controller = h.controller()
+        _ = try h.start(controller)
+        h.store.loads = 0
+        h.store.onLoad = { [unowned h] count in
+            if count == 2 {
+                h.store.active = nil
+                h.writer.clearAllSettings(store: "flint")
+            }
+        }
+        controller.reconcile()
+        XCTAssertNil(h.writer.web["flint"])
+        XCTAssertEqual(h.writer.applied, ["flint"])
+    }
+
+    func testPC72EverySessionEndClearsItsWholeStoreAndLeavesTwoRuleOwners() throws {
+        for end in ["manual", "shortcut", "focusOff", "pass", "expiry", "monitor", "warning", "carrier", "noSession"] {
+            let h = WebSessionHarness()
+            let controller = h.controller()
+            let session = try h.start(controller, duration: end == "warning" || end == "carrier" ? 300 : 1800)
+            h.writer.web["flint.rule-a"] = h.config
+            h.writer.web["flint.rule-b"] = h.config
+            let surgicalClears = h.writer.cleared.count
+            switch end {
+            case "manual": controller.stop()
+            case "shortcut": controller.stop(route: .shortcutStop)
+            case "focusOff": controller.stop(route: .focusFilterOff)
+            case "pass": XCTAssertTrue(controller.useEmergencyPass())
+            case "expiry":
+                h.now = session.endsAt!
+                controller.finishIfExpired()
+            case "monitor", "carrier":
+                h.now = session.endsAt!.addingTimeInterval(end == "carrier" ? 900 : 0)
+                controller.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
+            case "warning":
+                h.now = session.endsAt!
+                controller.handleMonitorEvent(.intervalWillEndWarning, activity: session.monitorName)
+            default:
+                h.store.active = nil
+                controller.reconcile()
+            }
+            XCTAssertEqual(Set(h.writer.web.keys), ["flint.rule-a", "flint.rule-b"], end)
+            XCTAssertEqual(h.writer.wholeStoresCleared, ["flint"], end)
+            XCTAssertEqual(h.writer.cleared.count, surgicalClears, "end uses only the cause's clearAllSettings: \(end)")
+            XCTAssertNil(h.store.active, end)
+        }
+    }
+}
+
+private final class WebSessionHarness {
+    var config = FlintWebRestrictions(enabled: true, applyDuringSchedules: true)
+    var now = ISO8601DateFormatter().date(from: "2026-10-26T23:00:00-04:00")!
+    let writer = RecordingWebWriter()
+    let store = WebSessionState()
+    lazy var shield = WebSessionShield(writer: writer)
+    lazy var registrar = WebSessionRegistrar(writer: writer)
+
+    func controller() -> FlintSessionController {
+        FlintSessionController(environment: FlintSessionEnvironment(
+            store: { [self] in store }, shield: shield,
+            webRestrictions: FlintSessionWebRestrictionAdapter(writer: writer, configuration: { [self] in config }),
+            registrar: registrar, isAuthorized: { true },
+            clock: FlintClock(now: { [self] in now }, monotonic: { 50_000 }, bootSessionID: { "test-boot" },
+                              calendar: {
+                                  var calendar = Calendar(identifier: .gregorian)
+                                  calendar.timeZone = TimeZone(identifier: "America/New_York")!
+                                  return calendar
+                              }),
+            healthDefaults: { nil }
+        ))
+    }
+
+    func start(_ controller: FlintSessionController, duration: TimeInterval = 1800,
+               source: FlintSessionSource = .manual) throws -> FlintActiveSession {
+        try controller.startBlockNow(selection: FamilyActivitySelection(), duration: duration,
+                                     breakLevel: .hardcore, source: source)
+    }
+}
+
+private final class WebSessionShield: FlintSessionShielding {
+    let writer: RecordingWebWriter
+    var refuse = false
+    init(writer: RecordingWebWriter) { self.writer = writer }
+    func counts(of selection: FamilyActivitySelection) -> FlintSelectionCounts { .init(applications: 1) }
+    func applyBlockList(_ selection: FamilyActivitySelection) throws {
+        if refuse { throw WebTestRefusal() }
+        writer.events.append("shield")
+    }
+    func setDenyAppRemoval(_ deny: Bool) {}
+    func clear() { writer.clearAllSettings(store: "flint") }
+}
+
+private struct WebTestRefusal: Error {}
+
+private final class WebSessionRegistrar: FlintSessionActivityRegistering {
+    let writer: RecordingWebWriter
+    var registered: Set<String> = []
+    var refuse = false
+    init(writer: RecordingWebWriter) { self.writer = writer }
+    func startMonitoring(_ name: String, plan: FlintSessionAutoClearPlan) throws {
+        if refuse { throw WebTestRefusal() }
+        writer.events.append("register")
+        registered.insert(name)
+    }
+    func stopMonitoring(_ names: [String]) { registered.subtract(names) }
+    func registeredActivityNames() -> Set<String> { registered }
+}
+
+private final class WebSessionState: FlintSessionStateStoring {
+    var active: FlintActiveSession?
+    var selection: FamilyActivitySelection?
+    var sessionSelection: FamilyActivitySelection?
+    var passUsed: Date?
+    var loads = 0
+    var onLoad: ((Int) -> Void)?
+    func loadActiveSession() -> FlintActiveSession? {
+        loads += 1
+        onLoad?(loads)
+        return active
+    }
+    func saveActiveSession(_ session: FlintActiveSession) { active = session }
+    func clearActiveSession() { active = nil }
+    func saveSelection(_ selection: FamilyActivitySelection) { self.selection = selection }
+    func loadSelection() -> FamilyActivitySelection? { selection }
+    func saveSessionSelection(_ selection: FamilyActivitySelection, sessionID: String) { sessionSelection = selection }
+    func loadSessionSelection(sessionID: String) -> FamilyActivitySelection? { sessionSelection }
+    func clearSessionSelection() { sessionSelection = nil }
+    func emergencyPassLastUsed() -> Date? { passUsed }
+    func recordEmergencyPassUse(_ date: Date) { passUsed = date }
 }

@@ -102,7 +102,8 @@ final class FlintMonitor: DeviceActivityMonitor {
     // MARK: Shielding
 
     private func applyRule(_ rule: FlintScheduleRule) {
-        guard rule.appliesOn(Date()) else { return } // weekday gate
+        let now = Date()
+        guard rule.enabled, rule.appliesOn(now) else { return } // same weekday gate for shield + Safari
         let store = ManagedSettingsStore(named: ManagedSettingsStore.Name(rule.storeName))
         let selection = rule.selection
         if rule.allowListMode {
@@ -116,6 +117,7 @@ final class FlintMonitor: DeviceActivityMonitor {
             store.shield.webDomains =
                 selection.webDomainTokens.isEmpty ? nil : selection.webDomainTokens
         }
+        FlintWebRestrictionLifecycle().reconcileRule(rule, config: .load(), now: now)
     }
 
     private func applyLimitShield(_ limit: FlintLimitRule) {
