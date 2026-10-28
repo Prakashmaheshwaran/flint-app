@@ -427,9 +427,15 @@ final class FlintOpenCreditTests: XCTestCase {
     }
 
     func testPreviewNeverSpendsRegistersOrReleases() throws {
+        XCTAssertEqual(service().preview(target: "app").blockedBy, .unavailable)
+        let file = directory.appendingPathComponent("ledger.json")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path), "pure preview cannot initialize or migrate")
+        _ = try state()
+        let original = try Data(contentsOf: file)
         XCTAssertEqual(service().preview(target: "app").remaining, 3)
         XCTAssertEqual(service().preview(target: "app").cap, 3)
         XCTAssertTrue(registrations.isEmpty); XCTAssertTrue(released.isEmpty)
         XCTAssertEqual(try state().openCredits.counters["app"]?.used, 0)
+        XCTAssertEqual(try Data(contentsOf: file), original)
     }
 }

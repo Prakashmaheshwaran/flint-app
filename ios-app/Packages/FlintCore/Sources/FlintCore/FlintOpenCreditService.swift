@@ -36,7 +36,7 @@ public final class FlintOpenCreditService {
 
     /// Does not consume, register, or release. Advancing a snapshot never replaces the ledger.
     public func preview(target: String) -> FlintOpenCreditPreview {
-        guard case var .success(state) = ledger.read(), let context = context() else {
+        guard case var .success(state) = ledger.peek(), let context = context() else {
             return .init(remaining: nil, cap: nil, blockedBy: .unavailable)
         }
         let now = FlintLedgerInstant(clock: clock)
