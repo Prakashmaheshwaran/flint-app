@@ -26,7 +26,12 @@ struct FlintGlanceInput: Equatable {
         let endsAt: Date
         var name: String? = nil
     }
-    struct Cause: Equatable { let name: String; let kind: String; let tier: String }
+    struct Cause: Equatable {
+        let name: String
+        let kind: String
+        let tier: String
+        var endsAt: Date? = nil
+    }
     struct History: Equatable {
         enum Availability: CaseIterable { case unavailable, degraded, empty, value }
         let availability: Availability
@@ -43,10 +48,15 @@ struct FlintGlanceInput: Equatable {
     let history: History
     var headline: Cause? = nil
 
-    static func unavailable(at date: Date) -> Self {
+    static func unavailable(at date: Date, history: History? = nil) -> Self {
         .init(protection: .unavailable, checkedAt: nil, validUntil: nil, session: nil,
               protectionEndsAt: nil, next: nil,
-              history: .init(availability: .unavailable, seconds: nil, inProgress: false, readAt: date))
+              history: history ?? .init(availability: .unavailable, seconds: nil, inProgress: false, readAt: date))
+    }
+
+    func replacingHistory(_ value: History) -> Self {
+        .init(protection: protection, checkedAt: checkedAt, validUntil: validUntil, session: session,
+              protectionEndsAt: protectionEndsAt, next: next, history: value, headline: headline)
     }
 }
 
@@ -75,11 +85,13 @@ struct FlintGlancePresentation: Equatable {
         let valid = input.checkedAt.map { $0 <= date } == true
             && input.validUntil.map { $0 > date && $0 > (input.checkedAt ?? $0) } == true
         let expired = input.protectionEndsAt.map { $0 <= date } == true
+        let headlineExpired = input.headline?.endsAt.map { $0 <= date } == true
+        let displayEnd = input.headline.map { $0.endsAt } ?? input.protectionEndsAt
         if input.protection == .unavailable || input.checkedAt == nil || input.validUntil == nil {
             status = .unavailable
         } else if expired {
             status = .expired
-        } else if !valid {
+        } else if !valid || headlineExpired {
             status = .stale
         } else {
             switch input.protection {
@@ -108,9 +120,9 @@ struct FlintGlancePresentation: Equatable {
         if valid, [.armed, .enforcing, .degraded].contains(status), let cause = input.headline {
             causeSummary = "\(Self.sanitizedName(cause.name)) · \(cause.tier)"
         } else { causeSummary = nil }
-        plannedEnd = valid && [.armed, .enforcing, .pass].contains(status) ? input.protectionEndsAt : nil
+        plannedEnd = valid && [.armed, .enforcing, .pass].contains(status) ? displayEnd : nil
         // Stop the timer at the first unsupported boundary, including snapshot freshness.
-        if valid, [.armed, .enforcing].contains(status), let end = input.protectionEndsAt,
+        if valid, [.armed, .enforcing].contains(status), let end = displayEnd,
            let until = input.validUntil, end > date {
             countdownEnd = min(end, until)
         } else { countdownEnd = nil }
@@ -161,7 +173,7 @@ struct FlintGlancePresentation: Equatable {
     static func boundaries(_ input: FlintGlanceInput, after date: Date, calendar: Calendar = .current) -> [Date] {
         let midnight = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: date))
         return Set([input.validUntil, input.protectionEndsAt, input.session?.endsAt,
-                    input.next?.startsAt, midnight].compactMap { $0 }.filter { $0 > date }).sorted()
+                    input.headline?.endsAt, input.next?.startsAt, midnight].compactMap { $0 }.filter { $0 > date }).sorted()
     }
 }
 
@@ -177,6 +189,8 @@ struct FlintGlanceActivityPlan: Equatable {
     static func countdownLabel(endsAt: Date, staleAt: Date) -> String {
         staleAt < endsAt ? "Check in" : "Planned time left"
     }
+
+    func mayRequest(lastRequestedSession: String?) -> Bool { lastRequestedSession != sessionID }
 
     static func make(_ input: FlintGlanceInput, optedIn: Bool, systemEnabled: Bool,
                      at date: Date) -> Self? {

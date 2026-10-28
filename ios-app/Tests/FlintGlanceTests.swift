@@ -97,6 +97,13 @@ final class FlintGlanceTests: XCTestCase {
         XCTAssertNotNil(plan(input(.armed)))
     }
 
+    func testDismissedSessionIsNotAutomaticallyRequestedAgain() {
+        let value = plan(input())!
+        XCTAssertTrue(value.mayRequest(lastRequestedSession: nil))
+        XCTAssertFalse(value.mayRequest(lastRequestedSession: value.sessionID))
+        XCTAssertTrue(value.mayRequest(lastRequestedSession: "previous-session"))
+    }
+
     func testOnlyManualTimerPomodoroAreEligible() {
         for cause in FlintGlanceInput.Session.Cause.allCases {
             XCTAssertEqual(plan(input(cause: cause)) != nil, cause != .other)
@@ -227,5 +234,27 @@ final class FlintGlanceTests: XCTestCase {
         let openEnded = project(ends: [nil, now.addingTimeInterval(600)])
         XCTAssertNil(openEnded.protectionEndsAt)
         XCTAssertNotNil(plan(openEnded), "An unrelated open-ended cause cannot erase a finite armed session")
+    }
+
+    func testNamedHeadlineKeepsItsOwnDeadlineAcrossOverlap() {
+        var value = project(ends: [now.addingTimeInterval(60), now.addingTimeInterval(600)])
+        value.headline = .init(name: "Strict A", kind: "recurringSchedule", tier: "Hardcore",
+                               endsAt: now.addingTimeInterval(60))
+        let model = FlintGlancePresentation(value, at: now)
+        XCTAssertEqual(model.causeSummary, "Strict A · Hardcore")
+        XCTAssertEqual(model.plannedEnd, now.addingTimeInterval(60))
+        XCTAssertEqual(model.countdownEnd, now.addingTimeInterval(60))
+        XCTAssertEqual(value.protectionEndsAt, now.addingTimeInterval(600))
+        let boundary = FlintGlancePresentation(value, at: now.addingTimeInterval(60))
+        XCTAssertEqual(boundary.status, .stale)
+        XCTAssertNil(boundary.causeSummary)
+        XCTAssertNil(boundary.countdownEnd)
+        XCTAssertNil(boundary.plannedEnd)
+        XCTAssertTrue(FlintGlancePresentation.boundaries(value, after: now).contains(now.addingTimeInterval(60)))
+
+        value = project(ends: [nil, now.addingTimeInterval(600)])
+        value.headline = .init(name: "Open-ended A", kind: "session", tier: "Easy", endsAt: nil)
+        XCTAssertNil(FlintGlancePresentation(value, at: now).plannedEnd)
+        XCTAssertNil(FlintGlancePresentation(value, at: now).countdownEnd)
     }
 }

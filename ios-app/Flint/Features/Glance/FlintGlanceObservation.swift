@@ -1,10 +1,12 @@
 import ActivityKit
 import SwiftUI
 import UIKit
+import WidgetKit
 import FlintCore
 
 enum FlintLiveActivityPreference {
     static let key = "flint.glance.liveActivitiesEnabled"
+    static let lastRequestedSessionKey = "flint.glance.lastRequestedActivitySession"
 }
 
 /// Additive host observer. It cannot arm, stop, change tiers or spend a pass.
@@ -14,6 +16,11 @@ struct FlintGlanceObservation: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .onReceive(NotificationCenter.default.publisher(for: FlintHistoryStore.didChangeNotification)) { _ in
+                // F's clear/drain signal is independent of protection. B still owns the
+                // canonical reload after enforcement publishes a new status snapshot.
+                WidgetCenter.shared.reloadTimelines(ofKind: FlintGlancePresentation.widgetKind)
+            }
             .task(id: phase) {
                 guard phase == .active else { return }
                 if #available(iOS 16.1, *) {
@@ -26,6 +33,11 @@ struct FlintGlanceObservation: ViewModifier {
                 }
             }
             .onChange(of: optedIn) { enabled in
+                if enabled {
+                    // A deliberate new opt-in can show the current session again. Ordinary
+                    // polling must respect a Live Activity the user dismissed in iOS.
+                    UserDefaults.standard.removeObject(forKey: FlintLiveActivityPreference.lastRequestedSessionKey)
+                }
                 if #available(iOS 16.1, *) {
                     Task { await FlintGlanceActivityController.shared.refresh(optedIn: enabled) }
                 }
@@ -74,9 +86,11 @@ final class FlintGlanceActivityController {
 
     private func apply(optedIn: Bool) async {
         let now = Date()
-        let input = FlintGlanceReader().read(at: now)
-        let plan = FlintGlanceActivityPlan.make(input, optedIn: optedIn,
-            systemEnabled: ActivityAuthorizationInfo().areActivitiesEnabled, at: now)
+        let plan: FlintGlanceActivityPlan?
+        if optedIn && ActivityAuthorizationInfo().areActivitiesEnabled {
+            let input = FlintGlanceReader().readProtection(at: now)
+            plan = FlintGlanceActivityPlan.make(input, optedIn: true, systemEnabled: true, at: now)
+        } else { plan = nil }
         let activities = Activity<FlintFocusActivityAttributes>.activities
         var kept: Activity<FlintFocusActivityAttributes>?
         for activity in activities {
@@ -91,6 +105,7 @@ final class FlintGlanceActivityController {
         let state = FlintFocusActivityAttributes.ContentState(cause: plan.cause, tier: plan.tier,
             startedAt: plan.startedAt, endsAt: plan.endsAt, staleAt: plan.staleAt, needsCheck: false)
         if let activity = kept {
+            rememberRequest(plan.sessionID)
             guard lastStates[activity.id] != state else { return }
             if #available(iOS 16.2, *) {
                 await activity.update(ActivityContent(state: state, staleDate: plan.staleAt))
@@ -99,7 +114,9 @@ final class FlintGlanceActivityController {
         } else {
             // ActivityKit start requests are foreground-only. No notification/remote path.
             guard UIApplication.shared.applicationState == .active,
-                  UserDefaults.standard.bool(forKey: FlintLiveActivityPreference.key) else { return }
+                  UserDefaults.standard.bool(forKey: FlintLiveActivityPreference.key),
+                  plan.mayRequest(lastRequestedSession: UserDefaults.standard.string(
+                    forKey: FlintLiveActivityPreference.lastRequestedSessionKey)) else { return }
             do {
                 let attributes = FlintFocusActivityAttributes(sessionID: plan.sessionID)
                 let activity: Activity<FlintFocusActivityAttributes>
@@ -110,6 +127,7 @@ final class FlintGlanceActivityController {
                     activity = try Activity.request(attributes: attributes, contentState: state, pushType: nil)
                 }
                 lastStates[activity.id] = state
+                rememberRequest(plan.sessionID)
             } catch {
                 // The OS may refuse an optional glance surface. Protection is unaffected.
             }
@@ -117,9 +135,22 @@ final class FlintGlanceActivityController {
     }
 
     private func end(_ activity: Activity<FlintFocusActivityAttributes>) async {
+        let endedByObserver = isOngoing(activity)
         if #available(iOS 16.2, *) { await activity.end(nil, dismissalPolicy: .immediate) }
         else { await activity.end(using: nil, dismissalPolicy: .immediate) }
         lastStates.removeValue(forKey: activity.id)
+        if endedByObserver, UserDefaults.standard.string(forKey: FlintLiveActivityPreference.lastRequestedSessionKey)
+            == activity.attributes.sessionID {
+            // A display we retire for stale/degraded authority may resume after a fresh
+            // armed observation. A user/system-dismissed activity keeps its marker.
+            UserDefaults.standard.removeObject(forKey: FlintLiveActivityPreference.lastRequestedSessionKey)
+        }
+    }
+
+    private func rememberRequest(_ sessionID: String) {
+        if UserDefaults.standard.string(forKey: FlintLiveActivityPreference.lastRequestedSessionKey) != sessionID {
+            UserDefaults.standard.set(sessionID, forKey: FlintLiveActivityPreference.lastRequestedSessionKey)
+        }
     }
 
     private func isOngoing(_ activity: Activity<FlintFocusActivityAttributes>) -> Bool {
