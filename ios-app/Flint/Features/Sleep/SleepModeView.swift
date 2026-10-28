@@ -31,6 +31,7 @@ struct SleepModeView: View {
         .navigationTitle("Sleep")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { vm.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: .flintProtectionReconciled)) { _ in vm.refreshHealth() }
         .onDisappear { vm.applyNow() }
     }
 
@@ -312,7 +313,7 @@ final class SleepModeViewModel: ObservableObject {
             authorized: AuthorizationCenter.shared.authorizationStatus == .approved)
     }
 
-    private func refreshHealth() {
+    func refreshHealth() {
         armingReport = FlintGroupStore()?.loadArmingHealth().domains["schedules"]
     }
 
@@ -384,6 +385,10 @@ enum FlintSleepProtectionStatus {
         }
         guard report.enabled >= activityNames.count, report.armed >= activityNames.count else {
             return String(localized: "Sleep registration has not been verified.")
+        }
+        guard let observed = report.observedActivities,
+              activityNames.allSatisfy({ observed.contains($0) }) else {
+            return "Sleep registration has not been observed in iOS."
         }
         return nil
     }

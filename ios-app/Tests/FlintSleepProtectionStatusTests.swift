@@ -18,7 +18,7 @@ final class FlintSleepProtectionStatusTests: XCTestCase {
         XCTAssertNotNil(FlintSleepProtectionStatus.issue(activityNames: [name], report: nil,
                                                        authorized: true, now: now))
         let report = FlintArmingHealth.DomainReport(enabled: 1, attempted: 1, armed: 1,
-                                                   failures: [], updatedAt: now)
+                                                   failures: [], updatedAt: now, observedActivities: [name])
         XCTAssertNotNil(FlintSleepProtectionStatus.issue(activityNames: [name], report: report,
                                                        authorized: false, now: now))
         XCTAssertNil(FlintSleepProtectionStatus.issue(activityNames: [name], report: report,

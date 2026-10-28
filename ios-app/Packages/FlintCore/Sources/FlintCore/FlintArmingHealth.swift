@@ -30,7 +30,8 @@ public struct FlintArmingHealth: Codable, Equatable {
     /// What one controller's `reload()` found, attempted, and successfully armed.
     ///
     /// `enabled` includes locally invalid rules that never reach `startMonitoring`; `attempted`
-    /// counts calls made to the framework; `armed` counts calls that returned successfully.
+    /// counts calls made to the framework; `armed` counts accepted requests plus unchanged
+    /// definitions already observed in iOS. `observedActivities` is the separate post-write read.
     public struct DomainReport: Codable, Equatable {
         public var enabled: Int
         public var attempted: Int
