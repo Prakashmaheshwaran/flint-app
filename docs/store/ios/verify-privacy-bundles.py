@@ -3,27 +3,14 @@
 import argparse
 import plistlib
 from pathlib import Path
+from bundle_inventory import built_bundles, load_shipping_targets
 
 
 def verify(app: Path) -> None:
     root = Path(__file__).resolve().parents[3]
-    targets = {
-        "Flint": "com.flint.peakfocus",
-        "DeviceActivityMonitorExtension": "com.flint.peakfocus.monitor",
-        "ShieldConfigurationExtension": "com.flint.peakfocus.shield-config",
-        "ShieldActionExtension": "com.flint.peakfocus.shield-action",
-        "DeviceActivityReportExtension": "com.flint.peakfocus.report",
-    }
-    bundles = [app, *sorted((app / "PlugIns").glob("*.appex"))]
-    assert len(bundles) == 5, f"Expected host + four extensions, found {bundles}"
-    remaining = dict(targets)
-    for bundle in bundles:
-        with (bundle / "Info.plist").open("rb") as stream:
-            info = plistlib.load(stream)
+    targets = load_shipping_targets(root)
+    for bundle, info, target in built_bundles(app, targets):
         bundle_id = info["CFBundleIdentifier"]
-        target = next((name for name, identifier in remaining.items() if identifier == bundle_id), None)
-        assert target is not None, f"Unexpected or duplicate bundle ID: {bundle_id}"
-        del remaining[target]
         source = root / "ios-app" / "Privacy" / target / "PrivacyInfo.xcprivacy"
         with source.open("rb") as stream:
             expected = plistlib.load(stream)
@@ -44,7 +31,6 @@ def verify(app: Path) -> None:
         }]
         assert actual["NSPrivacyAccessedAPITypes"] == reasons, bundle
         print(f"Verified privacy manifest: {bundle_id}")
-    assert not remaining, f"Missing bundles: {remaining}"
 
 
 if __name__ == "__main__":

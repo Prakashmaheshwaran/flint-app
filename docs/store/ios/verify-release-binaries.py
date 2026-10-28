@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Reject known Flint DEBUG fixture symbols/strings in all five executables."""
+"""Reject known Flint DEBUG fixture symbols/strings in every shipping executable."""
 import argparse
-import plistlib
 import re
 import subprocess
 from pathlib import Path
+from bundle_inventory import built_bundles, load_shipping_targets
 
 
 FIXTURES = re.compile(
@@ -14,15 +14,9 @@ FIXTURES = re.compile(
 
 
 def verify(app: Path, expect_fixtures: bool = False) -> None:
-    bundles = [app, *sorted((app / "PlugIns").glob("*.appex"))]
-    if len(bundles) != 5:
-        raise SystemExit(f"Expected host + four extensions, found {bundles}")
-    ids = set()
-    for bundle in bundles:
-        with (bundle / "Info.plist").open("rb") as stream:
-            info = plistlib.load(stream)
+    root = Path(__file__).resolve().parents[3]
+    for bundle, info, _ in built_bundles(app, load_shipping_targets(root)):
         identifier = info["CFBundleIdentifier"]
-        ids.add(identifier)
         executable = bundle / info["CFBundleExecutable"]
         if not executable.is_file():
             raise SystemExit(f"Missing executable: {executable}")
@@ -63,9 +57,6 @@ def verify(app: Path, expect_fixtures: bool = False) -> None:
         if expect_fixtures and identifier.endswith(".report") and "Instagram" not in strings:
             raise SystemExit("Debug control did not find report preview sample")
         print(f"Scanned {identifier}: {matches if expect_fixtures else 'no known DEBUG fixtures'}")
-    expected = {"com.flint.peakfocus" + suffix for suffix in ["", ".monitor", ".report", ".shield-action", ".shield-config"]}
-    if ids != expected:
-        raise SystemExit(f"Unexpected bundle IDs: {ids}")
 
 
 if __name__ == "__main__":

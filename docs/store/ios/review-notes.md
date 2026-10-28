@@ -17,11 +17,12 @@ credentials, certificates, profiles, and account evidence must stay out of git.
   Android evidence is not a substitute for iOS physical tests.
 - [ ] Lane F's real local-event history/Insights evidence is linked; final UI and
   listing make only supported history/completion/report claims.
-- [ ] Lane D's final Release archive is inspected for all five embedded bundles,
+- [ ] The final Release archive is inspected for all six shipping bundles,
   required-reason privacy manifests, AppIcon/resources, correct version/build,
   absence of DEBUG preview fixtures, and distribution-signed entitlements.
 - [ ] A human Account Holder confirms approval/provisioning coverage for each of
-  the five identifiers below, the intended signing team, and shared App Group.
+  the six identifiers below, the intended signing team, and shared App Group;
+  Family Controls approval is required for the host and four Screen Time extensions.
 - [ ] Owner-approved physical iPhone and iPad runs pass the script below on the
   exact candidate; attach private evidence references, not sensitive data.
 - [ ] Lane E's `docs/privacy-policy.md` is merged and reconciled with iOS; public
@@ -248,11 +249,18 @@ No turnaround time or approval outcome is predicted.
    [report entitlements](../../../ios-app/Extensions/DeviceActivityReportExtension/Report.entitlements#L5-L9).
    Renders Apple-supplied usage information inside the report extension.
 
-These are exactly the five shipping bundles, not the unit-test identifier
-`com.flint.peakfocus.tests`. App Intents/Focus filters are in the host; no sixth
-shipping extension is proposed. All five entitlement files declare
-`com.apple.developer.family-controls` and `group.com.flint.peakfocus`; the latter
-is an App Group, not another bundle ID or a claim of an approved portal record.
+6. **FlintWidgetsExtension:** `com.flint.peakfocus.widgets` — the display-only
+   WidgetKit extension also renders the opt-in Live Activity. It reads local
+   status/history snapshots and opens Flint; it does not arm protection or render
+   Device Activity reports. It needs `group.com.flint.peakfocus` and its own
+   signing/provisioning association, **not** the Family Controls entitlement.
+
+These are six shipping bundles; `com.flint.peakfocus.tests` remains a test bundle.
+App Intents/Focus filters remain in the host. The host and four Screen Time
+extensions declare `com.apple.developer.family-controls` and the App Group;
+the widget declares only the App Group. The group is not another bundle ID or
+a claim of an approved portal record. Submit Family Controls requests only for
+the five targets that use it, after checking existing approval state.
 
 ### Purpose text for the owner to adapt to each request
 
@@ -283,7 +291,7 @@ for extensions follows automatically from approval for the host.
 2. If needed, the human submits the reviewed request for each ID and records
    submission date/reference. This draft authorizes no portal mutation.
 3. After approval, the owner configures distribution signing/profiles for all
-   five bundles, inspects entitlements in the signed archive, and validates
+   six bundles, inspects entitlements in the signed archive, and validates
    resources/privacy manifests/Release fixture exclusion with lane D. Do not
    hand-edit the generated Xcode project; the source is `ios-app/project.yml`.
 4. The human creates/confirms the App Store Connect record, chooses final

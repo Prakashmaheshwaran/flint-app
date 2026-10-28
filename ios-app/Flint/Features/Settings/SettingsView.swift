@@ -26,6 +26,8 @@ struct SettingsView: View {
 
                     healthCard.padding(.top, 20)
 
+                    FlintLiveActivitySetting()
+
                     VStack(spacing: 0) {
                         Button {
                             appLock.cancelPINChange()
