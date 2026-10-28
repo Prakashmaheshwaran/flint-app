@@ -1,7 +1,11 @@
 # iOS fixture UI gate
 
-`iOS UI fixtures` runs the production app in **Debug** on a fresh GitHub-hosted
-iPhone simulator. It uses existing `-FlintUIPreview` authorization fixtures; it
+`make ios-ui` is the maintained local fixture gate. The `iOS UI fixtures`
+workflow is **manual-only** (`workflow_dispatch`), an optional hosted diagnostic
+that emits no PR check. Hosted simulator startup proved unreliable, so it is not
+a required merge gate. It runs the production app in **Debug** on a fresh hosted
+iPhone simulator when explicitly dispatched. The suite uses existing
+`-FlintUIPreview` authorization fixtures; it
 does not request system access, choose actual apps, or save/arm a schedule.
 This is fixture UI evidence, never Screen Time or physical-device proof.
 Hosted CI explicitly selects an available iPhone 17 Pro on iOS 26.5, matching the
@@ -9,9 +13,8 @@ observed green standard unit-test destination, then resolves its exact UDID.
 It fails if that runtime/device is missing or ambiguous; simulator JSON order
 cannot silently select an older runtime. This is a maintained CI pin, not
 minimum-iOS coverage.
-To conserve hosted macOS capacity, the job runs for ready PRs, the standing
-`integration/v1` PR, and explicit workflow dispatches;
-ordinary draft PRs skip it until marked ready for review.
+No push or pull-request event starts the hosted workflow. Test assertions and
+the separate UI target remain enabled in the local gate.
 
 The separate `FlintUI` scheme leaves the existing `Flint` unit-test scheme intact.
 The same command is used locally and in `.github/workflows/ios-ui.yml`:
@@ -83,6 +86,28 @@ based on that observed latency. Local ownership/readiness limits, UI assertions,
 and the 35-minute CI job cap are unchanged; no failed wait or test is rerun.
 
 Current run/commit evidence is recorded in the PR and worker report after CI
-completes. This gate does not establish minimum-iOS/iPad coverage, full VoiceOver,
+or local testing completes. The capped hosted attempts retained these outcomes:
+
+- [Run 40774736338](https://github.com/Prakashmaheshwaran/flint-app/actions/runs/40774736338)
+  passed all 10 UI and 11 Insights cases without skips or retries on head
+  `007a80a`, actual checkout merge `8ee09fb335b7d5a20572a91b3e5c2991a71a78f6`.
+  [Artifact 12856260581](https://github.com/Prakashmaheshwaran/flint-app/actions/runs/40774736338/artifacts/12856260581)
+  includes the verified xcresult, 20 screenshots and 14 accessibility trees.
+- After the integration rebase, [run 40778595423](https://github.com/Prakashmaheshwaran/flint-app/actions/runs/40778595423)
+  on head `af24db4`, actual merge `44d0e6dfd347aa0c228e3593d587f231bed31716`,
+  failed before project generation or tests. Bootstatus finished in about 103s
+  wall time, then the 30s SpringBoard query timed out. Post-failure service and
+  inventory queries also timed out; the system-domain query returned successfully.
+  [Artifact 12856950390](https://github.com/Prakashmaheshwaran/flint-app/actions/runs/40778595423/artifacts/12856950390)
+  retains boot progress, readiness diagnostics and provenance, with no xcresult.
+
+The owned suite/runner files were identical between those heads, but the actual
+checkout trees differed in 35 upstream iOS production/test files. The earlier
+green result therefore does not establish UI coverage of the rebased app. Local
+verification must run the complete unchanged suite against the final checkout
+under both semaphores on a newly created dedicated simulator. Do not rerun failed
+assertions or silently treat a later healthy diagnostic query as prior readiness.
+
+This gate does not establish minimum-iOS/iPad coverage, full VoiceOver,
 real authorization, ManagedSettings/FamilyControls enforcement, DeviceActivity
 callbacks, Safari restrictions, signing, release readiness or store approval.
