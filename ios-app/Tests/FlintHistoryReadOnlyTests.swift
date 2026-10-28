@@ -220,6 +220,43 @@ final class FlintHistoryReadOnlyTests: XCTestCase {
         XCTAssertEqual(store(host: false).readOnlySnapshot().availability, .unavailable)
     }
 
+    func testMissingMetadataAndUnreadableMainRecoverBoundaryFromOlderInbox() throws {
+        try assertOlderInboxRecovery(corruptMetadata: false)
+    }
+
+    func testCorruptMetadataAndUnreadableMainRecoverBoundaryFromOlderInbox() throws {
+        try assertOlderInboxRecovery(corruptMetadata: true)
+    }
+
+    private func assertOlderInboxRecovery(corruptMetadata: Bool) throws {
+        _ = try unreadableMainFixture()
+        let metadata = directory.appendingPathComponent("metadata.json")
+        if corruptMetadata { try Data("broken".utf8).write(to: metadata) }
+        else { try FileManager.default.removeItem(at: metadata) }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let yesterday = calendar.startOfDay(for: now).addingTimeInterval(-86_400)
+        let startAt = yesterday.addingTimeInterval(12 * 3600)
+        let endAt = startAt.addingTimeInterval(1200)
+        let start = FlintHistoryEvent(type: .started, session: "yesterday", at: startAt,
+            plannedEnd: endAt, tier: "easy", source: "manual", name: "Read")
+        let end = FlintHistoryEvent(type: .completed, session: "yesterday", at: endAt)
+        let writer = store(host: false)
+        XCTAssertTrue(writer.append(start)); XCTAssertTrue(writer.append(end))
+        // A fresh host instance on each pass also verifies persisted reconstruction.
+        for _ in 0..<2 {
+            let host = FlintHistoryStore(directory: directory, clock: { self.now }, calendar: calendar)
+            for snapshot in [host.read(), store(host: false).readOnlySnapshot()] {
+                XCTAssertEqual(snapshot.historyStart, startAt)
+                XCTAssertEqual(snapshot.events, [start, end])
+                XCTAssertEqual(snapshot.availability, .degraded)
+                let summary = FlintHistoryAggregator.summarize(snapshot, activeSessionID: nil, now: now, calendar: calendar)
+                XCTAssertEqual(summary.days.first(where: { $0.start == yesterday })?.focusedSeconds, 1200)
+                XCTAssertEqual(summary.sessions.first?.focusedSeconds, 1200)
+            }
+        }
+    }
+
     func testCommittedCompactionNotifiesOutsideLockEvenWhenMetadataSaveFails() {
         let expired = event(session: "expired", seconds: -401 * 86_400), recent = event(session: "recent")
         let setup = store(); setup.append(expired); setup.append(recent); _ = setup.read()

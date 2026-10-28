@@ -113,8 +113,8 @@ public final class FlintHistoryStore: @unchecked Sendable {
 
     public func read() -> FlintHistorySnapshot {
         hostOperation(fallback: .init(events: [], historyStart: nil, availability: .unavailable)) {
-            var loaded = readMain()
             let inbox = readInbox()
+            var loaded = readMain(inbox: inbox)
             var metadata = recoverMetadata(lines: loaded.lines, inbox: inbox)
             recoverClear(&metadata, loaded: &loaded)
             drain(&metadata, loaded: &loaded, inbox: inbox)
@@ -303,8 +303,8 @@ public final class FlintHistoryStore: @unchecked Sendable {
     /// Host-only; daily retention or >1 MiB triggers maintenance, with headroom below 5 MiB.
     @discardableResult public func compactIfNeeded() -> Bool {
         hostOperation(fallback: false) {
-            var loaded = readMain()
             let inbox = readInbox()
+            var loaded = readMain(inbox: inbox)
             var metadata = recoverMetadata(lines: loaded.lines, inbox: inbox)
             recoverClear(&metadata, loaded: &loaded)
             drain(&metadata, loaded: &loaded, inbox: inbox)
@@ -327,8 +327,8 @@ public final class FlintHistoryStore: @unchecked Sendable {
 
     @discardableResult public func clear(keepingRunningSession sessionID: String?) -> Bool {
         hostOperation(fallback: false) {
-            var loaded = readMain()
             let inbox = readInbox()
+            var loaded = readMain(inbox: inbox)
             var metadata = recoverMetadata(lines: loaded.lines, inbox: inbox)
             recoverClear(&metadata, loaded: &loaded)
             drain(&metadata, loaded: &loaded, inbox: inbox)
@@ -476,13 +476,15 @@ public final class FlintHistoryStore: @unchecked Sendable {
         }
     }
 
-    private func readMain() -> Loaded {
+    private func readMain(inbox: Inbox) -> Loaded {
         let url = path("events.jsonl")
         guard fm.fileExists(atPath: url.path) else { return Loaded(lines: [], bad: false, canRewrite: true) }
         guard let data = try? Data(contentsOf: url) else {
             // Readers do not take the host mutex. Publish loss before removing the only
             // evidence, so a suspended recovery cannot turn unreadable history into zero.
-            var metadata = recoverMetadata(lines: [], inbox: ([], false))
+            // Include already-published ingress when reconstructing a missing or
+            // damaged boundary; recovery time must not hide older readable history.
+            var metadata = recoverMetadata(lines: [], inbox: inbox)
             metadata.degraded = true; metadata.lostAllReadableEvents = true
             do { try saveMetadata(metadata) }
             catch { return Loaded(lines: [], bad: true, canRewrite: false, unavailable: true) }
