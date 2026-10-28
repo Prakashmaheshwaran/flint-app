@@ -57,11 +57,22 @@ final class FlintProtectionStatusCurrentStateTests: XCTestCase {
         let inputs = FlintProtectionStatus.currentInputs(now: now, defaults: defaults,
             ledgerPass: pass, ruleObservations: observations, quotaCalendar: calendar, environment: environment)
         let snapshot = FlintProtectionStatusBuilder.make(inputs)
+        XCTAssertEqual(inputs.activeSession?.session.id, "old")
         XCTAssertFalse(inputs.timeIntegrityApplies)
         XCTAssertEqual(snapshot.state, .protected)
         XCTAssertNil(snapshot.session)
         XCTAssertEqual(snapshot.causes.map(\.id), ["schedule"])
         XCTAssertFalse(snapshot.degradedReasons.contains("time_uncertain"))
+    }
+
+    func testPublicGroupStoreLiveSessionRecordBridgesToCurrentInputs() throws {
+        let (defaults, store) = try fixture()
+        store.saveActiveSession(.init(id: "live", name: "Live", startedAt: now.addingTimeInterval(-60),
+            endsAt: now.addingTimeInterval(600), breakLevel: .harder, monitorName: "live-monitor"))
+        let inputs = FlintProtectionStatus.currentInputs(now: now, defaults: defaults,
+            ledgerPass: pass, ruleObservations: observations, quotaCalendar: calendar, environment: environment)
+        XCTAssertEqual(inputs.activeSession?.session.id, "live")
+        XCTAssertTrue(inputs.timeIntegrityApplies)
     }
 
     func testRecentRecordedClockAnomalyDegradesButOldDiagnosticDoesNot() throws {
