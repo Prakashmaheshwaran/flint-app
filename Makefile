@@ -3,6 +3,8 @@
 
 IOS_DIR     := ios-app
 ANDROID_DIR := android-app
+# Keep Xcode outputs with the checkout so archiving a worktree reclaims them.
+IOS_DERIVED_DATA ?= $(IOS_DIR)/DerivedData
 # Homebrew keg-only JDK 21 (see `make doctor`). Override if yours lives elsewhere.
 JAVA_HOME   ?= /opt/homebrew/opt/openjdk@21
 # Auto-detect a full Xcode. `xcodes` installs versioned apps (e.g. Xcode-26.5.0.app); the
@@ -33,6 +35,7 @@ ios: ios-gen ## Generate the Xcode project and open it
 
 ios-build: ios-gen ## Compile the iOS app (app + 4 extensions) for the simulator, no signing
 	DEVELOPER_DIR="$(XCODE_DEV)" xcodebuild -project $(IOS_DIR)/Flint.xcodeproj -scheme Flint \
+		-derivedDataPath "$(IOS_DERIVED_DATA)" \
 		-sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
 		CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
 
@@ -49,6 +52,7 @@ ios-test: ios-gen ## Run the iOS unit tests on the first available iPhone simula
 	fi; \
 	echo "Using simulator: $$DEVICE"; \
 	DEVELOPER_DIR="$(XCODE_DEV)" xcodebuild test -project $(IOS_DIR)/Flint.xcodeproj -scheme Flint \
+		-derivedDataPath "$(IOS_DERIVED_DATA)" \
 		-destination "platform=iOS Simulator,name=$$DEVICE" CODE_SIGNING_ALLOWED=NO
 
 android: ## Assemble the Android debug APK
@@ -86,9 +90,14 @@ release-check: ## Check the tree is consistent with a release tag: make release-
 	@[ -n "$(TAG)" ] || { echo "usage: make release-check TAG=v0.2.0" >&2; exit 2; }
 	@bash scripts/check-release-version.sh "$(TAG)"
 
-clean: ## Remove build artifacts on both platforms
-	rm -rf $(IOS_DIR)/build $(IOS_DIR)/DerivedData $(IOS_DIR)/Flint.xcodeproj
-	cd $(ANDROID_DIR) && [ -x ./gradlew ] && JAVA_HOME="$(JAVA_HOME)" ./gradlew clean || true
+clean: ## Remove worktree build outputs/caches; preserve local.properties and shared caches
+	@python3 scripts/clean-worktree.py artifacts --derived-data "$(IOS_DERIVED_DATA)"
+
+clean-devices: ## Release only provably owned worktree devices/helpers (DRY_RUN=1 previews)
+	@bash scripts/clean-devices.sh $(if $(filter 1,$(DRY_RUN)),--dry-run,)
+
+clean-orphans: ## Preview stale Flint host artifacts/devices; delete only with CONFIRM=1
+	@bash scripts/clean-devices.sh --orphans $(if $(filter 1,$(CONFIRM)),--confirm,)
 
 .PHONY: help doctor ios-gen ios ios-build ios-test android android-release android-install android-test \
-	verify verify-ios verify-android selftest release-check clean
+	verify verify-ios verify-android selftest release-check clean clean-devices clean-orphans
