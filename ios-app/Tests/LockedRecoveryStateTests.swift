@@ -31,6 +31,8 @@ final class LockedRecoveryStateTests: XCTestCase {
                                             passLastUsed: nil, now: now)
         XCTAssertEqual(idle.running, .none)
         XCTAssertFalse(idle.canUsePass)
+        XCTAssertEqual(idle.passLine, "Emergency Pass: available for a running Hardcore block",
+                       "with nothing running the line isn't read as an action")
         let used = LockedRecoveryState.make(active: session(.hardcore), hasRecord: true, passAvailable: false,
                                             passLastUsed: now.addingTimeInterval(-3600), now: now)
         XCTAssertFalse(used.canUsePass)

@@ -48,25 +48,34 @@ struct LockedRecoveryState: Equatable {
     var headline: String {
         switch running {
         case .none:
-            return "No Flint block is running."
+            return String(localized: "No Flint block is running.")
         case .unreadable:
-            return "Flint couldn't read the block that's running, so it keeps it in place."
-        case let .session(tier, until):
-            let label: String
+            return String(localized: "Flint couldn't read the block that's running, so it keeps it in place.")
+        case let .session(tier, nil):
             switch tier {
-            case .easy: label = "An Easy"
-            case .harder: label = "A Harder"
-            case .hardcore: label = "A Hardcore"
+            case .easy: return String(localized: "An Easy block is running until you end it.")
+            case .harder: return String(localized: "A Harder block is running until you end it.")
+            case .hardcore: return String(localized: "A Hardcore block is running until you end it.")
             }
-            guard let until else { return "\(label) block is running until you end it." }
-            return "\(label) block is running until \(until.formatted(date: .omitted, time: .shortened))."
+        case let .session(tier, until?):
+            let time = until.formatted(date: .omitted, time: .shortened)
+            switch tier {
+            case .easy: return String(localized: "An Easy block is running until \(time).")
+            case .harder: return String(localized: "A Harder block is running until \(time).")
+            case .hardcore: return String(localized: "A Hardcore block is running until \(time).")
+            }
         }
     }
 
     var passLine: String {
-        if passAvailable { return "Emergency Pass: available" }
-        guard let nextPass else { return "Emergency Pass: not available right now" }
-        return "Emergency Pass: available again \(nextPass.formatted(date: .abbreviated, time: .shortened))"
+        if passAvailable {
+            return running == .none
+                ? String(localized: "Emergency Pass: available for a running Hardcore block")
+                : String(localized: "Emergency Pass: available")
+        }
+        guard let nextPass else { return String(localized: "Emergency Pass: not available right now") }
+        let when = nextPass.formatted(date: .abbreviated, time: .shortened)
+        return String(localized: "Emergency Pass: available again \(when)")
     }
 }
 
@@ -86,7 +95,7 @@ struct LockedRecoveryView: View {
                     Text(state.headline).flintSecondary(15).fixedSize(horizontal: false, vertical: true)
                     Text(state.passLine)
                         .font(FlintFont.text(13, weight: .medium))
-                        .foregroundStyle(Color(hex: 0xF4C27E))
+                        .foregroundStyle(FlintBrand.flame)
                     if state.canUsePass {
                         Button("Use Emergency Pass") { showPass = true }.buttonStyle(EmberButtonStyle())
                     }
@@ -100,6 +109,9 @@ struct LockedRecoveryView: View {
                 }
                 .padding(24)
             }
+            .scrollBounceBehaviorBasedOnSizeIfAvailable()
+            // VoiceOver stays inside the pass sheet while it's up.
+            .accessibilityHidden(showPass)
             if showPass {
                 EmergencyPassSheet(
                     sessionName: "the running Hardcore block",
@@ -107,16 +119,34 @@ struct LockedRecoveryView: View {
                     onKeep: { showPass = false },
                     onUse: {
                         showPass = false
-                        if FlintSessionController().useEmergencyPass() {
+                        let used = FlintSessionController().useEmergencyPass()
+                        if used {
                             NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
-                        } else {
-                            passFailed = true
                         }
+                        passFailed = !used
                         state = LockedRecoveryState.current()
+                        // Focus doesn't move when the state refreshes: say what happened.
+                        let message = used ? String(localized: "Emergency Pass used. The block has ended.")
+                                           : String(localized: "The pass couldn't be used. Nothing changed.")
+                        DispatchQueue.main.async {
+                            UIAccessibility.post(notification: .announcement, argument: message)
+                        }
                     }
                 )
             }
         }
+        .accessibilityAction(.escape) { onClose() }
         .preferredColorScheme(.dark)
+    }
+}
+
+private extension View {
+    /// Rubber-banding only when content overflows (iOS 16.4+); a no-op earlier.
+    @ViewBuilder func scrollBounceBehaviorBasedOnSizeIfAvailable() -> some View {
+        if #available(iOS 16.4, *) {
+            scrollBounceBehavior(.basedOnSize)
+        } else {
+            self
+        }
     }
 }

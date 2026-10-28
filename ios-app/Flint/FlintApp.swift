@@ -177,9 +177,7 @@ struct PINGateView: View {
                         }
                         .buttonStyle(EmberButtonStyle())
                         Button("Emergency Pass & recovery") { showRecovery = true }
-                            .font(FlintFont.text(14, weight: .medium))
-                            .foregroundStyle(FlintBrand.bone(0.7))
-                            .frame(minHeight: 44)
+                            .buttonStyle(QuietButtonStyle(color: FlintBrand.mist))
                             .accessibilityHint("Use the Emergency Pass or see how to lift blocks without the PIN")
                     }
                     .padding(.top, typeSize.isAccessibilitySize ? 40 : 110)
