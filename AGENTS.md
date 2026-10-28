@@ -9,6 +9,9 @@
 - `scripts/flint-env.sh` resolves tool paths for Make/setup; source it for direct shell commands. Existing environment wins; Android then uses `local.properties`, then `~/Library/Android/sdk`.
 - Run `make env` (or `make doctor`) for paths, sources, and missing tools. Worktree setup comes from the committed `orca.yaml`.
 - Drive devices through the project `orca-emulator` / `orca-emulator-android` skills, not raw `adb` / `simctl` UI input.
+- Drive one platform per worktree at a time; attaching Android in the same worktree shut down the active iOS simulator during verification.
+- If `orca emulator ax` times out with `emulator_helper_failed`, run `orca emulator kill --device <id>`, then attach that device again.
+- Android AVDs require their system image; the configured Android 35 Google APIs ARM64 image is currently missing on this host.
 
 ## Verification
 - iOS changes: run `make verify-ios` when the toolchain is available.
@@ -43,5 +46,6 @@ Start with `make help` and the project `flint-dev` skill (`.agents/skills/flint-
 
 ## Cleanup
 - Claim devices used by this worktree with `scripts/flint-devices.sh claim`; use `--booted` only after starting a previously stopped device, `--created` only for a simulator you created with the prefix from `scripts/flint-devices.sh prefix`, and `--avd NAME` for Android.
+- `orca emulator list --worktree` is not worktree-scoped. Use the claim ledger (or `make ios-run` / `make android-run`), which inherits the session identity used by cleanup; list output is not ownership evidence.
 - Run `make clean-devices` before `worker_done` or ending an agent session; unclaimed/shared devices are preserved. Project `SessionEnd` hooks provide best-effort cleanup when enabled/trusted; they do not run after every turn.
 - Keep build outputs while a human may continue work. `make clean` removes worktree artifacts; the Orca archive hook releases devices and artifacts before removal. `make clean-orphans` is a host-wide preview unless explicitly confirmed with `CONFIRM=1`.

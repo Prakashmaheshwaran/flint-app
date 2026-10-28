@@ -16,11 +16,22 @@ for current targets and override options rather than duplicating their mechanics
    this worktree and install/launch Flint. Load the project `orca-emulator` skill
    for iOS interaction or `orca-emulator-android` for Android interaction. Use
    `make logs-ios` / `make logs-android` with the same selector for app logs.
+   Drive one platform per worktree at a time: attaching Android in the same
+   worktree shut down the active iOS simulator during verification. If
+   `orca emulator ax` times out with `emulator_helper_failed`, run
+   `orca emulator kill --device <id>`, then attach that device again.
+   Android AVDs need their configured system image installed; the Android 35
+   Google APIs ARM64 image is currently missing on this host.
 3. Review `make gates DRY_RUN=1`, then run `make gates` for the AGENTS.md path-based
    checks against the local `origin/main` merge-base, including uncommitted work.
    `make ancestry` refreshes main and reports divergence; `make pr-status` reads
    the current branch's PR and CI state. Neither writes to the remote.
-4. Run `make clean-devices` before finishing, following its ownership safeguards.
+4. `orca emulator list --worktree` is not worktree-scoped. Claim devices through
+   `scripts/flint-devices.sh` or the run targets above; the ledger inherits the
+   same session identity as cleanup. Use `--booted` only for a cold start,
+   `--avd NAME` for Android, and `--created` only for a simulator you created
+   using the prefix from `scripts/flint-devices.sh prefix`.
+   Run `make clean-devices` before finishing, following its ownership safeguards.
    Report what changed, what actually passed, and any unavailable verification.
 
 Keep Flint local-first, account-free, and analytics-free. Treat Screen Time,

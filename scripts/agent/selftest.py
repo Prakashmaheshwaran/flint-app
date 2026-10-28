@@ -26,6 +26,8 @@ if name == os.environ.get("FAIL_TOOL") or (name == "fake-make" and args[0] == os
     sys.exit(7)
 if name == "xcrun" and args[:4] == ["simctl", "list", "devices", "available"]:
     print(os.environ["SIM_DEVICES"])
+elif name == "xcrun" and args == ["simctl", "list", "devices", "--json"]:
+    print(os.environ["SIM_DEVICES"])
 elif name == "xcodebuild" and not os.environ.get("NO_APP"):
     d = pathlib.Path(args[args.index("-derivedDataPath") + 1])
     (d / "Build/Products/Debug-iphonesimulator/Flint.app").mkdir(parents=True)
@@ -286,7 +288,46 @@ class AgentCommands(unittest.TestCase):
         ])
         self.assertEqual(self.calls("fake-make"), [["android"]])
         self.assertEqual(self.calls("flint-devices.sh"), [["claim", "android", "emulator-5554", "--avd", "flint-test", "--booted"]])
-        self.assertEqual([name for name, _ in self.calls()], ["orca", "orca", "orca", "flint-devices.sh", "fake-make", "orca", "orca"])
+        self.assertEqual([name for name, _ in self.calls()], ["orca", "orca", "orca", "adb", "flint-devices.sh", "fake-make", "orca", "orca"])
+
+    def use_real_ledger(self):
+        ledger = self.root / "scripts/flint-devices.sh"
+        ledger.unlink()
+        shutil.copy(ROOT / "scripts/flint-devices.sh", ledger)
+        (self.root / "android-app/settings.gradle.kts").touch()
+        (self.root / "ios-app/project.yml").touch()
+        self.init_repo()
+        for key in ("ORCA_TERMINAL_HANDLE", "ORCA_PANE_KEY", "CODEX_THREAD_ID", "CLAUDE_SESSION_ID"):
+            self.env.pop(key, None)
+        self.env["FLINT_DEVICE_SESSION_ID"] = "fixture-claude-session"
+
+    def ledger_entries(self):
+        result = self.run_cmd(["bash", "scripts/flint-devices.sh", "list", "--json"])
+        self.assert_ok(result)
+        return json.loads(result.stdout)
+
+    def test_android_serial_claim_uses_real_avd_and_ending_session_identity(self):
+        self.use_real_ledger()
+        result = self.make("android-run", "AVD=emulator-5554", AVD_BOOTED="1")
+        self.assert_ok(result)
+        entry, = self.ledger_entries()
+        self.assertEqual(entry["avd"], "flint-test")
+        self.assertEqual(entry["claimant"], "fixture-claude-session")
+        self.assertFalse(entry["booted"])
+        self.assertFalse(entry["created"])
+
+    def test_ios_real_ledger_inherits_orca_identity_and_only_cold_start_rights(self):
+        self.use_real_ledger()
+        ident = "11111111-2222-3333-4444-555555555555"
+        devices = json.loads(self.env["SIM_DEVICES"])
+        devices["devices"]["runtime"][0]["udid"] = ident
+        self.env["SIM_DEVICES"] = json.dumps(devices)
+        self.env["ORCA_TERMINAL_HANDLE"] = "fixture-orca-session"
+        self.assert_ok(self.make("ios-run", f"IOS_SIM={ident}"))
+        entry, = self.ledger_entries()
+        self.assertEqual(entry["claimant"], "fixture-orca-session")
+        self.assertTrue(entry["booted"])
+        self.assertFalse(entry["created"])
 
     def test_android_running_device_claim_does_not_own_shutdown(self):
         result = self.make("android-run", AVD_BOOTED="1")

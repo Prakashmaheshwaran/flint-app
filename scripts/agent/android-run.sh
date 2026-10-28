@@ -15,13 +15,18 @@ after=$(agent_orca emulator devices --json | python3 "$here/orca-device.py" "$av
 IFS=$'\t' read -r serial after_state <<< "$after"
 [[ "$after_state" == booted ]] || { echo "Android device $avd did not boot." >&2; exit 2; }
 if [[ -x scripts/flint-devices.sh ]]; then
-  claim=(claim android "$serial" --avd "$avd")
+  # AVD may be an adb serial; the ledger requires its actual AVD name and
+  # independently verifies that identity before accepting the claim.
+  avd_info=$(adb -s "$serial" emu avd name)
+  IFS= read -r avd_name <<< "$avd_info"
+  [[ -n "$avd_name" ]] || { echo "Cannot resolve AVD name for $serial." >&2; exit 2; }
+  claim=(claim android "$serial" --avd "$avd_name")
   if [[ "$state" == shutdown ]]; then claim+=(--booted); fi
   scripts/flint-devices.sh "${claim[@]}"
 fi
-# Reuse the project's build/environment entrypoint. This SDK fallback is only for
-# a checkout that has not yet received scripts/flint-env.sh and its Make wiring.
-ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}" "${FLINT_MAKE:-make}" android
+# common.sh and Make share scripts/flint-env.sh; the ledger selects the same
+# inherited Orca/Codex/Claude session identity as session-end cleanup.
+"${FLINT_MAKE:-make}" android
 apk="$android_dir/app/build/outputs/apk/debug/app-debug.apk"
 [[ -f "$apk" ]] || { echo "Built APK not found: $apk" >&2; exit 1; }
 agent_orca emulator install "$apk" --reinstall --device "$serial" --worktree "path:$PWD" --json
