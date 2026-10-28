@@ -18,6 +18,7 @@ public struct FlintHistorySnapshot: Sendable {
 /// no cross-process file locks to survive suspension. Host
 /// instances share an in-process mutex; lifecycle callers never wait for host maintenance.
 public final class FlintHistoryStore: @unchecked Sendable {
+    public static let didChangeNotification = Notification.Name("FlintHistoryDidChange")
     public static let softLimit = 1_048_576
     public static let compactedLimit = 4 * 1_048_576
     public static let hardLimit = 5 * 1_048_576
@@ -37,6 +38,9 @@ public final class FlintHistoryStore: @unchecked Sendable {
     private let maintenanceHook: () -> Void
     private let metadataWriteHook: () throws -> Void
     private let mutex: NSLock
+    // Accessed only while the per-directory host mutex is held. A clear supersedes
+    // any internal drain notification so observers see the final committed state once.
+    private var mutationReason: String?
     private let fm = FileManager.default
     private enum Failure: Error { case unavailable, io, capacity }
 
@@ -254,6 +258,7 @@ public final class FlintHistoryStore: @unchecked Sendable {
                 metadata.lastCompacted = FlintHistoryEvent.milliseconds(clock())
                 metadata.degraded = metadata.degraded == true || loaded.bad
                 try saveMetadata(metadata)
+                markChanged("compact")
                 return true
             } catch { return false }
         }
@@ -276,6 +281,7 @@ public final class FlintHistoryStore: @unchecked Sendable {
                 metadata.pendingClear = nil; metadata.degraded = false
                 metadata.lostAllReadableEvents = nil; metadata.lastCompacted = nil
                 try saveMetadata(metadata)
+                markChanged("clear")
                 return true
             } catch { return false }
         }
@@ -283,10 +289,30 @@ public final class FlintHistoryStore: @unchecked Sendable {
 
     private func hostOperation<T>(fallback: T, _ body: () -> T) -> T {
         guard isHost, let directory else { return fallback }
-        mutex.lock(); defer { mutex.unlock() }
-        do { try ensureDirectory(directory) } catch { return fallback }
+        mutex.lock()
+        mutationReason = nil
+        do { try ensureDirectory(directory) } catch { mutex.unlock(); return fallback }
         reclaimAbandonedTemps()
-        return body()
+        let result = body()
+        let reason = mutationReason
+        mutationReason = nil
+        mutex.unlock()
+        if let reason { postChange(reason) }
+        return result
+    }
+
+    private func markChanged(_ reason: String) {
+        if mutationReason != "clear" { mutationReason = reason }
+    }
+
+    /// Reconciliation publishes inferred records via atomic ingress without a host
+    /// lock. Notify once after those writes commit; extensions never post this signal.
+    func didCommitReconciliation() { postChange("reconcile") }
+
+    private func postChange(_ reason: String) {
+        guard isHost else { return }
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: self,
+                                        userInfo: ["reason": reason])
     }
 
     /// Only the host reclaims crash-left staging files. Recent staging files may belong to
@@ -334,6 +360,7 @@ public final class FlintHistoryStore: @unchecked Sendable {
             var committed = metadata
             committed.pendingClear = nil; committed.degraded = false; committed.lostAllReadableEvents = nil
             try saveMetadata(committed)
+            markChanged("clear")
             metadata = committed
             loaded = Loaded(lines: kept, bad: false, canRewrite: true)
         } catch {
@@ -373,6 +400,7 @@ public final class FlintHistoryStore: @unchecked Sendable {
             } catch { loaded.lines = combined; loaded.bad = true }
         } else { loaded.lines = combined }
         if committed {
+            if !additions.isEmpty { markChanged("drain") }
             // Sync/rename finished first. If deletion is interrupted, event IDs dedupe the retry.
             for entry in inbox.entries { try? fm.removeItem(at: entry.url) }
         }

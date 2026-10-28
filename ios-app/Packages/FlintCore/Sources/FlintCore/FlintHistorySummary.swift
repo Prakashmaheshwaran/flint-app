@@ -189,11 +189,14 @@ public enum FlintHistoryReconciler {
         let snapshot = store.read()
         guard snapshot.availability != .unavailable else { return snapshot }
         let terminalIDs = Set(snapshot.events.filter { $0.isSupported && $0.type.isTerminal }.map(\.session))
+        var appended = false
         for session in FlintHistoryAggregator.sessionSummaries(snapshot.events, activeSessionID: activeSession?.id, now: now)
             where session.inferred && !terminalIDs.contains(session.id) {
-            store.append(FlintHistoryEvent(type: session.outcome == .completed ? .completed : .endedEarly,
+            let committed = store.append(FlintHistoryEvent(type: session.outcome == .completed ? .completed : .endedEarly,
                 session: session.id, at: session.endedAt, timeZone: calendar.timeZone, inferred: true, route: session.route))
+            appended = committed || appended
         }
+        if appended { store.didCommitReconciliation() }
         store.compactIfNeeded()
         return store.read()
     }

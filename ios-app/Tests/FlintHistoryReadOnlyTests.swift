@@ -125,4 +125,88 @@ final class FlintHistoryReadOnlyTests: XCTestCase {
         XCTAssertNil(summary.days[0].focusedSeconds); XCTAssertEqual(summary.days[1].focusedSeconds, 0)
         XCTAssertEqual(summary.sessions[0].focusedSeconds, 60); XCTAssertTrue(summary.days[1].inProgress)
     }
+
+    func testClearPostsOnceAfterUnlockWithClearReason() {
+        let host = store()
+        host.append(event()); _ = host.read()
+        let delivered = expectation(description: "clear notification outside mutex")
+        delivered.assertForOverFulfill = true
+        var reasons: [String] = []
+        let token = NotificationCenter.default.addObserver(forName: FlintHistoryStore.didChangeNotification,
+                                                            object: nil, queue: nil) { note in
+            guard let changed = note.object as? FlintHistoryStore, changed === host else { return }
+            reasons.append(note.userInfo?["reason"] as? String ?? "missing")
+            // Re-entry would deadlock if the notification were posted under the mutex.
+            XCTAssertEqual(host.read().availability, .empty)
+            delivered.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        DispatchQueue.global().async { XCTAssertTrue(host.clear(keepingRunningSession: nil)) }
+        wait(for: [delivered], timeout: 2)
+        XCTAssertEqual(reasons, ["clear"])
+    }
+
+    func testNoOpReadAndReadOnlySnapshotPostNothing() {
+        let host = store(); _ = host.read()
+        var reasons: [String] = []
+        let token = NotificationCenter.default.addObserver(forName: FlintHistoryStore.didChangeNotification,
+                                                            object: nil, queue: nil) { note in
+            guard let changed = note.object as? FlintHistoryStore, changed === host else { return }
+            reasons.append(note.userInfo?["reason"] as? String ?? "missing")
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        _ = host.read(); _ = host.readOnlySnapshot(); _ = host.read()
+        XCTAssertTrue(reasons.isEmpty)
+    }
+
+    func testExtensionDoesNotPostAndHostDrainPostsOnlyForNewRecords() {
+        let host = store(), extensionStore = store(host: false)
+        _ = host.read()
+        var reasons: [String] = []
+        let token = NotificationCenter.default.addObserver(forName: FlintHistoryStore.didChangeNotification,
+                                                            object: nil, queue: nil) { note in
+            guard let changed = note.object as? FlintHistoryStore,
+                  changed === host || changed === extensionStore else { return }
+            reasons.append(note.userInfo?["reason"] as? String ?? "missing")
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        let start = event()
+        extensionStore.append(start); _ = extensionStore.readOnlySnapshot()
+        XCTAssertFalse(extensionStore.clear(keepingRunningSession: nil))
+        XCTAssertFalse(extensionStore.compactIfNeeded())
+        XCTAssertTrue(reasons.isEmpty)
+        _ = host.read(); _ = host.read()
+        extensionStore.append(start); _ = host.read() // duplicate ingress is not a new record
+        XCTAssertEqual(reasons, ["drain"])
+    }
+
+    func testCompactionPostsOnlyWhenCommittedRatherThanDailyNoOp() {
+        let host = store(); host.append(event()); _ = host.read()
+        var reasons: [String] = []
+        let token = NotificationCenter.default.addObserver(forName: FlintHistoryStore.didChangeNotification,
+                                                            object: nil, queue: nil) { note in
+            guard let changed = note.object as? FlintHistoryStore, changed === host else { return }
+            reasons.append(note.userInfo?["reason"] as? String ?? "missing")
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        XCTAssertTrue(host.compactIfNeeded()); XCTAssertTrue(host.compactIfNeeded())
+        XCTAssertEqual(reasons, ["compact"])
+    }
+
+    func testReconcilerNotifiesOnlyAfterNewInferredRecordsArePublished() {
+        let host = store(); host.append(event()); _ = host.read()
+        var inferredSnapshots: [[FlintHistoryEvent]] = []
+        let token = NotificationCenter.default.addObserver(forName: FlintHistoryStore.didChangeNotification,
+                                                            object: nil, queue: nil) { note in
+            guard let changed = note.object as? FlintHistoryStore, changed === host,
+                  note.userInfo?["reason"] as? String == "reconcile" else { return }
+            inferredSnapshots.append(host.readOnlySnapshot().events)
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        _ = FlintHistoryReconciler.reconcile(store: host, activeSession: nil, now: now.addingTimeInterval(4000))
+        _ = FlintHistoryReconciler.reconcile(store: host, activeSession: nil, now: now.addingTimeInterval(5000))
+        XCTAssertEqual(inferredSnapshots.count, 1)
+        XCTAssertEqual(inferredSnapshots.first?.last?.type, .completed)
+        XCTAssertEqual(inferredSnapshots.first?.last?.inferred, true)
+    }
 }
