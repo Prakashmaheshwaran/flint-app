@@ -87,7 +87,7 @@ struct AppLockWindow: UIViewRepresentable {
             curtain.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             curtain.backgroundColor = UIColor(FlintBrand.ground)
             curtain.isAccessibilityElement = true
-            curtain.accessibilityLabel = "Flint is hidden"
+            curtain.accessibilityLabel = String(localized: "Flint is hidden")
             host.view.addSubview(curtain)
             privacyCurtain = curtain
 
