@@ -9,7 +9,9 @@ import FlintCore
 /// enforcement alive when the app is closed or killed. Runs in a tight, short-lived sandbox.
 ///
 /// Activity names that arrive here:
-///  - `flint.session`    — the manual Block Now session (single shared store + saved selection).
+///  - `flint.session.<token>` — the manual Block Now session's one-shot auto-clear (older
+///                         builds used plain `flint.session`). `FlintSessionController` decides:
+///                         only the registration recorded on the active session can end it.
 ///  - `flint.rule.<id>`  — a recurring schedule rule (its own store + embedded selection).
 ///  - `flint.limit.<id>` — a daily Time Limit (all-day window; its event shields on threshold,
 ///                         and the day boundary resets it).
@@ -20,8 +22,6 @@ import FlintCore
 /// unreadable): it is deregistered and otherwise ignored — never treated as the session.
 final class FlintMonitor: DeviceActivityMonitor {
 
-    private let sessionStore = ManagedSettingsStore(named: ManagedSettingsStore.Name("flint"))
-
     override func intervalDidStart(for activity: DeviceActivityName) {
         super.intervalDidStart(for: activity)
         if let limit = limit(for: activity) {
@@ -30,8 +30,8 @@ final class FlintMonitor: DeviceActivityMonitor {
             applyRule(rule)
         } else if let openLimit = openLimit(for: activity) {
             applyOpenLimitShield(openLimit) // new day → re-arm tokens released by yesterday's grants
-        } else if activity.rawValue == FlintSessionController.monitorName {
-            applyShieldFromSavedSelection()
+        } else if FlintSessionController.isSessionActivity(activity.rawValue) {
+            FlintSessionController().handleMonitorEvent(.intervalDidStart, activity: activity.rawValue)
         } else {
             stopStaleActivity(activity)
         }
@@ -45,14 +45,21 @@ final class FlintMonitor: DeviceActivityMonitor {
             ManagedSettingsStore(named: ManagedSettingsStore.Name(rule.storeName)).clearAllSettings()
         } else if let openLimit = openLimit(for: activity) {
             applyOpenLimitShield(openLimit) // open limits stay shielded across the day roll-over
-        } else if activity.rawValue == FlintSessionController.monitorName {
-            // Session over (natural expiry with the app closed/killed): clearing the store
-            // drops the shield AND the Hardcore uninstall guard, which lives on the same store.
-            sessionStore.clearAllSettings()
-            FlintGroupStore()?.clearActiveSession()
+        } else if FlintSessionController.isSessionActivity(activity.rawValue) {
+            // Natural expiry with the app closed/killed: ending the session clears its store,
+            // which drops the shield AND the Hardcore uninstall guard living on it.
+            FlintSessionController().handleMonitorEvent(.intervalDidEnd, activity: activity.rawValue)
         } else {
             stopStaleActivity(activity)
         }
+    }
+
+    /// Only session registrations shorter than 15 minutes carry a warning: it marks their real
+    /// end inside the padded interval DeviceActivity requires.
+    override func intervalWillEndWarning(for activity: DeviceActivityName) {
+        super.intervalWillEndWarning(for: activity)
+        guard FlintSessionController.isSessionActivity(activity.rawValue) else { return }
+        FlintSessionController().handleMonitorEvent(.intervalWillEndWarning, activity: activity.rawValue)
     }
 
     override func eventDidReachThreshold(
@@ -84,8 +91,8 @@ final class FlintMonitor: DeviceActivityMonitor {
         FlintOpenLimitRule.loadAll().first { $0.activityName == activity.rawValue }
     }
 
-    /// A boundary fired for a name matching no schedule/limit/open-limit and not the session
-    /// (`flint.session`): a stale registration. It used to fall through to the session branch —
+    /// A boundary fired for a name matching no schedule/limit/open-limit and not a session
+    /// registration: a stale registration. It used to fall through to the session branch —
     /// applying the saved-selection shield or, worse, tearing down a *live* session's store and
     /// state. Deregister it so it never fires again; touch nothing else.
     private func stopStaleActivity(_ activity: DeviceActivityName) {
@@ -129,21 +136,5 @@ final class FlintMonitor: DeviceActivityMonitor {
     private func applyOpenLimitShield(_ rule: FlintOpenLimitRule) {
         guard rule.enabled else { return } // stale registration for a disabled rule → leave it clear
         FlintOpenLimitEnforcer.applyShield(for: rule)
-    }
-
-    private func applyShieldFromSavedSelection() {
-        guard let selection = FlintGroupStore()?.loadSelection() else { return }
-        sessionStore.shield.applications =
-            selection.applicationTokens.isEmpty ? nil : selection.applicationTokens
-        sessionStore.shield.applicationCategories =
-            selection.categoryTokens.isEmpty ? nil : .specific(selection.categoryTokens)
-        sessionStore.shield.webDomains =
-            selection.webDomainTokens.isEmpty ? nil : selection.webDomainTokens
-        // Uninstall guard: deny app removal while a Hardcore session runs. The OS-driven
-        // (re)apply mirrors the app-side arm in FlintSessionController, so the guard holds even
-        // if the host process died right after starting; a stale/non-Hardcore session asserts
-        // nil, and intervalDidEnd's clearAllSettings() releases it with the shield.
-        sessionStore.application.denyAppRemoval =
-            FlintUninstallGuard.shouldDeny(for: FlintGroupStore()?.loadActiveSession()) ? true : nil
     }
 }

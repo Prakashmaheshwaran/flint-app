@@ -44,7 +44,7 @@ enum FlintShortcutsRunner {
     /// Start a block from a portable `FlintSessionRequest`. Throws `.noSelectionAvailable` when the
     /// request resolves to nothing, so the user gets a useful prompt instead of a generic failure.
     @discardableResult
-    static func start(_ request: FlintSessionRequest) throws -> FlintActiveSession {
+    static func start(_ request: FlintSessionRequest, source: FlintSessionSource = .shortcut) throws -> FlintActiveSession {
         guard let selection = resolveSelection(for: request) else {
             throw FlintShortcutsError.noSelectionAvailable
         }
@@ -52,7 +52,8 @@ enum FlintShortcutsRunner {
             selection: selection,
             duration: request.duration,
             breakLevel: request.breakLevel,
-            name: request.name
+            name: request.name,
+            source: source
         )
     }
 
@@ -74,7 +75,7 @@ enum FlintShortcutsRunner {
             breakLevel: breakLevel,
             name: "Pomodoro"
         )
-        return try start(request)
+        return try start(request, source: .pomodoro)
     }
 
     /// Stop the running session, honoring Hardcore (which can't be ended early until it expires).
@@ -82,7 +83,7 @@ enum FlintShortcutsRunner {
         let controller = FlintSessionController()
         guard let active = controller.activeSession else { throw FlintShortcutsError.noActiveSession }
         guard controller.canStop(active) else { throw FlintShortcutsError.hardcoreLocked }
-        controller.stop()
+        controller.stop(route: .shortcutStop)
     }
 }
 #endif

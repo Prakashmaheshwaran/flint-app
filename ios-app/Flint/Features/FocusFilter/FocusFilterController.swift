@@ -37,10 +37,13 @@ struct FocusFilterController {
                 selection: selection,
                 duration: request.duration,   // 0 = open-ended; the Focus owns the lifetime
                 breakLevel: request.breakLevel,
-                name: Self.sessionName
+                name: Self.sessionName,
+                source: .focusFilter
             )
             return true
         } catch {
+            // The Focus turns on regardless; the failure is not silent — arming failures are
+            // recorded in FlintSessionHealth by the controller and shown in Settings.
             return false
         }
     }
@@ -51,7 +54,7 @@ struct FocusFilterController {
     /// via `FlintSessionController.canStop` — only the system Focus-off can end it here.
     func deactivate() {
         guard let active = controller.activeSession, active.name == Self.sessionName else { return }
-        controller.stop()
+        controller.stop(route: .focusFilterOff)
     }
 
     // MARK: Selection resolution
