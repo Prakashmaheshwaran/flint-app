@@ -15,11 +15,13 @@ enum FlintGlanceStatusAdapter {
             .init(protection: .unavailable, checkedAt: nil, validUntil: nil, session: nil,
                   protectionEndsAt: nil, next: nil, history: history)
         }
+        let sourceValidity = validUntil ?? (state == "not_protected"
+            ? observedAt.addingTimeInterval(maximumDisplayAge) : nil)
         guard version == 1, observedAt.timeIntervalSince1970.isFinite, observedAt <= date,
-              let validUntil, validUntil.timeIntervalSince1970.isFinite,
-              validUntil > date, validUntil > observedAt,
+              let sourceValidity, sourceValidity.timeIntervalSince1970.isFinite,
+              sourceValidity > date, sourceValidity > observedAt,
               !degradedReasons.contains("time_uncertain") else { return unavailable() }
-        let freshness = min(validUntil, observedAt.addingTimeInterval(maximumDisplayAge))
+        let freshness = min(sourceValidity, observedAt.addingTimeInterval(maximumDisplayAge))
         guard freshness > date else { return unavailable() }
         let protection: FlintGlanceInput.Protection
         switch state {

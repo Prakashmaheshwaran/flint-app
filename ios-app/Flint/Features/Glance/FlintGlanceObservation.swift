@@ -19,7 +19,7 @@ struct FlintGlanceObservation: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: FlintHistoryStore.didChangeNotification)) { _ in
                 // F's clear/drain signal is independent of protection. B still owns the
                 // canonical reload after enforcement publishes a new status snapshot.
-                WidgetCenter.shared.reloadTimelines(ofKind: FlintGlancePresentation.widgetKind)
+                WidgetCenter.shared.reloadTimelines(ofKind: FlintGlanceReader.widgetKind)
             }
             .task(id: phase) {
                 guard phase == .active else { return }

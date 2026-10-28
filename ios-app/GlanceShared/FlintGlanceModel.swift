@@ -47,6 +47,7 @@ struct FlintGlanceInput: Equatable {
     let next: Occurrence?
     let history: History
     var headline: Cause? = nil
+    var activeFocusSessionID: String? = nil
 
     static func unavailable(at date: Date, history: History? = nil) -> Self {
         .init(protection: .unavailable, checkedAt: nil, validUntil: nil, session: nil,
@@ -56,7 +57,8 @@ struct FlintGlanceInput: Equatable {
 
     func replacingHistory(_ value: History) -> Self {
         .init(protection: protection, checkedAt: checkedAt, validUntil: validUntil, session: session,
-              protectionEndsAt: protectionEndsAt, next: next, history: value, headline: headline)
+              protectionEndsAt: protectionEndsAt, next: next, history: value, headline: headline,
+              activeFocusSessionID: activeFocusSessionID)
     }
 }
 
@@ -64,7 +66,6 @@ struct FlintGlancePresentation: Equatable {
     enum Status: Equatable {
         case idle, saved, armed, enforcing, suspended, pass, degraded, unavailable, stale, expired
     }
-    static let widgetKind = "FlintProtectionWidget"
     static let openURL = URL(string: "flint://open")!
 
     let status: Status

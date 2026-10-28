@@ -32,7 +32,7 @@ struct FlintGlanceProvider: TimelineProvider {
 
 struct FlintProtectionWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: FlintGlancePresentation.widgetKind, provider: FlintGlanceProvider()) { entry in
+        StaticConfiguration(kind: FlintGlanceReader.widgetKind, provider: FlintGlanceProvider()) { entry in
             FlintGlanceWidgetView(entry: entry)
         }
         .configurationDisplayName("Flint at a glance")
