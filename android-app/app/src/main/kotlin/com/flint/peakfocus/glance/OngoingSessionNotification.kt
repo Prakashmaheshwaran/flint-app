@@ -35,8 +35,13 @@ data class OngoingNotificationPlan(
  */
 object OngoingSessionNotification {
     fun customize(context: Context, builder: Notification.Builder) {
-        val elapsed = SystemClock.elapsedRealtime()
-        val plan = OngoingNotificationPlan.from(GlanceSurfaceBridge.display.value, elapsed)
+        customize(context, builder, GlanceSurfaceBridge.display.value,
+            SystemClock.elapsedRealtime(), System.currentTimeMillis())
+    }
+
+    internal fun customize(context: Context, builder: Notification.Builder, display: GlanceDisplay,
+                           elapsed: Long, epochMs: Long) {
+        val plan = OngoingNotificationPlan.from(display, elapsed)
         val open = PendingIntent.getActivity(context, 1001,
             Intent(context, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
@@ -50,7 +55,7 @@ object OngoingSessionNotification {
             plan.countdownEndElapsedMs?.let { end ->
                 // Android converts this wall estimate to the system chronometer's elapsed base.
                 // The source deadline remains authoritative elapsedRealtime, including clock jumps.
-                builder.setWhen(System.currentTimeMillis() + (end - elapsed))
+                builder.setWhen(epochMs + (end - elapsed))
                     .setShowWhen(true).setUsesChronometer(true).setChronometerCountDown(true)
             }
         } // API 23 displays the absolute end from the mapper, never an upwards timer.
