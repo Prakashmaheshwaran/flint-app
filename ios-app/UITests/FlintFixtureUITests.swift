@@ -197,7 +197,7 @@ final class FlintFixtureUITests: XCTestCase {
     private enum ScrollDirection { case up, down }
 
     private func capture(_ state: String) {
-        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         screenshot.name = state
         screenshot.lifetime = .keepAlways
         add(screenshot)
@@ -219,7 +219,28 @@ final class FlintFixtureUITests: XCTestCase {
                 XCTFail("No visible scroll container for \(element)", file: file, line: line)
                 throw FixtureFailure.offscreen
             }
-            if direction == .up { scroll.swipeUp() } else { scroll.swipeDown() }
+            // SwiftUI can expose the sheet's full frame while the keyboard covers
+            // its lower portion. A default swipe then starts on the keyboard and
+            // never scrolls the form. Keep both gesture endpoints above it.
+            let window = app.frame
+            var viewport = scroll.frame.intersection(window)
+            let keyboard = app.keyboards.firstMatch
+            if keyboard.exists {
+                let bottom = min(viewport.maxY, keyboard.frame.minY)
+                viewport.size.height = max(0, bottom - viewport.minY)
+            }
+            guard !viewport.isNull, viewport.height >= 100 else {
+                XCTFail("No usable scroll viewport for \(element)", file: file, line: line)
+                throw FixtureFailure.offscreen
+            }
+            let top = viewport.minY + viewport.height * 0.2
+            let bottom = viewport.minY + viewport.height * 0.8
+            let origin = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+            let from = origin.withOffset(CGVector(dx: viewport.midX - window.minX,
+                dy: (direction == .up ? bottom : top) - window.minY))
+            let to = origin.withOffset(CGVector(dx: viewport.midX - window.minX,
+                dy: (direction == .up ? top : bottom) - window.minY))
+            from.press(forDuration: 0.05, thenDragTo: to)
         }
         XCTFail("Element remained offscreen: \(element)", file: file, line: line)
         throw FixtureFailure.offscreen
