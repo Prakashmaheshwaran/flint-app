@@ -193,8 +193,11 @@ extension FlintOpenLimitRule {
         return rules
     }
 
-    public static func saveAll(_ rules: [FlintOpenLimitRule], to defaults: UserDefaults? = .flintGroup) {
-        defaults?.set(try? JSONEncoder().encode(rules), forKey: FlintOpenLimitStoreKey.rules)
+    @discardableResult
+    public static func saveAll(_ rules: [FlintOpenLimitRule], to defaults: UserDefaults? = .flintGroup) -> Bool {
+        guard let defaults, let data = try? JSONEncoder().encode(rules) else { return false }
+        defaults.set(data, forKey: FlintOpenLimitStoreKey.rules)
+        return true
     }
 }
 #endif

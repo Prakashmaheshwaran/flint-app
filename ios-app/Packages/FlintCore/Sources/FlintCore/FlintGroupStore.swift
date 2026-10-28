@@ -123,8 +123,11 @@ public final class FlintGroupStore {
 
     // MARK: Scheduled rules
 
-    public func saveRules(_ rules: [FlintScheduleRule]) {
-        defaults.set(try? JSONEncoder().encode(rules), forKey: Key.rules)
+    @discardableResult
+    public func saveRules(_ rules: [FlintScheduleRule]) -> Bool {
+        guard let data = try? JSONEncoder().encode(rules) else { return false }
+        defaults.set(data, forKey: Key.rules)
+        return true
     }
 
     public func loadRules() -> [FlintScheduleRule] {
@@ -134,8 +137,11 @@ public final class FlintGroupStore {
 
     // MARK: Time limits
 
-    public func saveLimits(_ limits: [FlintLimitRule]) {
-        defaults.set(try? JSONEncoder().encode(limits), forKey: Key.limits)
+    @discardableResult
+    public func saveLimits(_ limits: [FlintLimitRule]) -> Bool {
+        guard let data = try? JSONEncoder().encode(limits) else { return false }
+        defaults.set(data, forKey: Key.limits)
+        return true
     }
 
     public func loadLimits() -> [FlintLimitRule] {
