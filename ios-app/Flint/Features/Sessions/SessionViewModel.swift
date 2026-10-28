@@ -49,6 +49,7 @@ final class SessionViewModel: ObservableObject {
     /// The saved group last applied, so a start from an unchanged preset is reported as one.
     private var appliedGroupSelection: FamilyActivitySelection?
     private var completionForeground: AnyCancellable?
+    private var reconciled: AnyCancellable?
 
     init() {
         if let saved = FlintGroupStore()?.loadSelection() { selection = saved }
@@ -73,6 +74,25 @@ final class SessionViewModel: ObservableObject {
         refreshCompletion()
         completionForeground = NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
             .sink { [weak self] _ in Task { @MainActor in self?.refreshCompletion() } }
+        // A session ended elsewhere — the locked gate's Emergency Pass, a Shortcut, the monitor —
+        // must not linger on screen as a phantom countdown.
+        reconciled = NotificationCenter.default.publisher(for: .flintProtectionReconciled)
+            .sink { [weak self] _ in Task { @MainActor in self?.syncActive() } }
+    }
+
+    private func syncActive() {
+        guard active?.monitorName != "preview" else { return }
+        let current = controller.activeSession
+        guard current?.id != active?.id else { return }
+        active = current
+        if current == nil {
+            remaining = 0
+            harderStop = nil
+            timer?.invalidate()
+            refreshCompletion()
+        } else {
+            startTicking()
+        }
     }
 
     // MARK: Saved app groups (presets)
@@ -215,7 +235,7 @@ final class SessionViewModel: ObservableObject {
             remaining = 0
             timer?.invalidate()
         } else {
-            errorText = "Emergency Pass isn't available yet — one per week."
+            errorText = "Emergency Pass isn't available yet — it renews seven days after you use it."
         }
     }
 

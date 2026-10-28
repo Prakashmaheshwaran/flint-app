@@ -187,8 +187,13 @@ struct PINGateView: View {
                 }
             }
         }
-        .fullScreenCover(isPresented: $showRecovery) {
-            LockedRecoveryView { showRecovery = false }
+        // In place, not a presented cover: the gate's privacy curtain must stay above it, and a
+        // re-lock that swaps the gate out discards it.
+        .accessibilityHidden(showRecovery)
+        .overlay {
+            if showRecovery {
+                LockedRecoveryView { showRecovery = false }
+            }
         }
     }
 }

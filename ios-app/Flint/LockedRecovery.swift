@@ -34,7 +34,8 @@ struct LockedRecoveryState: Equatable {
     static func current(now: Date = Date()) -> Self {
         let controller = FlintSessionController()
         let store = FlintGroupStore()
-        return make(active: controller.activeSession, hasRecord: store?.hasActiveSessionRecord() ?? false,
+        // Without the App Group nothing can be read — a block may still be enforced, so say so.
+        return make(active: controller.activeSession, hasRecord: store?.hasActiveSessionRecord() ?? true,
                     passAvailable: controller.emergencyPassAvailable(now: now),
                     passLastUsed: store?.emergencyPassLastUsed(), now: now)
     }
@@ -119,6 +120,8 @@ struct LockedRecoveryView: View {
                     onKeep: { showPass = false },
                     onUse: {
                         showPass = false
+                        passFailed = false
+                        guard state.canUsePass else { return }
                         let used = FlintSessionController().useEmergencyPass()
                         if used {
                             NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
