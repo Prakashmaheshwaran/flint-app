@@ -20,12 +20,11 @@ struct HelpView: View {
                     .padding(.top, 8)
 
                 HelpSection(title: "Strictness") {
-                    HelpParagraph("Each focus session you start in Flint has a strictness level. It decides how you can end that session early.")
-                    HelpItem(title: "Easy", text: "End the session whenever you choose.")
-                    HelpItem(title: "Harder", text: "Ending early from the session screen asks you to wait first, so the urge has time to pass.")
-                    HelpItem(title: "Hardcore", text: "The session screen has no way to end it early. An Emergency Pass can end it.")
-                    HelpParagraph("A session started by a Focus mode ends when that Focus turns off.")
-                    HelpParagraph("In this version, starting a session from Shortcuts or a Focus mode replaces the one that’s running, even a Hardcore session. Stopping a Harder session from Shortcuts doesn’t wait.")
+                    HelpParagraph("You choose a strictness level for each focus session. It decides how you can end that session early.")
+                    HelpItem(title: "Easy", text: "End the session any time after confirming.")
+                    HelpItem(title: "Harder", text: "Ending early starts a wait of 1 minute. Each exception you’ve already taken in this session — a break, a replacement — makes the next wait longer: 5, then 15 minutes. Cancelling a wait doesn’t count. After the wait you confirm in Flint. A Shortcut or turning a Focus off can start the wait but never finishes it.")
+                    HelpItem(title: "Hardcore", text: "Can’t be ended early — not in Flint, not by a Shortcut and not by turning a Focus off. It ends at its time or with an Emergency Pass. Starting one asks you to confirm.")
+                    HelpParagraph("Harder and Hardcore sessions need a set length; an Easy session can run until you stop it. One session runs at a time: a Focus turning on while another session runs starts nothing, and replacing a Hardcore session needs one at least as strong — the same apps or more, ending no earlier.")
                 }
 
                 HelpSection(title: "Emergency Pass") {
