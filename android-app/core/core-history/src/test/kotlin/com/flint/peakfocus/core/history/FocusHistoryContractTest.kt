@@ -133,8 +133,8 @@ class FocusHistoryContractTest {
     @Test fun FH14_retentionBoundaryKeepsWholeSessions() = runTest {
         val store = store()
         val boundary = start - FocusHistoryStore.RETENTION_MS
-        listOf(started(boundary - hour, "keep"), complete(boundary, "keep"),
-            started(boundary - hour - 1, "drop"), complete(boundary - 1, "drop")).forEach { store.append(it) }
+        store.update { listOf(started(boundary - hour, "keep"), complete(boundary, "keep"),
+            started(boundary - hour - 1, "drop"), complete(boundary - 1, "drop")) }
         assertTrue(store.compact())
         assertEquals(listOf("keep", "keep"), store.snapshots.value.events.map { it.session })
     }
@@ -202,6 +202,34 @@ class FocusHistoryContractTest {
         assertEquals(HistoryAvailability.UNAVAILABLE, FocusHistoryAggregator.summarize(snapshot, start, zone, emptySet()).availability)
         assertTrue(store.append(started()))
         assertEquals(1, store.load().events.size)
+    }
+    @Test fun hardCapDropsOldestWholeSessionsAndDailyCompactionSurvivesRestart() = runTest {
+        val dir = temporary.newFolder(); val store = store(dir = dir)
+        assertTrue(store.update { (1..6).flatMap { id -> listOf(
+            started(start + id, "$id"),
+            HistoryEvent(type = "future", session = "$id", at = start + id, tz = "UTC", reason = "x".repeat(1_048_576)),
+        ) } })
+        assertTrue(File(dir, "events.v1.jsonl").length() <= FocusHistoryStore.HARD_CAP)
+        val grouped = store.snapshots.value.events.groupBy { it.session }
+        assertFalse(grouped.containsKey("1"))
+        assertTrue(grouped.values.all { it.size == 2 })
+        // Once under the soft cap a second process incarnation must not compact again today.
+        store.clear(emptySet())
+        val log = File(dir, "events.v1.jsonl")
+        assertTrue(log.setLastModified(100))
+        store(dir = dir).load()
+        assertEquals(100L, log.lastModified())
+    }
+    @Test fun quarantineKeepsAtMostThreeAndMetadataCorruptionIsUnavailable() = runTest {
+        val dir = temporary.newFolder(); val store = store(dir = dir); store.load()
+        repeat(5) { index ->
+            File(dir, "events.v1.jsonl").appendText("bad-$index\n")
+            store.load()
+            store.compact()
+        }
+        assertEquals(3, File(dir, "quarantine").listFiles()!!.size)
+        File(dir, "metadata.v1.json").writeText("invalid metadata")
+        assertFalse(store(dir = dir).load().readable)
     }
     @Test fun bridgeDiffRestartIdempotenceAndObservedVsColdEnds() = runTest {
         val clock = MutableClock(start); val store = store(clock)

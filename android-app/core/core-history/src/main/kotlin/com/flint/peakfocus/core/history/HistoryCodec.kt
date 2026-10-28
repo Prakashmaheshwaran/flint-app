@@ -2,7 +2,7 @@ package com.flint.peakfocus.core.history
 
 /** Small strict flat-JSON codec. Does not depend on Android's stubbed org.json in JVM tests. */
 object HistoryCodec {
-    fun encode(event: HistoryEvent): String = event.originalLine ?: FlatJson.encode(linkedMapOf(
+    fun encode(event: HistoryEvent): String = event.originalLine ?: FlatJson.encode(linkedMapOf<String, Any?>(
         "v" to event.v.toLong(), "id" to event.id, "type" to event.type,
         "session" to event.session, "at" to event.at, "tz" to event.tz,
     ).apply {
@@ -24,8 +24,13 @@ object HistoryCodec {
         fun optionalString(key: String): String? = fields[key]?.let { it as? String ?: error(key) }
         fun optionalLong(key: String): Long? = fields[key]?.let { it as? Long ?: error(key) }
         val version = (fields["v"] as? Long)?.takeIf { it in 1..Int.MAX_VALUE }?.toInt() ?: error("v")
+        val type = string("type")
+        if (version > 1 || HistoryEventType.fromWire(type) == null) {
+            return HistoryEvent(v = version, id = string("id"), type = type, session = string("session"),
+                at = fields["at"] as? Long ?: error("at"), tz = string("tz"), originalLine = line)
+        }
         val event = HistoryEvent(
-            v = version, id = string("id"), type = string("type"), session = string("session"),
+            v = version, id = string("id"), type = type, session = string("session"),
             at = fields["at"] as? Long ?: error("at"), tz = string("tz"),
             inferred = fields["inferred"]?.let { it as? Boolean ?: error("inferred") } ?: false,
             plannedEnd = optionalLong("plannedEnd"), tier = optionalString("tier"),

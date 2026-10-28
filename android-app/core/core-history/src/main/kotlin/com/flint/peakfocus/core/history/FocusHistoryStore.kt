@@ -54,7 +54,9 @@ class FocusHistoryStore(
 
     suspend fun clear(activeSessionIds: Set<String>): Boolean = operation {
         val snapshot = readLocked()
-        val retained = snapshot.events.filter { it.session in activeSessionIds }
+        val running = FocusHistoryAggregator.sessions(snapshot.events, clock.millis(), activeSessionIds)
+            .filter { it.outcome == SessionOutcome.RUNNING }.mapTo(mutableSetOf()) { it.id }
+        val retained = snapshot.events.filter { it.session in running }
         rewriteLog(retained)
         val old = readMetadata()
         degraded = false
