@@ -18,6 +18,7 @@ concurrency:
 jobs:
   script-selftests:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - name: Install zsh for shell regression tests
