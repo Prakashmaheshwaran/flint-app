@@ -39,6 +39,10 @@ confirms those surfaces use real local events. Do not claim an uninstall lock,
 parental-control/enterprise status, disability-assistance tool status, Google
 approval, universal browser support or data recovery/cloud backup.
 
+Widget and ongoing-session claims remain pending lane K's final release/device
+evidence. Describe observation times and planned-end estimates accurately; do not
+imply that a cached widget proves current protection or completed focus time.
+
 Lane C's Settings/uninstall/disable interception removal landed in PR105. Verify
 that source and E4's matching disclosure are present in the exact submission
 build; demonstrate normal recovery controls before using this copy.
