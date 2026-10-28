@@ -50,7 +50,7 @@ class PathBServiceLifecycleTest {
         health.unavailable(owner, "usage-access-missing")
         assertEquals(PathBState.UNKNOWN, events.last().state)
         health.stopped(owner)
-        assertEquals(Published(PathBState.OFF, setOf("usage-access-missing"), null), events.last())
+        assertEquals(Published(PathBState.OFF, emptySet(), null), events.last())
     }
 
     @Test fun `clean destruction is off and has no live lease`() {
@@ -123,5 +123,39 @@ class PathBServiceLifecycleTest {
         health.unavailable(owner, "usage-access-check-failed")
         health.mode(owner, FallbackMode.ENFORCING)
         assertTrue(events.last().reasons.isEmpty())
+    }
+
+    @Test fun `stable successful ticks renew at half lease rather than every tick`() {
+        health.starting(owner); health.foregroundStarted(owner)
+        health.mode(owner, FallbackMode.ENFORCING)
+        val count = events.size
+        repeat(44) { now += 1_000; health.mode(owner, FallbackMode.ENFORCING) }
+        assertEquals(count, events.size)
+        assertEquals(91_000L, events.last().until)
+        now += 1_000
+        health.mode(owner, FallbackMode.ENFORCING)
+        assertEquals(count + 1, events.size)
+        assertEquals(136_000L, events.last().until)
+    }
+
+    @Test fun `mode transitions and recovery publish immediately even within an existing lease`() {
+        health.starting(owner); health.foregroundStarted(owner)
+        health.mode(owner, FallbackMode.STANDBY)
+        now += 1_000
+        health.mode(owner, FallbackMode.ENFORCING)
+        assertEquals(Published(PathBState.ENFORCING, emptySet(), 92_000L), events.last())
+        health.unavailable(owner, "usage-access-check-failed")
+        now += 1_000
+        health.mode(owner, FallbackMode.ENFORCING)
+        assertEquals(Published(PathBState.ENFORCING, emptySet(), 93_000L), events.last())
+    }
+
+    @Test fun `failed external permission probe cannot replace a live service observation`() {
+        health.starting(owner); health.foregroundStarted(owner)
+        health.mode(owner, FallbackMode.STANDBY)
+        val count = events.size
+        health.gateFailed("usage-access-check-failed")
+        assertEquals(count, events.size)
+        assertEquals(PathBState.STANDBY, events.last().state)
     }
 }

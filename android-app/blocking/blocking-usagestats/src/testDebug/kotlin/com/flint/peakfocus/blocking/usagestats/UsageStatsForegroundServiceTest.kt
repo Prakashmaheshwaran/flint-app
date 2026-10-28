@@ -148,13 +148,13 @@ class UsageStatsForegroundServiceTest {
         assertEquals(PathBState.UNKNOWN, health())
     }
 
-    @Test fun `permission loss removes foreground and reports off with its observed reason`() {
+    @Test fun `permission loss removes foreground and clean stop clears service reasons`() {
         controller.create(); startLoop(); scheduler.runCurrent()
         assertEquals(PathBState.ENFORCING, health())
         grantUsage(false)
         startLoop(); scheduler.runCurrent()
         assertEquals(PathBState.OFF, health())
-        assertTrue("usage-access-missing" in ProtectionStatusHub.status.value.detectors.degradedReasons)
+        assertFalse("usage-access-missing" in ProtectionStatusHub.status.value.detectors.degradedReasons)
         assertTrue(shadowOf(service).isForegroundStopped)
         assertTrue(shadowOf(service).isStoppedBySelf)
     }
@@ -179,6 +179,19 @@ class UsageStatsForegroundServiceTest {
         val before = customizations
         PathBNotification.requestRefresh(); scheduler.runCurrent()
         assertEquals(before, customizations)
+    }
+
+    @Test fun `stable enforcing ticks do not rebuild the foreground notification`() {
+        var customizations = 0
+        customize { customizations++ }
+        controller.create(); startLoop(); scheduler.runCurrent()
+        val before = customizations
+        val queries = CountingUsageStats.calls
+        repeat(10) { scheduler.advanceTimeBy(1_000); scheduler.runCurrent() }
+        assertTrue(CountingUsageStats.calls >= queries + 10)
+        assertEquals(before, customizations)
+        PathBNotification.requestRefresh(); scheduler.runCurrent()
+        assertEquals(before + 1, customizations)
     }
 
     @Test fun `debug timing distinguishes queries from handoff return without recording package identities`() {

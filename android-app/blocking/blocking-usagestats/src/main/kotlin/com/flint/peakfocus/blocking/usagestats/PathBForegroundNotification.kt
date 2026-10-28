@@ -1,7 +1,6 @@
 package com.flint.peakfocus.blocking.usagestats
 
 import android.app.Notification
-import android.app.PendingIntent
 import android.content.Context
 import android.os.Build
 import androidx.core.content.ContextCompat
@@ -58,7 +57,8 @@ internal class PathBForegroundNotification(
     private data class Content(
         val title: String?, val text: String?, val subtext: String?,
         val showWhen: Boolean, val chronometer: Boolean, val countdown: Boolean,
-        val whenMs: Long, val intent: PendingIntent?, val visibility: Int,
+        // The content intent always opens MainActivity; a fresh token is not a display change.
+        val whenMs: Long, val visibility: Int,
     ) {
         /** Chronometers render whole seconds; don't repost for wall/elapsed read jitter. */
         fun sameDisplay(previous: Content?): Boolean = previous != null &&
@@ -73,7 +73,7 @@ internal class PathBForegroundNotification(
                     e.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
                     e.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString(),
                     e.getBoolean(Notification.EXTRA_SHOW_WHEN), e.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER),
-                    e.getBoolean(Notification.EXTRA_CHRONOMETER_COUNT_DOWN), n.`when`, n.contentIntent, n.visibility)
+                    e.getBoolean(Notification.EXTRA_CHRONOMETER_COUNT_DOWN), n.`when`, n.visibility)
             }
         }
     }

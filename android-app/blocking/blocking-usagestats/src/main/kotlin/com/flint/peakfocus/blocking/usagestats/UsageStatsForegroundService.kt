@@ -32,6 +32,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -141,7 +142,12 @@ class UsageStatsForegroundService : Service() {
                                 DetectorFailover.mode(usageAccessGranted(), connected)
                             }
                         }
-                        if (connected != EnforcementSignals.detectors.pathAConnected) continue
+                        if (connected != EnforcementSignals.detectors.pathAConnected) {
+                            // A connection change invalidated this probe. Yield before retrying
+                            // so binding churn cannot create a tight AppOps binder loop.
+                            delay(100)
+                            continue
+                        }
                         failureReason = "foreground-observation-unavailable"
                         if (mode == FallbackMode.OFF) {
                             health.unavailable(this@UsageStatsForegroundService, "usage-access-missing")
@@ -154,18 +160,20 @@ class UsageStatsForegroundService : Service() {
                             true
                         }
                         if (completed) {
+                            val modeChanged = confirmedMode != mode
                             confirmedMode = mode
                             health.mode(this@UsageStatsForegroundService, mode)
-                            refreshNotification()
+                            if (modeChanged) refreshNotification()
                         }
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (failure: RuntimeException) {
                         // Permission changes/binder failures must not permanently kill fallback.
                         resetObservation = true
+                        val modeChanged = confirmedMode != null
                         confirmedMode = null
                         health.unavailable(this@UsageStatsForegroundService, failureReason)
-                        refreshNotification()
+                        if (modeChanged) refreshNotification()
                         Log.w("FlintFallback", "Foreground observation unavailable", failure)
                     }
                     withTimeoutOrNull(DetectorCadence.delayMs(mode)) { wake.receive() }

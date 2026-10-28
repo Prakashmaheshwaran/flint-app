@@ -1,7 +1,9 @@
 package com.flint.peakfocus.blocking.usagestats
 
 import android.app.Notification
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -26,6 +28,22 @@ class PathBForegroundNotificationTest {
     private fun customize(block: (Notification.Builder) -> Unit) {
         val customizer = PathBNotification.Customizer { _, builder -> block(builder) }
         customizers += customizer; PathBNotification.register(customizer)
+    }
+
+    @Test fun `fresh MainActivity intents do not repost unchanged display`() {
+        var request = 0
+        val intents = mutableListOf<PendingIntent>()
+        customize { builder ->
+            val intent = PendingIntent.getActivity(context, request++, Intent().setClassName(
+                context.packageName, "com.flint.peakfocus.MainActivity"), PendingIntent.FLAG_IMMUTABLE)
+            intents += intent
+            builder.setContentIntent(intent)
+        }
+        notifications.refresh(FallbackMode.ENFORCING)
+        repeat(120) { notifications.refresh(FallbackMode.ENFORCING) }
+        assertEquals(121, intents.toSet().size)
+        assertEquals(1, starts.size)
+        assertTrue(refreshes.isEmpty())
     }
 
     @Test fun `initial and changed content use one foreground notification`() {

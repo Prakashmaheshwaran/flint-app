@@ -13,12 +13,20 @@ internal class PathBServiceLifecycle(
     private var foregroundStarted = false
     private var reasons: Set<String> = emptySet()
     private var generation = 0L
+    private var confirmedMode: FallbackMode? = null
+    private var leaseUntil: Long? = null
+
+    private fun unleased(state: PathBState) {
+        confirmedMode = null
+        leaseUntil = null
+        publish(state, reasons, null)
+    }
 
     @Synchronized fun startRequested() {
         if (owner == null) {
             generation++
             reasons = emptySet()
-            publish(PathBState.UNKNOWN, reasons, null)
+            unleased(PathBState.UNKNOWN)
         }
     }
 
@@ -29,7 +37,7 @@ internal class PathBServiceLifecycle(
         owner = instance
         foregroundStarted = false
         reasons = emptySet()
-        publish(PathBState.UNKNOWN, reasons, null)
+        unleased(PathBState.UNKNOWN)
     }
 
     @Synchronized fun foregroundStarted(instance: Any) {
@@ -44,20 +52,26 @@ internal class PathBServiceLifecycle(
             return
         }
         reasons = emptySet()
+        val now = nowElapsed()
+        // Successful ticks remain frequent; stable health is renewed only when half its
+        // lease remains. A transition/failure always invalidates this coalescing state.
+        if (confirmedMode == mode && leaseUntil?.let { it - now > leaseMs / 2 } == true) return
+        confirmedMode = mode
+        leaseUntil = now + leaseMs
         publish(if (mode == FallbackMode.STANDBY) PathBState.STANDBY else PathBState.ENFORCING,
-            reasons, nowElapsed() + leaseMs)
+            reasons, leaseUntil)
     }
 
     @Synchronized fun handoff(instance: Any) {
         if (owner !== instance) return
         reasons = emptySet()
-        publish(PathBState.UNKNOWN, reasons, null)
+        unleased(PathBState.UNKNOWN)
     }
 
     @Synchronized fun unavailable(instance: Any, reason: String) {
         if (owner !== instance) return
         reasons = setOf(reason)
-        publish(PathBState.UNKNOWN, reasons, null)
+        unleased(PathBState.UNKNOWN)
     }
 
     @Synchronized fun stopped(instance: Any) {
@@ -65,7 +79,8 @@ internal class PathBServiceLifecycle(
         generation++
         owner = null
         foregroundStarted = false
-        publish(PathBState.OFF, reasons, null)
+        reasons = emptySet()
+        unleased(PathBState.OFF)
     }
 
     /** Capture before calling Android: onDestroy or a replacement may run during the binder call. */
@@ -75,7 +90,7 @@ internal class PathBServiceLifecycle(
     @Synchronized fun stopRequested(observedGeneration: Long, serviceWasRunning: Boolean, degradedReasons: Set<String>) {
         if (observedGeneration != generation) return
         reasons = degradedReasons.toSet()
-        publish(if (owner == null && !serviceWasRunning) PathBState.OFF else PathBState.UNKNOWN, reasons, null)
+        unleased(if (owner == null && !serviceWasRunning) PathBState.OFF else PathBState.UNKNOWN)
     }
 
     @Synchronized fun stopFailed(observedGeneration: Long) {
@@ -87,7 +102,9 @@ internal class PathBServiceLifecycle(
     }
 
     @Synchronized fun gateFailed(reason: String) {
+        // The service's own permission observation remains authoritative while it is alive.
+        if (owner != null) return
         reasons = setOf(reason)
-        publish(PathBState.UNKNOWN, reasons, null)
+        unleased(PathBState.UNKNOWN)
     }
 }
