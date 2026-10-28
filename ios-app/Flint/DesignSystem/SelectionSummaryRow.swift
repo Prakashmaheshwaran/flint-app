@@ -12,6 +12,9 @@ struct SelectionSummaryRow: View {
     let emptyTitle: LocalizedStringKey
     /// Leads the counts once something is picked, e.g. "Block".
     var verb: LocalizedStringKey = "Block"
+    /// Shown when categories are picked. Pass nil where categories aren't applied (allow lists
+    /// ignore category picks).
+    var categoryNote: LocalizedStringKey? = "A category includes every app in it."
     var maxIcons = 5
     @Environment(\.dynamicTypeSize) private var typeSize
 
@@ -24,8 +27,8 @@ struct SelectionSummaryRow: View {
                 } else {
                     Text("\(Text(verb)) \(counts.summary)").flintRowTitle()
                     if !typeSize.isAccessibilitySize { icons }
-                    if counts.categories > 0 {
-                        Text("A category includes every app in it.").flintSecondary()
+                    if counts.categories > 0, let categoryNote {
+                        Text(categoryNote).flintSecondary()
                     }
                     Text("Tap to change").flintSecondary()
                 }
@@ -34,7 +37,12 @@ struct SelectionSummaryRow: View {
             Spacer(minLength: 8)
             FlintChevron()
         }
-        .accessibilityElement(children: .combine)
+        // One concise label instead of every visible line and separator.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(counts.total == 0
+            ? Text("\(Text(emptyTitle)), apps, categories and sites")
+            : Text("\(Text(verb)) \(counts.spokenSummary)"))
+        .accessibilityHint(Text("Opens Apple’s picker"))
     }
 
     /// Up to `maxIcons` of Apple's token labels, then "+N". Decorative for VoiceOver: the counts
@@ -43,9 +51,10 @@ struct SelectionSummaryRow: View {
         let apps = Array(selection.applicationTokens)
         let categories = Array(selection.categoryTokens)
         let sites = Array(selection.webDomainTokens)
-        let shownApps = Array(apps.prefix(maxIcons))
-        let shownCategories = Array(categories.prefix(max(0, maxIcons - shownApps.count)))
-        let shownSites = Array(sites.prefix(max(0, maxIcons - shownApps.count - shownCategories.count)))
+        let limit = max(0, maxIcons)
+        let shownApps = Array(apps.prefix(limit))
+        let shownCategories = Array(categories.prefix(max(0, limit - shownApps.count)))
+        let shownSites = Array(sites.prefix(max(0, limit - shownApps.count - shownCategories.count)))
         let hidden = counts.total - shownApps.count - shownCategories.count - shownSites.count
         return HStack(spacing: 6) {
             ForEach(shownApps, id: \.self) { Label($0).labelStyle(.iconOnly) }
@@ -75,13 +84,21 @@ struct SelectionCounts: Equatable {
     var total: Int { apps + categories + sites }
 
     /// "3 apps · 1 category · 2 sites"; empty parts are omitted.
-    var summary: String {
+    var summary: String { parts.joined(separator: " · ") }
+
+    /// "3 apps, 1 category, 2 sites" for VoiceOver, without the visual separator.
+    var spokenSummary: String { parts.joined(separator: ", ") }
+
+    /// Plural-aware through Foundation's automatic grammar agreement; no String Catalog needed.
+    private var parts: [String] {
         var parts: [String] = []
-        if apps > 0 { parts.append(apps == 1 ? String(localized: "1 app") : String(localized: "\(apps) apps")) }
+        if apps > 0 { parts.append(Self.inflected(AttributedString(localized: "^[\(apps) app](inflect: true)"))) }
         if categories > 0 {
-            parts.append(categories == 1 ? String(localized: "1 category") : String(localized: "\(categories) categories"))
+            parts.append(Self.inflected(AttributedString(localized: "^[\(categories) category](inflect: true)")))
         }
-        if sites > 0 { parts.append(sites == 1 ? String(localized: "1 site") : String(localized: "\(sites) sites")) }
-        return parts.joined(separator: " · ")
+        if sites > 0 { parts.append(Self.inflected(AttributedString(localized: "^[\(sites) site](inflect: true)"))) }
+        return parts
     }
+
+    private static func inflected(_ text: AttributedString) -> String { String(text.characters) }
 }

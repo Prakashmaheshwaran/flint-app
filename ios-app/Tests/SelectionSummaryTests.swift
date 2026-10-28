@@ -13,4 +13,8 @@ final class SelectionSummaryTests: XCTestCase {
         XCTAssertEqual(SelectionCounts(apps: 3, categories: 1, sites: 2).summary, "3 apps · 1 category · 2 sites")
         XCTAssertEqual(SelectionCounts(categories: 2, sites: 1).summary, "2 categories · 1 site")
     }
+
+    func testSpokenSummaryUsesCommas() {
+        XCTAssertEqual(SelectionCounts(apps: 2, sites: 1).spokenSummary, "2 apps, 1 site")
+    }
 }
