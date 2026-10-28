@@ -38,14 +38,35 @@ public final class FlintHistoryStore: @unchecked Sendable {
         var clearedAt: Int64?
         var lastCompacted: Int64?
         var degraded = false
+        var lostAllReadableEvents: Bool?
         // A durable clear intent closes the crash window between replacing two files.
         var pendingClear: Bool?
         var keepSession: String?
         var historyStart: Date { FlintHistoryEvent.date(max(createdAt, clearedAt ?? createdAt)) }
+
+        init(createdAt: Int64, degraded: Bool = false) {
+            self.createdAt = createdAt; self.degraded = degraded
+        }
+        private enum CodingKeys: String, CodingKey {
+            case v, createdAt, clearedAt, lastCompacted, degraded, pendingClear, keepSession, lostAllReadableEvents
+        }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            v = try c.decode(Int.self, forKey: .v)
+            createdAt = try c.decode(Int64.self, forKey: .createdAt)
+            clearedAt = try c.decodeIfPresent(Int64.self, forKey: .clearedAt)
+            lastCompacted = try c.decodeIfPresent(Int64.self, forKey: .lastCompacted)
+            degraded = try c.decodeIfPresent(Bool.self, forKey: .degraded) ?? false
+            pendingClear = try c.decodeIfPresent(Bool.self, forKey: .pendingClear)
+            keepSession = try c.decodeIfPresent(String.self, forKey: .keepSession)
+            lostAllReadableEvents = try c.decodeIfPresent(Bool.self, forKey: .lostAllReadableEvents)
+        }
     }
     private struct Line {
-        let event: FlintHistoryEvent
+        let event: FlintHistoryEvent?
         let raw: Data // Preserve newer fields/types/versions byte-for-byte on compaction.
+        let session: String
+        let at: Date?
     }
     private enum StoreError: Error { case unavailable, io, metadata, cap }
 
@@ -58,7 +79,7 @@ public final class FlintHistoryStore: @unchecked Sendable {
     @discardableResult public func append(_ event: FlintHistoryEvent) -> Bool {
         do {
             return try locked {
-                var metadata = try loadMetadata()
+                var metadata = try loadMetadata(recoverByReadingLog: false)
                 // A host interrupted while clearing: reject append rather than resurrect old history.
                 guard metadata.pendingClear != true else { throw StoreError.unavailable }
                 let data = try encodedLine(event)
@@ -93,7 +114,11 @@ public final class FlintHistoryStore: @unchecked Sendable {
                 var metadata = try loadMetadata()
                 try finishPendingClear(&metadata)
                 let (lines, bad) = try readLines()
-                if bad { metadata.degraded = true; try saveMetadata(metadata) }
+                if bad {
+                    metadata.degraded = true
+                    metadata.lostAllReadableEvents = lines.compactMap(\.event).isEmpty
+                    try saveMetadata(metadata)
+                }
                 return snapshot(lines, metadata: metadata, unreadable: bad && lines.isEmpty)
             }
         } catch { return .init(events: [], historyStart: nil, availability: .unavailable) }
@@ -113,23 +138,24 @@ public final class FlintHistoryStore: @unchecked Sendable {
                 }
                 let (lines, bad) = try readLines()
                 metadata.degraded = metadata.degraded || bad
+                if bad { metadata.lostAllReadableEvents = lines.compactMap(\.event).isEmpty }
                 let cutoff = calendar.date(byAdding: .day, value: -400, to: now) ?? now
-                let grouped = Dictionary(grouping: lines, by: { $0.event.session })
+                let grouped = Dictionary(grouping: lines, by: \.session)
                 var retained = Set(grouped.filter { _, records in
-                    records.contains { $0.event.date >= cutoff }
+                    records.contains { $0.at.map { $0 >= cutoff } ?? true }
                 }.keys)
                 var sizes = [String: Int]()
                 for (id, group) in grouped { sizes[id] = group.reduce(0) { $0 + $1.raw.count + 1 } }
                 var total = retained.reduce(0) { $0 + (sizes[$1] ?? 0) }
                 let oldest = retained.sorted {
-                    let lhs = grouped[$0]!.map(\.event.at).max()!
-                    let rhs = grouped[$1]!.map(\.event.at).max()!
+                    let lhs = grouped[$0]!.compactMap(\.at).max() ?? .distantFuture
+                    let rhs = grouped[$1]!.compactMap(\.at).max() ?? .distantFuture
                     return lhs == rhs ? $0 < $1 : lhs < rhs
                 }
                 for id in oldest where total > Self.hardLimit {
                     retained.remove(id); total -= sizes[id] ?? 0
                 }
-                try replaceLog(lines.filter { retained.contains($0.event.session) })
+                try replaceLog(lines.filter { retained.contains($0.session) })
                 metadata.lastCompacted = FlintHistoryEvent.milliseconds(now)
                 try saveMetadata(metadata)
                 return true
@@ -151,14 +177,22 @@ public final class FlintHistoryStore: @unchecked Sendable {
     }
 
     private func snapshot(_ lines: [Line], metadata: Metadata, unreadable: Bool) -> FlintHistorySnapshot {
-        let events = lines.map(\.event)
-        let availability: FlintHistoryAvailability = unreadable ? .unavailable : metadata.degraded ? .degraded :
+        let events = lines.compactMap(\.event)
+        let unavailable = unreadable || (metadata.lostAllReadableEvents == true && events.isEmpty)
+        let availability: FlintHistoryAvailability = unavailable ? .unavailable : metadata.degraded ? .degraded :
             events.contains { $0.isSupported && $0.type == .started } ? .value : .empty
         return .init(events: events, historyStart: metadata.historyStart, availability: availability)
     }
 
     private func locked<T>(_ body: () throws -> T) throws -> T {
-        mutex.lock(); defer { mutex.unlock() }
+        // Neither another instance/process nor this instance can hold callers indefinitely.
+        let deadline = ProcessInfo.processInfo.systemUptime + 0.2
+        while !mutex.try() {
+            guard ProcessInfo.processInfo.systemUptime < deadline else { throw StoreError.unavailable }
+            usleep(1_000)
+        }
+        defer { mutex.unlock() }
+        try checkCancellation()
         guard let directory else { throw StoreError.unavailable }
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
         try protect(directory)
@@ -167,8 +201,14 @@ public final class FlintHistoryStore: @unchecked Sendable {
         guard fd >= 0 else { throw StoreError.io }
         defer { close(fd) }
         try protect(lockURL)
-        guard flock(fd, LOCK_EX) == 0 else { throw StoreError.io }
+        while flock(fd, LOCK_EX | LOCK_NB) != 0 {
+            guard errno == EWOULDBLOCK || errno == EAGAIN,
+                  ProcessInfo.processInfo.systemUptime < deadline else { throw StoreError.io }
+            try checkCancellation()
+            usleep(1_000)
+        }
         defer { flock(fd, LOCK_UN) }
+        try checkCancellation()
         return try body()
     }
 
@@ -179,17 +219,21 @@ public final class FlintHistoryStore: @unchecked Sendable {
                              ofItemAtPath: url.path)
         #endif
     }
-    private func loadMetadata() throws -> Metadata {
+    private func loadMetadata(recoverByReadingLog: Bool = true) throws -> Metadata {
         let url = path("metadata.json")
         if fm.fileExists(atPath: url.path) {
-            let metadata = try JSONDecoder().decode(Metadata.self, from: Data(contentsOf: url))
-            guard metadata.v == 1 else { throw StoreError.metadata }
-            return metadata
+            let data = try Data(contentsOf: url)
+            if let metadata = try? JSONDecoder().decode(Metadata.self, from: data), metadata.v == 1 {
+                return metadata
+            }
+            try quarantine(data, kind: "metadata")
         }
-        // Missing metadata next to a nonempty log is damage, not a fresh installation.
         let size = (try? fm.attributesOfItem(atPath: path("events.jsonl").path)[.size] as? NSNumber)?.intValue ?? 0
-        guard size == 0 else { throw StoreError.metadata }
-        let metadata = Metadata(createdAt: FlintHistoryEvent.milliseconds(clock()))
+        let damaged = size > 0 || fm.fileExists(atPath: url.path)
+        let earliest = recoverByReadingLog && size > 0 ? try readLines().0.compactMap(\.at).min() : nil
+        // Extensions never scan history, even during metadata recovery. A conservative now
+        // boundary is used until host recovery; a degraded state makes the damage explicit.
+        let metadata = Metadata(createdAt: FlintHistoryEvent.milliseconds(earliest ?? clock()), degraded: damaged)
         try saveMetadata(metadata)
         return metadata
     }
@@ -197,18 +241,49 @@ public final class FlintHistoryStore: @unchecked Sendable {
         try atomicWrite(JSONEncoder().encode(metadata), to: path("metadata.json"))
     }
     private func encodedLine(_ event: FlintHistoryEvent) throws -> Data {
-        var data = try JSONEncoder().encode(event); data.append(10); return data
+        var data = try JSONEncoder().encode(event)
+        if event.type == .started, event.plannedEnd == nil,
+           var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            object["plannedEnd"] = NSNull()
+            data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        }
+        data.append(10); return data
     }
     private func readLines() throws -> ([Line], Bool) {
         let url = path("events.jsonl")
         guard fm.fileExists(atPath: url.path) else { return ([], false) }
-        let data = try Data(contentsOf: url)
+        let data: Data
+        do { data = try Data(contentsOf: url) }
+        catch {
+            // Only replace an unreadable log if an exact quarantine copy can be preserved.
+            let folder = path("quarantine")
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            let backup = folder.appendingPathComponent("\(FlintHistoryEvent.milliseconds(clock()))-unreadable.jsonl")
+            try fm.copyItem(at: url, to: backup)
+            try protect(backup)
+            try atomicWrite(Data(), to: url)
+            return ([], true)
+        }
         var lines: [Line] = []; var bad = false
         var start = data.startIndex
         for end in data.indices where data[end] == 10 {
+            try checkCancellation()
             let raw = data.subdata(in: start..<end)
-            if let event = try? JSONDecoder().decode(FlintHistoryEvent.self, from: raw) {
-                lines.append(Line(event: event, raw: raw))
+            if let object = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any] {
+                let event = try? JSONDecoder().decode(FlintHistoryEvent.self, from: raw)
+                let known = event?.isSupported == true
+                let future = (object["v"] as? Int ?? 0) > 1
+                let unknownType: Bool
+                if let type = object["type"] as? String {
+                    let supported = [FlintHistoryEventType.started, .completed, .endedEarly, .superseded,
+                                     .breakStarted, .breakEnded, .passUsed, .failedToArm, .openIntercepted]
+                    unknownType = !supported.contains { $0.wireName == type }
+                } else { unknownType = false }
+                if known || future || unknownType {
+                    let identity = object["session"] as? String ?? "opaque:\(SHA256.hash(data: raw).description)"
+                    let at = (object["at"] as? Int64).map(FlintHistoryEvent.date)
+                    lines.append(Line(event: known ? event : nil, raw: raw, session: identity, at: at))
+                } else { bad = true }
             } else { bad = true }
             start = data.index(after: end)
         }
@@ -216,14 +291,14 @@ public final class FlintHistoryStore: @unchecked Sendable {
         if bad { try quarantine(data) }
         return (lines, bad)
     }
-    private func quarantine(_ data: Data) throws {
+    private func quarantine(_ data: Data, kind: String = "events") throws {
         let folder = path("quarantine")
         try fm.createDirectory(at: folder, withIntermediateDirectories: true)
         try protect(folder)
         let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         let existing = try fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
         if !existing.contains(where: { $0.lastPathComponent.contains(digest) }) {
-            let url = folder.appendingPathComponent("\(FlintHistoryEvent.milliseconds(clock()))-\(digest).jsonl")
+            let url = folder.appendingPathComponent("\(FlintHistoryEvent.milliseconds(clock()))-\(kind)-\(digest).jsonl")
             try atomicWrite(data, to: url)
         }
         let copies = try fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.creationDateKey])
@@ -234,17 +309,18 @@ public final class FlintHistoryStore: @unchecked Sendable {
     private func finishPendingClear(_ metadata: inout Metadata) throws {
         guard metadata.pendingClear == true else { return }
         let (lines, _) = try readLines()
-        try replaceLog(lines.filter { $0.event.session == metadata.keepSession })
+        try replaceLog(lines.filter { $0.session == metadata.keepSession })
         metadata.pendingClear = nil; metadata.keepSession = nil
-        metadata.degraded = false; metadata.lastCompacted = nil
+        metadata.degraded = false; metadata.lostAllReadableEvents = nil; metadata.lastCompacted = nil
         try saveMetadata(metadata)
     }
     private func replaceLog(_ lines: [Line]) throws {
         var data = Data()
-        for line in lines { data.append(line.raw); data.append(10) }
+        for line in lines { try checkCancellation(); data.append(line.raw); data.append(10) }
         try atomicWrite(data, to: path("events.jsonl"))
     }
     private func atomicWrite(_ data: Data, to url: URL) throws {
+        try checkCancellation()
         let temp = url.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).tmp")
         defer { try? fm.removeItem(at: temp) }
         #if os(iOS)
@@ -259,8 +335,33 @@ public final class FlintHistoryStore: @unchecked Sendable {
         guard result == 0, rename(temp.path, url.path) == 0 else { throw StoreError.io }
     }
     private func writeOnce(_ data: Data, fd: Int32) throws {
+        try checkCancellation()
         let written = data.withUnsafeBytes { Darwin.write(fd, $0.baseAddress, $0.count) }
         guard written == data.count else { throw StoreError.io }
+    }
+
+    private func checkCancellation() throws {
+        if let activity = Thread.current.threadDictionary[FlintHistoryActivity.key] as? FlintHistoryActivity,
+           activity.expired { throw StoreError.unavailable }
+    }
+}
+
+private final class FlintHistoryActivity: @unchecked Sendable {
+    static let key = "app.flint.history.activity"
+    private let lock = NSLock()
+    private var cancelled = false
+    private var began = false
+    var expired: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
+    func begin() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard !cancelled else { return false }
+        began = true; return true
+    }
+    /// Only release the serial queue here if work has not started. Otherwise the running
+    /// block cooperatively releases its lock and signals from its defer.
+    func cancelBeforeStart() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        cancelled = true; return !began
     }
 }
 
@@ -268,14 +369,42 @@ public final class FlintHistoryStore: @unchecked Sendable {
 public final class FlintHistorySink: FlintSessionEventSink, @unchecked Sendable {
     public static let shared = FlintHistorySink(store: .shared)
     public let store: FlintHistoryStore
+    private let isExtension: Bool
     private let queue = DispatchQueue(label: "app.flint.history", qos: .utility)
 
-    public init(store: FlintHistoryStore) { self.store = store }
+    public init(store: FlintHistoryStore, isExtension: Bool = Bundle.main.bundlePath.hasSuffix(".appex")) {
+        self.store = store; self.isExtension = isExtension
+    }
     public func handle(_ event: FlintSessionLifecycleEvent) {
-        queue.async { [store] in store.append(FlintHistoryEvent(event)) }
+        if isExtension {
+            // The callback is the extension's execution lifetime. A bounded append must finish
+            // before it returns; background queue work could otherwise vanish on termination.
+            store.append(FlintHistoryEvent(event))
+        } else {
+            perform { $0.append(FlintHistoryEvent(event)) }
+        }
     }
     /// UI refreshes enqueue after emissions, without blocking the caller or holding a file lock.
     public func perform(_ operation: @escaping (FlintHistoryStore) -> Void) {
-        queue.async { [store] in operation(store) }
+        queue.async { [store] in
+            #if os(iOS)
+            let activity = FlintHistoryActivity()
+            let done = DispatchSemaphore(value: 0)
+            ProcessInfo.processInfo.performExpiringActivity(withReason: "Save local focus history") { expired in
+                if expired { if activity.cancelBeforeStart() { done.signal() }; return }
+                guard activity.begin() else { return }
+                Thread.current.threadDictionary[FlintHistoryActivity.key] = activity
+                defer {
+                    Thread.current.threadDictionary.removeObject(forKey: FlintHistoryActivity.key)
+                    done.signal()
+                }
+                operation(store)
+            }
+            // Wait on the worker queue only, with no file lock held. Keeps host emissions ordered.
+            done.wait()
+            #else
+            operation(store)
+            #endif
+        }
     }
 }

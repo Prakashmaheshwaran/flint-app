@@ -1,5 +1,6 @@
 import XCTest
 import FlintCore
+import Darwin
 
 final class FlintHistoryTests: XCTestCase {
     private let t = Date(timeIntervalSince1970: 1_800_000_000)
@@ -210,11 +211,62 @@ final class FlintHistoryTests: XCTestCase {
         XCTAssertEqual(s.read().events.count, 2)
         XCTAssertEqual(s.read().availability, .degraded)
     }
-    func testMalformedMetadataIsUnavailableRatherThanReset() throws {
-        let s = store(); _ = s.read()
+    func testMalformedMetadataIsQuarantinedAndRecovered() throws {
+        let s = store(); s.append(event(.started, -100))
         try Data("broken".utf8).write(to: directory.appendingPathComponent("metadata.json"))
-        XCTAssertEqual(s.read().availability, .unavailable)
+        XCTAssertEqual(s.read().availability, .degraded)
+        XCTAssertEqual(s.read().historyStart, t.addingTimeInterval(-100))
+        XCTAssertTrue(s.append(event(.completed, 3600)))
+        XCTAssertEqual(s.read().events.count, 2)
+    }
+    func testMissingMetadataRecoversExistingEvents() throws {
+        let s = store(); s.append(event(.started, -100))
+        try FileManager.default.removeItem(at: directory.appendingPathComponent("metadata.json"))
+        XCTAssertEqual(s.read().availability, .degraded)
+        XCTAssertEqual(s.read().historyStart, t.addingTimeInterval(-100))
+        XCTAssertTrue(s.append(event(.completed, 3600)))
+    }
+    func testFH13FutureMinimalEnvelopeSurvivesCompaction() throws {
+        let s = store(); _ = s.read()
+        let raw = "{\"v\":9,\"session\":\"new\",\"at\":1800000000000,\"type\":\"started\"}\n{\"v\":9,\"unrecognized\":true}\n{\"v\":1,\"type\":\"new_kind\"}\n"
+        try Data(raw.utf8).write(to: directory.appendingPathComponent("events.jsonl"))
+        XCTAssertTrue(s.compactIfNeeded())
+        XCTAssertEqual(try String(contentsOf: directory.appendingPathComponent("events.jsonl"), encoding: .utf8), raw)
+        XCTAssertEqual(s.read().availability, .empty)
+    }
+    func testPendingClearRejectsAppendAndHostFinishesTransaction() throws {
+        let s = store(); s.append(event(.started, 0)); s.append(event(.started, 0, id: "b"))
+        let metadata = "{\"v\":1,\"createdAt\":1800000000000,\"clearedAt\":1800000001000,\"degraded\":false,\"pendingClear\":true,\"keepSession\":\"b\"}"
+        try Data(metadata.utf8).write(to: directory.appendingPathComponent("metadata.json"))
+        XCTAssertFalse(s.append(event(.completed, 3600)))
+        XCTAssertEqual(s.read().events.map(\.session), ["b"])
+        XCTAssertTrue(s.append(event(.completed, 3600, id: "b")))
+    }
+    func testLockContentionFailsWithinBound() {
+        let s = store(); _ = s.read()
+        let fd = open(directory.appendingPathComponent("history.lock").path, O_RDWR)
+        XCTAssertGreaterThanOrEqual(fd, 0)
+        defer { flock(fd, LOCK_UN); close(fd) }
+        XCTAssertEqual(flock(fd, LOCK_EX | LOCK_NB), 0)
+        let begin = ProcessInfo.processInfo.systemUptime
         XCTAssertFalse(s.append(event(.started, 0)))
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - begin, 0.6)
+    }
+    func testExtensionSinkAppendsBeforeReturning() {
+        let s = store(), sink = FlintHistorySink(store: store(), isExtension: true)
+        let session = FlintActiveSession(id: "sync", name: "Focus", startedAt: t, endsAt: nil,
+                                         breakLevel: .easy, monitorName: "unused")
+        sink.handle(.started(session, source: .shortcut, at: t))
+        XCTAssertEqual(s.read().events.first?.session, "sync")
+    }
+    func testQuarantineKeepsAtMostThreeCopies() throws {
+        let s = store(); s.append(event(.started, 0))
+        for i in 0..<5 {
+            let handle = try FileHandle(forWritingTo: directory.appendingPathComponent("events.jsonl"))
+            try handle.seekToEnd(); try handle.write(contentsOf: Data("bad-\(i)\n".utf8)); try handle.close()
+            _ = s.read()
+        }
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.appendingPathComponent("quarantine").path).count, 3)
     }
     func testHardCapRejectsGrowthWithoutDiscardingExistingData() throws {
         let s = store(); _ = s.read()
