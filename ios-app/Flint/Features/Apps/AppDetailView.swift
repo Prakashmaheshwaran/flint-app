@@ -110,22 +110,28 @@ struct AppDetailView: View {
     }
 }
 
-/// The one call into lane B's read-only status API.
+/// The one call into lane B's read-only status API (ADR-012 §8: no lock, write or migration).
 enum AppDetailLoader {
     static func presentation(for targetKey: String, now: Date = Date()) -> AppDetailPresentation {
-        let inputs = FlintProtectionStatus.currentInputs(now: now)
+        // Committed pass via the non-mutating peek; a missing/corrupt ledger stays unavailable.
+        let ledgerPass = FlintProtectionLedger.appGroup().flatMap { try? $0.peek().get() }?.pass
+        let inputs = FlintProtectionStatus.currentInputs(now: now, ledgerPass: ledgerPass)
+        let store = FlintGroupStore()
+        // The running session's frozen selection, never the picker's next selection.
+        let sessionSelection = inputs.activeSession.flatMap {
+            store?.loadSessionSelection(sessionID: $0.session.id)
+        }
+        let coverage = FlintProtectionStatus.coverageScopes(for: .init(
+            protection: inputs, sessionSelection: sessionSelection,
+            schedules: store?.loadRules() ?? [], timeLimits: store?.loadLimits() ?? [],
+            openLimits: FlintOpenLimitRule.loadAll()))
         let result = FlintProtectionStatus.contributors(
-            for: targetKey, inputs: inputs, coverageByCauseID: coverage(for: inputs),
+            for: targetKey, inputs: inputs, coverageByCauseID: coverage,
             counterState: strictOpenCounter())
         return AppDetailPresentation(.init(
             state: result.state, causes: result.causes, openCount: result.openCount,
             openCap: result.openCap, coverageUncertain: result.coverageUncertain))
     }
-
-    /// Lane B is adding `FlintProtectionStatus.coverageScopes(for:)` to PR #137; until it lands
-    /// every cause's scope is unknown, so the screen reports uncertainty rather than guessing.
-    private static func coverage(for inputs: FlintProtectionStatusBuilder.Inputs)
-        -> [String: FlintProtectionStatus.TargetScope] { [:] }
 
     /// Only a stored, decodable counter counts; a missing or malformed one is "unavailable",
     /// never a fresh zero (ADR-012 §5, §8).

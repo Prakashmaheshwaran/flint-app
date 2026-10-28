@@ -4,15 +4,15 @@ import ManagedSettings
 import FlintCore
 
 /// One picked app or site. Tokens are opaque: only Apple's `Label(token)` can show them, and the
-/// key is the same stable encoding Open Limits use (`FlintOpenLimit.key(for:)`).
+/// key is lane B's `FlintProtectionStatus.targetKey(for:)` (the Open Limit encoding).
 enum PickedTarget: Hashable, Identifiable {
     case app(ApplicationToken)
     case site(WebDomainToken)
 
     var key: String {
         switch self {
-        case .app(let token): FlintOpenLimit.key(for: token)
-        case .site(let token): FlintOpenLimit.key(for: token)
+        case .app(let token): FlintProtectionStatus.targetKey(for: token)
+        case .site(let token): FlintProtectionStatus.targetKey(for: token)
         }
     }
 
