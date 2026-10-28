@@ -41,6 +41,6 @@ xcodebuild test -project "$ios_dir/Flint.xcodeproj" -scheme FlintUI \
   -destination "platform=iOS Simulator,id=$device" \
   -resultBundlePath "$results/FlintUI.xcresult" \
   -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 \
-  -retry-tests-on-failure NO -test-iterations 1 \
+  -test-iterations 1 \
   -only-testing:FlintUITests -only-testing:FlintTests/FlintInsightsTests \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee "$results/xcodebuild.log"

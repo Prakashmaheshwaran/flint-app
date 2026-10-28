@@ -57,6 +57,7 @@ final class FlintFixtureUITests: XCTestCase {
         let error = app.staticTexts["onboarding.authorization.error"]
         XCTAssertTrue(error.waitForExistence(timeout: 5))
         XCTAssertEqual(allow.label, "Retry Screen Time")
+        try reveal(app.buttons["onboarding.skip"])
         try tap(app.buttons["onboarding.skip"])
         XCTAssertTrue(app.staticTexts["A quiet day so far."].waitForExistence(timeout: 5))
         try reveal(app.buttons["today.authorization.action"])
@@ -135,7 +136,11 @@ final class FlintFixtureUITests: XCTestCase {
         XCTAssertFalse(save.isEnabled, "A block list with no selection cannot save")
         let allowList = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Allow list'")).firstMatch
         try reveal(allowList)
-        try tap(allowList)
+        // The production custom toggle exposes its whole row to accessibility,
+        // while its pointer hit target is the trailing 52-point switch.
+        XCTAssertEqual(allowList.value as? String, "Off")
+        allowList.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        XCTAssertEqual(allowList.value as? String, "On")
         XCTAssertTrue(save.isEnabled, "A valid allow-list draft can be saved without tokens")
 
         let ends = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Ends '")).firstMatch
