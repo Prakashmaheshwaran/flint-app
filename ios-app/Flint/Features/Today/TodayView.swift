@@ -18,14 +18,14 @@ struct TodayView: View {
     private let presets: [(name: String, minutes: Int)] = [("Deep study", 90), ("Reading", 30), ("Workout", 60)]
 
     var body: some View {
-        ZStack(alignment: .top) {
-            if typeSize.isAccessibilitySize {
-                FlintGroundBackground()
-            } else {
-                EmberLandscape()
-            }
+        GeometryReader { geometry in
+            ZStack(alignment: .top) {
+                if typeSize.isAccessibilitySize || geometry.size.height < 700 {
+                    FlintGroundBackground()
+                } else {
+                    EmberLandscape()
+                }
 
-            GeometryReader { geometry in
                 ScrollView {
                     content
                         .padding(.horizontal, 24)
