@@ -57,10 +57,12 @@ file or record. Add local export/preservation of the original backing bytes and 
 explicit owner-approved restore/repair UI before offering any destructive reset;
 a future-version payload instead needs a compatible newer build. Until that work
 lands, preserve the data and report Unavailable; never reset automatically. The
-focus transaction strictly validates its shared accounting/preferences snapshot:
-an unrelated malformed rule/limit key can therefore disable all break/pass/counter
-commits until repaired, while last-known-good loaded rules still enforce. This is
-intentional conservative refusal, and is part of R5-RECOVERY's required UI scope.
+focus transaction strictly validates its shared accounting snapshot; malformed
+accounting can therefore disable break/pass/counter commits until repaired.
+Configuration keys have independent readiness: an ordinary grant requires its
+cause's configuration source, while a package Emergency Pass requires the focus
+ledger only. Last-known-good loaded rules still enforce. R5-RECOVERY must explain
+which storage domain needs repair.
 
 R5-RECEIPT-RETENTION: live requests carry an issued-at epoch and random identity in
 the existing opaque request-id field (`f1:<epoch>:<uuid>:<scope-index>`). The controller

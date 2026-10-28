@@ -40,6 +40,7 @@ class DurableCoordinatorTest {
     private fun coordinator(
         focus: FocusStateStore, rules: List<BlockRule> = listOf(rule(BreakLevel.EASY)),
         limits: LimitsStore = InMemoryLimitsStore(), onChanged: () -> Unit = {}, mount: Boolean = false,
+        configuredRules: BlockRulesStore = InMemoryBlockRulesStore(rules),
     ): BlockScreenCoordinator {
         ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, rules)
         return BlockScreenCoordinator(app, scope, object : BlockScreenCoordinator.SurfaceHost {
@@ -48,7 +49,7 @@ class DurableCoordinatorTest {
             override fun goHome() = Unit
         }, nowEpochMs = { now }, onEnforcementChanged = onChanged,
             safetyFloorGate = SafetyFloorGate(app.packageName, { emptyMap() }, { 0 }),
-            focusStateStore = focus, configuredLimitsStore = limits, blockRulesStore = InMemoryBlockRulesStore(rules))
+            focusStateStore = focus, configuredLimitsStore = limits, blockRulesStore = configuredRules)
     }
     private class PausedFocus(val backing: InMemoryFocusStateStore = InMemoryFocusStateStore()) : FocusStateStore by backing {
         val started = CompletableDeferred<Unit>()
@@ -119,6 +120,62 @@ class DurableCoordinatorTest {
         }
         assertFalse(focus.started.isCompleted)
         assertTrue(focus.backing.state.snapshotOrNull()!!.exemptions.isEmpty())
+    }
+
+    @Test fun corruptUnrelatedTimeLimitsDoNotDisableAReadyRuleBreak() = runBlocking {
+        val focus = InMemoryFocusStateStore()
+        val limits = object : LimitsStore by InMemoryLimitsStore() {
+            override val timeLimitsState = flowOf<StorageState<List<TimeLimit>>>(StorageState.Unavailable(StorageFailure.CORRUPT))
+        }
+        val c = coordinator(focus, limits = limits)
+        val cause = ruleBlockCause(rule(BreakLevel.EASY), now, 0)
+        assertEquals(GrantStatus.READY, c.screenState(pkg, null, cause, now).grantStatus)
+        assertTrue(c.requestBreak(pkg, cause, GrantRequestId.issue(now)) is GrantResult.Granted)
+        assertEquals(1, focus.state.snapshotOrNull()!!.breakSession.breaksTaken)
+    }
+
+    @Test fun anUnavailableCauseSourceStillRefusesItsOrdinaryBreak() = runBlocking {
+        val focus = InMemoryFocusStateStore()
+        val rules = object : BlockRulesStore by InMemoryBlockRulesStore() {
+            override val rulesState = flowOf<StorageState<List<BlockRule>>>(StorageState.Unavailable(StorageFailure.CORRUPT))
+        }
+        val c = coordinator(focus, configuredRules = rules)
+        val cause = ruleBlockCause(rule(BreakLevel.EASY), now, 0)
+        assertEquals(GrantStatus.UNAVAILABLE, c.screenState(pkg, null, cause, now).grantStatus)
+        assertTrue(c.requestBreak(pkg, cause, GrantRequestId.issue(now)) is GrantResult.Unavailable)
+        assertEquals(0, focus.state.snapshotOrNull()!!.breakSession.breaksTaken)
+    }
+
+    @Test fun aReadyOpenLimitCanGrantWithoutAnUnrelatedRulesRead() = runBlocking {
+        val focus = InMemoryFocusStateStore().also { it.setOpenCounts(OpenCountState(now / 86_400_000, mapOf(pkg to 1))) }
+        val limits = InMemoryLimitsStore().also { it.setOpenLimit(OpenLimit(pkg, 1)) }
+        val rules = object : BlockRulesStore by InMemoryBlockRulesStore() {
+            override val rulesState = flowOf<StorageState<List<BlockRule>>>(StorageState.Unavailable(StorageFailure.CORRUPT))
+        }
+        val c = coordinator(focus, rules = emptyList(), limits = limits, configuredRules = rules)
+        ActiveRulesHolder.publishState(ActiveRulesHolder.SOURCE_DATASTORE, StorageState.Unavailable(StorageFailure.CORRUPT))
+        val cause = openLimitBlockCause(OpenLimit(pkg, 1), now, 0)
+        assertEquals(GrantStatus.READY, c.screenState(pkg, null, cause, now).grantStatus)
+        assertTrue(c.requestBreak(pkg, cause, GrantRequestId.issue(now)) is GrantResult.Granted)
+        assertEquals(2, focus.state.snapshotOrNull()!!.openCounts.opensFor(pkg))
+    }
+
+    @Test fun aReadyPassLedgerRemainsUsableWhenConfigurationDomainsAreUnavailable() = runBlocking {
+        val focus = InMemoryFocusStateStore()
+        val rules = object : BlockRulesStore by InMemoryBlockRulesStore() {
+            override val rulesState = flowOf<StorageState<List<BlockRule>>>(StorageState.Unavailable(StorageFailure.CORRUPT))
+        }
+        val limits = object : LimitsStore by InMemoryLimitsStore() {
+            override val timeLimitsState = flowOf<StorageState<List<TimeLimit>>>(StorageState.Unavailable(StorageFailure.CORRUPT))
+            override val openLimitsState = flowOf<StorageState<List<OpenLimit>>>(StorageState.Unavailable(StorageFailure.CORRUPT))
+        }
+        val c = coordinator(focus, rules = listOf(rule(BreakLevel.HARDCORE)), limits = limits, configuredRules = rules)
+        ActiveRulesHolder.publishState(ActiveRulesHolder.SOURCE_DATASTORE, StorageState.Unavailable(StorageFailure.CORRUPT))
+        val cause = ruleBlockCause(rule(BreakLevel.HARDCORE), now, 0)
+        assertEquals(GrantStatus.READY, c.screenState(pkg, null, cause, now).grantStatus)
+        assertTrue(c.requestEmergencyPass(pkg, cause, GrantRequestId.issue(now)) is GrantResult.Granted)
+        assertTrue(c.canDismiss(pkg, cause))
+        assertEquals(now, focus.state.snapshotOrNull()!!.emergencyPass.usedAtEpochMs)
     }
 
     @Test fun aFailedSaveDoesNotLabelANewlyMountedSurfaceAsFailed() = runBlocking {
@@ -208,6 +265,16 @@ class DurableCoordinatorTest {
         assertSame(id, requests.id(false, now + 3))
         assertNotEquals(id, requests.id(true, now))
         assertNotEquals(id, requests.id(false, now + DurableGrantController.RETRY_HORIZON_MS))
+    }
+
+    @Test fun aConfirmedCauseChangeRejectionDoesNotRetainAnUnusableIdentity() {
+        val requests = BlockScreenCoordinator.SurfaceRequests()
+        val old = requests.id(false, now)
+        requests.recordResult(false, GrantResult.Denied)
+        assertNotEquals(old, requests.id(false, now + 1))
+        val uncertain = requests.id(false, now + 2)
+        requests.recordResult(false, GrantResult.Unconfirmed)
+        assertEquals(uncertain, requests.id(false, now + 3))
     }
 
     @Test fun aConfirmedGrantKeptBehindAStrongerCauseCannotWedgeTheNextExplicitBreak() = runBlocking {

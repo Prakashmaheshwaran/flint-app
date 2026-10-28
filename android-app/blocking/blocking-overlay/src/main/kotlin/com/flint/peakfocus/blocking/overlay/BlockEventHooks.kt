@@ -11,7 +11,8 @@ import java.util.concurrent.CopyOnWriteArraySet
  * Contract:
  *  - [Listener.onOpenIntercepted] fires once per NEW block surface mount for a foreground app (a
  *    different package, or the first mount after the surface was hidden) — never per one-second
- *    re-render or cause refresh.
+ *    re-render or cause refresh. Provisional holds for an unacknowledged normal-open
+ *    counter write never report an interception.
  *  - [Listener.onBreakGranted] / [Listener.onEmergencyPassUsed] fire only for accepted grants,
  *    after credit consumption and its exemption receipt are durably committed together.
  *    Idempotent retries do not emit another accepted-grant event.

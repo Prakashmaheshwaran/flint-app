@@ -168,7 +168,8 @@ class BlockScreenCoordinator(
         fun recordResult(emergency: Boolean, result: GrantResult) {
             // A stronger cause may keep this mount visible after an acknowledged grant.
             // Its next explicit action is a new request; uncertain retries retain the old id.
-            if (result is GrantResult.Pending || result is GrantResult.Granted || result == GrantResult.OpenAllowed) {
+            // A confirmed rejection also permits a new identity if the cause has changed.
+            if (result is GrantResult.Pending || result is GrantResult.Granted || result == GrantResult.OpenAllowed || result == GrantResult.Denied) {
                 if (emergency) passId = null else breakId = null
             }
         }
@@ -372,8 +373,18 @@ class BlockScreenCoordinator(
 
     private fun counterInputsReady() = grants.state.value is StorageState.Ready && openState.value is StorageState.Ready
 
-    private fun grantInputsReady() = counterInputsReady() && timeState.value is StorageState.Ready &&
-        rulesState.value is StorageState.Ready && ActiveRulesHolder.dataStoreState is StorageState.Ready
+    private fun grantInputs(cause: BlockCause, emergency: Boolean): List<StorageState<*>> =
+        listOf(grants.state.value) + when {
+            // A package Emergency Pass covers all cause tiers; configuration cannot change
+            // its accounting decision. The durable focus ledger must still be Ready.
+            emergency -> emptyList()
+            cause.reason == BlockScreenReason.OPEN_LIMIT -> listOf(openState.value)
+            cause.reason == BlockScreenReason.TIME_LIMIT -> listOf(timeState.value)
+            else -> listOf(rulesState.value, ActiveRulesHolder.dataStoreState)
+        }
+
+    private fun grantInputsReady(cause: BlockCause, emergency: Boolean) =
+        grantInputs(cause, emergency).all { it is StorageState.Ready }
 
     private fun inspectOpen(packageName: String, includeUnpaidVisit: Boolean = true): OpenLimitDecision {
         val limit = openLimits.firstOrNull { it.packageName == packageName } ?: return OpenLimitDecision.Allowed(null)
@@ -544,12 +555,13 @@ class BlockScreenCoordinator(
 
     private suspend fun requestGrant(packageName: String, cause: BlockCause, id: GrantRequestId, emergency: Boolean): GrantResult {
         if (safetyFloor.protectsFresh(packageName)) return GrantResult.Denied
-        if (!grantInputsReady()) return GrantResult.Unavailable()
+        if (grants.state.value !is StorageState.Ready) return GrantResult.Unavailable()
         if (!busy.add(packageName)) return GrantResult.Unavailable()
         failures.remove(packageName)
         rerenderNow()
         try {
             val current = currentBlockCause(packageName, cause) ?: return GrantResult.Denied
+            if (!grantInputsReady(current, emergency)) return GrantResult.Unavailable()
             runOnMain { if (visiblePackage == packageName) shownCause = current }
             val retry = if (!emergency && openRetryNeeded(packageName, current)) visits.current(packageName) else null
             val now = nowEpochMs()
@@ -568,7 +580,7 @@ class BlockScreenCoordinator(
                     duration, current.breakLevel, emergency, current.spendsOpenOnBreak,
                     usesDefaultLevel = current.reason == BlockScreenReason.TIME_LIMIT,
                     notAfterEpochMs = current.endsAtEpochMs.takeIf { emergency },
-                ), inputsReady = grantInputsReady())
+                ), inputsReady = grantInputsReady(current, emergency))
             }
             if (result is GrantResult.Unavailable || result == GrantResult.Unconfirmed) failures.add(packageName)
             if (result is GrantResult.Granted && result.newlyAccepted) {
@@ -604,11 +616,10 @@ class BlockScreenCoordinator(
     }
 
     fun screenState(packageName: String, label: String?, cause: BlockCause, now: Long): BlockScreenState {
+        val inputs = grantInputs(cause, emergency = cause.breakLevel == BreakLevel.HARDCORE)
         val status = when {
-            grants.state.value is StorageState.Loading || openState.value is StorageState.Loading ||
-                timeState.value is StorageState.Loading || rulesState.value is StorageState.Loading ||
-                ActiveRulesHolder.dataStoreState is StorageState.Loading -> GrantStatus.LOADING
-            !grantInputsReady() -> GrantStatus.UNAVAILABLE
+            inputs.any { it is StorageState.Loading } -> GrantStatus.LOADING
+            inputs.any { it !is StorageState.Ready } -> GrantStatus.UNAVAILABLE
             packageName in busy || visits.current(packageName)?.let { it.id.prefix in pendingOpens } == true -> GrantStatus.SAVING
             packageName in failures && openRetryNeeded(packageName, cause) -> GrantStatus.RETRY_OPEN
             packageName in failures -> GrantStatus.FAILED
