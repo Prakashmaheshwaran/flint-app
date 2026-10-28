@@ -6,8 +6,13 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.flint.peakfocus.blocking.resilience.HealthStatus
+import com.flint.peakfocus.core.common.Oem
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -76,6 +81,38 @@ class LegalNavigationTest {
         awaitText("Restored LICENSES")
         restoration.emulateSavedInstanceStateRestore()
         awaitText("Restored LICENSES")
+        compose.onNodeWithText("Back to settings").performClick()
+        compose.onNodeWithText("Privacy policy").assertIsDisplayed()
+    }
+
+    @Test fun `settings legal links preserve scroll position and do not request permissions`() {
+        val fixes = mutableListOf<PermissionKind>()
+        compose.setContent {
+            SettingsLegalNavigation(loadDocument = { "Offline policy fixture" }) { open ->
+                SettingsContent(
+                    health = HealthStatus(true, true, true, true),
+                    exits = emptyList(),
+                    oemGuidance = OemGuidanceCatalog.forOem(Oem.OTHER),
+                    exitsSupported = false,
+                    nowMillis = 0,
+                    onFix = { fixes.add(it) },
+                    onOpenLegal = open,
+                )
+            }
+        }
+        compose.onNodeWithText("Privacy policy").performScrollTo().performClick()
+        awaitText("Offline policy fixture")
+        compose.onNodeWithText("Back to settings").performClick()
+        compose.onNodeWithText("Privacy policy").assertIsDisplayed()
+        assertEquals(emptyList<PermissionKind>(), fixes)
+    }
+
+    @Test fun `long bundled notices remain scrollable to the end`() {
+        showSettings { (0..100).joinToString("\n\n") { "Notice paragraph $it" } }
+        compose.onNodeWithText("Open-source licenses").performClick()
+        awaitText("Notice paragraph 0")
+        compose.onNodeWithTag("legal-document").performScrollToIndex(100)
+        compose.onNodeWithText("Notice paragraph 100").assertIsDisplayed()
         compose.onNodeWithText("Back to settings").performClick()
         compose.onNodeWithText("Privacy policy").assertIsDisplayed()
     }

@@ -76,6 +76,26 @@ class LegalGeneratorTest(unittest.TestCase):
         with self.assertRaisesRegex(LegalError, "Missing license declaration"):
             pom_metadata(self.pom)
 
+    def test_license_is_inherited_from_resolved_parent_pom(self):
+        parent = self.repo / "parent.pom"
+        parent.write_bytes(self.pom.read_bytes())
+        self.pom.write_text("<project><name>Child library</name></project>")
+        self.entry["parents"] = [dict(coordinate="org.example:parent:1.0", pom=str(parent))]
+        self.inventory.write_text(json.dumps([self.entry]))
+        component = json.loads(self.run_generator()["dependency-list.json"])["components"][0]
+        self.assertEqual(component["name"], "Child library")
+        self.assertEqual(component["inheritedLicenseFrom"], "org.example:parent:1.0")
+        self.assertEqual(component["licenses"][0]["family"], "Apache-2.0")
+
+    def test_bsd_requires_the_actual_artifacts_full_license(self):
+        self.pom.write_text(self.pom.read_text().replace("Apache-2.0", "BSD-3-Clause"))
+        with self.assertRaisesRegex(LegalError, "No bundled full license text.*BSD-3-Clause"):
+            self.run_generator()
+        actual = (Path(__file__).parent / "licenses/desugar-2.1.5/SOURCE-NOTICES.txt").read_text()
+        with zipfile.ZipFile(self.jar, "w") as archive:
+            archive.writestr("LICENSE", actual)
+        self.assertIn(actual.strip().encode(), self.run_generator()["open-source-licenses.txt"])
+
     def test_new_bundled_font_fails_until_licensed(self):
         (self.repo / "android-app/core/core-common/src/main/res/font/new_font.ttf").write_bytes(b"new")
         with self.assertRaisesRegex(LegalError, "font license inventory mismatch"):

@@ -5,6 +5,11 @@
   },
   "supplements": [
     {
+      "coordinate": "androidx\\.datastore:datastore-preferences-external-protobuf:1\\.2\\.1",
+      "source": "https://github.com/protocolbuffers/protobuf/tree/v28.2",
+      "files": ["licenses/protobuf-28.2-LICENSE.txt"]
+    },
+    {
       "coordinate": "com\\.android\\.tools:desugar_jdk_libs:2\\.1\\.5",
       "source": "https://github.com/google/desugar_jdk_libs/tree/73170c345e6a762fc6a1f0301bb15218850023ef",
       "files": ["licenses/desugar-2.1.5/ADDITIONAL_LICENSE_INFO", "licenses/desugar-2.1.5/ASSEMBLY_EXCEPTION", "licenses/desugar-2.1.5/SOURCE-NOTICES.txt"]
@@ -13,6 +18,11 @@
       "coordinate": "org\\.jetbrains\\.kotlinx:kotlinx-coroutines-[^:]+:1\\.10\\.2",
       "source": "https://github.com/Kotlin/kotlinx.coroutines/tree/1.10.2/license",
       "files": ["licenses/coroutines-1.10.2-NOTICE.txt"]
+    },
+    {
+      "coordinate": "org\\.jetbrains\\.kotlinx:kotlinx-serialization-[^:]+:1\\.7\\.3",
+      "source": "https://github.com/Kotlin/kotlinx.serialization/tree/v1.7.3/license",
+      "files": ["licenses/serialization-1.7.3-NOTICE.txt"]
     },
     {
       "coordinate": "org\\.jetbrains\\.kotlin:kotlin-stdlib(?:-jdk[78])?:2\\.2\\.10",

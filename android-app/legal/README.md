@@ -4,7 +4,7 @@
 `docs/privacy-policy.md` byte for byte and generates notices from the **resolved
 releaseRuntimeClasspath plus coreLibraryDesugaring artifacts**, including transitive
 libraries. Internal project modules and debug/test-only dependencies are excluded.
-It resolves POMs using Gradle's configured repositories, preserves embedded notices
+It resolves POMs (and license-bearing parent POMs) using Gradle's configured repositories, preserves embedded notices
 (including nested AAR JARs), and includes full license texts and reviewed upstream
 notices. There is no network or WebView code in the legal UI and no new runtime SDK.
 
@@ -36,6 +36,12 @@ copies, and font modification descriptions match `design/fonts/README.md`.
   `androidx.annotation:annotation-jvm:1.9.1` (published Maven artifact).
 - Kotlin copyright header: upstream [`license/COPYRIGHT.txt` at v2.2.10](https://github.com/JetBrains/kotlin/blob/v2.2.10/license/COPYRIGHT.txt).
 - Coroutines notice: upstream [`license/NOTICE.txt` at 1.10.2](https://github.com/Kotlin/kotlinx.coroutines/blob/1.10.2/license/NOTICE.txt).
+- Serialization notice: upstream [`license/NOTICE.txt` at v1.7.3](https://github.com/Kotlin/kotlinx.serialization/blob/v1.7.3/license/NOTICE.txt).
+- Repackaged DataStore protobuf: upstream [`LICENSE` at v28.2](https://github.com/protocolbuffers/protobuf/blob/v28.2/LICENSE),
+  including the copyright omitted from the repackaged artifact's generic BSD text.
+  The released DataStore `datastore-preferences-external-protobuf:1.2.1` JAR's
+  `RuntimeVersion` constants identify its actual protobuf runtime as 4.28.2
+  (`javap -constants`), rather than assuming a version from current upstream source.
 - Desugar: upstream [2.1.5 preparation commit `73170c3`](https://github.com/google/desugar_jdk_libs/commit/73170c345e6a762fc6a1f0301bb15218850023ef),
   including `LICENSE` (GPLv2 + Classpath Exception), `ADDITIONAL_LICENSE_INFO`,
   `ASSEMBLY_EXCEPTION` and source notices corresponding to release JAR classes.

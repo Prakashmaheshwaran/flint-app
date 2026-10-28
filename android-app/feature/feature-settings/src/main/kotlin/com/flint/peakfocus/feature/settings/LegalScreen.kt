@@ -26,6 +26,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import com.flint.peakfocus.core.common.theme.FlintSpacing
 import com.flint.peakfocus.core.common.ui.FlintScreenHeader
@@ -35,7 +36,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
 
-internal enum class LegalDocument(val assetPath: String, @StringRes val title: Int) {
+internal enum class LegalDocument(val assetPath: String, @get:StringRes val title: Int) {
     PRIVACY("legal/privacy-policy.md", R.string.legal_privacy_policy),
     LICENSES("legal/open-source-licenses.txt", R.string.legal_open_source_licenses),
 }
@@ -117,7 +118,7 @@ private fun LegalScreen(
                     OutlinedButton(onClick = { attempt++ }) { Text(stringResource(R.string.legal_retry)) }
                 }
                 is LegalContent.Loaded -> SelectionContainer(Modifier.weight(1f)) {
-                    LazyColumn(Modifier.fillMaxSize()) {
+                    LazyColumn(Modifier.fillMaxSize().testTag("legal-document")) {
                         items(loaded.paragraphs) { paragraph ->
                             Text(
                                 paragraph,
