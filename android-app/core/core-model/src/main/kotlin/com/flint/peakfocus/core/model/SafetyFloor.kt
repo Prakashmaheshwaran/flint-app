@@ -27,11 +27,14 @@ object SafetyFloor {
     )
 
     /** Settings and the places Flint's grants (Accessibility, Usage Access, overlay,
-     *  notifications, battery exemptions) are recovered from, including common OEM managers. */
+     *  notifications, battery exemptions) are recovered from, including common OEM managers,
+     *  plus the system uninstaller (protection contract §7/§10: uninstall UI stays reachable). */
     private val PERMISSION_RECOVERY = setOf(
         "com.android.settings",
         "com.android.permissioncontroller",
         "com.google.android.permissioncontroller",
+        "com.android.packageinstaller",
+        "com.google.android.packageinstaller",
         "com.miui.securitycenter",
         "com.coloros.safecenter",
         "com.oplus.safecenter",

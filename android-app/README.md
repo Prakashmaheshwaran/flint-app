@@ -84,22 +84,12 @@ moves them (the receiver forces immediate re-evaluation; it cannot veto the OS c
 clock set back during an *already granted* break stretches that break's exemption window —
 HARDCORE is unaffected (it never grants breaks).
 
-**Uninstall guard + stats insights — implemented; build + unit tests green;
-Path A emulator UI shield still pending.** While any enabled HARDCORE rule's schedule window is
-active, Path A now shields the system uninstaller outright (mirroring iOS `denyAppRemoval`'s
-device-wide denial)
-and Settings pages *about Flint* (App-info / Accessibility toggle — mention-gated and
-danger-gated, so plain Settings stays usable during a block; an *unreadable* window falls back
-to the class name alone, fail-closed on the dangerous screen families). Decision half is pure
-Kotlin in `blocking-engine` (`UninstallGuard`, JVM-tested); the service side measures the
-foreground window (event class name + capped node-text sweep, gated behind a cheap `isArmed`
-pre-check so unarmed users never pay for the sweep) and routes verdicts through a dedicated
-`uninstallGuardBlockCause` — its shield deliberately offers **no** break/pass affordance,
-because the guard re-shields regardless of exemptions and would otherwise burn the weekly
-Emergency Pass for nothing (caught by the adversarial review pass; JVM-tested). Honest limits
-in the class KDoc: Path A only, English danger-phrase fallback (class-name +
-uninstaller-package gates are locale-independent), OEM lists best-effort, protects impulse not
-determination. The Stats tab adds a "Week in review" card (typical completed day, busiest day)
+**Uninstall guard — removed (2026-10-28, protection contract ADR-012 §10).** Android release
+and debug enforcement never intercept uninstallers, Settings, Accessibility disable, app info,
+force-stop or permission revocation, and Path A no longer reads Settings window text; the
+uninstaller and permission/Settings surfaces are on the safety floor instead. Turning access off
+reduces or stops protection and stays the user's choice (Play Accessibility API policy).
+**Stats insights:** the Stats tab adds a "Week in review" card (typical completed day, busiest day)
 and a today-vs-typical line (`UsageReport` derivations, JVM-tested).
 
 **Premium UI overhaul — implemented; build + unit tests green; emulator-verified 2026-07-06

@@ -20,6 +20,8 @@ class SafetyFloorTest {
             "com.google.android.cellbroadcastreceiver",
             "com.android.settings",
             "com.google.android.permissioncontroller",
+            "com.android.packageinstaller",
+            "com.google.android.packageinstaller",
             "com.android.systemui",
             "android",
         )) {

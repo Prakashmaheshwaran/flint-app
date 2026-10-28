@@ -67,6 +67,7 @@ class SafetyFloorCoordinatorMatrixTest {
             "com.android.emergency",
             "com.android.settings",
             "com.google.android.permissioncontroller",
+            "com.google.android.packageinstaller", // PC-51: uninstall UI reachable, no guard
             "com.android.systemui",
             customDialer,
             customHome,

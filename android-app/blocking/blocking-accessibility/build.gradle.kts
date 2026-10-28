@@ -12,6 +12,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    testOptions { unitTests { isIncludeAndroidResources = true } }
 }
 
 dependencies {
@@ -23,4 +24,9 @@ dependencies {
     implementation(project(":blocking:blocking-overlay"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android) // service-scoped CoroutineScope
+
+    // Robolectric service tests (protection contract PC-51: no guard interception), debug only.
+    testDebugImplementation(libs.junit)
+    testDebugImplementation(libs.androidx.junit)
+    testDebugImplementation(libs.robolectric)
 }
