@@ -265,7 +265,8 @@ class BlockScreenCoordinator(
             val now = statusClock() // first call stays off main, including lazy OS boot identity lookup
             val snapshot = ProtectionStatusProjection.evaluate(grants.state.value, rulesState.value,
                 timeState.value, openState.value, editorState.value, ActiveRulesHolder.rulesOutside(ActiveRulesHolder.SOURCE_DATASTORE),
-                safetyFloor.runtimeResolution.value, EnforcementSignals.detectors.pathAConnected, now)
+                safetyFloor.runtimeResolution.value, EnforcementSignals.detectors.pathAConnected, now,
+                timeLimitTier = { currentTimeLimitBreakLevel(it.packageName) })
             synchronized(statusLock) {
                 val connected = EnforcementSignals.detectors.pathAConnected
                 val health = snapshot.detectors.copy(accessibilityConnected = connected,
@@ -316,7 +317,7 @@ class BlockScreenCoordinator(
     fun currentDefaultBreakLevel(): BreakLevel = grants.lastGood?.defaultBreakLevel ?: BreakLevel.HARDCORE
 
     /**
-     * A saved limit owns its tier, also read directly by the read-only status projection.
+     * A saved limit owns its tier. Enforcement and the status publisher share this lookup.
      * Unknown limit storage cannot borrow ordinary default-tier rights. The default only
      * supplies a proven Ready legacy SharedPreferences budget without a DataStore record.
      */
