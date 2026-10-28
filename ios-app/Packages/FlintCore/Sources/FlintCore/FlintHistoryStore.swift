@@ -155,6 +155,7 @@ public final class FlintHistoryStore: @unchecked Sendable {
             }
             if start < data.endIndex { bad = true }
         }
+        let damagedRecords = bad
         // Read the clear boundary after the records, so already-published clear intent
         // suppresses the old generation even before its main-log replacement commits.
         var metadata: Metadata?
@@ -191,8 +192,11 @@ public final class FlintHistoryStore: @unchecked Sendable {
         let hasDiagnostic = diagnostics?.nextObject() != nil
         bad = bad || diagnosticError || hasDiagnostic
         let degraded = bad || metadata?.degraded == true || metadata?.lostAllReadableEvents == true
+        let unavailable = events.isEmpty && (damagedRecords || hasDiagnostic || diagnosticError ||
+                                            metadata?.lostAllReadableEvents == true)
         return .init(events: events, historyStart: metadata?.historyStart,
-                     availability: degraded ? .degraded : events.contains { $0.type == .started } ? .value : .empty)
+                     availability: unavailable ? .unavailable : degraded ? .degraded :
+                        events.contains { $0.type == .started } ? .value : .empty)
     }
 
     private enum ReadOnlyFile { case missing, data(Data), failed }

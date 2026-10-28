@@ -108,6 +108,26 @@ final class FlintHistoryReadOnlyTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
         XCTAssertEqual(FlintHistoryStore(directory: nil).readOnlySnapshot().availability, .unavailable)
     }
+    func testNothingSalvageableIsUnavailableRatherThanAnObservedZero() throws {
+        _ = store().read()
+        try Data("corrupt\ntruncated".utf8).write(to: directory.appendingPathComponent("events.jsonl"))
+        let before = try inventory()
+        let snapshot = store(host: false).readOnlySnapshot()
+        XCTAssertEqual(snapshot.availability, .unavailable)
+        let summary = FlintHistoryAggregator.summarize(snapshot, activeSessionID: nil, now: now)
+        XCTAssertTrue(summary.days.allSatisfy { $0.focusedSeconds == nil })
+        XCTAssertEqual(try inventory(), before)
+    }
+    func testMetadataOnlyDamageIsDegradedWithoutInventingObservedDays() throws {
+        _ = store().read()
+        try Data("corrupt".utf8).write(to: directory.appendingPathComponent("metadata.json"))
+        let before = try inventory()
+        let snapshot = store(host: false).readOnlySnapshot()
+        XCTAssertEqual(snapshot.availability, .degraded); XCTAssertNil(snapshot.historyStart)
+        let summary = FlintHistoryAggregator.summarize(snapshot, activeSessionID: nil, now: now)
+        XCTAssertTrue(summary.days.allSatisfy { $0.focusedSeconds == nil })
+        XCTAssertEqual(try inventory(), before)
+    }
     func testObservedEmptyStoreRemainsEmptyAndNonmutating() throws {
         _ = store().read()
         let before = try inventory()
