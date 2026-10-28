@@ -5,7 +5,10 @@ import com.flint.peakfocus.blocking.overlay.ProtectionStatusHub
 import com.flint.peakfocus.core.model.BreakLevel
 import kotlinx.coroutines.flow.map
 
-/** Only C's in-process/current-boot hub is read; no protection snapshot is persisted by K. */
+/**
+ * Only C's in-process/current-boot hub is read; no protection snapshot is persisted by K.
+ * Until C's live producers publish, the Hub's UNKNOWN default stays unavailable on this surface.
+ */
 class CoordinatorGlanceReader : GlanceProtectionReader {
     override val changes = ProtectionStatusHub.status.map { Unit }
     override suspend fun read() = coordinatorGlanceReading(ProtectionStatusHub.status.value)

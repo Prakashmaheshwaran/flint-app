@@ -54,6 +54,7 @@ data class FocusTodayReading(
     val text: String = "Focus history unavailable",
     val note: String? = null,
     val day: LocalDate? = null,
+    val inProgress: Boolean = false,
 )
 
 data class GlanceDisplay(
@@ -155,6 +156,14 @@ object GlanceDisplayMapper {
                     refreshAtElapsedMs = end?.let { minOf(refresh, it) } ?: refresh,
                     session = if (cause.kind == GlanceCauseKind.FOCUS_SESSION && id != null)
                         GlanceOngoingSession(id, end) else null,
+                    // RemoteViews may outlive this process. Progress always describes an update,
+                    // and is withdrawn on the stale/expired/unsupported branches above.
+                    historyNote = listOfNotNull(
+                        "In progress at update".takeIf {
+                            historyCurrent && focus.inProgress && cause.kind == GlanceCauseKind.FOCUS_SESSION
+                        },
+                        available.historyNote,
+                    ).takeIf { it.isNotEmpty() }?.joinToString(" · "),
                 )
             }
         }

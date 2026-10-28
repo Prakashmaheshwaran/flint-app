@@ -99,6 +99,28 @@ class GlanceDisplayMapperTest {
         assertNotNull(valid.refreshAtElapsedMs) // History midnight refresh even when C is unavailable.
     }
 
+    @Test fun cachedProgressIsQualifiedAndWithdrawnWhenValidityOrLogicalEndCannotSupportIt() {
+        val day = Instant.ofEpochMilli(1_800_000_000_000).atZone(ZoneId.of("UTC")).toLocalDate()
+        val focus = FocusTodayReading("5m", "Some history couldn't be read", day, inProgress = true)
+        assertEquals("In progress at update · Some history couldn't be read", display(active, focus).historyNote)
+        listOf(
+            active.copy(checkedElapsedMs = now - 60_000),
+            active.copy(validUntilElapsedMs = now),
+            active.copy(cause = cause.copy(logicalEndElapsedMs = now)),
+            active.copy(cause = cause.copy(logicalEndElapsedMs = null)),
+            active.copy(status = ProtectionStatus.DEGRADED),
+            active.copy(status = ProtectionStatus.INACTIVE),
+            ProtectionReading(),
+        ).forEach {
+            val result = display(it, focus)
+            assertEquals("5m", result.focusedToday)
+            assertEquals("Some history couldn't be read", result.historyNote)
+        }
+        val midnight = display(active, focus.copy(day = day.minusDays(1)))
+        assertEquals("Focus history unavailable", midnight.focusedToday)
+        assertEquals("Open Flint to refresh", midnight.historyNote)
+    }
+
     @Test fun nextSessionUsesOnlyFutureAuthoritativeReading() {
         val epoch = 1_800_000_000_000L
         assertTrue(display(active.copy(next = NextGlanceSession("Study", epoch + 60_000))).next.startsWith("Next: Study"))

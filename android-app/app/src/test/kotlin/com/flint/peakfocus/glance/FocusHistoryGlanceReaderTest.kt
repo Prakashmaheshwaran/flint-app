@@ -30,7 +30,8 @@ class FocusHistoryGlanceReaderTest {
         assertEquals("No data", focusGlanceReading(summary(ms = null), day).text)
         val partial = focusGlanceReading(summary(HistoryAvailability.DEGRADED, inProgress = true), day)
         assertEquals("5m", partial.text)
-        assertEquals("In progress · Some history couldn't be read", partial.note)
+        assertEquals("Some history couldn't be read", partial.note)
+        assertTrue(partial.inProgress)
     }
 
     @Test fun sourceDayIsPreservedSoYesterdayCannotBecomeToday() {
