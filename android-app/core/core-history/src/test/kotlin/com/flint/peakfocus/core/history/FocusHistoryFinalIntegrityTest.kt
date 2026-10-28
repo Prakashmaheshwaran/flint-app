@@ -55,6 +55,20 @@ class FocusHistoryFinalIntegrityTest {
         assertFalse(store.update { (1..3).map { future("huge-$it", 4 * 1024 * 1024) } })
         assertArrayEquals(before, log.readBytes()); assertEquals(1, FocusHistoryStore(dir, MutableClock(begin)).load().events.size)
     }
+    @Test fun N10_physicalLineFeedInOpaqueRecordRejectsWholeBatchButEscapedNewlinesRoundTrip() = runTest {
+        val dir = temporary.newFolder(); val store = FocusHistoryStore(dir, MutableClock(begin))
+        val initial = start(); assertTrue(store.append(initial))
+        val log = File(dir, "events.v1.jsonl"); val before = log.readBytes()
+        val multiline = "{\"v\":2,\"id\":\"multiline\",\"type\":\"future\",\"session\":\"session-a\",\"at\":$begin,\"tz\":\"UTC\",\"payload\":[\n1,2]}"
+        val escaped = HistoryEvent(type = "future", id = "escaped-newline", session = "session-a", at = begin,
+            tz = "UTC", reason = "first\nsecond")
+        assertFalse(store.update { listOf(escaped, HistoryCodec.decode(multiline)) })
+        assertArrayEquals(before, log.readBytes())
+        assertTrue(store.append(escaped))
+        val reopened = FocusHistoryStore(dir, MutableClock(begin)).load()
+        assertEquals(listOf(initial.id, escaped.id), reopened.events.map { it.id })
+        assertTrue(HistoryCodec.encode(reopened.events.last()).contains("first\\nsecond"))
+    }
     @Test fun N4_multiEditRecoveredShorteningIsAtomicAndIdempotent() = runTest {
         val dir = temporary.newFolder(); val clock = MutableClock(begin); val store = FocusHistoryStore(dir, clock)
         val observer = HistoryReconciler(store, clock)
