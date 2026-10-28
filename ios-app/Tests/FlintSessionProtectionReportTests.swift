@@ -5,6 +5,44 @@ import XCTest
 final class FlintSessionProtectionReportTests: XCTestCase {
     private let now = Date(timeIntervalSinceReferenceDate: 12345)
 
+    func testUnreadableRecordIsACurrentWholeDomainFailureWithoutADecodedSession() {
+        var recovery = FlintSessionReconcileReport(outcome: .running)
+        recovery.rearmFailed = true
+        recovery.recordUnreadable = true
+        let health = FlintSessionHealth(lastArmFailure: .init(sessionName: "Focus session",
+            reason: "the running session's record can't be read", at: now))
+        let report = FlintSessionProtectionReport.make(active: nil, recovery: recovery,
+            health: health, observedActivities: [session().monitorName], now: now)
+        XCTAssertEqual(report.enabled, 1)
+        XCTAssertEqual(report.attempted, 0, "unavailable intent never reached registration")
+        XCTAssertEqual(report.armed, 0)
+        XCTAssertEqual(report.observed, 0)
+        XCTAssertEqual(report.recordUnreadable, true)
+        XCTAssertEqual(report.failures.map(\.activityName), ["session"])
+        XCTAssertEqual(report.failures.first?.reason, health.lastArmFailure?.reason)
+        XCTAssertTrue(FlintSessionHealthPresentation.hasCurrentIssue(health: health, active: nil, report: report))
+        let copy = FlintSessionHealthPresentation.messages(health: health, report: report, active: nil).joined()
+        XCTAssertTrue(copy.contains("record couldn't be read"))
+        XCTAssertFalse(copy.contains("end could not be re-registered"))
+        XCTAssertNil(FlintWebReconcileEligibility.session(session(timed: false), report: report))
+    }
+
+    func testFreshRecordPresenceDetectsAnUnreadableRecordAfterRecovery() {
+        let report = FlintSessionProtectionReport.make(active: nil, recovery: .init(outcome: .noSession),
+            health: .init(lastArmFailure: .init(sessionName: "Old attempt", reason: "old pool refusal", at: now)),
+            observedActivities: [], hasActiveSessionRecord: true, now: now)
+        XCTAssertEqual(report.recordUnreadable, true)
+        XCTAssertEqual(report.enabled, 1)
+        XCTAssertEqual(report.attempted, 0)
+        XCTAssertEqual(report.failures.map(\.activityName), ["session"])
+        XCTAssertFalse(report.failures[0].reason.contains("old pool refusal"))
+        let absent = FlintSessionProtectionReport.make(active: nil, recovery: .init(outcome: .noSession),
+            health: .init(), observedActivities: [], hasActiveSessionRecord: false, now: now)
+        XCTAssertEqual(absent.enabled, 0)
+        XCTAssertEqual(absent.recordUnreadable, false)
+        XCTAssertTrue(absent.failures.isEmpty)
+    }
+
     func testRepairUsesCurrentSessionNameAndNativeObservation() {
         let active = session()
         var recovery = FlintSessionReconcileReport(outcome: .running)

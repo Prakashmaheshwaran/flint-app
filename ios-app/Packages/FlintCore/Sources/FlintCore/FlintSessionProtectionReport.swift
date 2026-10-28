@@ -9,9 +9,20 @@ enum FlintSessionProtectionReport {
         recovery: FlintSessionReconcileReport,
         health: FlintSessionHealth,
         observedActivities: [String],
+        hasActiveSessionRecord: Bool = false,
         scheduleIsCurrent: Bool = true,
         now: Date = Date()
     ) -> FlintArmingHealth.DomainReport {
+        // Presence is a fresh fact: a record can become unreadable between recovery and the
+        // following decode. Neither case is an authoritative "no session" or an arm attempt.
+        if recovery.recordUnreadable || (active == nil && hasActiveSessionRecord) {
+            let fallback = "The running session's record can't be read. Existing protection was preserved."
+            let reason = recovery.recordUnreadable ? health.lastArmFailure?.reason ?? fallback : fallback
+            return .init(enabled: 1, attempted: 0, armed: 0,
+                failures: [.init(activityName: "session", reason: reason)], updatedAt: now,
+                observedActivities: [], notAuthorized: recovery.notAuthorized,
+                rearmFailed: recovery.rearmFailed, recordUnreadable: true)
+        }
         var failures: [FlintArmingHealth.Failure] = []
         let name = active?.monitorName ?? "session"
         if recovery.notAuthorized {
@@ -39,7 +50,8 @@ enum FlintSessionProtectionReport {
                      armed: needsAutoEnd && !observed.isEmpty && scheduleIsCurrent
                         && !recovery.notAuthorized && !recovery.rearmFailed ? 1 : 0,
                      failures: failures, updatedAt: now, observedActivities: observed,
-                     notAuthorized: recovery.notAuthorized, rearmFailed: recovery.rearmFailed)
+                     notAuthorized: recovery.notAuthorized, rearmFailed: recovery.rearmFailed,
+                     recordUnreadable: false)
     }
 }
 #endif

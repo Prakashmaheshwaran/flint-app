@@ -27,6 +27,7 @@ extension FlintProtectionReconciler {
             let observed = center.activities.filter { center.schedule(for: $0) != nil }.map(\.rawValue)
             let report = FlintSessionProtectionReport.make(active: active, recovery: recovery,
                 health: FlintSessionHealth.load(), observedActivities: observed,
+                hasActiveSessionRecord: group.hasActiveSessionRecord(),
                 scheduleIsCurrent: active.map { FlintSessionAutoClearPlan.isCurrent(for: $0, in: .autoupdatingCurrent) } ?? true)
             group.saveArmingHealth(group.loadArmingHealth().replacing("session", with: report))
             return report

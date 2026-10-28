@@ -44,6 +44,7 @@ public struct FlintArmingHealth: Codable, Equatable {
         /// Session recovery outcomes. nil identifies older reports or other domains.
         public var notAuthorized: Bool?
         public var rearmFailed: Bool?
+        public var recordUnreadable: Bool?
 
         public init(
             enabled: Int,
@@ -53,7 +54,8 @@ public struct FlintArmingHealth: Codable, Equatable {
             updatedAt: Date = Date(),
             observedActivities: [String]? = nil,
             notAuthorized: Bool? = nil,
-            rearmFailed: Bool? = nil
+            rearmFailed: Bool? = nil,
+            recordUnreadable: Bool? = nil
         ) {
             self.enabled = enabled
             self.attempted = attempted
@@ -63,6 +65,7 @@ public struct FlintArmingHealth: Codable, Equatable {
             self.observedActivities = observedActivities
             self.notAuthorized = notAuthorized
             self.rearmFailed = rearmFailed
+            self.recordUnreadable = recordUnreadable
         }
 
         /// Source-compatible initializer for callers that only know the pre-funnel model. Old
@@ -79,7 +82,7 @@ public struct FlintArmingHealth: Codable, Equatable {
         }
 
         private enum CodingKeys: String, CodingKey {
-            case enabled, attempted, armed, failures, updatedAt, observedActivities, notAuthorized, rearmFailed
+            case enabled, attempted, armed, failures, updatedAt, observedActivities, notAuthorized, rearmFailed, recordUnreadable
         }
 
         /// Existing installs persisted only `attempted`, `failures`, and `updatedAt`. Decode that
@@ -96,6 +99,7 @@ public struct FlintArmingHealth: Codable, Equatable {
             observedActivities = try values.decodeIfPresent([String].self, forKey: .observedActivities)
             notAuthorized = try values.decodeIfPresent(Bool.self, forKey: .notAuthorized)
             rearmFailed = try values.decodeIfPresent(Bool.self, forKey: .rearmFailed)
+            recordUnreadable = try values.decodeIfPresent(Bool.self, forKey: .recordUnreadable)
         }
     }
 

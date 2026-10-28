@@ -5,6 +5,7 @@ import FlintCore
 enum FlintSessionHealthPresentation {
     static func hasCurrentIssue(health: FlintSessionHealth, active: FlintActiveSession?,
                                 report: FlintArmingHealth.DomainReport?) -> Bool {
+        if report?.recordUnreadable == true { return true }
         guard let active else { return false }
         if report?.notAuthorized == true || report?.rearmFailed == true || health.unauthorizedSince != nil { return true }
         if health.lastTimeAnomaly?.sessionID == active.id { return true }
@@ -43,7 +44,9 @@ enum FlintSessionHealthPresentation {
         if report?.notAuthorized == true {
             messages.append("At the last check, the last session did not have Screen Time access.")
         }
-        if report?.rearmFailed == true {
+        if report?.recordUnreadable == true {
+            messages.append("At the last check, the running session's record couldn't be read. Existing protection was preserved; its current state needs attention.")
+        } else if report?.rearmFailed == true {
             let reason = report?.failures.last { $0.activityName != "session.lastAttempt" }?.reason
             messages.append("At the last check, the session's end could not be re-registered. "
                 + (reason ?? "See the session failure above."))

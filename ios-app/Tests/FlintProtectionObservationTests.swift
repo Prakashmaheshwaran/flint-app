@@ -28,6 +28,7 @@ final class FlintProtectionObservationTests: XCTestCase {
         XCTAssertNil(report.observedActivities)
         XCTAssertNil(report.notAuthorized)
         XCTAssertNil(report.rearmFailed)
+        XCTAssertNil(report.recordUnreadable)
     }
 
     func testSessionRecoveryFlagsPersistInObservation() throws {
@@ -35,16 +36,18 @@ final class FlintProtectionObservationTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let session = FlintArmingHealth.DomainReport(enabled: 1, attempted: 1, armed: 0,
-            failures: [], notAuthorized: true, rearmFailed: true)
+            failures: [], notAuthorized: true, rearmFailed: true, recordUnreadable: true)
         let observation = FlintProtectionObservation(observedAt: date, trigger: .foreground,
                                                     domains: ["session": session])
         observation.save(to: defaults)
         let loaded = try XCTUnwrap(FlintProtectionObservation.load(from: defaults))
         XCTAssertEqual(loaded.domains["session"]?.notAuthorized, true)
         XCTAssertEqual(loaded.domains["session"]?.rearmFailed, true)
+        XCTAssertEqual(loaded.domains["session"]?.recordUnreadable, true)
         var recovered = session
         recovered.notAuthorized = false
         recovered.rearmFailed = false
+        recovered.recordUnreadable = false
         XCTAssertEqual(try JSONDecoder().decode(FlintArmingHealth.DomainReport.self,
             from: JSONEncoder().encode(recovered)), recovered)
     }

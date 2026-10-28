@@ -3,12 +3,13 @@ import Foundation
 import FamilyControls
 
 /// Web settings share their cause's store and end callback. A later web reconciliation must
-/// not resurrect keys just cleared because the cause could not arm. Keep disabled rule copies
-/// in the input so the web lifecycle clears their keys rather than silently skipping cleanup.
+/// not resurrect keys just cleared because the cause could not arm. This gates new writes;
+/// the web lifecycle must preserve last-good keys for unavailable intent or a failed repair.
 enum FlintWebReconcileEligibility {
     static func session(_ session: FlintActiveSession?, report: FlintArmingHealth.DomainReport?) -> FlintActiveSession? {
         guard let session else { return nil }
-        guard report?.notAuthorized != true, report?.rearmFailed != true else { return nil }
+        guard report?.notAuthorized != true, report?.rearmFailed != true,
+              report?.recordUnreadable != true else { return nil }
         if session.endsAt == nil { return session } // deliberately open-ended; no auto-end needed
         return isObserved(session.monitorName, domain: "session", report: report) ? session : nil
     }
