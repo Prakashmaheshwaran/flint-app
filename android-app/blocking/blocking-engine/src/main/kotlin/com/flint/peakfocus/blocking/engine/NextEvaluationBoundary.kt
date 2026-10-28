@@ -19,6 +19,8 @@ object NextEvaluationBoundary {
         foregroundPackage: String,
         rules: List<BlockRule>,
         remainingBudgetMs: Long? = null,
+        interactive: Boolean = true,
+        boundedRecovery: Boolean = false,
     ): Long? {
         val relevant = rules.filter { rule ->
             rule.enabled && !rule.isExpired(nowMs) && with(rule.targets) {
@@ -30,9 +32,11 @@ object NextEvaluationBoundary {
         val now = Instant.ofEpochMilli(nowMs)
         val today = now.atZone(zone).toLocalDate()
         val candidates = mutableListOf<Long>()
+        // Recover an obscured foreground or unavailable usage measurement without a new event.
+        if (boundedRecovery) candidates += nowMs + 60_000L
         // Budgets reset at local midnight; schedules can also change their weekday gate then.
         candidates += today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-        remainingBudgetMs?.takeIf { it > 0L && it <= Long.MAX_VALUE - nowMs }
+        remainingBudgetMs?.takeIf { interactive && it > 0L && it <= Long.MAX_VALUE - nowMs }
             ?.let { candidates += nowMs + it }
         for (rule in relevant) {
             rule.expiresAtEpochMs?.takeIf { it > nowMs }?.let(candidates::add)

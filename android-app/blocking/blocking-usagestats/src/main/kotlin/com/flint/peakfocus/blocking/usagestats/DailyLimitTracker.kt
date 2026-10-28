@@ -5,13 +5,13 @@ import android.content.Context
 import com.flint.peakfocus.core.data.UsageQuery
 
 /**
- * Shared event-derived Time Limit accounting. Counts the still-open foreground session;
- * aggregate UsageStats buckets need not have flushed that session yet.
+ * Shared conservative Time Limit accounting. Open-session events supplement aggregate daily
+ * buckets, while aggregate/observed totals protect against missing or truncated event history.
  */
 class DailyLimitTracker(private val usm: UsageStatsManager) {
 
     constructor(context: Context) : this(
-        context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager,
+        context.applicationContext.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager,
     )
 
     /** Total foreground time today (ms) for [packageName]. */

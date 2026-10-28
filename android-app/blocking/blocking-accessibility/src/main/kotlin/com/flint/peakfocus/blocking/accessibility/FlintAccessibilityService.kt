@@ -1,12 +1,17 @@
 package com.flint.peakfocus.blocking.accessibility
 
 import android.accessibilityservice.AccessibilityService
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.PixelFormat
+import android.os.PowerManager
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.core.content.ContextCompat
 import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
 import com.flint.peakfocus.blocking.engine.BrowserAddressBars
 import com.flint.peakfocus.blocking.engine.EvaluationTimer
@@ -25,10 +30,12 @@ import java.util.Calendar
 import java.util.TimeZone
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Path A — the primary, event-driven detector and the only source of browser URLs.
@@ -68,6 +75,13 @@ class FlintAccessibilityService : AccessibilityService() {
     private var stopSignals: (() -> Unit)? = null
     private var stopRules: (() -> Unit)? = null
     private var lastForegroundUrl: String? = null
+    private var evaluationJob: Job? = null
+    private var lastNonFloorPackage: String? = null
+    private var lastBudgetDeadlineMs: Long? = null
+    private var screenReceiverRegistered = false
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) { reevaluateForeground() }
+    }
 
     /** Last package seen in the foreground (Flint + system surfaces included — the open-limit
      *  policy interprets those transitions itself, e.g. shield bounces are not re-opens). */
@@ -103,6 +117,12 @@ class FlintAccessibilityService : AccessibilityService() {
                 reevaluateForeground()
             }
         }
+        ContextCompat.registerReceiver(this, screenReceiver, IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }, ContextCompat.RECEIVER_NOT_EXPORTED)
+        screenReceiverRegistered = true
         // Main-thread listeners stand Path B down synchronously before this path can shield.
         EnforcementSignals.detectors.connected(this)
         reevaluateForeground()
@@ -115,12 +135,15 @@ class FlintAccessibilityService : AccessibilityService() {
         val className = event.className?.toString()
         if (pkg == packageName) {
             // Attaching our overlay must not replace its underlying foreground target. A real
-            // MainActivity visit is different: cancel its deadline and stand the shield down.
+            // MainActivity visit is different: stand the shield down, retaining a bounded
+            // recovery check in case the underlying app returns without a fresh window event.
             if (className == "$packageName.MainActivity") {
                 lastForegroundPackage = pkg
                 lastForegroundUrl = null
                 boundaryTimer?.cancel()
+                evaluationJob?.cancel()
                 coordinator?.hideIfShown()
+                armFloorRecovery()
             }
             return
         }
@@ -135,7 +158,7 @@ class FlintAccessibilityService : AccessibilityService() {
         val pkg = rootPkg?.takeUnless { it == packageName }
             ?: lastForegroundPackage
             ?: return
-        if (pkg == packageName) { boundaryTimer?.cancel(); return }
+        if (pkg == packageName) { armFloorRecovery(); return }
         if (pkg != lastForegroundPackage) lastForegroundUrl = null
         lastForegroundPackage = pkg
         // A recheck is not a new open; the shared policy keeps the current visit intact.
@@ -144,59 +167,90 @@ class FlintAccessibilityService : AccessibilityService() {
 
     private fun evaluateForeground(previousPackage: String?, pkg: String) {
         val coordinator = coordinator ?: return // events never precede onServiceConnected
-        boundaryTimer?.cancel() // each decision replaces the one pending deadline
-        val now = System.currentTimeMillis()
-        val utcOffset = TimeZone.getDefault().getOffset(now).toLong()
-        val cal = Calendar.getInstance()
-        val nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
-        // Schedule.daysOfWeek is ISO-numbered (1=Mon…7=Sun — core-model's documented contract);
-        // Calendar.DAY_OF_WEEK is 1=Sun…7=Sat. Convert before handing to the engine.
-        val weekday = IsoWeekday.fromCalendar(cal.get(Calendar.DAY_OF_WEEK))
+        evaluationJob?.cancel()
+        evaluationJob = serviceScope?.launch {
+            boundaryTimer?.cancel() // each decision replaces the one pending deadline
+            val now = System.currentTimeMillis()
+            val utcOffset = TimeZone.getDefault().getOffset(now).toLong()
+            val cal = Calendar.getInstance().apply { timeInMillis = now }
+            val nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+            // Schedule.daysOfWeek is ISO-numbered (1=Mon…7=Sun — core-model's documented contract);
+            // Calendar.DAY_OF_WEEK is 1=Sun…7=Sat. Convert before handing to the engine.
+            val weekday = IsoWeekday.fromCalendar(cal.get(Calendar.DAY_OF_WEEK))
 
-        // 1) Safety floor (allow-list windows included): blocking the launcher loops the Home
-        //    button into the shield; the dialer and emergency surfaces are emergency calling;
-        //    Settings/permission pages are how protection is recovered. The coordinator applies
-        //    the same floor again; this early return also skips the budget query.
-        if (coordinator.isSafetyFloor(pkg)) {
-            coordinator.hideIfShown()
-            return
-        }
+            // 1) Safety floor (allow-list windows included): blocking the launcher loops the Home
+            //    button into the shield; the dialer and emergency surfaces are emergency calling;
+            //    Settings/permission pages are how protection is recovered. The coordinator applies
+            //    the same floor again; this early return also skips the budget query.
+            if (coordinator.isSafetyFloor(pkg)) {
+                coordinator.hideIfShown()
+                armFloorRecovery()
+                return@launch
+            }
+            if (pkg != lastNonFloorPackage) lastBudgetDeadlineMs = null
+            lastNonFloorPackage = pkg
 
-        // Time Limit: blocked once today's foreground time reaches the app's daily budget —
-        //    the stricter of the legacy store and the Limit editor's DataStore limits (read via
-        //    the coordinator's snapshot; they were authored-but-never-enforced before that).
-        //    TimeLimit carries no tier, so the store-wide default break level applies.
-        val limitMin = listOfNotNull(
-            LimitStore(this).limitMinutes(pkg),
-            coordinator.timeLimitMinutes(pkg),
-        ).minOrNull()
-        val remaining = limitMin?.let { it * 60_000L - UsageQuery.dailyForegroundMillis(this, pkg, now) }
-        val timeLimitSpent = remaining != null && remaining <= 0L
+            // Time Limit: blocked once today's foreground time reaches the app's daily budget —
+            //    the stricter of the legacy store and the Limit editor's DataStore limits (read via
+            //    the coordinator's snapshot; they were authored-but-never-enforced before that).
+            //    TimeLimit carries no tier, so the store-wide default break level applies.
+            val limitMin = listOfNotNull(
+                LimitStore(this@FlintAccessibilityService).limitMinutes(pkg),
+                coordinator.timeLimitMinutes(pkg),
+            ).minOrNull()
+            // Preserve a recovery deadline even if a floor window cancels this first IO read.
+            lastBudgetDeadlineMs = limitMin?.let { lastBudgetDeadlineMs ?: now + it * 60_000L }
+            // Cancellation on every newer decision prevents a suspended query from showing a
+            // stale shield. The initial seven-day carry-in query never runs on the main thread.
+            val used = limitMin?.let { withContext(Dispatchers.IO) {
+                UsageQuery.dailyForegroundMillis(this@FlintAccessibilityService, pkg, now)
+            } }
+            val remaining = limitMin?.let { it * 60_000L - checkNotNull(used) }
+            lastBudgetDeadlineMs = remaining?.let { now + it.coerceAtLeast(0L) }
+            val timeLimitSpent = remaining != null && remaining <= 0L
 
-        // Inspect rules even when a weaker time limit or an old ordinary break applies.
-        val root = runCatching { rootInActiveWindow }.getOrNull()
-        val url = if (BrowserAddressBars.isBrowser(pkg)) {
-            if (root?.packageName?.toString() == packageName) lastForegroundUrl else readUrl(root, pkg)
-        } else null
-        lastForegroundUrl = url
-        val verdict = engine.decide(pkg, url, ActiveRulesHolder.rules, packageName, nowMin, weekday, now)
-        val ruleCause = (verdict as? Verdict.Block)?.let {
-            ruleBlockCause(ActiveRulesHolder.rules.firstOrNull { rule -> rule.id == it.ruleId }, now, utcOffset)
+            // Inspect rules even when a weaker time limit or an old ordinary break applies.
+            val root = runCatching { rootInActiveWindow }.getOrNull()
+            val url = if (BrowserAddressBars.isBrowser(pkg)) {
+                if (root?.packageName?.toString() == packageName) lastForegroundUrl else readUrl(root, pkg)
+            } else null
+            lastForegroundUrl = url
+            val verdict = engine.decide(pkg, url, ActiveRulesHolder.rules, packageName, nowMin, weekday, now)
+            val ruleCause = (verdict as? Verdict.Block)?.let {
+                ruleBlockCause(ActiveRulesHolder.rules.firstOrNull { rule -> rule.id == it.ruleId }, now, utcOffset)
+            }
+            val cause = coordinator.evaluateBlockCause(previousPackage, pkg, ruleCause, timeLimitSpent, url)
+            if (cause != null) {
+                coordinator.showBlocked(pkg, labelFor(pkg), cause)
+            } else {
+                coordinator.hideIfShown()
+            }
+            armBoundary(pkg, now, remaining, retryUsage = used == Long.MAX_VALUE)
         }
-        val cause = coordinator.evaluateBlockCause(previousPackage, pkg, ruleCause, timeLimitSpent, url)
-        if (cause != null) {
-            coordinator.showBlocked(pkg, labelFor(pkg), cause)
-        } else {
-            coordinator.hideIfShown()
-        }
-        armBoundary(pkg, now, remaining)
     }
 
-    private fun armBoundary(pkg: String, now: Long, remainingBudgetMs: Long?) {
+    private fun armBoundary(pkg: String, now: Long, remainingBudgetMs: Long?, retryUsage: Boolean = false) {
+        val interactive = isInteractive()
         boundaryTimer?.arm(NextEvaluationBoundary.next(
             now, ZoneId.systemDefault(), pkg, ActiveRulesHolder.rules, remainingBudgetMs,
+            interactive = interactive,
+            // A failed measurement blocks this decision but must recover without an app switch.
+            boundedRecovery = retryUsage && interactive,
         ))
     }
+
+    private fun armFloorRecovery() {
+        val pkg = lastNonFloorPackage ?: return
+        val now = System.currentTimeMillis()
+        boundaryTimer?.arm(NextEvaluationBoundary.next(
+            now, ZoneId.systemDefault(), pkg, ActiveRulesHolder.rules,
+            lastBudgetDeadlineMs?.let { it - now },
+            interactive = isInteractive(), boundedRecovery = true,
+        ))
+    }
+
+    private fun isInteractive(): Boolean =
+        (getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
 
     // MARK: Enforcement surface (accessibility overlay window)
 
@@ -266,12 +320,18 @@ class FlintAccessibilityService : AccessibilityService() {
         stopRules = null
         boundaryTimer?.cancel()
         boundaryTimer = null
+        evaluationJob?.cancel()
+        evaluationJob = null
+        if (screenReceiverRegistered) runCatching { unregisterReceiver(screenReceiver) }
+        screenReceiverRegistered = false
         coordinator?.hideIfShown()
         serviceScope?.cancel()
         serviceScope = null
         coordinator = null
         lastForegroundPackage = null
         lastForegroundUrl = null
+        lastNonFloorPackage = null
+        lastBudgetDeadlineMs = null
         // Hide Path A before the synchronous wake allows Path B to enforce.
         EnforcementSignals.detectors.disconnected(this)
     }

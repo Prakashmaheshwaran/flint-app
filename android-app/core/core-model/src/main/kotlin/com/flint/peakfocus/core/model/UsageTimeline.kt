@@ -105,7 +105,9 @@ class ForegroundEventCursor(
 /**
  * Reconstructs package foreground intervals and includes the still-resumed interval up to now.
  * Read events before midnight to establish the carry-in, but charge only [startMs, nowMs]. Multiple
- * resumed activities in a package contribute their union, not a sum. Screen-off/shutdown closes
+ * resumed activities in a package contribute their union, not a sum. Input is timestamp ordered
+ * by the shared timeline; a different package taking foreground closes an orphaned interval.
+ * Screen-off/shutdown closes
  * all sessions, and a startup never charges an unknown gap across a missing shutdown.
  */
 object ForegroundUsage {
@@ -122,7 +124,7 @@ object ForegroundUsage {
             resumed.clear()
         }
 
-        for (event in events.sortedBy { it.timestampMs }) {
+        for (event in events) {
             if (event.timestampMs > nowMs) break
             when (event.kind) {
                 ForegroundEvent.Kind.SHUTDOWN -> { close(event.timestampMs); shutdown = true }
@@ -131,9 +133,12 @@ object ForegroundUsage {
                     openedAt = null; resumed.clear(); shutdown = false
                 }
                 ForegroundEvent.Kind.SCREEN_OFF -> close(event.timestampMs)
-                ForegroundEvent.Kind.RESUMED -> if (!shutdown && event.packageName == packageName) {
-                    if (resumed.isEmpty()) openedAt = event.timestampMs
-                    resumed += event.activityName
+                ForegroundEvent.Kind.RESUMED -> if (!shutdown) {
+                    if (event.packageName != packageName) close(event.timestampMs)
+                    else {
+                        if (resumed.isEmpty()) openedAt = event.timestampMs
+                        resumed += event.activityName
+                    }
                 }
                 ForegroundEvent.Kind.PAUSED, ForegroundEvent.Kind.STOPPED ->
                     if (event.packageName == packageName) {

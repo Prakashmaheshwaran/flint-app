@@ -6,6 +6,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ContinuousBudgetTest {
+    @Test fun `minimum clock value is an ordinary first sample rather than a cache sentinel`() {
+        var calls = 0
+        val gate = PathBTimeLimitGate({ 1 }, { _, _ -> calls++; 0 }, dayFor = { 0 })
+        assertFalse(gate.isSpent("app", Long.MIN_VALUE))
+        assertFalse(gate.isSpent("app", Long.MIN_VALUE + 1))
+        assertEquals(1, calls)
+    }
+
     @Test fun `stationary open session is requeried exactly at exhaustion`() {
         val events = listOf(ForegroundEvent(0, ForegroundEvent.Kind.RESUMED, "app"))
         val queries = mutableListOf<Long>()

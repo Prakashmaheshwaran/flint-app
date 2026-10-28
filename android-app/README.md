@@ -241,16 +241,28 @@ heuristic (JVM-tested only).
 - *Test-gate hole (found fixing the above):* `make android-test` ran `testDebugUnitTest`,
   which does not exist on the pure-Kotlin modules — the engine/core-model tests were silently
   skipped locally. The target now runs `./gradlew test`, matching CI.
-- *`DailyLimitTracker` had no caller (was gap 1 of this list):* Path B now enforces daily Time
-  Limits — `UsageStatsForegroundService.tick()` checks the stricter of the legacy `LimitStore`
-  and DataStore-authored thresholds against `DailyLimitTracker`'s consumption measure, ahead
-  of the rule verdict, and routes hits through
-  `PathBBlockHandoff.onTimeLimitExceeded` (break/pass stand-down still wins; no Open-Limit
-  open is recorded — Path A's exact order). UsageStats verdicts cache for 15 seconds so the
-  one-second poll loop does not issue an expensive system query every tick.
+- *Continuous Time Limits and schedules (R1/R6):* both paths use the larger of event-derived
+  usage (including the ongoing interval), aggregate daily buckets, and already observed usage.
+  A pruned/failed event query cannot erase aggregate consumption; two failed measurements fail
+  closed for that decision. Queries run on IO, and the ordered event timeline is reused across
+  measurements. Path B retains foreground across quiet polls; budget cache validity is bounded
+  by the smaller of 15 seconds and the remaining budget. The safety floor precedes all causes.
+  Path A owns one schedule/expiry/budget/midnight timer and wakes on rule/limit/clock changes.
+  Screen-off removes the budget deadline; screen-on/unlock re-evaluates. A floor/system window
+  keeps the previous app's earlier boundary or a 60-second recovery check.
+- *Detector failover:* Path B's existing specialUse foreground service stays in standby while
+  Accessibility is actually connected. Standby probes permission health once a minute, with
+  immediate channel wakeups for binding/rule/clock changes; active fallback polls each second.
+  Notifications distinguish standby from enforcement, and handoff removes the previous shield.
+- *Quota timezone deviation (tracked for C4d):* persisted `quotaZone` does not exist yet.
+  Midnight currently follows the device zone. A zone change retains the process's larger
+  already-measured usage until the next midnight in the new zone, so re-clipping cannot lower
+  today's observed quota. This protection is not durable across process death and is not a
+  substitute for C4d's persisted clock/zone contract. Conservative aggregate/high-water totals
+  can over-count when platform buckets span a changed zone or late events revise an interval.
 - *`POST_NOTIFICATIONS` never requested (was gap 2):* the app shell now asks **once**, on
   resume, and only when Path B is actually in play (usage access granted, a11y off — the
-  same condition the service gate starts it under); a decline is respected, never re-prompted.
+  original prompt condition); a decline is respected, never re-prompted.
   Enforcement never depended on the grant — only the FGS notification's visibility does.
 
 Emulator-verifiable next: Path A open counting, sleep windows, boot re-arm, the

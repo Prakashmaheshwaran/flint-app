@@ -19,7 +19,8 @@ import com.flint.peakfocus.blocking.overlay.PathBBlockHandoff
 import com.flint.peakfocus.core.data.LimitStore
 import com.flint.peakfocus.core.data.UsageQuery
 import com.flint.peakfocus.core.model.ActiveRulesHolder
-import com.flint.peakfocus.core.model.DetectorFailover
+import com.flint.peakfocus.core.model.DetectorCadence
+import com.flint.peakfocus.core.model.DetectorModeProbe
 import com.flint.peakfocus.core.model.EnforcementSignals
 import com.flint.peakfocus.core.model.FallbackMode
 import com.flint.peakfocus.core.model.Verdict
@@ -47,6 +48,7 @@ class UsageStatsForegroundService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val engine = BlockDecisionEngine()
     private val wake = Channel<Unit>(Channel.CONFLATED)
+    private val modeProbe = DetectorModeProbe(::usageAccessGranted)
     private lateinit var poller: UsagePoller
     private lateinit var timeLimitGate: PathBTimeLimitGate
     private var loop: Job? = null
@@ -83,14 +85,16 @@ class UsageStatsForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Re-post after a notification permission grant and wake an existing loop after boot
         // or a clock-change start command; do not wait for its polling delay to elapse.
+        modeProbe.invalidate()
         startAsForeground(currentMode())
         resetObservation = true
         wake.trySend(Unit)
         if (loop?.isActive != true) {
             loop = scope.launch {
                 while (isActive) {
+                    var mode = if (EnforcementSignals.detectors.pathAConnected) FallbackMode.STANDBY else FallbackMode.ENFORCING
                     try {
-                        val mode = currentMode()
+                        mode = currentMode()
                         if (mode != notifiedMode) startAsForeground(mode)
                         if (mode == FallbackMode.OFF) {
                             PathBBlockHandoff.coordinator(this@UsageStatsForegroundService).hideIfShown()
@@ -106,7 +110,7 @@ class UsageStatsForegroundService : Service() {
                         resetObservation = true
                         Log.w("FlintFallback", "Foreground observation unavailable", failure)
                     }
-                    withTimeoutOrNull(POLL_INTERVAL_MS) { wake.receive() }
+                    withTimeoutOrNull(DetectorCadence.delayMs(mode)) { wake.receive() }
                 }
             }
         }
@@ -143,7 +147,11 @@ class UsageStatsForegroundService : Service() {
         PathBBlockHandoff.onForegroundPolled(this, pkg, verdict, spent)
     }
 
-    private fun currentMode(): FallbackMode {
+    private fun currentMode(): FallbackMode = modeProbe.mode(
+        System.currentTimeMillis(), EnforcementSignals.detectors.pathAConnected,
+    )
+
+    private fun usageAccessGranted(): Boolean {
         val ops = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
         val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ops.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), packageName)
@@ -151,8 +159,7 @@ class UsageStatsForegroundService : Service() {
             @Suppress("DEPRECATION")
             ops.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), packageName)
         }
-        val granted = permission == AppOpsManager.MODE_ALLOWED
-        return DetectorFailover.mode(granted, EnforcementSignals.detectors.pathAConnected)
+        return permission == AppOpsManager.MODE_ALLOWED
     }
 
     private fun startAsForeground(mode: FallbackMode) {
@@ -195,7 +202,6 @@ class UsageStatsForegroundService : Service() {
     companion object {
         private const val CHANNEL_ID = "flint_enforcement"
         private const val NOTIF_ID = 1001
-        private const val POLL_INTERVAL_MS = 1_000L
 
         fun start(context: Context) {
             val intent = Intent(context, UsageStatsForegroundService::class.java)

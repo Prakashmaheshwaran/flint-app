@@ -7,7 +7,7 @@ import com.flint.peakfocus.core.model.ForegroundEvent
 /** Thin adapter; the tracker and accounting both consume the same public event vocabulary. */
 object UsageEventReader {
     fun read(manager: UsageStatsManager, startMs: Long, endMs: Long): List<ForegroundEvent> {
-        val events = manager.queryEvents(startMs, endMs) ?: return emptyList()
+        val events = checkNotNull(manager.queryEvents(startMs, endMs)) { "Usage event history unavailable" }
         val event = UsageEvents.Event()
         val result = mutableListOf<ForegroundEvent>()
         while (events.hasNextEvent()) {

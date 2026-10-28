@@ -8,6 +8,10 @@ class UsageTimelineTest {
     private fun event(time: Long, kind: ForegroundEvent.Kind = RESUMED, pkg: String = "app", activity: String = "Main") =
         ForegroundEvent(time, kind, pkg, activity)
 
+    @Test fun `another package resume closes a session whose pause was lost`() {
+        assertEquals(1_000L, ForegroundUsage.millis("app", listOf(event(0), event(1_000, pkg = "other")), 0, 60_000))
+    }
+
     @Test fun `stationary foreground survives ticks with no events for minutes`() {
         val tracker = ForegroundTracker()
         val cursor = ForegroundEventCursor()

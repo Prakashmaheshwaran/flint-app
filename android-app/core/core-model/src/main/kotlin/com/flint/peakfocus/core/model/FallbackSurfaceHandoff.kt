@@ -9,7 +9,12 @@ class FallbackSurfaceHandoff<T> {
     private val started = mutableSetOf<T>()
     private var pathALive = false
 
-    fun started(surface: T) { started += surface }
+    /** A late lifecycle callback must not resurrect fallback after Path A already took over. */
+    fun started(surface: T, primaryLive: Boolean = pathALive): Boolean {
+        if (primaryLive) return true
+        started += surface
+        return false
+    }
     fun stopped(surface: T) { started -= surface }
 
     fun pathAChanged(live: Boolean): List<T> {

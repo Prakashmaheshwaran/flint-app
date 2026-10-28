@@ -9,6 +9,16 @@ import org.junit.Test
 class DailyUsageTimelineTest {
     private val resume = ForegroundEvent(100, ForegroundEvent.Kind.RESUMED, "app")
 
+    @Test fun `late overlap events are merged in order before accounting`() {
+        val timeline = DailyUsageTimeline { _, end ->
+            val pause = resume.copy(timestampMs = 2_500, kind = ForegroundEvent.Kind.PAUSED)
+            if (end == 3_000L) listOf(resume, pause) else listOf(pause,
+                resume.copy(timestampMs = 2_000, packageName = "other"))
+        }
+        assertEquals(2_400L, timeline.millis("app", 0, 3_000))
+        assertEquals(1_900L, timeline.millis("app", 0, 4_000))
+    }
+
     @Test fun `long lookback happens once then queries stay incremental`() {
         val ranges = mutableListOf<Pair<Long, Long>>()
         val timeline = DailyUsageTimeline { start, end -> ranges += start to end; listOf(resume) }

@@ -14,7 +14,6 @@ class FallbackSurfaceHandoffTest {
 
     @Test fun `disconnect never dismisses fallback`() {
         val handoff = FallbackSurfaceHandoff<String>()
-        handoff.pathAChanged(true)
         handoff.started("fallback")
         assertTrue(handoff.pathAChanged(false).isEmpty())
         assertTrue(handoff.pathAChanged(false).isEmpty())
@@ -32,12 +31,24 @@ class FallbackSurfaceHandoffTest {
         assertTrue(handoff.pathAChanged(true).isEmpty())
     }
 
-    @Test fun `later lifecycle callback alone is not another Path A transition`() {
+    @Test fun `a fallback starting after Path A is live is dismissed immediately`() {
         val handoff = FallbackSurfaceHandoff<String>()
         handoff.pathAChanged(true)
-        handoff.started("fallback")
+        assertTrue(handoff.started("late fallback"))
         assertTrue(handoff.pathAChanged(true).isEmpty())
         handoff.pathAChanged(false)
+        assertFalse(handoff.started("fallback"))
         assertEquals(listOf("fallback"), handoff.pathAChanged(true))
+    }
+
+    @Test fun `fresh lifecycle state can detect a primary connected before adapter tracking`() {
+        assertTrue(FallbackSurfaceHandoff<String>().started("late fallback", primaryLive = true))
+    }
+
+    @Test fun `a late start does not consume the takeover of already visible fallbacks`() {
+        val handoff = FallbackSurfaceHandoff<String>()
+        handoff.started("existing")
+        assertTrue(handoff.started("late", primaryLive = true))
+        assertEquals(listOf("existing"), handoff.pathAChanged(true))
     }
 }

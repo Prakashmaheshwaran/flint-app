@@ -17,7 +17,7 @@ class PathBTimeLimitGate(
     private val dayFor: (Long) -> Long = { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate().toEpochDay() },
 ) {
     private var cachedPackage: String? = null
-    private var cachedAtEpochMs = Long.MIN_VALUE
+    private var cachedAtEpochMs: Long? = null
     private var cachedSpent = false
     private var cachedLimitMinutes: Int? = null
     private var validForMs = 0L
@@ -29,10 +29,10 @@ class PathBTimeLimitGate(
     fun isSpent(packageName: String, nowEpochMs: Long): Boolean {
         val limitMinutes = limitMinutesFor(packageName)
         val day = dayFor(nowEpochMs)
+        val cachedAt = cachedAtEpochMs
         val stale = packageName != cachedPackage || limitMinutes != cachedLimitMinutes ||
             day != cachedDay || lastObservedMs?.let { nowEpochMs < it } == true ||
-            nowEpochMs - cachedAtEpochMs >= validForMs ||
-            nowEpochMs < cachedAtEpochMs
+            cachedAt == null || nowEpochMs < cachedAt || nowEpochMs - cachedAt >= validForMs
         if (stale) {
             val remaining = limitMinutes?.let {
                 it * 60_000L - foregroundMillisToday(packageName, nowEpochMs)

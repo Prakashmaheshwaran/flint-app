@@ -22,7 +22,11 @@ class DailyUsageTimeline(private val read: (startMs: Long, endMs: Long) -> List<
             dayStart = startOfDayMs
         }
         val incoming = read(cursor.queryStart(nowMs), nowMs)
-        events += cursor.commit(nowMs, incoming)
+        val fresh = cursor.commit(nowMs, incoming)
+        val late = fresh.isNotEmpty() && events.isNotEmpty() && fresh.first().timestampMs < events.last().timestampMs
+        events += fresh
+        // Ordinary polls append in order. Reorder only when the overlap discovers late data.
+        if (late) events.sortBy { it.timestampMs }
         return ForegroundUsage.millis(packageName, events, startOfDayMs, nowMs)
     }
 

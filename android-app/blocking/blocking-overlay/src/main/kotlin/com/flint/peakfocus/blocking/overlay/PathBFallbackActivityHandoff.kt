@@ -26,11 +26,13 @@ class PathBFallbackActivityHandoff(application: Application) : Application.Activ
     }
 
     override fun onActivityStarted(activity: Activity) {
-        if (activity is BlockActivity) policy.started(activity)
+        if (activity is BlockActivity && policy.started(activity, EnforcementSignals.detectors.pathAConnected)) {
+            if (!activity.isFinishing && !activity.isDestroyed) activity.finish()
+        }
     }
 
     override fun onActivityResumed(activity: Activity) {
-        if (activity is BlockActivity) policy.started(activity)
+        onActivityStarted(activity)
     }
 
     override fun onActivityStopped(activity: Activity) {

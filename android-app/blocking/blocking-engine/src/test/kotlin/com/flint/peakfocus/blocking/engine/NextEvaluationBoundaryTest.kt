@@ -19,6 +19,35 @@ class NextEvaluationBoundaryTest {
         assertNull(NextEvaluationBoundary.next(0, utc, "app", emptyList()))
     }
 
+    @Test fun `screen off never repeatedly arms an unchanged short remaining budget`() {
+        val now = ms("2026-10-28T12:00:00Z")
+        val midnight = ms("2026-10-29T00:00:00Z")
+        repeat(60) { second ->
+            assertEquals(midnight, NextEvaluationBoundary.next(now + second * 1_000L, utc, "app", emptyList(), 10, interactive = false))
+        }
+        assertEquals(now + 10, NextEvaluationBoundary.next(now, utc, "app", emptyList(), 10, interactive = true))
+    }
+
+    @Test fun `screen off retains schedules and one shot expiry`() {
+        val now = ms("2026-10-28T09:59:00Z")
+        assertEquals(now + 60_000, NextEvaluationBoundary.next(now, utc, "app", listOf(rule()), 10, interactive = false))
+        val expiring = rule().copy(expiresAtEpochMs = now + 30_000)
+        assertEquals(now + 30_000, NextEvaluationBoundary.next(now, utc, "app", listOf(expiring), 10, interactive = false))
+    }
+
+    @Test fun `floor recovery retains nearer boundaries and otherwise rechecks within one minute`() {
+        val now = ms("2026-10-28T09:59:45Z")
+        assertEquals(now + 15_000, NextEvaluationBoundary.next(now, utc, "app", listOf(rule()), boundedRecovery = true))
+        assertEquals(now + 5_000, NextEvaluationBoundary.next(now, utc, "app", emptyList(), 5_000, boundedRecovery = true))
+        assertEquals(now + 60_000, NextEvaluationBoundary.next(now, utc, "app", listOf(rule(660, 720)), boundedRecovery = true))
+        assertNull(NextEvaluationBoundary.next(now, utc, "app", emptyList(), boundedRecovery = true))
+    }
+
+    @Test fun `unavailable usage is retried before midnight without a short budget loop`() {
+        val now = ms("2026-10-28T12:00:00Z")
+        assertEquals(now + 60_000, NextEvaluationBoundary.next(now, utc, "app", emptyList(), -Long.MAX_VALUE, boundedRecovery = true))
+    }
+
     @Test fun `disabled expired and unrelated rules need no timer`() {
         for (r in listOf(rule().copy(enabled = false), rule().copy(expiresAtEpochMs = 1), rule().copy(targets = BlockTargets()))) {
             assertNull(next("2026-10-28T09:00:00Z", r))
