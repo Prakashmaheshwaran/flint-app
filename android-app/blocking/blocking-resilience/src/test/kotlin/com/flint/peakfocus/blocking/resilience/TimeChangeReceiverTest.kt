@@ -2,7 +2,6 @@ package com.flint.peakfocus.blocking.resilience
 
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import com.flint.peakfocus.core.datastore.*
@@ -10,6 +9,8 @@ import com.flint.peakfocus.core.model.*
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.awaitCancellation
 import com.flint.peakfocus.blocking.engine.ClockShift
 
 /**
@@ -89,7 +90,7 @@ class TimeChangeReceiverTest {
         store.setOpenCounts(OpenCountState(0, mapOf("com.app" to 2)))
         store.setEmergencyPass(EmergencyPassState(0, null))
         store.setBreakSession(BreakSessionState(0, BreakRequestState(1_000, 61_000)))
-        val old = clockGuardSnapshot(store, InMemoryBlockRulesStore())!!.first
+        val old = store.state.snapshotOrNull()!!
         val receipt = PersistedExemption("grant", "com.app", "cause", ExemptionKind.EMERGENCY_PASS, 2_000_000_000_000)
         store.transact { FocusMutation(it.copy(
             openCounts = it.openCounts.copy(opensByPackage = mapOf("com.app" to 3)),
@@ -110,7 +111,7 @@ class TimeChangeReceiverTest {
         store.setOpenCounts(OpenCountState(0, mapOf("com.app" to 2)))
         store.setEmergencyPass(EmergencyPassState(0, 10))
         store.setBreakSession(BreakSessionState(1, BreakRequestState(1_000, 61_000)))
-        val before = clockGuardSnapshot(store, InMemoryBlockRulesStore())!!.first
+        val before = store.state.snapshotOrNull()!!
         val shift = ClockShift(1_700_000_000_000, 1_700_700_000_000, 0, 0)
         val guarded = guardCurrentFocus(store, shift) as FocusCommit.Committed
         assertEquals(before.revision + 1, guarded.snapshot.revision)
@@ -120,30 +121,25 @@ class TimeChangeReceiverTest {
         assertEquals(10L, guarded.snapshot.emergencyPass.usedAtEpochMs)
     }
 
-    @Test fun unavailableFocusCompletesWithoutWaitingForAReadyValue() = runBlocking {
-        for (reason in StorageFailure.entries) {
-            val focus = object : FocusStateStore by InMemoryFocusStateStore() {
-                override val state = flowOf<StorageState<FocusSnapshot>>(StorageState.Loading, StorageState.Unavailable(reason))
-            }
-            assertNull(withTimeout(500) { clockGuardSnapshot(focus, InMemoryBlockRulesStore()) })
+    @Test fun PC_55_stalledFocusCannotUseTheIndependentRulesGuardDeadline() = runBlocking {
+        val focus = object : FocusStateStore by InMemoryFocusStateStore() {
+            override suspend fun <R> transact(transform: (FocusSnapshot) -> FocusMutation<R>): FocusCommit<R> = awaitCancellation()
         }
+        val session = BlockRule("session", "Focus", BlockTargets(), expiresAtEpochMs = 300_000)
+        val rules = InMemoryBlockRulesStore(listOf(session))
+        withTimeout(1_000) { applyClockGuards(focus, rules, ClockShift(100_000, 200_000, 0, 0), perGuardTimeoutMs = 25) }
+        assertEquals(400_000L, rules.rulesState.snapshotOrNull()!!.single().expiresAtEpochMs)
     }
 
-    @Test fun unavailableRulesCompleteWithoutWaitingForAReadyValue() = runBlocking {
-        for (reason in StorageFailure.entries) {
-            val rules = object : BlockRulesStore by InMemoryBlockRulesStore() {
-                override val rulesState = flowOf<StorageState<List<BlockRule>>>(StorageState.Loading, StorageState.Unavailable(reason))
-            }
-            assertNull(withTimeout(500) { clockGuardSnapshot(InMemoryFocusStateStore(), rules) })
+    @Test fun PC_55_stalledRulesReadCannotHoldTheFocusGuardPastItsOwnDeadline() = runBlocking {
+        val focus = InMemoryFocusStateStore()
+        val receipt = PersistedExemption("grant", "app", "cause", ExemptionKind.BREAK, 300_000, "boot")
+        focus.transact { FocusMutation(it.copy(exemptions = mapOf("grant" to receipt)), Unit) }
+        val rules = object : BlockRulesStore by InMemoryBlockRulesStore() {
+            override val rulesState = flow<StorageState<List<BlockRule>>> { awaitCancellation() }
         }
-    }
-
-    @Test fun completeSnapshotsRemainAvailableAfterInitialLoading() = runBlocking {
-        val focus = InMemoryFocusStateStore().also { it.setDefaultBreakLevel(BreakLevel.HARDER) }
-        val rule = BlockRule("rule", "Work", BlockTargets())
-        val snapshot = withTimeout(500) { clockGuardSnapshot(focus, InMemoryBlockRulesStore(listOf(rule))) }!!
-        assertEquals(BreakLevel.HARDER, snapshot.first.defaultBreakLevel)
-        assertEquals(listOf(rule), snapshot.second)
+        withTimeout(1_000) { applyClockGuards(focus, rules, ClockShift(100_000, 50_000, 0, 0), perGuardTimeoutMs = 25) }
+        assertEquals(250_000L, focus.state.snapshotOrNull()!!.exemptions.getValue("grant").untilEpochMs)
     }
 
     @Test

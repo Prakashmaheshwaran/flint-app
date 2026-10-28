@@ -60,4 +60,50 @@ class BlockEventHooksTest {
         assertNull(timeLimitBlockCause(BreakLevel.EASY, 0L, 0L).ruleId)
         assertNull(openLimitBlockCause(OpenLimit("com.x", 1), 0L, 0L).ruleId)
     }
+
+    @Test fun PC_41_committedGlobalPassHasExactScopeAndOnlyOneCompatibilityDelivery() {
+        val committed = mutableListOf<String>()
+        var oldCalls = 0
+        val modern = object : BlockEventHooks.Listener {
+            override fun onEmergencyPassUsed(ruleId: String?, atEpochMs: Long) { oldCalls++ }
+            override fun onEmergencyPassCommitted(operationId: String, affectedRuleIds: Set<String>, recoveryEndEpochMs: Long, atEpochMs: Long) {
+                committed += "$operationId:${affectedRuleIds.sorted()}:$recoveryEndEpochMs@$atEpochMs"
+            }
+        }
+        BlockEventHooks.register(recorder)
+        BlockEventHooks.register(modern)
+        try {
+            BlockEventHooks.emergencyPassCommitted("op", setOf("session", "schedule"), 3_600_010, 10)
+            assertEquals(listOf("op:[schedule, session]:3600010@10"), committed)
+            assertEquals(0, oldCalls)
+            assertEquals(listOf("pass:null@10"), events)
+        } finally { BlockEventHooks.unregister(modern) }
+    }
+
+    @Test fun PC_22_breakTerminalHooksCarryStableGrantAndReasonAndIsolateObservers() {
+        val terminal = mutableListOf<String>()
+        val bad = object : BlockEventHooks.Listener {
+            override fun onBreakEnded(ruleId: String?, grantId: String, reason: BlockEventHooks.BreakEndReason, atEpochMs: Long) = error("observer")
+            override fun onEmergencyPassCommitted(operationId: String, affectedRuleIds: Set<String>, recoveryEndEpochMs: Long, atEpochMs: Long) = error("observer")
+        }
+        val good = object : BlockEventHooks.Listener {
+            override fun onBreakEnded(ruleId: String?, grantId: String, reason: BlockEventHooks.BreakEndReason, atEpochMs: Long) {
+                terminal += "$ruleId:$grantId:${reason.wireValue}@$atEpochMs"
+            }
+        }
+        BlockEventHooks.register(bad)
+        BlockEventHooks.register(good)
+        BlockEventHooks.register(recorder)
+        try {
+            BlockEventHooks.BreakEndReason.entries.forEach {
+                BlockEventHooks.breakEnded("rule", "grant", it, 20)
+            }
+            BlockEventHooks.emergencyPassCommitted("op", setOf("rule"), 100, 20)
+            assertEquals(listOf("rule:grant:expired@20", "rule:grant:resumed@20", "rule:grant:superseded@20", "rule:grant:recovery@20"), terminal)
+            assertEquals(listOf("pass:rule@20"), events)
+        } finally {
+            BlockEventHooks.unregister(bad)
+            BlockEventHooks.unregister(good)
+        }
+    }
 }

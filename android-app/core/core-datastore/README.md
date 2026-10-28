@@ -73,9 +73,12 @@ that horizon cannot create a debit, even after their receipt has been pruned.
 The persisted watermark never rewinds, so clock rollback and process recreation
 cannot make a pruned callback fresh again. A clock earlier than that watermark
 refuses new grant/counter requests until time catches up; no credit is consumed.
-An existing active receipt can still acknowledge its original request without a
-second spend. Old valid receipt IDs are preserved while active and may be removed
-after expiry; live request APIs never issue or accept those older token shapes.
+An existing active same-boot receipt can still acknowledge its original request
+without a second spend. Old non-`f1` receipt IDs remain decodable and their
+consumption is preserved; without a provable current boot they authorize no
+access and may be reclaimed at the next request. Live APIs never issue or accept
+those older token shapes. A legacy row with a proven current boot remains active
+until its original deadline, then becomes eligible for reclamation.
 The controller caps retained entries at 1,024 and applies a conservative escaping
 budget below the codec's 4 MiB bound. Capacity refusal is explicit and spends no
 credit; active grants are never evicted to make room. Operations have a five-second
@@ -84,6 +87,12 @@ acknowledgement is explicitly unconfirmed (it may follow a commit), so the surfa
 keeps its request identity for retry/Ready-read reconciliation rather than claiming
 the credit is unspent. Only an acknowledged or successfully read receipt can lift
 protection.
+
+On devices that do not expose a stable boot identity, process restart ends active
+access conservatively: “Access ended after restart; no extra credit was spent.”
+Consumed counters/pass and replay protection remain. This can shorten a previously
+accepted interval; R5-RECOVERY must display this reason instead of implying a lost
+credit or offering an automatic replacement grant.
 
 Only apps with a configured Open Limit write normal-open accounting. Unrestricted
 app switches create neither a counter write nor receipt pressure. Normal counted

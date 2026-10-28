@@ -37,6 +37,9 @@ data class ProtectionStatus(
      */
     val validUntilElapsedRealtimeMs: Long?,
 ) {
+    /** Last actual policy check, not the time a widget or detector-health publisher read it. */
+    val lastCheckedEpochMs: Long? get() = observedAt?.wallEpochMs
+
     enum class Readiness { LOADING, READY, UNAVAILABLE }
 
     enum class CauseKind { SESSION, TIMER, SCHEDULE, SLEEP, TIME_LIMIT, OPEN_LIMIT }
@@ -110,11 +113,48 @@ data class ProtectionStatus(
 /** Process-wide holder; enforcement publishes, display surfaces collect [status]. */
 object ProtectionStatusHub {
     private val state = MutableStateFlow(ProtectionStatus.UNKNOWN)
+    private val lock = Any()
+    private var policy = ProtectionStatus.UNKNOWN
+    private var pathB = ProtectionStatus.PathBState.UNKNOWN
+    private var pathBReasons: Set<String> = emptySet()
 
     val status: StateFlow<ProtectionStatus> = state.asStateFlow()
 
-    /** Enforcement-only (lane C). */
-    fun publish(status: ProtectionStatus) {
-        state.value = status
+    /**
+     * Coordinator-only policy publication. Path B mode is owned by its live service and
+     * merged here; an unrelated policy refresh cannot erase service health or infer it
+     * from permissions. Collection fields are frozen before crossing the read-only seam.
+     */
+    fun publish(status: ProtectionStatus) = synchronized(lock) {
+        policy = status.copy(activeCauses = status.activeCauses.toList(),
+            detectors = status.detectors.copy(degradedReasons = status.detectors.degradedReasons.toSet()))
+        publishLocked()
+    }
+
+    /**
+     * Service-lifecycle sink for Path B (blocking-usagestats). Report UNKNOWN during startup,
+     * STANDBY/ENFORCING only after foreground startup succeeds, and OFF after stopping. Reasons
+     * describe observed failures such as "usage-access-missing"; an empty set clears previous
+     * Path B reasons. This changes health only: never advances policy observation/expiry or
+     * lastCheckedEpochMs, and never authorizes enforcement. Initially UNKNOWN until reported.
+     */
+    fun publishPathBHealth(state: ProtectionStatus.PathBState, degradedReasons: Set<String> = emptySet()) = synchronized(lock) {
+        pathB = state
+        pathBReasons = degradedReasons.toSet()
+        publishLocked()
+    }
+
+    private fun publishLocked() {
+        state.value = policy.copy(detectors = policy.detectors.copy(
+            pathB = pathB,
+            degradedReasons = policy.detectors.degradedReasons + pathBReasons,
+        ))
+    }
+
+    internal fun resetForTests() = synchronized(lock) {
+        policy = ProtectionStatus.UNKNOWN
+        pathB = ProtectionStatus.PathBState.UNKNOWN
+        pathBReasons = emptySet()
+        publishLocked()
     }
 }

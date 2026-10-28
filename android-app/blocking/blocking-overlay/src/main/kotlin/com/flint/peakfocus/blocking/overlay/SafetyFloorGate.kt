@@ -2,6 +2,8 @@ package com.flint.peakfocus.blocking.overlay
 
 import com.flint.peakfocus.core.model.SafetyFloor
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Cached safety-floor answers for the detectors' hot paths (audit R2). The static floor is a set
@@ -29,7 +31,21 @@ class SafetyFloorGate(
     private val refreshInBackground: ((() -> Unit) -> Unit)? = null,
     private val refreshIntervalMs: Long = DEFAULT_REFRESH_INTERVAL_MS,
     private val freshIntervalMs: Long = DEFAULT_FRESH_INTERVAL_MS,
+    requiredRuntimeSources: Set<String> = setOf("home", "default-dialer", "system-dialer", "uninstaller"),
 ) {
+    data class RuntimeResolution(
+        val requiredSources: Set<String>,
+        val resolvedSources: Set<String> = emptySet(),
+        val failedSources: Set<String> = emptySet(),
+        val checkedAtElapsedMs: Long? = null,
+    ) {
+        val hasResolvedEverySource: Boolean get() = resolvedSources.containsAll(requiredSources)
+        val degraded: Boolean get() = !hasResolvedEverySource || failedSources.any { it in requiredSources }
+    }
+
+    private val resolution = MutableStateFlow(RuntimeResolution(requiredRuntimeSources.toSet()))
+    /** Read-only provenance; a failed/missing lookup is never counted as a resolved source. */
+    val runtimeResolution = resolution.asStateFlow()
     private val lock = Any()
     private val refreshing = AtomicBoolean(false)
     @Volatile private var bySource: Map<String, Set<String>> = emptyMap()
@@ -100,6 +116,11 @@ class SafetyFloorGate(
             // Stamp even on failure so a broken resolver is retried at the interval, not on
             // every event; the previous sets stay in force meanwhile.
             resolvedAtMs = nowElapsedMs()
+            resolution.value = resolution.value.copy(
+                resolvedSources = merged.keys.toSet(),
+                failedSources = resolution.value.requiredSources.filterTo(HashSet()) { resolved[it] == null },
+                checkedAtElapsedMs = resolvedAtMs,
+            )
         }
     }
 

@@ -12,9 +12,7 @@ import com.flint.peakfocus.core.datastore.FocusStateStore
 import com.flint.peakfocus.core.datastore.FocusCommit
 import com.flint.peakfocus.core.datastore.BlockRulesStore
 import com.flint.peakfocus.core.datastore.snapshotOrNull
-import com.flint.peakfocus.core.model.FocusSnapshot
 import com.flint.peakfocus.core.model.FocusMutation
-import com.flint.peakfocus.core.model.BlockRule
 import java.util.TimeZone
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.CoroutineScope
@@ -24,13 +22,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 
-/** A receiver cannot wait indefinitely for a Ready value from an unavailable store. */
-internal suspend fun clockGuardSnapshot(focus: FocusStateStore, rules: BlockRulesStore): Pair<FocusSnapshot, List<BlockRule>>? {
-    val focusSnapshot = focus.state.snapshotOrNull() ?: return null
-    val ruleSnapshot = rules.rulesState.snapshotOrNull() ?: return null
-    return focusSnapshot to ruleSnapshot
-}
+internal const val CLOCK_GUARD_TIMEOUT_MS = 2_000L
 
 /** Transform current accounting together: an older warm-up read must never refund a grant. */
 internal suspend fun guardCurrentFocus(store: FocusStateStore, shift: ClockShift): FocusCommit<Unit> =
@@ -50,17 +44,22 @@ internal suspend fun guardCurrentFocus(store: FocusStateStore, shift: ClockShift
     }
 
 /** Independent bounded domains: unreadable focus state must not skip valid session guards. */
-internal suspend fun applyClockGuards(focus: FocusStateStore, rules: BlockRulesStore, shift: ClockShift) = coroutineScope {
-    launch { isolateClockGuard { guardCurrentFocus(focus, shift) } }
-    launch { isolateClockGuard {
+internal suspend fun applyClockGuards(
+    focus: FocusStateStore, rules: BlockRulesStore, shift: ClockShift,
+    perGuardTimeoutMs: Long = CLOCK_GUARD_TIMEOUT_MS,
+) = coroutineScope {
+    launch { isolateClockGuard(perGuardTimeoutMs) { guardCurrentFocus(focus, shift) } }
+    launch { isolateClockGuard(perGuardTimeoutMs) {
         val snapshot = rules.rulesState.snapshotOrNull() ?: return@isolateClockGuard
         ClockChangeGuard().guardedSessionRules(snapshot, shift).forEach { rules.upsert(it) }
     } }
     Unit
 }
 
-private suspend fun isolateClockGuard(block: suspend () -> Unit) {
-    try { block() } catch (cancel: CancellationException) { throw cancel } catch (_: Exception) { }
+private suspend fun isolateClockGuard(timeoutMs: Long, block: suspend () -> Unit) {
+    try { withTimeoutOrNull(timeoutMs) { block() } }
+    catch (cancel: CancellationException) { throw cancel }
+    catch (_: Exception) { }
 }
 
 /**

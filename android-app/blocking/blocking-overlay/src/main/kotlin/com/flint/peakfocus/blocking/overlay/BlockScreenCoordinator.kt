@@ -119,6 +119,7 @@ class BlockScreenCoordinator(
         nowElapsedMs = SystemClock::elapsedRealtime,
         // Binder lookups stay off the accessibility event (main) thread.
         refreshInBackground = { refresh -> scope.launch(Dispatchers.Default) { refresh() } },
+        requiredRuntimeSources = NeverBlockSurfaces.requiredSources(),
     )
 
     /** Package whose newest mount already force-resolved the floor (cleared on hide). Main thread only. */
