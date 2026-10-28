@@ -94,10 +94,15 @@ android: ## Assemble the Android debug APK
 	@bash scripts/flint-env-report.sh --check-android
 	cd "$$ANDROID_DIR" && ./gradlew assembleDebug
 
-android-release: ## Build and verify the account-free, development-signed release APK
+android-release: ## Build and verify the local-first release APK (upload key or development preview)
 	@bash scripts/flint-env-report.sh --check-android
 	cd "$$ANDROID_DIR" && ./gradlew :app:assembleRelease
 	python3 scripts/verify_local_first_apk.py "$$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk"
+
+android-bundle: ## Build and verify the local-first release AAB (upload key or development preview)
+	@bash scripts/flint-env-report.sh --check-android
+	cd "$$ANDROID_DIR" && ./gradlew :app:bundleRelease
+	python3 scripts/verify_local_first_apk.py "$$ANDROID_DIR/app/build/outputs/bundle/release/app-release.aab"
 
 android-install: ## Build + install the debug APK on a connected device/emulator
 	@bash scripts/flint-env-report.sh --check-android
@@ -110,7 +115,7 @@ android-test: ## Run Android unit tests
 	@bash scripts/flint-env-report.sh --check-android
 	cd "$$ANDROID_DIR" && ./gradlew test
 
-verify-android: android android-release android-test ## Run the Android CI gate locally
+verify-android: android android-release android-bundle android-test ## Run the Android CI gate locally
 	@echo "Android gate passed."
 
 verify-ios: ios-build ios-test ## Run the iOS CI gate locally
@@ -159,6 +164,6 @@ clean-orphans: ## Preview orphans; deletion needs CONFIRM=1 ORPHAN_PLAN=file ORP
 	[ "$$CONFIRM" != 1 ] || args+=(--confirm --plan-digest "$$ORPHAN_DIGEST"); \
 	bash scripts/clean-devices.sh "$${args[@]}"
 
-.PHONY: help env doctor ios-gen ios ios-build ios-test android android-release android-install android-test \
+.PHONY: help env doctor ios-gen ios ios-build ios-test android android-release android-bundle android-install android-test \
 	verify verify-ios verify-android selftest release-check clean clean-devices clean-orphans \
 	gates ios-run android-run logs-ios logs-android pr-status ancestry
