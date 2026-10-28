@@ -75,10 +75,10 @@ fun openLimitBlockCause(limit: OpenLimit, nowEpochMs: Long, utcOffsetMs: Long): 
  * supplies the saved TimeLimit's own tier. Only a legacy LimitStore budget, which has no
  * explicit tier, uses the store-wide default.
  */
-fun timeLimitBlockCause(defaultBreakLevel: BreakLevel, nowEpochMs: Long, utcOffsetMs: Long): BlockCause =
+fun timeLimitBlockCause(breakLevel: BreakLevel, nowEpochMs: Long, utcOffsetMs: Long): BlockCause =
     BlockCause(
         reason = BlockScreenReason.TIME_LIMIT,
-        breakLevel = defaultBreakLevel,
+        breakLevel = breakLevel,
         endsAtEpochMs = nowEpochMs + millisUntilNextLocalMidnight(nowEpochMs, utcOffsetMs),
     )
 

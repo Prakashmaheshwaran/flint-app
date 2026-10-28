@@ -21,7 +21,9 @@ import kotlinx.coroutines.delay
  * Until enforcement publishes a snapshot (lane C: coordinator + detectors), [ProtectionStatusHub]
  * holds [ProtectionStatus.UNKNOWN]: readiness UNAVAILABLE and no causes — show "unavailable",
  * never "protected". Countdowns use [ActiveCause.logicalEndElapsedRealtimeMs] (same boot only,
- * per ADR-012 §9); the wall-clock end is a display estimate.
+ * per ADR-012 §9); the wall-clock end is a display estimate. Stored occurrence ends here
+ * are anchored; legacy engine window enforcement remains wall-based until the separate
+ * R-18 detector clock integration lands. A snapshot does not prove exact enforcement.
  *
  * Boot identity: the hub is process memory, so a snapshot read from [ProtectionStatusHub.status]
  * always belongs to the current boot (a reboot restarts the process and the hub at [UNKNOWN]). A
@@ -120,10 +122,11 @@ data class ProtectionStatus(
         )
 
         const val MAX_DISPLAY_NAME = 64
+        private val DISPLAY_WHITESPACE = Regex("[\\p{Cntrl}\\s]+")
 
         /** Collapse whitespace/control characters and cap at [MAX_DISPLAY_NAME] for display surfaces. */
         fun sanitizeDisplayName(raw: String): String =
-            raw.replace(Regex("[\\p{Cntrl}\\s]+"), " ").trim().take(MAX_DISPLAY_NAME)
+            raw.replace(DISPLAY_WHITESPACE, " ").trim().take(MAX_DISPLAY_NAME)
     }
 }
 

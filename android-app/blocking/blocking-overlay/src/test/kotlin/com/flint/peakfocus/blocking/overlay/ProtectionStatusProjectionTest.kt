@@ -95,4 +95,24 @@ class ProtectionStatusProjectionTest {
         assertEquals(ProtectionStatus.CauseKind.SLEEP, next.kind)
         assertEquals(jumped.wallEpochMs + 3_540_000, next.startWallEstimateEpochMs)
     }
+
+    @Test fun PC_73_legacyQuickBlockScheduleUsesItsOwnSourceWithoutMakingStoredPolicyUnavailable() {
+        val foreign = rule.copy(id = "blocklist", name = "Quick block", breakLevel = BreakLevel.HARDER,
+            schedule = Schedule(daysOfWeek = setOf(3), startMinuteOfDay = 9 * 60, endMinuteOfDay = 11 * 60), expiresAtEpochMs = null)
+        fun status(stamp: AccessClockStamp) = ProtectionStatusProjection.evaluate(StorageState.Ready(FocusSnapshot()),
+            StorageState.Ready(listOf(rule)), StorageState.Ready(emptyList()), StorageState.Ready(emptyList()),
+            StorageState.Ready(sidecar), listOf(foreign), resolved, true, stamp, legacyZone = "UTC")
+        val active = status(now)
+        assertEquals(ProtectionStatus.Readiness.READY, active.readiness)
+        val legacy = active.activeCauses.single { it.ruleId == "blocklist" }
+        assertEquals(ProtectionStatus.CauseKind.SCHEDULE, legacy.kind)
+        assertEquals(BreakLevel.HARDER, legacy.tier)
+        assertEquals(3_600_000L, legacy.remainingMs)
+        assertNull(legacy.logicalEndElapsedRealtimeMs)
+        assertTrue(legacy.timeUncertain)
+        assertFalse("occurrence-state-unavailable" in active.detectors.degradedReasons)
+        val ended = status(now.copy(wallEpochMs = at + 3_600_000, elapsedRealtimeMs = 3_610_000))
+        assertEquals(ProtectionStatus.Readiness.READY, ended.readiness)
+        assertTrue(ended.activeCauses.none { it.ruleId == "blocklist" })
+    }
 }
