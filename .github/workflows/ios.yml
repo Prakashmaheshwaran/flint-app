@@ -7,9 +7,10 @@ name: iOS
 on:
   push:
     branches: [main]
-    paths: ['ios-app/**', 'docs/store/ios/**', 'Makefile', 'scripts/ci_test_report.py', '.github/workflows/ios.yml']
+    paths: ['ios-app/**', 'docs/store/ios/*.py', 'Makefile', 'scripts/ci_test_report.py', '.github/workflows/ios.yml']
   pull_request:
-    paths: ['ios-app/**', 'docs/store/ios/**', 'Makefile', 'scripts/ci_test_report.py', '.github/workflows/ios.yml']
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths: ['ios-app/**', 'docs/store/ios/*.py', 'Makefile', 'scripts/ci_test_report.py', '.github/workflows/ios.yml']
   workflow_dispatch:
 
 permissions:
@@ -72,3 +73,29 @@ jobs:
           name: ios-unit-test-results
           retention-days: 14
           path: artifacts/
+
+  release-build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false || github.head_ref == 'integration/v1'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ios-app
+        run: xcodegen generate
+
+      - name: Build Release (Simulator, no signing)
+        run: |
+          xcodebuild -project ios-app/Flint.xcodeproj -scheme Flint \
+            -configuration Release -derivedDataPath ios-app/build/ReleaseDerivedData \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+
+      - name: Verify privacy manifests in every Release bundle
+        run: python3 docs/store/ios/verify-privacy-bundles.py ios-app/build/ReleaseDerivedData/Build/Products/Release-iphonesimulator/Flint.app
+
+      - name: Reject DEBUG fixtures in every Release executable
+        run: python3 docs/store/ios/verify-release-binaries.py ios-app/build/ReleaseDerivedData/Build/Products/Release-iphonesimulator/Flint.app
