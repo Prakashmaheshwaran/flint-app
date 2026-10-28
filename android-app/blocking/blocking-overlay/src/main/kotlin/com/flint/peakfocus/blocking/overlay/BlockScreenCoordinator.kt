@@ -162,6 +162,13 @@ class BlockScreenCoordinator(
                 now - previous.issuedAtEpochMs < DurableGrantController.RETRY_HORIZON_MS) return previous
             return GrantRequestId.issue(now).also { if (emergency) passId = it else breakId = it }
         }
+        fun recordResult(emergency: Boolean, result: GrantResult) {
+            // A stronger cause may keep this mount visible after an acknowledged grant.
+            // Its next explicit action is a new request; uncertain retries retain the old id.
+            if (result is GrantResult.Pending || result is GrantResult.Granted || result == GrantResult.OpenAllowed) {
+                if (emergency) passId = null else breakId = null
+            }
+        }
     }
     private var surfaceRequests: SurfaceRequests? = null
 
@@ -583,7 +590,7 @@ class BlockScreenCoordinator(
         val id = requests.id(emergency, nowEpochMs())
         scope.launch {
             val result = if (emergency) requestEmergencyPass(packageName, cause, id) else requestBreak(packageName, cause, id)
-            if (result is GrantResult.Pending) requests.breakId = null // next explicit ask is a new wait-completion request
+            requests.recordResult(emergency, result)
             if (result is GrantResult.Granted || result == GrantResult.OpenAllowed) {
                 runOnMain {
                     if (surfaceRequests === requests && visiblePackage == packageName && canDismiss(packageName, cause)) hideLocked()

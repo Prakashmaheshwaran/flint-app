@@ -21,7 +21,7 @@ import org.robolectric.annotation.Config
 class DurableCoordinatorTest {
     private val app: Context = ApplicationProvider.getApplicationContext()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
-    private val now = 1_800_000_000_000L
+    private var now = 1_800_000_000_000L
     private val pkg = "com.example.limited"
     private val events = mutableListOf<String>()
     private val listener = object : BlockEventHooks.Listener {
@@ -39,11 +39,11 @@ class DurableCoordinatorTest {
     private fun rule(level: BreakLevel) = BlockRule("rule", "Focus", BlockTargets(apps = setOf(AppRef(pkg))), breakLevel = level)
     private fun coordinator(
         focus: FocusStateStore, rules: List<BlockRule> = listOf(rule(BreakLevel.EASY)),
-        limits: LimitsStore = InMemoryLimitsStore(), onChanged: () -> Unit = {},
+        limits: LimitsStore = InMemoryLimitsStore(), onChanged: () -> Unit = {}, mount: Boolean = false,
     ): BlockScreenCoordinator {
         ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, rules)
         return BlockScreenCoordinator(app, scope, object : BlockScreenCoordinator.SurfaceHost {
-            override fun attach(view: View) = false
+            override fun attach(view: View) = mount
             override fun detach(view: View) = Unit
             override fun goHome() = Unit
         }, nowEpochMs = { now }, onEnforcementChanged = onChanged,
@@ -163,7 +163,42 @@ class DurableCoordinatorTest {
         val requests = BlockScreenCoordinator.SurfaceRequests()
         val id = requests.id(false, now)
         assertSame(id, requests.id(false, now + 1))
+        requests.recordResult(false, GrantResult.Unconfirmed)
+        assertSame(id, requests.id(false, now + 2))
+        requests.recordResult(false, GrantResult.Unavailable(StorageFailure.IO))
+        assertSame(id, requests.id(false, now + 3))
         assertNotEquals(id, requests.id(true, now))
         assertNotEquals(id, requests.id(false, now + DurableGrantController.RETRY_HORIZON_MS))
+    }
+
+    @Test fun aConfirmedGrantKeptBehindAStrongerCauseCannotWedgeTheNextExplicitBreak() = runBlocking {
+        val focus = PausedFocus()
+        val coordinator = coordinator(focus, mount = true)
+        val easy = rule(BreakLevel.EASY)
+        val cause = ruleBlockCause(easy, now, 0)
+        coordinator.showBlocked(pkg, null, cause)
+        fun field(name: String) = BlockScreenCoordinator::class.java.getDeclaredField(name)
+            .apply { isAccessible = true }.get(coordinator)
+        val requests = field("surfaceRequests") as BlockScreenCoordinator.SurfaceRequests
+        val callback = BlockScreenCoordinator::class.java.getDeclaredMethod("handleGrantRequested",
+            String::class.java, BlockScreenCoordinator.SurfaceRequests::class.java, java.lang.Boolean.TYPE)
+            .apply { isAccessible = true }
+        callback.invoke(coordinator, pkg, requests, false)
+        focus.started.await()
+        val acceptedId = requests.breakId!!
+        ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, listOf(rule(BreakLevel.HARDCORE)))
+        focus.release.complete(Unit)
+        yield()
+        assertEquals(pkg, field("visiblePackage"))
+        assertFalse(coordinator.canDismiss(pkg, cause))
+        assertEquals(1, focus.backing.breakSession.first().breaksTaken)
+        assertNull(requests.breakId)
+        now += BlockScreenCoordinator.DEFAULT_BREAK_DURATION_MS + 1
+        ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, listOf(easy))
+        assertNotEquals(acceptedId, requests.id(false, now))
+        callback.invoke(coordinator, pkg, requests, false)
+        yield()
+        assertEquals(2, focus.backing.breakSession.first().breaksTaken)
+        assertNull(field("visiblePackage"))
     }
 }

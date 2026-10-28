@@ -157,7 +157,7 @@ class BlockActivity : ComponentActivity() {
                             val id = requests.id(emergency = false, now = System.currentTimeMillis())
                             lifecycleScope.launch {
                                 val result = coordinator.requestBreak(current.packageName, current.cause, id)
-                                if (result is GrantResult.Pending) requests.breakId = null
+                                requests.recordResult(emergency = false, result)
                                 if ((result is GrantResult.Granted || result == GrantResult.OpenAllowed) &&
                                     target == current && coordinator.canDismiss(current.packageName, current.cause)
                                 ) {
@@ -174,6 +174,7 @@ class BlockActivity : ComponentActivity() {
                             val id = requests.id(emergency = true, now = System.currentTimeMillis())
                             lifecycleScope.launch {
                                 val result = coordinator.requestEmergencyPass(current.packageName, current.cause, id)
+                                requests.recordResult(emergency = true, result)
                                 if (result is GrantResult.Granted && target == current &&
                                     coordinator.canDismiss(current.packageName, current.cause)
                                 ) {
