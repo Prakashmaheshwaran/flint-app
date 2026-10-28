@@ -31,11 +31,11 @@ class DataStoreEditorCommitmentStore(
     private val harder = HarderWaitPolicy()
 
     override suspend fun reconcile(now: AccessClockStamp) {
-        dataStore.edit { prefs -> prepare(prefs, clockAtCommit?.invoke() ?: now) }
+        dataStore.edit { prefs -> prepare(prefs, clockAtCommit?.invoke() ?: now, checkpointQuota = false) }
     }
 
     override suspend fun reconcileRules(now: AccessClockStamp): List<BlockRule> = transact(now) { prefs, now ->
-        val state = prepare(prefs, now)
+        val state = prepare(prefs, now, checkpointQuota = false)
         prefs.editorRules().map { rule ->
             val cause = state.causes[ruleCauseKey(rule.id)]
             // A retained review-needed draft never clips a current or future occurrence.
@@ -194,12 +194,12 @@ class DataStoreEditorCommitmentStore(
     }
 
     /** Call inside one DataStore edit: migrate, apply queued changes, then materialize new occurrences. */
-    internal fun prepare(prefs: MutablePreferences, now: AccessClockStamp): EditorCommitmentState {
+    internal fun prepare(prefs: MutablePreferences, now: AccessClockStamp, checkpointQuota: Boolean = true): EditorCommitmentState {
         val previous = if (StrictPrefsCodec.string(prefs, EDITOR_COMMITMENTS_KEY) != null) readEditorState(prefs) else null
         val quota = if (prefs.editorTimes().isNotEmpty() || prefs.editorOpens().isNotEmpty() ||
             StrictPrefsCodec.long(prefs, OPEN_CREDIT_SCHEMA) != null) {
             val zone = previous?.causes?.entries?.firstOrNull { dailyKey(it.key) }?.value?.zoneId ?: defaultZone()
-            prepareOpenCredits(prefs, now, zone)
+            prepareOpenCredits(prefs, now, zone, checkpoint = checkpointQuota)
         } else null
         var state: EditorCommitmentState
         if (StrictPrefsCodec.string(prefs, EDITOR_COMMITMENTS_KEY) == null) {
@@ -247,6 +247,10 @@ class DataStoreEditorCommitmentStore(
             .map { (key, cause) -> editorOccurrence(key, cause) }.toSet()
         if (terminal.isNotEmpty()) prefs.putHarderWait(harder.withoutTerminated(readHarderWait(prefs), terminal))
         state = materialize(prefs, state, now)
+        // A real editor state change is a relevant mutation; an unchanged publication is not.
+        if (quota != null && EditorCommitmentCodec.encode(state) != StrictPrefsCodec.string(prefs, EDITOR_COMMITMENTS_KEY)) {
+            prepareOpenCredits(prefs, now, quota.quotaZone)
+        }
         prefs.putEditorState(state)
         return state
     }
@@ -281,7 +285,7 @@ class DataStoreEditorCommitmentStore(
             if (quota == null) { keepOrResolve(key) { zone -> dailyOccurrence(zone, logical) }; return }
             val old = causes[key]
             if (old != null && old.occurrenceId != "inactive" && old.interval?.remainingMs(now)?.let { it > 0 } == true) return
-            val remaining = quota.reset.remainingToResetMs
+            val remaining = OpenCreditPolicy().remainingToResetMs(quota.reset, now)
             causes[key] = EditorCause("quota:${quota.periodId}", AnchoredInterval(now, remaining, now.wallEpochMs + remaining), quota.quotaZone)
         }
         prefs.editorTimes().forEach { daily(timeCauseKey(it.packageName)) }
@@ -302,11 +306,14 @@ class DataStoreEditorCommitmentStore(
         val rolled = state.quotaPeriodId != null && state.quotaPeriodId != quota.periodId
         val remaining = if (rolled) 0L else quota.reset.remainingToResetMs
         val interval = AnchoredInterval(now, remaining, now.wallEpochMs + remaining)
+        fun unchanged(original: AnchoredInterval) = !rolled && trustedElapsedMs(original.anchor, now) != null &&
+            original.remainingMs(now) == remaining
         val causes = state.causes.mapValues { (key, cause) ->
-            if (dailyKey(key) && cause.occurrenceId != "inactive") cause.copy(interval = interval) else cause
+            if (!dailyKey(key) || cause.occurrenceId == "inactive" || cause.interval?.let(::unchanged) == true) cause
+            else cause.copy(interval = interval)
         }
         val queued = state.queued.map { q -> q.copy(boundaries = q.boundaries.mapValues { (key, original) ->
-            if (dailyKey(key) && q.expected.occurrences[key] == state.causes[key]?.occurrenceId) interval else original
+            if (dailyKey(key) && q.expected.occurrences[key] == state.causes[key]?.occurrenceId && !unchanged(original)) interval else original
         }) }
         return state.copy(causes = causes, queued = queued)
     }
@@ -434,8 +441,9 @@ internal fun MutablePreferences.putEditorRules(rules: List<BlockRule>) {
     val encoded = PrefsCodec.encodeRules(rules); StrictPrefsCodec.rules(encoded); this[PrefsKeys.BLOCK_RULES] = encoded
 }
 internal fun MutablePreferences.putEditorState(state: EditorCommitmentState) {
-    this[EDITOR_COMMITMENTS_KEY] = EditorCommitmentCodec.encode(state)
-    this[EDITOR_VERSION_KEY] = 1L
+    val encoded = EditorCommitmentCodec.encode(state)
+    if (StrictPrefsCodec.string(this, EDITOR_COMMITMENTS_KEY) != encoded) this[EDITOR_COMMITMENTS_KEY] = encoded
+    if (StrictPrefsCodec.long(this, EDITOR_VERSION_KEY) != 1L) this[EDITOR_VERSION_KEY] = 1L
 }
 
 /** Call inside the same DataStore edit when composing a protection mutation. */

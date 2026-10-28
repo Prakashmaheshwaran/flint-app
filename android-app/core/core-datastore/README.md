@@ -29,6 +29,10 @@ original legacy keys remain intact. Valid over-cap and removed-target counts sur
 import. A previous-day label alone does not reset them. Only a validated unused
 legacy Open domain may initialize explicit empty state once. Downgrade is unsupported;
 older builds must not become a second ledger writer.
+That one-time unused case includes configured legacy Open limits with both count
+keys absent and no Open receipt: old builds wrote those keys only on first use.
+The editor sidecar's new `D|periodId` row also makes pre-R-11 builds report the
+whole editor state as unsupported; preserve the archive and use a compatible build.
 
 The saved IANA `quota_zone_v1` is shared with Time Limits and captured at the first
 committed limit. One monotonic reset clock governs every target, including targets
@@ -44,6 +48,9 @@ remaining-to-reset without credit for powered-off time. One subsequent reset sel
 the next saved-zone midnight; missed resets are never replayed. Daily editor occurrence
 IDs, queued boundaries and Harder counts use that same reset rather than finite-session
 wall fallback. An unprovable old Open release leaves a durable ended-access notice flag.
+Read-driven reconciliation retains equivalent anchors and does not persist a new
+checkpoint on every read. Actual policy entries/mutations and observed rollover,
+expiry, reboot or new uncertainty still checkpoint durably.
 
 Only transient IO is retried automatically. File corruption emits `CORRUPT` once
 and stops; corrupt/unsupported payloads emit an unavailable state without a polling

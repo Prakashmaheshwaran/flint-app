@@ -117,6 +117,30 @@ class OpenCreditStoreTest {
         assertUnavailable(uncertain)
     }
 
+    @Test fun `PC-70 configured but never-used legacy Open limits import zero once with both count keys absent`() = runBlocking {
+        val disk = Disk(preferencesOf(PrefsKeys.OPEN_LIMITS to "app~3~HARDCORE"))
+        val migrated = initialize(disk)
+        assertTrue(migrated.counters.isEmpty())
+        assertEquals(3, OpenCreditLedgerPolicy.remainingCredits(migrated, "app", listOf(3)))
+        assertTrue(use(disk).acceptance is OpenCreditPolicy.Acceptance.Accepted)
+        assertEquals(1, readOpenCredits(disk.values.value).counters.getValue("app").used)
+        disk.edit { it.remove(OPEN_CREDIT_COUNTS) }
+        assertUnavailable(disk)
+    }
+
+    @Test fun `PC-56 read-driven checkpoints stay quiet while a real policy entry persists elapsed progress`() = runBlocking {
+        val disk = Disk(); val initial = initialize(disk)
+        val bytes = disk.values.value.asMap().toMap()
+        repeat(8) { index -> disk.edit { prefs ->
+            val prepared = prepareOpenCredits(prefs, at((index + 1) * 1_000L), "UTC", checkpoint = false)
+            assertEquals(initial.reset.remainingToResetMs - (index + 1) * 1_000L, prepared.reset.remainingToResetMs)
+        } }
+        assertEquals(bytes, disk.values.value.asMap())
+        initialize(disk, at(9_000))
+        assertEquals(at(9_000), readOpenCredits(disk.values.value).observedAt)
+        assertEquals(initial.reset.remainingToResetMs - 9_000, readOpenCredits(disk.values.value).reset.remainingToResetMs)
+    }
+
     @Test fun `PC-70 unprovable legacy Open release ends with notice and retains spent state and raw receipt`() = runBlocking {
         val oldReceipt = FocusLedgerCodec.encode(FocusLedgerCodec.Ledger(exemptions = mapOf("old" to
             PersistedExemption("old", "app", "open:app", ExemptionKind.OPEN_LIMIT, 0))))

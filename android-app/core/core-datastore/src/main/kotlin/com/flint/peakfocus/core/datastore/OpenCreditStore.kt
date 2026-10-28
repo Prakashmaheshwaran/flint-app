@@ -36,14 +36,22 @@ internal fun prepareQuotaZone(prefs: MutablePreferences, deviceZone: String): St
 }
 
 /** Validate/import/checkpoint inside the caller's existing flint_preferences edit. */
-internal fun prepareOpenCredits(prefs: MutablePreferences, now: AccessClockStamp, quotaZoneIfAbsent: String): OpenCreditLedger =
-    prepareOpenCreditPeriod(prefs, now, quotaZoneIfAbsent).next
+internal fun prepareOpenCredits(prefs: MutablePreferences, now: AccessClockStamp, quotaZoneIfAbsent: String,
+                                checkpoint: Boolean = true): OpenCreditLedger =
+    prepareOpenCreditPeriod(prefs, now, quotaZoneIfAbsent, checkpoint).next
 
 /** Detailed variant lets the shared grant transaction order period-end/deferred-change events. */
-internal fun prepareOpenCreditPeriod(prefs: MutablePreferences, now: AccessClockStamp, quotaZoneIfAbsent: String): OpenCreditReconciliation {
+internal fun prepareOpenCreditPeriod(prefs: MutablePreferences, now: AccessClockStamp, quotaZoneIfAbsent: String,
+                                    checkpoint: Boolean = true): OpenCreditReconciliation {
     if (StrictPrefsCodec.long(prefs, OPEN_CREDIT_SCHEMA) != null) {
-        val result = validOpenCredit { OpenCreditLedgerPolicy.reconcile(readOpenCredits(prefs), now) }
-        prefs.putOpenCredits(result.next)
+        val current = readOpenCredits(prefs)
+        val result = validOpenCredit { OpenCreditLedgerPolicy.reconcile(current, now) }
+        // Read-driven publication must not invalidate itself by persisting a fresh stamp.
+        // Policy/mutation entries checkpoint; reads persist only newly observed state changes.
+        if (checkpoint || result.periodChanged || result.endedOperationIds.isNotEmpty() ||
+            trustedElapsedMs(current.observedAt, now) == null ||
+            current.timeUncertain != result.next.timeUncertain ||
+            current.accessEndedAfterRestart != result.next.accessEndedAfterRestart) prefs.putOpenCredits(result.next)
         return result
     }
     wireRequire(listOf(OPEN_CREDIT_STATE, OPEN_CREDIT_COUNTS, OPEN_CREDIT_ARCHIVE).all {
@@ -52,11 +60,13 @@ internal fun prepareOpenCreditPeriod(prefs: MutablePreferences, now: AccessClock
     val zone = StrictPrefsCodec.string(prefs, QUOTA_ZONE) ?: quotaZoneIfAbsent
     val rawCounts = StrictPrefsCodec.string(prefs, PrefsKeys.OPEN_COUNTS)
     val day = StrictPrefsCodec.long(prefs, PrefsKeys.OPEN_COUNTS_DAY)
-    val opens = StrictPrefsCodec.openLimits(StrictPrefsCodec.string(prefs, PrefsKeys.OPEN_LIMITS).orEmpty())
+    StrictPrefsCodec.openLimits(StrictPrefsCodec.string(prefs, PrefsKeys.OPEN_LIMITS).orEmpty())
     val receipts = FocusLedgerCodec.decode(StrictPrefsCodec.string(prefs, PrefsKeys.FOCUS_LEDGER))
     // Only a complete, provably unused legacy Open domain gets the one-time optional-key exception.
     val legacyAccess = receipts.exemptions.values.any { it.kind == ExemptionKind.OPEN_LIMIT }
-    val unused = rawCounts == null && day == null && opens.isEmpty() && !legacyAccess
+    // Old builds wrote neither count key until the first accepted foreground open, even
+    // when limits were configured. Both absent + no receipt proves that legacy zero once.
+    val unused = rawCounts == null && day == null && !legacyAccess
     wireRequire(unused || (rawCounts != null && day != null))
     val counts = rawCounts?.let(StrictPrefsCodec::counts).orEmpty()
     val today = validOpenCredit { OpenCreditLedgerPolicy.epochDay(now.wallEpochMs, zone) }

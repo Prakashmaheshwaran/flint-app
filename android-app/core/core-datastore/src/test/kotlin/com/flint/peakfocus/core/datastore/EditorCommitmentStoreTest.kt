@@ -11,7 +11,7 @@ import java.util.Calendar
 import java.util.TimeZone
 import java.time.ZoneId
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.junit.Assert.*
@@ -23,6 +23,7 @@ class EditorCommitmentStoreTest {
         val lock = Mutex()
         var fail = false
         var updates = 0
+        var changedUpdates = 0
         var beforeUpdate: (() -> Unit)? = null
         override val data: Flow<Preferences> = values
         override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences = lock.withLock {
@@ -30,6 +31,7 @@ class EditorCommitmentStoreTest {
             beforeUpdate?.also { beforeUpdate = null }?.invoke()
             val next = transform(values.value)
             if (fail) throw IOException("disk full")
+            if (next != values.value) changedUpdates++
             values.value = next
             next
         }
@@ -206,6 +208,39 @@ class EditorCommitmentStoreTest {
         val causes = snapshot(store).causes
         assertEquals(causes.getValue(timeCauseKey("a")).occurrenceId, causes.getValue(openCauseKey("b")).occurrenceId)
         assertEquals(causes.getValue(timeCauseKey("a")).interval, causes.getValue(openCauseKey("b")).interval)
+    }
+
+    @Test fun `PC-56 daily reconcile with advancing clocks changes neither persisted snapshots nor emissions`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk)
+        confirm(store, EditorChange("Time", limits = EditorLimitsChange("a", TimeLimit("a", 30), null)))
+        confirm(store, EditorChange("Open", limits = EditorLimitsChange("b", null, OpenLimit("b", 3))))
+        val original = disk.values.value.asMap().toMap()
+        val writes = disk.changedUpdates
+        var emissions = 0
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) { disk.data.collect { emissions++ } }
+        repeat(8) { store.reconcileRules(clock((it + 1) * 1_000L)) }
+        yield()
+        assertEquals(original, disk.values.value.asMap())
+        assertEquals(writes, disk.changedUpdates)
+        assertEquals(1, emissions)
+        collector.cancelAndJoin()
+    }
+
+    @Test fun `PC-56 daily publication invalidation cannot sustain its own write loop`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk)
+        confirm(store, EditorChange("Time", limits = EditorLimitsChange("a", TimeLimit("a", 30), null)))
+        val writes = disk.changedUpdates
+        var refreshes = 0
+        val driver = launch {
+            store.changes.collectLatest {
+                check(++refreshes <= 10) { "publication produced a self-sustaining write loop" }
+                store.reconcileRules(clock(refreshes * 1_000L))
+            }
+        }
+        delay(50)
+        assertEquals(1, refreshes)
+        assertEquals(writes, disk.changedUpdates)
+        driver.cancelAndJoin()
     }
 
     @Test fun `PC-20 cancellation spends nothing and another request restarts the full wait`() = runBlocking {
