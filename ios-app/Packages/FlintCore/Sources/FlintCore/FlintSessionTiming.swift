@@ -10,7 +10,7 @@ import Foundation
 /// `warningTime = 15 − N` minutes, so iOS's `intervalWillEndWarning` arrives at N minutes and
 /// the monitor ends the session there. If a device never delivers that warning, the padded
 /// interval's end still ends the session at 15 minutes — protection is never dropped early.
-/// Device behaviour is unverified; `docs/verification/ios-device-acceptance.md` records the
+/// Device behaviour is unverified; lane B's physical-device acceptance checklist records the
 /// check, and `.floor` is the honest fallback (refuse sessions under 15 minutes).
 ///
 /// Pure value math so every boundary is unit-tested without Screen Time.
@@ -156,8 +156,12 @@ public struct FlintClock {
 /// stretch it. Flint records the anomaly so it is never silent; which clock governs a session's
 /// end is the protection contract's call (ADR-012), not this type's.
 public enum FlintTimeIntegrity {
-    /// Skew below this is noise: DeviceActivity truncates to whole seconds and callbacks lag.
-    public static let tolerance: TimeInterval = 120
+    /// A wall-vs-monotonic discrepancy above this is a clock discontinuity (ADR-012 §9).
+    public static let discontinuityThreshold: TimeInterval = 5
+    /// How far from `endsAt` a monitor end may be observed and still be reported as an on-time
+    /// completion to focus history (its provisional 120 s rule; ADR-012 §11 still forbids
+    /// ending before the logical deadline, which `endSlack` enforces).
+    public static let onTimeWindow: TimeInterval = 120
     /// How early an end callback may arrive and still count as the planned end — DeviceActivity
     /// resolves whole-second components. Anything earlier is premature and never ends a session.
     public static let endSlack: TimeInterval = 1
@@ -202,8 +206,8 @@ public enum FlintTimeIntegrity {
         // An undetected reboot makes monotonic time *under*-count, which looks exactly like a
         // forward clock change — so "ahead" is only trusted when the boot is known to match.
         // A reboot can never make the wall clock look behind.
-        if skew > tolerance { return sameBootKnown ? .wallAhead(seconds: skew) : .unverifiable }
-        if skew < -tolerance { return .wallBehind(seconds: -skew) }
+        if skew > discontinuityThreshold { return sameBootKnown ? .wallAhead(seconds: skew) : .unverifiable }
+        if skew < -discontinuityThreshold { return .wallBehind(seconds: -skew) }
         return .consistent
     }
 }
@@ -230,6 +234,9 @@ public struct FlintSessionHealth: Codable, Equatable, Sendable {
             /// iOS delivered the session's end before `endsAt`; Flint kept the block and
             /// re-registered its end.
             case prematureEnd
+            /// A short session's end warning never arrived; its padded interval end finished it
+            /// `seconds` after `endsAt` (the device check for the warning-time adapter).
+            case missedEndWarning
         }
 
         public let kind: Kind

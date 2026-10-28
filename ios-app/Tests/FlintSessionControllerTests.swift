@@ -136,7 +136,7 @@ final class FlintSessionControllerTests: XCTestCase {
 
     // MARK: Successful start
 
-    func testTimedStartRegistersThenShieldsThenPersists() throws {
+    func testTimedStartArmsShieldsAndRecordsTheSession() throws {
         let session = try start(controller(), minutes: 45, level: .hardcore, source: .shortcut)
         XCTAssertEqual(registrar.started.map(\.name), [session.monitorName])
         XCTAssertTrue(session.monitorName.hasPrefix("flint.session."))
@@ -275,12 +275,26 @@ final class FlintSessionControllerTests: XCTestCase {
         c.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
         XCTAssertNil(store.active)
         XCTAssertEqual(events.log, [.ended(session, route: .completed, at: session.endsAt!)])
+        XCTAssertEqual(health.lastTimeAnomaly?.kind, .missedEndWarning)
+        XCTAssertEqual(health.lastTimeAnomaly?.seconds, 10 * 60)
+    }
+
+    func testStopForgetsTheRecordBeforeStoppingItsRegistration() throws {
+        let c = controller()
+        let session = try start(c, minutes: 30)
+        log.entries.removeAll()
+        c.stop(route: .manualStop)
+        XCTAssertEqual(log.entries, ["clear", "forget", "stop:\(session.monitorName)"])
+        // iOS may still deliver the stopped activity's end: it finds no session to complete.
+        events.log.removeAll()
+        c.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
+        XCTAssertTrue(events.log.isEmpty)
     }
 
     func testEndCallbacksBeforeEndsAtNeverEndTheSession() throws {
         let c = controller()
         let session = try start(c, minutes: 5)
-        clock.advance(5 * 60 - 90) // 90 s early — inside the old tolerance, still early
+        clock.advance(5 * 60 - 90) // 90 s early — inside the on-time window, still early
         c.handleMonitorEvent(.intervalWillEndWarning, activity: session.monitorName)
         XCTAssertEqual(store.active, session, "early warning ignored")
         c.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
@@ -386,6 +400,8 @@ final class FlintSessionControllerTests: XCTestCase {
         XCTAssertTrue(report.rearmFailed)
         XCTAssertEqual(store.active, session)
         XCTAssertNotNil(health.lastArmFailure)
+        XCTAssertTrue(c.reconcile().rearmed, "iOS accepts the next attempt")
+        XCTAssertNil(health.lastArmFailure, "a recovered re-arm clears the stale failure")
     }
 
     func testReconcileDetectsWallClockChanges() throws {
@@ -412,20 +428,54 @@ final class FlintSessionControllerTests: XCTestCase {
         XCTAssertNil(health.lastTimeAnomaly)
     }
 
-    func testReArmingIsBounded() throws {
+    func testRepairsAreSpacedButNeverRefusedWhileLive() throws {
         let c = controller()
         _ = try start(c, minutes: 120)
-        for attempt in 1...FlintSessionController.maximumRearms {
+        for attempt in 1...5 {
             registrar.registered.removeAll()
-            XCTAssertTrue(c.reconcile().rearmed, "attempt \(attempt)")
+            XCTAssertTrue(c.reconcile().rearmed, "repair \(attempt)")
+            registrar.registered.removeAll()
+            let burst = c.reconcile()
+            XCTAssertFalse(burst.rearmed, "a second repair within a minute waits")
+            XCTAssertFalse(burst.rearmFailed)
+            clock.advance(FlintSessionController.repairInterval)
+        }
+        XCTAssertEqual(store.active?.rearmCount, 0, "repairs don't spend the premature-end budget")
+    }
+
+    func testPrematureEndRearmsAreBounded() throws {
+        let c = controller()
+        let session = try start(c, minutes: 120)
+        for attempt in 1...FlintSessionController.maximumRearms {
+            clock.advance(5 * 60)
+            c.handleMonitorEvent(.intervalDidEnd, activity: store.active!.monitorName)
             XCTAssertEqual(store.active?.rearmCount, attempt)
         }
-        registrar.registered.removeAll()
-        let report = c.reconcile()
-        XCTAssertFalse(report.rearmed)
-        XCTAssertTrue(report.rearmFailed)
-        XCTAssertEqual(health.lastArmFailure?.reason, "re-registration limit reached")
-        XCTAssertNotNil(store.active, "the block itself is kept")
+        let lastName = store.active!.monitorName
+        clock.advance(5 * 60)
+        c.handleMonitorEvent(.intervalDidEnd, activity: lastName)
+        XCTAssertEqual(store.active?.monitorName, lastName, "no further re-registration")
+        XCTAssertEqual(store.active?.id, session.id, "the block itself is kept")
+        XCTAssertNotNil(health.lastArmFailure)
+        XCTAssertEqual(shield.clearCount, 0)
+    }
+
+    func testReconcileReappliesTheSessionsOwnTargetsNotThePickers() throws {
+        let c = controller()
+        _ = try start(c, minutes: 60)
+        store.selection = nil // the picker was edited/cleared after the start
+        c.reconcile()
+        XCTAssertEqual(shield.applyCount, 2, "re-applied from the session's frozen snapshot")
+    }
+
+    func testReconcileDoesNotReshieldASessionEndedMeanwhile() throws {
+        let c = controller()
+        _ = try start(c, minutes: 60)
+        // The monitor ends the session between reconcile's first read and its shield write.
+        store.onLoad = { [unowned store] count in if count == 2 { store!.active = nil } }
+        store.loads = 0
+        c.reconcile()
+        XCTAssertEqual(shield.applyCount, 1, "no shield written after the record vanished")
     }
 
     func testReconcileReappliesTheShieldAndFlagsMissingAuthorization() throws {
@@ -471,10 +521,11 @@ final class FlintSessionControllerTests: XCTestCase {
         XCTAssertFalse(c.reconcile().rearmed)
     }
 
-    func testReconcileWithoutSessionDropsAStaleUninstallGuard() {
+    func testReconcileWithoutSessionClearsStaleSessionSettings() {
         shield.denyAppRemoval = true
         XCTAssertEqual(controller().reconcile().outcome, .noSession)
-        XCTAssertEqual(shield.denyAppRemoval, false)
+        XCTAssertEqual(shield.clearCount, 1)
+        XCTAssertNil(shield.denyAppRemoval)
     }
 
     func testMissingAppGroupFailsLoudly() {
@@ -584,16 +635,30 @@ private final class FakeSessionStore: FlintSessionStateStoring {
     let log: CallLog
     var active: FlintActiveSession?
     var selection: FamilyActivitySelection?
+    var sessionSelections: [String: FamilyActivitySelection] = [:]
     var passUsed: Date?
+    var loads = 0
+    var onLoad: ((Int) -> Void)?
 
     init(log: CallLog) { self.log = log }
 
-    func loadActiveSession() -> FlintActiveSession? { active }
+    func loadActiveSession() -> FlintActiveSession? {
+        loads += 1
+        onLoad?(loads)
+        return active
+    }
+    func saveSessionSelection(_ selection: FamilyActivitySelection, sessionID: String) {
+        sessionSelections[sessionID] = selection
+    }
+    func loadSessionSelection(sessionID: String) -> FamilyActivitySelection? { sessionSelections[sessionID] }
     func saveActiveSession(_ session: FlintActiveSession) {
         active = session
         log.entries.append("persist")
     }
-    func clearActiveSession() { active = nil }
+    func clearActiveSession() {
+        active = nil
+        log.entries.append("forget")
+    }
     func saveSelection(_ selection: FamilyActivitySelection) { self.selection = selection }
     func loadSelection() -> FamilyActivitySelection? { selection }
     func emergencyPassLastUsed() -> Date? { passUsed }

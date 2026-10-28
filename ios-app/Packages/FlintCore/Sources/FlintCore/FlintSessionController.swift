@@ -69,13 +69,39 @@ public protocol FlintSessionStateStoring: AnyObject {
     func loadActiveSession() -> FlintActiveSession?
     func saveActiveSession(_ session: FlintActiveSession)
     func clearActiveSession()
+    /// The picker's last selection (Today's default for the next start).
     func saveSelection(_ selection: FamilyActivitySelection)
     func loadSelection() -> FamilyActivitySelection?
+    /// The running session's own frozen targets, keyed by session id, so editing the picker or a
+    /// saved group never changes what an already-running session blocks.
+    func saveSessionSelection(_ selection: FamilyActivitySelection, sessionID: String)
+    func loadSessionSelection(sessionID: String) -> FamilyActivitySelection?
     func emergencyPassLastUsed() -> Date?
     func recordEmergencyPassUse(_ date: Date)
 }
 
-extension FlintGroupStore: FlintSessionStateStoring {}
+extension FlintGroupStore: FlintSessionStateStoring {
+    private struct SessionSelection: Codable {
+        let sessionID: String
+        let selection: FamilyActivitySelection
+    }
+
+    private static let sessionSelectionKey = "flint.activeSession.selection"
+
+    public func saveSessionSelection(_ selection: FamilyActivitySelection, sessionID: String) {
+        UserDefaults.flintGroup?.set(
+            try? JSONEncoder().encode(SessionSelection(sessionID: sessionID, selection: selection)),
+            forKey: Self.sessionSelectionKey
+        )
+    }
+
+    public func loadSessionSelection(sessionID: String) -> FamilyActivitySelection? {
+        guard let data = UserDefaults.flintGroup?.data(forKey: Self.sessionSelectionKey),
+              let saved = try? JSONDecoder().decode(SessionSelection.self, from: data),
+              saved.sessionID == sessionID else { return nil }
+        return saved.selection
+    }
+}
 
 /// Everything `FlintSessionController` touches outside its own logic.
 public struct FlintSessionEnvironment {
@@ -249,6 +275,7 @@ public final class FlintSessionController {
             usesEndWarning: plan.map(\.usesEndWarning)
         )
         let previous = store.loadActiveSession()
+        let previousSelection = previous.flatMap { store.loadSessionSelection(sessionID: $0.id) }
 
         // 1. The out-of-app end, before anything changes.
         if let plan {
@@ -265,9 +292,11 @@ public final class FlintSessionController {
         }
 
         // 2. Persist before anything else changes, so the monitor always finds the record that
-        //    matches the registration and shield it can see.
-        store.saveSelection(selection)
+        //    matches the registration and shield it can see. The id-keyed target snapshot goes
+        //    first: a monitor that already sees the new record can only find its own targets.
+        store.saveSessionSelection(selection, sessionID: session.id)
         store.saveActiveSession(session)
+        store.saveSelection(selection)
 
         // 3. The previous session's end can no longer fire against this one.
         if let previous, previous.monitorName != monitorName {
@@ -282,8 +311,9 @@ public final class FlintSessionController {
             // drop the new registration and give the previous session back its record and end.
             if plan != nil { env.registrar.stopMonitoring([monitorName]) }
             if let previous {
+                if let previousSelection { store.saveSessionSelection(previousSelection, sessionID: previous.id) }
                 store.saveActiveSession(previous)
-                if !previous.isExpired(at: now) { rearm(previous, in: store, now: now) }
+                if !previous.isExpired(at: now) { rearm(previous, in: store, now: now, reason: .repair) }
             } else {
                 store.clearActiveSession()
             }
@@ -348,9 +378,12 @@ public final class FlintSessionController {
         in store: FlintSessionStateStoring?
     ) {
         env.shield.clear()
-        env.registrar.stopMonitoring([session.monitorName])
         FlintSessionLifecycle.didEnd(session, route: route, at: now)
+        // Forget the record before stopping its registration: iOS may deliver intervalDidEnd
+        // for a stopped activity, and it must then find no matching session — never a live
+        // one to "complete" or re-arm.
         store?.clearActiveSession()
+        env.registrar.stopMonitoring([session.monitorName])
     }
 
     // MARK: Reconcile (launch; foreground and clock/time-zone changes once B3 wires them)
@@ -367,7 +400,9 @@ public final class FlintSessionController {
         let store = env.store()
         let now = env.clock.now()
         guard let session = store?.loadActiveSession() else {
-            env.shield.setDenyAppRemoval(false)
+            // Nothing else writes the session's store, and every start/stop in this process
+            // holds the lock — so with no record, whatever is left on it is stale.
+            env.shield.clear()
             FlintSessionHealth.update(in: env.healthDefaults()) { $0.unauthorizedSince = nil }
             return FlintSessionReconcileReport(outcome: .noSession)
         }
@@ -393,14 +428,23 @@ public final class FlintSessionController {
             $0.unauthorizedSince = report.notAuthorized ? ($0.unauthorizedSince ?? now) : nil
         }
 
-        if let selection = store?.loadSelection() { try? env.shield.applyBlockList(selection) }
+        // Re-read right before writing: the monitor (another process) may have just ended this
+        // session, and re-shielding after that would leave a shield nothing ever clears.
+        if let store, store.loadActiveSession()?.id == session.id,
+           let selection = sessionSelection(for: session, in: store) {
+            try? env.shield.applyBlockList(selection)
+        }
 
         if let store, session.endsAt != nil {
             let zoneMoved = !FlintSessionAutoClearPlan.isCurrent(for: session, in: env.clock.calendar())
             let missing = !env.registrar.registeredActivityNames().contains(session.monitorName)
             if zoneMoved || missing {
                 if zoneMoved { recordAnomaly(.timeZoneChanged, seconds: 0, session: session, at: now) }
-                if rearm(session, in: store, now: now) { report.rearmed = true } else { report.rearmFailed = true }
+                switch rearm(session, in: store, now: now, reason: .repair) {
+                case .rearmed: report.rearmed = true
+                case .failed: report.rearmFailed = true
+                case .deferred: break
+                }
             }
         }
 
@@ -413,18 +457,48 @@ public final class FlintSessionController {
         reconcile()
     }
 
+    enum RearmReason { case repair, prematureEnd }
+    enum RearmOutcome { case rearmed, failed, deferred }
+
+    /// Minimum spacing between repair re-registrations of one session (launch, foreground and
+    /// time notifications can arrive in bursts).
+    public static let repairInterval: TimeInterval = 60
+
+    /// The session's own frozen targets; sessions saved by older builds have no snapshot and
+    /// fall back to the picker selection they were started from.
+    private func sessionSelection(for session: FlintActiveSession, in store: FlintSessionStateStoring) -> FamilyActivitySelection? {
+        store.loadSessionSelection(sessionID: session.id) ?? store.loadSelection()
+    }
+
     /// Re-register `session`'s auto-clear for its remaining time under a fresh name: register
     /// the new name, persist it, then stop the old one — a callback from the old registration
     /// can then only arrive as a mismatch and is ignored.
+    ///
+    /// Repairs (registration missing, zone moved) are never refused while the session is live,
+    /// only spaced by `repairInterval`; ends iOS delivered early are bounded by `maximumRearms`,
+    /// so a device that keeps misfiring can't drain the shared registration pool.
     @discardableResult
-    private func rearm(_ session: FlintActiveSession, in store: FlintSessionStateStoring, now: Date) -> Bool {
-        guard let endsAt = session.endsAt, endsAt > now else { return false }
-        guard (session.rearmCount ?? 0) < Self.maximumRearms else {
-            FlintSessionHealth.update(in: env.healthDefaults()) {
-                $0.lastArmFailure = .init(sessionName: session.name,
-                                          reason: "re-registration limit reached", at: now)
+    private func rearm(
+        _ session: FlintActiveSession,
+        in store: FlintSessionStateStoring,
+        now: Date,
+        reason: RearmReason
+    ) -> RearmOutcome {
+        guard let endsAt = session.endsAt, endsAt > now else { return .failed }
+        switch reason {
+        case .prematureEnd:
+            guard (session.rearmCount ?? 0) < Self.maximumRearms else {
+                FlintSessionHealth.update(in: env.healthDefaults()) {
+                    $0.lastArmFailure = .init(sessionName: session.name,
+                                              reason: "iOS kept ending this session early; its end is no longer re-registered",
+                                              at: now)
+                }
+                return .failed
             }
-            return false
+        case .repair:
+            if let last = session.lastRearmAt, now.timeIntervalSince(last) < Self.repairInterval, now >= last {
+                return .deferred
+            }
         }
         let start = FlintSessionAutoClearPlan.wholeSecond(atOrAfter: now)
         let plan = FlintSessionAutoClearPlan.make(start: start, end: max(endsAt, start), calendar: env.clock.calendar(),
@@ -433,16 +507,19 @@ public final class FlintSessionController {
         do {
             try env.registrar.startMonitoring(name, plan: plan)
         } catch {
-            let reason = String(describing: error)
+            let message = String(describing: error)
             FlintSessionHealth.update(in: env.healthDefaults()) {
-                $0.lastArmFailure = .init(sessionName: session.name, reason: reason, at: now)
+                $0.lastArmFailure = .init(sessionName: session.name, reason: message, at: now)
             }
             FlintSessionLifecycle.didFailToArm(session, reason: "monitor_registration_failed", at: now)
-            return false
+            return .failed
         }
-        store.saveActiveSession(session.rearmed(monitorName: name, plan: plan))
+        store.saveActiveSession(session.rearmed(monitorName: name, plan: plan, at: now,
+                                                countsTowardLimit: reason == .prematureEnd))
         if session.monitorName != name { env.registrar.stopMonitoring([session.monitorName]) }
-        return true
+        // The running session is armed again: an earlier refusal is no longer current.
+        FlintSessionHealth.update(in: env.healthDefaults()) { $0.lastArmFailure = nil }
+        return .rearmed
     }
 
     private func recordTimeVerdict(_ verdict: FlintTimeIntegrity.Verdict, for session: FlintActiveSession, at now: Date) {
@@ -494,7 +571,9 @@ public final class FlintSessionController {
 
         switch event {
         case .intervalDidStart:
-            if let selection = store?.loadSelection() { try? env.shield.applyBlockList(selection) }
+            if let store, let selection = sessionSelection(for: session, in: store) {
+                try? env.shield.applyBlockList(selection)
+            }
             env.shield.setDenyAppRemoval(FlintUninstallGuard.shouldDeny(for: session, now: now))
 
         case .intervalWillEndWarning, .intervalDidEnd:
@@ -502,19 +581,24 @@ public final class FlintSessionController {
             if now.addingTimeInterval(FlintTimeIntegrity.endSlack) >= endsAt {
                 recordTimeVerdict(FlintTimeIntegrity.verdict(for: session, clock: env.clock), for: session, at: now)
                 env.shield.clear()
-                env.registrar.stopMonitoring([activity])
-                // Report a completion at the planned end when the callback is the expected one:
-                // near endsAt, or a short session's padded interval end (its warning never came).
+                // Report a completion at the logical deadline when the callback is the expected
+                // one: near endsAt, or a short session's padded interval end (its warning never
+                // came — recorded, since that is the deadline adapter failing on this device).
                 // Anything else is left to focus history's outcome inference.
                 let fallbackEnd = event == .intervalDidEnd && session.usesEndWarning == true
-                if fallbackEnd || abs(now.timeIntervalSince(endsAt)) <= FlintTimeIntegrity.tolerance {
+                let lateness = now.timeIntervalSince(endsAt)
+                if fallbackEnd, lateness > FlintTimeIntegrity.onTimeWindow {
+                    recordAnomaly(.missedEndWarning, seconds: lateness, session: session, at: now)
+                }
+                if fallbackEnd || abs(lateness) <= FlintTimeIntegrity.onTimeWindow {
                     FlintSessionLifecycle.didEnd(session, route: .completed, at: endsAt)
                 }
                 store?.clearActiveSession()
+                env.registrar.stopMonitoring([activity])
             } else if event == .intervalDidEnd, let store {
                 // The interval is over, but the session isn't: keep the shield, re-register.
                 recordAnomaly(.prematureEnd, seconds: endsAt.timeIntervalSince(now), session: session, at: now)
-                rearm(session, in: store, now: now)
+                rearm(session, in: store, now: now, reason: .prematureEnd)
             }
             // An early warning is ignored: the interval end that follows still ends the session.
         }

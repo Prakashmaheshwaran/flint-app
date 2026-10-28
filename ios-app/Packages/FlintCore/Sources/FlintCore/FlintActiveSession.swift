@@ -30,9 +30,11 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
     /// True when the session is shorter than DeviceActivity's 15-minute interval floor and its
     /// end is delivered by `intervalWillEndWarning` inside a padded 15-minute interval.
     public let usesEndWarning: Bool?
-    /// How many times the auto-clear was re-registered after start (bounded, so a device that
-    /// keeps firing ends early can't drain the shared DeviceActivity registration pool).
+    /// How many times the auto-clear was re-registered because iOS ended it before `endsAt`
+    /// (bounded, so a device that keeps misfiring can't drain the shared registration pool).
     public let rearmCount: Int?
+    /// When the auto-clear was last re-registered for any reason (spaces out repairs).
+    public let lastRearmAt: Date?
 
     public init(
         id: String = UUID().uuidString,
@@ -46,7 +48,8 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         autoClearTimeZoneID: String? = nil,
         autoClearUTCOffset: Int? = nil,
         usesEndWarning: Bool? = nil,
-        rearmCount: Int? = nil
+        rearmCount: Int? = nil,
+        lastRearmAt: Date? = nil
     ) {
         self.id = id
         self.name = name
@@ -60,6 +63,7 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         self.autoClearUTCOffset = autoClearUTCOffset
         self.usesEndWarning = usesEndWarning
         self.rearmCount = rearmCount
+        self.lastRearmAt = lastRearmAt
     }
 
     public var isExpired: Bool { isExpired(at: Date()) }
@@ -78,12 +82,19 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
     }
 
     /// The same session with its auto-clear re-registered under `monitorName` for `plan`.
-    func rearmed(monitorName: String, plan: FlintSessionAutoClearPlan) -> FlintActiveSession {
+    func rearmed(
+        monitorName: String,
+        plan: FlintSessionAutoClearPlan,
+        at date: Date,
+        countsTowardLimit: Bool
+    ) -> FlintActiveSession {
         FlintActiveSession(
             id: id, name: name, startedAt: startedAt, endsAt: endsAt, breakLevel: breakLevel,
             monitorName: monitorName, monotonicStart: monotonicStart, bootSessionID: bootSessionID,
             autoClearTimeZoneID: plan.timeZoneIdentifier, autoClearUTCOffset: plan.utcOffsetAtEnd,
-            usesEndWarning: plan.usesEndWarning, rearmCount: (rearmCount ?? 0) + 1
+            usesEndWarning: plan.usesEndWarning,
+            rearmCount: (rearmCount ?? 0) + (countsTowardLimit ? 1 : 0),
+            lastRearmAt: date
         )
     }
 }
