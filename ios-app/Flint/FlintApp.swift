@@ -46,6 +46,7 @@ struct RootView: View {
         .onAppear { updateScenePhase(scenePhase) }
         .onChange(of: scenePhase, perform: updateScenePhase)
         .modifier(FlintGlanceObservation())
+        .onChange(of: auth.status) { _ in reconcile(.configEdit) }
         .task { await FlintProtectionReconciler.shared.reconcile(trigger: .launch) }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
             reconcile(.significantTimeChange)
