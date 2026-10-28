@@ -97,6 +97,18 @@ class ActiveRulesHolderTest {
         assertEquals(listOf("ds"), ActiveRulesHolder.rules.map { it.id })
     }
 
+    @Test fun PC_73_sourceExclusionCannotReintroduceADeletedDatastoreRuleAsAnotherOwner() {
+        ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_LEGACY, listOf(rule("legacy")))
+        ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, listOf(rule("old-ds")))
+        ActiveRulesHolder.publish("future-source", listOf(rule("future")))
+        val outside = ActiveRulesHolder.rulesOutside(ActiveRulesHolder.SOURCE_DATASTORE)
+        assertEquals(listOf("legacy", "future"), outside.map { it.id })
+        ActiveRulesHolder.publishState(ActiveRulesHolder.SOURCE_DATASTORE, StorageState.Unavailable(StorageFailure.IO))
+        assertEquals(outside, ActiveRulesHolder.rulesOutside(ActiveRulesHolder.SOURCE_DATASTORE))
+        ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_LEGACY, emptyList())
+        assertEquals(listOf("legacy", "future"), outside.map { it.id })
+    }
+
     @Test fun readinessChangesWakeObserversWithoutLosingLastGoodRules() {
         val source = ActiveRulesHolder.SOURCE_DATASTORE
         val expected = listOf(rule("ds"))
