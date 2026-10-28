@@ -47,10 +47,24 @@ state. Retain a small evidence note and clean only owned device resources.
 Recheck storage round trips and OS recovery/permission controls as appropriate.
 Physical-device/OEM and signed Play split/update testing remain separate.
 
-Lane I's current standalone E2E module is not an unchanged release substitute:
-its exhausted-budget case seeds state through the debug-only SetBlocklistReceiver
-and its setup expects baseline disclosure text. A release-targeted test suite
-must remove that fixture dependency and follow current consent copy first.
+The separate `Android release smoke` workflow builds the release APK/AAB and
+isolated self-instrumenting test APK before emulator boot. Its release mode
+(`FLINT_E2E_DISPOSABLE=1 FLINT_E2E_VARIANT=release AVD=emulator-N bash scripts/android-e2e.sh`)
+retains lane I's exact-boot, disposable-device and run-token grant cleanup guards.
+It installs the release app directly, hashes both installed APKs against their
+build inputs, then selects only the UI-authored rule/persistence/shield/break test.
+It never invokes `connectedDebugAndroidTest`, which would install the debug app,
+and excludes the budget test's debug-only receiver. The selected case grants
+Accessibility through owned instrumentation setup; manual disclosure/system-grant
+flow and OEM testing remain separate acceptance.
+
+The runner retains source SHA, installed APKs/hashes, package metadata, raw
+instrumentation output, screenshots, hierarchy, logcat and mapping artifacts.
+Strict result parsing requires the exact single test to start and pass, a
+successful runner summary and terminal code; adb shell exit zero alone cannot
+certify runtime. Missing, failed, ignored, skipped or crashed tests fail the gate.
+No assertion retries are performed. Mapping/runtime evidence retention is 90 days;
+the owner must retain distributed-release evidence beyond that window.
 
 If an optimization concern cannot be resolved with build and runtime evidence,
 leave shrinking disabled and document the exact unresolved boundary. Do not
