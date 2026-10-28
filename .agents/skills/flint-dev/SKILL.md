@@ -55,9 +55,13 @@ for current targets and override options rather than duplicating their mechanics
    is inferred. Orca 1.4.241 logcat returns entries without PIDs; `make logs-android`
    falls back to the SDK with explicit serial and Flint PID. Use `button back`
    for Android Back; this CLI has no emulator `key` or `screenshot` verb.
-   Live verification used a coordinator-approved read-only SDK screenshot
-   fallback; keep UI input on Orca verbs. Verify pixels and AX after each input
-   and stop before any sensitive permission prompt.
+   For pixels, first confirm `adb -s <serial> emu avd name` prints the expected
+   AVD, then capture read-only with `adb -s <serial> exec-out screencap -p >
+   <file>.png`; keep all UI input on Orca verbs. Android AX bounds are pixels
+   while Orca `tap` takes normalized coordinates: tap the center at
+   `x=(left+right)/(2*width)`, `y=(top+bottom)/(2*height)` using the
+   screenshot's resolution. Verify pixels and AX after each input and stop
+   before any sensitive permission prompt.
    Android runs also compare the recorded/live boot incarnation after building
    and before installation and launch; a restart requires an explicit rerun.
 3. Review `make gates DRY_RUN=1`, then run `make gates` for the AGENTS.md path-based
@@ -74,6 +78,9 @@ for current targets and override options rather than duplicating their mechanics
    `--avd NAME` for Android, and `--created` only for a simulator you created
    using the prefix from `scripts/flint-devices.sh prefix`.
    Run `make clean-devices` before finishing, following its ownership safeguards.
+   It supersedes the generic emulator guides' "kill when done": Android attach
+   returns no helper PID, so a bare `orca emulator kill` can exceed proven
+   ownership.
    Orphan cleanup requires a saved reviewed plan plus its digest; `CONFIRM=1`
    alone never authorizes deletion, and a simulator name is only a preview hint.
    Report what changed, what actually passed, and any unavailable verification.
