@@ -26,24 +26,22 @@ internal class FocusCompletionNotifier(private val context: Context) {
     private val alarms = context.getSystemService(AlarmManager::class.java)
     private val notifications = context.getSystemService(NotificationManager::class.java)
     private val state = notificationState(context)
-    private var firstSuccessfulSnapshot = true
+    private val coordinator = FocusAlarmCoordinator(state,
+        { id, at -> alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending(context, id)) },
+        { alarms.cancel(pending(context, it)) })
 
     suspend fun reconcile(snapshot: HistorySnapshot, now: Long) {
-        createChannel()
-        val delivered = state.delivered()
-        val schedule = FocusCompletionPolicy.schedule(snapshot, delivered, now)
-        val targets = schedule.alarms.associate { it.sessionId to it.at }
-        val previous = state.scheduled()
-        previous.keys.filter { it !in targets }.forEach { alarms.cancel(pending(context, it)) }
-        // Persist stale outcomes without posting. A late resume cannot produce surprise reminders.
-        schedule.staleSessionIds.forEach { state.markDelivered(it, now) }
-        targets.forEach { (id, end) ->
-            if (firstSuccessfulSnapshot || previous[id] != end) {
-                alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, maxOf(end, now), pending(context, id))
-            }
+        try {
+            createChannel()
+            val delivered = state.delivered()
+            val schedule = FocusCompletionPolicy.schedule(snapshot, delivered, now)
+            coordinator.reconcile(schedule.alarms.associate { it.sessionId to it.at }, now)
+            // Cancel stale identities before a delivery marker removes them from the registry.
+            schedule.staleSessionIds.forEach { state.markDelivered(it, now) }
+        } catch (e: Exception) {
+            coordinator.invalidate()
+            throw e
         }
-        state.setScheduled(targets)
-        firstSuccessfulSnapshot = false
     }
 
     fun createChannel() {

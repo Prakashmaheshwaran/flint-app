@@ -8,7 +8,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /** Separate from rules/preferences and history clear; corrupt delivery state fails closed. */
-class FocusNotificationState(private val file: File) : FocusCompletionDeliveryState {
+class FocusNotificationState(private val file: File) : FocusCompletionDeliveryState, FocusAlarmRegistry {
     override suspend fun wasDelivered(sessionId: String): Boolean = locked { it.containsKey("d:$sessionId") }
 
     override suspend fun markDelivered(sessionId: String, at: Long): Boolean = locked { fields ->
@@ -24,8 +24,8 @@ class FocusNotificationState(private val file: File) : FocusCompletionDeliverySt
     }
 
     suspend fun delivered(): Set<String> = locked { fields -> fields.keys.filter { it.startsWith("d:") }.map { it.removePrefix("d:") }.toSet() }
-    suspend fun scheduled(): Map<String, Long> = locked { fields -> fields.filterKeys { it.startsWith("s:") }.mapKeys { it.key.removePrefix("s:") } }
-    suspend fun setScheduled(alarms: Map<String, Long>) = locked { fields ->
+    override suspend fun scheduled(): Map<String, Long> = locked { fields -> fields.filterKeys { it.startsWith("s:") }.mapKeys { it.key.removePrefix("s:") } }
+    override suspend fun setScheduled(alarms: Map<String, Long>) = locked { fields ->
         fields.keys.filter { it.startsWith("s:") }.forEach { fields.remove(it) }
         alarms.forEach { (id, at) -> if (!fields.containsKey("d:$id")) fields["s:$id"] = at }
         write(fields)
