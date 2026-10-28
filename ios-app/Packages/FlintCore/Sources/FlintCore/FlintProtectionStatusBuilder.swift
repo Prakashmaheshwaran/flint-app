@@ -33,6 +33,7 @@ public enum FlintProtectionStatusBuilder {
         public var enabled: Bool
         public var armed: Bool
         public var observed: Bool
+        /// False degrades this rule without erasing unrelated observed enforcement.
         public var available: Bool
         public var currentWindow: DateInterval?
         public var nextWindow: DateInterval?
@@ -125,7 +126,7 @@ public enum FlintProtectionStatusBuilder {
         var reasons = Set<String>()
         var unavailable = !inputs.available || inputs.authorized == nil
             || (inputs.timeIntegrityApplies && inputs.timeIntegrity == nil)
-            || inputs.pass.eligibility == .unavailable || enabled.contains { !$0.available }
+            || inputs.pass.eligibility == .unavailable
         if inputs.recordUnreadable {
             unavailable = true
             reasons.insert("record_unreadable")
@@ -167,6 +168,8 @@ public enum FlintProtectionStatusBuilder {
         let midnight = inputs.quotaCalendar.date(byAdding: .day, value: 1,
                                                  to: inputs.quotaCalendar.startOfDay(for: now))
         for rule in enabled {
+            // An unresolved rule is uncertain without suppressing unrelated known causes.
+            if !rule.available { reasons.insert("state_unavailable") }
             if !rule.armed { reasons.insert("registration_failed") }
             if !rule.observed { reasons.insert("registration_unobserved") }
             if let boundary = rule.nextBoundary, boundary > now { boundaries.append(boundary) }

@@ -108,7 +108,20 @@ public enum FlintProtectionStatus {
                                 coverageUncertain: true)
         }
         let causes = snapshot.causes.filter { coverageByCauseID[$0.id]?.contains(targetKey) == true }
-        let uncertain = snapshot.causes.contains {
+        let coveringIDs = Set(causes.map(\.id))
+        // A covering budget with unknown exhaustion may already block the target. It cannot
+        // authorize an Open release/charge merely because the snapshot makes no claim.
+        let unknownThreshold = inputs.rules.contains {
+            coveringIDs.contains($0.id) && $0.kind == .timeLimit && $0.thresholdReached == nil
+        }
+        // An unresolved window cannot prove whether its rule is active. Only a caller-supplied
+        // definitive exclusion can rule out that rule for this target.
+        let unresolvedCoverage = inputs.rules.contains {
+            guard $0.enabled && !$0.available else { return false }
+            guard let scope = coverageByCauseID[$0.id], scope != .unknown else { return true }
+            return scope.contains(targetKey)
+        }
+        let uncertain = unknownThreshold || unresolvedCoverage || snapshot.causes.contains {
             coverageByCauseID[$0.id] == nil || coverageByCauseID[$0.id] == .unknown
         }
         let openIDs = Set(causes.filter { $0.kind == .openLimit }.map(\.id))
@@ -124,7 +137,8 @@ public enum FlintProtectionStatus {
         let targetState: FlintProtectionStatusSnapshot.State
         if causes.isEmpty && !uncertain {
             targetState = .notProtected
-        } else if snapshot.state == .protected && !causes.contains(where: \.enforcing) {
+        } else if (snapshot.state == .protected || snapshot.state == .notProtected)
+                    && !causes.contains(where: \.enforcing) {
             targetState = uncertain ? .degraded : .notProtected
         } else {
             targetState = snapshot.state

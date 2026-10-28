@@ -139,6 +139,7 @@ extension FlintProtectionStatus {
                 active: rule.enabled, enforcing: openEnforcing[rule.id] == true,
                 opensAllowed: rule.opensAllowed)
         }
+        // Legacy sessions predate origin tracking; absent origins retain the app UI default.
         let session = active.map {
             FlintProtectionStatusBuilder.SessionInput($0,
                 armed: sessionArmed ?? activities.contains($0.monitorName),

@@ -71,13 +71,41 @@ final class FlintProtectionStatusTests: XCTestCase {
         value = baseline; value.timeIntegrity = nil; variants.append(value)
         value = baseline; value.recordUnreadable = true; variants.append(value)
         value = baseline; value.pass = .init(eligibility: .unavailable); variants.append(value)
-        value = baseline; value.rules[0].available = false; variants.append(value)
         for variant in variants {
             let result = Builder.make(variant)
             XCTAssertEqual(result.state, .unavailable)
             XCTAssertNil(result.headline)
             XCTAssertTrue(result.causes.allSatisfy { !$0.enforcing })
         }
+    }
+
+    func testUnresolvedRuleDegradesWithoutSuppressingUnrelatedEnforcingCause() {
+        let unresolved = Builder.RuleInput.schedule(id: "unresolved", displayName: "Unresolved",
+            tier: .hardcore, schedule: FlintSchedule(startHour: 25, endHour: 1),
+            armed: true, observed: true, now: now, calendar: calendar)
+        XCTAssertFalse(unresolved.available)
+        let result = Builder.make(inputs(rules: [unresolved, rule("known")]))
+        XCTAssertEqual(result.state, .degraded)
+        XCTAssertEqual(result.headline?.id, "known")
+        XCTAssertTrue(result.headline?.enforcing == true)
+        XCTAssertEqual(result.degradedReasons, ["state_unavailable"])
+        XCTAssertEqual(result.causes.map(\.id), ["known"])
+        let uncertain = FlintProtectionStatus.contributors(for: "target",
+            inputs: inputs(rules: [unresolved, rule("known")]),
+            coverageByCauseID: ["unresolved": .only(["target"]), "known": .only(["other"])])
+        XCTAssertEqual(uncertain.state, .degraded)
+        XCTAssertTrue(uncertain.coverageUncertain, "unresolved activity must not authorize release")
+        let excluded = FlintProtectionStatus.contributors(for: "excluded",
+            inputs: inputs(rules: [unresolved]), coverageByCauseID: ["unresolved": .only(["target"])])
+        XCTAssertEqual(excluded.state, .notProtected)
+        XCTAssertFalse(excluded.coverageUncertain)
+
+        var activeUnverified = rule("unverified")
+        activeUnverified.available = false
+        let active = Builder.make(inputs(rules: [activeUnverified, rule("known")]))
+        XCTAssertEqual(active.state, .degraded)
+        XCTAssertFalse(active.causes.first { $0.id == "unverified" }!.enforcing)
+        XCTAssertEqual(active.headline?.id, "known")
     }
 
     func testUnarmedAndUnobservedEnabledRulesDegradeEvenOutsideTheirWindow() {
@@ -335,6 +363,24 @@ final class FlintProtectionStatusTests: XCTestCase {
         XCTAssertEqual(result.causes.map(\.id), ["budget"])
         XCTAssertEqual(result.state, .notProtected)
         XCTAssertFalse(result.causes[0].enforcing)
+    }
+
+    func testUnknownTargetBudgetExhaustionRemainsUncertainWithoutClaimingEnforcement() {
+        var budget = rule("budget", kind: .timeLimit); budget.thresholdReached = nil
+        for rules in [[budget], [budget, rule("elsewhere")]] {
+            let value = inputs(rules: rules)
+            let result = FlintProtectionStatus.contributors(for: "target", inputs: value,
+                coverageByCauseID: ["budget": .only(["target"]), "elsewhere": .only(["other"])])
+            XCTAssertEqual(result.causes.map(\.id), ["budget"])
+            XCTAssertEqual(result.state, .degraded)
+            XCTAssertTrue(result.coverageUncertain)
+            XCTAssertFalse(result.causes[0].enforcing)
+            XCTAssertFalse(Builder.make(value).causes.first { $0.id == "budget" }!.enforcing)
+            let uncovered = FlintProtectionStatus.contributors(for: "uncovered", inputs: value,
+                coverageByCauseID: ["budget": .only(["target"]), "elsewhere": .only(["other"])])
+            XCTAssertEqual(uncovered.state, .notProtected)
+            XCTAssertFalse(uncovered.coverageUncertain)
+        }
     }
 
     func testProjectionDoesNotEncodeSelectionsMonitorNamesOrCallerTargetKeys() throws {
