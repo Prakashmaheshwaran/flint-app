@@ -8,7 +8,7 @@ session, SwiftUI and report preview fixtures. The report's `#Preview` is
 explicitly guarded by `#if DEBUG`; production report rendering is unchanged.
 
 ```sh
-python3 docs/store/ios/verify-release-binaries.py ios-app/DerivedDataRelease/Build/Products/Release-iphonesimulator/Flint.app
+python3 docs/store/ios/verify-release-binaries.py ios-app/build/ReleaseDerivedData/Build/Products/Release-iphonesimulator/Flint.app
 ```
 
 To verify scanner sensitivity with a Debug control build:
