@@ -3,7 +3,7 @@
 Scope: Android local-only release, package `com.flint.peakfocus`, with lane C's
 Settings/uninstall-guard and Settings-text-read removal in PR105 (`a34cbba`).
 Settings screen content is not read for guarding. Snapshot prepared 2026-10-28. Recheck the exact
-submission commit/AAB and lane F additions before signing the form. Debug-only
+submission commit/AAB and lane F/K additions before signing the form. Debug-only
 Firebase/connected sandbox data is outside this release and must remain excluded.
 
 | Data read or created | Purpose and source anchor | Location and retention | Off-device collection / sharing |
@@ -18,11 +18,20 @@ Firebase/connected sandbox data is outside this release and must remain excluded
 | Setup completion and notification-prompt preferences | `MainActivity` | `flint_onboarding` and `flint_permissions` SharedPreferences; until storage cleared | None |
 | Permission/service/clock health, boot state | Permissions, resilience, service gates and clock guard | System settings plus local runtime state; any lane C persisted additions must be inventoried at final merge | None |
 | Focus lifecycle history and derived Insights | Lane F integration | **Pending final lane F schema/path/retention verification**; add exact files/fields here before advertising or submitting history claims | None intended; verify final artifact |
+| Widget and ongoing-session display projection (pending lane K PR126) | `app/glance/GlanceState.kt`, `GlanceSurfaceBridge.kt`, `OngoingSessionNotification.kt`: source/session name, tier, logical-end estimate, next-session name/start, F's focused-today text/note and observed check/date | App projection is in memory, without a durable protection snapshot; launcher/widget and system notification copies can outlive the app process until refreshed or removed. Notifications request private lock-screen visibility. Verify actual OS/OEM presentation and retention | No network transfer intended; review OS surface delivery and applicable user-initiated sharing exceptions in the final form |
 
 The release has no account/profile identifiers, contacts, messages, photos,
 microphone, camera, location, payments, ads identifiers or developer telemetry
 SDK. Device package inventory, usage and URLs are still sensitive even when no
 data is transmitted. Do not confuse “not collected” in the form with “not read.”
+
+The pending K projection has no selected package/app/domain identifiers in its
+display model; user-chosen session names can still be sensitive. It reuses C's
+existing enforcement notification (id1001), separately from F's completion
+notification. These source facts were checked at K head534b48d; they are not a
+claim that K has merged or that final widget delivery, R8 retention, dependency
+inventory and release permissions have passed. Reconcile them against the exact
+submission build, including any launcher-owned cached view.
 
 ## Candidate Console answers
 
