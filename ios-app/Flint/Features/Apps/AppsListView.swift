@@ -39,7 +39,7 @@ struct AppsListView: View {
                 Text("Apps and sites").flintTitle(28)
                     .accessibilityAddTraits(.isHeader)
                     .padding(.top, 8)
-                Text("Everything you’ve picked in a rule or limit. Open one to see what covers it today.")
+                Text("Everything you’ve picked in a rule, limit or running session. Open one to see what covers it now.")
                     .flintSecondary(15)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 8)
@@ -90,13 +90,25 @@ struct AppsListView: View {
     }
 
     private func load() {
-        guard let store = FlintGroupStore() else {
+        guard let store = FlintGroupStore(), let defaults = UserDefaults.flintGroup else {
             readable = false
             return
         }
-        let selections = store.loadRules().map(\.selection)
-            + store.loadLimits().map(\.selection)
-            + FlintOpenLimitRule.loadAll().map(\.selection)
+        // Strict reads: a stored but undecodable list is "can't read", never an empty list.
+        func strict<T: Decodable>(_ key: String, as type: [T].Type) -> [T]? {
+            guard let data = defaults.data(forKey: key) else { return [] }
+            return try? JSONDecoder().decode(type, from: data)
+        }
+        guard let rules = strict("flint.rules", as: [FlintScheduleRule].self),
+              let limits = strict("flint.limits", as: [FlintLimitRule].self),
+              let opens = strict("flint.openLimit.rules", as: [FlintOpenLimitRule].self) else {
+            readable = false
+            return
+        }
+        // The running session's frozen selection, so apps it blocks appear too.
+        let session = store.loadActiveSession().flatMap { store.loadSessionSelection(sessionID: $0.id) }
+        let selections = rules.map(\.selection) + limits.map(\.selection) + opens.map(\.selection)
+            + (session.map { [$0] } ?? [])
         var seen = Set<String>()
         var result: [PickedTarget] = []
         for selection in selections {

@@ -29,13 +29,13 @@ final class AppDetailPresentationTests: XCTestCase {
     func testStrongestEnforcingCauseHeadlinesWithLatestEnforcingEnd() {
         let p = make(.protected, [cause("easy", .easy, end: 900), cause("hard", .hardcore, end: 600),
                                   cause("idle", .hardcore, end: 9_000, enforcing: false)])
-        XCTAssertEqual(p.headline, .blocked(name: "hard", until: now.addingTimeInterval(900)))
+        XCTAssertEqual(p.headline, .blocked(name: "hard", others: 1, until: now.addingTimeInterval(900)))
         XCTAssertEqual(p.rows.map(\.id), ["hard", "easy", "idle"])
     }
 
     func testOngoingEnforcingCauseMeansUntilStopped() {
         let p = make(.protected, [cause("manual", .easy, end: nil, kind: .session), cause("s", .harder, end: 600)])
-        XCTAssertEqual(p.headline, .blocked(name: "s", until: nil))
+        XCTAssertEqual(p.headline, .blocked(name: "s", others: 1, until: nil))
     }
 
     func testEqualTierTieBreaksByLatestEndThenID() {
@@ -46,10 +46,23 @@ final class AppDetailPresentationTests: XCTestCase {
 
     func testCoveredButNotBlockingAndUncertainAndNotCovered() {
         XCTAssertEqual(make(.protected, [cause("limit", .easy, end: nil, enforcing: false, kind: .timeLimit)]).headline,
+                       .coveredByLimitUnconfirmed)
+        XCTAssertEqual(make(.protected, [cause("sched", .easy, end: 600, enforcing: false)]).headline,
                        .coveredNotBlocking)
         XCTAssertEqual(make(.protected, [], uncertain: true).headline, .uncertain)
         XCTAssertEqual(make(.notProtected).headline, .notCovered)
         XCTAssertEqual(make(.suspended, [cause("a", .hardcore, end: 60)]).headline, .paused)
+    }
+
+    func testSingleEnforcingCauseHasNoOthers() {
+        XCTAssertEqual(make(.protected, [cause("only", .harder, end: 600)]).headline,
+                       .blocked(name: "only", others: 0, until: now.addingTimeInterval(600)))
+    }
+
+    func testLimitsNeverClaimNotBlocking() {
+        let p = make(.protected, [cause("t", .easy, end: 3_600, enforcing: false, kind: .timeLimit),
+                                  cause("o", .easy, end: 3_600, enforcing: false, kind: .openLimit)])
+        XCTAssertFalse(p.rows.contains { $0.detail.contains("not blocking") })
     }
 
     func testOpensLineOnlyWithACapAndNeverInventsAZeroCount() {

@@ -28,7 +28,7 @@ struct AppDetailView: View {
                             .padding(.top, 8)
                     }
                     if !presentation.rows.isEmpty {
-                        Text("Covering today").flintEyebrow()
+                        Text("Covering it now").flintEyebrow()
                             .accessibilityAddTraits(.isHeader)
                             .padding(.top, 28)
                         FlintCard {
@@ -47,7 +47,7 @@ struct AppDetailView: View {
                         .padding(.top, 10)
                     }
                     if presentation.showsUncertaintyNote {
-                        Text("Another rule that blocks a whole category may also apply to this.")
+                        Text("Another rule may also apply to this, but Flint can’t confirm whether it does.")
                             .flintSecondary()
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, 10)
@@ -59,9 +59,9 @@ struct AppDetailView: View {
                         Group {
                             switch opens {
                             case .used(let count, let cap):
-                                Text("Used today: \(count) of \(cap)")
+                                Text("Opens used today: \(count) of \(cap)")
                             case .unavailable(let cap):
-                                Text("Today’s count isn’t available. Daily limit: \(cap).")
+                                Text("Today’s count isn’t available. Daily limit: \(cap) opens.")
                             }
                         }
                         .flintSecondary(15)
@@ -92,12 +92,18 @@ struct AppDetailView: View {
                 Text("Protection state is unavailable right now, so Flint won’t guess what covers this.")
             case .paused:
                 Text("Protection is paused for Emergency Pass recovery.")
-            case .blocked(let name, let until?):
-                Text("Blocked now by \(name), until \(until.formatted(date: .omitted, time: .shortened)).")
-            case .blocked(let name, nil):
+            case .blocked(let name, 0, let until?):
+                Text("Blocked now by \(name), until \(AppDetailPresentation.endText(until)).")
+            case .blocked(let name, 0, nil):
                 Text("Blocked now by \(name), until it’s stopped.")
+            case .blocked(let name, let others, let until?):
+                Text("Blocked now by \(name) and \(others) more, until \(AppDetailPresentation.endText(until)).")
+            case .blocked(let name, let others, nil):
+                Text("Blocked now by \(name) and \(others) more, until the last one is stopped.")
             case .coveredNotBlocking:
-                Text("Covered today, but not blocked right now.")
+                Text("Covered now, but not blocked right now.")
+            case .coveredByLimitUnconfirmed:
+                Text("A limit covers this. Flint can’t confirm right now whether it’s blocking.")
             case .uncertain:
                 Text("Flint can’t tell for sure which rules cover this.")
             case .notCovered:

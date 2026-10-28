@@ -44,7 +44,7 @@ struct SettingsView: View {
                         }
                         NavigationLink { AppsListView() } label: {
                             FlintRow(title: String(localized: "Apps and sites"),
-                                     subtitle: String(localized: "What covers each one today"), chevron: true)
+                                     subtitle: String(localized: "What covers each one now"), chevron: true)
                         }
                         NavigationLink { WebRestrictionsView() } label: {
                             FlintRow(title: "Website rules", subtitle: "Safari restrictions and Private Browsing", chevron: true)

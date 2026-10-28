@@ -24,8 +24,12 @@ struct AppDetailPresentation: Equatable {
     enum Headline: Equatable {
         case unavailable
         case paused
-        case blocked(name: String, until: Date?)
+        /// `others` = how many more enforcing rules also block it; `until` = when the last known
+        /// one ends, nil when one of them runs until it's stopped (ADR-012 §3).
+        case blocked(name: String, others: Int, until: Date?)
         case coveredNotBlocking
+        /// Only limits cover it and Flint can't confirm whether one is blocking right now.
+        case coveredByLimitUnconfirmed
         case uncertain
         case notCovered
     }
@@ -55,7 +59,9 @@ struct AppDetailPresentation: Equatable {
                 // "Until" is when the last known enforcing contributor ends; nil = until stopped.
                 let enforcing = causes.filter(\.enforcing)
                 let until = enforcing.contains { $0.end == nil } ? nil : enforcing.compactMap(\.end).max()
-                headline = .blocked(name: strongest.displayName, until: until)
+                headline = .blocked(name: strongest.displayName, others: enforcing.count - 1, until: until)
+            } else if causes.contains(where: { Self.isLimit($0.kind) }) {
+                headline = .coveredByLimitUnconfirmed
             } else if !causes.isEmpty {
                 headline = .coveredNotBlocking
             } else if input.coverageUncertain {
@@ -95,12 +101,28 @@ struct AppDetailPresentation: Equatable {
         }
     }
 
+    /// Limits report blocking only when their monitor's state is known; never claim "not
+    /// blocking" for them (ADR-012 §5/§8).
+    static func isLimit(_ kind: FlintProtectionStatusSnapshot.Kind) -> Bool {
+        kind == .timeLimit || kind == .openLimit
+    }
+
+    static func endText(_ end: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+        calendar.isDate(end, inSameDayAs: now)
+            ? end.formatted(date: .omitted, time: .shortened)
+            : end.formatted(.dateTime.weekday(.abbreviated).hour().minute())
+    }
+
     private static func row(_ cause: FlintProtectionStatusSnapshot.Cause) -> Row {
-        let end = cause.end.map { $0.formatted(date: .omitted, time: .shortened) }
+        let end = cause.end.map { endText($0) }
         let detail: String
         switch (cause.enforcing, end) {
         case (true, let end?): detail = String(localized: "Blocking now · until \(end)")
-        case (true, nil): detail = String(localized: "Blocking now · until stopped")
+        case (true, nil): detail = String(localized: "Blocking now · until it’s stopped")
+        case (false, _) where cause.kind == .timeLimit:
+            detail = String(localized: "Blocks once today’s time is used")
+        case (false, _) where cause.kind == .openLimit:
+            detail = String(localized: "Blocks between the opens you’re allowed")
         case (false, let end?): detail = String(localized: "Active, not blocking right now · ends \(end)")
         case (false, nil): detail = String(localized: "Active, not blocking right now")
         }
