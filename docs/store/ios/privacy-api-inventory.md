@@ -10,7 +10,7 @@ calls discussed below.
 
 | Bundle | API and purpose | Declaration |
 | --- | --- | --- |
-| `com.flint.peakfocus` | `@AppStorage("flint.onboarded")` in `Flint/FlintApp.swift`, private onboarding preference | UserDefaults, `CA92.1` |
+| `com.flint.peakfocus` | Private onboarding, focus-completion acknowledgement, reminder preference, Live Activity preference/dismissal/request bookkeeping in `FlintApp.swift`, `FocusHistoryModel.swift`, `FlintCompletionNotifications.swift` and glance observation/settings | UserDefaults, `CA92.1` |
 | Host, `.monitor`, `.shield-config`, `.shield-action` | `FlintGroupStore` and `UserDefaults.flintGroup` in `Packages/FlintCore/Sources/FlintCore/{FlintGroupStore,FlintModel}.swift`; selections, rules, session, PIN, pass and counters shared only inside `group.com.flint.peakfocus` | UserDefaults, `1C8F.1` |
 | All six bundles | Focus history (`Packages/FlintCore/Sources/FlintCore/FlintHistoryStore.swift`) reads file size (`attributesOfItem`), `contentModificationDateKey` and `creationDateKey` for its own files under `group.com.flint.peakfocus/FlintHistory` (bounded reads, temp-file reclaim, quarantine pruning). FlintCore is linked into every bundle; the monitor publishes history there | FileTimestamp, `C617.1` |
 | `.report` | FlintCore is linked for brand/UI types. Its shared-suite defaults implementation remains in the optimized Release report binary, although report source makes no defaults call | UserDefaults, `1C8F.1` |
@@ -19,6 +19,13 @@ calls discussed below.
 Shared defaults are also used by `FlintOpenLimit.swift` and
 `FlintWebRestrictions.swift`. The monitor consumes the shared rules/session state;
 shield configuration reads remaining credits; shield action reads/writes credits.
+The shared protection ledger persists `FlintLedger/ledger.json`, lock/recovery files
+and the `flint.ledger.initializedAt` marker. Retained-store receipt state uses
+`flint.protection.retainedStoreEnds.v1`. These are local enforcement/migration data,
+separate from focus-history clearing; a ledger schema does not establish global pass
+runtime integration. Private reminder preferences are distinct from OS notification
+authorization, and Live Activity defaults off. These purposes do not add a manifest
+category beyond the declarations above.
 The report's `ActivitySummary`, `TotalActivityReport` and `TotalActivityView`
 keep system-provided report data in the report process; the report declaration
 covers retained shared-library code, not persistence or export of report data.
@@ -47,12 +54,13 @@ platform implementation details are not application API calls.
 
 ### History metadata and optimized binary retention
 
-On 2026-10-28, lane K inspected an unsigned optimized simulator Release build
+Historical inspection: on 2026-10-28, lane K inspected an unsigned optimized simulator Release build
 containing merged history PR #90 and the read-only reader from PR #132
 (`f5ca108`). All five current executables plus the proposed widget executable
 retain `_fstat`, Foundation's `attributesOfItem` and `FlintHistoryStore` reader
 code. This supports the FileTimestamp declaration in every current bundle;
-the widget's separate target also needs it. The report extension still keeps
+the widget's separate target also needs it and is now merged as the sixth bundle.
+The report extension still keeps
 DeviceActivity report data inside its process; retained history metadata APIs
 do not authorize report export.
 

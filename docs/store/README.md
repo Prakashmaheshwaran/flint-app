@@ -31,6 +31,9 @@ separate authorization; completing the repository work does not perform these ac
 - [ ] Select exact integration commit, marketing version/build numbers and supported device/OS
   scope; record final CI/artifact hashes. Resolve or explicitly exclude all required failed,
   blocked and unrun acceptance cases. Do not label emulator/fixture data as hardware proof.
+  The current separate iOS deletion-consent/global-pass implementation, all-cause access
+  producers and K live-status publication gaps remain engineering acceptance items;
+  softer marketing does not close them.
 - [ ] Complete [physical-device acceptance](../acceptance/device-acceptance-plan.md), beginning
   with emergency/recovery safety, Hardcore rights and global pass/bounded access. Record
   unsupported browsers/OEMs, clock uncertainty and observed OS delivery latency.
@@ -52,14 +55,22 @@ separate authorization; completing the repository work does not perform these ac
 - [ ] Publish stable HTTPS privacy/support destinations with real developer contact. Confirm
   the published policy matches bundled copy and final local history/permission/widget data.
   No placeholder or uncreated URL is a submission-ready destination.
+  Implement accessible iOS in-app policy access; verify Android offline policy/licenses,
+  clear-history/recovery-copy wording and a real private support route. Public GitHub
+  issues are unsuitable for sensitive selections or browsing information.
 - [ ] Finalize metadata, age/target-audience/content answers, App Privacy/Data safety,
   Accessibility and specialUse FGS declarations against final code/artifact and current
   Console forms. Include transient foreground/URL processing, local persistence/retention,
   user-initiated external links and OS/launcher/notification/Live Activity visibility.
   Local-only processing alone is not evidence that a form has been completed/approved.
+  Record the final merged normal/internal library permissions, WorkManager components,
+  all three Android channels and regenerated dependency/legal inventory, not source
+  manifests alone.
 - [ ] Capture genuine final-device screenshots and permission/Accessibility/FGS review videos.
   No DEBUG fixtures, synthetic Screen Time, seeded history or unimplemented feature claims.
   Explain no accounts/analytics, optional notifications, supported browser coverage and OS exits.
+  Include clear-history while idle/running, reminder denial/channel-disabled/late delivery,
+  ActivityKit default/opt-in/privacy and stale/unavailable glance states in device acceptance.
 - [ ] Explicitly authorize the exact archive/AAB upload and intended internal distribution.
   Read back processing status; install the actual TestFlight/Play-delivered build and repeat
   the critical smoke/update checks. A successful upload is not review acceptance.

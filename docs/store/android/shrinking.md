@@ -28,6 +28,12 @@ were checked 2026-10-28; the latter explicitly retains legacy DSL support in AGP
   still be removed. These packages remain debug-only dependencies.
 - R8 assertions require design-time Compose tooling and Flint Preview methods
   to be discarded. The release has no tooling UI dependency.
+- Glance/WorkManager constructs Room's `androidx.work.impl.WorkDatabase_Impl`
+  reflectively. The exact generated class and public no-argument constructor are kept
+  by `app/proguard-rules.pro`; do not replace this targeted rule with a broad keep.
+  K126's earlier release startup failure and repaired
+  [API 36 release smoke](https://github.com/Prakashmaheshwaran/flint-app/actions/runs/40778992967)
+  are artifact-specific evidence, not proof of a later candidate or hardware delivery.
 
 Android CI retains `app/build/outputs/mapping/release/mapping.txt` as an artifact
 named with the exact source SHA, for 90 days; missing output fails the upload

@@ -1,10 +1,14 @@
 # Flint iOS App Store package — draft
 
-Prepared 2026-10-28 for lane D6. Source baseline:
-`fa190e9df96f61c13ea651ee39cae6f68057f0c6` on `integration/v1`.
+Prepared 2026-10-28 for lane D6; reconciled by lane J against merged
+`integration/v1` at `32a8d6b`. Original D6 source baseline was
+`fa190e9df96f61c13ea651ee39cae6f68057f0c6`.
 This is preparation for human review, not a submitted listing or proof of release
 readiness. No Apple account, signing, upload, TestFlight, or publication action was
 performed. Companion: [review notes and physical-device script](review-notes.md).
+Current evidence: [capability ledger](../../acceptance/v1-capability-ledger.md).
+Human-owned signing, declarations, upload/review and publication steps are consolidated
+in the [store checklist](../README.md).
 
 ## Release claim gate
 
@@ -21,12 +25,20 @@ Do not add claims of unbreakable blocking, tamper-proof protection, guaranteed
 background expiry, blocking in every browser, proven sleep/health benefits,
 time saved, streaks, complete history, or iOS/Android parity. A countdown, source
 comment, unit test, simulator fixture, or design mockup proves none of these.
-At this baseline, timed monitor registration is best-effort in
-[FlintSessionController.startBlockNow](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintSessionController.swift#L82-L94),
-and completion is in memory in
-[SessionViewModel.tick](../../../ios-app/Flint/Features/Sessions/SessionViewModel.swift#L156-L169).
-These observations must be refreshed after B/F land; they are not claims about
-the future release candidate.
+Merged [#91](https://github.com/Prakashmaheshwaran/flint-app/pull/91),
+[#130](https://github.com/Prakashmaheshwaran/flint-app/pull/130) and
+[#148](https://github.com/Prakashmaheshwaran/flint-app/pull/148) add session timing,
+registration/stop policy and bounded recovery. History is now durable through
+[#90](https://github.com/Prakashmaheshwaran/flint-app/pull/90) and
+[#117](https://github.com/Prakashmaheshwaran/flint-app/pull/117); iOS presentation evidence
+uses labelled fixtures. These changes do not establish physical-device enforcement.
+
+**Current claim blockers:** the live session controller still requests deletion denial
+on Hardcore start rather than establishing the separate contract opt-in; its pass ends
+the current session rather than demonstrating global 60-minute recovery. Do not put
+either proposed contract behavior into public/reviewer copy until the corresponding
+live changes and signed-device acceptance land. Widget/Live Activity readers are merged,
+but authoritative protection publication/delivery needs its own evidence.
 
 ## Proposed en-US metadata
 
@@ -36,7 +48,7 @@ Proposed primary category: Productivity. Do not select the Kids category.
 Store price, territories, copyright holder, and release version are human-owned
 decisions; the product requirement is that all protection levels remain free.
 The baseline's `0.1.0` / build `1` is not an approved v1 release number
-([project settings](../../../ios-app/project.yml#L23-L31)).
+([project settings](../../../ios-app/project.yml)).
 
 ### Name
 
@@ -71,17 +83,17 @@ KEEP IT PERSONAL
 Flint needs no Flint account and includes no analytics or advertising SDKs. Your selections and settings are stored on your device and shared locally with Flint's Screen Time extensions. There is no Flint cloud sync. All protection levels are free.
 
 KNOW WHAT YOU ARE CHOOSING
-Flint uses Apple's Screen Time permission to apply restrictions. Protection depends on the permissions and settings on your device. A separate optional setting can request device-wide app-deletion restriction during an active Hardcore session with a set end time. Screen Time permission remains revocable in iOS Settings. Review the end time, available Emergency Pass, and recovery before opting in.
+Flint uses Apple's Screen Time permission to apply restrictions. Protection depends on the permissions and settings on your device. Screen Time permission remains revocable in iOS Settings. Review the end time and available recovery before starting a session.
 
 Flint is open source. Take a little space for the next thing you want to do.
 ```
 
 Source for the proposed workflows:
-[picker, saved groups, and duration](../../../ios-app/Flint/Features/Today/StartFocusSheet.swift#L1-L164),
-[recurring schedules](../../../ios-app/Flint/Features/Schedules/SchedulesView.swift#L396-L446),
-[limits persistence](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintGroupStore.swift#L135-L144),
-[individual authorization](../../../ios-app/Flint/Features/Authorization/AuthorizationModel.swift#L30-L40),
-and [device-wide removal restriction](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintUninstallGuard.swift#L16-L28).
+[picker, saved groups, and duration](../../../ios-app/Flint/Features/Today/StartFocusSheet.swift),
+[recurring schedules](../../../ios-app/Flint/Features/Schedules/SchedulesView.swift),
+[limits persistence](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintGroupStore.swift),
+[individual authorization](../../../ios-app/Flint/Features/Authorization/AuthorizationModel.swift),
+and [device-wide removal restriction](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintUninstallGuard.swift).
 Source shows intended behavior; lane B and physical verification must establish
 that the final copy describes the shipped behavior. Website selection is distinct
 from Safari content/Private Browsing settings; neither implies universal browser
@@ -110,8 +122,8 @@ unique, and contain no competitor names. Check the four blocks again after any
 wording or localization change. App Review Notes have a separate 4,000-byte
 limit, checked in the companion document. No promotional text is proposed.
 
-D6 measured the exact blocks above: name **5 characters**, subtitle **26
-characters**, keywords **86 UTF-8 bytes**, description **1,254 characters**.
+Lane J remeasured the exact blocks above: name **5 characters**, subtitle **26
+characters**, keywords **86 UTF-8 bytes**, description **1,114 characters**.
 All four are ASCII, so byte and character counts coincide for this draft.
 
 ## App Privacy answer draft: Data Not Collected
@@ -130,8 +142,8 @@ privacy-sensitive; a label does not mean the app has no local data.
 ### Source map and boundaries
 
 - **Dependencies and upload paths:**
-  [project packages](../../../ios-app/project.yml#L33-L35) and
-  [FlintCore Package.swift](../../../ios-app/Packages/FlintCore/Package.swift#L4-L13)
+  [project packages](../../../ios-app/project.yml) and
+  [FlintCore Package.swift](../../../ios-app/Packages/FlintCore/Package.swift)
   declare a local package with no external package dependency. Inspection of
   production Swift, YAML, plists, and entitlements found no app-owned URLSession
   client or analytics, advertising, crash-upload, or account SDK. Re-run the
@@ -140,38 +152,51 @@ privacy-sensitive; a label does not mean the app has no local data.
   iOS has no Android-style INTERNET permission switch; do not cite Android's
   release manifest as iOS privacy evidence.
 - **Selected apps, categories, and websites:**
-  [FlintGroupStore](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintGroupStore.swift#L112-L154)
+  [FlintGroupStore](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintGroupStore.swift)
   encodes opaque FamilyActivitySelection tokens, rules, limits, and named groups
   in shared defaults. Group names are local user-entered text. Tokens are not a
   developer-maintained list of raw app identifiers. No token export is proposed.
 - **Session and protection state:**
-  [shared keys and suite](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintGroupStore.swift#L10-L32)
-  and [state persistence](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintGroupStore.swift#L46-L110)
-  keep active-session times, pass-use timestamps, Open Limit counters, and arming
-  health locally in `group.com.flint.peakfocus`. Historical session encode/decode
-  helpers exist at lines 37–43, but have no production caller at this baseline;
-  do not turn that API into a history claim. Lane F must refresh this map when
-  its local event store lands, including storage/retention/deletion behavior.
-- **PIN:** [FlintPIN.set/verify](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintPIN.swift#L19-L42)
+  [shared keys and suite](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintGroupStore.swift)
+  and [state persistence](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintGroupStore.swift)
+  keep active-session times, pass-use timestamps, Open Limit counters, arming health,
+  anchored time state and the cross-process protection ledger locally in
+  `group.com.flint.peakfocus`.
+- **Durable focus history:**
+  [FlintHistoryStore](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintHistoryStore.swift)
+  stores an App Group `FlintHistory` JSONL log, per-event extension inbox, metadata and
+  bounded recovery/quarantine copies. Records contain session/operation IDs, user-entered
+  names, tier/origin/time/outcome and available event metrics; no app/package/token/domain
+  identifiers or Apple report values. Retention targets 400 days subject to local caps.
+  You's clear-history control preserves the active session and does not promise immediate
+  deletion of every recovery copy. No release export, cloud backup or restore feature is
+  supplied. See [history contract](../../architecture/focus-history.md).
+- **Reminders and OS displays:** optional planned-time-ended local notifications store
+  session/end/request bookkeeping; widget/Live Activity public status includes chosen
+  session names, tiers, end/next estimates, check time and local focused-today summaries.
+  WidgetKit/notification/ActivityKit copies can remain on OS surfaces until refreshed or
+  removed; the app PIN is not a promise to hide those surfaces. Live Activity defaults off.
+  Missing/stale authority stays unavailable; do not infer protection from the display.
+- **PIN:** [FlintPIN.set/verify](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintPIN.swift)
   stores a salted hash through the shared defaults, not a plaintext PIN or a
   server credential. Do not market this as encrypted storage or tamper-proof
   security. An app-open PIN is distinct from Apple's Screen Time passcode.
 - **Website rules and routine settings:**
-  [website settings persistence](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintWebRestrictions.swift#L169-L187)
+  [website settings persistence](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintWebRestrictions.swift)
   stores user-entered domains locally;
-  [Sleep, Focus, and Pomodoro settings](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintModel.swift#L217-L264)
+  [Sleep, Focus, and Pomodoro settings](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintModel.swift)
   use the same App Group defaults. A domain rule is not a browsing-history feed.
 - **Screen Time report data:**
-  [TotalActivityReport.makeConfiguration](../../../ios-app/Extensions/DeviceActivityReportExtension/TotalActivityReport.swift#L14-L38)
+  [TotalActivityReport.makeConfiguration](../../../ios-app/Extensions/DeviceActivityReportExtension/TotalActivityReport.swift)
   aggregates Apple-supplied durations, pickups, and localized app names inside
-  the report extension. [ActivitySummary](../../../ios-app/Extensions/DeviceActivityReportExtension/ActivitySummary.swift#L3-L22)
+  the report extension. [ActivitySummary](../../../ios-app/Extensions/DeviceActivityReportExtension/ActivitySummary.swift)
   is report-private and in memory; source does not persist or forward its raw
   report values to the host or a backend. Keep lane F's local session events
   separate from Screen Time usage data; do not export usage to fill empty cards.
 - **External destinations:**
-  [About Flint](../../../ios-app/Flint/Features/Settings/SettingsView.swift#L46-L48)
+  [About Flint](../../../ios-app/Flint/Features/Settings/SettingsView.swift)
   opens the repository when chosen by the user;
-  [authorization recovery](../../../ios-app/Flint/Features/Authorization/AuthorizationControls.swift#L15-L34)
+  [authorization recovery](../../../ios-app/Flint/Features/Authorization/AuthorizationControls.swift)
   opens iOS Settings. A browser, hosting provider, Apple, or a future support
   contact can process data under their own practices. Do not promise that those
   services receive nothing. Audit new support links, forms, server logs, and
@@ -182,12 +207,14 @@ service, or third-party code. Cloud backup, device transfer, and Apple system
 diagnostics are separate from a Flint backend; do not promise that OS backups
 never contain local settings or that uninstall removes backups. Verify removal
 of the host and its extensions/shared container on a test device before writing
-deletion instructions. Do not invent an in-app reset control.
+deletion instructions. The in-app clear-history control is real, but is narrower than
+deleting all app data.
 
 App Privacy answers are separate from required-reason API declarations. Lane D's
 privacy manifests must cover actual APIs/resources in every shipped bundle;
-local UserDefaults use still needs the appropriate manifest review. D6 has not
-validated a signed archive, manifests, entitlements, or DEBUG-fixture exclusion.
+local UserDefaults use still needs the appropriate manifest review. Unsigned CI now
+validates manifests and DEBUG-fixture exclusion; a signed archive, distribution
+entitlements and App Store validation remain unverified.
 
 ## Age-rating rationale for owner entry
 
@@ -201,7 +228,7 @@ and [questionnaire workflow](https://developer.apple.com/help/app-store-connect/
 at submission; do not reuse an obsolete 12+/17+ worksheet.
 
 - **Parental controls: proposed No.** Current
-  [authorization is `.individual`](../../../ios-app/Flint/Features/Authorization/AuthorizationModel.swift#L30-L40),
+  [authorization is `.individual`](../../../ios-app/Flint/Features/Authorization/AuthorizationModel.swift),
   for self-management. There is no parent/child account, family dashboard, or
   remote child supervision. The FamilyControls framework name alone is not a
   questionnaire answer. Reassess if the release adds child-directed controls.
@@ -236,8 +263,8 @@ All shots are **pending**. Capture the actual signed candidate on owner-approved
 physical devices with neutral test selections and real test activity. Never use
 `-FlintUIPreviewSession`, authorization previews, UI fixtures, fabricated report
 values, synthetic streaks, design HTML, or AI-generated pixels as product proof.
-The [session preview](../../../ios-app/Flint/Features/Sessions/SessionViewModel.swift#L31-L45)
-and [authorization preview](../../../ios-app/Flint/Features/Authorization/AuthorizationModel.swift#L30-L37)
+The [session preview](../../../ios-app/Flint/Features/Sessions/SessionViewModel.swift)
+and [authorization preview](../../../ios-app/Flint/Features/Authorization/AuthorizationModel.swift)
 are DEBUG-only source paths whose exclusion still needs release verification.
 
 For each capture, record candidate commit, version/build, signed archive hash,
@@ -273,7 +300,7 @@ private website lists, or unrelated people’s activity.
    report output into “zero use” or “time saved”. Omit this shot if unverified.
 
 Repeat approved shots using actual iPad layout: the
-[device-family setting](../../../ios-app/project.yml#L31)
+[device-family setting](../../../ios-app/project.yml)
 includes iPhone and iPad. Apple's
 [current screenshot specifications](https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications/)
 list required iPhone and 13-inch iPad display coverage and accepted pixel sizes.
@@ -285,10 +312,13 @@ No screenshots, preview video, or upload-ready asset set accompanies this draft.
 
 ## Public privacy/support URL plan — lane E dependency
 
-The canonical policy is lane E's planned `docs/privacy-policy.md`, linked from
-the [v1 lane plan](../../roadmap/v1-build-plan.md). It is absent at this D6
-baseline. Link the merged policy here and reconcile the iOS source map before
-submission; D6 does not create or edit that lane's file.
+The [canonical policy draft](../../privacy-policy.md) is merged, and Android bundles
+it offline with licenses. It is not a deployed HTTPS URL. iOS currently has a privacy
+note and About link, with no equivalent in-app policy route. Implement accessible
+in-app policy access before submission, in addition to publishing the metadata URL;
+[App Review 5.1.1](https://developer.apple.com/app-store/review/guidelines/#privacy)
+requires privacy information in the app and metadata. That engineering prerequisite
+is distinct from the human-owned publication step in the [central checklist](../README.md).
 
 - **Privacy Policy URL:** human to choose and publish a stable public HTTPS page
   rendered from lane E's policy. A repository path is not a published policy URL.

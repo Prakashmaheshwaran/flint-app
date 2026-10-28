@@ -33,15 +33,19 @@ blocking on every device.
 
 Do not add stationary schedule/budget reliability, emergency-app safety,
 reboot/OEM survival, durable temporary access or full browser coverage claims
-until lane C provides the corresponding evidence. Do not advertise precise
-focus history, streaks, completion analytics or new Insights charts until lane F
-confirms those surfaces use real local events. Do not claim an uninstall lock,
+until the corresponding exact-candidate evidence exists. Local focus history,
+streaks and Insights use merged F event sources, with a bounded hosted Timer E2E;
+final public screenshots/claims still need genuine release-device acceptance and
+must not imply complete pass/coverage/interception producers. Do not claim an uninstall lock,
 parental-control/enterprise status, disability-assistance tool status, Google
 approval, universal browser support or data recovery/cloud backup.
 
-Widget and ongoing-session claims remain pending lane K's final release/device
+Widget and ongoing-session code merged in PR126; public delivery claims remain pending
 evidence. Describe observation times and planned-end estimates accurately; do not
 imply that a cached widget proves current protection or completed focus time.
+The local F history schema, 400-day retention target and clear-history limits are now
+documented in [Data safety](data-safety.md). Hosted Timer E2E proves a bounded actual
+completion/early-end flow; full hardware/history/outbox claims remain separate.
 
 Lane C's Settings/uninstall/disable interception removal landed in PR105. Verify
 that source and E4's matching disclosure are present in the exact submission

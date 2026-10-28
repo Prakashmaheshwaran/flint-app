@@ -7,11 +7,17 @@ upload, signing enrollment, release, or publication has been performed.
 - [Target API assessment](target-api.md)
 - [Upload signing and key custody](signing.md)
 - [APK and app bundle verification](bundles.md)
+- [Shrinking, reflective WorkManager boundary and mapping evidence](shrinking.md)
 - [Listing copy and asset checklist](listing.md)
 - [On-device inventory and Data safety answers](data-safety.md)
 - [Accessibility declaration and demo shot list](accessibility.md)
 - [Permissions and foreground service declarations](permissions.md)
 - [Public privacy policy](../../privacy-policy.md)
+
+Android You includes the canonical policy and generated release-dependency/font notices
+as native offline screens; they need no WebView or network access. Regenerate/inspect
+the final artifact's legal inventory after dependency changes; historical library counts
+are not a current release count.
 
 ## Release gates
 
@@ -24,29 +30,16 @@ answers or publish the policy against a build that still reads Settings text or
 shields those system controls. Truthful disclosure alone does not resolve
 [Play's prohibition](https://support.google.com/googleplay/android-developer/answer/16558241).
 
-Before submission, the owner must:
+The [single owner submission checklist](../README.md#one-human-owned-submission-checklist)
+covers account/signing, final artifact/data inventory, hardware acceptance, public URLs,
+assets/declarations, upload/review and publication. The platform files above provide the
+technical inputs; none of their unchecked tasks is a completion claim.
 
-1. Confirm the submission source contains PR105 and the matching E4 disclosure; inspect
-   the exact release artifact and demonstrate freely reachable disable/uninstall
-   controls. Reconcile all drafts if the final code differs.
-2. Obtain green exact-head Android CI and script selftests for packaging changes;
-   complete lane C safety/enforcement and lane F real-history acceptance. Build
-   and unit tests do not prove physical-device/OEM behavior.
-3. Generate and securely back up the owner upload key, configure signing, enroll
-   in Play App Signing, and verify the bundle signer and update-install path.
-   Development-signed previews are not store submissions.
-4. Reconcile the final data inventory, SDK/dependency list and merged permissions
-   against the AAB; confirm no network/account/debug sandbox code. Publish the
-   privacy policy at a public static HTTPS URL under owner control and provide
-   that URL and the real developer/support contact in Console. No URL is live
-   merely because the Markdown exists.
-5. Capture real release-build screenshots and declaration videos. Complete
-   Accessibility and FGS declarations, Data safety, app access, ads, target
-   audience and content-rating forms with the exact current Console questions.
-   No accounts/login are needed; grant special access manually on a test device.
-6. Complete any account/device verification and testing requirements shown in the
-   owner's Console, then explicitly authorize upload and review submission.
-   Acceptance and production rollout remain Google's and the owner's decisions.
+Merged F history, K glance/notification code and C139 editor state are inventoried in
+[data-safety.md](data-safety.md). Use the [capability ledger](../../acceptance/v1-capability-ledger.md)
+for current live integration boundaries and the [shared device plan](../../acceptance/device-acceptance-plan.md)
+for actual results. This package remains blocked on final artifact and physical/OEM proof,
+owner signing/Play delivery and truthful declaration review.
 
 All policy links in this package were accessed **2026-10-28**. Refresh them at
 submission; the drafts do not assert eligibility or predict review outcomes.
