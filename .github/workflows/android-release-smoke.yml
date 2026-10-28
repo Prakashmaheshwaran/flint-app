@@ -3,7 +3,7 @@ name: Android release smoke
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    paths: ['android-app/**', 'scripts/android-e2e.sh', 'scripts/android-release-instrumentation.sh', 'scripts/verify_instrumentation_result.py', '.github/workflows/android-release-smoke.yml']
+    paths: ['android-app/**', 'scripts/android-e2e.sh', 'scripts/android-release-instrumentation.sh', 'scripts/verify_instrumentation_result.py', 'scripts/ci_android_emulator.py', '.github/actions/android-emulator-cache/**', '.github/workflows/android-release-smoke.yml']
 
 permissions:
   contents: read
@@ -47,6 +47,7 @@ jobs:
           if target != root.get('package') or target != 'com.flint.peakfocus.test':
               raise SystemExit('Instrumentation must target its isolated test package')
           PY
+      - uses: ./.github/actions/android-emulator-cache
       - name: Test installed release rule persistence and actual Accessibility shield
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -54,6 +55,8 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_2
+          avd-name: flint-ci-api36
+          force-avd-creation: false
           ram-size: 2048M
           emulator-boot-timeout: 300
           disable-animations: true

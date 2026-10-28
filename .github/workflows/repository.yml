@@ -3,9 +3,9 @@ name: Repository checks
 on:
   push:
     branches: [main]
-    paths: ['scripts/**', 'Makefile', '.github/workflows/**']
+    paths: ['scripts/**', 'Makefile', '.github/workflows/**', '.github/actions/**']
   pull_request:
-    paths: ['scripts/**', 'Makefile', '.github/workflows/**']
+    paths: ['scripts/**', 'Makefile', '.github/workflows/**', '.github/actions/**']
   workflow_dispatch:
 
 permissions:
