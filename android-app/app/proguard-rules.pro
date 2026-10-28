@@ -30,3 +30,9 @@
 -checkdiscard class com.flint.peakfocus.** {
     @androidx.compose.ui.tooling.preview.Preview <methods>;
 }
+
+# Glance's WorkManager creates this generated Room database through reflection.
+# Retain its public no-argument constructor under release shrinking.
+-keep class androidx.work.impl.WorkDatabase_Impl {
+    public <init>();
+}
