@@ -26,6 +26,7 @@ internal object ProtectionStatusProjection {
         pathAConnected: Boolean,
         now: AccessClockStamp,
         legacyZone: String = TimeZone.getDefault().id,
+        timeLimitTier: (TimeLimit) -> BreakLevel = { it.breakLevel },
     ): ProtectionStatus {
         val inputs = listOf(focus, rulesReadiness, times, opens, editor)
         val readiness = when {
@@ -82,7 +83,7 @@ internal object ProtectionStatusProjection {
                 }
             }
             (times as StorageState.Ready).value.forEach { limit ->
-                add(timeCauseKey(limit.packageName), null, "Time limit", ProtectionStatus.CauseKind.TIME_LIMIT, limit.breakLevel)
+                add(timeCauseKey(limit.packageName), null, "Time limit", ProtectionStatus.CauseKind.TIME_LIMIT, timeLimitTier(limit))
             }
             (opens as StorageState.Ready).value.forEach { limit ->
                 add(openCauseKey(limit.packageName), null, "Open limit", ProtectionStatus.CauseKind.OPEN_LIMIT, limit.breakLevel)
