@@ -11,6 +11,9 @@ enum FlintShortcutsError: Error, LocalizedError {
     case noSelectionAvailable
     case noActiveSession
     case hardcoreLocked
+    /// Harder: a wait started (or is still running) before the session can be ended.
+    case waitRunning(remaining: TimeInterval)
+    case stateUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -19,7 +22,12 @@ enum FlintShortcutsError: Error, LocalizedError {
         case .noActiveSession:
             return "Nothing is being blocked right now."
         case .hardcoreLocked:
-            return "This is a Hardcore session — it can't be stopped until it ends."
+            return "This is a Hardcore session — it can't be stopped early. It ends on its own, or use the Emergency Pass in Flint."
+        case let .waitRunning(remaining):
+            let minutes = max(1, Int((remaining / 60).rounded(.up)))
+            return "This is a Harder session: a \(minutes)-minute wait is running. Run this again after it to end the session."
+        case .stateUnavailable:
+            return "Flint couldn't read its protection state, so nothing was changed. Open Flint to check."
         }
     }
 }
@@ -53,7 +61,8 @@ enum FlintShortcutsRunner {
             duration: request.duration,
             breakLevel: request.breakLevel,
             name: request.name,
-            source: source
+            source: source,
+            origin: .shortcut
         )
     }
 
@@ -78,12 +87,19 @@ enum FlintShortcutsRunner {
         return try start(request, source: .pomodoro)
     }
 
-    /// Stop the running session, honoring Hardcore (which can't be ended early until it expires).
+    /// Stop the running session through the same tier rules as the app (ADR-012 §2, PC-07):
+    /// Easy stops (running the shortcut is the explicit request); Harder starts its persisted
+    /// wait and stops when the shortcut is run again after it; Hardcore is refused.
     static func stopActiveSession() throws {
         let controller = FlintSessionController()
-        guard let active = controller.activeSession else { throw FlintShortcutsError.noActiveSession }
-        guard controller.canStop(active) else { throw FlintShortcutsError.hardcoreLocked }
-        controller.stop(route: .shortcutStop)
+        switch controller.requestStop(route: .shortcutStop, confirmed: true) {
+        case .stopped: return
+        case let .waiting(remaining): throw FlintShortcutsError.waitRunning(remaining: remaining)
+        case .readyToConfirm, .needsConfirmation: throw FlintShortcutsError.waitRunning(remaining: 0)
+        case .denied: throw FlintShortcutsError.hardcoreLocked
+        case .notApplicable: throw FlintShortcutsError.noActiveSession
+        case .unavailable: throw FlintShortcutsError.stateUnavailable
+        }
     }
 }
 #endif

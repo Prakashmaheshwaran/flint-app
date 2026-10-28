@@ -8,53 +8,60 @@ import FlintCore
 /// "turn a `FlintSessionRequest` into a running block, then tear it down again" glue so the intent
 /// stays a thin shell over `FlintSessionController`.
 ///
-/// One-directional by design (see `FlintFocusFilterConfig`): a Focus turning **on** starts an
-/// open-ended block; turning it **off** stops *the block this filter started* — identified by
-/// `sessionName` so the filter never disturbs a manual "Block Now" or a hand-started session.
+/// One-directional by design (see `FlintFocusFilterConfig`): a Focus turning **on** starts a
+/// block; turning it **off** asks to end *the block this filter owns* — identified by its origin,
+/// so the filter never disturbs a manual "Block Now" or a hand-started session.
 struct FocusFilterController {
-    /// Tags the active session as Focus-Filter-owned so `deactivate()` only stops blocks this
-    /// controller started. Matches the name on `FlintFocusFilterConfig.sessionRequest`.
-    static let sessionName = "Focus Filter"
+    /// The session name this filter gives its blocks (older builds identified them by it).
+    static let sessionName = FlintSessionController.legacyFocusFilterName
+    /// The Focus filter's owner id on the sessions it starts (ADR-012 §3 ownership).
+    static let ownerID = "focus-filter"
 
     private let controller = FlintSessionController()
 
     init() {}
 
-    /// Start (or keep) the block described by `request`. Idempotent: if our Focus-Filter session is
-    /// already running, it's left alone (re-applying would reset the start time). Resolves
-    /// `appGroupID` to a saved preset's selection, falling back to the last-used selection, and
-    /// no-ops — rather than throwing — when there's nothing to block (an empty preset shouldn't make
-    /// turning a Focus on fail).
+    /// Start the block described by `request` beside — never over — a running session: iOS Flint
+    /// runs one session at a time, so a Focus turning on while another session runs starts
+    /// nothing (ADR-012 §3, "A Focus toggle is not authority over another session"). Idempotent
+    /// when its own block already runs. A refusal is recorded for Settings, never silent.
     @discardableResult
     func activate(_ request: FlintSessionRequest) -> Bool {
-        if let active = controller.activeSession, active.name == Self.sessionName { return true }
+        if let active = controller.activeSession, controller.isOwnedByFocusFilter(active) { return true }
 
         guard let selection = resolveSelection(for: request.appGroupID),
-              selectionCount(selection) > 0 else { return false }
+              selectionCount(selection) > 0 else {
+            FlintSessionHealth.recordRefusedStart(name: Self.sessionName, reason: "Nothing is selected to block.")
+            return false
+        }
 
         do {
             _ = try controller.startBlockNow(
                 selection: selection,
-                duration: request.duration,   // 0 = open-ended; the Focus owns the lifetime
+                duration: request.duration,   // 0 = while the Focus is on (Easy only)
                 breakLevel: request.breakLevel,
                 name: Self.sessionName,
-                source: .focusFilter
+                source: .focusFilter,
+                origin: .focusFilter,
+                ownerID: Self.ownerID,
+                replacing: false
             )
             return true
         } catch {
-            // The Focus turns on regardless. A refused registration is still recorded by the
-            // controller in FlintSessionHealth for Settings to show.
+            FlintSessionHealth.recordRefusedStart(
+                name: Self.sessionName,
+                reason: (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+            )
             return false
         }
     }
 
-    /// Stop the Focus-Filter block when the Focus ends. Only touches a session this controller
-    /// started. Note this stops *even a Hardcore* Focus-Filter block: turning the Focus off is the
-    /// block's legitimate end (the Focus is its timer). Hardcore still blocks the in-app Stop button
-    /// via `FlintSessionController.canStop` — only the system Focus-off can end it here.
+    /// The Focus turned off: an owner-ended stop request for the block this filter owns, under
+    /// the block's tier (ADR-012 §1, PC-08). Easy follows the Focus off; Harder starts its
+    /// persisted wait (finish ending it in Flint after the wait); a finite Hardcore block keeps
+    /// running until its end. Blocks from an older build keep their old Focus-off exit (§12).
     func deactivate() {
-        guard let active = controller.activeSession, active.name == Self.sessionName else { return }
-        controller.stop(route: .focusFilterOff)
+        controller.requestStop(route: .focusFilterOff, confirmed: true)
     }
 
     // MARK: Selection resolution

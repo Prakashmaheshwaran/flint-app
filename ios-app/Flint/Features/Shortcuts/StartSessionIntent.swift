@@ -16,7 +16,7 @@ struct StartSessionIntent: AppIntent {
     /// Background by design: blocking shouldn't yank the user out of whatever they're doing.
     static var openAppWhenRun = false
 
-    @Parameter(title: "Minutes", description: "How long to focus. 0 means until you stop.", default: 25)
+    @Parameter(title: "Minutes", description: "How long to focus. 0 means until you stop (Easy only).", default: 25)
     var minutes: Int
 
     @Parameter(title: "Strictness", default: .easy)

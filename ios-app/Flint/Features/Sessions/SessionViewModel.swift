@@ -34,6 +34,15 @@ final class SessionViewModel: ObservableObject {
         }
     }
     @Published var errorText: String?
+    /// A Harder early stop in progress: the persisted wait (ADR-012 §4) and its end.
+    @Published private(set) var harderStop: HarderStop?
+
+    enum HarderStop: Equatable {
+        /// The wait is running until `until`; `total` drives the ring.
+        case waiting(until: Date, total: TimeInterval)
+        /// The wait has passed; a final explicit confirmation ends the session.
+        case ready(total: TimeInterval)
+    }
 
     private let controller = FlintSessionController()
     private var timer: Timer?
@@ -141,17 +150,49 @@ final class SessionViewModel: ObservableObject {
         }
     }
 
+    /// The session screen's "End session". Easy ends now (the tap is the confirmation); Harder
+    /// starts or resumes its persisted wait; Hardcore is refused.
     func stop() {
         guard let active else { return }
-        guard controller.canStop(active) else {
-            errorText = "Hardcore session — it can't be stopped until it ends."
-            return
+        apply(controller.requestStop(route: .manualStop, confirmed: active.breakLevel == .easy))
+    }
+
+    /// The final confirmation once a Harder wait has passed.
+    func confirmStop() {
+        apply(controller.requestStop(route: .manualStop, confirmed: true))
+    }
+
+    /// "I'm good, go back": cancels the wait without counting it.
+    func cancelStop() {
+        controller.cancelPendingStop()
+        harderStop = nil
+    }
+
+    private func apply(_ outcome: FlintSessionStopOutcome) {
+        switch outcome {
+        case .stopped:
+            active = nil
+            remaining = 0
+            harderStop = nil
+            timer?.invalidate()
+        case let .waiting(left):
+            let total: TimeInterval
+            if case let .waiting(_, previous)? = harderStop { total = max(previous, left) } else { total = left }
+            harderStop = .waiting(until: Date().addingTimeInterval(left), total: total)
+        case .readyToConfirm:
+            harderStop = .ready(total: harderStop.map(\.total) ?? 60)
+        case .needsConfirmation:
+            break
+        case .denied:
+            harderStop = nil
+            errorText = "Hardcore session — it can't be stopped early. It ends on its own, or use the Emergency Pass."
+        case .notApplicable:
+            harderStop = nil
+            active = controller.activeSession
+        case .unavailable:
+            harderStop = nil
+            errorText = "Flint couldn't read its protection state, so nothing was changed."
         }
-        // In-app, Harder only stops after its wait (SessionView's BreakWaitView).
-        controller.stop(route: active.breakLevel == .harder ? .harderWait : .manualStop)
-        self.active = nil
-        remaining = 0
-        timer?.invalidate()
     }
 
     var emergencyPassAvailable: Bool { controller.emergencyPassAvailable() }
@@ -199,6 +240,14 @@ final class SessionViewModel: ObservableObject {
             self.finished = Finished(id: session.id, name: session.name, focusedSeconds: session.focusedSeconds,
                                      todaySeconds: summary.days.last?.focusedSeconds, isPreview: history.isPreview,
                                      historyDegraded: summary.availability == .degraded)
+        }
+    }
+}
+
+extension SessionViewModel.HarderStop {
+    var total: TimeInterval {
+        switch self {
+        case let .waiting(_, total), let .ready(total): return total
         }
     }
 }

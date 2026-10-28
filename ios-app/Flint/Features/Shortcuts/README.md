@@ -8,7 +8,7 @@ target count at 5; App Intents ship inside the host app).
 |---|---|
 | `StartSessionIntent.swift` | "Start a Flint session" — timed Block Now over a saved selection or app-group. |
 | `StartPomodoroIntent.swift` | "Start a Flint pomodoro" — first focus round of a focus/break cycle. |
-| `StopSessionIntent.swift` | "Stop my Flint session" — ends the block (Hardcore can't be ended early). |
+| `StopSessionIntent.swift` | "Stop my Flint session" — asks to end the block under the same tier rules as the app (see below). |
 | `FlintShortcuts.swift` | `AppShortcutsProvider` — Siri phrases + Shortcuts-app seeding. |
 | `FlintShortcutsRunner.swift` | The seam to `FlintCore`: resolve a selection → drive `FlintSessionController`. |
 | `FlintAppGroupEntity.swift` | Surfaces saved app-groups (presets) as a Shortcuts entity. |
@@ -27,6 +27,14 @@ target count at 5; App Intents ship inside the host app).
 
 ## Honest limits (match the repo's standard — say what's verified)
 
+- **Same rights as the app (ADR-012 §2/§3).** Stopping an Easy session ends it. Stopping a Harder
+  session starts its persisted wait (1, then 5, then 15 minutes for repeated early stops) and the
+  shortcut reports how long is left; run it again after the wait to end the session. A Hardcore
+  session can't be stopped early from a shortcut — it ends on its own, or with the Emergency Pass in
+  Flint. Starting a session while one runs replaces it only if that is allowed for the running
+  session's tier: a replacement that keeps everything protected at least as long and as strictly is
+  allowed; a weaker one is allowed for Easy, waits for Harder, and is refused for Hardcore. Harder
+  and Hardcore sessions need a set number of minutes (0 = until stopped is Easy-only).
 - **Simulator can't enforce.** Screen Time shields apply only on a physical, Screen-Time-authorized
   device. On the Simulator `make ios-build` proves these **compile and the logic path runs**, but the
   block won't visibly take effect; `startBlockNow` still records the `FlintActiveSession`.

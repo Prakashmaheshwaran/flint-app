@@ -5,7 +5,6 @@ import FlintCore
 /// pulse around it. The bottom bar holds the only ways out the break level allows.
 struct SessionView: View {
     @ObservedObject var vm: SessionViewModel
-    @State private var waitingToStop = false
     @State private var showPass = false
 
     var body: some View {
@@ -60,11 +59,10 @@ struct SessionView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .fullScreenCover(isPresented: $waitingToStop) {
-            BreakWaitView(onBack: { waitingToStop = false }, onStop: {
-                waitingToStop = false
-                vm.stop()
-            })
+        .fullScreenCover(isPresented: Binding(get: { vm.harderStop != nil }, set: { if !$0 { vm.cancelStop() } })) {
+            if let wait = vm.harderStop {
+                BreakWaitView(wait: wait, onBack: vm.cancelStop, onStop: vm.confirmStop)
+            }
         }
         .preferredColorScheme(.dark)
     }
@@ -84,7 +82,7 @@ struct SessionView: View {
             case .easy:
                 Button("End session") { vm.stop() }.buttonStyle(GhostButtonStyle())
             case .harder:
-                Button("End session") { waitingToStop = true }.buttonStyle(GhostButtonStyle())
+                Button("End session") { vm.stop() }.buttonStyle(GhostButtonStyle())
             case .hardcore:
                 Button(vm.emergencyPassAvailable ? "Emergency Pass · 1" : "Pass used this week") {
                     withAnimation(.easeOut(duration: 0.3)) { showPass = true }
@@ -193,17 +191,26 @@ struct SunArc: View {
 }
 
 /// Harder's friction: a breathing wait before an early stop. If the urge passes, go back.
+/// The wait itself is persisted by Flint (1, then 5, then 15 minutes for repeated early stops
+/// of the same session, ADR-012 §4) — closing this screen or the app doesn't reset it, and going
+/// back cancels it without counting.
 struct BreakWaitView: View {
+    let wait: SessionViewModel.HarderStop
     let onBack: () -> Void
     let onStop: () -> Void
-    static let wait: TimeInterval = 150
 
-    @State private var startedAt = Date()
     @State private var now = Date()
     @State private var breathe = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var left: TimeInterval { max(0, Self.wait - now.timeIntervalSince(startedAt)) }
+    private var total: TimeInterval { max(1, wait.total) }
+
+    private var left: TimeInterval {
+        switch wait {
+        case let .waiting(until, _): return max(0, until.timeIntervalSince(now))
+        case .ready: return 0
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -214,7 +221,7 @@ struct BreakWaitView: View {
                     .flintTitle(30)
                     .multilineTextAlignment(.center)
                     .padding(.top, 18)
-                Text("Ending opens when the ring closes. If the urge has passed by then, go back.")
+                Text("Ending early opens when the ring closes. If the urge has passed by then, go back — that doesn't count against you.")
                     .flintSecondary(15)
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)
@@ -230,7 +237,7 @@ struct BreakWaitView: View {
                         .scaleEffect(reduceMotion ? 0.9 : (breathe ? 1 : 0.78))
                     Circle().stroke(FlintBrand.bone(0.12), lineWidth: 1.2).frame(width: 256, height: 256)
                     Circle()
-                        .trim(from: 0, to: 1 - left / Self.wait)
+                        .trim(from: 0, to: 1 - left / total)
                         .stroke(FlintBrand.ember, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                         .rotationEffect(.degrees(-90))
                         .frame(width: 256, height: 256)

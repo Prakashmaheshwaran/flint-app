@@ -4,8 +4,10 @@ import FlintCore
 
 /// Flint's iOS **Focus Filter** (`SetFocusFilterIntent`). The user attaches it to a system Focus
 /// (Settings → Focus → a Focus → Add Filter → Flint); iOS then runs `perform()` whenever that Focus
-/// turns on or off. On → Flint starts an open-ended block of the chosen preset; off → it stops that
-/// block. One-directional: stopping the block inside Flint never turns the Focus off.
+/// turns on or off. On → Flint starts a block of the chosen preset (Easy may last while the Focus
+/// is on; Harder/Hardcore need a set length) unless another session is already running; off →
+/// it asks to end that block under its tier: Easy ends, Harder starts its wait, Hardcore keeps
+/// running until its end. Stopping the block inside Flint never turns the Focus off.
 ///
 /// **Verified by build only.** Focus activation is a device-side system event the Simulator can't
 /// raise, so the on/off path can't be exercised in CI. What's exercised on device is the reconcile
@@ -21,9 +23,14 @@ struct FlintFocusFilter: SetFocusFilterIntent {
     @Parameter(title: "Block")
     var preset: FlintAppGroupEntity?
 
-    /// How hard the auto-started block is to stop from inside Flint while the Focus is on.
+    /// How hard the auto-started block is to stop, from Flint or by turning the Focus off.
     @Parameter(title: "Strictness", default: .easy)
     var strictness: FocusFilterBreakLevel
+
+    /// Harder and Hardcore blocks need a set length (ADR-012 §1); 0 = while the Focus is on,
+    /// which is Easy-only. Filters saved by older builds read 0.
+    @Parameter(title: "Minutes", description: "How long the block lasts. 0 = while the Focus is on (Easy only).", default: 0)
+    var minutes: Int
 
     init() {}
 
@@ -31,15 +38,17 @@ struct FlintFocusFilter: SetFocusFilterIntent {
     var displayRepresentation: DisplayRepresentation {
         DisplayRepresentation(
             title: "Block \(preset?.name ?? "your last selection")",
-            subtitle: "\(strictness.label) · stops when the Focus ends"
+            subtitle: minutes > 0
+                ? "\(strictness.label) · \(minutes) min"
+                : "\(strictness.label) · while the Focus is on"
         )
     }
 
-    /// The open-ended block this filter's parameters describe (lifetime tied to the Focus).
+    /// The block this filter's parameters describe.
     var sessionRequest: FlintSessionRequest {
         FlintSessionRequest(
             appGroupID: preset?.id,
-            durationMinutes: 0,
+            durationMinutes: max(0, minutes),
             breakLevel: strictness.breakLevel,
             allowListMode: false,   // brick/allow-list mode isn't wired into the engine yet — don't imply it
             name: FocusFilterController.sessionName
@@ -65,6 +74,7 @@ struct FlintFocusFilter: SetFocusFilterIntent {
         let config = FlintFocusFilterConfig.load()
         let suggestion = FlintFocusFilter()
         suggestion.strictness = FocusFilterBreakLevel(config.breakLevel)
+        suggestion.minutes = config.durationMinutes
         if let id = config.appGroupID,
            let group = FlintGroupStore()?.loadAppGroups().first(where: { $0.id == id }) {
             suggestion.preset = FlintAppGroupEntity(group)

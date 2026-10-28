@@ -251,6 +251,9 @@ public struct FlintSessionHealth: Codable, Equatable, Sendable {
 
     public var lastArmFailure: ArmFailure?
     public var lastTimeAnomaly: TimeAnomaly?
+    /// The last background start (a Focus turning on) that Flint refused, and why — so a refusal
+    /// is never silent (ADR-012 §1).
+    public var lastRefusedStart: ArmFailure?
     /// Set while a session is recorded as running but Screen Time authorization is not approved,
     /// i.e. iOS is enforcing nothing for it. Cleared once authorization is back or it ends.
     public var unauthorizedSince: Date?
@@ -273,6 +276,12 @@ public struct FlintSessionHealth: Codable, Equatable, Sendable {
 
     public func save(to defaults: UserDefaults? = .flintGroup) {
         defaults?.set(try? JSONEncoder().encode(self), forKey: Self.storageKey)
+    }
+
+    /// Record a refused background start for Settings to show.
+    public static func recordRefusedStart(name: String, reason: String, at date: Date = Date(),
+                                          in defaults: UserDefaults? = .flintGroup) {
+        update(in: defaults) { $0.lastRefusedStart = ArmFailure(sessionName: name, reason: reason, at: date) }
     }
 
     /// Load-modify-save; a no-op without the App Group.

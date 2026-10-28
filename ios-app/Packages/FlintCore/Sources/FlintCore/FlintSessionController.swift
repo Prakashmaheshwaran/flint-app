@@ -13,6 +13,21 @@ public enum FlintSessionError: Error, LocalizedError, Equatable {
     case durationTooLong(maximumMinutes: Int)
     /// iOS refused the auto-clear registration, so the session could not end on its own.
     case armingFailed(reason: String)
+    /// Harder and Hardcore need a set end time; only Easy may run "until I stop" (ADR-012 §1).
+    case needsFiniteEnd
+    /// Another session is running and this request didn't ask to replace it; iOS Flint runs one
+    /// session at a time, so nothing changed (ADR-012 §3 `capacity_unavailable`).
+    case capacityUnavailable(runningName: String, until: Date?)
+    /// The running session is Hardcore and the request would weaken it; nothing changed.
+    case replacementDenied(until: Date?)
+    /// The running session is Harder: a wait before replacing it is running. Ask again once it
+    /// has passed to confirm.
+    case replacementWaiting(remaining: TimeInterval)
+    /// Protection state couldn't be read, so no weakening is allowed (ADR-012 §8).
+    case protectionStateUnavailable
+    /// The request needs the user's explicit confirmation first (a Hardcore start, or replacing
+    /// the running session).
+    case needsConfirmation
 
     public var errorDescription: String? {
         switch self {
@@ -25,7 +40,69 @@ public enum FlintSessionError: Error, LocalizedError, Equatable {
         case .armingFailed:
             return "iOS wouldn't schedule this session's end, so it wasn't started. Try again, or remove "
                 + "a schedule or limit to free a slot."
+        case .needsFiniteEnd:
+            return "Harder and Hardcore sessions need an end time. Choose how long it should run."
+        case let .capacityUnavailable(running, until):
+            return "“\(running)” is already running\(Self.untilText(until)). Flint runs one session at a time."
+        case let .replacementDenied(until):
+            return "The running Hardcore session can't be replaced by a weaker one\(Self.untilText(until)). "
+                + "It ends on its own, or you can use the Emergency Pass in Flint."
+        case let .replacementWaiting(remaining):
+            return "The running session is Harder: wait \(Self.minutesText(remaining)), then ask again to replace it."
+        case .protectionStateUnavailable:
+            return "Flint couldn't read its protection state, so nothing was changed. Open Flint to check."
+        case .needsConfirmation:
+            return "Confirm this in Flint first."
         }
+    }
+
+    static func untilText(_ date: Date?) -> String {
+        guard let date else { return "" }
+        return " until \(date.formatted(date: .omitted, time: .shortened))"
+    }
+
+    static func minutesText(_ seconds: TimeInterval) -> String {
+        let minutes = max(1, Int((seconds / 60).rounded(.up)))
+        return minutes == 1 ? "1 minute" : "\(minutes) minutes"
+    }
+}
+
+/// How a session's start request arrived (ADR-012 §11 `originRoute`). The route never changes
+/// tier rights; it decides only who owns the session for an owner-ended stop.
+public enum FlintSessionOrigin: String, Codable, Equatable, Sendable {
+    case appUI = "app_ui"
+    case shortcut
+    case focusFilter = "focus_filter"
+    case automation
+}
+
+/// What a stop request did (ADR-012 §2 stop row).
+public enum FlintSessionStopOutcome: Equatable, Sendable {
+    case stopped
+    /// Harder: a persisted wait is running; `remaining` seconds until it can be confirmed.
+    case waiting(remaining: TimeInterval)
+    /// Harder: the wait has passed; ask again with `confirmed: true` to stop.
+    case readyToConfirm
+    /// Easy: the stop needs the user's explicit confirmation (`confirmed: true`).
+    case needsConfirmation
+    /// Not allowed now (Hardcore before its end); the pass is the only exit.
+    case denied(FlintDenialReason, until: Date?)
+    /// Nothing is running, or the session isn't owned by the requester.
+    case notApplicable
+    /// Protection state couldn't be read; nothing changed.
+    case unavailable
+}
+
+/// Opaque target identities a selection blocks, so replacement dominance can be decided.
+public struct FlintSessionTargets: Equatable {
+    public var applications: Set<AnyHashable>
+    public var categories: Set<AnyHashable>
+    public var webDomains: Set<AnyHashable>
+
+    public init(applications: Set<AnyHashable> = [], categories: Set<AnyHashable> = [], webDomains: Set<AnyHashable> = []) {
+        self.applications = applications
+        self.categories = categories
+        self.webDomains = webDomains
     }
 }
 
@@ -50,6 +127,7 @@ public struct FlintSelectionCounts: Equatable, Sendable {
 /// The session's `ManagedSettingsStore` ("flint"): shield, uninstall guard, teardown.
 public protocol FlintSessionShielding: AnyObject {
     func counts(of selection: FamilyActivitySelection) -> FlintSelectionCounts
+    func targets(of selection: FamilyActivitySelection) -> FlintSessionTargets
     func applyBlockList(_ selection: FamilyActivitySelection) throws
     func setDenyAppRemoval(_ deny: Bool)
     /// Drops everything on the store — shield, uninstall guard and any other session setting.
@@ -67,6 +145,9 @@ public protocol FlintSessionActivityRegistering: AnyObject {
 /// The App Group state a session reads and writes.
 public protocol FlintSessionStateStoring: AnyObject {
     func loadActiveSession() -> FlintActiveSession?
+    /// True when a session record is stored, even one that doesn't decode — so an unreadable
+    /// record is never mistaken for "no session" (ADR-012 §8).
+    func hasActiveSessionRecord() -> Bool
     func saveActiveSession(_ session: FlintActiveSession)
     func clearActiveSession()
     /// The picker's last selection (Today's default for the next start).
@@ -98,6 +179,11 @@ extension FlintGroupStore: FlintSessionStateStoring {
         )
     }
 
+    public func hasActiveSessionRecord() -> Bool {
+        // FlintGroupStore's own key for the active session (its Key enum is private to its file).
+        UserDefaults.flintGroup?.data(forKey: "flint.activeSession") != nil
+    }
+
     public func clearSessionSelection() {
         UserDefaults.flintGroup?.removeObject(forKey: Self.sessionSelectionKey)
     }
@@ -121,6 +207,8 @@ public struct FlintSessionEnvironment {
     public var shortSessionStrategy: FlintSessionAutoClearPlan.ShortSessionStrategy
     /// Where `FlintSessionHealth` persists.
     public var healthDefaults: () -> UserDefaults?
+    /// The cross-process protection ledger (Harder waits; ADR-012 §8). nil = unavailable.
+    public var ledger: () -> FlintProtectionLedger?
 
     public init(
         store: @escaping () -> FlintSessionStateStoring?,
@@ -129,7 +217,8 @@ public struct FlintSessionEnvironment {
         isAuthorized: @escaping () -> Bool,
         clock: FlintClock,
         shortSessionStrategy: FlintSessionAutoClearPlan.ShortSessionStrategy = FlintSessionAutoClearPlan.shortSessionStrategy,
-        healthDefaults: @escaping () -> UserDefaults?
+        healthDefaults: @escaping () -> UserDefaults?,
+        ledger: @escaping () -> FlintProtectionLedger? = { nil }
     ) {
         self.store = store
         self.shield = shield
@@ -138,6 +227,7 @@ public struct FlintSessionEnvironment {
         self.clock = clock
         self.shortSessionStrategy = shortSessionStrategy
         self.healthDefaults = healthDefaults
+        self.ledger = ledger
     }
 
     public static var live: FlintSessionEnvironment {
@@ -147,7 +237,8 @@ public struct FlintSessionEnvironment {
             registrar: LiveSessionRegistrar(),
             isAuthorized: { AuthorizationCenter.shared.authorizationStatus == .approved },
             clock: .system,
-            healthDefaults: { .flintGroup }
+            healthDefaults: { .flintGroup },
+            ledger: { FlintProtectionLedger.appGroup() }
         )
     }
 }
@@ -174,6 +265,8 @@ public struct FlintSessionReconcileReport: Equatable, Sendable {
     public var rearmFailed = false
     /// A session is recorded as running but Screen Time authorization is not approved.
     public var notAuthorized = false
+    /// A session record is stored but can't be read: its shield is kept, nothing is released.
+    public var recordUnreadable = false
     public var timeVerdict: FlintTimeIntegrity.Verdict = .unverifiable
 }
 
@@ -227,14 +320,27 @@ public final class FlintSessionController {
 
     // MARK: Start
 
-    /// Start an immediate block. `duration <= 0` means open-ended (until manually stopped).
+    /// Start an immediate block. `duration <= 0` means open-ended (until manually stopped),
+    /// which only Easy may use (ADR-012 §1).
+    ///
+    /// While another session runs: `replacing: false` (an additive start, e.g. a Focus turning on)
+    /// is refused with `capacityUnavailable` — iOS Flint runs one session at a time; with
+    /// `replacing: true` the replacement is decided by ADR-012 §2/§3 against the running
+    /// session's tier: a dominating replacement is allowed; a weaker one is allowed for Easy,
+    /// waits for Harder (the wait persists; ask again after it to replace), and is denied for
+    /// Hardcore. `confirmed` is the caller's explicit confirmation; an intent's explicit
+    /// parameters count as one.
     @discardableResult
     public func startBlockNow(
         selection: FamilyActivitySelection,
         duration: TimeInterval,
         breakLevel: BreakLevel,
         name: String = "Focus",
-        source: FlintSessionSource = .manual
+        source: FlintSessionSource = .manual,
+        origin: FlintSessionOrigin = .appUI,
+        ownerID: String? = nil,
+        replacing: Bool = true,
+        confirmed: Bool = true
     ) throws -> FlintActiveSession {
         Self.lock.lock(); defer { Self.lock.unlock() }
 
@@ -262,8 +368,54 @@ public final class FlintSessionController {
             }
         }
 
+        let kind: FlintCauseState.Kind = source == .pomodoro ? .pomodoro : .session
+        switch FlintProtectionPolicy.issue(forNew: kind, tier: breakLevel, duration: duration > 0 ? duration : nil) {
+        case .needsFiniteEnd?: throw FlintSessionError.needsFiniteEnd
+        case .tooLong?: throw FlintSessionError.durationTooLong(maximumMinutes: Int(FlintSessionAutoClearPlan.maximumDuration / 60))
+        case .nonPositive?: throw FlintSessionError.durationTooShort(minimumMinutes: 1)
+        case nil: break
+        }
+
+        if case .allow(confirm: true) = FlintProtectionPolicy.decideStart(
+            kind: kind, newTier: breakLevel, duration: duration > 0 ? duration : nil, capacityAvailable: true),
+            !confirmed {
+            throw FlintSessionError.needsConfirmation
+        }
+
         let now = FlintSessionAutoClearPlan.wholeSecond(atOrAfter: env.clock.now())
         let endsAt = duration > 0 ? now.addingTimeInterval(duration.rounded(.up)) : nil
+
+        // Arbitrate against a running session before anything changes (ADR-012 §2/§3).
+        if let running = store.loadActiveSession(), !running.isExpired(at: now) {
+            guard replacing else {
+                throw FlintSessionError.capacityUnavailable(runningName: running.name, until: running.endsAt)
+            }
+            let old = snapshot(of: running, selection: sessionSelection(for: running, in: store))
+            let targets = env.shield.targets(of: selection)
+            let new = FlintProtectionSnapshot(mode: .blockList(
+                applications: targets.applications, categories: targets.categories,
+                webDomains: targets.webDomains), tier: breakLevel, end: endsAt)
+            let cause = causeState(of: running, at: now)
+            switch FlintProtectionPolicy.decideReplace(new, over: old, for: cause) {
+            case let .allow(confirm):
+                if confirm, !confirmed { throw FlintSessionError.needsConfirmation }
+            case .notApplicable:
+                break
+            case .deny:
+                throw FlintSessionError.replacementDenied(until: running.endsAt)
+            case .deferUntil:
+                throw FlintSessionError.replacementDenied(until: running.endsAt)
+            case .wait:
+                let scope = Self.replacementScope(tier: breakLevel, duration: duration, counts: counts)
+                switch harderGate(for: running, kind: "replace", scope: scope, confirmed: confirmed) {
+                case .proceed: break
+                case let .waiting(remaining): throw FlintSessionError.replacementWaiting(remaining: remaining)
+                case .ready: throw FlintSessionError.replacementWaiting(remaining: 0)
+                case .unavailable: throw FlintSessionError.protectionStateUnavailable
+                }
+            }
+        }
+
         let monitorName = Self.makeMonitorName()
         let plan = endsAt.map {
             FlintSessionAutoClearPlan.make(start: now, end: $0, calendar: env.clock.calendar(),
@@ -279,7 +431,10 @@ public final class FlintSessionController {
             bootSessionID: env.clock.bootSessionID(),
             autoClearTimeZoneID: plan?.timeZoneIdentifier,
             autoClearUTCOffset: plan?.utcOffsetAtEnd,
-            usesEndWarning: plan.map(\.usesEndWarning)
+            usesEndWarning: plan.map(\.usesEndWarning),
+            contractVersion: FlintActiveSession.currentContractVersion,
+            origin: origin.rawValue,
+            ownerID: ownerID
         )
         let previous = store.loadActiveSession()
         let previousSelection = previous.flatMap { store.loadSessionSelection(sessionID: $0.id) }
@@ -337,6 +492,7 @@ public final class FlintSessionController {
             $0.lastArmFailure = nil
             $0.lastTimeAnomaly = nil
             $0.unauthorizedSince = nil
+            $0.lastRefusedStart = nil
         }
         FlintSessionLifecycle.didStart(session, replacing: previous, source: source, at: now)
         return session
@@ -344,8 +500,8 @@ public final class FlintSessionController {
 
     // MARK: Stop
 
-    /// Whether the active session is allowed to be stopped right now.
-    /// Hardcore can't be stopped early (until it expires, or an Emergency Pass is spent).
+    /// Whether an in-app stop is possible at all (immediately for Easy, after the persisted wait
+    /// for Harder). Hardcore can't be stopped early — expiry or an Emergency Pass are its exits.
     public func canStop(_ session: FlintActiveSession) -> Bool {
         switch session.breakLevel {
         case .easy, .harder:
@@ -355,9 +511,58 @@ public final class FlintSessionController {
         }
     }
 
-    /// Tear down the active session: clear shields — which also drops the Hardcore uninstall
-    /// guard living on the same store — stop its auto-clear, forget the session. A session past
-    /// its planned end is reported as completed whatever route ended it.
+    /// Ask to end the running session early, through ADR-012 §2's stop row for its current tier.
+    /// `route == .focusFilterOff` is an owner-ended request and only applies to a session the
+    /// Focus filter owns. Easy needs `confirmed` (an explicit tap or an intent); Harder starts or
+    /// resumes the persisted 60/300/900 s wait and stops only when asked again with `confirmed`
+    /// after it has passed; Hardcore is denied. A session already past its end just completes.
+    @discardableResult
+    public func requestStop(route: FlintSessionEndRoute = .manualStop, confirmed: Bool) -> FlintSessionStopOutcome {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        let store = env.store()
+        let now = env.clock.now()
+        guard let session = store?.loadActiveSession() else {
+            if store?.hasActiveSessionRecord() == true { return .unavailable }
+            env.shield.clear()
+            return .notApplicable
+        }
+        if session.isExpired(at: now) {
+            end(session, route: .completed, at: now, in: store)
+            return .stopped
+        }
+        let ownerEnded = route == .focusFilterOff
+        if ownerEnded, !isOwnedByFocusFilter(session) { return .notApplicable }
+
+        switch FlintProtectionPolicy.decide(ownerEnded ? .ownerEnded : .stopEarly, for: causeState(of: session, at: now)) {
+        case let .allow(confirm):
+            if confirm, !confirmed { return .needsConfirmation }
+            end(session, route: route, at: now, in: store)
+            return .stopped
+        case .wait:
+            switch harderGate(for: session, kind: "stop", scope: [], confirmed: confirmed) {
+            case .proceed:
+                end(session, route: route == .manualStop ? .harderWait : route, at: now, in: store)
+                return .stopped
+            case let .waiting(remaining): return .waiting(remaining: remaining)
+            case .ready: return .readyToConfirm
+            case .unavailable: return .unavailable
+            }
+        case let .deny(reason):
+            return .denied(reason, until: session.endsAt)
+        case .deferUntil, .notApplicable:
+            return .notApplicable
+        }
+    }
+
+    /// Cancel a pending Harder stop wait ("I'm good, go back"): spends nothing, keeps the count.
+    public func cancelPendingStop() {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        guard let session = env.store()?.loadActiveSession() else { return }
+        _ = env.ledger()?.transaction { $0.cancelHarderWait(cause: session.id) }
+    }
+
+    /// Unconditional teardown, kept for tests and for paths that already passed the policy. App
+    /// entry points use `requestStop(route:confirmed:)`.
     public func stop(route: FlintSessionEndRoute = .manualStop) {
         Self.lock.lock(); defer { Self.lock.unlock() }
         let store = env.store()
@@ -394,6 +599,82 @@ public final class FlintSessionController {
         env.registrar.stopMonitoring([session.monitorName])
     }
 
+    // MARK: Policy adapters (ADR-012)
+
+    /// The session as the policy sees it. Sessions saved before the contract keep their legacy
+    /// rights until they end (§12).
+    private func causeState(of session: FlintActiveSession, at now: Date) -> FlintCauseState {
+        let count = (try? env.ledger()?.read().get())?.harder[session.id]?.committedCount ?? 0
+        return FlintCauseState(
+            causeID: session.id,
+            kind: .session,
+            tier: session.breakLevel,
+            isActive: !session.isExpired(at: now),
+            end: session.endsAt,
+            harderCount: count,
+            legacyRights: session.contractVersion == nil
+        )
+    }
+
+    private func snapshot(of session: FlintActiveSession, selection: FamilyActivitySelection?) -> FlintProtectionSnapshot<AnyHashable> {
+        let targets = selection.map(env.shield.targets(of:)) ?? FlintSessionTargets()
+        return FlintProtectionSnapshot(mode: .blockList(applications: targets.applications,
+                                                        categories: targets.categories,
+                                                        webDomains: targets.webDomains),
+                                       tier: session.breakLevel, end: session.endsAt)
+    }
+
+    /// The Focus filter owns sessions it started; older builds marked them only by name.
+    public func isOwnedByFocusFilter(_ session: FlintActiveSession) -> Bool {
+        if let origin = session.origin { return origin == FlintSessionOrigin.focusFilter.rawValue }
+        return session.name == Self.legacyFocusFilterName
+    }
+
+    /// The name older builds gave Focus-filter sessions (their only ownership mark).
+    public static let legacyFocusFilterName = "Focus Filter"
+
+    /// What changed in a replacement request, as a stable scope: a different request needs a new
+    /// wait (ADR-012 §4). Hash values aren't stable across launches, so counts stand in for targets.
+    static func replacementScope(tier: BreakLevel, duration: TimeInterval, counts: FlintSelectionCounts) -> [String] {
+        ["tier:\(tier.rawValue)", "duration:\(Int(duration))",
+         "apps:\(counts.applications)", "categories:\(counts.categories)", "web:\(counts.webDomains)"]
+    }
+
+    private enum HarderGate: Equatable {
+        case proceed
+        case waiting(TimeInterval)
+        case ready
+        case unavailable
+    }
+
+    /// The persisted Harder wait for one weakening operation (ADR-012 §4) in one ledger
+    /// transaction: start or resume it, and commit it — counting it once — only when it has
+    /// passed and the caller confirmed. A committed operation is remembered by id, so a crash
+    /// between the commit and the teardown still proceeds on the next request.
+    private func harderGate(for session: FlintActiveSession, kind: String, scope: [String], confirmed: Bool) -> HarderGate {
+        guard let ledger = env.ledger() else { return .unavailable }
+        let operationID = "\(kind).\(session.id).\(scope.joined(separator: ","))"
+        let clock = env.clock
+        let result = ledger.transaction { state -> HarderGate in
+            let now = FlintLedgerInstant(clock: clock)
+            if state.operation(operationID) != nil { return .proceed }
+            switch state.requestHarderWait(cause: session.id, kind: kind, scope: scope,
+                                           operationID: operationID, at: now) {
+            case let .waiting(remaining):
+                return .waiting(remaining)
+            case .matured:
+                guard confirmed else { return .ready }
+                switch state.commitHarderWait(cause: session.id, operationID: operationID, at: now) {
+                case .committed, .alreadyCommitted: return .proceed
+                case .notMatured, .nothingPending: return .unavailable
+                }
+            case .none:
+                return .unavailable
+            }
+        }
+        return (try? result.get()) ?? .unavailable
+    }
+
     // MARK: Reconcile (launch; foreground and clock/time-zone changes once B3 wires them)
 
     /// Bring the session's out-of-app state back in line with its record: record any wall-clock
@@ -408,6 +689,14 @@ public final class FlintSessionController {
         let store = env.store()
         let now = env.clock.now()
         guard let session = store?.loadActiveSession() else {
+            // A stored record that doesn't decode is not "no session": keep the last-good shield
+            // and report it rather than releasing protection on corrupt state (ADR-012 §8).
+            if store?.hasActiveSessionRecord() == true {
+                FlintSessionHealth.update(in: env.healthDefaults()) {
+                    $0.lastArmFailure = .init(sessionName: "Focus session", reason: "the running session's record can't be read", at: now)
+                }
+                return FlintSessionReconcileReport(outcome: .running, rearmFailed: true, recordUnreadable: true)
+            }
             // Nothing else writes the session's store, and every start/stop in this process
             // holds the lock — so with no record, whatever is left on it is stale.
             env.shield.clear()
@@ -648,6 +937,14 @@ final class LiveSessionShield: FlintSessionShielding {
             applications: selection.applicationTokens.count,
             categories: selection.categoryTokens.count,
             webDomains: selection.webDomainTokens.count
+        )
+    }
+
+    func targets(of selection: FamilyActivitySelection) -> FlintSessionTargets {
+        FlintSessionTargets(
+            applications: Set(selection.applicationTokens.map(AnyHashable.init)),
+            categories: Set(selection.categoryTokens.map(AnyHashable.init)),
+            webDomains: Set(selection.webDomainTokens.map(AnyHashable.init))
         )
     }
 
