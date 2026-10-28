@@ -42,6 +42,12 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
     public let origin: String?
     /// The automation that owns it (the Focus filter), for owner-ended stops.
     public let ownerID: String?
+    /// The committed length in seconds (ADR-012 §9 "duration remaining"). nil for sessions saved
+    /// before it was recorded: their planned length is `endsAt − startedAt`.
+    public let plannedDuration: TimeInterval?
+    /// The start request that created this session, so a retried request returns it instead of
+    /// minting a new id and deadline (PC-03/PC-10).
+    public let startRequestID: String?
 
     public static let currentContractVersion = 1
 
@@ -61,7 +67,9 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         lastRearmAt: Date? = nil,
         contractVersion: Int? = nil,
         origin: String? = nil,
-        ownerID: String? = nil
+        ownerID: String? = nil,
+        plannedDuration: TimeInterval? = nil,
+        startRequestID: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -79,6 +87,36 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         self.contractVersion = contractVersion
         self.origin = origin
         self.ownerID = ownerID
+        self.plannedDuration = plannedDuration
+        self.startRequestID = startRequestID
+    }
+
+    /// Time left on the commitment, by the clock ADR-012 §9 trusts: within the boot that started
+    /// the session, monotonic elapsed time governs — a wall-clock change can neither shorten nor
+    /// extend it. Across a reboot (or without anchors) no elapsed time can be trusted, so the
+    /// bounded fallback `min(planned, max(0, wallEnd − now))` applies. nil for an open-ended
+    /// session.
+    public func logicalRemaining(clock: FlintClock) -> TimeInterval? {
+        guard let endsAt else { return nil }
+        let planned = plannedDuration ?? endsAt.timeIntervalSince(startedAt)
+        if let start = monotonicStart, let boot = bootSessionID, boot == clock.bootSessionID() {
+            let elapsed = clock.monotonic() - start
+            if elapsed >= 0 { return max(0, planned - elapsed) }
+        }
+        return min(planned, max(0, endsAt.timeIntervalSince(clock.now())))
+    }
+
+    /// Whether the commitment is over by `logicalRemaining` (allowing `slack` for the whole-second
+    /// rounding of the registered interval). Open-ended sessions never expire.
+    public func isLogicallyExpired(clock: FlintClock, slack: TimeInterval = 0) -> Bool {
+        guard let remaining = logicalRemaining(clock: clock) else { return false }
+        return remaining <= slack
+    }
+
+    /// The wall-clock end equivalent to the logical remaining time, for display and OS
+    /// registration after a same-boot clock change.
+    public func logicalEnd(clock: FlintClock) -> Date? {
+        logicalRemaining(clock: clock).map { clock.now().addingTimeInterval($0) }
     }
 
     public var isExpired: Bool { isExpired(at: Date()) }
@@ -101,10 +139,11 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         monitorName: String,
         plan: FlintSessionAutoClearPlan,
         at date: Date,
-        countsTowardLimit: Bool
+        countsTowardLimit: Bool,
+        endsAt newEnd: Date? = nil
     ) -> FlintActiveSession {
         FlintActiveSession(
-            id: id, name: name, startedAt: startedAt, endsAt: endsAt, breakLevel: breakLevel,
+            id: id, name: name, startedAt: startedAt, endsAt: newEnd ?? endsAt, breakLevel: breakLevel,
             monitorName: monitorName, monotonicStart: monotonicStart, bootSessionID: bootSessionID,
             autoClearTimeZoneID: plan.timeZoneIdentifier, autoClearUTCOffset: plan.utcOffsetAtEnd,
             usesEndWarning: plan.usesEndWarning,
@@ -112,7 +151,9 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
             lastRearmAt: date,
             contractVersion: contractVersion,
             origin: origin,
-            ownerID: ownerID
+            ownerID: ownerID,
+            plannedDuration: plannedDuration ?? endsAt.map { $0.timeIntervalSince(startedAt) },
+            startRequestID: startRequestID
         )
     }
 }

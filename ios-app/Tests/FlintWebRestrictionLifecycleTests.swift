@@ -520,6 +520,9 @@ final class FlintSessionWebRestrictionTests: XCTestCase {
 private final class WebSessionHarness {
     var config = FlintWebRestrictions(enabled: true, applyDuringSchedules: true)
     var now = ISO8601DateFormatter().date(from: "2026-10-26T23:00:00-04:00")!
+    /// Moving `now` models real time passing: monotonic elapsed time moves with it (a session's
+    /// remaining time follows elapsed time, ADR-012 §9).
+    private let origin = ISO8601DateFormatter().date(from: "2026-10-26T23:00:00-04:00")!
     let writer = RecordingWebWriter()
     let store = WebSessionState()
     lazy var shield = WebSessionShield(writer: writer)
@@ -530,7 +533,8 @@ private final class WebSessionHarness {
             store: { [self] in store }, shield: shield,
             webRestrictions: FlintSessionWebRestrictionAdapter(writer: writer, configuration: { [self] in config }),
             registrar: registrar, isAuthorized: { true },
-            clock: FlintClock(now: { [self] in now }, monotonic: { 50_000 }, bootSessionID: { "test-boot" },
+            clock: FlintClock(now: { [self] in now }, monotonic: { [self] in 50_000 + now.timeIntervalSince(origin) },
+                              bootSessionID: { "test-boot" },
                               calendar: {
                                   var calendar = Calendar(identifier: .gregorian)
                                   calendar.timeZone = TimeZone(identifier: "America/New_York")!

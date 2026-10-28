@@ -158,6 +158,10 @@ final class SessionViewModel: ObservableObject {
     /// §2); the sheet asks, then calls `start(confirmed: true)`.
     @Published var confirmingHardcore = false
 
+    /// One id per start attempt, so a double tap or the confirm-then-start path returns the
+    /// session it already started instead of minting another deadline (PC-03).
+    private var startRequestID = UUID().uuidString
+
     func start(confirmed: Bool = false) {
         defer { NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil) }
         errorText = nil
@@ -169,8 +173,10 @@ final class SessionViewModel: ObservableObject {
                 name: "Focus",
                 source: appliedGroupSelection == selection ? .preset : .manual,
                 origin: .appUI,
+                requestID: startRequestID,
                 confirmed: confirmed
             )
+            startRequestID = UUID().uuidString
             startTicking()
         } catch FlintSessionError.needsConfirmation {
             confirmingHardcore = true

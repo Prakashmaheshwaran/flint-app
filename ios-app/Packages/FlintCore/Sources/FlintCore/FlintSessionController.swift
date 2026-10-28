@@ -217,6 +217,9 @@ public struct FlintSessionEnvironment {
     public var ledger: () -> FlintProtectionLedger?
     /// Re-publishes the shared status projection after a committed change (lanes K/H read it).
     public var publishStatus: () -> Void
+    /// The cross-process session-transition lock (R-20). nil = no App Group container, where
+    /// only the process-local lock applies (and no shared record can be read anyway).
+    public var transitionLock: () -> FlintSessionTransitionLock?
 
     public init(
         store: @escaping () -> FlintSessionStateStoring?,
@@ -228,7 +231,8 @@ public struct FlintSessionEnvironment {
         shortSessionStrategy: FlintSessionAutoClearPlan.ShortSessionStrategy = FlintSessionAutoClearPlan.shortSessionStrategy,
         healthDefaults: @escaping () -> UserDefaults?,
         ledger: @escaping () -> FlintProtectionLedger? = { nil },
-        publishStatus: @escaping () -> Void = {}
+        publishStatus: @escaping () -> Void = {},
+        transitionLock: @escaping () -> FlintSessionTransitionLock? = { nil }
     ) {
         self.store = store
         self.shield = shield
@@ -240,6 +244,7 @@ public struct FlintSessionEnvironment {
         self.healthDefaults = healthDefaults
         self.ledger = ledger
         self.publishStatus = publishStatus
+        self.transitionLock = transitionLock
     }
 
     public static var live: FlintSessionEnvironment {
@@ -254,7 +259,8 @@ public struct FlintSessionEnvironment {
             clock: .system,
             healthDefaults: { .flintGroup },
             ledger: { FlintProtectionLedger.appGroup() },
-            publishStatus: { FlintProtectionStatus.publishAfterCommit() }
+            publishStatus: { FlintProtectionStatus.publishAfterCommit() },
+            transitionLock: { FlintSessionTransitionLock.appGroup() }
         )
     }
 }
@@ -281,6 +287,9 @@ public struct FlintSessionReconcileReport: Equatable, Sendable {
     public var rearmFailed = false
     /// A session is recorded as running but Screen Time authorization is not approved.
     public var notAuthorized = false
+    /// Another process held the session-transition lock: nothing was checked or changed; the
+    /// next reconcile repeats it.
+    public var transitionBusy = false
     /// A session record is stored but can't be read: its shield is kept, nothing is released.
     public var recordUnreadable = false
     public var timeVerdict: FlintTimeIntegrity.Verdict = .unverifiable
@@ -310,9 +319,44 @@ public final class FlintSessionController {
     public static let maximumRearms = 3
 
     /// Serializes start/stop/reconcile within a process: the UI, App Intents and the Focus
-    /// filter can all reach the session at once. (The monitor extension is a separate process;
-    /// its decisions re-read state and tolerate a concurrent host write.)
+    /// filter can all reach the session at once. Across processes (host vs. the monitor
+    /// extension) every transition also holds `FlintSessionTransitionLock` and reads the record
+    /// inside it, so an old registration's callback can't clear a replacement (R-20).
     private static let lock = NSRecursiveLock()
+    private static var transitionDepth = 0
+
+    /// Take the cross-process transition lock for the outermost transition in this process (the
+    /// caller holds `Self.lock`). nil = another process holds it past the timeout: the caller
+    /// changes nothing.
+    private func beginTransition() -> FlintSessionTransitionLock.Hold? {
+        if Self.transitionDepth > 0 { Self.transitionDepth += 1; return .nested }
+        guard let lock = env.transitionLock() else { Self.transitionDepth += 1; return .nested }
+        guard let hold = lock.acquire() else { return nil }
+        Self.transitionDepth += 1
+        return hold
+    }
+
+    private func endTransition(_ hold: FlintSessionTransitionLock.Hold) {
+        Self.transitionDepth -= 1
+        hold.end()
+    }
+
+    /// Run `body` as one session transition: the in-process lock plus the cross-process
+    /// `FlintSessionTransitionLock`, re-entrant within this process — so other authorities (the
+    /// Emergency Pass, rule edits) can hold the transition around their own read-decide-persist
+    /// and still call into this controller. nil = another process held it past the timeout and
+    /// `body` didn't run. Lock order: this transition, then any ledger transaction.
+    public func withTransition<T>(_ body: () throws -> T) rethrows -> T? {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        guard let transition = beginTransition() else { return nil }
+        defer { endTransition(transition) }
+        return try body()
+    }
+
+    /// Whether the session's commitment is over by its logical (monotonic-governed) time.
+    private func isOver(_ session: FlintActiveSession) -> Bool {
+        session.isLogicallyExpired(clock: env.clock)
+    }
 
     private let env: FlintSessionEnvironment
 
@@ -357,10 +401,13 @@ public final class FlintSessionController {
         source: FlintSessionSource = .manual,
         origin: FlintSessionOrigin,
         ownerID: String? = nil,
+        requestID: String? = nil,
         replacing: Bool = true,
         confirmed: Bool = false
     ) throws -> FlintActiveSession {
         Self.lock.lock(); defer { Self.lock.unlock() }
+        guard let transition = beginTransition() else { throw FlintSessionError.protectionStateUnavailable }
+        defer { endTransition(transition) }
 
         guard let store = env.store() else { throw FlintSessionError.appGroupUnavailable }
         guard env.isAuthorized() else { throw FlintSessionError.notAuthorized }
@@ -400,14 +447,21 @@ public final class FlintSessionController {
             throw FlintSessionError.needsConfirmation
         }
 
-        let now = FlintSessionAutoClearPlan.wholeSecond(atOrAfter: env.clock.now())
+        // Sample wall and monotonic time together: the planned duration is measured from this
+        // anchor, so the logical end equals the (whole-second) wall end in a steady clock.
+        let wallNow = env.clock.now()
+        let monotonicNow = env.clock.monotonic()
+        let now = FlintSessionAutoClearPlan.wholeSecond(atOrAfter: wallNow)
         let endsAt = duration > 0 ? now.addingTimeInterval(duration.rounded(.up)) : nil
 
         // Arbitrate against a running session before anything changes (ADR-012 §2/§3). A record
         // that exists but can't be read is unknown protection: never overwrite it (§8).
         let current = store.loadActiveSession()
         if current == nil, store.hasActiveSessionRecord() { throw FlintSessionError.protectionStateUnavailable }
-        if let running = current, !running.isExpired(at: now) {
+        // A retried request (double tap, intent retry) returns the session it already started:
+        // no new id, deadline or registration (PC-03).
+        if let requestID, let current, current.startRequestID == requestID, !isOver(current) { return current }
+        if let running = current, !isOver(running) {
             guard replacing else {
                 throw FlintSessionError.capacityUnavailable(runningName: running.name, until: running.endsAt)
             }
@@ -458,14 +512,16 @@ public final class FlintSessionController {
             endsAt: endsAt,
             breakLevel: breakLevel,
             monitorName: monitorName,
-            monotonicStart: env.clock.monotonic(),
+            monotonicStart: monotonicNow,
             bootSessionID: env.clock.bootSessionID(),
             autoClearTimeZoneID: plan?.timeZoneIdentifier,
             autoClearUTCOffset: plan?.utcOffsetAtEnd,
             usesEndWarning: plan.map(\.usesEndWarning),
             contractVersion: FlintActiveSession.currentContractVersion,
             origin: origin.rawValue,
-            ownerID: ownerID
+            ownerID: ownerID,
+            plannedDuration: endsAt.map { $0.timeIntervalSince(wallNow) },
+            startRequestID: requestID
         )
         let previous = store.loadActiveSession()
         let previousSelection = previous.flatMap { store.loadSessionSelection(sessionID: $0.id) }
@@ -506,7 +562,7 @@ public final class FlintSessionController {
             if let previous {
                 if let previousSelection { store.saveSessionSelection(previousSelection, sessionID: previous.id) }
                 store.saveActiveSession(previous)
-                if !previous.isExpired(at: now) { rearm(previous, in: store, now: now, reason: .repair) }
+                if !isOver(previous) { rearm(previous, in: store, now: now, reason: .repair) }
             } else {
                 store.clearActiveSession()
             }
@@ -543,7 +599,7 @@ public final class FlintSessionController {
         case .easy, .harder:
             return true
         case .hardcore:
-            return session.isExpired(at: env.clock.now())
+            return isOver(session)
         }
     }
 
@@ -555,6 +611,8 @@ public final class FlintSessionController {
     @discardableResult
     public func requestStop(route: FlintSessionEndRoute = .manualStop, confirmed: Bool) -> FlintSessionStopOutcome {
         Self.lock.lock(); defer { Self.lock.unlock() }
+        guard let transition = beginTransition() else { return .unavailable }
+        defer { endTransition(transition) }
         let store = env.store()
         let now = env.clock.now()
         guard let session = store?.loadActiveSession() else {
@@ -562,7 +620,7 @@ public final class FlintSessionController {
             env.shield.clear()
             return .notApplicable
         }
-        if session.isExpired(at: now) {
+        if isOver(session) {
             end(session, route: .completed, at: now, in: store)
             return .stopped
         }
@@ -595,6 +653,8 @@ public final class FlintSessionController {
     /// Cancel a pending Harder stop wait ("I'm good, go back"): spends nothing, keeps the count.
     public func cancelPendingStop() {
         Self.lock.lock(); defer { Self.lock.unlock() }
+        guard let transition = beginTransition() else { return }
+        defer { endTransition(transition) }
         guard let session = env.store()?.loadActiveSession() else { return }
         _ = env.ledger()?.transaction { $0.cancelHarderWait(cause: session.id) }
     }
@@ -603,21 +663,25 @@ public final class FlintSessionController {
     /// entry points use `requestStop(route:confirmed:)`.
     public func stop(route: FlintSessionEndRoute = .manualStop) {
         Self.lock.lock(); defer { Self.lock.unlock() }
+        guard let transition = beginTransition() else { return }
+        defer { endTransition(transition) }
         let store = env.store()
         guard let session = store?.loadActiveSession() else {
             env.shield.clear()
             return
         }
         let now = env.clock.now()
-        end(session, route: session.isExpired(at: now) ? .completed : route, at: now, in: store)
+        end(session, route: isOver(session) ? .completed : route, at: now, in: store)
     }
 
     /// Called when a timed session reaches its end (or the app notices it expired): clean up.
     public func finishIfExpired() {
         Self.lock.lock(); defer { Self.lock.unlock() }
+        guard let transition = beginTransition() else { return }
+        defer { endTransition(transition) }
         let store = env.store()
         let now = env.clock.now()
-        guard let session = store?.loadActiveSession(), session.isExpired(at: now) else { return }
+        guard let session = store?.loadActiveSession(), isOver(session) else { return }
         end(session, route: .completed, at: now, in: store)
     }
 
@@ -651,7 +715,7 @@ public final class FlintSessionController {
             causeID: session.id,
             kind: .session,
             tier: session.breakLevel,
-            isActive: !session.isExpired(at: now),
+            isActive: !isOver(session),
             end: session.endsAt,
             harderCount: count,
             legacyRights: session.contractVersion == nil
@@ -734,6 +798,8 @@ public final class FlintSessionController {
     @discardableResult
     public func reconcile() -> FlintSessionReconcileReport {
         Self.lock.lock(); defer { Self.lock.unlock() }
+        guard let transition = beginTransition() else { var busy = FlintSessionReconcileReport(outcome: .running); busy.transitionBusy = true; return busy }
+        defer { endTransition(transition) }
         let store = env.store()
         let now = env.clock.now()
         guard let session = store?.loadActiveSession() else {
@@ -756,7 +822,7 @@ public final class FlintSessionController {
         let verdict = FlintTimeIntegrity.verdict(for: session, clock: env.clock)
         recordTimeVerdict(verdict, for: session, at: now)
 
-        if session.isExpired(at: now) {
+        if isOver(session) {
             end(session, route: .completed, at: now, in: store)
             FlintSessionHealth.update(in: env.healthDefaults()) { $0.unauthorizedSince = nil }
             var report = FlintSessionReconcileReport(outcome: .finishedExpired)
@@ -777,7 +843,13 @@ public final class FlintSessionController {
         if let store, session.endsAt != nil {
             let zoneMoved = !FlintSessionAutoClearPlan.isCurrent(for: session, in: env.clock.calendar())
             let missing = !env.registrar.registeredActivityNames().contains(session.monitorName)
-            if zoneMoved || missing {
+            // A same-boot wall-clock change moved the registered wall end away from the logical
+            // end: re-register so iOS ends it at the right moment (ADR-012 §9).
+            var drifted = false
+            if let wallEnd = session.endsAt, let logicalEnd = session.logicalEnd(clock: env.clock) {
+                drifted = abs(wallEnd.timeIntervalSince(logicalEnd)) > FlintTimeIntegrity.discontinuityThreshold
+            }
+            if zoneMoved || missing || drifted {
                 if zoneMoved { recordAnomaly(.timeZoneChanged, seconds: 0, session: session, at: now) }
                 switch rearm(session, in: store, now: now, reason: .repair) {
                 case .rearmed: report.rearmed = true
@@ -797,7 +869,7 @@ public final class FlintSessionController {
             }
         }
 
-        env.shield.setDenyAppRemoval(FlintUninstallGuard.shouldDeny(for: session, now: now))
+        env.shield.setDenyAppRemoval(FlintUninstallGuard.shouldDeny(for: session, clock: env.clock))
         return report
     }
 
@@ -833,7 +905,7 @@ public final class FlintSessionController {
         now: Date,
         reason: RearmReason
     ) -> RearmOutcome {
-        guard let endsAt = session.endsAt, endsAt > now else { return .failed }
+        guard let logicalEnd = session.logicalEnd(clock: env.clock), logicalEnd > now else { return .failed }
         switch reason {
         case .prematureEnd:
             guard (session.rearmCount ?? 0) < Self.maximumRearms else {
@@ -850,7 +922,11 @@ public final class FlintSessionController {
             }
         }
         let start = FlintSessionAutoClearPlan.wholeSecond(atOrAfter: now)
-        let plan = FlintSessionAutoClearPlan.make(start: start, end: max(endsAt, start), calendar: env.clock.calendar(),
+        // Register the logical end: after a same-boot wall-clock change it differs from the
+        // recorded wall end, which then moves with it (ADR-012 §9: remaining time is unchanged).
+        let end = FlintSessionAutoClearPlan.wholeSecond(atOrAfter: logicalEnd)
+        let reanchored = session.endsAt.map { abs($0.timeIntervalSince(end)) > FlintTimeIntegrity.discontinuityThreshold } ?? false
+        let plan = FlintSessionAutoClearPlan.make(start: start, end: max(end, start), calendar: env.clock.calendar(),
                                                   strategy: .endWarning)
         let name = Self.makeMonitorName()
         do {
@@ -864,7 +940,8 @@ public final class FlintSessionController {
             return .failed
         }
         store.saveActiveSession(session.rearmed(monitorName: name, plan: plan, at: now,
-                                                countsTowardLimit: reason == .prematureEnd))
+                                                countsTowardLimit: reason == .prematureEnd,
+                                                endsAt: reanchored ? end : nil))
         if session.monitorName != name { env.registrar.stopMonitoring([session.monitorName]) }
         // The running session is armed again: an earlier refusal is no longer current.
         // (Callers publish: the monitor callback, the reconcile, the start that repaired it.)
@@ -904,6 +981,8 @@ public final class FlintSessionController {
     ///  - any other session name is a replaced registration: deregistered at its end, ignored.
     public func handleMonitorEvent(_ event: FlintSessionMonitorEvent, activity: String) {
         Self.lock.lock(); defer { Self.lock.unlock() }
+        guard let transition = beginTransition() else { return }
+        defer { endTransition(transition) }
         // The monitor's callbacks are the app-closed path: always republish what they changed
         // (unchanged content skips the widget reload).
         defer { env.publishStatus() }
@@ -916,7 +995,9 @@ public final class FlintSessionController {
             // was lost, as older builds did. A *different* active session means this callback is
             // from a replaced registration: never touch the newer session.
             if event == .intervalDidEnd {
-                if session == nil { env.shield.clear() }
+                // An unreadable record is unknown protection, not "no session": keep its shield
+                // (ADR-012 §8; R-20). Only a truly absent record leaves a stale shield to clear.
+                if session == nil, store?.hasActiveSessionRecord() != true { env.shield.clear() }
                 env.registrar.stopMonitoring([activity])
             }
             return
@@ -928,11 +1009,12 @@ public final class FlintSessionController {
                 try? env.shield.applyBlockList(selection)
                 env.webRestrictions.reconcile(session, now: now)
             }
-            env.shield.setDenyAppRemoval(FlintUninstallGuard.shouldDeny(for: session, now: now))
+            env.shield.setDenyAppRemoval(FlintUninstallGuard.shouldDeny(for: session, clock: env.clock))
 
         case .intervalWillEndWarning, .intervalDidEnd:
             let endsAt = session.endsAt ?? now
-            if now.addingTimeInterval(FlintTimeIntegrity.endSlack) >= endsAt {
+            // Logical time decides (ADR-012 §9): a same-boot wall-clock jump can't end it early.
+            if session.isLogicallyExpired(clock: env.clock, slack: FlintTimeIntegrity.endSlack) {
                 recordTimeVerdict(FlintTimeIntegrity.verdict(for: session, clock: env.clock), for: session, at: now)
                 env.shield.clear()
                 // Report a completion only for an on-time observation of the logical deadline.
@@ -951,7 +1033,8 @@ public final class FlintSessionController {
                 env.registrar.stopMonitoring([activity])
             } else if event == .intervalDidEnd, let store {
                 // The interval is over, but the session isn't: keep the shield, re-register.
-                recordAnomaly(.prematureEnd, seconds: endsAt.timeIntervalSince(now), session: session, at: now)
+                recordAnomaly(.prematureEnd, seconds: session.logicalRemaining(clock: env.clock) ?? 0,
+                              session: session, at: now)
                 rearm(session, in: store, now: now, reason: .prematureEnd)
             }
             // An early warning is ignored: the interval end that follows still ends the session.
@@ -969,10 +1052,12 @@ public final class FlintSessionController {
     @discardableResult
     public func useEmergencyPass() -> Bool {
         Self.lock.lock(); defer { Self.lock.unlock() }
+        guard let transition = beginTransition() else { return false }
+        defer { endTransition(transition) }
         let store = env.store()
         let now = env.clock.now()
         guard let session = store?.loadActiveSession(), session.breakLevel == .hardcore,
-              !session.isExpired(at: now) else {
+              !isOver(session) else {
             return false
         }
         guard emergencyPassAvailable(now: now) else { return false }
