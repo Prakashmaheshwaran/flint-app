@@ -15,7 +15,12 @@ import com.flint.peakfocus.core.datastore.BlockRulesStore
 import com.flint.peakfocus.core.datastore.FlintPreferences
 import com.flint.peakfocus.core.datastore.FocusStateStore
 import com.flint.peakfocus.core.datastore.LimitsStore
+import com.flint.peakfocus.core.datastore.EditorCommitmentStore
+import com.flint.peakfocus.core.datastore.EditorCommitmentState
+import com.flint.peakfocus.core.datastore.ProtectionClock
 import com.flint.peakfocus.core.model.ActiveRulesHolder
+import com.flint.peakfocus.core.model.AccessClockStamp
+import com.flint.peakfocus.core.model.EnforcementSignals
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.model.BreakSessionState
 import com.flint.peakfocus.core.model.BlockRule
@@ -32,6 +37,7 @@ import java.util.Calendar
 import java.util.TimeZone
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -98,6 +104,9 @@ class BlockScreenCoordinator(
     focusStateStore: FocusStateStore? = null,
     configuredLimitsStore: LimitsStore? = null,
     blockRulesStore: BlockRulesStore? = null,
+    editorCommitmentStore: EditorCommitmentStore? = null,
+    private val statusClock: () -> AccessClockStamp = ProtectionClock::now,
+    private val statusDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
 
     /** How a path actually mounts the block surface. Implementations own the window type. */
@@ -133,6 +142,7 @@ class BlockScreenCoordinator(
     private val focusStore = focusStateStore ?: FlintPreferences.focusState(appContext)
     private val limitsStore = configuredLimitsStore ?: FlintPreferences.limits(appContext)
     private val rulesStore = blockRulesStore ?: FlintPreferences.blockRules(appContext)
+    private val editorStore = editorCommitmentStore ?: FlintPreferences.editorCommitments(appContext)
 
     private val passPolicy = EmergencyPassPolicy()
     private val openLimitPolicy = OpenLimitPolicy()
@@ -146,6 +156,10 @@ class BlockScreenCoordinator(
     private val openState = MutableStateFlow<StorageState<List<OpenLimit>>>(StorageState.Loading)
     private val timeState = MutableStateFlow<StorageState<List<TimeLimit>>>(StorageState.Loading)
     private val rulesState = MutableStateFlow<StorageState<List<BlockRule>>>(StorageState.Loading)
+    private val editorState = MutableStateFlow<StorageState<EditorCommitmentState>>(StorageState.Loading)
+    private val statusLock = Any()
+    @Volatile private var statusClockReady = false
+    private var lastPolicyStatus: ProtectionStatus? = null
     // Lists are last-known-good only, never a replacement emitted because a read failed.
     @Volatile private var openLimits: List<OpenLimit> = emptyList()
     @Volatile private var timeLimits: List<TimeLimit> = emptyList()
@@ -188,12 +202,31 @@ class BlockScreenCoordinator(
         scope.launch { limitsStore.openLimitsState.collect { state ->
             if (state is StorageState.Ready) openLimits = state.value
             openState.value = state
+            publishProtectionStatus()
         } }
         scope.launch { limitsStore.timeLimitsState.collect { state ->
             if (state is StorageState.Ready) timeLimits = state.value
             timeState.value = state
+            publishProtectionStatus()
         } }
-        scope.launch { rulesStore.rulesState.collect { rulesState.value = it } }
+        scope.launch { rulesStore.rulesState.collect { rulesState.value = it; publishProtectionStatus() } }
+        scope.launch { editorStore.state.collect { editorState.value = it; publishProtectionStatus() } }
+        scope.launch { safetyFloor.runtimeResolution.collect { publishProtectionStatus() } }
+        scope.launch {
+            val unsubscribe = EnforcementSignals.detectors.subscribe(::publishPathAHealth)
+            try { kotlinx.coroutines.awaitCancellation() } finally { unsubscribe() }
+        }
+        scope.launch(statusDispatcher) {
+            // ProtectionClock resolves the OS boot identity lazily. Initialize it here so
+            // status publication on an accessibility/main callback never opens /proc.
+            statusClock()
+            statusClockReady = true
+            while (isActive) {
+                safetyFloor.refreshSoonIfOlderThan(SafetyFloorGate.DEFAULT_REFRESH_INTERVAL_MS)
+                publishProtectionStatus()
+                delay(ProtectionStatusProjection.FRESHNESS_MS)
+            }
+        }
         scope.launch { grants.state.collect { state ->
             if (state is StorageState.Ready) state.value.exemptions.values.forEach { receipt ->
                 if (receipt.untilEpochMs > nowEpochMs() && scheduledExpiries.putIfAbsent(receipt.requestId, receipt.untilEpochMs) == null) {
@@ -201,6 +234,7 @@ class BlockScreenCoordinator(
                 }
             }
             rerenderNow()
+            publishProtectionStatus()
         } }
         scope.launch {
             // Include readiness (and recovery), but exclude counters/receipts from the config
@@ -213,6 +247,29 @@ class BlockScreenCoordinator(
                 rerenderNow()
             }
         }
+    }
+
+    /** Real policy evaluation; display reads and detector-health callbacks never invoke this. */
+    private fun publishProtectionStatus() {
+        if (!statusClockReady) return
+        val snapshot = ProtectionStatusProjection.evaluate(grants.state.value, rulesState.value,
+            timeState.value, openState.value, editorState.value, ActiveRulesHolder.rules,
+            safetyFloor.runtimeResolution.value, EnforcementSignals.detectors.pathAConnected, statusClock())
+        synchronized(statusLock) {
+            lastPolicyStatus = snapshot
+            ProtectionStatusHub.publish(snapshot)
+        }
+    }
+
+    /** A binding signal changes liveness only, preserving the last actual policy check. */
+    private fun publishPathAHealth() = synchronized(statusLock) {
+        val previous = lastPolicyStatus ?: return@synchronized
+        val connected = EnforcementSignals.detectors.pathAConnected
+        val reasons = previous.detectors.degradedReasons - "path-a-disconnected" +
+            if (connected) emptySet() else setOf("path-a-disconnected")
+        val next = previous.copy(detectors = previous.detectors.copy(accessibilityConnected = connected, degradedReasons = reasons))
+        lastPolicyStatus = next
+        ProtectionStatusHub.publish(next)
     }
 
     /**

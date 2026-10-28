@@ -72,4 +72,18 @@ class ProtectionStatusHubTest {
         serviceReasons.clear()
         assertTrue("b" in ProtectionStatusHub.status.value.detectors.degradedReasons)
     }
+
+    @Test fun PC_73_safetyFloorHealthCopiesAllRuntimeProvenanceSets() {
+        val required = mutableSetOf("home")
+        val resolved = mutableSetOf("home")
+        val failed = mutableSetOf("dialer")
+        ProtectionStatusHub.publish(ProtectionStatus.UNKNOWN.copy(safetyFloor =
+            ProtectionStatus.SafetyFloorStatus(required, resolved, failed, 10L, true)))
+        required.clear(); resolved.clear(); failed.clear()
+        val health = ProtectionStatusHub.status.value.safetyFloor!!
+        assertEquals(setOf("home"), health.requiredSources)
+        assertEquals(setOf("home"), health.resolvedSources)
+        assertEquals(setOf("dialer"), health.failedSources)
+        assertEquals(10L, health.checkedAtElapsedRealtimeMs)
+    }
 }
