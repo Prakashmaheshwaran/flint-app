@@ -32,6 +32,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(project(":permissions:permissions-special"))
     implementation(project(":blocking:blocking-resilience"))
+    implementation(project(":blocking:blocking-engine")) // supported-browser matrix and coverage states
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.tooling.preview)

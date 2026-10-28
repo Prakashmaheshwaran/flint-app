@@ -8,6 +8,8 @@ internal object ConsentCopy {
             "detect which app is in the foreground using app and screen class names, and " +
             "read the web address from known " +
             "browser address bars for website blocking. Not all browsers or pages expose an address. " +
+            "In supported browsers only, while a website rule is active, Flint also listens " +
+            "for window-content changes to re-read the address bar after same-tab navigation. " +
             "Flint uses these reads to show its block screen when your app or website rules apply."
     const val WHERE_IT_GOES =
         "Flint uses this only to enforce the blocks you set up. This data stays on " +

@@ -2,6 +2,8 @@ package com.flint.peakfocus.feature.settings
 
 import com.flint.peakfocus.blocking.resilience.HealthLevel
 import com.flint.peakfocus.blocking.resilience.HealthStatus
+import com.flint.peakfocus.blocking.engine.BrowserAddressBars
+import com.flint.peakfocus.blocking.engine.WebCoverage
 
 /**
  * Pure mapping from blocking-resilience's [HealthStatus] to what the settings screen renders.
@@ -123,7 +125,8 @@ object BlockingHealthUi {
         },
     )
 
-    fun banner(status: HealthStatus): BannerUi = when (status.level) {
+    fun banner(status: HealthStatus): BannerUi {
+        val banner = when (status.level) {
         HealthLevel.HEALTHY -> BannerUi(
             level = HealthLevel.HEALTHY,
             headline = "Blocking is healthy",
@@ -143,6 +146,25 @@ object BlockingHealthUi {
                 "below — enabling the accessibility service alone is enough to restore " +
                 "blocking.",
         )
+        }
+        return banner.copy(body = banner.body + "\n\n" + websiteCoverage(status))
+    }
+
+    /** Additive health information; no new permission action or alternate enable route. */
+    fun websiteCoverage(status: HealthStatus): String {
+        val observation = when (val coverage = status.websiteCoverage) {
+            WebCoverage.NotRequired -> "No website block is active now."
+            WebCoverage.AwaitingBrowser -> "Website coverage has not been checked in a supported browser yet."
+            WebCoverage.Paused -> "Website blocks paused: website rules need Accessibility."
+            is WebCoverage.Available -> "Address bar readable in ${coverage.browser.displayName}."
+            is WebCoverage.Degraded -> "Website blocking can't read ${coverage.browser.displayName}'s address bar."
+            is WebCoverage.Unsupported -> "Website blocking is unavailable in ${coverage.packageName}: unsupported browser."
+        }
+        return observation + "\nSupported browser adapters (list ${BrowserAddressBars.MATRIX_VERSION}): " +
+            BrowserAddressBars.supportedBrowsers.joinToString { it.displayName } +
+            ". Browser updates, hidden address bars and private pages can reduce coverage; " +
+            "this list is not device verification. Other browsers and the usage-access backup " +
+            "path do not filter websites. Allow-list mode uses the app list and ignores websites."
     }
 
     /** Names exactly what is missing, built from the status facts — JVM-tested per case. */

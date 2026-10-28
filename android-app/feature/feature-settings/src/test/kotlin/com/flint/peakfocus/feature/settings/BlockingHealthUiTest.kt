@@ -2,12 +2,31 @@ package com.flint.peakfocus.feature.settings
 
 import com.flint.peakfocus.blocking.resilience.HealthLevel
 import com.flint.peakfocus.blocking.resilience.HealthStatus
+import com.flint.peakfocus.blocking.engine.BrowserAddressBars
+import com.flint.peakfocus.blocking.engine.WebCoverage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BlockingHealthUiTest {
+    @Test fun websiteCoverageNamesTheObservedGapAndSupportedAdapters() {
+        val chrome = BrowserAddressBars.find("com.android.chrome")!!
+        val states = mapOf(
+            WebCoverage.Paused to "Website blocks paused",
+            WebCoverage.Degraded(chrome, 100) to "can't read Chrome's address bar",
+            WebCoverage.Unsupported("test.browser") to "test.browser",
+        )
+        states.forEach { (coverage, expected) ->
+            val health = status().copy(websiteCoverage = coverage)
+            assertTrue(BlockingHealthUi.banner(health).body.contains(expected))
+            val text = BlockingHealthUi.websiteCoverage(health)
+            assertTrue(text.contains("Chrome"))
+            assertTrue(text.contains("Firefox"))
+            assertTrue(text.contains("not device verification"))
+            assertTrue(text.contains("Allow-list mode uses the app list"))
+        }
+    }
 
     private fun status(
         accessibility: Boolean = true,

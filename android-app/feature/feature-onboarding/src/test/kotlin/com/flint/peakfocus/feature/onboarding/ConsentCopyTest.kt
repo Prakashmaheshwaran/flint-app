@@ -6,6 +6,13 @@ import org.junit.Test
 
 class ConsentCopyTest {
     @Test
+    fun `same-tab disclosure scopes content events to supported browsers and active website rules`() {
+        assertTrue(ConsentCopy.WHAT_IT_READS.contains("In supported browsers only, while a website rule is active"))
+        assertTrue(ConsentCopy.WHAT_IT_READS.contains("window-content changes"))
+        assertTrue(ConsentCopy.WHAT_IT_READS.contains("re-read the address bar after same-tab navigation"))
+    }
+
+    @Test
     fun `disclosure names the mechanism and data read`() {
         assertTrue(ConsentCopy.WHAT_IT_READS.contains("Accessibility service", ignoreCase = true))
         assertTrue(ConsentCopy.WHAT_IT_READS.contains("which app is in the foreground"))
