@@ -6,6 +6,12 @@ It scans each bundle's Mach-O executable, dylibs and frameworks for symbols and 
 five exact bundle IDs and failing on tool errors or known authorization,
 session, SwiftUI and report preview fixtures. The report's `#Preview` is
 explicitly guarded by `#if DEBUG`; production report rendering is unchanged.
+To conserve hosted macOS capacity, the extra Release job runs for ready PRs,
+workflow dispatches and the standing `integration/v1` PR, including when that
+integration PR is a draft. Marking a PR ready triggers the Release job.
+The same Release job also verifies D1's privacy resources in all five bundles.
+Ordinary store Markdown edits do not trigger iOS CI; executable Python verifier
+changes do.
 
 ```sh
 python3 docs/store/ios/verify-release-binaries.py ios-app/build/ReleaseDerivedData/Build/Products/Release-iphonesimulator/Flint.app
