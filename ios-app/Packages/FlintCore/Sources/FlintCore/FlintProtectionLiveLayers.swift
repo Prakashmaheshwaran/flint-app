@@ -17,7 +17,7 @@ extension FlintProtectionReconciler {
     /// Shared across scenes as well as tabs. No view model owns protection startup.
     public static let shared = FlintProtectionReconciler(layers: [
         FlintLiveProtectionLayer(domain: "session") { _ in
-            guard let group = FlintGroupStore() else { throw FlintSessionError.appGroupUnavailable }
+            guard FlintGroupStore() != nil else { throw FlintSessionError.appGroupUnavailable }
             let controller = FlintSessionController()
             controller.reconcileUninstallGuard()
             let active = controller.activeSession
@@ -43,7 +43,7 @@ extension FlintProtectionReconciler {
             guard let group = FlintGroupStore() else { throw FlintSessionError.appGroupUnavailable }
             // Preserve launch re-shielding. Foreground/time/config reconciliation must not
             // revoke a released grant by blindly applying the full selection (B5 owns grants).
-            FlintOpenLimitsController().reload(reapplyShields: trigger == .launch)
+            FlintOpenLimitsController().reload(reapplyShields: trigger.reappliesOpenLimitShields)
             return group.loadArmingHealth().domains["openLimits"] ?? missingReport("openLimits")
         },
         FlintLiveProtectionLayer(domain: "webRestrictions") { _ in

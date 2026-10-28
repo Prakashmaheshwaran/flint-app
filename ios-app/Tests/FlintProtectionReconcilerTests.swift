@@ -12,6 +12,12 @@ private struct FakeProtectionLayer: FlintProtectionLayer {
 
 @MainActor
 final class FlintProtectionReconcilerTests: XCTestCase {
+    func testRoutineReconciliationDoesNotReshieldOpenLimitGrants() {
+        for trigger in FlintProtectionTrigger.allCases {
+            XCTAssertEqual(trigger.reappliesOpenLimitShields, trigger == .launch)
+        }
+    }
+
     func testEveryTriggerRunsEveryLayerAndPersistsTheObservation() async {
         let names = ["session", "schedules", "limits", "openLimits", "webRestrictions"]
         var calls: [String] = []

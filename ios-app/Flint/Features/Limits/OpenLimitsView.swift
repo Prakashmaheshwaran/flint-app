@@ -84,7 +84,8 @@ struct OpenLimitsView: View {
                     .font(.caption).foregroundStyle(.secondary)
                 if rule.enabled {
                     Text(FlintRuleProtectionStatus.status(enabled: rule.enabled, activityName: rule.activityName,
-                        domain: "openLimits", health: vm.health, observation: vm.observation).label)
+                        domain: "openLimits", health: vm.health, observation: vm.observation,
+                        authorized: AuthorizationCenter.shared.authorizationStatus == .approved).label)
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

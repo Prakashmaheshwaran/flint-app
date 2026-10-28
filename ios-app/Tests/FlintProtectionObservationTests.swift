@@ -55,6 +55,18 @@ final class FlintProtectionObservationTests: XCTestCase {
             domain: "schedules", health: health, observation: old, at: date), .unverified)
     }
 
+    func testWholeLayerFailureAndDeniedAuthorizationCannotLookCurrent() {
+        let health = FlintArmingHealth(domains: ["schedules": report(observed: ["flint.rule.x"])])
+        let failed = report(failures: [.init(activityName: "schedules", reason: "storage unavailable")])
+        let observation = FlintProtectionObservation(observedAt: date, trigger: .launch,
+                                                    domains: ["schedules": failed])
+        XCTAssertEqual(FlintRuleProtectionStatus.status(enabled: true, activityName: "flint.rule.x",
+            domain: "schedules", health: health, observation: observation, at: date), .needsAttention)
+        let healthy = FlintProtectionObservation(observedAt: date, trigger: .launch, domains: health.domains)
+        XCTAssertEqual(FlintRuleProtectionStatus.status(enabled: true, activityName: "flint.rule.x",
+            domain: "schedules", health: health, observation: healthy, at: date, authorized: false), .needsAttention)
+    }
+
     private func status(_ report: FlintArmingHealth.DomainReport, enabled: Bool = true) -> FlintRuleProtectionStatus {
         let health = FlintArmingHealth(domains: ["schedules": report])
         let observation = FlintProtectionObservation(observedAt: date, trigger: .launch, domains: health.domains)

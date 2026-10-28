@@ -7,15 +7,20 @@ public enum FlintRuleProtectionStatus: Equatable {
     /// registration copy; a failure always wins, even if an older observation lists the rule.
     public static func status(
         enabled: Bool, activityName: String, domain: String,
-        health: FlintArmingHealth, observation: FlintProtectionObservation?, at now: Date = Date()
+        health: FlintArmingHealth, observation: FlintProtectionObservation?, at now: Date = Date(),
+        authorized: Bool = true
     ) -> Self {
         guard enabled else { return .off }
+        guard authorized else { return .needsAttention }
         let report = health.domains[domain]
-        if report?.failures.contains(where: { $0.activityName == activityName }) == true {
+        let matches: (FlintArmingHealth.Failure) -> Bool = {
+            $0.activityName == activityName || $0.activityName == domain
+        }
+        if report?.failures.contains(where: matches) == true {
             return .needsAttention
         }
-        if observation?.domains[domain]?.failures.contains(where: { $0.activityName == activityName }) == true,
-           report == nil || report!.updatedAt <= observation!.observedAt {
+        if let observation, observation.domains[domain]?.failures.contains(where: matches) == true,
+           report == nil || report!.updatedAt <= observation.observedAt {
             return .needsAttention
         }
         guard let observation, !observation.isStale(at: now), let report,

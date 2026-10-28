@@ -2,6 +2,8 @@ import Foundation
 
 public enum FlintProtectionTrigger: String, Codable, CaseIterable {
     case launch, foreground, significantTimeChange, timeZoneChange, configEdit
+
+    var reappliesOpenLimitShields: Bool { self == .launch }
 }
 
 @MainActor

@@ -188,7 +188,8 @@ struct TodayView: View {
 
     private func status(_ rule: FlintScheduleRule) -> FlintRuleProtectionStatus {
         FlintRuleProtectionStatus.status(enabled: rule.enabled, activityName: rule.monitorName,
-            domain: "schedules", health: health, observation: observation, at: now)
+            domain: "schedules", health: health, observation: observation, at: now,
+            authorized: auth.status == .approved)
     }
 
     private func refreshHealth() {

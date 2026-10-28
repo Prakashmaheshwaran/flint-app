@@ -195,7 +195,8 @@ struct RulesView: View {
                     Text(meta(rule)).font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
                     let status = FlintRuleProtectionStatus.status(enabled: rule.enabled,
                         activityName: rule.monitorName, domain: "schedules", health: vm.health,
-                        observation: vm.observation)
+                        observation: vm.observation,
+                        authorized: AuthorizationCenter.shared.authorizationStatus == .approved)
                     if rule.enabled {
                         Text(status.label).font(FlintFont.text(12))
                             .foregroundStyle(status == .needsAttention ? FlintBrand.danger : FlintBrand.stone)
@@ -266,7 +267,8 @@ struct TodayTimeline: View {
         let nowMinute = Double(cal.component(.hour, from: now) * 60 + cal.component(.minute, from: now))
         let current = FlintTodaySchedule.current(in: rules.filter {
             FlintRuleProtectionStatus.status(enabled: $0.enabled, activityName: $0.monitorName,
-                domain: "schedules", health: health, observation: observation, at: now) == .registered
+                domain: "schedules", health: health, observation: observation, at: now,
+                authorized: AuthorizationCenter.shared.authorizationStatus == .approved) == .registered
         }, at: now)
         VStack(spacing: 8) {
             ViewThatFits(in: .horizontal) {

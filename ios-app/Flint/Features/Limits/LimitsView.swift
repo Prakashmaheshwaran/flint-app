@@ -85,7 +85,8 @@ struct LimitsView: View {
                     Text("A day").font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
                     if limit.enabled {
                         Text(FlintRuleProtectionStatus.status(enabled: limit.enabled, activityName: limit.activityName,
-                            domain: "limits", health: vm.health, observation: vm.observation).label)
+                            domain: "limits", health: vm.health, observation: vm.observation,
+                            authorized: AuthorizationCenter.shared.authorizationStatus == .approved).label)
                             .font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
                     }
                 }
