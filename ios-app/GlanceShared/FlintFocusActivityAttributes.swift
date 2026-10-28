@@ -13,6 +13,7 @@ struct FlintFocusActivityAttributes: ActivityAttributes {
         let needsCheck: Bool
 
         var countdownEnd: Date { min(endsAt, staleAt) }
+        var countdownLabel: String { FlintGlanceActivityPlan.countdownLabel(endsAt: endsAt, staleAt: staleAt) }
     }
     let sessionID: String
 }

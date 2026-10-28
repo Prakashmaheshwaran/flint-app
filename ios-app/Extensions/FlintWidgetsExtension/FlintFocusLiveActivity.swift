@@ -17,7 +17,10 @@ struct FlintFocusLiveActivity: Widget {
                     Text("Open Flint to check")
                 } else {
                     HStack {
-                        countdown(context.state).font(.title2)
+                        VStack(alignment: .leading) {
+                            Text(context.state.countdownLabel).font(.caption)
+                            countdown(context.state).font(.title2)
+                        }
                         Spacer()
                         VStack(alignment: .trailing) {
                             Text("Planned end").font(.caption)
@@ -43,16 +46,33 @@ struct FlintFocusLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.trailing) { Text(context.state.tier).font(.caption) }
                 DynamicIslandExpandedRegion(.center) {
                     if needsCheck(context) { Text("Open Flint to check") }
-                    else { countdown(context.state).font(.title2) }
+                    else {
+                        VStack {
+                            Text(context.state.countdownLabel).font(.caption)
+                            countdown(context.state).font(.title2)
+                        }
+                    }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    Text("At zero, open Flint to check").font(.caption)
+                    HStack(spacing: 3) {
+                        Text("Planned end")
+                        Text(context.state.endsAt, style: .time)
+                        Text("· Open Flint")
+                    }.font(.caption)
                 }
             } compactLeading: {
                 Image(systemName: "flame.fill").foregroundStyle(FlintBrand.ember)
             } compactTrailing: {
                 if needsCheck(context) { Image(systemName: "questionmark") }
-                else { countdown(context.state).frame(maxWidth: 62).font(.caption) }
+                else {
+                    HStack(spacing: 2) {
+                        if context.state.staleAt < context.state.endsAt {
+                            Image(systemName: "arrow.clockwise").font(.system(size: 8))
+                        }
+                        countdown(context.state).frame(maxWidth: 55).font(.caption)
+                    }
+                    .accessibilityLabel(context.state.countdownLabel)
+                }
             } minimal: {
                 Image(systemName: needsCheck(context) ? "questionmark" : "flame.fill")
             }

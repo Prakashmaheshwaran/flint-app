@@ -77,6 +77,10 @@ final class FlintGlanceTests: XCTestCase {
         XCTAssertEqual(plan(value)?.staleAt, now.addingTimeInterval(60))
         XCTAssertEqual(FlintGlancePresentation(input(valid: 600, end: 30), at: now).countdownEnd,
                        now.addingTimeInterval(30))
+        XCTAssertEqual(FlintGlanceActivityPlan.countdownLabel(endsAt: now.addingTimeInterval(600),
+                                                            staleAt: now.addingTimeInterval(60)), "Check in")
+        XCTAssertEqual(FlintGlanceActivityPlan.countdownLabel(endsAt: now.addingTimeInterval(30),
+                                                            staleAt: now.addingTimeInterval(30)), "Planned time left")
     }
 
     func testActiveSessionAloneCannotAuthorizeActivity() {
@@ -159,5 +163,55 @@ final class FlintGlanceTests: XCTestCase {
     func testOnlyDeepLinkHasNoActionPayload() {
         XCTAssertEqual(FlintGlancePresentation.openURL.absoluteString, "flint://open")
         XCTAssertNil(URLComponents(url: FlintGlancePresentation.openURL, resolvingAgainstBaseURL: false)?.query)
+    }
+
+    private func project(version: Int = 1, state: String = "protected", observed: TimeInterval = -10,
+                         validity: TimeInterval? = 600, reasons: [String] = [],
+                         ends: [Date?]? = nil, recovery: Date? = nil) -> FlintGlanceInput {
+        let fixture = input()
+        return FlintGlanceStatusAdapter.project(version: version, observedAt: now.addingTimeInterval(observed),
+            validUntil: validity.map { now.addingTimeInterval($0) }, state: state,
+            session: fixture.session, enforcingEnds: ends ?? [now.addingTimeInterval(600)],
+            next: fixture.next, recoveryUntil: recovery, degradedReasons: reasons,
+            history: fixture.history, at: now)
+    }
+
+    func testBPublicStateProjectionAndGlobalRecovery() {
+        for (state, expected) in [("protected", FlintGlanceInput.Protection.enforcing),
+                                  ("not_protected", .idle), ("degraded", .degraded),
+                                  ("suspended", .suspended), ("unavailable", .unavailable)] {
+            XCTAssertEqual(project(state: state).protection, expected)
+        }
+        XCTAssertEqual(project(state: "suspended", recovery: now.addingTimeInterval(600)).protection, .pass)
+        XCTAssertNil(plan(project(state: "suspended", recovery: now.addingTimeInterval(600))))
+        XCTAssertEqual(project(reasons: ["registration_unobserved"]).protection, .degraded)
+        XCTAssertNil(plan(project(reasons: ["registration_unobserved"])))
+    }
+
+    func testBUnknownMissingUntrustedAndClockUncertainFailUnavailable() {
+        for value in [project(version: 0), project(version: 2), project(state: "future_state"),
+                      project(observed: 1), project(validity: nil), project(validity: 0),
+                      project(reasons: ["time_uncertain"]), project(ends: []), project(observed: -301)] {
+            XCTAssertEqual(value.protection, .unavailable)
+            XCTAssertNil(plan(value))
+            // Independently readable F history does not become a fabricated zero.
+            XCTAssertEqual(FlintGlancePresentation(value, at: now).historyValue, "2m")
+        }
+    }
+
+    func testBDisplayFreshnessIsBoundedIndependentlyOfLogicalEnd() {
+        let value = project()
+        XCTAssertEqual(value.validUntil, now.addingTimeInterval(290))
+        XCTAssertEqual(value.protectionEndsAt, now.addingTimeInterval(600))
+        XCTAssertEqual(plan(value)?.staleAt, now.addingTimeInterval(290))
+        XCTAssertEqual(plan(value)?.endsAt, now.addingTimeInterval(600))
+    }
+
+    func testBOverlapUntilNeverDropsLaterOrOpenEndedContributor() {
+        XCTAssertEqual(project(ends: [now.addingTimeInterval(60), now.addingTimeInterval(600)]).protectionEndsAt,
+                       now.addingTimeInterval(600))
+        let openEnded = project(ends: [nil, now.addingTimeInterval(600)])
+        XCTAssertNil(openEnded.protectionEndsAt)
+        XCTAssertNotNil(plan(openEnded), "An unrelated open-ended cause cannot erase a finite armed session")
     }
 }

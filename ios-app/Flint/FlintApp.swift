@@ -45,6 +45,7 @@ struct RootView: View {
         .background(AppLockWindow(lock: appLock))
         .onAppear { updateScenePhase(scenePhase) }
         .onChange(of: scenePhase, perform: updateScenePhase)
+        .modifier(FlintGlanceObservation())
     }
 
     private func updateScenePhase(_ phase: ScenePhase) {

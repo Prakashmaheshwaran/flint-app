@@ -47,6 +47,15 @@ final class FlintGlanceActivityController {
         guard !registered else { return }
         registered = true
         FlintSessionLifecycle.register(sink)
+        // This singleton lives for the process lifetime. The callback never dereferences
+        // the observer pointer; it only schedules a fresh read of B's public snapshot.
+        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(),
+            Unmanaged.passUnretained(self).toOpaque(), { _, _, _, _, _ in
+                Task { @MainActor in
+                    await FlintGlanceActivityController.shared.refresh(
+                        optedIn: UserDefaults.standard.bool(forKey: FlintLiveActivityPreference.key))
+                }
+            }, FlintGlanceReader.changedNotificationName as CFString, nil, .deliverImmediately)
     }
 
     /// Serialize ActivityKit mutations so a slow update cannot recreate an activity after

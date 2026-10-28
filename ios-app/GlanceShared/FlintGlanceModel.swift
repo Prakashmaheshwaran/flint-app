@@ -154,6 +154,10 @@ struct FlintGlanceActivityPlan: Equatable {
     let endsAt: Date
     let staleAt: Date
 
+    static func countdownLabel(endsAt: Date, staleAt: Date) -> String {
+        staleAt < endsAt ? "Check in" : "Planned time left"
+    }
+
     static func make(_ input: FlintGlanceInput, optedIn: Bool, systemEnabled: Bool,
                      at date: Date) -> Self? {
         guard optedIn, systemEnabled, [.armed, .enforcing].contains(input.protection),
@@ -163,11 +167,9 @@ struct FlintGlanceActivityPlan: Equatable {
               session.isArmed, !session.id.isEmpty,
               ["Easy", "Harder", "Hardcore"].contains(session.tier),
               session.startedAt <= date, session.endsAt > date,
-              session.endsAt > session.startedAt,
-              let protectionEnd = input.protectionEndsAt, protectionEnd > date else { return nil }
+              session.endsAt > session.startedAt else { return nil }
         return .init(sessionID: session.id, cause: session.cause.rawValue.capitalized,
                      tier: session.tier, startedAt: session.startedAt,
-                     endsAt: min(session.endsAt, protectionEnd),
-                     staleAt: min(valid, session.endsAt, protectionEnd))
+                     endsAt: session.endsAt, staleAt: min(valid, session.endsAt))
     }
 }
