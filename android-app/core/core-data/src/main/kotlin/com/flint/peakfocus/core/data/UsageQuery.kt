@@ -1,9 +1,13 @@
 package com.flint.peakfocus.core.data
 
+import android.app.AppOpsManager
 import android.app.usage.UsageStatsManager
 import android.content.Context
+import android.os.Build
+import android.os.Process
 import com.flint.peakfocus.core.model.DailyUsageTimeline
 import com.flint.peakfocus.core.model.ConservativeDailyUsage
+import com.flint.peakfocus.core.model.UsageAccessProbe
 import java.time.ZoneId
 
 /**
@@ -17,6 +21,31 @@ object UsageQuery {
     private var timeline: DailyUsageTimeline? = null
     private val conservative = ConservativeDailyUsage()
     @Volatile private var resetRequested = false
+    @Volatile private var resetAccessRequested = false
+    private var cachedOps: AppOpsManager? = null
+    private var accessProbe: UsageAccessProbe? = null
+
+    /** Path A cannot infer Usage Access from Accessibility. Null means the budget is unmeasured. */
+    @Synchronized
+    fun dailyForegroundMillisIfGranted(context: Context, packageName: String, now: Long): Long? {
+        val app = context.applicationContext
+        val ops = app.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+        if (cachedOps !== ops) {
+            cachedOps = ops
+            accessProbe = UsageAccessProbe {
+                val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    ops.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), app.packageName)
+                } else {
+                    @Suppress("DEPRECATION")
+                    ops.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), app.packageName)
+                }
+                mode == AppOpsManager.MODE_ALLOWED
+            }
+        }
+        if (resetAccessRequested) { accessProbe!!.invalidate(); resetAccessRequested = false }
+        return accessProbe!!.measure(now) { dailyForegroundMillis(app, packageName, now) }
+    }
+
     fun dailyForegroundMillis(
         context: Context,
         packageName: String,
@@ -44,6 +73,6 @@ object UsageQuery {
     }
 
     /** Rebuild event observations, but never erase the conservative quota floor on clock/zone changes. */
-    fun invalidate() { resetRequested = true }
+    fun invalidate() { resetRequested = true; resetAccessRequested = true }
 
 }

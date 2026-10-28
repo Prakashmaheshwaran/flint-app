@@ -136,4 +136,9 @@ class UsageTimelineTest {
         assertEquals(0L, ForegroundUsage.millis("app", emptyList(), 0, 5_000))
         assertEquals(0L, ForegroundUsage.millis("app", listOf(event(0)), 5_000, 4_000))
     }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `usage rejects out of order input instead of silently miscounting`() {
+        ForegroundUsage.millis("app", listOf(event(2_000), event(1_000, PAUSED)), 0, 3_000)
+    }
 }

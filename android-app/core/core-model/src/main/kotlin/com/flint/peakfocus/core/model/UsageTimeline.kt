@@ -124,8 +124,11 @@ object ForegroundUsage {
             resumed.clear()
         }
 
+        var previousTimestamp = Long.MIN_VALUE
         for (event in events) {
-            if (event.timestampMs > nowMs) break
+            require(event.timestampMs >= previousTimestamp) { "Foreground events must be timestamp ordered" }
+            previousTimestamp = event.timestampMs
+            if (event.timestampMs > nowMs) continue
             when (event.kind) {
                 ForegroundEvent.Kind.SHUTDOWN -> { close(event.timestampMs); shutdown = true }
                 ForegroundEvent.Kind.STARTUP -> {

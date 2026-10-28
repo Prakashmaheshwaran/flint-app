@@ -243,13 +243,18 @@ heuristic (JVM-tested only).
   skipped locally. The target now runs `./gradlew test`, matching CI.
 - *Continuous Time Limits and schedules (R1/R6):* both paths use the larger of event-derived
   usage (including the ongoing interval), aggregate daily buckets, and already observed usage.
-  A pruned/failed event query cannot erase aggregate consumption; two failed measurements fail
-  closed for that decision. Queries run on IO, and the ordered event timeline is reused across
-  measurements. Path B retains foreground across quiet polls; budget cache validity is bounded
+  A pruned/failed event query cannot erase aggregate consumption; with Usage Access granted,
+  two failed measurements fail closed for that decision. Without the grant, Path A time limits
+  are unmeasured and do not block; independent rule/open-limit causes still apply. Path A checks
+  AppOps on IO with a one-second cache and retries unmeasured limits while awake. Queries run on
+  IO, with one aggregate read alongside each event measurement; the ordered event timeline is
+  reused across measurements. Path B retains foreground across quiet polls; budget validity is bounded
   by the smaller of 15 seconds and the remaining budget. The safety floor precedes all causes.
   Path A owns one schedule/expiry/budget/midnight timer and wakes on rule/limit/clock changes.
-  Screen-off removes the budget deadline; screen-on/unlock re-evaluates. A floor/system window
-  keeps the previous app's earlier boundary or a 60-second recovery check.
+  Screen-off removes budget and 60-second recovery polling deadlines; screen-on/unlock
+  re-evaluates. While awake, a floor/system window keeps the previous app's earlier boundary or
+  a 60-second recovery check. Missing Usage Access is degraded protection; publishing that
+  reason to status surfaces is tracked in the separate ProtectionStatus follow-up.
 - *Detector failover:* Path B's existing specialUse foreground service stays in standby while
   Accessibility is actually connected. Standby probes permission health once a minute, with
   immediate channel wakeups for binding/rule/clock changes; active fallback polls each second.

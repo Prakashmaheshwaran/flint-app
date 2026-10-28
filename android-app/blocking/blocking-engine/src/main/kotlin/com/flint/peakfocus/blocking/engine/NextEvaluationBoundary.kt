@@ -33,7 +33,7 @@ object NextEvaluationBoundary {
         val today = now.atZone(zone).toLocalDate()
         val candidates = mutableListOf<Long>()
         // Recover an obscured foreground or unavailable usage measurement without a new event.
-        if (boundedRecovery) candidates += nowMs + 60_000L
+        if (boundedRecovery && interactive) candidates += nowMs + 60_000L
         // Budgets reset at local midnight; schedules can also change their weekday gate then.
         candidates += today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
         remainingBudgetMs?.takeIf { interactive && it > 0L && it <= Long.MAX_VALUE - nowMs }

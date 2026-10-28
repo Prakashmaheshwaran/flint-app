@@ -158,7 +158,7 @@ class FlintAccessibilityService : AccessibilityService() {
         val pkg = rootPkg?.takeUnless { it == packageName }
             ?: lastForegroundPackage
             ?: return
-        if (pkg == packageName) { armFloorRecovery(); return }
+        if (pkg == packageName) { evaluationJob?.cancel(); armFloorRecovery(); return }
         if (pkg != lastForegroundPackage) lastForegroundUrl = null
         lastForegroundPackage = pkg
         // A recheck is not a new open; the shared policy keeps the current visit intact.
@@ -203,9 +203,10 @@ class FlintAccessibilityService : AccessibilityService() {
             // Cancellation on every newer decision prevents a suspended query from showing a
             // stale shield. The initial seven-day carry-in query never runs on the main thread.
             val used = limitMin?.let { withContext(Dispatchers.IO) {
-                UsageQuery.dailyForegroundMillis(this@FlintAccessibilityService, pkg, now)
+                UsageQuery.dailyForegroundMillisIfGranted(this@FlintAccessibilityService, pkg, now)
             } }
-            val remaining = limitMin?.let { it * 60_000L - checkNotNull(used) }
+            // Missing Usage Access is degraded/unmeasured, not an exhausted time limit.
+            val remaining = used?.let { checkNotNull(limitMin) * 60_000L - it }
             lastBudgetDeadlineMs = remaining?.let { now + it.coerceAtLeast(0L) }
             val timeLimitSpent = remaining != null && remaining <= 0L
 
@@ -225,7 +226,9 @@ class FlintAccessibilityService : AccessibilityService() {
             } else {
                 coordinator.hideIfShown()
             }
-            armBoundary(pkg, now, remaining, retryUsage = used == Long.MAX_VALUE)
+            // A configured but unmeasured budget retains a recovery check without blocking.
+            armBoundary(pkg, now, remaining ?: limitMin?.let { 0L },
+                retryUsage = limitMin != null && (used == null || used == Long.MAX_VALUE))
         }
     }
 
@@ -234,7 +237,7 @@ class FlintAccessibilityService : AccessibilityService() {
         boundaryTimer?.arm(NextEvaluationBoundary.next(
             now, ZoneId.systemDefault(), pkg, ActiveRulesHolder.rules, remainingBudgetMs,
             interactive = interactive,
-            // A failed measurement blocks this decision but must recover without an app switch.
+            // Failed reads or missing access recover without an app switch, only while awake.
             boundedRecovery = retryUsage && interactive,
         ))
     }

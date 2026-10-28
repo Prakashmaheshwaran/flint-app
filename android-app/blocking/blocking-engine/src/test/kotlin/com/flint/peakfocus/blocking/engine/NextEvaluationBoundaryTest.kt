@@ -35,6 +35,19 @@ class NextEvaluationBoundaryTest {
         assertEquals(now + 30_000, NextEvaluationBoundary.next(now, utc, "app", listOf(expiring), 10, interactive = false))
     }
 
+    @Test fun `floor recovery stops its minute polling while screen is off`() {
+        val now = ms("2026-10-28T09:00:00Z")
+        val midnight = ms("2026-10-29T00:00:00Z")
+        repeat(120) { second ->
+            assertEquals(midnight, NextEvaluationBoundary.next(now + second * 1_000L, utc, "app", emptyList(), 10,
+                interactive = false, boundedRecovery = true))
+        }
+        assertEquals(ms("2026-10-28T10:00:00Z"), NextEvaluationBoundary.next(now, utc, "app", listOf(rule()),
+            interactive = false, boundedRecovery = true))
+        assertEquals(now + 60_000, NextEvaluationBoundary.next(now, utc, "app", emptyList(), 0,
+            interactive = true, boundedRecovery = true))
+    }
+
     @Test fun `floor recovery retains nearer boundaries and otherwise rechecks within one minute`() {
         val now = ms("2026-10-28T09:59:45Z")
         assertEquals(now + 15_000, NextEvaluationBoundary.next(now, utc, "app", listOf(rule()), boundedRecovery = true))
