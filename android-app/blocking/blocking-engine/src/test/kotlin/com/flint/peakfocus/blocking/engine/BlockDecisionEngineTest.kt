@@ -199,3 +199,63 @@ class BlockDecisionEngineTest {
         assertEquals(Verdict.Allow, engine.decide("com.x", null, listOf(rule), self, 1100, 3)) // outside
     }
 }
+
+/**
+ * Audit R2 regression matrix for the engine half of the safety floor: no block-list, allow-list,
+ * Sleep-style overnight allow-list, schedule or Hardcore rule shields a static floor surface,
+ * while an ordinary app with the identical rule IS blocked (proving each rule is live).
+ */
+class SafetyFloorEngineMatrixTest {
+
+    private val engine = BlockDecisionEngine()
+    private val self = "com.flint.peakfocus"
+    private val control = "com.instagram.android"
+    private val floor = listOf(
+        self,
+        "com.android.dialer",
+        "com.google.android.dialer",
+        "com.samsung.android.dialer",
+        "com.android.phone",
+        "com.android.emergency",
+        "com.android.settings",
+        "com.google.android.permissioncontroller",
+        "com.android.systemui",
+    )
+
+    private fun rule(id: String, apps: Set<String>, allowList: Boolean, schedule: Schedule? = null, level: BreakLevel = BreakLevel.EASY) =
+        BlockRule(
+            id = id,
+            name = id,
+            targets = BlockTargets(apps = apps.map { AppRef(it) }.toSet(), allowListMode = allowList),
+            schedule = schedule,
+            breakLevel = level,
+        )
+
+    private val cases: List<Pair<String, BlockRule>> by lazy {
+        listOf(
+            "block list" to rule("block", (floor + control).toSet(), allowList = false),
+            "allow list (brick phone)" to rule("allow", emptySet(), allowList = true),
+            "Sleep overnight allow list" to rule("sleep", setOf("com.spotify.music"), allowList = true, schedule = Schedule(startMinuteOfDay = 22 * 60, endMinuteOfDay = 7 * 60)),
+            "weekday schedule" to rule("sched", (floor + control).toSet(), allowList = false, schedule = Schedule(setOf(3), 9 * 60, 17 * 60)),
+            "hardcore session" to rule("hard", (floor + control).toSet(), allowList = false, level = BreakLevel.HARDCORE),
+        )
+    }
+
+    @Test fun `no rule kind shields a floor surface while the same rule blocks an ordinary app`() {
+        val wednesdayNoon = 12 * 60
+        val wednesdayLate = 23 * 60
+        for ((name, r) in cases) {
+            val minute = if (r.id == "sleep") wednesdayLate else wednesdayNoon
+            assertTrue("$name must be live", engine.decide(control, null, listOf(r), self, minute, 3) is Verdict.Block)
+            for (pkg in floor) {
+                assertEquals("$name on $pkg", Verdict.Allow, engine.decide(pkg, null, listOf(r), self, minute, 3))
+            }
+        }
+    }
+
+    @Test fun `a floor surface stays allowed even when it is the only allowed app`() {
+        val onlyDialer = rule("allow", setOf("com.android.dialer"), allowList = true)
+        assertEquals(Verdict.Allow, engine.decide("com.android.settings", null, listOf(onlyDialer), self))
+        assertTrue(engine.decide(control, null, listOf(onlyDialer), self) is Verdict.Block)
+    }
+}

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.View
 import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
 import com.flint.peakfocus.blocking.engine.BreakPolicy
@@ -41,6 +42,10 @@ import kotlinx.coroutines.launch
  * process-wide [BlockExemptions] — so a break granted on one path stands down the other.
  *
  * Responsibilities (the pieces `feature-blockscreen` explicitly leaves to its host):
+ *  - **Safety floor** ([SafetyFloorGate], audit R2): the dialer, emergency surfaces, home apps,
+ *    Settings/permission recovery and Flint are never shielded by a rule, allow-list, schedule,
+ *    Sleep, Time Limit or Open Limit cause, on either path. Checked before any cause is built
+ *    and again (with freshly resolved runtime surfaces) before a block is returned or mounted.
  *  - **Clock**: while a block surface is visible, re-render it every second with fresh
  *    [BlockScreenState] (countdowns tick, HARDER cooldowns drain, expired windows auto-hide).
  *  - **Break accounting** ([BreakPolicy]): EASY grants immediately; HARDER arms/settles the
@@ -75,6 +80,8 @@ class BlockScreenCoordinator(
      */
     private val onExemptionExpired: ((String) -> Unit)? = null,
     private val nowEpochMs: () -> Long = System::currentTimeMillis,
+    /** Test seam; production resolves the device's runtime floor surfaces lazily. */
+    safetyFloorGate: SafetyFloorGate? = null,
 ) {
 
     /** How a path actually mounts the block surface. Implementations own the window type. */
@@ -90,6 +97,11 @@ class BlockScreenCoordinator(
     }
 
     private val appContext = context.applicationContext
+    private val safetyFloor = safetyFloorGate ?: SafetyFloorGate(
+        selfPackage = appContext.packageName,
+        resolveRuntime = { NeverBlockSurfaces.resolve(appContext) },
+        nowElapsedMs = SystemClock::elapsedRealtime,
+    )
     private val focusStore: FocusStateStore = FlintPreferences.focusState(appContext)
     private val limitsStore: LimitsStore = FlintPreferences.limits(appContext)
 
@@ -136,6 +148,13 @@ class BlockScreenCoordinator(
         scope.launch { limitsStore.timeLimits.collect { timeLimits = it } }
     }
 
+    /**
+     * True when [packageName] is on the enforcement safety floor (static OEM list, Flint, or the
+     * device's resolved dialer/home apps). Detectors short-circuit on this before measuring
+     * budgets; [evaluateBlockCause] and [currentBlockCause] apply it regardless.
+     */
+    fun isSafetyFloor(packageName: String): Boolean = safetyFloor.protects(packageName)
+
     /** Store-wide default break level — the tier for Time Limit blocks (no per-limit tier yet). */
     fun currentDefaultBreakLevel(): BreakLevel = defaultBreakLevel
 
@@ -175,6 +194,10 @@ class BlockScreenCoordinator(
         timeLimitSpent: Boolean,
         foregroundUrl: String? = null,
     ): BlockCause? {
+        // Safety floor before every cause: nothing is measured, counted or shielded. Open-limit
+        // bookkeeping is untouched too — a floor app is not an open, and leaving one for an app
+        // is still decided by countsAsOpen on the next real transition.
+        if (safetyFloor.protects(packageName)) return null
         val now = nowEpochMs()
         val offset = utcOffsetMs(now)
         observations[packageName] = Observation(timeLimitSpent, openLimitPolicy.epochDay(now, offset), foregroundUrl)
@@ -189,11 +212,14 @@ class BlockScreenCoordinator(
         val openCause = (openDecision as? OpenLimitDecision.Blocked)?.let {
             openLimitBlockCause(it.limit, now, offset)
         }
-        return BlockOverlapPolicy.afterExemptions(
+        val cause = BlockOverlapPolicy.afterExemptions(
             BlockOverlapPolicy.strongest(timeCause, ruleCause, openCause),
             ordinary,
             emergency,
         )
+        // About to block: re-check against freshly resolved runtime surfaces, so a dialer or
+        // launcher made default seconds ago is never shielded from a stale cache.
+        return cause?.takeUnless { safetyFloor.protectsFresh(packageName) }
     }
 
     /**
@@ -203,6 +229,14 @@ class BlockScreenCoordinator(
      */
     fun currentBlockCause(packageName: String, displayedCause: BlockCause? = null): BlockCause? {
         val now = nowEpochMs()
+        if (safetyFloor.protects(packageName)) {
+            // Only the separately designed uninstall guard may stand on a floor surface (it
+            // shields specific Settings/installer pages); every ordinary cause stands down.
+            return displayedCause?.takeIf {
+                it.reason == BlockScreenReason.UNINSTALL_GUARD &&
+                    (it.endsAtEpochMs == null || now < it.endsAtEpochMs)
+            }
+        }
         val offset = utcOffsetMs(now)
         val observation = observations[packageName]
         val cal = Calendar.getInstance().apply { timeInMillis = now }
@@ -288,6 +322,11 @@ class BlockScreenCoordinator(
         if (cause.endsAtEpochMs != null && now >= cause.endsAtEpochMs) {
             // Stale cause: the block window already ended. Make sure nothing lingers.
             hideLocked()
+            return@runOnMain
+        }
+        if (cause.reason != BlockScreenReason.UNINSTALL_GUARD && safetyFloor.protectsFresh(packageName)) {
+            // Defense in depth for any caller: never mount an ordinary shield on a floor surface.
+            if (visiblePackage == packageName) hideLocked()
             return@runOnMain
         }
         val existing = shownView

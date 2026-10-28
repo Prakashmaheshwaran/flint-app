@@ -14,6 +14,7 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
+    testOptions { unitTests { isIncludeAndroidResources = true } }
 }
 
 dependencies {
@@ -38,4 +39,7 @@ dependencies {
 
     // JVM tests for the pure glue (decision→BlockScreenState mapping, exemption ledger).
     testImplementation(libs.junit)
+    // Robolectric coordinator tests (safety-floor matrix) run in the debug unit-test variant only.
+    testDebugImplementation(libs.androidx.junit)
+    testDebugImplementation(libs.robolectric)
 }

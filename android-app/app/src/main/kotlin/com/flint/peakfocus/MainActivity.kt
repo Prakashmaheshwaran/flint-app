@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.sp
+import com.flint.peakfocus.core.common.RuntimeSafetySurfaces
 import com.flint.peakfocus.core.common.theme.FlintPalette
 import com.flint.peakfocus.core.common.ui.EmberButton
 import com.flint.peakfocus.core.common.ui.EmberLandscape
@@ -128,6 +129,7 @@ import com.flint.peakfocus.core.common.ui.rememberFlintHaptics
 import com.flint.peakfocus.core.data.BlocklistStore
 import com.flint.peakfocus.core.datastore.FlintPreferences
 import com.flint.peakfocus.core.model.BlockRule
+import com.flint.peakfocus.core.model.SafetyFloor
 import com.flint.peakfocus.feature.blocklist.BlocklistScreen
 import com.flint.peakfocus.feature.blocklist.TimerScreen
 import com.flint.peakfocus.feature.onboarding.AccessibilityConsentScreen
@@ -679,11 +681,14 @@ private const val KEY_NOTIF_ASKED = "post_notifications_asked"
 private fun loadLaunchableApps(context: Context): List<AppEntry> {
     val pm = context.packageManager
     val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+    // Safety-floor apps (Flint, dialer/emergency, home apps, Settings/permission recovery) are
+    // never shielded, so they are never offered for blocking either.
+    val runtimeFloor = RuntimeSafetySurfaces.resolve(context)
     @Suppress("DEPRECATION")
     return pm.queryIntentActivities(intent, 0)
         .mapNotNull { resolveInfo ->
             val pkg = resolveInfo.activityInfo?.packageName ?: return@mapNotNull null
-            if (pkg == context.packageName) {
+            if (SafetyFloor.isProtected(pkg, context.packageName, runtimeFloor)) {
                 null
             } else {
                 // Decoded once, small (40dp rows): ~200 apps ≈ a few MB, never full launcher art.

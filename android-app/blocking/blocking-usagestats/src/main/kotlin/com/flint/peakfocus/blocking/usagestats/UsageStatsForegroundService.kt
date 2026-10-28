@@ -12,7 +12,6 @@ import android.os.IBinder
 import androidx.core.content.ContextCompat
 import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
 import com.flint.peakfocus.blocking.engine.IsoWeekday
-import com.flint.peakfocus.blocking.overlay.NeverBlockSurfaces
 import com.flint.peakfocus.blocking.overlay.PathBBlockHandoff
 import com.flint.peakfocus.core.data.LimitStore
 import com.flint.peakfocus.core.model.ActiveRulesHolder
@@ -41,7 +40,6 @@ class UsageStatsForegroundService : Service() {
     private val engine = BlockDecisionEngine()
     private lateinit var poller: UsagePoller
     private lateinit var timeLimitGate: PathBTimeLimitGate
-    private var neverBlock: Set<String> = emptySet()
     private var loop: Job? = null
 
     override fun onCreate() {
@@ -58,7 +56,6 @@ class UsageStatsForegroundService : Service() {
             },
             foregroundMillisToday = limitTracker::foregroundMillisToday,
         )
-        neverBlock = NeverBlockSurfaces.resolve(this)
         startAsForeground()
     }
 
@@ -82,9 +79,11 @@ class UsageStatsForegroundService : Service() {
         val now = System.currentTimeMillis()
         val pkg = poller.currentForegroundPackage(now) ?: return
 
-        // Default launcher/dialer are never shielded; route as Allow so the overlay stands
-        // down and open-limit transition bookkeeping stays intact (launcher→app IS an open).
-        if (pkg in neverBlock) {
+        // Safety floor (dialer, emergency, home apps, Settings/permission recovery, Flint): never
+        // shielded. Route as Allow so the overlay stands down and the handoff still tracks the
+        // previous package (launcher→app IS an open). The coordinator re-applies the floor
+        // before every cause; this early return also skips the budget query.
+        if (PathBBlockHandoff.coordinator(this).isSafetyFloor(pkg)) {
             PathBBlockHandoff.onForegroundPolled(this, pkg, Verdict.Allow)
             return
         }

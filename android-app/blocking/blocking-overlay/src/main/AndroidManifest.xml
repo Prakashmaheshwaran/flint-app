@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Safety floor (core-common RuntimeSafetySurfaces): see every installed home app so a
+         custom or secondary launcher is never shielded. Intent query only; no QUERY_ALL_PACKAGES. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
+    </queries>
+
     <application>
         <!-- Full-screen block screen (path B fallback). Launched with FLAG_ACTIVITY_NEW_TASK
              from the a11y service or an active foreground service (never from the background). -->

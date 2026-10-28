@@ -5,6 +5,8 @@ import android.content.Intent
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.drawable.toBitmap
+import com.flint.peakfocus.core.common.RuntimeSafetySurfaces
+import com.flint.peakfocus.core.model.SafetyFloor
 
 /** One launchable app as the picker shows it. [icon] is null when the drawable couldn't render. */
 internal data class InstalledApp(
@@ -33,12 +35,16 @@ internal class InstalledAppsSource(context: Context) {
 
         @Suppress("DEPRECATION") // The ResolveInfoFlags overload needs API 33; minSdk is 23.
         val resolved = pm.queryIntentActivities(launcherIntent, 0)
+        // The same runtime surfaces enforcement exempts (default/system dialer, home apps).
+        val runtimeFloor = RuntimeSafetySurfaces.resolve(appContext)
 
         return resolved
             .mapNotNull { info ->
                 val pkg = info.activityInfo?.packageName ?: return@mapNotNull null
-                // Never offer Flint itself — the engine refuses to block it anyway.
-                if (pkg == appContext.packageName) return@mapNotNull null
+                // Never offer safety-floor apps (Flint, dialer/emergency, home apps, Settings and
+                // permission recovery): enforcement never shields them, so a picker entry would
+                // promise a block that cannot happen. Already-stored selections stay inert.
+                if (SafetyFloor.isProtected(pkg, appContext.packageName, runtimeFloor)) return@mapNotNull null
                 val label = info.loadLabel(pm)?.toString()?.takeIf { it.isNotBlank() } ?: pkg
                 val icon = try {
                     info.loadIcon(pm)?.toBitmap(ICON_SIZE_PX, ICON_SIZE_PX)?.asImageBitmap()
