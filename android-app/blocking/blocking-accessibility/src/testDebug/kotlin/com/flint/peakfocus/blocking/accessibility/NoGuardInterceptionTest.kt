@@ -2,7 +2,6 @@ package com.flint.peakfocus.blocking.accessibility
 
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
-import java.time.Duration
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.flint.peakfocus.blocking.overlay.BlockExemptions
 import com.flint.peakfocus.blocking.overlay.BlockScreenCoordinator
@@ -18,7 +17,6 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
@@ -80,10 +78,12 @@ class NoGuardInterceptionTest {
             packageName = pkg
             className = cls
         }
+        // Never drain the main looper here: the mounted block screen's Compose animation keeps
+        // posting frame work at the same instant, so idle()/idleFor() can spin forever. Nothing
+        // needs draining — on Robolectric's main thread the service event, coordinator decision
+        // and overlay mount/hide all run synchronously (runOnMain executes inline).
+        check(Looper.myLooper() == Looper.getMainLooper()) { "test must run on the main looper" }
         service.onAccessibilityEvent(event)
-        // Bounded, never idle(): the mounted block screen runs an infinite Compose animation on
-        // the real window, so draining the looper "until idle" never returns on some hosts.
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(50))
     }
 
     /** The package whose shield is mounted on the accessibility overlay, if any. */
