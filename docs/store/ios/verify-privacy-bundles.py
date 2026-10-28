@@ -33,7 +33,7 @@ def verify(app: Path) -> None:
         assert actual["NSPrivacyTracking"] is False, bundle
         assert actual["NSPrivacyTrackingDomains"] == [], bundle
         assert actual["NSPrivacyCollectedDataTypes"] == [], bundle
-        reasons = [] if target == "DeviceActivityReportExtension" else [{
+        reasons = [{
             "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
             "NSPrivacyAccessedAPITypeReasons": ["CA92.1", "1C8F.1"] if target == "Flint" else ["1C8F.1"],
         }]

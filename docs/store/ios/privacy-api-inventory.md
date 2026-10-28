@@ -10,11 +10,19 @@ Apple account disclosures or signed-device behavior.
 | --- | --- | --- |
 | `com.flint.peakfocus` | `@AppStorage("flint.onboarded")` in `Flint/FlintApp.swift`, private onboarding preference | UserDefaults, `CA92.1` |
 | Host, `.monitor`, `.shield-config`, `.shield-action` | `FlintGroupStore` and `UserDefaults.flintGroup` in `Packages/FlintCore/Sources/FlintCore/{FlintGroupStore,FlintModel}.swift`; selections, rules, session, PIN, pass and counters shared only inside `group.com.flint.peakfocus` | UserDefaults, `1C8F.1` |
-| `.report` | `ActivitySummary`, `TotalActivityReport`, `TotalActivityView` keep system-provided report data in the report process; FlintCore is linked for brand/UI types, with no defaults call from the report source | Empty API list |
+| `.report` | FlintCore is linked for brand/UI types. Its shared-suite defaults implementation remains in the optimized Release report binary, although report source makes no defaults call | UserDefaults, `1C8F.1` |
 
 Shared defaults are also used by `FlintOpenLimit.swift` and
 `FlintWebRestrictions.swift`. The monitor consumes the shared rules/session state;
 shield configuration reads remaining credits; shield action reads/writes credits.
+The report's `ActivitySummary`, `TotalActivityReport` and `TotalActivityView`
+keep system-provided report data in the report process; the report declaration
+covers retained shared-library code, not persistence or export of report data.
+An optimized simulator Release build was inspected with `nm -a` on 2026-10-28
+and retained `NSUserDefaults`, `FlintGroupStore` and shared config load/save
+implementations in the report executable. The report therefore declares the
+same App Group reason as the other extensions rather than relying on a
+source-call-only inventory. Reinspect the final signed archive as well.
 All five bundles have their own manifest and no tracking, tracking domains or
 collected data types. No third-party Swift SDK dependency is declared in
 `project.yml`; FlintCore is a local static Swift package.
