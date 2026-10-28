@@ -16,7 +16,7 @@ class FocusHistoryTest : FlintE2EFixture() {
     @Test fun realCompletionAndEarlyEndSurviveRestartAndRenderHistory() {
         visible(By.text("No focus sessions yet")); evidence("empty-today")
         clickTab("Insights")
-        visible(By.text("Focus sessions")); visible(By.text("No focus sessions yet"))
+        visible(By.text("FOCUS SESSIONS")); visible(By.text("No focus sessions yet"))
         evidence("empty-insights")
         clickTab("Today")
 
@@ -42,10 +42,10 @@ class FocusHistoryTest : FlintE2EFixture() {
         visible(By.text("The ember has set.")); visible(By.text("5m focused"))
         evidence("complete-after-restart")
         click("Done")
-        visible(By.text("Focused today")); visible(By.text(duration(focusedToday(completed))))
+        visible(By.text("FOCUSED TODAY")); visible(By.text(duration(focusedToday(completed))))
         evidence("today-completed")
         restartFlint()
-        visible(By.text("Focused today")) // persisted Done must not reopen Complete
+        visible(By.text("FOCUSED TODAY")) // persisted Done must not reopen Complete
         assertFalse(device.hasObject(By.text("The ember has set.")))
 
         startFiveMinuteTimer()
@@ -66,13 +66,13 @@ class FocusHistoryTest : FlintE2EFixture() {
         val outcomes = ended.map { it.getString("session") }.distinct().mapNotNull { firstTerminal(ended, it)?.getString("type") }
         assertEquals(1, outcomes.count { it == "completed" })
         assertEquals(1, outcomes.count { it == "ended_early" })
-        visible(By.text("Focused today")); visible(By.text(duration(focusedToday(ended))))
+        visible(By.text("FOCUSED TODAY")); visible(By.text(duration(focusedToday(ended))))
         evidence("today-completed-and-early")
 
         restartFlint()
-        visible(By.text("Focused today")); visible(By.text(duration(focusedToday(history()))))
+        visible(By.text("FOCUSED TODAY")); visible(By.text(duration(focusedToday(history()))))
         clickTab("Insights")
-        visible(By.text("Focus sessions")); visible(By.text("1 completed · 1 ended early"))
+        visible(By.text("FOCUS SESSIONS")); visible(By.text("1 completed · 1 ended early"))
         evidence("insights-week")
         click("Day")
         visible(By.text(duration(focusedToday(history()))))
@@ -81,6 +81,7 @@ class FocusHistoryTest : FlintE2EFixture() {
 
     private fun startFiveMinuteTimer(): Long {
         scrollTo("Start focus").click()
+        // Both calls follow a fresh process launch, so the UI draft starts empty.
         scrollTo("Choose what rests").click()
         visible(By.text("What rests"))
         scrollTo(target).click(); click("Add · 1")
