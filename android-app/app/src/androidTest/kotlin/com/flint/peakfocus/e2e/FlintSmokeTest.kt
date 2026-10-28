@@ -2,6 +2,7 @@ package com.flint.peakfocus.e2e
 
 import android.app.Activity
 import android.app.UiAutomation
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.widget.TextView
@@ -209,14 +210,30 @@ class FlintSmokeTest {
         visible(By.text("Flint E2E Target is resting."))
     }
 
-    private fun visible(selector: BySelector): UiObject2 =
-        device.wait(Until.findObject(selector), timeout)
-            ?: throw AssertionError("UI did not show $selector")
+    private fun visible(selector: BySelector): UiObject2 {
+        val deadline = SystemClock.uptimeMillis() + timeout
+        do {
+            refreshAccessibilityCache()
+            device.findObject(selector)?.let { return it }
+            SystemClock.sleep(100)
+        } while (SystemClock.uptimeMillis() < deadline)
+        throw AssertionError("UI did not show $selector")
+    }
+
+    private fun refreshAccessibilityCache() {
+        // API 36 retained Add · 0/disabled AX nodes after pixels showed Add · 1
+        // enabled. Read fresh nodes during readiness polling, without replaying input
+        // or changing UiAutomation's accessibility-service preservation flag.
+        if (Build.VERSION.SDK_INT >= 34) {
+            instrumentation.getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES).clearCache()
+        }
+    }
 
     private fun click(text: String) = visible(By.text(text)).click()
 
     private fun scrollTo(text: String): UiObject2 {
         repeat(8) {
+            refreshAccessibilityCache()
             device.findObject(By.text(text))?.let { return it }
             // Editors have a fixed footer; a screen-relative swipe can start
             // outside the LazyColumn and never move it. Use its actual viewport.
@@ -234,6 +251,7 @@ class FlintSmokeTest {
         val directory = File(instrumentation.context.getExternalFilesDir(null), "smoke").apply { mkdirs() }
         val name = "${testName.methodName}-$stage"
         device.takeScreenshot(File(directory, "$name.png"))
+        refreshAccessibilityCache()
         device.dumpWindowHierarchy(File(directory, "$name.xml"))
     }
 }
