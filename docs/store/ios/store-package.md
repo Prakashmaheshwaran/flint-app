@@ -135,7 +135,7 @@ privacy-sensitive; a label does not mean the app has no local data.
   declare a local package with no external package dependency. Inspection of
   production Swift, YAML, plists, and entitlements found no app-owned URLSession
   client or analytics, advertising, crash-upload, or account SDK. Re-run the
-  inventory against all five archived bundles and linked frameworks after merges;
+  inventory against all six archived bundles and linked frameworks after merges;
   absence of a source match alone is not proof of zero runtime network traffic.
   iOS has no Android-style INTERNET permission switch; do not cite Android's
   release manifest as iOS privacy evidence.

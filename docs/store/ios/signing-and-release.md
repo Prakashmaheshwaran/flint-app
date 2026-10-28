@@ -24,7 +24,7 @@ cannot override the identity from the owner's local project configuration.
 ## Version policy
 
 `MARKETING_VERSION` in `ios-app/project.yml` is the digits-and-dots semantic
-version `X.Y.Z`; all five shipping targets inherit it. It must equal the numeric
+version `X.Y.Z`; all six shipping targets inherit it. It must equal the numeric
 core of the eventual repository release tag. `scripts/check-release-version.sh`
 already checks this mapping, including prerelease tags such as `v1.0.0-rc.1`
 mapping to iOS `1.0.0`. It also checks Android's full version name/code and the
@@ -36,7 +36,7 @@ TestFlight upload**, including a rebuild of the same marketing version. Never
 reuse an uploaded build number or override it on one target. The existing
 version-check script does not enforce iOS build-number monotonicity: the owner
 must compare against App Store Connect and the last uploaded build, then inspect
-the archived `CFBundleVersion` and `CFBundleShortVersionString` in all five
+the archived `CFBundleVersion` and `CFBundleShortVersionString` in all six
 bundles. The baseline `0.1.0` / `1` remains unchanged by this scaffold; it is not
 an approved v1 upload version. No tag or release is created here.
 
@@ -49,8 +49,10 @@ not upload authorization or proof of capability/signing.
 1. Inspect the intended Apple Developer team and existing Family Controls
    distribution approval for `com.flint.peakfocus`, `.monitor`, `.shield-config`,
    `.shield-action` and `.report`. Check each ID separately; status is unknown.
-   Confirm all five profiles contain Family Controls and the shared
-   `group.com.flint.peakfocus` entitlement. Use the unsent request drafts in
+   Confirm those five profiles contain Family Controls and the shared
+   `group.com.flint.peakfocus` entitlement. The sixth bundle,
+   `com.flint.peakfocus.widgets`, needs its own signing/profile association and
+   the same App Group, but no Family Controls entitlement. Use the unsent request drafts in
    [review-notes.md](review-notes.md) when available; avoid duplicate requests.
 2. Provision the intended signing identity and profiles in the owner's keychain
    and Xcode account configuration. Do not grant CI access to the Apple account.
@@ -75,9 +77,10 @@ xcodebuild -project ios-app/Flint.xcodeproj -scheme Flint \
 This deliberately supplies neither `-allowProvisioningUpdates` nor an upload
 option. If signing fails, stop and have the owner resolve the exact team/profile
 problem. Do not bypass it by stripping entitlements or using simulator output.
-Open the archive in Xcode Organizer and inspect the host plus all four embedded
+Open the archive in Xcode Organizer and inspect the host plus all five embedded
 extensions. Check exact bundle IDs, inherited version/build, signatures, App
-Group/Family Controls entitlements, icon resources and privacy manifests.
+Group entitlements, Family Controls on its five owning targets, icon resources
+and privacy manifests. The widget must remain display-only and App Group only.
 
 ```sh
 python3 docs/store/ios/verify-privacy-bundles.py ios-app/build/Flint.xcarchive/Products/Applications/Flint.app
@@ -96,7 +99,7 @@ Use Organizer to prepare an App Store Connect **local export**. Inspect the
 resulting export options and save them privately as
 `ios-app/Config/ExportOptions.local.plist` (gitignored). Confirm its
 `destination` is `export`, never `upload`, and review its method, team and all
-five provisioning mappings before using the equivalent local-only CLI:
+six provisioning mappings before using the equivalent local-only CLI:
 
 ```sh
 xcodebuild -exportArchive -archivePath ios-app/build/Flint.xcarchive \

@@ -13,6 +13,7 @@ calls discussed below.
 | `com.flint.peakfocus` | `@AppStorage("flint.onboarded")` in `Flint/FlintApp.swift`, private onboarding preference | UserDefaults, `CA92.1` |
 | Host, `.monitor`, `.shield-config`, `.shield-action` | `FlintGroupStore` and `UserDefaults.flintGroup` in `Packages/FlintCore/Sources/FlintCore/{FlintGroupStore,FlintModel}.swift`; selections, rules, session, PIN, pass and counters shared only inside `group.com.flint.peakfocus` | UserDefaults, `1C8F.1` |
 | `.report` | FlintCore is linked for brand/UI types. Its shared-suite defaults implementation remains in the optimized Release report binary, although report source makes no defaults call | UserDefaults, `1C8F.1` |
+| `.widgets` | Display-only protection and focus-history reads inside the shared App Group; no protection mutations or report export | UserDefaults, `1C8F.1` |
 
 Shared defaults are also used by `FlintOpenLimit.swift` and
 `FlintWebRestrictions.swift`. The monitor consumes the shared rules/session state;
@@ -25,7 +26,7 @@ and retained `NSUserDefaults`, `FlintGroupStore` and shared config load/save
 implementations in the report executable. The report therefore declares the
 same App Group reason as the other extensions rather than relying on a
 source-call-only inventory. Reinspect the final signed archive as well.
-All five bundles have their own manifest and no tracking, tracking domains or
+All six bundles have their own manifest and no tracking, tracking domains or
 collected data types. No third-party Swift SDK dependency is declared in
 `project.yml`; FlintCore is a local static Swift package.
 
@@ -87,7 +88,7 @@ Accessed **2026-10-28**, using current official Apple Developer documentation:
 
 ## Built-bundle check
 
-CI runs this after building the host and four extensions:
+CI runs this after building the host and its five embedded extensions:
 
 ```sh
 python3 docs/store/ios/verify-privacy-bundles.py ios-app/DerivedData/Build/Products/Debug-iphonesimulator/Flint.app
@@ -95,6 +96,9 @@ python3 docs/store/ios/verify-privacy-bundles.py ios-app/DerivedData/Build/Produ
 
 For a human-created signed archive, pass
 `<archive>.xcarchive/Products/Applications/Flint.app` instead. The check requires
-the exact five IDs, a root-level manifest in each bundle, equality with source,
+the exact shipping IDs derived from XcodeGen's resolved `project.yml`, a
+root-level manifest in each bundle, equality with source,
 and the intended tracking/collection/API declarations. It does not validate
 distribution entitlements, Apple's server-side validation or future API usage.
+Missing, duplicate and unexpected bundles fail; adding an extension to the spec
+also adds it to the privacy and Release binary checks without a Python ID list.
