@@ -246,12 +246,12 @@ fun FlintCircleButton(
     }
 }
 
-/** Preset / choice chip. Selected = bone fill with dark text. */
+/** Preset action / choice chip. Null [selected] is an action; a Boolean is a radio choice. */
 @Composable
 fun FlintChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    selected: Boolean = false,
+    selected: Boolean? = null,
     enabled: Boolean = true,
     height: Dp = 40.dp,
     content: @Composable RowScope.() -> Unit,
@@ -260,9 +260,9 @@ fun FlintChip(
         onClick = onClick,
         enabled = enabled,
         shape = CircleShape,
-        color = if (selected) FlintPalette.Bone else FlintPalette.BoneFill,
-        contentColor = if (selected) FlintPalette.OnBone else FlintPalette.Bone,
-        border = BorderStroke(1.dp, if (selected) FlintPalette.Bone else FlintPalette.Border),
+        color = if (selected == true) FlintPalette.Bone else FlintPalette.BoneFill,
+        contentColor = if (selected == true) FlintPalette.OnBone else FlintPalette.Bone,
+        border = BorderStroke(1.dp, if (selected == true) FlintPalette.Bone else FlintPalette.Border),
         modifier = modifier.minimumInteractiveComponentSize().heightIn(min = height).selectableRole(selected),
     ) {
         Row(

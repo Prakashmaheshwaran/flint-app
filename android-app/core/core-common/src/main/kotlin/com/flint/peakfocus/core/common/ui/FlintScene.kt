@@ -76,10 +76,10 @@ import com.flint.peakfocus.core.common.theme.FlintPalette
 
 internal fun Modifier.semanticsLabel(label: String): Modifier = semantics { contentDescription = label }
 
-internal fun Modifier.selectableRole(selected: Boolean, role: Role = Role.RadioButton): Modifier =
+internal fun Modifier.selectableRole(selected: Boolean?): Modifier =
     semantics(mergeDescendants = true) {
-        this.selected = selected
-        this.role = role
+        if (selected != null) this.selected = selected
+        role = if (selected == null) Role.Button else Role.RadioButton
     }
 
 fun Modifier.flintClickable(onClick: () -> Unit): Modifier =
