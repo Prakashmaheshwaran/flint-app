@@ -94,6 +94,13 @@ accessibility, device-owner, and anti-removal behavior as security-sensitive;
 do not grant sensitive permissions or claim enforcement from build/tests alone.
 Simulator evidence does not prove physical-device Screen Time behavior.
 
+Android instrumented smoke: `FLINT_E2E_DISPOSABLE=1 make android-e2e AVD=emulator-N`
+requires an exact, already booted disposable emulator and clears Flint app data.
+Hold the shared device semaphore for the session and Android build semaphore
+for the command; never run this on a shared/user-configured emulator. CI runs
+the same script without assertion retries. See `docs/verification/android-e2e.md`
+for artifacts, fixture boundaries, and shared-host semaphore examples.
+
 Do not send external messages, push, create/review/merge/close PRs, publish
 releases, or change account/security state without explicit authorization.
 Respect device reservations and task-specific limits; if Xcode, Gradle, a simulator,

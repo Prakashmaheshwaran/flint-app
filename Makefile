@@ -115,6 +115,9 @@ android-test: ## Run Android unit tests
 	@bash scripts/flint-env-report.sh --check-android
 	cd "$$ANDROID_DIR" && ./gradlew test
 
+android-e2e: ## Run UI smoke on an opted-in disposable emulator (AVD=emulator-N)
+	@bash scripts/android-e2e.sh
+
 verify-android: android android-release android-bundle android-test ## Run the Android CI gate locally
 	@echo "Android gate passed."
 
@@ -165,5 +168,5 @@ clean-orphans: ## Preview orphans; deletion needs CONFIRM=1 ORPHAN_PLAN=file ORP
 	bash scripts/clean-devices.sh "$${args[@]}"
 
 .PHONY: help env doctor ios-gen ios ios-build ios-test android android-release android-bundle android-install android-test \
-	verify verify-ios verify-android selftest release-check clean clean-devices clean-orphans \
+	verify verify-ios verify-android android-e2e selftest release-check clean clean-devices clean-orphans \
 	gates ios-run android-run logs-ios logs-android pr-status ancestry
