@@ -11,8 +11,8 @@ struct FlintLiveActivitySetting: View {
                 Toggle("Live Activities", isOn: $enabled)
                     .tint(FlintBrand.ember)
                     .foregroundStyle(FlintBrand.bone)
-                    .accessibilityHint("Show a session countdown and strictness on the Lock Screen. Does not change protection.")
-                Text("Off by default. Show session countdowns and strictness on your Lock Screen and Dynamic Island. Anyone who can see your screen may see these details. Open Flint to make changes.")
+                    .accessibilityHint("Show session names, countdowns and strictness on the Lock Screen. Does not change protection.")
+                Text("Off by default. Show session names, countdowns and strictness on your Lock Screen and Dynamic Island. Anyone who can see your screen may see these details. Open Flint to make changes.")
                     .font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
                     .fixedSize(horizontal: false, vertical: true)
                 if !ActivityAuthorizationInfo().areActivitiesEnabled {
