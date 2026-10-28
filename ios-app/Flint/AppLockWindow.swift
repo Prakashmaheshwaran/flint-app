@@ -112,6 +112,10 @@ struct AppLockWindow: UIViewRepresentable {
             notifications.append(NotificationCenter.default.addObserver(
                 forName: name, object: scene, queue: .main
             ) { [weak self] _ in
+                // The observer's explicit main queue is synchronous for main-thread
+                // scene notifications. Preserve the pre-snapshot timing while making
+                // that existing executor guarantee visible to Swift's actor checker.
+                MainActor.assumeIsolated {
                 guard let self else { return }
                 // Cross-check the notification's implied phase against the scene's live
                 // activation state: a late/coalesced background report must not lock a
@@ -121,6 +125,7 @@ struct AppLockWindow: UIViewRepresentable {
                 // Snapshot protection still happens synchronously before UIKit returns
                 // from a background/deactivation notification.
                 self.render(self.lock.state)
+                }
             })
         }
 

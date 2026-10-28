@@ -25,6 +25,7 @@ settings:
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: "YES"
     CODE_SIGN_STYLE: Automatic
     # Team/identity come only from the optional, untracked Config override below.
     TARGETED_DEVICE_FAMILY: "1,2" # iPhone + iPad
