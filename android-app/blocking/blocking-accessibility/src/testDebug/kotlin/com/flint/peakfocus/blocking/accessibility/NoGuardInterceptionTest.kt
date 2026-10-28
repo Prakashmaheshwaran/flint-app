@@ -2,6 +2,7 @@ package com.flint.peakfocus.blocking.accessibility
 
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
+import java.time.Duration
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.flint.peakfocus.blocking.overlay.BlockExemptions
 import com.flint.peakfocus.blocking.overlay.BlockScreenCoordinator
@@ -80,7 +81,9 @@ class NoGuardInterceptionTest {
             className = cls
         }
         service.onAccessibilityEvent(event)
-        shadowOf(Looper.getMainLooper()).idle()
+        // Bounded, never idle(): the mounted block screen runs an infinite Compose animation on
+        // the real window, so draining the looper "until idle" never returns on some hosts.
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(50))
     }
 
     /** The package whose shield is mounted on the accessibility overlay, if any. */
