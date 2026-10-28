@@ -26,7 +26,10 @@ struct FlintGlanceObservation: ViewModifier {
                 if #available(iOS 16.1, *) {
                     FlintGlanceActivityController.shared.register()
                     while !Task.isCancelled {
-                        await FlintGlanceActivityController.shared.refresh(optedIn: optedIn)
+                        // This phase task can outlive a Settings change. Read the current
+                        // preference each pass instead of retaining its initial value.
+                        await FlintGlanceActivityController.shared.refresh(optedIn:
+                            UserDefaults.standard.bool(forKey: FlintLiveActivityPreference.key))
                         do { try await Task.sleep(nanoseconds: 15_000_000_000) }
                         catch { return }
                     }
