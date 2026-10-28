@@ -1,0 +1,3153 @@
+{
+  "source_commit": "83a30ee097f4b6bd724833ed6f834cc3fa3583db",
+  "variant": "debug",
+  "apk_sha256": "543f1e7fbf5c30e6a0c3f848b8e780197d00e2bef061cfbd31653b95c4be9866",
+  "avd": "flint-test",
+  "serial": "emulator-5554",
+  "boot_id": "134e4850-bc5b-4dc5-8433-d421758c7cd0",
+  "android_api": 35,
+  "system_image": "Google APIs ARM64",
+  "time_zone": "America/New_York",
+  "gpu_config": "hw.gpu.enabled=no; no override used",
+  "sampling": "Guest wall-clock brackets around dumpsys window windows; times are window visibility upper bounds, not rendered-text timings.",
+  "cases": [
+    {
+      "case": "a-schedule",
+      "fixture": {
+        "case": "a-schedule",
+        "seed_clock_ms": 1793225891342,
+        "boundary_ms": 1793226060000,
+        "start_minute": 1101,
+        "end_minute": 1109,
+        "package": "com.google.android.deskclock",
+        "path": "A"
+      },
+      "expected_window_type": "ACCESSIBILITY_OVERLAY",
+      "boundary_ms": 1793226060000,
+      "first_visible_upper_ms": 1793226062807,
+      "latency_upper_ms": 2807,
+      "max_shields_in_any_sample": 1,
+      "samples": [
+        {
+          "before_ms": 1793225893061,
+          "after_ms": 1793225893121,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225893996,
+          "after_ms": 1793225894060,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225894899,
+          "after_ms": 1793225894979,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225895813,
+          "after_ms": 1793225895859,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225896677,
+          "after_ms": 1793225896746,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225897539,
+          "after_ms": 1793225897597,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225898409,
+          "after_ms": 1793225898475,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225899279,
+          "after_ms": 1793225899349,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225900164,
+          "after_ms": 1793225900213,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225901039,
+          "after_ms": 1793225901089,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225901904,
+          "after_ms": 1793225901980,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225902809,
+          "after_ms": 1793225902853,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225903641,
+          "after_ms": 1793225903706,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225904565,
+          "after_ms": 1793225904627,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225905464,
+          "after_ms": 1793225905565,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225906409,
+          "after_ms": 1793225906477,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225907367,
+          "after_ms": 1793225907443,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225908233,
+          "after_ms": 1793225908278,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225909083,
+          "after_ms": 1793225909128,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225909944,
+          "after_ms": 1793225910001,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225910854,
+          "after_ms": 1793225910900,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225911684,
+          "after_ms": 1793225911737,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225912530,
+          "after_ms": 1793225912573,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225913357,
+          "after_ms": 1793225913419,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225914245,
+          "after_ms": 1793225914314,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225915130,
+          "after_ms": 1793225915219,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225916071,
+          "after_ms": 1793225916125,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225916931,
+          "after_ms": 1793225916983,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225917831,
+          "after_ms": 1793225917884,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225918700,
+          "after_ms": 1793225918753,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225919560,
+          "after_ms": 1793225919612,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225920425,
+          "after_ms": 1793225920488,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225921276,
+          "after_ms": 1793225921316,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225922108,
+          "after_ms": 1793225922169,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225922939,
+          "after_ms": 1793225923028,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225923853,
+          "after_ms": 1793225923957,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225924760,
+          "after_ms": 1793225924822,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225925603,
+          "after_ms": 1793225925672,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225926480,
+          "after_ms": 1793225926525,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225927371,
+          "after_ms": 1793225927425,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225928254,
+          "after_ms": 1793225928297,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225929106,
+          "after_ms": 1793225929158,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225929939,
+          "after_ms": 1793225929991,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225930798,
+          "after_ms": 1793225930861,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225931684,
+          "after_ms": 1793225931761,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225932580,
+          "after_ms": 1793225932642,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225933440,
+          "after_ms": 1793225933531,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225934341,
+          "after_ms": 1793225934391,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225935211,
+          "after_ms": 1793225935257,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225936061,
+          "after_ms": 1793225936111,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225936913,
+          "after_ms": 1793225936953,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225937749,
+          "after_ms": 1793225937796,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225938595,
+          "after_ms": 1793225938647,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225939428,
+          "after_ms": 1793225939485,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225940653,
+          "after_ms": 1793225940840,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225941711,
+          "after_ms": 1793225942051,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225942973,
+          "after_ms": 1793225943042,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225943918,
+          "after_ms": 1793225943995,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225944795,
+          "after_ms": 1793225944844,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225945678,
+          "after_ms": 1793225945747,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225946538,
+          "after_ms": 1793225946595,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225947403,
+          "after_ms": 1793225947471,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225948276,
+          "after_ms": 1793225948340,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225949154,
+          "after_ms": 1793225949234,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225950059,
+          "after_ms": 1793225950109,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225950906,
+          "after_ms": 1793225950953,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225951768,
+          "after_ms": 1793225951805,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225952651,
+          "after_ms": 1793225952723,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225953582,
+          "after_ms": 1793225953638,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225954482,
+          "after_ms": 1793225954547,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225955373,
+          "after_ms": 1793225955433,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225956246,
+          "after_ms": 1793225956291,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225957090,
+          "after_ms": 1793225957155,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225957973,
+          "after_ms": 1793225958033,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225958865,
+          "after_ms": 1793225958925,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225959759,
+          "after_ms": 1793225959815,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225960646,
+          "after_ms": 1793225960691,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225961519,
+          "after_ms": 1793225961558,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225962339,
+          "after_ms": 1793225962387,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225963206,
+          "after_ms": 1793225963261,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225964063,
+          "after_ms": 1793225964122,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225964937,
+          "after_ms": 1793225965040,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225965890,
+          "after_ms": 1793225965952,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225966774,
+          "after_ms": 1793225966840,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225967647,
+          "after_ms": 1793225967692,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225968472,
+          "after_ms": 1793225968523,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225969339,
+          "after_ms": 1793225969413,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225970189,
+          "after_ms": 1793225970260,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225971060,
+          "after_ms": 1793225971101,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225971896,
+          "after_ms": 1793225971938,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225972760,
+          "after_ms": 1793225972812,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225973627,
+          "after_ms": 1793225973718,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225974570,
+          "after_ms": 1793225974626,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225975462,
+          "after_ms": 1793225975510,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225976341,
+          "after_ms": 1793225976394,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225977233,
+          "after_ms": 1793225977286,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225978094,
+          "after_ms": 1793225978135,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225978925,
+          "after_ms": 1793225978972,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225979789,
+          "after_ms": 1793225979824,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225980647,
+          "after_ms": 1793225980717,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225981539,
+          "after_ms": 1793225981632,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225982417,
+          "after_ms": 1793225982583,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225983380,
+          "after_ms": 1793225983423,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225984250,
+          "after_ms": 1793225984295,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225985110,
+          "after_ms": 1793225985150,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225985940,
+          "after_ms": 1793225985997,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225986783,
+          "after_ms": 1793225986853,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225987660,
+          "after_ms": 1793225987751,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225988539,
+          "after_ms": 1793225988605,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225989414,
+          "after_ms": 1793225989465,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225990271,
+          "after_ms": 1793225990340,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225991148,
+          "after_ms": 1793225991206,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225992021,
+          "after_ms": 1793225992073,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225992897,
+          "after_ms": 1793225992953,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225993767,
+          "after_ms": 1793225993811,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225994635,
+          "after_ms": 1793225994673,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225995456,
+          "after_ms": 1793225995513,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225996291,
+          "after_ms": 1793225996331,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225997107,
+          "after_ms": 1793225997138,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225997933,
+          "after_ms": 1793225997977,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225998800,
+          "after_ms": 1793225998864,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793225999749,
+          "after_ms": 1793225999837,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226000684,
+          "after_ms": 1793226000756,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226001575,
+          "after_ms": 1793226001646,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226002523,
+          "after_ms": 1793226002682,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226003541,
+          "after_ms": 1793226003641,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226004478,
+          "after_ms": 1793226004533,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226005343,
+          "after_ms": 1793226005391,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226006203,
+          "after_ms": 1793226006245,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226007059,
+          "after_ms": 1793226007131,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226007952,
+          "after_ms": 1793226008002,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226008795,
+          "after_ms": 1793226008833,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226009639,
+          "after_ms": 1793226009710,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226010519,
+          "after_ms": 1793226010562,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226011381,
+          "after_ms": 1793226011435,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226012260,
+          "after_ms": 1793226012306,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226013111,
+          "after_ms": 1793226013154,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226013951,
+          "after_ms": 1793226013989,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226014816,
+          "after_ms": 1793226014865,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226015671,
+          "after_ms": 1793226015732,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226016537,
+          "after_ms": 1793226016593,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226017400,
+          "after_ms": 1793226017456,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226018280,
+          "after_ms": 1793226018332,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226019141,
+          "after_ms": 1793226019191,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226019994,
+          "after_ms": 1793226020040,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226020918,
+          "after_ms": 1793226020984,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226021839,
+          "after_ms": 1793226021906,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226022706,
+          "after_ms": 1793226022763,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226023583,
+          "after_ms": 1793226023650,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226024472,
+          "after_ms": 1793226024685,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226025520,
+          "after_ms": 1793226025589,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226026397,
+          "after_ms": 1793226026451,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226027246,
+          "after_ms": 1793226027290,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226028117,
+          "after_ms": 1793226028170,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226028976,
+          "after_ms": 1793226029037,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226029869,
+          "after_ms": 1793226029932,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226030748,
+          "after_ms": 1793226030797,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226031641,
+          "after_ms": 1793226031688,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226032575,
+          "after_ms": 1793226032634,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226033516,
+          "after_ms": 1793226033621,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226034524,
+          "after_ms": 1793226034600,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226035437,
+          "after_ms": 1793226035488,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226036267,
+          "after_ms": 1793226036321,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226037134,
+          "after_ms": 1793226037193,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226038009,
+          "after_ms": 1793226038057,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226038883,
+          "after_ms": 1793226038941,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226039742,
+          "after_ms": 1793226039798,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226040594,
+          "after_ms": 1793226040651,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226041428,
+          "after_ms": 1793226041485,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226042291,
+          "after_ms": 1793226042328,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226043120,
+          "after_ms": 1793226043160,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226043942,
+          "after_ms": 1793226043996,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226044815,
+          "after_ms": 1793226044874,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226045681,
+          "after_ms": 1793226045735,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226046535,
+          "after_ms": 1793226046590,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226047360,
+          "after_ms": 1793226047414,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226048199,
+          "after_ms": 1793226048245,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226049008,
+          "after_ms": 1793226049051,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226049806,
+          "after_ms": 1793226049860,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226050670,
+          "after_ms": 1793226050704,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226051485,
+          "after_ms": 1793226051531,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226052326,
+          "after_ms": 1793226052362,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226053136,
+          "after_ms": 1793226053178,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226053996,
+          "after_ms": 1793226054054,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226054914,
+          "after_ms": 1793226054968,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226055755,
+          "after_ms": 1793226055799,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226056618,
+          "after_ms": 1793226056759,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226057613,
+          "after_ms": 1793226057677,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226058482,
+          "after_ms": 1793226058568,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226059394,
+          "after_ms": 1793226059454,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226060700,
+          "after_ms": 1793226060903,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226062264,
+          "after_ms": 1793226062807,
+          "shield_types": [
+            "ACCESSIBILITY_OVERLAY"
+          ],
+          "clock_visible": true,
+          "complete": true
+        }
+      ],
+      "complete_sample_count": 192
+    },
+    {
+      "case": "a-budget",
+      "fixture": {
+        "case": "a-budget",
+        "path": "A",
+        "package": "com.google.android.deskclock",
+        "baseline": {
+          "events": [
+            [
+              1793225666838,
+              "ACTIVITY_RESUMED"
+            ],
+            [
+              1793225781892,
+              "ACTIVITY_PAUSED"
+            ],
+            [
+              1793225786505,
+              "ACTIVITY_STOPPED"
+            ],
+            [
+              1793225855657,
+              "ACTIVITY_RESUMED"
+            ],
+            [
+              1793226213278,
+              "ACTIVITY_PAUSED"
+            ]
+          ],
+          "closed_event_ms": 472675,
+          "open_start_ms": null,
+          "aggregate_ms": 472675
+        },
+        "baseline_ms": 472675,
+        "limit_minutes": 10,
+        "resumed_ms": 1793226219604,
+        "boundary_ms": 1793226346929
+      },
+      "expected_window_type": "ACCESSIBILITY_OVERLAY",
+      "boundary_ms": 1793226346929,
+      "first_visible_upper_ms": 1793226348218,
+      "latency_upper_ms": 1289,
+      "max_shields_in_any_sample": 1,
+      "samples": [
+        {
+          "before_ms": 1793226274605,
+          "after_ms": 1793226274666,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226275466,
+          "after_ms": 1793226275516,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226276286,
+          "after_ms": 1793226276329,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226277121,
+          "after_ms": 1793226277167,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226277971,
+          "after_ms": 1793226278027,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226278823,
+          "after_ms": 1793226278877,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226279688,
+          "after_ms": 1793226279735,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226280569,
+          "after_ms": 1793226280621,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226281472,
+          "after_ms": 1793226281540,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226282347,
+          "after_ms": 1793226282416,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226283254,
+          "after_ms": 1793226283302,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226284115,
+          "after_ms": 1793226284160,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226284965,
+          "after_ms": 1793226285048,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226285851,
+          "after_ms": 1793226285906,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226286721,
+          "after_ms": 1793226286774,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226287570,
+          "after_ms": 1793226287648,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226288430,
+          "after_ms": 1793226288476,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226289265,
+          "after_ms": 1793226289297,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226290110,
+          "after_ms": 1793226290144,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226290961,
+          "after_ms": 1793226291013,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226291841,
+          "after_ms": 1793226291919,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226292738,
+          "after_ms": 1793226292770,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226293566,
+          "after_ms": 1793226293615,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226294404,
+          "after_ms": 1793226294446,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226295248,
+          "after_ms": 1793226295305,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226296093,
+          "after_ms": 1793226296145,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226296987,
+          "after_ms": 1793226297041,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226297873,
+          "after_ms": 1793226297944,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226298783,
+          "after_ms": 1793226298845,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226299649,
+          "after_ms": 1793226299707,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226300573,
+          "after_ms": 1793226300666,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226301532,
+          "after_ms": 1793226301599,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226302633,
+          "after_ms": 1793226302701,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226303508,
+          "after_ms": 1793226303555,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226304329,
+          "after_ms": 1793226304378,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226305197,
+          "after_ms": 1793226305236,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226306046,
+          "after_ms": 1793226306089,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226306877,
+          "after_ms": 1793226306919,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226307703,
+          "after_ms": 1793226307761,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226308556,
+          "after_ms": 1793226308603,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226309392,
+          "after_ms": 1793226309437,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226310231,
+          "after_ms": 1793226310288,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226311115,
+          "after_ms": 1793226311154,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226311965,
+          "after_ms": 1793226312033,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226312838,
+          "after_ms": 1793226312897,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226313762,
+          "after_ms": 1793226313821,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226314698,
+          "after_ms": 1793226314787,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226315709,
+          "after_ms": 1793226315790,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226316642,
+          "after_ms": 1793226316721,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226317569,
+          "after_ms": 1793226317612,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226318441,
+          "after_ms": 1793226318493,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226319300,
+          "after_ms": 1793226319354,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226320153,
+          "after_ms": 1793226320220,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226321003,
+          "after_ms": 1793226321077,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226321904,
+          "after_ms": 1793226321968,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226322775,
+          "after_ms": 1793226322831,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226323640,
+          "after_ms": 1793226323705,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226324572,
+          "after_ms": 1793226324641,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226325470,
+          "after_ms": 1793226325580,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226326414,
+          "after_ms": 1793226326492,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226327288,
+          "after_ms": 1793226327360,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226328162,
+          "after_ms": 1793226328208,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226329009,
+          "after_ms": 1793226329049,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226329848,
+          "after_ms": 1793226329907,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226330710,
+          "after_ms": 1793226330771,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226331621,
+          "after_ms": 1793226331693,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226332524,
+          "after_ms": 1793226332587,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226333426,
+          "after_ms": 1793226333502,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226334344,
+          "after_ms": 1793226334402,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226335180,
+          "after_ms": 1793226335227,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226336060,
+          "after_ms": 1793226336100,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226336902,
+          "after_ms": 1793226336964,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226337769,
+          "after_ms": 1793226337829,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226338619,
+          "after_ms": 1793226338674,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226339462,
+          "after_ms": 1793226339527,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226340333,
+          "after_ms": 1793226340378,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226341194,
+          "after_ms": 1793226341233,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226342052,
+          "after_ms": 1793226342102,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226342920,
+          "after_ms": 1793226342966,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226343762,
+          "after_ms": 1793226343803,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226344607,
+          "after_ms": 1793226344651,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226345447,
+          "after_ms": 1793226345483,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226346257,
+          "after_ms": 1793226346296,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226347349,
+          "after_ms": 1793226348218,
+          "shield_types": [
+            "ACCESSIBILITY_OVERLAY"
+          ],
+          "clock_visible": true,
+          "complete": true
+        }
+      ],
+      "complete_sample_count": 84
+    },
+    {
+      "case": "b-schedule",
+      "fixture": {
+        "case": "b-schedule",
+        "seed_clock_ms": 1793226535517,
+        "boundary_ms": 1793226660000,
+        "start_minute": 1111,
+        "end_minute": 1119,
+        "package": "com.google.android.deskclock",
+        "path": "B"
+      },
+      "expected_window_type": "APPLICATION_OVERLAY",
+      "boundary_ms": 1793226660000,
+      "first_visible_upper_ms": 1793226662483,
+      "latency_upper_ms": 2483,
+      "max_shields_in_any_sample": 1,
+      "samples": [
+        {
+          "before_ms": 1793226537047,
+          "after_ms": 1793226537114,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226537936,
+          "after_ms": 1793226537986,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226538771,
+          "after_ms": 1793226538821,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226539639,
+          "after_ms": 1793226539686,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226540532,
+          "after_ms": 1793226540664,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226541594,
+          "after_ms": 1793226541686,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226542579,
+          "after_ms": 1793226542659,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226543474,
+          "after_ms": 1793226543530,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226544347,
+          "after_ms": 1793226544399,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226545183,
+          "after_ms": 1793226545248,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226546052,
+          "after_ms": 1793226546122,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226546939,
+          "after_ms": 1793226546993,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226547827,
+          "after_ms": 1793226547873,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226548689,
+          "after_ms": 1793226548739,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226549530,
+          "after_ms": 1793226549608,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226550430,
+          "after_ms": 1793226550511,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226551359,
+          "after_ms": 1793226551429,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226552222,
+          "after_ms": 1793226552274,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226553089,
+          "after_ms": 1793226553129,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226553894,
+          "after_ms": 1793226553929,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226554712,
+          "after_ms": 1793226554749,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226555533,
+          "after_ms": 1793226555579,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226556410,
+          "after_ms": 1793226556457,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226557286,
+          "after_ms": 1793226557393,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226558346,
+          "after_ms": 1793226558410,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226559236,
+          "after_ms": 1793226559316,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226560147,
+          "after_ms": 1793226560232,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226561060,
+          "after_ms": 1793226561110,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226561943,
+          "after_ms": 1793226561978,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226562851,
+          "after_ms": 1793226562911,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226563755,
+          "after_ms": 1793226563813,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226564695,
+          "after_ms": 1793226564818,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226565679,
+          "after_ms": 1793226565792,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226566653,
+          "after_ms": 1793226566715,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226567531,
+          "after_ms": 1793226567579,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226568509,
+          "after_ms": 1793226568570,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226569369,
+          "after_ms": 1793226569420,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226570232,
+          "after_ms": 1793226570280,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226571094,
+          "after_ms": 1793226571138,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226571959,
+          "after_ms": 1793226572020,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226572848,
+          "after_ms": 1793226572905,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226573706,
+          "after_ms": 1793226573753,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226574552,
+          "after_ms": 1793226574596,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226575430,
+          "after_ms": 1793226575486,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226576301,
+          "after_ms": 1793226576358,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226577172,
+          "after_ms": 1793226577226,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226578010,
+          "after_ms": 1793226578056,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226578911,
+          "after_ms": 1793226578968,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226579850,
+          "after_ms": 1793226579892,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226581191,
+          "after_ms": 1793226581649,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226588581,
+          "after_ms": 1793226588894,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226590122,
+          "after_ms": 1793226590279,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226593525,
+          "after_ms": 1793226594672,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226603554,
+          "after_ms": 1793226604310,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226605168,
+          "after_ms": 1793226605245,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226606061,
+          "after_ms": 1793226606129,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226606978,
+          "after_ms": 1793226607045,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226607844,
+          "after_ms": 1793226607891,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226608704,
+          "after_ms": 1793226608763,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226609546,
+          "after_ms": 1793226609599,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226610368,
+          "after_ms": 1793226610416,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226611216,
+          "after_ms": 1793226611264,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226612096,
+          "after_ms": 1793226612144,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226612926,
+          "after_ms": 1793226612965,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226613805,
+          "after_ms": 1793226613861,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226614693,
+          "after_ms": 1793226614741,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226615593,
+          "after_ms": 1793226615656,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226616479,
+          "after_ms": 1793226616543,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226617365,
+          "after_ms": 1793226617408,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226618204,
+          "after_ms": 1793226618253,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226619052,
+          "after_ms": 1793226619092,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226619874,
+          "after_ms": 1793226619927,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226620746,
+          "after_ms": 1793226620808,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226621600,
+          "after_ms": 1793226621638,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226622408,
+          "after_ms": 1793226622460,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226623290,
+          "after_ms": 1793226623359,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226624171,
+          "after_ms": 1793226624232,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226625074,
+          "after_ms": 1793226625172,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226626044,
+          "after_ms": 1793226626160,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226626991,
+          "after_ms": 1793226627045,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226627857,
+          "after_ms": 1793226627908,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226628731,
+          "after_ms": 1793226628798,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226629649,
+          "after_ms": 1793226629711,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226630492,
+          "after_ms": 1793226630535,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226631372,
+          "after_ms": 1793226631426,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226632224,
+          "after_ms": 1793226632266,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226633078,
+          "after_ms": 1793226633129,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226633964,
+          "after_ms": 1793226634025,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226634850,
+          "after_ms": 1793226634888,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226635698,
+          "after_ms": 1793226635760,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226636561,
+          "after_ms": 1793226636629,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226637411,
+          "after_ms": 1793226637494,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226638294,
+          "after_ms": 1793226638361,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226639265,
+          "after_ms": 1793226639400,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226640203,
+          "after_ms": 1793226640279,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226641058,
+          "after_ms": 1793226641115,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226641924,
+          "after_ms": 1793226641985,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226642788,
+          "after_ms": 1793226642847,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226643649,
+          "after_ms": 1793226643707,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226644512,
+          "after_ms": 1793226644556,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226645333,
+          "after_ms": 1793226645390,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226646191,
+          "after_ms": 1793226646267,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226647101,
+          "after_ms": 1793226647165,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226647984,
+          "after_ms": 1793226648049,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226648862,
+          "after_ms": 1793226648927,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226649755,
+          "after_ms": 1793226649812,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226650617,
+          "after_ms": 1793226650673,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226651484,
+          "after_ms": 1793226651553,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226652422,
+          "after_ms": 1793226652503,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226653331,
+          "after_ms": 1793226654582,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226655448,
+          "after_ms": 1793226655510,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226656329,
+          "after_ms": 1793226656394,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226657204,
+          "after_ms": 1793226657257,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226658038,
+          "after_ms": 1793226658094,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226658882,
+          "after_ms": 1793226658923,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226659724,
+          "after_ms": 1793226659771,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226660664,
+          "after_ms": 1793226660735,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226661649,
+          "after_ms": 1793226662483,
+          "shield_types": [
+            "APPLICATION_OVERLAY"
+          ],
+          "clock_visible": true,
+          "complete": true
+        }
+      ],
+      "complete_sample_count": 118
+    },
+    {
+      "case": "b-budget",
+      "fixture": {
+        "case": "b-budget",
+        "path": "B",
+        "package": "com.google.android.deskclock",
+        "baseline": {
+          "events": [
+            [
+              1793225666838,
+              "ACTIVITY_RESUMED"
+            ],
+            [
+              1793225781892,
+              "ACTIVITY_PAUSED"
+            ],
+            [
+              1793225786505,
+              "ACTIVITY_STOPPED"
+            ],
+            [
+              1793225855657,
+              "ACTIVITY_RESUMED"
+            ],
+            [
+              1793226213278,
+              "ACTIVITY_PAUSED"
+            ],
+            [
+              1793226217495,
+              "ACTIVITY_STOPPED"
+            ],
+            [
+              1793226219604,
+              "ACTIVITY_RESUMED"
+            ],
+            [
+              1793226448004,
+              "ACTIVITY_PAUSED"
+            ],
+            [
+              1793226455135,
+              "ACTIVITY_STOPPED"
+            ],
+            [
+              1793226461986,
+              "ACTIVITY_RESUMED"
+            ],
+            [
+              1793226937590,
+              "ACTIVITY_PAUSED"
+            ]
+          ],
+          "closed_event_ms": 1176679,
+          "open_start_ms": null,
+          "aggregate_ms": 1176679
+        },
+        "baseline_ms": 1176679,
+        "limit_minutes": 22,
+        "resumed_ms": 1793226993723,
+        "boundary_ms": 1793227137044
+      },
+      "expected_window_type": "APPLICATION_OVERLAY",
+      "boundary_ms": 1793227137044,
+      "first_visible_upper_ms": 1793227157652,
+      "latency_upper_ms": 20608,
+      "max_shields_in_any_sample": 1,
+      "samples": [
+        {
+          "before_ms": 1793227051143,
+          "after_ms": 1793227051241,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793227052174,
+          "after_ms": 1793227052259,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793227053136,
+          "after_ms": 1793227053195,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793227054086,
+          "after_ms": 1793227054238,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793227055138,
+          "after_ms": 1793227055192,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793227056402,
+          "after_ms": 1793227057088,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793227059641,
+          "after_ms": 1793227060758,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793227062831,
+          "after_ms": 1793227063139,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793227065165,
+          "after_ms": 1793227065364,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793227066344,
+          "after_ms": 1793227066425,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793227067302,
+          "after_ms": 1793227067382,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793227068258,
+          "after_ms": 1793227068301,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793227071611,
+          "after_ms": 1793227107844,
+          "shield_types": null,
+          "clock_visible": null,
+          "complete": false,
+          "discard_reason": "dumpsys window timeout; partial output cannot establish presence/absence"
+        },
+        {
+          "before_ms": 1793227128829,
+          "after_ms": 1793227133928,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793227137199,
+          "after_ms": 1793227141566,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793227144993,
+          "after_ms": 1793227152753,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793227154077,
+          "after_ms": 1793227154404,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793227156522,
+          "after_ms": 1793227157652,
+          "shield_types": [
+            "APPLICATION_OVERLAY"
+          ],
+          "clock_visible": true,
+          "complete": true
+        }
+      ],
+      "complete_sample_count": 17
+    },
+    {
+      "case": "a-to-b-failover",
+      "fixture": {
+        "before_services": "com.flint.peakfocus/com.flint.peakfocus.blocking.accessibility.FlintAccessibilityService",
+        "remaining_services": [],
+        "command_before_ms": 1793226121937,
+        "command_after_ms": 1793226123180
+      },
+      "expected_window_type": "APPLICATION_OVERLAY",
+      "boundary_ms": 1793226121937,
+      "first_visible_upper_ms": 1793226128109,
+      "latency_upper_ms": 6172,
+      "max_shields_in_any_sample": 1,
+      "samples": [
+        {
+          "before_ms": 1793226123643,
+          "after_ms": 1793226124275,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226125400,
+          "after_ms": 1793226125761,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226127687,
+          "after_ms": 1793226128109,
+          "shield_types": [
+            "APPLICATION_OVERLAY"
+          ],
+          "clock_visible": true,
+          "complete": true
+        }
+      ],
+      "complete_sample_count": 3
+    },
+    {
+      "case": "b-to-a-handoff",
+      "fixture": {
+        "command_before_ms": 1793226165127,
+        "command_after_ms": 1793226165555
+      },
+      "expected_window_type": "ACCESSIBILITY_OVERLAY",
+      "boundary_ms": 1793226165127,
+      "first_visible_upper_ms": 1793226171406,
+      "latency_upper_ms": 6279,
+      "max_shields_in_any_sample": 1,
+      "samples": [
+        {
+          "before_ms": 1793226166197,
+          "after_ms": 1793226166656,
+          "shield_types": [
+            "APPLICATION_OVERLAY"
+          ],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226167800,
+          "after_ms": 1793226168620,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226169865,
+          "after_ms": 1793226170249,
+          "shield_types": [],
+          "clock_visible": true,
+          "complete": true
+        },
+        {
+          "before_ms": 1793226171216,
+          "after_ms": 1793226171406,
+          "shield_types": [
+            "ACCESSIBILITY_OVERLAY"
+          ],
+          "clock_visible": true,
+          "complete": true
+        }
+      ],
+      "complete_sample_count": 4
+    }
+  ]
+}
