@@ -85,8 +85,12 @@ object FocusHistoryAggregator {
         return FocusSummary(availability, sessions, days, streak)
     }
 
-    fun sessions(events: List<HistoryEvent>, now: Long, activeSessionIds: Set<String>): List<FocusSession> =
-        events.distinctBy { it.id }.filter { it.knownType != null }.groupBy { it.session }.mapNotNull { (id, group) ->
+    fun sessions(events: List<HistoryEvent>, now: Long, activeSessionIds: Set<String>): List<FocusSession> {
+        val supported = events.distinctBy { it.id }.filter { it.knownType != null }
+        val passesBySession = supported.filter { it.knownType == HistoryEventType.PASS_USED }
+            .flatMap { pass -> pass.sessions.orEmpty().distinct().map { it to pass } }
+            .groupBy({ it.first }, { it.second })
+        return supported.groupBy { it.session }.mapNotNull { (id, group) ->
             val ordered = group.sortedBy { it.at } // stable: ties retain file order
             val start = ordered.firstOrNull { it.knownType == HistoryEventType.STARTED } ?: return@mapNotNull null
             val terminal = ordered.firstOrNull { it.knownType?.terminal == true }
@@ -122,12 +126,14 @@ object FocusHistoryAggregator {
                 val restored = ordered.firstOrNull { it.knownType == HistoryEventType.PROTECTION_RESTORED && it.at >= gap.at }?.at
                 intervals = subtract(intervals, FocusInterval(gap.at, restored ?: clampedEnd))
             }
-            events.distinctBy { it.id }.filter { it.knownType == HistoryEventType.PASS_USED && id in it.sessions.orEmpty() }
-                .forEach { pass -> intervals = subtract(intervals, FocusInterval(pass.at, pass.recoveryEnd ?: pass.at)) }
+            passesBySession[id].orEmpty().forEach { pass ->
+                intervals = subtract(intervals, FocusInterval(pass.at, pass.recoveryEnd ?: pass.at))
+            }
             FocusSession(id, start.name ?: "Focus", start.at, end, plannedEnd, outcome, inferred,
                 intervals, breaks.size.takeIf { it > 0 },
                 ordered.count { it.knownType == HistoryEventType.OPEN_INTERCEPTED }.takeIf { it > 0 })
         }
+    }
 
     internal fun union(intervals: List<FocusInterval>): List<FocusInterval> {
         val result = mutableListOf<FocusInterval>()

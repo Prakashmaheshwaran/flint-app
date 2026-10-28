@@ -62,7 +62,7 @@ class FocusHistoryStore(
         val snapshot = readLocked()
         val running = FocusHistoryAggregator.sessions(snapshot.events, clock.millis(), activeSessionIds)
             .filter { it.outcome == SessionOutcome.RUNNING }.mapTo(mutableSetOf()) { it.id }
-        val retained = snapshot.events.filter { it.session in running }
+        val retained = retainForSessions(snapshot.events, running)
         val old = readMetadata()
         val at = maxOf(old.cleared ?: Long.MIN_VALUE, clock.millis())
         clearPhase(HistoryClearPhase.BEFORE_INTENT)
@@ -113,7 +113,7 @@ class FocusHistoryStore(
             writeMetadata(meta.copy(degraded = true))
         }
         if (meta.pendingClear != null) {
-            rewriteLog(events.filter { it.session in meta.keepSessions })
+            rewriteLog(retainForSessions(events, meta.keepSessions))
             degraded = false
             writeMetadata(meta.copy(cleared = maxOf(meta.cleared ?: Long.MIN_VALUE, meta.pendingClear),
                 degraded = false, pendingClear = null, keepSessions = emptySet()))
@@ -170,12 +170,22 @@ class FocusHistoryStore(
         val cutoff = clock.millis() - RETENTION_MS
         val groups = snapshot.events.groupBy { it.session }
         val retainedIds = groups.filterValues { events -> events.maxOf { it.at } >= cutoff }.keys.toMutableSet()
-        val sizes = groups.mapValues { (_, events) -> events.sumOf { (HistoryCodec.encode(it) + "\n").toByteArray(Charsets.UTF_8).size.toLong() } }
-        var size = retainedIds.sumOf { sizes.getValue(it) }
+        // A global pass belongs to its operation and every affected session. Keep that
+        // shared record until all retained owners disappear, including during hard-cap trim.
+        val groupOwners = groupOwners(snapshot.events)
+        val owners = snapshot.events.map { groupOwners.getValue(it.session) }
+        val dependents = mutableMapOf<String, MutableList<Int>>()
+        owners.forEachIndexed { index, ids -> ids.forEach { dependents.getOrPut(it) { mutableListOf() }.add(index) } }
+        val references = owners.map { ids -> ids.count { it in retainedIds } }.toIntArray()
+        val sizes = snapshot.events.map { (HistoryCodec.encode(it) + "\n").toByteArray(Charsets.UTF_8).size.toLong() }
+        var size = snapshot.events.indices.sumOf { if (references[it] > 0) sizes[it] else 0 }
         groups.entries.sortedBy { (_, events) -> events.maxOf { it.at } }.forEach { (id, _) ->
-            if (size > HARD_CAP && retainedIds.remove(id)) size -= sizes.getValue(id)
+            if (size > HARD_CAP && retainedIds.remove(id)) dependents[id].orEmpty().forEach { index ->
+                references[index]--
+                if (references[index] == 0) size -= sizes[index]
+            }
         }
-        rewriteLog(snapshot.events.filter { it.session in retainedIds })
+        rewriteLog(snapshot.events.filterIndexed { index, _ -> references[index] > 0 })
         lastCompaction = clock.instant().atZone(zone()).toLocalDate().toEpochDay()
         val meta = readMetadata()
         writeMetadata(meta.copy(compactedDay = lastCompaction, degraded = degraded))
@@ -184,6 +194,16 @@ class FocusHistoryStore(
 
     private fun rewriteLog(events: List<HistoryEvent>) = atomicWrite(log,
         events.joinToString("") { HistoryCodec.encode(it) + "\n" }.toByteArray(Charsets.UTF_8))
+
+    private fun groupOwners(events: List<HistoryEvent>): Map<String, Set<String>> =
+        events.groupBy { it.session }.mapValues { (id, group) -> buildSet {
+            add(id)
+            group.filter { it.knownType == HistoryEventType.PASS_USED }.forEach { addAll(it.sessions.orEmpty()) }
+        } }
+    private fun retainForSessions(events: List<HistoryEvent>, retained: Set<String>): List<HistoryEvent> {
+        val owners = groupOwners(events)
+        return events.filter { event -> owners.getValue(event.session).any { it in retained } }
+    }
 
     private fun quarantine(bytes: ByteArray, label: String = "events") {
         val dir = File(directory, "quarantine")

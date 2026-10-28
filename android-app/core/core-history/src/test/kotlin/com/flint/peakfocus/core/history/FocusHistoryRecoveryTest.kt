@@ -217,4 +217,37 @@ class FocusHistoryRecoveryTest {
         })
         assertEquals(1, store.snapshots.value.events.size)
     }
+    @Test fun FH21_clearAndInterruptedClearRetainGlobalPassForRunningSession() = runTest {
+        for (phase in listOf<HistoryClearPhase?>(null, HistoryClearPhase.INTENT_COMMITTED, HistoryClearPhase.LOG_REPLACED)) {
+            val dir = temporary.newFolder(); val clock = MutableClock(begin)
+            val store = FocusHistoryStore(dir, clock)
+            store.append(started())
+            store.append(HistoryEvent(type = "pass_used", session = "pass-operation", at = begin + 10 * 60_000,
+                tz = zone.id, sessions = listOf("session-a"), recoveryEnd = begin + 20 * 60_000))
+            store.append(HistoryEvent(type = "future_pass_detail", session = "pass-operation", at = begin, tz = zone.id))
+            clock.value = begin + 30 * 60_000
+            FocusHistoryStore(dir, clock, clearPhase = { if (it == phase) throw IOException("interrupted") })
+                .clear(setOf("session-a"))
+            clock.value = begin + hour
+            val reopened = FocusHistoryStore(dir, clock)
+            reopened.append(HistoryEvent(type = "completed", session = "session-a", at = clock.value, tz = zone.id))
+            assertTrue(reopened.load().events.any { it.type == "pass_used" })
+            assertTrue(reopened.load().events.any { it.type == "future_pass_detail" })
+            assertEquals(50 * 60_000L, FocusHistoryAggregator.sessions(reopened.load().events, clock.value, emptySet()).single().focusedMs)
+        }
+    }
+    @Test fun FH21_retentionKeepsSharedPassUntilItsLastRetainedOwnerIsDropped() = runTest {
+        val clock = MutableClock(begin); val store = FocusHistoryStore(temporary.newFolder(), clock)
+        val boundary = begin - FocusHistoryStore.RETENTION_MS
+        store.update { listOf(started(at = boundary - hour, end = boundary),
+            HistoryEvent(type = "pass_used", session = "pass-operation", at = boundary - hour / 2,
+                tz = zone.id, sessions = listOf("session-a"), recoveryEnd = boundary - hour / 4),
+            HistoryEvent(type = "completed", session = "session-a", at = boundary, tz = zone.id)) }
+        store.compact()
+        assertTrue(store.snapshots.value.events.any { it.type == "pass_used" })
+        assertEquals(3 * hour / 4, FocusHistoryAggregator.sessions(store.snapshots.value.events, begin, emptySet()).single().focusedMs)
+        clock.value += 1
+        store.compact()
+        assertTrue(store.snapshots.value.events.isEmpty())
+    }
 }
