@@ -15,6 +15,12 @@ public struct FlintHistorySessionSummary: Identifiable, Equatable, Sendable {
     public let intervals: [DateInterval]
     public var focusedSeconds: TimeInterval { intervals.reduce(0) { $0 + $1.duration } }
     public var isInProgress: Bool { outcome == .running }
+
+    public init(id: String, name: String, startedAt: Date, endedAt: Date, outcome: FlintHistoryOutcome,
+                inferred: Bool, route: String?, intervals: [DateInterval]) {
+        self.id = id; self.name = name; self.startedAt = startedAt; self.endedAt = endedAt
+        self.outcome = outcome; self.inferred = inferred; self.route = route; self.intervals = intervals
+    }
 }
 
 public struct FlintHistoryDay: Equatable, Sendable, Identifiable {
@@ -25,6 +31,12 @@ public struct FlintHistoryDay: Equatable, Sendable, Identifiable {
     public var completed = 0
     public var endedEarly = 0
     public var inProgress = false
+
+    public init(start: Date, focusedSeconds: TimeInterval?, completed: Int = 0, endedEarly: Int = 0,
+                inProgress: Bool = false) {
+        self.start = start; self.focusedSeconds = focusedSeconds; self.completed = completed
+        self.endedEarly = endedEarly; self.inProgress = inProgress
+    }
 }
 
 public struct FlintHistorySummary: Sendable {
@@ -33,6 +45,11 @@ public struct FlintHistorySummary: Sendable {
     public let days: [FlintHistoryDay]
     public let streak: Int
     public var focusedSeconds: TimeInterval { days.compactMap(\.focusedSeconds).reduce(0, +) }
+
+    public init(availability: FlintHistoryAvailability, sessions: [FlintHistorySessionSummary],
+                days: [FlintHistoryDay], streak: Int) {
+        self.availability = availability; self.sessions = sessions; self.days = days; self.streak = streak
+    }
 }
 
 public enum FlintHistoryAggregator {

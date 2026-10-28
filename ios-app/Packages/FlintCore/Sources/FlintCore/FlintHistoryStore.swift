@@ -13,8 +13,9 @@ public struct FlintHistorySnapshot: Sendable {
     }
 }
 
-/// Every process publishes small atomic inbox files; only the host reads/rewrites the main
-/// log and metadata. There are no cross-process file locks to survive suspension. Host
+/// Every process publishes small atomic inbox files; only the host rewrites the main
+/// log and metadata. Extensions can read a bounded snapshot without mutation. There are
+/// no cross-process file locks to survive suspension. Host
 /// instances share an in-process mutex; lifecycle callers never wait for host maintenance.
 public final class FlintHistoryStore: @unchecked Sendable {
     public static let softLimit = 1_048_576
@@ -109,6 +110,128 @@ public final class FlintHistoryStore: @unchecked Sendable {
             recoverClear(&metadata, loaded: &loaded)
             drain(&metadata, loaded: &loaded, inbox: inbox)
             return snapshot(loaded, metadata: metadata)
+        }
+    }
+
+    /// A bounded, nonmutating view for widgets and other extensions. It does not drain,
+    /// reconcile, repair metadata, quarantine corruption, or reclaim staging files.
+    /// A concurrent publication may appear on the next read; duplicate drain copies
+    /// are collapsed by event ID. Missing metadata cannot establish observed days.
+    public func readOnlySnapshot() -> FlintHistorySnapshot {
+        guard let directory,
+              let attributes = try? fm.attributesOfItem(atPath: directory.path),
+              attributes[.type] as? FileAttributeType == .typeDirectory else {
+            return .init(events: [], historyStart: nil, availability: .unavailable)
+        }
+        // Read inbox before the main log: host drain appends before unlinking inbox
+        // files, so this ordering observes either copy across that transition.
+        var bad = false
+        let urls = readOnlyInboxURLs(bad: &bad)
+        var inbox: [Line] = []
+        for url in urls {
+            switch readOnlyFile(url, limit: Self.recordLimit) {
+            case .missing: break // a concurrent host drain can already have removed it
+            case .failed: bad = true
+            case .data(let data):
+                if data.last == 10, let line = parse(Data(data.dropLast())) { inbox.append(line) }
+                else { bad = true }
+            }
+        }
+        var main: [Line] = []
+        switch readOnlyFile(path("events.jsonl"), limit: Self.hardLimit) {
+        case .missing: break
+        case .failed: bad = true
+        case .data(let data):
+            var start = data.startIndex
+            for end in data.indices where data[end] == 10 {
+                if end - start < Self.recordLimit,
+                   let line = parse(data.subdata(in: start..<end)) { main.append(line) }
+                else { bad = true }
+                start = data.index(after: end)
+            }
+            if start < data.endIndex { bad = true }
+        }
+        // Read the clear boundary after the records, so already-published clear intent
+        // suppresses the old generation even before its main-log replacement commits.
+        var metadata: Metadata?
+        if case .data(let data) = readOnlyFile(path("metadata.json"), limit: 65_536),
+           let decoded = try? JSONDecoder().decode(Metadata.self, from: data), decoded.v == 1,
+           [decoded.createdAt, decoded.clearedAt].compactMap({ $0 }).allSatisfy({
+               $0 >= -62_135_596_800_000 && $0 <= 253_402_300_799_000
+           }) {
+            metadata = decoded
+        } else { bad = true }
+        if metadata?.pendingClear == true {
+            main = main.filter { belongs($0, to: metadata?.keepSession) }
+            bad = true
+        }
+        if let clearedAt = metadata?.clearedAt {
+            let keep = metadata?.keepSession
+            let visible: (Line) -> Bool = { line in
+                self.belongs(line, to: keep) || line.at.map { FlintHistoryEvent.milliseconds($0) >= clearedAt } == true
+            }
+            main = main.filter(visible); inbox = inbox.filter(visible)
+        }
+        var ids = Set<String>()
+        let events = (main + inbox).filter { line in
+            guard let id = line.id else { return true }
+            return ids.insert(id).inserted
+        }.compactMap(\.event)
+        // Inspect only whether a failure marker exists; never consume it.
+        var diagnosticError = false
+        let diagnostics = fm.enumerator(at: path("diagnostics"), includingPropertiesForKeys: nil,
+                                        options: [.skipsSubdirectoryDescendants], errorHandler: { _, error in
+            if (error as NSError).code != NSFileReadNoSuchFileError { diagnosticError = true }
+            return false
+        })
+        let hasDiagnostic = diagnostics?.nextObject() != nil
+        bad = bad || diagnosticError || hasDiagnostic
+        let degraded = bad || metadata?.degraded == true || metadata?.lostAllReadableEvents == true
+        return .init(events: events, historyStart: metadata?.historyStart,
+                     availability: degraded ? .degraded : events.contains { $0.type == .started } ? .value : .empty)
+    }
+
+    private enum ReadOnlyFile { case missing, data(Data), failed }
+    private func readOnlyFile(_ url: URL, limit: Int) -> ReadOnlyFile {
+        let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+        guard fd >= 0 else { return errno == ENOENT ? .missing : .failed }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        defer { try? handle.close() }
+        var info = stat()
+        guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
+              info.st_size >= 0, info.st_size <= limit else { return .failed }
+        do {
+            var data = Data()
+            while data.count <= limit {
+                let chunk = try handle.read(upToCount: min(65_536, limit + 1 - data.count)) ?? Data()
+                if chunk.isEmpty { return .data(data) }
+                data.append(chunk)
+            }
+            return .failed
+        } catch { return .failed }
+    }
+
+    private func readOnlyInboxURLs(bad: inout Bool) -> [URL] {
+        var failed = false
+        guard let enumerator = fm.enumerator(at: path("inbox"), includingPropertiesForKeys: nil,
+                                            options: [.skipsSubdirectoryDescendants], errorHandler: { _, error in
+            if (error as NSError).code != NSFileReadNoSuchFileError { failed = true }
+            return false
+        }) else { bad = bad || failed; return [] }
+        var urls: [URL] = [], visited = 0
+        while let url = enumerator.nextObject() as? URL {
+            visited += 1
+            // Bound both materialized records and traversal through abandoned temp files.
+            guard visited <= Self.inboxLimit * 2 else { failed = true; break }
+            guard url.pathExtension == "json" else { continue }
+            guard urls.count < Self.inboxLimit else { failed = true; break }
+            urls.append(url)
+        }
+        bad = bad || failed
+        return urls.sorted {
+            let a = $0.lastPathComponent.split(separator: "-").dropFirst().first ?? ""
+            let b = $1.lastPathComponent.split(separator: "-").dropFirst().first ?? ""
+            return a == b ? $0.lastPathComponent < $1.lastPathComponent : a < b
         }
     }
 
