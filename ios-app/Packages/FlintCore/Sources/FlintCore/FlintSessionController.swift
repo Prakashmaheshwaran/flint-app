@@ -76,6 +76,7 @@ public protocol FlintSessionStateStoring: AnyObject {
     /// saved group never changes what an already-running session blocks.
     func saveSessionSelection(_ selection: FamilyActivitySelection, sessionID: String)
     func loadSessionSelection(sessionID: String) -> FamilyActivitySelection?
+    func clearSessionSelection()
     func emergencyPassLastUsed() -> Date?
     func recordEmergencyPassUse(_ date: Date)
 }
@@ -86,6 +87,8 @@ extension FlintGroupStore: FlintSessionStateStoring {
         let selection: FamilyActivitySelection
     }
 
+    /// Written to the App Group suite itself (FlintGroupStore's own suite is private to its
+    /// file); production stores always use that suite.
     private static let sessionSelectionKey = "flint.activeSession.selection"
 
     public func saveSessionSelection(_ selection: FamilyActivitySelection, sessionID: String) {
@@ -93,6 +96,10 @@ extension FlintGroupStore: FlintSessionStateStoring {
             try? JSONEncoder().encode(SessionSelection(sessionID: sessionID, selection: selection)),
             forKey: Self.sessionSelectionKey
         )
+    }
+
+    public func clearSessionSelection() {
+        UserDefaults.flintGroup?.removeObject(forKey: Self.sessionSelectionKey)
     }
 
     public func loadSessionSelection(sessionID: String) -> FamilyActivitySelection? {
@@ -383,6 +390,7 @@ public final class FlintSessionController {
         // for a stopped activity, and it must then find no matching session — never a live
         // one to "complete" or re-arm.
         store?.clearActiveSession()
+        store?.clearSessionSelection()
         env.registrar.stopMonitoring([session.monitorName])
     }
 
@@ -403,6 +411,7 @@ public final class FlintSessionController {
             // Nothing else writes the session's store, and every start/stop in this process
             // holds the lock — so with no record, whatever is left on it is stale.
             env.shield.clear()
+            store?.clearSessionSelection()
             FlintSessionHealth.update(in: env.healthDefaults()) { $0.unauthorizedSince = nil }
             return FlintSessionReconcileReport(outcome: .noSession)
         }
@@ -581,19 +590,19 @@ public final class FlintSessionController {
             if now.addingTimeInterval(FlintTimeIntegrity.endSlack) >= endsAt {
                 recordTimeVerdict(FlintTimeIntegrity.verdict(for: session, clock: env.clock), for: session, at: now)
                 env.shield.clear()
-                // Report a completion at the logical deadline when the callback is the expected
-                // one: near endsAt, or a short session's padded interval end (its warning never
-                // came — recorded, since that is the deadline adapter failing on this device).
-                // Anything else is left to focus history's outcome inference.
-                let fallbackEnd = event == .intervalDidEnd && session.usesEndWarning == true
+                // Report a completion only for an on-time observation of the logical deadline.
+                // A short session's padded carrier end after a missed warning is recovery, not a
+                // successful short session (ADR-012 §4): record the adapter failure and leave the
+                // outcome to focus history's reconciliation; so is any other late observation.
                 let lateness = now.timeIntervalSince(endsAt)
-                if fallbackEnd, lateness > FlintTimeIntegrity.onTimeWindow {
+                if event == .intervalDidEnd, session.usesEndWarning == true, lateness > FlintTimeIntegrity.onTimeWindow {
                     recordAnomaly(.missedEndWarning, seconds: lateness, session: session, at: now)
                 }
-                if fallbackEnd || abs(lateness) <= FlintTimeIntegrity.onTimeWindow {
+                if abs(lateness) <= FlintTimeIntegrity.onTimeWindow {
                     FlintSessionLifecycle.didEnd(session, route: .completed, at: endsAt)
                 }
                 store?.clearActiveSession()
+                store?.clearSessionSelection()
                 env.registrar.stopMonitoring([activity])
             } else if event == .intervalDidEnd, let store {
                 // The interval is over, but the session isn't: keep the shield, re-register.

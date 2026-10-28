@@ -267,14 +267,14 @@ final class FlintSessionControllerTests: XCTestCase {
         XCTAssertEqual(events.kinds.suffix(1), ["ended"])
     }
 
-    func testShortSessionFallbackEndStillCompletes() throws {
+    func testShortSessionCarrierEndIsRecoveryNotACompletion() throws {
         let c = controller()
         let session = try start(c, minutes: 5)
         clock.advance(15 * 60) // the warning never arrived; the padded interval ended
         events.log.removeAll()
         c.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
-        XCTAssertNil(store.active)
-        XCTAssertEqual(events.log, [.ended(session, route: .completed, at: session.endsAt!)])
+        XCTAssertNil(store.active, "the block still ends — never left without an end")
+        XCTAssertTrue(events.log.isEmpty, "ADR-012 §4: not reported as a successful 5-minute session")
         XCTAssertEqual(health.lastTimeAnomaly?.kind, .missedEndWarning)
         XCTAssertEqual(health.lastTimeAnomaly?.seconds, 10 * 60)
     }
@@ -476,6 +476,7 @@ final class FlintSessionControllerTests: XCTestCase {
         store.loads = 0
         c.reconcile()
         XCTAssertEqual(shield.applyCount, 1, "no shield written after the record vanished")
+        XCTAssertEqual(shield.clearCount, 0, "it was the running branch, not the no-session branch")
     }
 
     func testReconcileReappliesTheShieldAndFlagsMissingAuthorization() throws {
@@ -651,6 +652,7 @@ private final class FakeSessionStore: FlintSessionStateStoring {
         sessionSelections[sessionID] = selection
     }
     func loadSessionSelection(sessionID: String) -> FamilyActivitySelection? { sessionSelections[sessionID] }
+    func clearSessionSelection() { sessionSelections.removeAll() }
     func saveActiveSession(_ session: FlintActiveSession) {
         active = session
         log.entries.append("persist")

@@ -151,10 +151,13 @@ public struct FlintClock {
 /// Detects a wall-clock change during a running session by comparing elapsed wall time with
 /// elapsed monotonic time since the session's anchors.
 ///
-/// Detection only. iOS cannot veto a clock change, and DeviceActivity fires on wall-clock
-/// components, so a clock moved forward can still end a session early and one moved back can
-/// stretch it. Flint records the anomaly so it is never silent; which clock governs a session's
-/// end is the protection contract's call (ADR-012), not this type's.
+/// Detection only, for now. iOS cannot veto a clock change, and DeviceActivity fires on
+/// wall-clock components, so a clock moved forward can still end a session early and one moved
+/// back can stretch it; Flint records the anomaly so it is never silent. ADR-012 §9 decides that
+/// same-boot monotonic time governs remaining durations — applying that (re-deriving `endsAt`
+/// and the registration) is lane B's wave-2 follow-up, not this type's. `CLOCK_MONOTONIC_RAW`
+/// ignores frequency correction, so crystal drift of a few seconds a day can register as a
+/// small anomaly on a very long session; it is advisory only.
 public enum FlintTimeIntegrity {
     /// A wall-vs-monotonic discrepancy above this is a clock discontinuity (ADR-012 §9).
     public static let discontinuityThreshold: TimeInterval = 5
