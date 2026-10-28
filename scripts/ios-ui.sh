@@ -3,6 +3,10 @@
 set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
+[[ ${FLINT_UI_DISPOSABLE:-} == 1 ]] || {
+  echo "UI fixtures write a synthetic PIN. Set FLINT_UI_DISPOSABLE=1 only for an empty, dedicated simulator; see docs/verification/ios-ui.md." >&2
+  exit 2
+}
 # shellcheck source=scripts/agent/common.sh
 source "$root/scripts/agent/common.sh"
 

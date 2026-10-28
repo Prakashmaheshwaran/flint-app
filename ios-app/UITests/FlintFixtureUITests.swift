@@ -11,14 +11,7 @@ final class FlintFixtureUITests: XCTestCase {
 
     override func tearDownWithError() throws {
         if let app {
-            let screenshot = XCTAttachment(screenshot: app.screenshot())
-            screenshot.name = name
-            screenshot.lifetime = .keepAlways
-            add(screenshot)
-            let hierarchy = XCTAttachment(string: app.debugDescription)
-            hierarchy.name = "accessibility-hierarchy"
-            hierarchy.lifetime = .keepAlways
-            add(hierarchy)
+            capture(name)
             app.terminate()
         }
     }
@@ -58,7 +51,14 @@ final class FlintFixtureUITests: XCTestCase {
         XCTAssertTrue(error.waitForExistence(timeout: 5))
         XCTAssertEqual(allow.label, "Retry Screen Time")
         try reveal(app.buttons["onboarding.skip"])
-        try tap(app.buttons["onboarding.skip"])
+        XCTAssertTrue(app.buttons["onboarding.skip"].isEnabled)
+        capture("onboarding-consent-error-and-skip")
+
+        // NSArgumentDomain fixes onboarded=false for this process, including after
+        // a completion write. Exercise Today in a separate explicit fixture launch;
+        // do not claim persisted onboarding completion under that override.
+        app.terminate()
+        launch(accessibility: accessibility, approved: false)
         XCTAssertTrue(app.staticTexts["A quiet day so far."].waitForExistence(timeout: 5))
         try reveal(app.buttons["today.authorization.action"])
         XCTAssertTrue(app.staticTexts["today.authorization.explanation"].exists)
@@ -134,13 +134,13 @@ final class FlintFixtureUITests: XCTestCase {
         let save = app.buttons["Save"]
         XCTAssertTrue(save.waitForExistence(timeout: 5))
         XCTAssertFalse(save.isEnabled, "A block list with no selection cannot save")
-        let allowList = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Allow list'")).firstMatch
+        let allowList = app.switches.matching(NSPredicate(format: "label BEGINSWITH 'Allow list'")).firstMatch
         try reveal(allowList)
         // The production custom toggle exposes its whole row to accessibility,
         // while its pointer hit target is the trailing 52-point switch.
-        XCTAssertEqual(allowList.value as? String, "Off")
-        allowList.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
-        XCTAssertEqual(allowList.value as? String, "On")
+        XCTAssertEqual(allowList.value as? String, "0")
+        try tap(allowList.buttons.firstMatch)
+        XCTAssertEqual(allowList.value as? String, "1")
         XCTAssertTrue(save.isEnabled, "A valid allow-list draft can be saved without tokens")
 
         let ends = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Ends '")).firstMatch
@@ -176,13 +176,15 @@ final class FlintFixtureUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Insights needs a device"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["No screen time recorded"].exists,
                        "Unavailable data must not be presented as measured zero usage")
-        let range = app.descendants(matching: .any)["insights.range"]
-        let today = range.buttons["Today"]
+        // SwiftUI propagates the identifier onto both segment buttons.
+        let range = app.buttons.matching(identifier: "insights.range")
+        let today = range.matching(NSPredicate(format: "label == 'Today'")).firstMatch
         try tap(today)
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'reports for today'"))
             .firstMatch.waitForExistence(timeout: 5))
-        try tap(range.buttons["7 days"])
+        try tap(range.matching(NSPredicate(format: "label == '7 days'")).firstMatch)
         XCTAssertTrue(app.staticTexts["Insights needs a device"].exists)
+        capture("insights-approved-simulator-unavailable")
 
         app.terminate()
         launch(accessibility: accessibility, approved: false)
@@ -192,6 +194,17 @@ final class FlintFixtureUITests: XCTestCase {
     }
 
     private enum ScrollDirection { case up, down }
+
+    private func capture(_ state: String) {
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = state
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        let hierarchy = XCTAttachment(string: app.debugDescription)
+        hierarchy.name = "accessibility-hierarchy-\(state)"
+        hierarchy.lifetime = .keepAlways
+        add(hierarchy)
+    }
 
     /// Bounded scrolling reveals offscreen content; assertions and taps are never retried.
     private func reveal(_ element: XCUIElement, direction: ScrollDirection = .up,
@@ -208,9 +221,12 @@ final class FlintFixtureUITests: XCTestCase {
     }
 
     private func tap(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) throws {
-        XCTAssertTrue(element.waitForExistence(timeout: 5), file: file, line: line)
-        XCTAssertTrue(element.isHittable, "Target must be visible before input", file: file, line: line)
-        XCTAssertTrue(element.isEnabled, file: file, line: line)
+        let ready = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND hittable == true AND enabled == true"),
+            object: element
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 8), .completed,
+                       "Target must be visible and enabled before input", file: file, line: line)
         element.tap()
     }
 

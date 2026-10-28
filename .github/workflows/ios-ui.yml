@@ -3,10 +3,10 @@ name: iOS UI fixtures
 
 on:
   pull_request:
-    paths: ['ios-app/**', 'scripts/ios-ui.sh', 'scripts/agent/**', 'scripts/flint-env.sh', '.github/workflows/ios-ui.yml']
+    paths: ['ios-app/**', 'Makefile', 'scripts/ios-ui.sh', 'scripts/agent/**', 'scripts/flint-env.sh', '.github/workflows/ios-ui.yml']
   push:
     branches: [integration/v1, main]
-    paths: ['ios-app/**', 'scripts/ios-ui.sh', 'scripts/agent/**', 'scripts/flint-env.sh', '.github/workflows/ios-ui.yml']
+    paths: ['ios-app/**', 'Makefile', 'scripts/ios-ui.sh', 'scripts/agent/**', 'scripts/flint-env.sh', '.github/workflows/ios-ui.yml']
   workflow_dispatch:
 
 permissions:
@@ -22,6 +22,7 @@ jobs:
     timeout-minutes: 35
     env:
       IOS_UI_RESULTS: ios-app/build/ios-ui
+      FLINT_UI_DISPOSABLE: '1'
     steps:
       - uses: actions/checkout@v7
       - name: Install XcodeGen
@@ -39,7 +40,7 @@ jobs:
           print("IOS_SIM=" + phones[0]["udid"])
           PY
       - name: Test DEBUG UI fixtures and report empty-state renders (no assertion retries)
-        run: bash scripts/ios-ui.sh
+        run: make ios-ui
       - name: Upload xcresult, screenshots, accessibility hierarchies and provenance
         if: always()
         uses: actions/upload-artifact@v4
