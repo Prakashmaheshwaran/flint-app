@@ -146,6 +146,10 @@ final class FlintCompletionNotificationTests: XCTestCase {
 
     func testToggleOffCancelsOnlyFlintCompletionRequests() {
         let center = NotificationCenterStub(), sut = notifier(center)
+        // Isolate the explicit toggle from the separately tested startup recovery.
+        // Both may cancel the same identifier safely if the preference changes
+        // while the startup enumeration is in flight.
+        drain(sut)
         XCTAssertTrue(sut.isEnabled)
         let cancelled = expectation(description: "pending completion cancelled")
         center.pending = ["flint.session.complete.a", "unrelated.notification"]
