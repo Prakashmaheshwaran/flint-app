@@ -6,6 +6,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ContinuousBudgetTest {
+    @Test fun `nonpositive budgets are immediately spent without querying usage`() {
+        var limit: Int? = 0
+        var reads = 0
+        val gate = PathBTimeLimitGate({ limit }, { _, _ -> reads++; error("Usage Access is absent") })
+        assertTrue(gate.isSpent("app", 0))
+        limit = -1
+        assertTrue(gate.isSpent("app", 1))
+        limit = null
+        assertFalse(gate.isSpent("app", 2))
+        assertEquals(0, reads)
+    }
+
     @Test fun `minimum clock value is an ordinary first sample rather than a cache sentinel`() {
         var calls = 0
         val gate = PathBTimeLimitGate({ 1 }, { _, _ -> calls++; 0 }, dayFor = { 0 })

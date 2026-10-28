@@ -198,17 +198,21 @@ class FlintAccessibilityService : AccessibilityService() {
                 LimitStore(this@FlintAccessibilityService).limitMinutes(pkg),
                 coordinator.timeLimitMinutes(pkg),
             ).minOrNull()
+            // ADR-012: a configured zero/nonpositive budget is exhausted without measurement.
+            val immediatelySpent = limitMin != null && limitMin <= 0
+            val needsMeasurement = limitMin != null && limitMin > 0
             // Preserve a recovery deadline even if a floor window cancels this first IO read.
             lastBudgetDeadlineMs = limitMin?.let { lastBudgetDeadlineMs ?: now + it * 60_000L }
             // Cancellation on every newer decision prevents a suspended query from showing a
             // stale shield. The initial seven-day carry-in query never runs on the main thread.
-            val used = limitMin?.let { withContext(Dispatchers.IO) {
+            val used = if (needsMeasurement) withContext(Dispatchers.IO) {
                 UsageQuery.dailyForegroundMillisIfGranted(this@FlintAccessibilityService, pkg, now)
-            } }
-            // Missing Usage Access is degraded/unmeasured, not an exhausted time limit.
-            val remaining = used?.let { checkNotNull(limitMin) * 60_000L - it }
+            } else null
+            // Missing Usage Access leaves positive budgets unmeasured, not exhausted.
+            val remaining = if (immediatelySpent) 0L
+                else used?.let { checkNotNull(limitMin) * 60_000L - it }
             lastBudgetDeadlineMs = remaining?.let { now + it.coerceAtLeast(0L) }
-            val timeLimitSpent = remaining != null && remaining <= 0L
+            val timeLimitSpent = immediatelySpent || (remaining != null && remaining <= 0L)
 
             // Inspect rules even when a weaker time limit or an old ordinary break applies.
             val root = runCatching { rootInActiveWindow }.getOrNull()
@@ -227,8 +231,9 @@ class FlintAccessibilityService : AccessibilityService() {
                 coordinator.hideIfShown()
             }
             // A configured but unmeasured budget retains a recovery check without blocking.
-            armBoundary(pkg, now, remaining ?: limitMin?.let { 0L },
-                retryUsage = limitMin != null && (used == null || used == Long.MAX_VALUE))
+            val boundaryBudget = remaining ?: if (needsMeasurement) UNMEASURED_BUDGET_BOUNDARY_MS else null
+            armBoundary(pkg, now, boundaryBudget,
+                retryUsage = needsMeasurement && (used == null || used == Long.MAX_VALUE))
         }
     }
 
@@ -339,4 +344,8 @@ class FlintAccessibilityService : AccessibilityService() {
         EnforcementSignals.detectors.disconnected(this)
     }
 
+    private companion object {
+        // Requests midnight/recovery without inventing a future exhaustion deadline.
+        const val UNMEASURED_BUDGET_BOUNDARY_MS = 0L
+    }
 }

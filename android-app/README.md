@@ -244,8 +244,9 @@ heuristic (JVM-tested only).
 - *Continuous Time Limits and schedules (R1/R6):* both paths use the larger of event-derived
   usage (including the ongoing interval), aggregate daily buckets, and already observed usage.
   A pruned/failed event query cannot erase aggregate consumption; with Usage Access granted,
-  two failed measurements fail closed for that decision. Without the grant, Path A time limits
-  are unmeasured and do not block; independent rule/open-limit causes still apply. Path A checks
+  two failed measurements fail closed for that decision. Without the grant, positive Path A time
+  limits are unmeasured and do not block; independent rule/open-limit causes still apply.
+  Configured zero/nonpositive budgets are immediately exhausted and need no usage read. Path A checks
   AppOps on IO with a one-second cache and retries unmeasured limits while awake. Queries run on
   IO, with one aggregate read alongside each event measurement; the ordered event timeline is
   reused across measurements. Path B retains foreground across quiet polls; budget validity is bounded

@@ -34,8 +34,10 @@ class PathBTimeLimitGate(
             day != cachedDay || lastObservedMs?.let { nowEpochMs < it } == true ||
             cachedAt == null || nowEpochMs < cachedAt || nowEpochMs - cachedAt >= validForMs
         if (stale) {
-            val remaining = limitMinutes?.let {
-                it * 60_000L - foregroundMillisToday(packageName, nowEpochMs)
+            val remaining = when {
+                limitMinutes == null -> null
+                limitMinutes <= 0 -> 0L // already exhausted; no usage measurement is necessary
+                else -> limitMinutes * 60_000L - foregroundMillisToday(packageName, nowEpochMs)
             }
             cachedSpent = remaining != null && remaining <= 0L
             validForMs = if (remaining != null && remaining > 0L) {

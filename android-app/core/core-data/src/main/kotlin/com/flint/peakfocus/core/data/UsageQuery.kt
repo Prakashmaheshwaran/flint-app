@@ -5,6 +5,7 @@ import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.os.Build
 import android.os.Process
+import android.util.Log
 import com.flint.peakfocus.core.model.DailyUsageTimeline
 import com.flint.peakfocus.core.model.ConservativeDailyUsage
 import com.flint.peakfocus.core.model.UsageAccessProbe
@@ -64,11 +65,13 @@ object UsageQuery {
         }
         val zone = ZoneId.systemDefault()
         val start = DailyUsageTimeline.startOfDay(now, zone)
-        val eventUsage = runCatching { timeline!!.millis(packageName, start, now) }.getOrNull()
+        val eventUsage = runCatching { timeline!!.millis(packageName, start, now) }
+            .onFailure { Log.w("FlintUsage", "Event usage unavailable; retaining aggregate/high-water usage", it) }
+            .getOrNull()
         val aggregateUsage = runCatching {
             val buckets = checkNotNull(usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, now))
             buckets.filter { it.packageName == packageName }.sumOf { it.totalTimeInForeground.coerceAtLeast(0L) }
-        }.getOrNull()
+        }.onFailure { Log.w("FlintUsage", "Aggregate usage unavailable; retaining event/high-water usage", it) }.getOrNull()
         return conservative.observe(packageName, now, zone, eventUsage, aggregateUsage)
     }
 
