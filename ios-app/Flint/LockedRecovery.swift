@@ -75,7 +75,8 @@ struct LockedRecoveryState: Equatable {
                 : String(localized: "Emergency Pass: available")
         }
         guard let nextPass else { return String(localized: "Emergency Pass: not available right now") }
-        let when = nextPass.formatted(date: .abbreviated, time: .shortened)
+        // Date, time and zone (ADR-012 §6).
+        let when = nextPass.formatted(.dateTime.month(.abbreviated).day().hour().minute().timeZone(.specificName(.short)))
         return String(localized: "Emergency Pass: available again \(when)")
     }
 }

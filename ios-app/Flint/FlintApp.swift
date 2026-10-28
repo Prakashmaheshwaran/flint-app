@@ -176,7 +176,12 @@ struct PINGateView: View {
                             }
                         }
                         .buttonStyle(EmberButtonStyle())
-                        Button("Emergency Pass & recovery") { showRecovery = true }
+                        Button("Emergency Pass & recovery") {
+                            // Drop the PIN keypad so it can't cover the pass controls.
+                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                                            to: nil, from: nil, for: nil)
+                            showRecovery = true
+                        }
                             .buttonStyle(QuietButtonStyle(color: FlintBrand.mist))
                             .accessibilityHint("Use the Emergency Pass or see how to lift blocks without the PIN")
                     }
