@@ -63,8 +63,15 @@ Shortcut intents. Known boundaries at this checkpoint:
   chaining is absent. Immediate Allow List sessions are not implemented.
 - Open Limits require bounded-credit/re-shield, overlap and corrupt-state acceptance.
   Do not describe them as native DeviceActivity launch-count events.
-- Safari configuration/writer tests do not establish the production cause-owned lifecycle
-  or actual Private Browsing/history effects. Use the ledger for its latest merged state.
+- Settings → **Web & Safari** applies the Safari web-content filter during focus sessions
+  (Block Now, Shortcuts/Pomodoro and Focus filters), and independently during schedules/Sleep
+  when **Schedules and Sleep** is on. Choose adult-content filtering with extra block/allow
+  domains or an allowed-sites-only list, plus an optional explicit-media restriction. Each
+  cause owns its store, so its end clears only its own settings; Time/Open Limits are excluded.
+  Private Browsing and Clear History and Website Data lock as an iOS side effect while the
+  filter is active. Other browsers are not filtered. Real Safari filtering, those side effects,
+  cross-store composition and permission revocation remain device-unverified; the Simulator
+  cannot verify them.
 - Focus/Shortcut starts share session checks. Easy Focus-off can end its owned session;
   strict finite commitments keep their stop rights and may require confirmation in Flint.
 - PIN is a UI privacy barrier, separate from Screen Time authority. Hardware recovery and

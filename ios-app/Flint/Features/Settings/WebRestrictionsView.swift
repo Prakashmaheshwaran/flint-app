@@ -1,27 +1,26 @@
 import SwiftUI
 import FlintCore
 
-/// Configures Flint's Safari content restrictions + Private-Browsing lockdown (Opal features
-/// 1.8 / 1.9, FREE in Flint). This screen only edits + persists the `FlintWebRestrictions`
-/// preference; the session lifecycle is what calls `FlintWebRestrictionStore().applySaved()` /
-/// `.clear()` to enforce it. Reachable from `SettingsView`; the Wave-2 integrator owns app nav.
+/// Edits the shared Safari filter and immediately reconciles currently active causes.
 struct WebRestrictionsView: View {
     @State private var restrictions = FlintWebRestrictions.load()
 
     var body: some View {
         Form {
             Section {
-                Toggle("Restrict Safari during sessions", isOn: $restrictions.enabled)
+                Toggle("Focus sessions", isOn: $restrictions.enabled)
+                    .tint(FlintBrand.spark)
+                Toggle("Schedules and Sleep", isOn: $restrictions.applyDuringSchedules)
                     .tint(FlintBrand.spark)
             } footer: {
                 Text("""
-                    While a focus session is running, Safari follows the rules below. Turning this \
-                    on also disables Private Browsing and locks Clear History and Website \
-                    Data — iOS ties both to web restrictions, so they can't be evaded mid-session.
+                    Apply the Safari web-content filter during focus sessions, or during schedules \
+                    and Sleep when that switch is on. While the filter is active, iOS also disables \
+                    Private Browsing and locks Clear History and Website Data as a side effect.
                     """)
             }
 
-            if restrictions.enabled {
+            if restrictions.enabled || restrictions.applyDuringSchedules {
                 Section {
                     Picker("Mode", selection: $restrictions.filter) {
                         ForEach(FlintWebFilter.allCases, id: \.self) { mode in
@@ -42,8 +41,7 @@ struct WebRestrictionsView: View {
                 } else {
                     DomainListSection(
                         title: "Also block",
-                        footer: "Block these sites on top of the adult-content filter. Opal can't do "
-                              + "this on iOS — Flint lets you type any domain.",
+                        footer: "Block these sites on top of the adult-content filter.",
                         addPrompt: "Add a site to block",
                         domains: $restrictions.blockedDomains
                     )
@@ -64,8 +62,8 @@ struct WebRestrictionsView: View {
             }
 
             Section {
-                Text("Safari is the only browser iOS filters uniformly. Restrictions take effect on a "
-                     + "real device — the Simulator can't apply them.")
+                Text("This filter applies only to Safari. Other browsers are not filtered. "
+                     + "Safari filtering and its side effects cannot be verified in the Simulator.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -73,9 +71,12 @@ struct WebRestrictionsView: View {
         .flintForm()
         .navigationTitle("Web & Safari")
         .navigationBarTitleDisplayMode(.inline)
-        // Persist every edit to the shared App Group so a starting session enforces the latest config.
         .onChange(of: restrictions) { newValue in
             newValue.save()
+            guard let group = FlintGroupStore() else { return }
+            FlintWebRestrictionLifecycle().reconcile(
+                activeSession: group.loadActiveSession(), rules: group.loadRules(), config: newValue
+            )
         }
     }
 }

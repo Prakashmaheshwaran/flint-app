@@ -212,6 +212,12 @@ public final class FlintWebRestrictionStore {
 
     /// Enforce an already-authorized cause's configuration now.
     public func apply(_ restrictions: FlintWebRestrictions) {
+        store.webContent.blockedByFilter = Self.filterPolicy(for: restrictions)
+        // nil = no assertion from this cause; another cause may still deny explicit content.
+        store.media.denyExplicitContent = restrictions.denyExplicitMedia ? true : nil
+    }
+
+    static func filterPolicy(for restrictions: FlintWebRestrictions) -> WebContentSettings.FilterPolicy {
         let allowed = Set(restrictions.normalizedAllowedDomains.map { WebDomain(domain: $0) })
         let blocked = Set(restrictions.normalizedBlockedDomains.map { WebDomain(domain: $0) })
 
@@ -219,13 +225,10 @@ public final class FlintWebRestrictionStore {
         case .limitAdult:
             // Apple's auto adult filter, with the typed extras layered on. Setting any filter is
             // what disables Private Browsing + locks history clearing.
-            store.webContent.blockedByFilter = .auto(blocked, except: allowed)
+            return .auto(blocked, except: allowed)
         case .allowedOnly:
-            store.webContent.blockedByFilter = .specific(allowed)
+            return .all(except: allowed)
         }
-
-        // `denyExplicitContent` is optional: nil = "don't assert", so leave it unset when off.
-        store.media.denyExplicitContent = restrictions.denyExplicitMedia ? true : nil
     }
 
     /// Release this cause's web keys only. Other active causes may still restrict Safari.
