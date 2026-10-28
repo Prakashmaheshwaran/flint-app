@@ -90,6 +90,8 @@ struct SleepModeView: View {
                        selection: Binding(get: { vm.wake }, set: { vm.wake = $0 }),
                        displayedComponents: .hourAndMinute)
             dayCircles
+                // Recreate lazy cells when their scaled target size changes in an open Form.
+                .id(dynamicTypeSize)
         } header: {
             Text("Nights")
         } footer: {
