@@ -16,7 +16,7 @@ struct StartSessionIntent: AppIntent {
     /// Background by design: blocking shouldn't yank the user out of whatever they're doing.
     static var openAppWhenRun = false
 
-    @Parameter(title: "Minutes", description: "How long to focus. 0 means until you stop.", default: 25)
+    @Parameter(title: "Minutes", description: "How long to focus. 0 means until you stop (Easy only).", default: 25)
     var minutes: Int
 
     @Parameter(title: "Strictness", default: .easy)
@@ -38,7 +38,11 @@ struct StartSessionIntent: AppIntent {
             breakLevel: strictness.breakLevel,
             name: "Focus"
         )
-        let session = try FlintShortcutsRunner.start(request)
+        // Hardcore removes the early exit and a replacement retires the running session: both
+        // ask first, even from an automation (ADR-012 §2).
+        let session = try await startConfirmingIfNeeded(
+            { try FlintShortcutsRunner.start(request, confirmed: $0) },
+            hardcore: strictness.breakLevel == .hardcore, minutes: minutes)
         if session.endsAt != nil {
             return .result(dialog: "Focus on — blocking for \(minutes) minutes.")
         }

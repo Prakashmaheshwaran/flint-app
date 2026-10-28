@@ -58,6 +58,21 @@ struct StartFocusSheet: View {
         .presentationDragIndicator(.hidden)
         .familyActivityPicker(isPresented: $showPicker, selection: $vm.selection)
         .onChange(of: vm.selection) { _ in vm.persistSelection() }
+        .confirmationDialog(vm.breakLevel == .hardcore ? "Start a Hardcore block?" : "Replace the running session?",
+                            isPresented: $vm.confirmingHardcore,
+                            titleVisibility: .visible) {
+            Button(vm.breakLevel == .hardcore ? "Start Hardcore" : "Replace") {
+                vm.start(confirmed: true)
+                if vm.active != nil { onClose() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if vm.breakLevel == .hardcore {
+                Text("You can't end it early. It ends after \(vm.durationMinutes) minutes, or with your Emergency Pass.")
+            } else {
+                Text("The session that's running now ends and this one takes its place.")
+            }
+        }
         .alert("Save as group", isPresented: $showSaveGroup) {
             TextField("Name", text: $groupName)
             Button("Save") { vm.saveSelectionAsGroup(name: groupName); groupName = "" }
@@ -225,15 +240,15 @@ struct StartFocusSheet: View {
         switch level {
         case .easy: "Stop any time"
         case .harder: "Stopping takes friction"
-        case .hardcore: "No way out"
+        case .hardcore: "Locked until it ends"
         }
     }
 
     private func note(for level: BreakLevel) -> String {
         switch level {
         case .easy: "You can end this session whenever you like."
-        case .harder: "You can still stop early, but only after a short breathing wait."
-        case .hardcore: "Can’t be stopped, and Flint can’t be removed, until it ends. Your weekly Emergency Pass is the only exit."
+        case .harder: "You can still stop early, after a wait: 1 minute the first time, then 5, then 15. Going back from the wait doesn't count."
+        case .hardcore: "Can’t be stopped early in Flint — it ends at its set time. The Emergency Pass (one every 7 days after you use it) is there if you really need out. While it runs, iOS also won't let apps be deleted. Screen Time access can always be turned off in iOS Settings."
         }
     }
 }

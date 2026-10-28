@@ -38,7 +38,9 @@ struct StartPomodoroIntent: AppIntent {
             breakMinutes: max(0, breakMinutes),
             rounds: max(1, rounds)
         )
-        _ = try FlintShortcutsRunner.startPomodoro(config, appGroupID: appGroup?.id, breakLevel: .easy)
+        _ = try await startConfirmingIfNeeded(
+            { try FlintShortcutsRunner.startPomodoro(config, appGroupID: appGroup?.id, breakLevel: .easy, confirmed: $0) },
+            hardcore: false, minutes: config.focusMinutes)
         return .result(
             dialog: "Pomodoro started — \(config.focusMinutes) minutes of focus, then a \(config.breakMinutes)-minute break."
         )

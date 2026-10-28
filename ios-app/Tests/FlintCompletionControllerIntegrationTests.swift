@@ -48,7 +48,8 @@ final class FlintCompletionControllerIntegrationTests: XCTestCase {
 
     private func start(source: FlintSessionSource = .shortcut, level: BreakLevel = .easy) throws -> FlintActiveSession {
         try controller.startBlockNow(selection: FamilyActivitySelection(), duration: 1800,
-            breakLevel: level, name: "Private session name", source: source)
+            breakLevel: level, name: "Private session name", source: source,
+            origin: source == .shortcut ? .shortcut : .appUI, confirmed: true)
     }
 
     func testHostShortcutControllerStartAndStopScheduleThenCancel() throws {
@@ -100,6 +101,8 @@ private final class ControllerNotificationCenter: FlintNotificationCenter {
 
 private final class ControllerNotificationShield: FlintSessionShielding {
     func counts(of selection: FamilyActivitySelection) -> FlintSelectionCounts { .init(applications: 1) }
+    func targets(of selection: FamilyActivitySelection) -> FlintSessionTargets { .init() }
+    func fingerprint(of selection: FamilyActivitySelection) -> String { "" }
     func applyBlockList(_ selection: FamilyActivitySelection) throws {}
     func setDenyAppRemoval(_ deny: Bool) {}
     func clear() {}
@@ -117,6 +120,7 @@ private final class ControllerNotificationState: FlintSessionStateStoring {
     var active: FlintActiveSession?
     var passUsed: Date?
     func loadActiveSession() -> FlintActiveSession? { active }
+    func hasActiveSessionRecord() -> Bool { active != nil }
     func saveActiveSession(_ session: FlintActiveSession) { active = session }
     func clearActiveSession() { active = nil }
     func saveSelection(_ selection: FamilyActivitySelection) {}

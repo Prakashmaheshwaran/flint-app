@@ -35,6 +35,15 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
     public let rearmCount: Int?
     /// When the auto-clear was last re-registered for any reason (spaces out repairs).
     public let lastRearmAt: Date?
+    /// The protection-contract version the session was started under. nil = started by a build
+    /// before ADR-012, so it keeps that build's promised rights until it ends (ADR-012 §12).
+    public let contractVersion: Int?
+    /// `FlintSessionOrigin` raw value of the request that started it (ADR-012 §11).
+    public let origin: String?
+    /// The automation that owns it (the Focus filter), for owner-ended stops.
+    public let ownerID: String?
+
+    public static let currentContractVersion = 1
 
     public init(
         id: String = UUID().uuidString,
@@ -49,7 +58,10 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         autoClearUTCOffset: Int? = nil,
         usesEndWarning: Bool? = nil,
         rearmCount: Int? = nil,
-        lastRearmAt: Date? = nil
+        lastRearmAt: Date? = nil,
+        contractVersion: Int? = nil,
+        origin: String? = nil,
+        ownerID: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -64,6 +76,9 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         self.usesEndWarning = usesEndWarning
         self.rearmCount = rearmCount
         self.lastRearmAt = lastRearmAt
+        self.contractVersion = contractVersion
+        self.origin = origin
+        self.ownerID = ownerID
     }
 
     public var isExpired: Bool { isExpired(at: Date()) }
@@ -94,7 +109,10 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
             autoClearTimeZoneID: plan.timeZoneIdentifier, autoClearUTCOffset: plan.utcOffsetAtEnd,
             usesEndWarning: plan.usesEndWarning,
             rearmCount: (rearmCount ?? 0) + (countsTowardLimit ? 1 : 0),
-            lastRearmAt: date
+            lastRearmAt: date,
+            contractVersion: contractVersion,
+            origin: origin,
+            ownerID: ownerID
         )
     }
 }

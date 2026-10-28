@@ -138,18 +138,33 @@ public struct FlintFocusFilterConfig: Codable, Equatable, Sendable {
     public var appGroupID: String?
     public var breakLevel: BreakLevel
     public var allowListMode: Bool
+    /// How long a Harder/Hardcore Focus block lasts; 0 = while the Focus is on, which only Easy
+    /// may use (ADR-012 §1). Decoded with a default so older saved defaults keep loading.
+    public var durationMinutes: Int
 
-    public init(appGroupID: String? = nil, breakLevel: BreakLevel = .easy, allowListMode: Bool = false) {
+    public init(appGroupID: String? = nil, breakLevel: BreakLevel = .easy, allowListMode: Bool = false,
+                durationMinutes: Int = 0) {
         self.appGroupID = appGroupID
         self.breakLevel = breakLevel
         self.allowListMode = allowListMode
+        self.durationMinutes = durationMinutes
     }
 
-    /// The open-ended session this filter starts while its Focus is active.
+    private enum CodingKeys: String, CodingKey { case appGroupID, breakLevel, allowListMode, durationMinutes }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        appGroupID = try values.decodeIfPresent(String.self, forKey: .appGroupID)
+        breakLevel = try values.decode(BreakLevel.self, forKey: .breakLevel)
+        allowListMode = try values.decodeIfPresent(Bool.self, forKey: .allowListMode) ?? false
+        durationMinutes = try values.decodeIfPresent(Int.self, forKey: .durationMinutes) ?? 0
+    }
+
+    /// The session this filter starts while its Focus is active.
     public var sessionRequest: FlintSessionRequest {
         FlintSessionRequest(
             appGroupID: appGroupID,
-            durationMinutes: 0,
+            durationMinutes: durationMinutes,
             breakLevel: breakLevel,
             allowListMode: allowListMode,
             name: "Focus Filter"
