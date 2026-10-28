@@ -13,7 +13,7 @@ the final signed Release build**. Lane B owns iOS enforcement acceptance; lane C
 owns Android acceptance before any cross-platform parity claim; lane F owns real
 local history and Insights events. Their implementation/CI evidence and signed
 physical-device results must be linked before the owner pastes this package into
-App Store Connect. ADR-011 becomes the policy authority when merged; recheck
+App Store Connect. ADR-012 becomes the policy authority when merged; recheck
 levels, breaks, overlaps, Open Limits, and Emergency Pass against that contract.
 
 Do not add claims of unbreakable blocking, tamper-proof protection, guaranteed

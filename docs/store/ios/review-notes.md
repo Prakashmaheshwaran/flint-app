@@ -11,7 +11,7 @@ credentials, certificates, profiles, and account evidence must stay out of git.
 ## Before these notes can be submitted
 
 - [ ] Lane B's final iOS enforcement changes and acceptance evidence are linked,
-  including ADR-011 semantics, Safari lifecycle, monitor failure, permission loss,
+  including ADR-012 semantics, Safari lifecycle, monitor failure, permission loss,
   overlap arbitration, bounded Open Limits, and session expiry after host death.
 - [ ] Lane C's Android evidence is linked before any cross-platform parity claim;
   Android evidence is not a substitute for iOS physical tests.
@@ -79,7 +79,7 @@ For **each R-step**, record pass/fail/blocked/not-run, candidate commit/build,
 archive hash, device model/OS, start/end time, action/expected/actual result, and
 private evidence location. A “not-run” is not a pass. An unresolved enforcement,
 cleanup, or safe-exit failure blocks the corresponding public claim and submission.
-Lane B/J acceptance cases and ADR-011 take precedence if this draft becomes stale.
+Lane B/J acceptance cases and ADR-012 take precedence if this draft becomes stale.
 
 ### R1 — Identity and clean start
 
@@ -140,12 +140,12 @@ Only on a consenting owner's test device, with known recovery access and an
 available Emergency Pass: read the final Hardcore disclosure, choose a bounded
 duration and the same single nonessential app. Confirm the UI explains that
 app-removal denial is device-wide and is temporary. Verify the normal stop/edit/
-replacement behavior against merged ADR-011 across UI, Shortcuts, and Focus.
+replacement behavior against merged ADR-012 across UI, Shortcuts, and Focus.
 Observe removal availability without completing deletion. Exercise the in-app
 Emergency Pass confirmation/hold once and verify actual shield/guard release;
 do not reset defaults or change the clock to replenish it. In a separate timed
 run, verify expiry releases the guard with the host closed. Record the pass's
-actual state/cooldown; do not promise a fixed weekly policy until ADR-011/B agree.
+actual state/cooldown; do not promise a fixed weekly policy until ADR-012/B agree.
 Confirm Settings withdrawal of authorization and subsequent honest UI state as
 an owner-approved recovery test. Never rely on an unverified PIN bypass or an
 unproven claim that withdrawal instantly clears every restriction.
