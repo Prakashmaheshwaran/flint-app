@@ -37,12 +37,17 @@ public final class FlintCompletionNotifier: FlintSessionEventSink, @unchecked Se
     private let defaults: UserDefaults
     private let isHost: Bool
     private let clock: () -> Date
+    private let history: FlintHistoryStore
     private let queue = DispatchQueue(label: "app.flint.completionNotifications")
     private var generations: [String: UUID] = [:]
+    private var terminalSessions: Set<String> = []
 
     public init(center: FlintNotificationCenter = FlintSystemNotificationCenter(), defaults: UserDefaults = .standard,
-                isHost: Bool = Bundle.main.bundleURL.pathExtension == "app", clock: @escaping () -> Date = Date.init) {
+                isHost: Bool = Bundle.main.bundleURL.pathExtension == "app", clock: @escaping () -> Date = Date.init,
+                history: FlintHistoryStore = .shared) {
         self.center = center; self.defaults = defaults; self.isHost = isHost; self.clock = clock
+        self.history = history
+        if isHost { queue.async { [self] in reconcilePending() } }
     }
 
     public var isEnabled: Bool {
@@ -63,7 +68,7 @@ public final class FlintCompletionNotifier: FlintSessionEventSink, @unchecked Se
                             let sessionID = String(identifier.dropFirst(Self.identifierPrefix.count))
                             return self.generations[sessionID] == nil
                         }
-                        self.center.cancel(removable)
+                        if !removable.isEmpty { self.center.cancel(removable) }
                     }
                 }
             }
@@ -93,8 +98,11 @@ public final class FlintCompletionNotifier: FlintSessionEventSink, @unchecked Se
         queue.async { [self] in
             switch event.unannotated {
             case let .started(session, _, _): schedule(session)
-            case let .ended(session, route, _) where route.isEarly: cancel(session.id)
-            case let .superseded(session, _, _): cancel(session.id)
+            case let .ended(session, route, _):
+                terminalSessions.insert(session.id)
+                if route.isEarly { cancel(session.id) }
+            case let .superseded(session, _, _):
+                terminalSessions.insert(session.id); cancel(session.id)
             default: break
             }
         }
@@ -106,6 +114,8 @@ public final class FlintCompletionNotifier: FlintSessionEventSink, @unchecked Se
     }
 
     private func schedule(_ session: FlintActiveSession) {
+        terminalSessions.formUnion(persistedTerminalIDs())
+        guard !terminalSessions.contains(session.id) else { return }
         guard isEnabled, generations[session.id] == nil, let end = session.endsAt, end > clock() else { return }
         let token = UUID()
         generations[session.id] = token
@@ -113,6 +123,7 @@ public final class FlintCompletionNotifier: FlintSessionEventSink, @unchecked Se
             guard let self else { return }
             self.queue.async { [self] in
                 guard Self.isAuthorized(status), self.isEnabled,
+                      !self.terminalSessions.contains(session.id),
                       self.generations[session.id] == token, end > self.clock() else { return }
                 let content = UNMutableNotificationContent()
                 content.title = "Planned focus time ended"
@@ -125,16 +136,42 @@ public final class FlintCompletionNotifier: FlintSessionEventSink, @unchecked Se
                 components.calendar = calendar; components.timeZone = calendar.timeZone
                 let request = UNNotificationRequest(identifier: Self.identifierPrefix + session.id, content: content,
                     trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false))
-                self.center.add(request) { [weak self] _ in
+                self.center.add(request) { [weak self] error in
                     guard let self else { return }
                     self.queue.async {
                         // An early end can win while the OS is accepting the request.
                         if self.generations[session.id] != token || !self.isEnabled {
                             self.center.cancel([request.identifier])
+                        } else if error != nil {
+                            self.generations.removeValue(forKey: session.id)
                         }
                     }
                 }
             }
         }
+    }
+
+    private func persistedTerminalIDs() -> Set<String> {
+        Set(history.read().events.filter { $0.isSupported && $0.type.isTerminal }.map(\.session))
+    }
+
+    private func reconcilePending() {
+        terminalSessions.formUnion(persistedTerminalIDs())
+        center.pendingIdentifiers { [weak self] identifiers in
+            guard let self else { return }
+            self.queue.async {
+                self.terminalSessions.formUnion(self.persistedTerminalIDs())
+                let stale = identifiers.filter {
+                    $0.hasPrefix(Self.identifierPrefix) && self.terminalSessions.contains(String($0.dropFirst(Self.identifierPrefix.count)))
+                }
+                if !stale.isEmpty { self.center.cancel(stale) }
+            }
+        }
+    }
+
+    /// Test seam: drains queued decisions and their synchronous-double callback follow-ups.
+    /// OS callbacks deliberately held by a test must be released before calling this.
+    func drainForTesting(_ completion: @escaping () -> Void) {
+        queue.async { [self] in queue.async { [self] in queue.async { completion() } } }
     }
 }

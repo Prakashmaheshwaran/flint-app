@@ -227,10 +227,26 @@ final class CompletionNotificationSettingsModel: ObservableObject {
     init(notifier: FlintCompletionNotifier = .shared) { self.notifier = notifier }
 
     var allowed: Bool { status.map(FlintCompletionNotifier.isAuthorized) == true }
-    var statusText: String {
+    var statusText: String { Self.statusText(status: status, enabled: enabled) }
+    var showsSettingsLink: Bool { Self.showsSettingsLink(status: status) }
+    static func statusText(status: UNAuthorizationStatus?, enabled: Bool) -> String {
         guard let status else { return "Checking…" }
-        if FlintCompletionNotifier.isAuthorized(status) { return enabled ? "On" : "Off" }
-        return status == .denied ? "Off in Settings" : "Optional"
+        switch status {
+        case .notDetermined: return "Optional"
+        case .denied: return "Off in Settings"
+        case .authorized: return enabled ? "On" : "Off"
+        case .provisional: return enabled ? "On (quiet)" : "Off (quiet permission)"
+        case .ephemeral: return enabled ? "On (temporary)" : "Off (temporary permission)"
+        @unknown default: return "Check Settings"
+        }
+    }
+    static func showsSettingsLink(status: UNAuthorizationStatus?) -> Bool {
+        guard let status else { return false }
+        switch status {
+        case .notDetermined, .authorized: return false
+        case .denied, .provisional, .ephemeral: return true
+        @unknown default: return true
+        }
     }
     func refresh() {
         notifier.authorizationStatus { [weak self] status in
@@ -262,7 +278,10 @@ struct CompletionNotificationSettingsRow: View {
         VStack(alignment: .leading, spacing: 10) {
             if notifications.allowed {
                 Toggle(isOn: Binding(get: { notifications.enabled }, set: notifications.setEnabled)) {
-                    Text("Focus time notifications").flintRowTitle()
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Focus time notifications").flintRowTitle()
+                        Text(notifications.statusText).flintSecondary(13)
+                    }
                 }
                 .tint(FlintBrand.ember)
                 .accessibilityIdentifier("settings.completionNotifications.toggle")
@@ -273,13 +292,14 @@ struct CompletionNotificationSettingsRow: View {
                         .buttonStyle(BoneButtonStyle())
                         .disabled(notifications.isRequesting)
                         .accessibilityIdentifier("settings.completionNotifications.request")
-                } else if notifications.status == .denied {
-                    Link("Open notification settings", destination: URL(string: UIApplication.openSettingsURLString)!)
-                        .font(FlintFont.text(15, weight: .medium))
-                        .foregroundStyle(FlintBrand.bone)
-                        .frame(minHeight: 44)
-                        .accessibilityIdentifier("settings.completionNotifications.settings")
                 }
+            }
+            if notifications.showsSettingsLink {
+                Link("Open notification settings", destination: URL(string: UIApplication.openSettingsURLString)!)
+                    .font(FlintFont.text(15, weight: .medium))
+                    .foregroundStyle(FlintBrand.bone)
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("settings.completionNotifications.settings")
             }
             Text("Optional reminders when planned focus time ends. Applies to sessions you start after turning this on.")
                 .flintSecondary(13)

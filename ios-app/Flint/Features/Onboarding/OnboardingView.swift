@@ -140,8 +140,9 @@ private struct PermissionsView: View {
                                     .accessibilityIdentifier("onboarding.notifications.request")
                                 Button("Not now") { skippedNotifications = true }
                                     .buttonStyle(QuietButtonStyle())
+                                    .accessibilityLabel("Skip optional notifications")
                                     .accessibilityIdentifier("onboarding.notifications.skip")
-                            } else if notifications.status == .denied {
+                            } else if notifications.showsSettingsLink {
                                 Link("Open notification settings", destination: URL(string: UIApplication.openSettingsURLString)!)
                                     .font(FlintFont.text(14, weight: .medium))
                                     .foregroundStyle(FlintBrand.bone)
@@ -168,6 +169,7 @@ private struct PermissionsView: View {
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel("Skip setup for now")
                             .accessibilityIdentifier("onboarding.skip")
                         }
                         .frame(maxWidth: .infinity)
