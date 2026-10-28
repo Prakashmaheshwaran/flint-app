@@ -1,6 +1,8 @@
 import SwiftUI
 import FamilyControls
 import FlintCore
+import UserNotifications
+import UIKit
 
 /// The You tab: is protection healthy, and everything that isn't a rule.
 struct SettingsView: View {
@@ -60,6 +62,7 @@ struct SettingsView: View {
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("settings.clearFocusHistory")
                     if let historyFeedback { Text(historyFeedback).flintSecondary(13) }
+                    CompletionNotificationSettingsRow()
 
                     FlintPrivacyNote(text: "No account. No analytics. Your lists and history stay on this phone.",
                                      color: FlintBrand.stone)
@@ -211,5 +214,79 @@ struct SettingsView: View {
             Text(text).font(FlintFont.text(13)).foregroundStyle(FlintBrand.mist)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+@MainActor
+final class CompletionNotificationSettingsModel: ObservableObject {
+    @Published private(set) var status: UNAuthorizationStatus?
+    @Published private(set) var isRequesting = false
+    @Published private(set) var enabled = true
+    private let notifier: FlintCompletionNotifier
+
+    init(notifier: FlintCompletionNotifier = .shared) { self.notifier = notifier }
+
+    var allowed: Bool { status.map(FlintCompletionNotifier.isAuthorized) == true }
+    var statusText: String {
+        guard let status else { return "Checking…" }
+        if FlintCompletionNotifier.isAuthorized(status) { return enabled ? "On" : "Off" }
+        return status == .denied ? "Off in Settings" : "Optional"
+    }
+    func refresh() {
+        notifier.authorizationStatus { [weak self] status in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.status = status; self.enabled = self.notifier.isEnabled
+            }
+        }
+    }
+    func request() {
+        guard !isRequesting, status == .notDetermined else { return }
+        isRequesting = true
+        notifier.requestPermission { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isRequesting = false
+                self.refresh()
+            }
+        }
+    }
+    func setEnabled(_ value: Bool) { enabled = value; notifier.setEnabled(value) }
+}
+
+struct CompletionNotificationSettingsRow: View {
+    @StateObject private var notifications = CompletionNotificationSettingsModel()
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if notifications.allowed {
+                Toggle(isOn: Binding(get: { notifications.enabled }, set: notifications.setEnabled)) {
+                    Text("Focus time notifications").flintRowTitle()
+                }
+                .tint(FlintBrand.ember)
+                .accessibilityIdentifier("settings.completionNotifications.toggle")
+            } else {
+                FlintRow(title: "Focus time notifications", value: notifications.statusText)
+                if notifications.status == .notDetermined {
+                    Button(notifications.isRequesting ? "Requesting…" : "Allow notifications", action: notifications.request)
+                        .buttonStyle(BoneButtonStyle())
+                        .disabled(notifications.isRequesting)
+                        .accessibilityIdentifier("settings.completionNotifications.request")
+                } else if notifications.status == .denied {
+                    Link("Open notification settings", destination: URL(string: UIApplication.openSettingsURLString)!)
+                        .font(FlintFont.text(15, weight: .medium))
+                        .foregroundStyle(FlintBrand.bone)
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("settings.completionNotifications.settings")
+                }
+            }
+            Text("Optional reminders when planned focus time ends. Applies to sessions you start after turning this on.")
+                .flintSecondary(13)
+        }
+        .padding(.vertical, 16)
+        .overlay(alignment: .top) { FlintHairline() }
+        .onAppear { notifications.refresh() }
+        .onChange(of: scenePhase) { if $0 == .active { notifications.refresh() } }
     }
 }

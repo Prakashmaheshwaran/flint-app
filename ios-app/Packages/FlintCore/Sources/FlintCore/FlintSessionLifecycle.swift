@@ -141,6 +141,9 @@ public enum FlintSessionLifecycle {
         let event = origin != nil || reason != nil || observedAt != nil
             ? FlintSessionLifecycleEvent.annotated(raw, origin: origin, reason: reason, observedAt: observedAt) : raw
         FlintHistorySink.shared.handle(event)
+        if Bundle.main.bundleURL.pathExtension == "app" {
+            FlintCompletionNotifier.shared.handle(event)
+        }
         for sink in registry.snapshot() {
             sink.handle(event)
         }
