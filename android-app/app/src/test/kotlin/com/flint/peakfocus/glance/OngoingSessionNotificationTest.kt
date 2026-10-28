@@ -62,6 +62,7 @@ class OngoingSessionNotificationTest {
             assertFalse(result.extras.getBoolean(Notification.EXTRA_CHRONOMETER_COUNT_DOWN))
             assertEquals(0L, result.timeoutAfter)
             assertTrue(result.flags and Notification.FLAG_ONGOING_EVENT != 0)
+            assertEquals("Open Flint to check", result.extras.getString(Notification.EXTRA_SUB_TEXT))
         }
     }
 

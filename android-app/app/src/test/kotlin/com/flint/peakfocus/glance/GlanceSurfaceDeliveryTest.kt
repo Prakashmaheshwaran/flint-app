@@ -56,5 +56,10 @@ class GlanceSurfaceDeliveryTest {
         delivery.publish(degraded.copy(status = "Planned end reached"))
         assertEquals(4, renders)
         assertTrue(manager.activeNotifications.isEmpty())
+        repeat(120) { delivery.publish(degraded.copy(status = "Planned end reached")) }
+        assertEquals(4, renders)
+        delivery.invalidateRendering() // A deferred/failed launcher render can retry next heartbeat.
+        delivery.publish(degraded.copy(status = "Planned end reached"))
+        assertEquals(5, renders)
     }
 }

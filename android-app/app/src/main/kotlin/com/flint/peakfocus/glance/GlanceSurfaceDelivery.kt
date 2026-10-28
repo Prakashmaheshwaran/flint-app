@@ -1,6 +1,5 @@
 package com.flint.peakfocus.glance
 
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -18,6 +17,9 @@ internal class GlanceSurfaceDelivery(
     private val lock = Mutex()
     private var lastRendered: List<String?>? = null
     private var scheduledAt: Long? = null
+    private var scheduleInitialized = false
+
+    suspend fun invalidateRendering() = lock.withLock { lastRendered = null }
 
     suspend fun publish(display: GlanceDisplay) {
         lock.withLock {
@@ -25,10 +27,11 @@ internal class GlanceSurfaceDelivery(
             val at = display.refreshAtElapsedMs
             val previous = scheduledAt
             // Keep an earlier pending check instead of pushing it back on every heartbeat.
-            if ((at == null && previous != null) || (at != null &&
+            if (!scheduleInitialized || (at == null && previous != null) || (at != null &&
                     (previous == null || previous <= nowElapsed() || at < previous))) {
                 schedule(at)
                 scheduledAt = at
+                scheduleInitialized = true
             }
             val key = display.widgetKey()
             if (lastRendered != key) {

@@ -15,6 +15,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class FocusHistoryGlanceReaderTest {
     private val day = LocalDate.of(2027, 1, 15)
     private fun summary(availability: HistoryAvailability = HistoryAvailability.VALUE, ms: Long? = 300_000,

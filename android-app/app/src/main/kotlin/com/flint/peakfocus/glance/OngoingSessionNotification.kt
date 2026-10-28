@@ -49,7 +49,7 @@ object OngoingSessionNotification {
         builder.setContentTitle(plan.title).setContentText(plan.text)
             .setContentIntent(open).setOnlyAlertOnce(true).setShowWhen(false)
             .setUsesChronometer(false).setVisibility(Notification.VISIBILITY_PRIVATE)
-            .setSubText("Planned end · Open Flint to check")
+            .setSubText(if (plan.countdownEndElapsedMs != null) "Planned end · Open Flint to check" else "Open Flint to check")
         if (Build.VERSION.SDK_INT >= 24) {
             builder.setChronometerCountDown(false)
             plan.countdownEndElapsedMs?.let { end ->

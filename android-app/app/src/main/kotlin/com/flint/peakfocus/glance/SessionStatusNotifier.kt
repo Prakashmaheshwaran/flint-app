@@ -23,6 +23,7 @@ class SessionStatusNotifier(
     private data class Posted(val session: GlanceOngoingSession, val title: String, val text: String,
                               val deadline: Long)
     private var posted: Posted? = null
+    private var needsInitialCleanup = true
 
     @Synchronized fun update(display: GlanceDisplay) {
         val now = elapsedNow()
@@ -65,6 +66,7 @@ class SessionStatusNotifier(
         try {
             manager.notify(TAG, NOTIFICATION_ID, builder.build())
             posted = Posted(session, display.status, display.detail, until)
+            needsInitialCleanup = false
         } catch (_: SecurityException) {
             // Revocation can race the permission check; enforcement never waits on this.
             cancel()
@@ -76,8 +78,11 @@ class SessionStatusNotifier(
             == PackageManager.PERMISSION_GRANTED)
 
     private fun cancel() {
-        manager.cancel(TAG, NOTIFICATION_ID) // Never touches Path B1001 or F's tagged completion1.
+        if (posted != null || needsInitialCleanup) {
+            manager.cancel(TAG, NOTIFICATION_ID) // Never touches Path B1001 or F's tagged completion1.
+        }
         posted = null
+        needsInitialCleanup = false
     }
 
     companion object {

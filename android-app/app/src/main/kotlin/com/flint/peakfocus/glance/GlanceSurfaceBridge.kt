@@ -77,7 +77,11 @@ object GlanceSurfaceBridge {
         )
         renderer = scope.launch {
             renderRequests.collectLatest {
-                guardedGlanceRead({ Unit }, timeoutMs = 8_000) { FlintGlanceWidget().updateAll(app) }
+                val success = guardedGlanceRead({ false }, timeoutMs = 8_000) {
+                    FlintGlanceWidget().updateAll(app)
+                    true
+                }
+                if (!success) delivery?.invalidateRendering()
             }
         }
         observer = scope.launch {
