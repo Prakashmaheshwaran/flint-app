@@ -1,0 +1,74 @@
+import groovy.json.JsonOutput
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.maven.MavenModule
+import org.gradle.maven.MavenPomArtifact
+
+// Kept separate from release signing/minification. No plugin or runtime dependency is added.
+def legalAssets = layout.buildDirectory.dir('generated/offlineLegal/assets')
+android.sourceSets.main.assets.srcDir(legalAssets)
+
+def generateLegal = tasks.register('generateOfflineLegal') {
+    group = 'verification'
+    description = 'Bundle the canonical policy and complete resolved release dependency notices.'
+    // Resolve fresh metadata even when the policy is the only changed file. The output is
+    // deterministic; never cache a stale dependency inventory or a stale policy copy.
+    notCompatibleWithConfigurationCache('Legal inventory resolves release POM metadata at execution time')
+    outputs.upToDateWhen { false }
+    doLast {
+        def scopes = ['releaseRuntimeClasspath', 'coreLibraryDesugaring']
+        def modules = [:]
+        scopes.each { scope ->
+            def artifacts = configurations.getByName(scope).incoming.artifactView {
+                componentFilter { it instanceof ModuleComponentIdentifier }
+            }.artifacts.artifacts
+            artifacts.each { artifact ->
+                def id = artifact.id.componentIdentifier
+                def coordinate = "${id.group}:${id.module}:${id.version}".toString()
+                def entry = modules.computeIfAbsent(coordinate) {
+                    [coordinate: coordinate, id: id, scopes: [], artifacts: []]
+                }
+                entry.scopes.add(scope)
+                entry.artifacts.add(artifact.file.absolutePath)
+            }
+        }
+        def poms = dependencies.createArtifactResolutionQuery()
+            .forComponents(modules.values().collect { it.id })
+            .withArtifacts(MavenModule, MavenPomArtifact).execute()
+        poms.resolvedComponents.each { component ->
+            def id = component.id
+            def coordinate = "${id.group}:${id.module}:${id.version}".toString()
+            def resolved = component.getArtifacts(MavenPomArtifact).findAll {
+                it instanceof org.gradle.api.artifacts.result.ResolvedArtifactResult
+            }
+            if (resolved.size() != 1) throw new GradleException("Missing legal POM for ${coordinate}")
+            modules[coordinate].pom = resolved.first().file.absolutePath
+        }
+        def inventory = layout.buildDirectory.file('generated/offlineLegal/inventory.json').get().asFile
+        inventory.parentFile.mkdirs()
+        inventory.text = JsonOutput.toJson(modules.sort().values().collect {
+            if (!it.pom) throw new GradleException("Missing legal POM for ${it.coordinate}")
+            [coordinate: it.coordinate, pom: it.pom,
+             scopes: it.scopes.unique().sort(), artifacts: it.artifacts.unique().sort()]
+        })
+        providers.exec {
+            commandLine 'python3', rootProject.file('legal/generate_legal.py'),
+                '--inventory', inventory, '--repo', rootProject.projectDir.parentFile,
+                '--output', legalAssets.get().asFile
+        }.result.get().assertNormalExitValue()
+    }
+}
+
+tasks.register('testOfflineLegalGenerator') {
+    group = 'verification'
+    description = 'Test legal generation, including missing metadata and unknown-license failures.'
+    doLast {
+        providers.exec {
+            commandLine 'python3', '-B', '-m', 'unittest', 'discover',
+                '-s', rootProject.file('legal'), '-p', 'test_*.py'
+        }.result.get().assertNormalExitValue()
+    }
+}
+
+tasks.matching { it.name == 'preBuild' }.configureEach { dependsOn(generateLegal) }
+// Android CI runs `test` directly rather than `check`.
+tasks.matching { it.name in ['test', 'check'] }.configureEach { dependsOn('testOfflineLegalGenerator') }

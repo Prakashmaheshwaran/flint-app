@@ -6,6 +6,9 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// Bundled policy and notices come from the canonical policy and resolved release graph.
+apply(from = rootProject.file("gradle/offline-legal.gradle"))
+
 // Owner-controlled upload credentials stay outside version control. Environment
 // values take precedence over android-app/keystore.properties, including blanks
 // (an accidentally empty CI secret must fail rather than select preview signing).
