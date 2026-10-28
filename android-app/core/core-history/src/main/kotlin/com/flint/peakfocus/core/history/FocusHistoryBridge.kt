@@ -29,7 +29,9 @@ object FocusHistoryBridge {
         val observer = HistoryReconciler(store).also { reconciler = it }
         job = scope.launch(Dispatchers.IO) {
             store.load()
-            observer.collectSnapshots(FlintPreferences.blockRules(app).rulesState.map(::historyRulesSnapshot).withDeadlineObservations())
+            observer.collectSnapshots(FlintPreferences.blockRules(app).rulesState.map(::historyRulesSnapshot).withDeadlineObservations(
+                hasTerminal = { id -> store.snapshots.value.events.any { it.session == id && it.knownType?.terminal == true } },
+            ))
         }
     }
 }

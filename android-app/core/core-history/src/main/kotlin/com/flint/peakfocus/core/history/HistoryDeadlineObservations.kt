@@ -4,20 +4,28 @@ import java.time.Clock
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.transformLatest
 
 /** Re-observe unchanged strict Ready rules when due. A newer state cancels the old wakeup. */
 @OptIn(ExperimentalCoroutinesApi::class)
-internal fun Flow<HistoryRulesSnapshot>.withDeadlineObservations(clock: Clock = Clock.systemUTC()): Flow<HistoryRulesSnapshot> =
+@JvmOverloads
+internal fun Flow<HistoryRulesSnapshot>.withDeadlineObservations(
+    clock: Clock = Clock.systemUTC(),
+    hasTerminal: (String) -> Boolean = { false },
+    retryEveryMs: Long = 30_000,
+): Flow<HistoryRulesSnapshot> =
     transformLatest { snapshot ->
-        val deadlines = if (snapshot is HistoryRulesSnapshot.Ready) snapshot.rules.mapNotNull { it.plannedEnd }
-            .filter { it > clock.millis() }.distinct().sorted() else emptyList()
         emit(snapshot)
         if (snapshot is HistoryRulesSnapshot.Ready) {
-            for (deadline in deadlines) {
-                // Bounded monotonic waits recheck wall-clock changes without doing history I/O.
-                while (clock.millis() < deadline) delay(minOf(30_000, deadline - clock.millis()).coerceAtLeast(1))
-                emit(snapshot)
+            while (true) {
+                val pending = snapshot.rules.filter { it.plannedEnd != null && !hasTerminal(it.id) }
+                val deadline = pending.minOfOrNull { it.plannedEnd!! } ?: break
+                val remaining = deadline - clock.millis()
+                // A due wake is not an acknowledgement: a rollback or failed write can
+                // leave the session open. Retry until its terminal record actually exists.
+                delay(if (remaining > 0) minOf(retryEveryMs, remaining) else retryEveryMs)
+                if (pending.any { !hasTerminal(it.id) && it.plannedEnd!! <= clock.millis() }) emit(snapshot)
             }
         }
-    }
+    }.buffer(0)

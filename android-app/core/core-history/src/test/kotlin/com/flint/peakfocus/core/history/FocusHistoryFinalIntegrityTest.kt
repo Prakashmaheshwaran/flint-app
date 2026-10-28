@@ -8,6 +8,11 @@ import java.time.ZoneOffset
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.*
 import org.junit.Assert.*
 import org.junit.Rule
@@ -18,7 +23,7 @@ class FocusHistoryFinalIntegrityTest {
     @get:Rule val temporary = TemporaryFolder()
     private val begin = 1_793_196_000_000L
     private val minute = 60_000L
-    private class MutableClock(var now: Long) : Clock() {
+    private class MutableClock(@Volatile var now: Long) : Clock() {
         override fun instant() = Instant.ofEpochMilli(now)
         override fun getZone(): ZoneId = ZoneOffset.UTC
         override fun withZone(zone: ZoneId): Clock = this
@@ -96,19 +101,58 @@ class FocusHistoryFinalIntegrityTest {
         val first = HistoryRulesSnapshot.Ready(listOf(HistoryRule("session-a", "Focus", "easy", begin + minute)))
         val source = MutableStateFlow<HistoryRulesSnapshot>(first)
         val seen = mutableListOf<HistoryRulesSnapshot>()
+        val terminals = mutableSetOf<String>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
-            source.withDeadlineObservations(clock).collect { seen += it }
+            source.withDeadlineObservations(clock, { it in terminals }).collect { snapshot ->
+                seen += snapshot
+                if (snapshot is HistoryRulesSnapshot.Ready) terminals += snapshot.rules.filter {
+                    it.plannedEnd?.let { end -> end <= clock.now } == true
+                }.map { it.id }
+            }
         }
         runCurrent(); assertEquals(1, seen.size)
         clock.now = begin + minute; advanceTimeBy(minute); runCurrent(); assertEquals(2, seen.size)
-        val extended = first.copy(rules = first.rules.map { it.copy(plannedEnd = begin + 3 * minute) })
+        val extended = first.copy(rules = first.rules.map { it.copy(id = "session-b", plannedEnd = begin + 3 * minute) })
         source.value = extended; runCurrent()
         source.value = HistoryRulesSnapshot.Unavailable("CORRUPT"); runCurrent()
         val count = seen.size; clock.now = begin + 4 * minute; advanceTimeBy(3 * minute); runCurrent()
         assertEquals(count, seen.size)
-        source.value = first.copy(rules = first.rules.map { it.copy(plannedEnd = begin + 5 * minute) }); runCurrent()
+        source.value = first.copy(rules = first.rules.map { it.copy(id = "session-c", plannedEnd = begin + 5 * minute) }); runCurrent()
         source.value = HistoryRulesSnapshot.Loading; runCurrent()
         val loadingCount = seen.size; clock.now += 2 * minute; advanceTimeBy(2 * minute); runCurrent()
         assertEquals(loadingCount, seen.size)
+    }
+    @Test fun N9_rollbackDuringDueDeliveryRetriesUnchangedReadyUntilCompletionIsDurable() = runBlocking {
+        val clock = MutableClock(begin); val deadline = begin + 50
+        val store = FocusHistoryStore(temporary.newFolder(), clock)
+        store.append(start().copy(plannedEnd = deadline))
+        val observer = HistoryReconciler(store, clock)
+        val source = MutableStateFlow<HistoryRulesSnapshot>(HistoryRulesSnapshot.Ready(
+            listOf(HistoryRule("session-a", "Focus", "easy", deadline))))
+        val observations = Channel<HistorySnapshot>(Channel.UNLIMITED)
+        var rollbackPending = true
+        val collector = launch {
+            source.withDeadlineObservations(clock,
+                { id -> store.snapshots.value.events.any { it.session == id && it.knownType?.terminal == true } },
+                retryEveryMs = 25,
+            ).collect { snapshot ->
+                if (snapshot is HistoryRulesSnapshot.Ready) {
+                    if (rollbackPending && clock.now >= deadline) { clock.now = begin; rollbackPending = false }
+                    observer.observe(snapshot.rules)
+                    observations.send(store.snapshots.value)
+                }
+            }
+        }
+        try {
+            withTimeout(10_000) { observations.receive() }
+            clock.now = deadline
+            val rolledBack = withTimeout(10_000) { observations.receive() }
+            assertFalse(rollbackPending)
+            assertFalse(rolledBack.events.any { it.knownType == HistoryEventType.COMPLETED })
+            clock.now = deadline + 1
+            val completed = withTimeout(10_000) { store.snapshots.first { log -> log.events.any { it.knownType == HistoryEventType.COMPLETED } } }
+            assertEquals(deadline, completed.events.single { it.knownType == HistoryEventType.COMPLETED }.at)
+            assertEquals(1, completed.events.count { it.knownType == HistoryEventType.COMPLETED })
+        } finally { collector.cancelAndJoin(); observations.close() }
     }
 }
