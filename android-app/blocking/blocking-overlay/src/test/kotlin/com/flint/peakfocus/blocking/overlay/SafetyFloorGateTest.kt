@@ -28,6 +28,7 @@ class SafetyFloorGateTest {
         refreshInBackground = if (background) { task -> queued += task } else null,
         refreshIntervalMs = refresh,
         freshIntervalMs = fresh,
+        requiredRuntimeSources = setOf(HOME, DIALER),
     )
 
     @Test fun `static floor never needs the resolver`() {
@@ -128,6 +129,36 @@ class SafetyFloorGateTest {
         now -= 10_000L
         g.protects("x")
         assertEquals(2, resolveCalls)
+    }
+
+    @Test fun PC_52_aPartialOrMissingRuntimeSourceCannotClaimCompleteSafetyResolution() {
+        sources = mapOf(HOME to emptySet(), DIALER to null)
+        val g = gate()
+        assertFalse(g.runtimeResolution.value.hasResolvedEverySource)
+        g.protects("example")
+        assertEquals(setOf(HOME), g.runtimeResolution.value.resolvedSources)
+        assertEquals(setOf(DIALER), g.runtimeResolution.value.failedSources)
+        assertTrue(g.runtimeResolution.value.degraded)
+        sources = mapOf(HOME to emptySet(), DIALER to setOf("com.custom.dialer"))
+        now += 31_000
+        g.protects("example")
+        assertTrue(g.runtimeResolution.value.hasResolvedEverySource)
+        assertFalse(g.runtimeResolution.value.degraded)
+        sources = mapOf(HOME to emptySet())
+        now += 31_000
+        assertTrue(g.protects("com.custom.dialer"))
+        assertTrue(g.runtimeResolution.value.hasResolvedEverySource)
+        assertTrue(g.runtimeResolution.value.degraded)
+    }
+
+    @Test fun PC_52_anEntirelyFailedResolutionIsDegradedEvenWithStaticFloorProtection() {
+        val g = gate()
+        throwing = true
+        assertTrue(g.protects("com.android.settings"))
+        assertFalse(g.runtimeResolution.value.hasResolvedEverySource)
+        g.refreshSoonIfOlderThan(0)
+        assertTrue(g.runtimeResolution.value.degraded)
+        assertEquals(setOf(HOME, DIALER), g.runtimeResolution.value.failedSources)
     }
 
     private companion object {

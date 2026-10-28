@@ -23,10 +23,35 @@ import java.util.concurrent.CopyOnWriteArraySet
  */
 object BlockEventHooks {
 
+    enum class BreakEndReason(val wireValue: String) {
+        EXPIRED("expired"), RESUMED("resumed"), SUPERSEDED("superseded"), RECOVERY("recovery"),
+    }
+
     interface Listener {
         fun onOpenIntercepted(ruleId: String?, atEpochMs: Long) = Unit
+        @Deprecated("Use the overload with grantId to pair start and end of each durable grant")
         fun onBreakGranted(ruleId: String?, untilEpochMs: Long, atEpochMs: Long) = Unit
+
+        /** Stable id from the committed receipt; legacy observers receive the old hook once. */
+        @Suppress("DEPRECATION")
+        fun onBreakGranted(ruleId: String?, grantId: String, untilEpochMs: Long, atEpochMs: Long) {
+            onBreakGranted(ruleId, untilEpochMs, atEpochMs)
+        }
+        @Deprecated("Use onEmergencyPassCommitted for global recovery scope and operation identity")
         fun onEmergencyPassUsed(ruleId: String?, atEpochMs: Long) = Unit
+
+        /**
+         * One committed global recovery operation. A legacy observer receives its old hook
+         * through this default only; an observer overriding this method gets no duplicate
+         * compatibility callback. Names/targets never travel through this observe-only seam.
+         */
+        @Suppress("DEPRECATION")
+        fun onEmergencyPassCommitted(operationId: String, affectedRuleIds: Set<String>, recoveryEndEpochMs: Long, atEpochMs: Long) {
+            onEmergencyPassUsed(affectedRuleIds.singleOrNull(), atEpochMs)
+        }
+
+        /** One durably accepted end of an ordinary/credit interval; grantId is its stable id. */
+        fun onBreakEnded(ruleId: String?, grantId: String, reason: BreakEndReason, atEpochMs: Long) = Unit
     }
 
     private val listeners = CopyOnWriteArraySet<Listener>()
@@ -38,11 +63,22 @@ object BlockEventHooks {
     internal fun openIntercepted(ruleId: String?, atEpochMs: Long) =
         each { it.onOpenIntercepted(ruleId, atEpochMs) }
 
-    internal fun breakGranted(ruleId: String?, untilEpochMs: Long, atEpochMs: Long) =
-        each { it.onBreakGranted(ruleId, untilEpochMs, atEpochMs) }
+    internal fun breakGranted(ruleId: String?, grantId: String, untilEpochMs: Long, atEpochMs: Long) =
+        each { it.onBreakGranted(ruleId, grantId, untilEpochMs, atEpochMs) }
 
+    @Suppress("DEPRECATION")
     internal fun emergencyPassUsed(ruleId: String?, atEpochMs: Long) =
         each { it.onEmergencyPassUsed(ruleId, atEpochMs) }
+
+    /** Caller must first commit and durably claim this operation's event exactly once. */
+    internal fun emergencyPassCommitted(operationId: String, affectedRuleIds: Set<String>, recoveryEndEpochMs: Long, atEpochMs: Long) {
+        val frozen = affectedRuleIds.toSet()
+        each { it.onEmergencyPassCommitted(operationId, frozen, recoveryEndEpochMs, atEpochMs) }
+    }
+
+    /** Caller must first commit and durably claim this grant's terminal event exactly once. */
+    internal fun breakEnded(ruleId: String?, grantId: String, reason: BreakEndReason, atEpochMs: Long) =
+        each { it.onBreakEnded(ruleId, grantId, reason, atEpochMs) }
 
     private inline fun each(call: (Listener) -> Unit) {
         for (listener in listeners) runCatching { call(listener) }

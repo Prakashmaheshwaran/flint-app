@@ -29,4 +29,5 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.core)                 // goAsync guard application (DataStore I/O)
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

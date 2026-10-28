@@ -1,6 +1,7 @@
 package com.flint.peakfocus.blocking.overlay
 
 import android.content.Context
+import android.os.Build
 import com.flint.peakfocus.core.common.RuntimeSafetySurfaces
 
 /**
@@ -13,6 +14,14 @@ import com.flint.peakfocus.core.common.RuntimeSafetySurfaces
  * a cached [SafetyFloorGate] over [resolveBySource] and applies the floor before every cause.
  */
 object NeverBlockSurfaces {
+    /** Every runtime source supported by this OS; systemDialerPackage is API 29+. */
+    fun requiredSources(): Set<String> = buildSet {
+        add(RuntimeSafetySurfaces.SOURCE_HOME)
+        add(RuntimeSafetySurfaces.SOURCE_DEFAULT_DIALER)
+        add(RuntimeSafetySurfaces.SOURCE_UNINSTALLER)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) add(RuntimeSafetySurfaces.SOURCE_SYSTEM_DIALER)
+    }
+
     fun resolveBySource(context: Context): Map<String, Set<String>?> =
         RuntimeSafetySurfaces.resolveBySource(context)
 

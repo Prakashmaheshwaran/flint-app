@@ -76,6 +76,7 @@ class SafetyFloorCoordinatorMatrixTest {
                 selfPackage = app.packageName,
                 resolveRuntime = { mapOf("default-dialer" to setOf(customDialer), "home" to setOf(customHome)) },
                 nowElapsedMs = { 0L },
+                requiredRuntimeSources = setOf("default-dialer", "home"),
             ),
         )
     }

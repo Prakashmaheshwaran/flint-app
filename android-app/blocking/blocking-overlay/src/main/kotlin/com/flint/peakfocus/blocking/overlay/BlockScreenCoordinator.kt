@@ -119,6 +119,7 @@ class BlockScreenCoordinator(
         nowElapsedMs = SystemClock::elapsedRealtime,
         // Binder lookups stay off the accessibility event (main) thread.
         refreshInBackground = { refresh -> scope.launch(Dispatchers.Default) { refresh() } },
+        requiredRuntimeSources = NeverBlockSurfaces.requiredSources(),
     )
 
     /** Package whose newest mount already force-resolved the floor (cleared on hide). Main thread only. */
@@ -585,8 +586,10 @@ class BlockScreenCoordinator(
             if (result is GrantResult.Unavailable || result == GrantResult.Unconfirmed) failures.add(packageName)
             if (result is GrantResult.Granted && result.newlyAccepted) {
                 // Observe-only history hooks happen strictly after the atomic edit returns.
-                if (emergency) BlockEventHooks.emergencyPassUsed(current.ruleId, result.atEpochMs)
-                else BlockEventHooks.breakGranted(current.ruleId, result.receipts.maxOf { it.untilEpochMs }, result.atEpochMs)
+                if (emergency) BlockEventHooks.emergencyPassCommitted(result.receipts.first().requestId,
+                    setOfNotNull(current.ruleId), result.receipts.maxOf { it.untilEpochMs }, result.atEpochMs)
+                else BlockEventHooks.breakGranted(current.ruleId, result.receipts.first().requestId,
+                    result.receipts.maxOf { it.untilEpochMs }, result.atEpochMs)
             }
             return result
         } finally {

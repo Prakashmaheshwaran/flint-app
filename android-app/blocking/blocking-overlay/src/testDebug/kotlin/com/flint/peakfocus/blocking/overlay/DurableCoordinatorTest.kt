@@ -48,7 +48,7 @@ class DurableCoordinatorTest {
             override fun detach(view: View) = Unit
             override fun goHome() = Unit
         }, nowEpochMs = { now }, onEnforcementChanged = onChanged,
-            safetyFloorGate = SafetyFloorGate(app.packageName, { emptyMap() }, { 0 }),
+            safetyFloorGate = SafetyFloorGate(app.packageName, { emptyMap() }, { 0 }, requiredRuntimeSources = emptySet()),
             focusStateStore = focus, configuredLimitsStore = limits, blockRulesStore = configuredRules)
     }
     private class PausedFocus(val backing: InMemoryFocusStateStore = InMemoryFocusStateStore()) : FocusStateStore by backing {
@@ -81,6 +81,58 @@ class DurableCoordinatorTest {
         assertTrue(coordinator.canDismiss(pkg, cause))
         assertTrue(coordinator.requestBreak(pkg, cause, id) is GrantResult.Granted)
         assertEquals(listOf("break"), events)
+    }
+
+    @Test fun PC_22_breakStartUsesTheDurableReceiptIdentityOnlyAfterAcknowledgement() = runBlocking {
+        val ids = mutableListOf<String>()
+        val observer = object : BlockEventHooks.Listener {
+            override fun onBreakGranted(ruleId: String?, grantId: String, untilEpochMs: Long, atEpochMs: Long) { ids += grantId }
+        }
+        BlockEventHooks.register(observer)
+        try {
+            val focus = PausedFocus()
+            val c = coordinator(focus)
+            val cause = ruleBlockCause(rule(BreakLevel.EASY), now, 0)
+            val id = GrantRequestId.issue(now)
+            val pending = async { c.requestBreak(pkg, cause, id) }
+            focus.started.await()
+            assertTrue(ids.isEmpty())
+            focus.release.complete(Unit)
+            assertTrue(pending.await() is GrantResult.Granted)
+            assertEquals(focus.backing.state.snapshotOrNull()!!.exemptions.keys.toList(), ids)
+            c.requestBreak(pkg, cause, id)
+            assertEquals(1, ids.size)
+        } finally { BlockEventHooks.unregister(observer) }
+    }
+
+    @Test fun PC_43_PC_45_committedPassEventCarriesItsReceiptScopeAndEndOnlyAfterAcknowledgement() = runBlocking {
+        val committed = mutableListOf<List<Any?>>()
+        var oldCalls = 0
+        val observer = object : BlockEventHooks.Listener {
+            override fun onEmergencyPassUsed(ruleId: String?, atEpochMs: Long) { oldCalls++ }
+            override fun onEmergencyPassCommitted(operationId: String, affectedRuleIds: Set<String>, recoveryEndEpochMs: Long, atEpochMs: Long) {
+                committed += listOf(operationId, affectedRuleIds, recoveryEndEpochMs, atEpochMs)
+            }
+        }
+        BlockEventHooks.register(observer)
+        try {
+            val focus = PausedFocus()
+            val c = coordinator(focus, rules = listOf(rule(BreakLevel.HARDCORE)))
+            val cause = ruleBlockCause(rule(BreakLevel.HARDCORE), now, 0)
+            val id = GrantRequestId.issue(now)
+            val pending = async { c.requestEmergencyPass(pkg, cause, id) }
+            focus.started.await()
+            assertTrue(committed.isEmpty())
+            assertTrue(events.isEmpty())
+            focus.release.complete(Unit)
+            assertTrue(pending.await() is GrantResult.Granted)
+            val receipt = focus.backing.state.snapshotOrNull()!!.exemptions.values.single()
+            assertEquals(listOf(listOf(receipt.requestId, setOf("rule"), receipt.untilEpochMs, now)), committed)
+            assertEquals(listOf("pass"), events)
+            c.requestEmergencyPass(pkg, cause, id)
+            assertEquals(1, committed.size)
+            assertEquals(0, oldCalls)
+        } finally { BlockEventHooks.unregister(observer) }
     }
 
     @Test fun aFailedPassKeepsTheShieldAndShowsFailureWithoutCallingHistory() = runBlocking {

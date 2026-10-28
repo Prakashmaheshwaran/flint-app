@@ -5,6 +5,13 @@ import com.flint.peakfocus.core.model.BreakLevel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import android.os.SystemClock
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 /**
  * Read-only snapshot of Android protection for surfaces that only *display* it (home widget,
@@ -37,6 +44,9 @@ data class ProtectionStatus(
      */
     val validUntilElapsedRealtimeMs: Long?,
 ) {
+    /** Last actual policy check, not the time a widget or detector-health publisher read it. */
+    val lastCheckedEpochMs: Long? get() = observedAt?.wallEpochMs
+
     enum class Readiness { LOADING, READY, UNAVAILABLE }
 
     enum class CauseKind { SESSION, TIMER, SCHEDULE, SLEEP, TIME_LIMIT, OPEN_LIMIT }
@@ -107,14 +117,112 @@ data class ProtectionStatus(
     }
 }
 
-/** Process-wide holder; enforcement publishes, display surfaces collect [status]. */
-object ProtectionStatusHub {
+/** Testable publisher; the process-wide public facade below owns its production clock/scope. */
+internal class ProtectionStatusPublisher(
+    private val nowElapsedMs: () -> Long,
+    private val expiryScope: CoroutineScope,
+) {
     private val state = MutableStateFlow(ProtectionStatus.UNKNOWN)
+    private val lock = Any()
+    private var policy = ProtectionStatus.UNKNOWN
+    private var pathB = ProtectionStatus.PathBState.UNKNOWN
+    private var pathBReasons: Set<String> = emptySet()
+    private var pathBLease: Long? = null
+    private var leaseGeneration = 0L
+    private var leaseExpiry: Job? = null
 
-    val status: StateFlow<ProtectionStatus> = state.asStateFlow()
-
-    /** Enforcement-only (lane C). */
-    fun publish(status: ProtectionStatus) {
-        state.value = status
+    private val readonly = state.asStateFlow()
+    val status: StateFlow<ProtectionStatus> = object : StateFlow<ProtectionStatus> by readonly {
+        override val value: ProtectionStatus get() = synchronized(lock) { publishLocked(); state.value }
+        override val replayCache: List<ProtectionStatus> get() = listOf(value)
     }
+
+    /**
+     * Coordinator-only policy publication. Path B mode is owned by its live service and
+     * merged here; an unrelated policy refresh cannot erase service health or infer it
+     * from permissions. Collection fields are frozen before crossing the read-only seam.
+     */
+    fun publish(status: ProtectionStatus) = synchronized(lock) {
+        policy = status.copy(activeCauses = status.activeCauses.toList(),
+            detectors = status.detectors.copy(degradedReasons = status.detectors.degradedReasons.toSet()))
+        publishLocked()
+    }
+
+    /**
+     * Service-lifecycle sink for Path B (blocking-usagestats). Report UNKNOWN during startup,
+     * STANDBY/ENFORCING only after foreground startup succeeds, and OFF after stopping. Reasons
+     * describe observed failures such as "usage-access-missing"; an empty set clears previous
+     * Path B reasons. A lease also bounds snapshot validity, never advances the policy's
+     * observation or lastCheckedEpochMs, and never authorizes enforcement. Renew a lease only
+     * after confirmed evaluation success. Expiry reads UNKNOWN and emits to collectors even
+     * if the service died without a lifecycle callback; null retains unleased compatibility.
+     */
+    fun publishPathBHealth(
+        pathBState: ProtectionStatus.PathBState,
+        degradedReasons: Set<String> = emptySet(),
+        leaseUntilElapsedRealtimeMs: Long? = null,
+    ) = synchronized(lock) {
+        require(leaseUntilElapsedRealtimeMs == null || leaseUntilElapsedRealtimeMs >= 0)
+        pathB = pathBState
+        pathBReasons = degradedReasons.toSet()
+        pathBLease = leaseUntilElapsedRealtimeMs
+        leaseExpiry?.cancel()
+        leaseGeneration++
+        val generation = leaseGeneration
+        leaseExpiry = leaseUntilElapsedRealtimeMs?.let { deadline -> expiryScope.launch {
+            while (true) {
+                val remaining = (deadline - nowElapsedMs()).coerceAtLeast(0L)
+                if (remaining > 0L) delay(remaining)
+                synchronized(lock) {
+                    if (generation != leaseGeneration) return@launch
+                    publishLocked()
+                    if (nowElapsedMs() >= deadline) return@launch
+                }
+            }
+        } }
+        publishLocked()
+    }
+
+    private fun publishLocked() {
+        val expired = pathBLease?.let { nowElapsedMs() >= it } == true
+        state.value = policy.copy(detectors = policy.detectors.copy(
+            pathB = if (expired) ProtectionStatus.PathBState.UNKNOWN else pathB,
+            degradedReasons = policy.detectors.degradedReasons + pathBReasons + if (expired) setOf("path-b-health-expired") else emptySet(),
+        ), validUntilElapsedRealtimeMs = listOfNotNull(policy.validUntilElapsedRealtimeMs, pathBLease).minOrNull())
+    }
+
+    internal fun resetForTests() = synchronized(lock) {
+        policy = ProtectionStatus.UNKNOWN
+        pathB = ProtectionStatus.PathBState.UNKNOWN
+        pathBReasons = emptySet()
+        pathBLease = null
+        leaseExpiry?.cancel()
+        leaseExpiry = null
+        leaseGeneration++
+        publishLocked()
+    }
+}
+
+/** Process-wide read-only status. This facade has no grant/deny/extend authority. */
+object ProtectionStatusHub {
+    private val publisher = ProtectionStatusPublisher(SystemClock::elapsedRealtime,
+        CoroutineScope(SupervisorJob() + Dispatchers.Default))
+    val status: StateFlow<ProtectionStatus> = publisher.status
+
+    /** Coordinator-only complete policy snapshot; preserves the service-owned Path B report. */
+    fun publish(status: ProtectionStatus) = publisher.publish(status)
+
+    /**
+     * Path B service-lifecycle sink: UNKNOWN at startup, STANDBY/ENFORCING after foreground
+     * startup succeeds, OFF on stop. Renew [leaseUntilElapsedRealtimeMs] only on confirmed
+     * evaluation success. Expiry becomes UNKNOWN without changing A/policy observations;
+     * snapshot validity is min(policy deadline, lease). Null keeps unleased compatibility.
+     */
+    fun publishPathBHealth(
+        pathBState: ProtectionStatus.PathBState,
+        degradedReasons: Set<String> = emptySet(),
+        leaseUntilElapsedRealtimeMs: Long? = null,
+    ) = publisher.publishPathBHealth(pathBState, degradedReasons, leaseUntilElapsedRealtimeMs)
+
+    internal fun resetForTests() = publisher.resetForTests()
 }

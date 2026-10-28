@@ -79,7 +79,7 @@ class CoordinatorHooksTest {
         },
         onBlockSurfaceUnavailable = if (withFallback) { _, _, _, _ -> fallbackLaunches++ } else null,
         onEnforcementChanged = { enforcementChanges.incrementAndGet() },
-        safetyFloorGate = SafetyFloorGate(app.packageName, { emptyMap() }, { 0L }),
+        safetyFloorGate = SafetyFloorGate(app.packageName, { emptyMap() }, { 0L }, requiredRuntimeSources = emptySet()),
     )
 
     @After fun tearDown() {
@@ -178,7 +178,7 @@ class CoordinatorHooksTest {
                 override fun goHome() = Unit
             },
             onEnforcementChanged = { error("detector bug") },
-            safetyFloorGate = SafetyFloorGate(app.packageName, { emptyMap() }, { 0L }),
+            safetyFloorGate = SafetyFloorGate(app.packageName, { emptyMap() }, { 0L }, requiredRuntimeSources = emptySet()),
         )
         runBlocking { FlintPreferences.limits(app).setTimeLimit(TimeLimit(APP_A, dailyMinutes = 7)) }
         awaitTrue("first value") { throwing.timeLimitMinutes(APP_A) == 7 }
