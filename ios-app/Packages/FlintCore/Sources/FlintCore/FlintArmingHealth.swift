@@ -121,19 +121,19 @@ public struct FlintArmingHealth: Codable, Equatable {
 
     // MARK: Derived
 
-    /// Total enabled rules across all recorded domains at their last reload.
+    /// Total enabled activity owners at their last reload; web settings reuse those owners.
     public var enabledTotal: Int {
-        domains.values.reduce(0) { $0 + $1.enabled }
+        domains.filter { $0.key != "webRestrictions" }.values.reduce(0) { $0 + $1.enabled }
     }
 
     /// Total registrations attempted across all recorded domains at their last reload.
     public var attemptedTotal: Int {
-        domains.values.reduce(0) { $0 + $1.attempted }
+        domains.filter { $0.key != "webRestrictions" }.values.reduce(0) { $0 + $1.attempted }
     }
 
-    /// Total registrations successfully armed across all recorded domains at their last reload.
+    /// Total registrations successfully armed; applied web settings do not register activities.
     public var armedTotal: Int {
-        domains.values.reduce(0) { $0 + $1.armed }
+        domains.filter { $0.key != "webRestrictions" }.values.reduce(0) { $0 + $1.armed }
     }
 
     /// Every recorded failure, ordered by domain name for stable display.

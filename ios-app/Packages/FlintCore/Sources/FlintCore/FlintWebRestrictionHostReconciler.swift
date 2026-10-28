@@ -19,6 +19,10 @@ enum FlintWebRestrictionHostReconciler {
                             reason: "Saved protection state is unavailable. Existing Safari settings were preserved.")],
                          updatedAt: now)
         }
+        if let message = config.validationMessage {
+            return .init(enabled: 0, attempted: 0, armed: 0,
+                         failures: [.init(activityName: "webRestrictions", reason: message)], updatedAt: now)
+        }
 
         let failedRules = Set(rulesReport.failures.map(\.activityName))
         var preserving = Set(rules.filter { $0.enabled && failedRules.contains($0.monitorName) }.map(\.storeName))
@@ -32,19 +36,21 @@ enum FlintWebRestrictionHostReconciler {
             failures.append(.init(activityName: activeSession.monitorName,
                 reason: "Safari settings were preserved because this session's end or access could not be verified."))
         }
+        let eligibleSession = FlintWebReconcileEligibility.session(activeSession, report: sessionReport)
+        let eligibleRules = FlintWebReconcileEligibility.rules(rules, report: rulesReport)
         lifecycle.reconcile(
-            activeSession: FlintWebReconcileEligibility.session(activeSession, report: sessionReport),
-            rules: FlintWebReconcileEligibility.rules(rules, report: rulesReport), config: config,
+            activeSession: eligibleSession, rules: eligibleRules, config: config,
             now: now, calendar: calendar, preservingStores: preserving
         )
 
-        let desired = (FlintWebRestrictionPolicy.shouldApply(to: .session(activeSession), config: config, now: now) ? 1 : 0)
-            + rules.filter { FlintWebRestrictionPolicy.shouldApply(
+        let applied = (!preserving.contains(FlintWebRestrictionLifecycle.sessionStoreName)
+            && FlintWebRestrictionPolicy.shouldApply(to: .session(eligibleSession), config: config, now: now) ? 1 : 0)
+            + eligibleRules.filter { !preserving.contains($0.storeName) && FlintWebRestrictionPolicy.shouldApply(
                 to: .schedule($0.schedule, enabled: $0.enabled), config: config, now: now, calendar: calendar
             ) }.count
-        // Web settings register no activities. Never double-count their owners' activity slots
-        // or turn a settings write into claimed native enforcement/observation evidence.
-        return .init(enabled: desired, attempted: 0, armed: 0, failures: failures, updatedAt: now)
+        // This domain's funnel describes applied settings, not native activity registrations.
+        // Settings renders it separately and activity-slot totals exclude the web domain.
+        return .init(enabled: applied, attempted: applied, armed: applied, failures: failures, updatedAt: now)
     }
 }
 #endif

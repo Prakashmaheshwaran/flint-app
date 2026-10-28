@@ -138,7 +138,7 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
         XCTAssertEqual(Set(writer.cleared), ["flint", "flint.a", "flint.b", "flint.web"])
     }
 
-    func testEditingActiveCausesReappliesLatestConfigAndScheduleOnlyWorks() {
+    func testApprovedConfigReappliesToEligibleOwnersAndScheduleOnlyWorks() {
         let writer = RecordingWebWriter()
         let lifecycle = FlintWebRestrictionLifecycle(writer: writer)
         var config = FlintWebRestrictions(enabled: true, applyDuringSchedules: true)
@@ -261,8 +261,11 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
         XCTAssertEqual(writer.web[rules[1].storeName], config)
         XCTAssertEqual(writer.web["flint"], config)
         XCTAssertFalse(writer.cleared.contains(rules[0].storeName))
-        XCTAssertEqual(report.armed, 0, "web settings do not create extra native activity slots")
+        XCTAssertEqual(report.armed, 2, "only the session and healthy rule were applied")
+        XCTAssertEqual(report.enabled, 2, "the unwritten preserved owner is reported as a failure")
         XCTAssertNil(report.observedActivities, "a settings write is not observed OS enforcement")
+        XCTAssertEqual(health.replacing("webRestrictions", with: report).armedTotal, health.armedTotal,
+                       "applied web settings do not create additional native activity slots")
         XCTAssertEqual(report.failures.map(\.activityName), [rules[0].monitorName])
     }
 
@@ -600,4 +603,232 @@ private final class WebSessionState: FlintSessionStateStoring {
     func clearSessionSelection() { sessionSelection = nil }
     func emergencyPassLastUsed() -> Date? { passUsed }
     func recordEmergencyPassUse(_ date: Date) { passUsed = date }
+}
+
+final class FlintWebRestrictionEditorTests: XCTestCase {
+    func testHardcoreToggleOffAndMixedEditsRemainDraftsWithoutMutation() throws {
+        let h = WebEditorHarness()
+        h.active = h.session(.hardcore)
+        for kind in ["off", "mode", "mixed", "media", "removeBlock", "addAllow"] {
+            var draft = h.config
+            switch kind {
+            case "off": draft.enabled = false
+            case "mode": draft.filter = .allowedOnly
+            case "mixed": draft.blockedDomains += ["extra.example"]; draft.allowedDomains += ["extra.example"]
+            case "media": draft.denyExplicitMedia = false
+            case "removeBlock": draft.blockedDomains = []
+            default: draft.allowedDomains += ["extra.example"]
+            }
+            XCTAssertEqual(h.editor().save(draft, requestID: kind, confirmed: true), .protected(until: h.active?.endsAt), kind)
+        }
+        XCTAssertEqual(h.writes, 0)
+        XCTAssertTrue(try h.ledger().read().get().harder.isEmpty, "blocked batches start no waits")
+    }
+
+    func testHarderWaitPersistsAcrossEditorsAndNeedsFinalConfirmation() throws {
+        let h = WebEditorHarness()
+        h.active = h.session(.harder)
+        var draft = h.config; draft.enabled = false
+        XCTAssertEqual(h.editor().save(draft, requestID: "first"), .waiting(seconds: 60))
+        h.advance(60)
+        XCTAssertEqual(h.editor().save(draft, requestID: "first"), .confirmationRequired)
+        XCTAssertEqual(h.writes, 0, "a matured wait never saves automatically")
+        XCTAssertEqual(h.editor().save(draft, requestID: "first", confirmed: true), .saved)
+        XCTAssertEqual(try h.ledger().read().get().harder[h.active!.id]?.committedCount, 1)
+        XCTAssertEqual(h.editor().save(draft, requestID: "first", confirmed: true), .saved)
+        XCTAssertEqual(try h.ledger().read().get().harder[h.active!.id]?.committedCount, 1)
+        var stronger = h.config; stronger.enabled = true
+        XCTAssertEqual(h.editor().save(stronger, requestID: "on"), .saved)
+        XCTAssertEqual(h.editor().save(draft, requestID: "second"), .waiting(seconds: 300))
+    }
+
+    func testChangedDraftFingerprintStartsANewFullHarderWait() {
+        let h = WebEditorHarness(); h.active = h.session(.harder)
+        var draft = h.config; draft.allowedDomains += ["one.example"]
+        XCTAssertEqual(h.editor().save(draft, requestID: "first"), .waiting(seconds: 60))
+        h.advance(30)
+        draft.allowedDomains = ["two.example"]
+        XCTAssertEqual(h.editor().save(draft, requestID: "changed"), .waiting(seconds: 60))
+        XCTAssertEqual(h.writes, 0)
+    }
+
+    func testEasyAndInactiveCausesAllowWeakening() {
+        let h = WebEditorHarness(); h.active = h.session(.easy)
+        var draft = h.config; draft.enabled = false
+        XCTAssertEqual(h.editor().save(draft, requestID: "easy"), .saved)
+        h.config.enabled = true
+        h.active = h.session(.hardcore, end: h.now)
+        XCTAssertEqual(h.editor().save(draft, requestID: "expired"), .saved)
+        h.config.enabled = true; h.active = nil
+        XCTAssertEqual(h.editor().save(draft, requestID: "inactive"), .saved)
+    }
+
+    func testStrengtheningHardcoreAppliesImmediately() {
+        let h = WebEditorHarness(); h.active = h.session(.hardcore)
+        var draft = h.config
+        draft.blockedDomains += ["extra.example"]
+        draft.allowedDomains = []
+        XCTAssertEqual(h.editor().save(draft, requestID: "strengthen"), .saved)
+        XCTAssertEqual(h.config, draft)
+    }
+
+    func testBatchHardcoreRuleBlocksEasySessionButUnchangedScopeDoesNot() {
+        let h = WebEditorHarness(); h.active = h.session(.easy)
+        h.rules = [h.rule(.hardcore)]
+        var draft = h.config; draft.allowedDomains += ["extra.example"]
+        let end = FlintWebRestrictionEditor.affectedCauses(previous: h.config, candidate: draft,
+            snapshot: .init(session: h.active, rules: h.rules), now: h.now, calendar: h.calendar).last?.end
+        XCTAssertEqual(h.editor().save(draft, requestID: "batch"), .protected(until: end))
+        XCTAssertEqual(h.writes, 0)
+        draft = h.config; draft.enabled = false // only the Easy session changes
+        XCTAssertEqual(h.editor().save(draft, requestID: "session-only"), .saved)
+    }
+
+    func testHarderScheduleCountsAreScopedToItsOccurrence() throws {
+        let h = WebEditorHarness(); h.rules = [h.rule(.harder)]
+        var draft = h.config; draft.applyDuringSchedules = false
+        let cause = FlintWebRestrictionEditor.affectedCauses(previous: h.config, candidate: draft,
+            snapshot: .init(session: nil, rules: h.rules), now: h.now, calendar: h.calendar)[0]
+        XCTAssertEqual(h.editor().save(draft, requestID: "schedule"), .waiting(seconds: 60))
+        h.advance(60)
+        XCTAssertEqual(h.editor().save(draft, requestID: "schedule", confirmed: true), .saved)
+        XCTAssertEqual(try h.ledger().read().get().harder[cause.occurrenceID]?.committedCount, 1)
+    }
+
+    func testRepeatedHourUsesSharedLaterEndForSafariAndEditGating() {
+        let h = WebEditorHarness()
+        h.now = ISO8601DateFormatter().date(from: "2026-11-01T01:45:00-04:00")!
+        var rule = h.rule(.hardcore)
+        rule.schedule = .init(daysOfWeek: [1], startHour: 0, endHour: 1, endMinute: 30)
+        h.rules = [rule]
+        let end = ISO8601DateFormatter().date(from: "2026-11-01T01:30:00-05:00")!
+        XCTAssertTrue(rule.schedule.isWindowActive(at: h.now, calendar: h.calendar))
+        var draft = h.config; draft.applyDuringSchedules = false
+        XCTAssertEqual(h.editor().save(draft, requestID: "repeated"), .protected(until: end))
+        h.now = end
+        XCTAssertFalse(rule.schedule.isWindowActive(at: h.now, calendar: h.calendar))
+        XCTAssertEqual(h.editor().save(draft, requestID: "ended"), .saved)
+    }
+
+    func testOverlappingHarderSessionAndTwoRulesCommitEachWaitOnce() throws {
+        let h = WebEditorHarness(); h.active = h.session(.harder)
+        var second = h.rule(.harder); second.id = "second"
+        h.rules = [h.rule(.harder), second]
+        var draft = h.config; draft.allowedDomains += ["extra.example"]
+        let causes = FlintWebRestrictionEditor.affectedCauses(previous: h.config, candidate: draft,
+            snapshot: .init(session: h.active, rules: h.rules), now: h.now, calendar: h.calendar)
+        XCTAssertEqual(causes.count, 3)
+        XCTAssertEqual(h.editor().save(draft, requestID: "three", confirmed: true), .waiting(seconds: 60))
+        XCTAssertEqual(h.writes, 0)
+        h.advance(59)
+        XCTAssertEqual(h.editor().save(draft, requestID: "three", confirmed: true), .waiting(seconds: 1))
+        h.advance(1)
+        XCTAssertEqual(h.editor().save(draft, requestID: "three"), .confirmationRequired)
+        XCTAssertEqual(h.editor().save(draft, requestID: "three", confirmed: true), .saved)
+        let state = try h.ledger().read().get()
+        for cause in causes { XCTAssertEqual(state.harder[cause.occurrenceID]?.committedCount, 1) }
+        XCTAssertEqual(h.writes, 1)
+    }
+
+    func testUnavailableLedgerOrChangedCauseRefusesTheSave() {
+        let h = WebEditorHarness(); h.active = h.session(.harder); h.ledgerAvailable = false
+        var draft = h.config; draft.enabled = false
+        XCTAssertEqual(h.editor().save(draft, requestID: "no-ledger"), .unavailable)
+        h.active = h.session(.easy); h.changeSnapshotOnRead = 2; h.snapshotReads = 0
+        XCTAssertEqual(h.editor().save(draft, requestID: "raced"), .unavailable)
+        XCTAssertEqual(h.writes, 0)
+    }
+
+    func testUnreadableConfigCannotBeOverwrittenByADefaultDraft() throws {
+        let suite = "test.flint.web.editor.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let original = Data("{broken user configuration".utf8)
+        defaults.set(original, forKey: "flint.webRestrictions")
+        let h = WebEditorHarness()
+        let editor = FlintWebRestrictionEditor(load: { .loadForEnforcement(from: defaults) },
+            snapshot: { .init(session: nil, rules: []) }, persist: { $0.save(to: defaults) },
+            ledger: { nil }, clock: h.clock)
+        XCTAssertEqual(editor.save(.default, requestID: "bad"), .unavailable)
+        XCTAssertEqual(defaults.data(forKey: "flint.webRestrictions"), original)
+    }
+
+    func testDomainCapRefusesSaveAndReportsWithoutNativeWrites() throws {
+        let h = WebEditorHarness()
+        var draft = h.config
+        draft.blockedDomains = (0...FlintShieldLimits.tokenCap).map { "site\($0).example" }
+        XCTAssertEqual(h.editor().save(draft, requestID: "too-many"), .invalid(draft.validationMessage!))
+        XCTAssertEqual(h.writes, 0)
+        let writer = RecordingWebWriter()
+        writer.web["flint"] = h.config
+        let report = FlintWebRestrictionHostReconciler.reconcile(activeSession: nil, hasActiveSessionRecord: false,
+            rules: [], config: draft, health: .init(domains: [
+                "session": .init(enabled: 0, attempted: 0, armed: 0, failures: []),
+                "schedules": .init(enabled: 0, attempted: 0, armed: 0, failures: [])
+            ]), lifecycle: .init(writer: writer), now: h.now, calendar: h.calendar)
+        XCTAssertEqual(report.failures.first?.reason, draft.validationMessage)
+        XCTAssertTrue(writer.applied.isEmpty); XCTAssertTrue(writer.cleared.isEmpty)
+        XCTAssertEqual(writer.web["flint"], h.config)
+        draft.blockedDomains.removeLast()
+        XCTAssertNil(draft.validationMessage)
+        XCTAssertEqual(h.editor().save(draft, requestID: "fifty"), .saved)
+    }
+
+    func testAllowedDomainCapCountsNormalizedUniqueSitesAndPreservesSavedConfig() throws {
+        let suite = "test.flint.web.cap.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let previous = FlintWebRestrictions(enabled: true, allowedDomains: ["saved.example"])
+        XCTAssertTrue(previous.save(to: defaults))
+        var draft = previous
+        draft.allowedDomains = (0..<FlintShieldLimits.tokenCap).map { "site\($0).example" }
+        draft.allowedDomains += ["https://www.site0.example/path", "invalid"]
+        XCTAssertNil(draft.validationMessage, "only normalized unique hostnames reach ManagedSettings")
+        draft.allowedDomains.append("overflow.example")
+        XCTAssertNotNil(draft.validationMessage)
+        XCTAssertFalse(draft.save(to: defaults))
+        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults), previous)
+    }
+}
+
+private final class WebEditorHarness {
+    var config = FlintWebRestrictions(enabled: true, applyDuringSchedules: true,
+        blockedDomains: ["blocked.example"], allowedDomains: ["allowed.example"], denyExplicitMedia: true)
+    var active: FlintActiveSession?
+    var rules: [FlintScheduleRule] = []
+    var now = ISO8601DateFormatter().date(from: "2026-10-26T23:00:00-04:00")!
+    var monotonic: TimeInterval = 1000
+    var marker: Date?
+    var ledgerAvailable = true
+    var writes = 0
+    var snapshotReads = 0
+    var changeSnapshotOnRead: Int?
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("flint-web-edit-\(UUID().uuidString)")
+    deinit { try? FileManager.default.removeItem(at: directory) }
+    var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        return calendar
+    }
+    var clock: FlintClock { .init(now: { [self] in now }, monotonic: { [self] in monotonic },
+        bootSessionID: { "web-boot" }, calendar: { [self] in calendar }) }
+    func advance(_ seconds: TimeInterval) { now = now.addingTimeInterval(seconds); monotonic += seconds }
+    func session(_ tier: BreakLevel, end: Date? = nil) -> FlintActiveSession {
+        .init(name: "Focus", startedAt: now.addingTimeInterval(-60), endsAt: end ?? now.addingTimeInterval(3600),
+              breakLevel: tier, monitorName: "flint.session")
+    }
+    func rule(_ tier: BreakLevel) -> FlintScheduleRule {
+        .init(id: "sleep.night", name: "Sleep", schedule: .init(daysOfWeek: [2], startHour: 22, endHour: 7), breakLevel: tier)
+    }
+    func ledger() -> FlintProtectionLedger {
+        .init(directory: directory, clock: clock, initializedMarker: { [self] in marker },
+              setInitializedMarker: { [self] in marker = $0 })
+    }
+    func editor() -> FlintWebRestrictionEditor {
+        .init(load: { [self] in config }, snapshot: { [self] in
+            snapshotReads += 1
+            if snapshotReads == changeSnapshotOnRead { active = session(.hardcore) }
+            return .init(session: active, rules: rules)
+        }, persist: { [self] in config = $0; writes += 1; return true },
+        ledger: { [self] in ledgerAvailable ? ledger() : nil }, clock: clock)
+    }
 }

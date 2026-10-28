@@ -72,6 +72,9 @@ Shortcut intents. Known boundaries at this checkpoint:
   filter is active. Other browsers are not filtered. Real Safari filtering, those side effects,
   cross-store composition and permission revocation remain device-unverified; the Simulator
   cannot verify them.
+  Each website list accepts up to 50 domains. Weakening an active cause follows its tier:
+  Easy applies immediately; Harder requires a persisted wait and final confirmation;
+  Hardcore edits stay unsaved drafts until the commitment ends (no automatic edit is queued).
 - Focus/Shortcut starts share session checks. Easy Focus-off can end its owned session;
   strict finite commitments keep their stop rights and may require confirmation in Flint.
 - PIN is a UI privacy barrier, separate from Screen Time authority. Hardware recovery and

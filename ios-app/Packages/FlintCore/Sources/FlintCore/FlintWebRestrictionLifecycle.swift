@@ -74,6 +74,7 @@ public final class FlintWebRestrictionLifecycle {
         activeSession: FlintActiveSession?, rules: [FlintScheduleRule], config: FlintWebRestrictions,
         now: Date = Date(), calendar: Calendar = .current, preservingStores: Set<String> = []
     ) {
+        guard config.validationMessage == nil else { return }
         if !preservingStores.contains(Self.sessionStoreName) {
             reconcileSession(activeSession, config: config, now: now)
         }
@@ -85,6 +86,7 @@ public final class FlintWebRestrictionLifecycle {
     #endif
 
     private func update(store: String, shouldApply: Bool, config: FlintWebRestrictions) {
+        guard config.validationMessage == nil else { return }
         if shouldApply {
             writer.apply(config, toStore: store)
         } else {

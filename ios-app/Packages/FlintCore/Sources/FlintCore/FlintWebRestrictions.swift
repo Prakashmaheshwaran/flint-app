@@ -111,6 +111,14 @@ public struct FlintWebRestrictions: Codable, Equatable, Sendable {
     /// `allowedDomains` cleaned + de-duplicated.
     public var normalizedAllowedDomains: [String] { Self.normalizedDomains(allowedDomains) }
 
+    public var validationMessage: String? {
+        guard normalizedAllowedDomains.count <= FlintShieldLimits.tokenCap,
+              normalizedBlockedDomains.count <= FlintShieldLimits.tokenCap else {
+            return "Use at most \(FlintShieldLimits.tokenCap) sites in each website list. Remove sites before saving."
+        }
+        return nil
+    }
+
     // MARK: Mutating helpers (used by the editor)
 
     /// Add a typed domain to the relevant list, normalizing first. Returns the normalized value
@@ -199,8 +207,11 @@ extension FlintWebRestrictions {
         return try? JSONDecoder().decode(FlintWebRestrictions.self, from: data)
     }
 
-    public func save(to defaults: UserDefaults? = .flintGroup) {
-        defaults?.set(try? JSONEncoder().encode(self), forKey: Self.storageKey)
+    @discardableResult
+    public func save(to defaults: UserDefaults? = .flintGroup) -> Bool {
+        guard validationMessage == nil, let defaults, let data = try? JSONEncoder().encode(self) else { return false }
+        defaults.set(data, forKey: Self.storageKey)
+        return defaults.data(forKey: Self.storageKey) == data
     }
 }
 
@@ -218,6 +229,7 @@ public final class FlintWebRestrictionStore {
 
     /// Enforce an already-authorized cause's configuration now.
     public func apply(_ restrictions: FlintWebRestrictions) {
+        guard restrictions.validationMessage == nil else { return } // preserve last-good keys
         store.webContent.blockedByFilter = Self.filterPolicy(for: restrictions)
         // nil = no assertion from this cause; another cause may still deny explicit content.
         store.media.denyExplicitContent = restrictions.denyExplicitMedia ? true : nil
