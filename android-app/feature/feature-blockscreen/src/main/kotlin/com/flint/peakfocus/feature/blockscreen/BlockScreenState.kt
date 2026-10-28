@@ -22,12 +22,6 @@ enum class BlockScreenReason {
 
     /** A hardcore Deep Focus session is running. */
     DEEP_FOCUS,
-
-    /**
-     * A protected system surface (the uninstaller, Settings pages about Flint) while a
-     * Hardcore window is active — the anti-bypass shield, not an app block.
-     */
-    UNINSTALL_GUARD,
 }
 
 /**
@@ -83,13 +77,6 @@ internal sealed interface BreakAffordance {
     /** HARDCORE: no bypass affordance — only the Emergency Pass CTA, and only while this
      *  week's pass is unspent ([passAvailable] false shows an inert "already used" notice). */
     data class EmergencyPassOnly(val passAvailable: Boolean) : BreakAffordance
-
-    /**
-     * Uninstall guard: no affordance at all. The guard re-shields its surfaces on every
-     * window event regardless of exemptions, so offering the weekly Emergency Pass here
-     * would burn it for nothing — the shield must never sell an exit it won't honor.
-     */
-    data object None : BreakAffordance
 }
 
 /** Fully resolved copy + affordance for one render of the screen. Pure and unit-tested. */
@@ -106,8 +93,7 @@ internal data class BlockScreenContent(
 
 /**
  * The cause badge above the countdown (rendered uppercase by the badge component).
- * [emphasized] is the spark-filled treatment, reserved for the two unbreakable shapes:
- * a HARDCORE tier and the uninstall guard.
+ * [emphasized] is the spark-filled treatment, reserved for the unbreakable HARDCORE tier.
  */
 internal data class BlockScreenBadge(
     val text: String,
@@ -142,7 +128,6 @@ internal fun reasonLineFor(reason: BlockScreenReason): String = when (reason) {
     BlockScreenReason.TIME_LIMIT -> "You’ve used today’s time for this app."
     BlockScreenReason.OPEN_LIMIT -> "You’ve used today’s opens for this app."
     BlockScreenReason.DEEP_FOCUS -> "Deep Focus is on until the session ends."
-    BlockScreenReason.UNINSTALL_GUARD -> "This screen is protected while Deep Focus is on."
 }
 
 internal fun badgeFor(reason: BlockScreenReason, level: BreakLevel): BlockScreenBadge =
@@ -153,9 +138,8 @@ internal fun badgeFor(reason: BlockScreenReason, level: BreakLevel): BlockScreen
             BlockScreenReason.TIME_LIMIT -> "Time limit"
             BlockScreenReason.OPEN_LIMIT -> "Open limit"
             BlockScreenReason.DEEP_FOCUS -> "Deep Focus"
-            BlockScreenReason.UNINSTALL_GUARD -> "Protected"
         },
-        emphasized = level == BreakLevel.HARDCORE || reason == BlockScreenReason.UNINSTALL_GUARD,
+        emphasized = level == BreakLevel.HARDCORE,
     )
 
 /**
@@ -173,7 +157,6 @@ internal fun countdownVerbFor(reason: BlockScreenReason): String = when (reason)
     BlockScreenReason.MANUAL_SESSION,
     BlockScreenReason.SCHEDULE,
     BlockScreenReason.DEEP_FOCUS,
-    BlockScreenReason.UNINSTALL_GUARD,
     -> "Unblocks"
 }
 
@@ -184,8 +167,6 @@ internal fun breakAffordanceFor(
     breakWaitTotalMillis: Long? = null,
     emergencyPassAvailable: Boolean = true,
 ): BreakAffordance = when {
-    // Guard shields offer no exit whatever the tier — see [BreakAffordance.None]'s contract.
-    reason == BlockScreenReason.UNINSTALL_GUARD -> BreakAffordance.None
     level == BreakLevel.EASY -> BreakAffordance.TakeABreak
     level == BreakLevel.HARDER ->
         if (breakWaitRemainingMillis != null && breakWaitRemainingMillis > 0) {

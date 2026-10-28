@@ -567,7 +567,6 @@ private fun BreakActions(
             }
         }
 
-        BreakAffordance.None -> Unit // guard shield: "Go back" and "Open Flint" are the exits
     }
 }
 
@@ -653,7 +652,7 @@ private fun HoldToRequestBreakButton(
     }
 }
 
-// MARK: Previews — one per break-level state, plus the guard, light-theme + fallback cases.
+// MARK: Previews — one per break-level state, plus light-theme + fallback cases.
 
 @Preview(name = "Easy — free break", showBackground = true)
 @Composable
@@ -732,29 +731,6 @@ private fun BlockScreenHardcorePreview() {
             onOpenFlint = {},
             onBreakRequested = {},
             onEmergencyPassRequested = {},
-        )
-    }
-}
-
-@Preview(name = "Uninstall guard — protected badge", showBackground = true)
-@Composable
-private fun BlockScreenGuardPreview() {
-    FlintTheme(darkTheme = true) {
-        BlockScreen(
-            state = BlockScreenState(
-                packageName = "com.android.settings",
-                appLabel = "Settings",
-                reason = BlockScreenReason.UNINSTALL_GUARD,
-                breakLevel = BreakLevel.HARDCORE,
-                remainingMillis = 2_820_000L, // 47m
-            ),
-            onDismiss = {},
-            onOpenFlint = {},
-            onBreakRequested = {},
-            onEmergencyPassRequested = {},
-            // The nudge counter only animates on a live increment (baseline diff), so a
-            // static preview value stays inert by design — hosts drive it.
-            nudge = 0,
         )
     }
 }

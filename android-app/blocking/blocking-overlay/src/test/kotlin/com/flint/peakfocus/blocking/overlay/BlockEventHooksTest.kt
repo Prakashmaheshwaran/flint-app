@@ -59,6 +59,5 @@ class BlockEventHooksTest {
         assertNull(ruleBlockCause(null, 0L, 0L).ruleId)
         assertNull(timeLimitBlockCause(BreakLevel.EASY, 0L, 0L).ruleId)
         assertNull(openLimitBlockCause(OpenLimit("com.x", 1), 0L, 0L).ruleId)
-        assertNull(uninstallGuardBlockCause(rule, 0L, 0L).ruleId)
     }
 }

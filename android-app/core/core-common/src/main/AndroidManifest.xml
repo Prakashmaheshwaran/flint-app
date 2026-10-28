@@ -8,5 +8,10 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.HOME" />
         </intent>
+        <!-- ...and the package that hosts uninstall confirmation, so it is never shielded. -->
+        <intent>
+            <action android:name="android.intent.action.DELETE" />
+            <data android:scheme="package" />
+        </intent>
     </queries>
 </manifest>

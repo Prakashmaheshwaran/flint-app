@@ -62,27 +62,6 @@ fun ruleBlockCause(rule: BlockRule?, nowEpochMs: Long, utcOffsetMs: Long): Block
     return BlockCause(reason = reason, breakLevel = level, endsAtEpochMs = endsAt, ruleId = rule?.id)
 }
 
-/**
- * Cause for an `UninstallGuard`-shielded system surface (the uninstaller, Settings pages about
- * Flint) while a Hardcore window is active. Maps to [BlockScreenReason.UNINSTALL_GUARD], which
- * the screen renders with NO break/pass affordance: the guard re-shields on every window event
- * regardless of exemptions, so offering the weekly Emergency Pass here would burn it for
- * nothing. The honest way out is inside Flint's own UI — disable the Hardcore rule there
- * (deliberate, on-screen friction, per the guard's documented threat model).
- */
-fun uninstallGuardBlockCause(rule: BlockRule, nowEpochMs: Long, utcOffsetMs: Long): BlockCause {
-    // Same end-derivation as ruleBlockCause: a session's expiry wins, else the schedule —
-    // without it a guard shield armed by a Block Now session would never auto-hide (its
-    // ticker only dismisses causes with a known end, and guard causes grant no exemptions).
-    val endsAt = rule.expiresAtEpochMs
-        ?: rule.schedule?.let { nowEpochMs + millisUntilScheduleEnd(it, nowEpochMs, utcOffsetMs) }
-    return BlockCause(
-        reason = BlockScreenReason.UNINSTALL_GUARD,
-        breakLevel = rule.breakLevel,
-        endsAtEpochMs = endsAt,
-    )
-}
-
 /** Cause for an exhausted Open Limit: blocks until the next local midnight, tier from the limit. */
 fun openLimitBlockCause(limit: OpenLimit, nowEpochMs: Long, utcOffsetMs: Long): BlockCause =
     BlockCause(

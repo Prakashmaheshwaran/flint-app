@@ -173,7 +173,7 @@ external open lands on Home, and the blocked app still re-shields immediately af
 
 **Closed by the two 2026-07-08 runs below:** Path B fallback flow, daily Time Limit fallback,
 Easy break consumption, self-surface stand-down/re-shield, and Open Limits end-to-end on Path B.
-Still pending: Path A open counting, sleep windows, uninstall-guard shielding, boot re-arm, and
+Still pending: Path A open counting, sleep windows, boot re-arm, and
 the time-change-guard broadcast path. Device-only proof (OEM kill behavior, real-world
 resilience) stays in the board's `H-*` tasks.
 
@@ -254,7 +254,7 @@ heuristic (JVM-tested only).
   Enforcement never depended on the grant — only the FGS notification's visibility does.
 
 Emulator-verifiable next: Path A open counting, sleep windows, boot re-arm, the
-time-change-guard broadcast path, and Path A uninstall-guard shielding. Device-only proof (OEM
+time-change-guard broadcast path (the uninstall guard was removed, ADR-012 §10). Device-only proof (OEM
 kill behavior, real-world resilience) stays in the board's `H-*` tasks.
 
 ## Module map (all implemented; `make android` + `make android-test` green as of 2026-07-08)

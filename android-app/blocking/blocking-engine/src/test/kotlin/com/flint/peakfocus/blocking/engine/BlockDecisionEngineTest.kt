@@ -210,18 +210,8 @@ class SafetyFloorEngineMatrixTest {
     private val engine = BlockDecisionEngine()
     private val self = "com.flint.peakfocus"
     private val control = "com.instagram.android"
-    private val floor = listOf(
-        self,
-        "com.android.dialer",
-        "com.google.android.dialer",
-        "com.samsung.android.dialer",
-        "com.android.phone",
-        "com.android.emergency",
-        "com.android.settings",
-        "com.google.android.permissioncontroller",
-        "com.google.android.packageinstaller", // PC-51: uninstall UI reachable, no guard
-        "com.android.systemui",
-    )
+    // Every static floor package (ADR-012 §7) plus Flint itself — never a hand-kept subset.
+    private val floor = com.flint.peakfocus.core.model.SafetyFloor.STATIC_PACKAGES.toList() + self
 
     private fun rule(id: String, apps: Set<String>, allowList: Boolean, schedule: Schedule? = null, level: BreakLevel = BreakLevel.EASY) =
         BlockRule(

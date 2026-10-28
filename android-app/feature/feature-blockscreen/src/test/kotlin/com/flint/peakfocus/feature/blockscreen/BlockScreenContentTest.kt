@@ -54,17 +54,6 @@ class BlockScreenContentTest {
         assertEquals(BreakAffordance.HoldToRequest(BREAK_HOLD_MILLIS), content.breakAffordance)
     }
 
-    @Test
-    fun `uninstall guard offers no affordance at any tier`() {
-        // The guard re-shields regardless of exemptions, so any offered exit — especially
-        // the weekly Emergency Pass — would be spent for nothing (review regression).
-        for (level in BreakLevel.entries) {
-            val content = blockScreenContent(
-                state(breakLevel = level, reason = BlockScreenReason.UNINSTALL_GUARD),
-            )
-            assertEquals(BreakAffordance.None, content.breakAffordance)
-        }
-    }
 
     @Test
     fun `harder with zero cooldown offers hold-to-request`() {
@@ -160,19 +149,13 @@ class BlockScreenContentTest {
         }
     }
 
-    @Test
-    fun `badge is emphasized for the uninstall guard at every tier`() {
-        for (level in BreakLevel.entries) {
-            assertTrue(badgeFor(BlockScreenReason.UNINSTALL_GUARD, level).emphasized)
-        }
-    }
 
     @Test
     fun `badge stays quiet for easy and harder app blocks`() {
         // Emphasis is reserved for the unbreakable shapes; everything else keeps the
         // matte badge so the one ember accent doesn't cheapen.
         for (level in listOf(BreakLevel.EASY, BreakLevel.HARDER)) {
-            for (reason in BlockScreenReason.entries - BlockScreenReason.UNINSTALL_GUARD) {
+            for (reason in BlockScreenReason.entries) {
                 assertFalse(badgeFor(reason, level).emphasized)
             }
         }
@@ -223,7 +206,6 @@ class BlockScreenContentTest {
         assertEquals("Unblocks in 24m 0s", countdownLabelFor(BlockScreenReason.MANUAL_SESSION, 1_440_000L))
         assertEquals("Unblocks in 24m 0s", countdownLabelFor(BlockScreenReason.SCHEDULE, 1_440_000L))
         assertEquals("Unblocks in 24m 0s", countdownLabelFor(BlockScreenReason.DEEP_FOCUS, 1_440_000L))
-        assertEquals("Unblocks in 24m 0s", countdownLabelFor(BlockScreenReason.UNINSTALL_GUARD, 1_440_000L))
     }
 
     @Test
@@ -270,7 +252,6 @@ class BlockScreenContentTest {
             BlockScreenReason.TIME_LIMIT to "Resets",
             BlockScreenReason.OPEN_LIMIT to "Resets",
             BlockScreenReason.DEEP_FOCUS to "Unblocks",
-            BlockScreenReason.UNINSTALL_GUARD to "Unblocks",
         )
 
         assertEquals(BlockScreenReason.entries.toSet(), expected.keys)

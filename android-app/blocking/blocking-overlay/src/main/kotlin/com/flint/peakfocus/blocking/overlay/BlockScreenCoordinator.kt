@@ -208,7 +208,6 @@ class BlockScreenCoordinator(
     /** Re-check protection before a surface hides in response to a previously issued grant. */
     fun isExempt(packageName: String, displayedCause: BlockCause? = null): Boolean {
         val cause = currentBlockCause(packageName, displayedCause)
-        if (cause?.reason == BlockScreenReason.UNINSTALL_GUARD) return false
         return BlockExemptions.isExempt(packageName, nowEpochMs(), cause?.breakLevel ?: BreakLevel.EASY)
     }
 
@@ -258,14 +257,8 @@ class BlockScreenCoordinator(
      */
     fun currentBlockCause(packageName: String, displayedCause: BlockCause? = null): BlockCause? {
         val now = nowEpochMs()
-        if (safetyFloor.protects(packageName)) {
-            // Only the separately designed uninstall guard may stand on a floor surface (it
-            // shields specific Settings/installer pages); every ordinary cause stands down.
-            return displayedCause?.takeIf {
-                it.reason == BlockScreenReason.UNINSTALL_GUARD &&
-                    (it.endsAtEpochMs == null || now < it.endsAtEpochMs)
-            }
-        }
+        // Safety floor: no cause of any kind stands on a floor surface (ADR-012 §7, §10).
+        if (safetyFloor.protects(packageName)) return null
         val offset = utcOffsetMs(now)
         val observation = observations[packageName]
         val cal = Calendar.getInstance().apply { timeInMillis = now }
@@ -353,20 +346,18 @@ class BlockScreenCoordinator(
             hideLocked()
             return@runOnMain
         }
-        if (cause.reason != BlockScreenReason.UNINSTALL_GUARD) {
-            // Defense in depth for any caller: never mount an ordinary shield on a floor surface.
-            // A new mount force-resolves the runtime floor once (a launcher or dialer made default
-            // seconds ago); refreshes of the same surface use the short fresh window.
-            val onFloor = if (mountCheckedPackage != packageName) {
-                safetyFloor.protectsFresh(packageName, maxAgeMs = 0L)
-            } else {
-                safetyFloor.protectsFresh(packageName)
-            }
-            if (onFloor) {
-                // Only drop this package's own shield; never reveal another app's block.
-                if (visiblePackage == packageName) hideLocked()
-                return@runOnMain
-            }
+        // Defense in depth for any caller: never mount a shield on a floor surface, for any
+        // reason. A new mount force-resolves the runtime floor once (a launcher or dialer made
+        // default seconds ago); refreshes of the same surface use the short fresh window.
+        val onFloor = if (mountCheckedPackage != packageName) {
+            safetyFloor.protectsFresh(packageName, maxAgeMs = 0L)
+        } else {
+            safetyFloor.protectsFresh(packageName)
+        }
+        if (onFloor) {
+            // Only drop this package's own shield; never reveal another app's block.
+            if (visiblePackage == packageName) hideLocked()
+            return@runOnMain
         }
         val existing = shownView
         if (existing != null && visiblePackage == packageName) {

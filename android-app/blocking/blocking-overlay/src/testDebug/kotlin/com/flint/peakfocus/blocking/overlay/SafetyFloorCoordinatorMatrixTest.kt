@@ -13,6 +13,7 @@ import com.flint.peakfocus.core.model.BlockTargets
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.model.OpenCountState
 import com.flint.peakfocus.core.model.OpenLimit
+import com.flint.peakfocus.core.model.SafetyFloor
 import com.flint.peakfocus.core.model.Schedule
 import com.flint.peakfocus.feature.blockscreen.BlockScreenReason
 import kotlinx.coroutines.CoroutineScope
@@ -58,21 +59,8 @@ class SafetyFloorCoordinatorMatrixTest {
     private val control = "com.instagram.android"
     private val other = "com.example.elsewhere"
 
-    private val floor by lazy {
-        listOf(
-            self,
-            "com.android.dialer",
-            "com.google.android.dialer",
-            "com.android.phone",
-            "com.android.emergency",
-            "com.android.settings",
-            "com.google.android.permissioncontroller",
-            "com.google.android.packageinstaller", // PC-51: uninstall UI reachable, no guard
-            "com.android.systemui",
-            customDialer,
-            customHome,
-        )
-    }
+    // Every static floor package (ADR-012 §7), Flint, and the runtime custom dialer and launcher.
+    private val floor by lazy { SafetyFloor.STATIC_PACKAGES.toList() + self + customDialer + customHome }
 
     @Before fun setUp() {
         BlockExemptions.clearAll()
@@ -167,15 +155,13 @@ class SafetyFloorCoordinatorMatrixTest {
         }
     }
 
-    @Test fun `revalidation drops ordinary displayed causes but keeps the uninstall guard`() {
+    @Test fun `revalidation drops every displayed cause on a floor surface`() {
         val now = System.currentTimeMillis()
         ActiveRulesHolder.publish(TEST_SOURCE, listOf(rule("hardcore", BreakLevel.HARDCORE, allowList = true)))
         val displayed = ruleBlockCause(ActiveRulesHolder.rules.first { it.id == "hardcore" }, now, 0L)
         // No displayed cause passed: the rule itself must re-derive the block for the control.
         assertEquals(BlockScreenReason.DEEP_FOCUS, coordinator.currentBlockCause(control, null)?.reason)
         for (pkg in floor) assertNull(pkg, coordinator.currentBlockCause(pkg, displayed))
-        val guard = BlockCause(BlockScreenReason.UNINSTALL_GUARD, BreakLevel.HARDCORE, endsAtEpochMs = null)
-        assertEquals(guard, coordinator.currentBlockCause("com.android.settings", guard))
     }
 
     @Test fun `showBlocked never mounts an ordinary shield on a floor surface`() {
@@ -204,13 +190,14 @@ class SafetyFloorCoordinatorMatrixTest {
         shadowOf(Looper.getMainLooper()).idle()
     }
 
-    @Test fun `the uninstall guard still mounts on Settings`() {
-        val guard = BlockCause(BlockScreenReason.UNINSTALL_GUARD, BreakLevel.HARDCORE, endsAtEpochMs = null)
-        coordinator.showBlocked("com.android.settings", null, guard)
-        shadowOf(Looper.getMainLooper()).idle()
-        assertEquals(1, attached.size)
-        coordinator.hideIfShown()
-        shadowOf(Looper.getMainLooper()).idle()
+    @Test fun `no cause of any reason or tier mounts on Settings or the uninstaller (PC-51)`() {
+        for (reason in BlockScreenReason.entries) {
+            for (pkg in listOf("com.android.settings", "com.google.android.packageinstaller")) {
+                coordinator.showBlocked(pkg, null, BlockCause(reason, BreakLevel.HARDCORE, endsAtEpochMs = null))
+                shadowOf(Looper.getMainLooper()).idle()
+                assertTrue("$reason on $pkg", attached.isEmpty())
+            }
+        }
     }
 
     private fun rule(id: String, level: BreakLevel, allowList: Boolean, schedule: Schedule? = null) = BlockRule(

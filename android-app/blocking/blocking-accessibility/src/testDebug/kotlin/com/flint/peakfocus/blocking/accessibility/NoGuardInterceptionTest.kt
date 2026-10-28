@@ -24,8 +24,7 @@ import org.robolectric.annotation.Config
  * Protection contract ADR-012 §10 / PC-51 on the real Path A service: with an active Hardcore
  * commitment that blocks everything but one app, the uninstaller, Settings (app info,
  * Accessibility disable, force-stop) and the permission controller are never shielded — no
- * guard interception, no overlay, no forced Home — while an ordinary app IS shielded by the
- * same rule. Window text is never read for these surfaces (no guard remains to ask for it).
+ * guard interception and no overlay — while an ordinary app IS shielded by the same rule.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
@@ -63,6 +62,8 @@ class NoGuardInterceptionTest {
         for ((pkg, cls) in listOf(
             "com.google.android.packageinstaller" to "com.android.packageinstaller.UninstallerActivity",
             "com.android.packageinstaller" to "com.android.packageinstaller.UninstallerActivity",
+            "com.samsung.android.packageinstaller" to "com.android.packageinstaller.UninstallerActivity",
+            "com.miui.packageinstaller" to "com.android.packageinstaller.UninstallerActivity",
             "com.android.settings" to "com.android.settings.applications.InstalledAppDetailsTop",
             "com.android.settings" to "com.android.settings.SubSettings",
             "com.google.android.permissioncontroller" to "com.android.permissioncontroller.permission.ui.ManagePermissionsActivity",
