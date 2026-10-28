@@ -13,7 +13,8 @@ the final signed Release build**. Lane B owns iOS enforcement acceptance; lane C
 owns Android acceptance before any cross-platform parity claim; lane F owns real
 local history and Insights events. Their implementation/CI evidence and signed
 physical-device results must be linked before the owner pastes this package into
-App Store Connect. ADR-012 becomes the policy authority when merged; recheck
+App Store Connect. Merged [ADR-012](../../architecture/protection-contract.md) is
+the policy authority; recheck
 levels, breaks, overlaps, Open Limits, and Emergency Pass against that contract.
 
 Do not add claims of unbreakable blocking, tamper-proof protection, guaranteed
@@ -70,7 +71,7 @@ KEEP IT PERSONAL
 Flint needs no Flint account and includes no analytics or advertising SDKs. Your selections and settings are stored on your device and shared locally with Flint's Screen Time extensions. There is no Flint cloud sync. All protection levels are free.
 
 KNOW WHAT YOU ARE CHOOSING
-Flint uses Apple's Screen Time permission to apply restrictions. Access can be reviewed in iOS Settings. Protection depends on the permissions and settings on your device. Stronger sessions can also temporarily restrict app removal across the device; read the in-app explanation before starting one.
+Flint uses Apple's Screen Time permission to apply restrictions. Protection depends on the permissions and settings on your device. A separate optional setting can request device-wide app-deletion restriction during an active Hardcore session with a set end time. Screen Time permission remains revocable in iOS Settings. Review the end time, available Emergency Pass, and recovery before opting in.
 
 Flint is open source. Take a little space for the next thing you want to do.
 ```
@@ -88,6 +89,16 @@ coverage. This copy intentionally omits Open Limit timing, Sleep automation,
 Shortcuts, Focus filters, session history, and usage statistics until their gates
 pass. Do not infer completed integrations from their presence in Settings.
 
+Policy wording was reconciled with ADR-012 at `76581c5` on 2026-10-28. Optional
+app-deletion restriction is a separate opt-in, captured for an eligible armed,
+finite Hardcore commitment; choosing Hardcore alone is not consent. No
+unbreakable or sole-exit claim is permitted. If Emergency Pass is later added
+to listing copy, use “seven days after you use it” and describe the confirmed
+60-minute global recovery scope, affected commitments and resumption. Do not
+promise a Monday refill, a bank of passes or release of only the shown session.
+These are contract requirements, pending lane B implementation and signed-device
+acceptance; the reconciliation is not evidence that the features shipped.
+
 ### Length validation
 
 Apple's [product-page guidance](https://developer.apple.com/app-store/product-page/)
@@ -100,7 +111,7 @@ wording or localization change. App Review Notes have a separate 4,000-byte
 limit, checked in the companion document. No promotional text is proposed.
 
 D6 measured the exact blocks above: name **5 characters**, subtitle **26
-characters**, keywords **86 UTF-8 bytes**, description **1,154 characters**.
+characters**, keywords **86 UTF-8 bytes**, description **1,254 characters**.
 All four are ASCII, so byte and character counts coincide for this draft.
 
 ## App Privacy answer draft: Data Not Collected
