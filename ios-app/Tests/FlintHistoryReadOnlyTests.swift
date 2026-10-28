@@ -93,20 +93,159 @@ final class FlintHistoryReadOnlyTests: XCTestCase {
         XCTAssertEqual(snapshot.availability, .degraded)
         XCTAssertEqual(try inventory(), before)
     }
-    func testOversizeMainIsBoundedAndInboxRemainsReadable() throws {
+    func testOversizeMainReturnsUnavailableWithoutPartialInboxResults() throws {
         _ = store().read()
         try Data(repeating: 65, count: FlintHistoryStore.hardLimit + 1)
             .write(to: directory.appendingPathComponent("events.jsonl"))
         let start = event(); store(host: false).append(start)
         let before = try inventory()
         let snapshot = store(host: false).readOnlySnapshot()
-        XCTAssertEqual(snapshot.events, [start]); XCTAssertEqual(snapshot.availability, .degraded)
+        XCTAssertTrue(snapshot.events.isEmpty); XCTAssertEqual(snapshot.availability, .unavailable)
         XCTAssertEqual(try inventory(), before)
     }
     func testMissingContainerIsUnavailableWithoutCreatingDirectories() {
         XCTAssertEqual(store(host: false).readOnlySnapshot().availability, .unavailable)
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
         XCTAssertEqual(FlintHistoryStore(directory: nil).readOnlySnapshot().availability, .unavailable)
+    }
+
+    // Stress fixtures exercise the published operation/allocation bounds, not a
+    // WidgetKit RSS or wall-clock SLA. The reader retains no future-envelope rows.
+    func testDenseFutureMainAtFiveMiBIgnores655360Envelopes() throws {
+        _ = store().read()
+        let row = "{\"v\":2}\n"
+        try Data(String(repeating: row, count: FlintHistoryStore.hardLimit / row.utf8.count).utf8)
+            .write(to: directory.appendingPathComponent("events.jsonl"))
+        let snapshot = store(host: false).readOnlySnapshot()
+        XCTAssertEqual(snapshot.availability, .empty); XCTAssertTrue(snapshot.events.isEmpty)
+        XCTAssertEqual(snapshot.historyStart, now)
+    }
+
+    func testDenseUnknownMainIgnoresEnvelopesAndKeepsSupportedIngress() throws {
+        _ = store().read()
+        let row = "{\"v\":1,\"type\":\"future_kind\"}\n"
+        try Data(String(repeating: row, count: FlintHistoryStore.hardLimit / row.utf8.count).utf8)
+            .write(to: directory.appendingPathComponent("events.jsonl"))
+        let start = event(); XCTAssertTrue(store(host: false).append(start))
+        XCTAssertEqual(store(host: false).readOnlySnapshot().events, [start])
+    }
+
+    func testSupportedRecordBudgetAcceptsTwentyThousandAndRejectsDenseMain() throws {
+        _ = store().read()
+        let row = "{\"v\":1,\"type\":\"completed\",\"session\":\"a\",\"at\":1800000000000,\"tz\":\"UTC\",\"id\":\"same\"}\n"
+        let log = directory.appendingPathComponent("events.jsonl")
+        try Data(String(repeating: row, count: FlintHistoryStore.readOnlyRecordLimit).utf8).write(to: log)
+        let atLimit = store(host: false).readOnlySnapshot()
+        XCTAssertEqual(atLimit.availability, .empty); XCTAssertEqual(atLimit.events.count, 1)
+        try Data(String(repeating: row, count: FlintHistoryStore.hardLimit / row.utf8.count).utf8).write(to: log)
+        let overLimit = store(host: false).readOnlySnapshot()
+        XCTAssertEqual(overLimit.availability, .unavailable); XCTAssertTrue(overLimit.events.isEmpty)
+    }
+
+    func testNearCapInboxExhaustsDecodedByteBudgetWithoutPartialHistory() throws {
+        _ = store().read()
+        let inbox = directory.appendingPathComponent("inbox")
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        var large = event(.completed)
+        large.reason = String(repeating: "x", count: 16_000)
+        var data = try JSONEncoder().encode(large); data.append(10)
+        XCTAssertLessThanOrEqual(data.count, FlintHistoryStore.recordLimit)
+        XCTAssertGreaterThan(data.count, 16_000)
+        for index in 0..<FlintHistoryStore.inboxLimit {
+            try data.write(to: inbox.appendingPathComponent("0-\(index).json"))
+        }
+        let snapshot = store(host: false).readOnlySnapshot()
+        XCTAssertEqual(snapshot.availability, .unavailable); XCTAssertTrue(snapshot.events.isEmpty)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: inbox.path).count, FlintHistoryStore.inboxLimit)
+    }
+
+    func testEveryReadBoundExhaustionIsUnavailable() throws {
+        _ = store().read()
+        let log = directory.appendingPathComponent("events.jsonl")
+        try Data(repeating: 65, count: FlintHistoryStore.recordLimit).write(to: log)
+        XCTAssertEqual(store(host: false).readOnlySnapshot().availability, .unavailable)
+        try Data().write(to: log)
+        let metadata = directory.appendingPathComponent("metadata.json")
+        let original = try Data(contentsOf: metadata)
+        try Data(repeating: 32, count: 65_537).write(to: metadata)
+        XCTAssertEqual(store(host: false).readOnlySnapshot().availability, .unavailable)
+        try original.write(to: metadata)
+        let inbox = directory.appendingPathComponent("inbox")
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        for index in 0...FlintHistoryStore.inboxLimit {
+            try Data("{\"v\":2}\n".utf8).write(to: inbox.appendingPathComponent("0-\(index).json"))
+        }
+        XCTAssertEqual(store(host: false).readOnlySnapshot().availability, .unavailable)
+    }
+
+    private func unreadableMainFixture() throws -> URL {
+        _ = store().read()
+        // An invalid file kind deterministically makes Data(contentsOf:) fail on
+        // both macOS and Simulator, without depending on the runner's Unix UID.
+        let log = directory.appendingPathComponent("events.jsonl")
+        try FileManager.default.createDirectory(at: log, withIntermediateDirectories: true)
+        try Data("preserve me".utf8).write(to: log.appendingPathComponent("evidence"))
+        return log
+    }
+
+    func testQuarantinePublishesLossIntentBeforeRemovingUnreadableMain() throws {
+        let log = try unreadableMainFixture()
+        let moved = expectation(description: "quarantine moved")
+        let finished = expectation(description: "host recovery returned")
+        let resume = DispatchSemaphore(value: 0)
+        let host = FlintHistoryStore(directory: directory, clock: { self.now }, quarantineMoveHook: {
+            moved.fulfill(); _ = resume.wait(timeout: .now() + 5)
+        })
+        DispatchQueue.global().async {
+            XCTAssertEqual(host.read().availability, .unavailable); finished.fulfill()
+        }
+        wait(for: [moved], timeout: 2)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: log.path))
+        let during = store(host: false).readOnlySnapshot()
+        XCTAssertEqual(during.availability, .unavailable)
+        XCTAssertTrue(FlintHistoryAggregator.summarize(during, activeSessionID: nil, now: now)
+            .days.allSatisfy { $0.focusedSeconds == nil })
+        resume.signal(); wait(for: [finished], timeout: 2)
+        XCTAssertEqual(store(host: false).readOnlySnapshot().availability, .unavailable)
+    }
+
+    func testFailedLossIntentPreservesUnreadableMain() throws {
+        let log = try unreadableMainFixture()
+        let host = FlintHistoryStore(directory: directory, clock: { self.now }, metadataWriteHook: {
+            throw CocoaError(.fileWriteNoPermission)
+        })
+        XCTAssertEqual(host.read().availability, .unavailable)
+        XCTAssertEqual(try Data(contentsOf: log.appendingPathComponent("evidence")), Data("preserve me".utf8))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("quarantine").path))
+        XCTAssertEqual(store(host: false).readOnlySnapshot().availability, .unavailable)
+    }
+
+    func testCommittedCompactionNotifiesOutsideLockEvenWhenMetadataSaveFails() {
+        let expired = event(session: "expired", seconds: -401 * 86_400), recent = event(session: "recent")
+        let setup = store(); setup.append(expired); setup.append(recent); _ = setup.read()
+        var failMetadata = false
+        let host = FlintHistoryStore(directory: directory, clock: { self.now },
+            maintenanceHook: { failMetadata = true }, metadataWriteHook: {
+                if failMetadata { throw CocoaError(.fileWriteNoPermission) }
+            })
+        let delivered = expectation(description: "committed replacement signalled outside mutex")
+        delivered.assertForOverFulfill = true
+        let finished = expectation(description: "maintenance returned")
+        var reasons: [String] = []
+        let token = NotificationCenter.default.addObserver(forName: FlintHistoryStore.didChangeNotification,
+                                                            object: nil, queue: nil) { note in
+            guard let changed = note.object as? FlintHistoryStore, changed === host else { return }
+            reasons.append(note.userInfo?["reason"] as? String ?? "missing")
+            XCTAssertEqual(host.read().events, [recent])
+            delivered.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        DispatchQueue.global().async {
+            XCTAssertFalse(host.compactIfNeeded()); finished.fulfill()
+        }
+        wait(for: [delivered, finished], timeout: 2)
+        XCTAssertEqual(reasons, ["compact"])
+        XCTAssertEqual(store(host: false).readOnlySnapshot().events, [recent])
     }
     func testNothingSalvageableIsUnavailableRatherThanAnObservedZero() throws {
         _ = store().read()

@@ -24,6 +24,8 @@ public final class FlintHistoryStore: @unchecked Sendable {
     public static let hardLimit = 5 * 1_048_576
     public static let inboxLimit = 1000
     public static let recordLimit = 16_384
+    public static let readOnlyRecordLimit = 20_000
+    public static let readOnlyDecodedByteLimit = 4 * 1_048_576
     public static let shared = FlintHistoryStore(directory: FileManager.default
         .containerURL(forSecurityApplicationGroupIdentifier: FlintGroupStore.appGroupID)?
         .appendingPathComponent("FlintHistory", isDirectory: true),
@@ -37,6 +39,7 @@ public final class FlintHistoryStore: @unchecked Sendable {
     private let currentSessionID: () -> String?
     private let maintenanceHook: () -> Void
     private let metadataWriteHook: () throws -> Void
+    private let quarantineMoveHook: () -> Void
     private let mutex: NSLock
     // Accessed only while the per-directory host mutex is held. A clear supersedes
     // any internal drain notification so observers see the final committed state once.
@@ -79,10 +82,12 @@ public final class FlintHistoryStore: @unchecked Sendable {
     /// Hooks let tests pause maintenance or inject destination-specific metadata failures.
     public init(directory: URL?, clock: @escaping () -> Date = Date.init, calendar: Calendar = .current,
                 isHost: Bool = true, currentSessionID: @escaping () -> String? = { nil },
-                maintenanceHook: @escaping () -> Void = {}, metadataWriteHook: @escaping () throws -> Void = {}) {
+                maintenanceHook: @escaping () -> Void = {}, metadataWriteHook: @escaping () throws -> Void = {},
+                quarantineMoveHook: @escaping () -> Void = {}) {
         self.directory = directory; self.clock = clock; self.calendar = calendar; self.isHost = isHost
         self.currentSessionID = currentSessionID; self.maintenanceHook = maintenanceHook
         self.metadataWriteHook = metadataWriteHook
+        self.quarantineMoveHook = quarantineMoveHook
         mutex = FlintHistoryHostLocks.lock(for: directory?.standardizedFileURL.path ?? "unavailable")
     }
 
@@ -117,72 +122,77 @@ public final class FlintHistoryStore: @unchecked Sendable {
         }
     }
 
-    /// A bounded, nonmutating view for widgets and other extensions. It does not drain,
-    /// reconcile, repair metadata, quarantine corruption, or reclaim staging files.
-    /// A concurrent publication may appear on the next read; duplicate drain copies
-    /// are collapsed by event ID. Missing metadata cannot establish observed days.
+    /// A nonmutating extension view: 64 KiB streaming input, one <=16 KiB line,
+    /// <=20,000 supported records and <=4 MiB of their encoded bytes (including
+    /// duplicate ingress). Unknown/future envelopes are discarded immediately.
+    /// Main/inbox/metadata and traversal bounds also apply; exceeding ANY budget
+    /// returns unavailable with no partial events. These are allocation/operation
+    /// bounds, not a filesystem deadline or a measured WidgetKit RSS guarantee.
     public func readOnlySnapshot() -> FlintHistorySnapshot {
+        let unavailable = FlintHistorySnapshot(events: [], historyStart: nil, availability: .unavailable)
         guard let directory,
               let attributes = try? fm.attributesOfItem(atPath: directory.path),
-              attributes[.type] as? FileAttributeType == .typeDirectory else {
-            return .init(events: [], historyStart: nil, availability: .unavailable)
+              attributes[.type] as? FileAttributeType == .typeDirectory else { return unavailable }
+        var bad = false, exhausted = false
+        var decodedCount = 0, decodedBytes = 0
+        let decoder = JSONDecoder()
+        // Only the supported DTO survives this closure; no raw host Line or digest.
+        func decode(_ raw: Data, into events: inout [FlintHistoryEvent]) -> Bool {
+            guard let envelope = try? decoder.decode(ReadOnlyEnvelope.self, from: raw) else {
+                bad = true; return true
+            }
+            if (envelope.v ?? 0) > 1 { return true }
+            if let type = envelope.type,
+               !FlintHistoryEventType.knownTypes.contains(where: { $0.wireName == type }) { return true }
+            guard let event = try? decoder.decode(FlintHistoryEvent.self, from: raw), event.isSupported else {
+                bad = true; return true
+            }
+            guard decodedCount < Self.readOnlyRecordLimit,
+                  decodedBytes + raw.count + 1 <= Self.readOnlyDecodedByteLimit else { return false }
+            decodedCount += 1; decodedBytes += raw.count + 1
+            events.append(event)
+            return true
         }
-        // Read inbox before the main log: host drain appends before unlinking inbox
-        // files, so this ordering observes either copy across that transition.
-        var bad = false
-        let urls = readOnlyInboxURLs(bad: &bad)
-        var inbox: [Line] = []
+        // Read inbox before main: drain commits the log before unlinking inbox files.
+        let urls = readOnlyInboxURLs(bad: &bad, exhausted: &exhausted)
+        if exhausted { return unavailable }
+        var inbox: [FlintHistoryEvent] = []
         for url in urls {
-            switch readOnlyFile(url, limit: Self.recordLimit) {
-            case .missing: break // a concurrent host drain can already have removed it
-            case .failed: bad = true
-            case .data(let data):
-                if data.last == 10, let line = parse(Data(data.dropLast())) { inbox.append(line) }
-                else { bad = true }
-            }
+            let result = readOnlyLines(url, limit: Self.recordLimit, singleLine: true) { decode($0, into: &inbox) }
+            if result == .exhausted { return unavailable }
+            if result == .damaged { bad = true }
         }
-        var main: [Line] = []
-        switch readOnlyFile(path("events.jsonl"), limit: Self.hardLimit) {
-        case .missing: break
-        case .failed: bad = true
-        case .data(let data):
-            var start = data.startIndex
-            for end in data.indices where data[end] == 10 {
-                if end - start < Self.recordLimit,
-                   let line = parse(data.subdata(in: start..<end)) { main.append(line) }
-                else { bad = true }
-                start = data.index(after: end)
-            }
-            if start < data.endIndex { bad = true }
-        }
+        var events: [FlintHistoryEvent] = []
+        let mainResult = readOnlyLines(path("events.jsonl"), limit: Self.hardLimit) { decode($0, into: &events) }
+        if mainResult == .exhausted { return unavailable }
+        if mainResult == .damaged { bad = true }
         let damagedRecords = bad
-        // Read the clear boundary after the records, so already-published clear intent
-        // suppresses the old generation even before its main-log replacement commits.
+        // Read clear/loss intent after the records, including during host recovery.
         var metadata: Metadata?
-        if case .data(let data) = readOnlyFile(path("metadata.json"), limit: 65_536),
-           let decoded = try? JSONDecoder().decode(Metadata.self, from: data), decoded.v == 1,
-           [decoded.createdAt, decoded.clearedAt].compactMap({ $0 }).allSatisfy({
-               $0 >= -62_135_596_800_000 && $0 <= 253_402_300_799_000
-           }) {
-            metadata = decoded
-        } else { bad = true }
+        switch readOnlyFile(path("metadata.json"), limit: 65_536) {
+        case .exhausted: return unavailable
+        case .data(let data):
+            if let decoded = try? decoder.decode(Metadata.self, from: data), decoded.v == 1,
+               [decoded.createdAt, decoded.clearedAt].compactMap({ $0 }).allSatisfy({
+                   $0 >= -62_135_596_800_000 && $0 <= 253_402_300_799_000
+               }) { metadata = decoded } else { bad = true }
+        case .missing, .failed: bad = true
+        }
+        func kept(_ event: FlintHistoryEvent) -> Bool {
+            guard let keep = metadata?.keepSession else { return false }
+            return event.session == keep || event.sessions?.contains(keep) == true
+        }
+        func visible(_ event: FlintHistoryEvent) -> Bool {
+            guard let boundary = metadata?.clearedAt else { return true }
+            return kept(event) || event.at >= boundary
+        }
         if metadata?.pendingClear == true {
-            main = main.filter { belongs($0, to: metadata?.keepSession) }
-            bad = true
+            events.removeAll { !kept($0) }; bad = true
         }
-        if let clearedAt = metadata?.clearedAt {
-            let keep = metadata?.keepSession
-            let visible: (Line) -> Bool = { line in
-                self.belongs(line, to: keep) || line.at.map { FlintHistoryEvent.milliseconds($0) >= clearedAt } == true
-            }
-            main = main.filter(visible); inbox = inbox.filter(visible)
-        }
+        events.removeAll { !visible($0) }
         var ids = Set<String>()
-        let events = (main + inbox).filter { line in
-            guard let id = line.id else { return true }
-            return ids.insert(id).inserted
-        }.compactMap(\.event)
-        // Inspect only whether a failure marker exists; never consume it.
+        events.removeAll { !ids.insert($0.id).inserted }
+        for event in inbox where visible(event) && ids.insert(event.id).inserted { events.append(event) }
         var diagnosticError = false
         let diagnostics = fm.enumerator(at: path("diagnostics"), includingPropertiesForKeys: nil,
                                         options: [.skipsSubdirectoryDescendants], errorHandler: { _, error in
@@ -192,22 +202,69 @@ public final class FlintHistoryStore: @unchecked Sendable {
         let hasDiagnostic = diagnostics?.nextObject() != nil
         bad = bad || diagnosticError || hasDiagnostic
         let degraded = bad || metadata?.degraded == true || metadata?.lostAllReadableEvents == true
-        let unavailable = events.isEmpty && (damagedRecords || hasDiagnostic || diagnosticError ||
-                                            metadata?.lostAllReadableEvents == true)
+        let lost = events.isEmpty && (damagedRecords || hasDiagnostic || diagnosticError ||
+                                     metadata?.lostAllReadableEvents == true)
         return .init(events: events, historyStart: metadata?.historyStart,
-                     availability: unavailable ? .unavailable : degraded ? .degraded :
+                     availability: lost ? .unavailable : degraded ? .degraded :
                         events.contains { $0.type == .started } ? .value : .empty)
     }
 
-    private enum ReadOnlyFile { case missing, data(Data), failed }
+    private struct ReadOnlyEnvelope: Decodable {
+        let v: Int?
+        let type: String?
+        private enum CodingKeys: String, CodingKey { case v, type }
+        init(from decoder: Decoder) throws {
+            let fields = try decoder.container(keyedBy: CodingKeys.self)
+            v = try fields.decodeIfPresent(Int.self, forKey: .v)
+            // A higher version can change every other field's shape.
+            type = (v ?? 0) > 1 ? nil : try fields.decodeIfPresent(String.self, forKey: .type)
+        }
+    }
+    private enum ReadOnlyLines: Equatable { case missing, success, damaged, exhausted }
+    private func readOnlyLines(_ url: URL, limit: Int, singleLine: Bool = false,
+                               consume: (Data) -> Bool) -> ReadOnlyLines {
+        let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+        guard fd >= 0 else { return errno == ENOENT ? .missing : .damaged }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        defer { try? handle.close() }
+        var info = stat()
+        guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG, info.st_size >= 0 else { return .damaged }
+        guard info.st_size <= limit else { return .exhausted }
+        var line = Data(), bytes = 0, lines = 0
+        do {
+            while true {
+                let chunk = try handle.read(upToCount: min(65_536, limit + 1 - bytes)) ?? Data()
+                if chunk.isEmpty { return line.isEmpty && (!singleLine || lines == 1) ? .success : .damaged }
+                bytes += chunk.count
+                guard bytes <= limit else { return .exhausted }
+                var start = chunk.startIndex
+                for end in chunk.indices where chunk[end] == 10 {
+                    guard line.count + end - start < Self.recordLimit else { return .exhausted }
+                    line.append(contentsOf: chunk[start..<end])
+                    lines += 1
+                    guard !singleLine || lines == 1 else { return .exhausted }
+                    // Foundation decoding temporaries are released per line, including
+                    // dense future envelopes that never consume the decoded-event budget.
+                    guard autoreleasepool(invoking: { consume(line) }) else { return .exhausted }
+                    line.removeAll(keepingCapacity: true)
+                    start = chunk.index(after: end)
+                }
+                guard line.count + chunk.endIndex - start < Self.recordLimit else { return .exhausted }
+                line.append(contentsOf: chunk[start..<chunk.endIndex])
+            }
+        } catch { return .damaged }
+    }
+
+    // Used only for small metadata, never for the event log or inbox.
+    private enum ReadOnlyFile { case missing, data(Data), failed, exhausted }
     private func readOnlyFile(_ url: URL, limit: Int) -> ReadOnlyFile {
         let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
         guard fd >= 0 else { return errno == ENOENT ? .missing : .failed }
         let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         defer { try? handle.close() }
         var info = stat()
-        guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
-              info.st_size >= 0, info.st_size <= limit else { return .failed }
+        guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG, info.st_size >= 0 else { return .failed }
+        guard info.st_size <= limit else { return .exhausted }
         do {
             var data = Data()
             while data.count <= limit {
@@ -215,11 +272,11 @@ public final class FlintHistoryStore: @unchecked Sendable {
                 if chunk.isEmpty { return .data(data) }
                 data.append(chunk)
             }
-            return .failed
+            return .exhausted
         } catch { return .failed }
     }
 
-    private func readOnlyInboxURLs(bad: inout Bool) -> [URL] {
+    private func readOnlyInboxURLs(bad: inout Bool, exhausted: inout Bool) -> [URL] {
         var failed = false
         guard let enumerator = fm.enumerator(at: path("inbox"), includingPropertiesForKeys: nil,
                                             options: [.skipsSubdirectoryDescendants], errorHandler: { _, error in
@@ -229,18 +286,18 @@ public final class FlintHistoryStore: @unchecked Sendable {
         var urls: [URL] = [], visited = 0
         while let url = enumerator.nextObject() as? URL {
             visited += 1
-            // Bound both materialized records and traversal through abandoned temp files.
-            guard visited <= Self.inboxLimit * 2 else { failed = true; break }
+            guard visited <= Self.inboxLimit * 2 else { exhausted = true; break }
             guard url.pathExtension == "json" else { continue }
-            guard urls.count < Self.inboxLimit else { failed = true; break }
+            guard urls.count < Self.inboxLimit else { exhausted = true; break }
             urls.append(url)
         }
         bad = bad || failed
-        return urls.sorted {
+        urls.sort {
             let a = $0.lastPathComponent.split(separator: "-").dropFirst().first ?? ""
             let b = $1.lastPathComponent.split(separator: "-").dropFirst().first ?? ""
             return a == b ? $0.lastPathComponent < $1.lastPathComponent : a < b
         }
+        return urls
     }
 
     /// Host-only; daily retention or >1 MiB triggers maintenance, with headroom below 5 MiB.
@@ -259,10 +316,10 @@ public final class FlintHistoryStore: @unchecked Sendable {
             guard byteCount(retained) <= Self.hardLimit else { return false }
             do {
                 try replaceLog(retained)
+                markChanged("compact") // The visible replacement already committed, even if metadata fails.
                 metadata.lastCompacted = FlintHistoryEvent.milliseconds(clock())
                 metadata.degraded = metadata.degraded == true || loaded.bad
                 try saveMetadata(metadata)
-                markChanged("compact")
                 return true
             } catch { return false }
         }
@@ -423,8 +480,14 @@ public final class FlintHistoryStore: @unchecked Sendable {
         let url = path("events.jsonl")
         guard fm.fileExists(atPath: url.path) else { return Loaded(lines: [], bad: false, canRewrite: true) }
         guard let data = try? Data(contentsOf: url) else {
-            // Move preserves unreadable bytes without allocating or pretending they are empty.
+            // Readers do not take the host mutex. Publish loss before removing the only
+            // evidence, so a suspended recovery cannot turn unreadable history into zero.
+            var metadata = recoverMetadata(lines: [], inbox: ([], false))
+            metadata.degraded = true; metadata.lostAllReadableEvents = true
+            do { try saveMetadata(metadata) }
+            catch { return Loaded(lines: [], bad: true, canRewrite: false, unavailable: true) }
             let saved = quarantineFile(url, moving: true)
+            if saved { quarantineMoveHook() }
             return Loaded(lines: [], bad: true, canRewrite: saved, unavailable: !saved)
         }
         var lines: [Line] = [], bad = false, start = data.startIndex
