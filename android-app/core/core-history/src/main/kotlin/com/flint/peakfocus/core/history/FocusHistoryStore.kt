@@ -46,6 +46,7 @@ class FocusHistoryStore(
         var total = 0L
         val writes = additions.map { original ->
             val encoded = HistoryCodec.encode(original)
+            require('\n' !in encoded) { "An event must occupy one JSONL record" }
             require(utf8Size(encoded) + 1 <= MAX_RECORD_BYTES) { "Event exceeds append budget" }
             val bytes = (encoded + "\n").toByteArray(Charsets.UTF_8)
             total += bytes.size

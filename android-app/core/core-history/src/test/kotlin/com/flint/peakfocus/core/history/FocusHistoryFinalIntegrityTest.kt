@@ -55,6 +55,20 @@ class FocusHistoryFinalIntegrityTest {
         assertFalse(store.update { (1..3).map { future("huge-$it", 4 * 1024 * 1024) } })
         assertArrayEquals(before, log.readBytes()); assertEquals(1, FocusHistoryStore(dir, MutableClock(begin)).load().events.size)
     }
+    @Test fun N10_physicalLineFeedInOpaqueRecordRejectsWholeBatchButEscapedNewlinesRoundTrip() = runTest {
+        val dir = temporary.newFolder(); val store = FocusHistoryStore(dir, MutableClock(begin))
+        val initial = start(); assertTrue(store.append(initial))
+        val log = File(dir, "events.v1.jsonl"); val before = log.readBytes()
+        val multiline = "{\"v\":2,\"id\":\"multiline\",\"type\":\"future\",\"session\":\"session-a\",\"at\":$begin,\"tz\":\"UTC\",\"payload\":[\n1,2]}"
+        val escaped = HistoryEvent(type = "future", id = "escaped-newline", session = "session-a", at = begin,
+            tz = "UTC", reason = "first\nsecond")
+        assertFalse(store.update { listOf(escaped, HistoryCodec.decode(multiline)) })
+        assertArrayEquals(before, log.readBytes())
+        assertTrue(store.append(escaped))
+        val reopened = FocusHistoryStore(dir, MutableClock(begin)).load()
+        assertEquals(listOf(initial.id, escaped.id), reopened.events.map { it.id })
+        assertTrue(HistoryCodec.encode(reopened.events.last()).contains("first\\nsecond"))
+    }
     @Test fun N4_multiEditRecoveredShorteningIsAtomicAndIdempotent() = runTest {
         val dir = temporary.newFolder(); val clock = MutableClock(begin); val store = FocusHistoryStore(dir, clock)
         val observer = HistoryReconciler(store, clock)
@@ -154,5 +168,25 @@ class FocusHistoryFinalIntegrityTest {
             assertEquals(deadline, completed.events.single { it.knownType == HistoryEventType.COMPLETED }.at)
             assertEquals(1, completed.events.count { it.knownType == HistoryEventType.COMPLETED })
         } finally { collector.cancelAndJoin(); observations.close() }
+    }
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun expiredRuleWithoutStartDoesNotRetryAndFutureStartAppendCanFinish() = runTest {
+        val clock = MutableClock(begin)
+        val rule = HistoryRule("session-a", "Focus", "easy", begin - 1)
+        val source = MutableStateFlow<HistoryRulesSnapshot>(HistoryRulesSnapshot.Ready(listOf(rule)))
+        var started = false; var terminal = false; var observations = 0
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            source.withDeadlineObservations(clock, hasTerminal = { terminal }, hasStarted = { started }).collect { snapshot ->
+                observations++
+                if (started && snapshot is HistoryRulesSnapshot.Ready && snapshot.rules.any { it.plannedEnd!! <= clock.now }) terminal = true
+            }
+        }
+        runCurrent(); advanceTimeBy(90_000); runCurrent()
+        assertEquals(1, observations)
+        source.value = HistoryRulesSnapshot.Ready(listOf(rule.copy(plannedEnd = begin + minute)))
+        runCurrent(); assertEquals(2, observations)
+        started = true; clock.now = begin + minute
+        advanceTimeBy(minute); runCurrent()
+        assertEquals(3, observations); assertTrue(terminal)
     }
 }

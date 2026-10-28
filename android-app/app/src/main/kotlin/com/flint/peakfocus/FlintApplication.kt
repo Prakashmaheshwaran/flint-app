@@ -30,7 +30,7 @@ class FlintApplication : Application() {
         super.onCreate()
         PathBFallbackActivityHandoff(this)
         ActiveRulesBridge.start(this, appScope)
-        com.flint.peakfocus.core.history.FocusHistoryBridge.start(this, appScope)
+        FocusHistoryEventAdapter.start(this, appScope)
         BootReceiver.registerRearmAction { context -> PathBServiceGate.sync(context) }
         TimeChangeReceiver.baselineAnchor(this)
         TimeChangeReceiver.registerRearmAction { context -> PathBServiceGate.sync(context) }

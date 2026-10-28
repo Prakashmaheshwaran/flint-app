@@ -186,6 +186,7 @@ internal class TimerViewModel(
                 // Strength and activity are checked in the same transaction as deletion.
                 // Another writer cannot upgrade the session between our check and removal.
                 if (rulesStore.cancelEasySession(ruleId, timestamp)) {
+                    com.flint.peakfocus.core.history.FocusHistoryBridge.noteEndRoute(ruleId, "cancel", timestamp)
                     latestRules = latestRules.filterNot { it.id == ruleId }
                     state.update { it.copy(message = "Timer cancelled. Other rules may still apply.") }
                 } else {
@@ -261,7 +262,9 @@ internal class TimerViewModel(
             it.copy(busy = true, exit = TimerExitConfirmation(expected, TimerExitPhase.SAVING, 1f), error = null)
         }
         try {
-            if (rulesStore.endTimerSession(expected, now())) {
+            val timestamp = now()
+            if (rulesStore.endTimerSession(expected, timestamp)) {
+                com.flint.peakfocus.core.history.FocusHistoryBridge.noteEndRoute(expected.id, "hold_to_end", timestamp)
                 latestRules = latestRules.filterNot { it.id == expected.id }
                 state.update { it.copy(exit = null, message = "Timer ended. Other rules may still apply.") }
             } else {

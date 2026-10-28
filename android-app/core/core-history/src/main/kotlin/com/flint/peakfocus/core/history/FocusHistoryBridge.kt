@@ -25,6 +25,7 @@ import kotlinx.coroutines.CancellationException
 object FocusHistoryBridge {
     @Volatile private var history: FocusHistoryStore? = null
     @Volatile private var reconciler: HistoryReconciler? = null
+    @Volatile private var observedEvents: HistoryObservedQueue? = null
     private var job: Job? = null
 
     @Synchronized fun store(context: Context): FocusHistoryStore = history ?: FocusHistoryStore(
@@ -32,6 +33,10 @@ object FocusHistoryBridge {
     ).also { history = it }
 
     val activeSessionIds: StateFlow<Set<String>>? get() = reconciler?.activeSessionIds
+
+    fun noteOpenIntercepted(ruleId: String?, at: Long) { observedEvents?.offer(HistoryObservedEvent.Open(ruleId, at)) }
+    fun noteBreakGranted(ruleId: String?, until: Long, at: Long) { observedEvents?.offer(HistoryObservedEvent.Break(ruleId, at, until)) }
+    fun noteEndRoute(ruleId: String, route: String, at: Long) { observedEvents?.offer(HistoryObservedEvent.End(ruleId, at, route)) }
 
     suspend fun clear(context: Context): Boolean {
         val observer = reconciler ?: return false
@@ -70,11 +75,13 @@ object FocusHistoryBridge {
         val app = context.applicationContext
         val store = store(app)
         val observer = HistoryReconciler(store).also { reconciler = it }
+        observedEvents = HistoryObservedQueue(scope, HistoryObservedWriter(store)::record)
         FocusCompletionNotifier.start(app, scope, store, observer.ready)
         job = scope.launch(Dispatchers.IO) {
             store.load()
             observer.collectSnapshots(FlintPreferences.blockRules(app).rulesState.map(::historyRulesSnapshot).withDeadlineObservations(
                 hasTerminal = { id -> store.snapshots.value.events.any { it.session == id && it.knownType?.terminal == true } },
+                hasStarted = { id -> store.snapshots.value.events.any { it.session == id && it.knownType == HistoryEventType.STARTED } },
             ))
         }
     }
