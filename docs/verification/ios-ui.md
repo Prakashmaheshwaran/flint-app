@@ -64,7 +64,10 @@ existing bounded device helpers to wait for boot completion and a running
 SpringBoard with a positive PID. It saves `simulator-readiness.log` and fails
 before Xcode tests if readiness is not established; it never launches the app
 as a warmup or retries a failed test. Local runs already use this readiness
-check through the device claim/attach path.
+check through the device claim/attach path. A failed preflight retains bounded,
+read-only post-failure queries for the SpringBoard service, system launchctl
+domain and simulator inventory, including exit status, stdout and stderr.
+These diagnostic observations cannot resume the tests.
 
 Current run/commit evidence is recorded in the PR and worker report after CI
 completes. This gate does not establish minimum-iOS/iPad coverage, full VoiceOver,

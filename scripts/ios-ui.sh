@@ -61,7 +61,23 @@ try:
     runner.springboard_ready(device, timeout=30)
     print("springboard_ready=true (running with positive PID)", flush=True)
 except ValueError as error:
-    sys.exit(str(error))
+    print(f"preflight_failed: {error}", flush=True)
+    # Observe after failure without changing readiness or launching the app.
+    # Keep exact query output so a missing service is distinguishable from
+    # a service that exists but is not running. Diagnostics cannot resume tests.
+    queries = [
+        ["xcrun", "simctl", "spawn", device, "launchctl", "print", "system/com.apple.SpringBoard"],
+        ["xcrun", "simctl", "spawn", device, "launchctl", "print", "system"],
+        ["xcrun", "simctl", "list", "devices", "available", "--json"],
+    ]
+    for query in queries:
+        print(f"post_failure_query={query!r}", flush=True)
+        try:
+            result = runner.run(query, timeout=10, check=False)
+            print(f"exit={result.returncode}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}", flush=True)
+        except ValueError as diagnostic_error:
+            print(f"diagnostic_failed: {diagnostic_error}", flush=True)
+    sys.exit(1)
 PY
 fi
 
