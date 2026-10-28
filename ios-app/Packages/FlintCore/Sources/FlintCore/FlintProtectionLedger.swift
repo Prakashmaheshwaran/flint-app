@@ -38,21 +38,35 @@ public struct FlintLedgerInstant: Codable, Equatable, Sendable {
         self.init(wall: clock.now(), monotonic: clock.monotonic(), bootID: clock.bootSessionID())
     }
 
-    /// Elapsed seconds from `self` to `now` that can be trusted, or nil after a reboot (callers
-    /// then apply §9's reboot rules).
+    /// Elapsed seconds from `self` to `now` for **cooldowns and waits** — never more than may
+    /// have passed — or nil after a reboot (callers then apply §9's reboot rules).
     ///
-    /// With both boot ids known, a match means the monotonic delta is the truth. Without a boot
-    /// id (the OS may not expose one), a monotonic reading below the anchor proves a reboot;
-    /// otherwise only the smaller of the monotonic and wall deltas is credited: an undetected
-    /// reboot can only make monotonic time under-count, and a wall clock moved forward can only
-    /// over-count — so the minimum never credits time that may not have passed.
+    /// The monotonic delta is the measure: within a boot it is the true elapsed time and
+    /// immune to wall-clock changes; under a reboot the OS didn't report (no boot id, but the
+    /// new uptime already exceeds the anchor) it can only under-count. A monotonic reading below
+    /// the anchor, or differing known boot ids, is a reboot.
     public func elapsed(until now: FlintLedgerInstant) -> TimeInterval? {
-        guard now.monotonic >= monotonic else { return nil }
+        guard isSameBootCandidate(now) else { return nil }
+        return now.monotonic - monotonic
+    }
+
+    /// Elapsed seconds for **release intervals** (pass recovery, access grants) — never less
+    /// than may have passed, so a release can only end early, not late — or nil after a reboot
+    /// (the release then ends conservatively, §9). With matching known boot ids the monotonic
+    /// delta is exact; without a boot id the larger of the monotonic and wall deltas is used: an
+    /// undetected reboot under-counts monotonic time, and a wall clock moved back under-counts
+    /// wall time, but never both.
+    public func elapsedForRelease(until now: FlintLedgerInstant) -> TimeInterval? {
+        guard isSameBootCandidate(now) else { return nil }
         let monotonicDelta = now.monotonic - monotonic
-        if let bootID, let other = now.bootID {
-            return bootID == other ? monotonicDelta : nil
-        }
-        return max(0, min(monotonicDelta, now.wall.timeIntervalSince(wall)))
+        if bootID != nil, now.bootID != nil { return monotonicDelta }
+        return max(monotonicDelta, now.wall.timeIntervalSince(wall))
+    }
+
+    private func isSameBootCandidate(_ now: FlintLedgerInstant) -> Bool {
+        guard now.monotonic >= monotonic else { return false }
+        if let bootID, let other = now.bootID { return bootID == other }
+        return true
     }
 }
 
@@ -226,9 +240,12 @@ public final class FlintProtectionLedger {
                 return value > 0 ? Date(timeIntervalSince1970: value) : nil
             },
             setInitializedMarker: { defaults.set($0.timeIntervalSince1970, forKey: key) },
+            // Required for a usable pass: without it a new ledger stays `pendingImport` (closed).
             migrate: { state, now in
-                // The App Group suite is readable here (we just opened it), so absence of the
-                // legacy key is the old "never used" state, not an unreadable store.
+                guard !state.migrations.contains(FlintLedgerState.legacyPassMigration) else { return }
+                // The App Group suite opened, so absence of the legacy key is the old "never
+                // used" state. `UserDefaults` has no per-key failure channel: an unreadable
+                // container is caught earlier (no suite / no ledger directory), never here.
                 let raw = defaults.object(forKey: FlintLedgerState.legacyPassKey)
                 state.importLegacyPass(raw.map(FlintLegacyValue.value) ?? .absent, at: now)
             }

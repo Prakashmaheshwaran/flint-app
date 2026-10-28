@@ -299,17 +299,44 @@ final class FlintProtectionLedgerTests: XCTestCase {
 
     // MARK: Review follow-ups (§8, §9)
 
-    func testWithoutABootIDOnlyTheSmallerDeltaIsCredited() {
+    func testWithoutABootIDCooldownsUseMonotonicAndReleasesUseTheLargerDelta() {
         boot = nil
         let start = instant
         advance(100)
         XCTAssertEqual(start.elapsed(until: instant), 100, "steady clocks: credited")
         now = now.addingTimeInterval(3600)
-        XCTAssertEqual(start.elapsed(until: instant), 100, "a forward wall jump credits nothing extra")
-        now = now.addingTimeInterval(-3600 - 50)
-        XCTAssertEqual(start.elapsed(until: instant), 50, "a backward wall jump credits only what both agree on")
+        XCTAssertEqual(start.elapsed(until: instant), 100, "a forward wall jump credits a cooldown nothing extra")
+        XCTAssertEqual(start.elapsedForRelease(until: instant), 3700, "…but ends a release early")
+        now = now.addingTimeInterval(-3600 - 3600)
+        XCTAssertEqual(start.elapsed(until: instant), 100)
+        XCTAssertEqual(start.elapsedForRelease(until: instant), 100, "a backward wall jump never extends a release (PC-55)")
         monotonic = 1
         XCTAssertNil(start.elapsed(until: instant), "monotonic below the anchor proves a reboot")
+        XCTAssertNil(start.elapsedForRelease(until: instant))
+    }
+
+    func testABackwardClockJumpNeverExtendsRecoveryWithoutABootID() throws {
+        boot = nil
+        var s = try state()
+        _ = s.consumePass(operationID: "a", hasActiveCommitment: true, at: instant)
+        advance(600)
+        XCTAssertEqual(s.pass.status(at: instant, hasActiveCommitment: true).recoveryRemaining, 3000)
+        s.pass.checkpoint(at: instant)
+        now = now.addingTimeInterval(-3600)
+        advance(600)
+        XCTAssertEqual(s.pass.status(at: instant, hasActiveCommitment: true).recoveryRemaining, 2400)
+    }
+
+    func testOneOperationAcrossABatchIncrementsEachCauseOncePC19() throws {
+        var s = try state()
+        s.requestHarderWait(cause: "A", kind: "break", scope: ["t"], operationID: "batch", at: instant)
+        s.requestHarderWait(cause: "B", kind: "break", scope: ["t"], operationID: "batch", at: instant)
+        advance(60)
+        XCTAssertEqual(s.commitHarderWait(cause: "A", operationID: "batch", at: instant), .committed)
+        XCTAssertEqual(s.commitHarderWait(cause: "B", operationID: "batch", at: instant), .committed)
+        XCTAssertEqual(s.commitHarderWait(cause: "A", operationID: "batch", at: instant), .alreadyCommitted)
+        XCTAssertEqual(s.harder["A"]?.committedCount, 1)
+        XCTAssertEqual(s.harder["B"]?.committedCount, 1)
     }
 
     func testPassAndWaitsStillProgressWithoutABootID() throws {
@@ -347,9 +374,13 @@ final class FlintProtectionLedgerTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(holder, 0)
         XCTAssertEqual(flock(holder, LOCK_EX), 0)
         defer { flock(holder, LOCK_UN); close(holder) }
-        // The deadline runs on the (fake) monotonic clock: advance it from another thread.
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) { [unowned self] in self.monotonic += 10 }
-        guard case .failure(.busy) = ledger(lockTimeout: 1).read() else { return XCTFail("expected busy") }
+        // A clock whose monotonic reading advances on every read makes the deadline deterministic.
+        var ticks: TimeInterval = 0
+        let ticking = FlintClock(now: { Date() }, monotonic: { ticks += 0.25; return ticks },
+                                 bootSessionID: { "boot-1" }, calendar: { Calendar(identifier: .gregorian) })
+        let contended = FlintProtectionLedger(directory: directory, clock: ticking, lockTimeout: 1,
+                                              initializedMarker: { Date() }, setInitializedMarker: { _ in })
+        guard case .failure(.busy) = contended.read() else { return XCTFail("expected busy") }
     }
 
     func testNestedTransactionsReportNested() {

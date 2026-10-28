@@ -20,9 +20,12 @@ extension FlintLedgerState.Pass {
     /// monotonic time; across a reboot (or unknown boot) credit nothing and re-anchor, so a
     /// powered-off interval never shortens the cooldown.
     public mutating func checkpoint(at now: FlintLedgerInstant) {
-        if let last = checkpoint, let elapsed = last.elapsed(until: now) {
+        if let last = checkpoint, let elapsed = last.elapsed(until: now),
+           let released = last.elapsedForRelease(until: now) {
+            // Cooldown credits only time that surely passed; recovery (a release) only ends
+            // early, never late.
             cooldownRemaining = max(0, cooldownRemaining - elapsed)
-            recoveryRemaining = max(0, recoveryRemaining - elapsed)
+            recoveryRemaining = max(0, recoveryRemaining - released)
         } else if checkpoint != nil {
             // Reboot: recovery access ends conservatively (§9), cooldown keeps its remainder.
             recoveryRemaining = 0
@@ -73,8 +76,7 @@ extension FlintLedgerState {
         pass.checkpoint(at: now)
         if pass.lastOperationID == operationID || operation(operationID)?.kind == "pass" {
             return .success(FlintPassReceipt(operationID: operationID,
-                                             recoveryRemaining: pass.lastOperationID == operationID ? pass.recoveryRemaining : 0,
-                                             replayed: true))
+                                             recoveryRemaining: pass.recoveryRemaining, replayed: true))
         }
         switch FlintProtectionPolicy.passEligibility(pass.policyUsage, hasActiveCommitment: hasActiveCommitment) {
         case .available:
@@ -166,18 +168,21 @@ extension FlintLedgerState {
         harder[cause]?.pending = nil
     }
 
-    /// Commit the operation `operationID` whose wait matured: increments `n` exactly once. A
-    /// retry after an ambiguous result (§8) finds the remembered commit and reports
-    /// `.alreadyCommitted` instead of counting again or demanding a new wait.
+    /// Commit the operation `operationID` whose wait matured on `cause`: increments that cause's
+    /// `n` exactly once. A retry after an ambiguous result (§8) finds the remembered commit and
+    /// reports `.alreadyCommitted`. The record is per cause, so one operation id across a
+    /// multi-cause batch increments each cause once (§4, PC-19). A retry that carries an id the
+    /// wait no longer has (a resumed wait adopted a newer id) reports `.nothingPending`.
     public mutating func commitHarderWait(cause: String, operationID: String, at now: FlintLedgerInstant) -> FlintHarderCommit {
-        if operation(operationID)?.kind.hasPrefix("harder.") == true { return .alreadyCommitted }
+        let record = "\(operationID)#\(cause)"
+        if operation(record) != nil { return .alreadyCommitted }
         guard var entry = harder[cause] else { return .nothingPending }
         dropPendingAfterReboot(&entry, at: now)
         defer { harder[cause] = entry }
         guard let pending = entry.pending, pending.operationID == operationID else { return .nothingPending }
         guard status(of: pending, at: now) == .matured else { return .notMatured }
         entry.committedCount += 1
-        remember(Operation(id: operationID, kind: "harder.\(pending.kind)", result: "committed", at: now.wall))
+        remember(Operation(id: record, kind: "harder.\(pending.kind)", result: "committed", at: now.wall))
         entry.pending = nil
         return .committed
     }
