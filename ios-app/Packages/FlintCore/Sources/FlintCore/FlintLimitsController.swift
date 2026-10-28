@@ -13,14 +13,14 @@ public final class FlintLimitsController {
 
     public static func armPlan(
         for rules: [FlintLimitRule]
-    ) -> (arm: [FlintLimitRule], failures: [FlintArmingHealth.Failure]) {
+    ) -> FlintRuleArmPlan<FlintLimitRule, FlintArmingHealth.Failure> {
         armPlan(for: rules, selectionIssue: { FlintSelectionValidation.issue(for: $0.selection) })
     }
 
     static func armPlan(
         for rules: [FlintLimitRule],
         selectionIssue: (FlintLimitRule) -> FlintSelectionIssue?
-    ) -> (arm: [FlintLimitRule], failures: [FlintArmingHealth.Failure]) {
+    ) -> FlintRuleArmPlan<FlintLimitRule, FlintArmingHealth.Failure> {
         var arm: [FlintLimitRule] = []
         var failures: [FlintArmingHealth.Failure] = []
         for rule in rules where rule.enabled {
@@ -30,7 +30,9 @@ public final class FlintLimitsController {
                 arm.append(rule)
             }
         }
-        return (arm, failures)
+        let failedNames = Set(failures.map(\.activityName))
+        return .init(arm: arm, failures: failures,
+                     storesToClear: rules.filter { failedNames.contains($0.activityName) }.map(\.storeName))
     }
 
     public func limits() -> [FlintLimitRule] {
@@ -83,6 +85,9 @@ public final class FlintLimitsController {
         var attempted = 0
         var armed = 0
         let plan = Self.armPlan(for: all)
+        for name in plan.storesToClear {
+            ManagedSettingsStore(named: .init(name)).clearAllSettings()
+        }
         var failures = plan.failures
         for limit in plan.arm {
             let schedule = DeviceActivitySchedule(
@@ -111,7 +116,7 @@ public final class FlintLimitsController {
         }
         FlintArmingHealth.record(
             domain: "limits",
-            enabled: all.lazy.filter(\.enabled).count,
+            enabled: plan.enabled,
             attempted: attempted,
             armed: armed,
             failures: failures,

@@ -152,7 +152,7 @@ struct RulesView: View {
                 }
                 .buttonStyle(.plain)
             }
-            Text("These schedules are switched on but iOS never armed them. Tap one to fix its window.")
+            Text("These schedules are switched on but their last arming attempt failed. Tap one to fix its window or its app/site selection.")
                 .font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
         }
     }
@@ -434,7 +434,7 @@ struct ScheduleEditor: View {
                         .padding(.top, 24)
 
                         if let issue = selectionIssue {
-                            Text(issue.message).font(FlintFont.text(13))
+                            Text(issue.message(for: allowList ? .allowList : .blockList)).font(FlintFont.text(13))
                                 .foregroundStyle(FlintBrand.danger).padding(.top, 8)
                         }
 
@@ -535,7 +535,7 @@ struct ScheduleEditor: View {
     }
 
     private var selectionIssue: FlintSelectionIssue? {
-        FlintSelectionValidation.issue(for: selection, requiresSelection: !allowList)
+        FlintSelectionValidation.issue(for: selection, context: allowList ? .allowList : .blockList)
     }
 
     private func save() {

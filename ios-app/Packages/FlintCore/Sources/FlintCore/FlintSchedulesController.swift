@@ -15,18 +15,21 @@ public struct FlintScheduleArmFailure: Equatable, Sendable {
     public let ruleName: String
     public let issue: FlintScheduleIssue?
     public let selectionIssue: FlintSelectionIssue?
+    public let selectionContext: FlintSelectionContext
 
-    public init(ruleID: String, ruleName: String, issue: FlintScheduleIssue?, selectionIssue: FlintSelectionIssue? = nil) {
+    public init(ruleID: String, ruleName: String, issue: FlintScheduleIssue?, selectionIssue: FlintSelectionIssue? = nil,
+                selectionContext: FlintSelectionContext = .blockList) {
         self.ruleID = ruleID
         self.ruleName = ruleName
         self.issue = issue
         self.selectionIssue = selectionIssue
+        self.selectionContext = selectionContext
     }
 
     /// The user-facing reason this rule isn't blocking anything. The fallback stays vague on
     /// purpose: `startMonitoring` throws without telling us which of its limits we hit.
     public var message: String {
-        issue?.message ?? selectionIssue?.message ?? "iOS refused to register this schedule. Edit its window, or remove "
+        issue?.message ?? selectionIssue?.message(for: selectionContext) ?? "iOS refused to register this schedule. Edit its window, or remove "
             + "another schedule and try again."
     }
 }
@@ -86,9 +89,9 @@ public final class FlintSchedulesController {
     /// arm/skip decision is testable without a device.
     public static func armPlan(
         for rules: [FlintScheduleRule]
-    ) -> (arm: [FlintScheduleRule], failures: [FlintScheduleArmFailure]) {
+    ) -> FlintRuleArmPlan<FlintScheduleRule, FlintScheduleArmFailure> {
         armPlan(for: rules, selectionIssue: {
-            FlintSelectionValidation.issue(for: $0.selection, requiresSelection: !$0.allowListMode)
+            FlintSelectionValidation.issue(for: $0.selection, context: $0.allowListMode ? .allowList : .blockList)
         })
     }
 
@@ -96,7 +99,7 @@ public final class FlintSchedulesController {
     static func armPlan(
         for rules: [FlintScheduleRule],
         selectionIssue: (FlintScheduleRule) -> FlintSelectionIssue?
-    ) -> (arm: [FlintScheduleRule], failures: [FlintScheduleArmFailure]) {
+    ) -> FlintRuleArmPlan<FlintScheduleRule, FlintScheduleArmFailure> {
         var arm: [FlintScheduleRule] = []
         var failures: [FlintScheduleArmFailure] = []
         for rule in rules where rule.enabled {
@@ -104,12 +107,15 @@ public final class FlintSchedulesController {
                 failures.append(FlintScheduleArmFailure(ruleID: rule.id, ruleName: rule.name, issue: issue))
             } else if let issue = selectionIssue(rule) {
                 failures.append(FlintScheduleArmFailure(
-                    ruleID: rule.id, ruleName: rule.name, issue: nil, selectionIssue: issue))
+                    ruleID: rule.id, ruleName: rule.name, issue: nil, selectionIssue: issue,
+                    selectionContext: rule.allowListMode ? .allowList : .blockList))
             } else {
                 arm.append(rule)
             }
         }
-        return (arm, failures)
+        let failedIDs = Set(failures.map(\.ruleID))
+        return .init(arm: arm, failures: failures,
+                     storesToClear: rules.filter { failedIDs.contains($0.id) }.map(\.storeName))
     }
 
     /// Builds the health slice for a schedules reload. Kept pure so a locally invalid rule is
@@ -146,6 +152,9 @@ public final class FlintSchedulesController {
         FlintScheduling.stopMonitoring(all.map { $0.monitorName })
 
         let plan = Self.armPlan(for: all)
+        for name in plan.storesToClear {
+            ManagedSettingsStore(named: .init(name)).clearAllSettings()
+        }
         var failures = plan.failures
         var registrationFailures: [FlintArmingHealth.Failure] = []
         var attempted = 0
@@ -167,7 +176,7 @@ public final class FlintSchedulesController {
             }
         }
         let healthReport = Self.armingHealthReport(
-            enabled: plan.arm.count + plan.failures.count,
+            enabled: plan.enabled,
             attempted: attempted,
             armed: armed,
             validationFailures: plan.failures,

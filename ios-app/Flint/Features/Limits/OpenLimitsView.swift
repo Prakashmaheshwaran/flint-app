@@ -162,7 +162,7 @@ struct OpenLimitEditor: View {
 
     private var footerText: Text {
         if let issue = selectionIssue {
-            return Text(issue.message + (!selection.categoryTokens.isEmpty
+            return Text(issue.message(for: .openLimit) + (!selection.categoryTokens.isEmpty
                 ? " Open Limits require specific apps or websites; categories cannot be open-limited." : ""))
         }
         if !selection.categoryTokens.isEmpty {
@@ -188,6 +188,6 @@ struct OpenLimitEditor: View {
     }
 
     private var selectionIssue: FlintSelectionIssue? {
-        FlintSelectionValidation.issue(for: selection, supportsCategories: false)
+        FlintSelectionValidation.issue(for: selection, context: .openLimit)
     }
 }

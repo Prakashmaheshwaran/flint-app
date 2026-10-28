@@ -19,11 +19,5 @@ public enum FlintTokens {
         selection.applicationTokens.count + selection.webDomainTokens.count
     }
 
-    /// Whether this selection is safe to shield by individual token (vs. needing categories) —
-    /// see the silent ~50-token cap in `FlintShieldStore`.
-    public static func exceedsShieldCap(_ selection: FamilyActivitySelection) -> Bool {
-        selection.applicationTokens.count > FlintShieldLimits.tokenCap
-            || selection.webDomainTokens.count > FlintShieldLimits.tokenCap
-    }
     #endif
 }

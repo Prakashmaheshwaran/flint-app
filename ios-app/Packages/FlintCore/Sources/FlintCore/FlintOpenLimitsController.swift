@@ -21,26 +21,28 @@ public final class FlintOpenLimitsController {
 
     public static func armPlan(
         for rules: [FlintOpenLimitRule]
-    ) -> (arm: [FlintOpenLimitRule], failures: [FlintArmingHealth.Failure]) {
+    ) -> FlintRuleArmPlan<FlintOpenLimitRule, FlintArmingHealth.Failure> {
         armPlan(for: rules, selectionIssue: {
-            FlintSelectionValidation.issue(for: $0.selection, supportsCategories: false)
+            FlintSelectionValidation.issue(for: $0.selection, context: .openLimit)
         })
     }
 
     static func armPlan(
         for rules: [FlintOpenLimitRule],
         selectionIssue: (FlintOpenLimitRule) -> FlintSelectionIssue?
-    ) -> (arm: [FlintOpenLimitRule], failures: [FlintArmingHealth.Failure]) {
+    ) -> FlintRuleArmPlan<FlintOpenLimitRule, FlintArmingHealth.Failure> {
         var arm: [FlintOpenLimitRule] = []
         var failures: [FlintArmingHealth.Failure] = []
         for rule in rules where rule.enabled {
             if let issue = selectionIssue(rule) {
-                failures.append(.init(activityName: rule.activityName, reason: issue.message))
+                failures.append(.init(activityName: rule.activityName, reason: issue.message(for: .openLimit)))
             } else {
                 arm.append(rule)
             }
         }
-        return (arm, failures)
+        let failedNames = Set(failures.map(\.activityName))
+        return .init(arm: arm, failures: failures,
+                     storesToClear: rules.filter { failedNames.contains($0.activityName) }.map(\.storeName))
     }
 
     public func rules() -> [FlintOpenLimitRule] {
@@ -93,6 +95,9 @@ public final class FlintOpenLimitsController {
         var attempted = 0
         var armed = 0
         let plan = Self.armPlan(for: all)
+        for rule in all where plan.storesToClear.contains(rule.storeName) {
+            FlintOpenLimitEnforcer.clearShield(for: rule)
+        }
         var failures = plan.failures
         for rule in plan.arm {
             FlintOpenLimitEnforcer.applyShield(for: rule)
@@ -114,7 +119,7 @@ public final class FlintOpenLimitsController {
         }
         FlintArmingHealth.record(
             domain: "openLimits",
-            enabled: all.lazy.filter(\.enabled).count,
+            enabled: plan.enabled,
             attempted: attempted,
             armed: armed,
             failures: failures
