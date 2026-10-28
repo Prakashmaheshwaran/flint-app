@@ -21,6 +21,9 @@ import FlintCore
 /// and this handler's behavior stay in step.
 final class FlintShieldAction: ShieldActionDelegate {
 
+    // SDK versions expose different submenu actions. Every unsupported action
+    // intentionally keeps the existing .none response and never grants access.
+
     override func handle(
         action: ShieldAction,
         for application: ApplicationToken,
@@ -31,7 +34,7 @@ final class FlintShieldAction: ShieldActionDelegate {
             completionHandler(response(for: FlintOpenLimitEnforcer.handleOpenRequest(application: application)))
         case .secondaryButtonPressed:
             completionHandler(.close)
-        @unknown default:
+        default:
             completionHandler(.none)
         }
     }
@@ -46,7 +49,7 @@ final class FlintShieldAction: ShieldActionDelegate {
             completionHandler(response(for: FlintOpenLimitEnforcer.handleOpenRequest(webDomain: webDomain)))
         case .secondaryButtonPressed:
             completionHandler(.close)
-        @unknown default:
+        default:
             completionHandler(.none)
         }
     }
@@ -78,7 +81,7 @@ final class FlintShieldAction: ShieldActionDelegate {
             return .defer   // "Go back" — keep the shield up
         case .secondaryButtonPressed:
             return .close   // dismiss to home
-        @unknown default:
+        default:
             return .none
         }
     }

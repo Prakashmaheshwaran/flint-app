@@ -63,7 +63,7 @@ struct FlintFocusFilter: SetFocusFilterIntent {
     /// (`FlintFocusFilterConfig`, edited in `FocusFilterView`).
     static func suggestedFocusFilters(for context: FocusFilterSuggestionContext) async -> [FlintFocusFilter] {
         let config = FlintFocusFilterConfig.load()
-        var suggestion = FlintFocusFilter()
+        let suggestion = FlintFocusFilter()
         suggestion.strictness = FocusFilterBreakLevel(config.breakLevel)
         if let id = config.appGroupID,
            let group = FlintGroupStore()?.loadAppGroups().first(where: { $0.id == id }) {

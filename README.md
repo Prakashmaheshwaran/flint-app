@@ -179,7 +179,7 @@ make android       # assemble the Android debug APK
 make android-install  # build + install on a connected device/emulator
 ```
 
-- **iOS:** macOS + Xcode 15+, [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`). The
+- **iOS:** macOS + Xcode 15.3+, [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`). The
   `.xcodeproj` is generated from [`ios-app/project.yml`](ios-app/project.yml) — never hand-edited. To run on
   device, open with `make ios`, set your Development Team on each target, and run.
 - **Android:** JDK 21 + Android SDK (API 35). Android Studio recommended but not required.
