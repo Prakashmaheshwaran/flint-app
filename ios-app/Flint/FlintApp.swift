@@ -136,6 +136,8 @@ struct PINGateView: View {
     @ObservedObject var lock: FlintAppLock
     @State private var pin = ""
     @State private var showError = false
+    /// The PIN never blocks the pass or recovery route (ADR-012 §7, PC-50).
+    @State private var showRecovery = false
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
@@ -174,6 +176,11 @@ struct PINGateView: View {
                             }
                         }
                         .buttonStyle(EmberButtonStyle())
+                        Button("Emergency Pass & recovery") { showRecovery = true }
+                            .font(FlintFont.text(14, weight: .medium))
+                            .foregroundStyle(FlintBrand.bone(0.7))
+                            .frame(minHeight: 44)
+                            .accessibilityHint("Use the Emergency Pass or see how to lift blocks without the PIN")
                     }
                     .padding(.top, typeSize.isAccessibilitySize ? 40 : 110)
                     .padding(.horizontal, 24)
@@ -181,6 +188,9 @@ struct PINGateView: View {
                     .frame(minHeight: geometry.size.height)
                 }
             }
+        }
+        .fullScreenCover(isPresented: $showRecovery) {
+            LockedRecoveryView { showRecovery = false }
         }
     }
 }
