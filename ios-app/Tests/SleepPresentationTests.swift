@@ -51,7 +51,9 @@ final class SleepPresentationTests: XCTestCase {
         XCTAssertTrue(value.contains("Wake \(SleepPresentation.clock(7, 0, locale: english))"))
         XCTAssertTrue(value.contains("8 hours, 30 minutes"))
         XCTAssertTrue(SleepPresentation.dialValue(night, locale: french).contains("22:30"))
-        XCTAssertTrue(SleepPresentation.duration(night, locale: french, style: .full).contains("8 heures"))
+        let frenchDuration = SleepPresentation.duration(night, locale: french, style: .full)
+            .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        XCTAssertTrue(frenchDuration.contains("8 heures"))
     }
 
     func testDurationDoesNotTurnZeroWindowIntoTwentyFourHours() {
