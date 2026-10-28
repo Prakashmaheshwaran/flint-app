@@ -30,7 +30,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - name: Build app and instrumentation APKs before starting emulator
         working-directory: android-app
-        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
+        run: ./gradlew -PflintE2E=true :app:assembleDebug :e2e:assembleDebug
       - name: Real accessibility smoke (disposable emulator)
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -50,5 +50,5 @@ jobs:
           retention-days: 14
           path: |
             artifacts/android-e2e/
-            android-app/app/build/reports/androidTests/
-            android-app/app/build/outputs/androidTest-results/
+            android-app/e2e/build/reports/androidTests/
+            android-app/e2e/build/outputs/androidTest-results/

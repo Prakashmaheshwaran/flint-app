@@ -122,8 +122,4 @@ dependencies {
 
     testImplementation(libs.junit)
 
-    // UIAutomator drives the installed app from the self-instrumenting test APK.
-    androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation("androidx.test:runner:1.7.0")
-    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
 }

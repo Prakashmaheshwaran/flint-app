@@ -39,11 +39,16 @@ class FlintSmokeTest {
     @get:Rule val testName = TestName()
     private lateinit var device: UiDevice
     private var ownsSetup = false
+    private var ownsGrant = false
+    private var previousGlobal = "0"
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val app = "com.flint.peakfocus"
     private val target = "$app.test"
     private val service = "$app/com.flint.peakfocus.blocking.accessibility.FlintAccessibilityService"
     private val timeout = 15_000L
+    private val runToken get() = InstrumentationRegistry.getArguments().getString("flintRunToken")!!
+    private val bootId get() = InstrumentationRegistry.getArguments().getString("flintBootId")!!
+    private val grantMarker get() = File(instrumentation.context.getExternalFilesDir(null), "owned-service.txt")
 
     @Before fun resetDisposableApp() {
         // UIAutomator must not suppress the very AccessibilityService under test.
@@ -53,10 +58,11 @@ class FlintSmokeTest {
         assertEquals("Only disposable emulators are supported", "1", shell("getprop ro.kernel.qemu").trim())
         assertEquals("Explicit disposable consent required", "true",
             InstrumentationRegistry.getArguments().getString("flintDisposable"))
+        assertEquals("Exact boot incarnation required", bootId, shell("cat /proc/sys/kernel/random/boot_id").trim())
+        assertTrue("Run token required", runToken.matches(Regex("[0-9a-f-]{36}")))
         val enabled = shell("settings get secure enabled_accessibility_services").trim()
         assertTrue("Refusing to replace existing accessibility services", enabled.isEmpty() || enabled == "null")
         ownsSetup = true
-        disableService()
         assertTrue(shell("pm clear $app").contains("Success"))
         launchFlint()
         click("Begin")
@@ -65,9 +71,12 @@ class FlintSmokeTest {
 
     @After fun captureAndReset() {
         if (!ownsSetup) return
-        screenshot("final")
-        disableService()
-        shell("am force-stop $app")
+        try {
+            screenshot("final")
+        } finally {
+            disableService()
+            shell("am force-stop $app")
+        }
     }
 
     @Test fun onboardingConsentRendersAndDeclines() {
@@ -156,6 +165,12 @@ class FlintSmokeTest {
     }
 
     private fun enableService() {
+        assertEquals(bootId, shell("cat /proc/sys/kernel/random/boot_id").trim())
+        val current = shell("settings get secure enabled_accessibility_services").trim()
+        assertTrue("No existing service may be overwritten", current.isEmpty() || current == "null")
+        previousGlobal = shell("settings get secure accessibility_enabled").trim()
+        grantMarker.writeText(runToken)
+        ownsGrant = true
         shell("settings put secure enabled_accessibility_services $service")
         shell("settings put secure accessibility_enabled 1")
         val end = SystemClock.uptimeMillis() + timeout
@@ -167,8 +182,16 @@ class FlintSmokeTest {
     }
 
     private fun disableService() {
-        shell("settings put secure enabled_accessibility_services null")
-        shell("settings put secure accessibility_enabled 0")
+        if (!ownsGrant || shell("cat /proc/sys/kernel/random/boot_id").trim() != bootId) return
+        val remaining = shell("settings get secure enabled_accessibility_services").trim()
+            .split(":").filter { it.isNotBlank() && it != "null" && it != service }
+        shell("settings put secure enabled_accessibility_services ${remaining.joinToString(":").ifEmpty { "null" }}")
+        if (remaining.isEmpty()) {
+            if (previousGlobal == "null") shell("settings delete secure accessibility_enabled")
+            else shell("settings put secure accessibility_enabled $previousGlobal")
+        }
+        grantMarker.delete()
+        ownsGrant = false
     }
 
     private fun launchFlint() {

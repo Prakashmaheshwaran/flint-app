@@ -6,9 +6,13 @@ uses bounded readiness waits, and never retries assertions. It runs on Android
 PR changes, runner/Makefile changes, and manual dispatch. Screenshot/hierarchy,
 logcat and Gradle JUnit/HTML artifacts are uploaded on success and failure.
 
-The test APK instruments itself and contains a harmless launchable **Flint E2E
+The opt-in `:e2e` module instruments itself and contains a harmless launchable **Flint E2E
 Target** activity. UIAutomator interacts with the separately installed Flint
 app, so stopping Flint really terminates its process while the test survives.
+It sources the tests from `app/src/androidTest`, uses the app's SDK settings,
+and is included only with `-PflintE2E=true`; ordinary unit/release builds do not
+build or package it. The standalone module is necessary because AGP overrides
+`targetPackage` in an application module's androidTest manifest.
 No production code or release permissions are changed. Android UI automation
 explicitly preserves accessibility services during the test session.
 
@@ -47,8 +51,9 @@ kill "$device_slot"
 
 Retain the device slot across preparation and the test command; use the actual
 serial returned for your disposable emulator. The tests and exit trap remove
-their temporary accessibility grant. Worktree cleanup preserves shared or
+their token-recorded temporary Flint grant, preserve other services, and refuse
+cleanup against a changed boot incarnation. Worktree cleanup preserves shared or
 unclaimed devices. Outside this shared build, serialize device/build work using
 the host's equivalent semaphore. Reports are under
-`android-app/app/build/outputs/androidTest-results/connected/` and
+`android-app/e2e/build/outputs/androidTest-results/connected/` and
 `artifacts/android-e2e/`; inspect the original failure before changing a test.

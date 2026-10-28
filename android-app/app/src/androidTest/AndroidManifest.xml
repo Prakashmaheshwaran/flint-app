@@ -1,9 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
-    <!-- Run outside Flint so tests can really stop/restart its process. No app code hooks. -->
-    <instrumentation android:name="androidx.test.runner.AndroidJUnitRunner"
-        android:targetPackage="com.flint.peakfocus.test" tools:replace="android:targetPackage" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- :e2e generates self-instrumentation; the application plugin overrides targetPackage. -->
     <application>
         <!-- A deterministic, harmless app to block; no dependency on bundled OEM apps. -->
         <activity android:name="com.flint.peakfocus.e2e.BlockedTestActivity"
