@@ -28,6 +28,10 @@ object ActiveRulesHolder {
     @Volatile
     private var combined: List<BlockRule> = emptyList()
 
+    @Volatile
+    var dataStoreState: StorageState<List<BlockRule>> = StorageState.Loading
+        private set
+
     /** The current combined rule list — what both detection paths hand the engine. */
     val rules: List<BlockRule>
         get() = combined
@@ -37,7 +41,15 @@ object ActiveRulesHolder {
      * list atomically. Safe from any thread; readers never see a partially-merged list.
      */
     fun publish(source: String, rules: List<BlockRule>) {
+        publishState(source, StorageState.Ready(rules))
+    }
+
+    /** Loading/errors retain the last good contribution; only a successful read may clear it. */
+    fun publishState(source: String, state: StorageState<List<BlockRule>>) {
         synchronized(contributions) {
+            if (source == SOURCE_DATASTORE) dataStoreState = state
+            if (state !is StorageState.Ready) return
+            val rules = state.value.toList()
             if (rules.isEmpty()) contributions.remove(source) else contributions[source] = rules
             val known = knownOrder.flatMap { contributions[it].orEmpty() }
             val rest = contributions.entries.filter { it.key !in knownOrder }.flatMap { it.value }

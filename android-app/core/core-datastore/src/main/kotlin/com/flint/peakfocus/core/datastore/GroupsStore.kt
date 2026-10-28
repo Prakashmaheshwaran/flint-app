@@ -1,6 +1,7 @@
 package com.flint.peakfocus.core.datastore
 
 import com.flint.peakfocus.core.model.AppGroup
+import com.flint.peakfocus.core.model.StorageState
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -12,6 +13,8 @@ import kotlinx.coroutines.flow.Flow
  * reads groups — applying one copies its targets into the rule.
  */
 interface GroupsStore {
+
+    val groupsState: Flow<StorageState<List<AppGroup>>> get() = groups.withReadiness()
 
     /** All saved groups, re-emitted on every change. */
     val groups: Flow<List<AppGroup>>

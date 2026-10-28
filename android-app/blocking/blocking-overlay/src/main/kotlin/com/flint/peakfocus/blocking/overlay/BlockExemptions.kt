@@ -1,6 +1,8 @@
 package com.flint.peakfocus.blocking.overlay
 
 import com.flint.peakfocus.core.model.BreakLevel
+import com.flint.peakfocus.core.model.PersistedExemption
+import com.flint.peakfocus.core.model.ExemptionKind
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -10,11 +12,8 @@ import java.util.concurrent.ConcurrentHashMap
  * either surface (accessibility overlay, Path B overlay, or the full-screen BlockActivity)
  * silences the other path too — they run in the same app process.
  *
- * Deliberately **not persisted**: if Flint's process dies mid-break, the break is lost and
- * the shield comes back on the next detection — enforcement fails *strict*, never open.
- * (The durable pieces — breaks-taken count, pending HARDER friction request, spent pass,
- * open counts — all live in core-datastore via the policies; only the short-lived
- * "currently on a break" window lives here.)
+ * [restoreCommitted] projects a successfully read/committed durable focus ledger. The old
+ * in-memory grant entry points remain compatible until the coordinator adopts transactions.
  *
  * Plain JVM (ConcurrentHashMap, no Android imports) so the grant/expiry semantics are
  * unit-tested in `BlockExemptionsTest`.
@@ -27,6 +26,18 @@ object BlockExemptions {
     private val exemptUntil = ConcurrentHashMap<String, Long>()
     private val emergencyUntil = ConcurrentHashMap<String, Long>()
 
+    @Volatile private var committed: List<PersistedExemption> = emptyList()
+
+    /** Replace only the durable projection. Call ONLY with a Ready or acknowledged snapshot. */
+    fun restoreCommitted(receipts: Collection<PersistedExemption>, nowEpochMs: Long) {
+        committed = receipts.filter { it.untilEpochMs > nowEpochMs }.toList()
+    }
+
+    private fun durable(packageName: String, nowEpochMs: Long, emergency: Boolean): Boolean = committed.any {
+        (it.packageName == packageName || it.packageName == GLOBAL_PACKAGE) && it.untilEpochMs > nowEpochMs &&
+            (it.kind == ExemptionKind.EMERGENCY_PASS) == emergency
+    }
+
     /** Exempt [packageName] until [untilEpochMs]. Overlapping grants keep the later end. */
     fun grant(packageName: String, untilEpochMs: Long) {
         exemptUntil.merge(packageName, untilEpochMs) { old, new -> maxOf(old, new) }
@@ -38,10 +49,12 @@ object BlockExemptions {
     }
 
     fun hasOrdinaryExemption(packageName: String, nowEpochMs: Long): Boolean =
-        active(exemptUntil, packageName, nowEpochMs) || active(exemptUntil, GLOBAL_PACKAGE, nowEpochMs)
+        durable(packageName, nowEpochMs, false) ||
+            active(exemptUntil, packageName, nowEpochMs) || active(exemptUntil, GLOBAL_PACKAGE, nowEpochMs)
 
     fun hasEmergencyExemption(packageName: String, nowEpochMs: Long): Boolean =
-        active(emergencyUntil, packageName, nowEpochMs) || active(emergencyUntil, GLOBAL_PACKAGE, nowEpochMs)
+        durable(packageName, nowEpochMs, true) ||
+            active(emergencyUntil, packageName, nowEpochMs) || active(emergencyUntil, GLOBAL_PACKAGE, nowEpochMs)
 
     /** Evaluate the grant against the current restriction, not the tier when it was issued. */
     fun isExempt(packageName: String, nowEpochMs: Long, level: BreakLevel = BreakLevel.EASY): Boolean =
@@ -50,7 +63,8 @@ object BlockExemptions {
 
     /** The exemption end for [packageName] specifically, or null if none/expired. */
     fun exemptUntil(packageName: String, nowEpochMs: Long): Long? {
-        return listOfNotNull(exemptUntil[packageName], emergencyUntil[packageName])
+        return (listOfNotNull(exemptUntil[packageName], emergencyUntil[packageName]) +
+            committed.filter { it.packageName == packageName || it.packageName == GLOBAL_PACKAGE }.map { it.untilEpochMs })
             .filter { it > nowEpochMs }.maxOrNull()
     }
 
@@ -58,6 +72,7 @@ object BlockExemptions {
     fun clearAll() {
         exemptUntil.clear()
         emergencyUntil.clear()
+        committed = emptyList()
     }
 
     private fun active(ledger: ConcurrentHashMap<String, Long>, key: String, nowEpochMs: Long): Boolean {

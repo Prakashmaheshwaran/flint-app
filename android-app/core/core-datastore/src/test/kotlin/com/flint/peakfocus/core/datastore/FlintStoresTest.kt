@@ -76,7 +76,8 @@ class FlintStoresTest {
                 throw IOException("storage unavailable")
         }
         val store = DataStoreBlockRulesStore(failed)
-        assertEquals(emptyList<BlockRule>(), store.rules.first()) // legacy contract remains unchanged
+        assertEquals(com.flint.peakfocus.core.model.StorageState.Unavailable(com.flint.peakfocus.core.model.StorageFailure.IO),
+            store.rulesState.first { it is com.flint.peakfocus.core.model.StorageState.Unavailable })
         try {
             store.rulesOrError.first()
             throw AssertionError("Read failure was hidden")
