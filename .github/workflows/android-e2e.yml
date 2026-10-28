@@ -2,6 +2,7 @@ name: Android emulator E2E
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths: ['android-app/**', 'scripts/android-e2e.sh', 'Makefile', '.github/workflows/android-e2e.yml']
   workflow_dispatch:
 
@@ -14,6 +15,7 @@ concurrency:
 
 jobs:
   smoke:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false || github.head_ref == 'integration/v1'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

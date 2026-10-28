@@ -2,8 +2,9 @@
 
 `.github/workflows/android-e2e.yml` runs the instrumentation APK on an API 36
 Google APIs x86_64 emulator with KVM. The 25-minute job builds before booting,
-uses bounded readiness waits, and never retries assertions. It runs on Android
-PR changes, runner/Makefile changes, and manual dispatch. Screenshot/hierarchy,
+uses bounded readiness waits, and never retries assertions. It runs on non-draft
+Android/runner/Makefile PR changes, ready-for-review, manual dispatch, and always
+for the draft `integration/v1` standing PR. Screenshot/hierarchy,
 logcat and Gradle JUnit/HTML artifacts are uploaded on success and failure.
 
 The opt-in `:e2e` module instruments itself and contains a harmless launchable **Flint E2E

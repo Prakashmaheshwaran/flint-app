@@ -135,7 +135,7 @@ class FlintSmokeTest {
         enableService()
         launchTarget()
         shield()
-        visible(By.text("Time limit"))
+        visible(By.text("TIME LIMIT"))
         screenshot("time-limit")
     }
 
@@ -143,12 +143,14 @@ class FlintSmokeTest {
         clickTab("Rules")
         visible(By.desc("New block rule")).click()
         visible(By.text("Rule name"))
-        visible(By.clazz("android.widget.EditText")).apply { click(); text = name }
+        visible(By.clazz("android.widget.EditText")).click()
+        visible(By.clazz("android.widget.EditText").focused(true)).text = name
         device.pressBack() // dismiss keyboard
         click("Choose apps")
-        visible(By.clazz("android.widget.EditText")).apply { click(); text = "Flint E2E Target" }
-        visible(By.text("Flint E2E Target")).click()
-        device.pressBack() // dismiss search keyboard
+        // Wait for the destination before resolving its rows; the outgoing editor
+        // also has an EditText. Select the unique package row, not search text.
+        visible(By.text("Choose apps to block"))
+        scrollTo(target).click()
         click("Add · 1")
         if (hardcore) scrollTo("Hardcore").click()
         scrollTo("Save rule").click()
