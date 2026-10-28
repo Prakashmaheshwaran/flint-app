@@ -43,6 +43,7 @@ struct FlintRuleReloadEnvironment {
     var applyOpenShield: (FlintOpenLimitRule) -> Void
     var record: (String, FlintArmingHealth.DomainReport) -> Void
     var loadHealth: () -> FlintArmingHealth = { .init() }
+    var reconcileOpenCredits: () -> Void = {}
 
     static var live: Self {
         let group = FlintGroupStore()
@@ -52,7 +53,8 @@ struct FlintRuleReloadEnvironment {
             record: { domain, report in
                 guard let group else { return }
                 group.saveArmingHealth(group.loadArmingHealth().replacing(domain, with: report))
-            }, loadHealth: { group?.loadArmingHealth() ?? .init() })
+            }, loadHealth: { group?.loadArmingHealth() ?? .init() },
+            reconcileOpenCredits: { FlintOpenCredit.reconcile() })
     }
 }
 #endif

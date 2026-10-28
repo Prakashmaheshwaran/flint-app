@@ -7,14 +7,8 @@ import FamilyControls
 import ManagedSettings
 #endif
 
-/// Per-key daily "open" counts with a midnight reset — the data behind **Open Limits**
-/// (launch-count caps).
-///
-/// **iOS platform reality:** Screen Time has no native launch-count event (`DeviceActivityEvent`
-/// thresholds are usage *time* only). So Open Limits is driven by the `ShieldAction` extension:
-/// the app stays shielded, and each "Use app" tap increments the count here; once the cap is hit,
-/// the shield stops letting the app through. Keyed by a stable-ish token hash (tokens can rotate;
-/// the count resets daily, which bounds the impact).
+/// Legacy counter payload, retained only for the one-time ledger import. Live Open credits
+/// use FlintOpenCreditState and the cross-process protection ledger.
 public struct FlintOpenLimitState: Codable, Equatable {
     public var dayStart: Date
     public var counts: [String: Int]
@@ -117,8 +111,8 @@ extension FlintOpenLimit {
 
     /// SHA-256 (lowercase hex, mirrors `FlintPIN.hash`) over the token's canonical JSON —
     /// wrapped in a single-element array so the encoder always has a valid top level, with
-    /// `.sortedKeys` for deterministic bytes. Tokens *can* rotate (FB14082790): a rotated token
-    /// simply starts a fresh counter, and the daily reset bounds the impact.
+    /// `.sortedKeys` for deterministic bytes. A rotated token requires conservative reselection
+    /// and cannot mint a fresh mid-period pool (ADR-012 PC-38).
     private static func stableKey<T: Encodable>(_ token: T) -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -204,208 +198,47 @@ extension FlintOpenLimitRule {
 
 // MARK: - ShieldAction enforcement
 
-#if canImport(FamilyControls) && canImport(ManagedSettings)
-/// The token→context lookup + enforcement behind the `ShieldAction` extension. A tapped token is
-/// matched against the saved `FlintOpenLimitRule`s (Apple's shield callback can't tell an
-/// open-limit token from a hard-block one — FB14237883 — so Flint looks the context up itself);
-/// a grant releases the token from the rule's own store, and an exhausted cap keeps/re-applies
-/// the shield instead.
-///
-/// **Who re-arms after a grant:** the extension can't schedule its own re-shield (no
-/// DeviceActivity here), so a granted token stays released until `applyShield(for:)` runs again —
-/// `FlintOpenLimitsController` calls it on app launch and rule edits, and the monitor extension
-/// calls it at the boundaries of each rule's all-day activity (`FlintOpenLimitRule.activityName`).
-/// The daily counter itself resets automatically via `FlintOpenLimitState.dayStart`.
+#if canImport(FamilyControls) && canImport(ManagedSettings) && canImport(DeviceActivity)
+/// Compatibility surface for shield configuration; all acceptance uses the atomic ledger.
 public enum FlintOpenLimitEnforcer {
-
-    /// What the shield's action button should do for a tapped token.
     public enum Outcome: Equatable {
-        /// One open spent & recorded; the token was released from every covering open-limit
-        /// store. `remaining` grants are left today.
         case granted(remaining: Int)
-        /// Today's opens are spent — the shield stays (token re-applied defensively).
         case exhausted
-        /// Another blocking layer (Session / Schedule / Time Limit) also shields this token, so
-        /// a release wouldn't let the user in — nothing is spent, the shield stays.
         case hardBlocked
-        /// No enabled open-limit rule covers this token — a plain hard block ("Go back").
         case notOpenLimited
+        case unavailable
     }
-
-    // MARK: Shield-tap entry points (called by the ShieldAction extension)
 
     public static func handleOpenRequest(application token: ApplicationToken) -> Outcome {
-        handleOpenRequest(
-            key: FlintOpenLimit.key(for: token),
-            rules: coveringRules { $0.selection.applicationTokens.contains(token) },
-            isHardBlocked: isHardBlocked(application: token),
-            release: { store in
-                var apps = store.shield.applications ?? []
-                apps.remove(token)
-                store.shield.applications = apps.isEmpty ? nil : apps
-            },
-            reshield: { store in
-                var apps = store.shield.applications ?? []
-                apps.insert(token)
-                store.shield.applications = apps
-            }
-        )
+        outcome(FlintOpenCredit.accept(for: token))
     }
-
     public static func handleOpenRequest(webDomain token: WebDomainToken) -> Outcome {
-        handleOpenRequest(
-            key: FlintOpenLimit.key(for: token),
-            rules: coveringRules { $0.selection.webDomainTokens.contains(token) },
-            isHardBlocked: isHardBlocked(webDomain: token),
-            release: { store in
-                var domains = store.shield.webDomains ?? []
-                domains.remove(token)
-                store.shield.webDomains = domains.isEmpty ? nil : domains
-            },
-            reshield: { store in
-                var domains = store.shield.webDomains ?? []
-                domains.insert(token)
-                store.shield.webDomains = domains
-            }
-        )
+        outcome(FlintOpenCredit.accept(for: token))
     }
-
-    // MARK: Shield-label lookup (called by the ShieldConfiguration extension)
-
-    /// Opens left today for a shielded application token, or `nil` when a tap wouldn't grant one
-    /// (no enabled rule covers it, or another layer hard-blocks it) — drives the block screen's
-    /// "Use app (N left)" button label. The same lookup `handleOpenRequest` uses, but it spends
-    /// nothing; an unreadable App Group reads as 0 left (fail closed, like the action handler).
     public static func remainingOpens(application token: ApplicationToken) -> Int? {
-        remainingOpens(
-            key: FlintOpenLimit.key(for: token),
-            rules: coveringRules { $0.selection.applicationTokens.contains(token) },
-            isHardBlocked: isHardBlocked(application: token)
-        )
+        remaining(FlintOpenCredit.preview(for: token))
     }
-
-    /// Web-domain flavor of `remainingOpens(application:)`.
     public static func remainingOpens(webDomain token: WebDomainToken) -> Int? {
-        remainingOpens(
-            key: FlintOpenLimit.key(for: token),
-            rules: coveringRules { $0.selection.webDomainTokens.contains(token) },
-            isHardBlocked: isHardBlocked(webDomain: token)
-        )
+        remaining(FlintOpenCredit.preview(for: token))
     }
-
-    // MARK: Host-app seam (armed by FlintOpenLimitsController; day boundary by the monitor)
-
-    /// Shield a rule's full selection into its own store. Call when a rule is created or
-    /// enabled, on app launch, and at the day boundary — that last call re-arms tokens released
-    /// by yesterday's grants. App & web-domain tokens only (see the category note on
-    /// `FlintOpenLimitRule`); selections near the ~50-token cap should be validated with
-    /// `FlintShieldLimits` at creation time.
     public static func applyShield(for rule: FlintOpenLimitRule) {
-        let store = ManagedSettingsStore(named: ManagedSettingsStore.Name(rule.storeName))
-        let selection = rule.selection
-        store.shield.applications =
-            selection.applicationTokens.isEmpty ? nil : selection.applicationTokens
-        store.shield.webDomains =
-            selection.webDomainTokens.isEmpty ? nil : selection.webDomainTokens
+        FlintOpenCredit.applyShield(for: rule)
     }
-
-    /// Clear a rule's store (rule deleted or disabled).
     public static func clearShield(for rule: FlintOpenLimitRule) {
-        ManagedSettingsStore(named: ManagedSettingsStore.Name(rule.storeName)).clearAllSettings()
+        ManagedSettingsStore(named: .init(rule.storeName)).clearAllSettings()
     }
-
-    // MARK: Internals
-
-    private static func coveringRules(
-        _ matches: (FlintOpenLimitRule) -> Bool
-    ) -> [FlintOpenLimitRule] {
-        FlintOpenLimitRule.loadAll().filter { $0.enabled && matches($0) }
+    private static func remaining(_ preview: FlintOpenCreditPreview) -> Int? {
+        guard preview.blockedBy == nil || preview.blockedBy == .exhausted else { return nil }
+        return preview.remaining
     }
-
-    /// The shared decision path. When several rules cover one token the strictest cap wins, and
-    /// one tap spends one open from the single shared daily counter. The state is persisted
-    /// *before* the stores are touched: if the extension dies mid-way we may under-grant, never
-    /// over-grant.
-    private static func handleOpenRequest(
-        key: String,
-        rules: [FlintOpenLimitRule],
-        isHardBlocked: @autoclosure () -> Bool,
-        release: (ManagedSettingsStore) -> Void,
-        reshield: (ManagedSettingsStore) -> Void
-    ) -> Outcome {
-        guard !rules.isEmpty else { return .notOpenLimited }
-        guard !isHardBlocked() else { return .hardBlocked }
-        // No App Group = no counter; fail CLOSED (keep the shield) rather than grant unlimited
-        // opens.
-        guard let group = FlintGroupStore() else { return .exhausted }
-
-        let cap = rules.map(\.opensAllowed).min() ?? 0
-        let result = FlintOpenLimit.requestOpen(key, opensAllowed: cap, in: group.loadOpenLimitState())
-        switch result.verdict {
-        case .granted(count: _, remaining: let remaining):
-            group.saveOpenLimitState(result.state)
-            for rule in rules {
-                release(ManagedSettingsStore(named: ManagedSettingsStore.Name(rule.storeName)))
-            }
-            return .granted(remaining: remaining)
-        case .exhausted:
-            // Keep/re-apply: make sure the token is (still) shielded by every covering rule.
-            for rule in rules {
-                reshield(ManagedSettingsStore(named: ManagedSettingsStore.Name(rule.storeName)))
-            }
-            return .exhausted
+    private static func outcome(_ result: Result<FlintOpenCreditReceipt, FlintOpenCreditRefusal>) -> Outcome {
+        switch result {
+        case let .success(receipt): return .granted(remaining: receipt.remaining)
+        case .failure(.denied(.exhausted)): return .exhausted
+        case .failure(.denied(.notOpenLimited)): return .notOpenLimited
+        case .failure(.denied(.otherContributor)), .failure(.denied(.categoryOverlap)): return .hardBlocked
+        case .failure: return .unavailable
         }
-    }
-
-    /// The shared read-only tally behind `remainingOpens(application:)` / `(webDomain:)` —
-    /// `handleOpenRequest` with the spending taken out.
-    private static func remainingOpens(
-        key: String,
-        rules: [FlintOpenLimitRule],
-        isHardBlocked: @autoclosure () -> Bool
-    ) -> Int? {
-        guard !rules.isEmpty, !isHardBlocked() else { return nil }
-        guard let group = FlintGroupStore() else { return 0 } // no counter → show the spent state
-        let cap = rules.map(\.opensAllowed).min() ?? 0
-        return FlintOpenLimit.remainingOpens(key, opensAllowed: cap, in: group.loadOpenLimitState())
-    }
-
-    /// True if a non-open-limit layer also shields this token right now. Purely a UX-honesty
-    /// check (don't charge an open that can't get the user in) — safety never depends on it,
-    /// because a grant only ever touches "flintO.*" stores, so every other layer keeps blocking
-    /// regardless. Category-membership blocks can't be detected (opaque tokens); allow-list
-    /// (`.all(except:)`) blocks can.
-    private static func isHardBlocked(application token: ApplicationToken) -> Bool {
-        for store in otherBlockingStores() {
-            if store.shield.applications?.contains(token) == true { return true }
-            if case .all(except: let allowed)? = store.shield.applicationCategories,
-               !allowed.contains(token) {
-                return true // allow-list ("brick phone") mode blocks everything not excepted
-            }
-        }
-        return false
-    }
-
-    private static func isHardBlocked(webDomain token: WebDomainToken) -> Bool {
-        for store in otherBlockingStores() {
-            if store.shield.webDomains?.contains(token) == true { return true }
-            if case .all(except: let allowed)? = store.shield.webDomainCategories,
-               !allowed.contains(token) {
-                return true
-            }
-        }
-        return false
-    }
-
-    /// Every store the *other* blocking layers shield into: the manual-session store plus one
-    /// per schedule rule and one per time limit (see `FlintMonitor` and the controllers).
-    private static func otherBlockingStores() -> [ManagedSettingsStore] {
-        var names = ["flint"]
-        if let group = FlintGroupStore() {
-            names += group.loadRules().map(\.storeName)
-            names += group.loadLimits().map(\.storeName)
-        }
-        return names.map { ManagedSettingsStore(named: ManagedSettingsStore.Name($0)) }
     }
 }
 #endif
