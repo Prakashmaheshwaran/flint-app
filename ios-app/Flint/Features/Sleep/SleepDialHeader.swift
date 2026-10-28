@@ -28,7 +28,7 @@ struct SleepDialHeader: View {
         }
         .sheet(item: $editing) { field in
             TimePickerSheet(
-                title: field == .bedtime ? "Bedtime" : "Wake",
+                title: field == .bedtime ? String(localized: "Bedtime") : String(localized: "Wake"),
                 time: Binding(
                     get: { field == .bedtime ? vm.bedtime : vm.wake },
                     set: { if field == .bedtime { vm.bedtime = $0 } else { vm.wake = $0 } }
@@ -141,15 +141,17 @@ enum SleepPresentation {
     }
 
     static func weekdayName(_ weekday: Int, locale: Locale = .current) -> String {
-        calendar(locale).standaloneWeekdaySymbols[weekday - 1]
+        guard (1...7).contains(weekday) else { return String(localized: "Unknown day", locale: locale) }
+        return calendar(locale).standaloneWeekdaySymbols[weekday - 1]
     }
 
     static func weekdaySymbol(_ weekday: Int, locale: Locale = .current) -> String {
-        calendar(locale).veryShortStandaloneWeekdaySymbols[weekday - 1]
+        guard (1...7).contains(weekday) else { return "?" }
+        return calendar(locale).veryShortStandaloneWeekdaySymbols[weekday - 1]
     }
 
     static func daysSummary(_ schedule: FlintSchedule, locale: Locale = .current) -> String {
-        if schedule.daysOfWeek.isEmpty || schedule.daysOfWeek.count == 7 {
+        if schedule.daysOfWeek.isEmpty || schedule.daysOfWeek == Set(1...7) {
             return String(localized: "Every night", locale: locale)
         }
         let formatter = ListFormatter()
@@ -160,6 +162,9 @@ enum SleepPresentation {
     }
 
     static func clock(_ hour: Int, _ minute: Int, locale: Locale = .current) -> String {
+        guard (0...23).contains(hour), (0...59).contains(minute) else {
+            return String(localized: "Invalid time", locale: locale)
+        }
         let calendar = calendar(locale)
         let date = calendar.date(from: DateComponents(year: 2001, month: 1, day: 1, hour: hour, minute: minute))!
         let formatter = DateFormatter()

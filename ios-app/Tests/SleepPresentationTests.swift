@@ -68,4 +68,12 @@ final class SleepPresentationTests: XCTestCase {
         XCTAssertEqual(SleepPresentation.assistSummary(.fullAssist), "Full Assist · Hardcore")
         XCTAssertEqual(SleepPresentation.assistSummary(.off), "Sleep Assist off")
     }
+
+    func testInvalidSavedValuesRemainReadableSoTheArmingErrorCanBeShown() {
+        XCTAssertEqual(SleepPresentation.weekdayName(0, locale: english), "Unknown day")
+        XCTAssertEqual(SleepPresentation.weekdaySymbol(8, locale: english), "?")
+        XCTAssertTrue(SleepPresentation.daysSummary(schedule(days: [0, 8]), locale: english).contains("Unknown day"))
+        XCTAssertEqual(SleepPresentation.clock(25, 0, locale: english), "Invalid time")
+        XCTAssertEqual(SleepPresentation.clock(7, -1, locale: english), "Invalid time")
+    }
 }

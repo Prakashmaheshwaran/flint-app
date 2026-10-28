@@ -75,7 +75,7 @@ struct SleepModeView: View {
                 .font(.footnote)
                 .foregroundStyle(FlintBrand.mist)
         } else {
-            Text("Both assists are Off — no window will be shielded.")
+            Text("No Sleep or morning shield is scheduled.")
                 .font(.footnote)
                 .foregroundStyle(FlintBrand.mist)
         }
