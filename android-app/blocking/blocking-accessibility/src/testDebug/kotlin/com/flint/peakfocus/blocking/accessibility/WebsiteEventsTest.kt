@@ -1,6 +1,10 @@
 package com.flint.peakfocus.blocking.accessibility
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.pm.ResolveInfo
+import android.net.Uri
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -37,7 +41,8 @@ class WebsiteEventsTest {
         CountingServiceShadow.root = null
         CountingServiceShadow.roots = 0
         AddressNodeShadow.lookups.clear()
-        AddressNodeShadow.text = "allowed.example"
+        AddressNodeShadow.urlText = "allowed.example"
+        AddressNodeShadow.availableId = null
         ActiveRulesHolder.publish(SOURCE, listOf(rule))
         service = Robolectric.buildService(FlintAccessibilityService::class.java).create().get()
         // Production URL read path with an injected fake clock/scheduler; the coordinator is
@@ -93,7 +98,7 @@ class WebsiteEventsTest {
         assertEquals(1, AddressNodeShadow.lookups.size)
         repeat(499) { now = it + 1L; content(CHROME) }
         assertEquals(1, AddressNodeShadow.lookups.size)
-        AddressNodeShadow.text = "final.example"
+        AddressNodeShadow.urlText = "final.example"
         now = 500
         pending!!.invoke()
         assertEquals(2, AddressNodeShadow.lookups.size)
@@ -108,11 +113,11 @@ class WebsiteEventsTest {
     }
 
     @Test fun `missing address bar degrades after three throttled main-window reads and recovers`() {
-        AddressNodeShadow.text = null
+        AddressNodeShadow.urlText = null
         repeat(3) { now = it * 500L; content(CHROME) }
         assertTrue(WebsiteCoverageHealth.snapshot(true, true) is WebCoverage.Degraded)
         now = 1500
-        AddressNodeShadow.text = "recovered.example"
+        AddressNodeShadow.urlText = "recovered.example"
         content(CHROME)
         assertTrue(WebsiteCoverageHealth.snapshot(true, true) is WebCoverage.Available)
     }
@@ -135,6 +140,58 @@ class WebsiteEventsTest {
         service.onAccessibilityEvent(event)
         now = 500; queued()
         assertEquals(1, AddressNodeShadow.lookups.size)
+    }
+
+    @Test fun `unsupported foreground web handler is reported without reading its content`() {
+        val pkg = "test.unsupported.browser"
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com"))
+            .addCategory(Intent.CATEGORY_BROWSABLE).setPackage(pkg)
+        shadowOf(service.packageManager).addResolveInfoForIntent(intent, ResolveInfo().apply {
+            activityInfo = ActivityInfo().apply { packageName = pkg; name = "$pkg.MainActivity" }
+        })
+        setField("lastForegroundPackage", pkg)
+        setField("browserWindow", null)
+        FlintAccessibilityService::class.java.getDeclaredMethod("refreshWebsiteCoverage", String::class.java)
+            .apply { isAccessible = true }.invoke(service, pkg)
+        assertEquals(WebCoverage.Unsupported(pkg), WebsiteCoverageHealth.snapshot(true, true))
+        assertEquals(0, CountingServiceShadow.roots)
+        assertTrue(AddressNodeShadow.lookups.isEmpty())
+    }
+
+    @Test fun `alternate address-bar ids rotate across throttle windows with only one lookup per read`() {
+        val pkg = "org.mozilla.focus"
+        val window = BrowserWindow(pkg, 7)
+        setField("lastForegroundPackage", pkg)
+        setField("browserWindow", window)
+        setField("mainBrowserWindow", window)
+        CountingServiceShadow.root!!.packageName = pkg
+        AddressNodeShadow.availableId = "$pkg:id/display_url"
+        content(pkg)
+        assertEquals(listOf("$pkg:id/mozac_browser_toolbar_url_view"), AddressNodeShadow.lookups)
+        now = 500; content(pkg)
+        now = 1000; content(pkg)
+        assertEquals(listOf("$pkg:id/mozac_browser_toolbar_url_view", "$pkg:id/display_url", "$pkg:id/display_url"), AddressNodeShadow.lookups)
+        assertTrue(WebsiteCoverageHealth.snapshot(true, true) is WebCoverage.Available)
+    }
+
+    @Test fun `only an activity-backed state event establishes a main browser window`() {
+        setField("mainBrowserWindow", null)
+        val cls = "$CHROME.MainActivity"
+        shadowOf(service.packageManager).addOrUpdateActivity(ActivityInfo().apply {
+            packageName = CHROME; name = cls
+        })
+        val activity = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED).apply {
+            packageName = CHROME; className = cls
+        }
+        shadowOf(activity).setWindowId(7)
+        service.onAccessibilityEvent(activity)
+        assertEquals(BrowserWindow(CHROME, 7), field("mainBrowserWindow"))
+        val dialog = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED).apply {
+            packageName = CHROME; className = "android.app.Dialog"
+        }
+        shadowOf(dialog).setWindowId(8)
+        service.onAccessibilityEvent(dialog)
+        assertNull(field("mainBrowserWindow"))
     }
 
     private fun content(pkg: String, windowId: Int = 7) {
@@ -170,10 +227,12 @@ class CountingServiceShadow : ShadowAccessibilityService() {
 class AddressNodeShadow : ShadowAccessibilityNodeInfo() {
     @Implementation fun findAccessibilityNodeInfosByViewId(id: String): List<AccessibilityNodeInfo> {
         lookups += id
-        return text?.let { listOf(AccessibilityNodeInfo.obtain().apply { this.text = it }) }.orEmpty()
+        if (availableId != null && id != availableId) return emptyList()
+        return urlText?.let { listOf(AccessibilityNodeInfo.obtain().apply { this.text = it }) }.orEmpty()
     }
     companion object {
         val lookups = mutableListOf<String>()
-        var text: String? = null
+        var urlText: String? = null
+        var availableId: String? = null
     }
 }

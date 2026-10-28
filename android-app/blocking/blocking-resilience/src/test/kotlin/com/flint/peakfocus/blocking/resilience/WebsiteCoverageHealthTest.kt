@@ -10,7 +10,7 @@ import org.junit.Test
 class WebsiteCoverageHealthTest {
     @After fun reset() = WebsiteCoverageHealth.reset()
 
-    @Test fun `Path B pauses active website blocks even with usable app fallback`() {
+    @Test fun `PC-61 Path B pauses active website blocks even with usable app fallback`() {
         val coverage = WebsiteCoverageHealth.snapshot(true, false)
         assertEquals(WebCoverage.Paused, coverage)
         val health = HealthStatus(false, true, true, true, websiteCoverage = coverage)
@@ -40,5 +40,18 @@ class WebsiteCoverageHealthTest {
         val unsupported = WebCoverage.Unsupported("test.browser")
         assertEquals(HealthLevel.DEGRADED, HealthStatus(true, true, true, true, websiteCoverage = unsupported).level)
         assertEquals(HealthLevel.BROKEN, HealthStatus(false, false, false, true, websiteCoverage = WebCoverage.Paused).level)
+    }
+
+    @Test fun `opening Flint health preserves the last browser gap while resetting foreground misses`() {
+        val window = BrowserWindow("com.android.chrome", 1)
+        WebsiteCoverageHealth.foreground(window, true, true)
+        repeat(3) { WebsiteCoverageHealth.addressBarRead(window, false, true, 100) }
+        val gap = WebsiteCoverageHealth.snapshot(true, true)
+        WebsiteCoverageHealth.foreground(null, true, false)
+        assertEquals(gap, WebsiteCoverageHealth.snapshot(true, true))
+        WebsiteCoverageHealth.foreground(window, true, true)
+        assertEquals(WebCoverage.AwaitingBrowser, WebsiteCoverageHealth.snapshot(true, true))
+        WebsiteCoverageHealth.addressBarRead(window, false, true, 200)
+        assertEquals(WebCoverage.AwaitingBrowser, WebsiteCoverageHealth.snapshot(true, true))
     }
 }

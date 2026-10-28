@@ -31,18 +31,22 @@ degraded. A successful read clears it; switching browser/window resets the sessi
 Dialog/view window events do not establish a main application window; root/package/window
 identity must match before reading/counting. A Flint overlay never counts as a missing
 browser bar. Unavailable roots cannot establish a miss and do not prove readable coverage.
-URL cache and health are process-local; health contains no URL/history. Settings refreshes
-the snapshot on resume, as before. With active domain rules and Accessibility disabled,
+URL cache and health are process-local; health contains no URL/history. The last browser
+observation remains visible when opening Flint/Settings and is labeled as a last check;
+foreground miss counts reset when leaving that window. Settings refreshes the snapshot
+on resume, as before. With active domain rules and Accessibility disabled,
 the same health surface says website blocks are paused, even if app fallback still works.
 
 ## Verification and remaining acceptance
 
-26 new tests cover matrix/version/IDs, active windows and allow-list exclusion, consecutive
+30 new tests cover matrix/version/IDs, active windows and allow-list exclusion, consecutive
 misses/recovery, switches/stale windows, unsupported handlers, the leading/trailing throttle,
 synthetic service filtering, health presentation and event disclosure. The existing
 AccessibilityDisclosureNavigationTest retains all affirmative-consent gate checks.
 
-Local/CI execution results are recorded in the PR and `reports/c-web-coverage.md`.
+Local targeted execution passed 380 tests in the five changed modules (before the final
+additional activity-window identification test). Final exact-head CI results are linked
+from the PR and the lane handoff report.
 Before general website claims, manually exercise Chrome plus a non-Chromium browser:
 typed URL, link, redirect, subdomain, same-tab navigation, hidden/private address bars,
 unsupported browser and Accessibility-off fallback. Record browser versions, scrolling

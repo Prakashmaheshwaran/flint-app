@@ -27,7 +27,7 @@ class UrlReadThrottleTest {
     }
 
     @Test fun `leading read is immediate and an isolated event adds no trailing read`() {
-        throttle.request("chrome:1")
+        assertTrue(throttle.request("chrome:1"))
         advance(1000)
         assertEquals(listOf(Triple("chrome:1", 0L, false)), reads)
     }
@@ -70,7 +70,7 @@ class UrlReadThrottleTest {
 
     @Test fun `event exactly at boundary cancels queued trailing callback without duplicate read`() {
         throttle.request("chrome:1")
-        now = 1; throttle.request("chrome:1")
+        now = 1; assertFalse(throttle.request("chrome:1"))
         val queued = pending.single().callback
         now = 500; throttle.request("chrome:1"); queued()
         assertEquals(listOf(0L, 500L), reads.map { it.second })

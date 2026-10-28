@@ -109,9 +109,9 @@ class FlintAccessibilityService : AccessibilityService() {
                 val job = scope.launch { delay(delayMs); callback() }
                 ({ job.cancel() })
             },
-            read = { window, _ ->
+            read = { window, trailing ->
                 readBrowserWindow(window)
-                evaluateForeground(window.packageName, window.packageName, refreshUrl = false)
+                if (trailing) evaluateForeground(window.packageName, window.packageName, refreshUrl = false)
             },
         )
         boundaryTimer = EvaluationTimer(
@@ -156,7 +156,7 @@ class FlintAccessibilityService : AccessibilityService() {
             // Filter before root access, package queries, budget queries or any evaluation.
             if (!BrowserAddressBars.isBrowser(pkg) || pkg != lastForegroundPackage || !domainsActive()) return
             if (browserWindow != BrowserWindow(pkg, event.windowId)) return
-            refreshWebsiteCoverage(pkg)
+            if (refreshWebsiteCoverage(pkg)) evaluateForeground(pkg, pkg, refreshUrl = false)
             return
         }
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
@@ -212,7 +212,7 @@ class FlintAccessibilityService : AccessibilityService() {
 
     private fun evaluateForeground(previousPackage: String?, pkg: String, refreshUrl: Boolean = true) {
         val coordinator = coordinator ?: return // events never precede onServiceConnected
-        if (refreshUrl && refreshWebsiteCoverage(pkg)) return
+        if (refreshUrl) refreshWebsiteCoverage(pkg)
         evaluationJob?.cancel()
         evaluationJob = serviceScope?.launch {
             boundaryTimer?.cancel() // each decision replaces the one pending deadline
@@ -356,8 +356,7 @@ class FlintAccessibilityService : AccessibilityService() {
             BrowserWindow(pkg, root.windowId).also { browserWindow = it }
         }
         WebsiteCoverageHealth.foreground(window, true, false)
-        urlThrottle?.request(window)
-        return urlThrottle != null
+        return urlThrottle?.request(window) ?: false
     }
 
     private fun isHttpHandler(pkg: String): Boolean = listOf("https", "http").any { scheme ->
@@ -378,11 +377,12 @@ class FlintAccessibilityService : AccessibilityService() {
         // count as browser misses. A stale queued callback cannot inspect a new foreground.
         if (root.packageName?.toString() != window.packageName || root.windowId != window.windowId) return
         val ids = BrowserAddressBars.urlBarViewIds(window.packageName)
+        if (ids.isEmpty()) return
         val id = ids.getOrNull(urlBarIndex % ids.size) ?: return
         val nodes = runCatching { root.findAccessibilityNodeInfosByViewId(id) }.getOrNull().orEmpty()
-        val text = nodes.firstOrNull()?.text?.toString()?.takeIf { it.isNotBlank() }
+        val text = runCatching { nodes.firstOrNull()?.text?.toString()?.takeIf { it.isNotBlank() } }.getOrNull()
         @Suppress("DEPRECATION")
-        nodes.forEach { it.recycle() }
+        nodes.forEach { runCatching { it.recycle() } }
         lastForegroundUrl = text
         if (text == null) urlBarIndex = (urlBarIndex + 1) % ids.size
         WebsiteCoverageHealth.addressBarRead(window, text != null, window == mainBrowserWindow, System.currentTimeMillis())

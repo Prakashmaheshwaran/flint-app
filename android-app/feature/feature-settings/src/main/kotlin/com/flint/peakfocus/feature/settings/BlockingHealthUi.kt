@@ -127,25 +127,25 @@ object BlockingHealthUi {
 
     fun banner(status: HealthStatus): BannerUi {
         val banner = when (status.level) {
-        HealthLevel.HEALTHY -> BannerUi(
-            level = HealthLevel.HEALTHY,
-            headline = "Blocking is healthy",
-            body = "Both detection paths, the block screen, and the battery exemption are all " +
-                "in place. If blocking still stops on your phone, work through the " +
-                "manufacturer steps below.",
-        )
-        HealthLevel.DEGRADED -> BannerUi(
-            level = HealthLevel.DEGRADED,
-            headline = "Blocking works, but it isn't protected",
-            body = degradedBody(status),
-        )
-        HealthLevel.BROKEN -> BannerUi(
-            level = HealthLevel.BROKEN,
-            headline = "Blocking is off",
-            body = "Flint currently has no way to detect or block anything. Re-grant access " +
-                "below — enabling the accessibility service alone is enough to restore " +
-                "blocking.",
-        )
+            HealthLevel.HEALTHY -> BannerUi(
+                level = HealthLevel.HEALTHY,
+                headline = "Blocking is healthy",
+                body = "Both detection paths, the block screen, and the battery exemption are all " +
+                    "in place. If blocking still stops on your phone, work through the " +
+                    "manufacturer steps below.",
+            )
+            HealthLevel.DEGRADED -> BannerUi(
+                level = HealthLevel.DEGRADED,
+                headline = "Blocking works, but it isn't protected",
+                body = degradedBody(status),
+            )
+            HealthLevel.BROKEN -> BannerUi(
+                level = HealthLevel.BROKEN,
+                headline = "Blocking is off",
+                body = "Flint currently has no way to detect or block anything. Re-grant access " +
+                    "below — enabling the accessibility service alone is enough to restore " +
+                    "blocking.",
+            )
         }
         return banner.copy(body = banner.body + "\n\n" + websiteCoverage(status))
     }
@@ -156,9 +156,9 @@ object BlockingHealthUi {
             WebCoverage.NotRequired -> "No website block is active now."
             WebCoverage.AwaitingBrowser -> "Website coverage has not been checked in a supported browser yet."
             WebCoverage.Paused -> "Website blocks paused: website rules need Accessibility."
-            is WebCoverage.Available -> "Address bar readable in ${coverage.browser.displayName}."
-            is WebCoverage.Degraded -> "Website blocking can't read ${coverage.browser.displayName}'s address bar."
-            is WebCoverage.Unsupported -> "Website blocking is unavailable in ${coverage.packageName}: unsupported browser."
+            is WebCoverage.Available -> "Last browser check: address bar readable in ${coverage.browser.displayName}."
+            is WebCoverage.Degraded -> "Last browser check: website blocking can't read ${coverage.browser.displayName}'s address bar."
+            is WebCoverage.Unsupported -> "Last browser check: website blocking unavailable in ${coverage.packageName}: unsupported browser."
         }
         return observation + "\nSupported browser adapters (list ${BrowserAddressBars.MATRIX_VERSION}): " +
             BrowserAddressBars.supportedBrowsers.joinToString { it.displayName } +

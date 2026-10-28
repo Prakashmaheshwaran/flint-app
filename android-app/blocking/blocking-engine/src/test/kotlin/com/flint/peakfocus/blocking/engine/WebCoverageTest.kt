@@ -75,7 +75,7 @@ class WebCoverageTest {
         assertEquals(WebCoverage.AwaitingBrowser, tracker.state)
     }
 
-    @Test fun `PC-17 website activity uses enabled expiry schedule and excludes allow-list domains`() {
+    @Test fun `website activity uses enabled expiry schedule and excludes allow-list domains`() {
         val now = Instant.parse("2026-10-27T01:00:00Z").toEpochMilli() // Tuesday; Monday overnight tail
         val rule = BlockRule("web", "Web", BlockTargets(domains = setOf(DomainRef("example.com"))),
             schedule = Schedule(setOf(1), 22 * 60, 6 * 60))

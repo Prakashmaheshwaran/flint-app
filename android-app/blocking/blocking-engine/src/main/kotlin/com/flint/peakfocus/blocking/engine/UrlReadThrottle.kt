@@ -17,7 +17,8 @@ class UrlReadThrottle<K : Any>(
     private var cancelPending: (() -> Unit)? = null
     private var generation = 0L
 
-    fun request(current: K) {
+    /** Returns true for an immediate read, false when coalesced into the trailing read. */
+    fun request(current: K): Boolean {
         if (current != window) {
             cancel()
             window = current
@@ -29,6 +30,7 @@ class UrlReadThrottle<K : Any>(
             generation++
             lastRead = nowMs()
             read(current, false)
+            return true
         } else if (cancelPending == null) {
             val token = generation
             cancelPending = post((intervalMs - (nowMs() - last)).coerceAtLeast(1L)) {
@@ -39,6 +41,7 @@ class UrlReadThrottle<K : Any>(
                 }
             }
         }
+        return false
     }
 
     fun cancel() {
