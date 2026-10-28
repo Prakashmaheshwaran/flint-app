@@ -1,0 +1,4 @@
+<resources>
+    <string name="picker_empty_list_note">The app list is empty right now.</string>
+    <string name="picker_safety_floor_note">Phone, emergency and system apps can\'t be blocked</string>
+</resources>

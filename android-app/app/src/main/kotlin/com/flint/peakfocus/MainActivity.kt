@@ -49,18 +49,23 @@ import com.flint.peakfocus.core.common.ui.FlintTabGlyph
 import com.flint.peakfocus.core.common.ui.flintSwitchColors
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Home
@@ -104,6 +109,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
@@ -302,8 +309,8 @@ private fun FlintApp() {
                             when (tab) {
                                 FlintTabGlyph.Today -> TimerScreen(
                                     headline = plan.headline,
-                                    // Today keeps one sentence; Settings carries the full explanation.
-                                    subline = plan.body.substringBefore(". ").removeSuffix(".") + ".",
+                                    // Preserve the setup caveats; Today supports wrapping this text.
+                                    subline = plan.body,
                                     setupLabel = plan.nextStep?.ctaLabel,
                                     onSetup = { plan.nextStep?.let(onSetupStep) },
                                 )
@@ -361,37 +368,45 @@ private const val KEY_WELCOMED = "welcomed"
 private fun WelcomeScreen(onBegin: () -> Unit) {
     Box(Modifier.fillMaxSize()) {
         EmberLandscape(horizonOffset = 20f, orbCenter = Offset(195f, 480f), orbRadius = 64f)
-        Column(
+        BoxWithConstraints(
             Modifier
                 .fillMaxSize()
                 .padding(WindowInsets.systemBars.asPaddingValues())
                 .padding(horizontal = FlintSpacing.gutter),
-            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Spacer(Modifier.height(110.dp))
-            FlintMark(Modifier.size(40.dp))
-            Spacer(Modifier.height(14.dp))
-            Text("Flint", style = MaterialTheme.typography.displaySmall.copy(fontSize = 48.sp, letterSpacing = (-0.8).sp))
-            Spacer(Modifier.height(14.dp))
-            Text(
-                "Make time for what matters.",
-                style = MaterialTheme.typography.titleLarge.copy(fontSize = 18.sp, lineHeight = 27.sp),
-                color = FlintPalette.SoftBone,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                "No account  ·  No analytics  ·  Every feature free",
-                style = MaterialTheme.typography.bodySmall,
-                color = FlintPalette.Mist,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(18.dp))
-            EmberButton("Begin", onBegin)
-            Spacer(Modifier.height(18.dp))
-            Text("Open source · built in the open", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                color = FlintPalette.Stone)
-            Spacer(Modifier.height(12.dp))
+            Column(
+                Modifier.fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .heightIn(min = maxHeight)
+                    .height(IntrinsicSize.Min),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Spacer(Modifier.height(110.dp))
+                FlintMark(Modifier.size(40.dp))
+                Spacer(Modifier.height(14.dp))
+                Text("Flint", style = MaterialTheme.typography.displaySmall.copy(fontSize = 48.sp, letterSpacing = (-0.8).sp),
+                    modifier = Modifier.semantics { heading() })
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    "Make time for what matters.",
+                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 18.sp, lineHeight = 27.sp),
+                    color = FlintPalette.SoftBone,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.weight(1f).heightIn(min = FlintSpacing.lg))
+                Text(
+                    "No account  ·  No analytics  ·  Every feature free",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = FlintPalette.Mist,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(18.dp))
+                EmberButton("Begin", onBegin)
+                Spacer(Modifier.height(18.dp))
+                Text("Open source · built in the open", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = FlintPalette.Stone, textAlign = TextAlign.Center)
+                Spacer(Modifier.height(12.dp))
+            }
         }
     }
 }
