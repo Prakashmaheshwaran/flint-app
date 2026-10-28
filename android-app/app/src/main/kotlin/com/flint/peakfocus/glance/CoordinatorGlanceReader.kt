@@ -5,23 +5,23 @@ import com.flint.peakfocus.blocking.overlay.ProtectionStatusHub
 import com.flint.peakfocus.core.model.BreakLevel
 import kotlinx.coroutines.flow.map
 
-/** Only C's public snapshot is read. Missing boot/actual-FGS evidence stays unavailable. */
-class CoordinatorGlanceReader(
-    private val currentBootSessionId: () -> String? = { null },
-    private val pathBForegroundActive: () -> Boolean? = { null },
-) : GlanceProtectionReader {
+/** Only C's in-process/current-boot hub is read; no protection snapshot is persisted by K. */
+class CoordinatorGlanceReader : GlanceProtectionReader {
     override val changes = ProtectionStatusHub.status.map { Unit }
-    override suspend fun read() = coordinatorGlanceReading(
-        ProtectionStatusHub.status.value, currentBootSessionId(), pathBForegroundActive(),
-    )
+    override suspend fun read() = coordinatorGlanceReading(ProtectionStatusHub.status.value)
 }
 
-internal fun coordinatorGlanceReading(status: CoordinatorStatus, currentBootId: String?,
-                                     pathBForegroundActive: Boolean?): ProtectionReading {
+/** Input must come directly from C's process-local hub (or a test fixture), never from disk. */
+internal fun coordinatorGlanceReading(status: CoordinatorStatus): ProtectionReading {
     val checked = status.observedAt
     if (status.readiness != CoordinatorStatus.Readiness.READY || checked == null ||
-        currentBootId.isNullOrBlank() || currentBootId != checked.bootSessionId ||
+        status.validUntilElapsedRealtimeMs == null ||
         status.pass == CoordinatorStatus.PassStatus.Unavailable) return ProtectionReading()
+    val pathBForegroundActive = when (status.detectors.pathB) {
+        CoordinatorStatus.PathBState.STANDBY, CoordinatorStatus.PathBState.ENFORCING -> true
+        CoordinatorStatus.PathBState.OFF -> false
+        CoordinatorStatus.PathBState.UNKNOWN -> null
+    }
     val detector = when {
         pathBForegroundActive == true -> GlanceDetector.PATH_B_FOREGROUND
         status.detectors.accessibilityConnected && pathBForegroundActive == false -> GlanceDetector.PATH_A_CONFIRMED
@@ -29,10 +29,11 @@ internal fun coordinatorGlanceReading(status: CoordinatorStatus, currentBootId: 
     }
     val base = ProtectionReading(
         checkedElapsedMs = checked.elapsedRealtimeMs,
-        validUntilElapsedMs = checked.elapsedRealtimeMs + GlanceDisplayMapper.MAX_AGE_MS,
+        validUntilElapsedMs = status.validUntilElapsedRealtimeMs,
+        // C explicitly guarantees the Hub resets at process/reboot. K never restores a cache.
         sameBootVerified = true,
         detector = detector,
-        next = status.nextOccurrence?.let { NextGlanceSession(causeName(it.kind), it.startWallEstimateEpochMs) },
+        next = status.nextOccurrence?.let { NextGlanceSession(displayName(it.displayName, it.kind), it.startWallEstimateEpochMs) },
     )
     val pass = status.pass
     if (pass is CoordinatorStatus.PassStatus.RecoveryActive) return base.copy(
@@ -54,7 +55,7 @@ internal fun coordinatorGlanceReading(status: CoordinatorStatus, currentBootId: 
     }
     return base.copy(status = ProtectionStatus.ACTIVE,
         timeUncertain = status.activeCauses.any { it.timeUncertain },
-        cause = ActiveGlanceCause(selected.ruleId.orEmpty(), causeName(selected.kind),
+        cause = ActiveGlanceCause(selected.ruleId.orEmpty(), displayName(selected.displayName, selected.kind),
             when (selected.tier) {
                 BreakLevel.EASY -> GlanceTier.EASY
                 BreakLevel.HARDER -> GlanceTier.HARDER
@@ -63,6 +64,8 @@ internal fun coordinatorGlanceReading(status: CoordinatorStatus, currentBootId: 
 }
 
 private val focusKinds = setOf(CoordinatorStatus.CauseKind.SESSION, CoordinatorStatus.CauseKind.TIMER)
+private fun displayName(name: String, kind: CoordinatorStatus.CauseKind) =
+    CoordinatorStatus.sanitizeDisplayName(name).ifBlank { causeName(kind) }
 private fun causeName(kind: CoordinatorStatus.CauseKind) = when (kind) {
     CoordinatorStatus.CauseKind.SESSION -> "Focus session"
     CoordinatorStatus.CauseKind.TIMER -> "Timer"

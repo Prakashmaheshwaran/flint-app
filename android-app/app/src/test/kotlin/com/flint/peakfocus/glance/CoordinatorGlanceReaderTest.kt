@@ -7,49 +7,54 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CoordinatorGlanceReaderTest {
-    private val timer = C.ActiveCause("timer-fixture", C.CauseKind.TIMER, BreakLevel.HARDCORE,
+    private val timer = C.ActiveCause("timer-fixture", "Deep study", C.CauseKind.TIMER, BreakLevel.HARDCORE,
         300_000, 400_000, 1_800_000_300_000, false)
     private val ready = C(C.Readiness.READY, listOf(timer), null, C.PassStatus.Available,
         C.DetectorHealth(true, C.PathBState.OFF, emptySet()), true,
-        AccessClockStamp(1_800_000_000_000, 100_000, "fixture-boot"))
+        AccessClockStamp(1_800_000_000_000, 100_000, "fixture-boot"), 130_000)
 
-    @Test fun unknownLoadingUnavailableWrongBootAndPassReadFailureStayUnavailable() {
+    @Test fun unknownLoadingUnavailableMissingValidityAndPassFailureStayUnavailable() {
         listOf(C.UNKNOWN, ready.copy(readiness = C.Readiness.LOADING), ready.copy(readiness = C.Readiness.UNAVAILABLE),
-            ready.copy(pass = C.PassStatus.Unavailable), ready.copy(observedAt = null)).forEach {
-            assertEquals(ProtectionStatus.UNAVAILABLE, coordinatorGlanceReading(it, "fixture-boot", false).status)
-        }
-        for (boot in listOf(null, "", "other-boot")) {
-            assertEquals(ProtectionStatus.UNAVAILABLE, coordinatorGlanceReading(ready, boot, false).status)
+            ready.copy(pass = C.PassStatus.Unavailable), ready.copy(observedAt = null),
+            ready.copy(validUntilElapsedRealtimeMs = null)).forEach {
+            assertEquals(ProtectionStatus.UNAVAILABLE, coordinatorGlanceReading(it).status)
         }
     }
 
-    @Test fun pathARequiresConfirmedBAbsenceAndPathBModeIsNotFgsEvidence() {
-        assertEquals(GlanceDetector.PATH_A_CONFIRMED, coordinatorGlanceReading(ready, "fixture-boot", false).detector)
-        assertEquals(GlanceDetector.UNKNOWN, coordinatorGlanceReading(ready, "fixture-boot", null).detector)
-        val desiredB = ready.copy(detectors = C.DetectorHealth(false, C.PathBState.ENFORCING, emptySet()))
-        assertEquals(ProtectionStatus.DEGRADED, coordinatorGlanceReading(desiredB, "fixture-boot", null).status)
-        val liveB = coordinatorGlanceReading(desiredB, "fixture-boot", true)
-        assertEquals(ProtectionStatus.ACTIVE, liveB.status)
-        assertEquals(GlanceDetector.PATH_B_FOREGROUND, liveB.detector)
+    @Test fun pathARequiresConfirmedBAbsenceAndLiveBStatesAlwaysSuppressIt() {
+        assertEquals(GlanceDetector.PATH_A_CONFIRMED, coordinatorGlanceReading(ready).detector)
+        val unknown = ready.copy(detectors = C.DetectorHealth(true, C.PathBState.UNKNOWN, emptySet()))
+        assertEquals(GlanceDetector.UNKNOWN, coordinatorGlanceReading(unknown).detector)
+        for (state in listOf(C.PathBState.STANDBY, C.PathBState.ENFORCING)) {
+            val result = coordinatorGlanceReading(ready.copy(detectors = C.DetectorHealth(true, state, emptySet())))
+            assertEquals(GlanceDetector.PATH_B_FOREGROUND, result.detector)
+            assertEquals(ProtectionStatus.ACTIVE, result.status)
+        }
+        assertEquals(ProtectionStatus.DEGRADED, coordinatorGlanceReading(ready.copy(
+            detectors = C.DetectorHealth(false, C.PathBState.UNKNOWN, emptySet()))).status)
     }
 
-    @Test fun sessionKindsAndLogicalDeadlineAreProjectedWithoutRuleOrPolicyReads() {
-        val result = coordinatorGlanceReading(ready, "fixture-boot", false)
+    @Test fun sessionKindNameLogicalEndAndAuthorityValidityAreProjectedWithoutPrivateReads() {
+        val result = coordinatorGlanceReading(ready)
         assertEquals(GlanceCauseKind.FOCUS_SESSION, result.cause?.kind)
         assertEquals(400_000L, result.cause?.logicalEndElapsedMs)
+        assertEquals("Deep study", result.cause?.name)
+        assertEquals(130_000L, result.validUntilElapsedMs)
         assertEquals(GlanceTier.HARDCORE, result.cause?.tier)
         assertTrue(result.sameBootVerified)
-        val schedule = coordinatorGlanceReading(ready.copy(activeCauses = listOf(timer.copy(kind = C.CauseKind.SCHEDULE))),
-            "fixture-boot", false)
+        val schedule = coordinatorGlanceReading(ready.copy(activeCauses = listOf(timer.copy(kind = C.CauseKind.SCHEDULE))))
         assertEquals(GlanceCauseKind.SCHEDULE, schedule.cause?.kind)
+        val next = coordinatorGlanceReading(ready.copy(nextOccurrence = C.NextOccurrence("private-rule-id",
+            "Study\n tomorrow", C.CauseKind.SCHEDULE, 1_800_000_600_000))).next!!
+        assertEquals("Study tomorrow", next.name)
+        assertFalse(next.name.contains("private-rule-id"))
     }
 
     @Test fun recoveryDegradationNoCauseAndTimeUncertaintyRemainDistinct() {
         assertEquals(ProtectionStatus.PASS_RECOVERY, coordinatorGlanceReading(ready.copy(
-            pass = C.PassStatus.RecoveryActive(300_000, 400_000)), "fixture-boot", false).status)
-        assertEquals(ProtectionStatus.DEGRADED, coordinatorGlanceReading(ready.copy(safetyFloorResolved = false), "fixture-boot", false).status)
-        assertEquals(ProtectionStatus.INACTIVE, coordinatorGlanceReading(ready.copy(activeCauses = emptyList()), "fixture-boot", false).status)
-        assertTrue(coordinatorGlanceReading(ready.copy(activeCauses = listOf(timer.copy(timeUncertain = true))),
-            "fixture-boot", false).timeUncertain)
+            pass = C.PassStatus.RecoveryActive(300_000, 400_000))).status)
+        assertEquals(ProtectionStatus.DEGRADED, coordinatorGlanceReading(ready.copy(safetyFloorResolved = false)).status)
+        assertEquals(ProtectionStatus.INACTIVE, coordinatorGlanceReading(ready.copy(activeCauses = emptyList())).status)
+        assertTrue(coordinatorGlanceReading(ready.copy(activeCauses = listOf(timer.copy(timeUncertain = true)))).timeUncertain)
     }
 }
