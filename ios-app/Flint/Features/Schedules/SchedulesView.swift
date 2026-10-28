@@ -433,6 +433,11 @@ struct ScheduleEditor: View {
                         .buttonStyle(.plain)
                         .padding(.top, 24)
 
+                        if let issue = selectionIssue {
+                            Text(issue.message).font(FlintFont.text(13))
+                                .foregroundStyle(FlintBrand.danger).padding(.top, 8)
+                        }
+
                         Toggle(isOn: $allowList) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Allow list").flintRowTitle()
@@ -526,10 +531,15 @@ struct ScheduleEditor: View {
     }
 
     private var canSave: Bool {
-        (allowList || selectionCount > 0) && draftSchedule.isValid
+        selectionIssue == nil && draftSchedule.isValid
+    }
+
+    private var selectionIssue: FlintSelectionIssue? {
+        FlintSelectionValidation.issue(for: selection, requiresSelection: !allowList)
     }
 
     private func save() {
+        guard canSave else { return }
         let rule = FlintScheduleRule(
             id: existingID ?? String(UUID().uuidString.prefix(8)),
             name: name.isEmpty ? "Schedule" : name,

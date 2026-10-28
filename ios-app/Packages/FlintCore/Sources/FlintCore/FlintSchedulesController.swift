@@ -14,17 +14,19 @@ public struct FlintScheduleArmFailure: Equatable, Sendable {
     public let ruleID: String
     public let ruleName: String
     public let issue: FlintScheduleIssue?
+    public let selectionIssue: FlintSelectionIssue?
 
-    public init(ruleID: String, ruleName: String, issue: FlintScheduleIssue?) {
+    public init(ruleID: String, ruleName: String, issue: FlintScheduleIssue?, selectionIssue: FlintSelectionIssue? = nil) {
         self.ruleID = ruleID
         self.ruleName = ruleName
         self.issue = issue
+        self.selectionIssue = selectionIssue
     }
 
     /// The user-facing reason this rule isn't blocking anything. The fallback stays vague on
     /// purpose: `startMonitoring` throws without telling us which of its limits we hit.
     public var message: String {
-        issue?.message ?? "iOS refused to register this schedule. Edit its window, or remove "
+        issue?.message ?? selectionIssue?.message ?? "iOS refused to register this schedule. Edit its window, or remove "
             + "another schedule and try again."
     }
 }
@@ -85,11 +87,24 @@ public final class FlintSchedulesController {
     public static func armPlan(
         for rules: [FlintScheduleRule]
     ) -> (arm: [FlintScheduleRule], failures: [FlintScheduleArmFailure]) {
+        armPlan(for: rules, selectionIssue: {
+            FlintSelectionValidation.issue(for: $0.selection, requiresSelection: !$0.allowListMode)
+        })
+    }
+
+    // Count validation can be injected by unit tests without manufacturing opaque Apple tokens.
+    static func armPlan(
+        for rules: [FlintScheduleRule],
+        selectionIssue: (FlintScheduleRule) -> FlintSelectionIssue?
+    ) -> (arm: [FlintScheduleRule], failures: [FlintScheduleArmFailure]) {
         var arm: [FlintScheduleRule] = []
         var failures: [FlintScheduleArmFailure] = []
         for rule in rules where rule.enabled {
             if let issue = rule.schedule.issues.first {
                 failures.append(FlintScheduleArmFailure(ruleID: rule.id, ruleName: rule.name, issue: issue))
+            } else if let issue = selectionIssue(rule) {
+                failures.append(FlintScheduleArmFailure(
+                    ruleID: rule.id, ruleName: rule.name, issue: nil, selectionIssue: issue))
             } else {
                 arm.append(rule)
             }

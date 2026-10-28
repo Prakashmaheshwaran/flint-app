@@ -143,7 +143,7 @@ struct OpenLimitEditor: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(tokenCount == 0 || FlintTokens.exceedsShieldCap(selection))
+                        .disabled(selectionIssue != nil)
                 }
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -161,9 +161,9 @@ struct OpenLimitEditor: View {
     }
 
     private var footerText: Text {
-        if FlintTokens.exceedsShieldCap(selection) {
-            return Text("Too many items — pick at most \(FlintShieldLimits.tokenCap) apps or "
-                        + "\(FlintShieldLimits.tokenCap) sites (an iOS shield cap).")
+        if let issue = selectionIssue {
+            return Text(issue.message + (!selection.categoryTokens.isEmpty
+                ? " Open Limits require specific apps or websites; categories cannot be open-limited." : ""))
         }
         if !selection.categoryTokens.isEmpty {
             return Text("Whole categories can't be open-limited (an Apple token limitation) — "
@@ -174,6 +174,7 @@ struct OpenLimitEditor: View {
     }
 
     private func save() {
+        guard selectionIssue == nil else { return }
         let rule = FlintOpenLimitRule(
             id: existingID ?? String(UUID().uuidString.prefix(8)),
             name: name.isEmpty ? "Open limit" : name,
@@ -184,5 +185,9 @@ struct OpenLimitEditor: View {
         )
         onSave(rule)
         dismiss()
+    }
+
+    private var selectionIssue: FlintSelectionIssue? {
+        FlintSelectionValidation.issue(for: selection, supportsCategories: false)
     }
 }

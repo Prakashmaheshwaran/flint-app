@@ -11,6 +11,28 @@ public final class FlintLimitsController {
 
     public init() {}
 
+    public static func armPlan(
+        for rules: [FlintLimitRule]
+    ) -> (arm: [FlintLimitRule], failures: [FlintArmingHealth.Failure]) {
+        armPlan(for: rules, selectionIssue: { FlintSelectionValidation.issue(for: $0.selection) })
+    }
+
+    static func armPlan(
+        for rules: [FlintLimitRule],
+        selectionIssue: (FlintLimitRule) -> FlintSelectionIssue?
+    ) -> (arm: [FlintLimitRule], failures: [FlintArmingHealth.Failure]) {
+        var arm: [FlintLimitRule] = []
+        var failures: [FlintArmingHealth.Failure] = []
+        for rule in rules where rule.enabled {
+            if let issue = selectionIssue(rule) {
+                failures.append(.init(activityName: rule.activityName, reason: issue.message))
+            } else {
+                arm.append(rule)
+            }
+        }
+        return (arm, failures)
+    }
+
     public func limits() -> [FlintLimitRule] {
         FlintGroupStore()?.loadLimits() ?? []
     }
@@ -60,8 +82,9 @@ public final class FlintLimitsController {
         let center = DeviceActivityCenter()
         var attempted = 0
         var armed = 0
-        var failures: [FlintArmingHealth.Failure] = []
-        for limit in all where limit.enabled {
+        let plan = Self.armPlan(for: all)
+        var failures = plan.failures
+        for limit in plan.arm {
             let schedule = DeviceActivitySchedule(
                 intervalStart: DateComponents(hour: 0, minute: 0),
                 intervalEnd: DateComponents(hour: 23, minute: 59),
