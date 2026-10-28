@@ -26,6 +26,7 @@ android-app/.gradle/
 android-app/build/
 android-app/**/build/
 android-app/local.properties
+android-app/keystore.properties
 android-app/captures/
 *.iml
 .idea/
@@ -36,6 +37,8 @@ android-app/.cxx/
 # Reference-app archives are local research inputs, not Flint source or release assets.
 *.apkm
 *.keystore
+*.jks
+*.p12
 !debug.keystore
 
 # ── Editors / misc ──────────────────────────────────────
