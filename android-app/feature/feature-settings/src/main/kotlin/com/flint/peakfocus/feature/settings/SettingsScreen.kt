@@ -98,29 +98,32 @@ fun SettingsScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    SettingsLegalNavigation(modifier = modifier) { openLegal ->
-        SettingsContent(
-            health = health,
-            exits = exits,
-            oemGuidance = OemGuidanceCatalog.forOem(OemUtil.current),
-            exitsSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R,
-            nowMillis = System.currentTimeMillis(),
-            onAccount = onAccount,
-            onOpenLegal = openLegal,
-            onFix = { kind ->
-                routePermissionFix(kind, discloseAccessibility = onEnableAccessibility) { otherKind ->
-                    val intent = when (otherKind) {
-                        PermissionKind.ACCESSIBILITY -> error("Accessibility requires disclosure")
-                        PermissionKind.USAGE_ACCESS -> UsageAccess.settingsIntent()
-                        PermissionKind.OVERLAY -> OverlayPermission.settingsIntent(context)
-                        PermissionKind.BATTERY_EXEMPTION -> BatteryOptimization.requestIntent(context)
-                        PermissionKind.NOTIFICATIONS -> NotificationPermission.settingsIntent(context)
+    SettingsHelpNavigation(modifier = modifier) { openHelp ->
+        SettingsLegalNavigation(modifier = modifier) { openLegal ->
+            SettingsContent(
+                health = health,
+                exits = exits,
+                oemGuidance = OemGuidanceCatalog.forOem(OemUtil.current),
+                exitsSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R,
+                nowMillis = System.currentTimeMillis(),
+                onAccount = onAccount,
+                onOpenLegal = openLegal,
+                onOpenHelp = openHelp,
+                onFix = { kind ->
+                    routePermissionFix(kind, discloseAccessibility = onEnableAccessibility) { otherKind ->
+                        val intent = when (otherKind) {
+                            PermissionKind.ACCESSIBILITY -> error("Accessibility requires disclosure")
+                            PermissionKind.USAGE_ACCESS -> UsageAccess.settingsIntent()
+                            PermissionKind.OVERLAY -> OverlayPermission.settingsIntent(context)
+                            PermissionKind.BATTERY_EXEMPTION -> BatteryOptimization.requestIntent(context)
+                            PermissionKind.NOTIFICATIONS -> NotificationPermission.settingsIntent(context)
+                        }
+                        context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     }
-                    context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                }
-            },
-            modifier = modifier,
-        )
+                },
+                modifier = modifier,
+            )
+        }
     }
 }
 
@@ -136,6 +139,7 @@ internal fun SettingsContent(
     modifier: Modifier = Modifier,
     onAccount: (() -> Unit)? = null,
     onOpenLegal: (LegalDocument) -> Unit = {},
+    onOpenHelp: () -> Unit = {},
 ) {
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
@@ -170,6 +174,8 @@ internal fun SettingsContent(
                 supported = exitsSupported,
                 nowMillis = nowMillis,
             )
+            Spacer(Modifier.height(FlintSpacing.lg))
+            HelpSettingsLink(onOpen = onOpenHelp)
             Spacer(Modifier.height(FlintSpacing.lg))
             LegalSettingsLinks(onOpen = onOpenLegal)
             Spacer(Modifier.height(FlintSpacing.lg))
