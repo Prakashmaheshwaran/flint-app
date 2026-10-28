@@ -4,6 +4,11 @@
 iPhone simulator. It uses existing `-FlintUIPreview` authorization fixtures; it
 does not request system access, choose actual apps, or save/arm a schedule.
 This is fixture UI evidence, never Screen Time or physical-device proof.
+Hosted CI explicitly selects an available iPhone 17 Pro on iOS 26.5, matching the
+observed green standard unit-test destination, then resolves its exact UDID.
+It fails if that runtime/device is missing or ambiguous; simulator JSON order
+cannot silently select an older runtime. This is a maintained CI pin, not
+minimum-iOS coverage.
 To conserve hosted macOS capacity, the job runs for ready PRs, the standing
 `integration/v1` PR, and explicit workflow dispatches;
 ordinary draft PRs skip it until marked ready for review.

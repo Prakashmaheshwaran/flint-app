@@ -42,7 +42,9 @@ else
   # bounded system-state checks, never app launches or test/action retries.
   python3 - "$device" 2>&1 <<'PY' | tee "$results/simulator-readiness.log"
 import importlib.util
+import subprocess
 import sys
+import traceback
 
 spec = importlib.util.spec_from_file_location("flint_device_run", "scripts/agent/device-run.py")
 runner = importlib.util.module_from_spec(spec)
@@ -60,8 +62,9 @@ try:
     print("springboard_check timeout=30", flush=True)
     runner.springboard_ready(device, timeout=30)
     print("springboard_ready=true (running with positive PID)", flush=True)
-except ValueError as error:
+except (ValueError, subprocess.TimeoutExpired, OSError) as error:
     print(f"preflight_failed: {error}", flush=True)
+    traceback.print_exc()
     # Observe after failure without changing readiness or launching the app.
     # Keep exact query output so a missing service is distinguishable from
     # a service that exists but is not running. Diagnostics cannot resume tests.
@@ -75,7 +78,7 @@ except ValueError as error:
         try:
             result = runner.run(query, timeout=10, check=False)
             print(f"exit={result.returncode}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}", flush=True)
-        except ValueError as diagnostic_error:
+        except (ValueError, subprocess.TimeoutExpired, OSError) as diagnostic_error:
             print(f"diagnostic_failed: {diagnostic_error}", flush=True)
     sys.exit(1)
 PY
