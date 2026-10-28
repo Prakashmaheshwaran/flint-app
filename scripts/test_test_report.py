@@ -42,3 +42,32 @@ class TestReportTests(unittest.TestCase):
             path.write_text("not XML")
             with self.assertRaises(Exception):
                 counts(path)
+
+    def test_runner_failure_cannot_export_clean_junit(self):
+        report = {"testNodes": [{"nodeType": "Test Plan", "name": "Plan", "result": "Failed", "children": [
+            {"nodeType": "Test Case", "name": "passed", "result": "Passed"},
+            {"nodeType": "Failure Message", "name": "Runner exited unexpectedly"},
+        ]}]}
+        with tempfile.TemporaryDirectory() as folder, patch(
+            "ci_test_report.subprocess.check_output", return_value=json.dumps(report)
+        ):
+            path = Path(folder) / "report.xml"
+            with self.assertRaisesRegex(ValueError, "incomplete"):
+                xcresult_junit(Path("tests.xcresult"), path)
+            self.assertFalse(path.exists())
+
+    def test_missing_xcresult_retains_failure_diagnostic(self):
+        import subprocess
+        import sys
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / "artifacts" / "report.xml"
+            summary = Path(folder) / "summary.md"
+            result = subprocess.run([
+                sys.executable, str(Path(__file__).with_name("ci_test_report.py")),
+                "--xcresult", str(Path(folder) / "missing.xcresult"),
+                "--output", str(output), "--summary", str(summary),
+            ], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertFalse(output.exists())
+            self.assertIn("No passing test evidence", output.with_suffix(".error.txt").read_text())
+            self.assertIn("unavailable or incomplete", summary.read_text())

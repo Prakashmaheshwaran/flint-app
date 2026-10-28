@@ -18,6 +18,8 @@ def xcresult_junit(bundle, output):
     ], text=True)
     report = json.loads(raw)
     suite = ET.Element("testsuite", name="Xcode")
+    failed_ancestors = []
+    infrastructure_messages = []
 
     def visit(node, parent="Xcode"):
         if node["nodeType"] == "Test Case":
@@ -33,12 +35,23 @@ def xcresult_junit(bundle, output):
                 ET.SubElement(case, "error", message=f"Unresolved Xcode result: {result}")
             # Child runs/attachments describe this test, not additional test methods.
             return
+        if node.get("result") in ("Failed", "unknown"):
+            failed_ancestors.append(node["name"])
+        if node["nodeType"] == "Failure Message":
+            infrastructure_messages.append(node["name"])
         for child in node.get("children", []):
             visit(child, node["name"])
 
     for node in report["testNodes"]:
         visit(node)
     cases = list(suite)
+    if infrastructure_messages or (failed_ancestors and not any(
+        case.find("failure") is not None or case.find("error") is not None for case in cases
+    )):
+        # Do not turn a runner/plan failure into an apparently clean JUnit artifact.
+        # Keep the raw xcresult and an explicit unavailable-export diagnostic instead.
+        raise ValueError("Xcode execution failed outside reported test cases; "
+                         "JUnit export is incomplete. Inspect the retained xcresult.")
     suite.set("tests", str(len(cases)))
     for name in ("failure", "error", "skipped"):
         suite.set(name if name == "skipped" else name + "s",
@@ -85,17 +98,26 @@ def main():
     parser.add_argument("--summary", type=Path, default=os.environ.get("GITHUB_STEP_SUMMARY"))
     args = parser.parse_args()
     paths = {Path(p) for pattern in args.junit for p in glob.glob(pattern, recursive=True)}
-    if args.xcresult:
-        if not args.output:
-            parser.error("--xcresult requires --output")
-        xcresult_junit(args.xcresult, args.output)
-        paths.add(args.output)
-    summary, total = summarize(sorted(paths), args.title)
+    try:
+        if args.xcresult:
+            if not args.output:
+                parser.error("--xcresult requires --output")
+            xcresult_junit(args.xcresult, args.output)
+            paths.add(args.output)
+        summary, total = summarize(sorted(paths), args.title)
+        status = 1 if not total[0] or total[1] or total[2] else 0
+    except (OSError, ValueError, KeyError, ET.ParseError, subprocess.CalledProcessError) as exc:
+        summary = (f"## {html.escape(args.title)}\n\n**Test results unavailable or incomplete.** "
+                   f"No passing test evidence is inferred.\n\n{html.escape(str(exc))}\n")
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.with_suffix(".error.txt").write_text(summary)
+        status = 1
     print(summary)
     if args.summary:
         with args.summary.open("a") as out:
             out.write(summary + "\n")
-    return 1 if not total[0] or total[1] or total[2] else 0
+    return status
 
 
 if __name__ == "__main__":
