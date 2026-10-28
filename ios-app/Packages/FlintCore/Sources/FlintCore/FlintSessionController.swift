@@ -248,7 +248,7 @@ public struct FlintSessionEnvironment {
             store: { FlintGroupStore() },
             shield: LiveSessionShield(),
             webRestrictions: FlintSessionWebRestrictionAdapter(
-                writer: FlintManagedWebRestrictionWriter(), configuration: { .load() }
+                writer: FlintManagedWebRestrictionWriter(), configuration: { .loadForEnforcement() }
             ),
             registrar: LiveSessionRegistrar(),
             isAuthorized: { AuthorizationCenter.shared.authorizationStatus == .approved },

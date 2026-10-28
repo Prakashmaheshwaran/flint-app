@@ -100,16 +100,17 @@ public protocol FlintSessionWebRestricting {
 /// so edits and disabling a scope update running owners rather than leaving stale web keys.
 public struct FlintSessionWebRestrictionAdapter: FlintSessionWebRestricting {
     private let lifecycle: FlintWebRestrictionLifecycle
-    private let configuration: () -> FlintWebRestrictions
+    private let configuration: () -> FlintWebRestrictions?
 
     public init(writer: any FlintWebRestrictionWriting,
-                configuration: @escaping () -> FlintWebRestrictions) {
+                configuration: @escaping () -> FlintWebRestrictions?) {
         self.lifecycle = FlintWebRestrictionLifecycle(writer: writer)
         self.configuration = configuration
     }
 
     public func reconcile(_ session: FlintActiveSession, now: Date) {
-        lifecycle.reconcileSession(session, config: configuration(), now: now)
+        guard let config = configuration() else { return } // unknown desired intent preserves keys
+        lifecycle.reconcileSession(session, config: config, now: now)
     }
 }
 #endif

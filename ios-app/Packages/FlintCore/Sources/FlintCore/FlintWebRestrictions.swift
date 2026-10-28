@@ -186,11 +186,17 @@ extension FlintWebRestrictions {
     private static let storageKey = "flint.webRestrictions"
 
     public static func load(from defaults: UserDefaults? = .flintGroup) -> FlintWebRestrictions {
-        guard let data = defaults?.data(forKey: storageKey),
-              let config = try? JSONDecoder().decode(FlintWebRestrictions.self, from: data) else {
-            return .default
-        }
-        return config
+        loadForEnforcement(from: defaults) ?? .default
+    }
+
+    /// Missing preferences mean the default opt-out. Unreadable saved data or unavailable
+    /// shared storage are unknown intent: production callers must preserve last-good keys,
+    /// rather than treating a failed decode as the user's instruction to disable protection.
+    public static func loadForEnforcement(from defaults: UserDefaults? = .flintGroup) -> FlintWebRestrictions? {
+        guard let defaults else { return nil }
+        guard let stored = defaults.object(forKey: storageKey) else { return .default }
+        guard let data = stored as? Data else { return nil }
+        return try? JSONDecoder().decode(FlintWebRestrictions.self, from: data)
     }
 
     public func save(to defaults: UserDefaults? = .flintGroup) {

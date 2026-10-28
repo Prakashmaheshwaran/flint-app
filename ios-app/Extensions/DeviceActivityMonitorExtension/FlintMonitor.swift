@@ -117,7 +117,9 @@ final class FlintMonitor: DeviceActivityMonitor {
             store.shield.webDomains =
                 selection.webDomainTokens.isEmpty ? nil : selection.webDomainTokens
         }
-        FlintWebRestrictionLifecycle().reconcileRule(rule, config: .load(), now: now)
+        if let config = FlintWebRestrictions.loadForEnforcement() {
+            FlintWebRestrictionLifecycle().reconcileRule(rule, config: config, now: now)
+        }
     }
 
     private func applyLimitShield(_ limit: FlintLimitRule) {
