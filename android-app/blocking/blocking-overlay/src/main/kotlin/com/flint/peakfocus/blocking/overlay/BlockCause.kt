@@ -71,9 +71,9 @@ fun openLimitBlockCause(limit: OpenLimit, nowEpochMs: Long, utcOffsetMs: Long): 
     )
 
 /**
- * Cause for a spent daily Time Limit: blocks until the next local midnight. The legacy
- * `TimeLimit`/`LimitStore` carry no per-limit tier, so the store-wide default break level
- * (FocusStateStore.defaultBreakLevel) applies.
+ * Cause for a spent daily Time Limit: blocks until the next local midnight. The caller
+ * supplies the saved TimeLimit's own tier. Only a legacy LimitStore budget, which has no
+ * explicit tier, uses the store-wide default.
  */
 fun timeLimitBlockCause(defaultBreakLevel: BreakLevel, nowEpochMs: Long, utcOffsetMs: Long): BlockCause =
     BlockCause(

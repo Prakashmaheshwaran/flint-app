@@ -231,6 +231,10 @@ class BlockScreenCoordinator(
     /** Loaded tier for Time Limit displays; unknown accounting has no grant affordance. */
     fun currentDefaultBreakLevel(): BreakLevel = grants.lastGood?.defaultBreakLevel ?: BreakLevel.HARDCORE
 
+    /** A saved limit owns its tier; the default only supplies the legacy SharedPreferences budget. */
+    fun currentTimeLimitBreakLevel(packageName: String): BreakLevel =
+        timeLimits.firstOrNull { it.packageName == packageName }?.breakLevel ?: currentDefaultBreakLevel()
+
     /**
      * The Limit editor's daily Time Limit for [packageName] (minutes), or null. Synchronous
      * snapshot read — safe on the a11y event hot path, same contract as the other snapshots.
@@ -274,7 +278,7 @@ class BlockScreenCoordinator(
         val now = nowEpochMs()
         val offset = utcOffsetMs(now)
         observations[packageName] = Observation(timeLimitSpent, openLimitPolicy.epochDay(now, offset), foregroundUrl)
-        val timeCause = if (timeLimitSpent) timeLimitBlockCause(currentDefaultBreakLevel(), now, offset) else null
+        val timeCause = if (timeLimitSpent) timeLimitBlockCause(currentTimeLimitBreakLevel(packageName), now, offset) else null
         val ordinary = BlockExemptions.hasOrdinaryExemption(packageName, now)
         val emergency = BlockExemptions.hasEmergencyExemption(packageName, now)
         val openDecision = onForegroundChanged(
@@ -321,14 +325,14 @@ class BlockScreenCoordinator(
         }
         val timeCause = if (observation?.timeLimitSpent == true &&
             observation.epochDay == openLimitPolicy.epochDay(now, offset)
-        ) timeLimitBlockCause(currentDefaultBreakLevel(), now, offset) else null
+        ) timeLimitBlockCause(currentTimeLimitBreakLevel(packageName), now, offset) else null
         val openDecision = inspectOpen(packageName)
         val openCause = (openDecision as? OpenLimitDecision.Blocked)?.let {
             openLimitBlockCause(it.limit, now, offset)
         }
         val liveDisplayed = displayedCause?.takeIf { it.endsAtEpochMs == null || now < it.endsAtEpochMs }
             ?.takeUnless { it.reason == BlockScreenReason.OPEN_LIMIT && openState.value is StorageState.Ready && openCause == null }
-            ?.let { if (it.reason == BlockScreenReason.TIME_LIMIT) it.copy(breakLevel = currentDefaultBreakLevel()) else it }
+            ?.let { if (it.reason == BlockScreenReason.TIME_LIMIT) it.copy(breakLevel = currentTimeLimitBreakLevel(packageName)) else it }
         return BlockOverlapPolicy.strongest(timeCause, ruleCause, openCause, liveDisplayed)
     }
 
@@ -579,7 +583,7 @@ class BlockScreenCoordinator(
                 grants.request(GrantRequest(
                     id, packageName, causeKey(packageName, current), GrantScope.Packages(setOf(packageName)),
                     duration, current.breakLevel, emergency, current.spendsOpenOnBreak,
-                    usesDefaultLevel = current.reason == BlockScreenReason.TIME_LIMIT,
+                    usesDefaultLevel = current.reason == BlockScreenReason.TIME_LIMIT && timeLimits.none { it.packageName == packageName },
                     notAfterEpochMs = current.endsAtEpochMs.takeIf { emergency },
                 ), inputsReady = grantInputsReady(current, emergency))
             }

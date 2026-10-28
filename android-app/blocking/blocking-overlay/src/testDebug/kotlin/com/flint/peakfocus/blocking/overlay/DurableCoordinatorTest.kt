@@ -65,6 +65,64 @@ class DurableCoordinatorTest {
         }
     }
 
+    @Test fun PC_15_PC_25_PathAStoredHardcoreTimeLimitCannotBorrowEasyDefaultRights() = runBlocking {
+        val focus = InMemoryFocusStateStore()
+        val limits = InMemoryLimitsStore()
+        limits.setTimeLimit(TimeLimit(pkg, 0, BreakLevel.HARDCORE))
+        val c = coordinator(focus, rules = emptyList(), limits = limits)
+        val cause = c.evaluateBlockCause(null, pkg, null, timeLimitSpent = true)!!
+        assertEquals(BreakLevel.EASY, c.currentDefaultBreakLevel())
+        assertEquals(BreakLevel.HARDCORE, cause.breakLevel)
+        assertEquals(BreakLevel.HARDCORE, c.screenState(pkg, null, cause, now).breakLevel)
+        assertEquals(GrantResult.Denied, c.requestBreak(pkg, cause.copy(breakLevel = BreakLevel.EASY), GrantRequestId.issue(now)))
+        assertTrue(focus.state.snapshotOrNull()!!.exemptions.isEmpty())
+    }
+
+    @Test fun PC_15_PC_25_PathBStoredHardcoreTimeLimitCannotBorrowEasyDefaultRights() = runBlocking {
+        val focus = InMemoryFocusStateStore()
+        val limits = InMemoryLimitsStore()
+        limits.setTimeLimit(TimeLimit(pkg, 0, BreakLevel.HARDCORE))
+        ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, emptyList())
+        val c = PathBBlockHandoff.create(app, scope,
+            surfaceHost = object : BlockScreenCoordinator.SurfaceHost {
+                override fun attach(view: View) = false
+                override fun detach(view: View) = Unit
+                override fun goHome() = Unit
+            }, focusStateStore = focus, limitsStore = limits, rulesStore = InMemoryBlockRulesStore(),
+            safetyFloor = SafetyFloorGate(app.packageName, { emptyMap() }, { 0 }, requiredRuntimeSources = emptySet()), nowEpochMs = { now })
+        val cause = c.evaluateBlockCause(null, pkg, null, timeLimitSpent = true)!!
+        assertEquals(BreakLevel.HARDCORE, cause.breakLevel)
+        assertEquals(BreakLevel.HARDCORE, c.currentBlockCause(pkg, cause)!!.breakLevel)
+        assertEquals(BreakLevel.HARDCORE, c.screenState(pkg, null, cause, now).breakLevel)
+        assertEquals(GrantResult.Denied, c.requestBreak(pkg, cause, GrantRequestId.issue(now)))
+        assertTrue(focus.state.snapshotOrNull()!!.exemptions.isEmpty())
+    }
+
+    @Test fun PC_15_savedTimeLimitTierAlsoControlsHarderWaitAndRevalidatesAStaleEasySurface() = runBlocking {
+        val focus = InMemoryFocusStateStore()
+        val limits = InMemoryLimitsStore()
+        limits.setTimeLimit(TimeLimit(pkg, 0, BreakLevel.HARDER))
+        val c = coordinator(focus, rules = emptyList(), limits = limits)
+        val cause = c.evaluateBlockCause(null, pkg, null, timeLimitSpent = true)!!
+        assertEquals(BreakLevel.HARDER, cause.breakLevel)
+        assertTrue(c.requestBreak(pkg, cause, GrantRequestId.issue(now)) is GrantResult.Pending)
+        limits.setTimeLimit(TimeLimit(pkg, 0, BreakLevel.HARDCORE))
+        assertEquals(GrantResult.Denied, c.requestBreak(pkg, cause.copy(breakLevel = BreakLevel.EASY), GrantRequestId.issue(now)))
+        assertTrue(focus.state.snapshotOrNull()!!.exemptions.isEmpty())
+    }
+
+    @Test fun PC_15_savedEasyTimeLimitDoesNotAcquireHardcoreRightsFromTheGlobalDefault() = runBlocking {
+        val focus = InMemoryFocusStateStore()
+        focus.setDefaultBreakLevel(BreakLevel.HARDCORE)
+        val limits = InMemoryLimitsStore()
+        limits.setTimeLimit(TimeLimit(pkg, 0, BreakLevel.EASY))
+        val c = coordinator(focus, rules = emptyList(), limits = limits)
+        val cause = c.evaluateBlockCause(null, pkg, null, timeLimitSpent = true)!!
+        assertEquals(BreakLevel.EASY, cause.breakLevel)
+        assertTrue(c.requestBreak(pkg, cause, GrantRequestId.issue(now)) is GrantResult.Granted)
+        assertEquals(BreakLevel.HARDCORE, c.currentDefaultBreakLevel())
+    }
+
     @Test fun acceptedGrantHooksOnlyFireAfterCommitAndNeverForAnIdempotentRetry() = runBlocking {
         val focus = PausedFocus()
         val coordinator = coordinator(focus)
