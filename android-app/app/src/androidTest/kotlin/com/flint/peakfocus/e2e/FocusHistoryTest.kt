@@ -32,7 +32,8 @@ class FocusHistoryTest : FlintE2EFixture() {
             it.getString("session") == firstId && it.getString("type") == "completed"
         } }
         assertTrue("Natural completion required real elapsed time", SystemClock.elapsedRealtime() - began >= 295_000)
-        val terminal = completed.single { it.getString("session") == firstId && it.getString("type") == "completed" }
+        val terminal = requireNotNull(firstTerminal(completed, firstId))
+        assertEquals("completed", terminal.getString("type"))
         assertEquals(first.getLong("plannedEnd"), terminal.getLong("at"))
         visible(By.text("The ember has set.")); visible(By.text("5m focused"))
         evidence("complete")
@@ -59,10 +60,12 @@ class FocusHistoryTest : FlintE2EFixture() {
         val ended = awaitHistory { events -> events.any {
             it.getString("session") == second.getString("session") && it.getString("type") == "ended_early"
         } }
-        val early = ended.single { it.getString("session") == second.getString("session") && it.getString("type") == "ended_early" }
+        val early = requireNotNull(firstTerminal(ended, second.getString("session")))
+        assertEquals("ended_early", early.getString("type"))
         assertTrue(early.getLong("at") < second.getLong("plannedEnd"))
-        assertEquals(1, ended.count { it.getString("type") == "completed" })
-        assertEquals(1, ended.count { it.getString("type") == "ended_early" })
+        val outcomes = ended.map { it.getString("session") }.distinct().mapNotNull { firstTerminal(ended, it)?.getString("type") }
+        assertEquals(1, outcomes.count { it == "completed" })
+        assertEquals(1, outcomes.count { it == "ended_early" })
         visible(By.text("Focused today")); visible(By.text(duration(focusedToday(ended))))
         evidence("today-completed-and-early")
 
@@ -136,10 +139,15 @@ class FocusHistoryTest : FlintE2EFixture() {
         }.timeInMillis
         return events.groupBy { it.getString("session") }.values.sumOf { group ->
             val start = group.firstOrNull { it.getString("type") == "started" } ?: return@sumOf 0L
-            val end = group.firstOrNull { it.getString("type") in setOf("completed", "ended_early") } ?: return@sumOf 0L
+            val end = firstTerminal(group, start.getString("session")) ?: return@sumOf 0L
             (minOf(end.getLong("at"), start.getLong("plannedEnd")) - maxOf(dayStart, start.getLong("at"))).coerceAtLeast(0)
         }
     }
+
+    private fun firstTerminal(events: List<JSONObject>, sessionId: String): JSONObject? = events
+        .filter { it.getString("session") == sessionId && it.optInt("v") == 1 }
+        .distinctBy { it.getString("id") }.sortedBy { it.getLong("at") }
+        .firstOrNull { it.getString("type") in setOf("completed", "ended_early", "superseded") }
 
     private fun duration(ms: Long): String = when {
         ms in 1..59_999 -> "<1m"
