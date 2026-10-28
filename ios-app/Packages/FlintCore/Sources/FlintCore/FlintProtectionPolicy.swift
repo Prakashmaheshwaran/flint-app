@@ -96,7 +96,9 @@ public struct FlintCauseState: Codable, Equatable, Sendable {
 
 /// Weakening and exception requests against an existing cause. Starting a cause, accepting an
 /// Open credit and spending the Emergency Pass have their own functions below, because their
-/// inputs differ (the new cause, the other contributors, the pass timeline).
+/// inputs differ (the new cause, the other contributors, the pass timeline). At commit time,
+/// replacements and edits go through `decideReplace` / `decideEdit`, which compute dominance and
+/// edit impact themselves; the raw `replaceDominating` / `editStrengthen` cases are for previews.
 public enum FlintProtectionAction: String, Codable, Equatable, Sendable {
     /// Replace a running session with protection proven to dominate it (§3).
     case replaceDominating
@@ -134,22 +136,24 @@ public enum FlintProtectionDecision: Codable, Equatable, Sendable {
     case notApplicable
 }
 
-public enum FlintDenialReason: String, Codable, Equatable, Sendable {
+public enum FlintDenialReason: Codable, Equatable, Sendable {
     /// Active Hardcore: ordinary early weakening is denied; expiry or a pass are the exits.
-    case hardcoreCommitment = "hardcore_commitment"
+    case hardcoreCommitment
     /// A replacement that would weaken an active Hardcore session; start it independently.
-    case wouldWeakenHardcore = "would_weaken_hardcore"
+    case wouldWeakenHardcore
     /// A legacy open-ended strict session: it ends only through the route its old build
     /// promised (its Focus turning off) or an Emergency Pass — never an endless "save for later".
-    case legacyOpenEnded = "legacy_open_ended"
+    case legacyOpenEnded
+    /// The new cause itself is invalid under §1.
+    case invalidCause(FlintCauseIssue)
     /// The platform can't represent another cause; existing protection is untouched (§3).
-    case capacityUnavailable = "capacity_unavailable"
-    /// Another active cause would still block the target, so no credit is charged (§5).
-    case otherCauseBlocks = "other_cause_blocks"
+    case capacityUnavailable
+    /// Another cause would still block the target, so no credit is charged (§5).
+    case otherCauseBlocks
     /// The target's daily credits are used up.
-    case noCreditsLeft = "no_credits_left"
+    case noCreditsLeft
     /// Corrupt/unknown counter state: never charge or grant (§8).
-    case stateUnavailable = "state_unavailable"
+    case stateUnavailable
 }
 
 public enum FlintProtectionPolicy {
@@ -184,6 +188,9 @@ public enum FlintProtectionPolicy {
             return .allow(confirm: true)
         case .replaceWeaker:
             return cause.tier == .hardcore ? .deny(.wouldWeakenHardcore) : weakening
+        case .ownerEnded where cause.tier == .easy:
+            // "While Focus is on" is Easy's own end: the owner event is the confirmation (§1, C11).
+            return .allow(confirm: false)
         case .stopEarly, .ownerEnded, .ordinaryBreak:
             return weakening
         case .editWeaken, .toggleOff, .delete:
@@ -217,13 +224,13 @@ public enum FlintProtectionPolicy {
             default: return nil
             }
         }
+        // Old builds ended any Focus-owned session when its Focus turned off, at every tier and
+        // duration: keep that exit for a session that was already running.
+        if action == .ownerEnded { return .allow(confirm: false) }
         guard cause.end == nil, cause.tier != .easy else { return nil }
-        // Legacy open-ended strict session (an old Harder/Hardcore Focus-filter block): its Focus
-        // turning off was its promised end. Old Harder also allowed an in-app stop after a wait,
-        // which the current contract keeps; old Hardcore had no in-app exit but the pass.
+        // Legacy open-ended strict session: old Harder allowed an in-app stop after a wait, which
+        // the current contract keeps; old Hardcore had no in-app exit but the pass.
         switch action {
-        case .ownerEnded:
-            return .allow(confirm: false)
         case .stopEarly, .replaceWeaker, .ordinaryBreak:
             return cause.tier == .hardcore ? .deny(.legacyOpenEnded) : nil
         default:
@@ -258,11 +265,18 @@ public enum FlintProtectionPolicy {
 
 extension FlintProtectionPolicy {
 
-    /// Start a new cause beside the existing ones, retiring none (§2 "Start another cause").
-    /// A new Hardcore cause requires confirmation of its finite end and rights, including from
-    /// automation (§2 "Raising the tier requires explicit confirmation"). When the platform
-    /// can't represent another cause the start is refused and existing protection stays (§3).
-    public static func decideStart(newTier: BreakLevel, capacityAvailable: Bool) -> FlintProtectionDecision {
+    /// Start a new session or Pomodoro beside the existing causes, retiring none (§2 "Start
+    /// another cause"). The new cause must be valid under §1 (finite for Harder/Hardcore and every
+    /// Pomodoro, ≤ 24 h); a new Hardcore cause requires confirmation of its finite end and rights,
+    /// including from automation (§2 "Raising the tier requires explicit confirmation"). When the
+    /// platform can't represent another cause the start is refused and existing protection stays.
+    public static func decideStart(
+        kind: FlintCauseState.Kind = .session,
+        newTier: BreakLevel,
+        duration: TimeInterval?,
+        capacityAvailable: Bool
+    ) -> FlintProtectionDecision {
+        if let issue = issue(forNew: kind, tier: newTier, duration: duration) { return .deny(.invalidCause(issue)) }
         guard capacityAvailable else { return .deny(.capacityUnavailable) }
         return .allow(confirm: newTier == .hardcore)
     }
@@ -296,19 +310,20 @@ extension FlintProtectionPolicy {
 extension FlintProtectionPolicy {
 
     /// Accept one Open credit for a target. Quota credits are part of the commitment at every
-    /// tier (no Harder wait), but a credit is never charged while any other active cause would
-    /// still block the target — including an unprovable category overlap, which callers report
-    /// as an enforcing contributor (§5, PC-32, PC-33).
+    /// tier (no Harder wait), but a credit is never charged while another cause would still
+    /// block the target (§5, PC-32, PC-33).
     ///
     /// - Parameters:
     ///   - creditsRemaining: nil when the counter state is unavailable/corrupt.
-    ///   - otherEnforcing: every other active cause enforcing on this target right now.
+    ///   - blockingContributors: the other causes **currently enforcing on this target** — the
+    ///     §3 contributor list, not merely every active cause (an unspent Time Limit is active but
+    ///     not enforcing). Report an unprovable category overlap as a contributor.
     public static func decideOpenCredit(
         creditsRemaining: Int?,
-        otherEnforcing: [FlintCauseState]
+        blockingContributors: [FlintCauseState]
     ) -> FlintProtectionDecision {
         guard let creditsRemaining else { return .deny(.stateUnavailable) }
-        guard otherEnforcing.allSatisfy({ !$0.isActive }) else { return .deny(.otherCauseBlocks) }
+        guard blockingContributors.isEmpty else { return .deny(.otherCauseBlocks) }
         guard creditsRemaining > 0 else { return .deny(.noCreditsLeft) }
         return .allow(confirm: true)
     }
@@ -479,3 +494,10 @@ extension FlintProtectionPolicy {
         passEligibility(usage, hasActiveCommitment: causes.contains { $0.isActive })
     }
 }
+
+// MARK: - Persisting snapshots (§4 pending waits record their exact target scope)
+
+extension FlintProtectionSnapshot.Mode: Codable where Target: Codable {}
+extension FlintProtectionSnapshot: Codable where Target: Codable {}
+extension FlintProtectionSnapshot.Mode: Sendable where Target: Sendable {}
+extension FlintProtectionSnapshot: Sendable where Target: Sendable {}

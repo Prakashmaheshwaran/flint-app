@@ -28,8 +28,12 @@ final class FlintProtectionPolicyTests: XCTestCase {
     // MARK: §2 matrix — rows on existing causes, active and inactive
 
     func testStopOwnerEndAndBreakByTierPC07PC08() {
+        XCTAssertEqual(FlintProtectionPolicy.decide(.ownerEnded, for: active(.easy)), .allow(confirm: false),
+                       "an Easy Focus session follows its Focus off without a tap (C11)")
         for action in [FlintProtectionAction.stopEarly, .ownerEnded, .ordinaryBreak] {
-            XCTAssertEqual(FlintProtectionPolicy.decide(action, for: active(.easy)), .allow(confirm: true))
+            if action != .ownerEnded {
+                XCTAssertEqual(FlintProtectionPolicy.decide(action, for: active(.easy)), .allow(confirm: true))
+            }
             XCTAssertEqual(FlintProtectionPolicy.decide(action, for: active(.harder)), .wait(seconds: 60), "PC-07 \(action)")
             XCTAssertEqual(FlintProtectionPolicy.decide(action, for: active(.hardcore)), .deny(.hardcoreCommitment),
                            "PC-08 \(action): a Focus turning off can't end a finite Hardcore cause")
@@ -90,6 +94,14 @@ final class FlintProtectionPolicyTests: XCTestCase {
                        .deny(.hardcoreCommitment), "a non-legacy cause gets no such exit")
     }
 
+    func testLegacyFiniteFocusSessionsKeepTheFocusOffExitPC67() {
+        for tier in [BreakLevel.harder, .hardcore] {
+            XCTAssertEqual(FlintProtectionPolicy.decide(.ownerEnded, for: active(tier, legacy: true)), .allow(confirm: false),
+                           "an already-running \(tier) Focus session isn't tightened retroactively")
+        }
+        XCTAssertEqual(FlintProtectionPolicy.decide(.ownerEnded, for: active(.hardcore)), .deny(.hardcoreCommitment))
+    }
+
     func testLegacyRuleOccurrencesKeepUngatedEditingUntilTheyEnd() {
         for kind in [FlintCauseState.Kind.recurringSchedule, .sleep, .timeLimit, .openLimit] {
             let legacy = active(.hardcore, kind, legacy: true)
@@ -105,12 +117,17 @@ final class FlintProtectionPolicyTests: XCTestCase {
 
     // MARK: §2 row 1, §3 starts and commit-time checks
 
-    func testStartsDiscloseHardcoreAndRespectCapacity() {
-        XCTAssertEqual(FlintProtectionPolicy.decideStart(newTier: .easy, capacityAvailable: true), .allow(confirm: false))
-        XCTAssertEqual(FlintProtectionPolicy.decideStart(newTier: .harder, capacityAvailable: true), .allow(confirm: false))
-        XCTAssertEqual(FlintProtectionPolicy.decideStart(newTier: .hardcore, capacityAvailable: true), .allow(confirm: true),
+    func testStartsDiscloseHardcoreValidateAndRespectCapacity() {
+        XCTAssertEqual(FlintProtectionPolicy.decideStart(newTier: .easy, duration: nil, capacityAvailable: true), .allow(confirm: false))
+        XCTAssertEqual(FlintProtectionPolicy.decideStart(newTier: .harder, duration: 1800, capacityAvailable: true), .allow(confirm: false))
+        XCTAssertEqual(FlintProtectionPolicy.decideStart(newTier: .hardcore, duration: 1800, capacityAvailable: true), .allow(confirm: true),
                        "finite-end disclosure, also via automation")
-        XCTAssertEqual(FlintProtectionPolicy.decideStart(newTier: .easy, capacityAvailable: false), .deny(.capacityUnavailable), "PC-02")
+        XCTAssertEqual(FlintProtectionPolicy.decideStart(newTier: .hardcore, duration: nil, capacityAvailable: true),
+                       .deny(.invalidCause(.needsFiniteEnd)), "PC-01: no open-ended Hardcore through the authority")
+        XCTAssertEqual(FlintProtectionPolicy.decideStart(kind: .pomodoro, newTier: .easy, duration: nil, capacityAvailable: true),
+                       .deny(.invalidCause(.needsFiniteEnd)))
+        XCTAssertEqual(FlintProtectionPolicy.decideStart(newTier: .easy, duration: 1800, capacityAvailable: false),
+                       .deny(.capacityUnavailable), "PC-02")
     }
 
     func testCommitTimeReplaceAndEditComputeImpactThemselves() {
@@ -129,14 +146,14 @@ final class FlintProtectionPolicyTests: XCTestCase {
     // MARK: §5 Open credits
 
     func testOpenCreditsPC28PC32PC33PC37() {
-        XCTAssertEqual(FlintProtectionPolicy.decideOpenCredit(creditsRemaining: 1, otherEnforcing: []), .allow(confirm: true),
+        XCTAssertEqual(FlintProtectionPolicy.decideOpenCredit(creditsRemaining: 1, blockingContributors: []), .allow(confirm: true),
                        "PC-30: the last credit is usable")
-        XCTAssertEqual(FlintProtectionPolicy.decideOpenCredit(creditsRemaining: 0, otherEnforcing: []), .deny(.noCreditsLeft), "PC-28")
-        XCTAssertEqual(FlintProtectionPolicy.decideOpenCredit(creditsRemaining: 3, otherEnforcing: [active(.easy)]),
+        XCTAssertEqual(FlintProtectionPolicy.decideOpenCredit(creditsRemaining: 0, blockingContributors: []), .deny(.noCreditsLeft), "PC-28")
+        XCTAssertEqual(FlintProtectionPolicy.decideOpenCredit(creditsRemaining: 3, blockingContributors: [active(.easy)]),
                        .deny(.otherCauseBlocks), "PC-32/33: never charge while another cause still blocks")
-        XCTAssertEqual(FlintProtectionPolicy.decideOpenCredit(creditsRemaining: 3, otherEnforcing: [inactive(.hardcore)]),
-                       .allow(confirm: true), "inactive contributors don't block")
-        XCTAssertEqual(FlintProtectionPolicy.decideOpenCredit(creditsRemaining: nil, otherEnforcing: []), .deny(.stateUnavailable), "PC-37")
+        XCTAssertEqual(FlintProtectionPolicy.decideOpenCredit(creditsRemaining: 3, blockingContributors: []),
+                       .allow(confirm: true), "an unspent Time Limit is active but not a blocking contributor")
+        XCTAssertEqual(FlintProtectionPolicy.decideOpenCredit(creditsRemaining: nil, blockingContributors: []), .deny(.stateUnavailable), "PC-37")
     }
 
     // MARK: §4 Harder waits and batches
@@ -237,6 +254,14 @@ final class FlintProtectionPolicyTests: XCTestCase {
         XCTAssertEqual(FlintProtectionPolicy.passEligibility(.used(elapsed: .nan), hasActiveCommitment: true), .unavailable)
         XCTAssertEqual(FlintProtectionPolicy.passEligibility(.neverUsed, causes: [inactive(.hardcore)]), .nothingToRecover)
         XCTAssertEqual(FlintProtectionPolicy.passEligibility(.neverUsed, causes: [inactive(.easy), active(.easy)]), .available)
+    }
+
+    func testSnapshotsPersistWithTheirExactScope() throws {
+        let snapshot = block(["A"], cats: ["social"], web: ["x.com"], end: end, budget: 3)
+        let data = try JSONEncoder().encode(snapshot)
+        XCTAssertEqual(try JSONDecoder().decode(Snapshot.self, from: data), snapshot)
+        let decision = FlintProtectionDecision.deny(.invalidCause(.tooLong))
+        XCTAssertEqual(try JSONDecoder().decode(FlintProtectionDecision.self, from: JSONEncoder().encode(decision)), decision)
     }
 
     func testLegacyPassPeriodMatchesTheContract() {
