@@ -105,6 +105,7 @@ class SafetyFloorGate(
 
     companion object {
         const val DEFAULT_REFRESH_INTERVAL_MS: Long = 30_000L
-        const val DEFAULT_FRESH_INTERVAL_MS: Long = 2_000L
+        /** Also the coordinator's visible-shield refresh age, so re-renders never resolve inline more often. */
+        const val DEFAULT_FRESH_INTERVAL_MS: Long = 5_000L
     }
 }

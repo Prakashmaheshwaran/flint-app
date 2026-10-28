@@ -24,6 +24,11 @@ data class BlockCause(
     val breakLevel: BreakLevel,
     /** Absolute end of the block window, or null when open-ended (manual session). */
     val endsAtEpochMs: Long?,
+    /**
+     * The rule behind a rule-verdict cause (for local history via [BlockEventHooks]); null for
+     * daily Time Limit, Open Limit and uninstall-guard causes, and when the rule vanished.
+     */
+    val ruleId: String? = null,
 ) {
     /**
      * Open Limits count a granted break as spending one more open (see `OpenLimitPolicy`'s
@@ -54,7 +59,7 @@ fun ruleBlockCause(rule: BlockRule?, nowEpochMs: Long, utcOffsetMs: Long): Block
     }
     val endsAt = rule?.expiresAtEpochMs
         ?: schedule?.let { nowEpochMs + millisUntilScheduleEnd(it, nowEpochMs, utcOffsetMs) }
-    return BlockCause(reason = reason, breakLevel = level, endsAtEpochMs = endsAt)
+    return BlockCause(reason = reason, breakLevel = level, endsAtEpochMs = endsAt, ruleId = rule?.id)
 }
 
 /**

@@ -191,6 +191,18 @@ class SafetyFloorCoordinatorMatrixTest {
         shadowOf(Looper.getMainLooper()).idle()
     }
 
+    @Test fun `a floor show never reveals another app's shield`() {
+        val cause = BlockCause(BlockScreenReason.MANUAL_SESSION, BreakLevel.HARDCORE, endsAtEpochMs = null)
+        coordinator.showBlocked(control, null, cause)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(1, attached.size)
+        coordinator.showBlocked(customDialer, null, cause)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("control's shield stays mounted", 1, attached.size)
+        coordinator.hideIfShown()
+        shadowOf(Looper.getMainLooper()).idle()
+    }
+
     @Test fun `the uninstall guard still mounts on Settings`() {
         val guard = BlockCause(BlockScreenReason.UNINSTALL_GUARD, BreakLevel.HARDCORE, endsAtEpochMs = null)
         coordinator.showBlocked("com.android.settings", null, guard)

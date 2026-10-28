@@ -145,6 +145,10 @@ class BlockActivity : ComponentActivity() {
                         finish()
                     },
                     onOpenFlint = {
+                        // Leaving for Flint is leaving the blocked app: end this block so the
+                        // next block of it is a new interception (Flint's own foreground never
+                        // reaches the handoff's hide path).
+                        coordinator.hideIfShown()
                         openFlint()
                         finish()
                     },
@@ -196,6 +200,7 @@ class BlockActivity : ComponentActivity() {
                 reason = enumExtra(EXTRA_REASON, BlockScreenReason.MANUAL_SESSION),
                 breakLevel = enumExtra(EXTRA_BREAK_LEVEL, BreakLevel.EASY),
                 endsAtEpochMs = getLongExtra(EXTRA_ENDS_AT_EPOCH_MS, NO_END).takeIf { it > 0L },
+                ruleId = getStringExtra(EXTRA_RULE_ID),
             ),
         )
     }
@@ -221,6 +226,7 @@ class BlockActivity : ComponentActivity() {
         const val EXTRA_REASON = "flint.block_reason"
         const val EXTRA_BREAK_LEVEL = "flint.break_level"
         const val EXTRA_ENDS_AT_EPOCH_MS = "flint.ends_at_epoch_ms"
+        const val EXTRA_RULE_ID = "flint.rule_id"
         private const val NO_END = -1L
 
         /** Launch the fallback block screen for [packageName] with a resolved [cause]. */
@@ -235,7 +241,8 @@ class BlockActivity : ComponentActivity() {
                         .putExtra(EXTRA_BLOCKED_LABEL, label)
                         .putExtra(EXTRA_REASON, cause.reason.name)
                         .putExtra(EXTRA_BREAK_LEVEL, cause.breakLevel.name)
-                        .putExtra(EXTRA_ENDS_AT_EPOCH_MS, cause.endsAtEpochMs ?: NO_END),
+                        .putExtra(EXTRA_ENDS_AT_EPOCH_MS, cause.endsAtEpochMs ?: NO_END)
+                        .putExtra(EXTRA_RULE_ID, cause.ruleId),
                 )
             }
         }
