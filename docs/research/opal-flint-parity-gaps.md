@@ -1,5 +1,14 @@
 # Opal Android and Flint: rule compatibility and migration assessment
 
+> **Historical research — original scope and status claims retained (2026-10-28).**
+> Use the [v1 capability acceptance ledger](../acceptance/v1-capability-ledger.md) for
+> current Flint implementation/evidence and [ADR-012](../architecture/protection-contract.md)
+> for personal protection requirements. Old future-date, launch-count, pass, anti-removal,
+> competitor and expanded connected-scope claims below are historical planning inputs,
+> not current release promises. The Android connected backend remains debug-only;
+> release is local-first, no-account and without analytics. No physical-device result
+> follows from an old status column.
+
 Assessment date: 2026-10-11. Reference: user-supplied Opal 4.14.0 APKM. This compares static evidence with Flint's current Android implementation; it is not a claim of complete reference-app runtime verification. Detailed Opal evidence and DEX caveats are in [the rules notes](opal-4.14.0-rules-notes.md).
 
 ## Confirmed semantic gaps

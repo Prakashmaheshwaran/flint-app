@@ -1,189 +1,93 @@
 # Flint — iOS
 
-Native iOS/iPadOS app (Swift + SwiftUI) built entirely on Apple's **Screen Time API** — the
-only sanctioned way a third party can block apps/websites. Strategy & rationale:
-[`../docs/research/02-ios-technical-strategy.md`](../docs/research/02-ios-technical-strategy.md).
+Native Swift/SwiftUI for iOS/iPadOS 16+, using FamilyControls, ManagedSettings and
+DeviceActivity. The [v1 acceptance ledger](../docs/acceptance/v1-capability-ledger.md)
+is the current capability/evidence record. **Physical-device enforcement is pending.**
 
-## Generate & build
+## Generate, build and verify
 
-The `.xcodeproj` is **generated** from [`project.yml`](project.yml) with
-[XcodeGen](https://github.com/yonaskolb/XcodeGen) — never hand-edited, never committed.
-
-```bash
-# from repo root
-brew install xcodegen     # one time
-make ios                  # generate Flint.xcodeproj and open it
-# or:
-make ios-gen              # just (re)generate the project
+```sh
+# from repository root; full Xcode 15.3+/Swift 5.10+ and XcodeGen required
+make env
+make ios-gen
+make ios-build
+make verify-ios
 ```
 
-Then in Xcode: select the **Flint** scheme, set your **Development Team** on each target
-(Signing & Capabilities), and run on a real device or simulator (iOS 16+).
+Edit [project.yml](project.yml), then regenerate; never hand-edit
+`Flint.xcodeproj`. Configure private signing through
+[signing-and-release](../docs/store/ios/signing-and-release.md), not committed credentials.
+The simulator gate builds Debug, runs native tests and separately builds unsigned Release,
+checks actual bundled privacy manifests, and rejects known DEBUG fixture markers.
 
-> **Requires full Xcode** (not just Command Line Tools) to build. XcodeGen only needs to
-> generate the project.
+## Targets and data boundaries
 
-## Targets (5)
+The host `com.flint.peakfocus` embeds four Screen Time extensions
+(`.monitor`, `.shield-config`, `.shield-action`, `.report`) plus the
+WidgetKit extension declared in project.yml. The Screen Time bundles use Family Controls
+and `group.com.flint.peakfocus`; the widget uses its declared App Group and does not
+acquire enforcement authority. Shared logic lives in the local
+[FlintCore package](Packages/FlintCore).
 
-| Target | Bundle ID | Role |
-|---|---|---|
-| `Flint` | `com.flint.peakfocus` | SwiftUI host app: authorization, app picker, sessions/limits UI, embeds the stats report |
-| `DeviceActivityMonitorExtension` | `…​.monitor` | Applies/clears shields on schedule + threshold boundaries (so blocking survives app death) |
-| `ShieldConfigurationExtension` | `…​.shield-config` | The branded "Peak Focus" block screen |
-| `ShieldActionExtension` | `…​.shield-action` | Block-screen button handling |
-| `DeviceActivityReportExtension` | `…​.report` | Usage-stats UI — the **only** legal source of per-app usage + localized names |
+Local focus-session events drive Today, durable Complete and focus Insights. Screen Time
+report data remains in the report extension and is not repurposed as a focus-history export.
+The [history contract](../docs/architecture/focus-history.md) defines totals, gaps,
+retention and unavailable-versus-zero behavior. Optional local reminders say the **planned**
+focus time ended; delivery does not prove completion or uninterrupted protection.
 
-All five share the **`group.com.flint.peakfocus`** App Group and the
-`com.apple.developer.family-controls` entitlement. Shared logic lives in the **`FlintCore`**
-Swift package (`Packages/FlintCore`) so the app and every extension reuse one implementation
-(extensions can't import the app target).
+Read-only widgets show observed status/next occurrence and local focus summaries only when
+their public producers provide valid data. Live Activity is opt-in and requires a finite,
+armed session. Missing/stale input is unavailable; tests and compiled widgets do not prove
+WidgetKit/ActivityKit delivery, Dynamic Island behavior or lock-screen privacy on hardware.
 
-## FlintCore (the spine)
+## Protection implementation and limits
 
-| File | What it holds |
-|---|---|
-| `FlintBrand` | Brand palette as SwiftUI `Color` + `UIColor` (for the shield) |
-| `FlintModel` | `FlintSession`, `FlintSchedule`, `BreakLevel` (incl. free `hardcore`) |
-| `FlintGroupStore` | App Group I/O: the `FamilyActivitySelection` blob + sessions |
-| `FlintShieldStore` | `ManagedSettingsStore` wrapper + the silent ~50-token cap guard |
-| `FlintScheduling` | `DeviceActivityCenter` / schedule / event builders |
-| `FlintTokens` | Opaque/rotating-token helpers, shield-cap checks |
+Merged session work adds registration-before-shield, logical timing for short sessions,
+monotonic same-boot timing, owned replacement/stop arbitration and persisted Harder waits.
+Startup recovery and health distinguish saved, attempted, armed and observed state, using
+the actual observation time. Their [source/tests and PRs](../docs/acceptance/v1-capability-ledger.md#evidence-index)
+bound these claims.
 
-Tests live in `Tests/` at the ios-app root (the `FlintTests` target in `project.yml`; run via
-the Xcode test action on a simulator — the SwiftPM package declares no test target of its own).
+[ADR-012](../docs/architecture/protection-contract.md) defines Easy/Harder/Hardcore,
+ordinary breaks, timed Open credits and a rolling seven-day/global recovery pass.
+Adoption is tracked per cause/route in the ledger. A shared ledger or pure policy is not
+proof that every schedule, limit, shield or automation route has integrated it.
 
-## The entitlement reality (read before planning a release)
+Current scope includes recurring weekday schedules, daily Time Limits, legacy Open Limits,
+saved groups/presets, schedule/Sleep Allow Lists, app-open PIN, Focus Filter and three
+Shortcut intents. Known boundaries at this checkpoint:
 
-- `com.apple.developer.family-controls` is **free to develop** with — build & run on device today.
-- **App Store distribution is gated**: Apple must grant the *distribution* entitlement per
-  Bundle ID (all 5), via the request form. A GitHub repo URL is accepted as the "website";
-  free/open-source apps are **not** disqualified. Turnaround: days → weeks. **File early.**
-- Forkers shipping their own build must use their **own** bundle IDs and file their **own**
-  entitlement requests (the signing identity is not transferable).
+- Future date-specific one-shot scheduling is absent; recurring later-week windows are
+  distinct from arbitrary future dates. The Social detox preset has a 23:59–00:00 gap.
+- The Pomodoro intent starts its first focus round and saves cadence; full focus/rest
+  chaining is absent. Immediate Allow List sessions are not implemented.
+- Open Limits require bounded-credit/re-shield, overlap and corrupt-state acceptance.
+  Do not describe them as native DeviceActivity launch-count events.
+- Safari configuration/writer tests do not establish the production cause-owned lifecycle
+  or actual Private Browsing/history effects. Use the ledger for its latest merged state.
+- Focus/Shortcut starts share session checks. Easy Focus-off can end its owned session;
+  strict finite commitments keep their stop rights and may require confirmation in Flint.
+- PIN is a UI privacy barrier, separate from Screen Time authority. Hardware recovery and
+  full VoiceOver traversal remain unverified.
+- iOS app-deletion restrictions are device-wide, require authorization, and must follow
+  the contract's explicit opt-in/finite-owner rules before being advertised. OS permission
+  revocation stays reachable; no device-lock guarantee follows from a setting assignment.
 
-## Verify
+Opaque tokens, Always Allowed, Safari versus other browsers, finite registration capacity,
+late callbacks and unknown cross-reboot elapsed time are platform limits. Flint does not
+veto OS clock changes. Same-boot duration tests do not prove arbitrary reboot/clock tamper
+resistance. Sleep audio/stories and cross-device sync are outside local v1.
 
-```bash
-make ios-build      # compile app + 4 extensions (BUILD SUCCEEDED)
-# unit tests on a booted simulator:
-DEVELOPER_DIR="$(ls -d /Applications/Xcode*.app | tail -1)/Contents/Developer" \
-  xcodebuild test -project ios-app/Flint.xcodeproj -scheme Flint \
-  -destination 'platform=iOS Simulator,name=iPhone 17' CODE_SIGNING_ALLOWED=NO
-```
+## Hardware and store acceptance
 
-> **Simulator vs. device:** the app *runs* in the Simulator (UI, navigation, persistence), but
-> Screen Time **authorization** and **shield enforcement** only function on a real device — the
-> Simulator can't grant Family Controls or apply shields. So "the block actually blocks" is
-> verified on device; everything else (logic, UI, build) is verified in the Simulator + tests.
+Use the [single ordered device checklist](../docs/acceptance/device-acceptance-plan.md)
+for safety, strict commitments/pass, short deadlines while the host is killed, thresholds,
+Safari, Focus/Siri, report delivery, notifications and accessibility. Fixture screenshots
+in [verification](../docs/verification/) keep their original build/date and do not prove
+Family Controls authorization or shields.
 
-## Status
-
-**Done & verified:** all 5 targets build (`make ios-build` — the fleet merge gate re-runs it as
-each change lands); app runs in the Simulator; `FlintCore` unit tests pass. On-device enforcement
-proof is a separate, human task (`H-IOS-DEVICE`) — nothing below claims it.
-The 2026-10-23 audit ran `make verify-ios` on the integrated tree with Xcode 27.0:
-the simulator build and all 60 tests passed, including schedule validation and arming health.
-Verticals implemented:
-- **Block Now** — authorize → pick apps → timed shield + `DeviceActivity` auto-clear → live
-  countdown → stop gated by break level (incl. **free Hardcore**).
-- **Schedules** — recurring/daily rules with **no Flint-imposed count cap or 24h-advance cap**.
-  Each rule carries its own selection + break level + day-of-week gate + allow-list, and gets its
-  own `DeviceActivity` registration + `ManagedSettingsStore` (so schedules can overlap cleanly).
-  iOS nevertheless has a finite, undocumented registration pool shared with Time Limits, Open
-  Limits, and Flint's other monitors. Blocking Health records enabled → attempted → armed counts,
-  surfaces both local validation failures and actual OS refusals, and uses an empirical warning
-  near 20 registrations rather than presenting that observation as an Apple contract.
-  **Routine templates** — the Schedules tab ships four platform-adapted presets
-  (`FlintRoutinePreset`: Work hours, Evenings offline, Social detox, Weekend mornings); one tap
-  opens the new-schedule editor prefilled with name, window, and break level, and targets always
-  stay the user's to pick (FamilyControls tokens are opaque — a preset *couldn't* guess apps,
-  and Save stays disabled until the user picks). Android separately mirrors Opal's five named
-  inventory templates and never defaults a preset to Hardcore. Two further iOS divergences: "always
-  on" (Social detox) becomes a daily 00:00–23:59 window because `FlintScheduleRule` requires
-  one — the last minute of each day is genuinely uncovered — and the template copy makes no
-  break-level promises, because iOS schedule shields are plain hard blocks whose in-app toggle
-  the strictness tiers don't gate. Preset → rule mapping is unit-tested
-  (`FlintRoutinePresetsTests`); the integrated compile and simulator tests passed in the
-  2026-10-23 audit. Drafted rules enforce on a real device only, like every schedule.
-- **Break levels + Emergency Pass** — Easy/Harder/**free Hardcore** everywhere; a free **weekly
-  Emergency Pass** ends a running Hardcore session early (Opal paywalls this).
-- **Time Limits** — daily usage budgets via `DeviceActivityEvent` thresholds; the monitor shields
-  the apps when the budget is hit and clears at the day boundary (free, incl. the hard-reset tier).
-- **Website blocking + usage report** — web-domain shields apply through the same picker/monitor
-  path; the **Stats** tab embeds the `DeviceActivityReport` extension's "Total Activity" scene
-  (real per-app usage on device; empty in the Simulator).
-- **App groups / presets + Allow List** — save a picker selection as a named, reusable group and
-  apply it in one tap; Allow List ("brick phone") ships in Schedules (`.all(except:)`).
-- **App PIN** — an optional PIN (salted SHA-256, never stored plaintext) gates cold launch and
-  every return from the background, including running sessions and presented sheets. Brief
-  inactive interruptions hide content without re-locking. Changing or removing a PIN requires
-  the current PIN; backgrounding expires pending change authentication. New PINs must be
-  exactly 4–6 ASCII digits (0–9), entered twice in secure fields. Invalid or mismatched input
-  cannot be saved; input is never trimmed, filtered, or truncated. Existing saved PINs remain
-  usable until changed or removed, even if they do not meet the new policy. This protects
-  Flint's UI; OS Screen Time enforcement and the system Screen Time passcode are separate
-  protections.
-- **Hardcore uninstall guard** — while a Hardcore (Deep Focus) session runs, Flint sets
-  `denyAppRemoval` on the session's `ManagedSettingsStore`, so deleting the app — otherwise the
-  one-tap escape from a "non-bypassable" block — is refused by iOS. Armed on every Hardcore
-  start (Block Now, Shortcuts/Siri, Focus Filter) and re-asserted by the monitor extension and
-  on app launch; released on **every** end path — allowed stops, the monitor's interval end,
-  the Emergency Pass, launch reconciliation — because it lives on the same store as the session
-  shield (`clearAllSettings()` drops both together). Honest scope: Apple's setting blocks app
-  deletion **device-wide** while armed (it isn't per-app), and Hardcore *schedule rules* are
-  deliberately exempt (they can be toggled off in-app, so a deletion lock there would be
-  friction, not a lock). Pure "should the guard be on?" logic is unit-tested
-  (`FlintUninstallGuard`); the integrated simulator build passed on 2026-10-23, and
-  enforcement is device-gated like all Screen Time settings — the Simulator can't deny app
-  removal.
-- **Safari restrictions + Private-Browsing lockdown** — Settings → *Web & Safari*: while a
-  session runs, Safari follows either the adult-content filter (plus custom block/allow domains)
-  or an allowed-sites-only list, with an optional explicit-media toggle. iOS ties Private
-  Browsing and *Clear History* to web restrictions, so both lock down too. Applies on a real
-  device only — the Simulator can't set web restrictions.
-- **Focus Filter** — a `SetFocusFilterIntent` attaches Flint to any system Focus (Work, Sleep, …):
-  blocking starts when the Focus turns on and stops when it turns off. Per-Focus preset +
-  strictness are chosen in iOS Settings → Focus; Flint's Settings → *Automation → Focus Filter*
-  screen sets the defaults new filters pre-fill from. Focus filters only fire on a real device —
-  build-verified, **not** yet device-verified.
-- **Siri & Shortcuts** — App Intents (*Start Session*, *Start Pomodoro*, *Stop Session*) with
-  Siri phrases; iOS auto-discovers them from the app binary (no extra extension target), and
-  saved app groups surface as a preset parameter. The sessions they start enforce on a real
-  device only, like everything shield-based.
-- **Sleep Mode + Morning Assist** — Settings → *Sleep*: a bedtime → wake window on chosen
-  nights, Sleep Assist strictness (Off / Wind Down / **Full Assist — free**), an optional
-  enforced morning wind-up, and one saved app group allowed through overnight. It materializes
-  into two rules on the Schedules engine ("Sleep Mode" / "Morning Assist"), so enforcement rides
-  the same monitor path as Schedules. Blocking-only by design (no soundscapes/sleep stories);
-  Slow Uplift stores the choice but arms no shield — the screen says so. Device-gated like all
-  shields.
-- **Open Limits (launch-count caps)** — Screen Time has no launch-count event, so Flint counts
-  *intentional* opens at the shield: the apps stay shielded and the block screen's action button
-  spends one of the day's allowed opens. `FlintOpenLimitEnforcer` matches the tapped token back
-  to its saved rule (extensions can't tell an open-limit token from a hard-block one —
-  FB14237883), releases the token on a grant, keeps the shield once the cap is spent, avoids
-  charging an open that another layer (Session/Schedule/Time Limit) would still block, and fails
-  **closed** if the App Group is unreadable. One exception to that no-double-charge check: an
-  app another layer blocks via a *category* rule can't be detected (category membership is
-  opaque token-side), so a tap there still charges an open even though the grant won't get the
-  user in. Unit-tested; wired into `ShieldActionExtension`.
-  The user-facing end is implemented too: a config screen (Limits tab → *Open Limits*:
-  create/edit/toggle rules — opens-per-day, app/site picker, break level), host-app arming via
-  `FlintOpenLimitsController` (on launch and rule edits), a day-boundary re-arm through the
-  monitor extension (each rule registers an all-day activity), and the "Use app (N left)" /
-  opens-spent labels on the block screen. **Compile verification of the config-UI + arming
-  layer is pending on the macOS CI toolchain** (it was written without a local Xcode), and
-  grants enforce on a real device only, like every shield.
-
-**Next:**
-1. **On-device validation** of everything enforcement-shaped — shields, schedules, time limits,
-   open-limit grants, web restrictions, Focus filters, sleep windows. The Simulator cannot prove
-   any of it; tracked as `H-IOS-DEVICE` (human + hardware), evidence goes in `docs/verification/`.
-2. **macOS compile pass over the Open-Limits config UI + arming, the Hardcore uninstall
-   guard, and the routine-template library (presets + Schedules UI + tests)** — those layers
-   were built toolchain-blind. `xcodegen generate` has since gone green on a Mac without
-   Xcode (project.yml valid; the new preset/test/view files confirmed in their targets'
-   build phases), so what remains is exactly `xcodebuild` build/test on a Mac with full
-   Xcode before the blanket "all targets build" claim covers them.
-
-Build order: strategy doc §8.
+[iOS store drafts](../docs/store/ios/store-package.md), privacy manifests and an unsigned
+Release build are preparation. Apple team/account facts, Family Controls distribution
+approval for the five Screen Time IDs, widget provisioning, signed archive validation,
+real-device screenshots, TestFlight and submission remain
+[human-owned](../docs/store/README.md). No account, cloud sync or analytics is required.

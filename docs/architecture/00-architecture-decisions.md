@@ -1,5 +1,13 @@
 # Flint — Architecture Decision Record
 
+> **Current v1 interpretation (2026-10-28):** the entries below retain their historical
+> scope. [ADR-012](protection-contract.md) supersedes conflicting personal tier, pass,
+> clock and anti-removal promises; the [capability ledger](../acceptance/v1-capability-ledger.md)
+> records implementation/evidence. ADR-002's original no-backend-directory description
+> predates ADR-010/011: a local debug connected sandbox now exists, while release builds
+> remain local-first, no-account and without analytics. No production managed authority
+> is activated. Historical competitor/paywall claims are not refreshed here.
+
 > **Flint — Peak Focus.** A 100% free, open-source alternative to Opal. Everything Opal
 > paywalls is free in Flint. Built in the open, local-first, no dark patterns, no telemetry.
 >

@@ -1,9 +1,13 @@
 # ADR-012 — Protection and commitment contract
 
-**Date:** 2026-10-28. **Status:** proposed for `integration/v1`; authoritative when merged.
+**Date:** 2026-10-28. **Status:** accepted in `integration/v1` by [PR #96](https://github.com/Prakashmaheshwaran/flint-app/pull/96).
 **Owners:** lanes B/C enforce; F records history; G authors rules; H presents the same decisions.
 **Scope:** personal, local protection on iOS and Android. No account, analytics, remote
 authority, payment, device-owner mode or new release network capability.
+
+Implementation and passing evidence are tracked separately in the
+[v1 capability ledger](../acceptance/v1-capability-ledger.md). This accepted contract
+does not assert that every requirement or PC case is already implemented or verified.
 
 This supersedes ADR-011's *personal* temporary-access policy choices: separate
 Standard/Increasing difficulty, unspecified live all-cause arbitration and period adapters,
