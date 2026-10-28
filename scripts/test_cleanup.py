@@ -12,6 +12,7 @@ from pathlib import Path
 import plistlib
 import resource
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -557,6 +558,154 @@ class CleanupTests(unittest.TestCase):
             with self.assertRaises(module.Unsafe):
                 with module.Directory(self.root):
                     self.fail('rmtree without dir_fd was accepted')
+
+    def partial_delete(self, *, deadline=False, replacement=False, empty_replacement=False, hard_stop=False):
+        """Exercise the real CLI exception/deadline path after deleting one file."""
+        target = self.root / 'ios-app/build'
+        target.mkdir()
+        (target / 'deleted').write_text('may be removed')
+        (target / 'precious').write_text('remaining output')
+        key = [target.stat().st_dev, target.stat().st_ino]
+        probe = self.temp / 'partial-delete.py'
+        probe.write_text('''import os, runpy, shutil, signal, sys, time
+from pathlib import Path
+def interrupted(path, *, dir_fd=None):
+    artifact = os.open(path, os.O_RDONLY | os.O_DIRECTORY, dir_fd=dir_fd)
+    try:
+        os.unlink('deleted', dir_fd=artifact)
+    finally:
+        os.close(artifact)
+    if os.environ.get('REPLACE_BUILD') == '1':
+        target = Path(os.environ['BUILD_PATH'])
+        target.mkdir()
+        Path(os.environ['REPLACEMENT_KEY']).write_text(str(target.stat().st_ino))
+        if os.environ.get('EMPTY_REPLACEMENT') != '1':
+            (target / 'new-output').write_text('new build must survive')
+    if os.environ.get('HARD_STOP') == '1':
+        os._exit(7)
+    if os.environ.get('DELETE_DEADLINE') == '1':
+        signal.setitimer(signal.ITIMER_REAL, 0.02)
+        time.sleep(1)
+    raise OSError('injected mid-delete failure')
+interrupted.avoids_symlink_attacks = True
+shutil.rmtree = interrupted
+sys.argv = [sys.argv[1], '--root', sys.argv[2], 'artifacts']
+runpy.run_path(sys.argv[0], run_name='__main__')
+''')
+        env = dict(self.env, BUILD_PATH=str(target), REPLACE_BUILD=str(int(replacement)),
+                   DELETE_DEADLINE=str(int(deadline)), EMPTY_REPLACEMENT=str(int(empty_replacement)),
+                   REPLACEMENT_KEY=str(self.temp / 'replacement-inode'), HARD_STOP=str(int(hard_stop)))
+        result = bounded([sys.executable, '-B', str(probe),
+                          str(self.root / 'scripts/clean-worktree.py'), str(self.root)],
+                         cwd=self.root, env=env)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        return target, key, result
+
+    @unittest.skipUnless(hasattr(os, 'chflags') and hasattr(stat, 'UF_IMMUTABLE'),
+                         'requires the macOS immutable file flag')
+    def test_n1_real_immutable_denial_restores_and_retry_removes(self):
+        target = self.root / 'ios-app/build'
+        target.mkdir()
+        precious = target / 'precious'
+        precious.write_text('immutable fixture only')
+        before = target.stat().st_ino
+        try:
+            os.chflags(precious, stat.UF_IMMUTABLE)
+            denied = self.call('artifacts', check=False)
+            self.assertNotEqual(denied.returncode, 0, denied.stdout)
+            self.assertTrue(precious.exists(), denied.stdout)
+            self.assertEqual(target.stat().st_ino, before)
+            again = self.call('artifacts', check=False)
+            self.assertNotEqual(again.returncode, 0, 'retry must not report success with remaining output')
+        finally:
+            # The vulnerable baseline strands the file under a quarantine.
+            for payload in (self.root / 'ios-app').rglob('precious'):
+                os.chflags(payload, 0)
+        self.call('artifacts')
+        self.assertFalse(target.exists())
+        self.assertFalse(list(self.root.rglob('.flint-clean-*')))
+
+    def test_n1_mid_delete_restores_exact_remaining_tree_and_retry(self):
+        target, key, result = self.partial_delete()
+        self.assertTrue((target / 'precious').exists(), result.stdout)
+        self.assertFalse((target / 'deleted').exists())
+        self.assertEqual([target.stat().st_dev, target.stat().st_ino], key)
+        self.assertIn('restored', result.stdout.lower())
+        self.call('artifacts')
+        self.assertFalse(target.exists())
+        self.assertFalse(list(self.root.rglob('.flint-clean-*')))
+
+    def test_n1_deadline_restores_remaining_tree_and_retry(self):
+        target, key, result = self.partial_delete(deadline=True)
+        self.assertIn('deadline', result.stdout)
+        self.assertTrue((target / 'precious').exists(), result.stdout)
+        self.assertEqual([target.stat().st_dev, target.stat().st_ino], key)
+        self.call('artifacts')
+        self.assertFalse(list(self.root.rglob('.flint-clean-*')))
+
+    def test_n1_new_build_is_never_clobbered_and_quarantine_retry_defers(self):
+        target, key, result = self.partial_delete(replacement=True)
+        self.assertEqual((target / 'new-output').read_text(), 'new build must survive')
+        quarantines = list(target.parent.glob('.flint-clean-*'))
+        self.assertEqual(len(quarantines), 1)
+        quarantine = quarantines[0]
+        self.assertIn(str(quarantine), result.stdout)
+        record = json.loads((quarantine / 'recovery.json').read_text())
+        self.assertEqual(record['original_path'], str(target))
+        self.assertEqual(record['artifact_identity'], key)
+        self.assertTrue(record['ancestors'])
+        self.assertEqual((quarantine / 'artifact/precious').read_text(), 'remaining output')
+        retry = self.call('artifacts', check=False)
+        self.assertNotEqual(retry.returncode, 0, retry.stdout)
+        self.assertIn(str(quarantine), retry.stdout)
+        self.assertIn('review', retry.stdout.lower())
+        self.assertTrue((target / 'new-output').exists(), 'defer before deleting new output')
+
+    def test_n1_legacy_or_unverified_quarantine_is_discovered_and_deferred(self):
+        quarantine = self.root / 'custom-output/.flint-clean-legacy'
+        (quarantine / 'artifact').mkdir(parents=True)
+        (quarantine / 'artifact/precious').write_text('legacy remaining output')
+        result = self.call('artifacts', check=False)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn(str(quarantine), result.stdout)
+        self.assertTrue((quarantine / 'artifact/precious').exists())
+
+    def test_n1_empty_replacement_build_is_never_clobbered(self):
+        target, _, result = self.partial_delete(replacement=True, empty_replacement=True)
+        self.assertEqual(target.stat().st_ino, int((self.temp / 'replacement-inode').read_text()))
+        self.assertEqual(list(target.iterdir()), [])
+        self.assertIn('quarantine', result.stdout)
+        self.assertNotEqual(self.call('artifacts', check=False).returncode, 0)
+        self.assertEqual(target.stat().st_ino, int((self.temp / 'replacement-inode').read_text()))
+
+    def test_n1_hard_stop_keeps_durable_provenance_and_retry_defers(self):
+        target, key, _ = self.partial_delete(hard_stop=True)
+        self.assertFalse(target.exists())
+        quarantines = list(target.parent.glob('.flint-clean-*'))
+        self.assertEqual(len(quarantines), 1)
+        record = json.loads((quarantines[0] / 'recovery.json').read_text())
+        self.assertEqual(record['original_path'], str(target))
+        self.assertEqual(record['artifact_identity'], key)
+        self.assertEqual(record['quarantine_identity'], [quarantines[0].stat().st_dev,
+                                                       quarantines[0].stat().st_ino])
+        self.assertEqual(record['ancestors'][-1], [target.parent.stat().st_dev, target.parent.stat().st_ino])
+        self.assertEqual((quarantines[0] / 'recovery.json').stat().st_mode & 0o777, 0o600)
+        self.assertTrue((quarantines[0] / 'artifact/precious').exists())
+        retry = self.call('artifacts', check=False)
+        self.assertNotEqual(retry.returncode, 0)
+        self.assertIn(str(quarantines[0]), retry.stdout)
+
+    def test_n1_orphan_quarantine_defers_preview_and_approved_cleanup(self):
+        target = self.orphan_artifact()
+        flags = self.approve_orphans()
+        quarantine = target.parent / '.flint-clean-legacy'
+        quarantine.mkdir()
+        for args in ((), flags):
+            with self.subTest(args=args):
+                result = self.call('orphans', *args, check=False)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn(str(quarantine), result.stdout)
+                self.assertTrue(target.exists())
 
     def test_m2_same_avd_same_serial_restart_does_not_inherit_poweroff(self):
         self.claim('android', 'emulator-5554', '--booted', '--avd', 'flint-test')

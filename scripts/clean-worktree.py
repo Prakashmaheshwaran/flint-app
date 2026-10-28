@@ -6,7 +6,9 @@ Orca 1.4.241's emulator list is global even with --worktree; it is diagnostic on
 """
 import argparse
 import contextlib
+import ctypes
 import datetime
+import errno
 import fcntl
 import hashlib
 import inspect
@@ -512,6 +514,30 @@ def identity(info):
     return [info.st_dev, info.st_ino]
 
 
+def rename_noclobber(source, destination, source_fd, destination_fd):
+    """Atomically restore a directory only if its old name is still vacant.
+
+    A stat followed by os.rename could replace a new, empty build directory.
+    Platforms lacking an exclusive rename keep the documented quarantine.
+    """
+    libc = ctypes.CDLL(None, use_errno=True)
+    if sys.platform == "darwin":
+        rename = getattr(libc, "renameatx_np", None)
+        flags = 0x00000004  # RENAME_EXCL, from Darwin sys/stdio.h.
+    elif sys.platform.startswith("linux"):
+        rename = getattr(libc, "renameat2", None)
+        flags = 1  # RENAME_NOREPLACE.
+    else:
+        rename = None
+    if rename is None:
+        raise OSError(errno.ENOTSUP, "atomic exclusive directory rename unavailable")
+    rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    rename.restype = ctypes.c_int
+    if rename(source_fd, os.fsencode(source), destination_fd, os.fsencode(destination), flags):
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), destination)
+
+
 class Directory:
     """Hold every path component open; never traverse a symlink during deletion.
 
@@ -550,8 +576,9 @@ class Directory:
     def key(self):
         return identity(os.fstat(self.fd))
 
-    def recheck(self):
-        for index, name in enumerate(self.names):
+    def recheck(self, *, parents_only=False):
+        names = self.names[:-1] if parents_only else self.names
+        for index, name in enumerate(names):
             observed = os.stat(name, dir_fd=self.fds[index], follow_symlinks=False)
             opened = os.fstat(self.fds[index + 1])
             if not stat.S_ISDIR(observed.st_mode) or identity(observed) != identity(opened):
@@ -580,20 +607,74 @@ class Directory:
         quarantine = ".flint-clean-" + uuid.uuid4().hex
         os.mkdir(quarantine, mode=0o700, dir_fd=parent)
         qfd = os.open(quarantine, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+        location = self.path.parent / quarantine
+        qkey = identity(os.fstat(qfd))
         moved = False
         try:
+            # Persist provenance before the rename: even a killed process leaves
+            # either the original tree or a discoverable, documented quarantine.
+            record = {"version": 1, "original_path": str(self.path),
+                      "artifact_identity": self.key, "quarantine_identity": qkey,
+                      "ancestors": [identity(os.fstat(fd)) for fd in self.fds[:-1]]}
+            fd = os.open("recovery.json", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                         0o600, dir_fd=qfd)
+            with os.fdopen(fd, "w") as stream:
+                json.dump(record, stream, indent=2)
+                stream.write("\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.fsync(qfd)
+            os.fsync(parent)
             self.recheck()
             os.rename(name, "artifact", src_dir_fd=parent, dst_dir_fd=qfd)
             moved = True
             observed = os.stat("artifact", dir_fd=qfd, follow_symlinks=False)
             if not stat.S_ISDIR(observed.st_mode) or identity(observed) != self.key:
-                raise Unsafe(f"artifact replaced before deletion; preserved in {quarantine}/artifact")
+                raise Unsafe(f"artifact replaced before deletion; preserved in {location}/artifact")
+            os.fsync(qfd)
+            os.fsync(parent)
             shutil.rmtree("artifact", dir_fd=qfd)
             moved = False
+        except BaseException:
+            # Inspect the held quarantine rather than relying on the assignment
+            # after rename: a deadline can interrupt between those instructions.
+            try:
+                artifact = os.stat("artifact", dir_fd=qfd, follow_symlinks=False)
+            except FileNotFoundError:
+                moved = False
+            else:
+                moved = True
+                try:
+                    self.recheck(parents_only=True)
+                    entry = os.stat(quarantine, dir_fd=parent, follow_symlinks=False)
+                    if (not stat.S_ISDIR(entry.st_mode) or identity(entry) != qkey
+                            or not stat.S_ISDIR(artifact.st_mode) or identity(artifact) != self.key):
+                        raise Unsafe("quarantine or remaining artifact identity changed")
+                    rename_noclobber("artifact", name, qfd, parent)
+                    moved = False
+                    os.fsync(parent)
+                    print(f"Cleanup interrupted; restored verified remaining tree to {self.path}",
+                          file=sys.stderr, flush=True)
+                except (OSError, Unsafe) as recovery_error:
+                    print(f"KEEP quarantine {location}: {recovery_error}; review manually. "
+                          f"Recovery provenance: {location / 'recovery.json'}", file=sys.stderr, flush=True)
+            raise
         finally:
-            os.close(qfd)
-            if not moved:
-                os.rmdir(quarantine, dir_fd=parent)
+            try:
+                if not moved:
+                    # Only our private metadata remains after successful removal
+                    # or restoration. Never recursively remove a recovery tree.
+                    self.recheck(parents_only=True)
+                    entry = os.stat(quarantine, dir_fd=parent, follow_symlinks=False)
+                    if not stat.S_ISDIR(entry.st_mode) or identity(entry) != qkey:
+                        raise Unsafe(f"quarantine identity changed; review {location}")
+                    try:
+                        os.unlink("recovery.json", dir_fd=qfd)
+                    except FileNotFoundError:
+                        pass
+                    os.rmdir(quarantine, dir_fd=parent)
+            finally:
+                os.close(qfd)
 
     def close(self):
         for fd in reversed(self.fds):
@@ -644,6 +725,36 @@ def human_size(count):
     return f"{count / (1024 * 1024):.1f} MiB ({count} bytes)"
 
 
+def defer_quarantines(base, *, recursive=True):
+    """Old/ambiguous quarantine records are evidence, never deletion approval.
+
+    Defer before touching a replacement build or accepting a new orphan plan.
+    Scan the whole checkout, including custom output parents, without symlinks.
+    """
+    if not base.exists() and not base.is_symlink():
+        return
+    def scan_error(error):
+        raise Unsafe(f"cannot inventory cleanup quarantines in {base}: {error}")
+    found = []
+    with Directory(base) as directory:
+        if recursive:
+            for parent, dirs, files in os.walk(base, followlinks=False, onerror=scan_error):
+                for name in dirs + files:
+                    if name.startswith(".flint-clean-"):
+                        found.append(Path(parent) / name)
+                dirs[:] = [name for name in dirs if name != ".git"
+                           and not name.startswith(".flint-clean-")
+                           and not (Path(parent) / name).is_symlink()]
+        else:
+            found = [base / name for name in os.listdir(directory.fd) if name.startswith(".flint-clean-")]
+        directory.recheck()
+    if found:
+        for path in sorted(found):
+            print(f"KEEP quarantine {path}; review remaining data and recovery.json provenance manually.",
+                  file=sys.stderr, flush=True)
+        raise Unsafe("unresolved cleanup quarantine; no further artifacts removed, retry after manual review")
+
+
 def artifact_paths(root, derived):
     candidates = []
     for top in ("ios-app", "android-app"):
@@ -676,6 +787,7 @@ def artifact_paths(root, derived):
 
 
 def clean_artifacts(root, derived):
+    defer_quarantines(root)
     tracked = [root / p for p in run(["git", "ls-files", "-z"], root, required=True).split("\0") if p]
     freed = 0
     paths = artifact_paths(root, derived)
@@ -691,6 +803,7 @@ def clean_artifacts(root, derived):
             print(f"REMOVE {directory.path.relative_to(root)} {human_size(count)}", flush=True)
             directory.remove()
             freed += count
+    defer_quarantines(root)
     print(f"Removed {human_size(freed)} of worktree artifacts; local.properties and shared caches preserved.")
 
 
@@ -803,6 +916,9 @@ def orphan_preview(root, plan_path=None, allowed=()):
 
 
 def clean_orphans(root, confirm=False, plan_path=None, digest=None, allowed=()):
+    # Quarantines can contain the remainder of a previously approved orphan.
+    # A new/saved plan cannot silently authorize those hidden objects.
+    defer_quarantines(Path.home() / "Library/Developer/Xcode/DerivedData", recursive=False)
     if not confirm:
         if digest:
             raise Unsafe("--plan-digest applies only to confirmation")
