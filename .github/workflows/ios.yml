@@ -7,9 +7,9 @@ name: iOS
 on:
   push:
     branches: [main]
-    paths: ['ios-app/**', 'docs/store/ios/**', 'Makefile', '.github/workflows/ios.yml']
+    paths: ['ios-app/**', 'docs/store/ios/**', 'Makefile', 'scripts/ci_test_report.py', '.github/workflows/ios.yml']
   pull_request:
-    paths: ['ios-app/**', 'docs/store/ios/**', 'Makefile', '.github/workflows/ios.yml']
+    paths: ['ios-app/**', 'docs/store/ios/**', 'Makefile', 'scripts/ci_test_report.py', '.github/workflows/ios.yml']
   workflow_dispatch:
 
 permissions:
@@ -25,6 +25,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Record test provenance
+        run: |
+          mkdir -p artifacts
+          git rev-parse HEAD > artifacts/source-commit.txt
+          xcodebuild -version > artifacts/xcode-version.txt
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
@@ -36,6 +42,7 @@ jobs:
         run: |
           xcodebuild -project ios-app/Flint.xcodeproj -scheme Flint \
             -derivedDataPath ios-app/DerivedData \
+            -resultBundlePath artifacts/build.xcresult \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
 
@@ -48,5 +55,20 @@ jobs:
           echo "Using simulator: $DEVICE"
           xcodebuild test -project ios-app/Flint.xcodeproj -scheme Flint \
             -derivedDataPath ios-app/DerivedData \
+            -resultBundlePath artifacts/unit-tests.xcresult \
             -destination "platform=iOS Simulator,name=$DEVICE" \
             CODE_SIGNING_ALLOWED=NO
+
+      - name: Summarize Xcode unit tests as JUnit
+        if: always()
+        run: |
+          python3 scripts/ci_test_report.py --title 'iOS simulator unit tests (not Screen Time enforcement)' \
+            --xcresult artifacts/unit-tests.xcresult --output artifacts/ios-unit-tests.xml
+
+      - name: Upload unit test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-unit-test-results
+          retention-days: 14
+          path: artifacts/
