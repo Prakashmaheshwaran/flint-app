@@ -1,0 +1,85 @@
+package com.flint.peakfocus.core.history
+
+import java.io.File
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.*
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+
+class FocusCompletionPolicyTest {
+    @get:Rule val temporary = TemporaryFolder()
+    private val start = 1_793_188_800_000L
+    private val end = start + 300_000
+    private fun started() = HistoryEvent(type = "started", session = "session-a", at = start, tz = "UTC",
+        plannedEnd = end, tier = "easy", source = "manual", name = "Focus")
+    private fun terminal(type: HistoryEventType, at: Long = end) = HistoryEvent(type = type.wireName,
+        session = "session-a", at = at, tz = "UTC", route = "unknown", by = "session-b")
+    private fun snapshot(vararg events: HistoryEvent) = HistorySnapshot(events.toList(), start, true)
+
+    @Test fun futureStartsScheduleAndEarlyOrSupersededEndsCancel() {
+        val log = snapshot(started())
+        assertEquals(listOf(FocusCompletionAlarm("session-a", end)), FocusCompletionPolicy.alarms(log, emptySet(), start))
+        for (type in listOf(HistoryEventType.ENDED_EARLY, HistoryEventType.SUPERSEDED)) {
+            assertTrue(FocusCompletionPolicy.alarms(snapshot(started(), terminal(type, end - 1)), emptySet(), start).isEmpty())
+        }
+    }
+    @Test fun completedBeforeReceiverStillPostsAndFirstTerminalWins() {
+        val natural = terminal(HistoryEventType.COMPLETED)
+        assertEquals(FocusCompletionDelivery.POST, FocusCompletionPolicy.decision(snapshot(started(), natural), "session-a", end))
+        assertEquals(FocusCompletionDelivery.POST, FocusCompletionPolicy.decision(snapshot(started(), natural, terminal(HistoryEventType.ENDED_EARLY, end + 1)), "session-a", end + 1))
+        assertEquals(FocusCompletionDelivery.SUPPRESS, FocusCompletionPolicy.decision(snapshot(started(), terminal(HistoryEventType.ENDED_EARLY, end - 1), natural), "session-a", end))
+    }
+    @Test fun dueWindowHonorsThirtyMinuteBoundaryAndSuppressesOldRearm() {
+        val log = snapshot(started())
+        assertEquals(FocusCompletionDelivery.WAIT, FocusCompletionPolicy.decision(log, "session-a", end - 1))
+        assertEquals(FocusCompletionDelivery.POST, FocusCompletionPolicy.decision(log, "session-a", end + FocusCompletionPolicy.MAX_LATENESS_MS))
+        assertEquals(FocusCompletionDelivery.STALE, FocusCompletionPolicy.decision(log, "session-a", end + FocusCompletionPolicy.MAX_LATENESS_MS + 1))
+        assertTrue(FocusCompletionPolicy.alarms(log, emptySet(), end + FocusCompletionPolicy.MAX_LATENESS_MS + 1).isEmpty())
+        assertTrue(FocusCompletionPolicy.alarms(log, setOf("session-a"), start).isEmpty())
+    }
+    @Test fun corruptMissingOpenEndedAndUnknownRecordsCannotNotify() {
+        val log = snapshot(started())
+        assertEquals(FocusCompletionDelivery.SUPPRESS, FocusCompletionPolicy.decision(log.copy(degraded = true), "session-a", end))
+        assertEquals(FocusCompletionDelivery.SUPPRESS, FocusCompletionPolicy.decision(snapshot(started().copy(plannedEnd = null)), "session-a", end))
+        assertEquals(FocusCompletionDelivery.SUPPRESS, FocusCompletionPolicy.decision(snapshot(started().copy(v = 2)), "session-a", end))
+        assertEquals(FocusCompletionDelivery.SUPPRESS, FocusCompletionPolicy.decision(log, "missing", end))
+    }
+    @Test fun receiverWorkPostsOnceAndDeniedPermissionNeverPromptsOrPostsLater() = runTest {
+        var count = 0
+        val state = FakeState()
+        val service = FocusCompletionDeliveryService(state, { snapshot(started(), terminal(HistoryEventType.COMPLETED)) }, { true }) { count++ }
+        service.deliver("session-a", end); service.deliver("session-a", end)
+        assertEquals(1, count)
+        val denied = FakeState()
+        FocusCompletionDeliveryService(denied, { snapshot(started()) }, { false }) { count++ }.deliver("session-a", end)
+        FocusCompletionDeliveryService(denied, { snapshot(started()) }, { true }) { count++ }.deliver("session-a", end + 1)
+        assertEquals(1, count)
+    }
+    @Test fun staleIsMarkedDeliveredAndFailedPersistenceSuppressesPost() = runTest {
+        var count = 0; val stale = FakeState()
+        FocusCompletionDeliveryService(stale, { snapshot(started()) }, { true }) { count++ }
+            .deliver("session-a", end + FocusCompletionPolicy.MAX_LATENESS_MS + 1)
+        assertTrue(stale.wasDelivered("session-a")); assertEquals(0, count)
+        val failed = FakeState(fail = true)
+        FocusCompletionDeliveryService(failed, { snapshot(started()) }, { true }) { count++ }.deliver("session-a", end)
+        assertEquals(0, count)
+    }
+    @Test fun deliveryMarkersAndAlarmRegistrySurviveRestartAndRemainSeparateFromClear() = runTest {
+        val file = File(temporary.newFolder(), "notification-state.v1.json")
+        val state = FocusNotificationState(file)
+        state.setScheduled(mapOf("session-a" to end))
+        assertEquals(mapOf("session-a" to end), FocusNotificationState(file).scheduled())
+        assertTrue(state.markDelivered("session-a", end))
+        assertTrue(FocusNotificationState(file).wasDelivered("session-a"))
+        assertFalse(FocusNotificationState(file).markDelivered("session-a", end))
+        assertTrue(FocusNotificationState(file).scheduled().isEmpty())
+        file.writeText("corrupt")
+        assertThrows(Exception::class.java) { kotlinx.coroutines.runBlocking { FocusNotificationState(file).wasDelivered("session-a") } }
+    }
+    private class FakeState(private val fail: Boolean = false) : FocusCompletionDeliveryState {
+        val delivered = mutableSetOf<String>()
+        override suspend fun wasDelivered(sessionId: String) = sessionId in delivered
+        override suspend fun markDelivered(sessionId: String, at: Long) = !fail && delivered.add(sessionId)
+    }
+}
