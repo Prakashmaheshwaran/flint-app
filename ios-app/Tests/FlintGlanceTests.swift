@@ -228,13 +228,13 @@ final class FlintGlanceTests: XCTestCase {
         XCTAssertEqual(plan(value)?.endsAt, now.addingTimeInterval(600))
     }
 
-    func testExplicitIdleWithNoUpcomingBoundaryGetsBoundedObservation() {
-        let value = project(state: "not_protected", validity: nil)
+    func testIdleRequiresTheWriterFreshnessDeadlineEvenWithoutUpcomingOccurrence() {
+        let value = project(state: "not_protected")
         XCTAssertEqual(value.protection, .idle)
         XCTAssertEqual(value.validUntil, now.addingTimeInterval(290))
         XCTAssertEqual(FlintGlancePresentation(value, at: now).status, .idle)
         XCTAssertNil(plan(value))
-        XCTAssertEqual(project(state: "not_protected", observed: -301, validity: nil).protection, .unavailable)
+        XCTAssertEqual(project(state: "not_protected", validity: nil).protection, .unavailable)
         XCTAssertEqual(project(validity: nil).protection, .unavailable)
     }
 

@@ -17,7 +17,11 @@ struct FlintGlanceReader: FlintGlanceReading {
 
     /// The activity manager needs only B's small status blob, never the history log.
     func readProtection(at date: Date) -> FlintGlanceInput {
-        guard let status = FlintProtectionStatus.load(now: date) else { return .unavailable(at: date) }
+        Self.project(FlintProtectionStatus.load(now: date), at: date)
+    }
+
+    static func project(_ status: FlintProtectionStatusSnapshot?, at date: Date) -> FlintGlanceInput {
+        guard let status else { return .unavailable(at: date) }
         let session = status.session.flatMap { source -> FlintGlanceInput.Session? in
             // Open-ended Easy sessions remain valid history identities; ActivityKit needs
             // a real finite logical end and never substitutes the freshness deadline.
@@ -43,7 +47,7 @@ struct FlintGlanceReader: FlintGlanceReading {
             enforcingEnds: status.causes.filter(\.enforcing).map(\.end), next: next,
             recoveryUntil: status.pass.recoveryUntil, degradedReasons: status.degradedReasons,
             history: history, headline: headline, at: date)
-        if input.protection != .unavailable && input.protection != .pass,
+        if [.armed, .enforcing, .degraded, .suspended].contains(input.protection),
            let source = status.session, source.armed {
             input.activeFocusSessionID = source.id
         }
