@@ -5,6 +5,7 @@ import CryptoKit
 public struct FlintOpenCreditState: Codable, Equatable, Sendable {
     public static let maximumTargets = 4096
     public static let maximumGrants = 128
+    public static let maximumOperations = 8192
     public enum Availability: String, Codable, Sendable { case pendingImport, ready, unavailable }
     public var availability: Availability = .pendingImport
     public var quotaZone: String?
@@ -18,6 +19,9 @@ public struct FlintOpenCreditState: Codable, Equatable, Sendable {
     /// Unproven replacement/new identities wait until the next trusted period (PC-38).
     public var pendingTargets: Set<String> = []
     public var grants: [String: FlintOpenCreditGrant] = [:]
+    public var carrierCheckpoints: [String: FlintLedgerInstant] = [:]
+    /// Daily idempotency survives eviction from the ledger's general recent-operation list.
+    public var acceptedOperations: Set<String> = []
     public var enrolled: Bool = false
     public init() {}
 
@@ -39,11 +43,14 @@ public struct FlintOpenCreditState: Codable, Equatable, Sendable {
               resetRemaining.isFinite, (0...26 * 3600).contains(resetRemaining),
               counters.count <= Self.maximumTargets, pendingTargets.count <= Self.maximumTargets,
               Set(counters.keys) == knownTargets,
-              grants.count <= Self.maximumGrants else { return false }
+              grants.count <= Self.maximumGrants,
+              Set(grants.keys) == Set(carrierCheckpoints.keys),
+              acceptedOperations.count <= Self.maximumOperations else { return false }
         return counters.allSatisfy { key, counter in
             !key.isEmpty && counter.targetKey == key && counter.periodStart == periodStart && counter.used >= 0
         } && grants.allSatisfy { key, grant in
-            key == grant.targetKey && counters[key] != nil && grant.isValid
+            key == grant.targetKey && counters[key] != nil && grant.isValid &&
+                acceptedOperations.contains(grant.operationID) && carrierCheckpoints[key]!.monotonic.isFinite
         }
     }
 }
@@ -74,7 +81,7 @@ public struct FlintOpenCreditGrant: Codable, Equatable, Sendable {
 
 public enum FlintOpenCreditBlock: String, Codable, Equatable, Sendable {
     case unavailable, exhausted, otherContributor, categoryOverlap, notOpenLimited, identityNeedsReselection
-    case registrationFailed, staleOperation, safetyFloor
+    case registrationFailed, staleOperation, safetyFloor, applying
     public var message: String {
         switch self {
         case .categoryOverlap: return "Another category rule may still block this app; no credit used."
@@ -82,6 +89,7 @@ public enum FlintOpenCreditBlock: String, Codable, Equatable, Sendable {
         case .exhausted: return "No credits remaining today."
         case .identityNeedsReselection: return "Reselect this target. Access is unavailable until the next quota period; no credit used."
         case .notOpenLimited: return "This target has no enabled Open Limit."
+        case .applying: return "Credit accepted. Access needs recovery; retry keeps the same deadline."
         default: return "Access unavailable; no credit used."
         }
     }
@@ -92,8 +100,11 @@ public struct FlintOpenCreditPreview: Equatable, Sendable {
     public let cap: Int?
     public let blockedBy: FlintOpenCreditBlock?
     public let grant: FlintOpenCreditGrant?
-    public init(remaining: Int?, cap: Int?, blockedBy: FlintOpenCreditBlock?, grant: FlintOpenCreditGrant? = nil) {
+    public let blockingContributors: [String]
+    public init(remaining: Int?, cap: Int?, blockedBy: FlintOpenCreditBlock?, grant: FlintOpenCreditGrant? = nil,
+                blockingContributors: [String] = []) {
         self.remaining = remaining; self.cap = cap; self.blockedBy = blockedBy; self.grant = grant
+        self.blockingContributors = blockingContributors
     }
 }
 
@@ -165,6 +176,7 @@ extension FlintLedgerState {
         for grant in Array(openCredits.grants.values) where grant.remaining(at: now) <= 0 {
             reshield(grant)
             openCredits.grants[grant.targetKey] = nil
+            openCredits.carrierCheckpoints[grant.targetKey] = nil
         }
         let last = openCredits.checkpoint!
         if let elapsed = last.elapsed(until: now) {
@@ -175,6 +187,8 @@ extension FlintLedgerState {
         if openCredits.resetRemaining <= 0 {
             for grant in openCredits.grants.values { reshield(grant) }
             openCredits.grants.removeAll()
+            openCredits.carrierCheckpoints.removeAll()
+            openCredits.acceptedOperations.removeAll()
             var calendar = Calendar(identifier: .gregorian)
             calendar.timeZone = TimeZone(identifier: openCredits.quotaZone!)!
             let trusted = openCredits.trustedWall!
@@ -207,7 +221,8 @@ extension FlintLedgerState {
     }
 
     public func openCreditPreview(target: String, caps: [Int], blockedBy: FlintOpenCreditBlock?,
-                                  at now: FlintLedgerInstant) -> FlintOpenCreditPreview {
+                                  at now: FlintLedgerInstant, contributors: [String] = [],
+                                  coveringCauseIDs: Set<String>? = nil) -> FlintOpenCreditPreview {
         let cap = caps.min()
         guard let cap else { return .init(remaining: nil, cap: nil, blockedBy: .notOpenLimited) }
         guard openCredits.isValid, openCredits.availability == .ready else {
@@ -218,8 +233,13 @@ extension FlintLedgerState {
         }
         let remaining = max(0, cap) > counter.used ? max(0, cap) - counter.used : 0
         let grant = openCredits.grants[target].flatMap { $0.remaining(at: now) > 0 ? $0 : nil }
+        let additionalOpenCause = grant.map { grant in
+            coveringCauseIDs.map { !$0.isSubset(of: grant.coveredCauses) } ?? false
+        } ?? false
         return .init(remaining: remaining, cap: cap,
-                     blockedBy: blockedBy ?? (grant == nil && remaining == 0 ? .exhausted : nil), grant: grant)
+                     blockedBy: blockedBy ?? (additionalOpenCause ? .otherContributor :
+                        (grant == nil && remaining == 0 ? .exhausted : nil)), grant: grant,
+                     blockingContributors: contributors)
     }
 
     /// One atomic acceptance. `register` must succeed before consumption; failure spends
@@ -232,7 +252,8 @@ extension FlintLedgerState {
         guard reconcileOpenCredits(at: now, targetKeys: targetKeys, reshield: reshield) else {
             return .failure(.denied(.unavailable))
         }
-        let preview = openCreditPreview(target: target, caps: Array(coveringCaps.values), blockedBy: blocking(), at: now)
+        let preview = openCreditPreview(target: target, caps: Array(coveringCaps.values), blockedBy: blocking(),
+                                        at: now, coveringCauseIDs: Set(coveringCaps.keys))
         if let block = preview.blockedBy { return .failure(.denied(block)) }
         if let grant = preview.grant {
             return .success(.init(grant: grant, remaining: preview.remaining!, replayed: true))
@@ -240,8 +261,12 @@ extension FlintLedgerState {
         guard FlintProtectionPolicy.decideOpenCredit(creditsRemaining: preview.remaining,
             blockingContributors: []) == .allow(confirm: true) else { return .failure(.denied(.exhausted)) }
         // A delayed retry after expiry must not charge again or recreate access (PC-23).
-        guard !operationID.isEmpty, operation(operationID) == nil else { return .failure(.denied(.staleOperation)) }
+        guard !operationID.isEmpty, operationID.count <= 128, operation(operationID) == nil,
+              !openCredits.acceptedOperations.contains(operationID) else { return .failure(.denied(.staleOperation)) }
         guard openCredits.grants.count < FlintOpenCreditState.maximumGrants, coveringCaps.count <= 64 else {
+            return .failure(.denied(.unavailable))
+        }
+        guard openCredits.acceptedOperations.count < FlintOpenCreditState.maximumOperations else {
             return .failure(.denied(.unavailable))
         }
         let duration = min(300, openCredits.resetRemaining)
@@ -251,6 +276,8 @@ extension FlintLedgerState {
         do { try register(grant) } catch { return .failure(.denied(.registrationFailed)) }
         openCredits.counters[target]!.used += 1
         openCredits.grants[target] = grant
+        openCredits.carrierCheckpoints[target] = now
+        openCredits.acceptedOperations.insert(operationID)
         remember(.init(id: operationID, kind: "openCredit", result: "accepted", at: now.wall))
         return .success(.init(grant: grant, remaining: preview.remaining! - 1, replayed: false))
     }

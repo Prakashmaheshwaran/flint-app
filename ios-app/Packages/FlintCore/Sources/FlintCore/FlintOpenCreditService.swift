@@ -5,8 +5,11 @@ public struct FlintOpenCreditContext {
     public var coveringCaps: [String: Int]
     public var targetKeys: Set<String>
     public var blockedBy: FlintOpenCreditBlock?
-    public init(coveringCaps: [String: Int], targetKeys: Set<String>, blockedBy: FlintOpenCreditBlock? = nil) {
+    public var blockingContributors: [String]
+    public init(coveringCaps: [String: Int], targetKeys: Set<String>, blockedBy: FlintOpenCreditBlock? = nil,
+                blockingContributors: [String] = []) {
         self.coveringCaps = coveringCaps; self.targetKeys = targetKeys; self.blockedBy = blockedBy
+        self.blockingContributors = blockingContributors
     }
 }
 
@@ -41,7 +44,8 @@ public final class FlintOpenCreditService {
             return .init(remaining: nil, cap: context.coveringCaps.values.min(), blockedBy: .unavailable)
         }
         return state.openCreditPreview(target: target, caps: Array(context.coveringCaps.values),
-                                       blockedBy: context.blockedBy, at: now)
+            blockedBy: context.blockedBy, at: now, contributors: context.blockingContributors,
+            coveringCauseIDs: Set(context.coveringCaps.keys))
     }
 
     public func accept(target: String, operationID: String) -> Result<FlintOpenCreditReceipt, FlintOpenCreditRefusal> {
@@ -54,6 +58,9 @@ public final class FlintOpenCreditService {
                 blocking: { context.blockedBy }, register: { grant in
                     newRegistration = grant.activityName
                     try self.register(grant, grant.remaining(at: FlintLedgerInstant(clock: self.clock)))
+                    guard grant.remaining(at: FlintLedgerInstant(clock: self.clock)) > 0 else {
+                        throw FlintOpenCreditRefusal.denied(.registrationFailed)
+                    }
                 }, reshield: self.reshieldAndStop)
         }
         let receipt: FlintOpenCreditReceipt
@@ -76,18 +83,31 @@ public final class FlintOpenCreditService {
             guard let context = self.context(), state.reconcileOpenCredits(
                 at: FlintLedgerInstant(clock: self.clock), targetKeys: context.targetKeys, reshield: self.reshieldAndStop),
                 let grant = state.openCredits.grants[receipt.grant.targetKey],
-                grant.operationID == receipt.grant.operationID else { return .failure(.denied(.unavailable)) }
-            if let block = context.blockedBy { return .failure(.denied(block)) }
+                grant.operationID == receipt.grant.operationID else { return .failure(.denied(.applying)) }
+            guard context.blockedBy == nil, Set(context.coveringCaps.keys).isSubset(of: grant.coveredCauses) else {
+                return .failure(.denied(.applying))
+            }
             do {
-                if !self.registered(grant.activityName) {
+                let now = FlintLedgerInstant(clock: self.clock)
+                if !self.registered(grant.activityName) || Self.clockMoved(state.openCredits.carrierCheckpoints[grant.targetKey], to: now) {
                     try self.register(grant, grant.remaining(at: FlintLedgerInstant(clock: self.clock)))
+                    state.openCredits.carrierCheckpoints[grant.targetKey] = now
                 }
-            } catch { return .failure(.denied(.registrationFailed)) }
+            } catch { return .failure(.denied(.applying)) }
+            let fresh = FlintLedgerInstant(clock: self.clock)
+            guard grant.remaining(at: fresh) > 0 else {
+                _ = state.reconcileOpenCredits(at: fresh, targetKeys: context.targetKeys, reshield: self.reshieldAndStop)
+                return .failure(.denied(.applying))
+            }
+            guard let current = self.context(), current.blockedBy == nil,
+                  Set(current.coveringCaps.keys).isSubset(of: grant.coveredCauses) else {
+                return .failure(.denied(.applying))
+            }
             // Native store writes occur while the same lock used by expiry is held.
             self.release(grant)
             return .success(receipt)
         }
-        guard case let .success(result) = applied else { return .failure(.denied(.unavailable)) }
+        guard case let .success(result) = applied else { return .failure(.denied(.applying)) }
         return result
     }
 
@@ -113,13 +133,18 @@ public final class FlintOpenCreditService {
                 // Do not re-register on intervalDidStart: that would create a callback loop.
                 let repair = !self.registered(grant.activityName) ||
                     (grant.activityName == activity && (callback == .warning || callback == .end)) ||
+                    Self.clockMoved(state.openCredits.carrierCheckpoints[grant.targetKey], to: now) ||
                     activity == nil
                 do {
-                    if repair { try self.register(grant, grant.remaining(at: now)) }
+                    if repair {
+                        try self.register(grant, grant.remaining(at: now))
+                        state.openCredits.carrierCheckpoints[grant.targetKey] = now
+                    }
                 } catch {
                     // A committed grant whose carrier disappeared closes without refund.
                     self.reshieldAndStop(grant)
                     state.openCredits.grants[grant.targetKey] = nil
+                    state.openCredits.carrierCheckpoints[grant.targetKey] = nil
                     state.remember(.init(id: grant.operationID + ".repair", kind: "openCredit.repair",
                                          result: "registration_failed_closed", at: now.wall))
                 }
@@ -132,5 +157,10 @@ public final class FlintOpenCreditService {
     private func reshieldAndStop(_ grant: FlintOpenCreditGrant) {
         reshield(grant)
         stop(grant.activityName)
+    }
+
+    private static func clockMoved(_ checkpoint: FlintLedgerInstant?, to now: FlintLedgerInstant) -> Bool {
+        guard let checkpoint, let elapsed = checkpoint.elapsed(until: now) else { return true }
+        return abs(now.wall.timeIntervalSince(checkpoint.wall) - elapsed) > FlintTimeIntegrity.discontinuityThreshold
     }
 }

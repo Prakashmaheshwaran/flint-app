@@ -31,7 +31,7 @@ public enum FlintOpenCredit {
     @discardableResult
     public static func reconcile(activity: String? = nil, callback: FlintOpenCreditService.Callback? = nil) -> Bool {
         guard activity == nil || isCarrier(activity!) else { return false }
-        let result = service(target: nil, blockedBy: { nil })?.reconcile(activity: activity, callback: callback) ?? false
+        let result = service(target: nil, blockedBy: { .init(reason: nil, contributors: []) })?.reconcile(activity: activity, callback: callback) ?? false
         // Also closes pre-upgrade unbounded releases; only this domain's saved targets are
         // touched. applyShield excludes verifiable live grants under the same ledger lock.
         if let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup) {
@@ -63,26 +63,28 @@ public enum FlintOpenCredit {
         if case .failure = result { apply(rule, grants: [:]) }
     }
 
-    private static func preview(target: String, blockedBy: @escaping () -> FlintOpenCreditBlock?) -> FlintOpenCreditPreview {
+    private static func preview(target: String, blockedBy: @escaping () -> FlintOpenCreditBlocking) -> FlintOpenCreditPreview {
         service(target: target, blockedBy: blockedBy)?.preview(target: target) ??
             .init(remaining: nil, cap: nil, blockedBy: .unavailable)
     }
-    private static func accept(target: String, operationID: String, blockedBy: @escaping () -> FlintOpenCreditBlock?)
+    private static func accept(target: String, operationID: String, blockedBy: @escaping () -> FlintOpenCreditBlocking)
         -> Result<FlintOpenCreditReceipt, FlintOpenCreditRefusal> {
         guard let service = service(target: target, blockedBy: blockedBy) else { return .failure(.denied(.unavailable)) }
         return service.accept(target: target, operationID: operationID)
     }
 
-    private static func service(target: String?, blockedBy: @escaping () -> FlintOpenCreditBlock?) -> FlintOpenCreditService? {
+    private static func service(target: String?, blockedBy: @escaping () -> FlintOpenCreditBlocking) -> FlintOpenCreditService? {
         guard let ledger = FlintProtectionLedger.appGroup() else { return nil }
         let center = DeviceActivityCenter()
         return FlintOpenCreditService(ledger: ledger, clock: .system, context: {
             guard let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup),
                   Set(rules.map(\.id)).count == rules.count else { return nil }
             let covering = rules.filter { rule in rule.enabled && target.map { keys(for: rule).contains($0) } == true }
+            let blocked = blockedBy()
             return .init(coveringCaps: Dictionary(uniqueKeysWithValues: covering.map { ($0.id, $0.opensAllowed) }),
                          targetKeys: targetKeys(rules), blockedBy:
-                            target == "flint.openLimit.unencodable" ? .identityNeedsReselection : blockedBy())
+                            target == "flint.openLimit.unencodable" ? .identityNeedsReselection : blocked.reason,
+                         blockingContributors: blocked.contributors)
         }, register: { grant, remaining in
             guard remaining > 0 else { throw FlintOpenCreditRefusal.denied(.unavailable) }
             let plan = FlintOpenCreditCarrierPlan(start: Date(), remaining: remaining)
@@ -144,38 +146,36 @@ public enum FlintOpenCredit {
         store.shield.webDomainCategories = nil
     }
 
-    private static func otherStores() -> [ManagedSettingsStore]? {
+    private static func otherStores() -> [FlintOpenCreditContributor]? {
         guard let schedules = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: .flintGroup),
               let limits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: .flintGroup) else { return nil }
-        return (["flint"] + schedules.map(\.storeName) + limits.map(\.storeName)).map { ManagedSettingsStore(named: .init($0)) }
-    }
-    private static func blocking(application token: ApplicationToken) -> FlintOpenCreditBlock? {
-        guard let stores = otherStores() else { return .unavailable }
-        for store in stores {
-            if store.shield.applications?.contains(token) == true { return .otherContributor }
-            switch store.shield.applicationCategories {
-            case .all(except: let allowed)?: if !allowed.contains(token) { return .categoryOverlap }
-            case .specific(let categories, except: let allowed)?:
-                if !categories.isEmpty && !allowed.contains(token) { return .categoryOverlap }
-            case nil: break
-            @unknown default: return .categoryOverlap
-            }
+        let names = [("Current session", "flint")] + schedules.map { ("Schedule: " + $0.name, $0.storeName) } +
+            limits.map { ("Time Limit: " + $0.name, $0.storeName) }
+        return names.map { name, storeName in
+            let store = ManagedSettingsStore(named: .init(storeName))
+            return .init(name: name,
+                applications: Set((store.shield.applications ?? []).map { FlintOpenLimit.key(for: $0) }),
+                webDomains: Set((store.shield.webDomains ?? []).map { FlintOpenLimit.key(for: $0) }),
+                applicationCategoryExceptions: categoryExceptions(store.shield.applicationCategories, key: { FlintOpenLimit.key(for: $0) }),
+                webCategoryExceptions: categoryExceptions(store.shield.webDomainCategories, key: { FlintOpenLimit.key(for: $0) }))
         }
-        return nil
     }
-    private static func blocking(webDomain token: WebDomainToken) -> FlintOpenCreditBlock? {
-        guard let stores = otherStores() else { return .unavailable }
-        for store in stores {
-            if store.shield.webDomains?.contains(token) == true { return .otherContributor }
-            switch store.shield.webDomainCategories {
-            case .all(except: let allowed)?: if !allowed.contains(token) { return .categoryOverlap }
-            case .specific(let categories, except: let allowed)?:
-                if !categories.isEmpty && !allowed.contains(token) { return .categoryOverlap }
-            case nil: break
-            @unknown default: return .categoryOverlap
-            }
+    private static func blocking(application token: ApplicationToken) -> FlintOpenCreditBlocking {
+        .query(target: FlintOpenLimit.key(for: token), kind: .application, stores: otherStores())
+    }
+    private static func blocking(webDomain token: WebDomainToken) -> FlintOpenCreditBlocking {
+        .query(target: FlintOpenLimit.key(for: token), kind: .webDomain, stores: otherStores())
+    }
+    private static func categoryExceptions<Activity>(
+        _ policy: ShieldSettings.ActivityCategoryPolicy<Activity>?, key: (Token<Activity>) -> String
+    ) -> Set<String>? {
+        switch policy {
+        case .some(.none), .none: return nil
+        case let .some(.all(except: allowed)): return Set(allowed.map(key))
+        case let .some(.specific(categories, except: allowed)):
+            return categories.isEmpty ? nil : Set(allowed.map(key))
+        @unknown default: return [] // an unknown category policy never proves disjointness
         }
-        return nil
     }
 }
 #endif
