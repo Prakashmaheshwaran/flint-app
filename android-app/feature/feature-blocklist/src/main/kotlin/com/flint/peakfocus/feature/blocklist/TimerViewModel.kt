@@ -341,9 +341,6 @@ internal class TimerViewModel(
                     commitments = FlintPreferences.editorCommitments(appContext),
                     harderWaits = FlintPreferences.harderWait(appContext),
                     safety = { loadEditorSafety(appContext) },
-                    // The start instant rides the id so Today's sun arc can place the ember;
-                    // see timerStartEpochMs.
-                    newId = { "${System.currentTimeMillis()}-${UUID.randomUUID()}" },
                 ) as T
             }
         }

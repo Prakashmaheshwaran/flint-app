@@ -70,7 +70,8 @@ internal fun timerRule(draft: TimerDraft, nowEpochMs: Long, uniqueId: String): B
         it.id == draft.presetId && it.minutes == draft.durationMinutes
     }
     return BlockRule(
-        id = CONTRACT_TIMER_ID_PREFIX + uniqueId,
+        // The ID's start and deadline use the same instant; the UUID supplies no clock.
+        id = CONTRACT_TIMER_ID_PREFIX + "$nowEpochMs-$uniqueId",
         name = preset?.name ?: "Focus timer",
         targets = BlockTargets(apps = draft.apps.distinctBy { it.packageName }.toSet()),
         breakLevel = draft.breakLevel,

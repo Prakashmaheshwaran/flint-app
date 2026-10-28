@@ -287,6 +287,7 @@ class EditorCommitmentStoreTest {
         recreated.reconcile(clock(3_600_001))
         assertTrue(snapshot(recreated).queued.single().needsReview)
         assertEquals(listOf(changed), rules.rules.first())
+        assertEquals(listOf(changed), recreated.reconcileRules(clock(3_600_001)))
     }
 
     @Test fun `PC-12 published unqueued schedules retain their next start boundary`() = runBlocking {
@@ -322,6 +323,7 @@ class EditorCommitmentStoreTest {
         val newer = old.copy(name = "Concurrent save", targets = BlockTargets(apps = setOf(AppRef("c"))))
         disk.beforeUpdate = { disk.values.value = disk.values.value.toMutablePreferences().apply { putEditorRules(listOf(newer)) } }
         val preview = store.requestEnabled(setOf(old.id), false, "Turn off", clock(), safe) as EditorCommitResult.Preview
+        assertEquals("Turn off Concurrent save", preview.pending.change.label)
         assertEquals(listOf(newer), preview.pending.expected.rules)
         assertEquals(EditorCommitResult.Applied(), store.confirm(preview.pending.id, clock(), safe))
         assertEquals(listOf(newer.copy(enabled = false)), DataStoreBlockRulesStore(disk).rules.first())

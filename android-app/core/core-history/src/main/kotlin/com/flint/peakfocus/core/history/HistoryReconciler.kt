@@ -68,7 +68,7 @@ class HistoryReconciler(
             sessions.values.filter { it.id in current }.forEach { rule ->
                 if (known[rule.id].orEmpty().none { it.knownType == HistoryEventType.STARTED }) {
                     val native = rule.id.startsWith("session-timer-")
-                    val timestamp = if (native) rule.id.removePrefix("session-timer-").substringBefore('-').toLongOrNull() else null
+                    val timestamp = if (native) rule.id.removePrefix("session-timer-v2-").removePrefix("session-timer-").substringBefore('-').toLongOrNull() else null
                     val start = timestamp?.takeIf { it > 1_500_000_000_000L && (rule.plannedEnd == null || it < rule.plannedEnd) } ?: now
                     events += event(HistoryEventType.STARTED, rule.id, start).copy(
                         plannedEnd = rule.plannedEnd, tier = rule.tier, name = rule.name.take(64),

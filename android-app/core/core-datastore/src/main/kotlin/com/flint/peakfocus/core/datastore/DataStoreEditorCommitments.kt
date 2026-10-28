@@ -38,6 +38,7 @@ class DataStoreEditorCommitmentStore(
         val state = prepare(prefs, now)
         prefs.editorRules().map { rule ->
             val cause = state.causes[ruleCauseKey(rule.id)]
+            // A retained review-needed draft never clips a current or future occurrence.
             val boundary = state.queued.firstOrNull { !it.needsReview && ruleCauseKey(rule.id) in it.change.keys }
                 ?.boundaries?.get(ruleCauseKey(rule.id))
             val interval = boundary ?: cause?.interval
@@ -63,7 +64,8 @@ class DataStoreEditorCommitmentStore(
             request(prefs, stamp, safety) {
                 val current = prefs.editorRules().filter { it.id in ruleIds }
                 if (current.isEmpty() || (requireAll && current.map { it.id }.toSet() != ruleIds)) null
-                else EditorChange(label, upserts = current.map { it.copy(enabled = enabled) })
+                else EditorChange(if (requireAll && current.size == 1) "$label ${current.single().name}" else label,
+                    upserts = current.map { it.copy(enabled = enabled) })
             }
         }
 

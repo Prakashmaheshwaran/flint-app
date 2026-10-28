@@ -32,7 +32,7 @@ internal suspend fun runEditorRulePublication(changes: Flow<Unit>, refresh: susp
                 }
             }
         } catch (cancelled: CancellationException) { throw cancelled }
-        catch (cause: Throwable) { unavailable(cause) }
+        catch (cause: Exception) { unavailable(cause) }
         delay(EDITOR_RETRY_MS)
     }
 }

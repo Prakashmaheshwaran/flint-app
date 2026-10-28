@@ -286,7 +286,7 @@ internal class BlocklistViewModel(
 
     fun setRuleEnabled(ruleId: String, enabled: Boolean) {
         protectionWrite {
-            commitments.requestEnabled(setOf(ruleId), enabled, if (enabled) "Turn on rule" else "Turn off rule", clock(), withContext(ioDispatcher) { safety() })
+            commitments.requestEnabled(setOf(ruleId), enabled, if (enabled) "Turn on" else "Turn off", clock(), withContext(ioDispatcher) { safety() })
         }
     }
 
