@@ -34,7 +34,7 @@ One JSON object per event. Both platforms use the same field names.
 | `at` | int64 | all | Epoch milliseconds (UTC wall clock) the event takes effect. |
 | `tz` | string | all | IANA zone id at emission. Diagnostic only; aggregation uses the current zone. |
 | `inferred` | bool | optional | `true` when written by reconciliation rather than observed at the transition. |
-| `plannedEnd` | int64? | `started` | Planned end; `null` for open-ended sessions. |
+| `plannedEnd` | int64? | `started`, `rescheduled` | Planned end; `null` for open-ended sessions. |
 | `tier` | string | `started` | `easy`, `harder` or `hardcore`. |
 | `source` | string | `started` | `manual`, `preset`, `shortcut`, `pomodoro`, `focus_filter`, `legacy`, `unknown`. |
 | `name` | string | `started` | User-facing session name (e.g. "Focus", "Deep study"). Max 64 chars. |
@@ -54,6 +54,7 @@ One JSON object per event. Both platforms use the same field names.
 | `break_started` / `break_ended` | A break inside the session began / ended (Android only in v1). |
 | `pass_used` | An Emergency Pass was spent while this session was active. Does not by itself end the session; iOS also emits `ended_early(route: emergency_pass)`. |
 | `failed_to_arm` | Starting or arming the session's out-of-app teardown failed. Diagnostic; does not end the session. |
+| `rescheduled` | A still-running session's planned end changed in place (same session id). Carries the new `plannedEnd`. Name/tier-only edits emit nothing. |
 | `open_intercepted` | Android only: a block surface was shown for a new foreground open attempt during this session. |
 
 Unknown `type` values (from a newer build) are preserved on compaction and ignored by
@@ -61,7 +62,9 @@ aggregation. Records with `v` greater than the reader supports are preserved and
 
 ## Session outcome
 
-For each session id, group its events and sort by `at` (ties: file order).
+For each session id, group its events and sort by `at` (ties: file order). The session's
+**effective planned end** is the `plannedEnd` of its latest `started`/`rescheduled` event
+that precedes the terminal event; every rule below uses it.
 
 1. Outcome = the **first terminal event** among `completed`, `ended_early`, `superseded`.
    Later terminal events are duplicates and are ignored (e.g. the monitor wrote `completed`
@@ -80,13 +83,14 @@ For each session id, group its events and sort by `at` (ties: file order).
 
 For one session:
 
-- Interval = `[started.at, end)` where `end` is the terminal event's `at`, clamped to
-  `plannedEnd` when `plannedEnd != null`. Running sessions use `end = now` and are labelled
+- Interval = `[started.at, end)` where `end` is the terminal event's `at`, clamped to the
+  effective planned end when it is not `null`. Running sessions use `end = now` and are labelled
   "in progress" wherever shown.
 - **Inferred unknown ends (rule 4) credit zero focused time.** Flint cannot prove when such a
   session actually stopped, so it under-reports rather than invents time.
 - Subtract break intervals `[break_started.at, break_ended.at ?? breakEnd ?? end)` clipped
-  to the session interval.
+  to the session interval. An observed `break_ended` takes precedence over the planned
+  `breakEnd`, whether it is earlier or later.
 - If `end < started.at` (wall clock moved backwards) the session contributes zero.
 - Ended-early and superseded sessions **do** contribute the time actually spent before the
   end. Completed vs ended early is reported separately as a count.
@@ -186,8 +190,11 @@ so a missed extension write still produces a truthful outcome.
 ### Android — observed transitions
 
 The app process observes `BlockRulesStore.rules` (as `ActiveRulesBridge` already does) and
-diffs session rules against the history's open sessions: a new active session rule →
-`started` (start instant from the `session-timer-<epochMs>-…` id, else observation time);
+diffs successfully read session-rule snapshots against the history's open sessions: a new
+**active** session rule → `started` (start instant from the `session-timer-<epochMs>-…` id,
+else observation time; expired rules with no recorded start create nothing); a present rule
+whose `expiresAt` differs from the effective planned end → `rescheduled`; a present, enabled
+rule is never completed from an older planned end;
 a session rule gone with `now >= expiresAt` → `completed` at `expiresAt`; gone earlier →
 `ended_early(route: unknown)` at observation time — observed in-process, so this one
 credits time to the observation instant, unlike rule 4's cold-start inference. Explicit
@@ -225,3 +232,5 @@ route, break, pass and `open_intercepted` emission needs one call each in
 - **FH-17** superseded session credits time until the supersede; the new session starts fresh.
 - **FH-18** `end < start` (clock moved back) → zero credit, no crash.
 - **FH-19** streak: completions today and the previous two days → 3; none today → counts from yesterday.
+- **FH-20** `rescheduled` extends/shortens the effective planned end; completion and clamping
+  use the latest value; name/tier-only edits change nothing.
