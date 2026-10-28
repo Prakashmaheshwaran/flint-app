@@ -53,7 +53,8 @@ extension FlintProtectionStatus {
     }
 
     /// One-line commit hook, intentionally not installed in controllers/extensions here.
-    /// Supply the committed ledger's pass value, or an already projected pass status. This
+    /// Supply the committed ledger's pass value (or `try? ledger.peek().get().pass`),
+    /// or an already projected pass status. This
     /// never calls ledger.read(): that API transacts/writes and would nest the commit's lock.
     /// Missing established state must not imply a free pass.
     @discardableResult
@@ -181,6 +182,12 @@ extension FlintProtectionStatus {
 #endif
 
 extension FlintProtectionStatusSnapshot.Pass {
+    /// Projects a read-only ledger observation without migrating or checkpointing its state.
+    public init(_ state: FlintLedgerState, at instant: FlintLedgerInstant,
+                hasActiveCommitment: Bool) {
+        self.init(state.pass, at: instant, hasActiveCommitment: hasActiveCommitment)
+    }
+
     /// Uses the ledger's elapsed-time status; never projects its raw stored remainders.
     public init(_ pass: FlintLedgerState.Pass, at instant: FlintLedgerInstant,
                 hasActiveCommitment: Bool) {
