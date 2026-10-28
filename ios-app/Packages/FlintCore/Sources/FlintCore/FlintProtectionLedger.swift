@@ -15,6 +15,8 @@ public enum FlintLedgerError: Error, Equatable, Sendable {
     case unavailable(String)
     /// Another process held the lock past the timeout. Retry later; nothing was changed.
     case busy
+    /// A transaction was started inside another one on the same thread — a programming error.
+    case nested
 }
 
 // MARK: - Time stamps (§9 anchors)
@@ -36,16 +38,21 @@ public struct FlintLedgerInstant: Codable, Equatable, Sendable {
         self.init(wall: clock.now(), monotonic: clock.monotonic(), bootID: clock.bootSessionID())
     }
 
-    /// Elapsed seconds from `self` to `now` when both are provably on the same boot; nil when
-    /// the boot changed or can't be shown to match (callers then apply §9's reboot rules).
+    /// Elapsed seconds from `self` to `now` that can be trusted, or nil after a reboot (callers
+    /// then apply §9's reboot rules).
+    ///
+    /// With both boot ids known, a match means the monotonic delta is the truth. Without a boot
+    /// id (the OS may not expose one), a monotonic reading below the anchor proves a reboot;
+    /// otherwise only the smaller of the monotonic and wall deltas is credited: an undetected
+    /// reboot can only make monotonic time under-count, and a wall clock moved forward can only
+    /// over-count — so the minimum never credits time that may not have passed.
     public func elapsed(until now: FlintLedgerInstant) -> TimeInterval? {
-        if let bootID, let other = now.bootID {
-            guard bootID == other else { return nil }
-        } else {
-            return nil
-        }
         guard now.monotonic >= monotonic else { return nil }
-        return now.monotonic - monotonic
+        let monotonicDelta = now.monotonic - monotonic
+        if let bootID, let other = now.bootID {
+            return bootID == other ? monotonicDelta : nil
+        }
+        return max(0, min(monotonicDelta, now.wall.timeIntervalSince(wall)))
     }
 }
 
@@ -79,6 +86,9 @@ public struct FlintLedgerState: Codable, Equatable, Sendable {
 
     public struct Pass: Codable, Equatable, Sendable {
         public enum Usage: String, Codable, Sendable {
+            /// The one-time import of the pre-ledger pass state hasn't run yet: no pass can be
+            /// offered until it has (§12 — an established install must never get a fresh pass).
+            case pendingImport
             /// A validated install with no committed use.
             case neverUsed
             /// Used; cooldown is tracked by `cooldownRemaining` at `checkpoint`.
@@ -97,7 +107,7 @@ public struct FlintLedgerState: Codable, Equatable, Sendable {
         public var recoveryRemaining: TimeInterval
 
         public init() {
-            usage = .neverUsed
+            usage = .pendingImport
             cooldownRemaining = 0
             checkpoint = nil
             lastOperationID = nil
@@ -177,23 +187,29 @@ public final class FlintProtectionLedger {
     private let setInitializedMarker: (Date) -> Void
     private let clock: FlintClock
     private let lockTimeout: TimeInterval
+    private let migrate: (inout FlintLedgerState, FlintLedgerInstant) -> Void
 
     /// - Parameters:
     ///   - initializedMarker / setInitializedMarker: a durable marker *outside* the ledger file,
     ///     so a deleted or truncated file after first initialization reads as unavailable rather
-    ///     than as a fresh install (§8).
+    ///     than as a fresh install (§8). Invariant: the marker is written only after the file is
+    ///     durable, so "marker present" implies the file once existed.
+    ///   - migrate: one-time imports, run inside every transaction before the body (each is
+    ///     guarded by its own durable marker, so this is idempotent).
     public init(
         directory: URL,
         clock: FlintClock,
         lockTimeout: TimeInterval = 2,
         initializedMarker: @escaping () -> Date?,
-        setInitializedMarker: @escaping (Date) -> Void
+        setInitializedMarker: @escaping (Date) -> Void,
+        migrate: @escaping (inout FlintLedgerState, FlintLedgerInstant) -> Void = { _, _ in }
     ) {
         self.directory = directory
         self.clock = clock
         self.lockTimeout = lockTimeout
         self.initializedMarker = initializedMarker
         self.setInitializedMarker = setInitializedMarker
+        self.migrate = migrate
     }
 
     /// The production ledger in the App Group container; nil without the entitlement.
@@ -209,7 +225,13 @@ public final class FlintProtectionLedger {
                 let value = defaults.double(forKey: key)
                 return value > 0 ? Date(timeIntervalSince1970: value) : nil
             },
-            setInitializedMarker: { defaults.set($0.timeIntervalSince1970, forKey: key) }
+            setInitializedMarker: { defaults.set($0.timeIntervalSince1970, forKey: key) },
+            migrate: { state, now in
+                // The App Group suite is readable here (we just opened it), so absence of the
+                // legacy key is the old "never used" state, not an unreadable store.
+                let raw = defaults.object(forKey: FlintLedgerState.legacyPassKey)
+                state.importLegacyPass(raw.map(FlintLegacyValue.value) ?? .absent, at: now)
+            }
         )
     }
 
@@ -227,10 +249,8 @@ public final class FlintProtectionLedger {
     /// as `.unavailable`. Never nest transactions on one thread (it would self-deadlock across
     /// file descriptors); a nested call fails instead.
     public func transaction<T>(_ body: (inout FlintLedgerState) throws -> T) -> Result<T, FlintLedgerError> {
-        let nestingKey = "FlintProtectionLedger.inTransaction"
-        if Thread.current.threadDictionary[nestingKey] != nil {
-            return .failure(.unavailable("nested ledger transaction"))
-        }
+        let nestingKey = "FlintProtectionLedger.inTransaction:" + directory.path
+        if Thread.current.threadDictionary[nestingKey] != nil { return .failure(.nested) }
         Thread.current.threadDictionary[nestingKey] = true
         defer { Thread.current.threadDictionary.removeObject(forKey: nestingKey) }
 
@@ -239,22 +259,28 @@ public final class FlintProtectionLedger {
         } catch {
             return .failure(.unavailable("cannot create ledger directory: \(error)"))
         }
-        guard let lock = acquireLock() else { return .failure(.busy) }
+        let lock: Int32
+        switch acquireLock() {
+        case let .success(fd): lock = fd
+        case let .failure(error): return .failure(error)
+        }
         defer { releaseLock(lock) }
 
         var state: FlintLedgerState
+        let existed: Bool
         switch load() {
-        case let .success(loaded): state = loaded
+        case let .success(loaded): (state, existed) = loaded
         case let .failure(error): return .failure(error)
         }
         let before = state
+        migrate(&state, FlintLedgerInstant(clock: clock))
         let result: T
         do {
             result = try body(&state)
         } catch {
             return .failure(.unavailable("transaction aborted: \(error)"))
         }
-        if state != before || !FileManager.default.fileExists(atPath: fileURL.path) {
+        if state != before || !existed {
             if let failure = write(state) { return .failure(failure) }
         }
         if initializedMarker() == nil { setInitializedMarker(state.initializedAt) }
@@ -263,17 +289,17 @@ public final class FlintProtectionLedger {
 
     // MARK: Load / validate
 
-    private func load() -> Result<FlintLedgerState, FlintLedgerError> {
-        let manager = FileManager.default
-        guard manager.fileExists(atPath: fileURL.path) else {
-            if initializedMarker() != nil {
-                return .failure(.unavailable("ledger missing after initialization"))
-            }
-            return .success(FlintLedgerState(initializedAt: clock.now()))
-        }
+    /// The state and whether the file existed. Only a genuinely absent file (ENOENT) may start
+    /// a fresh install; an unreadable one (e.g. locked before first unlock) is unavailable.
+    private func load() -> Result<(FlintLedgerState, Bool), FlintLedgerError> {
         let data: Data
         do {
             data = try Data(contentsOf: fileURL)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            if initializedMarker() != nil {
+                return .failure(.unavailable("ledger missing after initialization"))
+            }
+            return .success((FlintLedgerState(initializedAt: clock.now()), false))
         } catch {
             return .failure(.unavailable("cannot read ledger: \(error)"))
         }
@@ -283,7 +309,7 @@ public final class FlintProtectionLedger {
             return .failure(.unavailable("ledger schema \(header.version) is newer than this build"))
         }
         do {
-            return .success(try Self.decoder.decode(FlintLedgerState.self, from: data))
+            return .success((try Self.makeDecoder().decode(FlintLedgerState.self, from: data), true))
         } catch {
             quarantine(data)
             return .failure(.unavailable("ledger is corrupt"))
@@ -292,25 +318,26 @@ public final class FlintProtectionLedger {
 
     private struct Header: Decodable { let version: Int }
 
-    static let encoder: JSONEncoder = {
+    // Per-call coders: transactions run concurrently on different threads.
+    static func makeEncoder() -> JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .secondsSince1970
         encoder.outputFormatting = [.sortedKeys]
         return encoder
-    }()
+    }
 
-    static let decoder: JSONDecoder = {
+    static func makeDecoder() -> JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .secondsSince1970
         return decoder
-    }()
+    }
 
     // MARK: Write (temp + fsync + rename)
 
     private func write(_ state: FlintLedgerState) -> FlintLedgerError? {
         let data: Data
         do {
-            data = try Self.encoder.encode(state)
+            data = try Self.makeEncoder().encode(state)
         } catch {
             return .unavailable("cannot encode ledger: \(error)")
         }
@@ -318,9 +345,12 @@ public final class FlintProtectionLedger {
         let manager = FileManager.default
         // Readable by the extensions after first unlock; never left world-readable.
         let attributes: [FileAttributeKey: Any] = [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
-        guard manager.createFile(atPath: temp.path, contents: nil, attributes: attributes),
-              let handle = try? FileHandle(forWritingTo: temp) else {
+        guard manager.createFile(atPath: temp.path, contents: nil, attributes: attributes) else {
             return .unavailable("cannot create ledger temp file")
+        }
+        guard let handle = try? FileHandle(forWritingTo: temp) else {
+            try? manager.removeItem(at: temp)
+            return .unavailable("cannot open ledger temp file")
         }
         do {
             try handle.write(contentsOf: data)
@@ -332,8 +362,15 @@ public final class FlintProtectionLedger {
             return .unavailable("cannot write ledger: \(error)")
         }
         guard rename(temp.path, fileURL.path) == 0 else {
+            let code = errno
             try? manager.removeItem(at: temp)
-            return .unavailable("cannot replace ledger (errno \(errno))")
+            return .unavailable("cannot replace ledger (errno \(code))")
+        }
+        // Make the rename itself durable before anything (the init marker) relies on it.
+        let directoryFD = open(directory.path, O_RDONLY)
+        if directoryFD >= 0 {
+            fsync(directoryFD)
+            close(directoryFD)
         }
         return nil
     }
@@ -347,7 +384,8 @@ public final class FlintProtectionLedger {
         let name = "\(Int64(clock.now().timeIntervalSince1970 * 1000)).json"
         let target = folder.appendingPathComponent(name)
         if !manager.fileExists(atPath: target.path) {
-            try? data.write(to: target)
+            manager.createFile(atPath: target.path, contents: data,
+                               attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
         }
         let existing = ((try? manager.contentsOfDirectory(atPath: folder.path)) ?? []).sorted()
         for stale in existing.dropLast(Self.quarantineLimit) {
@@ -357,19 +395,28 @@ public final class FlintProtectionLedger {
 
     // MARK: Lock
 
-    private func acquireLock() -> Int32? {
+    /// An exclusive lock on a dedicated file that is never deleted. Only a deadline expiry is
+    /// `.busy`; a lock that can't be opened or taken at all is `.unavailable` (a permanent fault,
+    /// not contention). The deadline runs on monotonic time, immune to clock changes.
+    private func acquireLock() -> Result<Int32, FlintLedgerError> {
         let path = directory.appendingPathComponent(Self.lockName).path
-        let fd = open(path, O_CREAT | O_RDWR, 0o600)
-        guard fd >= 0 else { return nil }
-        let deadline = Date().addingTimeInterval(lockTimeout)
+        var fd: Int32
+        repeat { fd = open(path, O_CREAT | O_RDWR, 0o600) } while fd < 0 && errno == EINTR
+        guard fd >= 0 else { return .failure(.unavailable("cannot open ledger lock (errno \(errno))")) }
+        let deadline = clock.monotonic() + lockTimeout
         while flock(fd, LOCK_EX | LOCK_NB) != 0 {
-            guard errno == EWOULDBLOCK || errno == EINTR, Date() < deadline else {
+            let code = errno
+            guard code == EWOULDBLOCK || code == EINTR else {
                 close(fd)
-                return nil
+                return .failure(.unavailable("cannot lock ledger (errno \(code))"))
+            }
+            guard clock.monotonic() < deadline else {
+                close(fd)
+                return .failure(.busy)
             }
             usleep(5_000)
         }
-        return fd
+        return .success(fd)
     }
 
     private func releaseLock(_ fd: Int32) {

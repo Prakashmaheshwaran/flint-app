@@ -28,10 +28,11 @@ final class FlintProtectionLedgerTests: XCTestCase {
                    bootSessionID: { [unowned self] in self.boot }, calendar: { Calendar(identifier: .gregorian) })
     }
 
-    private func ledger() -> FlintProtectionLedger {
-        FlintProtectionLedger(directory: directory, clock: clock, lockTimeout: 5,
+    private func ledger(lockTimeout: TimeInterval = 5, legacy: FlintLegacyValue = .absent) -> FlintProtectionLedger {
+        FlintProtectionLedger(directory: directory, clock: clock, lockTimeout: lockTimeout,
                               initializedMarker: { [unowned self] in self.marker },
-                              setInitializedMarker: { [unowned self] in self.marker = $0 })
+                              setInitializedMarker: { [unowned self] in self.marker = $0 },
+                              migrate: { state, now in state.importLegacyPass(legacy, at: now) })
     }
 
     private var instant: FlintLedgerInstant { FlintLedgerInstant(clock: clock) }
@@ -65,7 +66,9 @@ final class FlintProtectionLedgerTests: XCTestCase {
             throw Abort()
         }
         guard case .failure(.unavailable) = result else { return XCTFail("expected unavailable, got \(result)") }
-        XCTAssertEqual(try state().migrations, ["kept"])
+        let migrations = try state().migrations
+        XCTAssertTrue(migrations.contains("kept"))
+        XCTAssertFalse(migrations.contains("discarded"))
     }
 
     func testConcurrentIncrementsFromSeparateHandlesAreSerialized() throws {
@@ -78,16 +81,6 @@ final class FlintProtectionLedgerTests: XCTestCase {
             _ = ledger.transaction { $0.harder["c", default: .init()].committedCount += 1 }
         }
         XCTAssertEqual(try state().harder["c"]?.committedCount, 40, "no lost update")
-    }
-
-    func testNestedTransactionsFailInsteadOfDeadlocking() {
-        let ledger = ledger()
-        let outer = ledger.transaction { _ -> Result<Void, FlintLedgerError> in
-            ledger.transaction { _ in }
-        }
-        guard case let .success(inner) = outer, case .failure(.unavailable) = inner else {
-            return XCTFail("nested transaction must fail, got \(outer)")
-        }
     }
 
     func testCorruptFileIsUnavailableQuarantinedAndNeverReplacedPC37() throws {
@@ -155,12 +148,12 @@ final class FlintProtectionLedgerTests: XCTestCase {
         advance(1000)
         s.pass.checkpoint(at: instant)
         XCTAssertEqual(s.pass.cooldownRemaining, FlintProtectionConstants.passPeriod - 1000)
-        XCTAssertTrue(s.pass.isRecovering)
+        XCTAssertTrue(s.pass.status(at: instant, hasActiveCommitment: true).isRecovering)
         // Reboot: new boot id, monotonic restarts, wall says a week passed.
         boot = "boot-2"; monotonic = 50; now = now.addingTimeInterval(7 * 86_400)
         s.pass.checkpoint(at: instant)
         XCTAssertEqual(s.pass.cooldownRemaining, FlintProtectionConstants.passPeriod - 1000, "no unverified credit")
-        XCTAssertFalse(s.pass.isRecovering, "recovery access ends after a restart")
+        XCTAssertFalse(s.pass.status(at: instant, hasActiveCommitment: true).isRecovering, "recovery access ends after a restart")
         advance(100)
         s.pass.checkpoint(at: instant)
         XCTAssertEqual(s.pass.cooldownRemaining, FlintProtectionConstants.passPeriod - 1100)
@@ -173,7 +166,7 @@ final class FlintProtectionLedgerTests: XCTestCase {
         s.pass.checkpoint(at: instant)
         XCTAssertEqual(s.pass.recoveryRemaining, 1800)
         s.endRecovery(at: instant)
-        XCTAssertFalse(s.pass.isRecovering)
+        XCTAssertFalse(s.pass.status(at: instant, hasActiveCommitment: true).isRecovering)
         XCTAssertEqual(s.consumePass(operationID: "b", hasActiveCommitment: true, at: instant),
                        .failure(.coolingDown(remaining: FlintProtectionConstants.passPeriod - 1800)), "no refund")
     }
@@ -196,14 +189,14 @@ final class FlintProtectionLedgerTests: XCTestCase {
         XCTAssertEqual(s.requestHarderWait(cause: "c", kind: "stop", scope: ["s"], operationID: "w2", at: instant),
                        .waiting(remaining: 60), "PC-20: cancel restarts the full wait and spends nothing")
         advance(60)
-        XCTAssertTrue(s.commitHarderWait(cause: "c", at: instant))
+        XCTAssertEqual(s.commitHarderWait(cause: "c", operationID: "w2", at: instant), .committed)
         XCTAssertEqual(s.harder["c"]?.committedCount, 1)
         XCTAssertEqual(s.requestHarderWait(cause: "c", kind: "break", scope: ["s"], operationID: "w3", at: instant),
                        .waiting(remaining: 300), "PC-18: second exception waits 300 s")
-        advance(300); _ = s.commitHarderWait(cause: "c", at: instant)
+        advance(300); _ = s.commitHarderWait(cause: "c", operationID: "w3", at: instant)
         XCTAssertEqual(s.requestHarderWait(cause: "c", kind: "break", scope: ["s"], operationID: "w4", at: instant),
                        .waiting(remaining: 900))
-        advance(900); _ = s.commitHarderWait(cause: "c", at: instant)
+        advance(900); _ = s.commitHarderWait(cause: "c", operationID: "w4", at: instant)
         XCTAssertEqual(s.requestHarderWait(cause: "c", kind: "break", scope: ["s"], operationID: "w5", at: instant),
                        .waiting(remaining: 900), "capped at 900")
     }
@@ -212,14 +205,16 @@ final class FlintProtectionLedgerTests: XCTestCase {
         var s = try state()
         s.requestHarderWait(cause: "c", kind: "stop", scope: [], operationID: "w1", at: instant)
         advance(59)
-        XCTAssertFalse(s.commitHarderWait(cause: "c", at: instant))
+        XCTAssertEqual(s.commitHarderWait(cause: "c", operationID: "w1", at: instant), .notMatured)
         advance(1)
-        XCTAssertTrue(s.commitHarderWait(cause: "c", at: instant))
-        XCTAssertFalse(s.commitHarderWait(cause: "c", at: instant), "nothing pending any more")
+        XCTAssertEqual(s.commitHarderWait(cause: "c", operationID: "w1", at: instant), .committed)
+        XCTAssertEqual(s.commitHarderWait(cause: "c", operationID: "w1", at: instant), .alreadyCommitted,
+                       "§8: an ambiguous retry finds the commit instead of counting again")
         XCTAssertEqual(s.harder["c"]?.committedCount, 1)
+        XCTAssertEqual(s.commitHarderWait(cause: "c", operationID: "other", at: instant), .nothingPending)
     }
 
-    func testDifferentOperationNeedsANewWait() throws {
+    func testChangedScopeRestartsAndAResumedWaitAdoptsTheNewID() throws {
         var s = try state()
         s.requestHarderWait(cause: "c", kind: "stop", scope: ["a"], operationID: "w1", at: instant)
         advance(50)
@@ -227,6 +222,9 @@ final class FlintProtectionLedgerTests: XCTestCase {
                        .waiting(remaining: 60), "changed scope restarts")
         XCTAssertEqual(s.requestHarderWait(cause: "c", kind: "stop", scope: ["a", "b"], operationID: "w3", at: instant),
                        .waiting(remaining: 60), "same request resumes, not restarts")
+        advance(60)
+        XCTAssertEqual(s.commitHarderWait(cause: "c", operationID: "w3", at: instant), .committed,
+                       "the resumed wait is committed under the caller's id")
     }
 
     func testRebootCancelsAPendingWaitWithoutCountingIt() throws {
@@ -234,7 +232,7 @@ final class FlintProtectionLedgerTests: XCTestCase {
         s.requestHarderWait(cause: "c", kind: "stop", scope: [], operationID: "w1", at: instant)
         boot = "boot-2"; monotonic = 10; now = now.addingTimeInterval(3600)
         XCTAssertEqual(s.harderWaitStatus(cause: "c", at: instant), .none)
-        XCTAssertFalse(s.commitHarderWait(cause: "c", at: instant))
+        XCTAssertEqual(s.commitHarderWait(cause: "c", operationID: "w1", at: instant), .nothingPending)
         XCTAssertEqual(s.harder["c"]?.committedCount ?? 0, 0)
     }
 
@@ -248,29 +246,143 @@ final class FlintProtectionLedgerTests: XCTestCase {
     // MARK: Legacy pass import (§12)
 
     func testLegacyPassImportPC69() throws {
-        var s = try state()
-        s.importLegacyPass(lastUsed: now.addingTimeInterval(-86_400).timeIntervalSince1970, at: instant)
+        var s = FlintLedgerState(initializedAt: now)
+        XCTAssertEqual(s.consumePass(operationID: "early", hasActiveCommitment: true, at: instant), .failure(.unavailable),
+                       "no pass before the one-time import has run")
+        s.importLegacyPass(.value(now.addingTimeInterval(-86_400).timeIntervalSince1970), at: instant)
         XCTAssertEqual(s.pass.usage, .used)
         XCTAssertEqual(s.pass.cooldownRemaining, FlintProtectionConstants.passPeriod - 86_400, "cooldown preserved")
-        s.importLegacyPass(lastUsed: nil, at: instant)
+        s.importLegacyPass(.absent, at: instant)
         XCTAssertEqual(s.pass.usage, .used, "runs once")
 
         var fresh = FlintLedgerState(initializedAt: now)
-        fresh.importLegacyPass(lastUsed: nil, at: instant)
+        fresh.importLegacyPass(.absent, at: instant)
         XCTAssertEqual(fresh.pass.usage, .neverUsed, "a validated absent key is the old unused state")
 
+        var unreadable = FlintLedgerState(initializedAt: now)
+        unreadable.importLegacyPass(.unreadable, at: instant)
+        XCTAssertEqual(unreadable.pass.usage, .unknown, "a partial/unreadable read is never a fresh pass")
+
         var future = FlintLedgerState(initializedAt: now)
-        future.importLegacyPass(lastUsed: now.addingTimeInterval(86_400).timeIntervalSince1970, at: instant)
+        future.importLegacyPass(.value(now.addingTimeInterval(86_400).timeIntervalSince1970), at: instant)
         XCTAssertEqual(future.pass.usage, .unknown, "a future use is never a fresh pass")
         XCTAssertEqual(future.consumePass(operationID: "x", hasActiveCommitment: true, at: instant), .failure(.unavailable))
 
         var malformed = FlintLedgerState(initializedAt: now)
-        malformed.importLegacyPass(lastUsed: "yesterday", at: instant)
+        malformed.importLegacyPass(.value("yesterday"), at: instant)
         XCTAssertEqual(malformed.pass.usage, .unknown)
 
         var old = FlintLedgerState(initializedAt: now)
-        old.importLegacyPass(lastUsed: now.addingTimeInterval(-30 * 86_400).timeIntervalSince1970, at: instant)
+        old.importLegacyPass(.value(now.addingTimeInterval(-30 * 86_400).timeIntervalSince1970), at: instant)
         XCTAssertEqual(try old.consumePass(operationID: "y", hasActiveCommitment: true, at: instant).get().replayed, false)
+    }
+
+    func testLegacyImportReadsTheRealUserDefaultsBridging() throws {
+        let suite = "flint.tests.ledger.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(now.addingTimeInterval(-3600).timeIntervalSince1970, forKey: FlintLedgerState.legacyPassKey)
+        var s = FlintLedgerState(initializedAt: now)
+        s.importLegacyPass(defaults.object(forKey: FlintLedgerState.legacyPassKey).map(FlintLegacyValue.value) ?? .absent, at: instant)
+        XCTAssertEqual(s.pass.usage, .used)
+        XCTAssertEqual(s.pass.cooldownRemaining, FlintProtectionConstants.passPeriod - 3600)
+    }
+
+    func testAFreshLedgerOffersNoPassUntilTheImportRuns() throws {
+        let noImport = FlintProtectionLedger(directory: directory, clock: clock, initializedMarker: { nil }, setInitializedMarker: { _ in })
+        var s = try noImport.read().get()
+        XCTAssertEqual(s.consumePass(operationID: "x", hasActiveCommitment: true, at: instant), .failure(.unavailable))
+        _ = ledger(legacy: .absent).read()
+        s = try state()
+        XCTAssertEqual(try s.consumePass(operationID: "x", hasActiveCommitment: true, at: instant).get().replayed, false)
+    }
+
+    // MARK: Review follow-ups (§8, §9)
+
+    func testWithoutABootIDOnlyTheSmallerDeltaIsCredited() {
+        boot = nil
+        let start = instant
+        advance(100)
+        XCTAssertEqual(start.elapsed(until: instant), 100, "steady clocks: credited")
+        now = now.addingTimeInterval(3600)
+        XCTAssertEqual(start.elapsed(until: instant), 100, "a forward wall jump credits nothing extra")
+        now = now.addingTimeInterval(-3600 - 50)
+        XCTAssertEqual(start.elapsed(until: instant), 50, "a backward wall jump credits only what both agree on")
+        monotonic = 1
+        XCTAssertNil(start.elapsed(until: instant), "monotonic below the anchor proves a reboot")
+    }
+
+    func testPassAndWaitsStillProgressWithoutABootID() throws {
+        boot = nil
+        var s = try state()
+        _ = s.consumePass(operationID: "a", hasActiveCommitment: true, at: instant)
+        s.requestHarderWait(cause: "c", kind: "stop", scope: [], operationID: "w", at: instant)
+        advance(604_800)
+        XCTAssertEqual(s.harderWaitStatus(cause: "c", at: instant), .matured)
+        XCTAssertEqual(try s.consumePass(operationID: "b", hasActiveCommitment: true, at: instant).get().replayed, false,
+                       "the cooldown decays on the conservative timeline instead of never")
+    }
+
+    func testAnOlderPassOperationReplaysInsteadOfReportingACooldown() throws {
+        var s = try state()
+        _ = s.consumePass(operationID: "a", hasActiveCommitment: true, at: instant)
+        advance(604_800)
+        _ = s.consumePass(operationID: "b", hasActiveCommitment: true, at: instant)
+        XCTAssertEqual(try s.consumePass(operationID: "a", hasActiveCommitment: true, at: instant).get().replayed, true)
+    }
+
+    func testPassStatusDoesNotMutateTheRecord() throws {
+        var s = try state()
+        _ = s.consumePass(operationID: "a", hasActiveCommitment: true, at: instant)
+        let stored = s.pass
+        advance(1800)
+        XCTAssertEqual(s.pass.status(at: instant, hasActiveCommitment: true).recoveryRemaining, 1800)
+        XCTAssertEqual(s.pass, stored)
+    }
+
+    func testALockHeldElsewhereIsBusyNotUnavailable() throws {
+        _ = try state()
+        let path = directory.appendingPathComponent("ledger.lock").path
+        let holder = open(path, O_RDWR)
+        XCTAssertGreaterThanOrEqual(holder, 0)
+        XCTAssertEqual(flock(holder, LOCK_EX), 0)
+        defer { flock(holder, LOCK_UN); close(holder) }
+        // The deadline runs on the (fake) monotonic clock: advance it from another thread.
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) { [unowned self] in self.monotonic += 10 }
+        guard case .failure(.busy) = ledger(lockTimeout: 1).read() else { return XCTFail("expected busy") }
+    }
+
+    func testNestedTransactionsReportNested() {
+        let ledger = ledger()
+        let outer = ledger.transaction { _ -> Result<Void, FlintLedgerError> in ledger.transaction { _ in } }
+        guard case let .success(inner) = outer, case .failure(.nested) = inner else {
+            return XCTFail("nested transaction must report .nested, got \(outer)")
+        }
+    }
+
+    func testNewerSchemaIsNotQuarantinedAndQuarantineIsBounded() throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appendingPathComponent("ledger.json")
+        try Data(#"{"version": 99}"#.utf8).write(to: file)
+        _ = ledger().read()
+        let quarantine = directory.appendingPathComponent("quarantine")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: quarantine.path), "a newer schema is left alone")
+        for index in 0..<5 {
+            try Data("corrupt \(index)".utf8).write(to: file)
+            now = now.addingTimeInterval(1)
+            _ = ledger().read()
+        }
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: quarantine.path).count, 3)
+    }
+
+    func testHarderEntriesArePruned() {
+        var s = FlintLedgerState(initializedAt: now)
+        for index in 0..<100 { s.harder["old\(index)"] = .init(committedCount: 1) }
+        s.requestHarderWait(cause: "pending", kind: "stop", scope: [], operationID: "w", at: instant)
+        s.pruneHarder(keeping: ["old7"], limit: 10)
+        XCTAssertLessThanOrEqual(s.harder.count, 10)
+        XCTAssertNotNil(s.harder["old7"])
+        XCTAssertNotNil(s.harder["pending"])
     }
 
     func testOperationMemoryIsBounded() {

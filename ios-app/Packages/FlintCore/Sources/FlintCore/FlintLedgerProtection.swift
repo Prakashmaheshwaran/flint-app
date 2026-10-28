@@ -34,11 +34,29 @@ extension FlintLedgerState.Pass {
     public var policyUsage: FlintPassUsage {
         switch usage {
         case .neverUsed: return .neverUsed
-        case .unknown: return .unknown
+        case .unknown, .pendingImport: return .unknown
         case .used: return .used(elapsed: FlintProtectionConstants.passPeriod - cooldownRemaining)
         }
     }
 
+    /// The pass as of `now` without mutating the stored record. Raw `cooldownRemaining` /
+    /// `recoveryRemaining` are only meaningful at `checkpoint`; enforcement must read them
+    /// through this (or after `checkpoint(at:)`), never directly.
+    public func status(at now: FlintLedgerInstant, hasActiveCommitment: Bool) -> FlintPassStatus {
+        var copy = self
+        copy.checkpoint(at: now)
+        return FlintPassStatus(
+            eligibility: FlintProtectionPolicy.passEligibility(copy.policyUsage, hasActiveCommitment: hasActiveCommitment),
+            recoveryRemaining: copy.recoveryRemaining
+        )
+    }
+}
+
+/// The Emergency Pass as of one instant (ADR-012 §6).
+public struct FlintPassStatus: Equatable, Sendable {
+    public let eligibility: FlintPassEligibility
+    /// Global recovery left, in elapsed seconds; 0 = not recovering.
+    public let recoveryRemaining: TimeInterval
     public var isRecovering: Bool { recoveryRemaining > 0 }
 }
 
@@ -53,9 +71,10 @@ extension FlintLedgerState {
         at now: FlintLedgerInstant
     ) -> Result<FlintPassReceipt, FlintPassRefusal> {
         pass.checkpoint(at: now)
-        if pass.lastOperationID == operationID {
+        if pass.lastOperationID == operationID || operation(operationID)?.kind == "pass" {
             return .success(FlintPassReceipt(operationID: operationID,
-                                             recoveryRemaining: pass.recoveryRemaining, replayed: true))
+                                             recoveryRemaining: pass.lastOperationID == operationID ? pass.recoveryRemaining : 0,
+                                             replayed: true))
         }
         switch FlintProtectionPolicy.passEligibility(pass.policyUsage, hasActiveCommitment: hasActiveCommitment) {
         case .available:
@@ -90,6 +109,13 @@ public enum FlintPassRefusal: Error, Equatable, Sendable {
 
 // MARK: - Harder friction (§4, §9)
 
+public enum FlintHarderCommit: Equatable, Sendable {
+    case committed
+    case alreadyCommitted
+    case notMatured
+    case nothingPending
+}
+
 public enum FlintHarderWaitStatus: Equatable, Sendable {
     case none
     case waiting(remaining: TimeInterval)
@@ -112,7 +138,11 @@ extension FlintLedgerState {
     ) -> FlintHarderWaitStatus {
         var entry = harder[cause] ?? Harder()
         dropPendingAfterReboot(&entry, at: now)
-        if let pending = entry.pending, pending.kind == kind, pending.scope == scope {
+        if var pending = entry.pending, pending.kind == kind, pending.scope == scope {
+            // Same request resumed: keep its start, adopt the caller's id so the eventual
+            // commit is queryable by it.
+            pending.operationID = operationID
+            entry.pending = pending
             harder[cause] = entry
             return status(of: pending, at: now)
         }
@@ -136,22 +166,27 @@ extension FlintLedgerState {
         harder[cause]?.pending = nil
     }
 
-    /// Commit the operation whose wait matured: increments `n` exactly once. Idempotent by
-    /// the pending wait's operation id.
-    public mutating func commitHarderWait(cause: String, at now: FlintLedgerInstant) -> Bool {
-        guard var entry = harder[cause] else { return false }
+    /// Commit the operation `operationID` whose wait matured: increments `n` exactly once. A
+    /// retry after an ambiguous result (§8) finds the remembered commit and reports
+    /// `.alreadyCommitted` instead of counting again or demanding a new wait.
+    public mutating func commitHarderWait(cause: String, operationID: String, at now: FlintLedgerInstant) -> FlintHarderCommit {
+        if operation(operationID)?.kind.hasPrefix("harder.") == true { return .alreadyCommitted }
+        guard var entry = harder[cause] else { return .nothingPending }
         dropPendingAfterReboot(&entry, at: now)
-        guard let pending = entry.pending, status(of: pending, at: now) == .matured else {
-            harder[cause] = entry
-            return false
-        }
-        if operation(pending.operationID) == nil {
-            entry.committedCount += 1
-            remember(Operation(id: pending.operationID, kind: "harder.\(pending.kind)", result: "committed", at: now.wall))
-        }
+        defer { harder[cause] = entry }
+        guard let pending = entry.pending, pending.operationID == operationID else { return .nothingPending }
+        guard status(of: pending, at: now) == .matured else { return .notMatured }
+        entry.committedCount += 1
+        remember(Operation(id: operationID, kind: "harder.\(pending.kind)", result: "committed", at: now.wall))
         entry.pending = nil
-        harder[cause] = entry
-        return true
+        return .committed
+    }
+
+    /// Bound the per-occurrence map: keep `active` causes, then any with a pending wait, and
+    /// drop the rest beyond `limit` (§4 counts reset at a new natural occurrence anyway).
+    public mutating func pruneHarder(keeping active: Set<String>, limit: Int = 64) {
+        let removable = harder.keys.filter { !active.contains($0) && harder[$0]?.pending == nil }.sorted()
+        for key in removable where harder.count > limit { harder[key] = nil }
     }
 
     /// A natural new occurrence starts friction from zero (§4); a rename/toggle does not.
@@ -175,23 +210,41 @@ extension FlintLedgerState {
 
 // MARK: - Legacy import (§12)
 
+/// A legacy App Group value as read: absent, present, or not readable at all.
+public enum FlintLegacyValue {
+    case absent
+    case value(Any)
+    case unreadable
+}
+
 extension FlintLedgerState {
     static let legacyPassMigration = "pass.v0"
+    /// The pre-ledger pass key (seconds since 1970 as a Double; absent = never used).
+    public static let legacyPassKey = "flint.emergencyPass.lastUsed"
 
-    /// Import the pre-ledger `flint.emergencyPass.lastUsed` (seconds since 1970, a Double; the
-    /// old store treated absence as "never used"). Runs once; the legacy key is left untouched.
-    /// A future or malformed value is `unknown` (no pass until repaired), never a fresh pass.
-    public mutating func importLegacyPass(lastUsed raw: Any?, at now: FlintLedgerInstant) {
+    /// Import the pre-ledger `flint.emergencyPass.lastUsed` once. Until this has run, a new
+    /// ledger offers no pass (`pendingImport`), so an extension that touches the ledger first
+    /// can't hand out a second pass on an established install. Absent on a readable store = the
+    /// old "never used" state; unreadable, future or malformed = `unknown` (no pass until
+    /// repaired), never a fresh pass. The legacy key is left untouched.
+    public mutating func importLegacyPass(_ raw: FlintLegacyValue, at now: FlintLedgerInstant) {
         guard !migrations.contains(Self.legacyPassMigration) else { return }
         defer { migrations.insert(Self.legacyPassMigration) }
-        guard pass.lastOperationID == nil, pass.usage == .neverUsed else { return } // ledger already knows more
+        guard pass.usage == .pendingImport else { return } // the ledger already knows more
 
         switch raw {
-        case nil:
+        case .absent:
             pass.usage = .neverUsed
-        case let seconds as Double where seconds > 0:
-            let used = Date(timeIntervalSince1970: seconds)
-            let wallElapsed = now.wall.timeIntervalSince(used)
+        case .unreadable:
+            pass.usage = .unknown
+        case let .value(value):
+            guard let seconds = (value as? NSNumber)?.doubleValue ?? (value as? Double), seconds.isFinite else {
+                pass.usage = .unknown
+                return
+            }
+            if seconds == 0 { pass.usage = .neverUsed; return } // the old store's "never"
+            guard seconds > 0 else { pass.usage = .unknown; return }
+            let wallElapsed = now.wall.timeIntervalSince(Date(timeIntervalSince1970: seconds))
             guard wallElapsed >= -FlintTimeIntegrity.discontinuityThreshold else {
                 pass.usage = .unknown
                 return
@@ -199,10 +252,6 @@ extension FlintLedgerState {
             pass.usage = .used
             pass.cooldownRemaining = max(0, FlintProtectionConstants.passPeriod - max(0, wallElapsed))
             pass.checkpoint = now
-        case let seconds as Double where seconds == 0:
-            pass.usage = .neverUsed // the old store wrote 0 for "never"
-        default:
-            pass.usage = .unknown
         }
     }
 }
