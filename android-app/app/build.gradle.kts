@@ -1,7 +1,42 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+}
+
+// Owner-controlled upload credentials stay outside version control. Environment
+// values take precedence over android-app/keystore.properties, including blanks
+// (an accidentally empty CI secret must fail rather than select preview signing).
+val uploadPropertiesFile = rootProject.file("keystore.properties")
+val uploadProperties = Properties().apply {
+    if (uploadPropertiesFile.isFile) uploadPropertiesFile.inputStream().use { load(it) }
+}
+val uploadFields = mapOf(
+    "storeFile" to "FLINT_UPLOAD_STORE_FILE",
+    "storePassword" to "FLINT_UPLOAD_STORE_PASSWORD",
+    "keyAlias" to "FLINT_UPLOAD_KEY_ALIAS",
+    "keyPassword" to "FLINT_UPLOAD_KEY_PASSWORD",
+)
+val uploadValues = uploadFields.mapValues { (property, environment) ->
+    providers.environmentVariable(environment).orNull ?: uploadProperties.getProperty(property)
+}
+val uploadSigningRequested = uploadPropertiesFile.exists() || uploadValues.values.any { it != null }
+if (uploadSigningRequested) {
+    val missing = uploadFields.keys.filter { uploadValues[it].isNullOrBlank() }
+    require(missing.isEmpty()) {
+        "Incomplete upload signing configuration; provide all four upload fields. Missing: ${missing.joinToString()}."
+    }
+    require(rootProject.file(uploadValues.getValue("storeFile")!!).isFile) {
+        "Upload keystore is missing; check FLINT_UPLOAD_STORE_FILE / storeFile."
+    }
+}
+require(providers.environmentVariable("FLINT_REQUIRE_UPLOAD_SIGNING").orNull != "1" || uploadSigningRequested) {
+    "Owner upload signing is required; development-signed previews cannot be submitted to Google Play."
+}
+if (!uploadSigningRequested) {
+    logger.warn("Flint release: DEVELOPMENT-SIGNED PREVIEW (not a Google Play upload); no owner upload key configured.")
 }
 
 android {
@@ -18,11 +53,23 @@ android {
         vectorDrawables { useSupportLibrary = true }
     }
 
+    signingConfigs {
+        if (uploadSigningRequested) {
+            create("upload") {
+                storeFile = rootProject.file(uploadValues.getValue("storeFile")!!)
+                storePassword = uploadValues.getValue("storePassword")
+                keyAlias = uploadValues.getValue("keyAlias")
+                keyPassword = uploadValues.getValue("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // Public previews use release code with the existing development signing key.
-            // Debug-only emulator tools and dependencies must never enter those APKs.
-            signingConfig = signingConfigs.getByName("debug")
+            // No credentials preserves the existing preview path for public CI.
+            // Incomplete credentials fail above; they never silently fall back.
+            signingConfig = signingConfigs.getByName(if (uploadSigningRequested) "upload" else "debug")
+            buildConfigField("boolean", "DEVELOPMENT_SIGNED_PREVIEW", (!uploadSigningRequested).toString())
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
