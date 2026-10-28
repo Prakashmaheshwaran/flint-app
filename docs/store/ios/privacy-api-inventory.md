@@ -12,7 +12,7 @@ calls discussed below.
 | --- | --- | --- |
 | `com.flint.peakfocus` | `@AppStorage("flint.onboarded")` in `Flint/FlintApp.swift`, private onboarding preference | UserDefaults, `CA92.1` |
 | Host, `.monitor`, `.shield-config`, `.shield-action` | `FlintGroupStore` and `UserDefaults.flintGroup` in `Packages/FlintCore/Sources/FlintCore/{FlintGroupStore,FlintModel}.swift`; selections, rules, session, PIN, pass and counters shared only inside `group.com.flint.peakfocus` | UserDefaults, `1C8F.1` |
-| All five bundles | Focus history (`Packages/FlintCore/Sources/FlintCore/FlintHistoryStore.swift`) reads file size (`attributesOfItem`), `contentModificationDateKey` and `creationDateKey` for its own files under `group.com.flint.peakfocus/FlintHistory` (bounded reads, temp-file reclaim, quarantine pruning). FlintCore is linked into every bundle; the monitor publishes history there | FileTimestamp, `C617.1` |
+| All six bundles | Focus history (`Packages/FlintCore/Sources/FlintCore/FlintHistoryStore.swift`) reads file size (`attributesOfItem`), `contentModificationDateKey` and `creationDateKey` for its own files under `group.com.flint.peakfocus/FlintHistory` (bounded reads, temp-file reclaim, quarantine pruning). FlintCore is linked into every bundle; the monitor publishes history there | FileTimestamp, `C617.1` |
 | `.report` | FlintCore is linked for brand/UI types. Its shared-suite defaults implementation remains in the optimized Release report binary, although report source makes no defaults call | UserDefaults, `1C8F.1` |
 | `.widgets` | Display-only protection and focus-history reads inside the shared App Group; no protection mutations or report export | UserDefaults, `1C8F.1` |
 
@@ -32,7 +32,7 @@ collected data types. No third-party Swift SDK dependency is declared in
 `project.yml`; FlintCore is a local static Swift package.
 
 Focus history (#90, lane F) added file-metadata reads inside the App Group
-container, declared above as FileTimestamp `C617.1` in all five manifests; values
+container, declared above as FileTimestamp `C617.1` in all six manifests; values
 are used only to size, order and reclaim Flint's own history files and never
 leave the device. Apart from that, the 2026-10-28 production Swift-source search
 (host, extensions and FlintCore, excluding Tests) found no other direct file
@@ -81,7 +81,7 @@ Apple's current `NSPrivacyAccessedAPICategorySystemBootTime` list names
 `ProcessInfo.systemUptime` and `mach_absolute_time()`. It does not list
 `clock_gettime_nsec_np` or `sysctlbyname`; neither appears in the other current
 required-reason categories. On that source-to-list mapping, these B2 calls do
-not add a declared category or change the five manifests. This is an inference
+not add a declared category or change the bundle manifests. This is an inference
 from the published list, not a promise about future policy or archive validation.
 If an implementation switches to a listed API, elapsed session timing must be
 reviewed against Apple's `35F9.1` reason before shipping.
