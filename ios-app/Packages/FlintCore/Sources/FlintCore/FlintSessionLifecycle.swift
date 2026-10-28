@@ -101,6 +101,7 @@ public enum FlintSessionLifecycle {
     private static let registry = SinkRegistry()
 
     private static func emit(_ event: FlintSessionLifecycleEvent) {
+        FlintHistorySink.shared.handle(event)
         for sink in registry.snapshot() {
             sink.handle(event)
         }
