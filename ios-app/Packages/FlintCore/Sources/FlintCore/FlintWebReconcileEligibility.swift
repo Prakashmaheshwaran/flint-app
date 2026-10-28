@@ -8,6 +8,7 @@ import FamilyControls
 enum FlintWebReconcileEligibility {
     static func session(_ session: FlintActiveSession?, report: FlintArmingHealth.DomainReport?) -> FlintActiveSession? {
         guard let session else { return nil }
+        guard report?.notAuthorized != true, report?.rearmFailed != true else { return nil }
         if session.endsAt == nil { return session } // deliberately open-ended; no auto-end needed
         return isObserved(session.monitorName, domain: "session", report: report) ? session : nil
     }

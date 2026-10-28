@@ -41,6 +41,18 @@ final class FlintWebReconcileEligibilityTests: XCTestCase {
         XCTAssertNil(FlintWebReconcileEligibility.session(nil, report: nil))
     }
 
+    func testCurrentRecoveryFlagsOverrideObservedSessionAndOpenEndedState() {
+        for endsAt in [Date().addingTimeInterval(3600), nil] {
+            let session = session(endsAt: endsAt)
+            var report = FlintArmingHealth.DomainReport(enabled: 1, attempted: 1, armed: 1,
+                failures: [], observedActivities: [session.monitorName], notAuthorized: true, rearmFailed: false)
+            XCTAssertNil(FlintWebReconcileEligibility.session(session, report: report))
+            report.notAuthorized = false
+            report.rearmFailed = true
+            XCTAssertNil(FlintWebReconcileEligibility.session(session, report: report))
+        }
+    }
+
     private func rule(_ id: String, enabled: Bool = true) -> FlintScheduleRule {
         .init(id: id, name: id, schedule: .init(startHour: 9, endHour: 17), allowListMode: true, enabled: enabled)
     }

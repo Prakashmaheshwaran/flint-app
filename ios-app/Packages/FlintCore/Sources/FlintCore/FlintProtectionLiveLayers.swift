@@ -17,17 +17,19 @@ extension FlintProtectionReconciler {
     /// Shared across scenes as well as tabs. No view model owns protection startup.
     public static let shared = FlintProtectionReconciler(layers: [
         FlintLiveProtectionLayer(domain: "session") { _ in
-            guard FlintGroupStore() != nil else { throw FlintSessionError.appGroupUnavailable }
+            guard let group = FlintGroupStore() else { throw FlintSessionError.appGroupUnavailable }
             let controller = FlintSessionController()
-            controller.reconcileUninstallGuard()
+            let recovery = controller.reconcile()
+            // Recovery can replace the session's monitor name. Observe the newly persisted
+            // session, and require its schedule as well as its presence in the native list.
             let active = controller.activeSession
-            let observed = DeviceActivityCenter().activities.contains(.init(FlintSessionController.monitorName))
-            // B2 will supply registration/recovery outcomes. Until integrated, do not claim
-            // that reconciling only the uninstall guard re-armed the active session.
-            return .init(enabled: active == nil ? 0 : 1, attempted: 0, armed: 0,
-                         failures: active == nil ? [] : [.init(activityName: FlintSessionController.monitorName,
-                            reason: "Session recovery has not yet verified the current registration.")],
-                         observedActivities: observed ? [FlintSessionController.monitorName] : [])
+            let center = DeviceActivityCenter()
+            let observed = center.activities.filter { center.schedule(for: $0) != nil }.map(\.rawValue)
+            let report = FlintSessionProtectionReport.make(active: active, recovery: recovery,
+                health: FlintSessionHealth.load(), observedActivities: observed,
+                scheduleIsCurrent: active.map { FlintSessionAutoClearPlan.isCurrent(for: $0, in: .autoupdatingCurrent) } ?? true)
+            group.saveArmingHealth(group.loadArmingHealth().replacing("session", with: report))
+            return report
         },
         FlintLiveProtectionLayer(domain: "schedules") { _ in
             guard let group = FlintGroupStore() else { throw FlintSessionError.appGroupUnavailable }
@@ -47,6 +49,9 @@ extension FlintProtectionReconciler {
             return group.loadArmingHealth().domains["openLimits"] ?? missingReport("openLimits")
         },
         FlintLiveProtectionLayer(domain: "webRestrictions") { _ in
+            // TODO(B1 phase 2, after B3b merges): call FlintWebRestrictionLifecycle.reconcile
+            // using FlintWebReconcileEligibility and the fresh session/schedules reports.
+            // This adapter intentionally performs no native web writes until that handoff.
             let enabled = FlintWebRestrictions.load().enabled
             return .init(enabled: enabled ? 1 : 0, attempted: 0, armed: 0,
                          failures: enabled ? [.init(activityName: "flint.web",

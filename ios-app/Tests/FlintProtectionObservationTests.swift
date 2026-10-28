@@ -26,6 +26,27 @@ final class FlintProtectionObservationTests: XCTestCase {
         XCTAssertEqual(report.armed, 1)
         XCTAssertNil(report.observed)
         XCTAssertNil(report.observedActivities)
+        XCTAssertNil(report.notAuthorized)
+        XCTAssertNil(report.rearmFailed)
+    }
+
+    func testSessionRecoveryFlagsPersistInObservation() throws {
+        let suite = "flint.tests.sessionObservation.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let session = FlintArmingHealth.DomainReport(enabled: 1, attempted: 1, armed: 0,
+            failures: [], notAuthorized: true, rearmFailed: true)
+        let observation = FlintProtectionObservation(observedAt: date, trigger: .foreground,
+                                                    domains: ["session": session])
+        observation.save(to: defaults)
+        let loaded = try XCTUnwrap(FlintProtectionObservation.load(from: defaults))
+        XCTAssertEqual(loaded.domains["session"]?.notAuthorized, true)
+        XCTAssertEqual(loaded.domains["session"]?.rearmFailed, true)
+        var recovered = session
+        recovered.notAuthorized = false
+        recovered.rearmFailed = false
+        XCTAssertEqual(try JSONDecoder().decode(FlintArmingHealth.DomainReport.self,
+            from: JSONEncoder().encode(recovered)), recovered)
     }
 
     func testStaleBoundaryAndClockRollback() {

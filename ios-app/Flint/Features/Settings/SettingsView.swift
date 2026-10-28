@@ -16,6 +16,7 @@ struct SettingsView: View {
     @State private var confirmClearHistory = false
     @State private var historyFeedback: String?
     @State private var observation = FlintProtectionObservation.load()
+    @State private var sessionHealth = FlintSessionHealth.load()
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
@@ -135,6 +136,7 @@ struct SettingsView: View {
         authStatus = AuthorizationCenter.shared.authorizationStatus
         passAvailable = FlintSessionController().emergencyPassAvailable()
         observation = FlintProtectionObservation.load()
+        sessionHealth = FlintSessionHealth.load()
     }
 
     private var health: FlintArmingHealth {
@@ -146,14 +148,19 @@ struct SettingsView: View {
     }
 
     private var stale: Bool { observation?.isStale() ?? true }
-    private var healthy: Bool { authStatus == .approved && health.isHealthy && !stale }
+    private var healthy: Bool {
+        authStatus == .approved && health.isHealthy && !stale
+            && sessionHealth.lastArmFailure == nil && sessionHealth.lastTimeAnomaly == nil
+            && sessionHealth.unauthorizedSince == nil
+    }
 
     private var authorizationCopy: String {
         switch authStatus {
         case .approved: return "Screen Time access allowed"
         case .denied: return "Screen Time access denied or revoked"
         case .notDetermined: return "Screen Time access not requested"
-        @unknown default: return "Screen Time access state unknown"
+        // SDKs add authorization modes; preserve an honest fallback on older builds too.
+        default: return "Screen Time access state unknown"
         }
     }
 
@@ -192,6 +199,10 @@ struct SettingsView: View {
                         }
                     }
                 }
+                ForEach(Array(FlintSessionHealthPresentation.messages(health: sessionHealth,
+                    report: observation?.domains["session"]).enumerated()), id: \.offset) { _, message in
+                    check(false, message)
+                }
                 Text("Registration does not verify that a shield or background callback took effect.")
                     .font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
                 check(passAvailable, passAvailable ? "Emergency Pass ready · 1 this week" : "Emergency Pass used this week")
@@ -220,7 +231,7 @@ struct SettingsView: View {
                 Circle().fill(healthy ? FlintBrand.ember : FlintBrand.danger).frame(width: 12, height: 12)
             }
             .accessibilityHidden(true)
-            Text(healthy ? "Protection is healthy" : "Protection needs attention")
+            Text(healthy ? "No recorded protection issues" : "Protection needs attention")
                 .font(FlintFont.text(16, weight: .medium)).foregroundStyle(FlintBrand.bone)
                 .fixedSize(horizontal: false, vertical: true)
         }
