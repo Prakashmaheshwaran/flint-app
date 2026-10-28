@@ -81,9 +81,7 @@ class TimeChangeReceiver : BroadcastReceiver() {
 
         // 4. App-registered re-arm hooks. Failures are isolated so one bad hook cannot
         //    break the rest of re-arm.
-        for (rearm in rearmActions) {
-            runCatching { rearm(appContext) }
-        }
+        rearmDetectors(rearmActions.map { rearm -> { rearm(appContext) } })
     }
 
     /** Read the previous anchor, derive the [ClockShift] it implies, persist a fresh anchor. */

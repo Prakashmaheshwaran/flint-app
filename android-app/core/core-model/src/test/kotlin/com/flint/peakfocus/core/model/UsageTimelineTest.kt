@@ -50,6 +50,15 @@ class UsageTimelineTest {
         assertEquals("new", tracker.packageName)
     }
 
+    @Test fun `delayed resume before another apps pause is replayed within overlap`() {
+        val tracker = ForegroundTracker()
+        tracker.accept(event(0))
+        tracker.accept(event(600, PAUSED))
+        assertNull(tracker.packageName)
+        tracker.accept(event(500, pkg = "next"))
+        assertEquals("next", tracker.packageName)
+    }
+
     @Test fun `cursor begins with long lookback then bounded overlap`() {
         val cursor = ForegroundEventCursor(initialLookbackMs = 100_000, overlapMs = 2_000)
         assertEquals(-90_000L, cursor.queryStart(10_000))

@@ -12,33 +12,53 @@ data class ForegroundEvent(
 
 /** Retains an observation until an actual transition, never until an arbitrary query timeout. */
 class ForegroundTracker {
-    var packageName: String? = null
-        private set
-    private var activityName: String? = null
-    private var lastEventMs = Long.MIN_VALUE
+    private data class State(val packageName: String? = null, val activityName: String? = null)
+    private var base = State()
+    private var current = State()
+    private val recent = mutableListOf<ForegroundEvent>()
+    private var latestMs = Long.MIN_VALUE
+    private var rejectBeforeMs = Long.MIN_VALUE
+
+    val packageName: String? get() = current.packageName
 
     fun accept(event: ForegroundEvent) {
-        // An event arriving late through the cursor's overlap must not rewind newer state.
-        if (event.timestampMs < lastEventMs) return
-        lastEventMs = event.timestampMs
-        when (event.kind) {
-            ForegroundEvent.Kind.RESUMED -> {
-                packageName = event.packageName?.takeIf { it.isNotBlank() }
-                activityName = event.activityName
-            }
-            ForegroundEvent.Kind.PAUSED, ForegroundEvent.Kind.STOPPED -> {
-                if (event.packageName == packageName &&
-                    (event.activityName == null || event.activityName == activityName)
-                ) clear()
-            }
-            ForegroundEvent.Kind.SCREEN_OFF, ForegroundEvent.Kind.SHUTDOWN,
-            ForegroundEvent.Kind.STARTUP -> clear()
+        if (event.timestampMs < rejectBeforeMs) return
+        if (latestMs != Long.MIN_VALUE && event.timestampMs < latestMs - 2_000L) return
+        latestMs = maxOf(latestMs, event.timestampMs)
+        recent += event
+        recent.sortBy { it.timestampMs }
+        // Replay only the cursor's overlap. A delayed resume(B) preceding pause(A) must still
+        // yield B; simply rejecting every event older than the last pause would lose it.
+        while (recent.isNotEmpty() && recent.first().timestampMs < latestMs - 2_000L) {
+            base = transition(base, recent.removeAt(0))
         }
+        current = recent.fold(base, ::transition)
     }
 
-    fun clear() { packageName = null; activityName = null }
+    private fun transition(state: State, event: ForegroundEvent): State =
+        when (event.kind) {
+            ForegroundEvent.Kind.RESUMED -> State(event.packageName?.takeIf { it.isNotBlank() }, event.activityName)
+            ForegroundEvent.Kind.PAUSED, ForegroundEvent.Kind.STOPPED -> {
+                if (event.packageName == state.packageName &&
+                    (event.activityName == null || event.activityName == state.activityName)
+                ) State() else state
+            }
+            ForegroundEvent.Kind.SCREEN_OFF, ForegroundEvent.Kind.SHUTDOWN,
+            ForegroundEvent.Kind.STARTUP -> State()
+        }
 
-    fun reset() { clear(); lastEventMs = Long.MIN_VALUE }
+    fun clear() {
+        base = State()
+        current = base
+        recent.clear()
+        rejectBeforeMs = latestMs
+    }
+
+    fun reset() {
+        clear()
+        latestMs = Long.MIN_VALUE
+        rejectBeforeMs = Long.MIN_VALUE
+    }
 }
 
 /**
