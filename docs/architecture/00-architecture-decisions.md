@@ -294,3 +294,22 @@ An API 35 emulator run is not evidence of execution on API 23.
 
 *Decisions are revisited as the platforms change (notably iOS Screen Time and Android
 Advanced Protection / Play policy). Amend this file — don't let it drift from the code.*
+
+---
+
+## ADR-012 — Protection and commitment contract
+
+**Decision (2026-10-28; authoritative when merged).** Adopt the
+[personal protection contract](protection-contract.md) for both platforms: one tier/action
+matrix across every entry point, strongest-cause arbitration, scoped five-minute access,
+rolling-seven-day Emergency Pass with global 60-minute recovery, an unconditional safety
+floor, truthful arming/recovery, versioned migration and local lifecycle events. Active
+Hardcore weakening is deferred to occurrence end; inactive templates remain editable.
+The contract includes the platform-specific removal/permission boundary and acceptance
+cases PC-01–PC-84; it is a specification, not evidence that implementation/device gates pass.
+
+**Supersession.** This replaces ADR-011's personal Standard/Increasing difficulty split,
+unspecified live all-cause arbitration and period adapters, and undefined shipping
+break/pass semantics. ADR-011's versioned atomic storage foundation, unavailable-state
+handling, cause/revision identities and monotonic durations remain. Its separate, dormant
+managed-authority boundary remains unchanged; no production managed enforcement is authorized.
