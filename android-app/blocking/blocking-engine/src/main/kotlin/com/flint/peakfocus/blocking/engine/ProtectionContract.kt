@@ -33,10 +33,32 @@ object ProtectionContract {
 }
 
 /**
- * Elapsed time between two stamps when it is trustworthy (§9): same boot only, never negative.
- * Null across a reboot or with an unknown boot identity — callers apply their §9 reboot rule.
+ * The single same-boot clock authority for ADR-012 policies (§9): elapsed time between two stamps
+ * only when both share a known boot identity and time did not run backwards; null otherwise, and
+ * callers apply their §9 reboot rule. (`AccessDuration` in core-model predates this and is not
+ * used by the ADR-012 policies.)
  */
-internal fun trustedElapsedMs(from: AccessClockStamp, to: AccessClockStamp): Long? {
+fun trustedElapsedMs(from: AccessClockStamp, to: AccessClockStamp): Long? {
     if (from.bootSessionId.isBlank() || from.bootSessionId != to.bootSessionId) return null
     return (to.elapsedRealtimeMs - from.elapsedRealtimeMs).takeIf { it >= 0L }
 }
+
+/**
+ * True when wall-clock progression disagrees with elapsed progression by more than
+ * [ProtectionContract.CLOCK_DISCONTINUITY_MS] in one boot (a clock edit), or the stamps cannot be
+ * compared (reboot): wall-derived estimates are then uncertain (§9). Elapsed-time accounting is
+ * unaffected either way.
+ */
+fun clockDiscontinuity(from: AccessClockStamp, to: AccessClockStamp): Boolean {
+    val elapsed = trustedElapsedMs(from, to) ?: return true
+    val wall = to.wallEpochMs - from.wallEpochMs
+    return kotlin.math.abs(wall - elapsed) > ProtectionContract.CLOCK_DISCONTINUITY_MS
+}
+
+/** §1: a new finite session / Pomodoro parent must be positive and at most 24 h. */
+fun isValidNewSessionDuration(durationMs: Long): Boolean =
+    durationMs in 1..ProtectionContract.MAX_SESSION_MS
+
+/** §1: one recurring/daily occurrence must be positive and at most 26 elapsed hours. */
+fun isValidOccurrenceDuration(durationMs: Long): Boolean =
+    durationMs in 1..ProtectionContract.MAX_OCCURRENCE_MS

@@ -5,18 +5,35 @@ import com.flint.peakfocus.core.model.AccessClockStamp
 /**
  * ADR-012 §5 Open Limits as **timed credits**: the target stays shielded between grants (including
  * before the first credit); an accepted open is an explicit "Use one credit · 5 minutes" that
- * grants 300 s of elapsed access, clipped at the quota midnight. One daily counter per target is
+ * grants 300 s of elapsed access, clipped at the quota reset. One daily counter per target is
  * shared by every covering Open rule, whose effective cap is the minimum of their caps, so
  * duplicate rules never multiply credits and editing/re-creating a rule never resets the count.
  *
- * Pure: run [accept] inside one durable transaction (increment + grant + idempotency key) and
- * honor only the committed result. Nothing is charged when another cause still blocks the target,
- * for a duplicate request, a floor target, or unavailable state.
+ * The reset is a **trusted** boundary (§9): the counter carries the remaining time to its reset,
+ * checkpointed on the monotonic clock. A same-boot wall-clock edit cannot mint a fresh quota; after
+ * a reboot the remaining-to-reset resumes on the new clock with no credit for powered-off time,
+ * and exactly one reset happens at that deadline (missed resets are never replayed).
+ *
+ * Every accepted operation id is recorded on the counter for its period, so a duplicate callback
+ * or retry never charges twice — even after its grant expired and was pruned.
+ *
+ * Pure: run [accept] inside one durable transaction (counter + grant together) and honor only the
+ * committed result. Nothing is charged when another cause still blocks the target, for a
+ * duplicate, a floor target, or unavailable state.
  */
 class OpenCreditPolicy {
 
-    /** Shared per-target counter for one quota period (local day in the saved quota zone). */
-    data class Counter(val target: String, val periodId: Long, val used: Int)
+    /** Time to the counter's reset, measured from [checkpoint] on the monotonic clock. */
+    data class ResetClock(val checkpoint: AccessClockStamp, val remainingToResetMs: Long)
+
+    /** Shared per-target counter for one quota period. */
+    data class Counter(
+        val target: String,
+        val periodId: Long,
+        val used: Int,
+        val reset: ResetClock,
+        val consumedOperationIds: Set<String> = emptySet(),
+    )
 
     data class Grant(
         val target: String,
@@ -25,14 +42,28 @@ class OpenCreditPolicy {
         val durationMs: Long,
     )
 
-    enum class Denial { UNAVAILABLE, SAFETY_FLOOR, NO_LIMIT, ZERO_CAP, EXHAUSTED, BLOCKED_BY_OTHER_CAUSE }
+    enum class Denial {
+        /** Counter/grant state is corrupt, unreadable or of an unknown version (§8). */
+        UNAVAILABLE,
+        SAFETY_FLOOR,
+        NO_LIMIT,
+        ZERO_CAP,
+        EXHAUSTED,
+        BLOCKED_BY_OTHER_CAUSE,
+
+        /** Exactly at the quota reset instant: reset first, then retry (not a failure). */
+        PERIOD_BOUNDARY,
+    }
 
     sealed interface Acceptance {
         /** Persist [counter] and [grant] together; [remainingCredits] may be 0 for the last credit. */
         data class Accepted(val counter: Counter, val grant: Grant, val remainingCredits: Int) : Acceptance
 
-        /** A live grant already covers the target: same remaining interval, no spend (PC-23, PC-31). */
+        /** A live grant already covers the target: same remaining interval, no spend (PC-23). */
         data class AlreadyActive(val grant: Grant, val remainingMs: Long) : Acceptance
+
+        /** [operationId] was already accepted this period: no spend; [liveGrant] if still running (PC-31). */
+        data class Duplicate(val operationId: String, val liveGrant: Grant?) : Acceptance
 
         /** [blockingContributors] names the other causes that still block (PC-32). */
         data class Denied(val reason: Denial, val blockingContributors: List<String> = emptyList()) : Acceptance
@@ -44,12 +75,27 @@ class OpenCreditPolicy {
         return (grant.durationMs - elapsed).coerceAtLeast(0L)
     }
 
+    /** Remaining time to [reset] at [now]: same boot subtracts elapsed; across a reboot it resumes unchanged. */
+    fun remainingToResetMs(reset: ResetClock, now: AccessClockStamp): Long {
+        val elapsed = trustedElapsedMs(reset.checkpoint, now) ?: 0L
+        return (reset.remainingToResetMs - elapsed).coerceAtLeast(0L)
+    }
+
     /**
-     * Roll [counter] into [periodId] forward only: a later period starts at zero; the same or an
-     * earlier period (clock moved back) keeps the used count — no fresh quota from a clock change.
+     * Re-anchor [counter] on [now] and apply at most one reset: when the trusted remaining time
+     * reaches zero, start the next period at zero used with the next reset [msUntilNextQuotaMidnight]
+     * from now (computed by the caller in the saved quota zone). Persist the result.
      */
-    fun rolled(counter: Counter, periodId: Long): Counter =
-        if (periodId > counter.periodId) counter.copy(periodId = periodId, used = 0) else counter
+    fun rolled(counter: Counter, now: AccessClockStamp, msUntilNextQuotaMidnight: Long): Counter {
+        val remaining = remainingToResetMs(counter.reset, now)
+        if (remaining > 0L) return counter.copy(reset = ResetClock(now, remaining))
+        return Counter(
+            target = counter.target,
+            periodId = counter.periodId + 1,
+            used = 0,
+            reset = ResetClock(now, msUntilNextQuotaMidnight.coerceAtLeast(0L)),
+        )
+    }
 
     /**
      * @param caps the daily caps of every enabled Open rule covering [target] now.
@@ -57,38 +103,33 @@ class OpenCreditPolicy {
      * @param liveGrant the target's current grant, if any.
      * @param otherBlockingCauses non-Open causes that would still block the target (sessions,
      *   schedules, exhausted Time Limits, unprovable overlaps) — any of them means no charge.
-     * @param msUntilQuotaMidnight time to the next trusted quota-period boundary; grants clip there.
      */
     fun accept(
         target: String,
         operationId: String,
         caps: List<Int>,
         counter: Counter?,
-        periodId: Long,
         liveGrant: Grant?,
         otherBlockingCauses: List<String>,
         onSafetyFloor: Boolean,
         now: AccessClockStamp,
-        msUntilQuotaMidnight: Long,
+        msUntilNextQuotaMidnight: Long,
     ): Acceptance {
         if (onSafetyFloor) return Acceptance.Denied(Denial.SAFETY_FLOOR)
-        val current = counter?.takeIf { it.target == target }
-            ?: return Acceptance.Denied(Denial.UNAVAILABLE)
-        liveGrant?.takeIf { it.target == target }?.let { grant ->
-            val remaining = remainingMs(grant, now)
-            // A live grant, or a retry of the very operation that created it: never charge again.
-            if (remaining > 0L || grant.operationId == operationId) return Acceptance.AlreadyActive(grant, remaining)
-        }
+        val stored = counter?.takeIf { it.target == target } ?: return Acceptance.Denied(Denial.UNAVAILABLE)
+        val current = rolled(stored, now, msUntilNextQuotaMidnight)
+        val live = liveGrant?.takeIf { it.target == target && remainingMs(it, now) > 0L }
+        if (operationId in current.consumedOperationIds) return Acceptance.Duplicate(operationId, live)
+        if (live != null) return Acceptance.AlreadyActive(live, remainingMs(live, now))
         if (otherBlockingCauses.isNotEmpty()) {
             return Acceptance.Denied(Denial.BLOCKED_BY_OTHER_CAUSE, otherBlockingCauses)
         }
         val cap = caps.minOrNull() ?: return Acceptance.Denied(Denial.NO_LIMIT)
         if (cap <= 0) return Acceptance.Denied(Denial.ZERO_CAP)
-        val rolled = rolled(current, periodId)
-        if (rolled.used >= cap) return Acceptance.Denied(Denial.EXHAUSTED)
-        val duration = minOf(ProtectionContract.OPEN_CREDIT_MS, msUntilQuotaMidnight.coerceAtLeast(0L))
-        if (duration == 0L) return Acceptance.Denied(Denial.UNAVAILABLE) // at the boundary: reset first
-        val next = rolled.copy(used = rolled.used + 1)
+        if (current.used >= cap) return Acceptance.Denied(Denial.EXHAUSTED)
+        val duration = minOf(ProtectionContract.OPEN_CREDIT_MS, current.reset.remainingToResetMs)
+        if (duration <= 0L) return Acceptance.Denied(Denial.PERIOD_BOUNDARY)
+        val next = current.copy(used = current.used + 1, consumedOperationIds = current.consumedOperationIds + operationId)
         return Acceptance.Accepted(
             counter = next,
             grant = Grant(target, operationId, now, duration),
@@ -96,7 +137,7 @@ class OpenCreditPolicy {
         )
     }
 
-    /** Credits left today for display; null when no Open rule covers the target. */
-    fun remainingCredits(caps: List<Int>, counter: Counter, periodId: Long): Int? =
-        caps.minOrNull()?.let { (it - rolled(counter, periodId).used).coerceAtLeast(0) }
+    /** Credits left this period for display; null when no Open rule covers the target. */
+    fun remainingCredits(caps: List<Int>, counter: Counter, now: AccessClockStamp, msUntilNextQuotaMidnight: Long): Int? =
+        caps.minOrNull()?.let { (it - rolled(counter, now, msUntilNextQuotaMidnight).used).coerceAtLeast(0) }
 }

@@ -21,12 +21,20 @@ class HarderWaitPolicy {
 
     enum class OperationKind { BREAK, STOP, EDIT_WEAKEN, TOGGLE_OFF, DELETE }
 
-    /** One weakening operation: kind, the exact cause revisions it was previewed against, and scope. */
+    /**
+     * One weakening operation: kind, the exact cause revisions it was previewed against (opaque
+     * revision identities, as `AccessCauseScope.definitionRevision`), and target scope. Include
+     * only the affected **Harder** causes: Easy grants never consume `n`, Hardcore denies.
+     */
     data class Operation(
         val kind: OperationKind,
-        val causes: Map<Occurrence, Long>,
+        val causes: Map<Occurrence, String>,
         val targetScope: Set<String> = emptySet(),
-    )
+    ) {
+        init {
+            require(causes.isNotEmpty()) { "a Harder weakening operation names at least one Harder cause" }
+        }
+    }
 
     data class PendingWait(val operation: Operation, val startedAt: AccessClockStamp, val requiredMs: Long)
 
@@ -45,10 +53,10 @@ class HarderWaitPolicy {
     }
 
     fun requiredWaitMs(ledger: Ledger, operation: Operation): Long =
-        operation.causes.keys.maxOfOrNull { cause ->
+        operation.causes.keys.maxOf { cause ->
             val n = ledger.counts[cause] ?: 0
             ProtectionContract.HARDER_WAITS_MS[n.coerceIn(0, ProtectionContract.HARDER_WAITS_MS.lastIndex)]
-        } ?: ProtectionContract.HARDER_WAITS_MS.first()
+        }
 
     /** Remaining wait for [pending], or null when it cannot be measured (reboot → cancelled). */
     fun remainingMs(pending: PendingWait, now: AccessClockStamp): Long? {
@@ -84,10 +92,15 @@ class HarderWaitPolicy {
     /** Cancel: nothing consumed, `n` preserved. */
     fun cancel(ledger: Ledger): Ledger = ledger.copy(pending = null)
 
-    /** Drop counts for occurrences that are no longer live (a new occurrence starts at zero). */
-    fun pruned(ledger: Ledger, liveOccurrences: Set<Occurrence>): Ledger = ledger.copy(
-        counts = ledger.counts.filterKeys { it in liveOccurrences },
-        pending = ledger.pending?.takeIf { p -> p.operation.causes.keys.all { it in liveOccurrences } },
+    /**
+     * Forget occurrences **proven terminal** (natural end, completed deletion, or a pass-authorized
+     * end) — never ones merely not rematerialized yet or suspended during pass recovery, whose
+     * count must survive (§4: counts reset only at a new natural occurrence). A new occurrence has
+     * its own key and therefore starts at zero.
+     */
+    fun withoutTerminated(ledger: Ledger, terminated: Set<Occurrence>): Ledger = ledger.copy(
+        counts = ledger.counts.filterKeys { it !in terminated },
+        pending = ledger.pending?.takeIf { p -> p.operation.causes.keys.none { it in terminated } },
     )
 
     /** A pending wait whose start cannot be measured on this clock (reboot) is cancelled. */

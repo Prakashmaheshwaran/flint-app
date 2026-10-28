@@ -32,10 +32,18 @@ class RollingEmergencyPassPolicy {
         val remainingAtCheckpointMs: Long,
     )
 
-    /** Global recovery started by [operationId] at [startedAt]. */
+    /**
+     * The full scope a pass recovers (§6): every active personal cause it suspends, and the
+     * transient sessions it ends early (`ended_early`, reason `emergency_pass`). Built by the
+     * caller from the materialized occurrences; an incomplete/unreadable scope must not be passed.
+     */
+    data class RecoveryScope(val affectedCauseIds: Set<String>, val transientsToEnd: Set<String>)
+
+    /** Global recovery started by [operationId] at [startedAt] over [scope]. */
     data class Recovery(
         val operationId: String,
         val startedAt: AccessClockStamp,
+        val scope: RecoveryScope,
         val durationMs: Long = ProtectionContract.PASS_RECOVERY_MS,
     )
 
@@ -73,7 +81,9 @@ class RollingEmergencyPassPolicy {
         return Eligibility.CoolingDown(
             remainingMs = remaining,
             nextEligibleEstimateEpochMs = now.wallEpochMs + remaining,
-            clockUncertain = elapsed == null,
+            // A reboot, or a same-boot wall/elapsed discrepancy (a clock edit): the remaining time
+            // is still exact, but the wall-clock date estimate is not (§9, PC-55).
+            clockUncertain = clockDiscontinuity(cooldown.checkpoint, now),
         )
     }
 
@@ -99,16 +109,17 @@ class RollingEmergencyPassPolicy {
     }
 
     /**
-     * Spend the pass for [operationId]. Requires at least one active personal commitment (§6:
-     * "spend only when at least one personal commitment is active"). A retry of the committed
-     * operation returns its recovery; a different request during cooldown or recovery is denied
-     * and never extends anything.
+     * Spend the pass for [operationId]. §6: spend only when at least one personal commitment is
+     * active **and the full recovery scope is known** — pass null for [scope] when it could not be
+     * resolved (→ UNAVAILABLE), an empty affected set when nothing is active (→ NOTHING_TO_RECOVER).
+     * A retry of the committed operation returns its recovery; a different request during cooldown
+     * or recovery is denied and never extends anything.
      */
     fun consume(
         state: PassState,
         now: AccessClockStamp,
         operationId: String,
-        hasActiveCommitment: Boolean,
+        scope: RecoveryScope?,
     ): Consumption {
         val known = state as? PassState.Known
             ?: return Consumption.Denied(Denial.UNAVAILABLE, Eligibility.Unavailable)
@@ -117,8 +128,9 @@ class RollingEmergencyPassPolicy {
         }
         val eligibility = eligibility(known, now)
         if (eligibility != Eligibility.Available) return Consumption.Denied(Denial.COOLING_DOWN, eligibility)
-        if (!hasActiveCommitment) return Consumption.Denied(Denial.NOTHING_TO_RECOVER, eligibility)
-        val recovery = Recovery(operationId = operationId, startedAt = now)
+        if (scope == null) return Consumption.Denied(Denial.UNAVAILABLE, eligibility)
+        if (scope.affectedCauseIds.isEmpty()) return Consumption.Denied(Denial.NOTHING_TO_RECOVER, eligibility)
+        val recovery = Recovery(operationId = operationId, startedAt = now, scope = scope)
         val cooldown = Cooldown(
             operationId = operationId,
             usedAtWallEpochMs = now.wallEpochMs,
