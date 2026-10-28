@@ -92,14 +92,14 @@ class FocusHistoryIntegrityTest {
             val store = FocusHistoryStore(dir, clock(observed))
             HistoryReconciler(store, clock(observed)).observe(listOf(HistoryRule("session-a", "Focus", "easy", deadline)))
             val records = store.load().events
-            assertEquals(listOf("started", "rescheduled", "completed"), records.map { it.type })
+            assertEquals(listOf("started", "rescheduled"), records.map { it.type })
             assertEquals(deadline, records[1].at); assertEquals(observed, records[1].observedAt)
-            assertTrue(records[1].inferred); assertEquals(observed, records[2].observedAt)
+            assertTrue(records[1].inferred)
             val reopened = FocusHistoryStore(dir, clock(observed))
             HistoryReconciler(reopened, clock(observed)).observe(emptyList())
             val session = FocusHistoryAggregator.sessions(reopened.load().events, observed, emptySet()).single()
-            assertEquals(deadline, session.plannedEnd); assertEquals(newDuration * minute, session.focusedMs)
-            assertEquals(SessionOutcome.COMPLETED, session.outcome); assertEquals(3, reopened.load().events.size)
+            assertEquals(deadline, session.plannedEnd); assertEquals(0L, session.focusedMs)
+            assertEquals(SessionOutcome.UNCONFIRMED, session.outcome); assertEquals(2, reopened.load().events.size)
         }
     }
     @Test fun FH20_N4_completionUsesEffectiveDeadlineUnderLockAndRemainsIdempotent() = runTest {

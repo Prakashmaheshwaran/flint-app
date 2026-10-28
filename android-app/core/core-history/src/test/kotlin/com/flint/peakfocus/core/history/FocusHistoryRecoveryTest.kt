@@ -101,7 +101,7 @@ class FocusHistoryRecoveryTest {
         assertTrue(store.snapshots.value.events.isEmpty())
         store.append(started(native, begin - hour, begin - 1))
         HistoryReconciler(store, clock).observe(emptyList())
-        assertEquals("completed", store.snapshots.value.events.last().type)
+        assertEquals("started", store.snapshots.value.events.last().type)
     }
     @Test fun FH20_deadlineExtensionAndRestartDoNotCompleteAtOldDeadline() = runTest {
         val clock = MutableClock(begin); val store = FocusHistoryStore(temporary.newFolder(), clock)
@@ -115,7 +115,7 @@ class FocusHistoryRecoveryTest {
         assertEquals(SessionOutcome.RUNNING, FocusHistoryAggregator.sessions(store.snapshots.value.events, clock.value, setOf(rule.id)).single().outcome)
         clock.value = begin + 2 * hour
         bridge.observe(emptyList())
-        assertEquals(2 * hour, FocusHistoryAggregator.sessions(store.snapshots.value.events, clock.value, emptySet()).single().focusedMs)
+        assertEquals(0L, FocusHistoryAggregator.sessions(store.snapshots.value.events, clock.value, emptySet()).single().focusedMs)
     }
     @Test fun FH20_shorteningOpenEndNameTierAndDisableEditsUseEffectivePlan() = runTest {
         for (newEnd in listOf(begin + hour / 2, null)) {
@@ -129,7 +129,7 @@ class FocusHistoryRecoveryTest {
             assertEquals("rescheduled", store.snapshots.value.events.last().type)
             if (newEnd != null) {
                 clock.value = newEnd; bridge.observe(emptyList())
-                assertEquals(hour / 2, FocusHistoryAggregator.sessions(store.snapshots.value.events, clock.value, emptySet()).single().focusedMs)
+                assertEquals(0L, FocusHistoryAggregator.sessions(store.snapshots.value.events, clock.value, emptySet()).single().focusedMs)
             } else {
                 clock.value = begin + 2 * hour; bridge.observe(listOf(rule.copy(plannedEnd = null)))
                 assertEquals(2, store.snapshots.value.events.size)

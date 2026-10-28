@@ -18,6 +18,17 @@ import org.junit.Test
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class FocusHistoryGlanceReaderTest {
     private val day = LocalDate.of(2027, 1, 15)
+    @Test fun R17_expiredStartUsesThePublicZeroAndUnconfirmedNote() {
+        val now = day.atTime(12, 0).atZone(ZoneId.of("UTC")).toInstant().toEpochMilli()
+        val start = com.flint.peakfocus.core.history.HistoryEvent(type = "started", session = "killed",
+            at = now - 3_600_000, plannedEnd = now - 60_000, tz = "UTC", name = "Focus", tier = "easy", source = "manual")
+        val result = com.flint.peakfocus.core.history.FocusHistoryAggregator.summarize(
+            com.flint.peakfocus.core.history.HistorySnapshot(listOf(start), now - 3_600_000, true), now, ZoneId.of("UTC"), setOf("killed"))
+        val reading = focusGlanceReading(result, day)
+        assertEquals("0m", reading.text)
+        assertEquals("1 session couldn't be confirmed", reading.note)
+        assertFalse(reading.inProgress)
+    }
     private fun summary(availability: HistoryAvailability = HistoryAvailability.VALUE, ms: Long? = 300_000,
                         inProgress: Boolean = false, date: LocalDate = day) =
         FocusSummary(availability, emptyList(), listOf(FocusDay(date, ms, inProgress = inProgress)), 0)

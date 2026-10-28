@@ -78,9 +78,9 @@ class FocusHistoryFinalIntegrityTest {
         clock.now = begin + 180 * minute
         repeat(2) { observer.observe(listOf(rule.copy(plannedEnd = begin + 20 * minute))) }
         val events = store.load().events
-        assertEquals(listOf("started", "rescheduled", "rescheduled", "completed"), events.map { it.type })
+        assertEquals(listOf("started", "rescheduled", "rescheduled"), events.map { it.type })
         assertNull(observer.diagnostic.value)
-        assertEquals(20 * minute, FocusHistoryAggregator.sessions(events, clock.now, emptySet()).single().focusedMs)
+        assertEquals(0L, FocusHistoryAggregator.sessions(events, clock.now, emptySet()).single().focusedMs)
         val bytes = File(dir, "events.v1.jsonl").readBytes()
         assertFalse(store.update { listOf(HistoryEvent(type = "rescheduled", session = "session-a", at = begin,
             tz = "UTC", plannedEnd = begin + 500 * minute),
@@ -164,6 +164,10 @@ class FocusHistoryFinalIntegrityTest {
             assertFalse(rollbackPending)
             assertFalse(rolledBack.events.any { it.knownType == HistoryEventType.COMPLETED })
             clock.now = deadline + 1
+            val stillOpen = withTimeout(10_000) { observations.receive() }
+            assertFalse(stillOpen.events.any { it.knownType == HistoryEventType.COMPLETED })
+            // Only a durable owner/outbox transition can confirm completion.
+            assertTrue(store.append(HistoryEvent(type = "completed", session = "session-a", at = deadline, tz = "UTC", originRoute = "service", observedAt = clock.now)))
             val completed = withTimeout(10_000) { store.snapshots.first { log -> log.events.any { it.knownType == HistoryEventType.COMPLETED } } }
             assertEquals(deadline, completed.events.single { it.knownType == HistoryEventType.COMPLETED }.at)
             assertEquals(1, completed.events.count { it.knownType == HistoryEventType.COMPLETED })

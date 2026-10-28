@@ -77,6 +77,14 @@ enum FocusHistoryText {
     static let definition = "Counts focus sessions you start. Schedules and limits aren’t counted."
     static let degraded = "Some history couldn’t be read."
 
+    static func unconfirmed(_ days: [FlintHistoryDay]) -> String? {
+        let count = days.reduce(0) { $0 + $1.unconfirmed }
+        guard count > 0 else { return nil }
+        if count == 1 { return NSLocalizedString("1 session couldn’t be confirmed.", comment: "Unconfirmed focus history") }
+        return String.localizedStringWithFormat(NSLocalizedString("%ld sessions couldn’t be confirmed.",
+            comment: "Unconfirmed focus history count"), count)
+    }
+
     static func duration(_ seconds: TimeInterval?) -> String {
         guard let seconds, seconds.isFinite else { return "No data" }
         if seconds > 0 && seconds < 60 { return "<1m" }

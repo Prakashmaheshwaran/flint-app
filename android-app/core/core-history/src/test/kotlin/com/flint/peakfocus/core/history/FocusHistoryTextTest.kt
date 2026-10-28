@@ -33,6 +33,13 @@ class FocusHistoryTextTest {
         assertEquals("1 break", FocusHistoryText.breaks(1)); assertEquals("2 breaks", FocusHistoryText.breaks(2))
         assertEquals("1 open stopped", FocusHistoryText.opensStopped(1)); assertEquals("0 opens stopped", FocusHistoryText.opensStopped(0))
     }
+    @Test fun R17_unconfirmedSessionNotesAreCountedInTheSelectedRange() {
+        val result = FocusSummary(HistoryAvailability.VALUE, emptyList(), listOf(FocusDay(today, 0, unconfirmed = 1)), 0)
+        assertEquals("0m", FocusHistoryText.today(result))
+        assertEquals("1 session couldn't be confirmed", FocusHistoryText.note(result))
+        assertEquals("2 sessions couldn't be confirmed", FocusHistoryText.note(result, listOf(FocusDay(today, 0, unconfirmed = 2))))
+        assertNull(FocusHistoryText.note(result, emptyList()))
+    }
     @Test fun partialWeekLabelsOnlyTheAvailableWindow() {
         val days = (6L downTo 0L).map { FocusDay(today.minusDays(it), if (it > 0) null else 0) }
         assertEquals("Since Wed, Oct 28", FocusHistoryText.weekLabel(days))

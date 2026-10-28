@@ -32,6 +32,16 @@ final class FocusHistoryPresentationTests: XCTestCase {
                       FlintHistoryEvent(type: .endedEarly, session: "a", at: now.addingTimeInterval(-900), route: "manual_stop")]
         XCTAssertNil(FocusHistoryModel.latestCompletion(in: summary(events), acknowledgedID: nil))
     }
+    func testR17UnconfirmedCopyAndNoCompletionPresentation() {
+        let events = [FlintHistoryEvent(type: .started, session: "a", at: now.addingTimeInterval(-3600),
+            plannedEnd: now.addingTimeInterval(-60), tier: "easy", source: "manual", name: "Read")]
+        let result = summary(events)
+        XCTAssertEqual(FocusHistoryText.today(result), "0m")
+        XCTAssertEqual(FocusHistoryText.unconfirmed(result.days), "1 session couldn’t be confirmed.")
+        XCTAssertEqual(FocusHistoryText.unconfirmed([.init(start: now, focusedSeconds: 0, unconfirmed: 2)]), "2 sessions couldn’t be confirmed.")
+        XCTAssertNil(FocusHistoryText.unconfirmed([]))
+        XCTAssertNil(FocusHistoryModel.latestCompletion(in: result, acknowledgedID: nil))
+    }
     func testStaleCompletionIsSilentlyAcknowledgedAndStaysDismissedAfterRestart() {
         let suite = "FocusHistoryPresentation.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

@@ -5,7 +5,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 enum class HistoryAvailability { UNAVAILABLE, DEGRADED, EMPTY, VALUE }
-enum class SessionOutcome { RUNNING, COMPLETED, ENDED_EARLY, SUPERSEDED }
+enum class SessionOutcome { RUNNING, COMPLETED, ENDED_EARLY, SUPERSEDED, UNCONFIRMED }
 
 data class FocusInterval(val start: Long, val end: Long)
 data class FocusSession(
@@ -30,6 +30,7 @@ data class FocusDay(
     val completed: Int = 0,
     val endedEarly: Int = 0,
     val inProgress: Boolean = false,
+    val unconfirmed: Int = 0,
 )
 data class FocusSummary(
     val availability: HistoryAvailability,
@@ -71,10 +72,13 @@ object FocusHistoryAggregator {
         val completed = sessions.filter { it.outcome == SessionOutcome.COMPLETED }.groupingBy { date(it.end, zone) }.eachCount()
         val ended = sessions.filter { it.outcome in setOf(SessionOutcome.ENDED_EARLY, SessionOutcome.SUPERSEDED) }
             .groupingBy { date(it.end, zone) }.eachCount()
+        val unconfirmed = sessions.filter { it.outcome == SessionOutcome.UNCONFIRMED }
+            .groupingBy { date(it.end, zone) }.eachCount()
         val days = generateSequence(from) { it.plusDays(1) }.takeWhile { it <= through }.map { day ->
             if (day < startDate) FocusDay(day, null) else FocusDay(
                 day, totals[day] ?: 0, completed[day] ?: 0, ended[day] ?: 0,
                 sessions.any { s -> s.outcome == SessionOutcome.RUNNING && date(s.start, zone) <= day && date(now, zone) >= day },
+                unconfirmed[day] ?: 0,
             )
         }.toList()
         var streak = 0
@@ -95,7 +99,7 @@ object FocusHistoryAggregator {
             val ordered = group.sortedBy { it.at } // stable: ties retain file order
             val start = ordered.firstOrNull { it.knownType == HistoryEventType.STARTED } ?: return@mapNotNull null
             val terminal = ordered.firstOrNull { it.knownType?.terminal == true }
-            val plan = ordered.takeWhile { it !== terminal }.lastOrNull {
+            val plan = ordered.takeWhile { it !== terminal }.sortedBy { it.observedAt ?: it.at }.lastOrNull {
                 it.knownType in setOf(HistoryEventType.STARTED, HistoryEventType.RESCHEDULED)
             } ?: start
             val plannedEnd = plan.plannedEnd
@@ -105,15 +109,23 @@ object FocusHistoryAggregator {
                 HistoryEventType.ENDED_EARLY -> SessionOutcome.ENDED_EARLY
                 HistoryEventType.SUPERSEDED -> SessionOutcome.SUPERSEDED
                 else -> when {
-                    expired -> SessionOutcome.COMPLETED
+                    expired -> SessionOutcome.UNCONFIRMED
                     id in activeSessionIds -> SessionOutcome.RUNNING
-                    else -> SessionOutcome.ENDED_EARLY
+                    else -> SessionOutcome.UNCONFIRMED
                 }
             }
             val inferred = terminal?.inferred ?: (outcome != SessionOutcome.RUNNING)
             val unknownEnd = outcome == SessionOutcome.ENDED_EARLY && inferred && (terminal == null || terminal.route == "unknown")
             val end = terminal?.at ?: if (expired) plannedEnd!! else now
-            val clampedEnd = minOf(end, plannedEnd ?: end)
+            // STARTED + a deadline is a plan, not coverage. Credit only a later
+            // lifecycle observation's prefix while waiting for the owner's terminal.
+            val coverageEnd = ordered.filter { it.at <= now && it.knownType in setOf(
+                HistoryEventType.BREAK_STARTED, HistoryEventType.BREAK_ENDED,
+                HistoryEventType.PROTECTION_DEGRADED, HistoryEventType.PROTECTION_RESTORED,
+                HistoryEventType.OPEN_INTERCEPTED,
+            ) }.maxOfOrNull { it.at } ?: start.at
+            val evidencedEnd = if (outcome == SessionOutcome.UNCONFIRMED) minOf(end, coverageEnd) else end
+            val clampedEnd = minOf(evidencedEnd, plannedEnd ?: evidencedEnd, now)
             var intervals = if (unknownEnd || clampedEnd <= start.at) emptyList()
                 else listOf(FocusInterval(start.at, clampedEnd))
             val breaks = ordered.filter { it.knownType == HistoryEventType.BREAK_STARTED }

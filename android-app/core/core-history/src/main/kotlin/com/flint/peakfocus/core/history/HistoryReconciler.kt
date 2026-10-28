@@ -60,6 +60,7 @@ class HistoryReconciler(
         val now = clock.millis()
         val sessions = rules.filter { it.id.startsWith("session-") }.associateBy { it.id }
         val current = sessions.filterValues { it.plannedEnd == null || it.plannedEnd > now }.keys
+        val previouslyActive = active.value
         active.value = current
         val coldStart = firstSuccessfulSnapshot
         val success = store.update { snapshot ->
@@ -84,7 +85,7 @@ class HistoryReconciler(
             sessions.values.forEach { rule ->
                 val group = known[rule.id].orEmpty()
                 if (group.any { it.knownType?.terminal == true }) return@forEach
-                val plan = group.sortedBy { it.at }.lastOrNull {
+                val plan = group.sortedBy { it.observedAt ?: it.at }.lastOrNull {
                     it.knownType in setOf(HistoryEventType.STARTED, HistoryEventType.RESCHEDULED)
                 } ?: return@forEach
                 if (plan.plannedEnd != rule.plannedEnd) {
@@ -95,16 +96,13 @@ class HistoryReconciler(
             (snapshot.events + events).filter { it.knownType != null }.groupBy { it.session }.forEach { (id, group) ->
                 if (group.none { it.knownType == HistoryEventType.STARTED }) return@forEach
                 if (group.any { it.knownType?.terminal == true }) return@forEach
-                val plan = group.sortedBy { it.at }.last { it.knownType in setOf(HistoryEventType.STARTED, HistoryEventType.RESCHEDULED) }
+                val plan = group.sortedBy { it.observedAt ?: it.at }.last { it.knownType in setOf(HistoryEventType.STARTED, HistoryEventType.RESCHEDULED) }
                 val rule = sessions[id]
                 val deadline = if (rule != null) rule.plannedEnd else plan.plannedEnd
-                if (deadline != null && now >= deadline) {
-                    // Expiry is provable even if ActiveRulesBridge has not swept the row yet.
-                    events += event(HistoryEventType.COMPLETED, id, deadline).copy(
-                        inferred = coldStart || id in sessions || now > deadline,
-                        observedAt = now.takeIf { it > deadline })
-                } else if (id !in current) {
-                    events += event(HistoryEventType.ENDED_EARLY, id, now).copy(route = "unknown", inferred = coldStart)
+                // An expired/missing rule is not proof of natural completion. Leave
+                // the occurrence open for the coordinator's durable terminal/outbox.
+                if (!coldStart && id in previouslyActive && id !in current && (deadline == null || now < deadline)) {
+                    events += event(HistoryEventType.ENDED_EARLY, id, now).copy(route = "unknown")
                 }
             }
             events
