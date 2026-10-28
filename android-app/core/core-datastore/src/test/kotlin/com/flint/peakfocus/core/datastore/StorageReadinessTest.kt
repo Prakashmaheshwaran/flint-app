@@ -315,7 +315,7 @@ class StorageReadinessTest {
             "H|2|1|0\nE|id|app|cause|BREAK|123|" to StorageFailure.CORRUPT,
             "H|2|1|0\nE|id|app|cause|BREAK|123|%ZZ" to StorageFailure.CORRUPT,
             "H|2|1|0|future" to StorageFailure.UNSUPPORTED_VERSION,
-            "H|3|1|0" to StorageFailure.UNSUPPORTED_VERSION,
+            "H|4|1|0" to StorageFailure.UNSUPPORTED_VERSION,
         )) {
             val disk = Disk(mutablePreferencesOf(PrefsKeys.FOCUS_LEDGER to payload))
             val store = DataStoreFocusStateStore(disk)
