@@ -16,36 +16,39 @@ import FlintCore
 final class FlintShieldConfiguration: ShieldConfigurationDataSource {
 
     private func flintShield(
-        for name: String?, unit: String = "app", remainingOpens: Int? = nil
+        for name: String?, unit: ShieldCopy.Unit = .app, targetKey: String? = nil,
+        remainingOpens: Int? = nil
     ) -> ShieldConfiguration {
-        let subtitle: String
-        let primaryButton: String
-        switch remainingOpens {
-        case .some(let left) where left > 0:
-            subtitle = "\(left) intentional \(left == 1 ? "open" : "opens") left today. Notice the reach first."
-            primaryButton = "Use \(unit) (\(left) left)"
-        case .some:
-            // Zero also covers the enforcer's fail-closed path (App Group unreadable reports 0
-            // remaining) — only promise a tomorrow reset when the counter is actually readable;
-            // fail-closed has no daily reset to promise.
-            subtitle = FlintGroupStore() != nil
-                ? "Today’s opens are spent. It opens again tomorrow."
-                : "Opens are unavailable right now."
-            primaryButton = "Go back"
-        case .none:
-            subtitle = "Notice the reach, then let it pass."
-            primaryButton = "Go back"
-        }
-        let title = name.map { "\($0) is resting." } ?? "This \(unit) is resting."
+        let now = Date()
+        let copy = ShieldCopy(name: name, unit: unit,
+                              contributors: targetKey.flatMap { contributors(for: $0, now: now) },
+                              now: now, remainingOpens: remainingOpens,
+                              openStoreAvailable: FlintGroupStore() != nil)
         return ShieldConfiguration(
             backgroundBlurStyle: nil,
             backgroundColor: FlintBrand.nightUI,
             icon: Self.ember,
-            title: ShieldConfiguration.Label(text: title, color: FlintBrand.boneUI),
-            subtitle: ShieldConfiguration.Label(text: subtitle, color: FlintBrand.mistUI),
-            primaryButtonLabel: ShieldConfiguration.Label(text: primaryButton, color: FlintBrand.onEmberUI),
+            title: ShieldConfiguration.Label(text: copy.title, color: FlintBrand.boneUI),
+            subtitle: ShieldConfiguration.Label(text: copy.subtitle, color: FlintBrand.mistUI),
+            primaryButtonLabel: ShieldConfiguration.Label(text: copy.primaryButtonLabel, color: FlintBrand.onEmberUI),
             primaryButtonBackgroundColor: FlintBrand.emberUI
         )
+    }
+
+    private func contributors(for targetKey: String, now: Date) -> FlintProtectionStatus.Contributors? {
+        guard let defaults = UserDefaults.flintGroup else { return nil }
+        // Never call ledger.read(): it can initialize/migrate storage. Lane B's #137 adds
+        // the read-only peek() seam; until then an unavailable pass keeps the copy neutral.
+        let inputs = FlintProtectionStatus.currentInputs(now: now, defaults: defaults)
+        return FlintProtectionStatus.contributors(for: targetKey, inputs: inputs,
+                                                  coverageByCauseID: coverage(for: inputs))
+    }
+
+    private func coverage(for inputs: FlintProtectionStatusBuilder.Inputs)
+        -> [String: FlintProtectionStatus.TargetScope] {
+        // Replace with FlintProtectionStatus.coverageScopes(for: inputs) when lane B's #137
+        // publishes the read-only target coverage adapter. Missing coverage stays uncertain.
+        [:]
     }
 
     /// The ember orb inside its halo, drawn once (design/ember-mist/E07-Shield.dc.html).
@@ -78,6 +81,7 @@ final class FlintShieldConfiguration: ShieldConfigurationDataSource {
     override func configuration(shielding application: Application) -> ShieldConfiguration {
         flintShield(
             for: application.localizedDisplayName,
+            targetKey: application.token.map { FlintOpenLimit.key(for: $0) },
             remainingOpens: application.token.flatMap {
                 FlintOpenLimitEnforcer.remainingOpens(application: $0)
             }
@@ -94,7 +98,8 @@ final class FlintShieldConfiguration: ShieldConfigurationDataSource {
     override func configuration(shielding webDomain: WebDomain) -> ShieldConfiguration {
         flintShield(
             for: webDomain.domain,
-            unit: "site",
+            unit: .site,
+            targetKey: webDomain.token.map { FlintOpenLimit.key(for: $0) },
             remainingOpens: webDomain.token.flatMap {
                 FlintOpenLimitEnforcer.remainingOpens(webDomain: $0)
             }
@@ -105,6 +110,6 @@ final class FlintShieldConfiguration: ShieldConfigurationDataSource {
         shielding webDomain: WebDomain,
         in category: ActivityCategory
     ) -> ShieldConfiguration {
-        flintShield(for: webDomain.domain)
+        flintShield(for: webDomain.domain, unit: .site)
     }
 }
