@@ -134,6 +134,10 @@ class DataStoreEditorCommitmentStore(
             if (boundaries.isEmpty()) return@transact EditorCommitResult.Rejected("This occurrence ended. Review the change again.")
             state = state.copy(queued = retained + QueuedEditorChange(id, change, pending.expected, boundaries))
         } else {
+            if (change.limits?.let { it.time != null || it.open != null } == true) {
+                // Initialize while the old domain is still intact, before adding its first limit.
+                prepareOpenCredits(prefs, now, defaultZone())
+            }
             apply(prefs, change)
             // Explicitly confirmed edits may shorten or extend an active snapshot. Ordinary
             // reconciliation and clock-display rewrites never acquire that authority.
@@ -191,6 +195,12 @@ class DataStoreEditorCommitmentStore(
 
     /** Call inside one DataStore edit: migrate, apply queued changes, then materialize new occurrences. */
     internal fun prepare(prefs: MutablePreferences, now: AccessClockStamp): EditorCommitmentState {
+        val previous = if (StrictPrefsCodec.string(prefs, EDITOR_COMMITMENTS_KEY) != null) readEditorState(prefs) else null
+        val quota = if (prefs.editorTimes().isNotEmpty() || prefs.editorOpens().isNotEmpty() ||
+            StrictPrefsCodec.long(prefs, OPEN_CREDIT_SCHEMA) != null) {
+            val zone = previous?.causes?.entries?.firstOrNull { dailyKey(it.key) }?.value?.zoneId ?: defaultZone()
+            prepareOpenCredits(prefs, now, zone)
+        } else null
         var state: EditorCommitmentState
         if (StrictPrefsCodec.string(prefs, EDITOR_COMMITMENTS_KEY) == null) {
             if (StrictPrefsCodec.long(prefs, EDITOR_VERSION_KEY) != null) wireCorrupt()
@@ -220,9 +230,10 @@ class DataStoreEditorCommitmentStore(
             prefs[ARCHIVE_TIMES] = rawTimes
             prefs[PrefsKeys.TIME_LIMITS] = PrefsCodec.encodeTimeLimits(times)
         } else {
-            state = readEditorState(prefs)
+            state = checkNotNull(previous)
             readHarderWait(prefs) // Missing initialized friction state is not a fresh occurrence.
         }
+        state = preserveDailyUntilQuotaReset(state, quota, now)
         val due = state.queued.filter { q -> !q.needsReview && q.boundaries.values.all { it.remainingMs(now) == 0L } }
         val stale = mutableSetOf<Long>()
         for (q in due) {
@@ -241,6 +252,7 @@ class DataStoreEditorCommitmentStore(
     }
 
     private fun materialize(prefs: Preferences, state: EditorCommitmentState, now: AccessClockStamp): EditorCommitmentState {
+        val quota = if (StrictPrefsCodec.long(prefs, OPEN_CREDIT_SCHEMA) != null) readOpenCredits(prefs) else null
         val timeline = state.timeline ?: now
         val logical = logicalClock(state, now)
         val causes = state.causes.toMutableMap()
@@ -265,14 +277,38 @@ class DataStoreEditorCommitmentStore(
             if (rule.expiresAtEpochMs != null && old?.occurrenceId == rule.id && old.interval?.remainingMs(now) == 0L) return@forEach
             keepOrResolve(key) { zone -> ruleOccurrence(rule, zone, logical) }
         }
-        prefs.editorTimes().forEach { limit -> keepOrResolve(timeCauseKey(limit.packageName)) { zone -> dailyOccurrence(zone, logical) } }
-        prefs.editorOpens().forEach { limit -> keepOrResolve(openCauseKey(limit.packageName)) { zone -> dailyOccurrence(zone, logical) } }
+        fun daily(key: String) {
+            if (quota == null) { keepOrResolve(key) { zone -> dailyOccurrence(zone, logical) }; return }
+            val old = causes[key]
+            if (old != null && old.occurrenceId != "inactive" && old.interval?.remainingMs(now)?.let { it > 0 } == true) return
+            val remaining = quota.reset.remainingToResetMs
+            causes[key] = EditorCause("quota:${quota.periodId}", AnchoredInterval(now, remaining, now.wallEpochMs + remaining), quota.quotaZone)
+        }
+        prefs.editorTimes().forEach { daily(timeCauseKey(it.packageName)) }
+        prefs.editorOpens().forEach { daily(openCauseKey(it.packageName)) }
         // Retain tombstones only until their natural boundary, preventing mid-period count resets.
         val liveKeys = prefs.editorRules().map { ruleCauseKey(it.id) }.toSet() +
             prefs.editorTimes().map { timeCauseKey(it.packageName) } + prefs.editorOpens().map { openCauseKey(it.packageName) }
         causes.entries.removeAll { (key, c) -> key !in liveKeys && c.interval?.remainingMs(now) == 0L }
         require(causes.size <= 2_000) { "Too many commitments" }
-        return state.copy(causes = causes.toMap(), timeline = timeline)
+        return state.copy(causes = causes.toMap(), timeline = timeline, quotaPeriodId = quota?.periodId ?: state.quotaPeriodId)
+    }
+
+    private fun dailyKey(key: String) = key.startsWith("time:") || key.startsWith("open:")
+
+    /** Daily counters are reboot-conservative; finite-restriction wall fallback must not reset n. */
+    private fun preserveDailyUntilQuotaReset(state: EditorCommitmentState, quota: OpenCreditLedger?, now: AccessClockStamp): EditorCommitmentState {
+        if (quota == null) return state
+        val rolled = state.quotaPeriodId != null && state.quotaPeriodId != quota.periodId
+        val remaining = if (rolled) 0L else quota.reset.remainingToResetMs
+        val interval = AnchoredInterval(now, remaining, now.wallEpochMs + remaining)
+        val causes = state.causes.mapValues { (key, cause) ->
+            if (dailyKey(key) && cause.occurrenceId != "inactive") cause.copy(interval = interval) else cause
+        }
+        val queued = state.queued.map { q -> q.copy(boundaries = q.boundaries.mapValues { (key, original) ->
+            if (dailyKey(key) && q.expected.occurrences[key] == state.causes[key]?.occurrenceId) interval else original
+        }) }
+        return state.copy(causes = causes, queued = queued)
     }
 
     private fun logicalClock(state: EditorCommitmentState, now: AccessClockStamp): AccessClockStamp {
