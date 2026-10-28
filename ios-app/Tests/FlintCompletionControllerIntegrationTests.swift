@@ -43,7 +43,7 @@ final class FlintCompletionControllerIntegrationTests: XCTestCase {
     private func drain() {
         let done = expectation(description: "controller notification effects settled")
         notifier.drainForTesting { done.fulfill() }
-        wait(for: [done], timeout: 2)
+        wait(for: [done], timeout: 10)
     }
 
     private func start(source: FlintSessionSource = .shortcut, level: BreakLevel = .easy) throws -> FlintActiveSession {

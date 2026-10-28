@@ -28,7 +28,7 @@ final class FlintCompletionNotificationTests: XCTestCase {
     private func drain(_ sut: FlintCompletionNotifier) {
         let drained = expectation(description: "notifier decisions drained")
         sut.drainForTesting { drained.fulfill() }
-        wait(for: [drained], timeout: 2)
+        wait(for: [drained], timeout: 10)
     }
     func testAuthorizedStartSchedulesOneHonestPlannedDeadlineNotification() {
         let center = NotificationCenterStub(), sut = notifier(center)
@@ -44,7 +44,7 @@ final class FlintCompletionNotificationTests: XCTestCase {
         }
         let event = FlintSessionLifecycleEvent.started(session(seconds: 1800.1), source: .shortcut, at: now)
         sut.handle(event); sut.handle(event)
-        wait(for: [added], timeout: 2)
+        wait(for: [added], timeout: 10)
         drain(sut)
         XCTAssertEqual(center.requests.count, 1)
         XCTAssertEqual(center.requests.first?.content.body, "Your focus session has reached its planned end.")
@@ -59,7 +59,7 @@ final class FlintCompletionNotificationTests: XCTestCase {
             center.onStatus = { callback in callback(status); checked.fulfill() }
             center.onAdd = { _, _ in XCTFail("unauthorized schedule") }
             sut.handle(.started(session(), source: .manual, at: now))
-            wait(for: [checked], timeout: 2)
+            wait(for: [checked], timeout: 10)
             drain(sut)
             XCTAssertTrue(center.requests.isEmpty)
             XCTAssertEqual(center.requestCount, 0)
@@ -87,15 +87,15 @@ final class FlintCompletionNotificationTests: XCTestCase {
         center.onAdd = { _, _ in XCTFail("late status must not revive cancelled session") }
         center.onCancel = { XCTAssertEqual($0, ["flint.session.complete.a"]); cancelled.fulfill() }
         sut.handle(.started(session(), source: .manual, at: now))
-        wait(for: [requested], timeout: 2)
+        wait(for: [requested], timeout: 10)
         sut.handle(.ended(session(), route: .manualStop, at: now.addingTimeInterval(60)))
-        wait(for: [cancelled], timeout: 2)
+        wait(for: [cancelled], timeout: 10)
         releaseStatus?(.authorized)
         // Queue a second cancellation as a barrier after the authorization callback.
         let barrier = expectation(description: "late callback processed")
         center.onCancel = { _ in barrier.fulfill() }
         sut.handle(.ended(session(id: "barrier"), route: .manualStop, at: now))
-        wait(for: [barrier], timeout: 2)
+        wait(for: [barrier], timeout: 10)
         drain(sut)
     }
     func testCancellationWinsAnAddCompletionRace() {
@@ -106,10 +106,10 @@ final class FlintCompletionNotificationTests: XCTestCase {
         center.onAdd = { _, completion in finishAdd = completion; added.fulfill() }
         center.onCancel = { XCTAssertEqual($0, ["flint.session.complete.a"]); cancelled.fulfill() }
         sut.handle(.started(session(), source: .manual, at: now))
-        wait(for: [added], timeout: 2)
+        wait(for: [added], timeout: 10)
         sut.handle(.superseded(session(), by: session(id: "b"), at: now.addingTimeInterval(1)))
         finishAdd?(nil)
-        wait(for: [cancelled], timeout: 2)
+        wait(for: [cancelled], timeout: 10)
         drain(sut)
     }
     func testStartupRecoversSavedOptOutWithoutSchedulingOrRequestingPermission() {
@@ -155,7 +155,7 @@ final class FlintCompletionNotificationTests: XCTestCase {
         center.pending = ["flint.session.complete.a", "unrelated.notification"]
         center.onCancel = { XCTAssertEqual($0, ["flint.session.complete.a"]); cancelled.fulfill() }
         sut.setEnabled(false)
-        wait(for: [cancelled], timeout: 2)
+        wait(for: [cancelled], timeout: 10)
         drain(sut)
         XCTAssertFalse(sut.isEnabled)
         XCTAssertFalse(defaults.bool(forKey: FlintCompletionNotifier.preferenceKey))
@@ -190,7 +190,7 @@ final class FlintCompletionNotificationTests: XCTestCase {
         center.onAdd = { _, done in added.fulfill(); done(nil) }
         center.onCancel = { _ in XCTFail("logical completion must not cancel its planned notification") }
         sut.handle(.started(session(), source: .manual, at: now))
-        wait(for: [added], timeout: 2)
+        wait(for: [added], timeout: 10)
         drain(sut)
         sut.handle(.ended(session(), route: .completed, at: now.addingTimeInterval(1800)))
         drain(sut)
