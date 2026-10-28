@@ -73,7 +73,8 @@ android {
             // Incomplete credentials fail above; they never silently fall back.
             signingConfig = signingConfigs.getByName(if (uploadSigningRequested) "upload" else "debug")
             buildConfigField("boolean", "DEVELOPMENT_SIGNED_PREVIEW", (!uploadSigningRequested).toString())
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
