@@ -241,8 +241,40 @@ class FlintSmokeTest {
             if (previousGlobal == "null") shell("settings delete secure accessibility_enabled")
             else shell("settings put secure accessibility_enabled $previousGlobal")
         }
-        grantMarker.delete()
-        ownsGrant = false
+        // Settings writes are asynchronous. Force-stopping while the manager still
+        // considers Flint enabled can mark its service crashed for the next test.
+        // Observe removal once; never repeat the grant mutation or force-stop early.
+        val deadline = SystemClock.uptimeMillis() + timeout
+        var lastDump = "not sampled"
+        do {
+            assertEquals("Boot changed during service cleanup", bootId,
+                shell("cat /proc/sys/kernel/random/boot_id").trim())
+            lastDump = shell("dumpsys accessibility")
+            if (listOf("Enabled", "Bound", "Binding", "Crashed").all { state ->
+                    val section = managerServiceState(lastDump, state)
+                    !section.contains("$app/") && !section.contains("FlintAccessibilityService")
+                }) {
+                grantMarker.delete()
+                ownsGrant = false
+                return
+            }
+            SystemClock.sleep(200)
+        } while (SystemClock.uptimeMillis() < deadline)
+        fail("Accessibility manager did not remove Flint before force-stop: $lastDump")
+    }
+
+    private fun managerServiceState(dump: String, state: String): String {
+        val headings = Regex("(?m)^\\s*${state} services:\\s*\\{").findAll(dump).toList()
+        check(headings.size == 1) { "Expected one $state services state: $dump" }
+        val start = headings.single().range.last
+        var depth = 0
+        for (index in start until dump.length) {
+            when (dump[index]) {
+                '{' -> depth++
+                '}' -> if (--depth == 0) return dump.substring(start, index + 1)
+            }
+        }
+        error("Unterminated $state services state: $dump")
     }
 
     private fun launchFlint() {
@@ -256,6 +288,9 @@ class FlintSmokeTest {
     private fun shield() {
         visible(By.text("Go back"))
         visible(By.text("Flint E2E Target is resting."))
+        // Semantics precede entrance paint (six 75 ms staggers + 300 ms fade).
+        // One presentation settle makes screenshots reviewable without replaying input.
+        SystemClock.sleep(1_000)
     }
 
     private fun visible(selector: BySelector): UiObject2 {
