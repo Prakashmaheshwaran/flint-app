@@ -2,10 +2,13 @@ package com.flint.peakfocus.e2e
 
 import android.app.Activity
 import android.app.UiAutomation
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.widget.TextView
+import android.view.accessibility.AccessibilityWindowInfo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
@@ -82,7 +85,7 @@ class FlintSmokeTest {
 
     @Test fun onboardingConsentRendersAndDeclines() {
         scrollTo("Enable accessibility service").click()
-        visible(By.text("Before Flint can block apps"))
+        visible(By.text("Before enabling Accessibility"))
         scrollTo("Accept & continue")
         visible(By.text("Not now"))
         screenshot("consent")
@@ -146,7 +149,11 @@ class FlintSmokeTest {
         visible(By.text("Rule name"))
         visible(By.clazz("android.widget.EditText")).click()
         visible(By.clazz("android.widget.EditText").focused(true)).text = name
-        device.pressBack() // dismiss keyboard
+        waitForImeVisibility(true)
+        device.pressBack() // exactly one Back, only after a visible keyboard is proven
+        waitForImeVisibility(false)
+        visible(By.text("Rule name"))
+        visible(By.text("Choose apps"))
         click("Choose apps")
         // Wait for the destination before resolving its rows; the outgoing editor
         // also has an EditText. Select the unique package row, not search text.
@@ -165,6 +172,47 @@ class FlintSmokeTest {
         val matches = device.wait(Until.findObjects(By.text(name)), timeout)
         check(!matches.isNullOrEmpty()) { "Missing $name tab" }
         matches.maxBy { it.visibleBounds.bottom }.click()
+    }
+
+    private fun waitForImeVisibility(expected: Boolean) {
+        val automation = instrumentation.getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
+        val serviceInfo = checkNotNull(automation.serviceInfo) { "UiAutomation service info unavailable" }
+        val retrieveWindows = AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+        if (serviceInfo.flags and retrieveWindows == 0) {
+            serviceInfo.flags = serviceInfo.flags or retrieveWindows
+            automation.serviceInfo = serviceInfo
+        }
+        val deadline = SystemClock.uptimeMillis() + timeout
+        var lastWindows = "not sampled"
+        var previousImeWindows: List<String>? = null
+        var stableSamples = 0
+        do {
+            refreshAccessibilityCache()
+            val windows = automation.windows
+            val imeWindows = mutableListOf<String>()
+            lastWindows = windows.joinToString("\n") { window ->
+                val bounds = Rect().also(window::getBoundsInScreen)
+                if (window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD && !bounds.isEmpty) {
+                    imeWindows += "${window.id}:$bounds"
+                }
+                "id=${window.id} type=${window.type} active=${window.isActive} bounds=$bounds"
+            }
+            val currentImeWindows = imeWindows.sorted()
+            if (currentImeWindows.isNotEmpty() == expected) {
+                stableSamples = if (currentImeWindows == previousImeWindows) stableSamples + 1 else 1
+                previousImeWindows = currentImeWindows
+            } else {
+                stableSamples = 0
+                previousImeWindows = null
+            }
+            if (stableSamples >= 2) return
+            SystemClock.sleep(100)
+        } while (SystemClock.uptimeMillis() < deadline)
+        val directory = File(instrumentation.context.getExternalFilesDir(null), "smoke").apply { mkdirs() }
+        File(directory, "${testName.methodName}-ime-timeout.txt").writeText(
+            "Expected visible IME=$expected\nWindows:\n$lastWindows\nInput method:\n" + shell("dumpsys input_method"),
+        )
+        fail("IME visibility did not become $expected; windows=$lastWindows")
     }
 
     private fun enableService() {

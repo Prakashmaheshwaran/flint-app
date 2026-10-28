@@ -1,9 +1,10 @@
 # Accessibility API declaration draft
 
-Prepared 2026-10-28. **Hold submission until lane C removes release
-Settings/uninstall/disable interception and E4 copy matches the resulting code.**
-The baseline guard is not justified by consent or the fact that other apps ship
-similar behavior. [Full sensitive-API policy](https://support.google.com/googleplay/android-developer/answer/16558241)
+Prepared 2026-10-28. Lane C [PR105](https://github.com/Prakashmaheshwaran/flint-app/pull/105)
+removed Settings/uninstall/disable interception and Settings-content reads in
+every variant; E4 aligns disclosure and enable routing with that source. Verify
+the exact submission AAB and demonstrate normal system recovery controls before
+submitting. Consent does not justify an uninstall guard. [Full sensitive-API policy](https://support.google.com/googleplay/android-developer/answer/16558241)
 restricts preventing disable/uninstall to parental-control and enterprise cases;
 Flint is neither. No exception or approval is claimed.
 
@@ -20,7 +21,7 @@ updates, inaccessible bars or unsupported browsers can reduce website coverage.
 No raw URL history or screen content is uploaded. There are no accounts,
 analytics, ads or remote commands in the release.
 
-The intended submission build does not read Settings screen text for guarding,
+The release implementation does not read Settings screen text for guarding,
 intercept system uninstall/disable controls, change settings automatically, or
 prevent the user from revoking access. It does not automate purchases/messages
 or autonomously plan actions. App blocking follows user-defined deterministic

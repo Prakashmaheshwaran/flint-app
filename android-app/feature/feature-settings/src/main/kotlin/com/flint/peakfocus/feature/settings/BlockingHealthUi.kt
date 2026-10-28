@@ -62,10 +62,13 @@ object BlockingHealthUi {
             title = "Accessibility service",
             role = "Instant app and website blocking",
             disclosure = "Flint's accessibility service detects which app is in the foreground " +
-                "and — for website blocking — reads the web address shown in your browser. " +
+                "and reads web addresses from known browser address bars for website blocking. " +
+                "App and screen class names identify the foreground app. " +
                 "Flint uses this only to enforce the blocks you set up. Everything stays on " +
-                "your device; it is never sent off your device, shared, or sold.",
-            fixLabel = "Open Accessibility settings",
+                "your device; it is never sent off your device, shared, or sold. Review the " +
+                "full disclosure before choosing " +
+                "whether to open Android Settings.",
+            fixLabel = "Review Accessibility access",
         ),
         PermissionRowUi(
             kind = PermissionKind.USAGE_ACCESS,

@@ -90,6 +90,10 @@ class BlockingHealthUiTest {
         // what is read, what it's used for, and that nothing leaves the device.
         assertTrue(row.disclosure.contains("which app is in the foreground"))
         assertTrue(row.disclosure.contains("web address"))
+        assertTrue(row.disclosure.contains("known browser address bars"))
+        assertFalse(row.disclosure.contains("Settings text"))
+        assertFalse(row.disclosure.contains("uninstall and disable restrictions"))
+        assertEquals("Review Accessibility access", row.fixLabel)
         assertTrue(row.disclosure.contains("only to enforce the blocks you set up"))
         assertTrue(row.disclosure.contains("stays on your device", ignoreCase = true))
         assertTrue(row.disclosure.contains("never", ignoreCase = true))

@@ -30,9 +30,10 @@ Android controls its visibility when notification permission is denied. Flint
 does not request full-screen-intent notification permission.
 
 This explains the requested use case; it does not prove Play will accept
-specialUse. The current manifest subtype mentions website blocks, while the
-fallback detector is app-only: the owner must show the actual app-only behavior
-and lane C must correct any inaccurate service metadata before submission.
+specialUse. The manifest subtype, corrected in lane C PR93, states: “Detects which
+app is in front to enforce the user's own on-device app blocks, schedules and
+daily app limits. Website blocking is not part of this service.” The owner must
+show that actual app-only behavior and use matching Console declaration text.
 
 Record the user enabling the fallback while Flint is visible, the ongoing
 notification/Task Manager entry, opening a rule-selected app and seeing its

@@ -39,8 +39,9 @@ confirms those surfaces use real local events. Do not claim an uninstall lock,
 parental-control/enterprise status, disability-assistance tool status, Google
 approval, universal browser support or data recovery/cloud backup.
 
-The candidate copy assumes lane C's removal of Settings/uninstall/disable
-interception has landed. Until then it must not be submitted as current behavior.
+Lane C's Settings/uninstall/disable interception removal landed in PR105. Verify
+that source and E4's matching disclosure are present in the exact submission
+build; demonstrate normal recovery controls before using this copy.
 
 ## Owner asset and form checklist
 
