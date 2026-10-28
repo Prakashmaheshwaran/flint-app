@@ -40,8 +40,9 @@ struct SettingsView: View {
                         NavigationLink { FocusFilterView() } label: {
                             FlintRow(title: "Shortcuts and Focus modes", subtitle: "Start and stop with a system Focus", chevron: true)
                         }
-                        NavigationLink { StrongerProtectionView() } label: {
-                            FlintRow(title: "Stronger protection", subtitle: "Screen Time passcode", chevron: true)
+                        NavigationLink { HelpView() } label: {
+                            FlintRow(title: String(localized: "How Flint works"),
+                                     subtitle: String(localized: "Strictness, Emergency Pass and limits"), chevron: true)
                         }
                         Link(destination: URL(string: "https://github.com/Prakashmaheshwaran/flint-app")!) {
                             FlintRow(title: "About Flint", value: "Open source", chevron: true)
@@ -191,27 +192,5 @@ struct SettingsView: View {
             Text(text).font(FlintFont.text(13)).foregroundStyle(FlintBrand.mist)
                 .fixedSize(horizontal: false, vertical: true)
         }
-    }
-}
-
-/// Apple's Screen Time passcode is the real anti-uninstall lock; Flint can only point to it.
-private struct StrongerProtectionView: View {
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Stronger protection").flintTitle(28)
-                Text("For true anti-uninstall protection, set a system Screen Time passcode in Settings → Screen Time. "
-                     + "It prevents deleting Flint or turning blocking off. Flint can’t enforce that itself — it’s an "
-                     + "Apple limitation.")
-                    .flintSecondary(15)
-                    .lineSpacing(4)
-                Text("Hardcore sessions already stop Flint from being deleted until they end.")
-                    .flintSecondary(15)
-                    .lineSpacing(4)
-            }
-            .padding(24)
-        }
-        .background(FlintGroundBackground())
-        .navigationBarTitleDisplayMode(.inline)
     }
 }
