@@ -19,7 +19,11 @@ struct TodayView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            EmberLandscape()
+            if typeSize.isAccessibilitySize {
+                FlintGroundBackground()
+            } else {
+                EmberLandscape()
+            }
 
             GeometryReader { geometry in
                 ScrollView {
