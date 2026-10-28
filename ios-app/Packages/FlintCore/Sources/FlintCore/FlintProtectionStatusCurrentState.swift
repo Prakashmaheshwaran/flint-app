@@ -19,12 +19,21 @@ extension FlintProtectionStatus {
         public var authorized: () -> Bool?
         public var registeredActivities: () -> Set<String>
         public var clock: FlintClock
+        public var loadActiveSession: () -> FlintActiveSession?
+        public var hasActiveSessionRecord: () -> Bool
+        public var loadArmingHealth: () -> FlintArmingHealth
 
         public init(authorized: @escaping () -> Bool?, registeredActivities: @escaping () -> Set<String>,
-                    clock: FlintClock) {
+                    clock: FlintClock,
+                    loadActiveSession: @escaping () -> FlintActiveSession? = { FlintGroupStore()?.loadActiveSession() },
+                    hasActiveSessionRecord: @escaping () -> Bool = { FlintGroupStore()?.hasActiveSessionRecord() ?? false },
+                    loadArmingHealth: @escaping () -> FlintArmingHealth = { FlintGroupStore()?.loadArmingHealth() ?? .init() }) {
             self.authorized = authorized
             self.registeredActivities = registeredActivities
             self.clock = clock
+            self.loadActiveSession = loadActiveSession
+            self.hasActiveSessionRecord = hasActiveSessionRecord
+            self.loadArmingHealth = loadArmingHealth
         }
 
         public static var system: Self {
@@ -55,7 +64,7 @@ extension FlintProtectionStatus {
         ruleObservations: [String: RuleObservation] = [:],
         thresholdReached: [String: Bool] = [:], openEnforcing: [String: Bool] = [:],
         sessionArmed: Bool? = nil, sessionKind: FlintProtectionStatusSnapshot.Session.Kind = .session,
-        sessionOrigin: FlintProtectionStatusSnapshot.Session.Origin = .appUI,
+        sessionOrigin: FlintProtectionStatusSnapshot.Session.Origin? = nil,
         timeIntegrity: FlintTimeIntegrity.Verdict? = nil, quotaCalendar: Calendar = .current,
         writer: Writer = .host,
         environment: ObservationEnvironment = .system,
@@ -71,8 +80,8 @@ extension FlintProtectionStatus {
         return snapshot
     }
 
-    /// Strictly decodes the existing public model formats rather than using the legacy
-    /// loaders' corrupt-to-empty fallbacks. No controller, registration or shield is mutated.
+    /// Uses the shared typed rule loaders and public session decode/presence APIs rather than
+    /// duplicating their storage keys. No controller, registration or shield is mutated.
     /// Observations/thresholds can be supplied by the committing adapter without depending on
     /// B3b's upcoming types. Unknown threshold flags remain non-enforcing.
     public static func currentInputs(
@@ -82,29 +91,29 @@ extension FlintProtectionStatus {
         ruleObservations: [String: RuleObservation] = [:],
         thresholdReached: [String: Bool] = [:], openEnforcing: [String: Bool] = [:],
         sessionArmed: Bool? = nil, sessionKind: FlintProtectionStatusSnapshot.Session.Kind = .session,
-        sessionOrigin: FlintProtectionStatusSnapshot.Session.Origin = .appUI,
+        sessionOrigin: FlintProtectionStatusSnapshot.Session.Origin? = nil,
         timeIntegrity: FlintTimeIntegrity.Verdict? = nil, quotaCalendar: Calendar = .current,
         environment: ObservationEnvironment = .system
     ) -> FlintProtectionStatusBuilder.Inputs {
-        var unreadable = false
-        func read<T: Decodable>(_ key: String, as type: T.Type) -> T? {
-            guard let object = defaults?.object(forKey: key) else { return nil }
-            guard let data = object as? Data, let value = try? JSONDecoder().decode(type, from: data) else {
-                unreadable = true
-                return nil
-            }
-            return value
+        guard defaults != nil else {
+            return .init(now: now, quotaCalendar: quotaCalendar, authorized: nil, pass: pass,
+                         timeIntegrity: nil, available: false, timeIntegrityApplies: false)
         }
-        let active = read("flint.activeSession", as: FlintActiveSession.self)
-        let schedules = read("flint.rules", as: [FlintScheduleRule].self) ?? []
-        let limits = read("flint.limits", as: [FlintLimitRule].self) ?? []
-        let opens = read("flint.openLimit.rules", as: [FlintOpenLimitRule].self) ?? []
-        let health = read("flint.armingHealth", as: FlintArmingHealth.self)
+        let active = environment.loadActiveSession()
+        let loadedSchedules = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: defaults)
+        let loadedLimits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: defaults)
+        let loadedOpens = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: defaults)
+        let unreadable = (active == nil && environment.hasActiveSessionRecord())
+            || loadedSchedules == nil || loadedLimits == nil || loadedOpens == nil
+        let schedules = loadedSchedules ?? []
+        let limits = loadedLimits ?? []
+        let opens = loadedOpens ?? []
+        let health = environment.loadArmingHealth()
         let activities = environment.registeredActivities()
         func observation(id: String, activity: String, domain: String) -> RuleObservation {
             if let supplied = ruleObservations[id] { return supplied }
             // Aggregate health proves this rule armed only when the entire domain succeeded.
-            let report = health?.domains[domain]
+            let report = health.domains[domain]
             let armed = report.map {
                 $0.updatedAt <= now && $0.enabled > 0 && $0.armed == $0.enabled && $0.failures.isEmpty
             } ?? false
@@ -132,7 +141,8 @@ extension FlintProtectionStatus {
         let session = active.map {
             FlintProtectionStatusBuilder.SessionInput($0,
                 armed: sessionArmed ?? activities.contains($0.monitorName),
-                kind: sessionKind, origin: sessionOrigin)
+                kind: sessionKind,
+                origin: sessionOrigin ?? $0.origin.flatMap(FlintProtectionStatusSnapshot.Session.Origin.init(rawValue:)) ?? .appUI)
         }
         let clock = environment.clock
         let liveActive = active.flatMap { $0.isExpired(at: now) ? nil : $0 }
