@@ -32,6 +32,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -113,10 +114,10 @@ class BlockScreenCoordinator(
         refreshInBackground = { refresh -> scope.launch(Dispatchers.Default) { refresh() } },
     )
 
-    /** Package whose newest mount already force-resolved the floor (cleared on hide). */
+    /** Package whose newest mount already force-resolved the floor (cleared on hide). Main thread only. */
     private var mountCheckedPackage: String? = null
 
-    /** Package whose current block was already reported as an intercepted open (cleared on hide). */
+    /** Package whose current block was already reported as an intercepted open (cleared on hide). Main thread only. */
     private var interceptedPackage: String? = null
     private val focusStore: FocusStateStore = FlintPreferences.focusState(appContext)
     private val limitsStore: LimitsStore = FlintPreferences.limits(appContext)
@@ -159,22 +160,19 @@ class BlockScreenCoordinator(
         scope.launch { focusStore.breakSession.collect { breakSession = it } }
         scope.launch { focusStore.emergencyPass.collect { emergencyPass = it } }
         scope.launch { focusStore.openCounts.collect { openCounts = it } }
+        // One collector for the three enforcement inputs, so "loaded" is a single signal after
+        // all three have emitted (never a notification over a half-loaded snapshot), and a
+        // write to any other key of the shared DataStore (open counts, break/pass state)
+        // re-emits equal values that distinctUntilChanged swallows — no re-evaluation loop.
         scope.launch {
-            focusStore.defaultBreakLevel.distinctUntilChanged().collect {
-                defaultBreakLevel = it
-                onEnforcementChanged?.invoke()
-            }
-        }
-        scope.launch {
-            limitsStore.openLimits.distinctUntilChanged().collect {
-                openLimits = it
-                onEnforcementChanged?.invoke()
-            }
-        }
-        scope.launch {
-            limitsStore.timeLimits.distinctUntilChanged().collect {
-                timeLimits = it
-                onEnforcementChanged?.invoke()
+            combine(focusStore.defaultBreakLevel, limitsStore.openLimits, limitsStore.timeLimits) { level, open, time ->
+                Triple(level, open, time)
+            }.distinctUntilChanged().collect { (level, open, time) ->
+                defaultBreakLevel = level
+                openLimits = open
+                timeLimits = time
+                // Observe-only: a detector bug must never stop these snapshots updating.
+                runCatching { onEnforcementChanged?.invoke() }
             }
         }
     }
@@ -392,16 +390,21 @@ class BlockScreenCoordinator(
             onEmergencyPassRequested = ::handleEmergencyPassRequested,
         )
         view.render(blockScreenState(packageName, appLabel, cause, breakSession, now, isEmergencyPassAvailable()))
-        if (surfaceHost.attach(view)) {
+        val mounted = if (surfaceHost.attach(view)) {
             shownView = view
             visiblePackage = packageName
             startTicker()
+            true
         } else {
-            onBlockSurfaceUnavailable?.invoke(appContext, packageName, appLabel, cause)
+            onBlockSurfaceUnavailable?.let { fallback ->
+                fallback(appContext, packageName, appLabel, cause)
+                true
+            } ?: false
         }
-        // Once per new block of this package (Path B's fallback re-launches every poll tick
-        // while the overlay is unavailable; those are not new interceptions).
-        if (interceptedPackage != packageName) {
+        // Once per new block of this package that actually reached the user (Path B's fallback
+        // re-launches every poll tick while the overlay is unavailable; those are not new
+        // interceptions, and a failed attach with no fallback blocked nothing).
+        if (mounted && interceptedPackage != packageName) {
             interceptedPackage = packageName
             BlockEventHooks.openIntercepted(cause.ruleId, now)
         }
@@ -600,7 +603,7 @@ class BlockScreenCoordinator(
         const val EMERGENCY_PASS_OPEN_ENDED_EXEMPTION_MS: Long = 30 * 60_000L
 
         /** Runtime-floor refresh age while a shield is visible (background, off the main thread). */
-        private const val SHOWN_FLOOR_REFRESH_MS: Long = 5_000L
+        private const val SHOWN_FLOOR_REFRESH_MS: Long = SafetyFloorGate.DEFAULT_FRESH_INTERVAL_MS
 
         /** Re-check a hair after expiry so the re-evaluation never races the ledger. */
         private const val EXPIRY_SLACK_MS: Long = 250L

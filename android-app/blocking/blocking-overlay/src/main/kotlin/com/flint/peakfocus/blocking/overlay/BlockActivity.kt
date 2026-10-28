@@ -145,6 +145,10 @@ class BlockActivity : ComponentActivity() {
                         finish()
                     },
                     onOpenFlint = {
+                        // Leaving for Flint is leaving the blocked app: end this block so the
+                        // next block of it is a new interception (Flint's own foreground never
+                        // reaches the handoff's hide path).
+                        coordinator.hideIfShown()
                         openFlint()
                         finish()
                     },

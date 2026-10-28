@@ -12,6 +12,7 @@ import com.flint.peakfocus.core.model.BreakDecision
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.model.BreakSessionState
 import com.flint.peakfocus.core.model.EmergencyPassState
+import com.flint.peakfocus.core.model.OpenCountState
 import com.flint.peakfocus.core.model.TimeLimit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
@@ -21,6 +22,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -40,6 +42,7 @@ class CoordinatorHooksTest {
     private val app: Context = ApplicationProvider.getApplicationContext()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
     private var attachOk = true
+    private var fallbackLaunches = 0
     private val enforcementChanges = AtomicInteger()
     private val events = mutableListOf<String>()
     private val listener = object : BlockEventHooks.Listener {
@@ -56,18 +59,24 @@ class CoordinatorHooksTest {
     @Before fun setUp() {
         BlockExemptions.clearAll()
         BlockEventHooks.register(listener)
-        coordinator = BlockScreenCoordinator(
-            context = app,
-            scope = scope,
-            surfaceHost = object : BlockScreenCoordinator.SurfaceHost {
-                override fun attach(view: View): Boolean = attachOk
-                override fun detach(view: View) = Unit
-                override fun goHome() = Unit
-            },
-            onEnforcementChanged = { enforcementChanges.incrementAndGet() },
-            safetyFloorGate = SafetyFloorGate(app.packageName, { emptyMap() }, { 0L }),
-        )
+        coordinator = newCoordinator(withFallback = true)
+        // Process-wide rules from other suites must not block the hook test packages.
+        assertNull(coordinator.currentBlockCause(APP_A, null))
+        assertNull(coordinator.currentBlockCause(APP_B, null))
     }
+
+    private fun newCoordinator(withFallback: Boolean) = BlockScreenCoordinator(
+        context = app,
+        scope = scope,
+        surfaceHost = object : BlockScreenCoordinator.SurfaceHost {
+            override fun attach(view: View): Boolean = attachOk
+            override fun detach(view: View) = Unit
+            override fun goHome() = Unit
+        },
+        onBlockSurfaceUnavailable = if (withFallback) { _, _, _, _ -> fallbackLaunches++ } else null,
+        onEnforcementChanged = { enforcementChanges.incrementAndGet() },
+        safetyFloorGate = SafetyFloorGate(app.packageName, { emptyMap() }, { 0L }),
+    )
 
     @After fun tearDown() {
         BlockEventHooks.unregister(listener)
@@ -76,6 +85,7 @@ class CoordinatorHooksTest {
             FlintPreferences.limits(app).clearTimeLimit(APP_A)
             FlintPreferences.focusState(app).setEmergencyPass(EmergencyPassState())
             FlintPreferences.focusState(app).setBreakSession(BreakSessionState())
+            FlintPreferences.focusState(app).setOpenCounts(OpenCountState())
         }
         scope.cancel()
     }
@@ -96,10 +106,19 @@ class CoordinatorHooksTest {
         attachOk = false // overlay unavailable → BlockActivity fallback each tick
         val cause = ruleBlockCause(rule, System.currentTimeMillis(), 0L)
         repeat(4) { show(APP_A, cause) }
+        assertEquals(4, fallbackLaunches)
         assertEquals(listOf("open:session-timer-7"), events)
         coordinator.hideIfShown(); idle() // the user left the app
         show(APP_A, cause)
         assertEquals(2, events.size)
+    }
+
+    @Test fun `a failed attach with no fallback blocked nothing and reports nothing`() {
+        attachOk = false
+        val pathA = newCoordinator(withFallback = false)
+        pathA.showBlocked(APP_A, null, ruleBlockCause(rule, System.currentTimeMillis(), 0L))
+        idle()
+        assertEquals(emptyList<String>(), events)
     }
 
     @Test fun `accepted break and pass grants are reported with the rule id`() {
@@ -119,10 +138,42 @@ class CoordinatorHooksTest {
     }
 
     @Test fun `limit snapshot loads and changes notify the detector`() {
-        awaitTrue("initial snapshots") { enforcementChanges.get() >= 3 } // tier, open and time limits
+        awaitTrue("initial snapshots") { enforcementChanges.get() >= 1 }
         val before = enforcementChanges.get()
         runBlocking { FlintPreferences.limits(app).setTimeLimit(TimeLimit(APP_A, dailyMinutes = 1)) }
         awaitTrue("time limit change") { enforcementChanges.get() > before && coordinator.timeLimitMinutes(APP_A) == 1 }
+    }
+
+    @Test fun `the coordinator's own counter and grant writes never notify (no re-evaluation loop)`() {
+        awaitTrue("initial snapshots") { enforcementChanges.get() >= 1 }
+        Thread.sleep(200L); idle()
+        val settled = enforcementChanges.get()
+        val focus = FlintPreferences.focusState(app)
+        runBlocking {
+            focus.setOpenCounts(OpenCountState(epochDay = 20_000L, opensByPackage = mapOf(APP_A to 3)))
+            focus.setBreakSession(BreakSessionState(breaksTaken = 2))
+            focus.setEmergencyPass(EmergencyPassState(weekStartEpochDay = 20_000L, usedAtEpochMs = 1L))
+        }
+        Thread.sleep(300L); idle()
+        assertEquals(settled, enforcementChanges.get())
+    }
+
+    @Test fun `a throwing enforcement callback never freezes the limit snapshots`() {
+        val throwing = BlockScreenCoordinator(
+            context = app,
+            scope = scope,
+            surfaceHost = object : BlockScreenCoordinator.SurfaceHost {
+                override fun attach(view: View): Boolean = true
+                override fun detach(view: View) = Unit
+                override fun goHome() = Unit
+            },
+            onEnforcementChanged = { error("detector bug") },
+            safetyFloorGate = SafetyFloorGate(app.packageName, { emptyMap() }, { 0L }),
+        )
+        runBlocking { FlintPreferences.limits(app).setTimeLimit(TimeLimit(APP_A, dailyMinutes = 7)) }
+        awaitTrue("first value") { throwing.timeLimitMinutes(APP_A) == 7 }
+        runBlocking { FlintPreferences.limits(app).setTimeLimit(TimeLimit(APP_A, dailyMinutes = 9)) }
+        awaitTrue("still collecting after the callback threw") { throwing.timeLimitMinutes(APP_A) == 9 }
     }
 
     private fun show(pkg: String, cause: BlockCause) {
