@@ -24,6 +24,9 @@ enum class BlockScreenReason {
     DEEP_FOCUS,
 }
 
+/** Host persistence status; only READY/FAILED may offer a new tier-dependent request. */
+enum class GrantStatus { READY, LOADING, SAVING, UNAVAILABLE, FAILED, RETRY_OPEN }
+
 /**
  * Everything [BlockScreen] needs to render, supplied by the host (accessibility overlay or
  * full-screen Activity — wired by A-SERVICE-INTEGRATION).
@@ -55,6 +58,7 @@ data class BlockScreenState(
      * of a button whose tap would silently no-op.
      */
     val emergencyPassAvailable: Boolean = true,
+    val grantStatus: GrantStatus = GrantStatus.READY,
 )
 
 /** How long the HARDER-level control must be held before `onBreakRequested` fires. */
@@ -62,6 +66,9 @@ internal const val BREAK_HOLD_MILLIS = 1_500L
 
 /** The break affordance the screen offers, derived from break level + host wait state. */
 internal sealed interface BreakAffordance {
+    data object Saving : BreakAffordance
+    data object Unavailable : BreakAffordance
+    data object RetryOpen : BreakAffordance
     /** EASY: a plain "Take a break" button. */
     data object TakeABreak : BreakAffordance
 
@@ -109,13 +116,18 @@ internal fun blockScreenContent(state: BlockScreenState): BlockScreenContent {
         badge = badgeFor(state.reason, state.breakLevel),
         countdownLabel = countdownLabelFor(state.reason, state.remainingMillis),
         encouragement = encouragementFor(state.packageName),
-        breakAffordance = breakAffordanceFor(
+        breakAffordance = when (state.grantStatus) {
+            GrantStatus.LOADING, GrantStatus.SAVING -> BreakAffordance.Saving
+            GrantStatus.UNAVAILABLE -> BreakAffordance.Unavailable
+            GrantStatus.RETRY_OPEN -> BreakAffordance.RetryOpen
+            GrantStatus.READY, GrantStatus.FAILED -> breakAffordanceFor(
             state.reason,
             state.breakLevel,
             state.breakWaitRemainingMillis,
             state.breakWaitTotalMillis,
             state.emergencyPassAvailable,
-        ),
+            )
+        },
     )
 }
 

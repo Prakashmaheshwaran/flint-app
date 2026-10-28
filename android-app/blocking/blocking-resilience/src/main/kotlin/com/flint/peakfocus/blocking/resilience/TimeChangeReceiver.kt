@@ -9,9 +9,11 @@ import com.flint.peakfocus.blocking.engine.ClockShift
 import com.flint.peakfocus.core.data.BlocklistStore
 import com.flint.peakfocus.core.datastore.FlintPreferences
 import com.flint.peakfocus.core.datastore.FocusStateStore
+import com.flint.peakfocus.core.datastore.FocusCommit
 import com.flint.peakfocus.core.datastore.BlockRulesStore
 import com.flint.peakfocus.core.datastore.snapshotOrNull
 import com.flint.peakfocus.core.model.FocusSnapshot
+import com.flint.peakfocus.core.model.FocusMutation
 import com.flint.peakfocus.core.model.BlockRule
 import java.util.TimeZone
 import java.util.concurrent.CopyOnWriteArrayList
@@ -27,6 +29,17 @@ internal suspend fun clockGuardSnapshot(focus: FocusStateStore, rules: BlockRule
     val ruleSnapshot = rules.rulesState.snapshotOrNull() ?: return null
     return focusSnapshot to ruleSnapshot
 }
+
+/** Transform current accounting together: an older warm-up read must never refund a grant. */
+internal suspend fun guardCurrentFocus(store: FocusStateStore, shift: ClockShift): FocusCommit<Unit> =
+    store.transact { current ->
+        val guard = ClockChangeGuard()
+        FocusMutation(current.copy(
+            openCounts = guard.guardedOpenCounts(current.openCounts, shift),
+            emergencyPass = guard.guardedEmergencyPass(current.emergencyPass, shift),
+            breakSession = guard.guardedBreakSession(current.breakSession, shift),
+        ), Unit)
+    }
 
 /**
  * Time-change re-arm (anti-bypass, spec 2.4/2.5): users can dodge schedules and daily limits
@@ -121,19 +134,8 @@ class TimeChangeReceiver : BroadcastReceiver() {
                 withTimeout(5_000) {
                     val store = FlintPreferences.focusState(appContext)
                     val rulesStore = FlintPreferences.blockRules(appContext)
-                    val (focus, rules) = clockGuardSnapshot(store, rulesStore) ?: return@withTimeout
-                    val counts = focus.openCounts
-                    guard.guardedOpenCounts(counts, shift)
-                        .takeIf { it != counts }
-                        ?.let { store.setOpenCounts(it) }
-                    val pass = focus.emergencyPass
-                    guard.guardedEmergencyPass(pass, shift)
-                        .takeIf { it != pass }
-                        ?.let { store.setEmergencyPass(it) }
-                    val session = focus.breakSession
-                    guard.guardedBreakSession(session, shift)
-                        .takeIf { it != session }
-                        ?.let { store.setBreakSession(it) }
+                    val (_, rules) = clockGuardSnapshot(store, rulesStore) ?: return@withTimeout
+                    if (guardCurrentFocus(store, shift) is FocusCommit.Unavailable) return@withTimeout
                     // One-shot Block Now sessions measure DURATION, not a wall deadline: shift
                     // their expiry with the injected jump so a set-forward clock can't end a
                     // Hardcore session early (nor a set-back stretch one). Upserting also

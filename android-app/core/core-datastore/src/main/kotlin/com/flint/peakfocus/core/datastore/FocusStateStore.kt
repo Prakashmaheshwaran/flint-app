@@ -34,7 +34,10 @@ interface FocusStateStore {
         defaultBreakLevel, emergencyPass, breakSession, openCounts,
     ) { level, pass, session, counts -> FocusSnapshot(level, pass, session, counts) }.withReadiness()
 
-    /** Pure reducer. Success follows durable consumption + receipt commit; revision is store-owned. */
+    /**
+     * Pure reducer. Success follows durable consumption + receipt commit; revision is store-owned.
+     * The persisted request-retention watermark may advance but must never rewind.
+     */
     suspend fun <R> transact(transform: (FocusSnapshot) -> FocusMutation<R>): FocusCommit<R> {
         error("Atomic focus updates are not supported by this store")
     }

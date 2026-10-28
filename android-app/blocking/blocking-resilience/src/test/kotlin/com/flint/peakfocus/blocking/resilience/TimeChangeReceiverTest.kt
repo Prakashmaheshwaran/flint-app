@@ -10,6 +10,7 @@ import com.flint.peakfocus.core.model.*
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.flowOf
+import com.flint.peakfocus.blocking.engine.ClockShift
 
 /**
  * Pure-JVM: exercises the action filters and bounded store snapshot reads. The receiver itself
@@ -17,6 +18,42 @@ import kotlinx.coroutines.flow.flowOf
  * applies are pure and covered in blocking-engine's ClockChangeGuardTest.
  */
 class TimeChangeReceiverTest {
+
+    @Test fun guardCannotRefundAGrantCommittedAfterTheWarmUpSnapshot() = runBlocking {
+        val store = InMemoryFocusStateStore()
+        store.setOpenCounts(OpenCountState(0, mapOf("com.app" to 2)))
+        store.setEmergencyPass(EmergencyPassState(0, null))
+        store.setBreakSession(BreakSessionState(0, BreakRequestState(1_000, 61_000)))
+        val old = clockGuardSnapshot(store, InMemoryBlockRulesStore())!!.first
+        val receipt = PersistedExemption("grant", "com.app", "cause", ExemptionKind.EMERGENCY_PASS, 2_000_000_000_000)
+        store.transact { FocusMutation(it.copy(
+            openCounts = it.openCounts.copy(opensByPackage = mapOf("com.app" to 3)),
+            emergencyPass = it.emergencyPass.copy(usedAtEpochMs = 1_700_700_000_000),
+            breakSession = BreakSessionState(1, null),
+            exemptions = mapOf(receipt.requestId to receipt),
+        ), Unit) }
+        assertEquals(2, old.openCounts.opensFor("com.app"))
+        val guarded = guardCurrentFocus(store, ClockShift(1_700_000_000_000, 1_700_700_000_000, 0, 0)) as FocusCommit.Committed
+        assertEquals(3, guarded.snapshot.openCounts.opensFor("com.app"))
+        assertEquals(1_700_700_000_000, guarded.snapshot.emergencyPass.usedAtEpochMs)
+        assertEquals(BreakSessionState(1, null), guarded.snapshot.breakSession)
+        assertEquals(receipt, guarded.snapshot.exemptions[receipt.requestId])
+    }
+
+    @Test fun allClockGuardAccountingChangesCommitInOneRevision() = runBlocking {
+        val store = InMemoryFocusStateStore()
+        store.setOpenCounts(OpenCountState(0, mapOf("com.app" to 2)))
+        store.setEmergencyPass(EmergencyPassState(0, 10))
+        store.setBreakSession(BreakSessionState(1, BreakRequestState(1_000, 61_000)))
+        val before = clockGuardSnapshot(store, InMemoryBlockRulesStore())!!.first
+        val shift = ClockShift(1_700_000_000_000, 1_700_700_000_000, 0, 0)
+        val guarded = guardCurrentFocus(store, shift) as FocusCommit.Committed
+        assertEquals(before.revision + 1, guarded.snapshot.revision)
+        assertTrue(guarded.snapshot.openCounts.epochDay > before.openCounts.epochDay)
+        assertTrue(guarded.snapshot.emergencyPass.weekStartEpochDay > before.emergencyPass.weekStartEpochDay)
+        assertEquals(61_000 + shift.wallDeltaMs, guarded.snapshot.breakSession.pending!!.effectiveAtEpochMs)
+        assertEquals(10L, guarded.snapshot.emergencyPass.usedAtEpochMs)
+    }
 
     @Test fun unavailableFocusCompletesWithoutWaitingForAReadyValue() = runBlocking {
         for (reason in StorageFailure.entries) {
