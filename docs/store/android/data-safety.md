@@ -1,7 +1,8 @@
 # Release data inventory and Data safety draft
 
-Scope: Android local-only release, package `com.flint.peakfocus`, after lane C's
-Settings/uninstall-guard removal. Snapshot prepared 2026-10-28. Recheck the exact
+Scope: Android local-only release, package `com.flint.peakfocus`, with lane C's
+Settings/uninstall-guard and Settings-text-read removal in PR105 (`a34cbba`).
+Settings screen content is not read for guarding. Snapshot prepared 2026-10-28. Recheck the exact
 submission commit/AAB and lane F additions before signing the form. Debug-only
 Firebase/connected sandbox data is outside this release and must remain excluded.
 
@@ -17,7 +18,6 @@ Firebase/connected sandbox data is outside this release and must remain excluded
 | Setup completion and notification-prompt preferences | `MainActivity` | `flint_onboarding` and `flint_permissions` SharedPreferences; until storage cleared | None |
 | Permission/service/clock health, boot state | Permissions, resilience, service gates and clock guard | System settings plus local runtime state; any lane C persisted additions must be inventoried at final merge | None |
 | Focus lifecycle history and derived Insights | Lane F integration | **Pending final lane F schema/path/retention verification**; add exact files/fields here before advertising or submitting history claims | None intended; verify final artifact |
-| Settings screen text/content descriptions for anti-disable/uninstall guarding | Baseline `FlintAccessibilityService.collectVisibleText` | Baseline reads in memory during an active Hardcore guard. **Must be removed from the release path by lane C before these no-guard drafts are submitted** | No transmission in baseline; removal is a policy gate |
 
 The release has no account/profile identifiers, contacts, messages, photos,
 microphone, camera, location, payments, ads identifiers or developer telemetry

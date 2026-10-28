@@ -1,10 +1,14 @@
 import Foundation
 
-/// The free weekly "get out of jail" pass that lets a user end a Hardcore (Deep Focus) block
-/// early. Opal paywalls this; Flint gives it away. Pure, deterministic logic so it's easy to test.
+/// The free Emergency Pass that lets a user end a Hardcore (Deep Focus) block early.
+///
+/// Superseded by ADR-012 §6: eligibility belongs on the elapsed-time ledger
+/// (`FlintProtectionPolicy.passEligibility`), where missing or corrupt state is unavailable
+/// rather than a fresh pass. This wall-clock check remains only until lane B moves the pass
+/// onto that ledger; do not add new callers.
 public enum FlintEmergencyPass {
-    /// One pass per rolling 7 days.
-    public static let period: TimeInterval = 7 * 24 * 60 * 60
+    /// One pass per rolling 7 days after use — the contract's constant, kept in one place.
+    public static let period: TimeInterval = FlintProtectionConstants.passPeriod
 
     /// Available if it was never used, or the period has elapsed since the last use.
     public static func isAvailable(lastUsed: Date?, now: Date = Date()) -> Bool {

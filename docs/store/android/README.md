@@ -15,16 +15,18 @@ upload, signing enrollment, release, or publication has been performed.
 
 ## Release gates
 
-The declarations describe the intended local-only release **without Settings,
-uninstall or disable interception**. The coordinator assigned removal of that
-consumer guard to lane C under the protection contract. Do not submit these
+The declarations describe the local-only release **without Settings,
+uninstall or disable interception**. Lane C removed that consumer guard and its
+Settings text sweep in [PR105](https://github.com/Prakashmaheshwaran/flint-app/pull/105)
+(integration commit `a34cbba754ae33211e9bd18ddb29ad8310157355`); E4 reconciles the
+matching disclosure and shared enable gate. Do not submit these
 answers or publish the policy against a build that still reads Settings text or
 shields those system controls. Truthful disclosure alone does not resolve
 [Play's prohibition](https://support.google.com/googleplay/android-developer/answer/16558241).
 
 Before submission, the owner must:
 
-1. Confirm lane C removal and the matching E4 disclosure copy are merged; inspect
+1. Confirm the submission source contains PR105 and the matching E4 disclosure; inspect
    the exact release artifact and demonstrate freely reachable disable/uninstall
    controls. Reconcile all drafts if the final code differs.
 2. Obtain green exact-head Android CI and script selftests for packaging changes;

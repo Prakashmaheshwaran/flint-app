@@ -184,7 +184,10 @@ private fun FlintApp() {
     val haptics = rememberFlintHaptics()
     val prefs = remember { context.getSharedPreferences("flint_onboarding", Context.MODE_PRIVATE) }
     var welcomed by rememberSaveable { mutableStateOf(prefs.getBoolean(KEY_WELCOMED, false)) }
-    var showConsent by rememberSaveable { mutableStateOf(false) }
+    val consentNavigation = rememberSaveable(saver = AccessibilityDisclosureNavigation.StateSaver) {
+        AccessibilityDisclosureNavigation()
+    }
+    val showConsent = consentNavigation.showDisclosure
     var detail by rememberSaveable { mutableStateOf<Detail?>(null) }
     var health by remember { mutableStateOf(PermissionHealthChecker.check(context)) }
     val store = remember { BlocklistStore(context) }
@@ -234,11 +237,10 @@ private fun FlintApp() {
     }
 
     val onSetupStep: (SetupStep) -> Unit = { step ->
-        val handOff = settingsHandOff(context, step)
-        if (handOff == null) {
-            showConsent = true
-        } else {
-            context.startActivity(handOff.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        consentNavigation.setup(step) { otherStep ->
+            settingsHandOff(context, otherStep)?.let { handOff ->
+                context.startActivity(handOff.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
         }
     }
 
@@ -268,12 +270,13 @@ private fun FlintApp() {
             // the ONLY route to the accessibility-settings hand-off — no tab bar, no shortcut.
             Stage.Consent -> AccessibilityConsentScreen(
                 onAccept = {
-                    showConsent = false
-                    context.startActivity(
-                        AccessibilityPermission.settingsIntent().addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                    )
+                    consentNavigation.accept {
+                        context.startActivity(
+                            AccessibilityPermission.settingsIntent().addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }
                 },
-                onDecline = { showConsent = false },
+                onDecline = consentNavigation::decline,
             )
             Stage.Tabs -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                 val systemBars = WindowInsets.systemBars.asPaddingValues()
@@ -322,6 +325,7 @@ private fun FlintApp() {
                                 FlintTabGlyph.Insights -> StatsScreen(Modifier.fillMaxSize())
                                 FlintTabGlyph.You -> SettingsScreen(
                                     Modifier.fillMaxSize(),
+                                    onEnableAccessibility = consentNavigation::request,
                                     onAccount = if (BuildConfig.DEBUG) {
                                         { detail = Detail.Account }
                                     } else null,

@@ -104,7 +104,7 @@ fun AccessibilityConsentScreen(
                     EntranceStep(step = 1) {
                         FlintScreenHeader(
                             title = ConsentCopy.HEADLINE,
-                            eyebrow = "One-time setup",
+                            eyebrow = "Accessibility access",
                         )
                     }
                     Spacer(Modifier.height(FlintSpacing.md))
@@ -132,7 +132,7 @@ fun AccessibilityConsentScreen(
                             )
                             DisclosureRow(
                                 icon = Icons.Filled.Settings,
-                                heading = "Reversible any time",
+                                heading = "Your choice and how to turn it off",
                                 body = ConsentCopy.NEXT_STEP,
                                 bodyStyle = MaterialTheme.typography.bodyMedium,
                             )
@@ -165,8 +165,8 @@ fun AccessibilityConsentScreen(
                     }
                     Spacer(Modifier.height(FlintSpacing.sm))
                     Text(
-                        text = "Flint can't block anything until this is enabled — you can " +
-                            "come back any time.",
+                        text = "Accessibility is optional. You can review this disclosure again " +
+                            "from Today or You.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,

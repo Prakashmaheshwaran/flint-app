@@ -701,12 +701,14 @@ private final class LifecycleCapture: FlintSessionEventSink {
 
     var kinds: [String] {
         log.map {
-            switch $0 {
+            switch $0.unannotated {
             case .started: return "started"
             case .ended: return "ended"
             case .superseded: return "superseded"
             case .passUsed: return "passUsed"
             case .failedToArm: return "failedToArm"
+            case .globalPassUsed: return "globalPassUsed"
+            case .annotated: return "annotated"
             }
         }
     }
