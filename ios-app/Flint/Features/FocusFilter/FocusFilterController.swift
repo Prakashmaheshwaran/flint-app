@@ -15,7 +15,7 @@ struct FocusFilterController {
     /// The session name this filter gives its blocks (older builds identified them by it).
     static let sessionName = FlintSessionController.legacyFocusFilterName
     /// The Focus filter's owner id on the sessions it starts (ADR-012 §3 ownership).
-    static let ownerID = "focus-filter"
+    static let ownerID = FlintSessionController.focusFilterOwnerID
 
     private let controller = FlintSessionController()
 
@@ -31,7 +31,7 @@ struct FocusFilterController {
 
         guard let selection = resolveSelection(for: request.appGroupID),
               selectionCount(selection) > 0 else {
-            FlintSessionHealth.recordRefusedStart(name: Self.sessionName, reason: "Nothing is selected to block.")
+            FlintSessionHealth.recordRefusal(action: .start, name: Self.sessionName, reason: "Nothing is selected to block.")
             return false
         }
 
@@ -44,11 +44,15 @@ struct FocusFilterController {
                 source: .focusFilter,
                 origin: .focusFilter,
                 ownerID: Self.ownerID,
-                replacing: false
+                replacing: false,
+                // The tier was chosen — with its disclosure — in the Focus filter's settings;
+                // that choice is the confirmation of its rights (ADR-012 §2).
+                confirmed: true
             )
             return true
         } catch {
-            FlintSessionHealth.recordRefusedStart(
+            FlintSessionHealth.recordRefusal(
+                action: .start,
                 name: Self.sessionName,
                 reason: (error as? LocalizedError)?.errorDescription ?? String(describing: error)
             )
@@ -61,7 +65,26 @@ struct FocusFilterController {
     /// persisted wait (finish ending it in Flint after the wait); a finite Hardcore block keeps
     /// running until its end. Blocks from an older build keep their old Focus-off exit (§12).
     func deactivate() {
-        controller.requestStop(route: .focusFilterOff, confirmed: true)
+        let outcome = controller.requestStop(route: .focusFilterOff, confirmed: true)
+        let reason: String
+        switch outcome {
+        case .stopped, .notApplicable:
+            return
+        case let .waiting(remaining):
+            reason = "Focus turned off, but this is a Harder block: a \(Self.minutes(remaining)) wait started. Finish ending it in Flint."
+        case .readyToConfirm, .needsConfirmation:
+            reason = "Focus turned off. The wait is over — open Flint to end this Harder block."
+        case let .denied(_, until):
+            reason = "Focus turned off, but this Hardcore block keeps running\(until.map { " until \($0.formatted(date: .omitted, time: .shortened))" } ?? "")."
+        case .unavailable:
+            reason = "Focus turned off, but Flint couldn't read its protection state, so nothing changed."
+        }
+        FlintSessionHealth.recordRefusal(action: .stop, name: Self.sessionName, reason: reason)
+    }
+
+    private static func minutes(_ seconds: TimeInterval) -> String {
+        let minutes = max(1, Int((seconds / 60).rounded(.up)))
+        return minutes == 1 ? "1-minute" : "\(minutes)-minute"
     }
 
     // MARK: Selection resolution

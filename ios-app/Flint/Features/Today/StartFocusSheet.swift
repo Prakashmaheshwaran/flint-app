@@ -58,6 +58,21 @@ struct StartFocusSheet: View {
         .presentationDragIndicator(.hidden)
         .familyActivityPicker(isPresented: $showPicker, selection: $vm.selection)
         .onChange(of: vm.selection) { _ in vm.persistSelection() }
+        .confirmationDialog(vm.breakLevel == .hardcore ? "Start a Hardcore block?" : "Replace the running session?",
+                            isPresented: $vm.confirmingHardcore,
+                            titleVisibility: .visible) {
+            Button(vm.breakLevel == .hardcore ? "Start Hardcore" : "Replace") {
+                vm.start(confirmed: true)
+                if vm.active != nil { onClose() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if vm.breakLevel == .hardcore {
+                Text("You can't end it early. It ends after \(vm.durationMinutes) minutes, or with your Emergency Pass.")
+            } else {
+                Text("The session that's running now ends and this one takes its place.")
+            }
+        }
         .alert("Save as group", isPresented: $showSaveGroup) {
             TextField("Name", text: $groupName)
             Button("Save") { vm.saveSelectionAsGroup(name: groupName); groupName = "" }

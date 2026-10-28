@@ -251,9 +251,18 @@ public struct FlintSessionHealth: Codable, Equatable, Sendable {
 
     public var lastArmFailure: ArmFailure?
     public var lastTimeAnomaly: TimeAnomaly?
-    /// The last background start (a Focus turning on) that Flint refused, and why — so a refusal
-    /// is never silent (ADR-012 §1).
-    public var lastRefusedStart: ArmFailure?
+    /// A background request (a Focus turning on or off) that Flint refused or only partly did,
+    /// and why — so a refusal is never silent (ADR-012 §1, C11).
+    public struct Refusal: Codable, Equatable, Sendable {
+        public enum Action: String, Codable, Sendable { case start, stop }
+        public let action: Action
+        public let sessionName: String
+        public let reason: String
+        public let at: Date
+    }
+
+    /// The last refused or unfinished background request; cleared when a session starts.
+    public var lastRefusal: Refusal?
     /// Set while a session is recorded as running but Screen Time authorization is not approved,
     /// i.e. iOS is enforcing nothing for it. Cleared once authorization is back or it ends.
     public var unauthorizedSince: Date?
@@ -278,10 +287,15 @@ public struct FlintSessionHealth: Codable, Equatable, Sendable {
         defaults?.set(try? JSONEncoder().encode(self), forKey: Self.storageKey)
     }
 
-    /// Record a refused background start for Settings to show.
-    public static func recordRefusedStart(name: String, reason: String, at date: Date = Date(),
-                                          in defaults: UserDefaults? = .flintGroup) {
-        update(in: defaults) { $0.lastRefusedStart = ArmFailure(sessionName: name, reason: reason, at: date) }
+    /// Record a refused (or unfinished) background request for Flint to show.
+    public static func recordRefusal(action: Refusal.Action, name: String, reason: String, at date: Date = Date(),
+                                     in defaults: UserDefaults? = .flintGroup) {
+        update(in: defaults) { $0.lastRefusal = Refusal(action: action, sessionName: name, reason: reason, at: date) }
+    }
+
+    /// Dismiss the shown refusal.
+    public static func clearRefusal(in defaults: UserDefaults? = .flintGroup) {
+        update(in: defaults) { $0.lastRefusal = nil }
     }
 
     /// Load-modify-save; a no-op without the App Group.

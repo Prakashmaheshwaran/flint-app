@@ -13,6 +13,8 @@ enum FlintShortcutsError: Error, LocalizedError {
     case hardcoreLocked
     /// Harder: a wait started (or is still running) before the session can be ended.
     case waitRunning(remaining: TimeInterval)
+    /// Harder: the wait has passed; the final confirmation happens in Flint (ADR-012 §2).
+    case confirmInFlint
     case stateUnavailable
 
     var errorDescription: String? {
@@ -25,7 +27,9 @@ enum FlintShortcutsError: Error, LocalizedError {
             return "This is a Hardcore session — it can't be stopped early. It ends on its own, or use the Emergency Pass in Flint."
         case let .waitRunning(remaining):
             let minutes = max(1, Int((remaining / 60).rounded(.up)))
-            return "This is a Harder session: a \(minutes)-minute wait is running. Run this again after it to end the session."
+            return "This is a Harder session, so it didn't end yet: a \(minutes)-minute wait is running. After it, open Flint to end the session."
+        case .confirmInFlint:
+            return "The wait is over, but a Harder session only ends after you confirm in Flint. Open Flint to end it."
         case .stateUnavailable:
             return "Flint couldn't read its protection state, so nothing was changed. Open Flint to check."
         }
@@ -52,7 +56,10 @@ enum FlintShortcutsRunner {
     /// Start a block from a portable `FlintSessionRequest`. Throws `.noSelectionAvailable` when the
     /// request resolves to nothing, so the user gets a useful prompt instead of a generic failure.
     @discardableResult
-    static func start(_ request: FlintSessionRequest, source: FlintSessionSource = .shortcut) throws -> FlintActiveSession {
+    /// `confirmed` is the user's explicit confirmation of a Hardcore start, which the intent asks
+    /// for before calling (ADR-012 §2: raising rights needs it, including via automation).
+    static func start(_ request: FlintSessionRequest, source: FlintSessionSource = .shortcut,
+                      confirmed: Bool = false) throws -> FlintActiveSession {
         guard let selection = resolveSelection(for: request) else {
             throw FlintShortcutsError.noSelectionAvailable
         }
@@ -62,7 +69,8 @@ enum FlintShortcutsRunner {
             breakLevel: request.breakLevel,
             name: request.name,
             source: source,
-            origin: .shortcut
+            origin: .shortcut,
+            confirmed: confirmed
         )
     }
 
@@ -88,14 +96,15 @@ enum FlintShortcutsRunner {
     }
 
     /// Stop the running session through the same tier rules as the app (ADR-012 §2, PC-07):
-    /// Easy stops (running the shortcut is the explicit request); Harder starts its persisted
-    /// wait and stops when the shortcut is run again after it; Hardcore is refused.
+    /// Easy stops (running the shortcut is the explicit request); Harder starts or resumes its
+    /// persisted wait and never completes from here — the final confirmation is in Flint;
+    /// Hardcore is refused.
     static func stopActiveSession() throws {
         let controller = FlintSessionController()
         switch controller.requestStop(route: .shortcutStop, confirmed: true) {
         case .stopped: return
         case let .waiting(remaining): throw FlintShortcutsError.waitRunning(remaining: remaining)
-        case .readyToConfirm, .needsConfirmation: throw FlintShortcutsError.waitRunning(remaining: 0)
+        case .readyToConfirm, .needsConfirmation: throw FlintShortcutsError.confirmInFlint
         case .denied: throw FlintShortcutsError.hardcoreLocked
         case .notApplicable: throw FlintShortcutsError.noActiveSession
         case .unavailable: throw FlintShortcutsError.stateUnavailable

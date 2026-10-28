@@ -76,12 +76,17 @@ final class FlintSessionControllerTests: XCTestCase {
         source: FlintSessionSource = .manual,
         origin: FlintSessionOrigin = .appUI,
         replacing: Bool = true,
-        confirmed: Bool = true
+        confirmed: Bool = true,
+        selection: FamilyActivitySelection = FamilyActivitySelection()
     ) throws -> FlintActiveSession {
         try controller.startBlockNow(
-            selection: FamilyActivitySelection(), duration: minutes * 60, breakLevel: level, source: source,
+            selection: selection, duration: minutes * 60, breakLevel: level, source: source,
             origin: origin, replacing: replacing, confirmed: confirmed)
     }
+
+    /// The fake shield's second target set: `selectionA` blocks {A, B}, `selectionB` only {A}.
+    private let selectionA = FamilyActivitySelection()
+    private let selectionB = FamilyActivitySelection(includeEntireCategory: true)
 
     // MARK: ADR-012 arbitration (§1–§4)
 
@@ -124,6 +129,95 @@ final class FlintSessionControllerTests: XCTestCase {
         XCTAssertEqual(store.active, longer)
         XCTAssertEqual(events.kinds.suffix(2), ["superseded", "started"])
         XCTAssertTrue(registrar.stopped.contains(hardcore.monitorName))
+    }
+
+    func testDroppingATargetIsNotDominancePC06() throws {
+        let c = controller()
+        let hardcore = try start(c, minutes: 60, level: .hardcore, selection: selectionA)
+        XCTAssertThrowsError(try start(c, minutes: 120, level: .hardcore, selection: selectionB),
+                             "a longer Hardcore block of A alone drops B") {
+            XCTAssertEqual($0 as? FlintSessionError, .replacementDenied(until: hardcore.endsAt))
+        }
+        XCTAssertEqual(store.active, hardcore)
+    }
+
+    func testWithoutItsOwnTargetsARunningSessionCanOnlyBeReplacedAsWeakening() throws {
+        // A session from an older build has no id-keyed target snapshot; the picker selection is
+        // the user's current draft and must never stand in for what is blocked.
+        let legacy = FlintActiveSession(name: "Focus", startedAt: clock.now, endsAt: clock.now.addingTimeInterval(3600),
+                                        breakLevel: .hardcore, monitorName: "flint.session")
+        store.active = legacy
+        store.selection = selectionB
+        XCTAssertThrowsError(try start(controller(), minutes: 120, level: .hardcore, selection: selectionB)) {
+            XCTAssertEqual($0 as? FlintSessionError, .replacementDenied(until: legacy.endsAt))
+        }
+        XCTAssertEqual(store.active, legacy)
+
+        let easy = FlintActiveSession(name: "Focus", startedAt: clock.now, endsAt: clock.now.addingTimeInterval(3600),
+                                      breakLevel: .easy, monitorName: "flint.session")
+        store.active = easy
+        XCTAssertNoThrow(try start(controller(), minutes: 30, level: .easy, selection: selectionB),
+                         "Easy may still be replaced, as a weakening")
+    }
+
+    func testAStartNeverOverwritesAnUnreadableRecord() {
+        store.corruptRecord = true
+        XCTAssertThrowsError(try start(controller(), minutes: 30)) {
+            XCTAssertEqual($0 as? FlintSessionError, .protectionStateUnavailable)
+        }
+        XCTAssertTrue(registrar.started.isEmpty)
+        XCTAssertEqual(shield.applyCount, 0)
+        XCTAssertNil(shield.denyAppRemoval)
+    }
+
+    func testAReplacementWaitCoversOnlyTheRequestedTargets() throws {
+        let c = controller()
+        _ = try start(c, minutes: 60, level: .harder, selection: selectionA)
+        XCTAssertThrowsError(try start(c, minutes: 30, level: .easy, selection: selectionA))
+        clock.advance(60)
+        XCTAssertThrowsError(try start(c, minutes: 30, level: .easy, selection: selectionB),
+                             "other targets are a different request: a new wait") {
+            XCTAssertEqual($0 as? FlintSessionError, .replacementWaiting(remaining: 60))
+        }
+    }
+
+    func testABackgroundReplacementNeverCompletesAHarderWait() throws {
+        let c = controller()
+        let harder = try start(c, minutes: 60, level: .harder)
+        XCTAssertThrowsError(try start(c, minutes: 30, level: .easy, origin: .shortcut))
+        clock.advance(60)
+        XCTAssertThrowsError(try start(c, minutes: 30, level: .easy, origin: .shortcut)) {
+            XCTAssertEqual($0 as? FlintSessionError, .confirmInFlint)
+        }
+        XCTAssertEqual(store.active, harder)
+    }
+
+    func testAHarderWaitSpanningTheBackgroundOnlyEndsInFlint() throws {
+        let c = controller()
+        _ = try start(c, minutes: 60, level: .harder, origin: .focusFilter, replacing: false)
+        XCTAssertEqual(c.requestStop(route: .focusFilterOff, confirmed: true), .waiting(remaining: 60))
+        clock.advance(60)
+        XCTAssertEqual(c.requestStop(route: .focusFilterOff, confirmed: true), .readyToConfirm,
+                       "Focus off again after the wait: still no automatic completion")
+        XCTAssertEqual(c.requestStop(route: .shortcutStop, confirmed: true), .readyToConfirm)
+        XCTAssertNotNil(store.active)
+        XCTAssertEqual(c.requestStop(route: .manualStop, confirmed: true), .stopped, "the final confirmation in Flint")
+    }
+
+    func testACommittedStopProceedsWithoutASecondWait() throws {
+        let c = controller()
+        let harder = try start(c, minutes: 60, level: .harder)
+        _ = c.requestStop(route: .manualStop, confirmed: false)
+        clock.advance(60)
+        // Crash after the commit, before the teardown.
+        let ledger = FlintProtectionLedger(directory: ledgerDirectory!, clock: clock.flintClock,
+                                           initializedMarker: { nil }, setInitializedMarker: { _ in })
+        _ = ledger.transaction { $0.commitHarderWait(cause: harder.id, operationID: "stop.\(harder.id).",
+                                                     at: FlintLedgerInstant(clock: self.clock.flintClock)) }
+        XCTAssertEqual(c.requestStop(route: .manualStop, confirmed: true), .stopped)
+        let state = try ledger.read().get()
+        XCTAssertEqual(state.operations.filter { $0.id.hasPrefix("stop.\(harder.id).") }.count, 1, "committed once")
+        XCTAssertNil(state.harder[harder.id], "the ended session's count is dropped")
     }
 
     func testAHarderSessionWaitsBeforeAWeakerReplacement() throws {
@@ -749,7 +843,10 @@ private final class FakeShield: FlintSessionShielding {
     init(log: CallLog) { self.log = log }
 
     func counts(of selection: FamilyActivitySelection) -> FlintSelectionCounts { nextCounts }
-    func targets(of selection: FamilyActivitySelection) -> FlintSessionTargets { FlintSessionTargets() }
+    func targets(of selection: FamilyActivitySelection) -> FlintSessionTargets {
+        FlintSessionTargets(applications: selection.includeEntireCategory ? ["A"] : ["A", "B"])
+    }
+    func fingerprint(of selection: FamilyActivitySelection) -> String { selection.includeEntireCategory ? "B" : "A" }
     func applyBlockList(_ selection: FamilyActivitySelection) throws {
         applyCount += 1
         log.entries.append("shield")

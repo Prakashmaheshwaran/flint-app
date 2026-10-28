@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 #if canImport(FamilyControls) && canImport(ManagedSettings) && canImport(DeviceActivity)
 import FamilyControls
@@ -25,6 +26,9 @@ public enum FlintSessionError: Error, LocalizedError, Equatable {
     case replacementWaiting(remaining: TimeInterval)
     /// Protection state couldn't be read, so no weakening is allowed (ADR-012 §8).
     case protectionStateUnavailable
+    /// A Harder wait has passed, but a background request (Shortcut, Focus) never completes it:
+    /// the final confirmation happens in Flint (ADR-012 §2).
+    case confirmInFlint
     /// The request needs the user's explicit confirmation first (a Hardcore start, or replacing
     /// the running session).
     case needsConfirmation
@@ -51,6 +55,8 @@ public enum FlintSessionError: Error, LocalizedError, Equatable {
             return "The running session is Harder: wait \(Self.minutesText(remaining)), then ask again to replace it."
         case .protectionStateUnavailable:
             return "Flint couldn't read its protection state, so nothing was changed. Open Flint to check."
+        case .confirmInFlint:
+            return "The wait is over, but the running session is Harder: open Flint to confirm the change."
         case .needsConfirmation:
             return "Confirm this in Flint first."
         }
@@ -128,6 +134,9 @@ public struct FlintSelectionCounts: Equatable, Sendable {
 public protocol FlintSessionShielding: AnyObject {
     func counts(of selection: FamilyActivitySelection) -> FlintSelectionCounts
     func targets(of selection: FamilyActivitySelection) -> FlintSessionTargets
+    /// A digest of the selection's tokens that is stable across launches (token encodings are);
+    /// identifies a target set without storing tokens.
+    func fingerprint(of selection: FamilyActivitySelection) -> String
     func applyBlockList(_ selection: FamilyActivitySelection) throws
     func setDenyAppRemoval(_ deny: Bool)
     /// Drops everything on the store — shield, uninstall guard and any other session setting.
@@ -328,8 +337,10 @@ public final class FlintSessionController {
     /// `replacing: true` the replacement is decided by ADR-012 §2/§3 against the running
     /// session's tier: a dominating replacement is allowed; a weaker one is allowed for Easy,
     /// waits for Harder (the wait persists; ask again after it to replace), and is denied for
-    /// Hardcore. `confirmed` is the caller's explicit confirmation; an intent's explicit
-    /// parameters count as one.
+    /// Hardcore. A replacement without the running session's own frozen targets can't prove
+    /// dominance and counts as weakening. `confirmed` is the user's explicit confirmation of the
+    /// new rights (a Hardcore start needs it, including via automation — §2); a background
+    /// origin never completes a Harder wait (`confirmInFlint`).
     @discardableResult
     public func startBlockNow(
         selection: FamilyActivitySelection,
@@ -340,7 +351,7 @@ public final class FlintSessionController {
         origin: FlintSessionOrigin = .appUI,
         ownerID: String? = nil,
         replacing: Bool = true,
-        confirmed: Bool = true
+        confirmed: Bool = false
     ) throws -> FlintActiveSession {
         Self.lock.lock(); defer { Self.lock.unlock() }
 
@@ -385,32 +396,45 @@ public final class FlintSessionController {
         let now = FlintSessionAutoClearPlan.wholeSecond(atOrAfter: env.clock.now())
         let endsAt = duration > 0 ? now.addingTimeInterval(duration.rounded(.up)) : nil
 
-        // Arbitrate against a running session before anything changes (ADR-012 §2/§3).
-        if let running = store.loadActiveSession(), !running.isExpired(at: now) {
+        // Arbitrate against a running session before anything changes (ADR-012 §2/§3). A record
+        // that exists but can't be read is unknown protection: never overwrite it (§8).
+        let current = store.loadActiveSession()
+        if current == nil, store.hasActiveSessionRecord() { throw FlintSessionError.protectionStateUnavailable }
+        if let running = current, !running.isExpired(at: now) {
             guard replacing else {
                 throw FlintSessionError.capacityUnavailable(runningName: running.name, until: running.endsAt)
             }
-            let old = snapshot(of: running, selection: sessionSelection(for: running, in: store))
             let targets = env.shield.targets(of: selection)
             let new = FlintProtectionSnapshot(mode: .blockList(
                 applications: targets.applications, categories: targets.categories,
                 webDomains: targets.webDomains), tier: breakLevel, end: endsAt)
             let cause = causeState(of: running, at: now)
-            switch FlintProtectionPolicy.decideReplace(new, over: old, for: cause) {
+            // Dominance needs the running session's own frozen targets. Without them (a session
+            // from an older build, or a lost snapshot) it can't be proven — the picker selection
+            // is the user's current draft, not what is blocked — so the replacement is weakening.
+            let decision: FlintProtectionDecision
+            if let oldSelection = store.loadSessionSelection(sessionID: running.id) {
+                decision = FlintProtectionPolicy.decideReplace(new, over: snapshot(of: running, selection: oldSelection), for: cause)
+            } else {
+                decision = FlintProtectionPolicy.decide(.replaceWeaker, for: cause)
+            }
+            switch decision {
             case let .allow(confirm):
                 if confirm, !confirmed { throw FlintSessionError.needsConfirmation }
             case .notApplicable:
                 break
-            case .deny:
-                throw FlintSessionError.replacementDenied(until: running.endsAt)
-            case .deferUntil:
+            case .deny, .deferUntil:
+                // (`decide` never defers a replacement; treated as a denial if it ever did.)
                 throw FlintSessionError.replacementDenied(until: running.endsAt)
             case .wait:
-                let scope = Self.replacementScope(tier: breakLevel, duration: duration, counts: counts)
-                switch harderGate(for: running, kind: "replace", scope: scope, confirmed: confirmed) {
+                let scope = Self.replacementScope(tier: breakLevel, duration: duration,
+                                                  targets: env.shield.fingerprint(of: selection))
+                switch harderGate(for: running, kind: "replace", scope: scope,
+                                  confirmed: confirmed && origin == .appUI) {
                 case .proceed: break
                 case let .waiting(remaining): throw FlintSessionError.replacementWaiting(remaining: remaining)
-                case .ready: throw FlintSessionError.replacementWaiting(remaining: 0)
+                case .ready:
+                    throw origin == .appUI ? FlintSessionError.replacementWaiting(remaining: 0) : FlintSessionError.confirmInFlint
                 case .unavailable: throw FlintSessionError.protectionStateUnavailable
                 }
             }
@@ -492,7 +516,7 @@ public final class FlintSessionController {
             $0.lastArmFailure = nil
             $0.lastTimeAnomaly = nil
             $0.unauthorizedSince = nil
-            $0.lastRefusedStart = nil
+            $0.lastRefusal = nil
         }
         FlintSessionLifecycle.didStart(session, replacing: previous, source: source, at: now)
         return session
@@ -539,7 +563,9 @@ public final class FlintSessionController {
             end(session, route: route, at: now, in: store)
             return .stopped
         case .wait:
-            switch harderGate(for: session, kind: "stop", scope: [], confirmed: confirmed) {
+            // A background route (Shortcut, Focus off) may start or resume the wait but never
+            // completes it: the final confirmation happens in Flint (§2 "no automatic completion").
+            switch harderGate(for: session, kind: "stop", scope: [], confirmed: confirmed && !route.isBackground) {
             case .proceed:
                 end(session, route: route == .manualStop ? .harderWait : route, at: now, in: store)
                 return .stopped
@@ -597,6 +623,9 @@ public final class FlintSessionController {
         store?.clearActiveSession()
         store?.clearSessionSelection()
         env.registrar.stopMonitoring([session.monitorName])
+        // The session's Harder count ends with it (a new session starts from zero, §4); its
+        // committed-operation records stay in the ledger's bounded memory.
+        _ = env.ledger()?.transaction { $0.resetHarder(cause: session.id) }
     }
 
     // MARK: Policy adapters (ADR-012)
@@ -626,18 +655,24 @@ public final class FlintSessionController {
 
     /// The Focus filter owns sessions it started; older builds marked them only by name.
     public func isOwnedByFocusFilter(_ session: FlintActiveSession) -> Bool {
-        if let origin = session.origin { return origin == FlintSessionOrigin.focusFilter.rawValue }
+        if let origin = session.origin {
+            return origin == FlintSessionOrigin.focusFilter.rawValue
+                && (session.ownerID ?? Self.focusFilterOwnerID) == Self.focusFilterOwnerID
+        }
         return session.name == Self.legacyFocusFilterName
     }
+
+    /// The owner id the Focus filter stamps on the sessions it starts (ADR-012 §3).
+    public static let focusFilterOwnerID = "focus-filter"
 
     /// The name older builds gave Focus-filter sessions (their only ownership mark).
     public static let legacyFocusFilterName = "Focus Filter"
 
-    /// What changed in a replacement request, as a stable scope: a different request needs a new
-    /// wait (ADR-012 §4). Hash values aren't stable across launches, so counts stand in for targets.
-    static func replacementScope(tier: BreakLevel, duration: TimeInterval, counts: FlintSelectionCounts) -> [String] {
-        ["tier:\(tier.rawValue)", "duration:\(Int(duration))",
-         "apps:\(counts.applications)", "categories:\(counts.categories)", "web:\(counts.webDomains)"]
+    /// What a replacement request is, as a stable scope: a different request — other targets,
+    /// tier or duration — needs a new wait (ADR-012 §4). `targets` is the shield's launch-stable
+    /// fingerprint of the requested selection.
+    static func replacementScope(tier: BreakLevel, duration: TimeInterval, targets: String) -> [String] {
+        ["tier:\(tier.rawValue)", "duration:\(Int(duration))", "targets:\(targets)"]
     }
 
     private enum HarderGate: Equatable {
@@ -657,7 +692,7 @@ public final class FlintSessionController {
         let clock = env.clock
         let result = ledger.transaction { state -> HarderGate in
             let now = FlintLedgerInstant(clock: clock)
-            if state.operation(operationID) != nil { return .proceed }
+            if state.hasCommittedHarderWait(cause: session.id, operationID: operationID) { return .proceed }
             switch state.requestHarderWait(cause: session.id, kind: kind, scope: scope,
                                            operationID: operationID, at: now) {
             case let .waiting(remaining):
@@ -946,6 +981,17 @@ final class LiveSessionShield: FlintSessionShielding {
             categories: Set(selection.categoryTokens.map(AnyHashable.init)),
             webDomains: Set(selection.webDomainTokens.map(AnyHashable.init))
         )
+    }
+
+    func fingerprint(of selection: FamilyActivitySelection) -> String {
+        let encoder = JSONEncoder()
+        func encoded<T: Encodable>(_ tokens: Set<T>, _ tag: String) -> [String] {
+            tokens.map { tag + ((try? encoder.encode($0))?.base64EncodedString() ?? "?") }
+        }
+        let parts = (encoded(selection.applicationTokens, "a:") + encoded(selection.categoryTokens, "c:")
+                     + encoded(selection.webDomainTokens, "w:")).sorted()
+        let digest = SHA256.hash(data: Data(parts.joined(separator: "\n").utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 
     func applyBlockList(_ selection: FamilyActivitySelection) throws {

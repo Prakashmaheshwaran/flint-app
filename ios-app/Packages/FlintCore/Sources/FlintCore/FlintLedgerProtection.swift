@@ -176,10 +176,8 @@ extension FlintLedgerState {
     /// multi-cause batch increments each cause once (§4, PC-19). A retry that carries an id the
     /// wait no longer has (a resumed wait adopted a newer id) reports `.nothingPending`.
     public mutating func commitHarderWait(cause: String, operationID: String, at now: FlintLedgerInstant) -> FlintHarderCommit {
-        // The idempotency record is "<operation id>#<cause>" (cause ids are UUIDs; `#` never
-        // appears in them). A batch over more causes than `operationLimit` evicts its own
-        // records; a replay then reports `.nothingPending` — still never a second increment.
-        let record = "\(operationID)#\(cause)"
+        // (Record id: see `harderRecordID`.)
+        let record = Self.harderRecordID(operationID: operationID, cause: cause)
         if operation(record) != nil { return .alreadyCommitted }
         guard var entry = harder[cause] else { return .nothingPending }
         dropPendingAfterReboot(&entry, at: now)
@@ -194,6 +192,20 @@ extension FlintLedgerState {
 
     /// Bound the per-occurrence map: keep `active` causes, then any with a pending wait, and
     /// drop the rest beyond `limit` (§4 counts reset at a new natural occurrence anyway).
+    /// Whether `operationID` already committed its Harder wait on `cause` — a caller that
+    /// crashed between the commit and its teardown can proceed without a second wait.
+    public func hasCommittedHarderWait(cause: String, operationID: String) -> Bool {
+        operation(Self.harderRecordID(operationID: operationID, cause: cause)) != nil
+    }
+
+    /// The idempotency record of one Harder commit: "<operation id>#<cause>" (cause ids are
+    /// UUIDs; `#` never appears in them). A batch over more causes than the operation memory
+    /// holds evicts its own records; a replay then reports `.nothingPending` — still never a
+    /// second increment.
+    static func harderRecordID(operationID: String, cause: String) -> String {
+        "\(operationID)#\(cause)"
+    }
+
     public mutating func pruneHarder(keeping active: Set<String>, limit: Int = 64) {
         let removable = harder.keys.filter { !active.contains($0) && harder[$0]?.pending == nil }.sorted()
         for key in removable where harder.count > limit { harder[key] = nil }

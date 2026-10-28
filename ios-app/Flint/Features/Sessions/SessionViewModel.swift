@@ -134,7 +134,11 @@ final class SessionViewModel: ObservableObject {
         FlintGroupStore()?.saveSelection(selection)
     }
 
-    func start() {
+    /// Set when a Hardcore start needs the user's explicit confirmation of its rights (ADR-012
+    /// §2); the sheet asks, then calls `start(confirmed: true)`.
+    @Published var confirmingHardcore = false
+
+    func start(confirmed: Bool = false) {
         errorText = nil
         do {
             active = try controller.startBlockNow(
@@ -142,9 +146,12 @@ final class SessionViewModel: ObservableObject {
                 duration: TimeInterval(durationMinutes * 60),
                 breakLevel: breakLevel,
                 name: "Focus",
-                source: appliedGroupSelection == selection ? .preset : .manual
+                source: appliedGroupSelection == selection ? .preset : .manual,
+                confirmed: confirmed
             )
             startTicking()
+        } catch FlintSessionError.needsConfirmation {
+            confirmingHardcore = true
         } catch {
             errorText = (error as? LocalizedError)?.errorDescription ?? "\(error)"
         }
