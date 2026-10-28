@@ -135,11 +135,12 @@ final class FlintFixtureUITests: XCTestCase {
         XCTAssertTrue(save.waitForExistence(timeout: 5))
         XCTAssertFalse(save.isEnabled, "A block list with no selection cannot save")
         let allowList = app.switches.matching(NSPredicate(format: "label BEGINSWITH 'Allow list'")).firstMatch
-        try reveal(allowList)
+        let toggle = allowList.buttons.firstMatch
+        try reveal(toggle)
         // The production custom toggle exposes its whole row to accessibility,
         // while its pointer hit target is the trailing 52-point switch.
         XCTAssertEqual(allowList.value as? String, "0")
-        try tap(allowList.buttons.firstMatch)
+        try tap(toggle)
         XCTAssertEqual(allowList.value as? String, "1")
         XCTAssertTrue(save.isEnabled, "A valid allow-list draft can be saved without tokens")
 
@@ -212,8 +213,12 @@ final class FlintFixtureUITests: XCTestCase {
         XCTAssertTrue(element.waitForExistence(timeout: 5), file: file, line: line)
         for _ in 0..<8 {
             if element.isHittable { return }
-            let scroll = app.scrollViews.firstMatch
-            XCTAssertTrue(scroll.exists, "No scroll container for \(element)", file: file, line: line)
+            // A presented editor leaves its underlying tab in the AX tree. Use
+            // the frontmost hittable scroll view, not that covered tab's view.
+            guard let scroll = app.scrollViews.allElementsBoundByIndex.last(where: { $0.isHittable }) else {
+                XCTFail("No visible scroll container for \(element)", file: file, line: line)
+                throw FixtureFailure.offscreen
+            }
             if direction == .up { scroll.swipeUp() } else { scroll.swipeDown() }
         }
         XCTFail("Element remained offscreen: \(element)", file: file, line: line)
