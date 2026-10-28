@@ -14,7 +14,7 @@ final class FlintProtectionStatusReaderTests: XCTestCase {
             state: state, session: .init(id: "session", kind: .session, name: "Study", tier: .harder,
                 startedAt: now.addingTimeInterval(-60), logicalEnd: end, origin: .appUI, armed: true),
             headline: cause, causes: [cause], nextOccurrence: nil,
-            pass: .init(eligibility: .available), degradedReasons: [])
+            pass: .init(eligibility: .available), degradedReasons: [], writer: "host")
     }
 
     private func encode(_ snapshot: Snapshot) throws -> Data {
@@ -29,6 +29,7 @@ final class FlintProtectionStatusReaderTests: XCTestCase {
         XCTAssertEqual(FlintProtectionStatus.decode(data, now: now), snapshot)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(json["observedAt"] as? Double, now.timeIntervalSince1970)
+        XCTAssertEqual(json["writer"] as? String, "host")
         XCTAssertEqual(FlintProtectionStatus.storageKey, "flint.status.v1")
         XCTAssertEqual(FlintProtectionStatus.changedNotification, "com.flint.peakfocus.status.changed")
         XCTAssertEqual(FlintProtectionStatus.widgetKind, "FlintProtectionWidget")
@@ -52,7 +53,7 @@ final class FlintProtectionStatusReaderTests: XCTestCase {
         XCTAssertEqual(FlintProtectionStatus.load(now: now, from: defaults), snapshot)
     }
 
-    func testEveryUsableStateAndOptionalExpiry() throws {
+    func testEveryUsableStateAndMissingExpiryIsUnavailable() throws {
         for state in [Snapshot.State.protected, .notProtected, .degraded, .suspended] {
             let snapshot = fixture(state: state)
             XCTAssertEqual(FlintProtectionStatus.decode(try encode(snapshot), now: now)?.state, state)
@@ -60,7 +61,7 @@ final class FlintProtectionStatusReaderTests: XCTestCase {
         let data = try encode(fixture())
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         json.removeValue(forKey: "validUntil")
-        XCTAssertNotNil(FlintProtectionStatus.decode(try JSONSerialization.data(withJSONObject: json), now: now))
+        XCTAssertNil(FlintProtectionStatus.decode(try JSONSerialization.data(withJSONObject: json), now: now))
         XCTAssertNotNil(FlintProtectionStatus.decode(data, now: now.addingTimeInterval(600)))
         XCTAssertNil(FlintProtectionStatus.decode(data, now: now.addingTimeInterval(601)))
     }

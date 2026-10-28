@@ -19,7 +19,8 @@ public enum FlintProtectionStatus {
         guard let snapshot = try? decoder.decode(FlintProtectionStatusSnapshot.self, from: data),
               snapshot.version == 1, snapshot.state != .unavailable,
               snapshot.observedAt <= now,
-              snapshot.validUntil.map({ now <= $0 && snapshot.observedAt <= $0 }) ?? true else { return nil }
+              let validUntil = snapshot.validUntil,
+              now <= validUntil, snapshot.observedAt <= validUntil else { return nil }
         return snapshot
     }
 }

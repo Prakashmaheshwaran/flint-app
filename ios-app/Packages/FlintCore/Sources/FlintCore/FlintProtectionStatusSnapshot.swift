@@ -101,10 +101,12 @@ public struct FlintProtectionStatusSnapshot: Codable, Equatable, Sendable {
     public let nextOccurrence: Occurrence?
     public let pass: Pass
     public let degradedReasons: [String]
+    /// Optional traceability only: host, monitor or shield_action; never target information.
+    public let writer: String?
 
     public init(version: Int = 1, observedAt: Date, validUntil: Date?, state: State,
                 session: Session?, headline: Cause?, causes: [Cause], nextOccurrence: Occurrence?,
-                pass: Pass, degradedReasons: [String]) {
+                pass: Pass, degradedReasons: [String], writer: String? = nil) {
         self.version = version
         self.observedAt = observedAt
         self.validUntil = validUntil
@@ -115,5 +117,6 @@ public struct FlintProtectionStatusSnapshot: Codable, Equatable, Sendable {
         self.nextOccurrence = nextOccurrence
         self.pass = pass
         self.degradedReasons = degradedReasons
+        self.writer = writer
     }
 }
