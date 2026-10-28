@@ -10,9 +10,26 @@ import FlintCore
 struct FocusFilterView: View {
     @State private var config = FlintFocusFilterConfig.load()
     @State private var savedGroups: [FlintAppGroup] = FlintGroupStore()?.loadAppGroups() ?? []
+    /// The last Focus request Flint refused or couldn't finish (ADR-012 §1: never silent).
+    @State private var refusal = FlintSessionHealth.load().lastRefusal
 
     var body: some View {
         Form {
+            if let refusal {
+                Section {
+                    Text(refusal.reason)
+                        .font(.footnote)
+                    Button("Dismiss") {
+                        FlintSessionHealth.clearRefusal()
+                        self.refusal = nil
+                    }
+                } header: {
+                    Text(refusal.action == .start ? "Focus didn't start a block" : "Focus off didn't end the block")
+                } footer: {
+                    Text(refusal.at.formatted(date: .abbreviated, time: .shortened))
+                }
+            }
+
             Section {
                 Text("Attach Flint to a system Focus (Work, Sleep, …) so a block starts the moment "
                      + "that Focus turns on. If another session is already running, the Focus "
