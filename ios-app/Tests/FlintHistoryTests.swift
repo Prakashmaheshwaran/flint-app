@@ -247,7 +247,11 @@ final class FlintHistoryTests: XCTestCase {
         let running = summary([event(.started, 0), extended], now: t.addingTimeInterval(4000), active: "a")
         XCTAssertEqual(running.sessions[0].outcome, .running)
         XCTAssertEqual(running.focusedSeconds, 4000)
-        let completed = summary([event(.started, 0), extended], now: t.addingTimeInterval(8000))
+        let unconfirmed = summary([event(.started, 0), extended], now: t.addingTimeInterval(8000))
+        XCTAssertEqual(unconfirmed.sessions[0].outcome, .unconfirmed)
+        XCTAssertEqual(unconfirmed.focusedSeconds, 0, "A reschedule is a plan, not coverage evidence")
+        XCTAssertEqual(unconfirmed.days.reduce(0) { $0 + $1.completed }, 0)
+        let completed = summary([event(.started, 0), extended, event(.completed, 7200)], now: t.addingTimeInterval(8000))
         XCTAssertEqual(completed.sessions[0].outcome, .completed)
         XCTAssertEqual(completed.focusedSeconds, 7200)
         var shortened = event(.rescheduled, 600); shortened.plannedEnd = event(.completed, 1200).at
