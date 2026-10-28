@@ -40,6 +40,7 @@ class CoordinatorGlanceReaderTest {
         assertEquals(400_000L, result.cause?.logicalEndElapsedMs)
         assertEquals("Deep study", result.cause?.name)
         assertEquals(130_000L, result.validUntilElapsedMs)
+        assertEquals(1_800_000_000_000, result.checkedEpochMs)
         assertEquals(GlanceTier.HARDCORE, result.cause?.tier)
         assertTrue(result.sameBootVerified)
         val schedule = coordinatorGlanceReading(ready.copy(activeCauses = listOf(timer.copy(kind = C.CauseKind.SCHEDULE))))

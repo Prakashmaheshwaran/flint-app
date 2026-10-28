@@ -29,6 +29,7 @@ internal fun coordinatorGlanceReading(status: CoordinatorStatus): ProtectionRead
     }
     val base = ProtectionReading(
         checkedElapsedMs = checked.elapsedRealtimeMs,
+        checkedEpochMs = checked.wallEpochMs,
         validUntilElapsedMs = status.validUntilElapsedRealtimeMs,
         // C explicitly guarantees the Hub resets at process/reboot. K never restores a cache.
         sameBootVerified = true,

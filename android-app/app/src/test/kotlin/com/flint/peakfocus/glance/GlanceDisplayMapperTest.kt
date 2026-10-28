@@ -127,4 +127,13 @@ class GlanceDisplayMapperTest {
         assertEquals("Protection state unavailable", timer.status)
         assertNull(timer.session)
     }
+
+    @Test fun wallClockChangeCannotRelabelAnOldSourceCheckAsANewCheck() {
+        val epoch = 1_800_000_000_000L
+        val reading = active.copy(checkedEpochMs = epoch - 30_000, checkedElapsedMs = now - 30_000)
+        val original = GlanceDisplayMapper.map(reading, FocusTodayReading(), now, epoch, ZoneId.of("UTC"), Locale.US)
+        val clockChanged = GlanceDisplayMapper.map(reading, FocusTodayReading(), now, epoch + 14_400_000, ZoneId.of("UTC"), Locale.US)
+        assertEquals(original.checked, clockChanged.checked)
+        assertEquals(original.countdownEndElapsedMs, clockChanged.countdownEndElapsedMs)
+    }
 }

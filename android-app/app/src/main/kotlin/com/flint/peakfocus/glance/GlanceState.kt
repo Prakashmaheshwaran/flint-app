@@ -36,6 +36,7 @@ data class ProtectionReading(
     val sameBootVerified: Boolean = false,
     val timeUncertain: Boolean = false,
     val detector: GlanceDetector = GlanceDetector.UNKNOWN,
+    val checkedEpochMs: Long? = null,
 )
 
 data class ActiveGlanceCause(
@@ -93,7 +94,8 @@ object GlanceDisplayMapper {
             nowElapsedMs - checked < MAX_AGE_MS && validUntil != null &&
             validUntil > nowElapsedMs && validUntil >= checked
         val stamp = if (reading.sameBootVerified && !reading.timeUncertain && checked != null && checked in 0..nowElapsedMs)
-            "Checked ${atElapsed(checked)} · Open Flint for current state" else "Open Flint to check protection"
+            "Checked ${reading.checkedEpochMs?.let(::at) ?: atElapsed(checked)} · Open Flint for current state"
+            else "Open Flint to check protection"
         val today = Instant.ofEpochMilli(nowEpochMs).atZone(zone).toLocalDate()
         val historyCurrent = focus.day == today
         val midnight = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
