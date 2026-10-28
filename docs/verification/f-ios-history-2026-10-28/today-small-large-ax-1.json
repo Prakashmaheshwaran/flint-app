@@ -1,0 +1,81 @@
+{
+  "id": "1ec1ed91-a685-4e24-b553-3e7e2211c696",
+  "ok": true,
+  "result": [
+    {
+      "role": "application",
+      "type": "Application",
+      "label": " ",
+      "value": "",
+      "enabled": true,
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "width": 1,
+        "height": 1
+      },
+      "children": [
+        {
+          "role": "text",
+          "type": "StaticText",
+          "label": "Carrier",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.0173,
+            "y": 0.0045,
+            "width": 0.104,
+            "height": 0.0217
+          },
+          "children": []
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "",
+          "value": "SSID, 3 of 3 Wi-Fi bars",
+          "enabled": true,
+          "frame": {
+            "x": 0.132,
+            "y": 0.0067,
+            "width": 0.0413,
+            "height": 0.0165
+          },
+          "children": [],
+          "id": "3 of 3 Wi-Fi bars"
+        },
+        {
+          "role": "text",
+          "type": "StaticText",
+          "label": "5:10 PM",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.4387,
+            "y": 0.0045,
+            "width": 0.1227,
+            "height": 0.0217
+          },
+          "children": []
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "100% battery power",
+          "value": "Not charging",
+          "enabled": true,
+          "frame": {
+            "x": 0.9187,
+            "y": 0.006,
+            "width": 0.0667,
+            "height": 0.0172
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "_meta": {
+    "runtimeId": "8f38263a-4ff0-4ed2-9d46-3f93ba87f5d9"
+  }
+}

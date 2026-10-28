@@ -42,3 +42,10 @@ Test Suite 'All tests' passed at 2026-10-28 16:26:40.839.
 Cleanup:
 2026-10-28T20:31:15.365579+00:00 RUN /Applications/Orca.app/Contents/Resources/bin/orca emulator kill --worktree path:/Users/prakash/orca/workspaces/flint/v1-f-ios --device 1BD4732B-EC1A-4074-8C70-6AC369607185 --json
 Device semaphore released after stopping verified own sleep holder PID 31191.
+
+Final combined native retry at 7d4aa45: 267 tests, zero failures; Xcode TEST SUCCEEDED.
+Source: /tmp/flint-f-final-device.log, 2026-10-28 17:01:07 local.
+Compact Today build at 9a43e54 source: BUILD SUCCEEDED; /tmp/flint-f-small-contrast-build.log.
+Today regular four states and iPhone17 AX5 top/card/lower visually + AX verified; small Large verified.
+Small AX5 scroll returned ok without pixel or AX movement; full small AX5 remains unverified.
+Cleanup: owned small helper released and created simulator deleted; unproven shared iPhone17 preserved; device slot released.
