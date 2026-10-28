@@ -13,6 +13,8 @@ import FlintCore
 /// `FocusFilterView`. The Wave-2 integrator links it into navigation — do not wire tabs here.
 struct SleepModeView: View {
     @StateObject private var vm = SleepModeViewModel()
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .body) private var daySize = 44.0
 
     var body: some View {
         Form {
@@ -36,18 +38,16 @@ struct SleepModeView: View {
 
     private var introSection: some View {
         Section {
-            Text("Wind down at bedtime and wake up without the feed. Between bedtime and wake-up, "
-                 + "Sleep Mode shields everything except the apps you allow — and Morning Assist "
-                 + "keeps that shield up while your day starts. Free, including Full Assist.")
+            Text("Wind down at bedtime and wake up without the feed. Sleep Assist can shield apps between bedtime and wake-up. Morning Full Assist adds a shield while your day starts. Free, including Full Assist.")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(FlintBrand.mist)
         }
     }
 
     private var masterSection: some View {
         Section {
             Toggle("Sleep Mode", isOn: $vm.config.enabled)
-                .tint(FlintBrand.spark)
+                .tint(FlintBrand.ember)
             if vm.config.enabled {
                 statusRow
             }
@@ -59,22 +59,25 @@ struct SleepModeView: View {
         if let issue = vm.protectionIssue {
             Label("Needs attention — \(issue)", systemImage: "exclamationmark.triangle")
                 .font(.footnote).foregroundStyle(FlintBrand.danger)
+            Button("Retry Sleep registration") { vm.applyNow() }
+                .frame(minHeight: 44)
+                .tint(FlintBrand.ember)
         } else if vm.nightWindowActiveNow {
             Label("Bedtime window is scheduled now", systemImage: "moon.zzz.fill")
                 .font(.footnote)
-                .foregroundStyle(FlintBrand.spark)
+                .foregroundStyle(FlintBrand.ember)
         } else if vm.morningWindowActiveNow {
             Label("Morning wind-up is scheduled now", systemImage: "sunrise.fill")
                 .font(.footnote)
-                .foregroundStyle(FlintBrand.spark)
+                .foregroundStyle(FlintBrand.ember)
         } else if vm.nightArmed || vm.morningArmed {
             Label("Sleep windows registered with iOS", systemImage: "moon.stars")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(FlintBrand.mist)
         } else {
-            Text("Both assists are Off — no window will be shielded.")
+            Text("No Sleep or morning shield is scheduled.")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(FlintBrand.mist)
         }
     }
 
@@ -87,6 +90,8 @@ struct SleepModeView: View {
                        selection: Binding(get: { vm.wake }, set: { vm.wake = $0 }),
                        displayedComponents: .hourAndMinute)
             dayCircles
+                // Recreate lazy cells when their scaled target size changes in an open Form.
+                .id(dynamicTypeSize)
         } header: {
             Text("Nights")
         } footer: {
@@ -95,41 +100,41 @@ struct SleepModeView: View {
     }
 
     private var dayCircles: some View {
-        HStack {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: max(44, daySize)), spacing: 4)], spacing: 8) {
             ForEach(1...7, id: \.self) { weekday in
                 let on = vm.config.schedule.daysOfWeek.contains(weekday)
                 Button {
                     vm.toggleDay(weekday)
                 } label: {
-                    Text(Self.dayLetters[weekday - 1])
-                        .frame(width: 34, height: 34)
-                        .background(on ? FlintBrand.spark : Color.gray.opacity(0.15))
-                        .foregroundStyle(on ? FlintBrand.onAccent : Color.primary)
+                    Text(SleepPresentation.weekdaySymbol(weekday))
+                        .font(FlintFont.text(16, weight: on ? .semibold : .regular))
+                        .frame(width: max(44, daySize), height: max(44, daySize))
+                        .background(on ? FlintBrand.ember : FlintBrand.bone(0.06))
+                        .foregroundStyle(on ? FlintBrand.onEmber : FlintBrand.bone)
                         .clipShape(Circle())
+                        .overlay(Circle().strokeBorder(on ? FlintBrand.onEmber : FlintBrand.mist, lineWidth: on ? 3 : 1))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(Text(SleepPresentation.weekdayName(weekday)))
+                .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
     }
 
-    private var nightsFooter: String {
+    private var nightsFooter: LocalizedStringKey {
         guard vm.windowIsUsable else {
-            return "Bedtime and wake-up are too close — the window needs at least "
-                + "\(FlintSchedule.minimumWindowMinutes) minutes, so the bedtime shield "
-                + "won't arm until it's longer."
+            return "Bedtime and wake-up are too close — the window needs at least \(FlintSchedule.minimumWindowMinutes) minutes, so the bedtime shield won't arm until it's longer."
         }
-        return "\(daysSummary(vm.config.schedule)) · \(timeSummary(vm.config.schedule)). "
-            + "Days pick the night the window starts; none selected means every night."
+        return "\(SleepPresentation.daysSummary(vm.config.schedule)) · \(SleepPresentation.timeSummary(vm.config.schedule)). Days pick the night the window starts; none selected means every night."
     }
 
     private var sleepAssistSection: some View {
         Section {
-            Picker("Sleep Assist", selection: $vm.config.sleepAssist) {
-                Text("Off").tag(FlintSleepAssistLevel.off)
-                Text("Wind Down").tag(FlintSleepAssistLevel.windDown)
-                Text("Full Assist").tag(FlintSleepAssistLevel.fullAssist)
+            if dynamicTypeSize.isAccessibilitySize {
+                sleepAssistPicker.pickerStyle(.inline)
+            } else {
+                sleepAssistPicker.pickerStyle(.segmented)
             }
-            .pickerStyle(.segmented)
         } header: {
             Text("Sleep Assist")
         } footer: {
@@ -137,29 +142,32 @@ struct SleepModeView: View {
         }
     }
 
-    private var sleepAssistFooter: String {
+    private var sleepAssistPicker: some View {
+        Picker("Sleep Assist", selection: $vm.config.sleepAssist) {
+            Text("Off").tag(FlintSleepAssistLevel.off)
+            Text("Wind Down").tag(FlintSleepAssistLevel.windDown)
+            Text("Full Assist").tag(FlintSleepAssistLevel.fullAssist)
+        }
+    }
+
+    private var sleepAssistFooter: LocalizedStringKey {
         switch vm.config.sleepAssist {
         case .off:
             return "No bedtime shield. Morning Assist below can still run on its own after wake-up."
         case .windDown:
-            return "From bedtime to wake-up, everything except your Allowed apps is shielded at "
-                + "Harder strictness — a strong nudge, and you stay in control."
+            return "Wind Down uses Harder strictness from bedtime to wake-up. Allowed apps stay reachable. Turning Sleep Mode off lifts the night shield."
         case .fullAssist:
-            return "From bedtime to wake-up, everything except your Allowed apps is shielded, "
-                + "registered at Hardcore strictness. Flint's free weekly Emergency Pass is the "
-                + "escape hatch for Hardcore blocks; in this build, turning Sleep Mode off also "
-                + "lifts the night shield."
+            return "Full Assist uses Hardcore strictness from bedtime to wake-up. Allowed apps stay reachable. Flint's free Emergency Pass becomes available seven days after use; in this build it ends Hardcore focus sessions, not Sleep windows. Turning Sleep Mode off lifts the night shield."
         }
     }
 
     private var morningAssistSection: some View {
         Section {
-            Picker("Morning Assist", selection: $vm.config.morningAssist) {
-                Text("Off").tag(FlintMorningAssistLevel.off)
-                Text("Slow Uplift").tag(FlintMorningAssistLevel.slowUplift)
-                Text("Full Assist").tag(FlintMorningAssistLevel.fullAssist)
+            if dynamicTypeSize.isAccessibilitySize {
+                morningAssistPicker.pickerStyle(.inline)
+            } else {
+                morningAssistPicker.pickerStyle(.segmented)
             }
-            .pickerStyle(.segmented)
             if vm.config.morningAssist == .fullAssist {
                 Stepper(
                     "\(vm.config.morningAssistMinutes) minutes after wake-up",
@@ -175,18 +183,22 @@ struct SleepModeView: View {
         }
     }
 
-    private var morningAssistFooter: String {
+    private var morningAssistPicker: some View {
+        Picker("Morning Assist", selection: $vm.config.morningAssist) {
+            Text("Off").tag(FlintMorningAssistLevel.off)
+            Text("Slow Uplift").tag(FlintMorningAssistLevel.slowUplift)
+            Text("Full Assist").tag(FlintMorningAssistLevel.fullAssist)
+        }
+    }
+
+    private var morningAssistFooter: LocalizedStringKey {
         switch vm.config.morningAssist {
         case .off:
             return "Nothing after wake-up — the night shield (if any) simply ends."
         case .slowUplift:
-            return "Slow Uplift is a reminder-style nudge, not a block. This blocking-only build "
-                + "stores your choice but arms no shield for it — choose Full Assist for an "
-                + "enforced morning window."
+            return "This build saves your Slow Uplift choice but provides no reminders or shield for it. Choose Full Assist for a morning shield."
         case .fullAssist:
-            return "Everything except your Allowed apps stays shielded for "
-                + "\(vm.config.morningAssistMinutes) minutes after wake-up. Nights map to their "
-                + "mornings — Sun–Thu nights guard Mon–Fri mornings."
+            return "Morning Full Assist uses Hardcore strictness for \(vm.config.morningAssistMinutes) minutes after wake-up. Allowed apps stay reachable. Overnight windows map to the following morning."
         }
     }
 
@@ -198,56 +210,33 @@ struct SleepModeView: View {
                     Text("\(group.name) · \(group.itemCount)").tag(String?.some(group.id))
                 }
             }
-            .tint(FlintBrand.spark)
+            .tint(FlintBrand.ember)
         } header: {
             Text("Allowed apps")
         } footer: {
-            Text(vm.savedGroups.isEmpty
-                 ? "Save an app group in Block Now (alarm, podcasts, meditation…) to keep it "
-                   + "reachable overnight. Until then the shield allows nothing extra — the "
-                   + "system's own Always Allowed apps (like Phone) stay available regardless."
-                 : "Individually-picked apps in this preset stay reachable during Wind Down and "
-                   + "Full Assist; whole-category picks don't carry over to a night shield. The "
-                   + "system's Always Allowed apps stay available regardless.")
+            if vm.savedGroups.isEmpty {
+                Text("Save an app group in Block Now (alarm, podcasts, meditation…) to keep it reachable overnight. Until then the shield allows nothing extra. iOS's Always Allowed apps and emergency calling are expected to remain available; this hasn't been verified on a device yet.")
+            } else {
+                Text("Individually-picked apps in this preset stay reachable during Wind Down and Full Assist; whole-category picks don't carry over to a night shield. iOS's Always Allowed apps and emergency calling are expected to remain available; this hasn't been verified on a device yet.")
+            }
         }
     }
 
     private var goodToKnowSection: some View {
         Section {
-            Label("Sleep Mode runs on Flint's Schedules engine — its windows appear in Schedules "
-                  + "as \u{201C}Sleep Mode\u{201D} and \u{201C}Morning Assist\u{201D} and re-arm "
-                  + "whenever you edit here.",
+            Label("Sleep windows also appear in Schedules as “Sleep Mode” and “Morning Assist”. Changes here update those windows.",
                   systemImage: "calendar.badge.clock")
                 .font(.footnote)
-            Label("No soundscapes, sleep stories or meditations — Flint v1 is a blocking control "
-                  + "by design.",
+            Label("No soundscapes, sleep stories or meditations — Flint v1 is a blocking control by design.",
                   systemImage: "speaker.slash")
                 .font(.footnote)
         } header: {
             Text("Good to know")
         } footer: {
-            Text("Shield enforcement needs Screen Time access on a real device — the Simulator "
-                 + "verifies UI and scheduling logic only.")
+            Text("Shield enforcement needs Screen Time access on a real device — the Simulator verifies UI and scheduling logic only.")
         }
     }
 
-    // MARK: Helpers
-
-    private static let dayLetters = ["S", "M", "T", "W", "T", "F", "S"] // index 0 -> weekday 1 (Sun)
-
-    private func daysSummary(_ schedule: FlintSchedule) -> String {
-        if schedule.daysOfWeek.isEmpty { return "Every night" }
-        let names = ["", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-        return schedule.daysOfWeek.sorted().map { names[$0] }.joined(separator: " ") + " nights"
-    }
-
-    private func timeSummary(_ schedule: FlintSchedule) -> String {
-        let start = String(format: "%02d:%02d", schedule.startHour, schedule.startMinute)
-        let end = String(format: "%02d:%02d", schedule.endHour, schedule.endMinute)
-        let startMinutes = schedule.startHour * 60 + schedule.startMinute
-        let endMinutes = schedule.endHour * 60 + schedule.endMinute
-        return startMinutes >= endMinutes ? "\(start) → \(end) next morning" : "\(start) → \(end)"
-    }
 }
 
 /// Owns the persisted `FlintSleepConfig` and keeps the enforcement rules in sync with it.
@@ -385,16 +374,16 @@ enum FlintSleepProtectionStatus {
     static func issue(activityNames: [String], report: FlintArmingHealth.DomainReport?,
                       authorized: Bool, now: Date = Date()) -> String? {
         guard !activityNames.isEmpty else { return nil }
-        guard authorized else { return "Screen Time access is not allowed." }
+        guard authorized else { return String(localized: "Screen Time access is not allowed.") }
         guard let report, report.updatedAt <= now,
               now.timeIntervalSince(report.updatedAt) <= 24 * 3600 else {
-            return "Sleep registration has not been checked recently."
+            return String(localized: "Sleep registration has not been checked recently.")
         }
         if let failure = report.failures.first(where: { activityNames.contains($0.activityName) }) {
             return failure.reason
         }
         guard report.enabled >= activityNames.count, report.armed >= activityNames.count else {
-            return "Sleep registration has not been verified."
+            return String(localized: "Sleep registration has not been verified.")
         }
         return nil
     }
