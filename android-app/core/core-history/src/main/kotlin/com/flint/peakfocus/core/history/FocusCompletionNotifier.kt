@@ -46,8 +46,8 @@ internal class FocusCompletionNotifier(private val context: Context) {
 
     fun createChannel() {
         if (Build.VERSION.SDK_INT >= 26) notifications.createNotificationChannel(
-            NotificationChannel(CHANNEL, "Focus sessions", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                description = "Planned focus time alerts may arrive a few minutes late."
+            NotificationChannel(CHANNEL, "Focus end reminders", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "Tells you when a focus session's planned time ends."
             },
         )
     }
