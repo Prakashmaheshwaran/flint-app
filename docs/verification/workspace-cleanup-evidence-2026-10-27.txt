@@ -1,0 +1,163 @@
+
+2026-10-28T00:48:42.949974+00:00 $ git status --porcelain --ignored
+ M .github/workflows/ios.yml
+ M .gitignore
+ M AGENTS.md
+ M Makefile
+?? .claude/settings.json
+?? .codex/
+?? docs/verification/workspace-cleanup-2026-10-27.md
+?? docs/verification/workspace-cleanup-evidence-2026-10-27.txt
+?? scripts/clean-devices.sh
+?? scripts/clean-env.sh
+?? scripts/clean-session.sh
+?? scripts/clean-worktree.py
+?? scripts/flint-devices.sh
+?? scripts/orca/
+?? scripts/test_cleanup.py
+!! android-app/.gradle/
+!! android-app/app/build/
+!! android-app/blocking/blocking-accessibility/build/
+!! android-app/blocking/blocking-engine/build/
+!! android-app/blocking/blocking-overlay/build/
+!! android-app/blocking/blocking-resilience/build/
+!! android-app/blocking/blocking-usagestats/build/
+!! android-app/build/
+!! android-app/core/core-common/build/
+!! android-app/core/core-data/build/
+!! android-app/core/core-datastore/build/
+!! android-app/core/core-model/build/
+!! android-app/feature/feature-blocklist/build/
+!! android-app/feature/feature-blockscreen/build/
+!! android-app/feature/feature-connected/build/
+!! android-app/feature/feature-onboarding/build/
+!! android-app/feature/feature-settings/build/
+!! android-app/feature/feature-stats/build/
+!! android-app/permissions/permissions-special/build/
+!! ios-app/DerivedData/
+!! ios-app/Flint.xcodeproj/
+Exit 0; elapsed 0.160s
+
+2026-10-28T00:48:43.112958+00:00 $ df -k .
+Filesystem   1024-blocks      Used Available Capacity iused     ifree %iused  Mounted on
+/dev/disk3s5   239362496 169028896  40452908    81% 1884847 404529080    0%   /System/Volumes/Data
+Exit 0; elapsed 0.005s
+
+2026-10-28T00:48:43.117768+00:00 $ env -u CONFIRM -u DRY_RUN make clean
+REMOVE android-app/build 1.7 MiB (1802240 bytes)
+REMOVE android-app/.gradle 20.3 MiB (21274624 bytes)
+REMOVE ios-app/Flint.xcodeproj 0.1 MiB (77824 bytes)
+REMOVE ios-app/DerivedData 545.4 MiB (571928576 bytes)
+REMOVE android-app/app/build 121.5 MiB (127438848 bytes)
+REMOVE android-app/core/core-common/build 7.7 MiB (8122368 bytes)
+REMOVE android-app/feature/feature-settings/build 4.8 MiB (5074944 bytes)
+REMOVE android-app/feature/feature-stats/build 6.6 MiB (6885376 bytes)
+REMOVE android-app/feature/feature-connected/build 15.7 MiB (16498688 bytes)
+REMOVE android-app/core/core-data/build 1.7 MiB (1789952 bytes)
+REMOVE android-app/permissions/permissions-special/build 1.5 MiB (1531904 bytes)
+REMOVE android-app/blocking/blocking-resilience/build 3.7 MiB (3862528 bytes)
+REMOVE android-app/blocking/blocking-engine/build 2.6 MiB (2740224 bytes)
+REMOVE android-app/feature/feature-onboarding/build 4.2 MiB (4374528 bytes)
+REMOVE ios-app/Packages/FlintCore/.swiftpm 0.0 MiB (0 bytes)
+REMOVE android-app/blocking/blocking-overlay/build 6.0 MiB (6324224 bytes)
+REMOVE android-app/feature/feature-blocklist/build 31.8 MiB (33296384 bytes)
+REMOVE android-app/core/core-datastore/build 11.1 MiB (11603968 bytes)
+REMOVE android-app/blocking/blocking-usagestats/build 3.5 MiB (3633152 bytes)
+REMOVE android-app/blocking/blocking-accessibility/build 2.4 MiB (2473984 bytes)
+REMOVE android-app/feature/feature-blockscreen/build 5.3 MiB (5586944 bytes)
+REMOVE android-app/core/core-model/build 2.1 MiB (2154496 bytes)
+Removed 799.6 MiB (838475776 bytes) of worktree artifacts; local.properties and shared caches preserved.
+Exit 0; elapsed 5.115s
+
+2026-10-28T00:48:48.235659+00:00 $ env -u CONFIRM -u DRY_RUN make clean
+Removed 0.0 MiB (0 bytes) of worktree artifacts; local.properties and shared caches preserved.
+Exit 0; elapsed 0.098s
+
+2026-10-28T00:48:48.333972+00:00 $ git status --porcelain --ignored
+ M .github/workflows/ios.yml
+ M .gitignore
+ M AGENTS.md
+ M Makefile
+?? .claude/settings.json
+?? .codex/
+?? docs/verification/workspace-cleanup-2026-10-27.md
+?? docs/verification/workspace-cleanup-evidence-2026-10-27.txt
+?? scripts/clean-devices.sh
+?? scripts/clean-env.sh
+?? scripts/clean-session.sh
+?? scripts/clean-worktree.py
+?? scripts/flint-devices.sh
+?? scripts/orca/
+?? scripts/test_cleanup.py
+Exit 0; elapsed 0.027s
+
+2026-10-28T00:48:48.361412+00:00 $ df -k .
+Filesystem   1024-blocks      Used Available Capacity iused     ifree %iused  Mounted on
+/dev/disk3s5   239362496 168368472  41113328    81% 1862844 411133280    0%   /System/Volumes/Data
+Exit 0; elapsed 0.003s
+
+2026-10-28T00:48:48.365021+00:00 $ env -u CONFIRM -u DRY_RUN make clean-devices
+No claimed devices; unclaimed devices/helpers are left alone.
+Exit 0; elapsed 0.098s
+
+2026-10-28T00:48:48.463946+00:00 $ /bin/bash scripts/orca/archive.sh
+Archive cleanup: target=/Users/prakash/orca/workspaces/flint/ws-cleanup cwd=/Users/prakash/orca/workspaces/flint/ws-cleanup
+No claimed devices; unclaimed devices/helpers are left alone.
+Removed 0.0 MiB (0 bytes) of worktree artifacts; local.properties and shared caches preserved.
+Exit 0; elapsed 0.145s
+
+2026-10-28T00:49:11.083054+00:00 $ df -k .
+Filesystem   1024-blocks      Used Available Capacity iused     ifree %iused  Mounted on
+/dev/disk3s5   239362496 168021492  41460308    81% 1863034 414603080    0%   /System/Volumes/Data
+Exit 0; elapsed 0.025s
+
+2026-10-28T00:49:11.108160+00:00 $ make clean-orphans
+DRY RUN (use make clean-orphans CONFIRM=1 to delete listed candidates)
+WOULD REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-amntpsdwnkbrdhfbrsppktamtzvo 157.2 MiB (164880384 bytes) workspace=/Users/prakash/.local/share/opencode/worktree/501dae/review-pr-62/ios-app/Flint.xcodeproj
+WOULD REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-auklkoyyokpfgaafcxdddawhryuc 163.1 MiB (171044864 bytes) workspace=/Users/prakash/.codex/worktrees/a4a2/flint/ios-app/Flint.xcodeproj
+WOULD REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-bgytuxhlhrvbbtbpgxyitwpbxymo 160.1 MiB (167858176 bytes) workspace=/tmp/flint-fix/pr-67/ios-app/Flint.xcodeproj
+WOULD REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-bkknmgokvnvdkyfvmmnbnseohfiw 154.2 MiB (161738752 bytes) workspace=/Users/prakash/.codex/worktrees/b3b6/flint/ios-app/Flint.xcodeproj
+WOULD REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-boeunbaleqpaxtbesjkdpnbcnpzr 168.2 MiB (176418816 bytes) workspace=/Users/prakash/.codex/worktrees/b2f6/flint/ios-app/Flint.xcodeproj
+WOULD REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-btzdwezpmfffzwcgjjxbkusuutin 158.0 MiB (165715968 bytes) workspace=/tmp/flint-fix/pr-65/ios-app/Flint.xcodeproj
+WOULD REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-cntarviknofepxezullqsrrpadpk 179.8 MiB (188506112 bytes) workspace=/Users/prakash/.codex/worktrees/f5-permission-errors-recovery/flint/ios-app/Flint.xcodeproj
+KEEP live/unknown checkout Flint-cvbfthlglgmasrewlpycelpedxwo: /Users/prakash/Desktop/open-source/flint
+WOULD REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-cxhcgtiaoyydggexgubwstlcfkkb 90.5 MiB (94867456 bytes) workspace=/Users/prakash/.local/share/opencode/worktree/501dae/review-pr-61/ios-app/Flint.xcodeproj
+WOULD REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-dlftjpwczqiifqftizdcmysrwafp 321.7 MiB (337350656 bytes) workspace=/tmp/flint-fix/pr-61/ios-app/Flint.xcodeproj
+WOULD REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-eadfnfrqofwjeyawvgwrbjwwrdvo 125.8 MiB (131911680 bytes) workspace=/tmp/flint-branch-audit-2026-10-23/main/ios-app/Flint.xcodeproj
+WOULD REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-eepljttjkdvkprfeoqplddtjgxqd 167.2 MiB (175271936 bytes) workspace=/Users/prakash/orca/workspaces/flint/.fix/pr-67/ios-app/Flint.xcodeproj
+WOULD REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-fggdlgegqjbjefbfkflrgdeztfpm 164.9 MiB (172941312 bytes) workspace=/Users/prakash/.codex/worktrees/6b27/flint/ios-app/Flint.xcodeproj
+WOULD REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-fofnntawxbsmewexzbhfyzkilhen 169.8 MiB (178032640 bytes) workspace=/Users/prakash/.codex/worktrees/f3-pin-validation/flint/ios-app/Flint.xcodeproj
+WOULD REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-gqiyptjhetymvmeghvgicwqcbcrk 165.8 MiB (173875200 bytes) workspace=/Users/prakash/.local/share/opencode/worktree/501dae/review-pr-67/ios-app/Flint.xcodeproj
+WOULD REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-gzilznchzdewhiarzmllmrocytev 187.0 MiB (196087808 bytes) workspace=/Users/prakash/.codex/worktrees/f4-accessible-text-layouts-recovery/flint/ios-app/Flint.xcodeproj
+Exit 0; elapsed 4.269s
+Approval guard passed: exactly the approved 15 folders, zero simulator candidates.
+
+2026-10-28T00:49:15.377505+00:00 $ env -u DRY_RUN make clean-orphans CONFIRM=1
+DELETE ENABLED
+REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-amntpsdwnkbrdhfbrsppktamtzvo 157.2 MiB (164880384 bytes) workspace=/Users/prakash/.local/share/opencode/worktree/501dae/review-pr-62/ios-app/Flint.xcodeproj
+REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-auklkoyyokpfgaafcxdddawhryuc 163.1 MiB (171044864 bytes) workspace=/Users/prakash/.codex/worktrees/a4a2/flint/ios-app/Flint.xcodeproj
+REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-bgytuxhlhrvbbtbpgxyitwpbxymo 160.1 MiB (167858176 bytes) workspace=/tmp/flint-fix/pr-67/ios-app/Flint.xcodeproj
+REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-bkknmgokvnvdkyfvmmnbnseohfiw 154.2 MiB (161738752 bytes) workspace=/Users/prakash/.codex/worktrees/b3b6/flint/ios-app/Flint.xcodeproj
+REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-boeunbaleqpaxtbesjkdpnbcnpzr 168.2 MiB (176418816 bytes) workspace=/Users/prakash/.codex/worktrees/b2f6/flint/ios-app/Flint.xcodeproj
+REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-btzdwezpmfffzwcgjjxbkusuutin 158.0 MiB (165715968 bytes) workspace=/tmp/flint-fix/pr-65/ios-app/Flint.xcodeproj
+REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-cntarviknofepxezullqsrrpadpk 179.8 MiB (188506112 bytes) workspace=/Users/prakash/.codex/worktrees/f5-permission-errors-recovery/flint/ios-app/Flint.xcodeproj
+KEEP live/unknown checkout Flint-cvbfthlglgmasrewlpycelpedxwo: /Users/prakash/Desktop/open-source/flint
+REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-cxhcgtiaoyydggexgubwstlcfkkb 90.5 MiB (94867456 bytes) workspace=/Users/prakash/.local/share/opencode/worktree/501dae/review-pr-61/ios-app/Flint.xcodeproj
+REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-dlftjpwczqiifqftizdcmysrwafp 321.7 MiB (337350656 bytes) workspace=/tmp/flint-fix/pr-61/ios-app/Flint.xcodeproj
+REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-eadfnfrqofwjeyawvgwrbjwwrdvo 125.8 MiB (131911680 bytes) workspace=/tmp/flint-branch-audit-2026-10-23/main/ios-app/Flint.xcodeproj
+REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-eepljttjkdvkprfeoqplddtjgxqd 167.2 MiB (175271936 bytes) workspace=/Users/prakash/orca/workspaces/flint/.fix/pr-67/ios-app/Flint.xcodeproj
+REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-fggdlgegqjbjefbfkflrgdeztfpm 164.9 MiB (172941312 bytes) workspace=/Users/prakash/.codex/worktrees/6b27/flint/ios-app/Flint.xcodeproj
+REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-fofnntawxbsmewexzbhfyzkilhen 169.8 MiB (178032640 bytes) workspace=/Users/prakash/.codex/worktrees/f3-pin-validation/flint/ios-app/Flint.xcodeproj
+REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-gqiyptjhetymvmeghvgicwqcbcrk 165.8 MiB (173875200 bytes) workspace=/Users/prakash/.local/share/opencode/worktree/501dae/review-pr-67/ios-app/Flint.xcodeproj
+REMOVE /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-gzilznchzdewhiarzmllmrocytev 187.0 MiB (196087808 bytes) workspace=/Users/prakash/.codex/worktrees/f4-accessible-text-layouts-recovery/flint/ios-app/Flint.xcodeproj
+Exit 0; elapsed 28.844s
+
+2026-10-28T00:49:44.222072+00:00 $ df -k .
+Filesystem   1024-blocks      Used Available Capacity iused     ifree %iused  Mounted on
+/dev/disk3s5   239362496 165487948  43993852    79% 1784057 439938520    0%   /System/Volumes/Data
+Exit 0; elapsed 0.003s
+
+2026-10-28T00:49:44.225037+00:00 $ du -sk /Users/prakash/Library/Developer/Xcode/DerivedData/Flint-cvbfthlglgmasrewlpycelpedxwo
+170496	/Users/prakash/Library/Developer/Xcode/DerivedData/Flint-cvbfthlglgmasrewlpycelpedxwo
+Exit 0; elapsed 0.107s
+Remaining Flint-* folders: Flint-cvbfthlglgmasrewlpycelpedxwo
