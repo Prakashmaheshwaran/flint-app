@@ -82,7 +82,7 @@ class FlintSmokeTest {
 
     @Test fun onboardingConsentRendersAndDeclines() {
         scrollTo("Enable accessibility service").click()
-        visible(By.text("Before Flint can block apps"))
+        visible(By.text("Before enabling Accessibility"))
         scrollTo("Accept & continue")
         visible(By.text("Not now"))
         screenshot("consent")

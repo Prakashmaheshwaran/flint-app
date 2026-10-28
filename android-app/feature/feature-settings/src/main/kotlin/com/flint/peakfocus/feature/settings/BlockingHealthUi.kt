@@ -63,11 +63,10 @@ object BlockingHealthUi {
             role = "Instant app and website blocking",
             disclosure = "Flint's accessibility service detects which app is in the foreground " +
                 "and reads web addresses from known browser address bars for website blocking. " +
-                "While an enabled Hardcore rule is active, it also reads screen class names " +
-                "and visible Settings text and content descriptions for its Settings guard. " +
+                "App and screen class names identify the foreground app. " +
                 "Flint uses this only to enforce the blocks you set up. Everything stays on " +
                 "your device; it is never sent off your device, shared, or sold. Review the " +
-                "full disclosure, including uninstall and disable restrictions, before choosing " +
+                "full disclosure before choosing " +
                 "whether to open Android Settings.",
             fixLabel = "Review Accessibility access",
         ),

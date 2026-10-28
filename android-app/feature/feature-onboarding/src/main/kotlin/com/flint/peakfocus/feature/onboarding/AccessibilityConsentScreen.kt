@@ -132,16 +132,6 @@ fun AccessibilityConsentScreen(
                             )
                             DisclosureRow(
                                 icon = Icons.Filled.Settings,
-                                heading = "Hardcore Settings guard",
-                                body = ConsentCopy.GUARD_BEHAVIOR,
-                                bodyStyle = MaterialTheme.typography.bodyLarge,
-                            )
-                            HorizontalDivider(
-                                modifier = Modifier.padding(vertical = FlintSpacing.cardGap),
-                                color = MaterialTheme.colorScheme.outlineVariant,
-                            )
-                            DisclosureRow(
-                                icon = Icons.Filled.Settings,
                                 heading = "Your choice and how to turn it off",
                                 body = ConsentCopy.NEXT_STEP,
                                 bodyStyle = MaterialTheme.typography.bodyMedium,
