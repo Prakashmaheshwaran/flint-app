@@ -43,6 +43,8 @@ targets:
       # Recursively globs Flint/Features/* — the Wave-1 verticals (FocusFilter, Shortcuts, Sleep,
       # Settings/Privacy) drop their App Intents / screens here and are picked up automatically.
       - Flint
+      - path: Privacy/Flint/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus
@@ -69,6 +71,8 @@ targets:
     platform: iOS
     sources:
       - Extensions/DeviceActivityMonitorExtension
+      - path: Privacy/DeviceActivityMonitorExtension/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.monitor
@@ -83,6 +87,8 @@ targets:
     platform: iOS
     sources:
       - Extensions/ShieldConfigurationExtension
+      - path: Privacy/ShieldConfigurationExtension/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.shield-config
@@ -97,6 +103,8 @@ targets:
     platform: iOS
     sources:
       - Extensions/ShieldActionExtension
+      - path: Privacy/ShieldActionExtension/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.shield-action
@@ -111,6 +119,8 @@ targets:
     platform: iOS
     sources:
       - Extensions/DeviceActivityReportExtension
+      - path: Privacy/DeviceActivityReportExtension/PrivacyInfo.xcprivacy
+        buildPhase: resources
       # Insights renders inside this extension, so it bundles the same two fonts as the app.
       - path: Flint/Resources/Fonts
         buildPhase: resources

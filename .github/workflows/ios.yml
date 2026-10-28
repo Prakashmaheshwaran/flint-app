@@ -7,9 +7,9 @@ name: iOS
 on:
   push:
     branches: [main]
-    paths: ['ios-app/**', 'Makefile', '.github/workflows/ios.yml']
+    paths: ['ios-app/**', 'docs/store/ios/**', 'Makefile', '.github/workflows/ios.yml']
   pull_request:
-    paths: ['ios-app/**', 'Makefile', '.github/workflows/ios.yml']
+    paths: ['ios-app/**', 'docs/store/ios/**', 'Makefile', '.github/workflows/ios.yml']
   workflow_dispatch:
 
 permissions:
@@ -38,6 +38,9 @@ jobs:
             -derivedDataPath ios-app/DerivedData \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+
+      - name: Verify privacy manifests in host and every extension
+        run: python3 docs/store/ios/verify-privacy-bundles.py ios-app/DerivedData/Build/Products/Debug-iphonesimulator/Flint.app
 
       - name: Unit tests (first available iPhone simulator)
         run: |
