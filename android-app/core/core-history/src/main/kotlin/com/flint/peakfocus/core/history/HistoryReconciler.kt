@@ -40,7 +40,7 @@ class HistoryReconciler(
                     when (snapshot) {
                         is HistoryRulesSnapshot.Ready -> observe(snapshot.rules)
                         is HistoryRulesSnapshot.Unavailable -> diagnostics.value = "Rules unavailable: ${snapshot.reason}"
-                        HistoryRulesSnapshot.Loading -> Unit
+                        HistoryRulesSnapshot.Loading -> diagnostics.value = "Rules loading"
                     }
                 }
                 return

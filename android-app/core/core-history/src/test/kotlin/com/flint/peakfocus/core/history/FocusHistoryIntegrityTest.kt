@@ -6,6 +6,12 @@ import java.time.Instant
 import java.time.ZoneOffset
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import com.flint.peakfocus.core.model.BlockRule
+import com.flint.peakfocus.core.model.BlockTargets
+import com.flint.peakfocus.core.model.StorageFailure
+import com.flint.peakfocus.core.model.StorageState
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -20,6 +26,23 @@ class FocusHistoryIntegrityTest {
         at = begin, tz = "UTC", plannedEnd = end, tier = "easy", source = "manual", name = "Focus")
     private fun focus(snapshot: HistorySnapshot, now: Long) =
         FocusHistoryAggregator.sessions(snapshot.events, now, setOf("session-a")).single().focusedMs
+
+    @Test fun S1_strictRulesReadyCorruptReadyRetainsLastGoodWithoutTerminal() = runTest {
+        val store = FocusHistoryStore(temporary.newFolder(), clock(begin))
+        val observer = HistoryReconciler(store, clock(begin))
+        val rule = BlockRule("session-a", "Focus", BlockTargets(), expiresAtEpochMs = begin + 60 * minute)
+        observer.collectSnapshots(flow<StorageState<List<BlockRule>>> {
+            emit(StorageState.Loading)
+            emit(StorageState.Ready(listOf(rule)))
+            emit(StorageState.Unavailable(StorageFailure.CORRUPT))
+            assertEquals(setOf(rule.id), observer.activeSessionIds.value)
+            assertTrue(observer.diagnostic.value!!.contains("CORRUPT"))
+            assertEquals(listOf("started"), store.load().events.map { it.type })
+            emit(StorageState.Ready(listOf(rule)))
+        }.map(::historyRulesSnapshot))
+        assertNull(observer.diagnostic.value)
+        assertEquals(listOf("started"), store.load().events.map { it.type })
+    }
 
     @Test fun N1_malformedPendingClearNeverAuthorizesDestructiveRecovery() = runTest {
         for (field in listOf("", ",\"keepSessions\":null", ",\"keepSessions\":false",

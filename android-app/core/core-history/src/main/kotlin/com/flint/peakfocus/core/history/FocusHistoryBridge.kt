@@ -3,7 +3,6 @@ package com.flint.peakfocus.core.history
 import android.content.Context
 import com.flint.peakfocus.core.datastore.FlintPreferences
 import java.io.File
-import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -30,11 +29,7 @@ object FocusHistoryBridge {
         val observer = HistoryReconciler(store).also { reconciler = it }
         job = scope.launch(Dispatchers.IO) {
             store.load()
-            observer.collect(FlintPreferences.blockRules(app).rulesOrError.map { rules ->
-                rules.filter { it.id.startsWith("session-") && it.enabled && it.schedule == null }.map {
-                    HistoryRule(it.id, it.name, it.breakLevel.name.lowercase(Locale.ROOT), it.expiresAtEpochMs)
-                }
-            })
+            observer.collectSnapshots(FlintPreferences.blockRules(app).rulesState.map(::historyRulesSnapshot))
         }
     }
 }
