@@ -210,16 +210,20 @@ public enum FlintOpenLimitEnforcer {
     }
 
     public static func handleOpenRequest(application token: ApplicationToken) -> Outcome {
-        outcome(FlintOpenCredit.accept(for: token))
+        guard FlintOpenCredit.shieldAcceptanceEnabled else { return .unavailable }
+        return outcome(FlintOpenCredit.accept(for: token))
     }
     public static func handleOpenRequest(webDomain token: WebDomainToken) -> Outcome {
-        outcome(FlintOpenCredit.accept(for: token))
+        guard FlintOpenCredit.shieldAcceptanceEnabled else { return .unavailable }
+        return outcome(FlintOpenCredit.accept(for: token))
     }
     public static func remainingOpens(application token: ApplicationToken) -> Int? {
-        remaining(FlintOpenCredit.preview(for: token))
+        guard FlintOpenCredit.shieldAcceptanceEnabled else { return nil }
+        return remaining(FlintOpenCredit.preview(for: token))
     }
     public static func remainingOpens(webDomain token: WebDomainToken) -> Int? {
-        remaining(FlintOpenCredit.preview(for: token))
+        guard FlintOpenCredit.shieldAcceptanceEnabled else { return nil }
+        return remaining(FlintOpenCredit.preview(for: token))
     }
     public static func applyShield(for rule: FlintOpenLimitRule) {
         FlintOpenCredit.applyShield(for: rule)

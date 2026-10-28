@@ -6,10 +6,12 @@ public struct FlintOpenCreditContext {
     public var targetKeys: Set<String>
     public var blockedBy: FlintOpenCreditBlock?
     public var blockingContributors: [String]
+    public var restoration: FlintOpenCreditRestoration?
     public init(coveringCaps: [String: Int], targetKeys: Set<String>, blockedBy: FlintOpenCreditBlock? = nil,
-                blockingContributors: [String] = []) {
+                blockingContributors: [String] = [], restoration: FlintOpenCreditRestoration? = nil) {
         self.coveringCaps = coveringCaps; self.targetKeys = targetKeys; self.blockedBy = blockedBy
         self.blockingContributors = blockingContributors
+        self.restoration = restoration
     }
 }
 
@@ -21,14 +23,14 @@ public final class FlintOpenCreditService {
     private let context: () -> FlintOpenCreditContext?
     private let register: (FlintOpenCreditGrant, TimeInterval) throws -> Void
     private let registered: (String) -> Bool
-    private let release: (FlintOpenCreditGrant) -> Void
+    private let release: (FlintOpenCreditGrant) throws -> Void
     private let reshield: (FlintOpenCreditGrant) -> Void
     private let stop: (String) -> Void
 
     public init(ledger: FlintProtectionLedger, clock: FlintClock,
                 context: @escaping () -> FlintOpenCreditContext?,
                 register: @escaping (FlintOpenCreditGrant, TimeInterval) throws -> Void,
-                registered: @escaping (String) -> Bool, release: @escaping (FlintOpenCreditGrant) -> Void,
+                registered: @escaping (String) -> Bool, release: @escaping (FlintOpenCreditGrant) throws -> Void,
                 reshield: @escaping (FlintOpenCreditGrant) -> Void, stop: @escaping (String) -> Void) {
         self.ledger = ledger; self.clock = clock; self.context = context; self.register = register
         self.registered = registered; self.release = release; self.reshield = reshield; self.stop = stop
@@ -51,10 +53,10 @@ public final class FlintOpenCreditService {
     public func accept(target: String, operationID: String) -> Result<FlintOpenCreditReceipt, FlintOpenCreditRefusal> {
         var newRegistration: String?
         let committed = ledger.transaction { state -> Result<FlintOpenCreditReceipt, FlintOpenCreditRefusal> in
-            guard let context = self.context() else { return .failure(.denied(.unavailable)) }
+            guard let context = self.context(), let restoration = context.restoration else { return .failure(.denied(.unavailable)) }
             let now = FlintLedgerInstant(clock: self.clock)
             return state.acceptOpenCredit(target: target, operationID: operationID,
-                coveringCaps: context.coveringCaps, targetKeys: context.targetKeys, at: now,
+                coveringCaps: context.coveringCaps, targetKeys: context.targetKeys, restoration: restoration, at: now,
                 blocking: { context.blockedBy }, register: { grant in
                     newRegistration = grant.activityName
                     try self.register(grant, grant.remaining(at: FlintLedgerInstant(clock: self.clock)))
@@ -104,7 +106,7 @@ public final class FlintOpenCreditService {
                 return .failure(.denied(.applying))
             }
             // Native store writes occur while the same lock used by expiry is held.
-            self.release(grant)
+            do { try self.release(grant) } catch { return .failure(.denied(.applying)) }
             return .success(receipt)
         }
         guard case let .success(result) = applied else { return .failure(.denied(.applying)) }
@@ -117,10 +119,13 @@ public final class FlintOpenCreditService {
     /// at carrier end is recorded as recovery rather than an on-time five-minute result.
     public func reconcile(activity: String? = nil, callback: Callback? = nil) -> Bool {
         let result = ledger.transaction { state -> Bool in
-            guard let context = self.context() else { return false }
+            // Expiry remains possible using the frozen target when saved rules are corrupt.
+            // New acceptance still requires a readable live context above.
+            let context = self.context()
             let now = FlintLedgerInstant(clock: self.clock)
             let original = activity.flatMap { name in state.openCredits.grants.values.first { $0.activityName == name } }
-            guard state.reconcileOpenCredits(at: now, targetKeys: context.targetKeys, reshield: self.reshieldAndStop) else { return false }
+            guard state.reconcileOpenCredits(at: now,
+                targetKeys: context?.targetKeys ?? state.openCredits.knownTargets, reshield: self.reshieldAndStop) else { return false }
             if let activity, original == nil { self.stop(activity); return true }
             if let original, state.openCredits.grants[original.targetKey] == nil,
                let elapsed = original.grantedAt.elapsedForRelease(until: now), elapsed > original.duration + 1 {

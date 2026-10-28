@@ -1,5 +1,9 @@
 import XCTest
+import FamilyControls
 @testable import FlintCore
+
+private let openAppPayload = Data(#"["app"]"#.utf8)
+private let openAppKey = FlintOpenCreditRestoration(kind: .application, encodedToken: openAppPayload, storeNames: []).targetKey
 
 /// These tests use the real flock/atomic ledger and the production adapter ordering, with
 /// fake native stores and registrar. They do not establish physical Screen Time delivery.
@@ -10,7 +14,7 @@ final class FlintOpenCreditTests: XCTestCase {
     private var monotonic: TimeInterval = 10_000
     private var boot: String? = "boot-a"
     private var caps = ["open-a": 3]
-    private var targets: Set<String> = ["app"]
+    private var targets: Set<String> = [openAppKey]
     private var block: FlintOpenCreditBlock?
     private var contributors: [FlintOpenCreditContributor] = []
     private var unavailableContext = false
@@ -25,7 +29,7 @@ final class FlintOpenCreditTests: XCTestCase {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent("flint-open-\(UUID().uuidString)")
         marker = nil
         now = ISO8601DateFormatter().date(from: "2026-10-28T12:00:00Z")!
-        monotonic = 10_000; boot = "boot-a"; caps = ["open-a": 3]; targets = ["app"]
+        monotonic = 10_000; boot = "boot-a"; caps = ["open-a": 3]; targets = [openAppKey]
         block = nil; unavailableContext = false; refuses = false
         contributors = []
         registrations = [:]; released = []; shielded = []; order = []
@@ -41,6 +45,9 @@ final class FlintOpenCreditTests: XCTestCase {
         FlintClock(now: { self.now }, monotonic: { self.monotonic }, bootSessionID: { self.boot }, calendar: { self.calendar })
     }
     private var instant: FlintLedgerInstant { FlintLedgerInstant(clock: clock) }
+    private var restoration: FlintOpenCreditRestoration {
+        .init(kind: .application, encodedToken: openAppPayload, storeNames: Set(caps.keys.map { "flintO." + $0 }))
+    }
     private func advance(_ seconds: TimeInterval) { now = now.addingTimeInterval(seconds); monotonic += seconds }
     private func ledger(importing legacy: FlintLegacyValue = .absent, established: Bool = false) -> FlintProtectionLedger {
         FlintProtectionLedger(directory: directory, clock: clock, lockTimeout: 10,
@@ -52,9 +59,10 @@ final class FlintOpenCreditTests: XCTestCase {
     }
     private func service(_ ledger: FlintProtectionLedger? = nil) -> FlintOpenCreditService {
         FlintOpenCreditService(ledger: ledger ?? self.ledger(), clock: clock, context: {
-            let blocking = FlintOpenCreditBlocking.query(target: "app", kind: .application, stores: self.contributors)
+            let blocking = FlintOpenCreditBlocking.query(target: openAppKey, kind: .application, stores: self.contributors)
             return self.unavailableContext ? nil : .init(coveringCaps: self.caps, targetKeys: self.targets,
-                blockedBy: self.block ?? blocking.reason, blockingContributors: blocking.contributors)
+                blockedBy: self.block ?? blocking.reason, blockingContributors: blocking.contributors,
+                restoration: self.restoration)
         }, register: { grant, remaining in
             self.order.append("register")
             if self.refuses { throw FlintOpenCreditRefusal.denied(.registrationFailed) }
@@ -71,11 +79,11 @@ final class FlintOpenCreditTests: XCTestCase {
         stop: { self.registrations[$0] = nil })
     }
     private func accepted(_ op: String = UUID().uuidString, using service: FlintOpenCreditService? = nil) throws -> FlintOpenCreditReceipt {
-        try (service ?? self.service()).accept(target: "app", operationID: op).get()
+        try (service ?? self.service()).accept(target: openAppKey, operationID: op).get()
     }
     private func state() throws -> FlintLedgerState { try ledger().read().get() }
     private func denied(_ expected: FlintOpenCreditBlock, op: String = UUID().uuidString, using service: FlintOpenCreditService? = nil) {
-        XCTAssertEqual((service ?? self.service()).accept(target: "app", operationID: op), .failure(.denied(expected)))
+        XCTAssertEqual((service ?? self.service()).accept(target: openAppKey, operationID: op), .failure(.denied(expected)))
     }
 
     func testPC28ThreeBoundedCreditsThenFourthDenied() throws {
@@ -87,7 +95,7 @@ final class FlintOpenCreditTests: XCTestCase {
             XCTAssertTrue(service().reconcile(activity: receipt.grant.activityName, callback: .warning))
         }
         denied(.exhausted)
-        XCTAssertEqual(try state().openCredits.counters["app"]?.used, 3)
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 3)
         XCTAssertEqual(shielded.count, 3)
     }
 
@@ -97,14 +105,14 @@ final class FlintOpenCreditTests: XCTestCase {
         let lock = NSLock()
         var receipts: [FlintOpenCreditReceipt] = []
         DispatchQueue.concurrentPerform(iterations: 12) { index in
-            let result = self.service().accept(target: "app", operationID: "race-\(index)")
+            let result = self.service().accept(target: openAppKey, operationID: "race-\(index)")
             lock.lock(); defer { lock.unlock() }
             if case let .success(receipt) = result { receipts.append(receipt) }
         }
         XCTAssertEqual(receipts.count, 12)
         XCTAssertEqual(Set(receipts.map { $0.grant.operationID }).count, 1)
         XCTAssertEqual(receipts.filter { !$0.replayed }.count, 1)
-        XCTAssertEqual(try state().openCredits.counters["app"]?.used, 1)
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
         XCTAssertEqual(registrations.count, 1)
     }
 
@@ -115,10 +123,10 @@ final class FlintOpenCreditTests: XCTestCase {
         advance(299)
         XCTAssertTrue(service().reconcile(activity: receipt.grant.activityName, callback: .start))
         XCTAssertTrue(shielded.isEmpty)
-        XCTAssertEqual(service().preview(target: "app").grant?.remaining(at: instant), 1)
+        XCTAssertEqual(service().preview(target: openAppKey).grant?.remaining(at: instant), 1)
         advance(1)
         _ = service().reconcile(activity: receipt.grant.activityName, callback: .warning)
-        XCTAssertEqual(shielded, ["app"])
+        XCTAssertEqual(shielded, [openAppKey])
     }
 
     func testPC23PC31RepeatedRequestsReturnUnchangedGrantAcrossProcessRestart() throws {
@@ -128,7 +136,7 @@ final class FlintOpenCreditTests: XCTestCase {
         XCTAssertTrue(next.replayed)
         XCTAssertEqual(first.grant, next.grant)
         XCTAssertEqual(next.grant.remaining(at: instant), 200)
-        XCTAssertEqual(try state().openCredits.counters["app"]?.used, 1)
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
     }
 
     func testPC23ExpiredOperationCannotRecreateAccess() throws {
@@ -136,7 +144,7 @@ final class FlintOpenCreditTests: XCTestCase {
         advance(300)
         _ = service().reconcile(activity: receipt.grant.activityName, callback: .warning)
         denied(.staleOperation, op: "once")
-        XCTAssertEqual(try state().openCredits.counters["app"]?.used, 1)
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
     }
 
     func testExpiredOperationRemainsIdempotentAfterGeneralOperationMemoryEvictsIt() throws {
@@ -149,27 +157,27 @@ final class FlintOpenCreditTests: XCTestCase {
         }
         XCTAssertNil(try state().operation("original"))
         denied(.staleOperation, op: "original")
-        XCTAssertEqual(try state().openCredits.counters["app"]?.used, 1)
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
     }
 
     func testNewIndependentOpenCauseDuringGrantDeniesWithoutAnotherCharge() throws {
         _ = try accepted()
         caps["new-independent-open"] = 1
         denied(.otherContributor)
-        XCTAssertEqual(service().preview(target: "app").blockedBy, .otherContributor)
-        XCTAssertEqual(try state().openCredits.counters["app"]?.used, 1)
+        XCTAssertEqual(service().preview(target: openAppKey).blockedBy, .otherContributor)
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
     }
 
     func testPostCommitRegistrationFailureReportsRecoveryAndKeepsConsumption() throws {
         var attempts = 0
         let adapter = FlintOpenCreditService(ledger: ledger(), clock: clock,
-            context: { .init(coveringCaps: self.caps, targetKeys: self.targets) }, register: { _, _ in
+            context: { .init(coveringCaps: self.caps, targetKeys: self.targets, restoration: self.restoration) }, register: { _, _ in
                 attempts += 1
                 if attempts > 1 { throw FlintOpenCreditRefusal.denied(.registrationFailed) }
             }, registered: { _ in false }, release: { _ in XCTFail("repair refused") }, reshield: { _ in }, stop: { _ in })
         denied(.applying, using: adapter)
-        XCTAssertEqual(try state().openCredits.counters["app"]?.used, 1)
-        XCTAssertNotNil(try state().openCredits.grants["app"])
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
+        XCTAssertNotNil(try state().openCredits.grants[openAppKey])
     }
 
     func testStartCallbackRepairsClockChangeOnceWithoutRegistrationLoop() throws {
@@ -185,40 +193,40 @@ final class FlintOpenCreditTests: XCTestCase {
 
     func testPC32SessionScheduleAndExhaustedTimeLimitDenyWithoutCharge() throws {
         for name in ["session", "schedule", "exhausted-time-limit"] {
-            contributors = [.init(name: name, applications: ["app"])]
+            contributors = [.init(name: name, applications: [openAppKey])]
             denied(.otherContributor)
-            XCTAssertEqual(service().preview(target: "app").blockingContributors, [name])
+            XCTAssertEqual(service().preview(target: openAppKey).blockingContributors, [name])
         }
-        XCTAssertEqual(try state().openCredits.counters["app"]?.used, 0)
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 0)
         XCTAssertTrue(registrations.isEmpty); XCTAssertTrue(released.isEmpty)
     }
 
     func testPC33UnprovenCategoryOverlapDeniesWithoutCharge() throws {
         contributors = [.init(name: "opaque-category", applicationCategoryExceptions: [])]
         denied(.categoryOverlap)
-        XCTAssertEqual(service().preview(target: "app").blockedBy, .categoryOverlap)
+        XCTAssertEqual(service().preview(target: openAppKey).blockedBy, .categoryOverlap)
         XCTAssertEqual(FlintOpenCreditBlock.categoryOverlap.message,
                        "Another category rule may still block this app; no credit used.")
-        XCTAssertEqual(try state().openCredits.counters["app"]?.used, 0)
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 0)
         XCTAssertTrue(released.isEmpty)
     }
 
     func testContributorQueryDistinguishesUnspentLimitExplicitDomainsAndProvenExceptions() {
         let unspent = FlintOpenCreditContributor(name: "unspent-time-limit")
-        XCTAssertNil(FlintOpenCreditBlocking.query(target: "app", kind: .application, stores: [unspent]).reason)
+        XCTAssertNil(FlintOpenCreditBlocking.query(target: openAppKey, kind: .application, stores: [unspent]).reason)
         let site = FlintOpenCreditContributor(name: "site-schedule", webDomains: ["site"])
         XCTAssertEqual(FlintOpenCreditBlocking.query(target: "site", kind: .webDomain, stores: [site]).reason, .otherContributor)
-        let category = FlintOpenCreditContributor(name: "category", applicationCategoryExceptions: ["app"], webCategoryExceptions: [])
-        XCTAssertNil(FlintOpenCreditBlocking.query(target: "app", kind: .application, stores: [category]).reason)
+        let category = FlintOpenCreditContributor(name: "category", applicationCategoryExceptions: [openAppKey], webCategoryExceptions: [])
+        XCTAssertNil(FlintOpenCreditBlocking.query(target: openAppKey, kind: .application, stores: [category]).reason)
         XCTAssertEqual(FlintOpenCreditBlocking.query(target: "site", kind: .webDomain, stores: [category]).reason, .categoryOverlap)
-        XCTAssertEqual(FlintOpenCreditBlocking.query(target: "app", kind: .application, stores: nil).reason, .unavailable)
+        XCTAssertEqual(FlintOpenCreditBlocking.query(target: openAppKey, kind: .application, stores: nil).reason, .unavailable)
     }
 
     func testPC34SharedMinimumCapAndRenameNeverReset() throws {
         caps = ["open-a": 2, "open-b": 5]
         let first = try accepted()
         XCTAssertEqual(first.grant.coveredCauses, ["open-a", "open-b"])
-        XCTAssertEqual(service().preview(target: "app").cap, 2)
+        XCTAssertEqual(service().preview(target: openAppKey).cap, 2)
         advance(300); _ = service().reconcile()
         caps = ["renamed-a": 2, "open-b": 5]
         XCTAssertEqual(try accepted().remaining, 0)
@@ -233,7 +241,7 @@ final class FlintOpenCreditTests: XCTestCase {
         advance(120)
         let second = try accepted()
         XCTAssertEqual(second.grant.duration, 300)
-        XCTAssertEqual(try state().openCredits.counters["app"]?.used, 1)
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
         let reshield = try XCTUnwrap(order.firstIndex(of: "reshield"))
         XCTAssertLessThan(reshield, order.lastIndex(of: "register")!)
         XCTAssertNotEqual(first.grant.activityName, second.grant.activityName)
@@ -246,20 +254,20 @@ final class FlintOpenCreditTests: XCTestCase {
         denied(.notOpenLimited)
         caps = ["recreated": 3]
         XCTAssertEqual(try accepted().remaining, 1)
-        XCTAssertEqual(try state().openCredits.counters["app"]?.used, 2)
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 2)
     }
 
     func testPC37MissingInitializedCounterNeverBecomesZero() throws {
         _ = try state()
-        _ = ledger().transaction { $0.openCredits.counters["app"] = nil }
+        _ = ledger().transaction { $0.openCredits.counters[openAppKey] = nil }
         denied(.unavailable)
-        XCTAssertNil(service().preview(target: "app").remaining)
+        XCTAssertNil(service().preview(target: openAppKey).remaining)
         XCTAssertTrue(released.isEmpty)
     }
 
     func testPC37CorruptNegativeCounterAndUnavailableContextDeny() throws {
         _ = try state()
-        _ = ledger().transaction { $0.openCredits.counters["app"]?.used = -1 }
+        _ = ledger().transaction { $0.openCredits.counters[openAppKey]?.used = -1 }
         denied(.unavailable)
         unavailableContext = true
         denied(.unavailable)
@@ -295,14 +303,14 @@ final class FlintOpenCreditTests: XCTestCase {
         targets = ["rotated"]
         XCTAssertEqual(service().accept(target: "rotated", operationID: "rotate"), .failure(.denied(.identityNeedsReselection)))
         let stored = try state()
-        XCTAssertEqual(stored.openCredits.counters["app"]?.used, 1)
+        XCTAssertEqual(stored.openCredits.counters[openAppKey]?.used, 1)
         XCTAssertNil(stored.openCredits.counters["rotated"])
         XCTAssertTrue(stored.openCredits.pendingTargets.contains("rotated"))
     }
 
     func testNonpositiveCapDoesNotChargeOrRegister() throws {
         for cap in [0, -2] { caps = ["open-a": cap]; denied(.exhausted) }
-        XCTAssertEqual(try state().openCredits.counters["app"]?.used, 0)
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 0)
         XCTAssertTrue(registrations.isEmpty)
     }
 
@@ -318,7 +326,7 @@ final class FlintOpenCreditTests: XCTestCase {
         let file = directory.appendingPathComponent("ledger.json")
         let saved = directory.appendingPathComponent("before.json")
         let failing = FlintOpenCreditService(ledger: ledger(), clock: clock,
-            context: { .init(coveringCaps: self.caps, targetKeys: self.targets) },
+            context: { .init(coveringCaps: self.caps, targetKeys: self.targets, restoration: self.restoration) },
             register: { grant, remaining in
                 self.registrations[grant.activityName] = remaining
                 try FileManager.default.moveItem(at: file, to: saved)
@@ -329,14 +337,14 @@ final class FlintOpenCreditTests: XCTestCase {
         XCTAssertTrue(registrations.isEmpty)
         try FileManager.default.removeItem(at: file)
         try FileManager.default.moveItem(at: saved, to: file)
-        XCTAssertEqual(try state().openCredits.counters["app"]?.used, 0)
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 0)
         XCTAssertTrue(try state().openCredits.grants.isEmpty)
     }
 
     func testCommittedGrantRecoversAfterDeathBeforeNativeReleaseWithoutSecondCharge() throws {
         let result = ledger().transaction { state in
-            state.acceptOpenCredit(target: "app", operationID: "crash", coveringCaps: self.caps,
-                targetKeys: self.targets, at: self.instant, blocking: { nil }, register: { grant in
+            state.acceptOpenCredit(target: openAppKey, operationID: "crash", coveringCaps: self.caps,
+                targetKeys: self.targets, restoration: self.restoration, at: self.instant, blocking: { nil }, register: { grant in
                     self.registrations[grant.activityName] = grant.duration
                 }, reshield: { _ in })
         }
@@ -347,13 +355,13 @@ final class FlintOpenCreditTests: XCTestCase {
         XCTAssertTrue(retry.replayed)
         XCTAssertEqual(retry.grant, first.grant)
         XCTAssertEqual(retry.grant.remaining(at: instant), 250)
-        XCTAssertEqual(try state().openCredits.counters["app"]?.used, 1)
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
     }
 
     func testPC75RegistrationFailureSpendsNothingAndNeverReleases() throws {
         refuses = true
         denied(.registrationFailed)
-        XCTAssertEqual(try state().openCredits.counters["app"]?.used, 0)
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 0)
         XCTAssertTrue(try state().openCredits.grants.isEmpty)
         XCTAssertTrue(released.isEmpty)
     }
@@ -367,28 +375,71 @@ final class FlintOpenCreditTests: XCTestCase {
         advance(800)
         _ = service().reconcile(activity: first.grant.activityName, callback: .end)
         _ = service().reconcile(activity: first.grant.activityName, callback: .warning)
-        XCTAssertEqual(shielded, ["app"])
+        XCTAssertEqual(shielded, [openAppKey])
         XCTAssertEqual(try state().operation(first.grant.operationID + ".expiry")?.result, "missed_warning_recovered")
-        XCTAssertEqual(try state().openCredits.counters["app"]?.used, 1)
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
     }
 
     func testMissingCarrierRepairFailureClosesWithoutRefund() throws {
         _ = try accepted()
         registrations = [:]; refuses = true
         _ = service().reconcile()
-        XCTAssertEqual(shielded, ["app"])
+        XCTAssertEqual(shielded, [openAppKey])
         XCTAssertTrue(try state().openCredits.grants.isEmpty)
-        XCTAssertEqual(try state().openCredits.counters["app"]?.used, 1)
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
+    }
+
+    func testCorruptRuleJSONMidGrantRestoresOnlyFrozenTargetAndCoveredStores() throws {
+        let suite = "flint.tests.open-restoration.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let rule = FlintOpenLimitRule(id: "open-a", name: "Test", opensAllowed: 1)
+        FlintOpenLimitRule.saveAll([rule], to: defaults)
+        var stores: [String: Set<String>] = [rule.storeName: [openAppKey, "sibling"], "unrelated": ["foreign"]]
+        let adapter = FlintOpenCreditService(ledger: ledger(), clock: clock, context: {
+            guard let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: defaults) else { return nil }
+            let caps = Dictionary(uniqueKeysWithValues: rules.filter(\.enabled).map { ($0.id, $0.opensAllowed) })
+            return .init(coveringCaps: caps, targetKeys: [openAppKey], restoration: self.restoration)
+        }, register: { grant, remaining in self.registrations[grant.activityName] = remaining },
+        registered: { self.registrations[$0] != nil }, release: { grant in
+            for name in grant.restoration.storeNames { stores[name]?.remove(grant.targetKey) }
+        }, reshield: { grant in
+            XCTAssertNil(FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: defaults))
+            XCTAssertTrue(grant.restoration.restore(as: String.self, target: grant.targetKey,
+                coveredCauses: grant.coveredCauses) { name, token in
+                    XCTAssertEqual(token, "app")
+                    stores[name, default: []].insert(grant.targetKey)
+                })
+        }, stop: { self.registrations[$0] = nil })
+        let first = try accepted(using: adapter)
+        XCTAssertEqual(stores[rule.storeName], ["sibling"])
+        defaults.set(Data("broken rules JSON".utf8), forKey: FlintRuleStoreKey.openLimits.rawValue)
+        advance(300)
+        XCTAssertTrue(adapter.reconcile(activity: first.grant.activityName, callback: .warning))
+        XCTAssertEqual(stores[rule.storeName], [openAppKey, "sibling"])
+        XCTAssertEqual(stores["unrelated"], ["foreign"])
+        XCTAssertTrue(try state().openCredits.grants.isEmpty, "prunes the opaque restoration payload with its grant")
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
+    }
+
+    func testRestorationRejectsExtraTokensOrUnownedStores() throws {
+        let two = FlintOpenCreditRestoration(kind: .application, encodedToken: Data(#"["app","other"]"#.utf8),
+                                            storeNames: ["flintO.open-a"])
+        XCTAssertFalse(two.restore(as: String.self, target: two.targetKey, coveredCauses: ["open-a"]) { _, _ in XCTFail() })
+        let wrongStore = FlintOpenCreditRestoration(kind: .application, encodedToken: openAppPayload, storeNames: ["flint"])
+        XCTAssertFalse(wrongStore.restore(as: String.self, target: openAppKey, coveredCauses: ["open-a"]) { _, _ in XCTFail() })
+        XCTAssertTrue(restoration.restore(as: String.self, target: openAppKey, coveredCauses: ["open-a"],
+                                          currentTargets: [:]) { _, _ in XCTFail("valid disabled/deleted rules stay clear") })
     }
 
     func testPC54PC55WallJumpsDoNotRefreshOrExtendCredits() throws {
         let first = try accepted()
         advance(100); now = now.addingTimeInterval(3 * 86_400)
         _ = service().reconcile()
-        XCTAssertEqual(service().preview(target: "app").grant?.remaining(at: instant), 200)
+        XCTAssertEqual(service().preview(target: openAppKey).grant?.remaining(at: instant), 200)
         now = now.addingTimeInterval(-6 * 86_400)
         _ = service().reconcile()
-        XCTAssertEqual(try state().openCredits.counters["app"]?.used, 1)
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
         XCTAssertEqual(first.grant.remaining(at: instant), 200)
         XCTAssertEqual(try state().openCredits.resetRemaining, 12 * 3600 - 100)
     }
@@ -399,8 +450,8 @@ final class FlintOpenCreditTests: XCTestCase {
         let reset = try state().openCredits.resetRemaining
         boot = "boot-b"; monotonic = 10; now = now.addingTimeInterval(5 * 86_400)
         _ = service().reconcile()
-        XCTAssertEqual(shielded, ["app"])
-        XCTAssertEqual(try state().openCredits.counters["app"]?.used, 1)
+        XCTAssertEqual(shielded, [openAppKey])
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
         XCTAssertEqual(try state().openCredits.resetRemaining, reset)
     }
 
@@ -408,7 +459,7 @@ final class FlintOpenCreditTests: XCTestCase {
         var zone = calendar; zone.timeZone = TimeZone(identifier: "America/New_York")!
         now = ISO8601DateFormatter().date(from: "2026-11-01T04:00:00Z")! // fall-back midnight
         var stored = FlintLedgerState(initializedAt: now)
-        stored.importLegacyOpenCredits(.absent, targetKeys: ["app"], established: false, at: instant, calendar: zone)
+        stored.importLegacyOpenCredits(.absent, targetKeys: [openAppKey], established: false, at: instant, calendar: zone)
         XCTAssertEqual(stored.openCredits.resetRemaining, 25 * 3600)
         XCTAssertEqual(stored.openCredits.quotaZone, "America/New_York")
     }
@@ -427,15 +478,15 @@ final class FlintOpenCreditTests: XCTestCase {
     }
 
     func testPreviewNeverSpendsRegistersOrReleases() throws {
-        XCTAssertEqual(service().preview(target: "app").blockedBy, .unavailable)
+        XCTAssertEqual(service().preview(target: openAppKey).blockedBy, .unavailable)
         let file = directory.appendingPathComponent("ledger.json")
         XCTAssertFalse(FileManager.default.fileExists(atPath: file.path), "pure preview cannot initialize or migrate")
         _ = try state()
         let original = try Data(contentsOf: file)
-        XCTAssertEqual(service().preview(target: "app").remaining, 3)
-        XCTAssertEqual(service().preview(target: "app").cap, 3)
+        XCTAssertEqual(service().preview(target: openAppKey).remaining, 3)
+        XCTAssertEqual(service().preview(target: openAppKey).cap, 3)
         XCTAssertTrue(registrations.isEmpty); XCTAssertTrue(released.isEmpty)
-        XCTAssertEqual(try state().openCredits.counters["app"]?.used, 0)
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 0)
         XCTAssertEqual(try Data(contentsOf: file), original)
     }
 }

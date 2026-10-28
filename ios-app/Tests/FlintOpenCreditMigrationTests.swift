@@ -108,12 +108,17 @@ final class FlintOpenCreditMigrationTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("flint-import-crash-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
         let bytes = try legacy(["app": 2])
+        let suite = "flint.tests.open-migration.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(bytes, forKey: FlintLedgerState.legacyOpenCreditKey)
         let clock = FlintClock(now: { self.now }, monotonic: { 1000 }, bootSessionID: { "fixture-boot" }, calendar: { self.calendar })
         var marker: Date?
         func handle() -> FlintProtectionLedger {
             FlintProtectionLedger(directory: directory, clock: clock, initializedMarker: { marker },
                 setInitializedMarker: { marker = $0 }, migrate: { state, at in
-                    state.importLegacyOpenCredits(.value(bytes), targetKeys: ["app"], established: true,
+                    let raw = defaults.object(forKey: FlintLedgerState.legacyOpenCreditKey).map(FlintLegacyValue.value) ?? .absent
+                    state.importLegacyOpenCredits(raw, targetKeys: ["app"], established: true,
                                                   at: at, calendar: self.calendar)
                 })
         }
@@ -129,6 +134,6 @@ final class FlintOpenCreditMigrationTests: XCTestCase {
         XCTAssertEqual(try handle().read().get().openCredits.counters["app"]?.used, 2)
         _ = handle().transaction { $0.openCredits.counters["app"]?.used = 3 }
         XCTAssertEqual(try handle().read().get().openCredits.counters["app"]?.used, 3)
-        XCTAssertEqual(try legacy(["app": 2]), bytes, "legacy source bytes remain unchanged")
+        XCTAssertEqual(defaults.data(forKey: FlintLedgerState.legacyOpenCreditKey), bytes, "legacy source bytes remain unchanged")
     }
 }

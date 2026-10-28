@@ -63,6 +63,8 @@ public struct FlintOpenCreditGrant: Codable, Equatable, Sendable {
     public let deadline: Date
     public let duration: TimeInterval
     public let coveredCauses: Set<String>
+    /// Exact local token/store snapshot, pruned with the grant. Never exported to status.
+    public let restoration: FlintOpenCreditRestoration
     public var activityName: String {
         let digest = SHA256.hash(data: Data((targetKey + "#" + operationID).utf8))
         return "flint.open." + digest.prefix(8).map { String(format: "%02x", $0) }.joined()
@@ -71,11 +73,54 @@ public struct FlintOpenCreditGrant: Codable, Equatable, Sendable {
         !targetKey.isEmpty && !operationID.isEmpty && !coveredCauses.isEmpty && coveredCauses.count <= 64 &&
         duration.isFinite && duration > 0 && duration <= 300 && grantedAt.monotonic.isFinite &&
         grantedAt.monotonic >= 0 && deadline.timeIntervalSince1970.isFinite &&
-        abs(deadline.timeIntervalSince(grantedAt.wall) - duration) < 0.001
+        abs(deadline.timeIntervalSince(grantedAt.wall) - duration) < 0.001 &&
+        restoration.isValid(target: targetKey, coveredCauses: coveredCauses)
     }
     public func remaining(at now: FlintLedgerInstant) -> TimeInterval {
         guard isValid, let elapsed = grantedAt.elapsedForRelease(until: now), elapsed.isFinite else { return 0 }
         return max(0, duration - elapsed)
+    }
+}
+
+/// Only one opaque token, already persisted in the App Group by the owning rules. This is
+/// needed when rule JSON becomes unreadable before the monitor closes the bounded release.
+public struct FlintOpenCreditRestoration: Codable, Equatable, Sendable {
+    public enum Kind: String, Codable, Sendable { case application, webDomain }
+    public let kind: Kind
+    /// Canonical single-element token array, exactly the bytes used by FlintOpenLimit.key.
+    public let encodedToken: Data
+    public let storeNames: Set<String>
+    public init(kind: Kind, encodedToken: Data, storeNames: Set<String>) {
+        self.kind = kind; self.encodedToken = encodedToken; self.storeNames = storeNames
+    }
+    public var targetKey: String {
+        SHA256.hash(data: encodedToken).map { String(format: "%02x", $0) }.joined()
+    }
+    func isValid(target: String, coveredCauses: Set<String>) -> Bool {
+        guard !encodedToken.isEmpty, encodedToken.count <= 65_536, targetKey == target,
+              storeNames == Set(coveredCauses.map { "flintO." + $0 }),
+              let array = (try? JSONSerialization.jsonObject(with: encodedToken)) as? [Any] else { return false }
+        return array.count == 1
+    }
+    static func make<T: Encodable>(kind: Kind, token: T, storeNames: Set<String>) -> Self? {
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        guard let bytes = try? encoder.encode([token]) else { return nil }
+        return .init(kind: kind, encodedToken: bytes, storeNames: storeNames)
+    }
+    /// The live adapter and fake stores share exact payload/scope validation.
+    @discardableResult
+    func restore<T: Decodable>(as type: T.Type, target: String, coveredCauses: Set<String>,
+                               currentTargets: [String: Set<String>]? = nil,
+                               apply: (String, T) -> Void) -> Bool {
+        guard isValid(target: target, coveredCauses: coveredCauses),
+              let tokens = try? JSONDecoder().decode([T].self, from: encodedToken),
+              tokens.count == 1, let token = tokens.first else { return false }
+        // Readable deleted/disabled rules stay clear. An unreadable rule set uses exactly
+        // the frozen covered stores; a readable set may include a new independent Open owner.
+        let names = currentTargets.map { Set($0.filter { $0.value.contains(target) }.keys) } ?? storeNames
+        guard names.allSatisfy({ $0.hasPrefix("flintO.") }) else { return false }
+        for name in names { apply(name, token) }
+        return true
     }
 }
 
@@ -246,6 +291,7 @@ extension FlintLedgerState {
     /// nothing and never releases. Callers release only after this transaction is durable.
     public mutating func acceptOpenCredit(
         target: String, operationID: String, coveringCaps: [String: Int], targetKeys: Set<String>,
+        restoration: FlintOpenCreditRestoration,
         at now: FlintLedgerInstant, blocking: () -> FlintOpenCreditBlock?,
         register: (FlintOpenCreditGrant) throws -> Void, reshield: (FlintOpenCreditGrant) -> Void
     ) -> Result<FlintOpenCreditReceipt, FlintOpenCreditRefusal> {
@@ -270,9 +316,12 @@ extension FlintLedgerState {
             return .failure(.denied(.unavailable))
         }
         let duration = min(300, openCredits.resetRemaining)
-        guard duration > 0 else { return .failure(.denied(.unavailable)) }
+        guard duration > 0, restoration.isValid(target: target, coveredCauses: Set(coveringCaps.keys)) else {
+            return .failure(.denied(.unavailable))
+        }
         let grant = FlintOpenCreditGrant(targetKey: target, operationID: operationID, grantedAt: now,
-            deadline: now.wall.addingTimeInterval(duration), duration: duration, coveredCauses: Set(coveringCaps.keys))
+            deadline: now.wall.addingTimeInterval(duration), duration: duration, coveredCauses: Set(coveringCaps.keys),
+            restoration: restoration)
         do { try register(grant) } catch { return .failure(.denied(.registrationFailed)) }
         openCredits.counters[target]!.used += 1
         openCredits.grants[target] = grant

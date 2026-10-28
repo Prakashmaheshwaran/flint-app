@@ -6,6 +6,10 @@ import DeviceActivity
 
 /// Shared host/shield/monitor adapter for bounded, explicit Open credits.
 public enum FlintOpenCredit {
+    /// Release gate: lane H enables this only alongside the explicit timed-credit shield copy.
+    /// Core explicit-acceptance APIs remain available for that integration and its tests.
+    public static let shieldAcceptanceEnabled = false
+
     public static func preview(for token: ApplicationToken) -> FlintOpenCreditPreview {
         preview(target: FlintOpenLimit.key(for: token), blockedBy: { blocking(application: token) })
     }
@@ -14,11 +18,13 @@ public enum FlintOpenCredit {
     }
     public static func accept(for token: ApplicationToken, operationID: String = UUID().uuidString)
         -> Result<FlintOpenCreditReceipt, FlintOpenCreditRefusal> {
-        accept(target: FlintOpenLimit.key(for: token), operationID: operationID, blockedBy: { blocking(application: token) })
+        accept(target: FlintOpenLimit.key(for: token), operationID: operationID, blockedBy: { blocking(application: token) },
+               restoration: { .make(kind: .application, token: token, storeNames: $0) })
     }
     public static func accept(for token: WebDomainToken, operationID: String = UUID().uuidString)
         -> Result<FlintOpenCreditReceipt, FlintOpenCreditRefusal> {
-        accept(target: FlintOpenLimit.key(for: token), operationID: operationID, blockedBy: { blocking(webDomain: token) })
+        accept(target: FlintOpenLimit.key(for: token), operationID: operationID, blockedBy: { blocking(webDomain: token) },
+               restoration: { .make(kind: .webDomain, token: token, storeNames: $0) })
     }
 
     public static func isCarrier(_ name: String) -> Bool {
@@ -57,7 +63,7 @@ public enum FlintOpenCredit {
         let result = ledger.transaction { state -> Void in
             let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup)
             let valid = state.reconcileOpenCredits(at: FlintLedgerInstant(clock: .system),
-                targetKeys: rules.map(targetKeys) ?? [], reshield: reshield)
+                targetKeys: rules.map(targetKeys) ?? state.openCredits.knownTargets, reshield: reshield)
             apply(rule, grants: valid ? state.openCredits.grants : [:])
         }
         if case .failure = result { apply(rule, grants: [:]) }
@@ -67,13 +73,15 @@ public enum FlintOpenCredit {
         service(target: target, blockedBy: blockedBy)?.preview(target: target) ??
             .init(remaining: nil, cap: nil, blockedBy: .unavailable)
     }
-    private static func accept(target: String, operationID: String, blockedBy: @escaping () -> FlintOpenCreditBlocking)
+    private static func accept(target: String, operationID: String, blockedBy: @escaping () -> FlintOpenCreditBlocking,
+                               restoration: @escaping (Set<String>) -> FlintOpenCreditRestoration?)
         -> Result<FlintOpenCreditReceipt, FlintOpenCreditRefusal> {
-        guard let service = service(target: target, blockedBy: blockedBy) else { return .failure(.denied(.unavailable)) }
+        guard let service = service(target: target, blockedBy: blockedBy, restoration: restoration) else { return .failure(.denied(.unavailable)) }
         return service.accept(target: target, operationID: operationID)
     }
 
-    private static func service(target: String?, blockedBy: @escaping () -> FlintOpenCreditBlocking) -> FlintOpenCreditService? {
+    private static func service(target: String?, blockedBy: @escaping () -> FlintOpenCreditBlocking,
+                                restoration: @escaping (Set<String>) -> FlintOpenCreditRestoration? = { _ in nil }) -> FlintOpenCreditService? {
         guard let ledger = FlintProtectionLedger.appGroup() else { return nil }
         let center = DeviceActivityCenter()
         return FlintOpenCreditService(ledger: ledger, clock: .system, context: {
@@ -84,7 +92,8 @@ public enum FlintOpenCredit {
             return .init(coveringCaps: Dictionary(uniqueKeysWithValues: covering.map { ($0.id, $0.opensAllowed) }),
                          targetKeys: targetKeys(rules), blockedBy:
                             target == "flint.openLimit.unencodable" ? .identityNeedsReselection : blocked.reason,
-                         blockingContributors: blocked.contributors)
+                         blockingContributors: blocked.contributors,
+                         restoration: restoration(Set(covering.map(\.storeName))))
         }, register: { grant, remaining in
             guard remaining > 0 else { throw FlintOpenCreditRefusal.denied(.unavailable) }
             let plan = FlintOpenCreditCarrierPlan(start: Date(), remaining: remaining)
@@ -107,8 +116,10 @@ public enum FlintOpenCredit {
         Set(rule.selection.applicationTokens.map { FlintOpenLimit.key(for: $0) })
             .union(rule.selection.webDomainTokens.map { FlintOpenLimit.key(for: $0) })
     }
-    private static func release(_ grant: FlintOpenCreditGrant) {
-        guard let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup) else { return }
+    private static func release(_ grant: FlintOpenCreditGrant) throws {
+        guard let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup) else {
+            throw FlintOpenCreditRefusal.denied(.applying)
+        }
         for rule in rules where rule.enabled && grant.coveredCauses.contains(rule.id) {
             let store = ManagedSettingsStore(named: .init(rule.storeName))
             var apps = store.shield.applications ?? []
@@ -120,21 +131,37 @@ public enum FlintOpenCredit {
         }
     }
     private static func reshield(_ grant: FlintOpenCreditGrant) {
-        guard let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup) else { return }
-        for rule in rules where rule.enabled {
-            let store = ManagedSettingsStore(named: .init(rule.storeName))
-            let apps = rule.selection.applicationTokens.filter { FlintOpenLimit.key(for: $0) == grant.targetKey }
-            let domains = rule.selection.webDomainTokens.filter { FlintOpenLimit.key(for: $0) == grant.targetKey }
-            if !apps.isEmpty { store.shield.applications = (store.shield.applications ?? []).union(apps) }
-            if !domains.isEmpty { store.shield.webDomains = (store.shield.webDomains ?? []).union(domains) }
+        guard grant.isValid else { return }
+        let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup)
+        var currentTargets: [String: Set<String>]?
+        if let rules, Set(rules.map(\.id)).count == rules.count {
+            currentTargets = Dictionary(uniqueKeysWithValues: rules.filter(\.enabled).map { ($0.storeName, keys(for: $0)) })
+        }
+        // Only one frozen token is restored. Valid deleted/disabled rules stay clear, while
+        // unreadable rules fall back to the exact covered stores committed with this grant.
+        let snapshot = grant.restoration
+        switch snapshot.kind {
+        case .application:
+            snapshot.restore(as: ApplicationToken.self, target: grant.targetKey, coveredCauses: grant.coveredCauses,
+                             currentTargets: currentTargets) { name, token in
+                let store = ManagedSettingsStore(named: .init(name))
+                store.shield.applications = (store.shield.applications ?? []).union([token])
+            }
+        case .webDomain:
+            snapshot.restore(as: WebDomainToken.self, target: grant.targetKey, coveredCauses: grant.coveredCauses,
+                             currentTargets: currentTargets) { name, token in
+                let store = ManagedSettingsStore(named: .init(name))
+                store.shield.webDomains = (store.shield.webDomains ?? []).union([token])
+            }
         }
     }
     private static func apply(_ rule: FlintOpenLimitRule, grants: [String: FlintOpenCreditGrant]) {
         let store = ManagedSettingsStore(named: .init(rule.storeName))
         let now = FlintLedgerInstant(clock: .system)
+        let center = DeviceActivityCenter()
         func covered(_ key: String) -> Bool {
             guard let grant = grants[key], grant.coveredCauses.contains(rule.id), grant.remaining(at: now) > 0,
-                  DeviceActivityCenter().schedule(for: DeviceActivityName(grant.activityName)) != nil else { return false }
+                  center.schedule(for: DeviceActivityName(grant.activityName)) != nil else { return false }
             return true
         }
         let apps = rule.selection.applicationTokens.filter { !covered(FlintOpenLimit.key(for: $0)) }

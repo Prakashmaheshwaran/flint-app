@@ -11,7 +11,7 @@ final class FlintShieldAction: ShieldActionDelegate {
     ) {
         switch action {
         case .primaryButtonPressed:
-            _ = FlintOpenCredit.accept(for: application)
+            if FlintOpenCredit.shieldAcceptanceEnabled { _ = FlintOpenCredit.accept(for: application) }
             completionHandler(.close)
         case .secondaryButtonPressed:
             completionHandler(.close)
@@ -26,7 +26,7 @@ final class FlintShieldAction: ShieldActionDelegate {
     ) {
         switch action {
         case .primaryButtonPressed:
-            _ = FlintOpenCredit.accept(for: webDomain)
+            if FlintOpenCredit.shieldAcceptanceEnabled { _ = FlintOpenCredit.accept(for: webDomain) }
             completionHandler(.close)
         case .secondaryButtonPressed:
             completionHandler(.close)
