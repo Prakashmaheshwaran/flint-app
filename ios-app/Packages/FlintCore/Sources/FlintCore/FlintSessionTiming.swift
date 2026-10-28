@@ -87,14 +87,19 @@ public struct FlintSessionAutoClearPlan: Equatable, Sendable {
         )
     }
 
-    /// Whether a session's registered components still land on its `endsAt` in `calendar`.
-    /// Legacy sessions (no recorded zone) are assumed to — there is nothing to compare.
+    /// Whether a session's registered components still land on its `endsAt` in `calendar`. Only
+    /// the UTC offset at `endsAt` matters (a renamed zone identifier with the same offset lands
+    /// on the same instant). Legacy sessions (no recorded offset) are assumed to.
     public static func isCurrent(for session: FlintActiveSession, in calendar: Calendar) -> Bool {
-        guard let endsAt = session.endsAt,
-              let zoneID = session.autoClearTimeZoneID,
-              let offset = session.autoClearUTCOffset else { return true }
-        let zone = calendar.timeZone
-        return zone.identifier == zoneID && zone.secondsFromGMT(for: endsAt) == offset
+        guard let endsAt = session.endsAt, let offset = session.autoClearUTCOffset else { return true }
+        return calendar.timeZone.secondsFromGMT(for: endsAt) == offset
+    }
+
+    /// Whole seconds, rounded up: DeviceActivity takes hour/minute/second components, so a
+    /// session's start and end are kept on whole seconds and the registered end lands exactly
+    /// on `endsAt` instead of up to a second before it.
+    public static func wholeSecond(atOrAfter date: Date) -> Date {
+        Date(timeIntervalSinceReferenceDate: date.timeIntervalSinceReferenceDate.rounded(.up))
     }
 }
 
@@ -153,6 +158,9 @@ public struct FlintClock {
 public enum FlintTimeIntegrity {
     /// Skew below this is noise: DeviceActivity truncates to whole seconds and callbacks lag.
     public static let tolerance: TimeInterval = 120
+    /// How early an end callback may arrive and still count as the planned end — DeviceActivity
+    /// resolves whole-second components. Anything earlier is premature and never ends a session.
+    public static let endSlack: TimeInterval = 1
 
     public enum Verdict: Equatable, Sendable {
         case consistent
@@ -181,13 +189,20 @@ public enum FlintTimeIntegrity {
         currentBootSessionID: String?
     ) -> Verdict {
         guard let monotonicStart else { return .unverifiable }
-        if let bootSessionID, let currentBootSessionID, bootSessionID != currentBootSessionID {
-            return .unverifiable
+        let sameBootKnown: Bool
+        if let bootSessionID, let currentBootSessionID {
+            guard bootSessionID == currentBootSessionID else { return .unverifiable }
+            sameBootKnown = true
+        } else {
+            sameBootKnown = false
         }
-        // Without a boot identifier, a monotonic reading below the anchor proves a reboot.
+        // A monotonic reading below the anchor proves a reboot.
         guard monotonicNow >= monotonicStart else { return .unverifiable }
         let skew = now.timeIntervalSince(wallStart) - (monotonicNow - monotonicStart)
-        if skew > tolerance { return .wallAhead(seconds: skew) }
+        // An undetected reboot makes monotonic time *under*-count, which looks exactly like a
+        // forward clock change — so "ahead" is only trusted when the boot is known to match.
+        // A reboot can never make the wall clock look behind.
+        if skew > tolerance { return sameBootKnown ? .wallAhead(seconds: skew) : .unverifiable }
         if skew < -tolerance { return .wallBehind(seconds: -skew) }
         return .consistent
     }
@@ -226,10 +241,14 @@ public struct FlintSessionHealth: Codable, Equatable, Sendable {
 
     public var lastArmFailure: ArmFailure?
     public var lastTimeAnomaly: TimeAnomaly?
+    /// Set while a session is recorded as running but Screen Time authorization is not approved,
+    /// i.e. iOS is enforcing nothing for it. Cleared once authorization is back or it ends.
+    public var unauthorizedSince: Date?
 
-    public init(lastArmFailure: ArmFailure? = nil, lastTimeAnomaly: TimeAnomaly? = nil) {
+    public init(lastArmFailure: ArmFailure? = nil, lastTimeAnomaly: TimeAnomaly? = nil, unauthorizedSince: Date? = nil) {
         self.lastArmFailure = lastArmFailure
         self.lastTimeAnomaly = lastTimeAnomaly
+        self.unauthorizedSince = unauthorizedSince
     }
 
     private static let storageKey = "flint.sessionHealth"

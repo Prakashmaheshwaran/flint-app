@@ -42,8 +42,8 @@ struct FocusFilterController {
             )
             return true
         } catch {
-            // The Focus turns on regardless; the failure is not silent — arming failures are
-            // recorded in FlintSessionHealth by the controller and shown in Settings.
+            // The Focus turns on regardless. A refused registration is still recorded by the
+            // controller in FlintSessionHealth for Settings to show.
             return false
         }
     }

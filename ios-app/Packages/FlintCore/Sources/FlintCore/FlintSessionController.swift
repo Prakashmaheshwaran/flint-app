@@ -137,8 +137,10 @@ public struct FlintSessionReconcileReport: Equatable, Sendable {
     public var outcome: Outcome
     /// The auto-clear was re-registered (time-zone change or iOS no longer held it).
     public var rearmed = false
-    /// Re-registration was needed but iOS refused it.
+    /// Re-registration was needed but iOS refused it (or the re-registration limit was hit).
     public var rearmFailed = false
+    /// A session is recorded as running but Screen Time authorization is not approved.
+    public var notAuthorized = false
     public var timeVerdict: FlintTimeIntegrity.Verdict = .unverifiable
 }
 
@@ -150,13 +152,20 @@ public struct FlintSessionReconcileReport: Equatable, Sendable {
 ///
 /// Ordering is the safety property: the auto-clear is registered **before** anything changes,
 /// so if iOS refuses it (or Screen Time isn't authorized) no shield is applied and no session
-/// is persisted — the UI can never show a block that has no out-of-app end. Each registration
-/// gets a unique activity name, and the previous session's registration is stopped once the new
-/// one is in place, so a late callback for a replaced session can't end the new one.
+/// is persisted — the UI can never show a block that has no out-of-app end. The new session is
+/// then persisted before the previous registration is stopped and before the shield is written,
+/// so the monitor extension (another process) always finds a record matching whatever shield
+/// and registration exist. Each registration gets a unique activity name, so a late callback
+/// for a replaced session can't end the new one.
 public final class FlintSessionController {
 
     /// Prefix of every session activity name; also the exact name older builds registered.
     public static let monitorName = "flint.session"
+
+    /// Re-registrations allowed per session after its start (time-zone changes, an end iOS
+    /// delivered early, a registration iOS dropped). Each one briefly holds an extra slot in the
+    /// shared DeviceActivity pool, so a device that keeps misfiring can't drain it.
+    public static let maximumRearms = 3
 
     /// Serializes start/stop/reconcile within a process: the UI, App Intents and the Focus
     /// filter can all reach the session at once. (The monitor extension is a separate process;
@@ -220,8 +229,8 @@ public final class FlintSessionController {
             }
         }
 
-        let now = env.clock.now()
-        let endsAt = duration > 0 ? now.addingTimeInterval(duration) : nil
+        let now = FlintSessionAutoClearPlan.wholeSecond(atOrAfter: env.clock.now())
+        let endsAt = duration > 0 ? now.addingTimeInterval(duration.rounded(.up)) : nil
         let monitorName = Self.makeMonitorName()
         let plan = endsAt.map {
             FlintSessionAutoClearPlan.make(start: now, end: $0, calendar: env.clock.calendar(),
@@ -255,19 +264,29 @@ public final class FlintSessionController {
             }
         }
 
-        // 2. The previous session's end can no longer fire against this one.
+        // 2. Persist before anything else changes, so the monitor always finds the record that
+        //    matches the registration and shield it can see.
+        store.saveSelection(selection)
+        store.saveActiveSession(session)
+
+        // 3. The previous session's end can no longer fire against this one.
         if let previous, previous.monitorName != monitorName {
             env.registrar.stopMonitoring([previous.monitorName])
         }
 
-        // 3. Shield immediately so the block takes effect now, not at the monitor's callback.
+        // 4. Shield immediately so the block takes effect now, not at the monitor's callback.
         do {
             try env.shield.applyBlockList(selection)
         } catch {
             // Unreachable after the count checks above, but never leave a half-started session:
-            // drop the new registration and give the previous session its end back.
+            // drop the new registration and give the previous session back its record and end.
             if plan != nil { env.registrar.stopMonitoring([monitorName]) }
-            if let previous, !previous.isExpired(at: now) { rearm(previous, in: store, now: now) }
+            if let previous {
+                store.saveActiveSession(previous)
+                if !previous.isExpired(at: now) { rearm(previous, in: store, now: now) }
+            } else {
+                store.clearActiveSession()
+            }
             throw error
         }
 
@@ -277,11 +296,10 @@ public final class FlintSessionController {
         // Hardcore session can't leave the guard dangling.
         env.shield.setDenyAppRemoval(breakLevel == .hardcore)
 
-        store.saveSelection(selection)
-        store.saveActiveSession(session)
         FlintSessionHealth.update(in: env.healthDefaults()) {
             $0.lastArmFailure = nil
             $0.lastTimeAnomaly = nil
+            $0.unauthorizedSince = nil
         }
         FlintSessionLifecycle.didStart(session, replacing: previous, source: source, at: now)
         return session
@@ -335,12 +353,14 @@ public final class FlintSessionController {
         store?.clearActiveSession()
     }
 
-    // MARK: Reconcile (launch, foreground, clock or time-zone change)
+    // MARK: Reconcile (launch; foreground and clock/time-zone changes once B3 wires them)
 
-    /// Bring the session's out-of-app state back in line with its record: finish an expired
-    /// session; for a running one, re-register its auto-clear when iOS no longer holds it or
-    /// the time zone moved its wall-clock end, record any wall-clock skew, and make the
-    /// uninstall guard match the session. Never extends or shortens `endsAt`.
+    /// Bring the session's out-of-app state back in line with its record: record any wall-clock
+    /// skew first (a forward jump that ages the session out must not look like a clean
+    /// completion), finish an expired session; for a running one, re-apply its shield and
+    /// uninstall guard (idempotent — repairs a crash between record and shield), re-register its
+    /// auto-clear when iOS no longer holds it or the time zone moved its wall-clock end, and flag
+    /// it when Screen Time authorization is missing. Never extends or shortens `endsAt`.
     @discardableResult
     public func reconcile() -> FlintSessionReconcileReport {
         Self.lock.lock(); defer { Self.lock.unlock() }
@@ -348,16 +368,32 @@ public final class FlintSessionController {
         let now = env.clock.now()
         guard let session = store?.loadActiveSession() else {
             env.shield.setDenyAppRemoval(false)
+            FlintSessionHealth.update(in: env.healthDefaults()) { $0.unauthorizedSince = nil }
             return FlintSessionReconcileReport(outcome: .noSession)
         }
+
+        let verdict = FlintTimeIntegrity.verdict(for: session, clock: env.clock)
+        recordTimeVerdict(verdict, for: session, at: now)
+
         if session.isExpired(at: now) {
             end(session, route: .completed, at: now, in: store)
-            return FlintSessionReconcileReport(outcome: .finishedExpired)
+            FlintSessionHealth.update(in: env.healthDefaults()) { $0.unauthorizedSince = nil }
+            var report = FlintSessionReconcileReport(outcome: .finishedExpired)
+            report.timeVerdict = verdict
+            return report
         }
 
         var report = FlintSessionReconcileReport(outcome: .running)
-        report.timeVerdict = FlintTimeIntegrity.verdict(for: session, clock: env.clock)
-        recordTimeVerdict(report.timeVerdict, for: session, at: now)
+        report.timeVerdict = verdict
+
+        // Not destructive: the status can read stale right after launch, and ending a Hardcore
+        // session on a misread would be a bypass. Surface it instead.
+        report.notAuthorized = !env.isAuthorized()
+        FlintSessionHealth.update(in: env.healthDefaults()) {
+            $0.unauthorizedSince = report.notAuthorized ? ($0.unauthorizedSince ?? now) : nil
+        }
+
+        if let selection = store?.loadSelection() { try? env.shield.applyBlockList(selection) }
 
         if let store, session.endsAt != nil {
             let zoneMoved = !FlintSessionAutoClearPlan.isCurrent(for: session, in: env.clock.calendar())
@@ -383,7 +419,15 @@ public final class FlintSessionController {
     @discardableResult
     private func rearm(_ session: FlintActiveSession, in store: FlintSessionStateStoring, now: Date) -> Bool {
         guard let endsAt = session.endsAt, endsAt > now else { return false }
-        let plan = FlintSessionAutoClearPlan.make(start: now, end: endsAt, calendar: env.clock.calendar(),
+        guard (session.rearmCount ?? 0) < Self.maximumRearms else {
+            FlintSessionHealth.update(in: env.healthDefaults()) {
+                $0.lastArmFailure = .init(sessionName: session.name,
+                                          reason: "re-registration limit reached", at: now)
+            }
+            return false
+        }
+        let start = FlintSessionAutoClearPlan.wholeSecond(atOrAfter: now)
+        let plan = FlintSessionAutoClearPlan.make(start: start, end: max(endsAt, start), calendar: env.clock.calendar(),
                                                   strategy: .endWarning)
         let name = Self.makeMonitorName()
         do {
@@ -426,9 +470,10 @@ public final class FlintSessionController {
     /// on the active session can affect it:
     ///  - start: re-apply the saved selection's shield (the host already applied it; this keeps
     ///    the block if the host died mid-start) and the uninstall guard;
-    ///  - end warning / interval end at or after `endsAt`: end the session as completed;
-    ///  - interval end well before `endsAt` (e.g. a time-zone change shifted the wall-clock end):
-    ///    keep the block and re-register its end — never drop protection early;
+    ///  - end warning / interval end at `endsAt` (whole-second slack): end it as completed;
+    ///  - interval end before `endsAt` (e.g. a time-zone change shifted the wall-clock end): keep
+    ///    the block and re-register its end — never drop protection early; an early warning is
+    ///    ignored because the interval end still follows;
     ///  - any other session name is a replaced registration: deregistered at its end, ignored.
     public func handleMonitorEvent(_ event: FlintSessionMonitorEvent, activity: String) {
         Self.lock.lock(); defer { Self.lock.unlock() }
@@ -454,13 +499,15 @@ public final class FlintSessionController {
 
         case .intervalWillEndWarning, .intervalDidEnd:
             let endsAt = session.endsAt ?? now
-            if now.addingTimeInterval(FlintTimeIntegrity.tolerance) >= endsAt {
+            if now.addingTimeInterval(FlintTimeIntegrity.endSlack) >= endsAt {
                 recordTimeVerdict(FlintTimeIntegrity.verdict(for: session, clock: env.clock), for: session, at: now)
                 env.shield.clear()
                 env.registrar.stopMonitoring([activity])
-                // Focus history records a completion only near the planned end; a late
-                // fallback end (the warning never arrived) is inferred by the host instead.
-                if abs(now.timeIntervalSince(endsAt)) <= FlintTimeIntegrity.tolerance {
+                // Report a completion at the planned end when the callback is the expected one:
+                // near endsAt, or a short session's padded interval end (its warning never came).
+                // Anything else is left to focus history's outcome inference.
+                let fallbackEnd = event == .intervalDidEnd && session.usesEndWarning == true
+                if fallbackEnd || abs(now.timeIntervalSince(endsAt)) <= FlintTimeIntegrity.tolerance {
                     FlintSessionLifecycle.didEnd(session, route: .completed, at: endsAt)
                 }
                 store?.clearActiveSession()

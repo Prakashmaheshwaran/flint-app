@@ -30,6 +30,9 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
     /// True when the session is shorter than DeviceActivity's 15-minute interval floor and its
     /// end is delivered by `intervalWillEndWarning` inside a padded 15-minute interval.
     public let usesEndWarning: Bool?
+    /// How many times the auto-clear was re-registered after start (bounded, so a device that
+    /// keeps firing ends early can't drain the shared DeviceActivity registration pool).
+    public let rearmCount: Int?
 
     public init(
         id: String = UUID().uuidString,
@@ -42,7 +45,8 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         bootSessionID: String? = nil,
         autoClearTimeZoneID: String? = nil,
         autoClearUTCOffset: Int? = nil,
-        usesEndWarning: Bool? = nil
+        usesEndWarning: Bool? = nil,
+        rearmCount: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -55,6 +59,7 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         self.autoClearTimeZoneID = autoClearTimeZoneID
         self.autoClearUTCOffset = autoClearUTCOffset
         self.usesEndWarning = usesEndWarning
+        self.rearmCount = rearmCount
     }
 
     public var isExpired: Bool { isExpired(at: Date()) }
@@ -78,7 +83,7 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
             id: id, name: name, startedAt: startedAt, endsAt: endsAt, breakLevel: breakLevel,
             monitorName: monitorName, monotonicStart: monotonicStart, bootSessionID: bootSessionID,
             autoClearTimeZoneID: plan.timeZoneIdentifier, autoClearUTCOffset: plan.utcOffsetAtEnd,
-            usesEndWarning: plan.usesEndWarning
+            usesEndWarning: plan.usesEndWarning, rearmCount: (rearmCount ?? 0) + 1
         )
     }
 }
