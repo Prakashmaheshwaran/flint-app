@@ -3,12 +3,22 @@
 
 IOS_DIR     := ios-app
 ANDROID_DIR := android-app
-# Homebrew keg-only JDK 21 (see `make doctor`). Override if yours lives elsewhere.
-JAVA_HOME   ?= /opt/homebrew/opt/openjdk@21
-# Auto-detect a full Xcode. `xcodes` installs versioned apps (e.g. Xcode-26.5.0.app); the
-# generic /Applications/Xcode.app may not exist. Override XCODE_DEV if needed.
-XCODE_APP   := $(shell ls -d /Applications/Xcode*.app 2>/dev/null | sort | tail -1)
-XCODE_DEV   ?= $(XCODE_APP)/Contents/Developer
+# One resolver for recipes, parse-time shell calls, setup, and sourced terminals.
+# The wrapper accepts GNU Make 3.81's ordinary -c interface, without .SHELLFLAGS.
+SHELL := "$(CURDIR)/scripts/flint-shell.sh"
+# Keep historical Make aliases (including archived verification harnesses).
+ifeq ($(origin JAVA_HOME),undefined)
+JAVA_HOME := $(shell printf '%s' "$$JAVA_HOME")
+unexport JAVA_HOME
+endif
+ifeq ($(origin XCODE_DEV),undefined)
+XCODE_DEV := $(shell printf '%s' "$$DEVELOPER_DIR")
+unexport XCODE_DEV
+endif
+export ANDROID_HOME ANDROID_SDK_ROOT DEVELOPER_DIR
+ifeq ($(origin XCODE_DEV),command line)
+export DEVELOPER_DIR := $(XCODE_DEV)
+endif
 
 .DEFAULT_GOAL := help
 
@@ -16,14 +26,10 @@ help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-doctor: ## Check the toolchain (Xcode, XcodeGen, Android SDK, JDK)
-	@echo "== Flint toolchain =="
-	@printf "%-14s " "Xcode:";      DEVELOPER_DIR="$(XCODE_DEV)" xcodebuild -version 2>/dev/null | head -1 || echo "NOT INSTALLED (App Store / xcodes)"
-	@printf "%-14s " "XcodeGen:";   xcodegen --version 2>/dev/null   || echo "NOT INSTALLED (brew install xcodegen)"
-	@printf "%-14s " "Swift:";      swift --version 2>/dev/null | head -1 || echo "missing"
-	@printf "%-14s " "JDK:";        "$(JAVA_HOME)/bin/java" -version 2>&1 | head -1 || echo "NOT FOUND at JAVA_HOME=$(JAVA_HOME)"
-	@printf "%-14s " "Android SDK:"; [ -n "$$ANDROID_HOME" ] && echo "$$ANDROID_HOME" || ([ -d "$$HOME/Library/Android/sdk" ] && echo "$$HOME/Library/Android/sdk" || echo "NOT FOUND (set ANDROID_HOME)")
-	@printf "%-14s " "adb:";        adb --version 2>/dev/null | head -1 || echo "not on PATH"
+env: ## Show resolved tool paths, their sources, and missing tools
+	@bash scripts/flint-env-report.sh
+
+doctor: env ## Check the toolchain (same diagnostic as make env)
 
 ios-gen: ## Generate ios-app/Flint.xcodeproj from project.yml (XcodeGen)
 	cd $(IOS_DIR) && xcodegen generate
@@ -32,7 +38,7 @@ ios: ios-gen ## Generate the Xcode project and open it
 	open $(IOS_DIR)/Flint.xcodeproj
 
 ios-build: ios-gen ## Compile the iOS app (app + 4 extensions) for the simulator, no signing
-	DEVELOPER_DIR="$(XCODE_DEV)" xcodebuild -project $(IOS_DIR)/Flint.xcodeproj -scheme Flint \
+	xcodebuild -project $(IOS_DIR)/Flint.xcodeproj -scheme Flint \
 		-sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
 		CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
 
@@ -41,31 +47,35 @@ ios-build: ios-gen ## Compile the iOS app (app + 4 extensions) for the simulator
 # error, so name the real problem instead.
 ios-test: ios-gen ## Run the iOS unit tests on the first available iPhone simulator
 	@set -e; \
-	DEVICE=$$(DEVELOPER_DIR="$(XCODE_DEV)" xcrun simctl list devices available | \
+	DEVICE=$$(xcrun simctl list devices available | \
 		grep -oE 'iPhone [^(]+' | head -1 | sed 's/ *$$//'); \
 	if [ -z "$$DEVICE" ]; then \
 		echo "No iPhone simulator available (Xcode > Settings > Platforms)." >&2; \
 		exit 1; \
 	fi; \
 	echo "Using simulator: $$DEVICE"; \
-	DEVELOPER_DIR="$(XCODE_DEV)" xcodebuild test -project $(IOS_DIR)/Flint.xcodeproj -scheme Flint \
+	xcodebuild test -project $(IOS_DIR)/Flint.xcodeproj -scheme Flint \
 		-destination "platform=iOS Simulator,name=$$DEVICE" CODE_SIGNING_ALLOWED=NO
 
 android: ## Assemble the Android debug APK
-	cd $(ANDROID_DIR) && JAVA_HOME="$(JAVA_HOME)" ./gradlew assembleDebug
+	@bash scripts/flint-env-report.sh --check-android
+	cd $(ANDROID_DIR) && ./gradlew assembleDebug
 
 android-release: ## Build and verify the account-free, development-signed release APK
-	cd $(ANDROID_DIR) && JAVA_HOME="$(JAVA_HOME)" ./gradlew :app:assembleRelease
+	@bash scripts/flint-env-report.sh --check-android
+	cd $(ANDROID_DIR) && ./gradlew :app:assembleRelease
 	python3 scripts/verify_local_first_apk.py $(ANDROID_DIR)/app/build/outputs/apk/release/app-release.apk
 
 android-install: ## Build + install the debug APK on a connected device/emulator
-	cd $(ANDROID_DIR) && JAVA_HOME="$(JAVA_HOME)" ./gradlew installDebug
+	@bash scripts/flint-env-report.sh --check-android
+	cd $(ANDROID_DIR) && ./gradlew installDebug
 
 # `test` (not `testDebugUnitTest`) — matches CI: the pure-Kotlin modules (blocking-engine,
 # core-model) are kotlin.jvm projects whose test task is `test`; the old task name silently
 # skipped them, so the engine tests never ran under this target.
 android-test: ## Run Android unit tests
-	cd $(ANDROID_DIR) && JAVA_HOME="$(JAVA_HOME)" ./gradlew test
+	@bash scripts/flint-env-report.sh --check-android
+	cd $(ANDROID_DIR) && ./gradlew test
 
 verify-android: android android-release android-test ## Run the Android CI gate locally
 	@echo "Android gate passed."
@@ -77,6 +87,8 @@ verify: verify-android verify-ios ## Run both platform gates
 	@echo "All gates passed."
 
 selftest: ## Run the device-free script selftests (no emulator, Gradle, or Xcode needed)
+	@bash scripts/flint-env-selftest.sh
+	@bash scripts/orca-setup-selftest.sh
 	@bash scripts/android-verify-selftest.sh
 	@bash scripts/check-release-version-selftest.sh
 	@python3 -m unittest discover -s scripts -p 'test_*.py'
@@ -90,5 +102,5 @@ clean: ## Remove build artifacts on both platforms
 	rm -rf $(IOS_DIR)/build $(IOS_DIR)/DerivedData $(IOS_DIR)/Flint.xcodeproj
 	cd $(ANDROID_DIR) && [ -x ./gradlew ] && JAVA_HOME="$(JAVA_HOME)" ./gradlew clean || true
 
-.PHONY: help doctor ios-gen ios ios-build ios-test android android-release android-install android-test \
+.PHONY: help env doctor ios-gen ios ios-build ios-test android android-release android-install android-test \
 	verify verify-ios verify-android selftest release-check clean
