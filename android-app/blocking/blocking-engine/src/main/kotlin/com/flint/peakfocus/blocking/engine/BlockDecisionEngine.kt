@@ -1,6 +1,7 @@
 package com.flint.peakfocus.blocking.engine
 
 import com.flint.peakfocus.core.model.BlockRule
+import com.flint.peakfocus.core.model.SafetyFloor
 import com.flint.peakfocus.core.model.Schedule
 import com.flint.peakfocus.core.model.Verdict
 
@@ -32,9 +33,10 @@ class BlockDecisionEngine {
         weekday: Int = -1,
         nowEpochMs: Long = -1L,
     ): Verdict {
-        if (foregroundPackage.isBlank()) return Verdict.Allow
-        if (foregroundPackage == selfPackage) return Verdict.Allow
-        if (foregroundPackage in SYSTEM_ALLOWLIST) return Verdict.Allow
+        // Static safety floor first (blank, Flint, system UI, Settings/permission recovery,
+        // telephony/emergency): no rule — block list, allow list, schedule or Sleep — reaches
+        // these. Runtime surfaces (custom default dialer/launcher) are added by the detectors.
+        if (SafetyFloor.isProtected(foregroundPackage, selfPackage)) return Verdict.Allow
 
         // Canonicalize once: this runs on every foreground change, against every domain of
         // every active rule, and the address bar does not change between those comparisons.
@@ -138,9 +140,4 @@ class BlockDecisionEngine {
     /** Previous ISO day, preserving the "unknown" sentinel (<= 0) unchanged. */
     private fun previousWeekday(weekday: Int): Int =
         if (weekday <= 0) weekday else DayMath.previousIsoDay(weekday)
-
-    private companion object {
-        /** Never shield core system surfaces (mirrors iOS's silently-ignored system apps). */
-        val SYSTEM_ALLOWLIST = SYSTEM_SURFACE_PACKAGES
-    }
 }

@@ -13,7 +13,6 @@ import com.flint.peakfocus.blocking.engine.ForegroundSurface
 import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.blocking.engine.UninstallGuard
 import com.flint.peakfocus.blocking.overlay.BlockScreenCoordinator
-import com.flint.peakfocus.blocking.overlay.NeverBlockSurfaces
 import com.flint.peakfocus.blocking.overlay.ruleBlockCause
 import com.flint.peakfocus.blocking.overlay.uninstallGuardBlockCause
 import com.flint.peakfocus.core.data.BlocklistStore
@@ -47,10 +46,12 @@ import kotlinx.coroutines.launch
  *     Settings-pages-about-Flint are shielded (anti-bypass). Deliberately ahead of the
  *     break/pass stand-down: an exemption granted on some *other* rule must not open the
  *     uninstall window, and Hardcore itself never grants breaks;
- *  1. Gather daily Time Limit, rule and Open Limit candidates;
- *  2. the shared coordinator selects the strongest protection, then applies exemptions;
+ *  1. the enforcement safety floor ([BlockScreenCoordinator.isSafetyFloor]: dialer, emergency,
+ *     home apps, Settings/permission recovery, Flint) — no ordinary cause reaches those;
+ *  2. Gather daily Time Limit, rule and Open Limit candidates;
+ *  3. the shared coordinator selects the strongest protection, then applies exemptions;
  *     ordinary breaks never bypass a currently applicable Hardcore restriction;
- *  3. count a permitted open only when no other restriction/exemption controls access.
+ *  4. count a permitted open only when no other restriction/exemption controls access.
  *
  * Compliance: NOT an accessibility tool; the in-app consent flow (feature-onboarding) must run
  * before the user enables this. On connect it loads the persisted blocklist.
@@ -64,9 +65,6 @@ class FlintAccessibilityService : AccessibilityService() {
 
     /** One-shot re-check armed while a time-limited app sits in front (see [armTimeLimitRecheck]). */
     private var timeLimitRecheck: Job? = null
-
-    /** Runtime-resolved default launcher + dialer — never shielded (see [NeverBlockSurfaces]). */
-    @Volatile private var neverBlock: Set<String> = emptySet()
 
     /** Flint's own launcher label — what the uninstall guard scans Settings text for. */
     private val selfLabel: String by lazy { labelFor(packageName) }
@@ -82,7 +80,6 @@ class FlintAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        neverBlock = NeverBlockSurfaces.resolve(this)
         BlocklistStore(this).load()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         serviceScope = scope
@@ -133,12 +130,6 @@ class FlintAccessibilityService : AccessibilityService() {
     private fun evaluateForeground(previousPackage: String?, pkg: String, windowClassName: String?) {
         val coordinator = coordinator ?: return // events never precede onServiceConnected
         timeLimitRecheck?.cancel() // every fresh decision invalidates a pending budget re-check
-        // Default launcher/dialer are never shielded (allow-list windows included) — blocking
-        // the launcher loops the Home button into the shield; the dialer is emergency calling.
-        if (pkg in neverBlock) {
-            coordinator.hideIfShown()
-            return
-        }
         val now = System.currentTimeMillis()
         val utcOffset = TimeZone.getDefault().getOffset(now).toLong()
         val cal = Calendar.getInstance()
@@ -165,6 +156,15 @@ class FlintAccessibilityService : AccessibilityService() {
                 coordinator.showBlocked(pkg, labelFor(pkg), uninstallGuardBlockCause(armingRule, now, utcOffset))
                 return
             }
+        }
+
+        // 1) Safety floor (allow-list windows included): blocking the launcher loops the Home
+        //    button into the shield; the dialer and emergency surfaces are emergency calling;
+        //    Settings/permission pages are how protection is recovered. The coordinator applies
+        //    the same floor again; this early return also skips the budget query.
+        if (coordinator.isSafetyFloor(pkg)) {
+            coordinator.hideIfShown()
+            return
         }
 
         // Time Limit: blocked once today's foreground time reaches the app's daily budget —
