@@ -112,15 +112,18 @@ not a substitute for a matching capability assertion.
   [#130](https://github.com/Prakashmaheshwaran/flint-app/pull/130);
   [controller](../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintSessionController.swift),
   [timing](../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintSessionTiming.swift),
-  [tests](../../ios-app/Tests/), [CI workflow](../../.github/workflows/ios.yml).
+  [tests](../../ios-app/Tests/), [CI 40776064823](https://github.com/Prakashmaheshwaran/flint-app/actions/runs/40776064823).
 - <a id="ip"></a>**IP — iOS policy/ledger:** [#112](https://github.com/Prakashmaheshwaran/flint-app/pull/112),
   [#120](https://github.com/Prakashmaheshwaran/flint-app/pull/120);
   [policy tests](../../ios-app/Tests/FlintProtectionPolicyTests.swift),
-  [ledger tests](../../ios-app/Tests/FlintProtectionLedgerTests.swift). Pure/transaction decisions do not prove all live callers.
+  [ledger tests](../../ios-app/Tests/FlintProtectionLedgerTests.swift),
+  [CI 40769576347](https://github.com/Prakashmaheshwaran/flint-app/actions/runs/40769576347).
+  Pure/transaction decisions do not prove all live callers.
 - <a id="ir"></a>**IR — iOS recovery:** [#82](https://github.com/Prakashmaheshwaran/flint-app/pull/82),
   [#87](https://github.com/Prakashmaheshwaran/flint-app/pull/87);
   [reconciler tests](../../ios-app/Tests/FlintProtectionReconcilerTests.swift),
-  [recovery safety tests](../../ios-app/Tests/FlintProtectionRecoverySafetyTests.swift).
+  [recovery safety tests](../../ios-app/Tests/FlintProtectionRecoverySafetyTests.swift),
+  [CI 40780953866](https://github.com/Prakashmaheshwaran/flint-app/actions/runs/40780953866).
 - <a id="im"></a>**IM — iOS existing model/entry scope:** [schedule model](../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintScheduleRule.swift),
   [schedule controller](../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintSchedulesController.swift),
   [Shortcuts runner](../../ios-app/Flint/Features/Shortcuts/FlintShortcutsRunner.swift),
@@ -148,7 +151,8 @@ not a substitute for a matching capability assertion.
 - <a id="as"></a>**AS — Android safety floor:** [#93](https://github.com/Prakashmaheshwaran/flint-app/pull/93),
   [#105 guard removal](https://github.com/Prakashmaheshwaran/flint-app/pull/105),
   [coordinator matrix](../../android-app/blocking/blocking-overlay/src/testDebug/kotlin/com/flint/peakfocus/blocking/overlay/SafetyFloorCoordinatorMatrixTest.kt),
-  [runtime floor](../../android-app/blocking/blocking-overlay/src/main/kotlin/com/flint/peakfocus/blocking/overlay/SafetyFloorGate.kt).
+  [runtime floor](../../android-app/blocking/blocking-overlay/src/main/kotlin/com/flint/peakfocus/blocking/overlay/SafetyFloorGate.kt),
+  [CI 40753783076](https://github.com/Prakashmaheshwaran/flint-app/actions/runs/40753783076).
 - <a id="ac"></a>**AC — Android continuous evaluation:** [#88](https://github.com/Prakashmaheshwaran/flint-app/pull/88),
   [CI 40776050830](https://github.com/Prakashmaheshwaran/flint-app/actions/runs/40776050830),
   [#146 local emulator evidence](../verification/android-continuous-eval-2026-10-28/README.md).
@@ -158,7 +162,8 @@ not a substitute for a matching capability assertion.
   [CI 40778888207](https://github.com/Prakashmaheshwaran/flint-app/actions/runs/40778888207),
   [live coordinator](../../android-app/blocking/blocking-overlay/src/main/kotlin/com/flint/peakfocus/blocking/overlay/BlockScreenCoordinator.kt).
 - <a id="ap"></a>**AP — Android pure policy:** [#118](https://github.com/Prakashmaheshwaran/flint-app/pull/118),
-  [policy fixtures](../../android-app/blocking/blocking-engine/src/test/kotlin/com/flint/peakfocus/blocking/engine/ProtectionPoliciesTest.kt).
+  [policy fixtures](../../android-app/blocking/blocking-engine/src/test/kotlin/com/flint/peakfocus/blocking/engine/ProtectionPoliciesTest.kt),
+  [CI 40768045817](https://github.com/Prakashmaheshwaran/flint-app/actions/runs/40768045817).
   This PR explicitly does not wire every live caller.
 - <a id="am"></a>**AM — Android personal model/UI scope:** [model](../../android-app/core/core-model/src/main/kotlin/com/flint/peakfocus/core/model/Models.kt),
   [draft](../../android-app/feature/feature-blocklist/src/main/kotlin/com/flint/peakfocus/feature/blocklist/RuleDraft.kt),
