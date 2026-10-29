@@ -272,7 +272,7 @@ class WebsiteEventsTest {
         assertEquals(1, AddressNodeShadow.recycles)
     }
 
-    @Test fun `cached overlay identity preserves the browser but MainActivity yields to the safety floor`() {
+    @Test fun `cached overlay window preserves the browser but a different Flint window yields to the safety floor`() {
         setField("overlayAttached", true)
         setField("overlayWindowId", 7)
         setField("lastForegroundUrl", "blocked.example")
@@ -286,7 +286,11 @@ class WebsiteEventsTest {
         reconcile.invoke(service, false, true)
         assertEquals(CHROME, field("lastForegroundPackage"))
         assertEquals("blocked.example", field("lastForegroundUrl"))
-        CountingServiceShadow.root!!.className = "${service.packageName}.MainActivity"
+        // Real roots are Views, not Activity classes. A different Flint window is not
+        // the cached overlay even though it has the same package and root View class.
+        val applicationWindow = AccessibilityWindowInfo.obtain()
+        shadowOf(applicationWindow).setId(8)
+        shadowOf(CountingServiceShadow.root!!).setAccessibilityWindowInfo(applicationWindow)
         reconcile.invoke(service, false, true)
         assertEquals(service.packageName, field("lastForegroundPackage"))
         assertNull(field("lastForegroundUrl"))

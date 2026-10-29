@@ -13,6 +13,7 @@ class ConsentCopyTest {
         assertTrue(ConsentCopy.WHAT_IT_READS.contains("Android sends page-change signals from other apps too"))
         assertTrue(ConsentCopy.WHAT_IT_READS.contains("without reading their content"))
         assertTrue(ConsentCopy.WHAT_IT_READS.contains("when a page changes without opening a new tab"))
+        assertTrue(ConsentCopy.WHAT_IT_READS.contains(ConsentCopy.URL_HANDLING))
         assertFalse(ConsentCopy.WHAT_IT_READS.contains("window-content"))
         assertFalse(ConsentCopy.WHAT_IT_READS.contains("same-tab"))
     }
@@ -36,9 +37,12 @@ class ConsentCopyTest {
         assertTrue(config.getAttributeNS(ns, "packageNames").isEmpty())
         org.junit.Assert.assertEquals(setOf("typeWindowStateChanged", "typeWindowContentChanged"),
             config.getAttributeNS(ns, "accessibilityEventTypes").split('|').toSet())
-        for (relative in listOf("docs/privacy-policy.md", "docs/store/android/data-safety.md")) {
+        for (relative in listOf("docs/privacy-policy.md", "docs/store/android/accessibility.md", "docs/store/android/data-safety.md")) {
             val text = File(root.parentFile, relative).readText().replace(Regex("\\s+"), " ")
-            assertTrue("$relative must agree on URL scope, retention and revocation", text.contains(ConsentCopy.URL_HANDLING))
+            assertTrue("$relative must agree on URL scope, retention and revocation", text.contains(ConsentCopy.URL_FACTS))
+            if (!relative.endsWith("data-safety.md")) {
+                assertTrue("$relative must point to the browser list after setup", text.contains(ConsentCopy.URL_HANDLING))
+            }
         }
     }
 

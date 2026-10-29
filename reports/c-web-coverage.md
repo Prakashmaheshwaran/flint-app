@@ -21,7 +21,9 @@ shadow now returns an owned copy; all local suites passed after that fix. Final 
 is pending; consult the PR exact-head checks and planning handoff report for live state.
 The final delta adds an overlay/MainActivity regression, asserts no window-info calls on
 scrolling, removes window-info calls from production, and aligns URL scope/retention/revocation
-copy across consent, service description, privacy policy and Data safety with a cross-file guard.
+copy across consent, service description, privacy policy, the Play Accessibility declaration
+and Data safety with a cross-file guard. User copy consistently calls the list Known browsers;
+the after-setup pointer is omitted from the Data safety form while its data facts remain.
 
 Independent review follow-up: accurate global event-delivery/filter disclosure in consent,
 service description, health summary, store declaration and privacy policy; cross-file copy

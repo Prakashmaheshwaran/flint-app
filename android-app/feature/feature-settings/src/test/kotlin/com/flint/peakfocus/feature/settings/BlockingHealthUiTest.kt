@@ -27,7 +27,7 @@ class BlockingHealthUiTest {
             assertTrue(text.contains("not verified on this device"))
             assertTrue(text.contains("Allow-list mode uses the app list"))
             assertFalse(text.contains("test.browser"))
-            assertTrue(text.contains("Known adapters (not verified on this device)"))
+            assertTrue(text.contains("Known browsers (not verified on this device)"))
         }
     }
 
@@ -36,6 +36,7 @@ class BlockingHealthUiTest {
         assertTrue(text.contains("when a page changes"))
         assertTrue(text.contains("signals from other apps"))
         assertTrue(text.contains("without reading their content"))
+        assertTrue(text.contains("Address-bar URLs stay in memory; reading stops if Accessibility is off"))
         assertFalse(text.contains("window-content"))
         assertFalse(text.contains("same-tab"))
     }

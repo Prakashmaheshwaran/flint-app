@@ -68,6 +68,7 @@ object BlockingHealthUi {
                 "While a website rule is active, it re-reads supported browsers' address bars " +
                 "when a page changes. Android also sends page-change signals from other apps; " +
                 "Flint ignores those without reading their content. " +
+                "Address-bar URLs stay in memory; reading stops if Accessibility is off. " +
                 "App and screen class names identify the foreground app. " +
                 "Flint uses this only to enforce the blocks you set up. Everything stays on " +
                 "your device; it is never sent off your device, shared, or sold. Review the " +
@@ -166,7 +167,7 @@ object BlockingHealthUi {
             is WebCoverage.Unsupported -> "Last website check: website blocking unavailable in ${coverage.displayName}: " +
                 if (coverage.isBrowser) "unsupported browser." else "unsupported link handler."
         }
-        return observation + "\nKnown adapters (not verified on this device): " +
+        return observation + "\nKnown browsers (not verified on this device): " +
             BrowserAddressBars.supportedBrowsers.joinToString { it.displayName } +
             ". Browser updates, hidden address bars and private pages can reduce coverage; " +
             "support depends on a readable address bar. Other browsers and the usage-access backup " +

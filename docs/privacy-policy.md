@@ -58,9 +58,9 @@ While a website rule is active, Flint also re-reads supported browsers' address 
 when a page changes within a tab; other apps' page-change signals are ignored without
 reading their content.
 
-See the Known adapters browser list on the You health screen in Flint. Address-bar
+After setup, the list of known browsers is on Flint's You health screen. Address-bar
 URLs stay on this device, in memory for blocking; they are not saved as browsing
-history. Websites you enter remain in your rules. Address-bar reading stops when Accessibility is off.
+history. Websites you add to a rule remain in your rules. Address-bar reading stops when Accessibility is off.
 
 With Usage Access, Flint reads Android's on-device app-usage events and duration
 to calculate local reports and limits and provide app-only fallback detection.

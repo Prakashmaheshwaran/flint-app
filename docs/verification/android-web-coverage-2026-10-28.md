@@ -41,7 +41,7 @@ service restart, without needing a new activity event. Root/package/window ident
 match before reading/counting. A Flint overlay never counts as a missing browser bar.
 Unavailable roots cannot establish a miss and do not prove readable coverage.
 The URL-read/reconcile paths do not call `AccessibilityNodeInfo.getWindow()`; overlay identity
-uses the attached surface and its cached window ID plus root package/class metadata. This
+uses the attached surface and its cached window ID plus root package metadata. This
 avoids a window-info cache miss becoming a synchronous system-server call for every scroll read.
 URL cache and health are process-local; health contains no URL/history. The last browser
 observation remains visible when opening Flint/Settings and is labeled as a last check;

@@ -30,6 +30,10 @@ category, collection or transmission. The existing affirmative consent gate is u
 No raw URL history or screen content is uploaded. There are no accounts,
 analytics, ads or remote commands in the release.
 
+After setup, the list of known browsers is on Flint's You health screen. Address-bar
+URLs stay on this device, in memory for blocking; they are not saved as browsing
+history. Websites you add to a rule remain in your rules. Address-bar reading stops when Accessibility is off.
+
 The release implementation does not read Settings screen text for guarding,
 intercept system uninstall/disable controls, change settings automatically, or
 prevent the user from revoking access. It does not automate purchases/messages

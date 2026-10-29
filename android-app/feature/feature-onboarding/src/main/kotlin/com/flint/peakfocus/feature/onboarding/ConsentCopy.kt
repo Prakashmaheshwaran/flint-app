@@ -3,10 +3,12 @@ package com.flint.peakfocus.feature.onboarding
 /** Policy-sensitive AccessibilityService disclosure copy, isolated for JVM regression tests. */
 internal object ConsentCopy {
     const val HEADLINE = "Before enabling Accessibility"
-    const val URL_HANDLING =
-        "See the Known adapters browser list on the You health screen in Flint. Address-bar " +
+    const val URL_FACTS =
+        "Address-bar " +
             "URLs stay on this device, in memory for blocking; they are not saved as browsing " +
-            "history. Websites you enter remain in your rules. Address-bar reading stops when Accessibility is off."
+            "history. Websites you add to a rule remain in your rules. Address-bar reading stops when Accessibility is off."
+    const val URL_HANDLING =
+        "After setup, the list of known browsers is on Flint's You health screen. " + URL_FACTS
     const val PAGE_CHANGES =
         "In the browsers Flint supports, while a website rule is active, Flint also re-reads " +
             "the address bar when a page changes without opening a new tab. Android sends " +
