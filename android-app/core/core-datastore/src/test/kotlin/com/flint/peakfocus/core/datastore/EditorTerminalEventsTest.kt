@@ -3,6 +3,7 @@ package com.flint.peakfocus.core.datastore
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import com.flint.peakfocus.blocking.engine.AnchoredInterval
+import com.flint.peakfocus.blocking.engine.HarderWaitPolicy
 import com.flint.peakfocus.core.model.*
 import java.io.IOException
 import java.time.Instant
@@ -91,7 +92,7 @@ class EditorTerminalEventsTest {
     @Test fun `PC-70 concurrent expiry callbacks produce one durable terminal revision`() = runBlocking {
         val disk = Disk(); val clock = Clock(at()); val owner = started(disk, clock)
         clock.now = at(300_000)
-        coroutineScope { List(8) { async { owner.reconcile(clock.now) } }.awaitAll() }
+        coroutineScope { List(8) { async { owner.reconcileRules(clock.now) } }.awaitAll() }
         assertEquals(1L, owner.readTerminalEvents().single().revision)
         assertEquals(1L, readEditorTerminals(disk.values.value).revision)
     }
@@ -123,8 +124,7 @@ class EditorTerminalEventsTest {
         val disk = Disk(); val clock = Clock(at()); val owner = started(disk, clock)
         clock.now = at(300_000); owner.reconcile(clock.now)
         val before = owner.readTerminalEvents()
-        try { owner.deliverTerminalEvents { throw IOException("history write") }; fail("sink failure swallowed") }
-        catch (_: IOException) { }
+        assertEquals(0, owner.deliverTerminalEvents { throw IOException("history write") })
         assertEquals(before, owner.readTerminalEvents())
         try { owner.deliverTerminalEvents { throw CancellationException("cancelled append") }; fail("cancellation swallowed") }
         catch (_: CancellationException) { }
@@ -210,7 +210,7 @@ class EditorTerminalEventsTest {
 
     @Test fun `PC-70 bounded pending overflow survives rule removal and drains with original first observation`() = runBlocking {
         val seed = (0 until MAX_PENDING_TERMINALS).map(::event).associateBy { it.id }
-        val disk = Disk(preferencesOf(EDITOR_TERMINAL_SCHEMA to 1L,
+        val disk = Disk(preferencesOf(EDITOR_TERMINAL_SCHEMA to 2L,
             EDITOR_TERMINALS to EditorTerminalCodec.encode(EditorTerminalLedger(MAX_PENDING_TERMINALS.toLong(), seed))))
         val clock = Clock(at()); val owner = started(disk, clock)
         clock.now = at(300_000); owner.reconcile(clock.now)
@@ -241,7 +241,7 @@ class EditorTerminalEventsTest {
     @Test fun `PC-70 ack receipts retain a count bound without evicting pending deliveries`() = runBlocking {
         val pending = event(MAX_TERMINAL_ACKS)
         val acks = (0 until MAX_TERMINAL_ACKS).associate { "acked-$it" to base - MAX_TERMINAL_ACKS + it }
-        val disk = Disk(preferencesOf(EDITOR_TERMINAL_SCHEMA to 1L, EDITOR_TERMINALS to EditorTerminalCodec.encode(
+        val disk = Disk(preferencesOf(EDITOR_TERMINAL_SCHEMA to 2L, EDITOR_TERMINALS to EditorTerminalCodec.encode(
             EditorTerminalLedger(pending.revision, mapOf(pending.id to pending), acks))))
         val clock = Clock(at()); val owner = store(disk, clock)
         owner.ackTerminalEvents(setOf(pending.id))
@@ -258,8 +258,9 @@ class EditorTerminalEventsTest {
         val raw = initial[EDITOR_TERMINALS]!!
         val fixtures = listOf(
             initial.toMutablePreferences().also { it.remove(EDITOR_TERMINALS) },
-            initial.toMutablePreferences().also { it[EDITOR_TERMINAL_SCHEMA] = 2L },
-            initial.toMutablePreferences().also { it[EDITOR_TERMINALS] = raw.replace("T|1", "T|2") },
+            initial.toMutablePreferences().also { it[EDITOR_TERMINAL_SCHEMA] = 3L },
+            initial.toMutablePreferences().also { it[EDITOR_TERMINALS] = raw.replace("T|2", "T|3") },
+            initial.toMutablePreferences().also { it[EDITOR_TERMINALS] = raw.lines().filterNot { line -> line.startsWith("H|") }.joinToString("\n") },
             initial.toMutablePreferences().also { it[EDITOR_TERMINALS] = raw + "\n" + raw.lineSequence().first { line -> line.startsWith("E|") } },
         )
         for (prefs in fixtures) {
@@ -269,5 +270,122 @@ class EditorTerminalEventsTest {
             assertEquals(prefs[EDITOR_TERMINALS], corrupt.values.value[EDITOR_TERMINALS])
             assertTrue(reader.state.first { it !is StorageState.Loading } is StorageState.Ready)
         }
+    }
+
+    @Test fun `PC-70 legacy outbox fixture migrates losslessly and acknowledged Timer rows retire together`() = runBlocking {
+        val disk = Disk(); val clock = Clock(at()); val owner = started(disk, clock)
+        clock.now = at(300_000); owner.reconcile(clock.now)
+        val original = owner.readTerminalEvents().single()
+        disk.updateData { prefs -> prefs.toMutablePreferences().also {
+            it[EDITOR_TERMINAL_SCHEMA] = 1L
+            it[EDITOR_TERMINALS] = it[EDITOR_TERMINALS]!!.replace("T|2", "T|1")
+                .lines().filterNot { line -> line.startsWith("H|") }.joinToString("\n")
+        } }
+        assertEquals(listOf(original), owner.readTerminalEvents())
+        assertTrue(DataStoreBlockRulesStore(disk).rules.first().any { it.id == timer().id })
+        assertEquals(1, owner.deliverTerminalEvents { true })
+        assertEquals(2L, disk.values.value[EDITOR_TERMINAL_SCHEMA])
+        assertFalse(DataStoreBlockRulesStore(disk).rules.first().any { it.id == timer().id })
+        assertFalse(ruleCauseKey(timer().id) in readEditorState(disk.values.value).causes)
+        clock.now = at(400_000, wall = -86_400_000L); owner.reconcile(clock.now)
+        assertTrue(owner.readTerminalEvents().isEmpty())
+    }
+
+    @Test fun `PC-70 one failing sink cannot starve later events and successful IDs ack in one edit`() = runBlocking {
+        val events = (0..2).map(::event)
+        val disk = Disk(preferencesOf(EDITOR_TERMINAL_SCHEMA to 2L, EDITOR_TERMINALS to
+            EditorTerminalCodec.encode(EditorTerminalLedger(3, events.associateBy { it.id }))))
+        val owner = store(disk, Clock(at()))
+        val before = disk.changedWrites
+        val seen = mutableListOf<String>()
+        assertEquals(2, owner.deliverTerminalEvents {
+            seen += it.id
+            if (it.id == events.first().id) throw IOException("one history row")
+            true
+        })
+        assertEquals(events.map { it.id }, seen)
+        assertEquals(listOf(events.first()), owner.readTerminalEvents())
+        assertEquals(before + 1, disk.changedWrites)
+    }
+
+    @Test fun `PC-70 cancellation after a durable sink success leaves the whole unacknowledged batch replayable`() = runBlocking {
+        val events = (0..1).map(::event)
+        val disk = Disk(preferencesOf(EDITOR_TERMINAL_SCHEMA to 2L, EDITOR_TERMINALS to
+            EditorTerminalCodec.encode(EditorTerminalLedger(2, events.associateBy { it.id }))))
+        val owner = store(disk, Clock(at()))
+        try {
+            owner.deliverTerminalEvents { if (it.id == events.last().id) throw CancellationException("cancelled later append"); true }
+            fail("cancellation swallowed")
+        } catch (_: CancellationException) { }
+        assertEquals(events, owner.readTerminalEvents())
+        assertTrue(readEditorTerminals(disk.values.value).acknowledged.isEmpty())
+    }
+
+    @Test fun `PC-70 bounded proof overflow is counted once and never prevents another Timer start`() = runBlocking {
+        val seeds = (0 until MAX_PENDING_TERMINALS).map(::event).associateBy { it.id }
+        val rules = (0..MAX_OVERFLOW_TERMINALS).map { timer().copy(id = CONTRACT_TIMER_ID_PREFIX + "overflow-$it") }
+        val causes = rules.associate { ruleCauseKey(it.id) to EditorCause(it.id, AnchoredInterval(at(), 300_000, base + 300_000), "UTC") }
+        val disk = Disk(preferencesOf(EDITOR_TERMINAL_SCHEMA to 2L,
+            EDITOR_TERMINALS to EditorTerminalCodec.encode(EditorTerminalLedger(MAX_PENDING_TERMINALS.toLong(), seeds)),
+            PrefsKeys.BLOCK_RULES to PrefsCodec.encodeRules(rules), EDITOR_VERSION_KEY to 1L,
+            EDITOR_COMMITMENTS_KEY to EditorCommitmentCodec.encode(EditorCommitmentState(causes = causes, timeline = at())),
+            HARDER_WAIT_KEY to HarderWaitCodec.encode(HarderWaitPolicy.Ledger())))
+        val clock = Clock(at(300_000)); val owner = store(disk, clock)
+        owner.reconcile(clock.now); owner.reconcile(clock.now)
+        val health = (owner.terminalDeliveryHealth.first { it !is StorageState.Loading } as StorageState.Ready).value
+        assertEquals(MAX_PENDING_TERMINALS, health.pendingCount)
+        assertEquals(MAX_OVERFLOW_TERMINALS, health.overflowCount)
+        assertEquals(1L, health.overflowDropped); assertTrue(health.incompleteHistory)
+        val next = timer().copy(id = CONTRACT_TIMER_ID_PREFIX + "next", expiresAtEpochMs = clock.now.wallEpochMs + 300_000)
+        assertTrue(owner.startTimer(next, clock.now, EditorSafety(true)))
+        assertEquals(1L, readEditorTerminals(disk.values.value).overflowDropped)
+        owner.ackTerminalEvents(setOf(seeds.keys.first())); owner.reconcile(clock.now)
+        assertEquals(MAX_OVERFLOW_TERMINALS - 1,
+            (owner.terminalDeliveryHealth.first { it !is StorageState.Loading } as StorageState.Ready).value.overflowCount)
+    }
+
+    @Test fun `PC-70 unrepresentable endpoint records one health failure without aborting editor preparation`() = runBlocking {
+        val impossible = timer()
+        val anchor = at()
+        val cause = EditorCause(impossible.id, AnchoredInterval(anchor, 20, Long.MAX_VALUE), "UTC")
+        val disk = Disk(preferencesOf(PrefsKeys.BLOCK_RULES to PrefsCodec.encodeRules(listOf(impossible)),
+            EDITOR_VERSION_KEY to 1L, HARDER_WAIT_KEY to HarderWaitCodec.encode(HarderWaitPolicy.Ledger()),
+            EDITOR_COMMITMENTS_KEY to EditorCommitmentCodec.encode(EditorCommitmentState(causes = mapOf(ruleCauseKey(impossible.id) to cause), timeline = anchor))))
+        val clock = Clock(at(20))
+        val owner = store(disk, clock)
+        repeat(2) { owner.reconcile(clock.now) }
+        assertTrue(owner.readTerminalEvents().isEmpty())
+        assertTrue(owner.state.first { it !is StorageState.Loading } is StorageState.Ready)
+        assertEquals(1L, (owner.terminalDeliveryHealth.first { it !is StorageState.Loading } as StorageState.Ready).value.captureFailures)
+    }
+
+    @Test fun `PC-70 total cause bound refuses a new Timer with typed unavailable while existing deletion still works`() = runBlocking {
+        val rules = (0 until MAX_EDITOR_CAUSES).map { timer().copy(id = CONTRACT_TIMER_ID_PREFIX + "retained-$it") }
+        val causes = rules.associate { ruleCauseKey(it.id) to EditorCause(it.id, AnchoredInterval(at(), 1, base + 1), "UTC",
+            timerTerminal = EditorTimerTerminalState(recorded = true)) }
+        val disk = Disk(preferencesOf(PrefsKeys.BLOCK_RULES to PrefsCodec.encodeRules(rules), EDITOR_VERSION_KEY to 1L,
+            EDITOR_COMMITMENTS_KEY to EditorCommitmentCodec.encode(EditorCommitmentState(causes = causes, timeline = at())),
+            HARDER_WAIT_KEY to HarderWaitCodec.encode(HarderWaitPolicy.Ledger())))
+        val clock = Clock(at(300_000)); val owner = store(disk, clock)
+        val before = disk.values.value.asMap().toMap()
+        try {
+            owner.startTimer(timer().copy(expiresAtEpochMs = clock.now.wallEpochMs + 300_000), clock.now, EditorSafety(true))
+            fail("capacity was exceeded")
+        } catch (_: StorageUnavailableException) { }
+        assertEquals(before, disk.values.value.asMap())
+        val preview = owner.request(EditorChange("Delete ended", deleteIds = setOf(rules.first().id)), clock.now, EditorSafety(true)) as EditorCommitResult.Preview
+        assertTrue(owner.confirm(preview.pending.id, clock.now, EditorSafety(true)) is EditorCommitResult.Applied)
+        assertEquals(MAX_EDITOR_CAUSES - 1, readEditorState(disk.values.value).causes.size)
+    }
+
+    @Test fun `PC-17 legacy native Timer natural history is independent of grandfathered exit rights`() = runBlocking {
+        val legacy = timer().copy(id = NATIVE_TIMER_ID_PREFIX + "legacy")
+        val disk = Disk(preferencesOf(PrefsKeys.BLOCK_RULES to PrefsCodec.encodeRules(listOf(legacy))))
+        val clock = Clock(at()); val owner = store(disk, clock)
+        owner.reconcile(clock.now)
+        assertTrue(readEditorState(disk.values.value).causes.getValue(ruleCauseKey(legacy.id)).legacyRights)
+        clock.now = at(300_000); owner.reconcile(clock.now)
+        assertEquals(legacy.id, owner.readTerminalEvents().single().sessionId)
+        assertEquals(at(300_000), owner.readTerminalEvents().single().logicalEnd)
     }
 }

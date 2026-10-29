@@ -12,7 +12,6 @@ import java.util.TimeZone
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.first
 
 /** New Timer rights are identified durably; an old all-tier Timer never acquires new rights. */
@@ -67,9 +66,9 @@ interface EditorCommitmentStore {
     val state: Flow<StorageState<EditorCommitmentState>>
     /** Includes raw template changes made by other writers, even when the sidecar is unchanged. */
     val changes: Flow<Unit> get() = state.map { Unit }
-    val terminalEvents: Flow<StorageState<List<EditorTerminalEvent>>> get() = flowOf(StorageState.Ready(emptyList()))
+    val terminalEvents: Flow<StorageState<List<EditorTerminalEvent>>> get() = error("Terminal delivery is unsupported by this store")
     val terminalDeliveryHealth: Flow<StorageState<EditorTerminalDeliveryHealth>> get() =
-        flowOf(StorageState.Ready(EditorTerminalDeliveryHealth(0, 0, null)))
+        error("Terminal delivery health is unsupported by this store")
     suspend fun readTerminalEvents(): List<EditorTerminalEvent> = when (val value = terminalEvents.first { it !is StorageState.Loading }) {
         is StorageState.Ready -> value.value
         is StorageState.Unavailable -> throw StorageUnavailableException(value.reason)

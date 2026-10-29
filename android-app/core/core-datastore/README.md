@@ -63,22 +63,36 @@ a later re-anchor cannot manufacture trusted powered-off time.
 
 `EditorCommitmentStore.terminalEvents`, `readTerminalEvents` and `ackTerminalEvents`
 expose delivery until ack. `deliverTerminalEvents` invokes the consumer's suspend
-sink and acknowledges each event only after true (a durable history append). False,
-exception, failed ack or cancellation leaves it pending. The history sink must dedupe
+sink and batch-acknowledges successful IDs in one edit, returning their delivered count.
+A per-event non-cancellation failure stays pending while later events are attempted;
+false, failed ack or cancellation leaves the affected IDs pending. Cancellation before
+the batch ack preserves the whole batch. The history sink must dedupe
 by event.id, including a crash between its append and the separate editor ack.
 
-`editor_terminal_schema_v1=1` and `editor_terminal_events_v1` (`T|1`) are required
+`editor_terminal_schema_v1=2` and `editor_terminal_events_v1` (`T|2`) are required
 together after initialization. The pending batch is capped at 256; compact overflow
-evidence stays in the existing bounded cause state, even after a natural queued
-deletion. Acks free space for the next reconciliation. Pending events are never
+evidence is separately capped at 256, even after a natural queued deletion. Once both
+are full, later ends increment durable `overflowDropped` instead of silently dropping
+history or preventing protection. Unrepresentable endpoints increment `captureFailures`.
+These saturated counters describe incomplete history, never successful completions.
+Acks free space for the next reconciliation. Pending events are never
 age-deleted; acknowledged dedupe receipts are capped at 1024 and 30 days. A recorded
-cause marker prevents re-emission after those ack receipts are pruned.
+cause marker prevents re-emission after those ack receipts are pruned. A naturally
+ended raw Timer row and its cause retire together only after durable terminal ack,
+and never while a pending/queued editor change references them. The total 2,000-cause
+bound refuses new capacity with typed unavailable while existing edits/deletes remain
+available. History backlog alone cannot prevent a new Timer start.
 `terminalDeliveryHealth` exposes pending/overflow counts and the oldest observation,
-so absent or failing consumers are observable. History-domain corruption preserves
+plus `overflowDropped`, `captureFailures` and `incompleteHistory`, so absent/failing
+consumers and lost evidence are observable. Draft `T|1` fixtures remain readable and
+upgrade on the next outbox mutation; version 2 requires its health row. Both legacy
+`session-timer-` and new `session-timer-v2-` native rows emit natural history; this does
+not change their distinct exit rights. History-domain corruption preserves
 raw records/evidence and reports unavailable without erasing unrelated protection.
 New editor `F|` metadata is unsupported in pre-terminal builds; downgrade is not a
 repair route. C3 may absorb this outbox into its lifecycle journal later while
 preserving stable IDs and acknowledgement semantics.
+This outbox must ship together with lane F's #151 consumer, not in an earlier release.
 
 Only transient IO is retried automatically. File corruption emits `CORRUPT` once
 and stops; corrupt/unsupported payloads emit an unavailable state without a polling
