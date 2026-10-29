@@ -31,7 +31,7 @@ internal object ProtectionHistoryEventAdapter {
 
 /** Consume only the public health projection; no history reader opens C's private ledger. */
 internal fun hasMissingProtectionEvents(status: ProtectionStatus): Boolean =
-    "lifecycle-events-dropped" in status.detectors.degradedReasons
+    status.lifecycleEventsDropped > 0 || "lifecycle-events-dropped" in status.detectors.degradedReasons
 
 /** Returning true acknowledges the whole projection, including all pass terminals, on disk. */
 internal class ProtectionHistoryConsumer(
