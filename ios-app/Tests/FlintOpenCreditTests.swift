@@ -284,7 +284,8 @@ final class FlintOpenCreditTests: XCTestCase {
         var fields = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(rule)) as? [String: Any])
         let window: [String: Any] = ["start": now.timeIntervalSinceReferenceDate, "end": now.addingTimeInterval(86_400).timeIntervalSinceReferenceDate]
         var metadata: [String: Any] = ["revision": 1, "activityRevision": 1, "contractVersion": 12,
-            "timeZoneID": "UTC", "usesLegacyActivityName": false, "requiresTierReview": false, "occurrence": window]
+            "timeZoneID": "UTC", "usesLegacyActivityName": false, "requiresTierReview": false, "occurrence": window,
+            "incarnation": UUID().uuidString]
         fields["protection"] = metadata
         let before = try JSONDecoder().decode(FlintOpenLimitRule.self, from: JSONSerialization.data(withJSONObject: fields))
         let originalFingerprint = try FlintOpenCredit.effectiveFingerprint(for: before)

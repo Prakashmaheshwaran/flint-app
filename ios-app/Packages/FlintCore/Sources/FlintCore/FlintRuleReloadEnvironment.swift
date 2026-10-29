@@ -12,8 +12,7 @@ enum FlintDesiredRules {
 
     static func load<Rule: FlintGatedRule>(_ type: Rule.Type, key: Key, from defaults: UserDefaults?,
                                          at now: Date = Date(), migrating: Bool = true) -> [Rule]? {
-        guard let defaults else { return nil }
-        defaults.synchronize()
+        guard let defaults, defaults.synchronize() else { return nil }
         let marker = defaults.object(forKey: key.marker)
         if let marker {
             guard let data = marker as? Data,
@@ -66,13 +65,30 @@ enum FlintDesiredRules {
 
     static func save<Rule: FlintGatedRule>(_ rules: [Rule], key: Key, to defaults: UserDefaults?,
         encode: ([Rule]) throws -> Data = { try JSONEncoder().encode($0) }) -> Bool {
-        guard let defaults, Set(rules.map(\.id)).count == rules.count,
+        guard let defaults, defaults.synchronize(), Set(rules.map(\.id)).count == rules.count,
               rules.allSatisfy({ $0.validationIssue == nil && $0.protection != nil }),
-              let data = try? encode(rules) else { return false }
+              let data = try? encode(rules),
+              let marker = try? JSONEncoder().encode(Marker(schema: 1)) else { return false }
+        let previous = defaults.object(forKey: key.rawValue)
+        let previousMarker = defaults.object(forKey: key.marker)
+        var saved = false
+        defer {
+            if !saved {
+                // A failed flush must not leave a weaker cached after-image available to a
+                // later reconcile. Restore both keys; unreadable storage remains unavailable.
+                if let previous { defaults.set(previous, forKey: key.rawValue) }
+                else { defaults.removeObject(forKey: key.rawValue) }
+                if let previousMarker { defaults.set(previousMarker, forKey: key.marker) }
+                else { defaults.removeObject(forKey: key.marker) }
+                defaults.synchronize()
+            }
+        }
         defaults.set(data, forKey: key.rawValue)
         guard defaults.synchronize(), defaults.data(forKey: key.rawValue) == data else { return false }
-        defaults.set(try? JSONEncoder().encode(Marker(schema: 1)), forKey: key.marker)
-        return defaults.synchronize()
+        defaults.set(marker, forKey: key.marker)
+        guard defaults.synchronize(), defaults.data(forKey: key.marker) == marker else { return false }
+        saved = true
+        return true
     }
 
     static func saveFailure(_ domain: String, previous: FlintArmingHealth) -> FlintArmingHealth.DomainReport {

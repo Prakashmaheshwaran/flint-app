@@ -38,7 +38,7 @@ final class FlintRuleCallbackTests: XCTestCase {
         XCTAssertEqual(h.appliedLimits, [limit])
     }
 
-    func testDuplicateDailyStartCannotResetUsedTimeOrRevokeOpenCreditPC15PC16PC64() throws {
+    func testDuplicateDailyStartKeepsTimeBudgetAndUsesGrantAwareOpenWriterPC15PC16PC64() throws {
         let h = try RuleHarness(); defer { h.clean() }
         let time = h.install(FlintLimitRule(id: "time", name: "Time", thresholdMinutes: 10,
             protection: .init(timeZoneID: "UTC")))
@@ -48,13 +48,15 @@ final class FlintRuleCallbackTests: XCTestCase {
         _ = monitor.handle(.start, activity: time.activityName)
         _ = monitor.handle(.start, activity: open.activityName)
         XCTAssertTrue(h.cleared.isEmpty)
-        XCTAssertTrue(h.appliedOpens.isEmpty)
+        XCTAssertEqual(h.appliedOpens, [open], "the B5 writer preserves valid bounded grants on every trigger")
+        XCTAssertTrue(h.center.starts.isEmpty, "a duplicate callback must not re-register a daily budget")
         h.now = time.protection!.occurrence!.end
         _ = monitor.handle(.start, activity: time.activityName)
         _ = monitor.handle(.end, activity: time.activityName) // delayed previous-day end
         _ = monitor.handle(.start, activity: open.activityName)
         XCTAssertEqual(h.cleared, [time.storeName])
-        XCTAssertEqual(h.appliedOpens.count, 1)
+        XCTAssertEqual(h.appliedOpens.count, 2)
+        XCTAssertEqual(h.appliedOpens.last?.activityName, open.activityName)
     }
 
     func testUnavailableDomainCallbackPreservesRegistrationAndShield() throws {

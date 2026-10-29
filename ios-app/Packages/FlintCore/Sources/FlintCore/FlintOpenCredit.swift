@@ -55,7 +55,8 @@ public enum FlintOpenCredit {
     static func importLegacy(into state: inout FlintLedgerState, defaults: UserDefaults,
                              at now: FlintLedgerInstant, calendar: Calendar) {
         guard !state.migrations.contains(FlintLedgerState.legacyOpenCreditMigration) else { return }
-        let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: defaults)
+        let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: defaults,
+                                           at: now.wall, migrating: false)
         let raw = defaults.object(forKey: FlintLedgerState.legacyOpenCreditKey)
         state.importLegacyOpenCredits(raw.map(FlintLegacyValue.value) ?? .absent,
             targetKeys: rules.map(targetKeys), established: rules == nil ||
@@ -93,7 +94,7 @@ public enum FlintOpenCredit {
     private static func transactApplyShield(for rule: FlintOpenLimitRule,
                                             ledger: FlintProtectionLedger) -> Result<Void, FlintLedgerError> {
         ledger.transaction { state -> Void in
-            let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup)
+            let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup, migrating: false)
             let valid = state.reconcileOpenCredits(at: FlintLedgerInstant(clock: .system),
                 targetKeys: rules.map(targetKeys) ?? state.openCredits.knownTargets,
                 setupCalendar: FlintClock.system.calendar(), reshield: reshield)
@@ -126,7 +127,7 @@ public enum FlintOpenCredit {
         guard let ledger = FlintProtectionLedger.appGroup() else { return nil }
         let center = DeviceActivityCenter()
         return FlintOpenCreditService(ledger: ledger, clock: .system, context: {
-            guard let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup),
+            guard let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup, migrating: false),
                   Set(rules.map(\.id)).count == rules.count else { return nil }
             let covering = rules.filter { rule in rule.enabled && target.map { keys(for: rule).contains($0) } == true }
             guard covering.allSatisfy({ rule in
@@ -160,7 +161,7 @@ public enum FlintOpenCredit {
             center.activities.contains(DeviceActivityName(name)) && center.schedule(for: DeviceActivityName(name)) != nil
         }, release: release, reshield: reshield, stop: { FlintScheduling.stopMonitoring([$0]) },
         transition: { body in FlintSessionController().withTransition(body) != nil }, authorized: { grant in
-            guard let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup),
+            guard let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup, migrating: false),
                   Set(rules.map(\.id)).count == rules.count else { return nil }
             return authorized(grant, rules: rules)
         }, unavailable: restoreObservedRules)
@@ -197,7 +198,7 @@ public enum FlintOpenCredit {
         return SHA256.hash(data: try JSONEncoder().encode(parts)).map { String(format: "%02x", $0) }.joined()
     }
     private static func release(_ grant: FlintOpenCreditGrant) throws {
-        guard let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup) else {
+        guard let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup, migrating: false) else {
             throw FlintOpenCreditRefusal.denied(.applying)
         }
         for rule in rules where rule.enabled && grant.coveredCauses.contains(rule.id) {
@@ -225,7 +226,7 @@ public enum FlintOpenCredit {
     /// A corrupt ledger cannot identify its hashed carrier. Restore only readable rules
     /// whose daily registration is already observed; never create an unarmed/global shield.
     private static func restoreObservedRules() {
-        guard let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup),
+        guard let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup, migrating: false),
               Set(rules.map(\.id)).count == rules.count else { return }
         let center = DeviceActivityCenter()
         let peek = FlintProtectionLedger.appGroup().flatMap { try? $0.peek().get() }
@@ -238,7 +239,7 @@ public enum FlintOpenCredit {
     }
     private static func reshield(_ grant: FlintOpenCreditGrant) {
         guard grant.isValid else { return }
-        let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup)
+        let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup, migrating: false)
         var currentTargets: [String: Set<String>]?
         if let rules, Set(rules.map(\.id)).count == rules.count {
             currentTargets = Dictionary(uniqueKeysWithValues: rules.filter(\.enabled).map { ($0.storeName, keys(for: $0)) })
@@ -280,8 +281,8 @@ public enum FlintOpenCredit {
     }
 
     private static func otherStores() -> [FlintOpenCreditContributor]? {
-        guard let schedules = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: .flintGroup),
-              let limits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: .flintGroup) else { return nil }
+        guard let schedules = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: .flintGroup, migrating: false),
+              let limits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: .flintGroup, migrating: false) else { return nil }
         let names = [("Current session", "flint"), ("Safari restriction", FlintWebRestrictionLifecycle.legacyStoreName)] +
             schedules.map { ("Schedule: " + $0.name, $0.storeName) } +
             limits.map { ("Time Limit: " + $0.name, $0.storeName) }

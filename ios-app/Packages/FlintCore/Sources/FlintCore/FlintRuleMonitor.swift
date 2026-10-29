@@ -25,6 +25,7 @@ public final class FlintRuleMonitor {
     }
 
     private func process<Rule: FlintGatedRule>(_ type: Rule.Type, callback: Callback, activity: String) {
+        if Rule.domain == .openLimits { env.reconcileOpenCredits() }
         guard FlintRuleArbiter(environment: env).applyQueued(type),
               var all = FlintDesiredRules.load(type, key: Rule.domain, from: env.defaults, at: env.clock.now()) else {
             env.record(Rule.domain.domain, FlintDesiredRules.unavailable(Rule.domain.domain, previous: env.loadHealth()))
@@ -52,7 +53,7 @@ public final class FlintRuleMonitor {
             else if let limit = rule as? FlintLimitRule {
                 if isNewOccurrence { env.clearStore(limit.storeName); env.clearLimitThreshold(limit.id) }
                 if limit.thresholdMinutes == 0 { env.applyLimitShield(limit); env.markLimitThreshold(limit, now) }
-            } else if let open = rule as? FlintOpenLimitRule, isNewOccurrence { env.applyOpenShield(open) }
+            } else if let open = rule as? FlintOpenLimitRule { env.applyOpenShield(open) }
         case .end:
             // A delayed old end, including a callback delivered after the next start, cannot
             // end the new window. A carrier's wall end alone is never release authority.

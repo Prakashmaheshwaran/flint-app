@@ -3,7 +3,94 @@ import FamilyControls
 @testable import FlintCore
 @testable import Flint
 
+/// Only injects a failed flush; successful operations still use the real suite.
+private final class FailingRuleDefaults: UserDefaults {
+    var successfulFlushesBeforeFailure: Int?
+    override func synchronize() -> Bool {
+        if let remaining = successfulFlushesBeforeFailure {
+            guard remaining > 0 else { successfulFlushesBeforeFailure = nil; return false }
+            successfulFlushesBeforeFailure = remaining - 1
+        }
+        return super.synchronize()
+    }
+}
+
 final class FlintRuleReviewTests: XCTestCase {
+    func testFailedDefaultsFlushRestoresThePriorBlobAndInitializationMarker() throws {
+        for (initialized, successfulFlushes) in [(false, 1), (false, 2), (true, 1), (true, 2)] {
+            let h = try RuleHarness(); defer { h.clean() }
+            let original = h.install(h.schedule(tier: .easy))
+            if !initialized { h.defaults.removeObject(forKey: FlintRuleStoreKey.schedules.marker) }
+            let writer = try XCTUnwrap(FailingRuleDefaults(suiteName: h.suite))
+            let bytes = writer.data(forKey: FlintRuleStoreKey.schedules.rawValue)
+            let marker = writer.data(forKey: FlintRuleStoreKey.schedules.marker)
+            var changed = original; changed.enabled = false
+            // Flush 1 reads the baseline; 2 writes the blob; 3 writes the marker.
+            writer.successfulFlushesBeforeFailure = successfulFlushes
+            XCTAssertFalse(FlintDesiredRules.save([changed], key: .schedules, to: writer))
+            XCTAssertEqual(writer.data(forKey: FlintRuleStoreKey.schedules.rawValue), bytes)
+            XCTAssertEqual(writer.data(forKey: FlintRuleStoreKey.schedules.marker), marker)
+            XCTAssertTrue(writer.synchronize())
+            XCTAssertEqual(FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules,
+                from: writer, at: h.now), [original])
+        }
+    }
+
+    func testFailedDefaultsReadIsUnavailableAndDoesNotRetireNativeProtection() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let original = h.install(h.schedule(tier: .easy))
+        let writer = try XCTUnwrap(FailingRuleDefaults(suiteName: h.suite))
+        var environment = h.environment; environment.defaults = writer
+        let bytes = writer.data(forKey: FlintRuleStoreKey.schedules.rawValue)
+        writer.successfulFlushesBeforeFailure = 0
+        XCTAssertEqual(FlintSchedulesController(environment: environment).delete(original.id,
+            revision: original.revision), .unavailable)
+        XCTAssertEqual(writer.data(forKey: FlintRuleStoreKey.schedules.rawValue), bytes)
+        XCTAssertTrue(h.center.stops.isEmpty); XCTAssertTrue(h.cleared.isEmpty)
+        XCTAssertNotNil(h.center.held[.init(original.activityName)])
+    }
+
+    func testOpenCreditLegacyImportDoesNotMigrateOrInitializeTheRulesDomain() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        var legacy = FlintOpenLimitRule(id: "legacy", name: "Legacy", opensAllowed: 3,
+            breakLevel: .hardcore)
+        legacy.protection = nil
+        let source = try JSONEncoder().encode([legacy])
+        h.defaults.set(source, forKey: FlintRuleStoreKey.openLimits.rawValue)
+        var state = FlintLedgerState(initializedAt: h.now)
+        FlintOpenCredit.importLegacy(into: &state, defaults: h.defaults,
+            at: FlintLedgerInstant(clock: h.clock), calendar: h.clock.calendar())
+        XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.openLimits.rawValue), source)
+        XCTAssertNil(h.defaults.object(forKey: FlintRuleStoreKey.openLimits.marker))
+        XCTAssertNil(h.defaults.object(forKey: FlintRuleStoreKey.openLimits.original))
+        XCTAssertNil(h.defaults.object(forKey: FlintRuleStoreKey.openLimits.rawValue + ".quarantine.adr012"))
+    }
+
+    func testOpenRecoveryPrecedesMonitorAndHostRuleReadsAndEveryObservedReapplyPreservesGrants() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        var legacy = FlintOpenLimitRule(id: "legacy", name: "Legacy", opensAllowed: 3)
+        legacy.protection = nil
+        let source = try JSONEncoder().encode([legacy])
+        h.defaults.set(source, forKey: FlintRuleStoreKey.openLimits.rawValue)
+        h.center.held[.init(legacy.activityName)] = legacy.registration()
+        var recovered = 0
+        var environment = h.environment
+        environment.reconcileOpenCredits = {
+            if recovered == 0 {
+                XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.openLimits.rawValue), source)
+                XCTAssertNil(h.defaults.object(forKey: FlintRuleStoreKey.openLimits.marker),
+                    "no migration/queue read may run ahead of credit recovery")
+            }
+            recovered += 1
+        }
+        XCTAssertTrue(FlintRuleMonitor(environment: environment).handle(.start, activity: legacy.activityName))
+        XCTAssertEqual(recovered, 1)
+        XCTAssertEqual(h.appliedOpens.count, 1)
+        FlintOpenLimitsController(environment: environment, selectionIssue: { _ in nil }).reload(reapplyShields: false)
+        XCTAssertEqual(recovered, 2)
+        XCTAssertEqual(h.appliedOpens.count, 2, "every observed reload uses the grant-aware writer")
+    }
+
     func testMixedBatchUsesEachNaturalEndAndAppliesEasyAndInactiveImmediately() throws {
         let h = try RuleHarness(); defer { h.clean() }
         var night = h.schedule(tier: .harder); night.id = "sleep.night"
