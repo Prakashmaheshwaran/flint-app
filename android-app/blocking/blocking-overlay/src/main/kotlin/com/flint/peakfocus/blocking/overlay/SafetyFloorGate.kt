@@ -13,8 +13,8 @@ import kotlinx.coroutines.flow.asStateFlow
  *
  *  - [protects] is a pure read of the cached set. When the cache is older than
  *    [refreshIntervalMs] it hands a refresh to [refreshInBackground] (one in flight at a time)
- *    and answers from the last known set meanwhile. Only the very first call resolves inline,
- *    so a cold start has no hole.
+ *    and answers from the last known set meanwhile. An unresolved cold start allows
+ *    unclassifiable packages until the background snapshot arrives.
  *  - [protectsFresh] is for a decision that is about to *block* (rare): it resolves inline when
  *    the cache is older than [maxAgeMs], so a dialer or launcher the user just made default is
  *    not shielded from stale data. Pass 0 to force a resolve (a new shield mount).
@@ -53,21 +53,24 @@ class SafetyFloorGate(
     /** Read-only provenance; a failed/missing lookup is never counted as a resolved source. */
     val runtimeResolution = resolution.asStateFlow()
     private val lock = Any()
+    private val refreshLock = Any()
     private val refreshing = AtomicBoolean(false)
     @Volatile private var bySource: Map<String, Set<String>> = emptyMap()
     @Volatile private var runtime: Set<String> = emptySet()
     @Volatile private var resolvedAtMs: Long? = null
-    private var candidates: Set<String> = emptySet()
-    private var candidatesUnavailable = true
+    private var homeCandidates: Set<String> = emptySet()
+    private var callingCandidates: Set<String> = emptySet()
+    private var homeCandidatesUnavailable = true
+    private var callingCandidatesUnavailable = true
     private var ordinaryLaunchers: Set<String> = emptySet()
 
     /** Floor check against the cached runtime set; schedules a background refresh when stale. */
     fun protects(packageName: String): Boolean {
         if (SafetyFloor.isProtected(packageName, selfPackage)) return true
         if (resolvedAtMs == null) {
-            refreshIfOlderThan(0L) // cold start: one inline resolve, never an empty first answer
+            scheduleRefresh()
         } else if (runtimeResolution.value.degraded && isOlderThan(UNRESOLVED_RETRY_MS)) {
-            refreshIfOlderThan(UNRESOLVED_RETRY_MS)
+            scheduleRefresh()
         } else if (isOlderThan(refreshIntervalMs)) {
             scheduleRefresh()
         }
@@ -83,8 +86,15 @@ class SafetyFloorGate(
 
     /** Never combine a refreshed set with the previous successful resolution metadata. */
     private fun allowForSafety(packageName: String): Boolean = synchronized(lock) {
-        packageName in runtime || (resolution.value.degraded &&
-            (packageName in candidates || (candidatesUnavailable && packageName !in ordinaryLaunchers)))
+        val provenance = resolution.value
+        fun unresolved(source: String) = source in provenance.requiredSources &&
+            (source !in provenance.resolvedSources || source in provenance.failedSources)
+        val homeMissing = unresolved(RuntimeSafetySurfaces.SOURCE_HOME)
+        val callingMissing = unresolved(RuntimeSafetySurfaces.SOURCE_DEFAULT_DIALER)
+        packageName in runtime || (homeMissing && packageName in homeCandidates) ||
+            (callingMissing && packageName in callingCandidates) ||
+            (((homeMissing && homeCandidatesUnavailable) || (callingMissing && callingCandidatesUnavailable)) &&
+                packageName !in ordinaryLaunchers)
     }
 
     /** Ask for a background refresh if the cache is older than [maxAgeMs] (e.g. while a shield is up). */
@@ -119,32 +129,35 @@ class SafetyFloorGate(
 
     private fun refreshIfOlderThan(maxAgeMs: Long) {
         if (maxAgeMs > 0L && !isOlderThan(maxAgeMs)) return
-        synchronized(lock) {
+        synchronized(refreshLock) {
             if (maxAgeMs > 0L && !isOlderThan(maxAgeMs)) return
             val resolved = runCatching(resolveRuntime).getOrNull().orEmpty()
-            // Per source: a successful lookup replaces that source; a failed (null) or missing
-            // one keeps its last known packages.
-            val merged = HashMap(bySource)
-            for ((source, packages) in resolved) {
-                if (source !in RuntimeSafetySurfaces.CANDIDATE_SOURCES && packages != null) merged[source] = packages
+            synchronized(lock) {
+                // Per source: a successful lookup replaces that source; a failed (null) or missing
+                // one keeps its last known packages. Binder work never holds this membership lock.
+                val merged = HashMap(bySource)
+                for ((source, packages) in resolved) {
+                    if (source !in RuntimeSafetySurfaces.CANDIDATE_SOURCES && packages != null) merged[source] = packages
+                }
+                bySource = merged
+                runtime = merged.values.flatMapTo(HashSet()) { it }
+                val home = resolved[RuntimeSafetySurfaces.SOURCE_CANDIDATE_HOME]
+                val calling = resolved[RuntimeSafetySurfaces.SOURCE_CANDIDATE_CALLING]
+                homeCandidatesUnavailable = home == null
+                callingCandidatesUnavailable = calling == null
+                if (home != null) homeCandidates = home
+                if (calling != null) callingCandidates = calling
+                // Positive ordinary classifications must never survive a failed new snapshot.
+                ordinaryLaunchers = resolved[RuntimeSafetySurfaces.SOURCE_ORDINARY_LAUNCHERS].orEmpty()
+                // Stamp even on failure so a broken resolver is retried at the interval, not on
+                // every event; the previous sets stay in force meanwhile.
+                resolvedAtMs = nowElapsedMs()
+                resolution.value = resolution.value.copy(
+                    resolvedSources = merged.keys.toSet(),
+                    failedSources = resolution.value.requiredSources.filterTo(HashSet()) { resolved[it] == null },
+                    checkedAtElapsedMs = resolvedAtMs,
+                )
             }
-            bySource = merged
-            runtime = merged.values.flatMapTo(HashSet()) { it }
-            val home = resolved[RuntimeSafetySurfaces.SOURCE_CANDIDATE_HOME]
-            val calling = resolved[RuntimeSafetySurfaces.SOURCE_CANDIDATE_CALLING]
-            candidatesUnavailable = home == null || calling == null
-            val currentCandidates = home.orEmpty() + calling.orEmpty()
-            candidates = if (candidatesUnavailable) candidates + currentCandidates else currentCandidates
-            // Positive ordinary classifications must never survive a failed new snapshot.
-            ordinaryLaunchers = resolved[RuntimeSafetySurfaces.SOURCE_ORDINARY_LAUNCHERS].orEmpty()
-            // Stamp even on failure so a broken resolver is retried at the interval, not on
-            // every event; the previous sets stay in force meanwhile.
-            resolvedAtMs = nowElapsedMs()
-            resolution.value = resolution.value.copy(
-                resolvedSources = merged.keys.toSet(),
-                failedSources = resolution.value.requiredSources.filterTo(HashSet()) { resolved[it] == null },
-                checkedAtElapsedMs = resolvedAtMs,
-            )
         }
     }
 

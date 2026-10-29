@@ -40,21 +40,27 @@ object RuntimeSafetySurfaces {
     internal fun resolvedIdentity(packageName: String?): Set<String>? =
         packageName?.takeIf { it.isNotBlank() }?.let(::setOf)
 
+    /** No telephony is a proven absence; a failed lookup is not. Null defaults use the effective dialer. */
+    internal fun resolvedCallingIdentity(hasTelephony: Boolean?, role: () -> String?, effective: () -> String?): Set<String>? {
+        if (hasTelephony == false) return emptySet()
+        if (hasTelephony == null) return null
+        return runCatching { resolvedIdentity(role()) ?: resolvedIdentity(effective()) }.getOrNull()
+    }
+
     /** Source → resolved packages, or null when the role identity could not be established. */
     fun resolveBySource(context: Context): Map<String, Set<String>?> {
         val pm = context.packageManager
         val telecom = runCatching {
             context.getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
         }
+        val hasTelephony = runCatching { pm.hasSystemFeature(PackageManager.FEATURE_TELEPHONY) }.getOrNull()
+        val effectiveDialer by lazy { effectiveRole(pm, Intent(Intent.ACTION_DIAL, Uri.parse("tel:"))) }
         return buildMap {
             put(
                 SOURCE_HOME,
                 runCatching {
                     val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-                    @Suppress("DEPRECATION") // ResolveInfoFlags overloads need API 33; minSdk is 23.
-                    resolvedIdentity(
-                        pm.resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName,
-                    )
+                    resolvedIdentity(effectiveRole(pm, home))
                 }.getOrNull(),
             )
             put(
@@ -69,17 +75,17 @@ object RuntimeSafetySurfaces {
             )
             put(
                 SOURCE_DEFAULT_DIALER,
-                telecom.mapCatching { resolvedIdentity(it?.defaultDialerPackage) }.getOrNull(),
+                resolvedCallingIdentity(hasTelephony, { telecom.getOrThrow()?.defaultDialerPackage }, { effectiveDialer }),
             )
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 put(
                     SOURCE_SYSTEM_DIALER,
-                    telecom.mapCatching { resolvedIdentity(it?.systemDialerPackage) }.getOrNull(),
+                    resolvedCallingIdentity(hasTelephony, { telecom.getOrThrow()?.systemDialerPackage }, { effectiveDialer }),
                 )
             }
             // The role and candidate results share one refresh/decision snapshot. Handler
             // discovery does not prove that a candidate currently owns a default role.
-            if (values.any { it == null }) {
+            if (this[SOURCE_HOME] == null || this[SOURCE_DEFAULT_DIALER] == null) {
                 val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
                 val calling = listOf(Intent(Intent.ACTION_DIAL),
                     Intent(Intent.ACTION_DIAL, Uri.parse("tel:")),
@@ -106,12 +112,21 @@ object RuntimeSafetySurfaces {
 
     @Suppress("DEPRECATION")
     private fun queryPackages(pm: PackageManager, intent: Intent): Set<String>? = runCatching {
-        pm.queryIntentActivities(intent, 0).mapTo(HashSet()) {
+        pm.queryIntentActivities(Intent(intent).addCategory(Intent.CATEGORY_DEFAULT), PackageManager.MATCH_DEFAULT_ONLY).mapTo(HashSet()) {
             requireNotNull(it.activityInfo?.packageName?.takeIf(String::isNotBlank))
         }
     }.getOrNull()
 
-    /** A failed discovery never promotes a missing classification to proof of an ordinary app. */
+    @Suppress("DEPRECATION")
+    private fun effectiveRole(pm: PackageManager, intent: Intent): String? {
+        val matched = Intent(intent).addCategory(Intent.CATEGORY_DEFAULT)
+        val pkg = pm.resolveActivity(matched, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName ?: return null
+        // A system chooser is not proof of a default role. It must be a real matching handler.
+        return pkg.takeIf { it in queryPackages(pm, matched).orEmpty() }
+    }
+
+    /** Empty successful discovery permits ordinary blocking with degraded role health;
+     * failed discovery never promotes missing classification to proof of an ordinary app. */
     internal fun candidateSources(home: Set<String>?, calling: Set<String>?,
         visibleLaunchers: () -> Set<String>?, classify: (String) -> Boolean?): Map<String, Set<String>?> = mapOf(
         SOURCE_CANDIDATE_HOME to home,

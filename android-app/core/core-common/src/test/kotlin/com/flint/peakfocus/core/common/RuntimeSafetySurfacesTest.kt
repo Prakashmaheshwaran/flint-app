@@ -39,4 +39,19 @@ class RuntimeSafetySurfacesTest {
         assertNull(snapshot[RuntimeSafetySurfaces.SOURCE_CANDIDATE_CALLING])
         assertTrue(snapshot[RuntimeSafetySurfaces.SOURCE_ORDINARY_LAUNCHERS]!!.isEmpty())
     }
+
+    @Test fun PC_49_noTelephonyResolvesCallingAsAbsentWithoutReadingUnavailableServices() {
+        assertEquals(emptySet<String>(), RuntimeSafetySurfaces.resolvedCallingIdentity(false,
+            role = { error("no TelecomManager required") }, effective = { error("no fallback required") }))
+    }
+
+    @Test fun PC_49_unsetDefaultUsesTheEffectiveDialerButLookupFailuresRemainUnresolved() {
+        assertEquals(setOf("effective.dialer"), RuntimeSafetySurfaces.resolvedCallingIdentity(true,
+            role = { null }, effective = { "effective.dialer" }))
+        assertEquals(setOf("chosen.dialer"), RuntimeSafetySurfaces.resolvedCallingIdentity(true,
+            role = { "chosen.dialer" }, effective = { error("explicit role wins") }))
+        assertNull(RuntimeSafetySurfaces.resolvedCallingIdentity(true, role = { null }, effective = { null }))
+        assertNull(RuntimeSafetySurfaces.resolvedCallingIdentity(null, role = { "untrusted" }, effective = { null }))
+        assertNull(RuntimeSafetySurfaces.resolvedCallingIdentity(true, role = { error("binder died") }, effective = { null }))
+    }
 }
