@@ -55,6 +55,7 @@ final class FlintRuleArbiter {
             var decisions: [FlintProtectionDecision] = []
             var causes: [FlintCauseState] = []
             var scopes: [String] = [context]
+            var waitScopes: [String] = [context]
             var previews: [FlintRuleChangePreview] = []
             var nextOccurrenceEnds: [Date] = []
             var raisesTier = false
@@ -124,6 +125,15 @@ final class FlintRuleArbiter {
                 guard let fingerprint = try? sourceFingerprint(mutation) else { return .unavailable }
                 let activation = occurrence == nil ? mutation.proposed?.previewWindow(at: now) : nil
                 scopes.append("\(cause.causeID):\(old?.revision ?? 0):\(cause.end?.timeIntervalSince1970 ?? 0):\(activation?.start.timeIntervalSince1970 ?? 0):\(activation?.end.timeIntervalSince1970 ?? 0):\(fingerprint)")
+                guard let before = try? source.fingerprint(action: "current", includeName: false) else { return .unavailable }
+                let after: String
+                if let proposed = mutation.proposed {
+                    guard let value = try? proposed.fingerprint(action: mutation.action.rawValue, includeName: false) else { return .unavailable }
+                    after = value
+                } else { after = "delete" }
+                // Cosmetic revisions invalidate an old confirmation, but do not restart a
+                // persisted wait for the same exact protection change (ADR-012 §2/4).
+                waitScopes.append("\(cause.causeID):\(old?.activityName ?? "new"):\(cause.end?.timeIntervalSince1970 ?? 0):\(before):\(after)")
             }
             let digest = SHA256.hash(data: Data(scopes.sorted().joined(separator: "|").utf8))
                 .map { String(format: "%02x", $0) }.joined()
@@ -189,7 +199,7 @@ final class FlintRuleArbiter {
                 if case .wait = decision { return cause }; return nil
             }
             if !harder.isEmpty {
-                let result = self.harderGate(harder, scope: scopes, operationID: digest, confirmation: false)
+                let result = self.harderGate(harder, scope: waitScopes, operationID: digest, confirmation: false)
                 switch result {
                 case .applied: break
                 case let .waiting(_, remaining, required):
@@ -257,7 +267,7 @@ final class FlintRuleArbiter {
                 all[index].protection?.queuedChange = rebased
             }
             if !harder.isEmpty {
-                guard self.harderGate(harder, scope: scopes, operationID: digest, confirmation: true) == .applied else {
+                guard self.harderGate(harder, scope: waitScopes, operationID: digest, confirmation: true) == .applied else {
                     self.rollback(prepared, previous: previous); return .unavailable
                 }
             }

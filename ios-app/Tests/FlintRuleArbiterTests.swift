@@ -205,6 +205,28 @@ final class FlintRuleArbiterTests: XCTestCase {
         }
     }
 
+    func testCosmeticRevisionRefreshesConfirmationWithoutRestartingPendingWaitPC10PC18PC21() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let old = h.install(FlintLimitRule(id: "time", name: "Time", thresholdMinutes: 30,
+            breakLevel: .harder, protection: .init(timeZoneID: "UTC")))
+        let arbiter = FlintRuleArbiter(environment: h.environment)
+        var draft = old; draft.thresholdMinutes = 60
+        guard case let .waiting(oldTicket, _, _) = arbiter.upsert(draft) else { return XCTFail() }
+        h.advance(30)
+        var rename = old; rename.name = "Renamed"
+        XCTAssertEqual(arbiter.upsert(rename), .applied)
+        XCTAssertEqual(arbiter.upsert(draft, confirmation: oldTicket), .staleRevision)
+        var refreshed = try XCTUnwrap(h.load(FlintLimitRule.self).first); refreshed.thresholdMinutes = 60
+        guard case let .waiting(ticket, remaining, required) = arbiter.upsert(refreshed) else { return XCTFail() }
+        XCTAssertEqual(remaining, 30); XCTAssertEqual(required, 60)
+        XCTAssertNotEqual(ticket.fingerprint, oldTicket.fingerprint)
+        h.advance(30)
+        guard case .waiting(_, remaining: 0, required: 60) = arbiter.upsert(refreshed) else { return XCTFail() }
+        XCTAssertEqual(arbiter.upsert(refreshed, confirmation: ticket), .applied)
+        let cause = FlintRuleArbiter.causeID(old, window: old.occurrence(at: h.now))
+        XCTAssertEqual(try h.ledger.read().get().harder[cause]?.committedCount, 1)
+    }
+
     func testHarderCancelRestartsFullWaitAndDifferentScopeCannotReuseItPC20() throws {
         let h = try RuleHarness(); defer { h.clean() }
         let old = h.install(h.schedule(tier: .harder))

@@ -101,13 +101,13 @@ extension FlintGatedRule {
             to: try snapshot(end: templateOccurrence(at: now)?.end ?? old.occurrence(at: now)?.end))
     }
 
-    func fingerprint(action: String) throws -> String {
+    func fingerprint(action: String, includeName: Bool = true) throws -> String {
         func keys<T: Encodable>(_ set: Set<T>) throws -> [String] {
             let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
             return try set.map { try encoder.encode($0).base64EncodedString() }.sorted()
         }
         // Canonical arrays: encoding Swift Sets directly is process-order dependent.
-        var parts = [action, id, name, enabled.description, breakLevel.rawValue, allowList.description,
+        var parts = [action, id, includeName ? name : "", enabled.description, breakLevel.rawValue, allowList.description,
                      selection.includeEntireCategory.description,
                      protection?.timeZoneID ?? TimeZone.current.identifier, budget.map(String.init) ?? "none"]
         if let window {
