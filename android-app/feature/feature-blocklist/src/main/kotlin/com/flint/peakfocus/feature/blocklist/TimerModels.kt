@@ -8,6 +8,7 @@ import com.flint.peakfocus.core.datastore.NATIVE_TIMER_ID_PREFIX
 import com.flint.peakfocus.core.datastore.CONTRACT_TIMER_ID_PREFIX
 import com.flint.peakfocus.core.datastore.EditorCommitmentState
 import com.flint.peakfocus.core.datastore.ruleCauseKey
+import com.flint.peakfocus.core.datastore.isActiveEditorSession
 import com.flint.peakfocus.core.model.AccessClockStamp
 import com.flint.peakfocus.blocking.engine.isValidNewSessionDuration
 
@@ -92,18 +93,13 @@ internal fun activeTimerSessions(rules: List<BlockRule>, nowEpochMs: Long): List
 /** Stored anchors keep a wall-clock edit from hiding a still-active Timer or extending it. */
 internal fun anchoredTimerSessions(rules: List<BlockRule>, editor: EditorCommitmentState?,
                                    now: AccessClockStamp, wall: Long): List<BlockRule> =
-    rules.filter { it.id.startsWith(BlockRule.SESSION_ID_PREFIX) && it.enabled }.mapNotNull { rule ->
+    rules.filter { isActiveEditorSession(it, editor?.causes?.get(ruleCauseKey(it.id)), now) }.map { rule ->
         val cause = editor?.causes?.get(ruleCauseKey(rule.id))
         val interval = cause?.interval
-        when {
-            cause?.occurrenceId == "inactive" -> null
-            interval != null -> interval.remainingMs(now).let { remaining ->
-                if (remaining == 0L) null else rule.copy(expiresAtEpochMs =
-                    if (wall > Long.MAX_VALUE - remaining) Long.MAX_VALUE else wall + remaining)
-            }
-            rule.isExpired(wall) -> null
-            else -> rule
-        }
+        if (interval != null) interval.remainingMs(now).let { remaining ->
+            rule.copy(expiresAtEpochMs =
+                if (wall > Long.MAX_VALUE - remaining) Long.MAX_VALUE else wall + remaining)
+        } else rule
     }.sortedWith(compareBy<BlockRule> { it.expiresAtEpochMs ?: Long.MAX_VALUE }.thenBy { it.id })
 
 /**

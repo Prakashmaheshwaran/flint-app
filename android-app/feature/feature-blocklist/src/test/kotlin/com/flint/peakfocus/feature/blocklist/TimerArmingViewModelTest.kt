@@ -31,6 +31,7 @@ class TimerArmingViewModelTest {
     private var applyFails = false
     private var requests = 0
     private var ids = 0
+    private var permissionReads = 0
     private val health = MutableStateFlow(readyTimerStatus(clock()))
     private class Disk : DataStore<Preferences> {
         private val values = MutableStateFlow(emptyPreferences())
@@ -54,7 +55,7 @@ class TimerArmingViewModelTest {
     private fun model(): TimerViewModel = TimerViewModel(rules, { listOf(app) }, editor, DataStoreHarderWaitStore(disk),
         now = { clock().wallEpochMs }, newId = { "attempt-${++ids}" }, ioDispatcher = dispatcher,
         protectionClock = ::clock, safety = { EditorSafety(true) }, protectionStatus = health,
-        loadPermissions = { permissions }, livePathA = { liveA }, requestEvaluation = {
+        loadPermissions = { permissionReads++; permissions }, livePathA = { liveA }, requestEvaluation = {
             requests++
             if (applyFails) throw IOException("detector unavailable")
         }).also { vm -> owners += ViewModelStore().also { it.put("timer", vm) } }
@@ -152,8 +153,25 @@ class TimerArmingViewModelTest {
         val vm = model(); runCurrent()
         val displayed = vm.uiState.value.sessions.single()
         assertEquals(rule.id, displayed.id); assertEquals(300_000L, displayed.expiresAtEpochMs!! - clock().wallEpochMs)
+        assertTrue(vm.uiState.value.arming is TimerArmingState.Applying)
+        advanceTimeBy(TIMER_ARM_CONFIRMATION_MS); health.value = readyTimerStatus(clock()); runCurrent()
         assertTrue(vm.uiState.value.arming is TimerArmingState.Degraded)
         assertFalse(vm.uiState.value.canStart)
         assertEquals(listOf(rule), rules.rules.first())
+    }
+
+    @Test fun `PC-77 Armed health lookups slow to ten seconds and an explicit resume refreshes immediately`() = runTest(dispatcher) {
+        val vm = model(); runCurrent(); vm.selectApps(listOf(app)); vm.start(); runCurrent()
+        val saved = rules.rules.first().single(); health.value = readyTimerStatus(clock(), listOf(saved.id)); runCurrent()
+        vm.setVisible(true); runCurrent()
+        val initial = permissionReads
+        repeat(9) {
+            advanceTimeBy(1_000); health.value = readyTimerStatus(clock(), listOf(saved.id)); runCurrent()
+        }
+        assertEquals(initial, permissionReads)
+        advanceTimeBy(1_000); health.value = readyTimerStatus(clock(), listOf(saved.id)); runCurrent()
+        assertEquals(initial + 1, permissionReads)
+        vm.refreshHealth(); runCurrent(); assertEquals(initial + 2, permissionReads)
+        vm.setVisible(false)
     }
 }

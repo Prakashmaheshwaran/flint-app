@@ -255,10 +255,7 @@ class DataStoreEditorCommitmentStore(
         val current = prefs.editorRules()
         if (state.causes.size >= MAX_EDITOR_CAUSES) return@transact TimerStartResult.Rejected("Protection capacity is full. Finish an existing commitment and try again.")
         val occupied = current.any { existing ->
-            existing.id == rule.id || (existing.id.startsWith(BlockRule.SESSION_ID_PREFIX) && existing.enabled &&
-                state.causes[ruleCauseKey(existing.id)]?.let { cause ->
-                    cause.occurrenceId != "inactive" && (cause.interval == null || cause.interval.remainingMs(now) > 0)
-                } != false)
+            existing.id == rule.id || isActiveEditorSession(existing, state.causes[ruleCauseKey(existing.id)], now)
         }
         if (occupied) return@transact TimerStartResult.Rejected("A Timer is already active. Finish it before starting another.")
         val startDecision = policy.decide(CommitmentPolicy.Action.START_ADDITIONAL, rule.breakLevel, CommitmentPolicy.CauseActivity.Inactive)

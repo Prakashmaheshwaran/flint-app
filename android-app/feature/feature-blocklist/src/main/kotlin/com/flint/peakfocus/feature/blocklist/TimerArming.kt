@@ -14,6 +14,7 @@ internal data class TimerPermissions(
 internal sealed interface TimerArmingState {
     data object Idle : TimerArmingState
     data class Applying(val ruleId: String) : TimerArmingState
+    data class Checking(val ruleId: String) : TimerArmingState
     data class Armed(val ruleId: String, val checkedAt: AccessClockStamp) : TimerArmingState
     data class Degraded(val ruleId: String?, val reason: String, val committed: Boolean) : TimerArmingState
 }
@@ -28,10 +29,15 @@ internal data class TimerArmAttempt(
 )
 
 internal const val TIMER_ARM_CONFIRMATION_MS = 6_000L
+internal const val TIMER_STATUS_GRACE_MS = 2_000L
 
 /** Display/start preflight only. The serialized editor remains the mutation authority. */
 internal fun timerPrerequisiteFailure(status: ProtectionStatus, permissions: TimerPermissions,
-                                     livePathA: Boolean, now: AccessClockStamp): String? {
+                                     livePathA: Boolean, now: AccessClockStamp): String? =
+    timerInfrastructureFailure(status, permissions, livePathA, now) ?: timerSnapshotFailure(status, now)
+
+private fun timerInfrastructureFailure(status: ProtectionStatus, permissions: TimerPermissions,
+                                       livePathA: Boolean, now: AccessClockStamp): String? {
     val canUseA = permissions.accessibilityEnabled && livePathA && status.detectors.accessibilityConnected
     // Path B has a full-screen Activity fallback when overlay access is absent.
     val canUseB = permissions.usageAccess && status.detectors.pathB == ProtectionStatus.PathBState.ENFORCING
@@ -39,10 +45,6 @@ internal fun timerPrerequisiteFailure(status: ProtectionStatus, permissions: Tim
         "Turn on Accessibility or grant Usage Access."
     else "Protection service is not connected. Retry or check setup."
     if (status.readiness != ProtectionStatus.Readiness.READY) return "Protection state is unavailable. Retry or check setup."
-    val observed = status.observedAt
-    if (observed == null || trustedElapsedMs(observed, now) == null ||
-        status.validUntilElapsedRealtimeMs?.let { now.elapsedRealtimeMs < it } != true)
-        return "The protection check is stale or unavailable. Retry to check again."
     val floor = status.safetyFloor
     val checked = floor?.checkedAtElapsedRealtimeMs
     if (!status.safetyFloorResolved || floor == null || floor.degraded || floor.failedSources.isNotEmpty() ||
@@ -54,12 +56,25 @@ internal fun timerPrerequisiteFailure(status: ProtectionStatus, permissions: Tim
     return null
 }
 
+private fun timerSnapshotFailure(status: ProtectionStatus, now: AccessClockStamp): String? =
+    if (status.observedAt?.let { trustedElapsedMs(it, now) } == null ||
+        status.validUntilElapsedRealtimeMs?.let { now.elapsedRealtimeMs < it } != true)
+        "The protection check is stale or unavailable. Retry to check again." else null
+
 /** A stored row cannot become Armed without a fresh check naming that exact Timer. */
 internal fun timerArmingState(attempt: TimerArmAttempt, status: ProtectionStatus,
                              permissions: TimerPermissions, livePathA: Boolean,
                              now: AccessClockStamp): TimerArmingState {
-    timerPrerequisiteFailure(status, permissions, livePathA, now)?.let {
+    timerInfrastructureFailure(status, permissions, livePathA, now)?.let {
         return TimerArmingState.Degraded(attempt.ruleId, it, committed = true)
+    }
+    timerSnapshotFailure(status, now)?.let { reason ->
+        attempt.applyFailure?.let { return TimerArmingState.Degraded(attempt.ruleId, it, committed = true) }
+        val until = status.validUntilElapsedRealtimeMs
+        val withinGrace = status.observedAt?.let { trustedElapsedMs(it, now) } != null && until != null &&
+            now.elapsedRealtimeMs >= until && now.elapsedRealtimeMs - until <= TIMER_STATUS_GRACE_MS
+        return if (withinGrace) TimerArmingState.Checking(attempt.ruleId)
+            else TimerArmingState.Degraded(attempt.ruleId, reason, committed = true)
     }
     val observed = checkNotNull(status.observedAt)
     val afterCommit = attempt.committedAt?.let { trustedElapsedMs(it, observed) != null } ?: true

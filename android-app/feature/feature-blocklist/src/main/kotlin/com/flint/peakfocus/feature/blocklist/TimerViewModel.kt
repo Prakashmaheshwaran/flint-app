@@ -17,6 +17,7 @@ import com.flint.peakfocus.core.datastore.ProtectionClock
 import com.flint.peakfocus.core.model.AccessClockStamp
 import com.flint.peakfocus.core.model.StorageState
 import com.flint.peakfocus.blocking.engine.HarderWaitPolicy
+import com.flint.peakfocus.blocking.engine.trustedElapsedMs
 import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BreakLevel
@@ -69,34 +70,48 @@ internal class TimerViewModel(
     private var permissions = TimerPermissions()
     private var permissionsJob: Job? = null
     private var armAttempt: TimerArmAttempt? = null
+    private var clockReady = false
+    private var permissionsCheckedAt: AccessClockStamp? = null
 
     init {
-        viewModelScope.launch { protectionStatus.collect { refreshClock() } }
         viewModelScope.launch {
-            commitments.state.collect { snapshot ->
-                editorUnavailable = snapshot is StorageState.Unavailable
-                if (snapshot is StorageState.Ready) latestEditor = snapshot.value
-                refreshClock()
+            // The first OS boot-identity read opens /proc; finish it before any main-thread read.
+            withContext(ioDispatcher) { protectionClock() }
+            clockReady = true
+            viewModelScope.launch { protectionStatus.collect { refreshClock() } }
+            viewModelScope.launch {
+                commitments.state.collect { snapshot ->
+                    editorUnavailable = snapshot is StorageState.Unavailable
+                    if (snapshot is StorageState.Ready) latestEditor = snapshot.value
+                    refreshClock()
+                }
             }
-        }
-        viewModelScope.launch {
-            harderWaits.state.collect { value ->
-                waitLedger = (value as? StorageState.Ready)?.value
-                refreshClock()
+            viewModelScope.launch {
+                harderWaits.state.collect { value ->
+                    waitLedger = (value as? StorageState.Ready)?.value
+                    refreshClock()
+                }
             }
+            retryRules()
+            retryApps()
+            refreshHealth()
         }
-        retryRules()
-        retryApps()
-        refreshHealth()
     }
 
     /** Special-access lookups run off main; the displayed check time still comes from the backend. */
-    fun refreshHealth() {
+    fun refreshHealth(force: Boolean = true) {
+        if (!clockReady) return
         if (permissionsJob?.isActive == true) return
+        if (!force) {
+            val interval = if (state.value.arming is TimerArmingState.Armed) 10_000L else 1_000L
+            val age = permissionsCheckedAt?.let { trustedElapsedMs(it, protectionClock()) }
+            if (age != null && age < interval) return
+        }
         permissionsJob = viewModelScope.launch {
             permissions = try { withContext(ioDispatcher) { loadPermissions() } }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { TimerPermissions() }
+            permissionsCheckedAt = protectionClock()
             refreshClock()
         }
     }
@@ -151,12 +166,13 @@ internal class TimerViewModel(
             while (isActive) {
                 delay(1000)
                 refreshClock()
-                refreshHealth()
+                refreshHealth(force = false)
             }
         }
     }
 
     fun refreshClock() {
+        if (!clockReady) return
         val timestamp = now()
         val stamp = protectionClock()
         val sessions = anchoredTimerSessions(latestRules, latestEditor, stamp, timestamp)
@@ -234,6 +250,7 @@ internal class TimerViewModel(
         viewModelScope.launch {
             try {
                 permissions = withContext(ioDispatcher) { loadPermissions() }
+                permissionsCheckedAt = protectionClock()
                 val freshSafety = withContext(ioDispatcher) { safety() }
                 val stamp = protectionClock()
                 val unavailable = timerPrerequisiteFailure(protectionStatus.value, permissions, livePathA(), stamp)
@@ -277,6 +294,7 @@ internal class TimerViewModel(
         viewModelScope.launch {
             try {
                 permissions = withContext(ioDispatcher) { loadPermissions() }
+                permissionsCheckedAt = protectionClock()
                 val stamp = protectionClock()
                 armAttempt = TimerArmAttempt(rule.id, armAttempt?.takeIf { it.ruleId == rule.id }?.committedAt, stamp)
                 wakeProtection()
@@ -313,7 +331,7 @@ internal class TimerViewModel(
                     state.update { it.copy(message = "Timer cancelled. Other rules may still apply.") }
                 } else {
                     latestRules = rulesStore.rulesOrError.first()
-                    val stillActive = activeTimerSessions(latestRules, now()).any { it.id == ruleId }
+                    val stillActive = anchoredTimerSessions(latestRules, latestEditor, protectionClock(), now()).any { it.id == ruleId }
                     state.update {
                         if (stillActive) it.copy(error = "This timer cannot be ended early.")
                         else it.copy(message = "This timer is no longer active.")

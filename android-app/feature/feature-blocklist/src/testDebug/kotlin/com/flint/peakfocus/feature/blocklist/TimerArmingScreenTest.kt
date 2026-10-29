@@ -56,4 +56,12 @@ class TimerArmingScreenTest {
         compose.onNodeWithText("Service checked at", substring = true).assertExists()
         compose.onAllNodesWithText("checked now", substring = true, ignoreCase = true).assertCountEquals(0)
     }
+
+    @Test fun `PC-73 stale grace shows Checking without Armed degraded or resting text`() {
+        show(TimerArmingState.Checking(timer.id))
+        compose.onNodeWithText("Checking protection…").assertExists()
+        compose.onAllNodesWithText("Armed").assertCountEquals(0)
+        compose.onAllNodesWithText("Protection degraded").assertCountEquals(0)
+        compose.onAllNodesWithText("resting", substring = true, ignoreCase = true).assertCountEquals(0)
+    }
 }

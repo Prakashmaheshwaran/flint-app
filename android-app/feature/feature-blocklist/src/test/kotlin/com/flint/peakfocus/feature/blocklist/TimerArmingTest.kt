@@ -38,10 +38,11 @@ class TimerArmingTest {
     @Test fun `PC-61 PC-73 stale expired future or wrong-boot checks cannot arm`() {
         val checked = readyTimerStatus(at(), listOf(id))
         val invalid = listOf(ProtectionStatus.UNKNOWN, checked.copy(readiness = ProtectionStatus.Readiness.LOADING),
-            checked.copy(validUntilElapsedRealtimeMs = at().elapsedRealtimeMs), checked.copy(observedAt = null),
+            checked.copy(observedAt = null),
             checked.copy(observedAt = at(1)), checked.copy(observedAt = at(boot = "old")))
         invalid.forEach { assertTrue(it.toString(), phase(it) is TimerArmingState.Degraded) }
-        assertTrue(phase(checked, now = at(2_000)) is TimerArmingState.Degraded)
+        assertTrue(phase(checked, now = at(2_000)) is TimerArmingState.Checking)
+        assertTrue(phase(checked, now = at(4_001)) is TimerArmingState.Degraded)
     }
 
     @Test fun `PC-53 sticky floor resolution cannot hide failed incomplete or stale role checks`() {
@@ -119,5 +120,30 @@ class TimerArmingTest {
         }
         assertTrue(anchoredTimerSessions(listOf(rule), state, at(300_000, -86_400_000), base - 86_400_000).isEmpty())
         assertEquals(base + 300_000, rule.expiresAtEpochMs)
+    }
+
+    @Test fun `PC-73 short stale grace is Checking with no assurance and longer staleness is degraded`() {
+        val status = readyTimerStatus(at(), listOf(id))
+        val armed = attempt().copy(hadArmed = true)
+        assertTrue(phase(status, now = at(1_999), attempt = armed) is TimerArmingState.Armed)
+        assertTrue(phase(status, now = at(2_000), attempt = armed) is TimerArmingState.Checking)
+        assertTrue(phase(status, now = at(4_000), attempt = armed) is TimerArmingState.Checking)
+        assertTrue(phase(status, now = at(4_001), attempt = armed) is TimerArmingState.Degraded)
+        assertNotNull(timerPrerequisiteFailure(status, permissions, true, at(2_000))) // A new start cannot use the grace.
+        assertTrue(phase(status, now = at(2_001), permission = TimerPermissions(), attempt = armed) is TimerArmingState.Degraded)
+    }
+
+    @Test fun `PC-46 unavailable spent or unused pass status alone never refuses a healthy new Timer`() {
+        for (pass in listOf(ProtectionStatus.PassStatus.Unavailable, ProtectionStatus.PassStatus.Available,
+            ProtectionStatus.PassStatus.CoolingDown(base + 604_800_000, false))) {
+            assertNull(timerPrerequisiteFailure(readyTimerStatus(at()).copy(pass = pass), permissions, true, at()))
+        }
+    }
+
+    @Test fun `PC-61 cause-less session rows use the same activity predicate for capacity and display`() {
+        val future = timerRule(TimerDraft(setOf(AppRef("app")), durationMinutes = 5), base, "cold")
+        for (now in listOf(at(), at(300_000))) {
+            assertEquals(isActiveEditorSession(future, null, now), anchoredTimerSessions(listOf(future), null, now, now.wallEpochMs).isNotEmpty())
+        }
     }
 }

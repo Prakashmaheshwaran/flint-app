@@ -71,6 +71,12 @@ sealed interface TimerStartResult {
     data class Rejected(val reason: String) : TimerStartResult
 }
 
+/** One activity predicate for Timer collision checks and display, including legacy/cold rows. */
+fun isActiveEditorSession(rule: BlockRule, cause: EditorCause?, now: AccessClockStamp): Boolean =
+    rule.id.startsWith(BlockRule.SESSION_ID_PREFIX) && rule.enabled &&
+        if (cause == null) !rule.isExpired(now.wallEpochMs)
+        else cause.occurrenceId != "inactive" && (cause.interval?.remainingMs(now)?.let { it > 0 } ?: true)
+
 interface EditorCommitmentStore {
     val state: Flow<StorageState<EditorCommitmentState>>
     /** Includes raw template changes made by other writers, even when the sidecar is unchanged. */

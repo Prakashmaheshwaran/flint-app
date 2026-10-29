@@ -646,6 +646,10 @@ internal fun TimerArmingNotice(arming: TimerArmingState, onRetry: () -> Unit, on
                 Text("Applying…", style = MaterialTheme.typography.titleSmall)
                 Text("Timer saved. Waiting for the protection service to confirm it.", style = MaterialTheme.typography.bodySmall)
             }
+            is TimerArmingState.Checking -> {
+                Text("Checking protection…", style = MaterialTheme.typography.titleSmall)
+                Text("Waiting for a fresh service check.", style = MaterialTheme.typography.bodySmall)
+            }
             is TimerArmingState.Armed -> {
                 Text("Armed", style = MaterialTheme.typography.titleSmall)
                 Text("Service checked at ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(arming.checkedAt.wallEpochMs))}",
