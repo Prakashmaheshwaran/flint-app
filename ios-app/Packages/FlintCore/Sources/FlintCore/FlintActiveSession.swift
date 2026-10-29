@@ -110,8 +110,9 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         return min(planned, max(0, endsAt.timeIntervalSince(clock.now())))
     }
 
-    /// How long ago the logical deadline passed (negative before it), by the same clock rule as
-    /// `logicalRemaining` but unclamped — for callback latency diagnostics. nil if open-ended.
+    /// How long ago the logical deadline passed (negative before it), for callback latency
+    /// diagnostics: monotonic within the boot, else the wall end. Unlike `logicalRemaining` it
+    /// isn't capped at the planned length; callers gate on `isLogicallyExpired`. nil if open-ended.
     public func logicalOverrun(clock: FlintClock) -> TimeInterval? {
         guard let endsAt else { return nil }
         let planned = plannedDuration ?? endsAt.timeIntervalSince(startedAt)

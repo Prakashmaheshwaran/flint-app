@@ -1023,6 +1023,17 @@ public final class FlintSessionController {
     ///    ignored because the interval end still follows;
     ///  - any other session name is a replaced registration: deregistered at its end, ignored.
     public func handleMonitorEvent(_ event: FlintSessionMonitorEvent, activity: String) {
+        // An end that arrived a moment early (DeviceActivity resolves whole seconds) waits out
+        // the remainder first, before taking any lock, so no other transition is held up by it.
+        // This read is advisory: the decision below re-reads the record under the locks and
+        // never ends before the logical deadline (ADR-012 §4; R-36).
+        var waited = false
+        if event != .intervalDidStart, let early = env.store()?.loadActiveSession(), early.monitorName == activity,
+           let remaining = early.logicalRemaining(clock: env.clock), remaining > 0,
+           remaining <= FlintTimeIntegrity.endSlack {
+            env.wait(remaining)
+            waited = true
+        }
         Self.lock.lock(); defer { Self.lock.unlock() }
         // Still busy after the longer wait: change nothing. The host's next reconcile finds the
         // registration missing or drifted and repairs it; shields stay on meanwhile.
@@ -1061,16 +1072,10 @@ public final class FlintSessionController {
 
         case .intervalWillEndWarning, .intervalDidEnd:
             let endsAt = session.endsAt ?? now
-            // An end never acts before the logical deadline (ADR-012 §4; R-36). DeviceActivity
-            // resolves whole seconds, so a callback can land a moment early: wait that out.
-            if let remaining = session.logicalRemaining(clock: env.clock), remaining > 0,
-               remaining <= FlintTimeIntegrity.endSlack {
-                env.wait(remaining)
-            }
-            // Logical time decides (ADR-012 §9): a same-boot wall-clock jump can't end it early.
+            // Logical time decides with no slack (ADR-012 §4, §9): never before the deadline, and
+            // a same-boot wall-clock jump can't end it early.
             if session.isLogicallyExpired(clock: env.clock) {
-                let observedAt = env.clock.now()
-                recordTimeVerdict(FlintTimeIntegrity.verdict(for: session, clock: env.clock), for: session, at: observedAt)
+                recordTimeVerdict(FlintTimeIntegrity.verdict(for: session, clock: env.clock), for: session, at: now)
                 env.shield.clear()
                 // Report a completion only for an on-time observation of the logical deadline.
                 // A short session's padded carrier end after a missed warning is recovery, not a
@@ -1081,7 +1086,7 @@ public final class FlintSessionController {
                 if lateness > FlintTimeIntegrity.onTimeWindow {
                     let missedWarning = event == .intervalDidEnd && session.usesEndWarning == true
                     recordAnomaly(missedWarning ? .missedEndWarning : .lateEnd, seconds: lateness,
-                                  session: session, at: observedAt)
+                                  session: session, at: now)
                 } else {
                     FlintSessionLifecycle.didEnd(session, route: .completed, at: endsAt)
                 }
@@ -1090,9 +1095,12 @@ public final class FlintSessionController {
                 env.registrar.stopMonitoring([activity])
             } else if event == .intervalDidEnd, let store {
                 // The interval is over, but the session isn't: keep the shield, re-register. A
-                // forward wall-clock jump explains it; otherwise iOS ended it early.
+                // forward wall-clock jump explains it, as does a wait that ended short of the
+                // deadline (a local clock effect, not iOS misfiring); otherwise iOS ended it early.
                 let verdict = FlintTimeIntegrity.verdict(for: session, clock: env.clock)
-                if case .wallAhead = verdict {
+                let wallAhead: Bool
+                if case .wallAhead = verdict { wallAhead = true } else { wallAhead = false }
+                if wallAhead || waited {
                     recordTimeVerdict(verdict, for: session, at: now)
                     rearm(session, in: store, now: now, reason: .clockChange)
                 } else {

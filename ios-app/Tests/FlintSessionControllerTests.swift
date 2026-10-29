@@ -33,6 +33,7 @@ final class FlintSessionControllerTests: XCTestCase {
         ledgerAvailable = true
         publications = 0
         waited = []
+        waitShortfall = 0
         ledgerDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("flint-session-ledger-\(UUID().uuidString)", isDirectory: true)
     }
@@ -69,7 +70,7 @@ final class FlintSessionControllerTests: XCTestCase {
             publishStatus: { [unowned self] in self.publications += 1 },
             transitionLock: { FlintSessionTransitionLock(directory: directory, timeout: 0.2) },
             monitorLockTimeout: 1,
-            wait: { [unowned self] in self.waited.append($0); self.clock.advance($0) }
+            wait: { [unowned self] in self.waited.append($0); self.clock.advance($0 - self.waitShortfall) }
         ))
     }
 
@@ -77,6 +78,8 @@ final class FlintSessionControllerTests: XCTestCase {
     private var publications = 0
     /// Seconds the monitor waited out before acting on an end callback.
     private var waited: [TimeInterval] = []
+    /// How far short of the requested time a wait returns (e.g. an interrupted sleep).
+    private var waitShortfall: TimeInterval = 0
 
     private var health: FlintSessionHealth { FlintSessionHealth.load(from: defaults) }
 
@@ -835,6 +838,32 @@ final class FlintSessionControllerTests: XCTestCase {
         XCTAssertEqual(shield.clearCount, clearsBefore + 1)
         XCTAssertNil(store.active)
         XCTAssertEqual(events.kinds.suffix(1), ["ended"], "an on-time completion")
+    }
+
+    func testAnIntervalEndASecondEarlyWaitsThenCompletes() throws {
+        let c = controller()
+        let session = try start(c, minutes: 30)
+        clock.advance(30 * 60 - 1)
+        events.log.removeAll()
+        c.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
+        XCTAssertEqual(waited, [1])
+        XCTAssertNil(store.active)
+        XCTAssertEqual(events.kinds, ["ended"])
+        XCTAssertNotEqual(health.lastTimeAnomaly?.kind, .prematureEnd)
+    }
+
+    func testAWaitThatEndsShortKeepsTheBlockWithoutSpendingAMisfire() throws {
+        let c = controller()
+        let session = try start(c, minutes: 30)
+        clock.advance(30 * 60 - 1)
+        waitShortfall = 0.5 // the sleep returned half a second early
+        c.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
+        let kept = try XCTUnwrap(store.active, "not yet at the deadline: the block stays")
+        XCTAssertEqual(kept.id, session.id)
+        XCTAssertNotEqual(kept.monitorName, session.monitorName, "its end is re-registered")
+        XCTAssertEqual(kept.rearmCount ?? 0, 0, "a local clock effect isn't an iOS misfire")
+        XCTAssertEqual(kept.clockRearmCount, 1)
+        XCTAssertEqual(shield.clearCount, 0)
     }
 
     func testALateEndWarningRecordsItsLatencyPC76() throws {
