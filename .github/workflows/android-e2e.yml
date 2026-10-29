@@ -55,7 +55,10 @@ jobs:
           profile: pixel_2
           avd-name: flint-ci-api36
           force-avd-creation: false
-          ram-size: 2048M
+          cores: 2
+          ram-size: 3072M
+          heap-size: 512M
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-snapshot-save -noaudio -no-boot-anim -camera-back none -camera-front none
           emulator-boot-timeout: 300
           disable-animations: true
           script: FLINT_E2E_DISPOSABLE=1 AVD=emulator-5554 bash scripts/android-e2e.sh

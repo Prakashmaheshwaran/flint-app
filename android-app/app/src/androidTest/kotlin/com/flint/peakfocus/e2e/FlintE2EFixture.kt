@@ -15,6 +15,7 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import java.io.File
+import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -52,10 +53,88 @@ abstract class FlintE2EFixture {
         val enabled = shell("settings get secure enabled_accessibility_services").trim()
         assertTrue("Refusing to replace existing accessibility services", enabled.isEmpty() || enabled == "null")
         ownsSetup = true
+        settleSystemBeforeReset()
         assertTrue(shell("pm clear $app").contains("Success"))
         launchFlint()
         click("Begin")
         visible(By.text("Today"))
+    }
+
+    private fun setupEvent(event: String, detail: String) {
+        val directory = File(instrumentation.context.getExternalFilesDir(null), "smoke").apply { mkdirs() }
+        File(directory, "setup-events.jsonl").appendText(JSONObject()
+            .put("test", testName.methodName).put("runToken", runToken).put("uptimeMs", SystemClock.uptimeMillis())
+            .put("event", event).put("detail", detail).toString() + "\n")
+    }
+
+    /** Bounded setup only. No recovery is called by visible(), clicks or test bodies. */
+    private fun settleSystemBeforeReset() {
+        val configurator = Configurator.getInstance()
+        val previousIdleTimeout = configurator.waitForIdleTimeout
+        configurator.waitForIdleTimeout = 500
+        setupEvent("setup-start", "Checking launcher and System UI before clearing Flint")
+        try {
+            val component = shell("cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME")
+                .lineSequence().lastOrNull { it.contains('/') }?.trim()
+            val launcher = requireNotNull(component?.substringBefore('/')) { "Cannot resolve the launcher: $component" }
+            check(launcher.matches(Regex("[a-zA-Z0-9_.]+"))) { "Invalid launcher package: $launcher" }
+            val launcherLabel = runCatching {
+                val pm = instrumentation.context.packageManager
+                pm.getApplicationLabel(pm.getApplicationInfo(launcher, 0)).toString()
+            }.getOrDefault(launcher)
+            val deadline = SystemClock.uptimeMillis() + 30_000
+            var dismissals = 0
+            var homeRequested = false
+            var stableSamples = 0
+            var previousSystemUi = ""
+            do {
+                assertEquals("Boot changed during setup", bootId, shell("cat /proc/sys/kernel/random/boot_id").trim())
+                refreshAccessibilityCache()
+                val title = device.findObject(By.text(java.util.regex.Pattern.compile("(?is).*isn['’]t responding.*")))
+                if (title != null) {
+                    val text = title.text
+                    val wait = device.findObject(By.res("android", "aerr_wait").enabled(true))
+                    val close = device.findObject(By.res("android", "aerr_close").enabled(true))
+                    val action = SetupAnrPolicy.action(text, launcherLabel, wait != null, close != null)
+                    setupEvent("anr-detected", "$text; action=$action")
+                    screenshot("setup-anr-${dismissals + 1}")
+                    check(action != SetupAnrPolicy.Action.FAIL && dismissals < 2) {
+                        "Setup refuses unknown/Flint ANR or more than two dismissals: $text"
+                    }
+                    val button = checkNotNull(if (action == SetupAnrPolicy.Action.WAIT) wait else close)
+                    check(!button.visibleBounds.isEmpty) { "ANR control has no visible bounds" }
+                    button.click() // one input for this observed dialog, never replay a failed click
+                    dismissals++
+                    setupEvent("anr-dismiss-requested", "$text; action=$action; count=$dismissals")
+                    check(device.wait(Until.gone(By.text(text)), 5_000)) { "ANR dialog did not dismiss: $text" }
+                    setupEvent("anr-dismissed", "$text; action=$action; count=$dismissals")
+                    homeRequested = false
+                    stableSamples = 0
+                } else {
+                    if (!homeRequested) {
+                        check(device.pressHome()) { "Home input failed during setup" }
+                        homeRequested = true
+                    }
+                    val systemUi = shell("pidof com.android.systemui").trim()
+                    val home = device.findObject(By.pkg(launcher).enabled(true))
+                    val responsive = device.currentPackageName == launcher && home != null &&
+                        !home.visibleBounds.isEmpty && systemUi.isNotEmpty()
+                    stableSamples = if (responsive && systemUi == previousSystemUi) stableSamples + 1 else 0
+                    previousSystemUi = systemUi
+                    if (stableSamples >= 2) {
+                        setupEvent("launcher-ready", "package=$launcher; systemUiPid=$systemUi; dismissals=$dismissals")
+                        return
+                    }
+                }
+                SystemClock.sleep(1_000)
+            } while (SystemClock.uptimeMillis() < deadline)
+            error("Launcher/System UI did not settle within 30 seconds")
+        } catch (failure: Throwable) {
+            setupEvent("setup-failed", failure.toString())
+            throw failure
+        } finally {
+            configurator.waitForIdleTimeout = previousIdleTimeout
+        }
     }
 
     @After fun captureAndReset() {
