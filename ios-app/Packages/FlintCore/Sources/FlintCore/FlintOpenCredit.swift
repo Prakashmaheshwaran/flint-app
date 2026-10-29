@@ -38,6 +38,9 @@ public enum FlintOpenCredit {
     @discardableResult
     public static func reconcile(activity: String? = nil, callback: FlintOpenCreditService.Callback? = nil) -> Bool {
         guard activity == nil || isCarrier(activity!) else { return false }
+        defer {
+            if activity != nil { FlintProtectionStatus.publishAfterCommit(writer: .monitor) }
+        }
         // Grant expiry uses its frozen target even when rules are unreadable. Bulk/legacy
         // re-arming belongs to the controller, after validated registration observation.
         guard let service = service(target: nil, blockedBy: { .init(reason: nil, contributors: []) }) else {
@@ -86,6 +89,7 @@ public enum FlintOpenCredit {
     private static func accept(target: String, operationID: String, blockedBy: @escaping () -> FlintOpenCreditBlocking,
                                restoration: @escaping (Set<String>) -> FlintOpenCreditRestoration?)
         -> Result<FlintOpenCreditReceipt, FlintOpenCreditRefusal> {
+        defer { FlintProtectionStatus.publishAfterCommit() }
         guard let service = service(target: target, blockedBy: blockedBy, restoration: restoration) else { return .failure(.denied(.unavailable)) }
         return service.accept(target: target, operationID: operationID)
     }
