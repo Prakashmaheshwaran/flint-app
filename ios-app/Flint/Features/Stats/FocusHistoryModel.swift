@@ -17,15 +17,18 @@ final class FocusHistoryModel: ObservableObject {
     let acknowledgementKey: String
     private let sink: FlintHistorySink
     private let clock: () -> Date
+    private let sessionClock: FlintClock
     private let calendar: Calendar
     private let activeSession: () -> FlintActiveSession?
 
     init(sink: FlintHistorySink = .shared, clock: @escaping () -> Date = Date.init,
+         sessionClock: FlintClock = .system,
          calendar: Calendar = .current,
          activeSession: @escaping () -> FlintActiveSession? = { FlintGroupStore()?.loadActiveSession() },
          isPreview: Bool = false, presentsCompletions: Bool = true,
          acknowledgementKey: String = "flint.history.lastAcknowledgedCompletion") {
         self.sink = sink; self.clock = clock; self.calendar = calendar; self.activeSession = activeSession
+        self.sessionClock = sessionClock
         self.isPreview = isPreview; self.presentsCompletions = presentsCompletions
         self.acknowledgementKey = acknowledgementKey
     }
@@ -44,8 +47,8 @@ final class FocusHistoryModel: ObservableObject {
     }
 
     func clear(completion: @escaping (Bool, Bool) -> Void) {
-        let now = clock(), active = activeSession()
-        let keep = active.flatMap { session in session.endsAt.map { $0 <= now } == true ? nil : session.id }
+        let active = activeSession()
+        let keep = active.flatMap { $0.isLogicallyExpired(clock: sessionClock) ? nil : $0.id }
         sink.perform { [weak self] store in
             let success = store.clear(keepingRunningSession: keep)
             DispatchQueue.main.async { self?.refresh(); completion(success, success && keep != nil) }

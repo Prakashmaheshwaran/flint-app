@@ -70,6 +70,31 @@ final class FlintSessionLifecycleTests: XCTestCase {
         XCTAssertEqual(sink.events, [.ended(s, route: .completed, at: t0.addingTimeInterval(1800))])
     }
 
+    func testCompletionPreservesExplicitLogicalEndAfterBackwardWallJump() {
+        let s = session("rollback", start: 0, end: 3600)
+        let logicalEnd = t0.addingTimeInterval(1800)
+        FlintSessionLifecycle.didEnd(s, route: .completed, at: logicalEnd.addingTimeInterval(5),
+                                    logicalEnd: logicalEnd)
+        XCTAssertEqual(sink.events, [.ended(s, route: .completed, at: logicalEnd)])
+        XCTAssertEqual(FlintHistoryEvent(sink.events[0]).date, logicalEnd)
+    }
+
+    func testExplicitLogicalEndCannotCompleteEarlyAndKeepsObservedMetadata() {
+        let s = session("forward", start: 0, end: 1800)
+        let logicalEnd = t0.addingTimeInterval(5400)
+        FlintSessionLifecycle.didEnd(s, route: .completed, at: logicalEnd.addingTimeInterval(-1),
+                                    logicalEnd: logicalEnd)
+        XCTAssertTrue(sink.events.isEmpty)
+        let observed = logicalEnd.addingTimeInterval(5)
+        FlintSessionLifecycle.didEnd(s, route: .completed, at: observed, origin: "monitor",
+                                    reason: "deadline", observedAt: observed, logicalEnd: logicalEnd)
+        let record = FlintHistoryEvent(sink.events[0])
+        XCTAssertEqual(record.date, logicalEnd)
+        XCTAssertEqual(record.observedAt, FlintHistoryEvent.milliseconds(observed))
+        XCTAssertEqual(record.originRoute, "monitor")
+        XCTAssertEqual(record.reason, "deadline")
+    }
+
     func testEarlyEndKeepsObservedTime() {
         let s = session("a", start: 0, end: 1800)
         FlintSessionLifecycle.didUsePass(s, at: t0.addingTimeInterval(600))

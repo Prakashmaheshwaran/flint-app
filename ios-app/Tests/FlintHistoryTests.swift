@@ -308,15 +308,25 @@ final class FlintHistoryTests: XCTestCase {
         XCTAssertEqual(s.read().events, [start, pass])
         XCTAssertEqual(summary(s.read().events, now: old.addingTimeInterval(300), active: "running", start: old).focusedSeconds, 240)
     }
-    func testCompletionSinkRejectsBeforeLogicalDeadline() {
+    func testCompletionSinkPreservesAcceptedLogicalEndInsteadOfFutureWallPlan() {
         let s = store(), session = FlintActiveSession(id: "a", name: "Focus", startedAt: t,
             endsAt: t.addingTimeInterval(3600), breakLevel: .easy, monitorName: "unused")
-        let sink = FlintHistorySink(store: s, isExtension: true, clock: { self.t })
-        sink.handle(.ended(session, route: .completed, at: t.addingTimeInterval(3600)))
-        XCTAssertTrue(s.read().events.isEmpty)
-        let after = FlintHistorySink(store: s, isExtension: true, clock: { self.t.addingTimeInterval(3600) })
-        after.handle(.ended(session, route: .completed, at: t.addingTimeInterval(3600)))
+        let logicalEnd = t.addingTimeInterval(1800)
+        let sink = FlintHistorySink(store: s, isExtension: true, clock: { logicalEnd })
+        sink.handle(.ended(session, route: .completed, at: logicalEnd))
+        XCTAssertEqual(s.read().events.first?.date, logicalEnd)
         XCTAssertEqual(s.read().events.first?.type, .completed)
+    }
+    func testCompletionSinkKeepsAcceptedEventWhenReaderClockMovesBehindIt() {
+        let s = store(), session = FlintActiveSession(id: "a", name: "Focus", startedAt: t,
+            endsAt: t.addingTimeInterval(3600), breakLevel: .easy, monitorName: "unused")
+        let committedEnd = t.addingTimeInterval(3600)
+        let sink = FlintHistorySink(store: s, isExtension: true, clock: { self.t })
+        sink.handle(.annotated(.ended(session, route: .completed, at: committedEnd),
+                              origin: "monitor", reason: "deadline", observedAt: committedEnd))
+        let record = s.read().events.first
+        XCTAssertEqual(record?.date, committedEnd)
+        XCTAssertEqual(record?.observedAt, FlintHistoryEvent.milliseconds(committedEnd))
     }
     func testRunningUsesNowAndIsLabelledInProgress() {
         let result = summary([event(.started, 0)], now: t.addingTimeInterval(300), active: "a")

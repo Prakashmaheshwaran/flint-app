@@ -198,9 +198,13 @@ FlintSessionLifecycle.didFailToArm(_ session: FlintActiveSession, reason: String
 ```
 
 `didStart` with a non-expired `previous` emits `superseded(previous, by:)`; with an expired
-one, `completed(previous)`. `didEnd(.completed)` records `at: session.endsAt` and must only be
-called at or after the logical deadline (ADR-012 §4/§11; lane B's warning-time deadline
-adapter owns the timing — no early-callback allowance). Proposed hook sites, for
+one, `completed(previous)`. `didEnd(.completed)` must only be called at or after the logical
+deadline (ADR-012 §4/§11; lane B owns timing — no early-callback allowance). Owners pass
+`logicalEnd:` after clock changes; legacy callers default to `session.endsAt`. The event
+mapping and durable sink preserve the accepted event time rather than substituting the
+original wall plan or discarding an outcome when a reader's wall clock has moved back.
+Clear keeps the running session by logical expiry, including through a same-boot wall jump.
+Proposed hook sites, for
 lane B to accept or adapt: `FlintSessionController.startBlockNow` (after saving the active
 session), `stop(route:)`, `finishIfExpired`, `useEmergencyPass`, the monitor's session
 `intervalDidEnd` branch (before `clearActiveSession`), Shortcuts stop, Focus filter off,

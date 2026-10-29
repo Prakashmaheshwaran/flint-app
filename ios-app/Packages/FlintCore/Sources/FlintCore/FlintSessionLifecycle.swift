@@ -62,6 +62,12 @@ public enum FlintSessionLifecycle {
     public static func didEnd(_ session: FlintActiveSession, route: FlintSessionEndRoute, at date: Date = Date()) {
         didEnd(session, route: route, at: date, origin: nil)
     }
+    /// The lifecycle owner supplies the wall equivalent of its accepted logical deadline
+    /// after a clock change. Keep the original exact overload available to older callers.
+    public static func didEnd(_ session: FlintActiveSession, route: FlintSessionEndRoute,
+                              at date: Date = Date(), logicalEnd: Date?) {
+        didEnd(session, route: route, at: date, origin: nil, logicalEnd: logicalEnd)
+    }
     public static func didUsePass(_ session: FlintActiveSession, at date: Date = Date()) {
         didUsePass(session, at: date, origin: nil)
     }
@@ -91,15 +97,17 @@ public enum FlintSessionLifecycle {
         emit(.started(session, source: source, at: date), origin: origin, reason: reason, observedAt: observedAt)
     }
 
-    /// The session ended. Pass `.completed` only when it reached its planned end; a
-    /// completion is recorded at the planned end rather than at `date`.
+    /// Pass `.completed` only after the owner reaches the logical deadline. An explicit
+    /// logical end survives wall-clock changes; legacy callers retain the planned end.
     public static func didEnd(
         _ session: FlintActiveSession,
         route: FlintSessionEndRoute,
-        at date: Date = Date(), origin: String?, reason: String? = nil, observedAt: Date? = nil
+        at date: Date = Date(), origin: String?, reason: String? = nil, observedAt: Date? = nil,
+        logicalEnd: Date? = nil
     ) {
-        guard route != .completed || session.endsAt.map({ $0 <= date }) == true else { return }
-        let when = route == .completed ? (session.endsAt ?? date) : date
+        let deadline = logicalEnd ?? session.endsAt
+        guard route != .completed || deadline.map({ $0 <= date }) == true else { return }
+        let when = route == .completed ? (deadline ?? date) : date
         emit(.ended(session, route: route, at: when), origin: origin, reason: reason, observedAt: observedAt)
     }
 

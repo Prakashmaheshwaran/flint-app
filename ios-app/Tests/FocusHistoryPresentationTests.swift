@@ -77,6 +77,42 @@ final class FocusHistoryPresentationTests: XCTestCase {
         XCTAssertEqual(FocusHistoryText.clearFeedback(success: true, keptRunningSession: true), "Focus history cleared. Your running session was kept.")
         XCTAssertFalse(FocusHistoryText.clearFeedback(success: false, keptRunningSession: true).contains("was kept"))
     }
+    func testClearKeepsRunningSessionAfterSameBootForwardWallJump() async throws {
+        try await assertClearUsesLogicalExpiry(wallOffset: 3600, elapsed: 600, keepsRunning: true)
+    }
+    func testClearDropsLogicallyExpiredSessionDespiteFutureWallDeadline() async throws {
+        try await assertClearUsesLogicalExpiry(wallOffset: 600, elapsed: 1800, keepsRunning: false)
+    }
+    private func assertClearUsesLogicalExpiry(wallOffset: TimeInterval, elapsed: TimeInterval,
+                                             keepsRunning: Bool) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let wall = now.addingTimeInterval(wallOffset)
+        let sessionClock = FlintClock(now: { wall }, monotonic: { 100 + elapsed },
+                                      bootSessionID: { "same-boot" }, calendar: { .current })
+        let active = FlintActiveSession(id: "running", name: "Focus", startedAt: now,
+            endsAt: now.addingTimeInterval(1800), breakLevel: .easy, monitorName: "test",
+            monotonicStart: 100, bootSessionID: "same-boot", plannedDuration: 1800)
+        let store = FlintHistoryStore(directory: directory, clock: { wall })
+        XCTAssertTrue(store.append(.init(.started(active, source: .manual, at: now))))
+        XCTAssertTrue(store.append(.init(type: .started, session: "old", at: now.addingTimeInterval(-3600),
+                                        tier: "easy", source: "manual", name: "Old")))
+        let sink = FlintHistorySink(store: store, activity: { $0(false) })
+        let model = FocusHistoryModel(sink: sink, clock: { wall }, sessionClock: sessionClock,
+                                      activeSession: { active })
+        let cleared = expectation(description: "clear committed")
+        model.clear { success, kept in
+            XCTAssertTrue(success)
+            XCTAssertEqual(kept, keepsRunning)
+            cleared.fulfill()
+        }
+        await fulfillment(of: [cleared], timeout: 5)
+        // clear enqueues a refresh; drain it before inspecting/removing the real fixture.
+        let drained = expectation(description: "refresh drained")
+        sink.perform { _ in drained.fulfill() }
+        await fulfillment(of: [drained], timeout: 5)
+        XCTAssertEqual(Set(store.read().events.map(\.session)), keepsRunning ? ["running"] : [])
+    }
     func testRunningSummaryIsLabelledAndNeverPresentedAsComplete() {
         let event = FlintHistoryEvent(type: .started, session: "a", at: now.addingTimeInterval(-300),
                                      plannedEnd: now.addingTimeInterval(600), tier: "easy", source: "manual", name: "Read")
