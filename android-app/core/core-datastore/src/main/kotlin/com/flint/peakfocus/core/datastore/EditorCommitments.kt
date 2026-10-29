@@ -3,12 +3,15 @@ package com.flint.peakfocus.core.datastore
 import androidx.datastore.core.CorruptionException
 import com.flint.peakfocus.blocking.engine.AnchoredInterval
 import com.flint.peakfocus.blocking.engine.CommitmentPolicy
+import com.flint.peakfocus.blocking.engine.ClockShift
 import com.flint.peakfocus.blocking.engine.HarderWaitPolicy
+import com.flint.peakfocus.blocking.engine.ScheduleOccurrences
 import com.flint.peakfocus.blocking.engine.isValidNewSessionDuration
 import com.flint.peakfocus.blocking.engine.isValidOccurrenceDuration
 import com.flint.peakfocus.core.model.*
 import java.util.Calendar
 import java.util.TimeZone
+import java.time.ZoneId
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -84,6 +87,10 @@ interface EditorCommitmentStore {
     suspend fun reconcile(now: AccessClockStamp)
     /** Queued templates are clipped at their old end until the reconciler applies them. */
     suspend fun reconcileRules(now: AccessClockStamp): List<BlockRule>
+    /** Re-key finite display estimates from fresh anchored state in one transaction. */
+    suspend fun guardSessionClock(now: AccessClockStamp, shift: ClockShift) {
+        throw UnsupportedOperationException("Clock guarding requires an atomic editor store")
+    }
     /** Called by the explicit Start action after the selected duration/tier disclosure. */
     suspend fun startTimer(rule: BlockRule, now: AccessClockStamp, safety: EditorSafety = EditorSafety(false)): Boolean
 }
@@ -114,28 +121,9 @@ internal fun ruleOccurrence(rule: BlockRule, zone: String, now: AccessClockStamp
         return EditorCause(rule.id, AnchoredInterval(now, end - now.wallEpochMs, end), zone)
     }
     val schedule = rule.schedule ?: return EditorCause(rule.id, null, zone)
-    val start = schedule.startMinuteOfDay; val end = schedule.endMinuteOfDay
-    if (start !in 0..1439 || end !in 0..1439 || start == end) return null
-    val today = Calendar.getInstance(TimeZone.getTimeZone(zone)).apply { timeInMillis = now.wallEpochMs }
-    for (offset in listOf(0, -1)) {
-        val from = (today.clone() as Calendar).apply {
-            add(Calendar.DATE, offset)
-            set(Calendar.HOUR_OF_DAY, start / 60); set(Calendar.MINUTE, start % 60)
-            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-        }
-        val day = ((from.get(Calendar.DAY_OF_WEEK) + 5) % 7) + 1
-        if (schedule.daysOfWeek.isNotEmpty() && day !in schedule.daysOfWeek) continue
-        val to = (from.clone() as Calendar).apply {
-            if (end <= start) add(Calendar.DATE, 1)
-            set(Calendar.HOUR_OF_DAY, end / 60); set(Calendar.MINUTE, end % 60)
-        }
-        val duration = to.timeInMillis - from.timeInMillis
-        if (!isValidOccurrenceDuration(duration)) continue
-        if (now.wallEpochMs in from.timeInMillis until to.timeInMillis) {
-            return EditorCause("${from.timeInMillis}", AnchoredInterval(now, to.timeInMillis - now.wallEpochMs, to.timeInMillis), zone)
-        }
-    }
-    return null
+    val occurrence = ScheduleOccurrences.containing(schedule, ZoneId.of(zone), now.wallEpochMs) ?: return null
+    return EditorCause(occurrence.id,
+        AnchoredInterval(now, occurrence.endsAtEpochMs - now.wallEpochMs, occurrence.endsAtEpochMs), zone)
 }
 
 internal fun dailyOccurrence(zone: String, now: AccessClockStamp): EditorCause {

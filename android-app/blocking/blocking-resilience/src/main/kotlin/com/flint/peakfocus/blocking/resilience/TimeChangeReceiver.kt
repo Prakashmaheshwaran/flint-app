@@ -10,8 +10,7 @@ import com.flint.peakfocus.core.datastore.FlintPreferences
 import com.flint.peakfocus.core.datastore.ProtectionClock
 import com.flint.peakfocus.core.datastore.FocusStateStore
 import com.flint.peakfocus.core.datastore.FocusCommit
-import com.flint.peakfocus.core.datastore.BlockRulesStore
-import com.flint.peakfocus.core.datastore.snapshotOrNull
+import com.flint.peakfocus.core.model.EmergencyPassState
 import com.flint.peakfocus.core.model.FocusMutation
 import java.util.TimeZone
 import java.util.concurrent.CopyOnWriteArrayList
@@ -32,7 +31,7 @@ internal suspend fun guardCurrentFocus(store: FocusStateStore, shift: ClockShift
         val guard = ClockChangeGuard()
         FocusMutation(current.copy(
             openCounts = guard.guardedOpenCounts(current.openCounts, shift),
-            emergencyPass = guard.guardedEmergencyPass(current.emergencyPass, shift),
+            emergencyPass = guardedLegacyPassForMigration(current.emergencyPass, shift),
             breakSession = guard.guardedBreakSession(current.breakSession, shift),
             // Only shorten access on a measured rollback. In particular, never move an
             // inactive normal-open receipt (until=0) into an active release interval.
@@ -43,16 +42,18 @@ internal suspend fun guardCurrentFocus(store: FocusStateStore, shift: ClockShift
         ), Unit)
     }
 
+/** Legacy weekly migration mirror only; initialized rolling-ledger state bypasses this hook. */
+private fun guardedLegacyPassForMigration(pass: EmergencyPassState, shift: ClockShift): EmergencyPassState =
+    ClockChangeGuard().guardedEmergencyPass(pass, shift)
+
 /** Independent bounded domains: unreadable focus state must not skip valid session guards. */
 internal suspend fun applyClockGuards(
-    focus: FocusStateStore, rules: BlockRulesStore, shift: ClockShift,
+    focus: FocusStateStore, shift: ClockShift,
     perGuardTimeoutMs: Long = CLOCK_GUARD_TIMEOUT_MS,
+    guardRules: suspend () -> Unit,
 ) = coroutineScope {
     launch { isolateClockGuard(perGuardTimeoutMs) { guardCurrentFocus(focus, shift) } }
-    launch { isolateClockGuard(perGuardTimeoutMs) {
-        val snapshot = rules.rulesState.snapshotOrNull() ?: return@isolateClockGuard
-        ClockChangeGuard().guardedSessionRules(snapshot, shift).forEach { rules.upsert(it) }
-    } }
+    launch { isolateClockGuard(perGuardTimeoutMs, guardRules) }
     Unit
 }
 
@@ -142,12 +143,10 @@ class TimeChangeReceiver : BroadcastReceiver() {
             try {
                 withTimeout(5_000) {
                     val store = FlintPreferences.focusState(appContext)
-                    val rulesStore = FlintPreferences.blockRules(appContext)
-                    // One-shot Block Now sessions measure DURATION, not a wall deadline: shift
-                    // their expiry with the injected jump so a set-forward clock can't end a
-                    // Hardcore session early (nor a set-back stretch one). Upserting also
-                    // restores a session the lazy expiry sweep raced to delete after the jump.
-                    applyClockGuards(store, rulesStore, shift)
+                    val editor = FlintPreferences.editorCommitments(appContext)
+                    // The transaction reads the latest records and anchored duration. A
+                    // delayed callback cannot overwrite a stronger edit or revive a deletion.
+                    applyClockGuards(store, shift) { editor.guardSessionClock(ProtectionClock.now(), shift) }
                 }
             } catch (_: Exception) {
                 // Swallowed on purpose (see KDoc above): fail toward existing state, no crash
