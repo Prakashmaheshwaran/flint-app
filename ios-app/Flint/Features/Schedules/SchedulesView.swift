@@ -257,7 +257,7 @@ struct RulesView: View {
         let count = rule.selection.applicationTokens.count + rule.selection.categoryTokens.count
             + rule.selection.webDomainTokens.count
         let target = rule.allowListMode ? "Allow list" : "\(count) \(count == 1 ? "item" : "items")"
-        return "\(Self.daysSummary(rule.schedule)) · \(level) · \(target)"
+        return "\(Self.daysSummary(rule.schedule)) · \(level) · \(target) · \(rule.protection?.timeZoneID ?? TimeZone.current.identifier)"
     }
 
     private func timeRange(_ s: FlintSchedule) -> String {
@@ -453,6 +453,8 @@ struct ScheduleEditor: View {
                             timeCard("Ends", end) { editingTime = .end }
                         }
                         .padding(.top, 22)
+                        Text("Times use \(original?.protection?.timeZoneID ?? TimeZone.current.identifier).")
+                            .font(.caption).foregroundStyle(FlintBrand.stone).padding(.top, 6)
                         if let issue = draftSchedule.issues.first {
                             Text(issue.message).font(FlintFont.text(13)).foregroundStyle(FlintBrand.danger).padding(.top, 8)
                         } else if draftSchedule.isOvernight {

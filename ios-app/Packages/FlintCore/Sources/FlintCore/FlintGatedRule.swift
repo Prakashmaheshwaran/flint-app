@@ -172,6 +172,10 @@ extension FlintScheduleRule: FlintGatedRule {
     var absoluteWindow: FlintRuleWindow? { oneShot }
     var allowList: Bool { allowListMode }
     var budget: Int? { nil }
+
+    /// Display-only projection of the same saved-zone/frozen-window calculation used by the
+    /// arbiter. Editors must still submit mutations to the controller for commit-time checks.
+    public func currentOccurrence(at date: Date = Date()) -> FlintRuleWindow? { occurrence(at: date) }
 }
 
 extension FlintLimitRule: FlintGatedRule {

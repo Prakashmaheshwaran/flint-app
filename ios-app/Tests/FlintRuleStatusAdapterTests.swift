@@ -12,6 +12,7 @@ final class FlintRuleStatusAdapterTests: XCTestCase {
         let input = FlintProtectionStatusBuilder.RuleInput.schedule(rule, armed: true, observed: true, now: h.now, calendar: display)
         XCTAssertEqual(input.currentWindow?.start, frozen.start)
         XCTAssertEqual(input.currentWindow?.end, frozen.end.addingTimeInterval(3600))
+        XCTAssertEqual(rule.currentOccurrence(at: h.now)?.end, frozen.end.addingTimeInterval(3600))
     }
 
     func testOneShotProjectsFutureOnceAndNeverAsRecurring() throws {

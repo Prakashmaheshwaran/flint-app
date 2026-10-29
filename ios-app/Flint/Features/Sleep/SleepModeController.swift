@@ -33,10 +33,11 @@ struct SleepModeController {
         rules.save(config, confirmation: confirmation)
     }
 
-    /// Remove both rules (clears their shields and stops their monitoring via the schedules API).
-    func removeAll() {
+    /// Request removal through the same tier/confirmation gate as an explicit Sleep save.
+    @discardableResult
+    func removeAll(confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
         var config = FlintSleepConfig.load(); config.enabled = false
-        _ = rules.save(config)
+        return rules.save(config, confirmation: confirmation)
     }
 
     func cancel(confirmation: FlintRuleConfirmation?) { rules.cancel(confirmation: confirmation) }

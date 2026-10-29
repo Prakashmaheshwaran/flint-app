@@ -30,6 +30,12 @@ struct SleepModeView: View {
                 ForEach(vm.effectiveRules) { rule in
                     VStack(alignment: .leading, spacing: 4) {
                         Text("\(rule.name) · \(rule.breakLevel.rawValue.capitalized)")
+                        Text("\(SleepPresentation.timeSummary(rule.schedule)) · \(rule.protection?.timeZoneID ?? TimeZone.current.identifier)")
+                            .font(.footnote)
+                        if let window = rule.currentOccurrence() {
+                            Text("Current occurrence until \(window.end.formatted(date: .abbreviated, time: .shortened))")
+                                .font(.footnote)
+                        }
                         if let queued = rule.protection?.queuedChange {
                             Text("\(queued.summary) · after \(queued.window.end.formatted(date: .abbreviated, time: .shortened))")
                                 .font(.footnote).foregroundStyle(FlintBrand.ember)
@@ -60,11 +66,11 @@ struct SleepModeView: View {
 
     private var masterSection: some View {
         Section {
-            Toggle("Sleep Mode", isOn: $vm.config.enabled)
+            Toggle("Enable Sleep template", isOn: $vm.config.enabled)
                 .tint(FlintBrand.ember)
-            if vm.config.enabled {
-                statusRow
-            }
+            Text("These controls are a draft. Save Sleep changes to apply them; saved protection is shown below.")
+                .font(.footnote).foregroundStyle(FlintBrand.mist)
+            statusRow
         }
     }
 
@@ -73,7 +79,7 @@ struct SleepModeView: View {
         if let issue = vm.protectionIssue {
             Label("Needs attention — \(issue)", systemImage: "exclamationmark.triangle")
                 .font(.footnote).foregroundStyle(FlintBrand.danger)
-            Button("Retry Sleep registration") { vm.applyNow() }
+            Button("Retry Sleep registration") { vm.retryRegistration() }
                 .frame(minHeight: 44)
                 .tint(FlintBrand.ember)
         } else if vm.nightWindowActiveNow {
@@ -268,9 +274,8 @@ struct SleepModeView: View {
 
 }
 
-/// Owns the persisted `FlintSleepConfig` and keeps the enforcement rules in sync with it.
-/// Every edit saves immediately (cheap App Group write, like `FocusFilterView`); re-materializing
-/// DeviceActivity changes happen only after an explicit save and the shared rule gate.
+/// Keeps a Sleep draft separate from effective saved rules. Native changes happen only after
+/// an explicit save and the shared rule gate; current status always comes from saved snapshots.
 @MainActor
 final class SleepModeViewModel: ObservableObject {
 
@@ -292,7 +297,7 @@ final class SleepModeViewModel: ObservableObject {
         }
     }
 
-    /// Refresh the preset list (it changes in Block Now) and re-assert the rules.
+    /// Refresh the preset list and saved protection without overwriting the draft or rules.
     func refresh() {
         savedGroups = FlintGroupStore()?.loadAppGroups() ?? []
         refreshHealth()
@@ -309,40 +314,41 @@ final class SleepModeViewModel: ObservableObject {
 
     // MARK: Derived state for the view
 
-    var nightArmed: Bool { SleepModeController.nightWindow(for: config) != nil }
-    var morningArmed: Bool { SleepModeController.morningWindow(for: config) != nil }
+    var nightArmed: Bool { effectiveRules.contains { $0.id == SleepModeController.nightRuleID && $0.enabled } }
+    var morningArmed: Bool { effectiveRules.contains { $0.id == SleepModeController.morningRuleID && $0.enabled } }
 
     var protectionIssue: String? {
-        if config.enabled, config.sleepAssist != .off, let issue = config.schedule.issues.first {
-            return issue.message
-        }
-        let names = [(nightArmed, SleepModeController.nightRuleID),
-                     (morningArmed, SleepModeController.morningRuleID)]
-            .filter(\.0).compactMap { pair in effectiveRules.first { $0.id == pair.1 }?.monitorName }
+        if let unavailable = armingReport?.failures.first(where: { $0.activityName == "schedules" }) { return unavailable.reason }
+        let enabled = effectiveRules.filter(\.enabled)
+        let names = enabled.map(\.monitorName)
         guard !names.isEmpty else { return nil }
-        let selection = savedGroups.first { $0.id == config.allowGroupID }?.selection ?? FamilyActivitySelection()
-        if let issue = FlintSelectionValidation.issue(for: selection, context: .allowList) {
-            return issue.message(for: .allowList)
+        for rule in enabled {
+            if let issue = FlintSelectionValidation.issue(for: rule.selection, context: .allowList) {
+                return issue.message(for: .allowList)
+            }
         }
         return FlintSleepProtectionStatus.issue(activityNames: names, report: armingReport,
             authorized: AuthorizationCenter.shared.authorizationStatus == .approved)
     }
 
     func refreshHealth() {
-        armingReport = FlintGroupStore()?.loadArmingHealth().domains["schedules"]
         effectiveRules = FlintSchedulesController().rules().filter {
             $0.id == SleepModeController.nightRuleID || $0.id == SleepModeController.morningRuleID
         }
+        armingReport = FlintGroupStore()?.loadArmingHealth().domains["schedules"]
+    }
+
+    func retryRegistration() {
+        _ = FlintSchedulesController().reload()
+        refreshHealth()
     }
 
     var nightWindowActiveNow: Bool {
-        guard let window = SleepModeController.nightWindow(for: config) else { return false }
-        return SleepModeController.isWindowActive(window)
+        effectiveRules.first { $0.id == SleepModeController.nightRuleID }?.currentOccurrence() != nil
     }
 
     var morningWindowActiveNow: Bool {
-        guard let window = SleepModeController.morningWindow(for: config) else { return false }
-        return SleepModeController.isWindowActive(window)
+        effectiveRules.first { $0.id == SleepModeController.morningRuleID }?.currentOccurrence() != nil
     }
 
     var windowIsUsable: Bool {

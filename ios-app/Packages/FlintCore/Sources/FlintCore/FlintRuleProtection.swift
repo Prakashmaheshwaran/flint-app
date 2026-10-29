@@ -108,6 +108,7 @@ public struct FlintRuleChangePreview: Equatable, Sendable, Identifiable {
     public let allowList: Bool
     public let budget: Int?
     public let isTimeLimit: Bool
+    public let timeZoneID: String
     public let window: FlintRuleWindow?
 }
 

@@ -102,6 +102,8 @@ struct OpenLimitsView: View {
                 Text(rule.name).font(.body.weight(.medium))
                 Text("\(rule.opensAllowed) \(rule.opensAllowed == 1 ? "credit" : "credits")/day")
                     .font(.caption).foregroundStyle(.secondary)
+                Text("\(rule.breakLevel.rawValue.capitalized) · \(rule.protection?.timeZoneID ?? TimeZone.current.identifier)")
+                    .font(.caption).foregroundStyle(.secondary)
                 if let queued = rule.protection?.queuedChange {
                     Text("\(queued.summary) · after \(queued.window.end.formatted(date: .abbreviated, time: .shortened))")
                         .font(.caption).foregroundStyle(FlintBrand.ember)

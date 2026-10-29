@@ -135,11 +135,17 @@ private struct RuleMutationSheet: View {
                     if let budget = rule.budget { Text(rule.isTimeLimit ? "\(budget) minutes per day" : "\(budget) credits per day") }
                 }
                 if let window = rule.window {
-                    Text("Selected window: \(window.start.formatted(date: .abbreviated, time: .shortened)) – \(window.end.formatted(date: .abbreviated, time: .shortened))")
+                    Text(selectedWindow(window, zoneID: rule.timeZoneID))
                 }
             }
             .font(.subheadline)
         }
+    }
+
+    private func selectedWindow(_ window: FlintRuleWindow, zoneID: String) -> String {
+        var style = Date.FormatStyle(date: .abbreviated, time: .shortened)
+        style.timeZone = TimeZone(identifier: zoneID) ?? .current
+        return "Selected window: \(window.start.formatted(style)) – \(window.end.formatted(style)) (\(zoneID))"
     }
 
     private var passStatus: String {

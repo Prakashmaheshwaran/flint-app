@@ -97,7 +97,8 @@ struct LimitsView: View {
                         Text("\(limit.thresholdMinutes) min").font(FlintFont.display(14))
                             .foregroundStyle(FlintBrand.mist).monospacedDigit()
                     }
-                    Text("A day").font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
+                    Text("A day · \(limit.breakLevel.rawValue.capitalized) · \(limit.protection?.timeZoneID ?? TimeZone.current.identifier)")
+                        .font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
                     if let queued = limit.protection?.queuedChange {
                         Text("\(queued.summary) · after \(queued.window.end.formatted(date: .abbreviated, time: .shortened))")
                             .font(.caption).foregroundStyle(FlintBrand.ember)

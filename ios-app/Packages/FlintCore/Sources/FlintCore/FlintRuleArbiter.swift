@@ -90,6 +90,7 @@ final class FlintRuleArbiter {
                     categoryCount: displayed.selection.categoryTokens.count,
                     webDomainCount: displayed.selection.webDomainTokens.count, allowList: displayed.allowList,
                     budget: displayed.budget, isTimeLimit: displayed.kind == .timeLimit,
+                    timeZoneID: displayed.zone.identifier,
                     window: displayed.previewWindow(at: now) ?? occurrence))
                 let decision: FlintProtectionDecision
                 if mutation.action == .delete { decision = FlintProtectionPolicy.decide(.delete, for: cause) }
