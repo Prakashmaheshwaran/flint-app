@@ -4,6 +4,12 @@ import java.io.File
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.flow.flow
@@ -26,6 +32,38 @@ class FocusHistoryIntegrityTest {
         at = begin, tz = "UTC", plannedEnd = end, tier = "easy", source = "manual", name = "Focus")
     private fun focus(snapshot: HistorySnapshot, now: Long) =
         FocusHistoryAggregator.sessions(snapshot.events, now, setOf("session-a")).single().focusedMs
+
+    @Test fun ownerEndWhileObservationWaitsForClearLockCannotReimportRemovedStart() = runTest {
+        val dir = temporary.newFolder()
+        val store = FocusHistoryStore(dir, clock(begin))
+        assertTrue(store.append(start()))
+        val entered = CompletableDeferred<Unit>()
+        val release = CountDownLatch(1)
+        val clearingStore = FocusHistoryStore(dir, clock(begin), clearPhase = {
+            if (it == HistoryClearPhase.BEFORE_INTENT) {
+                entered.complete(Unit)
+                check(release.await(10, TimeUnit.SECONDS))
+            }
+        })
+        val clearing = async(Dispatchers.IO) { clearingStore.clear(emptySet()) }
+        try {
+            entered.await()
+            val rule = HistoryRule("session-a", "Focus", "easy", begin + 60 * minute)
+            val current = AtomicReference(HistoryRulesSnapshot.Ready(listOf(rule)))
+            val firstRead = CompletableDeferred<Unit>()
+            val observer = HistoryReconciler(store, clock(begin), authoritativeSnapshot = {
+                current.get().also { firstRead.complete(Unit) }
+            })
+            val observing = async { observer.observe(listOf(rule)) }
+            firstRead.await() // observation captured a live rule, then waits for clear's lock
+            current.set(HistoryRulesSnapshot.Ready(emptyList(), setOf(rule.id)))
+            release.countDown()
+            assertTrue(clearing.await())
+            observing.await()
+            assertTrue(observer.activeSessionIds.value.isEmpty())
+            assertTrue(store.load().events.isEmpty())
+        } finally { release.countDown() }
+    }
 
     @Test fun authoritativeOwnerEndRejectsQueuedStartAndDoesNotGuessEarlyExit() = runTest {
         val store = FocusHistoryStore(temporary.newFolder(), clock(begin))
