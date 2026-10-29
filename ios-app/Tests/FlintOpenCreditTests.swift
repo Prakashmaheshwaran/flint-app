@@ -137,6 +137,10 @@ final class FlintOpenCreditTests: XCTestCase {
         XCTAssertEqual(first.grant, next.grant)
         XCTAssertEqual(next.grant.remaining(at: instant), 200)
         XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
+        advance(200)
+        _ = service().reconcile()
+        denied(.staleOperation, op: "different-surface")
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
     }
 
     func testPC23ExpiredOperationCannotRecreateAccess() throws {

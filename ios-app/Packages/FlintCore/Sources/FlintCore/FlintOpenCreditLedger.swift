@@ -20,7 +20,8 @@ public struct FlintOpenCreditState: Codable, Equatable, Sendable {
     public var pendingTargets: Set<String> = []
     public var grants: [String: FlintOpenCreditGrant] = [:]
     public var carrierCheckpoints: [String: FlintLedgerInstant] = [:]
-    /// Daily idempotency survives eviction from the ledger's general recent-operation list.
+    /// Daily request idempotency (including aliases of a live grant) survives eviction from
+    /// the ledger's general recent-operation list.
     public var acceptedOperations: Set<String> = []
     public var enrolled: Bool = false
     public init() {}
@@ -323,13 +324,22 @@ extension FlintLedgerState {
         let preview = openCreditPreview(target: target, caps: Array(coveringCaps.values), blockedBy: blocking(),
                                         at: now, coveringCauseIDs: Set(coveringCaps.keys))
         if let block = preview.blockedBy { return .failure(.denied(block)) }
+        guard !operationID.isEmpty, operationID.count <= 128 else { return .failure(.denied(.staleOperation)) }
         if let grant = preview.grant {
+            // A different request answered by the same live interval must not become a new
+            // charge when its delayed retry arrives after that interval expires.
+            if !openCredits.acceptedOperations.contains(operationID) {
+                guard openCredits.acceptedOperations.count < FlintOpenCreditState.maximumOperations else {
+                    return .failure(.denied(.unavailable))
+                }
+                openCredits.acceptedOperations.insert(operationID)
+            }
             return .success(.init(grant: grant, remaining: preview.remaining!, replayed: true))
         }
         guard FlintProtectionPolicy.decideOpenCredit(creditsRemaining: preview.remaining,
             blockingContributors: []) == .allow(confirm: true) else { return .failure(.denied(.exhausted)) }
         // A delayed retry after expiry must not charge again or recreate access (PC-23).
-        guard !operationID.isEmpty, operationID.count <= 128, operation(operationID) == nil,
+        guard operation(operationID) == nil,
               !openCredits.acceptedOperations.contains(operationID) else { return .failure(.denied(.staleOperation)) }
         guard openCredits.grants.count < FlintOpenCreditState.maximumGrants, coveringCaps.count <= 64 else {
             return .failure(.denied(.unavailable))
