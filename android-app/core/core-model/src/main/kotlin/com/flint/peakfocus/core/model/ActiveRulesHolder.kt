@@ -57,7 +57,13 @@ object ActiveRulesHolder {
      * A consumer still combines independently observed sources; there can be a transient
      * publication window. This read is not a transaction or authority for a release.
      */
-    fun rulesOutside(source: String): List<BlockRule> = synchronized(contributions) {
+    fun rulesOutside(source: String): List<BlockRule> = projection(rawRulesOutside(source))
+
+    /**
+     * Exactly the published contributions, without read-time clock estimates. Foreign-source
+     * confirmation hashes use this stable read; DataStore definitions still come from storage.
+     */
+    fun rawRulesOutside(source: String): List<BlockRule> = synchronized(contributions) {
         knownOrder.filterNot { it == source }.flatMap { contributions[it].orEmpty() } +
             contributions.entries.filter { it.key != source && it.key !in knownOrder }.flatMap { it.value }
     }

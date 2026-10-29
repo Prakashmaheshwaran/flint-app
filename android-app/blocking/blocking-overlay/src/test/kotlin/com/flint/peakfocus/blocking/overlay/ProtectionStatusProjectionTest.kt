@@ -8,6 +8,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import java.util.Calendar
 import java.util.TimeZone
+import java.time.Instant
 
 class ProtectionStatusProjectionTest {
     private val at = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply { clear(); set(2026, Calendar.OCTOBER, 28, 10, 0) }.timeInMillis
@@ -94,6 +95,28 @@ class ProtectionStatusProjectionTest {
         val next = project(jumped, editor = StorageState.Ready(editor), rules = listOf(scheduled)).nextOccurrence!!
         assertEquals(ProtectionStatus.CauseKind.SLEEP, next.kind)
         assertEquals(jumped.wallEpochMs + 3_540_000, next.startWallEstimateEpochMs)
+    }
+
+    @Test fun R_18_PC_57_nextScheduleUsesEarlierOverlapStartAndDoesNotRepeatItInTheSecondHour() {
+        val scheduled = rule.copy(id = "overlap", schedule = Schedule(startMinuteOfDay = 75, endMinuteOfDay = 105), expiresAtEpochMs = null)
+        val first = AccessClockStamp(Instant.parse("2026-11-01T05:00:00Z").toEpochMilli(), 1_000, "boot")
+        val editor = EditorCommitmentState(causes = mapOf("rule:overlap" to
+            EditorCause("inactive", AnchoredInterval(first, 0, first.wallEpochMs), "America/New_York")), timeline = first)
+        val next = project(first, editor = StorageState.Ready(editor), rules = listOf(scheduled)).nextOccurrence!!
+        assertEquals(Instant.parse("2026-11-01T05:15:00Z").toEpochMilli(), next.startWallEstimateEpochMs)
+        val second = first.copy(wallEpochMs = first.wallEpochMs + 3_600_000, elapsedRealtimeMs = first.elapsedRealtimeMs + 3_600_000)
+        val tomorrow = project(second, editor = StorageState.Ready(editor), rules = listOf(scheduled)).nextOccurrence!!
+        assertEquals(Instant.parse("2026-11-02T06:15:00Z").toEpochMilli(), tomorrow.startWallEstimateEpochMs)
+    }
+
+    @Test fun R_18_PC_57_nextScheduleShiftsMissingLocalStartByTheFullDSTGap() {
+        val scheduled = rule.copy(id = "gap", schedule = Schedule(startMinuteOfDay = 150, endMinuteOfDay = 240), expiresAtEpochMs = null)
+        val before = AccessClockStamp(Instant.parse("2026-03-08T07:00:00Z").toEpochMilli(), 1_000, "boot")
+        val editor = EditorCommitmentState(causes = mapOf("rule:gap" to
+            EditorCause("inactive", AnchoredInterval(before, 0, before.wallEpochMs), "America/New_York")), timeline = before)
+        val jumped = before.copy(wallEpochMs = before.wallEpochMs + 86_400_000, elapsedRealtimeMs = before.elapsedRealtimeMs + 60_000)
+        val next = project(jumped, editor = StorageState.Ready(editor), rules = listOf(scheduled)).nextOccurrence!!
+        assertEquals(jumped.wallEpochMs + 29 * 60_000, next.startWallEstimateEpochMs)
     }
 
     @Test fun PC_73_legacyQuickBlockScheduleUsesItsOwnSourceWithoutMakingStoredPolicyUnavailable() {

@@ -41,6 +41,8 @@ class RuleClockProjectionTest {
         assertEquals(now.wallEpochMs + 7 * hour - 60_000, projected.expiresAtEpochMs)
         assertEquals(schedule, projected.schedule)
         assertEquals(projected, (ActiveRulesHolder.dataStoreState as StorageState.Ready).value.single())
+        assertEquals(projected, ActiveRulesHolder.rulesOutside(ActiveRulesHolder.SOURCE_LEGACY).single())
+        assertEquals(rule(), ActiveRulesHolder.rawRulesOutside(ActiveRulesHolder.SOURCE_LEGACY).single())
         // An unrelated writer and failed storage refresh cannot freeze the old wall estimate.
         ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_LEGACY, emptyList())
         ActiveRulesHolder.publishState(ActiveRulesHolder.SOURCE_DATASTORE, StorageState.Unavailable(StorageFailure.IO))
