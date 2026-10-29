@@ -4,6 +4,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TargetFloorIdentityTest {
+    // PC-48/PC-49/PC-52/PC-73: reader evidence only; no device safety claim.
     private var now = 1_000L
     private var calls = 0
     private val pending = mutableListOf<() -> Unit>()

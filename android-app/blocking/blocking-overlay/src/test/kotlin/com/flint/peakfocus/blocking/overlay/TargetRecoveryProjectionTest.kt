@@ -30,7 +30,7 @@ class TargetRecoveryProjectionTest {
         target: OrdinaryProtectionInput? = input, limitsKnown: Boolean = true) =
         TargetRecoveryProjection.read(stored, at, target, emptyList(), limitsKnown)
 
-    // PC-20/PC-24: a read cannot consume, checkpoint, or broaden the frozen grant.
+    // PC-23/PC-24: a read cannot consume, checkpoint, or broaden the frozen grant.
     @Test fun ordinaryEndUsesTheExactRuntimeFrozenScopeAndDoesNotCheckpointOrMintEvents() {
         val stored = granted()
         val ledger = stored.focus.protection!!.copy()

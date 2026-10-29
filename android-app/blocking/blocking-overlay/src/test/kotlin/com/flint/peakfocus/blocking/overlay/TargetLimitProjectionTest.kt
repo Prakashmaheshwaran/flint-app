@@ -8,6 +8,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TargetLimitProjectionTest {
+    // PC-15/PC-37/PC-54/PC-55/PC-57: accounting/clock views, not grant acceptance.
     private var now = AccessClockStamp(1_800_000_000_000L, 10_000, "boot")
     private val pkg = "selected.app"
     private fun snapshot(time: TimeLimit? = TimeLimit(pkg, 5, BreakLevel.HARDCORE),
