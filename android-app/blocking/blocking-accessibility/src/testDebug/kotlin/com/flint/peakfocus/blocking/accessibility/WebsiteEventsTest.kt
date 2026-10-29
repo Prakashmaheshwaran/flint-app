@@ -47,6 +47,7 @@ class WebsiteEventsTest {
         AddressNodeShadow.availableId = null
         AddressNodeShadow.nodeExists = true
         AddressNodeShadow.recycles = 0
+        AddressNodeShadow.windowReads = 0
         ActiveRulesHolder.publish(SOURCE, listOf(rule))
         service = Robolectric.buildService(FlintAccessibilityService::class.java).create().get()
         // Production URL read path with an injected fake clock/scheduler; the coordinator is
@@ -225,6 +226,7 @@ class WebsiteEventsTest {
         assertEquals(rootsAfterLeading + 1, CountingServiceShadow.roots) // read only, no reconciliation
         assertEquals(2, AddressNodeShadow.lookups.size)
         assertEquals("allowed.example", field("lastForegroundUrl"))
+        assertEquals("scrolling never calls AccessibilityNodeInfo.getWindow", 0, AddressNodeShadow.windowReads)
     }
 
     @Test fun `delayed content callback reconciles a foreign root and clears cached browser URL`() {
@@ -270,6 +272,28 @@ class WebsiteEventsTest {
         assertEquals(1, AddressNodeShadow.recycles)
     }
 
+    @Test fun `cached overlay identity preserves the browser but MainActivity yields to the safety floor`() {
+        setField("overlayAttached", true)
+        setField("overlayWindowId", 7)
+        setField("lastForegroundUrl", "blocked.example")
+        CountingServiceShadow.root!!.apply {
+            packageName = service.packageName
+            className = "android.widget.FrameLayout"
+        }
+        val reconcile = FlintAccessibilityService::class.java.getDeclaredMethod(
+            "reconcileForeground", java.lang.Boolean.TYPE, java.lang.Boolean::class.java,
+        ).apply { isAccessible = true }
+        reconcile.invoke(service, false, true)
+        assertEquals(CHROME, field("lastForegroundPackage"))
+        assertEquals("blocked.example", field("lastForegroundUrl"))
+        CountingServiceShadow.root!!.className = "${service.packageName}.MainActivity"
+        reconcile.invoke(service, false, true)
+        assertEquals(service.packageName, field("lastForegroundPackage"))
+        assertNull(field("lastForegroundUrl"))
+        assertNull(field("browserWindow"))
+        assertEquals(0, AddressNodeShadow.windowReads)
+    }
+
     private fun content(pkg: String, windowId: Int = 7) {
         check(Looper.myLooper() == Looper.getMainLooper())
         val event = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED).apply { packageName = pkg }
@@ -303,8 +327,10 @@ class CountingServiceShadow : ShadowAccessibilityService() {
 class AddressNodeShadow : ShadowAccessibilityNodeInfo() {
     // Android returns a separately owned window snapshot. Robolectric's default shadow
     // returns its backing instance; recycling that would mutate the fixture's window ID.
-    @Implementation override fun getWindow(): AccessibilityWindowInfo? =
-        super.getWindow()?.let { AccessibilityWindowInfo.obtain(it) }
+    @Implementation override fun getWindow(): AccessibilityWindowInfo? {
+        windowReads++
+        return super.getWindow()?.let { AccessibilityWindowInfo.obtain(it) }
+    }
     @Implementation override fun recycle() { recycles++; super.recycle() }
     @Implementation fun findAccessibilityNodeInfosByViewId(id: String): List<AccessibilityNodeInfo> {
         lookups += id
@@ -317,5 +343,6 @@ class AddressNodeShadow : ShadowAccessibilityNodeInfo() {
         var availableId: String? = null
         var nodeExists: Boolean = true
         var recycles = 0
+        var windowReads = 0
     }
 }

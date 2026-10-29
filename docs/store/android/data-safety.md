@@ -24,6 +24,10 @@ Firebase/connected sandbox data is outside this release and must remain excluded
 | Planned-end notification schedule/delivery bookkeeping | F97 `FocusCompletionNotifier`, `FocusNotificationState` | `files/focus-history/notification-state.v1.json` stores scheduled/delivered session IDs/times and recoverable alarm state. Inexact alarms and OS notification copies are separate from history clearing | None |
 | Widget and ongoing-session display projection (merged K126) | `app/glance/GlanceState.kt`, `GlanceSurfaceBridge.kt`, `OngoingSessionNotification.kt`, `GlanceReadProjection.kt`: source/session name, tier, logical-end estimate, next-session name/start, F's focused-today text/note and observed check/date | App projection is in memory, without a durable protection snapshot; launcher/widget and system notification copies can outlive the app process until refreshed or removed. Notifications request private lock-screen visibility. Public protection publishers/service delivery remain pending; missing/stale data is unavailable | No developer network transfer; review OS surface delivery and applicable user-initiated sharing exceptions in the final form |
 
+See the Known adapters browser list on the You health screen in Flint. Address-bar
+URLs stay on this device, in memory for blocking; they are not saved as browsing
+history. Websites you enter remain in your rules. Address-bar reading stops when Accessibility is off.
+
 The release has no account/profile identifiers, contacts, messages, photos,
 microphone, camera, location, payments, ads identifiers or developer telemetry
 SDK. Device package inventory, usage and URLs are still sensitive even when no

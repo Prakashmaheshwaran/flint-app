@@ -9,9 +9,9 @@ supported-browser/active-domain/window filtering. Existing allow-list editor not
 No changes to the five prohibited hot files. Coordinator approved additive health mapping
 and reassigned service/consent/store disclosure copy to C5; enable routing is unchanged.
 
-Tests added: 41 (matrix 1, coverage policy/tracker 9, throttle 5, service 16, health 6,
+Tests added: 42 (matrix 1, coverage policy/tracker 9, throttle 5, service 17, health 6,
 health presentation 2, consent copy 2). Existing consent-navigation tests preserved.
-Latest local suites passed **392** tests: engine 262, accessibility 19, resilience 43,
+The preceding local suites passed **392** tests: engine 262, accessibility 19, resilience 43,
 Settings 47, onboarding 21; zero failures, Android semaphore and >=35% memory held.
 The first candidate c1ca27a also passed full Android CI run 40787949420, including APK/AAB
 account/network exclusion. Follow-up 6a1c9f1 built all artifacts but exposed a fixture
@@ -19,6 +19,9 @@ ownership bug in CI/local tests: Robolectric returned its backing window object 
 than a separate snapshot, so recycling it mutated the fake root's window ID. The test
 shadow now returns an owned copy; all local suites passed after that fix. Final full CI
 is pending; consult the PR exact-head checks and planning handoff report for live state.
+The final delta adds an overlay/MainActivity regression, asserts no window-info calls on
+scrolling, removes window-info calls from production, and aligns URL scope/retention/revocation
+copy across consent, service description, privacy policy and Data safety with a cross-file guard.
 
 Independent review follow-up: accurate global event-delivery/filter disclosure in consent,
 service description, health summary, store declaration and privacy policy; cross-file copy

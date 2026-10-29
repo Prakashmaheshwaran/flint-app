@@ -36,10 +36,13 @@ Downloads or tab-switcher-only visit cannot prove a compatibility failure. Once 
 has produced a successful read, three consecutive reads of a visible but blank/unreadable
 address-bar node mark coverage **Degraded**; absent nodes do not count toward that threshold.
 One successful read clears either state; switching browser/window resets the session.
-Root application-window metadata and the first successful read also establish evidence after
+Foreground root identity and the first successful read also establish evidence after
 service restart, without needing a new activity event. Root/package/window identity must
 match before reading/counting. A Flint overlay never counts as a missing browser bar.
 Unavailable roots cannot establish a miss and do not prove readable coverage.
+The URL-read/reconcile paths do not call `AccessibilityNodeInfo.getWindow()`; overlay identity
+uses the attached surface and its cached window ID plus root package/class metadata. This
+avoids a window-info cache miss becoming a synchronous system-server call for every scroll read.
 URL cache and health are process-local; health contains no URL/history. The last browser
 observation remains visible when opening Flint/Settings and is labeled as a last check;
 foreground miss counts reset when leaving that window, and historical gaps no longer
@@ -49,13 +52,14 @@ the same health surface says website blocks are paused, even if app fallback sti
 
 ## Verification and remaining acceptance
 
-41 new tests cover matrix/version/IDs, active windows and allow-list exclusion, consecutive
+42 new tests cover matrix/version/IDs, active windows and allow-list exclusion, consecutive
 misses/recovery, switches/stale windows, unsupported handlers, the leading/trailing throttle,
 synthetic service filtering, health presentation and event disclosure. The existing
 AccessibilityDisclosureNavigationTest retains all affirmative-consent gate checks.
 
-Latest targeted execution passed 392 local changed-module tests, including all review
-regressions. The first candidate also passed full Android CI. The review
+The preceding candidate passed 392 local changed-module tests. The final delta adds a
+cached-overlay/MainActivity regression and a zero-window-info-call assertion; its exact-head
+execution results are recorded in the PR and planning handoff report. The first candidate also passed full Android CI. The review
 follow-up adds global-delivery disclosure guards, unchanged-scroll/stale-root/utility-screen
 and root-recycling regressions. Final execution results are linked from the PR and lane
 handoff report. The window fixture returns owned snapshots so resource recycling cannot

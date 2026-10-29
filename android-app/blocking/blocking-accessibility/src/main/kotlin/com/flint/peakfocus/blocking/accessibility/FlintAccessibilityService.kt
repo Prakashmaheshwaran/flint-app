@@ -14,7 +14,6 @@ import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import android.view.accessibility.AccessibilityWindowInfo
 import androidx.core.content.ContextCompat
 import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
 import com.flint.peakfocus.blocking.engine.BrowserAddressBars
@@ -93,6 +92,8 @@ class FlintAccessibilityService : AccessibilityService() {
     private var urlBarIndex = 0
     private var contentReadRequested = false
     private var websiteRulesActive = false
+    private var overlayAttached = false
+    private var overlayWindowId: Int? = null
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) { reevaluateForeground() }
     }
@@ -177,6 +178,8 @@ class FlintAccessibilityService : AccessibilityService() {
                 evaluationJob?.cancel()
                 coordinator?.hideIfShown()
                 armFloorRecovery()
+            } else if (overlayAttached) {
+                overlayWindowId = event.windowId
             }
             return
         }
@@ -204,7 +207,9 @@ class FlintAccessibilityService : AccessibilityService() {
         val live = rootIdentity()
         if (!refreshUrl && live == null) return
         val rootPkg = live?.first?.packageName
-        val ownOverlay = rootPkg == packageName && live?.second != AccessibilityWindowInfo.TYPE_APPLICATION
+        val ownOverlay = live != null && rootPkg == packageName && !live.second && overlayAttached &&
+            (overlayWindowId == null || overlayWindowId == live.first.windowId)
+        if (ownOverlay && overlayWindowId == null) overlayWindowId = live?.first?.windowId
         val pkg = rootPkg?.takeUnless { ownOverlay }
             ?: lastForegroundPackage
             ?: return
@@ -221,7 +226,12 @@ class FlintAccessibilityService : AccessibilityService() {
             BrowserAddressBars.isBrowser(pkg) && live.first != browserWindow)
         if (contextChanged) {
             clearBrowserWindow()
-            if (rootPkg == pkg && BrowserAddressBars.isBrowser(pkg)) browserWindow = live?.first
+            if (rootPkg == pkg && BrowserAddressBars.isBrowser(pkg)) {
+                browserWindow = live?.first
+                // A foreground root is sufficient for informational Unconfirmed coverage.
+                // Degraded additionally requires a prior URL read and visible address node.
+                mainBrowserWindow = browserWindow
+            }
             if (!refreshUrl) WebsiteCoverageHealth.foreground(
                 browserWindow ?: BrowserWindow(pkg, -1), activeDomains ?: domainsActive(), false,
             )
@@ -338,13 +348,15 @@ class FlintAccessibilityService : AccessibilityService() {
                 0,
                 PixelFormat.OPAQUE,
             )
-            return runCatching { wm.addView(view, params) }.isSuccess
+            return runCatching { wm.addView(view, params) }.isSuccess.also { if (it) overlayAttached = true }
         }
 
         override fun detach(view: View) {
             runCatching {
                 (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(view)
             }
+            overlayAttached = false
+            overlayWindowId = null
         }
 
         override fun goHome() {
@@ -381,7 +393,7 @@ class FlintAccessibilityService : AccessibilityService() {
         val window = browserWindow ?: run {
             val live = rootIdentity() ?: return
             if (live.first.packageName != pkg) return
-            live.first.also { browserWindow = it }
+            live.first.also { browserWindow = it; mainBrowserWindow = it }
         }
         WebsiteCoverageHealth.foreground(window, true, false)
         contentReadRequested = contentEvent
@@ -418,19 +430,16 @@ class FlintAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun rootIdentity(): Pair<BrowserWindow, Int?>? {
+    private fun rootIdentity(): Pair<BrowserWindow, Boolean>? {
         val root = runCatching { rootInActiveWindow }.getOrNull() ?: return null
         return try {
-            runCatching { root.packageName?.toString()?.let { BrowserWindow(it, root.windowId) to windowType(root) } }.getOrNull()
+            runCatching {
+                root.packageName?.toString()?.let {
+                    BrowserWindow(it, root.windowId) to
+                        (it == packageName && root.className?.toString() == "$packageName.MainActivity")
+                }
+            }.getOrNull()
         } finally { recycle(root) }
-    }
-
-    private fun windowType(root: AccessibilityNodeInfo): Int? {
-        val window = runCatching { root.window }.getOrNull() ?: return null
-        return try { window.type } finally {
-            @Suppress("DEPRECATION")
-            runCatching { window.recycle() }
-        }
     }
 
     private fun recycle(node: AccessibilityNodeInfo) {
@@ -445,9 +454,8 @@ class FlintAccessibilityService : AccessibilityService() {
         return try {
             // A foreign root never supplies a URL or counts as a miss. Reconcile its live
             // identity before another decision; our own accessibility overlay keeps its target.
-            val type = windowType(root)
             if (root.packageName?.toString() != window.packageName || root.windowId != window.windowId) {
-                return if (root.packageName?.toString() == packageName && type != AccessibilityWindowInfo.TYPE_APPLICATION)
+                return if (root.packageName?.toString() == packageName)
                     UrlReadOutcome.UNCHANGED else UrlReadOutcome.FOREGROUND_CHANGED
             }
             val ids = BrowserAddressBars.urlBarViewIds(window.packageName)
@@ -460,9 +468,8 @@ class FlintAccessibilityService : AccessibilityService() {
             val changed = text != lastForegroundUrl
             lastForegroundUrl = text
             if (text == null) urlBarIndex = (urlBarIndex + 1) % ids.size
-            val main = window == mainBrowserWindow || type == AccessibilityWindowInfo.TYPE_APPLICATION
             if (text != null) mainBrowserWindow = window // startup/root fallback needs no activity event
-            WebsiteCoverageHealth.addressBarRead(window, text != null, main, System.currentTimeMillis(), nodePresent)
+            WebsiteCoverageHealth.addressBarRead(window, text != null, window == mainBrowserWindow, System.currentTimeMillis(), nodePresent)
             if (changed) UrlReadOutcome.CHANGED else UrlReadOutcome.UNCHANGED
         } finally { recycle(root) }
     }
@@ -502,6 +509,8 @@ class FlintAccessibilityService : AccessibilityService() {
         if (screenReceiverRegistered) runCatching { unregisterReceiver(screenReceiver) }
         screenReceiverRegistered = false
         coordinator?.hideIfShown()
+        overlayAttached = false
+        overlayWindowId = null
         serviceScope?.cancel()
         serviceScope = null
         coordinator = null

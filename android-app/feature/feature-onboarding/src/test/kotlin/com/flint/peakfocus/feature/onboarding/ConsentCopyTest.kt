@@ -19,7 +19,7 @@ class ConsentCopyTest {
 
     @Test fun `service description and globally requested event set agree with consent`() {
         val root = generateSequence(File(System.getProperty("user.dir"))) { it.parentFile }
-            .first { File(it, "blocking/blocking-accessibility/src/main/res/xml/accessibility_service_config.xml").isFile }
+            .first { File(it, "settings.gradle.kts").isFile }
         val factory = DocumentBuilderFactory.newInstance().apply {
             isNamespaceAware = true
             setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
@@ -36,6 +36,10 @@ class ConsentCopyTest {
         assertTrue(config.getAttributeNS(ns, "packageNames").isEmpty())
         org.junit.Assert.assertEquals(setOf("typeWindowStateChanged", "typeWindowContentChanged"),
             config.getAttributeNS(ns, "accessibilityEventTypes").split('|').toSet())
+        for (relative in listOf("docs/privacy-policy.md", "docs/store/android/data-safety.md")) {
+            val text = File(root.parentFile, relative).readText().replace(Regex("\\s+"), " ")
+            assertTrue("$relative must agree on URL scope, retention and revocation", text.contains(ConsentCopy.URL_HANDLING))
+        }
     }
 
     @Test
