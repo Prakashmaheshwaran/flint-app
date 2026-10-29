@@ -27,6 +27,9 @@ internal object TimedOpenCreditPolicy {
         val reset = policy.remainingToResetMs(credits.reset, now)
         val remaining = OpenCreditLedgerPolicy.remainingCredits(credits, input.packageName, limits.map { it.dailyOpens }) ?: return null
         val live = credits.active[input.packageName]?.grant?.let { minOf(policy.remainingMs(it, now), reset) } ?: 0L
+        // requestScope binds period, Open occurrence and limit definitions only. This pure
+        // policy rechecks every live contributor inside the acceptance transaction; that
+        // overlap check, not the display nominee or token, is the release authority.
         val raw = "${credits.periodId}|${cause.occurrenceId}|${limits.sortedBy { it.toString() }}"
         val identity = MessageDigest.getInstance("SHA-256").digest(raw.toByteArray()).joinToString("") { "%02x".format(it) }
         return TimedCreditView(remaining, minOf(ProtectionContract.OPEN_CREDIT_MS, reset), live, names.distinct().sorted(), "${credits.periodId}:$identity")

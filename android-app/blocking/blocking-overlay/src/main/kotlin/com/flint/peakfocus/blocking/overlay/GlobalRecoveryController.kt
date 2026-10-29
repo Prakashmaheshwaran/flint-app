@@ -45,11 +45,16 @@ internal class GlobalRecoveryController(
                 val credits = lastGood?.openCredits?.active?.values.orEmpty().mapNotNull {
                     com.flint.peakfocus.blocking.engine.OpenCreditPolicy().remainingMs(it.grant, now).takeIf { ms -> ms > 0 }
                 }
-                val quota = lastGood?.openCredits?.let { com.flint.peakfocus.blocking.engine.OpenCreditPolicy().remainingToResetMs(it.reset, now) }
-                val wait = (ordinary + credits + listOfNotNull(remaining.takeIf { it > 0 }, quota?.takeIf { it > 0 }) + CHECKPOINT_MS).minOrNull() ?: CHECKPOINT_MS
-                withTimeoutOrNull(wait) { boundarySignals.receive() }
-                // Deadlines still stop release when storage becomes unavailable at expiry.
-                runCatching(enforcementChanged)
+                val quota = lastGood?.takeIf(::needsCheckpoint)?.openCredits?.let {
+                    com.flint.peakfocus.blocking.engine.OpenCreditPolicy().remainingToResetMs(it.reset, now)
+                }
+                val boundary = (ordinary + credits + listOfNotNull(remaining.takeIf { it > 0 }, quota?.takeIf { it > 0 })).minOrNull()
+                val wait = minOf(boundary ?: CHECKPOINT_MS, CHECKPOINT_MS)
+                val signalled = withTimeoutOrNull(wait) { boundarySignals.receive(); true } == true
+                // publish already nudges real grant changes. A checkpoint or failed commit
+                // alone does not alter enforcement; an elapsed boundary still must wake both
+                // detectors even when its storage reconciliation is unavailable.
+                if (!signalled && boundary != null && boundary <= CHECKPOINT_MS) runCatching(enforcementChanged)
             }
         }
         scope.launch(dispatcher) {
@@ -171,6 +176,8 @@ internal class GlobalRecoveryController(
     fun creditRemaining(packageName: String, now: AccessClockStamp): Long {
         val credits = lastGood?.openCredits ?: return 0
         val policy = com.flint.peakfocus.blocking.engine.OpenCreditPolicy()
+        // A stale active row is never release authority after its original elapsed expiry,
+        // quota reset, or reboot. Reads recheck both bounds even if pruning cannot commit.
         return credits.active[packageName]?.grant?.let { minOf(policy.remainingMs(it, now), policy.remainingToResetMs(credits.reset, now)) } ?: 0
     }
 

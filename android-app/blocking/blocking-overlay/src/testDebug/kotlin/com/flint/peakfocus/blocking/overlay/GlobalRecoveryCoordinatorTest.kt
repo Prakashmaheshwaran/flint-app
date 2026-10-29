@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.flint.peakfocus.blocking.engine.*
 import com.flint.peakfocus.core.datastore.*
 import com.flint.peakfocus.core.model.*
+import com.flint.peakfocus.feature.blockscreen.BlockScreenReason
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
@@ -495,10 +496,100 @@ class GlobalRecoveryCoordinatorTest {
     @Test fun PC_65_idleControllerWakesDoNotRewriteTheStoreOrBumpItsRevision() = runTest {
         val s = initial().copy(rules = emptyList(), times = emptyList(), opens = emptyList(),
             editor = EditorCommitmentState(timeline = base), openCredits = OpenCreditLedgerPolicy.initial(base, "UTC"))
-        val disk = Disk(s) { clock() }; coordinator(disk); runCurrent()
+        val disk = Disk(s) { clock() }; var wakes = 0
+        GlobalRecoveryController(disk, backgroundScope, disk.clock, { emptyList() }, { wakes++ }, StandardTestDispatcher(testScheduler))
+        runCurrent()
         val writes = disk.writes; val revision = disk.latest.focus.revision
+        val afterInitialization = wakes
         advanceTimeBy(4 * GlobalRecoveryController.CHECKPOINT_MS); runCurrent()
         assertEquals(writes, disk.writes); assertEquals(revision, disk.latest.focus.revision)
+        assertEquals(afterInitialization, wakes)
+    }
+
+    @Test fun PC_22_PC_37_PC_65_failedCheckpointsStayQuietButCreditExpiryStillWakesWithUnavailableStorage() = runTest {
+        val disk = Disk(initial().copy(openCredits = OpenCreditLedgerPolicy.initial(base, "UTC"))) { clock() }
+        var wakes = 0
+        val controller = GlobalRecoveryController(disk, backgroundScope, disk.clock, { emptyList() }, { wakes++ }, StandardTestDispatcher(testScheduler))
+        runCurrent()
+        val input = OrdinaryProtectionInput("c", app.packageName, timeSpent = false, openBlocked = true)
+        val id = GrantRequestId.issue(clock(), controller.creditView(input, clock())!!.requestScope)
+        assertEquals(GrantResult.OpenAllowed, controller.requestCredit(input, id) { false }); runCurrent()
+        val afterCommit = wakes
+        disk.values.value = StorageState.Unavailable(StorageFailure.IO); runCurrent()
+        assertFalse(controller.reconcile()); runCurrent()
+        advanceTimeBy(299_999); runCurrent()
+        assertEquals(afterCommit, wakes)
+        assertEquals(1L, controller.creditRemaining("c", clock()))
+        advanceTimeBy(1); runCurrent()
+        assertEquals(afterCommit + 1, wakes)
+        assertEquals(0L, controller.creditRemaining("c", clock()))
+        assertTrue(disk.latest.openCredits!!.active.containsKey("c")) // failed pruning retains a harmless stale row
+        advanceTimeBy(120_000); runCurrent()
+        assertEquals(afterCommit + 1, wakes)
+        assertEquals(1, disk.latest.openCredits!!.counters.getValue("c").used)
+    }
+
+    @Test fun PC_29_PC_31_PC_32_noonRuleAndOpenNomineeNeverChargeThroughOrdinaryOrRepeatedActions() =
+        assertOverlapNeverCharges(Schedule(startMinuteOfDay = 9 * 60, endMinuteOfDay = 12 * 60),
+            "2026-10-29T10:00:00Z", BlockScreenReason.OPEN_LIMIT)
+
+    @Test fun PC_29_PC_31_PC_32_overnightRuleNomineeAndOpenNeverChargeThroughOrdinaryOrRepeatedActions() =
+        assertOverlapNeverCharges(Schedule(startMinuteOfDay = 22 * 60, endMinuteOfDay = 7 * 60),
+            "2026-10-29T23:00:00Z", BlockScreenReason.SCHEDULE)
+
+    private fun assertOverlapNeverCharges(schedule: Schedule, wall: String, expectedNominee: BlockScreenReason) = runTest {
+        val zone = java.util.TimeZone.getDefault()
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"))
+        try {
+            val start = base.copy(wallEpochMs = java.time.Instant.parse(wall).toEpochMilli())
+            val credits = OpenCreditLedgerPolicy.initial(start, "UTC")
+            val open = OpenLimit(pkg, 2, BreakLevel.EASY)
+            val openCause = EditorCause("open-day", AnchoredInterval(start, credits.reset.remainingToResetMs,
+                start.wallEpochMs + credits.reset.remainingToResetMs), "UTC")
+            val s = initial().copy(rules = emptyList(), times = emptyList(), opens = listOf(open),
+                focus = FocusSnapshot(protection = ProtectionLedger(start, start)), openCredits = credits,
+                editor = EditorCommitmentState(causes = mapOf(openCauseKey(pkg) to openCause), timeline = start), observedAt = start)
+            val disk = Disk(s) { start.copy(wallEpochMs = start.wallEpochMs + testScheduler.currentTime,
+                elapsedRealtimeMs = start.elapsedRealtimeMs + testScheduler.currentTime) }
+            val c = coordinator(disk); runCurrent()
+            val displayedOpen = c.currentBlockCause(pkg)!!
+            val explicit = GrantRequestId.issue(disk.clock(), c.screenState(pkg, null, displayedOpen, disk.clock().wallEpochMs).openCreditRequestScope)
+            assertNotNull(explicit.creditScope)
+            val rule = BlockRule("overlap", "Other schedule", BlockTargets(apps = setOf(AppRef(pkg))), schedule = schedule, breakLevel = BreakLevel.EASY)
+            val ruleEnd = ruleBlockCause(rule, start.wallEpochMs, 0).endsAtEpochMs!!
+            disk.latest = disk.latest.copy(rules = listOf(rule), editor = disk.latest.editor.copy(causes = disk.latest.editor.causes +
+                (ruleCauseKey(rule.id) to EditorCause("schedule-occurrence", AnchoredInterval(start, ruleEnd - start.wallEpochMs, ruleEnd), "UTC"))))
+            disk.values.value = StorageState.Ready(disk.latest); runCurrent()
+            val nominee = c.currentBlockCause(pkg)!!
+            assertEquals(expectedNominee, nominee.reason)
+            // Even leftover legacy visit bookkeeping cannot turn the nominee into a debit.
+            OpenVisits.process.observe(pkg, countable = true, charge = true, now = start.wallEpochMs)
+            val ui = c.screenState(pkg, null, nominee, disk.clock().wallEpochMs)
+            assertEquals(listOf("Other schedule"), ui.openCreditBlockingContributors)
+            val ordinary = GrantRequestId.issue(disk.clock())
+            repeat(2) {
+                c.onForegroundChanged(null, pkg)
+                assertEquals(GrantResult.Denied, c.requestBreak(pkg, nominee, ordinary))
+                assertEquals(GrantResult.Denied, c.requestBreak(pkg, nominee, explicit))
+                assertFalse(c.canDismiss(pkg, nominee))
+            }
+            assertTrue(disk.latest.openCredits!!.counters.isEmpty())
+            assertTrue(disk.latest.openCredits!!.active.isEmpty())
+            assertTrue(disk.latest.focus.protection!!.outbox.isEmpty())
+            disk.latest = disk.latest.copy(rules = emptyList(), editor = disk.latest.editor.copy(causes = mapOf(openCauseKey(pkg) to openCause)))
+            disk.values.value = StorageState.Ready(disk.latest); runCurrent()
+            assertEquals(GrantResult.Denied, c.requestBreak(pkg, displayedOpen, ordinary))
+            assertEquals(GrantResult.OpenAllowed, c.requestBreak(pkg, displayedOpen, explicit)); runCurrent()
+            val originalGrant = disk.latest.openCredits!!.active.getValue(pkg)
+            repeat(2) {
+                assertEquals(GrantResult.OpenAllowed, c.requestBreak(pkg, displayedOpen, explicit))
+                assertEquals(GrantResult.OpenAllowed, c.requestBreak(pkg, displayedOpen, GrantRequestId.issue(disk.clock(), explicit.creditScope)))
+                c.onForegroundChanged(null, pkg)
+            }
+            assertEquals(1, disk.latest.openCredits!!.counters.getValue(pkg).used)
+            assertEquals(originalGrant, disk.latest.openCredits!!.active.getValue(pkg))
+            assertEquals(1, disk.latest.focus.protection!!.outbox.values.count { it.kind == ProtectionLifecycleKind.ACCESS_STARTED })
+        } finally { java.util.TimeZone.setDefault(zone) }
     }
 
     @Test fun PC_29_PC_30_PC_31_explicitCreditAcrossBothPathsCommitsOnceAndExpiryWakesStationaryForeground() = runTest {

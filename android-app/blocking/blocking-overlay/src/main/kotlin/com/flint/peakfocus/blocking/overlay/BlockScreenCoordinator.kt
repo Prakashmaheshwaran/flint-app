@@ -856,6 +856,8 @@ class BlockScreenCoordinator(
         return try {
             val current = currentBlockCause(packageName, displayed)
             if (id.creditScope != null) {
+                // Only an explicitly reviewed Open action may charge. The latest-ending
+                // display nominee and its spendsOpenOnBreak flag have no accounting rights.
                 val result = owner.requestCredit(ordinaryInput(packageName, current ?: displayed), id) { safetyFloor.protectsFresh(packageName) }
                 if (result is GrantResult.Unavailable || result == GrantResult.Unconfirmed) failures.add(packageName)
                 return result
@@ -887,6 +889,7 @@ class BlockScreenCoordinator(
         .joinToString("") { "%02x".format(it) }
 
     private fun openRetryNeeded(packageName: String, cause: BlockCause): Boolean {
+        if (recoveries != null) return false // legacy visit retries never buy timed credits
         val visit = visits.current(packageName) ?: return false
         return cause.reason == BlockScreenReason.OPEN_LIMIT && visit.charge && !visit.paid &&
             counterInputsReady() && inspectOpen(packageName, includeUnpaidVisit = false) is OpenLimitDecision.Allowed
@@ -894,6 +897,7 @@ class BlockScreenCoordinator(
 
     /** Accounting holds are provisional, not evidence of a genuinely exhausted quota. */
     private fun pendingOpenHold(packageName: String, cause: BlockCause): Boolean {
+        if (recoveries != null) return false // timed credits require their explicit scoped action
         val visit = visits.current(packageName) ?: return false
         if (cause.reason != BlockScreenReason.OPEN_LIMIT || !visit.charge || visit.paid) return false
         val focus = focusLastGood ?: return true
