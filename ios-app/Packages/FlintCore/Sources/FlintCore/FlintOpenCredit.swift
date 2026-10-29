@@ -53,7 +53,8 @@ public enum FlintOpenCredit {
         let raw = defaults.object(forKey: FlintLedgerState.legacyOpenCreditKey)
         state.importLegacyOpenCredits(raw.map(FlintLegacyValue.value) ?? .absent,
             targetKeys: rules.map(targetKeys), established: rules == nil ||
-                defaults.object(forKey: FlintRuleStoreKey.openLimits.rawValue) != nil,
+                defaults.object(forKey: FlintRuleStoreKey.openLimits.rawValue) != nil ||
+                state.pass.usage != .pendingImport || !state.migrations.isEmpty,
             at: now, calendar: calendar)
     }
 

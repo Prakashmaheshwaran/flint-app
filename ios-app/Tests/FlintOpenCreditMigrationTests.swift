@@ -81,6 +81,18 @@ final class FlintOpenCreditMigrationTests: XCTestCase {
                        "deleted legacy rules plus a missing counter cannot mint a new pool")
     }
 
+    func testEstablishedLedgerWithMissingLegacyDefaultsCannotBecomeAFreshPool() throws {
+        let suite = "flint.tests.established-open-migration.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var state = FlintLedgerState(initializedAt: now)
+        state.importLegacyPass(.absent, at: instant)
+        FlintOpenCredit.importLegacy(into: &state, defaults: defaults, at: instant, calendar: calendar)
+        XCTAssertEqual(state.openCredits.availability, .unavailable)
+        XCTAssertTrue(state.reconcileOpenCredits(at: instant, targetKeys: ["recovered-token"], reshield: { _ in }))
+        XCTAssertNil(state.openCreditPreview(target: "recovered-token", caps: [3], blockedBy: nil, at: instant).remaining)
+    }
+
     func testQuotaZoneCapturedAtFirstTargetSetupThenSurvivesTravel() {
         var state = imported(.absent, keys: [], established: false)
         var setupZone = calendar; setupZone.timeZone = TimeZone(identifier: "America/New_York")!

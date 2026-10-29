@@ -274,12 +274,13 @@ public final class FlintProtectionLedger {
             setInitializedMarker: { defaults.set($0.timeIntervalSince1970, forKey: key) },
             // Required for a usable pass: without it a new ledger stays `pendingImport` (closed).
             migrate: { state, now in
+                // Inspect the pre-import initialization evidence before adding the pass marker.
+                FlintOpenCredit.importLegacy(into: &state, defaults: defaults, at: now, calendar: clock.calendar())
                 // The App Group suite opened, so absence of the legacy key is the old "never
                 // used" state. `UserDefaults` has no per-key failure channel: an unreadable
                 // container is caught earlier (no suite / no ledger directory), never here.
                 let raw = defaults.object(forKey: FlintLedgerState.legacyPassKey)
                 state.importLegacyPass(raw.map(FlintLegacyValue.value) ?? .absent, at: now)
-                FlintOpenCredit.importLegacy(into: &state, defaults: defaults, at: now, calendar: clock.calendar())
             }
         )
     }
