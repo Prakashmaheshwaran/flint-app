@@ -12,7 +12,8 @@ import java.util.concurrent.CopyOnWriteArrayList
  * and can never clobber another's (the bug this replaced: legacy writers used to overwrite the
  * whole list, silently dropping DataStore rules from enforcement until the next republish).
  *
- * [rules] stays a cheap volatile read — it is on the hot path of every accessibility event.
+ * Publication remains atomic. Reads apply the app's pure clock projection without storage I/O,
+ * so a clock edit cannot make a cached wall deadline authoritative before the next publication.
  */
 object ActiveRulesHolder {
 
@@ -30,7 +31,15 @@ object ActiveRulesHolder {
     private data class Snapshot(val rules: List<BlockRule>, val dataStoreState: StorageState<List<BlockRule>>)
     @Volatile private var snapshot = Snapshot(emptyList(), StorageState.Loading)
 
-    val dataStoreState: StorageState<List<BlockRule>> get() = snapshot.dataStoreState
+    @Volatile private var projection: (List<BlockRule>) -> List<BlockRule> = { it }
+
+    /** Installed once by the app before publishing editor rules; core-model owns no clock. */
+    fun configureProjection(project: (List<BlockRule>) -> List<BlockRule>) { projection = project }
+
+    val dataStoreState: StorageState<List<BlockRule>> get() = when (val state = snapshot.dataStoreState) {
+        is StorageState.Ready -> StorageState.Ready(projection(state.value))
+        else -> state
+    }
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
 
     /** Lightweight invalidation; observers read [rules] and schedule work on their own loop. */
@@ -41,7 +50,7 @@ object ActiveRulesHolder {
 
     /** The current combined rule list — what both detection paths hand the engine. */
     val rules: List<BlockRule>
-        get() = snapshot.rules
+        get() = projection(snapshot.rules)
 
     /**
      * Read another source without mistaking this source's slower replica for a new owner.

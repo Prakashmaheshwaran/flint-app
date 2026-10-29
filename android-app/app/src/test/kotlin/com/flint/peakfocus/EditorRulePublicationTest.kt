@@ -51,4 +51,14 @@ class EditorRulePublicationTest {
             com.flint.peakfocus.core.datastore.EditorCause("inactive", null, "UTC")))
         assertEquals(5 * 60_000L, nextEditorReconciliationDelay(listOf(rule), state, AccessClockStamp(at, 0, "boot")))
     }
+
+    @Test fun `R_18 PC_54 future publication timer follows saved timeline after a wall jump`() {
+        val at = Instant.parse("2026-10-28T20:55:00Z").toEpochMilli()
+        val anchor = AccessClockStamp(at, 0, "boot")
+        val rule = BlockRule("evening", "Evening", BlockTargets(apps = setOf(AppRef("a"))),
+            Schedule(startMinuteOfDay = 21 * 60, endMinuteOfDay = 22 * 60),
+            runtime = RuleRuntime("inactive", anchor, 0, at, "UTC", anchor))
+        val jumped = anchor.copy(wallEpochMs = at + 12 * 3_600_000, elapsedRealtimeMs = 60_000)
+        assertEquals(4 * 60_000L, nextEditorReconciliationDelay(listOf(rule), EditorCommitmentState(), jumped))
+    }
 }
