@@ -17,12 +17,12 @@ class GlanceSurfaceTest : FlintE2EFixture() {
         // Ordinary widget binding and POST_NOTIFICATIONS consent; never adopt/grant privileges.
         val deadline = SystemClock.uptimeMillis() + timeout
         var bound = false
-        var allowed = false
+        var allowed = shell("dumpsys package $app").contains("android.permission.POST_NOTIFICATIONS: granted=true")
         while (SystemClock.uptimeMillis() < deadline) {
             refreshAccessibilityCache()
             if (!bound) device.findObject(By.text(java.util.regex.Pattern.compile("(?i)create|allow")))?.let { it.click(); bound = true }
             if (!allowed) device.findObject(By.res("com.android.permissioncontroller", "permission_allow_button"))?.let { it.click(); allowed = true }
-            if (device.findObject(By.text("Protection active at last check")) != null) break
+            if (allowed && device.findObject(By.text("Protection active at last check")) != null) break
             SystemClock.sleep(100)
         }
         visible(By.text("Protection active at last check"))
