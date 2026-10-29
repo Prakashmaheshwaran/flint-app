@@ -31,6 +31,7 @@ final class FlintSessionControllerTests: XCTestCase {
         events = LifecycleCapture()
         FlintSessionLifecycle.register(events)
         ledgerAvailable = true
+        publications = 0
         ledgerDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("flint-session-ledger-\(UUID().uuidString)", isDirectory: true)
     }
@@ -63,9 +64,13 @@ final class FlintSessionControllerTests: XCTestCase {
                 guard self.ledgerAvailable else { return nil }
                 return FlintProtectionLedger(directory: directory, clock: flintClock,
                                              initializedMarker: { nil }, setInitializedMarker: { _ in })
-            }
+            },
+            publishStatus: { [unowned self] in self.publications += 1 }
         ))
     }
+
+    /// Status projections published after committed changes.
+    private var publications = 0
 
     private var health: FlintSessionHealth { FlintSessionHealth.load(from: defaults) }
 
@@ -90,6 +95,18 @@ final class FlintSessionControllerTests: XCTestCase {
     private let selectionB = FamilyActivitySelection(includeEntireCategory: true)
 
     // MARK: ADR-012 arbitration (§1–§4)
+
+    func testEveryCommittedChangePublishesTheStatusProjection() throws {
+        let c = controller()
+        XCTAssertThrowsError(try start(c, minutes: 0, level: .hardcore))
+        XCTAssertEqual(publications, 0, "a refused start changes nothing and publishes nothing")
+        _ = try start(c, minutes: 30, level: .easy)
+        XCTAssertEqual(publications, 1, "start")
+        XCTAssertEqual(c.requestStop(route: .manualStop, confirmed: false), .needsConfirmation)
+        XCTAssertEqual(publications, 1, "an unconfirmed stop changes nothing")
+        XCTAssertEqual(c.requestStop(route: .manualStop, confirmed: true), .stopped)
+        XCTAssertEqual(publications, 2, "end")
+    }
 
     func testStrictSessionsNeedAnEndTimePC01() {
         XCTAssertThrowsError(try start(controller(), minutes: 0, level: .hardcore)) {

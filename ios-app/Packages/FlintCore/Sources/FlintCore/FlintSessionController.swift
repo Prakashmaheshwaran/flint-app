@@ -188,11 +188,6 @@ extension FlintGroupStore: FlintSessionStateStoring {
         )
     }
 
-    public func hasActiveSessionRecord() -> Bool {
-        // FlintGroupStore's own key for the active session (its Key enum is private to its file).
-        UserDefaults.flintGroup?.data(forKey: "flint.activeSession") != nil
-    }
-
     public func clearSessionSelection() {
         UserDefaults.flintGroup?.removeObject(forKey: Self.sessionSelectionKey)
     }
@@ -220,6 +215,8 @@ public struct FlintSessionEnvironment {
     public var healthDefaults: () -> UserDefaults?
     /// The cross-process protection ledger (Harder waits; ADR-012 §8). nil = unavailable.
     public var ledger: () -> FlintProtectionLedger?
+    /// Re-publishes the shared status projection after a committed change (lanes K/H read it).
+    public var publishStatus: () -> Void
 
     public init(
         store: @escaping () -> FlintSessionStateStoring?,
@@ -230,7 +227,8 @@ public struct FlintSessionEnvironment {
         clock: FlintClock,
         shortSessionStrategy: FlintSessionAutoClearPlan.ShortSessionStrategy = FlintSessionAutoClearPlan.shortSessionStrategy,
         healthDefaults: @escaping () -> UserDefaults?,
-        ledger: @escaping () -> FlintProtectionLedger? = { nil }
+        ledger: @escaping () -> FlintProtectionLedger? = { nil },
+        publishStatus: @escaping () -> Void = {}
     ) {
         self.store = store
         self.shield = shield
@@ -241,6 +239,7 @@ public struct FlintSessionEnvironment {
         self.shortSessionStrategy = shortSessionStrategy
         self.healthDefaults = healthDefaults
         self.ledger = ledger
+        self.publishStatus = publishStatus
     }
 
     public static var live: FlintSessionEnvironment {
@@ -254,7 +253,8 @@ public struct FlintSessionEnvironment {
             isAuthorized: { AuthorizationCenter.shared.authorizationStatus == .approved },
             clock: .system,
             healthDefaults: { .flintGroup },
-            ledger: { FlintProtectionLedger.appGroup() }
+            ledger: { FlintProtectionLedger.appGroup() },
+            publishStatus: { FlintProtectionStatus.publishAfterCommit() }
         )
     }
 }
@@ -530,6 +530,7 @@ public final class FlintSessionController {
             $0.lastRefusal = nil
         }
         FlintSessionLifecycle.didStart(session, replacing: previous, source: source, at: now)
+        env.publishStatus()
         return session
     }
 
@@ -637,6 +638,7 @@ public final class FlintSessionController {
         // The session's Harder count ends with it (a new session starts from zero, §4); its
         // committed-operation records stay in the ledger's bounded memory.
         _ = env.ledger()?.transaction { $0.resetHarder(cause: session.id) }
+        env.publishStatus()
     }
 
     // MARK: Policy adapters (ADR-012)
@@ -865,6 +867,7 @@ public final class FlintSessionController {
                                                 countsTowardLimit: reason == .prematureEnd))
         if session.monitorName != name { env.registrar.stopMonitoring([session.monitorName]) }
         // The running session is armed again: an earlier refusal is no longer current.
+        // (Callers publish: the monitor callback, the reconcile, the start that repaired it.)
         FlintSessionHealth.update(in: env.healthDefaults()) { $0.lastArmFailure = nil }
         return .rearmed
     }
@@ -901,6 +904,9 @@ public final class FlintSessionController {
     ///  - any other session name is a replaced registration: deregistered at its end, ignored.
     public func handleMonitorEvent(_ event: FlintSessionMonitorEvent, activity: String) {
         Self.lock.lock(); defer { Self.lock.unlock() }
+        // The monitor's callbacks are the app-closed path: always republish what they changed
+        // (unchanged content skips the widget reload).
+        defer { env.publishStatus() }
         let store = env.store()
         let now = env.clock.now()
         let session = store?.loadActiveSession()
