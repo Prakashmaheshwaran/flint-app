@@ -302,6 +302,14 @@ write returns `false`, and cancellation propagates. Multi-record projections com
 atomic history rewrite; deterministic UUIDs derived from the owner event id, history type
 and session id make replay after a crash before acknowledgement idempotent.
 
+The projection also reads `HistorySnapshot.clearedAt` under that same update lock. Events
+at or before the persisted clear cutoff may reference only sessions with retained `started`
+records. Cleared pass references and early terminals are omitted together; an old pass with
+no retained sessions is intentionally acknowledged without a new record. Break replay uses
+the same retained scope, so a running session keeps its break pairing while cleared sessions
+do not return after a failed acknowledgement. The cutoff comes from existing clear metadata,
+without a new history schema or tombstone ledger.
+
 - `PASS_COMMITTED` writes one `pass_used`, with the opaque operation id as `session` and
   `grant`. Its `sessions` contains only `session-*` ids from `affectedRuleIds`, and
   `recoveryEnd` is the owner's deadline. Only focus sessions in `endedTransientIds` receive
@@ -325,6 +333,11 @@ diagnostics. The app observes a positive `ProtectionStatus.lifecycleEventsDroppe
 events may be missing". That observation is sticky within the process; a later loading or
 stale status cannot erase known loss, and C persists its counter across process restarts.
 Existing totals stay unchanged; no events, loss start date or missing duration are invented.
+The app also observes the public `EditorCommitmentStore.terminalDeliveryHealth` stream and
+maps a ready `EditorTerminalDeliveryHealth.incompleteHistory` into that same missing-events
+note. The owner derives it from `overflowDropped` or `captureFailures`; `pendingCount` and
+retained `overflowCount` alone never imply loss. Loading/unavailable health cannot establish
+a loss count, and history does not inspect the editor's private ledger.
 The consumer never reads the private protection ledger or treats a missing event as evidence
 of uninterrupted focus. Exact production emission and status-publication coverage remain
 C-owned verification requirements.

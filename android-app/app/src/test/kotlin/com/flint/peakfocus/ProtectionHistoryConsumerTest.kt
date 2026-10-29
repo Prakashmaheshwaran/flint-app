@@ -40,7 +40,8 @@ class ProtectionHistoryConsumerTest {
     private val minute = 60_000L
     private val clock = Clock.fixed(Instant.ofEpochMilli(begin + 60 * minute), ZoneOffset.UTC)
     private fun stamp(at: Long) = AccessClockStamp(at, at - begin, "private-boot-identity")
-    private fun store(directory: File = temporary.newFolder()) = FocusHistoryStore(directory, clock)
+    private fun store(directory: File = temporary.newFolder(), at: Long = clock.millis()) =
+        FocusHistoryStore(directory, Clock.fixed(Instant.ofEpochMilli(at), ZoneOffset.UTC))
     private fun consumer(store: FocusHistoryStore) = ProtectionHistoryConsumer(store) { ZoneOffset.UTC }
     private fun start(id: String) = HistoryEvent(type = "started", session = id, at = begin, tz = "UTC",
         plannedEnd = begin + 60 * minute, tier = "harder", source = "manual", name = "Focus")
@@ -200,6 +201,83 @@ class ProtectionHistoryConsumerTest {
         owner.failAck = false
         owner.deliverLifecycleEvents(consumer(store(store.directory))::deliver)
         assertEquals(2, store.load().events.size)
+        assertTrue(owner.pending.isEmpty())
+    }
+
+    @Test fun failedAckThenClearAndReopenDoesNotResurrectPassOrBreakRecords() = runBlocking {
+        val clearAt = begin + 20 * minute
+        for (event in listOf(pass(), breakStart(), breakEnd(breakStart()),
+            pass().copy(at = stamp(clearAt), untilEpochMs = clearAt + 5 * minute),
+            pass().copy(affectedRuleIds = setOf("schedule-a"), endedTransientIds = emptySet()))) {
+            val store = store(at = clearAt)
+            assertTrue(store.update { listOf(start("session-a"), start("session-b")) })
+            val owner = Owner(event).apply { failAck = true }
+            owner.deliverLifecycleEvents(consumer(store)::deliver)
+            assertFalse(store.load().events.isEmpty())
+            assertEquals(setOf(event.id), owner.pending.keys)
+            assertTrue(store.clear(emptySet()))
+            val reopened = store(store.directory, clearAt)
+            assertEquals(clearAt, reopened.load().clearedAt)
+            assertTrue(reopened.load().events.isEmpty())
+            owner.failAck = false
+            owner.deliverLifecycleEvents(consumer(reopened)::deliver)
+            assertTrue(owner.pending.isEmpty())
+            assertTrue(store(store.directory, clearAt).load().events.isEmpty())
+            assertEquals("", File(store.directory, "events.v1.jsonl").readText())
+        }
+    }
+
+    @Test fun delayedOldPassKeepsOnlyRetainedSessionReferencesAndExactTerminals() = runBlocking {
+        val store = store(at = begin + 20 * minute)
+        assertTrue(store.update { listOf(start("session-a"), start("session-b")) })
+        assertTrue(store.clear(setOf("session-a")))
+        val event = pass().copy(endedTransientIds = setOf("session-a", "session-b"))
+        val owner = Owner(event)
+        owner.deliverLifecycleEvents(consumer(store)::deliver)
+        val events = store.load().events
+        assertEquals(listOf("session-a"), events.single { it.knownType == HistoryEventType.PASS_USED }.sessions)
+        assertEquals("session-a", events.single { it.knownType == HistoryEventType.ENDED_EARLY }.session)
+        assertFalse(File(store.directory, "events.v1.jsonl").readText().contains("session-b"))
+        assertTrue(owner.pending.isEmpty())
+    }
+
+    @Test fun failedPassAckThenPartialClearPreservesOnlyTheRetainedRunningSession() = runBlocking {
+        val now = begin + 20 * minute
+        val store = store(at = now)
+        assertTrue(store.update { listOf(start("session-a"), start("session-b")) })
+        val owner = Owner(pass()).apply { failAck = true }
+        owner.deliverLifecycleEvents(consumer(store)::deliver)
+        assertTrue(store.clear(setOf("session-a")))
+        val afterClear = File(store.directory, "events.v1.jsonl").readBytes()
+        owner.failAck = false
+        owner.deliverLifecycleEvents(consumer(store(store.directory, now))::deliver)
+        val events = store.load().events
+        assertEquals(2, events.size)
+        assertEquals(listOf("session-a"), events.single { it.knownType == HistoryEventType.PASS_USED }.sessions)
+        assertFalse(afterClear.toString(Charsets.UTF_8).contains("session-b"))
+        assertArrayEquals(afterClear, File(store.directory, "events.v1.jsonl").readBytes())
+        assertTrue(owner.pending.isEmpty())
+    }
+
+    @Test fun clearRetainsRunningBreakPairButReplayNeverRestoresClearedSessionScope() = runBlocking {
+        val now = begin + 20 * minute
+        val store = store(at = now)
+        assertTrue(store.update { listOf(start("session-a"), start("session-b")) })
+        val start = breakStart()
+        val owner = Owner(start).apply { failAck = true }
+        owner.deliverLifecycleEvents(consumer(store)::deliver)
+        assertTrue(store.clear(setOf("session-a")))
+        val reopened = store(store.directory, now)
+        assertTrue(consumer(reopened).deliver(breakEnd(start)))
+        owner.failAck = false
+        owner.deliverLifecycleEvents(consumer(reopened)::deliver)
+        val events = reopened.load().events
+        assertEquals(3, events.size)
+        assertTrue(events.all { it.session == "session-a" })
+        assertEquals(setOf("grant-a"), events.mapNotNull { it.grant }.toSet())
+        val session = FocusHistoryAggregator.sessions(events, begin + 30 * minute, setOf("session-a")).single()
+        assertEquals(28 * minute, session.focusedMs)
+        assertEquals(1, session.breaks)
         assertTrue(owner.pending.isEmpty())
     }
 
