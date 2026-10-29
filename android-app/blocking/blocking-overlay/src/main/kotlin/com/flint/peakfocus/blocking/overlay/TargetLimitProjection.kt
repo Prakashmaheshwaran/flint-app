@@ -21,13 +21,16 @@ internal data class TargetLimitFacts(
 internal object TargetLimitProjection {
     const val CREDIT_RUNTIME_UNAVAILABLE = "timed-open-credit-runtime-unavailable"
 
-    fun app(snapshot: ProtectionSnapshot, packageName: String, now: AccessClockStamp, measuredUsageMs: Long?): TargetLimitFacts {
+    fun app(snapshot: ProtectionSnapshot, packageName: String, now: AccessClockStamp, measuredUsageMs: Long?,
+        legacyMinutes: Int? = null): TargetLimitFacts {
         val time = snapshot.times.firstOrNull { it.packageName == packageName }
         val open = snapshot.opens.firstOrNull { it.packageName == packageName }
-        if (time == null && open == null) return TargetLimitFacts(emptyList(), null, null, null)
+        val minutes = listOfNotNull(time?.dailyMinutes, legacyMinutes?.takeIf { it >= 0 }).minOrNull()
+        if (minutes == null && open == null) return TargetLimitFacts(emptyList(), null, null, null)
         val quota = snapshot.openCredits?.let { OpenCreditLedgerPolicy.reconcile(it, now).next }
         val usedMs = measuredUsageMs?.takeIf { it >= 0 }
-        val timeView = time?.let { TimeLimitView(it.dailyMinutes.toLong().coerceAtLeast(0) * 60_000L, usedMs, it.breakLevel, usedMs != null) }
+        val timeView = minutes?.let { TimeLimitView(it.toLong().coerceAtLeast(0) * 60_000L, usedMs,
+            time?.breakLevel ?: snapshot.focus.defaultBreakLevel, usedMs != null) }
         val openView = open?.let { limit ->
             val remaining = quota?.let { OpenCreditPolicy().remainingToResetMs(it.reset, now) }
             OpenCreditView(
@@ -56,9 +59,22 @@ internal object TargetLimitProjection {
                 clockDiscontinuity(interval.anchor, now) || quota?.timeUncertain == true,
                 end, enforcing, key, saved.occurrenceId)
         }
-        time?.let { limit ->
-            val spent = usedMs?.let { it >= checkNotNull(timeView).quotaMs }
-            add(timeCauseKey(packageName), CauseKind.TIME_LIMIT, "Time limit", limit.breakLevel, spent)
+        timeView?.let { view ->
+            val budget = view.quotaMs
+            val spent = if (budget <= 0) true else usedMs?.let { it >= budget }
+            if (time != null) {
+                add(timeCauseKey(packageName), CauseKind.TIME_LIMIT, "Time limit", view.tier, spent)
+            } else {
+                // Matches OrdinaryProtectionPolicy's legacy Time Limit period and tier.
+                val remaining = quota?.let { OpenCreditPolicy().remainingToResetMs(it.reset, now) }
+                if (remaining == null || remaining <= 0) missingOccurrence = true
+                else {
+                    val period = checkNotNull(quota)
+                    val end = addBounded(now.wallEpochMs, remaining)
+                    causes += CoveringCause(null, "Time limit", CauseKind.TIME_LIMIT, view.tier, true,
+                        end, period.timeUncertain, end, spent, "legacy-time:$packageName", "legacy-time-${period.periodId}")
+                }
+            }
         }
         open?.let { limit ->
             // A positive legacy launch cap is not proof of the timed-credit runtime disposition.

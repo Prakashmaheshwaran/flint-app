@@ -34,13 +34,14 @@ class TargetLimitProjectionTest {
         assertNull(result.unavailableReason)
     }
 
-    @Test fun unmeasurableUsageIsUnknownRatherThanZeroAndZeroQuotaStillNeedsMeasurement() {
-        val stored = snapshot(time = TimeLimit(pkg, 0), open = null)
+    @Test fun positiveUnmeasurableUsageIsUnknownWhileZeroQuotaNeedsNoUsageAccess() {
+        val stored = snapshot(open = null)
         val unknown = TargetLimitProjection.app(stored, pkg, now, null)
         assertFalse(unknown.timeLimit!!.measurable)
         assertNull(unknown.timeLimit.usedMs)
         assertNull(unknown.causes.single().enforcingNow)
-        assertEquals(true, TargetLimitProjection.app(stored, pkg, now, 0).causes.single().enforcingNow)
+        val zero = stored.copy(times = listOf(TimeLimit(pkg, 0)))
+        assertEquals(true, TargetLimitProjection.app(zero, pkg, now, null).causes.single().enforcingNow)
     }
 
     @Test fun readableOpenAccountingDoesNotAdvertiseAnUnavailableTimedCredit() {
@@ -116,5 +117,34 @@ class TargetLimitProjectionTest {
         assertNull(result.openCredit)
         assertNull(result.timeLimit)
         assertNull(result.unavailableReason)
+    }
+
+    @Test fun stricterLegacyBudgetStillUsesTheStoredDataStoreTier() {
+        val stored = snapshot(open = null)
+        val stricter = TargetLimitProjection.app(stored, pkg, now, 90_000, legacyMinutes = 1)
+        assertEquals(60_000L, stricter.timeLimit!!.quotaMs)
+        assertEquals(BreakLevel.HARDCORE, stricter.timeLimit.tier)
+        assertEquals(true, stricter.causes.single().enforcingNow)
+        assertEquals(300_000L, TargetLimitProjection.app(stored, pkg, now, 0, legacyMinutes = 10).timeLimit!!.quotaMs)
+    }
+
+    @Test fun legacyOnlyBudgetUsesTheReadyDefaultTierAndSharedAnchoredPeriod() {
+        val stored = snapshot(time = null, open = null).let {
+            it.copy(focus = it.focus.copy(defaultBreakLevel = BreakLevel.HARDER))
+        }
+        val result = TargetLimitProjection.app(stored, pkg, now, 0, legacyMinutes = 3)
+        val quota = checkNotNull(stored.openCredits)
+        assertEquals(TimeLimitView(180_000, 0, BreakLevel.HARDER, true), result.timeLimit)
+        assertEquals("legacy-time:$pkg", result.causes.single().causeKey)
+        assertEquals("legacy-time-${quota.periodId}", result.causes.single().occurrenceId)
+        assertEquals(result.causes.single().endsAtWall,
+            now.wallEpochMs + quota.reset.remainingToResetMs)
+        assertNull(result.unavailableReason)
+    }
+
+    @Test fun negativeLegacyUnsetMarkerDoesNotCreateAConfiguredLimit() {
+        val result = TargetLimitProjection.app(snapshot(time = null, open = null), pkg, now, 0, legacyMinutes = -1)
+        assertNull(result.timeLimit)
+        assertTrue(result.causes.isEmpty())
     }
 }
