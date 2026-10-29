@@ -157,6 +157,20 @@ final class FlintEmergencyPassControllerTests: XCTestCase {
         XCTAssertFalse(effects.contains("release"))
     }
 
+    func testCommittedRecoveryRemainsManageableWhenLaterScopeReadsFail() throws {
+        _ = try use()
+        scopeReadable = false
+        let recovering = try controller().status().get()
+        XCTAssertTrue(recovering.pass.isRecovering)
+        XCTAssertFalse(recovering.isAvailable)
+        XCTAssertEqual(controller().currentScope(), .failure(.scopeUnavailable))
+        let resumed = try controller().resumeNow().get()
+        XCTAssertFalse(resumed.pass.isRecovering)
+        XCTAssertFalse(resumed.isAvailable)
+        XCTAssertTrue(effects.contains("resume"))
+        XCTAssertEqual(try ledger().peek().get().operations.filter { $0.kind == "pass" }.count, 1)
+    }
+
     func testStalePreviewRefreshesWithoutSpend() throws {
         let preview = try controller().preview().get()
         revision = "different occurrence or targets"
@@ -564,6 +578,7 @@ final class FlintEmergencyPassControllerTests: XCTestCase {
         rules = [.init(id: "schedule:a", name: "Rule", kind: .schedule,
             naturalStart: now.addingTimeInterval(-60), naturalEnd: now.addingTimeInterval(7200),
             storeName: "flint.a", activityName: "flint.session.unrelated")]
+        XCTAssertEqual(controller().status(), .failure(.scopeUnavailable))
         XCTAssertEqual(controller().preview(), .failure(.scopeUnavailable))
         XCTAssertEqual(try ledger().peek().get().pass.usage, .neverUsed)
         rules = [.init(id: "schedule:a", name: "Rule", kind: .schedule,

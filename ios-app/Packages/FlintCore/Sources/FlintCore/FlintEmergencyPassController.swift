@@ -408,8 +408,19 @@ public final class FlintEmergencyPassController {
                   Self.hasValidRecovery(state) else { return .failure(.unavailable) }
             state.pass.checkpoint(at: now)
             guard Self.hasValidRecovery(state), state.pass.policyUsage != .unknown else { return .failure(.unavailable) }
-            guard let scope = try? env.scope(state, now) else { return .failure(.scopeUnavailable) }
+            guard let scope = try? env.scope(state, now) else {
+                // A new spend still requires the complete scope. Already committed recovery
+                // and cooldown remain knowable from the ledger, so Resume/Retry stays reachable
+                // even if a later rule/config read fails. Never infer Available from that gap.
+                let known = Self.status(state, at: now, active: true)
+                if case .coolingDown = known.pass.eligibility { return .success(known) }
+                return .failure(.scopeUnavailable)
+            }
             let status = Self.status(state, at: now, active: scope.hasActiveCommitment)
+            if status.pass.eligibility == .available {
+                guard FlintPassRecovery(operationID: "status", at: now, scope: scope,
+                    carrierName: Self.carrierPrefix + "status").isValid else { return .failure(.scopeUnavailable) }
+            }
             if now.bootID == nil {
                 switch status.pass.eligibility {
                 case .available, .nothingToRecover: return .failure(.unavailable)
