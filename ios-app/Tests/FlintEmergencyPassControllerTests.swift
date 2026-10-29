@@ -584,6 +584,34 @@ final class FlintEmergencyPassControllerTests: XCTestCase {
         XCTAssertEqual(effects, before)
     }
 
+    func testRecoveryIntentBindsCurrentRuleIncarnationAndRevisionNames() throws {
+        let incarnation = "0123456789abcdef0123456789abcdef"
+        func rule(_ activity: String) -> FlintPassCommitment {
+            .init(id: "schedule:a", name: "Rule", kind: .schedule,
+                naturalStart: now.addingTimeInterval(-60), naturalEnd: now.addingTimeInterval(7200),
+                storeName: "flint.a", activityName: activity)
+        }
+        for activity in ["flint.rule.a", "flint.rule.a.r2", "flint.rule.a.i\(incarnation).r2"] {
+            rules = [rule(activity)]
+            XCTAssertNoThrow(try controller().preview().get())
+        }
+        for activity in ["flint.rule.other.i\(incarnation).r2", "flint.rule.a.ibad.r2",
+                         "flint.rule.a.i\(incarnation).r0", "flint.rule.a.i\(incarnation).r-1",
+                         "flint.rule.a.r0", "flint.session.a.i\(incarnation).r2"] {
+            rules = [rule(activity)]
+            XCTAssertEqual(controller().preview(), .failure(.scopeUnavailable))
+        }
+        XCTAssertEqual(try ledger().peek().get().pass.usage, .neverUsed)
+    }
+
+    func testThresholdEvidenceAcceptsEveryRepresentableDailyBudgetWithoutInventingASmallerCap() {
+        let window = DateInterval(start: now, duration: 86400)
+        XCTAssertTrue(FlintPassLimitThreshold(window: window, thresholdMinutes: 1500,
+            applications: [], categories: [], webDomains: [], includeEntireCategory: false).isValid)
+        XCTAssertFalse(FlintPassLimitThreshold(window: window, thresholdMinutes: Int.max / 60 + 1,
+            applications: [], categories: [], webDomains: [], includeEntireCategory: false).isValid)
+    }
+
     func testFocusSessionIsSuppressedUntilFreshOffOnCycle() throws {
         sessions = [.init(name: "Focus Filter", startedAt: now, endsAt: nil, breakLevel: .easy,
                           monitorName: "focus", origin: "focus_filter", ownerID: "focus-filter")]

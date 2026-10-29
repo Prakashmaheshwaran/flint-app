@@ -53,7 +53,7 @@ public struct FlintPassLimitThreshold: Codable, Equatable, Sendable {
         window.start.timeIntervalSinceReferenceDate.isFinite
             && window.end.timeIntervalSinceReferenceDate.isFinite
             && window.duration > 0 && window.duration <= 26 * 3600
-            && (0...24 * 60).contains(thresholdMinutes)
+            && thresholdMinutes >= 0 && thresholdMinutes <= Int.max / 60
             && applications.count <= FlintShieldLimits.tokenCap && webDomains.count <= FlintShieldLimits.tokenCap
             && categories.count <= 4096
             && applications.union(categories).union(webDomains).allSatisfy { !$0.isEmpty && $0.utf8.count <= 65536 }
@@ -181,8 +181,17 @@ public struct FlintPassRecovery: Codable, Equatable, Sendable {
               rule.storeName == storePrefix + id else { return false }
         let baseActivity = activityPrefix + id
         if rule.activityName != baseActivity {
-            guard rule.activityName.hasPrefix(baseActivity + ".r"),
-                  let revision = Int(rule.activityName.dropFirst(baseActivity.count + 2)), revision > 0 else { return false }
+            guard rule.activityName.hasPrefix(baseActivity + ".") else { return false }
+            var suffix = String(rule.activityName.dropFirst(baseActivity.count))
+            if suffix.hasPrefix(".i") {
+                let parts = suffix.dropFirst(2).split(separator: ".", omittingEmptySubsequences: false)
+                guard parts.count == 2, parts[0].count == 32,
+                      parts[0].allSatisfy({ "0123456789abcdef".contains($0) }) else { return false }
+                suffix = "." + String(parts[1])
+            }
+            let digits = suffix.dropFirst(2)
+            guard suffix.hasPrefix(".r"), !digits.isEmpty, digits.allSatisfy({ "0123456789".contains($0) }),
+                  let revision = Int(digits), revision > 0, revision < Int.max / 2 else { return false }
         }
         return !rule.id.isEmpty && rule.id.utf8.count <= 128 && !rule.activityName.isEmpty
             && rule.activityName.utf8.count <= 256
