@@ -32,6 +32,7 @@ final class FlintSessionControllerTests: XCTestCase {
         FlintSessionLifecycle.register(events)
         ledgerAvailable = true
         publications = 0
+        waited = []
         ledgerDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("flint-session-ledger-\(UUID().uuidString)", isDirectory: true)
     }
@@ -67,12 +68,15 @@ final class FlintSessionControllerTests: XCTestCase {
             },
             publishStatus: { [unowned self] in self.publications += 1 },
             transitionLock: { FlintSessionTransitionLock(directory: directory, timeout: 0.2) },
-            monitorLockTimeout: 1
+            monitorLockTimeout: 1,
+            wait: { [unowned self] in self.waited.append($0); self.clock.advance($0) }
         ))
     }
 
     /// Status projections published after committed changes.
     private var publications = 0
+    /// Seconds the monitor waited out before acting on an end callback.
+    private var waited: [TimeInterval] = []
 
     private var health: FlintSessionHealth { FlintSessionHealth.load(from: defaults) }
 
@@ -820,9 +824,30 @@ final class FlintSessionControllerTests: XCTestCase {
         c.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
         XCTAssertEqual(store.active?.id, session.id, "early interval end keeps the block")
         XCTAssertEqual(shield.clearCount, 0)
-        clock.advance(89) // one second before endsAt: whole-second slack
+        clock.advance(89) // one second before endsAt: whole-second resolution
+        let endsAt = try XCTUnwrap(session.endsAt)
+        let clearsBefore = shield.clearCount
+        shield.onClear = { [unowned self] in
+            XCTAssertGreaterThanOrEqual(self.clock.now, endsAt, "never released before the logical deadline (R-36)")
+        }
         c.handleMonitorEvent(.intervalWillEndWarning, activity: store.active!.monitorName)
+        XCTAssertEqual(waited, [1], "waited out the last second instead of releasing early")
+        XCTAssertEqual(shield.clearCount, clearsBefore + 1)
         XCTAssertNil(store.active)
+        XCTAssertEqual(events.kinds.suffix(1), ["ended"], "an on-time completion")
+    }
+
+    func testALateEndWarningRecordsItsLatencyPC76() throws {
+        let c = controller()
+        let session = try start(c, minutes: 5)
+        clock.advance(5 * 60 + 300) // the warning arrives five minutes late
+        events.log.removeAll()
+        c.handleMonitorEvent(.intervalWillEndWarning, activity: session.monitorName)
+        XCTAssertNil(store.active, "a late warning still ends the block")
+        XCTAssertEqual(health.lastTimeAnomaly?.kind, .lateEnd)
+        XCTAssertEqual(try XCTUnwrap(health.lastTimeAnomaly?.seconds), 300, accuracy: 1)
+        XCTAssertTrue(events.log.isEmpty, "a late observation isn't reported as an on-time completion")
+        XCTAssertTrue(waited.isEmpty)
     }
 
     func testOrphanEndWithNoSessionRecordClearsTheLeftoverShield() {
@@ -1120,7 +1145,11 @@ private final class FakeShield: FlintSessionShielding {
         denyAppRemoval = deny
         log.entries.append("deny:\(deny)")
     }
+    /// Observes the moment of each release.
+    var onClear: (() -> Void)?
+
     func clear() {
+        onClear?()
         clearCount += 1
         denyAppRemoval = nil
         log.entries.append("clear")

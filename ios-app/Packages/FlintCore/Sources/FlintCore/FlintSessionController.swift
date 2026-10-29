@@ -231,6 +231,9 @@ public struct FlintSessionEnvironment {
     /// end leaves the block on until the host next reconciles, so the extension waits out
     /// another process's short transition rather than give up.
     public var monitorLockTimeout: TimeInterval
+    /// Blocks the calling thread for the given seconds: the monitor waits out an end callback
+    /// that arrived up to `FlintTimeIntegrity.endSlack` early.
+    public var wait: (TimeInterval) -> Void
 
     public init(
         store: @escaping () -> FlintSessionStateStoring?,
@@ -244,7 +247,8 @@ public struct FlintSessionEnvironment {
         ledger: @escaping () -> FlintProtectionLedger? = { nil },
         publishStatus: @escaping () -> Void = {},
         transitionLock: @escaping () -> FlintSessionTransitionLock? = { nil },
-        monitorLockTimeout: TimeInterval = 6
+        monitorLockTimeout: TimeInterval = 6,
+        wait: @escaping (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }
     ) {
         self.store = store
         self.shield = shield
@@ -258,6 +262,7 @@ public struct FlintSessionEnvironment {
         self.publishStatus = publishStatus
         self.transitionLock = transitionLock
         self.monitorLockTimeout = monitorLockTimeout
+        self.wait = wait
     }
 
     public static var live: FlintSessionEnvironment {
@@ -1011,7 +1016,8 @@ public final class FlintSessionController {
     /// on the active session can affect it:
     ///  - start: re-apply the saved selection's shield (the host already applied it; this keeps
     ///    the block if the host died mid-start) and the uninstall guard;
-    ///  - end warning / interval end at `endsAt` (whole-second slack): end it as completed;
+    ///  - end warning / interval end at the logical deadline: end it as completed — one that
+    ///    arrives up to `endSlack` early first waits out the remainder, so it never releases early;
     ///  - interval end before `endsAt` (e.g. a time-zone change shifted the wall-clock end): keep
     ///    the block and re-register its end — never drop protection early; an early warning is
     ///    ignored because the interval end still follows;
@@ -1055,19 +1061,28 @@ public final class FlintSessionController {
 
         case .intervalWillEndWarning, .intervalDidEnd:
             let endsAt = session.endsAt ?? now
+            // An end never acts before the logical deadline (ADR-012 §4; R-36). DeviceActivity
+            // resolves whole seconds, so a callback can land a moment early: wait that out.
+            if let remaining = session.logicalRemaining(clock: env.clock), remaining > 0,
+               remaining <= FlintTimeIntegrity.endSlack {
+                env.wait(remaining)
+            }
             // Logical time decides (ADR-012 §9): a same-boot wall-clock jump can't end it early.
-            if session.isLogicallyExpired(clock: env.clock, slack: FlintTimeIntegrity.endSlack) {
-                recordTimeVerdict(FlintTimeIntegrity.verdict(for: session, clock: env.clock), for: session, at: now)
+            if session.isLogicallyExpired(clock: env.clock) {
+                let observedAt = env.clock.now()
+                recordTimeVerdict(FlintTimeIntegrity.verdict(for: session, clock: env.clock), for: session, at: observedAt)
                 env.shield.clear()
                 // Report a completion only for an on-time observation of the logical deadline.
                 // A short session's padded carrier end after a missed warning is recovery, not a
                 // successful short session (ADR-012 §4): record the adapter failure and leave the
-                // outcome to focus history's reconciliation; so is any other late observation.
-                let lateness = now.timeIntervalSince(endsAt)
-                if event == .intervalDidEnd, session.usesEndWarning == true, lateness > FlintTimeIntegrity.onTimeWindow {
-                    recordAnomaly(.missedEndWarning, seconds: lateness, session: session, at: now)
-                }
-                if abs(lateness) <= FlintTimeIntegrity.onTimeWindow {
+                // outcome to focus history's reconciliation; so is any other late observation,
+                // whose latency is recorded too (PC-76).
+                let lateness = max(0, session.logicalOverrun(clock: env.clock) ?? 0)
+                if lateness > FlintTimeIntegrity.onTimeWindow {
+                    let missedWarning = event == .intervalDidEnd && session.usesEndWarning == true
+                    recordAnomaly(missedWarning ? .missedEndWarning : .lateEnd, seconds: lateness,
+                                  session: session, at: observedAt)
+                } else {
                     FlintSessionLifecycle.didEnd(session, route: .completed, at: endsAt)
                 }
                 store?.clearActiveSession()

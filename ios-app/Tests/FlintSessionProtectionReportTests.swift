@@ -113,7 +113,7 @@ final class FlintSessionProtectionReportTests: XCTestCase {
 
     func testSettingsShowsEveryTimeAnomalyAndAuthorizationRecoveryFlags() {
         let kinds: [FlintSessionHealth.TimeAnomaly.Kind] = [
-            .wallAhead, .wallBehind, .timeZoneChanged, .prematureEnd, .missedEndWarning
+            .wallAhead, .wallBehind, .timeZoneChanged, .prematureEnd, .missedEndWarning, .lateEnd
         ]
         var descriptions: Set<String> = []
         for kind in kinds {

@@ -29,6 +29,7 @@ enum FlintSessionHealthPresentation {
             case .timeZoneChanged: description = "The time zone changed during a session"
             case .prematureEnd: description = "iOS delivered a session end early"
             case .missedEndWarning: description = "A short session's end warning did not arrive"
+            case .lateEnd: description = "iOS delivered a session end late"
             }
             let amount = anomaly.kind == .timeZoneChanged && anomaly.seconds == 0
                 ? "" : " (\(Int(anomaly.seconds.rounded())) seconds)"

@@ -17,7 +17,7 @@ struct FlintFocusFilter: SetFocusFilterIntent {
     static var title: LocalizedStringResource = "Block apps during a Focus"
 
     static var description: IntentDescription? =
-        "Start a Flint block automatically while this Focus is on, and stop it when the Focus ends."
+        "Start a Flint block automatically while this Focus is on. When the Focus ends, an Easy block stops; a Harder block starts its wait, then you confirm in Flint; a Hardcore block keeps running until its end."
 
     /// Which saved preset to block. Unset = whatever you last selected in Block Now.
     @Parameter(title: "Block")

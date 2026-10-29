@@ -110,6 +110,18 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         return min(planned, max(0, endsAt.timeIntervalSince(clock.now())))
     }
 
+    /// How long ago the logical deadline passed (negative before it), by the same clock rule as
+    /// `logicalRemaining` but unclamped — for callback latency diagnostics. nil if open-ended.
+    public func logicalOverrun(clock: FlintClock) -> TimeInterval? {
+        guard let endsAt else { return nil }
+        let planned = plannedDuration ?? endsAt.timeIntervalSince(startedAt)
+        if let start = monotonicStart, let boot = bootSessionID, boot == clock.bootSessionID() {
+            let elapsed = clock.monotonic() - start
+            if elapsed >= 0 { return elapsed - planned }
+        }
+        return clock.now().timeIntervalSince(endsAt)
+    }
+
     /// Whether the commitment is over by `logicalRemaining` (allowing `slack` for the whole-second
     /// rounding of the registered interval). Open-ended sessions never expire.
     public func isLogicallyExpired(clock: FlintClock, slack: TimeInterval = 0) -> Bool {
