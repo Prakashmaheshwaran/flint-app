@@ -44,7 +44,10 @@ internal object ProtectionStatusProjection {
         // its missing-access reason here would feed stale policy state back after recovery.
         if (usageAccessMissing) {
             if (pathAConnected) reasons += "path-b-backup-unavailable"
-            if ((times as? StorageState.Ready)?.value?.isNotEmpty() == true) reasons += "time-limits-need-usage-access"
+            // A zero-minute limit is already exhausted and needs no usage measurement.
+            if ((times as? StorageState.Ready)?.value?.any { it.dailyMinutes > 0 } == true) {
+                reasons += "time-limits-need-usage-access"
+            }
         }
         if (readiness != ProtectionStatus.Readiness.READY) reasons += "policy-storage-${readiness.name.lowercase()}"
         val checked = floor.checkedAtElapsedMs

@@ -53,6 +53,22 @@ class ProtectionStatusProjectionTest {
         assertTrue("time-limits-need-usage-access" in disconnected.detectors.degradedReasons)
     }
 
+    @Test fun zeroMinuteBlocksRemainActiveWithoutAUsageMeasurementWarning() {
+        val period = EditorCause("day", AnchoredInterval(now, 600_000, at + 600_000), "UTC")
+        val editor = StorageState.Ready(sidecar.copy(causes = sidecar.causes +
+            mapOf("time:a" to period, "time:b" to period)))
+        for (tier in BreakLevel.entries) {
+            val zero = TimeLimit("a", 0, tier)
+            val status = project(editor = editor, times = listOf(zero), usageAccessMissing = true)
+            assertTrue("path-b-backup-unavailable" in status.detectors.degradedReasons)
+            assertFalse("time-limits-need-usage-access" in status.detectors.degradedReasons)
+            assertEquals(ProtectionStatus.Readiness.READY, status.readiness)
+            assertEquals(tier, status.activeCauses.single { it.kind == ProtectionStatus.CauseKind.TIME_LIMIT }.tier)
+            val mixed = project(editor = editor, times = listOf(zero, TimeLimit("b", 1, tier)), usageAccessMissing = true)
+            assertTrue("time-limits-need-usage-access" in mixed.detectors.degradedReasons)
+        }
+    }
+
     @Test fun contextualPolicyReasonsRetainTheServiceCauseWithoutFeedingItBackAfterRecovery() {
         try {
             ProtectionStatusHub.publishPathBHealth(ProtectionStatus.PathBState.OFF, setOf("usage-access-missing"))
