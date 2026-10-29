@@ -97,15 +97,39 @@ final class FlintRuleThresholdTests: XCTestCase {
     }
 
     func testFailedNewPeriodSaveCannotResetBudgetOrShield() throws {
-        let h = try RuleHarness(); defer { h.clean() }
-        let rule = h.install(FlintLimitRule(id: "time", name: "Time", thresholdMinutes: 30,
-            protection: .init(timeZoneID: "UTC")))
-        let source = h.defaults.data(forKey: FlintRuleStoreKey.limits.rawValue)
-        h.now = try XCTUnwrap(rule.protection?.occurrence?.end); h.saveAllowed = false
-        _ = FlintRuleMonitor(environment: h.environment).handle(.start, activity: rule.activityName)
-        XCTAssertTrue(h.cleared.isEmpty); XCTAssertTrue(h.appliedLimits.isEmpty)
-        XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.limits.rawValue), source)
-        XCTAssertNotNil(h.reports["limits"]?.failures.first)
+        for thresholdFirst in [false, true] {
+            let h = try RuleHarness(); defer { h.clean() }
+            let rule = h.install(FlintLimitRule(id: "time", name: "Time", thresholdMinutes: 30,
+                protection: .init(timeZoneID: "UTC")))
+            let source = h.defaults.data(forKey: FlintRuleStoreKey.limits.rawValue)
+            h.now = try XCTUnwrap(rule.protection?.occurrence?.end); h.saveAllowed = false
+            _ = FlintRuleMonitor(environment: h.environment).handle(
+                thresholdFirst ? .threshold(rule.eventName) : .start, activity: rule.activityName)
+            XCTAssertTrue(h.cleared.isEmpty); XCTAssertTrue(h.appliedLimits.isEmpty)
+            XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.limits.rawValue), source)
+            XCTAssertNotNil(h.reports["limits"]?.failures.first)
+        }
+    }
+
+    func testThresholdBeforeStartAndDelayedOldEndCannotResetNewPeriodR21PC64PC66() throws {
+        for endFirst in [false, true] {
+            let h = try RuleHarness(); defer { h.clean() }
+            let rule = h.install(FlintLimitRule(id: "time", name: "Time", thresholdMinutes: 30,
+                protection: .init(timeZoneID: "UTC")))
+            h.now = try XCTUnwrap(rule.protection?.occurrence?.end).addingTimeInterval(60)
+            var env = h.environment
+            env.markLimitThreshold = { FlintLimitThresholds.markReached($0, at: h.now, in: h.defaults) }
+            env.clearLimitThreshold = { FlintLimitThresholds.clear($0, in: h.defaults) }
+            let monitor = FlintRuleMonitor(environment: env)
+            _ = monitor.handle(.threshold(rule.eventName), activity: rule.activityName)
+            let current = try XCTUnwrap(h.load(FlintLimitRule.self).first)
+            XCTAssertEqual(current.protection?.occurrence, current.templateOccurrence(at: h.now))
+            _ = monitor.handle(endFirst ? .end : .start, activity: rule.activityName)
+            _ = monitor.handle(endFirst ? .start : .end, activity: rule.activityName)
+            XCTAssertEqual(FlintLimitThresholds.reachedToday(now: h.now, in: h.defaults), [rule.id: true])
+            XCTAssertEqual(h.appliedLimits.count, 1)
+            XCTAssertTrue(h.cleared.isEmpty, "late daily boundaries cannot release today's exhausted protection")
+        }
     }
 
     func testOnlyCommittedMutationsPublishAndZeroBudgetIsMarkedAfterSave() throws {

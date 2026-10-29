@@ -342,6 +342,25 @@ final class FlintRuleArbiterTests: XCTestCase {
         XCTAssertEqual(FlintRuleArbiter(environment: env).upsert(draft), .unavailable)
     }
 
+    func testUnavailableLedgerCannotSaveActiveHardcoreWeakeningButInactiveTemplateStaysEditable() throws {
+        for active in [true, false] {
+            let h = try RuleHarness(); defer { h.clean() }
+            if !active { h.now = h.now.addingTimeInterval(8 * 3600) }
+            let old = h.install(h.schedule(tier: .hardcore))
+            let arbiter = FlintRuleArbiter(environment: h.environment)
+            var draft = old; draft.schedule.endHour = 16
+            let ticket = active ? try confirmation(arbiter.upsert(draft)) : nil
+            h.ledgerAvailable = false
+            XCTAssertEqual(arbiter.upsert(draft, confirmation: ticket), active ? .unavailable : .applied)
+            let saved = try XCTUnwrap(h.load(FlintScheduleRule.self).first)
+            if active {
+                XCTAssertEqual(saved, old)
+                XCTAssertNil(saved.protection?.queuedChange)
+                XCTAssertTrue(h.cleared.isEmpty)
+            } else { XCTAssertEqual(saved.schedule.endHour, 16) }
+        }
+    }
+
     func testTierIncreaseRequiresExplicitConfirmationAtEveryEntryPC11() throws {
         let h = try RuleHarness(); defer { h.clean() }
         let old = h.install(h.schedule(tier: .easy))

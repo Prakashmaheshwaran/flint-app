@@ -64,8 +64,19 @@ public final class FlintRuleMonitor {
             if Rule.domain != .openLimits { env.clearStore(rule.storeName) }
             if Rule.domain == .limits { env.clearLimitThreshold(rule.id) }
         case let .threshold(event):
-            guard let limit = rule as? FlintLimitRule, event == limit.eventName,
-                  limit.occurrence(at: now) != nil else { return }
+            guard var limit = rule as? FlintLimitRule, event == limit.eventName,
+                  let window = limit.occurrence(at: now) else { return }
+            if limit.protection?.occurrence?.start != window.start {
+                // Threshold delivery may precede today's start (or yesterday's delayed end).
+                // Freeze today's period first so those later callbacks cannot clear a budget
+                // already exhausted in this period.
+                limit.protection?.occurrence = window
+                all[index].protection?.occurrence = window
+                guard env.acceptSave(), FlintDesiredRules.save(all, key: Rule.domain, to: env.defaults) else {
+                    env.record(Rule.domain.domain, FlintDesiredRules.saveFailure(Rule.domain.domain, previous: env.loadHealth()))
+                    return
+                }
+            }
             env.applyLimitShield(limit)
             env.markLimitThreshold(limit)
         }

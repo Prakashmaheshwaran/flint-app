@@ -148,6 +148,12 @@ final class FlintRuleArbiter {
                 return .denied(reason, cause: mutations[index].id, tier: cause.tier, end: cause.end)
             }
             let policyDeferrals = decisions.compactMap { if case let .deferUntil(end) = $0 { return end }; return nil }
+            if !policyDeferrals.isEmpty {
+                // An active Hardcore future weakening still depends on readable protection
+                // state (§8). Easy edits, including future exhausted-budget edits, need no
+                // ledger; natural expiry remains independently bounded by the saved window.
+                guard let ledger = self.env.ledger(), case .success = ledger.read() else { return .unavailable }
+            }
             let deferredUntil = (policyDeferrals + nextOccurrenceEnds).max()
             if let end = deferredUntil {
                 guard confirmation != nil, !raisesTier || confirmation?.confirmsTierIncrease == true else {
