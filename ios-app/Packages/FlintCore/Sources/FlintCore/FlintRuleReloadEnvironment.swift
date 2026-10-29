@@ -31,7 +31,9 @@ enum FlintDesiredRules {
               objects.allSatisfy({ Set($0.keys).isSubset(of: Rule.storedKeys) }),
               var rules = try? JSONDecoder().decode([Rule].self, from: data),
               Set(rules.map(\.id)).count == rules.count,
-              rules.allSatisfy({ $0.validationIssue == nil }) else {
+              // The marker is written only after every record has current metadata. Losing
+              // that metadata later is corruption, never another import of legacy rights.
+              rules.allSatisfy({ $0.validationIssue == nil && (marker == nil || $0.protection != nil) }) else {
             if migrating, defaults.object(forKey: key.rawValue + ".quarantine.adr012") == nil {
                 defaults.set(object, forKey: key.rawValue + ".quarantine.adr012")
             }
@@ -65,7 +67,7 @@ enum FlintDesiredRules {
     static func save<Rule: FlintGatedRule>(_ rules: [Rule], key: Key, to defaults: UserDefaults?,
         encode: ([Rule]) throws -> Data = { try JSONEncoder().encode($0) }) -> Bool {
         guard let defaults, Set(rules.map(\.id)).count == rules.count,
-              rules.allSatisfy({ $0.validationIssue == nil }),
+              rules.allSatisfy({ $0.validationIssue == nil && $0.protection != nil }),
               let data = try? encode(rules) else { return false }
         defaults.set(data, forKey: key.rawValue)
         guard defaults.synchronize(), defaults.data(forKey: key.rawValue) == data else { return false }

@@ -60,6 +60,36 @@ final class FlintRuleMigrationTests: XCTestCase {
         XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.schedules.rawValue), source)
     }
 
+    func testDeletedMetadataAfterInitializationCannotRegainLegacyRightsR22PC70PC71() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        try removedMetadata(h.schedule(tier: .hardcore), h: h)
+        try removedMetadata(FlintLimitRule(id: "time", name: "Time", thresholdMinutes: 3,
+            breakLevel: .hardcore), h: h)
+        try removedMetadata(FlintOpenLimitRule(id: "open", name: "Open", opensAllowed: 3,
+            breakLevel: .hardcore), h: h)
+        _ = FlintSchedulesController(environment: h.environment).reload()
+        FlintLimitsController(environment: h.environment).reload()
+        FlintOpenLimitsController(environment: h.environment).reload()
+        XCTAssertTrue(h.center.starts.isEmpty); XCTAssertTrue(h.center.stops.isEmpty); XCTAssertTrue(h.cleared.isEmpty)
+        XCTAssertEqual(Set(h.reports.keys), ["schedules", "limits", "openLimits"])
+    }
+
+    private func removedMetadata<Rule: FlintGatedRule>(_ rule: Rule, h: RuleHarness) throws {
+        XCTAssertTrue(FlintDesiredRules.save([rule], key: Rule.domain, to: h.defaults))
+        var legacy = rule; legacy.protection = nil
+        XCTAssertFalse(FlintDesiredRules.save([legacy], key: Rule.domain, to: h.defaults),
+            "current saves must never mint another legacy record")
+        let source = try JSONEncoder().encode([legacy])
+        h.defaults.set(source, forKey: Rule.domain.rawValue)
+        for migrating in [false, true] {
+            XCTAssertNil(FlintDesiredRules.load(Rule.self, key: Rule.domain, from: h.defaults,
+                at: h.now, migrating: migrating))
+            XCTAssertEqual(h.defaults.data(forKey: Rule.domain.rawValue), source)
+        }
+        XCTAssertNotNil(h.defaults.object(forKey: Rule.domain.marker))
+        XCTAssertEqual(h.defaults.data(forKey: Rule.domain.rawValue + ".quarantine.adr012"), source)
+    }
+
     func testUnrepresentableBudgetAndRevisionAreUnavailableWithoutTrappingPC71() throws {
         let h = try RuleHarness(); defer { h.clean() }
         for invalidRevision in [false, true] {
