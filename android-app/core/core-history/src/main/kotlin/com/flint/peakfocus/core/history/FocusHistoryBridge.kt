@@ -24,6 +24,7 @@ object FocusHistoryBridge {
     @Volatile private var history: FocusHistoryStore? = null
     @Volatile private var reconciler: HistoryReconciler? = null
     @Volatile private var observedEvents: HistoryObservedQueue? = null
+    private val deliveryHealth = HistoryDeliveryHealth()
     private var job: Job? = null
 
     @Synchronized fun store(context: Context): FocusHistoryStore = history ?: FocusHistoryStore(
@@ -35,6 +36,7 @@ object FocusHistoryBridge {
     fun noteOpenIntercepted(ruleId: String?, at: Long) { observedEvents?.offer(HistoryObservedEvent.Open(ruleId, at)) }
     fun noteBreakGranted(ruleId: String?, until: Long, at: Long) { observedEvents?.offer(HistoryObservedEvent.Break(ruleId, at, until)) }
     fun noteEndRoute(ruleId: String, route: String, at: Long) { observedEvents?.offer(HistoryObservedEvent.End(ruleId, at, route)) }
+    fun noteLifecycleEventsDropped() { deliveryHealth.noteEventsDropped() }
 
     suspend fun clear(context: Context): Boolean {
         val observer = reconciler ?: return false
@@ -57,7 +59,7 @@ object FocusHistoryBridge {
     fun summaries(context: Context): Flow<FocusSummary?> {
         val observer = reconciler ?: return flowOf(null)
         val ticker = flow { while (true) { emit(System.currentTimeMillis()); delay(1_000) } }
-        return combine(store(context).snapshots, observer.activeSessionIds, observer.ready, observer.diagnostic, ticker) {
+        return deliveryHealth.applyTo(combine(store(context).snapshots, observer.activeSessionIds, observer.ready, observer.diagnostic, ticker) {
                 snapshot, active, ready, diagnostic, now ->
             when {
                 !ready && diagnostic == null -> null
@@ -65,7 +67,7 @@ object FocusHistoryBridge {
                 else -> FocusHistoryAggregator.summarize(
                     snapshot.copy(degraded = snapshot.degraded || diagnostic != null), now, ZoneId.systemDefault(), active)
             }
-        }.flowOn(Dispatchers.Default)
+        }).flowOn(Dispatchers.Default)
     }
 
     @Synchronized fun start(context: Context, scope: CoroutineScope) {

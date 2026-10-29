@@ -11,7 +11,7 @@ internal object FocusHistoryEventAdapter {
     @Synchronized fun start(context: Context, scope: CoroutineScope) {
         FocusHistoryBridge.start(context, scope)
         if (listener != null) return
-        ProtectionHistoryEventAdapter.start(context)
+        ProtectionHistoryEventAdapter.start(context, scope)
         listener = FocusHistoryHookListener().also(BlockEventHooks::register)
         FocusHistoryTerminalAdapter.start(context, scope)
     }

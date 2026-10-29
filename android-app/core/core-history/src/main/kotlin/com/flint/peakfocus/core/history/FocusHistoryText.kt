@@ -14,11 +14,13 @@ object FocusHistoryText {
             else -> "${minutes / 60}h ${minutes % 60}m"
         }
     }
-    fun today(summary: FocusSummary?): String = when (summary?.availability) {
+    fun today(summary: FocusSummary?, resources: Resources? = null): String = when (summary?.availability) {
         null -> "Loading focus history…"
         HistoryAvailability.UNAVAILABLE -> "Focus history unavailable"
         HistoryAvailability.EMPTY -> "No focus sessions yet"
-        else -> summary.days.lastOrNull()?.focusedMs?.let(::duration) ?: "No data"
+        else -> if (summary.lifecycleEventsMissing && summary.sessions.isEmpty())
+            resources?.getString(R.string.focus_history_no_recorded_sessions) ?: "No recorded focus sessions"
+            else summary.days.lastOrNull()?.focusedMs?.let(::duration) ?: "No data"
     }
     fun breaks(count: Int) = "$count ${if (count == 1) "break" else "breaks"}"
     fun opensStopped(count: Int) = "$count ${if (count == 1) "open" else "opens"} stopped"
@@ -35,6 +37,11 @@ object FocusHistoryText {
                 resources?.getQuantityString(R.plurals.focus_history_unconfirmed, count, count)
                     ?: "$count ${if (count == 1) "session" else "sessions"} couldn't be confirmed"
             },
-            "Some history couldn't be read".takeIf { summary?.availability == HistoryAvailability.DEGRADED },
+            if (summary?.lifecycleEventsMissing == true)
+                resources?.getString(R.string.focus_history_missing_events) ?: "Some focus events may be missing"
+            else null,
+            "Some history couldn't be read".takeIf {
+                summary?.availability == HistoryAvailability.DEGRADED && !summary.lifecycleEventsMissing
+            },
         ).takeIf { it.isNotEmpty() }?.joinToString(" · ")
 }
