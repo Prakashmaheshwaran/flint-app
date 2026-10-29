@@ -78,9 +78,10 @@ class FocusHistoryFinalIntegrityTest {
         clock.now = begin + 180 * minute
         repeat(2) { observer.observe(listOf(rule.copy(plannedEnd = begin + 20 * minute))) }
         val events = store.load().events
-        assertEquals(listOf("started", "rescheduled", "rescheduled", "completed"), events.map { it.type })
+        assertEquals(listOf("started", "rescheduled", "rescheduled"), events.map { it.type })
         assertNull(observer.diagnostic.value)
-        assertEquals(20 * minute, FocusHistoryAggregator.sessions(events, clock.now, emptySet()).single().focusedMs)
+        assertEquals(0L, FocusHistoryAggregator.sessions(events, clock.now, emptySet()).single().focusedMs)
+        assertEquals(begin + 20 * minute, FocusHistoryAggregator.sessions(events, clock.now, emptySet()).single().plannedEnd)
         val bytes = File(dir, "events.v1.jsonl").readBytes()
         assertFalse(store.update { listOf(HistoryEvent(type = "rescheduled", session = "session-a", at = begin,
             tz = "UTC", plannedEnd = begin + 500 * minute),
@@ -108,6 +109,23 @@ class FocusHistoryFinalIntegrityTest {
         val parsed = store.load().events.last()
         assertNull(parsed.knownType); assertNull(parsed.sessions); assertEquals(external, parsed.originalLine)
         assertTrue(store.compact())
+    }
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun futureRuleRetriesAnUnrecordedStartBeforeItsDeadline() = runTest {
+        val clock = MutableClock(begin)
+        val source = MutableStateFlow<HistoryRulesSnapshot>(HistoryRulesSnapshot.Ready(
+            listOf(HistoryRule("session-a", "Focus", "easy", begin + 60 * minute))))
+        var started = false
+        val seen = mutableListOf<HistoryRulesSnapshot>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            source.withDeadlineObservations(clock, hasStarted = { started }).collect { seen += it }
+        }
+        runCurrent(); assertEquals(1, seen.size)
+        clock.now += 30_000; advanceTimeBy(30_000); runCurrent()
+        assertEquals(2, seen.size)
+        started = true
+        clock.now += 30_000; advanceTimeBy(30_000); runCurrent()
+        assertEquals(2, seen.size)
     }
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test fun deadlineWakeupReobservesStableReadyAndCancelsOnEditLoadingAndUnavailable() = runTest {
@@ -164,6 +182,10 @@ class FocusHistoryFinalIntegrityTest {
             assertFalse(rollbackPending)
             assertFalse(rolledBack.events.any { it.knownType == HistoryEventType.COMPLETED })
             clock.now = deadline + 1
+            val stillOpen = withTimeout(10_000) { observations.receive() }
+            assertFalse(stillOpen.events.any { it.knownType == HistoryEventType.COMPLETED })
+            // Only a durable owner/outbox transition can confirm completion.
+            assertTrue(store.append(HistoryEvent(type = "completed", session = "session-a", at = deadline, tz = "UTC", originRoute = "service", observedAt = clock.now)))
             val completed = withTimeout(10_000) { store.snapshots.first { log -> log.events.any { it.knownType == HistoryEventType.COMPLETED } } }
             assertEquals(deadline, completed.events.single { it.knownType == HistoryEventType.COMPLETED }.at)
             assertEquals(1, completed.events.count { it.knownType == HistoryEventType.COMPLETED })

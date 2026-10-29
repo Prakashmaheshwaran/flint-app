@@ -51,4 +51,6 @@ data class HistorySnapshot(
     val readable: Boolean = false,
     val degraded: Boolean = false,
     val diagnostic: String? = null,
+    /** Existing persisted clear cutoff; durable consumers inspect it under update's lock. */
+    val clearedAt: Long? = null,
 )

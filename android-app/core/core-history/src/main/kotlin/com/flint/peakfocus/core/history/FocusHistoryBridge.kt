@@ -1,7 +1,7 @@
 package com.flint.peakfocus.core.history
 
 import android.content.Context
-import com.flint.peakfocus.core.datastore.FlintPreferences
+import com.flint.peakfocus.core.model.ActiveRulesHolder
 import com.flint.peakfocus.core.model.StorageState
 import java.io.File
 import java.time.ZoneId
@@ -15,8 +15,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
@@ -48,7 +47,7 @@ object FocusHistoryBridge {
         val observer = reconciler ?: return@withContext false
         try {
             store(context).load()
-            val state = FlintPreferences.blockRules(context).rulesState.first { it !is StorageState.Loading }
+            val state = ActiveRulesHolder.dataStoreState
             observer.collectSnapshots(flowOf(historyRulesSnapshot(state)))
             state is StorageState.Ready && observer.ready.value && store(context).snapshots.value.readable
         } catch (e: CancellationException) { throw e }
@@ -74,12 +73,21 @@ object FocusHistoryBridge {
         if (job?.isActive == true) return
         val app = context.applicationContext
         val store = store(app)
-        val observer = HistoryReconciler(store).also { reconciler = it }
+        val observer = HistoryReconciler(store, authoritativeSnapshot = {
+            historyRulesSnapshot(ActiveRulesHolder.dataStoreState)
+        }).also { reconciler = it }
         observedEvents = HistoryObservedQueue(scope, HistoryObservedWriter(store)::record)
         FocusCompletionNotifier.start(app, scope, store, observer.ready)
         job = scope.launch(Dispatchers.IO) {
             store.load()
-            observer.collectSnapshots(FlintPreferences.blockRules(app).rulesState.map(::historyRulesSnapshot).withDeadlineObservations(
+            // Read-time owner projection advances even without a DataStore emission.
+            val rules = flow {
+                while (true) {
+                    emit(historyRulesSnapshot(ActiveRulesHolder.dataStoreState))
+                    delay(1_000)
+                }
+            }.distinctUntilChanged()
+            observer.collectSnapshots(rules.withDeadlineObservations(
                 hasTerminal = { id -> store.snapshots.value.events.any { it.session == id && it.knownType?.terminal == true } },
                 hasStarted = { id -> store.snapshots.value.events.any { it.session == id && it.knownType == HistoryEventType.STARTED } },
             ))

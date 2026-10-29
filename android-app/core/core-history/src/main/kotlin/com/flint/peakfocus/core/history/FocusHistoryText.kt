@@ -1,5 +1,6 @@
 package com.flint.peakfocus.core.history
 
+import android.content.res.Resources
 import java.time.format.DateTimeFormatter
 
 object FocusHistoryText {
@@ -26,9 +27,14 @@ object FocusHistoryText {
         return if (first.date > days.first().date) "Since ${first.date.format(DateTimeFormatter.ofPattern("EEE, MMM d"))}"
             else "Last 7 days"
     }
-    fun note(summary: FocusSummary?, days: List<FocusDay> = summary?.days?.takeLast(1).orEmpty()): String? =
+    fun note(summary: FocusSummary?, days: List<FocusDay> = summary?.days?.takeLast(1).orEmpty(),
+             resources: Resources? = null): String? =
         listOfNotNull(
             "In progress".takeIf { days.any { it.inProgress } },
+            days.sumOf { it.unconfirmed }.takeIf { it > 0 }?.let { count ->
+                resources?.getQuantityString(R.plurals.focus_history_unconfirmed, count, count)
+                    ?: "$count ${if (count == 1) "session" else "sessions"} couldn't be confirmed"
+            },
             "Some history couldn't be read".takeIf { summary?.availability == HistoryAvailability.DEGRADED },
         ).takeIf { it.isNotEmpty() }?.joinToString(" · ")
 }
