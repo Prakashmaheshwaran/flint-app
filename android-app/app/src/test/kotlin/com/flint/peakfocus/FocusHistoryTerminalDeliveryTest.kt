@@ -28,10 +28,10 @@ class FocusHistoryTerminalDeliveryTest {
 
     @Test fun failedHistoryAppendNeverAcknowledgesOwnerIntent() = runTest {
         val owner = PendingOwner(terminal)
-        projectEditorHistoryTerminals(owner, { false }, ZoneOffset.UTC)
+        assertEquals(0, projectEditorHistoryTerminals(owner, { false }, ZoneOffset.UTC))
         assertEquals(listOf(terminal), owner.pending)
         assertEquals(0, owner.acknowledgements)
-        projectEditorHistoryTerminals(owner, { true }, ZoneOffset.UTC)
+        assertEquals(1, projectEditorHistoryTerminals(owner, { true }, ZoneOffset.UTC))
         assertTrue(owner.pending.isEmpty())
         assertEquals(1, owner.acknowledgements)
     }
@@ -131,9 +131,53 @@ class FocusHistoryTerminalDeliveryTest {
         assertTrue(record.inferred)
     }
 
+    @Test fun failedSinkDoesNotStarveAnotherTerminalAndOnlySuccessfulIdsAreAcknowledged() = runTest {
+        val clock = Clock.fixed(Instant.ofEpochMilli(start + 2 * hour), ZoneOffset.UTC)
+        val store = FocusHistoryStore(temporary.newFolder(), clock)
+        val second = terminal.copy(id = "editor:completed:second", sessionId = "session-second", occurrenceId = "session-second")
+        for (event in listOf(terminal, second)) assertTrue(store.append(HistoryEvent(type = "started",
+            session = event.sessionId, at = start, plannedEnd = start + hour, tz = "UTC",
+            name = "Focus", tier = "easy", source = "manual")))
+        val owner = PendingOwner(terminal, second)
+        var attempts = 0
+        assertEquals(1, projectEditorHistoryTerminals(owner, { projection ->
+            if (attempts++ == 0) throw IOException("first sink failed")
+            store.update(projection)
+        }, ZoneOffset.UTC))
+        assertEquals(listOf(terminal), owner.pending)
+        assertEquals(listOf(second.sessionId), FocusHistoryAggregator.sessions(store.load().events,
+            clock.millis(), emptySet()).filter { it.outcome == SessionOutcome.COMPLETED }.map { it.id })
+        assertEquals(1, projectEditorHistoryTerminals(owner, store::update, ZoneOffset.UTC))
+        assertTrue(owner.pending.isEmpty())
+    }
+
+    @Test fun cancellationBeforeBatchAckReplaysAlreadyCommittedTerminalWithoutDuplicates() = runTest {
+        val clock = Clock.fixed(Instant.ofEpochMilli(start + 2 * hour), ZoneOffset.UTC)
+        val store = FocusHistoryStore(temporary.newFolder(), clock)
+        val second = terminal.copy(id = "editor:completed:second", sessionId = "session-second", occurrenceId = "session-second")
+        for (event in listOf(terminal, second)) assertTrue(store.append(HistoryEvent(type = "started",
+            session = event.sessionId, at = start, plannedEnd = start + hour, tz = "UTC",
+            name = "Focus", tier = "easy", source = "manual")))
+        val owner = PendingOwner(terminal, second)
+        var attempts = 0
+        try {
+            projectEditorHistoryTerminals(owner, { projection ->
+                if (attempts++ > 0) throw CancellationException("second sink cancelled")
+                store.update(projection)
+            }, ZoneOffset.UTC)
+            fail("Cancellation must propagate before the batch ack")
+        } catch (_: CancellationException) { }
+        assertEquals(0, owner.acknowledgements)
+        assertEquals(listOf(terminal, second), owner.pending)
+        assertEquals(4, store.load().events.size)
+        assertEquals(2, projectEditorHistoryTerminals(owner, store::update, ZoneOffset.UTC))
+        assertTrue(owner.pending.isEmpty())
+        assertEquals(6, store.load().events.size)
+    }
+
     /** Real owner delivery extension; only its queue read/ack storage is faked. */
-    private class PendingOwner(event: EditorTerminalEvent) : EditorCommitmentStore {
-        var pending = listOf(event)
+    private class PendingOwner(vararg events: EditorTerminalEvent) : EditorCommitmentStore {
+        var pending = events.toList()
         var acknowledgements = 0
         var failAck = false
         override val state = flowOf(StorageState.Ready(EditorCommitmentState()))
