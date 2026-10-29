@@ -47,7 +47,7 @@ struct SleepDialHeader: View {
     }
 
     private var daysLine: String {
-        String(localized: "\(SleepPresentation.daysSummary(vm.config.schedule)) · \(SleepPresentation.assistSummary(vm.config.sleepAssist))")
+        String(localized: "\(SleepPresentation.daysSummary(vm.config.schedule)) · \(SleepPresentation.assistSummary(vm.config.sleepAssist, tier: vm.config.nightBreakLevel))")
     }
 
     private var dial: some View {
@@ -204,12 +204,24 @@ enum SleepPresentation {
         return String(localized: "Bedtime \(bedtime). Wake \(wake). \(duration) of quiet.", locale: locale)
     }
 
-    // Match the current saved assist mapping, not the future defaults in ADR-012.
-    static func assistSummary(_ level: FlintSleepAssistLevel) -> String {
+    /// The assist level with the night rule's SAVED tier (ADR-012 PC-82: the tier is saved
+    /// independently of the level). An unknown tier is left out rather than guessed.
+    static func assistSummary(_ level: FlintSleepAssistLevel, tier: BreakLevel?) -> String {
+        let name: String
         switch level {
         case .off: return String(localized: "Sleep Assist off")
-        case .windDown: return String(localized: "Wind Down · Harder")
-        case .fullAssist: return String(localized: "Full Assist · Hardcore")
+        case .windDown: name = String(localized: "Wind Down")
+        case .fullAssist: name = String(localized: "Full Assist")
+        }
+        guard let tier else { return name }
+        return String(localized: "\(name) · \(tierName(tier))")
+    }
+
+    static func tierName(_ tier: BreakLevel) -> String {
+        switch tier {
+        case .easy: return String(localized: "Easy")
+        case .harder: return String(localized: "Harder")
+        case .hardcore: return String(localized: "Hardcore")
         }
     }
 }
