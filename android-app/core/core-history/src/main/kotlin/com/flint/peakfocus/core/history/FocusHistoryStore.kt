@@ -174,7 +174,8 @@ class FocusHistoryStore(
         }
         return HistorySnapshot(events, maxOf(createdAt, clearedAt ?: createdAt),
             readable = !bad || events.isNotEmpty(), degraded = degraded,
-            diagnostic = if (degraded) "Some history couldn't be read" else null).also { state.value = it }
+            diagnostic = if (degraded) "Some history couldn't be read" else null,
+            clearedAt = clearedAt).also { state.value = it }
     }
 
     private data class Metadata(
