@@ -64,8 +64,23 @@ public enum FlintOpenCredit {
     /// Preserve a live grant through reloads; close legacy unbounded releases by applying
     /// the full selection when there is no verifiable ledger grant. Never clear categories.
     static func applyShield(for rule: FlintOpenLimitRule) {
-        guard let ledger = FlintProtectionLedger.appGroup() else { return }
-        _ = ledger.transaction { state -> Void in
+        // Never leave the rule unshielded when the ledger can't be used (ADR-012 §8): without a
+        // ledger nothing proves a live grant, so the whole selection applies.
+        guard let ledger = FlintProtectionLedger.appGroup() else { apply(rule, grants: [:]); return }
+        for attempt in 0..<2 {
+            if case .success = transactApplyShield(for: rule, ledger: ledger) { return }
+            if attempt == 0 { usleep(100_000) }
+        }
+        // Still busy or unreadable: shield, keeping only grants a read-only snapshot proves live
+        // (their deadlines still end them, PC-30). An unreadable ledger proves none.
+        let live = (try? ledger.peek().get())?.openCredits.grants ?? [:]
+        apply(rule, grants: live)
+    }
+
+    @discardableResult
+    private static func transactApplyShield(for rule: FlintOpenLimitRule,
+                                            ledger: FlintProtectionLedger) -> Result<Void, FlintLedgerError> {
+        ledger.transaction { state -> Void in
             let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup)
             let valid = state.reconcileOpenCredits(at: FlintLedgerInstant(clock: .system),
                 targetKeys: rules.map(targetKeys) ?? state.openCredits.knownTargets,
