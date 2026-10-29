@@ -98,7 +98,10 @@ fun SettingsScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    SettingsHelpNavigation(modifier = modifier) { openHelp ->
+    SettingsHelpNavigation(
+        websiteCoverageText = BlockingHealthUi.websiteCoverage(health),
+        modifier = modifier,
+    ) { openHelp ->
         SettingsLegalNavigation(modifier = modifier) { openLegal ->
             SettingsContent(
                 health = health,

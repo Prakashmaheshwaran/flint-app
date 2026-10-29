@@ -66,6 +66,7 @@ internal object HelpContent {
 /** Module-local route, like the legal documents: survives recreation, Back returns to You. */
 @Composable
 internal fun SettingsHelpNavigation(
+    websiteCoverageText: String,
     modifier: Modifier = Modifier,
     settings: @Composable (onOpenHelp: () -> Unit) -> Unit,
 ) {
@@ -73,7 +74,9 @@ internal fun SettingsHelpNavigation(
     val stateHolder = rememberSaveableStateHolder()
     BackHandler(enabled = open) { open = false }
     if (open) {
-        stateHolder.SaveableStateProvider("help") { HelpScreen(onBack = { open = false }, modifier = modifier) }
+        stateHolder.SaveableStateProvider("help") {
+            HelpScreen(onBack = { open = false }, websiteCoverageText = websiteCoverageText, modifier = modifier)
+        }
     } else {
         stateHolder.SaveableStateProvider("settings") { settings { open = true } }
     }
@@ -90,7 +93,7 @@ internal fun HelpSettingsLink(onOpen: () -> Unit) {
 }
 
 @Composable
-internal fun HelpScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
+internal fun HelpScreen(onBack: () -> Unit, websiteCoverageText: String, modifier: Modifier = Modifier) {
     Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().padding(horizontal = FlintSpacing.gutter).testTag("help-screen")) {
             // Kept outside the scrolling content so the way back never scrolls away.
@@ -132,7 +135,10 @@ internal fun HelpScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                             )
                             Spacer(Modifier.height(FlintSpacing.xs))
                             Text(
-                                stringResource(fact.text),
+                                // Lane C owns both the observation wording and browser matrix.
+                                // Render its same read-only health projection used on You.
+                                if (fact.text == R.string.help_websites_text) websiteCoverageText
+                                else stringResource(fact.text),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
