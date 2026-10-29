@@ -76,6 +76,8 @@ data class ProtectionStatus(
         val wallEndEstimateEpochMs: Long?,
         /** Reboot or clock discontinuity since the cause started: the wall estimate is uncertain. */
         val timeUncertain: Boolean,
+        /** Exact materialized occurrence; a reusable rule ID is not session identity. */
+        val occurrenceId: String? = null,
     )
 
     data class NextOccurrence(

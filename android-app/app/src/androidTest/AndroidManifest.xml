@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- :e2e generates self-instrumentation; the application plugin overrides targetPackage. -->
     <application android:label="Flint E2E Target">
+        <activity android:name="com.flint.peakfocus.e2e.GlanceWidgetHostActivity"
+            android:exported="true" android:label="Flint widget test host" />
         <!-- A deterministic, harmless app to block; no dependency on bundled OEM apps. -->
         <activity android:name="com.flint.peakfocus.e2e.BlockedTestActivity"
             android:exported="true" android:label="Flint E2E Target">

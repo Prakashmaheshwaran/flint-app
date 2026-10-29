@@ -5,7 +5,7 @@ import kotlinx.coroutines.sync.withLock
 
 /** Only pixels/words belong in the render key; a fresh health heartbeat is not new content. */
 internal fun GlanceDisplay.widgetKey() = listOf(status, detail, next, focusedToday, historyNote,
-    checked, focusedTodayLabel)
+    checked, focusedTodayLabel, pass)
 
 /** Coalesces optional surface IO, while checking notification eligibility on every source change. */
 internal class GlanceSurfaceDelivery(
