@@ -27,7 +27,8 @@ enum FlintEmergencyPassScope {
         _ = try FlintEmergencyPassRuleEffects.sleepConfiguration(from: defaults)
         let active: FlintActiveSession?
         if let raw = defaults.object(forKey: "flint.activeSession") {
-            guard let data = raw as? Data, let session = try? JSONDecoder().decode(FlintActiveSession.self, from: data) else {
+            guard let data = raw as? Data, let session = try? JSONDecoder().decode(FlintActiveSession.self, from: data),
+                  session.contractVersion == nil || session.contractVersion == FlintActiveSession.currentContractVersion else {
                 throw FlintEmergencyPassError.scopeUnavailable
             }
             let clock = FlintClock(now: { now.wall }, monotonic: { now.monotonic },

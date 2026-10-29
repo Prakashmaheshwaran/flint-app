@@ -131,6 +131,17 @@ final class FlintEmergencyPassScopeTests: XCTestCase {
         XCTAssertThrowsError(try load())
     }
 
+    func testFutureSessionContractIsUnavailableEvenWithReadableTargets() throws {
+        let unknown = FlintActiveSession(id: "future", name: "Future", startedAt: now.addingTimeInterval(-60),
+            endsAt: now.addingTimeInterval(1800), breakLevel: .hardcore, monitorName: "flint.session.future",
+            contractVersion: FlintActiveSession.currentContractVersion + 1)
+        let store = try XCTUnwrap(FlintGroupStore(suiteName: suite))
+        store.saveActiveSession(unknown)
+        store.saveSessionSelection(FamilyActivitySelection(), sessionID: unknown.id)
+        XCTAssertThrowsError(try load())
+        XCTAssertEqual(store.loadActiveSession(), unknown, "preserve unsupported intent")
+    }
+
     func testTimeLimitThresholdObservedDuringRecoveryKeepsItsNaturalEnd() throws {
         let limit = FlintLimitRule(id: "time", name: "Time", thresholdMinutes: 30,
                                   protection: .init(timeZoneID: "UTC"))
