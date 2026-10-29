@@ -144,6 +144,7 @@ internal fun SleepEditorScreen(
         } else {
             BoxWithConstraints(Modifier.fillMaxSize()) {
             val viewport = maxHeight
+            val compactTimeSummary = sleepTimeFieldsStack(maxWidth.value, LocalDensity.current.fontScale)
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -237,7 +238,7 @@ internal fun SleepEditorScreen(
                     if (bed != null && wake != null) {
                         val morningShown = config.morningEnabled && morningEnd != null
                         Spacer(Modifier.height(FlintSpacing.md))
-                        if (sleepTimeFieldsStack(maxWidth.value, LocalDensity.current.fontScale)) {
+                        if (compactTimeSummary) {
                             Column(verticalArrangement = Arrangement.spacedBy(FlintSpacing.xs)) {
                                 Text(stringResource(R.string.sleep_time_value, stringResource(R.string.sleep_bed), formatMinuteOfDay(bed)))
                                 Text(stringResource(R.string.sleep_time_value, stringResource(R.string.sleep_wake), formatMinuteOfDay(wake)))
