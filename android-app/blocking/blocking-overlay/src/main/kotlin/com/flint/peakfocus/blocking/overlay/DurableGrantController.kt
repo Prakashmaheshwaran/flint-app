@@ -5,6 +5,7 @@ import com.flint.peakfocus.blocking.engine.EmergencyPassPolicy
 import com.flint.peakfocus.blocking.engine.OpenLimitPolicy
 import com.flint.peakfocus.core.datastore.FocusCommit
 import com.flint.peakfocus.core.datastore.FocusStateStore
+import com.flint.peakfocus.core.datastore.ProtectionClock
 import com.flint.peakfocus.core.model.*
 import java.io.IOException
 import java.util.UUID
@@ -13,12 +14,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 /** A surface keeps this identity through retries, including a lost acknowledgement. */
-data class GrantRequestId internal constructor(val issuedAtEpochMs: Long, val nonce: String) {
+data class GrantRequestId internal constructor(val issuedAtEpochMs: Long, val nonce: String, val issuedAtClock: AccessClockStamp? = null) {
     internal val prefix: String get() = "f1:$issuedAtEpochMs:$nonce:"
     companion object {
         fun issue(nowEpochMs: Long): GrantRequestId = GrantRequestId(nowEpochMs, UUID.randomUUID().toString())
+        fun issue(now: AccessClockStamp): GrantRequestId = GrantRequestId(now.wallEpochMs, UUID.randomUUID().toString(), now)
     }
 }
 
@@ -65,9 +69,12 @@ internal class DurableGrantController(
     scope: CoroutineScope,
     private val nowEpochMs: () -> Long,
     private val utcOffsetMs: (Long) -> Long,
-    private val bootSessionId: String,
+    bootSessionId: String?,
     private val commitTimeoutMs: Long = COMMIT_TIMEOUT_MS,
+    private val bootClock: () -> AccessClockStamp = ProtectionClock::now,
 ) {
+    @Volatile private var resolvedBootSessionId: String? = bootSessionId
+    private val bootSessionId: String get() = checkNotNull(resolvedBootSessionId)
     private val mutableState = MutableStateFlow<StorageState<FocusSnapshot>>(StorageState.Loading)
     val state: StateFlow<StorageState<FocusSnapshot>> = mutableState
     private val publicationLock = Any()
@@ -77,7 +84,10 @@ internal class DurableGrantController(
     private val passes = EmergencyPassPolicy()
     private val opens = OpenLimitPolicy()
 
-    init { scope.launch { store.state.collect(::publish) } }
+    init { scope.launch {
+        if (resolvedBootSessionId == null) resolvedBootSessionId = withContext(Dispatchers.Default) { bootClock().bootSessionId }
+        store.state.collect(::publish)
+    } }
 
     private fun publish(next: StorageState<FocusSnapshot>) = synchronized(publicationLock) {
         if (next is StorageState.Ready) {

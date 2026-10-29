@@ -7,6 +7,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import java.util.concurrent.ConcurrentHashMap
 
 /** One durable authority shared by the two detector adapters; no UI callback writes accounting. */
 internal class GlobalRecoveryController(
@@ -24,6 +25,9 @@ internal class GlobalRecoveryController(
     @Volatile var lastGood: ProtectionSnapshot? = null
         private set
     private val drainSignals = Channel<Unit>(Channel.CONFLATED)
+    private val boundarySignals = Channel<Unit>(Channel.CONFLATED)
+    private val ordinarySignals = Channel<Unit>(Channel.CONFLATED)
+    private val ordinaryInputs = ConcurrentHashMap<String, OrdinaryProtectionInput>()
 
     init {
         scope.launch(dispatcher) { store.state.collect(::publish) }
@@ -34,7 +38,11 @@ internal class GlobalRecoveryController(
                 reconcile()
                 val now = clock()
                 val remaining = GlobalRecoveryPolicy.remaining(lastGood?.focus?.protection?.recovery, now)
-                delay(if (remaining > 0) minOf(remaining, CHECKPOINT_MS) else CHECKPOINT_MS)
+                val ordinary = lastGood?.focus?.protection?.ordinaryGrants?.values.orEmpty().mapNotNull { it.lifetime.remainingMs(now)?.takeIf { ms -> ms > 0 } }
+                val wait = (ordinary + listOfNotNull(remaining.takeIf { it > 0 }) + CHECKPOINT_MS).minOrNull() ?: CHECKPOINT_MS
+                withTimeoutOrNull(wait) { boundarySignals.receive() }
+                // Deadlines still stop release when storage becomes unavailable at expiry.
+                runCatching(enforcementChanged)
             }
         }
         scope.launch(dispatcher) {
@@ -48,6 +56,16 @@ internal class GlobalRecoveryController(
                 }
             } finally { unsubscribe() }
         }
+        scope.launch(dispatcher) {
+            for (ignored in ordinarySignals) {
+                val inputs = ordinaryInputs.values.toList()
+                commit { original ->
+                    var snapshot = GlobalRecoveryPolicy.checkpoint(original)
+                    for (input in inputs) snapshot = snapshot.copy(focus = OrdinaryProtectionPolicy.retireInvalid(snapshot, input, foreignRules()))
+                    ProtectionMutation(snapshot.focus, Unit)
+                }
+            }
+        }
     }
 
     private fun publish(next: StorageState<ProtectionSnapshot>) {
@@ -60,14 +78,17 @@ internal class GlobalRecoveryController(
                     return
                 }
                 changed = next.value.focus.protection?.recovery != lastGood?.focus?.protection?.recovery ||
+                    next.value.focus.protection?.ordinaryGrants != lastGood?.focus?.protection?.ordinaryGrants ||
                     lastGood == null
+                if (lastGood?.rules != next.value.rules || lastGood?.times != next.value.times || lastGood?.opens != next.value.opens)
+                    ordinarySignals.trySend(Unit)
                 lastGood = next.value
                 BlockExemptions.restoreRecovery(next.value.focus.protection?.recovery, clock, next.value.focus.revision)
                 if (next.value.focus.protection?.outbox?.isNotEmpty() == true) drainSignals.trySend(Unit)
             }
             mutableState.value = next
         }
-        if (changed) runCatching(enforcementChanged)
+        if (changed) { boundarySignals.trySend(Unit); runCatching(enforcementChanged) }
     }
 
     suspend fun reconcile(): Boolean = when (val commit = commit { snapshot ->
@@ -99,6 +120,43 @@ internal class GlobalRecoveryController(
         is ProtectionCommit.Committed -> accepted.result
         else -> false
     }
+
+    suspend fun previewEnd(selected: Set<String>, delete: Boolean): RecoveryEndPreview? {
+        val frozen = selected.toSet()
+        val accepted = commit { original ->
+            val snapshot = GlobalRecoveryPolicy.checkpoint(original)
+            ProtectionMutation(snapshot.focus, GlobalRecoveryPolicy.previewEnd(snapshot, frozen, delete))
+        }
+        return (accepted as? ProtectionCommit.Committed)?.result
+    }
+
+    suspend fun endAndResume(preview: RecoveryEndPreview): Boolean {
+        val frozen = preview.copy(selectedCauseKeys = preview.selectedCauseKeys.toSet(), displayNames = preview.displayNames.toList())
+        return (commit { GlobalRecoveryPolicy.endAndResume(it, frozen) } as? ProtectionCommit.Committed)?.result == true
+    }
+
+    suspend fun requestOrdinary(input: OrdinaryProtectionInput, id: GrantRequestId): GrantResult {
+        val stamp = id.issuedAtClock ?: return GrantResult.Unavailable()
+        return when (val accepted = commit { OrdinaryProtectionPolicy.request(it, input, "p1-${id.nonce}", stamp, foreignRules().toList()) }) {
+            is ProtectionCommit.Committed -> accepted.result
+            is ProtectionCommit.Unavailable -> GrantResult.Unavailable(accepted.reason)
+            null -> GrantResult.Unconfirmed
+        }
+    }
+
+    fun ordinaryCovers(input: OrdinaryProtectionInput, now: AccessClockStamp): Boolean = lastGood?.let {
+        OrdinaryProtectionPolicy.covers(it, input, foreignRules(), now)
+    } == true
+
+    fun observeOrdinary(input: OrdinaryProtectionInput) {
+        if (lastGood?.focus?.protection?.ordinaryGrants?.values?.any { it.target == AccessTarget.App(input.packageName) } != true) {
+            ordinaryInputs.remove(input.packageName); return
+        }
+        if (ordinaryInputs.put(input.packageName, input) != input) ordinarySignals.trySend(Unit)
+    }
+
+    suspend fun resumeOrdinary(packageName: String? = null): Boolean =
+        (commit { OrdinaryProtectionPolicy.resume(it, packageName) } as? ProtectionCommit.Committed)?.result == true
 
     private suspend fun <R> commit(reducer: (ProtectionSnapshot) -> ProtectionMutation<R>): ProtectionCommit<R>? = withContext(dispatcher) {
         val accepted = withTimeoutOrNull(timeoutMs) { store.transact(reducer) }

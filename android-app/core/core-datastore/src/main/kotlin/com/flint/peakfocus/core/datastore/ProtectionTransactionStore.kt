@@ -78,7 +78,7 @@ class DataStoreProtectionTransactionStore(
                     current = current.copy(focus = current.focus.copy(protection = initial,
                         // Old package receipts lack the global/frozen recovery scope. Preserve
                         // their spend/archive, but never let them masquerade as ADR-012 access.
-                        exemptions = current.focus.exemptions.filterValues { it.kind != ExemptionKind.EMERGENCY_PASS }))
+                        exemptions = current.focus.exemptions.filterValues { it.untilEpochMs == 0L }))
                 }
                 val mutation = transform(current)
                 mutation.rules?.let(prefs::putEditorRules)
@@ -118,7 +118,7 @@ class DataStoreProtectionTransactionStore(
             if (remaining == 0L) null else ProtectionCooldown("legacy-pass-$it", it, now, remaining)
         }
         return ProtectionLedger(now, now, cooldown = cooldown, lastUsedAtEpochMs = used,
-            previousAccessEnded = focus.exemptions.values.any { it.kind == ExemptionKind.EMERGENCY_PASS })
+            previousAccessEnded = focus.exemptions.values.any { it.untilEpochMs > 0L })
     }
 
     private fun legacyArchive(prefs: Preferences): String = buildList {

@@ -20,6 +20,14 @@ data class RecoveryPreview internal constructor(
 
 data class RecoveryCommitment(val causeKey: String, val ruleId: String?, val displayName: String, val transient: Boolean)
 
+data class RecoveryEndPreview internal constructor(
+    val recoveryOperationId: String,
+    val scopeIdentity: String,
+    val selectedCauseKeys: Set<String>,
+    val deleteTemplates: Boolean,
+    val displayNames: List<String>,
+)
+
 sealed interface RecoveryResult {
     data class Accepted(val recovery: ProtectionRecovery?, val newlyAccepted: Boolean) : RecoveryResult
     data object StalePreview : RecoveryResult
@@ -56,11 +64,15 @@ internal object GlobalRecoveryPolicy {
         val previousRecovery = ledger.recovery
         val recovery = previousRecovery?.takeIf { state.recovery != null }
         val rebootClosed = previousRecovery != null && trustedElapsedMs(previousRecovery.startedAt, now) == null
+        val ended = ledger.ordinaryGrants.values.filter { it.lifetime.remainingMs(now)?.let { left -> left > 0L } != true }
+        val endedEvents = ended.map { grant -> ordinaryEnded(grant, now, ProtectionBreakEndReason.EXPIRED, snapshot.focus.revision + 1) }
         val retained = ledger.operations.filterValues { it.operationId == cooldown?.operationId ||
             trustedElapsedMs(it.acceptedAt, now)?.let { age -> age < REQUEST_LIFETIME_MS } == true }
         return snapshot.copy(focus = snapshot.focus.copy(protection = bound(ledger.copy(checkpoint = now,
             cooldown = cooldown, recovery = recovery, operations = retained,
-            previousAccessEnded = ledger.previousAccessEnded || rebootClosed), now)))
+            ordinaryGrants = ledger.ordinaryGrants - ended.map { it.operationId }.toSet(),
+            outbox = ledger.outbox + endedEvents.associateBy { it.id },
+            previousAccessEnded = ledger.previousAccessEnded || rebootClosed || ended.any { trustedElapsedMs(it.lifetime.startedAt, now) == null }), now)))
     }
 
     fun preview(snapshot: ProtectionSnapshot, foreignRules: List<BlockRule>, operationId: String = "p1-${UUID.randomUUID()}"): RecoveryPreview? {
@@ -96,13 +108,13 @@ internal object GlobalRecoveryPolicy {
         val recovery = ProtectionRecovery(preview.operationId, now, keys, ruleIds, transientIds, ProtectionContract.PASS_RECOVERY_MS)
         val event = ProtectionLifecycleEvent("pass:${preview.operationId}", preview.operationId, ProtectionLifecycleKind.PASS_COMMITTED,
             ruleIds, now, untilEpochMs = now.wallEpochMs + recovery.durationMs, endedTransientIds = transientIds, revision = current.revision + 1)
-        val endedBreaks = current.exemptions.values.filter { it.untilEpochMs > now.wallEpochMs && it.kind != ExemptionKind.EMERGENCY_PASS }.map { receipt ->
-            ProtectionLifecycleEvent("break-ended:${receipt.requestId}", preview.operationId, ProtectionLifecycleKind.BREAK_ENDED,
-                emptySet(), now, grantId = receipt.requestId, breakEndReason = ProtectionBreakEndReason.RECOVERY, revision = current.revision + 1)
+        val endedBreaks = ledger.ordinaryGrants.values.map { grant ->
+            ordinaryEnded(grant, now, ProtectionBreakEndReason.RECOVERY, current.revision + 1)
         }
         val nextLedger = bound(ledger.copy(cooldown = ProtectionCooldown(preview.operationId, now.wallEpochMs, now, ProtectionContract.PASS_COOLDOWN_MS),
             recovery = recovery, operations = ledger.operations + (preview.operationId to ProtectionPassReceipt(preview.operationId, preview.issuedAt, now, preview.scopeIdentity)),
-            outbox = ledger.outbox + (endedBreaks + event).associateBy { it.id }, lastUsedAtEpochMs = now.wallEpochMs), now)
+            outbox = ledger.outbox + (endedBreaks + event).associateBy { it.id }, lastUsedAtEpochMs = now.wallEpochMs,
+            ordinaryGrants = emptyMap()), now)
         val endedKeys = transientIds.map(::ruleCauseKey).toSet()
         val terminal = snapshot.editor.causes.filterKeys { it in endedKeys }.map { (key, cause) -> editorOccurrence(key, cause) }.toSet()
         val editor = snapshot.editor.copy(causes = snapshot.editor.causes - endedKeys, pending = null,
@@ -118,6 +130,48 @@ internal object GlobalRecoveryPolicy {
         val snapshot = checkpoint(original)
         val ledger = snapshot.focus.protection ?: return ProtectionMutation(snapshot.focus, false)
         return ProtectionMutation(snapshot.focus.copy(protection = ledger.copy(recovery = null)), true)
+    }
+
+    fun ordinaryEnded(grant: ProtectionOrdinaryGrant, now: AccessClockStamp, reason: ProtectionBreakEndReason, revision: Long): ProtectionLifecycleEvent {
+        val start = grant.lifetime.startedAt
+        val elapsed = trustedElapsedMs(start, now)
+        val logicalEnd = if (reason == ProtectionBreakEndReason.EXPIRED && elapsed != null && elapsed >= grant.lifetime.durationMs)
+            AccessClockStamp(start.wallEpochMs + grant.lifetime.durationMs, start.elapsedRealtimeMs + grant.lifetime.durationMs, start.bootSessionId) else now
+        return ProtectionLifecycleEvent("break-ended:${grant.operationId}", grant.operationId, ProtectionLifecycleKind.BREAK_ENDED,
+            grant.affectedRuleIds, logicalEnd, grantId = grant.operationId, breakEndReason = reason, revision = revision,
+            timeUncertain = clockDiscontinuity(start, now))
+    }
+
+    /** Exact pass-authorized selection; no counter or unchosen template is included. */
+    fun previewEnd(snapshot: ProtectionSnapshot, selected: Set<String>, delete: Boolean): RecoveryEndPreview? {
+        val recovery = snapshot.focus.protection?.recovery ?: return null
+        if (remaining(recovery, snapshot.observedAt) == 0L || selected.isEmpty()) return null
+        val choices = recoveryChoices(snapshot)
+        if (!choices.keys.containsAll(selected)) return null
+        return RecoveryEndPreview(recovery.operationId, identity(snapshot, emptyList(), emptyList()), selected.toSet(), delete,
+            selected.sorted().map { choices.getValue(it) })
+    }
+
+    fun recoveryChoices(snapshot: ProtectionSnapshot): Map<String, String> =
+        snapshot.rules.filter { it.enabled }.associate { ruleCauseKey(it.id) to ProtectionStatus.sanitizeDisplayName(it.name) } +
+            snapshot.times.associate { timeCauseKey(it.packageName) to "Time limit · ${it.packageName}" } +
+            snapshot.opens.associate { openCauseKey(it.packageName) to "Open limit · ${it.packageName}" }
+
+    fun endAndResume(original: ProtectionSnapshot, expected: RecoveryEndPreview): ProtectionMutation<Boolean> {
+        val snapshot = checkpoint(original)
+        if (previewEnd(snapshot, expected.selectedCauseKeys, expected.deleteTemplates) != expected)
+            return ProtectionMutation(snapshot.focus, false)
+        val selected = expected.selectedCauseKeys
+        val terminal = snapshot.editor.causes.filterKeys { it in selected }.map { (key, cause) -> editorOccurrence(key, cause) }.toSet()
+        val rules = snapshot.rules.mapNotNull { rule ->
+            if (ruleCauseKey(rule.id) !in selected) rule else if (expected.deleteTemplates) null else rule.copy(enabled = false)
+        }
+        val editor = snapshot.editor.copy(causes = snapshot.editor.causes - selected, pending = null,
+            queued = snapshot.editor.queued.map { if (it.change.keys.any(selected::contains)) it.copy(needsReview = true) else it })
+        return ProtectionMutation(snapshot.focus.copy(protection = snapshot.focus.protection!!.copy(recovery = null)), true,
+            rules = rules, times = snapshot.times.filterNot { timeCauseKey(it.packageName) in selected },
+            opens = snapshot.opens.filterNot { openCauseKey(it.packageName) in selected }, editor = editor,
+            harder = HarderWaitPolicy().withoutTerminated(snapshot.harder.copy(pending = null), terminal))
     }
 
     /** Counts and event bytes are bounded even when history is absent or never acknowledges. */
@@ -152,7 +206,7 @@ internal object GlobalRecoveryPolicy {
         return all.sortedBy { it.causeKey }
     }
 
-    private fun foreignActive(rule: BlockRule, now: AccessClockStamp, timeline: AccessClockStamp?): Boolean {
+    internal fun foreignActive(rule: BlockRule, now: AccessClockStamp, timeline: AccessClockStamp?): Boolean {
         val logicalWall = timeline?.let { t -> trustedElapsedMs(t, now)?.let { t.wallEpochMs + it } } ?: now.wallEpochMs
         if (rule.expiresAtEpochMs?.let { it <= logicalWall } == true) return false
         val schedule = rule.schedule ?: return true
