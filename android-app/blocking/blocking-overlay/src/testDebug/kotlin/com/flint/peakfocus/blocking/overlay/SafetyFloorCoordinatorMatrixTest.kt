@@ -6,6 +6,10 @@ import android.view.View
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.flint.peakfocus.core.datastore.FlintPreferences
+import com.flint.peakfocus.core.datastore.InMemoryBlockRulesStore
+import com.flint.peakfocus.core.datastore.InMemoryFocusStateStore
+import com.flint.peakfocus.core.datastore.InMemoryLimitsStore
+import com.flint.peakfocus.core.datastore.snapshotOrNull
 import com.flint.peakfocus.core.model.ActiveRulesHolder
 import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
@@ -18,9 +22,12 @@ import com.flint.peakfocus.core.model.Schedule
 import com.flint.peakfocus.feature.blockscreen.BlockScreenReason
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -142,17 +149,49 @@ class SafetyFloorCoordinatorMatrixTest {
         }
     }
 
-    @Test fun `a non-zero open limit on a custom dialer never trips after repeated opens`() {
-        runBlocking { FlintPreferences.limits(app).setOpenLimit(OpenLimit(customDialer, dailyOpens = 1)) }
-        runBlocking { FlintPreferences.limits(app).setOpenLimit(OpenLimit(COUNTED, dailyOpens = 1)) }
-        // The ordinary app with the same limit is blocked on its second open (proves it is live).
-        awaitTrue("limit loaded") {
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun `a non-zero open limit on a custom dialer never trips after repeated opens`() = runTest {
+        val focus = InMemoryFocusStateStore()
+        val limits = InMemoryLimitsStore(initialOpenLimits = listOf(
+            OpenLimit(customDialer, dailyOpens = 1), OpenLimit(COUNTED, dailyOpens = 1),
+        ))
+        val coordinator = BlockScreenCoordinator(
+            context = app,
+            scope = backgroundScope,
+            surfaceHost = object : BlockScreenCoordinator.SurfaceHost {
+                override fun attach(view: View) = false
+                override fun detach(view: View) = Unit
+                override fun goHome() = Unit
+            },
+            safetyFloorGate = SafetyFloorGate(
+                selfPackage = app.packageName,
+                resolveRuntime = { mapOf("default-dialer" to setOf(customDialer), "home" to setOf(customHome)) },
+                nowElapsedMs = { 0L },
+                requiredRuntimeSources = setOf("default-dialer", "home"),
+            ),
+            nowEpochMs = { 1_800_000_000_000L },
+            focusStateStore = focus,
+            configuredLimitsStore = limits,
+            blockRulesStore = InMemoryBlockRulesStore(),
+        )
+        OpenVisits.process.leave()
+        try {
+            runCurrent() // Initial store readiness, without polling or wall-clock sleeps.
             coordinator.evaluateBlockCause(other, COUNTED, null, false)
-            coordinator.evaluateBlockCause(other, COUNTED, null, false)?.reason == BlockScreenReason.OPEN_LIMIT
-        }
-        repeat(5) {
-            assertNull(coordinator.evaluateBlockCause(other, customDialer, null, false))
-            assertNull(coordinator.evaluateBlockCause(customDialer, other, null, false))
+            runCurrent() // Complete and acknowledge the first visit's debit.
+            assertEquals(1, focus.state.snapshotOrNull()!!.openCounts.opensFor(COUNTED))
+            assertTrue(OpenVisits.process.current(COUNTED)!!.paid)
+            assertNull(coordinator.evaluateBlockCause(COUNTED, COUNTED, null, false))
+            // A repeated check is the same paid visit. Observe an actual departure first.
+            assertNull(coordinator.evaluateBlockCause(COUNTED, other, null, false))
+            assertEquals(BlockScreenReason.OPEN_LIMIT,
+                coordinator.evaluateBlockCause(other, COUNTED, null, false)?.reason)
+            repeat(5) {
+                assertNull(coordinator.evaluateBlockCause(other, customDialer, null, false))
+                assertNull(coordinator.evaluateBlockCause(customDialer, other, null, false))
+            }
+        } finally {
+            OpenVisits.process.leave()
         }
     }
 
