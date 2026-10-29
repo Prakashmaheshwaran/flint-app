@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The isolated host must resolve only Flint's package/resources for RemoteViews. -->
+    <queries><package android:name="com.flint.peakfocus" /></queries>
     <!-- :e2e generates self-instrumentation; the application plugin overrides targetPackage. -->
     <application android:label="Flint E2E Target">
         <activity android:name="com.flint.peakfocus.e2e.GlanceWidgetHostActivity"

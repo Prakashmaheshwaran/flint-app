@@ -36,3 +36,12 @@
 -keep class androidx.work.impl.WorkDatabase_Impl {
     public <init>();
 }
+
+# WorkManager 2.7.1's merged consumer rules keep InputMerger classes, but omit
+# their constructors. R8 full mode does not implicitly retain a no-arg constructor;
+# WorkerWrapper reflectively creates this merger for Glance's actual widget jobs.
+# ListenableWorker constructors (including Glance SessionWorker) are already kept
+# explicitly by those consumer rules. Keep this missing constructor only.
+-keep class androidx.work.OverwritingInputMerger {
+    public <init>();
+}

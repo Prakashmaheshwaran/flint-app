@@ -4,7 +4,6 @@ import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.uiautomator.By
 import org.junit.Assert.*
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -12,7 +11,8 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class GlanceSurfaceTest : FlintE2EFixture() {
     @Test fun fixtureWidgetAndOptionalNotificationProtectedInactiveAndUnavailable() {
-        assumeTrue("Debug-only fixture is absent from release", shell("dumpsys package $app").contains("GlanceFixtureActivity"))
+        // This class is selected only by the debug suite; release has exact separate selectors.
+        // Explicit activity launch below must fail if the fixture is unexpectedly missing.
         openFixture("protected")
         // Ordinary widget binding and POST_NOTIFICATIONS consent; never adopt/grant privileges.
         val deadline = SystemClock.uptimeMillis() + timeout
