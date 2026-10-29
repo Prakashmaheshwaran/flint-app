@@ -27,27 +27,41 @@ public final class FlintWebRestrictionEditor {
     private let persist: (FlintWebRestrictions) -> Bool
     private let ledger: () -> FlintProtectionLedger?
     private let clock: FlintClock
+    private let withTransitionBoundary: (() -> Void) -> Bool
 
     public init(load: @escaping () -> FlintWebRestrictions?, snapshot: @escaping () -> Snapshot?,
                 persist: @escaping (FlintWebRestrictions) -> Bool,
-                ledger: @escaping () -> FlintProtectionLedger?, clock: FlintClock) {
+                ledger: @escaping () -> FlintProtectionLedger?, clock: FlintClock,
+                withTransitionBoundary: @escaping (() -> Void) -> Bool = { body in body(); return true }) {
         self.load = load; self.snapshot = snapshot; self.persist = persist
-        self.ledger = ledger; self.clock = clock
+        self.ledger = ledger; self.clock = clock; self.withTransitionBoundary = withTransitionBoundary
     }
 
     public convenience init() {
         self.init(load: { .loadForEnforcement() }, snapshot: {
             guard let group = FlintGroupStore(),
-                  let rules = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: .flintGroup) else { return nil }
+                  let rules = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: .flintGroup,
+                    migrating: false) else { return nil }
             let active = group.loadActiveSession()
             guard active != nil || !group.hasActiveSessionRecord() else { return nil }
             return Snapshot(session: active, rules: rules)
-        }, persist: { $0.save() }, ledger: { FlintProtectionLedger.appGroup() }, clock: .system)
+        }, persist: { $0.save() }, ledger: { FlintProtectionLedger.appGroup() }, clock: .system,
+           withTransitionBoundary: { body in
+               FlintRuleStoreLock.withLock(environment: .live) { body(); return true } ?? false
+           })
     }
 
     /// Only a final explicit user confirmation may commit matured Harder waits. The request id
     /// stays stable for retries of this draft; its scope is the canonical new-config fingerprint.
     public func save(_ candidate: FlintWebRestrictions, requestID: String, confirmed: Bool = false) -> Outcome {
+        var result = Outcome.unavailable
+        guard withTransitionBoundary({ result = saveLocked(candidate, requestID: requestID, confirmed: confirmed) }) else {
+            return .unavailable
+        }
+        return result
+    }
+
+    private func saveLocked(_ candidate: FlintWebRestrictions, requestID: String, confirmed: Bool) -> Outcome {
         guard let previous = load(), let snapshot = snapshot() else { return .unavailable }
         if let message = candidate.validationMessage { return .invalid(message) }
         let now = clock.now()
@@ -72,12 +86,27 @@ public final class FlintWebRestrictionEditor {
         let harder = affected.filter { $0.tier == .harder }
         if !harder.isEmpty {
             guard let ledger = ledger() else { return .unavailable }
-            let scope = [Self.fingerprint(candidate)]
-            let operation = "web.edit.\(requestID).\(scope[0])"
+            let policy = try? snapshot.rules.compactMap { rule -> String? in
+                guard let window = rule.occurrence(at: now), harder.contains(where: {
+                    $0.causeID == FlintRuleArbiter.causeID(rule, window: window)
+                }) else { return nil }
+                return try rule.fingerprint(action: "web.current", includeName: false)
+            }.sorted()
+            guard let policy else { return .unavailable }
+            let scope = [Self.fingerprint(previous), Self.fingerprint(candidate)] + policy
+            let revisions = harder.map { "\($0.occurrenceID):\($0.revision)" }.sorted()
+            let identity = SHA256.hash(data: Data((scope + revisions).joined(separator: "|").utf8))
+                .map { String(format: "%02x", $0) }.joined()
+            let operation = "web.edit.\(requestID).\(identity)"
             let result = ledger.transaction { state -> Outcome in
                 let instant = FlintLedgerInstant(clock: self.clock)
                 var remaining: TimeInterval = 0
+                var refreshedConfirmation = false
                 for cause in harder where !state.hasCommittedHarderWait(cause: cause.occurrenceID, operationID: operation) {
+                    if let pending = state.harder[cause.occurrenceID]?.pending,
+                       pending.operationID != operation, pending.kind == "web.edit", pending.scope == scope {
+                        refreshedConfirmation = true
+                    }
                     switch state.requestHarderWait(cause: cause.occurrenceID, kind: "web.edit", scope: scope,
                                                    operationID: operation, at: instant) {
                     case let .waiting(seconds): remaining = max(remaining, seconds)
@@ -86,7 +115,7 @@ public final class FlintWebRestrictionEditor {
                     }
                 }
                 if remaining > 0 { return .waiting(seconds: remaining) }
-                guard confirmed else { return .confirmationRequired }
+                guard confirmed, !refreshedConfirmation else { return .confirmationRequired }
                 for cause in harder {
                     switch state.commitHarderWait(cause: cause.occurrenceID, operationID: operation, at: instant) {
                     case .committed, .alreadyCommitted: break
@@ -98,8 +127,14 @@ public final class FlintWebRestrictionEditor {
             guard case let .success(outcome) = result else { return .unavailable }
             guard outcome == .saved else { return outcome }
         }
-        guard load() == previous, self.snapshot() == snapshot else { return .unavailable }
-        return persist(candidate) ? .saved : .unavailable
+        guard load() == previous, self.snapshot() == snapshot,
+              affected.allSatisfy({ $0.end.map { self.clock.now() < $0 } ?? true }) else { return .unavailable }
+        if persist(candidate) { return .saved }
+        if !harder.isEmpty {
+            let end = harder.compactMap(\.end).max().map { " Existing protection stays until \($0.formatted(date: .abbreviated, time: .shortened))." } ?? ""
+            return .invalid("Change authorized but not saved — try again." + end)
+        }
+        return .unavailable
     }
 
     public static func weakensContent(_ old: FlintWebRestrictions, _ new: FlintWebRestrictions) -> Bool {
@@ -124,12 +159,11 @@ public final class FlintWebRestrictionEditor {
         }
         if previous.applyDuringSchedules, !candidate.applyDuringSchedules || content {
             for rule in snapshot.rules where rule.enabled {
-                guard let window = FlintScheduleWindow.resolve(rule.schedule, at: now, calendar: calendar)?.current else { continue }
-                let end = window.end
-                let occurrence = "\(rule.monitorName).\(Int(end.timeIntervalSince1970))"
-                causes.append(.init(causeID: rule.monitorName, occurrenceID: occurrence,
-                                    kind: rule.id.hasPrefix("sleep.") ? .sleep : .recurringSchedule,
-                                    tier: rule.breakLevel, isActive: true, end: end))
+                guard let window = rule.occurrence(at: now) else { continue }
+                let identity = FlintRuleArbiter.causeID(rule, window: window)
+                causes.append(.init(causeID: identity, occurrenceID: identity, revision: rule.revision,
+                                    kind: rule.kind, tier: rule.breakLevel, isActive: true, end: window.end,
+                                    legacyRights: rule.protection?.legacyRightsUntil.map { now < $0 } ?? false))
             }
         }
         return causes

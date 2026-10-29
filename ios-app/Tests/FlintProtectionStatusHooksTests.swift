@@ -85,6 +85,7 @@ final class FlintProtectionStatusHooksTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 1_793_206_800)
         let a = FlintLimitRule(id: "limit-a", name: "A", thresholdMinutes: 30)
         let b = FlintLimitRule(id: "limit-b", name: "B", thresholdMinutes: 30)
+        XCTAssertTrue(FlintDesiredRules.save([a, b], key: .limits, to: defaults))
         FlintLimitThresholds.markReached(a, at: now, in: defaults)
         FlintLimitThresholds.markReached(b, at: now.addingTimeInterval(-86_400 * 2), in: defaults)
         var calendar = Calendar(identifier: .gregorian)
@@ -97,6 +98,7 @@ final class FlintProtectionStatusHooksTests: XCTestCase {
     func testAMarkDoesNotOutliveADisableOrAThresholdChange() {
         let now = Date(timeIntervalSince1970: 1_793_206_800)
         var limit = FlintLimitRule(id: "limit-a", name: "A", thresholdMinutes: 30)
+        XCTAssertTrue(FlintDesiredRules.save([limit], key: .limits, to: defaults))
         FlintLimitThresholds.markReached(limit, at: now, in: defaults)
         limit.enabled = false
         FlintLimitThresholds.prune(keeping: [limit], in: defaults)

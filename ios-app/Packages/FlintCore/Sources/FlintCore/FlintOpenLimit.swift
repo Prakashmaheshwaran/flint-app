@@ -144,6 +144,8 @@ public struct FlintOpenLimitRule: Codable, Identifiable, Equatable {
     public var selection: FamilyActivitySelection
     public var breakLevel: BreakLevel
     public var enabled: Bool
+    public var protection: FlintRuleProtection?
+    public var tierNeedsReview: Bool?
 
     public init(
         id: String = String(UUID().uuidString.prefix(8)),
@@ -151,7 +153,8 @@ public struct FlintOpenLimitRule: Codable, Identifiable, Equatable {
         opensAllowed: Int,
         selection: FamilyActivitySelection = FamilyActivitySelection(),
         breakLevel: BreakLevel = .easy,
-        enabled: Bool = true
+        enabled: Bool = true,
+        protection: FlintRuleProtection? = .init()
     ) {
         self.id = id
         self.name = name
@@ -159,6 +162,7 @@ public struct FlintOpenLimitRule: Codable, Identifiable, Equatable {
         self.selection = selection
         self.breakLevel = breakLevel
         self.enabled = enabled
+        self.protection = protection
     }
 
     /// The `ManagedSettingsStore` this limit shields into ("O" for open limit — cf. "flintL." for
@@ -168,7 +172,30 @@ public struct FlintOpenLimitRule: Codable, Identifiable, Equatable {
     /// The all-day `DeviceActivityName` whose day boundary re-arms this rule's shield (cf.
     /// `FlintLimitRule.activityName`). Registered by `FlintOpenLimitsController`; the monitor
     /// extension re-applies the shield when it fires.
-    public var activityName: String { "flint.openLimit.\(id)" }
+    public var activityName: String {
+        FlintRuleActivity.name(prefix: "flint.openLimit.", id: id, protection: protection)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, opensAllowed, selection, breakLevel, enabled, protection, tierNeedsReview
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        opensAllowed = try c.decode(Int.self, forKey: .opensAllowed)
+        selection = try c.decode(FamilyActivitySelection.self, forKey: .selection)
+        enabled = try c.decode(Bool.self, forKey: .enabled)
+        protection = c.contains(.protection) ? try c.decode(FlintRuleProtection.self, forKey: .protection) : nil
+        if c.contains(.breakLevel) || protection != nil {
+            breakLevel = try c.decode(BreakLevel.self, forKey: .breakLevel)
+            tierNeedsReview = try c.decodeIfPresent(Bool.self, forKey: .tierNeedsReview)
+        } else {
+            breakLevel = .easy
+            tierNeedsReview = true
+        }
+    }
 }
 
 private enum FlintOpenLimitStoreKey {

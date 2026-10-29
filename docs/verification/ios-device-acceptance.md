@@ -95,3 +95,29 @@ expiry only); Harder waits 60/300/900 s and only Flint confirms the end; one ses
 | R01-03 | With the recovery view open, go Home and open the app switcher. | The switcher snapshot shows the privacy curtain, not the recovery view; reopening shows the PIN gate, recovery closed. |
 | R01-04 | VoiceOver + largest accessibility text size on the gate and recovery view. | The entry and every control are reachable and readable; two-finger scrub returns to the PIN. |
 
+## Rule mutations — schedules, Sleep, Time and Open Limits (PR #162)
+
+R-07 / R-21 / R-22 / R-31 / R-35; PC-10–16, PC-18–21, PC-37/62/64–66/70/71.
+Record the selected window in its saved zone and the actual callback/shield time separately.
+An accepted native registration is not proof of timely callback delivery.
+
+| ID | Steps | Expected |
+| --- | --- | --- |
+| RULE-01 | For each rule kind and each tier, edit a current occurrence: rename, strengthen, weaken, turn off and delete. Include a Time Limit below quota and an Open Limit during a timed credit. | Rename/strengthen preserve continuity; Easy weakening confirms, Harder weakening waits then confirms, Hardcore weakening/off/delete saves a separate future revision. Unspent budget and a credit do not make a commitment inactive. |
+| RULE-02 | Save a Hardcore weakening/off/delete for after an occurrence; force-quit Flint across its end and the next start. Repeat with the host kept closed, then reopen twice. | The old snapshot protects through its end; the monitor applies the queued revision before the adjacent occurrence. Foreground recovery applies it once, without restarting an already registered revision. Record delivery latency and locked-device/resume behavior. |
+| RULE-03 | Disable a Hardcore template and edit it; separately edit a future one-shot before it starts. Re-enable the disabled template. | Inactive edits are available. Re-enable requires explicit confirmation of the tier and finite selected window. A one-shot never replays as a recurring rule. |
+| RULE-04 | On a Harder rule commit four weakening operations within one occurrence, reopening Flint between request and confirmation; separately cancel and request again. | Waits are 1, 5, 15 and 15 minutes; maturity alone changes nothing. Final confirmation commits once. Cancel spends nothing and restarts the full wait; rename/toggle does not reset committed counts. |
+| RULE-05 | Open a confirmation, change the same rule in another process/entry route, then confirm the older preview. | The old revision is refused; no shield or registration is released. Reopen the current saved rule. |
+| RULE-06 | Extend or strengthen an active schedule, leave Flint closed through the former end, then through the new end. Repeat with a Time Limit threshold/target revision. | A delayed old activity/event cannot clear or shield the current revision. Schedule protection stays through the new logical end. Native replacement failure preserves the old rule and protection. |
+| RULE-07 | Exhaust an Easy or Harder Time Limit, then increase its quota or remove targets. Confirm saving for the next occurrence. Repeat below quota and with a stricter quota. | An exhausted live weakening explains that today's change is unavailable and queues it without changing today's rule or spending a wait. The next day gets the saved new budget and a fresh shield state. Below quota, ordinary tier gates apply; strengthening retains an already exhausted shield. |
+| RULE-08 | On a signed debug fixture build, remove only an initialized domain's rules key while a Hardcore rule is active, then cold-launch. Separately load duplicate IDs or malformed/unknown tier/version data. | The whole affected domain reports unavailable; bytes are preserved and existing registrations/shields are not removed. A missing established key never becomes an empty rule list. |
+| RULE-09 | Upgrade with an active legacy schedule/Sleep/limit. Inspect a valid old Time Limit without a tier and separately malformed tier data. End the legacy occurrence, then start the next. | Existing rights last only through the captured running occurrence. The valid tierless limit uses its documented old Easy default with a review flag; malformed data is unavailable. Migration does not grant legacy rights again. |
+| RULE-10 | Change an Easy schedule from block mode to allow mode and back, with distinct app/category/domain picks. Repeat a Hardcore mode change through a queued revision. | Every owned shield field is replaced, including old app/domain fields and category exceptions; no previous-mode residue survives. Hardcore keeps its current mode until the queued boundary. |
+
+DeviceActivity does not expose a synchronous used-minutes query to this adapter. On iOS 17.4+
+native Time Limit replacements use `includesPastActivity`; verify that already used time is
+counted after an under-quota revision. Earlier iOS versions refuse a live native replacement
+instead of resetting usage. An exhausted budget/target/zone weakening uses RULE-07's future
+revision because Flint cannot accurately decide whether the revised live quota is exhausted.
+These API and callback boundaries remain **device-unverified** until the rows above are run.
+

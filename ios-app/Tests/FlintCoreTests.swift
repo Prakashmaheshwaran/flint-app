@@ -147,11 +147,12 @@ final class FlintCoreTests: XCTestCase {
     }
 
     func testLimitRuleRoundTripsAndNames() throws {
-        let limit = FlintLimitRule(name: "Social", thresholdMinutes: 30, breakLevel: .harder)
+        let limit = FlintLimitRule(name: "Social", thresholdMinutes: 30, breakLevel: .harder,
+            protection: .init(incarnation: "00000000-0000-0000-0000-000000000001"))
         let data = try JSONEncoder().encode(limit)
         XCTAssertEqual(limit, try JSONDecoder().decode(FlintLimitRule.self, from: data))
-        XCTAssertEqual(limit.activityName, "flint.limit.\(limit.id)")
-        XCTAssertEqual(limit.eventName, "flint.limitEvent.\(limit.id)")
+        XCTAssertEqual(limit.activityName, "flint.limit.\(limit.id).i00000000000000000000000000000001.r1")
+        XCTAssertEqual(limit.eventName, "flint.limitEvent.\(limit.id).i00000000000000000000000000000001.r1")
         XCTAssertEqual(limit.storeName, "flintL.\(limit.id)")
     }
 

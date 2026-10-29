@@ -22,7 +22,7 @@ final class FlintProtectionRecoverySafetyTests: XCTestCase {
                 // Editing must not turn an unavailable source into an authoritative array.
                 _ = FlintSchedulesController(environment: env).upsert(.init(name: "New",
                     schedule: .init(startHour: 9, endHour: 17), allowListMode: true))
-                FlintLimitsController(environment: env).delete("keep")
+                FlintLimitsController(environment: env).delete("keep", revision: 0)
                 FlintOpenLimitsController(environment: env).upsert(.init(name: "New", opensAllowed: 2))
                 XCTAssertEqual(Set(center.activities.map(\.rawValue)), Set(names))
                 XCTAssertTrue(center.starts.isEmpty)
