@@ -258,7 +258,9 @@ final class FlintEmergencyPassControllerTests: XCTestCase {
         let proof = FlintPassLimitThreshold(window: .init(start: now.addingTimeInterval(-60), end: now.addingTimeInterval(7200)),
             thresholdMinutes: 30, applications: ["opaque-a"], categories: [], webDomains: [], includeEntireCategory: false)
         registrationWork = {
-            XCTAssertNoThrow(try self.ledger().transaction { $0.passLimitThresholds = ["limit-a": proof] }.get())
+            if case let .failure(error) = self.ledger().transaction({ $0.passLimitThresholds = ["limit-a": proof] }) {
+                XCTFail("The observation should persist outside the carrier registration lock: \(error)")
+            }
         }
         _ = try use()
         XCTAssertEqual(try ledger().peek().get().passLimitThresholds?["limit-a"], proof)
