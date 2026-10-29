@@ -86,3 +86,12 @@ expiry only); Harder waits 60/300/900 s and only Flint confirms the end; one ses
 | B4-11 | Harder session: End session → wait screen; force-quit Flint; reopen after 60 s. (PC-21) | The wait was remembered (not restarted); End needs only the final confirm. |
 | B4-12 | Harder session: End session → "I'm good, go back"; End session again. (PC-20) | The full 60 s wait starts again; nothing was counted. |
 
+## R-01 — PIN gate keeps the pass and recovery reachable (PR #152, PC-50)
+
+| ID | Steps | Expected |
+| --- | --- | --- |
+| R01-01 | Settings → turn on the app PIN. Start a 30-min Hardcore block. Leave Flint, return so the PIN gate shows. Tap "Emergency Pass & recovery". | The gate shows only "A Hardcore block is running until <time>", the pass status and the Screen Time route — no session name, apps or other screens; the PIN keypad is dismissed. |
+| R01-02 | From R01-01, use the pass (2-second hold, or the VoiceOver action). | The block ends without unlocking Flint; VoiceOver announces it; after unlocking, Today no longer shows the session. |
+| R01-03 | With the recovery view open, go Home and open the app switcher. | The switcher snapshot shows the privacy curtain, not the recovery view; reopening shows the PIN gate, recovery closed. |
+| R01-04 | VoiceOver + largest accessibility text size on the gate and recovery view. | The entry and every control are reachable and readable; two-finger scrub returns to the PIN. |
+
