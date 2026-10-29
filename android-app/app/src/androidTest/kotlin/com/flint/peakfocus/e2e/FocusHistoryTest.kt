@@ -20,6 +20,7 @@ class FocusHistoryTest : FlintE2EFixture() {
         evidence("empty-insights")
         clickTab("Today")
 
+        enableService() // Fixture-owned disposable Accessibility grant; real history assertions stay unchanged.
         val began = startFiveMinuteTimer()
         val initial = awaitHistory { events -> events.count { it.getString("type") == "started" } == 1 }
         val first = initial.single { it.getString("type") == "started" }

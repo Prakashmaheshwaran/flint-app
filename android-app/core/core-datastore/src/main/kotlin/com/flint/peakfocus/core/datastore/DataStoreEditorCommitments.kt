@@ -244,20 +244,29 @@ class DataStoreEditorCommitmentStore(
         dataStore.edit { prefs -> prefs.putEditorState(readEditorState(prefs).copy(migrationNotice = false)) }
     }
 
-    override suspend fun startTimer(rule: BlockRule, now: AccessClockStamp, safety: EditorSafety): Boolean = transact(now) { prefs, now ->
+    override suspend fun startTimer(rule: BlockRule, now: AccessClockStamp, safety: EditorSafety): Boolean =
+        commitTimer(rule, now, safety) is TimerStartResult.Applying
+
+    override suspend fun commitTimer(rule: BlockRule, now: AccessClockStamp, safety: EditorSafety): TimerStartResult = transact(now) { prefs, now ->
         var state = prepare(prefs, now)
         require(rule.id.startsWith(CONTRACT_TIMER_ID_PREFIX) && rule.schedule == null && rule.enabled)
         require(!rule.targets.allowListMode && rule.targets.apps.isNotEmpty() && rule.targets.apps.none { it.packageName.isBlank() || it.packageName in floor(safety) })
         require(isValidNewSessionDuration((rule.expiresAtEpochMs ?: 0) - now.wallEpochMs))
         val current = prefs.editorRules()
-        wireRequire(state.causes.size < MAX_EDITOR_CAUSES)
-        if (!current.canStartSession(rule.id, now.wallEpochMs)) return@transact false
+        if (state.causes.size >= MAX_EDITOR_CAUSES) return@transact TimerStartResult.Rejected("Protection capacity is full. Finish an existing commitment and try again.")
+        val occupied = current.any { existing ->
+            existing.id == rule.id || (existing.id.startsWith(BlockRule.SESSION_ID_PREFIX) && existing.enabled &&
+                state.causes[ruleCauseKey(existing.id)]?.let { cause ->
+                    cause.occurrenceId != "inactive" && (cause.interval == null || cause.interval.remainingMs(now) > 0)
+                } != false)
+        }
+        if (occupied) return@transact TimerStartResult.Rejected("A Timer is already active. Finish it before starting another.")
         val startDecision = policy.decide(CommitmentPolicy.Action.START_ADDITIONAL, rule.breakLevel, CommitmentPolicy.CauseActivity.Inactive)
         check(startDecision in setOf(CommitmentPolicy.Outcome.ALLOW, CommitmentPolicy.Outcome.ALLOW_AFTER_DISCLOSURE))
         prefs.putEditorRules(current + rule)
         state = materialize(prefs, state, now)
         prefs.putEditorState(state)
-        true
+        TimerStartResult.Applying(rule.id, now)
     }
 
     private suspend fun <R> transact(requestedAt: AccessClockStamp, action: (MutablePreferences, AccessClockStamp) -> R): R {

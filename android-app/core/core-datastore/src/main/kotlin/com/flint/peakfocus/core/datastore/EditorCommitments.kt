@@ -65,6 +65,12 @@ sealed interface EditorCommitResult {
     data class Rejected(val reason: String) : EditorCommitResult
 }
 
+/** Durable desired state only; the backend must separately confirm this exact ID before Armed. */
+sealed interface TimerStartResult {
+    data class Applying(val ruleId: String, val acceptedAt: AccessClockStamp) : TimerStartResult
+    data class Rejected(val reason: String) : TimerStartResult
+}
+
 interface EditorCommitmentStore {
     val state: Flow<StorageState<EditorCommitmentState>>
     /** Includes raw template changes made by other writers, even when the sidecar is unchanged. */
@@ -93,6 +99,9 @@ interface EditorCommitmentStore {
     }
     /** Called by the explicit Start action after the selected duration/tier disclosure. */
     suspend fun startTimer(rule: BlockRule, now: AccessClockStamp, safety: EditorSafety = EditorSafety(false)): Boolean
+    suspend fun commitTimer(rule: BlockRule, now: AccessClockStamp, safety: EditorSafety): TimerStartResult =
+        if (startTimer(rule, now, safety)) TimerStartResult.Applying(rule.id, now)
+        else TimerStartResult.Rejected("A Timer is already active. Finish it before starting another.")
 }
 
 /** A fresh resolution supplied by the adapter, never a permission bit or a visible shield. */

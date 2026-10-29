@@ -6,6 +6,9 @@ import com.flint.peakfocus.core.model.BlockTargets
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.datastore.NATIVE_TIMER_ID_PREFIX
 import com.flint.peakfocus.core.datastore.CONTRACT_TIMER_ID_PREFIX
+import com.flint.peakfocus.core.datastore.EditorCommitmentState
+import com.flint.peakfocus.core.datastore.ruleCauseKey
+import com.flint.peakfocus.core.model.AccessClockStamp
 import com.flint.peakfocus.blocking.engine.isValidNewSessionDuration
 
 /** Finite duration choices; a zero-duration/infinite session is deliberately unsupported. */
@@ -50,6 +53,7 @@ internal data class TimerUiState(
     val error: String? = null,
     val message: String? = null,
     val exit: TimerExitConfirmation? = null,
+    val arming: TimerArmingState = TimerArmingState.Idle,
 ) {
     val canEdit: Boolean get() = rulesLoaded && rulesError == null && !busy && sessions.isEmpty() && exit == null
     val canStart: Boolean get() = canEdit && validTimerDraft(draft)
@@ -83,6 +87,23 @@ internal fun timerRule(draft: TimerDraft, nowEpochMs: Long, uniqueId: String): B
 internal fun activeTimerSessions(rules: List<BlockRule>, nowEpochMs: Long): List<BlockRule> =
     rules.filter {
         it.id.startsWith(BlockRule.SESSION_ID_PREFIX) && it.enabled && !it.isExpired(nowEpochMs)
+    }.sortedWith(compareBy<BlockRule> { it.expiresAtEpochMs ?: Long.MAX_VALUE }.thenBy { it.id })
+
+/** Stored anchors keep a wall-clock edit from hiding a still-active Timer or extending it. */
+internal fun anchoredTimerSessions(rules: List<BlockRule>, editor: EditorCommitmentState?,
+                                   now: AccessClockStamp, wall: Long): List<BlockRule> =
+    rules.filter { it.id.startsWith(BlockRule.SESSION_ID_PREFIX) && it.enabled }.mapNotNull { rule ->
+        val cause = editor?.causes?.get(ruleCauseKey(rule.id))
+        val interval = cause?.interval
+        when {
+            cause?.occurrenceId == "inactive" -> null
+            interval != null -> interval.remainingMs(now).let { remaining ->
+                if (remaining == 0L) null else rule.copy(expiresAtEpochMs =
+                    if (wall > Long.MAX_VALUE - remaining) Long.MAX_VALUE else wall + remaining)
+            }
+            rule.isExpired(wall) -> null
+            else -> rule
+        }
     }.sortedWith(compareBy<BlockRule> { it.expiresAtEpochMs ?: Long.MAX_VALUE }.thenBy { it.id })
 
 /**
