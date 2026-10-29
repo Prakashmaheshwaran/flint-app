@@ -64,12 +64,15 @@ class FocusHistoryTerminalDeliveryTest {
             var nativeNow = AccessClockStamp(start, 10_000, "boot")
             val owner = DataStoreEditorCommitmentStore(disk, { nativeNow }, { "UTC" })
             owner.reconcile(nativeNow)
-            // The owner's timeline advanced ten minutes while wall time advanced five.
-            nativeNow = AccessClockStamp(start + 5 * minute, 10_000 + 10 * minute, "boot")
             val id = CONTRACT_TIMER_ID_PREFIX + "${nativeNow.wallEpochMs}-mismatch"
             val rawRule = BlockRule(id, "Focus timer", BlockTargets(apps = setOf(AppRef("app"))),
                 expiresAtEpochMs = start + 15 * minute)
-            assertTrue(owner.startTimer(rawRule, nativeNow, EditorSafety(true)))
+            assertTrue(owner.startTimer(rawRule.copy(expiresAtEpochMs = start + 10 * minute),
+                nativeNow, EditorSafety(true)))
+            nativeNow = AccessClockStamp(start + 5 * minute, 10_000 + 5 * minute, "boot")
+            // A compatibility writer can leave a later raw display estimate. The
+            // real owner retains its original ten-minute anchored commitment.
+            DataStoreBlockRulesStore(disk).upsert(rawRule)
             val published = owner.reconcileRules(nativeNow)
             ActiveRulesHolder.configureProjection { RuleClockProjection.project(it, nativeNow) }
             ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, published)
@@ -81,7 +84,7 @@ class FocusHistoryTerminalDeliveryTest {
                     .observe(listOf(HistoryRule(id, "Focus timer", "easy", rawRule.expiresAtEpochMs)))
                 assertEquals(1, store.load().events.size)
 
-                nativeNow = AccessClockStamp(start + 10 * minute, 10_000 + 15 * minute, "boot")
+                nativeNow = AccessClockStamp(start + 10 * minute, 10_000 + 10 * minute, "boot")
                 clock.now = nativeNow.wallEpochMs
                 owner.reconcile(nativeNow)
                 val terminal = owner.readTerminalEvents().single()
@@ -102,7 +105,7 @@ class FocusHistoryTerminalDeliveryTest {
                 // Keep the SAME cached owner publication and raw future rule through
                 // clear, restart, wall catch-up and terminal replay. Only read-time
                 // anchored evaluation can reject this stale STARTED candidate.
-                nativeNow = AccessClockStamp(start + 11 * minute, 10_000 + 16 * minute, "boot")
+                nativeNow = AccessClockStamp(start + 11 * minute, 10_000 + 11 * minute, "boot")
                 clock.now = nativeNow.wallEpochMs
                 val reopened = FocusHistoryStore(store.directory, clock)
                 reopened.load()
