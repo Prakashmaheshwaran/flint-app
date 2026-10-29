@@ -92,14 +92,92 @@ final class FlintRuleCallbackTests: XCTestCase {
         XCTAssertEqual(writer.apps, [app]); XCTAssertEqual(writer.domains, [domain])
         XCTAssertEqual(writer.fields, ["apps", "categories", "domains", "domainCategories"])
     }
+
+    func testBusyRepairOnlyUnionsShieldFieldsAndNeverWidensCategoryExceptions() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        var rule = h.schedule(tier: .hardcore); rule.allowListMode = false
+        let oldApp: ApplicationToken = try fictionalRuleToken("old-app")
+        let newApp: ApplicationToken = try fictionalRuleToken("new-app")
+        let domain: WebDomainToken = try fictionalRuleToken("old-domain")
+        let category: ActivityCategoryToken = try fictionalRuleToken("new-category")
+        rule.selection.applicationTokens = [newApp]; rule.selection.categoryTokens = [category]
+        let writer = RuleShieldWriter()
+        writer.apps = [oldApp]; writer.domains = [domain]
+        writer.appCategories = .all(except: [oldApp]); writer.domainCategories = .all()
+        FlintRuleShield.add(rule, to: writer)
+        XCTAssertEqual(writer.apps, [oldApp, newApp])
+        XCTAssertEqual(writer.domains, [domain]); XCTAssertEqual(writer.domainCategories, .all(except: []))
+        XCTAssertEqual(writer.appCategories, .all(except: []))
+        XCTAssertFalse(writer.fields.contains("domains")); XCTAssertFalse(writer.fields.contains("domainCategories"))
+    }
+
+    func testNativeRuleWebChildUsesSavedZoneFrozenAndOneShotOccurrence() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        h.now = ISO8601DateFormatter().date(from: "2026-10-28T20:00:00Z")!
+        let config = FlintWebRestrictions(enabled: false, applyDuringSchedules: true)
+        for mode in ["zone", "frozen", "oneShot"] {
+            var rule = h.schedule(tier: .hardcore)
+            let window = FlintRuleWindow(start: h.now.addingTimeInterval(-3600), end: h.now.addingTimeInterval(3600))
+            if mode == "zone" { rule.protection?.timeZoneID = "America/Los_Angeles" }
+            if mode == "frozen" { rule.protection?.occurrence = window }
+            if mode == "oneShot" { rule.oneShot = window }
+            let writer = RuleWebWriter()
+            FlintRuleShield.reconcileWeb(rule, config: config, at: h.now, writer: writer)
+            XCTAssertEqual(writer.applied, [rule.storeName], mode)
+            XCTAssertTrue(writer.cleared.isEmpty)
+        }
+    }
+
+    func testBusyOpenAdditionsPreserveOnlyVerifiedLiveCreditsWithoutRemovingExistingFields() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let granted: ApplicationToken = try fictionalRuleToken("granted")
+        let blocked: ApplicationToken = try fictionalRuleToken("blocked")
+        var rule = FlintOpenLimitRule(id: "open", name: "Open", opensAllowed: 3,
+            protection: .init(timeZoneID: "UTC"))
+        rule.selection.applicationTokens = [granted, blocked]
+        let target = FlintOpenLimit.key(for: granted)
+        let instant = FlintLedgerInstant(clock: h.clock)
+        let snapshot = try XCTUnwrap(FlintOpenCreditRestoration.make(kind: .application,
+            token: granted, storeNames: [rule.storeName]))
+        let grant = FlintOpenCreditGrant(targetKey: target, operationID: "credit", grantedAt: instant,
+            deadline: h.now.addingTimeInterval(300), duration: 300, coveredCauses: [rule.id],
+            coveredFingerprints: [rule.id: try FlintOpenCredit.effectiveFingerprint(for: rule)],
+            coveredScopes: [rule.id: try FlintOpenCredit.effectiveFingerprint(for: rule, includingCap: false)],
+            coveredCaps: [rule.id: rule.opensAllowed], coveredActivities: [rule.id: rule.activityName], restoration: snapshot)
+        XCTAssertTrue(grant.isValid)
+        let live = FlintOpenCredit.shieldAdditions(for: rule, grants: [target: grant], at: instant, registered: { _ in true })
+        XCTAssertEqual(live.selection.applicationTokens, [blocked])
+        let writer = RuleShieldWriter(); writer.apps = [granted]
+        FlintRuleShield.add(live, to: writer)
+        XCTAssertEqual(writer.apps, [granted, blocked], "the fallback never releases an existing assertion")
+        XCTAssertEqual(FlintOpenCredit.shieldAdditions(for: rule, grants: [target: grant], at: instant,
+            registered: { _ in false }).selection.applicationTokens, [granted, blocked])
+        h.advance(300)
+        XCTAssertEqual(FlintOpenCredit.shieldAdditions(for: rule, grants: [target: grant],
+            at: .init(clock: h.clock), registered: { _ in true }).selection.applicationTokens, [granted, blocked])
+        rule.protection?.activityRevision += 1; rule.protection?.revision += 1
+        XCTAssertEqual(FlintOpenCredit.shieldAdditions(for: rule, grants: [target: grant], at: instant,
+            registered: { _ in true }).selection.applicationTokens, [granted, blocked])
+    }
 }
 
-private final class RuleShieldWriter: FlintRuleShieldWriting {
+private final class RuleWebWriter: FlintWebRestrictionWriting {
+    var applied: [String] = []
+    var cleared: [String] = []
+    func apply(_ config: FlintWebRestrictions, toStore storeName: String) { applied.append(storeName) }
+    func clear(store storeName: String) { cleared.append(storeName) }
+}
+
+private final class RuleShieldWriter: FlintRuleShieldReading {
     var apps: Set<ApplicationToken>?
     var appCategories: ShieldSettings.ActivityCategoryPolicy<Application>?
     var domains: Set<WebDomainToken>?
     var domainCategories: ShieldSettings.ActivityCategoryPolicy<WebDomain>?
     var fields: [String] = []
+    var currentApplications: Set<ApplicationToken>? { apps }
+    var currentApplicationCategories: ShieldSettings.ActivityCategoryPolicy<Application>? { appCategories }
+    var currentWebDomains: Set<WebDomainToken>? { domains }
+    var currentWebDomainCategories: ShieldSettings.ActivityCategoryPolicy<WebDomain>? { domainCategories }
     func applications(_ tokens: Set<ApplicationToken>?) { fields.append("apps"); apps = tokens }
     func applicationCategories(_ policy: ShieldSettings.ActivityCategoryPolicy<Application>?) { fields.append("categories"); appCategories = policy }
     func webDomains(_ tokens: Set<WebDomainToken>?) { fields.append("domains"); domains = tokens }

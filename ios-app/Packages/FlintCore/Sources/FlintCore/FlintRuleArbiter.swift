@@ -51,6 +51,7 @@ final class FlintRuleArbiter {
             guard !mutations.isEmpty, Set(mutations.map(\.id)).count == mutations.count,
                   self.applyQueued(Rule.self),
                   var all = self.load(Rule.self) else { return .unavailable }
+            let original = all
             let now = self.env.clock.now()
             var decisions: [FlintProtectionDecision] = []
             var causes: [FlintCauseState] = []
@@ -236,12 +237,18 @@ final class FlintRuleArbiter {
                 else { all.append(next) }
             }
             if !harder.isEmpty {
+                guard self.occurrencesUnchanged(mutations, original: original, since: now) else {
+                    self.rollback(prepared, previous: previous); return .staleRevision
+                }
                 let gate = self.harderGate(harder, scope: waitScopes, operationID: digest, confirmation: true)
                 guard gate == .applied else {
                     self.rollback(prepared, previous: previous)
                     return gate == .staleRevision ? .staleRevision : unavailableAfterAuthorization()
                 }
                 authorizationCommitted = true
+            }
+            guard self.occurrencesUnchanged(mutations, original: original, since: now) else {
+                self.rollback(prepared, previous: previous); return .staleRevision
             }
             guard self.save(all) else { self.rollback(prepared, previous: previous); return unavailableAfterAuthorization() }
             self.finish(prepared, replacing: previous)
@@ -290,7 +297,7 @@ final class FlintRuleArbiter {
                                 && self.env.center.schedule(for: .init(rule.activityName)) != nil
                             let armed = observed || self.prepare(rule, replacing: nil)
                             if armed && rule.occurrence(at: now) != nil {
-                                self.finish([rule], replacing: [], resetTimeBudget: true)
+                                self.finish([rule], replacing: [rule], resetTimeBudget: false)
                             } else if rule.occurrence(at: now) == nil { self.env.clearStore(rule.storeName) } // independent natural end
                         } else if endedOneShot {
                             self.env.clearStore(rule.storeName)
@@ -359,9 +366,9 @@ final class FlintRuleArbiter {
     private func harderGate(_ causes: [FlintCauseState], scope: [String], operationID: String,
                             confirmation: Bool) -> FlintRuleMutationResult {
         guard let ledger = env.ledger() else { return .unavailable }
-        let instant = FlintLedgerInstant(clock: env.clock)
-        guard causes.allSatisfy({ $0.end.map { instant.wall < $0 } ?? false }) else { return .staleRevision }
         return (try? ledger.transaction { state -> FlintRuleMutationResult in
+            let instant = FlintLedgerInstant(clock: self.env.clock)
+            guard causes.allSatisfy({ $0.end.map { instant.wall < $0 } ?? false }) else { return .staleRevision }
             var remaining: TimeInterval = 0
             var required: TimeInterval = 0
             var allCommitted = true
@@ -449,11 +456,21 @@ final class FlintRuleArbiter {
         }
         // All native preflights and revision fences succeeded; one domain write accepts every
         // member. Each active strict member keeps its own boundary, never a sibling's window.
+        guard occurrencesUnchanged(mutations, original: original, since: now) else { return .staleRevision }
         guard save(all), let end = ends.values.max() else { return .unavailable }
         accepted = true
         finish(prepared, replacing: previous)
         notify()
         return .queued(until: end)
+    }
+
+    private func occurrencesUnchanged<Rule: FlintGatedRule>(_ mutations: [Mutation<Rule>],
+                                                           original: [Rule], since start: Date) -> Bool {
+        let now = env.clock.now()
+        return mutations.allSatisfy { mutation in
+            guard let old = original.first(where: { $0.id == mutation.id }) else { return true }
+            return old.occurrence(at: start) == old.occurrence(at: now)
+        }
     }
 
     private func successor<Rule: FlintGatedRule>(_ proposed: Rule, replacing old: Rule?, at now: Date) -> Rule? {
@@ -559,7 +576,8 @@ final class FlintRuleArbiter {
         env.acceptSave() && FlintDesiredRules.save(all, key: Rule.domain, to: env.defaults)
     }
     private func load<Rule: FlintGatedRule>(_ type: Rule.Type) -> [Rule]? {
-        FlintDesiredRules.load(type, key: Rule.domain, from: env.defaults, at: env.clock.now())
+        FlintDesiredRules.load(type, key: Rule.domain, from: env.defaults, at: env.clock.now(),
+            recoveryDirectory: env.recoveryDirectory)
     }
     private func withLock(_ body: () -> FlintRuleMutationResult) -> FlintRuleMutationResult {
         FlintRuleStoreLock.withLock(environment: env, body) ?? .unavailable

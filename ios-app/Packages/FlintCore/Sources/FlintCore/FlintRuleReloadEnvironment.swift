@@ -11,8 +11,12 @@ enum FlintDesiredRules {
     private struct Marker: Codable { let schema: Int }
 
     static func load<Rule: FlintGatedRule>(_ type: Rule.Type, key: Key, from defaults: UserDefaults?,
-                                         at now: Date = Date(), migrating: Bool = true) -> [Rule]? {
+                                         at now: Date = Date(), migrating: Bool = true,
+                                         recoveryDirectory: URL? = FlintRuleRecovery.directory) -> [Rule]? {
         guard let defaults, defaults.synchronize() else { return nil }
+        guard FlintRuleRecovery.available(key.original, defaults: defaults, directory: recoveryDirectory),
+              FlintRuleRecovery.available(key.rawValue + ".quarantine.adr012", defaults: defaults,
+                directory: recoveryDirectory) else { return nil }
         let marker = defaults.object(forKey: key.marker)
         if let marker {
             guard let data = marker as? Data,
@@ -34,7 +38,8 @@ enum FlintDesiredRules {
               // that metadata later is corruption, never another import of legacy rights.
               rules.allSatisfy({ $0.validationIssue == nil && (marker == nil || $0.protection != nil) }) else {
             if migrating, defaults.object(forKey: key.rawValue + ".quarantine.adr012") == nil {
-                defaults.set(object, forKey: key.rawValue + ".quarantine.adr012")
+                FlintRuleRecovery.retain(object, key: key.rawValue + ".quarantine.adr012",
+                    defaults: defaults, directory: recoveryDirectory)
             }
             return nil
         }
@@ -51,7 +56,10 @@ enum FlintDesiredRules {
         if migrated || marker == nil {
             // Backup first. A crash at any checkpoint preserves source bytes and cannot
             // grandfather a later occurrence a second time (PC-70/71).
-            if defaults.object(forKey: key.original) == nil { defaults.set(data, forKey: key.original) }
+            if migrated {
+                guard FlintRuleRecovery.retain(data, key: key.original, defaults: defaults,
+                    directory: recoveryDirectory) else { return nil }
+            }
             guard save(rules, key: key, to: defaults) else { return nil }
         }
         return rules
@@ -126,14 +134,20 @@ struct FlintRuleReloadEnvironment {
     var markLimitThreshold: (FlintLimitRule, Date) -> Void = { _, _ in }
     var clearLimitThreshold: (String) -> Void = { _ in }
     var publishStatus: () -> Void = {}
+    /// Positive-only restoration when a callback cannot commit a rule transition.
+    var addRuleShield: ((FlintScheduleRule) -> Void)? = nil
+    var addLimitShield: ((FlintLimitRule) -> Void)? = nil
+    var addOpenShield: ((FlintOpenLimitRule) -> Void)? = nil
+    var recoveryDirectory: URL? = FlintRuleRecovery.directory
 
     func rulesForDisplay<Rule: FlintGatedRule>(_ type: Rule.Type) -> [Rule]? {
         if let read = FlintRuleStoreLock.withLock(environment: self, {
-            FlintDesiredRules.load(type, key: Rule.domain, from: defaults, at: clock.now())
+            FlintDesiredRules.load(type, key: Rule.domain, from: defaults, at: clock.now(), recoveryDirectory: recoveryDirectory)
         }) { return read }
         // A busy transition is not evidence that the saved blob is corrupt. A display-only
         // peek may show its valid revision; commits still acquire the boundary and re-check it.
-        return FlintDesiredRules.load(type, key: Rule.domain, from: defaults, at: clock.now(), migrating: false)
+        return FlintDesiredRules.load(type, key: Rule.domain, from: defaults, at: clock.now(), migrating: false,
+            recoveryDirectory: recoveryDirectory)
     }
 
     static var live: Self {
@@ -158,7 +172,10 @@ struct FlintRuleReloadEnvironment {
                 FlintSessionController().withTransition { body(); return true } ?? false
             }, markLimitThreshold: { FlintLimitThresholds.markReached($0, at: $1) },
             clearLimitThreshold: { FlintLimitThresholds.clear($0) },
-            publishStatus: { FlintProtectionStatus.publishAfterCommit() })
+            publishStatus: { FlintProtectionStatus.publishAfterCommit() },
+            addRuleShield: { FlintRuleShield.add($0) },
+            addLimitShield: { FlintRuleShield.add($0) },
+            addOpenShield: { FlintOpenCredit.addShieldFromSnapshot(for: $0) })
     }
 }
 #endif

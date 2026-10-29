@@ -199,6 +199,64 @@ extension FlintOpenLimitRule: FlintGatedRule {
 enum FlintRuleShield {
     static func apply<Rule: FlintGatedRule>(_ rule: Rule) {
         apply(rule, to: FlintManagedRuleShieldWriter(store: ManagedSettingsStore(named: .init(rule.storeName))))
+        if let schedule = rule as? FlintScheduleRule {
+            reconcileWeb(schedule, config: FlintWebRestrictions.loadForEnforcement(), at: Date(),
+                writer: FlintManagedWebRestrictionWriter())
+        }
+    }
+
+    static func reconcileWeb(_ rule: FlintScheduleRule, config: FlintWebRestrictions?, at now: Date,
+                              writer: FlintWebRestrictionWriting) {
+        guard let config, config.validationMessage == nil else { return }
+        if config.applyDuringSchedules && rule.occurrence(at: now) != nil { writer.apply(config, toStore: rule.storeName) }
+        else { writer.clear(store: rule.storeName) }
+    }
+
+    /// Without mutation authority, union restrictions; never clear a field or widen an
+    /// exception. A concurrent newer revision may already have made the store stricter.
+    static func add<Rule: FlintGatedRule>(_ rule: Rule) {
+        let store = ManagedSettingsStore(named: .init(rule.storeName))
+        add(rule, to: FlintManagedRuleShieldWriter(store: store))
+        if let schedule = rule as? FlintScheduleRule, schedule.occurrence(at: Date()) != nil,
+           let config = FlintWebRestrictions.loadForEnforcement(), config.applyDuringSchedules,
+           config.validationMessage == nil {
+            if store.webContent.blockedByFilter == nil {
+                store.webContent.blockedByFilter = FlintWebRestrictionStore.filterPolicy(for: config)
+            }
+            if config.denyExplicitMedia { store.media.denyExplicitContent = true }
+        }
+    }
+
+    static func add<Rule: FlintGatedRule>(_ rule: Rule, to writer: FlintRuleShieldReading) {
+        if rule.allowList {
+            writer.applicationCategories(union(.all(except: rule.selection.applicationTokens), writer.currentApplicationCategories))
+            writer.webDomainCategories(union(.all(), writer.currentWebDomainCategories))
+        } else {
+            if !rule.selection.applicationTokens.isEmpty {
+                writer.applications((writer.currentApplications ?? []).union(rule.selection.applicationTokens))
+            }
+            if !rule.selection.categoryTokens.isEmpty {
+                writer.applicationCategories(union(.specific(rule.selection.categoryTokens), writer.currentApplicationCategories))
+            }
+            if !rule.selection.webDomainTokens.isEmpty {
+                writer.webDomains((writer.currentWebDomains ?? []).union(rule.selection.webDomainTokens))
+            }
+        }
+    }
+
+    private static func union<Activity>(_ addition: ShieldSettings.ActivityCategoryPolicy<Activity>,
+                                        _ previous: ShieldSettings.ActivityCategoryPolicy<Activity>?)
+        -> ShieldSettings.ActivityCategoryPolicy<Activity> {
+        switch (previous, addition) {
+        case (nil, _), (.some(.none), _): return addition
+        case let (.some(.all(old)), .all(new)),
+             let (.some(.all(old)), .specific(_, new)),
+             let (.some(.specific(_, old)), .all(new)):
+            return .all(except: old.intersection(new))
+        case let (.some(.specific(old, oldExceptions)), .specific(new, newExceptions)):
+            return .specific(old.union(new), except: oldExceptions.intersection(newExceptions))
+        default: return .all() // unknown policy never proves that releasing a target is safe
+        }
     }
 
     static func apply<Rule: FlintGatedRule>(_ rule: Rule, to writer: FlintRuleShieldWriting) {
@@ -218,8 +276,19 @@ protocol FlintRuleShieldWriting {
     func webDomainCategories(_ policy: ShieldSettings.ActivityCategoryPolicy<WebDomain>?)
 }
 
-private struct FlintManagedRuleShieldWriter: FlintRuleShieldWriting {
+protocol FlintRuleShieldReading: FlintRuleShieldWriting {
+    var currentApplications: Set<ApplicationToken>? { get }
+    var currentApplicationCategories: ShieldSettings.ActivityCategoryPolicy<Application>? { get }
+    var currentWebDomains: Set<WebDomainToken>? { get }
+    var currentWebDomainCategories: ShieldSettings.ActivityCategoryPolicy<WebDomain>? { get }
+}
+
+private struct FlintManagedRuleShieldWriter: FlintRuleShieldReading {
     let store: ManagedSettingsStore
+    var currentApplications: Set<ApplicationToken>? { store.shield.applications }
+    var currentApplicationCategories: ShieldSettings.ActivityCategoryPolicy<Application>? { store.shield.applicationCategories }
+    var currentWebDomains: Set<WebDomainToken>? { store.shield.webDomains }
+    var currentWebDomainCategories: ShieldSettings.ActivityCategoryPolicy<WebDomain>? { store.shield.webDomainCategories }
     func applications(_ tokens: Set<ApplicationToken>?) { store.shield.applications = tokens }
     func applicationCategories(_ policy: ShieldSettings.ActivityCategoryPolicy<Application>?) { store.shield.applicationCategories = policy }
     func webDomains(_ tokens: Set<WebDomainToken>?) { store.shield.webDomains = tokens }

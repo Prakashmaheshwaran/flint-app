@@ -116,7 +116,8 @@ public final class FlintOpenLimitsController {
             environment.record("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
             return
         }
-        guard let all = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: environment.defaults) else {
+        guard let all = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: environment.defaults,
+            recoveryDirectory: environment.recoveryDirectory) else {
             environment.record("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
             return
         }

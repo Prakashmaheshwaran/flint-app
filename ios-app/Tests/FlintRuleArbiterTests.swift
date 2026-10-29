@@ -615,7 +615,12 @@ func fictionalRuleToken<Token: Decodable>(_ sentinel: String) throws -> Token {
 }
 
 final class RuleHarness {
-    let suite = "flint.rule-gate.\(UUID().uuidString)"
+    // cfprefsd retains a source per suite for the process lifetime. Bound the number of real
+    // persistent suites while isolating simultaneously live harnesses and wiping every lease.
+    private static let poolLock = NSLock()
+    private static var leased: Set<String> = []
+    private enum HarnessError: Error { case poolExhausted, unavailablePreferences }
+    let suite: String
     let defaults: UserDefaults
     let directory: URL
     let center = FakeActivityCenter()
@@ -631,12 +636,32 @@ final class RuleHarness {
     var appliedLimits: [FlintLimitRule] = []
     var appliedOpens: [FlintOpenLimitRule] = []
     var reports: [String: FlintArmingHealth.DomainReport] = [:]
-    init() throws {
+    private var cleaned = false
+    var recoveryDirectory: URL { directory.appendingPathComponent("Recovery", isDirectory: true) }
+    init(file: StaticString = #filePath) throws {
+        let name = URL(fileURLWithPath: String(describing: file)).deletingPathExtension().lastPathComponent
+        Self.poolLock.lock()
+        guard let available = (0..<8).map({ "flint.rule-gate.pool.\(name).\($0)" }).first(where: { !Self.leased.contains($0) }) else {
+            Self.poolLock.unlock(); throw HarnessError.poolExhausted
+        }
+        suite = available; Self.leased.insert(available); Self.poolLock.unlock()
         defaults = UserDefaults(suiteName: suite)!
-        directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        directory = FileManager.default.temporaryDirectory.appendingPathComponent("\(suite).\(UUID().uuidString)")
+        do {
+            defaults.removePersistentDomain(forName: suite)
+            guard defaults.synchronize() else { throw HarnessError.unavailablePreferences }
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        } catch {
+            Self.poolLock.lock(); Self.leased.remove(suite); Self.poolLock.unlock(); throw error
+        }
     }
-    func clean() { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: directory) }
+    func clean() {
+        guard !cleaned else { return }; cleaned = true
+        defaults.removePersistentDomain(forName: suite)
+        XCTAssertTrue(defaults.synchronize(), "fixture teardown must flush its real persistent domain")
+        try? FileManager.default.removeItem(at: directory)
+        Self.poolLock.lock(); Self.leased.remove(suite); Self.poolLock.unlock()
+    }
     var clock: FlintClock {
         .init(now: { self.now }, monotonic: { self.monotonic }, bootSessionID: { self.boot }, calendar: {
             var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "UTC")!; return c
@@ -654,7 +679,7 @@ final class RuleHarness {
             ledger: { self.ledgerAvailable ? self.ledger : nil }, lockDirectory: directory.appendingPathComponent("rules"),
             acceptSave: { self.saveAllowed }, validateSelection: { _, _ in nil },
             applyRuleShield: { self.appliedSchedules.append($0) }, applyLimitShield: { self.appliedLimits.append($0) },
-            timeLimitIsShielded: { _, _ in self.timeLimitExhausted })
+            timeLimitIsShielded: { _, _ in self.timeLimitExhausted }, recoveryDirectory: recoveryDirectory)
     }
     func advance(_ seconds: TimeInterval) { now.addTimeInterval(seconds); monotonic += seconds }
     func schedule(tier: BreakLevel) -> FlintScheduleRule {
@@ -670,6 +695,9 @@ final class RuleHarness {
         return rule
     }
     func load<Rule: FlintGatedRule>(_ type: Rule.Type) -> [Rule] {
-        FlintDesiredRules.load(type, key: Rule.domain, from: defaults, at: now) ?? []
+        FlintDesiredRules.load(type, key: Rule.domain, from: defaults, at: now, recoveryDirectory: recoveryDirectory) ?? []
+    }
+    func backup(_ key: String) -> Data? {
+        defaults.object(forKey: key).flatMap { FlintRuleRecovery.read($0, key: key, directory: recoveryDirectory) }
     }
 }

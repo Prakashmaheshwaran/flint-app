@@ -172,7 +172,8 @@ public final class FlintSchedulesController {
             environment.record("schedules", FlintDesiredRules.unavailable("schedules", previous: environment.loadHealth()))
             return []
         }
-        guard let all = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: environment.defaults) else {
+        guard let all = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: environment.defaults,
+            recoveryDirectory: environment.recoveryDirectory) else {
             environment.record("schedules", FlintDesiredRules.unavailable("schedules", previous: environment.loadHealth()))
             return []
         }

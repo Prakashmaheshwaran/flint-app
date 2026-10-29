@@ -88,7 +88,8 @@ public final class FlintLimitsController {
             environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
             return
         }
-        guard let all = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: environment.defaults) else {
+        guard let all = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: environment.defaults,
+            recoveryDirectory: environment.recoveryDirectory) else {
             environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
             return
         }

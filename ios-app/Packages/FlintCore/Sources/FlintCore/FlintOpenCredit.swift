@@ -70,6 +70,32 @@ public enum FlintOpenCredit {
         _ = FlintSessionController().withTransition { applyShieldLocked(for: rule) }
     }
 
+    /// Busy rule callbacks cannot re-enter the transition. Restore only additions, preserving
+    /// peek-verified live credits without releasing any field another writer already set.
+    static func addShieldFromSnapshot(for rule: FlintOpenLimitRule) {
+        guard rule.enabled, FlintSelectionValidation.issue(for: rule.selection, context: .openLimit) == nil else { return }
+        let grants = fallbackGrants(peek: FlintProtectionLedger.appGroup().flatMap { try? $0.peek().get() })
+        let now = FlintLedgerInstant(clock: .system)
+        let center = DeviceActivityCenter()
+        let adding = shieldAdditions(for: rule, grants: grants, at: now, registered: {
+            center.schedule(for: DeviceActivityName($0)) != nil
+        })
+        FlintRuleShield.add(adding)
+    }
+
+    static func shieldAdditions(for rule: FlintOpenLimitRule, grants: [String: FlintOpenCreditGrant],
+                                at now: FlintLedgerInstant, registered: (String) -> Bool) -> FlintOpenLimitRule {
+        func covered(_ key: String) -> Bool {
+            guard let grant = grants[key], authorizes(grant, rule: rule), grant.remaining(at: now) > 0,
+                  registered(grant.activityName) else { return false }
+            return true
+        }
+        var adding = rule
+        adding.selection.applicationTokens = rule.selection.applicationTokens.filter { !covered(FlintOpenLimit.key(for: $0)) }
+        adding.selection.webDomainTokens = rule.selection.webDomainTokens.filter { !covered(FlintOpenLimit.key(for: $0)) }
+        return adding
+    }
+
     private static func applyShieldLocked(for rule: FlintOpenLimitRule) {
         // Never leave the rule unshielded when the ledger can't be used (ADR-012 §8): without a
         // ledger nothing proves a live grant, so the whole selection applies.

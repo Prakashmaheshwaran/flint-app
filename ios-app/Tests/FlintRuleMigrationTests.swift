@@ -3,6 +3,91 @@ import FamilyControls
 @testable import FlintCore
 
 final class FlintRuleMigrationTests: XCTestCase {
+    func testLargeMigrationBackupUsesAnImmutableFileAndCompactPreferencesMarker() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        var legacy = FlintLimitRule(id: "large", name: String(repeating: "x", count: 2_200_000), thresholdMinutes: 30)
+        legacy.protection = nil
+        let source = try JSONEncoder().encode([legacy])
+        h.defaults.set(source, forKey: FlintRuleStoreKey.limits.rawValue)
+        XCTAssertEqual(h.load(FlintLimitRule.self).first?.name.count, legacy.name.count)
+        XCTAssertEqual(h.backup(FlintRuleStoreKey.limits.original), source)
+        XCTAssertTrue(h.defaults.object(forKey: FlintRuleStoreKey.limits.original) is [String: Any])
+        let domain = try XCTUnwrap(h.defaults.persistentDomain(forName: h.suite))
+        let bytes = try PropertyListSerialization.data(fromPropertyList: domain, format: .binary, options: 0)
+        XCTAssertLessThan(bytes.count, source.count + 10_000, "recovery bytes must not double the preference domain")
+        let files = try FileManager.default.contentsOfDirectory(at: h.recoveryDirectory, includingPropertiesForKeys: nil)
+        XCTAssertEqual(files.count, 1)
+        XCTAssertEqual(try Data(contentsOf: files[0]), source)
+    }
+
+    func testCrashBetweenRecoveryFileAndMarkerAdoptsTheDurableFileIdempotently() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let key = FlintRuleStoreKey.openLimits
+        let source = try fixture("legacy-open-hardcore")
+        h.defaults.set(source, forKey: key.rawValue)
+        XCTAssertTrue(FlintRuleRecovery.retain(source, key: key.original, defaults: h.defaults, directory: h.recoveryDirectory))
+        let files = try FileManager.default.contentsOfDirectory(atPath: h.recoveryDirectory.path)
+        h.defaults.removeObject(forKey: key.original) // crash after fsync/rename, before compact marker
+        XCTAssertEqual(h.load(FlintOpenLimitRule.self).count, 1)
+        XCTAssertEqual(h.backup(key.original), source)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: h.recoveryDirectory.path), files)
+        let bytes = h.defaults.data(forKey: key.rawValue)
+        h.advance(86_400); _ = h.load(FlintOpenLimitRule.self)
+        XCTAssertEqual(h.defaults.data(forKey: key.rawValue), bytes)
+    }
+
+    func testMissingOrDamagedRecoveryFileMakesTheDomainUnavailableWithoutRetiringProtection() throws {
+        for missing in [false, true] {
+            let h = try RuleHarness(); defer { h.clean() }
+            h.defaults.set(try fixture("legacy-open-hardcore"), forKey: FlintRuleStoreKey.openLimits.rawValue)
+            let rule = try XCTUnwrap(h.load(FlintOpenLimitRule.self).first)
+            h.center.held[.init(rule.activityName)] = rule.registration()
+            let source = h.defaults.data(forKey: FlintRuleStoreKey.openLimits.rawValue)
+            let file = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: h.recoveryDirectory,
+                includingPropertiesForKeys: nil).first)
+            if missing { try FileManager.default.removeItem(at: file) }
+            else { try Data("damaged".utf8).write(to: file) }
+            for migrating in [false, true] {
+                XCTAssertNil(FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: h.defaults,
+                    at: h.now, migrating: migrating, recoveryDirectory: h.recoveryDirectory))
+            }
+            let controller = FlintOpenLimitsController(environment: h.environment)
+            controller.reload()
+            XCTAssertEqual(controller.delete(rule.id, revision: rule.revision), .unavailable)
+            XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.openLimits.rawValue), source)
+            XCTAssertTrue(h.center.stops.isEmpty); XCTAssertTrue(h.cleared.isEmpty)
+        }
+    }
+
+    func testUnwritableRecoveryDirectoryPreservesOriginalBytesAndRefusesMigration() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let source = try fixture("legacy-time-tierless")
+        h.defaults.set(source, forKey: FlintRuleStoreKey.limits.rawValue)
+        try Data("a regular file is not a recovery directory".utf8).write(to: h.recoveryDirectory)
+        XCTAssertNil(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults,
+            recoveryDirectory: h.recoveryDirectory))
+        XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.limits.rawValue), source)
+        XCTAssertNil(h.defaults.object(forKey: FlintRuleStoreKey.limits.original))
+        XCTAssertNil(h.defaults.object(forKey: FlintRuleStoreKey.limits.marker))
+    }
+
+    func testRuleHarnessBoundsRealPreferenceSuitesAndErasesEachLease() throws {
+        var suites: Set<String> = []
+        for _ in 0..<200 {
+            let h = try RuleHarness(); defer { h.clean() }
+            suites.insert(h.suite)
+            XCTAssertNil(h.defaults.object(forKey: "fixture.previous"))
+            h.defaults.set(true, forKey: "fixture.previous")
+            XCTAssertTrue(h.defaults.synchronize())
+        }
+        XCTAssertEqual(suites.count, 1)
+        let first = try RuleHarness(); defer { first.clean() }
+        let second = try RuleHarness(); defer { second.clean() }
+        XCTAssertNotEqual(first.suite, second.suite)
+        first.defaults.set(true, forKey: "fixture.isolated")
+        XCTAssertNil(second.defaults.object(forKey: "fixture.isolated"))
+    }
+
     /// Fixtures omit only Apple's opaque `selection` representation. Insert the SDK's encoded
     /// empty selection, keeping all legacy scalar/version/tier fields exactly as the fixture.
     private func fixture(_ name: String, change: (inout [String: Any]) -> Void = { _ in }) throws -> Data {
@@ -18,15 +103,15 @@ final class FlintRuleMigrationTests: XCTestCase {
         let h = try RuleHarness(); defer { h.clean() }
         let source = try fixture("legacy-time-tierless")
         h.defaults.set(source, forKey: FlintRuleStoreKey.limits.rawValue)
-        let first = try XCTUnwrap(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults, at: h.now))
+        let first = try XCTUnwrap(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults, at: h.now, recoveryDirectory: h.recoveryDirectory))
         XCTAssertEqual(first[0].breakLevel, .easy)
         XCTAssertEqual(first[0].protection?.requiresTierReview, true)
         XCTAssertEqual(first[0].protection?.contractVersion, 12)
         XCTAssertEqual(first[0].protection?.revision, 1)
         XCTAssertNotNil(first[0].protection.flatMap { UUID(uuidString: $0.incarnation) })
-        XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.limits.original), source)
+        XCTAssertEqual(h.backup(FlintRuleStoreKey.limits.original), source)
         let migratedBytes = h.defaults.data(forKey: FlintRuleStoreKey.limits.rawValue)
-        XCTAssertEqual(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults, at: h.now), first)
+        XCTAssertEqual(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults, at: h.now, recoveryDirectory: h.recoveryDirectory), first)
         XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.limits.rawValue), migratedBytes)
     }
 
@@ -35,7 +120,7 @@ final class FlintRuleMigrationTests: XCTestCase {
             let h = try RuleHarness(); defer { h.clean() }
             let source = try fixture("legacy-time-tierless") { $0["breakLevel"] = tier }
             h.defaults.set(source, forKey: FlintRuleStoreKey.limits.rawValue)
-            XCTAssertNil(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults, at: h.now))
+            XCTAssertNil(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults, at: h.now, recoveryDirectory: h.recoveryDirectory))
             XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.limits.rawValue), source)
             XCTAssertNil(h.defaults.object(forKey: FlintRuleStoreKey.limits.marker))
         }
@@ -45,7 +130,7 @@ final class FlintRuleMigrationTests: XCTestCase {
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(rule)) as? [String: Any])
         object.removeValue(forKey: "breakLevel")
         h.defaults.set(try JSONSerialization.data(withJSONObject: [object]), forKey: FlintRuleStoreKey.limits.rawValue)
-        XCTAssertNil(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults))
+        XCTAssertNil(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults, recoveryDirectory: h.recoveryDirectory))
     }
 
     func testPartialCurrentMetadataCannotMintAnIncarnationDuringReadPC71() throws {
@@ -56,7 +141,7 @@ final class FlintRuleMigrationTests: XCTestCase {
         metadata.removeValue(forKey: "incarnation"); fields["protection"] = metadata
         let source = try JSONSerialization.data(withJSONObject: [fields])
         h.defaults.set(source, forKey: FlintRuleStoreKey.schedules.rawValue)
-        XCTAssertNil(FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: h.defaults))
+        XCTAssertNil(FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: h.defaults, recoveryDirectory: h.recoveryDirectory))
         XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.schedules.rawValue), source)
     }
 
@@ -83,11 +168,11 @@ final class FlintRuleMigrationTests: XCTestCase {
         h.defaults.set(source, forKey: Rule.domain.rawValue)
         for migrating in [false, true] {
             XCTAssertNil(FlintDesiredRules.load(Rule.self, key: Rule.domain, from: h.defaults,
-                at: h.now, migrating: migrating))
+                at: h.now, migrating: migrating, recoveryDirectory: h.recoveryDirectory))
             XCTAssertEqual(h.defaults.data(forKey: Rule.domain.rawValue), source)
         }
         XCTAssertNotNil(h.defaults.object(forKey: Rule.domain.marker))
-        XCTAssertEqual(h.defaults.data(forKey: Rule.domain.rawValue + ".quarantine.adr012"), source)
+        XCTAssertEqual(h.backup(Rule.domain.rawValue + ".quarantine.adr012"), source)
     }
 
     func testUnrepresentableBudgetAndRevisionAreUnavailableWithoutTrappingPC71() throws {
@@ -97,7 +182,7 @@ final class FlintRuleMigrationTests: XCTestCase {
             if invalidRevision { rule.protection?.revision = Int.max }
             let source = try JSONEncoder().encode([rule])
             h.defaults.set(source, forKey: FlintRuleStoreKey.limits.rawValue)
-            XCTAssertNil(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults))
+            XCTAssertNil(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults, recoveryDirectory: h.recoveryDirectory))
             XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.limits.rawValue), source)
         }
     }
@@ -109,7 +194,7 @@ final class FlintRuleMigrationTests: XCTestCase {
         h.now = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: h.now)!
         let source = try fixture("legacy-sleep-hardcore")
         h.defaults.set(source, forKey: FlintRuleStoreKey.schedules.rawValue)
-        let first = try XCTUnwrap(FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: h.defaults, at: h.now)?.first)
+        let first = try XCTUnwrap(FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: h.defaults, at: h.now, recoveryDirectory: h.recoveryDirectory)?.first)
         XCTAssertEqual(first.breakLevel, .hardcore)
         XCTAssertEqual(first.monitorName, "flint.rule.sleep.night", "already registered legacy names remain recognized")
         let grandfatherEnd = try XCTUnwrap(first.protection?.legacyRightsUntil)
@@ -129,7 +214,7 @@ final class FlintRuleMigrationTests: XCTestCase {
         let rule = try XCTUnwrap(h.load(FlintOpenLimitRule.self).first)
         XCTAssertEqual(rule.breakLevel, .hardcore)
         XCTAssertFalse(rule.protection?.requiresTierReview ?? true)
-        XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.openLimits.original), source)
+        XCTAssertEqual(h.backup(FlintRuleStoreKey.openLimits.original), source)
     }
 
     func testLegacyRightsCannotReviveAfterOffAndNewEnablePC70() throws {
@@ -170,12 +255,12 @@ final class FlintRuleMigrationTests: XCTestCase {
 
     func testAbsentFreshKeyCanInitializeButPartialUnknownMarkerCannotR22PC70PC71() throws {
         let h = try RuleHarness(); defer { h.clean() }
-        XCTAssertEqual(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults), [])
+        XCTAssertEqual(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults, recoveryDirectory: h.recoveryDirectory), [])
         XCTAssertNil(h.defaults.object(forKey: FlintRuleStoreKey.limits.marker))
         for marker in [Data("{partial".utf8), Data("{\"schema\":99}".utf8),
                        Data("{\"schema\":1,\"future\":true}".utf8)] {
             h.defaults.set(marker, forKey: FlintRuleStoreKey.limits.marker)
-            XCTAssertNil(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults))
+            XCTAssertNil(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults, recoveryDirectory: h.recoveryDirectory))
         }
     }
 
@@ -184,19 +269,19 @@ final class FlintRuleMigrationTests: XCTestCase {
         let key = FlintRuleStoreKey.limits
         let source = Data("{unreadable".utf8)
         h.defaults.set(source, forKey: key.rawValue)
-        XCTAssertNil(FlintDesiredRules.load(FlintLimitRule.self, key: key, from: h.defaults))
+        XCTAssertNil(FlintDesiredRules.load(FlintLimitRule.self, key: key, from: h.defaults, recoveryDirectory: h.recoveryDirectory))
         h.defaults.removeObject(forKey: key.rawValue)
-        XCTAssertNil(FlintDesiredRules.load(FlintLimitRule.self, key: key, from: h.defaults))
-        XCTAssertEqual(h.defaults.data(forKey: key.rawValue + ".quarantine.adr012"), source)
+        XCTAssertNil(FlintDesiredRules.load(FlintLimitRule.self, key: key, from: h.defaults, recoveryDirectory: h.recoveryDirectory))
+        XCTAssertEqual(h.backup(key.rawValue + ".quarantine.adr012"), source)
     }
 
     func testUnknownRuleSchemaFieldIsUnavailableInsteadOfLegacyDefaultPC71() throws {
         let h = try RuleHarness(); defer { h.clean() }
         let data = try fixture("legacy-time-tierless") { $0["contractVersion"] = 99 }
         h.defaults.set(data, forKey: FlintRuleStoreKey.limits.rawValue)
-        XCTAssertNil(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults))
+        XCTAssertNil(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults, recoveryDirectory: h.recoveryDirectory))
         XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.limits.rawValue), data)
-        XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.limits.rawValue + ".quarantine.adr012"), data)
+        XCTAssertEqual(h.backup(FlintRuleStoreKey.limits.rawValue + ".quarantine.adr012"), data)
     }
 
     func testCrashAfterBackupOrMigratedBlobFinishesIdempotentlyPC70() throws {
@@ -215,7 +300,7 @@ final class FlintRuleMigrationTests: XCTestCase {
             h.advance(86400)
             XCTAssertEqual(h.load(FlintOpenLimitRule.self), first)
             XCTAssertEqual(h.defaults.data(forKey: key.rawValue), bytes)
-            XCTAssertEqual(h.defaults.data(forKey: key.original), source)
+            XCTAssertEqual(h.backup(key.original), source)
         }
     }
 
@@ -234,7 +319,7 @@ final class FlintRuleMigrationTests: XCTestCase {
     private func duplicates<Rule: FlintGatedRule>(_ rule: Rule, h: RuleHarness) throws {
         let bytes = try JSONEncoder().encode([rule, rule])
         h.defaults.set(bytes, forKey: Rule.domain.rawValue)
-        XCTAssertNil(FlintDesiredRules.load(Rule.self, key: Rule.domain, from: h.defaults))
+        XCTAssertNil(FlintDesiredRules.load(Rule.self, key: Rule.domain, from: h.defaults, recoveryDirectory: h.recoveryDirectory))
         XCTAssertEqual(h.defaults.data(forKey: Rule.domain.rawValue), bytes)
         XCTAssertFalse(FlintDesiredRules.save([rule, rule], key: Rule.domain, to: h.defaults))
     }

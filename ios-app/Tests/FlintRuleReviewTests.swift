@@ -16,6 +16,84 @@ private final class FailingRuleDefaults: UserDefaults {
 }
 
 final class FlintRuleReviewTests: XCTestCase {
+    func testBusyRuleStartAddsOnlyTheExactReadableRevisionAndEndDoesNothing() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let schedule = h.install(h.schedule(tier: .hardcore))
+        let zero = h.install(FlintLimitRule(id: "zero", name: "Zero", thresholdMinutes: 0,
+            protection: .init(timeZoneID: "UTC")))
+        let open = h.install(FlintOpenLimitRule(id: "open", name: "Open", opensAllowed: 3,
+            protection: .init(timeZoneID: "UTC")))
+        let source = [FlintRuleStoreKey.schedules, .limits, .openLimits].map { h.defaults.data(forKey: $0.rawValue) }
+        var environment = h.environment; environment.withTransitionBoundary = { _ in false }
+        let monitor = FlintRuleMonitor(environment: environment)
+        _ = monitor.handle(.start, activity: schedule.activityName + ".stale")
+        XCTAssertTrue(h.appliedSchedules.isEmpty)
+        _ = monitor.handle(.start, activity: schedule.activityName)
+        _ = monitor.handle(.start, activity: zero.activityName)
+        _ = monitor.handle(.start, activity: open.activityName)
+        XCTAssertEqual(h.appliedSchedules, [schedule]); XCTAssertEqual(h.appliedLimits, [zero]); XCTAssertEqual(h.appliedOpens, [open])
+        h.now = try XCTUnwrap(schedule.protection?.occurrence?.end)
+        _ = monitor.handle(.end, activity: schedule.activityName)
+        XCTAssertTrue(h.cleared.isEmpty); XCTAssertTrue(h.center.stops.isEmpty); XCTAssertTrue(h.center.starts.isEmpty)
+        XCTAssertEqual([FlintRuleStoreKey.schedules, .limits, .openLimits].map { h.defaults.data(forKey: $0.rawValue) }, source)
+        XCTAssertNotNil(h.reports["schedules"]?.failures.first)
+        XCTAssertTrue(try h.ledger.read().get().harder.isEmpty)
+    }
+
+    func testFailedOccurrenceFreezeStillAddsItsScheduleShieldAndReportsFailure() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let rule = h.install(h.schedule(tier: .hardcore))
+        let source = h.defaults.data(forKey: FlintRuleStoreKey.schedules.rawValue)
+        h.advance(86_400); h.saveAllowed = false
+        let monitor = FlintRuleMonitor(environment: h.environment)
+        _ = monitor.handle(.start, activity: rule.activityName)
+        XCTAssertEqual(h.appliedSchedules.map(\.activityName), [rule.activityName])
+        XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.schedules.rawValue), source)
+        _ = monitor.handle(.end, activity: rule.activityName) // yesterday's delayed end cannot clear today's shield
+        XCTAssertTrue(h.cleared.isEmpty)
+        XCTAssertNotNil(h.reports["schedules"]?.failures.first)
+    }
+
+    func testFailedDueQueueKeepsExhaustedTimeShieldAndHonorsTheFirstThresholdCallback() throws {
+        for alreadyShielded in [false, true] {
+            let h = try RuleHarness(); defer { h.clean() }
+            let old = h.install(FlintLimitRule(id: "time", name: "Time", thresholdMinutes: 30,
+                breakLevel: .hardcore, protection: .init(timeZoneID: "UTC")))
+            var future = old; future.thresholdMinutes = 60
+            let arbiter = FlintRuleArbiter(environment: h.environment)
+            guard case let .deferRequired(ticket, end) = arbiter.upsert(future) else { return XCTFail() }
+            _ = arbiter.upsert(future, confirmation: ticket)
+            var refused = future; refused.protection?.activityRevision = old.revision + 2
+            h.center.refused = [refused.activityName]
+            h.now = end.addingTimeInterval(9 * 3600); h.timeLimitExhausted = alreadyShielded
+            var marks = 0; var resets = 0
+            var environment = h.environment
+            environment.markLimitThreshold = { _, _ in marks += 1 }
+            environment.clearLimitThreshold = { _ in resets += 1 }
+            _ = FlintRuleMonitor(environment: environment).handle(.threshold(old.eventName), activity: old.activityName)
+            XCTAssertFalse(h.appliedLimits.isEmpty, "even the first threshold is honored when queue repair fails")
+            XCTAssertTrue(h.cleared.isEmpty); XCTAssertEqual(resets, 0)
+            XCTAssertGreaterThan(marks, 0)
+            XCTAssertEqual(h.load(FlintLimitRule.self).first?.thresholdMinutes, 30)
+            XCTAssertNotNil(h.load(FlintLimitRule.self).first?.protection?.queuedChange)
+        }
+    }
+
+    func testHardcoreQueuePreflightCannotCrossIntoANewOccurrence() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let old = h.install(FlintLimitRule(id: "time", name: "Time", thresholdMinutes: 30,
+            breakLevel: .hardcore, protection: .init(timeZoneID: "UTC")))
+        let source = h.defaults.data(forKey: FlintRuleStoreKey.limits.rawValue)
+        var future = old; future.thresholdMinutes = 60
+        let arbiter = FlintRuleArbiter(environment: h.environment)
+        guard case let .deferRequired(ticket, end) = arbiter.upsert(future) else { return XCTFail() }
+        h.center.onStart = { _ in h.now = end.addingTimeInterval(1) }
+        XCTAssertEqual(arbiter.upsert(future, confirmation: ticket), .staleRevision)
+        XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.limits.rawValue), source)
+        XCTAssertEqual(h.center.activities.map(\.rawValue), [old.activityName])
+        XCTAssertTrue(h.cleared.isEmpty)
+    }
+
     func testFailedDefaultsFlushRestoresThePriorBlobAndInitializationMarker() throws {
         for (initialized, successfulFlushes) in [(false, 1), (false, 2), (true, 1), (true, 2)] {
             let h = try RuleHarness(); defer { h.clean() }
@@ -32,7 +110,7 @@ final class FlintRuleReviewTests: XCTestCase {
             XCTAssertEqual(writer.data(forKey: FlintRuleStoreKey.schedules.marker), marker)
             XCTAssertTrue(writer.synchronize())
             XCTAssertEqual(FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules,
-                from: writer, at: h.now), [original])
+                from: writer, at: h.now, recoveryDirectory: h.recoveryDirectory), [original])
         }
     }
 
@@ -105,9 +183,9 @@ final class FlintRuleReviewTests: XCTestCase {
         var morningOff = original[1]; morningOff.enabled = false
         var future = original[2]; future.schedule.endHour = 22
         var easyOff = original[3]; easyOff.enabled = false
-        let changes = [nightOff, morningOff, future, easyOff].map {
-            FlintRuleArbiter.Mutation(id: $0.id, proposed: $0,
-                action: $0.enabled ? .edit : .turnOff, expectedRevision: $0.revision)
+        let changes = [nightOff, morningOff, future, easyOff].map { (rule: FlintScheduleRule) in
+            FlintRuleArbiter.Mutation<FlintScheduleRule>(id: rule.id, proposed: rule,
+                action: rule.enabled ? .edit : .turnOff, expectedRevision: rule.revision)
         }
         let arbiter = FlintRuleArbiter(environment: h.environment)
         guard case let .deferRequired(ticket, latest) = arbiter.mutate(changes, confirmation: nil) else { return XCTFail() }
@@ -146,8 +224,8 @@ final class FlintRuleReviewTests: XCTestCase {
         let bytes = h.defaults.data(forKey: FlintRuleStoreKey.schedules.rawValue)
         var stronger = original[0]; stronger.schedule.endHour = 18
         var weaker = original[1]; weaker.schedule.endHour = 16
-        let changes = [stronger, weaker].map {
-            FlintRuleArbiter.Mutation(id: $0.id, proposed: $0, action: .edit, expectedRevision: $0.revision)
+        let changes = [stronger, weaker].map { (rule: FlintScheduleRule) in
+            FlintRuleArbiter.Mutation<FlintScheduleRule>(id: rule.id, proposed: rule, action: .edit, expectedRevision: rule.revision)
         }
         let arbiter = FlintRuleArbiter(environment: h.environment)
         guard case let .deferRequired(ticket, _) = arbiter.mutate(changes, confirmation: nil) else { return XCTFail() }

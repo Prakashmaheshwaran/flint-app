@@ -21,8 +21,10 @@ public final class FlintSleepRulesController {
             guard draft.contractVersion == nil || draft.contractVersion == 12,
                   draft.revision.map({ $0 > 0 }) ?? true else { return .unavailable }
             guard let defaults = self.env.defaults,
+                  FlintRuleRecovery.available(Self.key + ".original.adr012", defaults: defaults,
+                    directory: self.env.recoveryDirectory),
                   let all = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules,
-                    from: defaults, at: self.env.clock.now()) else { return .unavailable }
+                    from: defaults, at: self.env.clock.now(), recoveryDirectory: self.env.recoveryDirectory) else { return .unavailable }
             let previous: FlintSleepConfig?
             if let raw = defaults.object(forKey: Self.key) {
                 guard let data = raw as? Data, let config = try? JSONDecoder().decode(FlintSleepConfig.self, from: data),
@@ -58,6 +60,10 @@ public final class FlintSleepRulesController {
                 draft.morningAssist.rawValue, draft.allowGroupID ?? "none", String(draft.morningAssistMinutes),
                 nightTier.rawValue, morningTier.rawValue, draft.schedule.daysOfWeek.sorted().map(String.init).joined(separator: ",")]
                 .joined(separator: "|")
+            if previous?.contractVersion == nil, let original = defaults.data(forKey: Self.key) {
+                guard FlintRuleRecovery.retain(original, key: Self.key + ".original.adr012",
+                    defaults: defaults, directory: self.env.recoveryDirectory) else { return .unavailable }
+            }
             let result = mutations.isEmpty ? FlintRuleMutationResult.applied
                 : FlintRuleArbiter(environment: self.env).mutate(mutations, confirmation: confirmation, context: context, origin: origin)
             guard result.didSave else { return result }
@@ -65,10 +71,6 @@ public final class FlintSleepRulesController {
             saved.revision = (previous?.revision ?? 0) + 1; saved.contractVersion = 12
             saved.nightBreakLevel = nightTier; saved.morningBreakLevel = morningTier
             guard let data = try? JSONEncoder().encode(saved) else { return .unavailable }
-            if previous?.contractVersion == nil, let original = defaults.data(forKey: Self.key),
-               defaults.object(forKey: Self.key + ".original.adr012") == nil {
-                defaults.set(original, forKey: Self.key + ".original.adr012")
-            }
             defaults.set(data, forKey: Self.key)
             guard defaults.synchronize() else { return .unavailable }
             defaults.set(1, forKey: Self.key + ".initialized")

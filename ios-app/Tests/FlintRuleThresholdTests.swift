@@ -105,7 +105,9 @@ final class FlintRuleThresholdTests: XCTestCase {
             h.now = try XCTUnwrap(rule.protection?.occurrence?.end); h.saveAllowed = false
             _ = FlintRuleMonitor(environment: h.environment).handle(
                 thresholdFirst ? .threshold(rule.eventName) : .start, activity: rule.activityName)
-            XCTAssertTrue(h.cleared.isEmpty); XCTAssertTrue(h.appliedLimits.isEmpty)
+            XCTAssertTrue(h.cleared.isEmpty)
+            XCTAssertEqual(h.appliedLimits.count, thresholdFirst ? 1 : 0,
+                "a validated threshold still adds its shield when the period freeze cannot be saved")
             XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.limits.rawValue), source)
             XCTAssertNotNil(h.reports["limits"]?.failures.first)
         }
