@@ -43,12 +43,15 @@ public final class FlintRuleMonitor {
             if isNewOccurrence {
                 rule.protection?.occurrence = window
                 all[index] = rule
-                guard FlintDesiredRules.save(all, key: Rule.domain, to: env.defaults) else { return }
+                guard env.acceptSave(), FlintDesiredRules.save(all, key: Rule.domain, to: env.defaults) else {
+                    env.record(Rule.domain.domain, FlintDesiredRules.saveFailure(Rule.domain.domain, previous: env.loadHealth()))
+                    return
+                }
             }
             if let schedule = rule as? FlintScheduleRule { env.applyRuleShield(schedule) }
             else if let limit = rule as? FlintLimitRule {
-                if isNewOccurrence { env.clearStore(limit.storeName) }
-                if limit.thresholdMinutes == 0 { env.applyLimitShield(limit) }
+                if isNewOccurrence { env.clearStore(limit.storeName); env.clearLimitThreshold(limit.id) }
+                if limit.thresholdMinutes == 0 { env.applyLimitShield(limit); env.markLimitThreshold(limit) }
             } else if let open = rule as? FlintOpenLimitRule, isNewOccurrence { env.applyOpenShield(open) }
         case .end:
             // A delayed old end, including a callback delivered after the next start, cannot
@@ -59,10 +62,12 @@ public final class FlintRuleMonitor {
                 return
             }
             if Rule.domain != .openLimits { env.clearStore(rule.storeName) }
+            if Rule.domain == .limits { env.clearLimitThreshold(rule.id) }
         case let .threshold(event):
             guard let limit = rule as? FlintLimitRule, event == limit.eventName,
                   limit.occurrence(at: now) != nil else { return }
             env.applyLimitShield(limit)
+            env.markLimitThreshold(limit)
         }
     }
 }

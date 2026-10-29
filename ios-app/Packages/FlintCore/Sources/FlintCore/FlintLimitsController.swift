@@ -107,6 +107,7 @@ public final class FlintLimitsController {
             })
         for limit in plan.arm where limit.thresholdMinutes == 0 && report.observedActivities?.contains(limit.activityName) == true {
             environment.applyLimitShield(limit)
+            environment.markLimitThreshold(limit)
         }
         environment.record("limits", report)
     }

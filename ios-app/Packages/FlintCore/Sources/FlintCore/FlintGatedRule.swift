@@ -235,6 +235,7 @@ enum FlintRuleCleanup {
         let prefix: String
         switch Rule.domain { case .schedules: prefix = "flint."; case .limits: prefix = "flintL."; case .openLimits: prefix = "flintO." }
         environment.clearStore(prefix + id)
+        if Rule.domain == .limits { environment.clearLimitThreshold(id) }
     }
 }
 #endif

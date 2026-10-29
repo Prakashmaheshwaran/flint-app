@@ -400,7 +400,11 @@ final class FlintRuleArbiter {
                     // Strengthening keeps an exhausted shield. A cosmetic edit below quota
                     // never exhausts the allowance; a due future revision starts a fresh day.
                     env.applyLimitShield(limit)
-                } else if resetTimeBudget { env.clearStore(limit.storeName) }
+                    env.markLimitThreshold(limit)
+                } else if resetTimeBudget {
+                    env.clearStore(limit.storeName)
+                    env.clearLimitThreshold(limit.id)
+                }
             } else if let open = rule as? FlintOpenLimitRule { env.applyOpenShield(open) }
         }
         for previous in old {
@@ -408,6 +412,7 @@ final class FlintRuleArbiter {
             if replacement?.enabled != true
                 || (replacement?.window != nil && replacement?.occurrence(at: env.clock.now()) == nil) {
                 env.clearStore(previous.storeName)
+                if previous.kind == .timeLimit { env.clearLimitThreshold(previous.id) }
             }
             if replacement?.activityName != previous.activityName || replacement?.enabled != true {
                 env.center.stopMonitoring([.init(previous.activityName)])
@@ -424,7 +429,10 @@ final class FlintRuleArbiter {
     private func withLock(_ body: () -> FlintRuleMutationResult) -> FlintRuleMutationResult {
         FlintRuleStoreLock.withLock(environment: env, body) ?? .unavailable
     }
-    private func notify() { NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil) }
+    private func notify() {
+        env.publishStatus()
+        NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
+    }
     static func causeID<Rule: FlintGatedRule>(_ rule: Rule, window: FlintRuleWindow?) -> String {
         "\(Rule.domain.rawValue):\(rule.id):\(rule.protection?.incarnation ?? "legacy")@\(window?.identity ?? "inactive")"
     }

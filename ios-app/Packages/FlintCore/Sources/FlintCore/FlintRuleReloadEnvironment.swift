@@ -105,6 +105,9 @@ struct FlintRuleReloadEnvironment {
     }
     /// Production binds to the shared session-transition lock; tests can simulate busy scope.
     var withTransitionBoundary: (() -> Void) -> Bool = { body in body(); return true }
+    var markLimitThreshold: (FlintLimitRule) -> Void = { _ in }
+    var clearLimitThreshold: (String) -> Void = { _ in }
+    var publishStatus: () -> Void = {}
 
     static var live: Self {
         let group = FlintGroupStore()
@@ -117,7 +120,15 @@ struct FlintRuleReloadEnvironment {
             }, loadHealth: { group?.loadArmingHealth() ?? .init() },
             reconcileOpenCredits: { FlintOpenCredit.reconcile() },
             lockDirectory: FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: FlintGroupStore.appGroupID)?
-                .appendingPathComponent("FlintRules", isDirectory: true))
+                .appendingPathComponent("FlintRules", isDirectory: true),
+            timeLimitIsShielded: { limit in
+                let store = ManagedSettingsStore(named: .init(limit.storeName))
+                return FlintLimitThresholds.hasReached(limit, at: Date(), in: .flintGroup)
+                    || store.shield.applications != nil || store.shield.applicationCategories != nil
+                    || store.shield.webDomains != nil || store.shield.webDomainCategories != nil
+            }, markLimitThreshold: { FlintLimitThresholds.markReached($0) },
+            clearLimitThreshold: { FlintLimitThresholds.clear($0) },
+            publishStatus: { FlintProtectionStatus.publishAfterCommit() })
     }
 }
 #endif
