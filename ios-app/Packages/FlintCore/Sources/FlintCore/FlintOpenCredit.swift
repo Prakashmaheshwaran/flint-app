@@ -9,7 +9,7 @@ import DeviceActivity
 public enum FlintOpenCredit {
     /// Release gate: lane H enables this only alongside the explicit timed-credit shield copy.
     /// Core explicit-acceptance APIs remain available for that integration and its tests.
-    public static let shieldAcceptanceEnabled = false
+    public static let shieldAcceptanceEnabled = true
 
     public static func preview(for token: ApplicationToken) -> FlintOpenCreditPreview {
         preview(target: FlintOpenLimit.key(for: token), blockedBy: { blocking(application: token) })

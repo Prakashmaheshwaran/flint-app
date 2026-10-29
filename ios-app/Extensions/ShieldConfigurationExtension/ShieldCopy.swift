@@ -1,18 +1,33 @@
 import Foundation
 import FlintCore
 
-/// Read-only presentation of lane B's contributor query. No storage or enforcement work
-/// belongs here: Open-limit labels still follow the existing enforcer's remaining value.
+/// Read-only presentation of lane B's contributor query and Open-credit preview. No storage
+/// or enforcement work belongs here.
+///
+/// **Open credits (ADR-012 §5):** the secondary button is the only control that can spend a
+/// credit, and it exists only when the preview shows an available credit. The primary button
+/// is always "Go back" and never charges. The action extension cannot see which labels Apple
+/// drew, so a stale or cached shield must never offer a spend that it did not draw.
 struct ShieldCopy: Equatable {
     enum Unit { case app, site }
+
+    /// What the configuration extension knows about Open credits for this shield.
+    enum OpenCredit: Equatable {
+        /// An enabled Open Limit covers this exact app/site token.
+        case target(FlintOpenCreditPreview, hardcore: Bool)
+        /// The shield comes from a category that an enabled Open Limit selected. Opaque
+        /// category tokens are never credit targets.
+        case categoryTarget
+    }
 
     let title: String
     let subtitle: String
     let primaryButtonLabel: String
-    let secondaryButtonLabel: String? = nil
+    /// Non-nil only for an available credit; `FlintShieldAction` spends only on this button.
+    let secondaryButtonLabel: String?
 
     init(name: String?, unit: Unit, contributors: FlintProtectionStatus.Contributors?,
-         now: Date, remainingOpens: Int?, openStoreAvailable: Bool,
+         now: Date, openCredit: OpenCredit? = nil,
          locale: Locale = .current, timeZone: TimeZone = .current) {
         if let name {
             title = String(localized: "\(name) is resting.", locale: locale)
@@ -22,29 +37,146 @@ struct ShieldCopy: Equatable {
             case .site: title = String(localized: "This site is resting.", locale: locale)
             }
         }
+        primaryButtonLabel = String(localized: "Go back", locale: locale)
 
-        switch remainingOpens {
-        case .some(let left) where left > 0:
-            // Keep the action extension's current wording until lane B changes its semantics.
-            subtitle = left == 1
-                ? String(localized: "\(left) intentional open left today. Notice the reach first.", locale: locale)
-                : String(localized: "\(left) intentional opens left today. Notice the reach first.", locale: locale)
+        let credit = openCredit.flatMap {
+            Self.creditCopy($0, unit: unit, locale: locale, timeZone: timeZone)
+        }
+        subtitle = credit?.subtitle
+            ?? Self.causeSubtitle(contributors, now: now, locale: locale, timeZone: timeZone)
+            ?? String(localized: "Notice the reach, then let it pass.", locale: locale)
+        secondaryButtonLabel = credit?.offer
+    }
+
+    /// Whether `FlintOpenCredit.accept` would charge for this preview right now: no blocking
+    /// cause, no live grant, a positive pool and a positive (possibly clipped) interval.
+    static func offersCredit(_ preview: FlintOpenCreditPreview) -> Bool {
+        guard preview.blockedBy == nil, preview.grant == nil,
+              let remaining = preview.remaining, remaining > 0,
+              let duration = preview.duration, duration > 0 else { return false }
+        return true
+    }
+
+    private static func creditCopy(_ credit: OpenCredit, unit: Unit, locale: Locale,
+                                   timeZone: TimeZone) -> (subtitle: String, offer: String?)? {
+        let preview: FlintOpenCreditPreview
+        let hardcore: Bool
+        switch credit {
+        case .categoryTarget:
             switch unit {
             case .app:
-                primaryButtonLabel = String(localized: "Use app (\(left) left)", locale: locale)
+                return (String(localized: "Open credits work for individual apps — pick apps in Flint", locale: locale), nil)
             case .site:
-                primaryButtonLabel = String(localized: "Use site (\(left) left)", locale: locale)
+                return (String(localized: "Open credits work for individual sites — pick sites in Flint", locale: locale), nil)
             }
-        case .some:
-            subtitle = openStoreAvailable
-                ? String(localized: "Today’s opens are spent. It opens again tomorrow.", locale: locale)
-                : String(localized: "Opens are unavailable right now.", locale: locale)
-            primaryButtonLabel = String(localized: "Go back", locale: locale)
-        case .none:
-            subtitle = Self.causeSubtitle(contributors, now: now, locale: locale, timeZone: timeZone)
-                ?? String(localized: "Notice the reach, then let it pass.", locale: locale)
-            primaryButtonLabel = String(localized: "Go back", locale: locale)
+        case let .target(value, isHardcore):
+            preview = value
+            hardcore = isHardcore
         }
+
+        if offersCredit(preview), let remaining = preview.remaining, let duration = preview.duration {
+            let subtitle: String
+            if remaining == 1 {
+                subtitle = String(localized: "Last credit today", locale: locale)
+            } else {
+                let cap = preview.cap ?? remaining
+                subtitle = String(localized: "\(remaining) of \(cap) credits left today", locale: locale)
+            }
+            return (subtitle, offerLabel(duration: duration, locale: locale))
+        }
+
+        if preview.grant != nil, preview.blockedBy == nil {
+            // The shield is visible, so the target may not be open right now. Describe the
+            // committed credit, not current access, and never offer a replay: a stale press
+            // after its deadline would spend a new credit.
+            let minutes = Int(max(0, preview.duration ?? 0) / 60)
+            let subtitle = minutes >= 1
+                ? String(localized: "Credit active for \(minutes) more min · no extra credit used", locale: locale)
+                : String(localized: "Credit active for under 1 more min · no extra credit used", locale: locale)
+            return (subtitle, nil)
+        }
+
+        switch preview.blockedBy {
+        case nil where preview.remaining == 0, .exhausted?:
+            let reset: String
+            if preview.timeUncertain {
+                reset = String(localized: "No credits left today · resets after the clock is confirmed", locale: locale)
+            } else if let resetAt = preview.resetAtEstimate {
+                let time = shortTime(resetAt, locale: locale, timeZone: timeZone)
+                reset = String(localized: "No credits left today · resets about \(time)", locale: locale)
+            } else {
+                reset = String(localized: "No credits left today", locale: locale)
+            }
+            guard hardcore else { return (reset, nil) }
+            return (String(localized: "\(reset). Only the Emergency Pass ends this early.", locale: locale), nil)
+        case nil:
+            // No pool, or no positive interval before the reset: accept would refuse.
+            return (unavailable(locale), nil)
+        case .otherContributor?:
+            return (otherContributor(preview.blockingContributors, unit: unit, locale: locale), nil)
+        case .categoryOverlap?:
+            switch unit {
+            case .app:
+                return (String(localized: "Another category rule may still block this app; no credit used", locale: locale), nil)
+            case .site:
+                return (String(localized: "Another category rule may still block this site; no credit used", locale: locale), nil)
+            }
+        case .identityNeedsReselection?:
+            switch unit {
+            case .app:
+                return (String(localized: "Flint can't match this app to its credits yet · no credit used", locale: locale), nil)
+            case .site:
+                return (String(localized: "Flint can't match this site to its credits yet · no credit used", locale: locale), nil)
+            }
+        case .notOpenLimited?:
+            // The service found no covering Open Limit: present the shield's ordinary cause.
+            return nil
+        case .unavailable?, .registrationFailed?, .staleOperation?, .safetyFloor?, .applying?:
+            return (unavailable(locale), nil)
+        }
+    }
+
+    /// Whole minutes, rounded down, so a midnight-clipped credit never reads longer than it is.
+    private static func offerLabel(duration: TimeInterval, locale: Locale) -> String {
+        let minutes = Int(min(300, duration) / 60)
+        switch minutes {
+        case 5...: return String(localized: "Use one credit · 5 minutes", locale: locale)
+        case 1: return String(localized: "Use one credit · 1 minute", locale: locale)
+        case 2...4: return String(localized: "Use one credit · \(minutes) minutes", locale: locale)
+        default: return String(localized: "Use one credit · under 1 minute", locale: locale)
+        }
+    }
+
+    /// Kinds only: saved rule names never appear on the shield for another cause.
+    private static func otherContributor(_ names: [String], unit: Unit, locale: Locale) -> String {
+        let session = names.contains("Current session")
+        let schedule = names.contains { $0.hasPrefix("Schedule: ") }
+        let timeLimit = names.contains { $0.hasPrefix("Time Limit: ") }
+        let safari = names.contains("Safari restriction")
+        switch (unit, session, schedule, timeLimit, safari) {
+        case (.app, true, _, _, _): return String(localized: "A focus session still blocks this app · no credit used", locale: locale)
+        case (.site, true, _, _, _): return String(localized: "A focus session still blocks this site · no credit used", locale: locale)
+        case (.app, _, true, _, _): return String(localized: "A schedule still blocks this app · no credit used", locale: locale)
+        case (.site, _, true, _, _): return String(localized: "A schedule still blocks this site · no credit used", locale: locale)
+        case (.app, _, _, true, _): return String(localized: "A Time Limit still blocks this app · no credit used", locale: locale)
+        case (.site, _, _, true, _): return String(localized: "A Time Limit still blocks this site · no credit used", locale: locale)
+        case (.site, _, _, _, true): return String(localized: "A Safari restriction still blocks this site · no credit used", locale: locale)
+        case (.app, _, _, _, _): return String(localized: "Another protection still blocks this app · no credit used", locale: locale)
+        case (.site, _, _, _, _): return String(localized: "Another protection still blocks this site · no credit used", locale: locale)
+        }
+    }
+
+    private static func unavailable(_ locale: Locale) -> String {
+        String(localized: "Flint can't confirm your credits right now · no credit used", locale: locale)
+    }
+
+    private static func shortTime(_ date: Date, locale: Locale, timeZone: TimeZone) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.timeZone = timeZone
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 
     private static func causeSubtitle(_ contributors: FlintProtectionStatus.Contributors?,
@@ -65,12 +197,7 @@ struct ShieldCopy: Equatable {
             withReminder = String(localized: "\(strongest.displayName), until you stop. Notice the reach, then let it pass.", locale: locale)
         } else {
             guard let end = enforcing.compactMap(\.end).max() else { return nil }
-            let formatter = DateFormatter()
-            formatter.locale = locale
-            formatter.timeZone = timeZone
-            formatter.dateStyle = .none
-            formatter.timeStyle = .short
-            let time = formatter.string(from: end)
+            let time = shortTime(end, locale: locale, timeZone: timeZone)
             short = String(localized: "\(strongest.displayName), until \(time).", locale: locale)
             withReminder = String(localized: "\(strongest.displayName), until \(time). Notice the reach, then let it pass.", locale: locale)
         }
