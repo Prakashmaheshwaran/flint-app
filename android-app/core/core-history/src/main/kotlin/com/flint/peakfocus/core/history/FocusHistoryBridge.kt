@@ -15,7 +15,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
@@ -80,13 +79,7 @@ object FocusHistoryBridge {
         FocusCompletionNotifier.start(app, scope, store, observer.ready)
         job = scope.launch(Dispatchers.IO) {
             store.load()
-            // Read-time owner projection advances even without a DataStore emission.
-            val rules = flow {
-                while (true) {
-                    emit(historyRulesSnapshot(ActiveRulesHolder.dataStoreState))
-                    delay(1_000)
-                }
-            }.distinctUntilChanged()
+            val rules = historyOwnerSnapshots()
             observer.collectSnapshots(rules.withDeadlineObservations(
                 hasTerminal = { id -> store.snapshots.value.events.any { it.session == id && it.knownType?.terminal == true } },
                 hasStarted = { id -> store.snapshots.value.events.any { it.session == id && it.knownType == HistoryEventType.STARTED } },
