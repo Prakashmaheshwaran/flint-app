@@ -50,8 +50,9 @@ public final class FlintSchedulesController {
     init(environment: FlintRuleReloadEnvironment) { self.environment = environment }
 
     public func rules() -> [FlintScheduleRule] {
-        guard let rules = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules,
-            from: environment.defaults, at: environment.clock.now()) else {
+        guard let loaded = FlintRuleStoreLock.withLock(environment: environment, {
+            FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: environment.defaults, at: environment.clock.now())
+        }), let rules = loaded else {
             environment.record("schedules", FlintDesiredRules.unavailable("schedules", previous: environment.loadHealth()))
             return []
         }

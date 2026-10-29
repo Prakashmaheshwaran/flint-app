@@ -68,19 +68,25 @@ final class FlintRuleCallbackTests: XCTestCase {
     func testModeFlipsAssignEveryOwnedFieldAndEraseStaleExceptionsR35PC11PC65() throws {
         let h = try RuleHarness(); defer { h.clean() }
         var rule = h.schedule(tier: .easy)
+        let app: ApplicationToken = try fictionalRuleToken("mode-app")
+        let domain: WebDomainToken = try fictionalRuleToken("mode-domain")
+        let category: ActivityCategoryToken = try fictionalRuleToken("mode-category")
+        rule.selection.applicationTokens = [app]
+        rule.selection.webDomainTokens = [domain]
+        rule.selection.categoryTokens = [category]
         let writer = RuleShieldWriter()
         // Simulate previously explicit app/domain fields, even with opaque tokens unavailable.
         writer.apps = []; writer.domains = []
         FlintRuleShield.apply(rule, to: writer) // block -> allow
         XCTAssertNil(writer.apps); XCTAssertNil(writer.domains)
-        XCTAssertEqual(writer.appCategories, .all(except: []))
+        XCTAssertEqual(writer.appCategories, .all(except: [app]))
         XCTAssertEqual(writer.domainCategories, .all(except: []))
         XCTAssertEqual(writer.fields, ["apps", "categories", "domains", "domainCategories"])
         writer.fields = []
         rule.allowListMode = false
         FlintRuleShield.apply(rule, to: writer) // allow -> block
-        XCTAssertNil(writer.appCategories); XCTAssertNil(writer.domainCategories)
-        XCTAssertNil(writer.apps); XCTAssertNil(writer.domains)
+        XCTAssertEqual(writer.appCategories, .specific([category])); XCTAssertNil(writer.domainCategories)
+        XCTAssertEqual(writer.apps, [app]); XCTAssertEqual(writer.domains, [domain])
         XCTAssertEqual(writer.fields, ["apps", "categories", "domains", "domainCategories"])
     }
 }

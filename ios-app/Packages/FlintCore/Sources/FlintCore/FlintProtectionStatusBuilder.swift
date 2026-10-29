@@ -184,11 +184,11 @@ public enum FlintProtectionStatusBuilder {
                     displayName: rule.displayName, start: window.start, end: window.end))
             }
             if rule.isLimit {
-                if let midnight, midnight > now { boundaries.append(midnight) }
+                if let end = rule.currentWindow?.end ?? midnight, end > now { boundaries.append(end) }
                 else { unavailable = true; reasons.insert("state_unavailable") }
             }
             guard rule.isActive(at: now) else { continue }
-            let end = rule.isLimit ? midnight : rule.currentWindow?.end
+            let end = rule.isLimit ? (rule.currentWindow?.end ?? midnight) : rule.currentWindow?.end
             if let end { boundaries.append(end) }
             let reached = rule.kind != .timeLimit || rule.thresholdReached == true
             causes.append(.init(id: rule.id, kind: rule.kind, displayName: rule.displayName,

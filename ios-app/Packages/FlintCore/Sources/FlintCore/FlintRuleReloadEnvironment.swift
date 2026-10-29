@@ -11,7 +11,7 @@ enum FlintDesiredRules {
     private struct Marker: Codable { let schema: Int }
 
     static func load<Rule: FlintGatedRule>(_ type: Rule.Type, key: Key, from defaults: UserDefaults?,
-                                         at now: Date = Date()) -> [Rule]? {
+                                         at now: Date = Date(), migrating: Bool = true) -> [Rule]? {
         guard let defaults else { return nil }
         defaults.synchronize()
         let marker = defaults.object(forKey: key.marker)
@@ -29,11 +29,12 @@ enum FlintDesiredRules {
               var rules = try? JSONDecoder().decode([Rule].self, from: data),
               Set(rules.map(\.id)).count == rules.count,
               rules.allSatisfy({ $0.validationIssue == nil }) else {
-            if defaults.object(forKey: key.rawValue + ".quarantine.adr012") == nil {
+            if migrating, defaults.object(forKey: key.rawValue + ".quarantine.adr012") == nil {
                 defaults.set(object, forKey: key.rawValue + ".quarantine.adr012")
             }
             return nil
         }
+        guard migrating else { return rules }
         var migrated = false
         for index in rules.indices where rules[index].protection == nil {
             let occurrence = rules[index].templateOccurrence(at: now)

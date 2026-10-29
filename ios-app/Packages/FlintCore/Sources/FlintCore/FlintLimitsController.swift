@@ -38,8 +38,9 @@ public final class FlintLimitsController {
     }
 
     public func limits() -> [FlintLimitRule] {
-        guard let rules = FlintDesiredRules.load(FlintLimitRule.self, key: .limits,
-            from: environment.defaults, at: environment.clock.now()) else {
+        guard let loaded = FlintRuleStoreLock.withLock(environment: environment, {
+            FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: environment.defaults, at: environment.clock.now())
+        }), let rules = loaded else {
             environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
             return []
         }

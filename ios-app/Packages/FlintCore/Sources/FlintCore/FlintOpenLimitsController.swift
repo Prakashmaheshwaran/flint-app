@@ -57,8 +57,9 @@ public final class FlintOpenLimitsController {
     }
 
     public func rules() -> [FlintOpenLimitRule] {
-        guard let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits,
-            from: environment.defaults, at: environment.clock.now()) else {
+        guard let loaded = FlintRuleStoreLock.withLock(environment: environment, {
+            FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: environment.defaults, at: environment.clock.now())
+        }), let rules = loaded else {
             environment.record("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
             return []
         }

@@ -17,13 +17,17 @@ public final class FlintSleepRulesController {
     @discardableResult
     public func save(_ draft: FlintSleepConfig, confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
         FlintRuleStoreLock.withLock(environment: env) {
+            guard draft.contractVersion == nil || draft.contractVersion == 12,
+                  draft.revision.map({ $0 > 0 }) ?? true else { return .unavailable }
             guard let defaults = self.env.defaults,
                   let all = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules,
                     from: defaults, at: self.env.clock.now()) else { return .unavailable }
             let previous: FlintSleepConfig?
             if let raw = defaults.object(forKey: Self.key) {
                 guard let data = raw as? Data, let config = try? JSONDecoder().decode(FlintSleepConfig.self, from: data),
-                      config.contractVersion == nil || config.contractVersion == 12 else { return .unavailable }
+                      config.contractVersion == nil || config.contractVersion == 12,
+                      (config.contractVersion == nil && config.revision == nil)
+                        || (config.contractVersion == 12 && (config.revision ?? 0) > 0) else { return .unavailable }
                 previous = config
             } else {
                 guard defaults.object(forKey: Self.key + ".initialized") == nil else { return .unavailable }

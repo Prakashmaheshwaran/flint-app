@@ -1,6 +1,7 @@
 import XCTest
 import FamilyControls
 import DeviceActivity
+import ManagedSettings
 @testable import FlintCore
 
 /// Concrete controller/arbiter matrix, including Sleep's actual schedule representation.
@@ -344,6 +345,31 @@ final class FlintRuleArbiterTests: XCTestCase {
         XCTAssertEqual(try h.ledger.read().get().harder[causeB]?.committedCount, 3)
     }
 
+    func testTargetStrengthenRemovalMixedModeAndCategoryEditsUseExactSnapshotsPC11PC12() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let a: ApplicationToken = try fictionalRuleToken("app-A")
+        let b: ApplicationToken = try fictionalRuleToken("app-B")
+        let category: ActivityCategoryToken = try fictionalRuleToken("category")
+        var original = h.schedule(tier: .hardcore)
+        original.allowListMode = false; original.selection.applicationTokens = [a]
+        let old = h.install(original)
+        let arbiter = FlintRuleArbiter(environment: h.environment)
+        var grow = old; grow.selection.applicationTokens.insert(b)
+        let growTicket = try confirmation(arbiter.upsert(grow))
+        XCTAssertEqual(arbiter.upsert(grow, confirmation: growTicket), .applied)
+        let current = try XCTUnwrap(h.load(FlintScheduleRule.self).first)
+        var remove = current; remove.selection.applicationTokens = [b]
+        guard case let .deferRequired(ticket, _) = arbiter.upsert(remove) else { return XCTFail("removing a denied target weakens") }
+        var different = remove; different.selection.applicationTokens = [a]
+        XCTAssertEqual(arbiter.upsert(different, confirmation: ticket), .staleRevision, "confirmation cannot authorize another exact target set")
+        var mixed = remove; mixed.schedule.endHour = 18
+        guard case .deferRequired = arbiter.upsert(mixed) else { return XCTFail("extension plus target removal is mixed weakening") }
+        var mode = current; mode.allowListMode = true
+        guard case .deferRequired = arbiter.upsert(mode) else { return XCTFail("mode flip needs weakening gate") }
+        var opaque = current; opaque.selection.categoryTokens = [category]
+        guard case .deferRequired = arbiter.upsert(opaque) else { return XCTFail("opaque category change needs weakening gate") }
+    }
+
     private func confirmation(_ result: FlintRuleMutationResult) throws -> FlintRuleConfirmation {
         switch result {
         case let .confirmationRequired(ticket, _), let .deferRequired(ticket, _), let .waiting(ticket, _, _): return ticket
@@ -351,6 +377,11 @@ final class FlintRuleArbiterTests: XCTestCase {
         }
     }
     private enum TestFailure: Error { case unexpected }
+}
+
+func fictionalRuleToken<Token: Decodable>(_ sentinel: String) throws -> Token {
+    let data = try JSONSerialization.data(withJSONObject: ["data": Data(sentinel.utf8).base64EncodedString()])
+    return try JSONDecoder().decode(Token.self, from: data)
 }
 
 final class RuleHarness {
