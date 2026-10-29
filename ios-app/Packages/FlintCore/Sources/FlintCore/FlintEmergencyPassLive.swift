@@ -7,6 +7,14 @@ import DeviceActivity
 extension FlintEmergencyPassController {
     public convenience init() { self.init(environment: .live) }
 
+    /// Called only at ordinary live mutation boundaries, before their domain/ledger locks.
+    /// Pass effects already own that transition and must not recursively replay themselves.
+    static func prepareForPolicyMutation() -> Bool {
+        if isInPolicyTransition { return true }
+        if case .success = FlintEmergencyPassController().reconcile() { return true }
+        return false
+    }
+
     @discardableResult
     public func noteTimeLimitThreshold(activity: String, event: String) -> Bool {
         FlintEmergencyPassRuleEffects.noteThreshold(activity: activity, event: event,

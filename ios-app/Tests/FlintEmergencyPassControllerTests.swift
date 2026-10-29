@@ -16,6 +16,8 @@ final class FlintEmergencyPassControllerTests: XCTestCase {
     private var carrierFails = false
     private var changesScopeDuringRegistration = false
     private var registrationWork: (() -> Void)?
+    private var duringTransition: (() -> Void)?
+    private var preparations = 0
     private var crash = false
     private var releaseFails = false
     private var resumeFails = false
@@ -90,9 +92,12 @@ final class FlintEmergencyPassControllerTests: XCTestCase {
             if self.disableFails { throw Fault.injected }
             self.effects.append("disable:\(authorization.rules.map(\.id).joined(separator: ","))")
         },
-        emit: { self.emitted.append($0) }, afterCommit: {
+        emit: { self.emitted.append($0) }, transition: { body in
+            self.duringTransition?(); body(); return true
+        }, afterCommit: {
             if self.crash { throw Fault.injected }
-        }, cancelGrants: { state in state.cancelAccessGrantsForPass() + self.cancelledCarriers }))
+        }, cancelGrants: { state in state.cancelAccessGrantsForPass() + self.cancelledCarriers },
+        prepareScope: { self.preparations += 1 }))
     }
 
     private func advance(_ seconds: TimeInterval) {
@@ -103,6 +108,38 @@ final class FlintEmergencyPassControllerTests: XCTestCase {
         let controller = controller()
         let preview = try controller.preview().get()
         return try controller.use(previewRevision: preview.revision, operationID: operation).get()
+    }
+
+    func testPassTransitionMarkerCoversOuterBoundaryAndNestedStatusWithoutLeaking() throws {
+        XCTAssertFalse(FlintEmergencyPassController.isInPolicyTransition)
+        var observations = 0
+        duringTransition = {
+            XCTAssertTrue(FlintEmergencyPassController.isInPolicyTransition)
+            observations += 1
+        }
+        _ = try controller().reconcile().get() // no recovery: drains into a nested status read
+        XCTAssertGreaterThanOrEqual(observations, 2)
+        XCTAssertFalse(FlintEmergencyPassController.isInPolicyTransition)
+        scopeReadable = false
+        XCTAssertEqual(controller().status(), .failure(.scopeUnavailable))
+        XCTAssertFalse(FlintEmergencyPassController.isInPolicyTransition, "failure must restore the caller thread")
+    }
+
+    func testIneligibleRecoveryDoesNotPrepareQueuedRuleMutations() throws {
+        _ = try use()
+        let count = preparations
+        XCTAssertEqual(controller().preview(), .failure(.resumeProtectionFirst))
+        XCTAssertEqual(controller().use(previewRevision: "old", operationID: "other"), .failure(.resumeProtectionFirst))
+        XCTAssertEqual(preparations, count)
+    }
+
+    func testPendingCommittedWorkIsCheckedBeforePreviewPreparesRuleMutations() throws {
+        let preview = try controller().preview().get()
+        crash = true
+        XCTAssertEqual(controller().use(previewRevision: preview.revision, operationID: "pending"), .failure(.applying))
+        let count = preparations
+        XCTAssertEqual(controller().preview(), .failure(.applying))
+        XCTAssertEqual(preparations, count)
     }
 
     func testAnyTierAndRulesOnlyCanRedeemGlobalRecoveryPC41() throws {
@@ -223,6 +260,7 @@ final class FlintEmergencyPassControllerTests: XCTestCase {
 
     func testInvalidElapsedClockNeverAdvertisesAnAvailablePassOrAuthorizesApply() throws {
         let preview = try controller().preview().get()
+        let count = preparations
         for value in [TimeInterval.nan, .infinity, -1] {
             monotonic = value
             XCTAssertEqual(controller().status(), .failure(.unavailable))
@@ -230,6 +268,7 @@ final class FlintEmergencyPassControllerTests: XCTestCase {
             XCTAssertEqual(controller().use(previewRevision: preview.revision, operationID: "invalid-clock"), .failure(.unavailable))
             XCTAssertEqual(FlintPassRecoveryGate.read(ledger: ledger(), at: .init(clock: clock)), .unavailable)
             XCTAssertTrue(effects.isEmpty)
+            XCTAssertEqual(preparations, count, "an invalid clock cannot prepare queued rule mutations")
         }
         monotonic = 10000
         XCTAssertEqual(try ledger().peek().get().pass.usage, .neverUsed)

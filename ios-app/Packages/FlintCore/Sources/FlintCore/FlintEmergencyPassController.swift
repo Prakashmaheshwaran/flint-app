@@ -345,6 +345,10 @@ public final class FlintEmergencyPassController {
     /// Don't accept an old open confirmation with materially stale displayed resume times.
     public static let previewLifetime: TimeInterval = 60
     private let env: FlintEmergencyPassEnvironment
+    private static let transitionMarker = "FlintEmergencyPassController.policyTransition"
+    /// Live rule/credit mutation boundaries skip a redundant outbox drain while the pass
+    /// controller itself is restoring them. This is not a release or tier authorization.
+    static var isInPolicyTransition: Bool { Thread.current.threadDictionary[transitionMarker] as? Bool == true }
 
     init(environment: FlintEmergencyPassEnvironment) { env = environment }
 
@@ -437,8 +441,17 @@ public final class FlintEmergencyPassController {
     }
 
     private func previewLocked() -> Result<FlintPassPreview, FlintEmergencyPassError> {
-        do { try env.prepareScope() } catch { return .failure(.scopeUnavailable) }
         guard let ledger = env.ledger() else { return .failure(.unavailable) }
+        let initialInstant = FlintLedgerInstant(clock: env.clock)
+        guard initialInstant.bootID != nil, initialInstant.wall.timeIntervalSinceReferenceDate.isFinite,
+              initialInstant.monotonic.isFinite, initialInstant.monotonic >= 0,
+              case let .success(initial) = ledger.read(), Self.hasValidRecovery(initial) else { return .failure(.unavailable) }
+        let initialStatus = initial.pass.status(at: initialInstant, hasActiveCommitment: true)
+        guard initial.emergencyRecovery?.needsApplication(isRecovering: initialStatus.isRecovering) != true else {
+            return .failure(.applying)
+        }
+        if let refusal = Self.refusal(initialStatus) { return .failure(refusal) }
+        do { try env.prepareScope() } catch { return .failure(.scopeUnavailable) }
         let result = ledger.transaction { state -> Result<FlintPassPreview, FlintEmergencyPassError> in
             let now = FlintLedgerInstant(clock: env.clock)
             guard now.bootID != nil, now.monotonic.isFinite, now.monotonic >= 0 else { return .failure(.unavailable) }
@@ -471,11 +484,18 @@ public final class FlintEmergencyPassController {
         if case let .success(state) = ledger.peek(), state.emergencyRecovery?.operationID == operationID {
             return drain(ledger)
         }
-        if case let .success(state) = ledger.peek(), let previous = state.emergencyRecovery,
-           previous.releasePending || previous.eventPending || (!state.pass.status(at: .init(clock: env.clock), hasActiveCommitment: true).isRecovering && previous.resumePending) {
-            if case .failure = drain(ledger) { return .failure(.applying) }
-            return .failure(.stalePreview)
+        if case let .success(state) = ledger.peek() {
+            guard Self.hasValidRecovery(state) else { return .failure(.unavailable) }
+            let status = state.pass.status(at: .init(clock: env.clock), hasActiveCommitment: true)
+            if state.emergencyRecovery?.needsApplication(isRecovering: status.isRecovering) == true {
+                if case .failure = drain(ledger) { return .failure(.applying) }
+                return .failure(.stalePreview)
+            }
+            if let refusal = Self.refusal(status) { return .failure(refusal) }
         }
+        let beforePreparation = FlintLedgerInstant(clock: env.clock)
+        guard beforePreparation.bootID != nil, beforePreparation.wall.timeIntervalSinceReferenceDate.isFinite,
+              beforePreparation.monotonic.isFinite, beforePreparation.monotonic >= 0 else { return .failure(.unavailable) }
         do { try env.prepareScope() } catch { return .failure(.scopeUnavailable) }
         let instant = FlintLedgerInstant(clock: env.clock)
         guard instant.bootID != nil, instant.monotonic.isFinite, instant.monotonic >= 0,
@@ -633,6 +653,14 @@ public final class FlintEmergencyPassController {
     }
 
     private func serialized<T>(_ body: () -> Result<T, FlintEmergencyPassError>) -> Result<T, FlintEmergencyPassError> {
+        // Set this BEFORE env.transition: that boundary enters the live rule lock, whose
+        // ordinary preparation drains pass work. Setting it inside work would recurse there.
+        let previous = Thread.current.threadDictionary[Self.transitionMarker]
+        Thread.current.threadDictionary[Self.transitionMarker] = true
+        defer {
+            if let previous { Thread.current.threadDictionary[Self.transitionMarker] = previous }
+            else { Thread.current.threadDictionary.removeObject(forKey: Self.transitionMarker) }
+        }
         var result: Result<T, FlintEmergencyPassError>?
         guard env.transition({ result = body() }) else { return .failure(.unavailable) }
         return result ?? .failure(.unavailable)
