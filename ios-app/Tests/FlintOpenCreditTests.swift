@@ -259,6 +259,17 @@ final class FlintOpenCreditTests: XCTestCase {
         XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 2)
     }
 
+    func testDeletedTargetIdentitySurvivesMidnightAndGetsOnlyTheNewPeriodPool() throws {
+        _ = try accepted()
+        caps = [:]; targets = []
+        advance(12 * 3600)
+        _ = service().reconcile()
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 0)
+        caps = ["recreated": 3]; targets = [openAppKey]
+        XCTAssertEqual(try accepted().remaining, 2)
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
+    }
+
     func testPC37MissingInitializedCounterNeverBecomesZero() throws {
         _ = try state()
         _ = ledger().transaction { $0.openCredits.counters[openAppKey] = nil }

@@ -239,6 +239,8 @@ extension FlintLedgerState {
         }
         openCredits.checkpoint = now // reboot preserves remaining-to-reset; no wall-date refill
         if openCredits.resetRemaining <= 0 {
+            let keys = openCredits.knownTargets.union(targetKeys).union(openCredits.pendingTargets)
+            guard keys.count <= FlintOpenCreditState.maximumTargets else { return false }
             for grant in openCredits.grants.values { reshield(grant) }
             openCredits.grants.removeAll()
             openCredits.carrierCheckpoints.removeAll()
@@ -248,10 +250,9 @@ extension FlintLedgerState {
             let trusted = openCredits.trustedWall!
             openCredits.periodStart = calendar.startOfDay(for: trusted)
             openCredits.resetRemaining = Self.untilMidnight(trusted, calendar: calendar)
-            // Prune old periods only after the trusted boundary. Current unknown identities
-            // become eligible here, never in the period in which they first appeared.
-            let keys = targetKeys.union(openCredits.pendingTargets)
-            guard keys.count <= FlintOpenCreditState.maximumTargets else { return false }
+            // Replace old periods only after the trusted boundary. Keep bounded historical
+            // identities so later reselection is provable, including across deletion/reset.
+            // Unknown identities become eligible here, never in their first observed period.
             openCredits.counters = Dictionary(uniqueKeysWithValues: keys.map {
                 ($0, .init(targetKey: $0, periodStart: openCredits.periodStart!, used: 0))
             })
