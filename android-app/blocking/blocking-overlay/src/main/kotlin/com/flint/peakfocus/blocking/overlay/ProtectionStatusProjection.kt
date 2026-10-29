@@ -2,6 +2,7 @@ package com.flint.peakfocus.blocking.overlay
 
 import com.flint.peakfocus.blocking.engine.clockDiscontinuity
 import com.flint.peakfocus.blocking.engine.trustedElapsedMs
+import com.flint.peakfocus.blocking.engine.ScheduleOccurrences
 import com.flint.peakfocus.core.datastore.EditorCommitmentState
 import com.flint.peakfocus.core.datastore.ruleCauseKey
 import com.flint.peakfocus.core.datastore.timeCauseKey
@@ -9,6 +10,7 @@ import com.flint.peakfocus.core.datastore.openCauseKey
 import com.flint.peakfocus.core.model.*
 import java.util.Calendar
 import java.util.TimeZone
+import java.time.ZoneId
 
 /** A read-only evaluation of actual store snapshots, never consulted to grant access. */
 internal object ProtectionStatusProjection {
@@ -141,17 +143,11 @@ internal object ProtectionStatusProjection {
             if (owned && saved == null) return@mapNotNull null
             val schedule = checkNotNull(rule.schedule)
             val ruleWall = if (owned) logicalWall else now.wallEpochMs
-            val today = Calendar.getInstance(TimeZone.getTimeZone(saved?.zoneId ?: legacyZone)).apply { timeInMillis = ruleWall }
-            val start = (0..7).firstNotNullOfOrNull { offset ->
-                (today.clone() as Calendar).apply {
-                    add(Calendar.DATE, offset); set(Calendar.HOUR_OF_DAY, schedule.startMinuteOfDay / 60)
-                    set(Calendar.MINUTE, schedule.startMinuteOfDay % 60); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-                }.takeIf { c -> c.timeInMillis > ruleWall &&
-                    (schedule.daysOfWeek.isEmpty() || ((c.get(Calendar.DAY_OF_WEEK) + 5) % 7) + 1 in schedule.daysOfWeek) }
-            } ?: return@mapNotNull null
+            val start = ScheduleOccurrences.nextStart(schedule, ZoneId.of(saved?.zoneId ?: legacyZone), ruleWall)
+                ?: return@mapNotNull null
             ProtectionStatus.NextOccurrence(rule.id, ProtectionStatus.sanitizeDisplayName(rule.name),
                 if (rule.id.startsWith("sleep-")) ProtectionStatus.CauseKind.SLEEP else ProtectionStatus.CauseKind.SCHEDULE,
-                addBounded(now.wallEpochMs, start.timeInMillis - ruleWall))
+                addBounded(now.wallEpochMs, start - ruleWall))
         }.minByOrNull { it.startWallEstimateEpochMs }
     }
 

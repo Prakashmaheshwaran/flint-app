@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import com.flint.peakfocus.blocking.engine.*
 import com.flint.peakfocus.core.model.*
 import java.util.TimeZone
+import java.time.ZoneId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
@@ -44,24 +45,60 @@ class DataStoreEditorCommitmentStore(
 
     override suspend fun reconcileRules(now: AccessClockStamp): List<BlockRule> = transact(now) { prefs, now ->
         val state = prepare(prefs, now, checkpointQuota = false)
-        prefs.editorRules().map { rule ->
-            val cause = state.causes[ruleCauseKey(rule.id)]
-            // A retained review-needed draft never clips a current or future occurrence.
-            val boundary = state.queued.firstOrNull { !it.needsReview && ruleCauseKey(rule.id) in it.change.keys }
-                ?.boundaries?.get(ruleCauseKey(rule.id))
-            val interval = boundary ?: cause?.interval
-            if (!rule.enabled) rule
-            // Preserve future schedule starts for the foreground evaluator's boundary timer.
-            else if (rule.schedule != null && boundary == null) rule
-            else if (rule.schedule != null && interval?.remainingMs(now) == 0L) rule.copy(enabled = false)
-            else if (interval == null) rule
-            else {
-                val end = now.wallEpochMs + interval.remainingMs(now)
-                // The effective snapshot has a finite elapsed-derived end. It cannot roll
-                // into a neighboring occurrence before a queued off/delete has applied.
-                rule.copy(schedule = null, expiresAtEpochMs = end)
+        RuleClockProjection.project(editorRulesWithRuntime(prefs.editorRules(), state, now), now)
+    }
+
+    override suspend fun guardSessionClock(now: AccessClockStamp, shift: ClockShift): Unit = transact(now) { prefs, now ->
+        if (StrictPrefsCodec.string(prefs, EDITOR_COMMITMENTS_KEY) == null) {
+            // Legacy import only: there is no anchored duration yet. Never resurrect an
+            // already elapsed record, and never apply the same shift to initialized state.
+            val current = prefs.editorRules()
+            val changed = current.map { rule ->
+                val end = rule.expiresAtEpochMs
+                if (rule.enabled && end != null && end > shift.oldEpochMs && shift.wallDeltaMs != 0L) {
+                    rule.copy(expiresAtEpochMs = end + shift.wallDeltaMs)
+                } else rule
+            }
+            if (changed != current) prefs.putEditorRules(changed)
+        }
+        var state = checkpointRuleIntervals(prepare(prefs, now), now, force = true)
+        val current = prefs.editorRules()
+        val changed = current.map { rule ->
+            val interval = state.causes[ruleCauseKey(rule.id)]?.interval
+            if (rule.expiresAtEpochMs == null || interval == null) rule
+            else rule.copy(expiresAtEpochMs = now.wallEpochMs + interval.remainingMs(now))
+        }
+        if (changed != current) {
+            val replacements = current.zip(changed).filter { it.first != it.second }.toMap()
+            fun rekeyExpected(expected: EditorExpected) = expected.copy(rules = expected.rules.map { replacements[it] ?: it })
+            fun rekeyDraft(change: EditorChange) = change.copy(upserts = change.upserts.map { draft ->
+                val before = current.singleOrNull { it.id == draft.id }
+                val after = before?.let { replacements[it] }
+                if (after != null && draft.expiresAtEpochMs == before.expiresAtEpochMs) draft.copy(expiresAtEpochMs = after.expiresAtEpochMs)
+                else draft
+            })
+            val originalPending = state.pending
+            val pendingWasCurrent = originalPending != null && expected(prefs, state, originalPending.change, now) == originalPending.expected
+            state = state.copy(
+                pending = originalPending?.let { it.copy(change = rekeyDraft(it.change), expected = rekeyExpected(it.expected)) },
+                queued = state.queued.map { it.copy(change = rekeyDraft(it.change), expected = rekeyExpected(it.expected)) },
+            )
+            prefs.putEditorRules(changed)
+            // A display-only rewrite must not restart a valid running Harder wait. Only
+            // rebind the exact pending operation; a concurrent edit remains stale.
+            if (pendingWasCurrent && originalPending?.wait != null) {
+                val pending = checkNotNull(state.pending)
+                val fresh = decision(prefs, state, pending.change, now)
+                val ledger = readHarderWait(prefs)
+                val waiting = ledger.pending
+                val operation = fresh.second
+                if (fresh.first == pending.outcome && operation != null && waiting?.operation == originalPending.wait) {
+                    state = state.copy(pending = pending.copy(wait = operation))
+                    prefs.putHarderWait(ledger.copy(pending = waiting.copy(operation = operation)))
+                }
             }
         }
+        prefs.putEditorState(state)
     }
 
     override suspend fun request(change: EditorChange, now: AccessClockStamp, safety: EditorSafety): EditorCommitResult =
@@ -139,7 +176,12 @@ class DataStoreEditorCommitmentStore(
         state = state.copy(pending = null, queued = retained)
         if (isDeferred) {
             val boundaries = change.keys.mapNotNull { key -> state.causes[key]?.interval?.takeIf { it.remainingMs(now) > 0 }?.let { key to it } }.toMap()
-            if (boundaries.isEmpty()) return@transact EditorCommitResult.Rejected("This occurrence ended. Review the change again.")
+            if (boundaries.isEmpty()) {
+                val openEnded = change.keys.any { key -> state.causes[key]?.let { it.interval == null } == true }
+                return@transact EditorCommitResult.Rejected(if (openEnded)
+                    "This protection has no scheduled end. A future-only change cannot take effect until this protection ends."
+                    else "This occurrence ended. Review the change again.")
+            }
             state = state.copy(queued = retained + QueuedEditorChange(id, change, pending.expected, boundaries))
         } else {
             if (change.limits?.let { it.time != null || it.open != null } == true) {
@@ -153,12 +195,31 @@ class DataStoreEditorCommitmentStore(
             change.upserts.forEach { rule ->
                 val key = ruleCauseKey(rule.id)
                 val cause = causes[key] ?: return@forEach
-                val interval = cause.interval ?: return@forEach
-                if (interval.remainingMs(now) == 0L) return@forEach
-                val candidateRemaining = if (rule.expiresAtEpochMs != null) rule.expiresAtEpochMs!! - now.wallEpochMs
-                    else ruleOccurrence(rule, cause.zoneId, logicalClock(state, now))?.interval?.remainingAtAnchorMs ?: 0
-                val remaining = if (rule.enabled) candidateRemaining.coerceAtLeast(0) else 0
-                causes[key] = cause.copy(interval = AnchoredInterval(now, remaining, now.wallEpochMs + remaining))
+                val ended = cause.interval?.remainingMs(now) == 0L
+                val explicitlyEnabled = rule.enabled && pending.expected.rules.singleOrNull { it.id == rule.id }?.enabled == false
+                // A rename cannot restart an elapsed finite session. A confirmed Start
+                // from disabled may resume only when its current finite end is still future.
+                if (ended && rule.expiresAtEpochMs != null && !explicitlyEnabled) return@forEach
+                val candidate = ruleOccurrence(rule, cause.zoneId,
+                    if (rule.expiresAtEpochMs != null) now else logicalClock(state, now))
+                val nextInterval = if (candidate == null) AnchoredInterval(now, 0, now.wallEpochMs)
+                    else candidate.interval?.let { AnchoredInterval(now, it.remainingAtAnchorMs, now.wallEpochMs + it.remainingAtAnchorMs) }
+                // Null means open-ended; zero means inactive. Both directions must replace
+                // the old runtime shape when the user explicitly confirms the change.
+                val startsFinite = cause.interval == null && nextInterval != null && candidate != null
+                val updated = (if (ended || startsFinite) candidate ?: cause else cause).copy(interval = nextInterval)
+                causes[key] = updated
+                if (startsFinite && updated.occurrenceId != cause.occurrenceId) {
+                    // Assign the canonical window ID without refunding the just-committed
+                    // Harder operation or earlier friction on this still-active cause.
+                    val ledger = readHarderWait(prefs)
+                    val before = editorOccurrence(key, cause)
+                    val after = editorOccurrence(key, updated)
+                    ledger.counts[before]?.let { count ->
+                        prefs.putHarderWait(ledger.copy(counts = ledger.counts - before +
+                            (after to maxOf(count, ledger.counts[after] ?: 0))))
+                    }
+                }
             }
             state = state.copy(causes = causes.toMap())
         }
@@ -244,6 +305,9 @@ class DataStoreEditorCommitmentStore(
         }
         state = preserveDailyUntilQuotaReset(state, quota, now)
         state = captureNaturalTimerTerminals(prefs, state, now)
+        // Timer terminal capture belongs before this checkpoint: a reboot fallback is
+        // bounded protection, not evidence that elapsed completion was observed.
+        state = checkpointRuleIntervals(state, now)
         val due = state.queued.filter { q -> !q.needsReview && q.boundaries.values.all { it.remainingMs(now) == 0L } }
         val stale = mutableSetOf<Long>()
         for (q in due) {
@@ -270,11 +334,19 @@ class DataStoreEditorCommitmentStore(
         val timeline = state.timeline ?: now
         val logical = logicalClock(state, now)
         val causes = state.causes.toMutableMap()
-        fun keepOrResolve(key: String, resolve: (String) -> EditorCause?) {
+        fun keepOrResolve(key: String, recurring: Boolean = false, finite: Boolean? = null, resolve: (String) -> EditorCause?) {
             val old = causes[key]
-            if (old != null && (old.interval == null || old.interval.remainingMs(now) > 0)) return
+            // A queued edit can change either runtime shape without changing the rule ID.
+            // Daily causes do not supply a template shape; their reset remains independent.
+            val shapeChanged = old != null && finite != null && ((old.interval == null) != !finite)
+            if (old != null && !shapeChanged && (old.interval == null || old.interval.remainingMs(now) > 0)) return
             val zone = old?.zoneId ?: defaultZone()
-            val resolved = resolve(zone) ?: old?.takeIf { it.occurrenceId == "inactive" }
+            val candidate = resolve(zone)
+            // Retain the last expired identity even between windows, so a later rollback
+            // cannot replay the same local occurrence or reset its accounting.
+            if (old != null && !shapeChanged && (candidate == null || candidate.occurrenceId == old.occurrenceId ||
+                (recurring && ScheduleOccurrences.sameStartDate(candidate.occurrenceId, old.occurrenceId, ZoneId.of(zone))))) return
+            val resolved = candidate
                 ?: EditorCause("inactive", AnchoredInterval(now, 0, now.wallEpochMs), zone)
             if (resolved === old) return
             // Anchor remaining duration to the real elapsed stamp, with a wall display estimate.
@@ -289,7 +361,12 @@ class DataStoreEditorCommitmentStore(
             // A finite occurrence is materialized once. A later wall-clock estimate rewrite
             // cannot resurrect it when its anchored duration has already elapsed.
             if (rule.expiresAtEpochMs != null && old?.occurrenceId == rule.id && old.interval?.remainingMs(now) == 0L) return@forEach
-            keepOrResolve(key) { zone -> ruleOccurrence(rule, zone, logical) }
+            // A newly started finite Timer already carries a duration in the current wall
+            // estimate. Only recurring templates use the saved schedule timeline.
+            keepOrResolve(key, recurring = rule.schedule != null && rule.expiresAtEpochMs == null,
+                finite = if (rule.enabled) rule.schedule != null || rule.expiresAtEpochMs != null else null) { zone ->
+                ruleOccurrence(rule, zone, if (rule.expiresAtEpochMs != null) now else logical)
+            }
         }
         fun daily(key: String) {
             if (quota == null) { keepOrResolve(key) { zone -> dailyOccurrence(zone, logical) }; return }
@@ -309,6 +386,27 @@ class DataStoreEditorCommitmentStore(
     }
 
     private fun dailyKey(key: String) = key.startsWith("time:") || key.startsWith("open:")
+
+    /** Persist cross-boot bounds or a measured clock-event checkpoint, never on every read. */
+    private fun checkpointRuleIntervals(state: EditorCommitmentState, now: AccessClockStamp, force: Boolean = false): EditorCommitmentState {
+        fun checkpoint(interval: AnchoredInterval): AnchoredInterval {
+            val remaining = interval.remainingMs(now)
+            // Observing an elapsed end is a durable terminal checkpoint too. Retaining a
+            // positive saved duration here would let a later reboot + rollback revive it.
+            if (!force && trustedElapsedMs(interval.anchor, now) != null &&
+                (remaining > 0 || interval.remainingAtAnchorMs == 0L)) return interval
+            return AnchoredInterval(now, remaining, now.wallEpochMs + remaining)
+        }
+        return state.copy(
+            timeline = state.timeline?.takeIf { trustedElapsedMs(it, now) != null } ?: now,
+            causes = state.causes.mapValues { (key, cause) ->
+                if (dailyKey(key)) cause else cause.copy(interval = cause.interval?.let(::checkpoint))
+            },
+            queued = state.queued.map { q -> q.copy(boundaries = q.boundaries.mapValues { (key, interval) ->
+                if (dailyKey(key)) interval else checkpoint(interval)
+            }) },
+        )
+    }
 
     /** Daily counters are reboot-conservative; finite-restriction wall fallback must not reset n. */
     private fun preserveDailyUntilQuotaReset(state: EditorCommitmentState, quota: OpenCreditLedger?, now: AccessClockStamp): EditorCommitmentState {

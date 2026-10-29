@@ -389,7 +389,7 @@ class EditorCommitmentStoreTest {
         recreated.reconcile(clock(3_600_001))
         assertTrue(snapshot(recreated).queued.single().needsReview)
         assertEquals(listOf(changed), rules.rules.first())
-        assertEquals(listOf(changed), recreated.reconcileRules(clock(3_600_001)))
+        assertEquals(listOf(changed), recreated.reconcileRules(clock(3_600_001)).map { it.copy(runtime = null) })
     }
 
     @Test fun `PC-12 published unqueued schedules retain their next start boundary`() = runBlocking {
@@ -397,7 +397,7 @@ class EditorCommitmentStoreTest {
         val future = rule().copy(schedule = Schedule(startMinuteOfDay = 12 * 60, endMinuteOfDay = 13 * 60))
         DataStoreBlockRulesStore(disk).upsert(future)
         val published = store.reconcileRules(clock())
-        assertEquals(listOf(future), published)
+        assertEquals(listOf(future), published.map { it.copy(runtime = null) })
         assertEquals(at + 2 * 3_600_000, NextEvaluationBoundary.next(at, ZoneId.of("UTC"), "a", published))
     }
 

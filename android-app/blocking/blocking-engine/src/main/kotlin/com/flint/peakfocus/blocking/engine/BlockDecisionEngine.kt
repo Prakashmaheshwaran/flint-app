@@ -51,8 +51,13 @@ class BlockDecisionEngine {
         var strictestReason = ""
         for (rule in activeRules) {
             if (!rule.enabled) continue
-            if (rule.isExpired(nowEpochMs)) continue // one-shot session whose timer ran out
-            if (!scheduleActive(rule.schedule, nowMinutesOfDay, weekday)) continue
+            val occurrence = rule.runtime?.evaluation
+            if (occurrence != null) {
+                if (!occurrence.active) continue
+            } else {
+                if (rule.isExpired(nowEpochMs)) continue
+                if (!scheduleActive(rule.schedule, nowMinutesOfDay, weekday)) continue
+            }
             val targets = rule.targets
 
             val reason = when {
