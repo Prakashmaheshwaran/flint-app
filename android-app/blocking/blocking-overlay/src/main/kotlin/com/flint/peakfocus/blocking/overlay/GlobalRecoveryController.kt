@@ -173,6 +173,10 @@ internal class GlobalRecoveryController(
         TimedOpenCreditPolicy.view(it, input, foreignRules(), now)
     }
 
+    fun openOccurrenceActive(packageName: String, now: AccessClockStamp): Boolean? = lastGood?.let {
+        TimedOpenCreditPolicy.occurrenceActive(it, packageName, now)
+    }
+
     fun creditRemaining(packageName: String, now: AccessClockStamp): Long {
         val credits = lastGood?.openCredits ?: return 0
         val policy = com.flint.peakfocus.blocking.engine.OpenCreditPolicy()

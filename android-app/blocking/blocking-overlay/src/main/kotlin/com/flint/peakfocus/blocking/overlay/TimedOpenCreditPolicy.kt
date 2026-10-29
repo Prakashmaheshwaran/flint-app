@@ -13,12 +13,19 @@ internal data class TimedCreditView(val remainingCredits: Int, val durationMs: L
 internal object TimedOpenCreditPolicy {
     private val policy = OpenCreditPolicy()
 
+    /** False is a known absent/inactive occurrence; null is unreadable occurrence state. */
+    fun occurrenceActive(snapshot: ProtectionSnapshot, packageName: String, now: AccessClockStamp): Boolean? {
+        if (snapshot.opens.none { it.packageName == packageName }) return false
+        val cause = snapshot.editor.causes[openCauseKey(packageName)] ?: return null
+        return cause.occurrenceId != "inactive" && cause.interval?.remainingMs(now) != 0L
+    }
+
     fun view(snapshot: ProtectionSnapshot, input: OrdinaryProtectionInput, foreign: List<BlockRule>, now: AccessClockStamp): TimedCreditView? {
+        if (occurrenceActive(snapshot, input.packageName, now) != true) return null
         val credits = snapshot.openCredits ?: return null
         val limits = snapshot.opens.filter { it.packageName == input.packageName }
         if (limits.isEmpty()) return null
         val cause = snapshot.editor.causes[openCauseKey(input.packageName)] ?: return null
-        if (cause.occurrenceId == "inactive" || cause.interval?.remainingMs(now) == 0L) return null
         val others = OrdinaryProtectionPolicy.frozenScopes(snapshot, input.copy(openBlocked = false), foreign, now) ?: return null
         val names = others.map { scope -> when (scope.counter.rule.source) {
             "time", "legacy-time" -> "Time limit"
@@ -40,6 +47,7 @@ internal object TimedOpenCreditPolicy {
         val focus = snapshot.focus
         fun unchanged(result: GrantResult) = ProtectionMutation(focus, result)
         val ledger = focus.protection ?: return unchanged(GrantResult.Unavailable())
+        if (occurrenceActive(snapshot, input.packageName, snapshot.observedAt) == false) return unchanged(GrantResult.Denied)
         val credits = snapshot.openCredits ?: return unchanged(GrantResult.Unavailable())
         if (onSafetyFloor || GlobalRecoveryPolicy.remaining(ledger.recovery, snapshot.observedAt) > 0) return unchanged(GrantResult.Denied)
         val stamp = id.issuedAtClock ?: return unchanged(GrantResult.Unavailable())

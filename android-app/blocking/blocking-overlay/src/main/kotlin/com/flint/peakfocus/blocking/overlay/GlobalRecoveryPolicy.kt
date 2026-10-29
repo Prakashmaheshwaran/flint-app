@@ -149,16 +149,21 @@ internal object GlobalRecoveryPolicy {
     fun previewEnd(snapshot: ProtectionSnapshot, selected: Set<String>, delete: Boolean): RecoveryEndPreview? {
         val recovery = snapshot.focus.protection?.recovery ?: return null
         if (remaining(recovery, snapshot.observedAt) == 0L || selected.isEmpty()) return null
-        val choices = recoveryChoices(snapshot)
+        val choices = recoveryChoices(snapshot, delete)
         if (!choices.keys.containsAll(selected)) return null
         return RecoveryEndPreview(recovery.operationId, identity(snapshot, emptyList(), emptyList()), selected.toSet(), delete,
             selected.sorted().map { choices.getValue(it) })
     }
 
-    fun recoveryChoices(snapshot: ProtectionSnapshot): Map<String, String> =
-        snapshot.rules.filter { it.enabled }.associate { ruleCauseKey(it.id) to ProtectionStatus.sanitizeDisplayName(it.name) } +
-            snapshot.times.associate { timeCauseKey(it.packageName) to "Time limit · ${it.packageName}" } +
-            snapshot.opens.associate { openCauseKey(it.packageName) to "Open limit · ${it.packageName}" }
+    fun recoveryChoices(snapshot: ProtectionSnapshot, deleteTemplates: Boolean = true): Map<String, String> {
+        val affected = snapshot.focus.protection?.recovery?.affectedCauseKeys.orEmpty()
+        // Limits have no disabled state. They can only be explicitly deleted, and a pass
+        // authorizes editing only the commitments included in its original confirmation.
+        val rules = snapshot.rules.filter { it.enabled }.associate { ruleCauseKey(it.id) to ProtectionStatus.sanitizeDisplayName(it.name) }
+        val limits = if (deleteTemplates) snapshot.times.associate { timeCauseKey(it.packageName) to "Time limit · ${it.packageName}" } +
+            snapshot.opens.associate { openCauseKey(it.packageName) to "Open limit · ${it.packageName}" } else emptyMap()
+        return (rules + limits).filterKeys { it in affected }
+    }
 
     fun endAndResume(original: ProtectionSnapshot, expected: RecoveryEndPreview): ProtectionMutation<Boolean> {
         val snapshot = checkpoint(original)
@@ -169,7 +174,11 @@ internal object GlobalRecoveryPolicy {
         val rules = snapshot.rules.mapNotNull { rule ->
             if (ruleCauseKey(rule.id) !in selected) rule else if (expected.deleteTemplates) null else rule.copy(enabled = false)
         }
-        val editor = snapshot.editor.copy(causes = snapshot.editor.causes - selected, pending = null,
+        // Natural Timer completion may still be waiting for outbox capacity. Keep that
+        // evidence even when its selected template is disabled/deleted in this edit.
+        val editor = snapshot.editor.copy(causes = snapshot.editor.causes.filter { (key, cause) ->
+            key !in selected || cause.timerTerminal?.pending != null
+        }, pending = null,
             queued = snapshot.editor.queued.map { if (it.change.keys.any(selected::contains)) it.copy(needsReview = true) else it })
         return ProtectionMutation(snapshot.focus.copy(protection = snapshot.focus.protection!!.copy(recovery = null)), true,
             rules = rules, times = snapshot.times.filterNot { timeCauseKey(it.packageName) in selected },

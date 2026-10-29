@@ -167,6 +167,46 @@ class ProtectionTransactionStoreTest {
         }
     }
 
+    @Test fun PC_37_PC_47_PC_69_PC_70_removingOnlyUsedPassKeyAfterConsumptionCannotGrantFreshRights() =
+        assertRemovedConsumedKey(PrefsKeys.EMERGENCY_PASS_USED_AT)
+
+    @Test fun PC_37_PC_47_PC_69_PC_70_removingOnlyOpenCountsWithDayRetainedCannotResetQuota() =
+        assertRemovedConsumedKey(PrefsKeys.OPEN_COUNTS)
+
+    @Test fun PC_37_PC_47_PC_69_PC_70_removingOnlyFocusLedgerAfterConsumptionCannotGrantFreshRights() =
+        assertRemovedConsumedKey(PrefsKeys.FOCUS_LEDGER)
+
+    private fun assertRemovedConsumedKey(key: Preferences.Key<*>) = runBlocking {
+        val disk = Disk()
+        val focus = DataStoreFocusStateStore(disk)
+        focus.setOpenCounts(OpenCountState(20_000, mapOf("app" to 1)))
+        initialize(disk)
+        store(disk).transact { snapshot ->
+            val spent = com.flint.peakfocus.blocking.engine.OpenCreditLedgerPolicy.acceptOpenCredit(snapshot.openCredits!!,
+                "app", "credit-one", listOf(2), emptyList(), false, stamp).next
+            ProtectionMutation(consumed(snapshot.focus), Unit, openCredits = spent)
+        }
+        val before = disk.values.value
+        assertNotNull(before[key])
+        val corrupted = before.toMutablePreferences().apply { remove(key) }
+        disk.values.value = corrupted
+        val reloaded = store(disk)
+        assertEquals(StorageState.Unavailable(StorageFailure.CORRUPT), reloaded.state.first { it !is StorageState.Loading })
+        assertEquals(StorageState.Unavailable(StorageFailure.CORRUPT), DataStoreFocusStateStore(disk).state.first { it !is StorageState.Loading })
+        var grants = 0
+        assertEquals(ProtectionCommit.Unavailable(StorageFailure.CORRUPT), reloaded.transact {
+            grants++; ProtectionMutation(consumed(it.focus), Unit)
+        })
+        assertEquals(FocusCommit.Unavailable(StorageFailure.CORRUPT), DataStoreFocusStateStore(disk).transact {
+            grants++; FocusMutation(it.copy(openCounts = OpenCountState()), Unit)
+        })
+        assertEquals(0, grants)
+        assertEquals(corrupted, disk.values.value)
+        assertEquals(before[PrefsKeys.OPEN_COUNTS_DAY], disk.values.value[PrefsKeys.OPEN_COUNTS_DAY])
+        assertEquals(before[OPEN_CREDIT_COUNTS], disk.values.value[OPEN_CREDIT_COUNTS])
+        assertEquals(before[PrefsKeys.PROTECTION_LEDGER], disk.values.value[PrefsKeys.PROTECTION_LEDGER])
+    }
+
     @Test fun PC_44_PC_65_passReceiptOutboxAndRuleRetirementCommitTogetherOrNonePublish() = runBlocking {
         val rule = BlockRule("session-one", "One", BlockTargets(apps = setOf(AppRef("a"))), expiresAtEpochMs = stamp.wallEpochMs + 60_000)
         val disk = Disk(mutablePreferencesOf(PrefsKeys.BLOCK_RULES to PrefsCodec.encodeRules(listOf(rule))))

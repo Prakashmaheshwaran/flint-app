@@ -294,6 +294,12 @@ internal fun writeFocus(prefs: MutablePreferences, current: FocusSnapshot, propo
 
 internal fun readFocus(prefs: Preferences): FocusSnapshot {
     validateInitializedProtectionChildren(prefs)
+    // The legacy quota is a pair written in one edit. A retained day with missing
+    // counts (or vice versa) is corruption, never a fresh allowance during migration
+    // or through the production FocusStateStore reader.
+    val countsDay = StrictPrefsCodec.long(prefs, PrefsKeys.OPEN_COUNTS_DAY)
+    val countsRaw = StrictPrefsCodec.string(prefs, PrefsKeys.OPEN_COUNTS)
+    if ((countsDay == null) != (countsRaw == null)) wireCorrupt()
     val ledger = FocusLedgerCodec.decode(StrictPrefsCodec.string(prefs, PrefsKeys.FOCUS_LEDGER))
     val usedAt = StrictPrefsCodec.long(prefs, PrefsKeys.EMERGENCY_PASS_USED_AT)
     if (usedAt != null && usedAt < 0) throw StorageUnavailableException(StorageFailure.CORRUPT)
@@ -316,8 +322,8 @@ internal fun readFocus(prefs: Preferences): FocusSnapshot {
         ),
         breakSession = StrictPrefsCodec.session(StrictPrefsCodec.string(prefs, PrefsKeys.BREAK_SESSION)),
         openCounts = OpenCountState(
-            StrictPrefsCodec.long(prefs, PrefsKeys.OPEN_COUNTS_DAY) ?: OpenCountState.DAY_UNINITIALIZED,
-            StrictPrefsCodec.counts(StrictPrefsCodec.string(prefs, PrefsKeys.OPEN_COUNTS).orEmpty()),
+            countsDay ?: OpenCountState.DAY_UNINITIALIZED,
+            StrictPrefsCodec.counts(countsRaw.orEmpty()),
         ),
         exemptions = ledger.exemptions,
         breaksByCause = ledger.breaksByCause,

@@ -202,7 +202,7 @@ class BlockScreenCoordinator(
         var retired = false
         fun id(emergency: Boolean, now: Long, clock: AccessClockStamp? = null, creditScope: String? = null): GrantRequestId {
             val previous = if (emergency) passId else breakId
-            if (previous != null && (if (clock != null) previous.issuedAtClock?.let {
+            if (previous != null && previous.creditScope == creditScope && (if (clock != null) previous.issuedAtClock?.let {
                 com.flint.peakfocus.blocking.engine.trustedElapsedMs(it, clock)?.let { age -> age < GlobalRecoveryPolicy.REQUEST_LIFETIME_MS }
             } == true else previous.issuedAtEpochMs <= now && now - previous.issuedAtEpochMs < DurableGrantController.RETRY_HORIZON_MS)) return previous
             return (clock?.let { GrantRequestId.issue(it, creditScope) } ?: GrantRequestId.issue(now)).also { if (emergency) passId = it else breakId = it }
@@ -586,15 +586,8 @@ class BlockScreenCoordinator(
             ?.takeIf { !it.isElapsed(atEpochMs) }
             ?.let { it.effectiveAtEpochMs - atEpochMs }
 
-    /**
-     * Open Limits, on every foreground transition: rolls the day over, decides once per real
-     * open, and records the opens it allows (shield bounces, system surfaces and same-app
-     * changes aren't opens). An open that was allowed stays allowed while the app holds the
-     * foreground — [OpenLimitPolicy.onForegroundTransition] carries that grant across
-     * re-evaluations, so the app the user just spent their last open on is not shielded a poll
-     * tick later. A new limited visit is held until its counter debit commits; the detector's
-     * re-evaluation callback then accepts the paid visit. The event hot path never waits on IO.
-     */
+    /** Production observations inspect timed access only; explicit actions own every debit.
+     * The constructor-injected legacy adapter below remains solely for v1 fixture coverage. */
     fun onForegroundChanged(
         previousPackage: String?,
         foregroundPackage: String,
@@ -643,6 +636,7 @@ class BlockScreenCoordinator(
         val first = covering.firstOrNull() ?: return OpenLimitDecision.Allowed(null)
         val limit = if (recoveries == null) first else first.copy(dailyOpens = covering.minOf { it.dailyOpens }, breakLevel = covering.maxBy { it.breakLevel.ordinal }.breakLevel)
         recoveries?.let { owner ->
+            if (owner.openOccurrenceActive(packageName, statusClock()) == false) return OpenLimitDecision.Allowed(null)
             if (owner.creditRemaining(packageName, statusClock()) > 0) return OpenLimitDecision.Allowed(
                 owner.lastGood?.openCredits?.let { OpenCreditLedgerPolicy.remainingCredits(it, packageName,
                     openLimits.filter { row -> row.packageName == packageName }.map { row -> row.dailyOpens }) })
@@ -864,7 +858,7 @@ class BlockScreenCoordinator(
             }
             val cause = current ?: return GrantResult.Denied
             val limit = openLimits.firstOrNull { it.packageName == packageName }
-            if (limit != null) {
+            if (limit != null && owner.openOccurrenceActive(packageName, statusClock()) != false) {
                 val credits = owner.lastGood?.openCredits ?: return GrantResult.Unavailable()
                 // A stale ordinary action never silently becomes a credit purchase.
                 if (owner.creditRemaining(packageName, statusClock()) == 0L &&
@@ -911,6 +905,7 @@ class BlockScreenCoordinator(
             else grantInputs(cause, emergency = cause.breakLevel == BreakLevel.HARDCORE)
         val credit = recoveries?.creditView(ordinaryInput(packageName, cause), statusClock())
         val unavailableCredit = recoveries != null && openLimits.any { it.packageName == packageName } &&
+            recoveries.openOccurrenceActive(packageName, statusClock()) != false &&
             (credit == null || credit.durationMs == 0L)
         val status = when {
             inputs.any { it is StorageState.Loading } -> GrantStatus.LOADING
@@ -927,7 +922,7 @@ class BlockScreenCoordinator(
             .copy(grantStatus = status, openCreditsRemaining = credit?.remainingCredits, openCreditDurationMillis = credit?.durationMs,
                 openCreditActiveRemainingMillis = credit?.activeRemainingMs,
                 openCreditBlockingContributors = credit?.blockingContributors.orEmpty(),
-                openCreditRequestScope = credit?.takeIf { it.remainingCredits > 0 && it.activeRemainingMs == 0L }?.requestScope)
+                openCreditRequestScope = credit?.takeIf { it.remainingCredits > 0 && it.activeRemainingMs == 0L && it.blockingContributors.isEmpty() }?.requestScope)
     }
 
     // MARK: Surface callbacks (Compose invokes these on the main thread)

@@ -404,8 +404,12 @@ class BlockActivity : ComponentActivity() {
                 nextPassAt = (eligibility as? RollingEmergencyPassPolicy.Eligibility.CoolingDown)?.let { date(it.nextEligibleEstimateEpochMs) },
                 timeUncertain = (eligibility as? RollingEmergencyPassPolicy.Eligibility.CoolingDown)?.clockUncertain == true,
                 previousAccessEnded = ledger?.previousAccessEnded == true || snapshot?.openCredits?.accessEndedAfterRestart == true,
-                choices = snapshot?.let { GlobalRecoveryPolicy.recoveryChoices(it).map { (key, name) -> RecoveryChoice(key, name) } }.orEmpty(),
-                confirmation = confirmation, endConfirmation = endPreview?.displayNames, error = error, saving = saving,
+                choices = snapshot?.let { snapshot ->
+                    val canDisable = GlobalRecoveryPolicy.recoveryChoices(snapshot, deleteTemplates = false).keys
+                    GlobalRecoveryPolicy.recoveryChoices(snapshot).map { (key, name) -> RecoveryChoice(key, name, key in canDisable) }
+                }.orEmpty(),
+                confirmation = confirmation, endConfirmation = endPreview?.displayNames,
+                endConfirmationDeletes = endPreview?.deleteTemplates == true, error = error, saving = saving,
                 activeOrdinaryBreaks = ledger?.ordinaryGrants?.values?.count { now != null && it.lifetime.remainingMs(now)?.let { ms -> ms > 0 } == true } ?: 0,
                 activeOpenCredits = snapshot?.openCredits?.active?.values?.count { now != null && com.flint.peakfocus.blocking.engine.OpenCreditPolicy().remainingMs(it.grant, now) > 0 } ?: 0),
             onBack = { openFlint(); finish() },

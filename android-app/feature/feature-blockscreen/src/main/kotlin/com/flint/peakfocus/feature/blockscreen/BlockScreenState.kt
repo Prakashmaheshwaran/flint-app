@@ -122,7 +122,8 @@ internal fun blockScreenContent(state: BlockScreenState): BlockScreenContent {
         headline = "$name is resting.",
         reasonLine = (if (state.reason == BlockScreenReason.OPEN_LIMIT && (state.openCreditsRemaining ?: 0) > 0)
             "This app stays protected between 5-minute access credits." else reasonLineFor(state.reason)) +
-            if ((state.openCreditActiveRemainingMillis ?: 0) > 0) " Credit access ends in ${formatDuration(state.openCreditActiveRemainingMillis!!)}; ${state.openCreditsRemaining ?: 0} credits remain." else "",
+            (if ((state.openCreditActiveRemainingMillis ?: 0) > 0) " Credit access ends in ${formatDuration(state.openCreditActiveRemainingMillis!!)}; ${state.openCreditsRemaining ?: 0} credits remain." else "") +
+            if (state.openCreditBlockingContributors.isNotEmpty()) " Also blocked by ${state.openCreditBlockingContributors.joinToString(", ")}." else "",
         badge = badgeFor(state.reason, state.breakLevel),
         countdownLabel = countdownLabelFor(state.reason, state.remainingMillis),
         encouragement = encouragementFor(state.packageName),

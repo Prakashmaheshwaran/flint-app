@@ -400,6 +400,24 @@ class DurableCoordinatorTest {
         assertEquals(uncertain, requests.id(false, now + 3))
     }
 
+    @Test fun PC_31_uncertainOrdinaryRequestCannotReuseItsIdentityForAnExplicitCreditOrNewScope() {
+        for (failure in listOf(GrantResult.Unconfirmed, GrantResult.Unavailable(StorageFailure.IO))) {
+            val requests = BlockScreenCoordinator.SurfaceRequests()
+            val clock = AccessClockStamp(now, 1_000, "boot")
+            val ordinary = requests.id(false, now, clock)
+            requests.recordResult(false, failure)
+            assertSame(ordinary, requests.id(false, now, clock))
+            val credit = requests.id(false, now, clock, "period:open-occurrence")
+            assertNotEquals(ordinary.nonce, credit.nonce)
+            assertEquals("period:open-occurrence", credit.creditScope)
+            requests.recordResult(false, failure)
+            assertSame(credit, requests.id(false, now, clock, "period:open-occurrence"))
+            assertNotEquals(credit.nonce, requests.id(true, now, clock, "period:open-occurrence").nonce)
+            assertNotEquals(credit.nonce, requests.id(false, now, clock, "next-period:open-occurrence").nonce)
+            assertNull(requests.id(false, now, clock).creditScope)
+        }
+    }
+
     @Test fun aConfirmedGrantKeptBehindAStrongerCauseCannotWedgeTheNextExplicitBreak() = runBlocking {
         val focus = PausedFocus()
         val coordinator = coordinator(focus, mount = true)

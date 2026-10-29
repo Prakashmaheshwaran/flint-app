@@ -1,0 +1,147 @@
+package com.flint.peakfocus.blocking.overlay
+
+import android.content.Context
+import android.view.View
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.flint.peakfocus.core.datastore.*
+import com.flint.peakfocus.core.model.*
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.test.*
+import org.junit.After
+import org.junit.Assert.*
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
+
+/** Real preference readers, editor/quota preparation and both detector coordinator entries. */
+@OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(AndroidJUnit4::class)
+@Config(sdk = [34])
+class ProductionCreditDeadlineTest {
+    private val app: Context = ApplicationProvider.getApplicationContext()
+    private val pkg = "com.example.limited"
+    private class Disk : DataStore<Preferences> {
+        val values = MutableStateFlow(emptyPreferences())
+        override val data: Flow<Preferences> = values
+        private val lock = Mutex()
+        override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences = lock.withLock {
+            transform(values.value).also { values.value = it }
+        }
+    }
+    private fun handoff(name: String, value: Any?) = PathBBlockHandoff::class.java.getDeclaredField(name)
+        .apply { isAccessible = true }.set(null, value)
+    @After fun clean() {
+        handoff("coordinator", null); handoff("lastForegroundPackage", null)
+        BlockExemptions.clearAll(); OpenVisits.process.leave(); ProtectionStatusHub.resetForTests()
+        ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, emptyList())
+    }
+
+    @Test fun PC_28_PC_76_bothProductionConstructorsAlwaysOwnTheAtomicRecoveryBackend() = runTest {
+        val host = object : BlockScreenCoordinator.SurfaceHost {
+            override fun attach(view: View) = false
+            override fun detach(view: View) = Unit
+            override fun goHome() = Unit
+        }
+        // Path A uses this default construction; Path B's production factory also leaves
+        // focusStateStore unset. Neither can select the constructor-injected v1 fixture.
+        val a = BlockScreenCoordinator(app, backgroundScope, host)
+        val b = PathBBlockHandoff.create(app, backgroundScope, host)
+        for (c in listOf(a, b)) {
+            assertNotNull(c.recoveryState)
+            assertNull(BlockScreenCoordinator::class.java.getDeclaredField("legacyGrants").apply { isAccessible = true }.get(c))
+        }
+    }
+
+    @Test fun PC_22_PC_28_PC_30_PC_31_PC_76_pathAHardcoreCreditReblocksStationaryForegroundAt300Seconds() =
+        deadline(pathB = false, midnight = false)
+    @Test fun PC_22_PC_28_PC_30_PC_31_PC_76_pathBHardcoreCreditReblocksStationaryForegroundAt300Seconds() =
+        deadline(pathB = true, midnight = false)
+    @Test fun PC_28_PC_31_PC_35_PC_76_pathACreditAt2358ClipsToTrustedMidnightAndResetsOnce() =
+        deadline(pathB = false, midnight = true)
+    @Test fun PC_28_PC_31_PC_35_PC_76_pathBCreditAt2358ClipsToTrustedMidnightAndResetsOnce() =
+        deadline(pathB = true, midnight = true)
+
+    private fun deadline(pathB: Boolean, midnight: Boolean) = runTest {
+        val start = AccessClockStamp(java.time.Instant.parse(if (midnight) "2026-10-29T23:58:00Z" else "2026-10-29T12:00:00Z").toEpochMilli(), 10_000, "boot")
+        fun clock() = start.copy(wallEpochMs = start.wallEpochMs + testScheduler.currentTime,
+            elapsedRealtimeMs = start.elapsedRealtimeMs + testScheduler.currentTime)
+        val disk = Disk()
+        val limits = DataStoreLimitsStore(disk)
+        limits.setOpenLimit(OpenLimit(pkg, 1, BreakLevel.HARDCORE))
+        val focus = DataStoreFocusStateStore(disk)
+        focus.setOpenCounts(OpenCountState(start.wallEpochMs / 86_400_000L, mapOf(pkg to 0)))
+        // An old unbounded visit receipt and paid process visit must never authorize access.
+        val legacy = PersistedExemption("legacy-open", pkg, "open-visit", ExemptionKind.OPEN_LIMIT, 0, "boot")
+        focus.transact { FocusMutation(it.copy(exemptions = mapOf(legacy.requestId to legacy)), Unit) }
+        val transactions = DataStoreProtectionTransactionStore(disk, ::clock) { "UTC" }
+        val initialized = transactions.transact { ProtectionMutation(it.focus, Unit) }
+        assertTrue(initialized.toString(), initialized is ProtectionCommit.Committed)
+        val paid = OpenVisits.process.observe(pkg, true, true, start.wallEpochMs)!!
+        OpenVisits.process.acknowledge(paid)
+        var mounted = false
+        val host = object : BlockScreenCoordinator.SurfaceHost {
+            override fun attach(view: View): Boolean { mounted = true; return true }
+            override fun detach(view: View) { mounted = false }
+            override fun goHome() = Unit
+        }
+        var evaluate: (() -> Unit)? = null
+        val c = BlockScreenCoordinator(app, backgroundScope, host,
+            onEnforcementChanged = { evaluate?.invoke() }, nowEpochMs = { clock().wallEpochMs },
+            safetyFloorGate = SafetyFloorGate(app.packageName, { emptyMap() }, { clock().elapsedRealtimeMs }, requiredRuntimeSources = emptySet()),
+            focusStateStore = focus, configuredLimitsStore = limits, blockRulesStore = DataStoreBlockRulesStore(disk),
+            editorCommitmentStore = DataStoreEditorCommitmentStore(disk, defaultZone = { "UTC" }),
+            statusClock = ::clock, statusDispatcher = StandardTestDispatcher(testScheduler), protectionTransactionStore = transactions)
+        runCurrent()
+        handoff("coordinator", c)
+        evaluate = {
+            if (pathB) PathBBlockHandoff.onForegroundPolled(app, pkg, Verdict.Allow)
+            else c.evaluateBlockCause(pkg, pkg, null, false)?.let { c.showBlocked(pkg, null, it) } ?: c.hideIfShown()
+        }
+        suspend fun snapshot() = (transactions.state.first { it !is StorageState.Loading } as StorageState.Ready).value
+        try {
+            val before = snapshot()
+            evaluate.invoke(); runCurrent()
+            assertTrue("Entry is shielded without charging even with a legacy paid visit", mounted)
+            assertEquals(before.focus.openCounts, snapshot().focus.openCounts)
+            assertEquals(before.openCredits!!.counters, snapshot().openCredits!!.counters)
+            assertEquals(0, snapshot().openCredits!!.counters.getValue(pkg).used)
+            val cause = c.currentBlockCause(pkg)!!
+            val id = GrantRequestId.issue(clock(), c.screenState(pkg, null, cause, clock().wallEpochMs).openCreditRequestScope)
+            assertNotNull(id.creditScope)
+            assertEquals(GrantResult.OpenAllowed, c.requestBreak(pkg, cause, id)); runCurrent()
+            assertFalse(mounted)
+            val accepted = snapshot()
+            val grant = accepted.openCredits!!.active.getValue(pkg).grant
+            val duration = if (midnight) 120_000L else 300_000L
+            assertEquals(duration, grant.durationMs)
+            assertEquals(1, accepted.openCredits!!.counters.getValue(pkg).used)
+            assertEquals(setOf(legacy.requestId), accepted.focus.exemptions.keys) // no new until=0 receipt
+            advanceTimeBy(duration - 1); runCurrent()
+            evaluate.invoke()
+            assertFalse(mounted)
+            advanceTimeBy(1); runCurrent() // expiry wake, no new foreground transition
+            assertTrue("Stationary foreground re-shields at the trusted deadline", mounted)
+            val expired = snapshot()
+            assertTrue(expired.openCredits!!.active.isEmpty())
+            assertEquals(before.focus.openCounts, expired.focus.openCounts)
+            assertEquals(setOf(legacy.requestId), expired.focus.exemptions.keys)
+            assertEquals(1, expired.focus.protection!!.outbox.values.count { it.kind == ProtectionLifecycleKind.ACCESS_STARTED })
+            assertEquals(1, expired.focus.protection!!.outbox.values.count { it.kind == ProtectionLifecycleKind.ACCESS_ENDED })
+            if (midnight) {
+                assertNotEquals(accepted.openCredits!!.periodId, expired.openCredits!!.periodId)
+                assertEquals(0, expired.openCredits!!.counters.getValue(pkg).used)
+                val period = expired.openCredits!!.periodId
+                repeat(3) { evaluate.invoke(); c.retryProtectionState(); runCurrent() }
+                assertEquals(period, snapshot().openCredits!!.periodId)
+                assertEquals(0, snapshot().openCredits!!.counters.getValue(pkg).used)
+            } else assertEquals(1, expired.openCredits!!.counters.getValue(pkg).used)
+        } finally { evaluate = null; c.hideIfShown(); clean() }
+    }
+}

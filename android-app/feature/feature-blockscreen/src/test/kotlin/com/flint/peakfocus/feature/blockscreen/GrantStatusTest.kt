@@ -39,6 +39,25 @@ class GrantStatusTest {
         val ready = state(BreakLevel.EASY, GrantStatus.READY).copy(openCreditsRemaining = 3,
             openCreditDurationMillis = 120_000, openCreditBlockingContributors = listOf("Focus"))
         assertEquals(BreakAffordance.CreditBlocked(listOf("Focus")), blockScreenContent(ready).breakAffordance)
+        org.junit.Assert.assertTrue(blockScreenContent(ready).reasonLine.contains("Also blocked by Focus."))
+    }
+
+    @Test fun PC_83_limitSelectionOnlyOffersDeletionWhileRuleSelectionCanDisable() {
+        val choices = listOf(RecoveryChoice("rule:work", "Work"), RecoveryChoice("open:app", "Open limit", canDisable = false))
+        org.junit.Assert.assertTrue(canDisableRecoverySelection(choices, setOf("rule:work")))
+        org.junit.Assert.assertFalse(canDisableRecoverySelection(choices, setOf("open:app")))
+        org.junit.Assert.assertFalse(canDisableRecoverySelection(choices, setOf("rule:work", "open:app")))
+        org.junit.Assert.assertFalse(canDisableRecoverySelection(choices, emptySet()))
+    }
+
+    @Test fun PC_32_otherContributorNamesDoNotChangeTheLatestEndHeadlineOrCountdown() {
+        val ready = state(BreakLevel.EASY, GrantStatus.READY).copy(remainingMillis = 42_000, openCreditsRemaining = 2,
+            openCreditBlockingContributors = listOf("Work", "Time limit"))
+        val baseline = blockScreenContent(ready.copy(openCreditBlockingContributors = emptyList()))
+        val actual = blockScreenContent(ready)
+        assertEquals(baseline.headline, actual.headline)
+        assertEquals(baseline.countdownLabel, actual.countdownLabel)
+        org.junit.Assert.assertTrue(actual.reasonLine.contains("Also blocked by Work, Time limit."))
     }
 
     @org.junit.Test fun PC_28_PC_35_exhaustionKeepsTierExceptionsAndShortCreditShowsItsActualDuration() {

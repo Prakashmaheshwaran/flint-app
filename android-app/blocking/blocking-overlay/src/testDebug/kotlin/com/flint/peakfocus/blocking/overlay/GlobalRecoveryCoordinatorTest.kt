@@ -479,6 +479,46 @@ class GlobalRecoveryCoordinatorTest {
         assertFalse(BlockExemptions.hasGlobalRecovery())
     }
 
+    @Test fun PC_42_restartedProcessFailsClosedUntilTheFirstReadyRecoverySnapshot() = runTest {
+        val initial = initial()
+        val preview = GlobalRecoveryPolicy.preview(initial, emptyList(), "p1-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")!!
+        val committed = GlobalRecoveryPolicy.consume(initial, preview, emptyList())
+        val recovered = initial.copy(focus = committed.focus, rules = committed.rules!!, editor = committed.editor!!)
+        val disk = Disk(recovered) { clock() }
+        disk.values.value = StorageState.Loading
+        coordinator(disk); runCurrent()
+        assertFalse(BlockExemptions.hasGlobalRecovery())
+        disk.values.value = StorageState.Ready(recovered); runCurrent()
+        assertTrue(BlockExemptions.hasGlobalRecovery())
+    }
+
+    @Test fun PC_28_inactiveOpenOccurrencePreservesEasyAndHarderBreaksButUnreadableStateDoesNot() = runTest {
+        for (tier in listOf(BreakLevel.EASY, BreakLevel.HARDER)) {
+            for (expired in listOf(false, true)) {
+                val initial = initial(tier)
+                val inactive = if (expired) EditorCause("ended-day", AnchoredInterval(base, 0, base.wallEpochMs), "UTC")
+                    else EditorCause("inactive", null, "UTC")
+                val s = initial.copy(opens = listOf(OpenLimit(pkg, 1, BreakLevel.HARDCORE)),
+                    editor = initial.editor.copy(causes = initial.editor.causes + (openCauseKey(pkg) to inactive)))
+                val disk = Disk(s) { clock() }; val c = coordinator(disk); runCurrent()
+                val cause = c.currentBlockCause(pkg)!!
+                assertEquals(tier, cause.breakLevel)
+                assertTrue(c.onForegroundChanged(null, pkg) is OpenLimitDecision.Allowed)
+                val ui = c.screenState(pkg, null, cause, clock().wallEpochMs)
+                assertEquals(com.flint.peakfocus.feature.blockscreen.GrantStatus.READY, ui.grantStatus)
+                assertNull(ui.openCreditsRemaining); assertNull(ui.openCreditRequestScope)
+                val result = c.requestBreak(pkg, cause, GrantRequestId.issue(clock()))
+                if (tier == BreakLevel.EASY) assertTrue(result is GrantResult.Granted) else assertTrue(result is GrantResult.Pending)
+                assertEquals(s.openCredits!!.counters, disk.latest.openCredits!!.counters)
+                disk.latest = disk.latest.copy(editor = disk.latest.editor.copy(causes = disk.latest.editor.causes - openCauseKey(pkg)))
+                disk.values.value = StorageState.Ready(disk.latest); runCurrent()
+                assertEquals(com.flint.peakfocus.feature.blockscreen.GrantStatus.UNAVAILABLE,
+                    c.screenState(pkg, null, cause, clock().wallEpochMs).grantStatus)
+                BlockExemptions.clearAll()
+            }
+        }
+    }
+
     @Test fun PC_28_PC_47_foregroundNeverWritesLegacyQuotaAndAnUnspentCreditCannotBecomeAFreeOrdinaryBreak() = runTest {
         val s = initial().copy(openCredits = OpenCreditLedgerPolicy.initial(base, "UTC"))
         val disk = Disk(s) { clock() }; val c = coordinator(disk); runCurrent()
@@ -566,6 +606,7 @@ class GlobalRecoveryCoordinatorTest {
             OpenVisits.process.observe(pkg, countable = true, charge = true, now = start.wallEpochMs)
             val ui = c.screenState(pkg, null, nominee, disk.clock().wallEpochMs)
             assertEquals(listOf("Other schedule"), ui.openCreditBlockingContributors)
+            assertNull(ui.openCreditRequestScope)
             val ordinary = GrantRequestId.issue(disk.clock())
             repeat(2) {
                 c.onForegroundChanged(null, pkg)
