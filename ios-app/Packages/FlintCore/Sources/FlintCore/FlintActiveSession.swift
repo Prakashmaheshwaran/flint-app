@@ -33,6 +33,8 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
     /// How many times the auto-clear was re-registered because iOS ended it before `endsAt`
     /// (bounded, so a device that keeps misfiring can't drain the shared registration pool).
     public let rearmCount: Int?
+    /// Re-registrations after forward wall-clock jumps (bounded on their own). nil = none yet.
+    public let clockRearmCount: Int?
     /// When the auto-clear was last re-registered for any reason (spaces out repairs).
     public let lastRearmAt: Date?
     /// The protection-contract version the session was started under. nil = started by a build
@@ -69,7 +71,8 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         origin: String? = nil,
         ownerID: String? = nil,
         plannedDuration: TimeInterval? = nil,
-        startRequestID: String? = nil
+        startRequestID: String? = nil,
+        clockRearmCount: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -89,6 +92,7 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         self.ownerID = ownerID
         self.plannedDuration = plannedDuration
         self.startRequestID = startRequestID
+        self.clockRearmCount = clockRearmCount
     }
 
     /// Time left on the commitment, by the clock ADR-012 §9 trusts: within the boot that started
@@ -160,6 +164,7 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         plan: FlintSessionAutoClearPlan,
         at date: Date,
         countsTowardLimit: Bool,
+        countsTowardClockLimit: Bool = false,
         endsAt newEnd: Date? = nil
     ) -> FlintActiveSession {
         FlintActiveSession(
@@ -173,7 +178,8 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
             origin: origin,
             ownerID: ownerID,
             plannedDuration: plannedDuration ?? endsAt.map { $0.timeIntervalSince(startedAt) },
-            startRequestID: startRequestID
+            startRequestID: startRequestID,
+            clockRearmCount: countsTowardClockLimit ? (clockRearmCount ?? 0) + 1 : clockRearmCount
         )
     }
 }

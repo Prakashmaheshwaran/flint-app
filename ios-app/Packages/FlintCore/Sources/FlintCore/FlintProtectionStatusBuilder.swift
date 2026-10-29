@@ -165,7 +165,7 @@ public enum FlintProtectionStatusBuilder {
                 }
                 causes.append(Snapshot.Cause(id: active.id,
                     kind: input.kind == .pomodoro ? .pomodoro : .session, displayName: active.name,
-                    tier: active.breakLevel, end: active.endsAt,
+                    tier: active.breakLevel, end: input.logicalEnd,
                     enforcing: canEnforce && input.armed && input.enforcing))
             }
         }

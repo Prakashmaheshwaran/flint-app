@@ -117,7 +117,9 @@ final class FlintSessionControllerTests: XCTestCase {
         let session = try start(c, minutes: 60, level: .hardcore)
         clock.advance(10 * 60)
         clock.now = clock.now.addingTimeInterval(2 * 3600) // wall jumps; elapsed time doesn't
-        XCTAssertEqual(c.requestStop(route: .manualStop, confirmed: true), .denied(.hardcoreCommitment, until: session.endsAt))
+        let logicalEnd = clock.now.addingTimeInterval(50 * 60)
+        XCTAssertEqual(c.requestStop(route: .manualStop, confirmed: true), .denied(.hardcoreCommitment, until: logicalEnd),
+                       "denied until the logical end, not the wall end that already looks past")
         c.finishIfExpired()
         XCTAssertNotNil(store.active, "still committed: 50 minutes remain")
         // The old registration fires at its wall end: premature, so the block stays and re-arms.
@@ -130,6 +132,46 @@ final class FlintSessionControllerTests: XCTestCase {
         clock.advance(50 * 60)
         c.handleMonitorEvent(.intervalDidEnd, activity: rearmed.monitorName)
         XCTAssertNil(store.active, "ends after the full committed duration")
+    }
+
+    func testAfterAForwardJumpAShortReplacementCannotOutlastHardcorePC54() throws {
+        let c = controller()
+        _ = try start(c, minutes: 60, level: .hardcore)
+        clock.advance(10 * 60)
+        clock.now = clock.now.addingTimeInterval(2 * 3600) // the recorded end now reads as past
+        let logicalEnd = clock.now.addingTimeInterval(50 * 60)
+        XCTAssertThrowsError(try start(c, minutes: 1, level: .hardcore)) {
+            XCTAssertEqual($0 as? FlintSessionError, .replacementDenied(until: logicalEnd),
+                           "a 1-minute block would end the commitment 49 minutes early")
+        }
+    }
+
+    func testClockChangeReArmsHaveTheirOwnBound() throws {
+        let c = controller()
+        var session = try start(c, minutes: 600, level: .hardcore)
+        for _ in 0..<FlintSessionController.maximumClockChangeRearms {
+            clock.advance(60)
+            clock.now = clock.now.addingTimeInterval(24 * 3600)
+            c.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
+            session = try XCTUnwrap(store.active)
+        }
+        XCTAssertEqual(session.clockRearmCount, FlintSessionController.maximumClockChangeRearms)
+        XCTAssertEqual(session.rearmCount ?? 0, 0, "the misfire budget is untouched")
+        clock.advance(60)
+        clock.now = clock.now.addingTimeInterval(24 * 3600)
+        c.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
+        XCTAssertEqual(store.active?.rearmCount, 1, "past its bound, a clock-ahead early end is a misfire again")
+    }
+
+    func testALogicalCompletionAfterABackwardJumpStillReportsIt() throws {
+        let c = controller()
+        _ = try start(c, minutes: 30)
+        clock.now = clock.now.addingTimeInterval(-3600)
+        clock.advance(30 * 60) // elapsed time completes it; the recorded end reads as future
+        events.log.removeAll()
+        c.finishIfExpired()
+        XCTAssertNil(store.active)
+        XCTAssertEqual(events.kinds, ["ended"], "one completion, not a silently dropped outcome")
     }
 
     func testAReconcileAfterAWallJumpReRegistersTheLogicalEnd() throws {

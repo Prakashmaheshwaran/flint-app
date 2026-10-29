@@ -330,6 +330,8 @@ public final class FlintSessionController {
     /// delivered early, a registration iOS dropped). Each one briefly holds an extra slot in the
     /// shared DeviceActivity pool, so a device that keeps misfiring can't drain it.
     public static let maximumRearms = 3
+    /// Re-registrations after forward clock jumps, bounded separately from misfires.
+    public static let maximumClockChangeRearms = 8
 
     /// Serializes start/stop/reconcile within a process: the UI, App Intents and the Focus
     /// filter can all reach the session at once. Across processes (host vs. the monitor
@@ -476,7 +478,8 @@ public final class FlintSessionController {
         if let requestID, let current, current.startRequestID == requestID, !isOver(current) { return current }
         if let running = current, !isOver(running) {
             guard replacing else {
-                throw FlintSessionError.capacityUnavailable(runningName: running.name, until: running.endsAt)
+                throw FlintSessionError.capacityUnavailable(runningName: running.name,
+                                                            until: running.stableLogicalEnd(clock: env.clock))
             }
             let targets = env.shield.targets(of: selection)
             let new = FlintProtectionSnapshot(mode: .blockList(
@@ -499,7 +502,7 @@ public final class FlintSessionController {
                 break
             case .deny, .deferUntil:
                 // (`decide` never defers a replacement; treated as a denial if it ever did.)
-                throw FlintSessionError.replacementDenied(until: running.endsAt)
+                throw FlintSessionError.replacementDenied(until: running.stableLogicalEnd(clock: env.clock))
             case .wait:
                 let scope = Self.replacementScope(tier: breakLevel, duration: duration,
                                                   targets: env.shield.fingerprint(of: selection))
@@ -657,7 +660,7 @@ public final class FlintSessionController {
             case .unavailable: return .unavailable
             }
         case let .deny(reason):
-            return .denied(reason, until: session.endsAt)
+            return .denied(reason, until: session.stableLogicalEnd(clock: env.clock))
         case .deferUntil, .notApplicable:
             return .notApplicable
         }
@@ -705,7 +708,10 @@ public final class FlintSessionController {
         in store: FlintSessionStateStoring?
     ) {
         env.shield.clear()
-        FlintSessionLifecycle.didEnd(session, route: route, at: now)
+        // A completion is recorded at the planned end; after a backward wall jump that end
+        // reads as future, which mustn't drop the event (history keeps one outcome).
+        FlintSessionLifecycle.didEnd(session, route: route,
+                                     at: route == .completed ? max(now, session.endsAt ?? now) : now)
         // Forget the record before stopping its registration: iOS may deliver intervalDidEnd
         // for a stopped activity, and it must then find no matching session — never a live
         // one to "complete" or re-arm.
@@ -729,7 +735,9 @@ public final class FlintSessionController {
             kind: .session,
             tier: session.breakLevel,
             isActive: !isOver(session),
-            end: session.endsAt,
+            // Dominance compares against the logical end: after a forward wall jump the recorded
+            // end is past, and a short replacement must not look like it outlasts it (§3, §9).
+            end: session.stableLogicalEnd(clock: env.clock),
             harderCount: count,
             legacyRights: session.contractVersion == nil
         )
@@ -740,7 +748,8 @@ public final class FlintSessionController {
         return FlintProtectionSnapshot(mode: .blockList(applications: targets.applications,
                                                         categories: targets.categories,
                                                         webDomains: targets.webDomains),
-                                       tier: session.breakLevel, end: session.endsAt)
+                                       // Logical: a forward jump must not shorten what it protects (§9).
+                                       tier: session.breakLevel, end: session.stableLogicalEnd(clock: env.clock))
     }
 
     /// The Focus filter owns sessions it started; older builds marked them only by name.
@@ -942,7 +951,11 @@ public final class FlintSessionController {
                 return .deferred
             }
         case .clockChange:
-            break
+            // Its own bound: a clock that keeps reading ahead of elapsed time (drift, not a
+            // jump) must not re-register forever. Past it, an early end is a misfire again.
+            guard (session.clockRearmCount ?? 0) < Self.maximumClockChangeRearms else {
+                return rearm(session, in: store, now: now, reason: .prematureEnd)
+            }
         }
         let start = FlintSessionAutoClearPlan.wholeSecond(atOrAfter: now)
         // Register the logical end: after a same-boot wall-clock change it differs from the
@@ -964,6 +977,7 @@ public final class FlintSessionController {
         }
         store.saveActiveSession(session.rearmed(monitorName: name, plan: plan, at: now,
                                                 countsTowardLimit: reason == .prematureEnd,
+                                                countsTowardClockLimit: reason == .clockChange,
                                                 endsAt: reanchored ? end : nil))
         if session.monitorName != name { env.registrar.stopMonitoring([session.monitorName]) }
         // The running session is armed again: an earlier refusal is no longer current.
