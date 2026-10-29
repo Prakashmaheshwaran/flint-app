@@ -40,7 +40,7 @@ final class FlintRuleReviewTests: XCTestCase {
         guard case let .deferRequired(ticket, end) = arbiter.upsert(future) else { return XCTFail() }
         XCTAssertEqual(arbiter.upsert(future, confirmation: ticket), .queued(until: end))
         let starts = h.center.starts.count
-        h.now = end.addingTimeInterval(1) // callbacks need not land on the exact wall instant
+        h.advance(to: end.addingTimeInterval(1)) // callbacks need not land on the exact wall instant
         let monitor = FlintRuleMonitor(environment: h.environment)
         _ = monitor.handle(startFirst ? .start : .end, activity: old.activityName)
         let effective = try XCTUnwrap(h.load(Rule.self).first)
@@ -71,7 +71,7 @@ final class FlintRuleReviewTests: XCTestCase {
                 let arbiter = FlintRuleArbiter(environment: h.environment)
                 guard case let .deferRequired(ticket, end) = arbiter.mutate([mutation], confirmation: nil) else { return XCTFail() }
                 XCTAssertEqual(arbiter.mutate([mutation], confirmation: ticket), .queued(until: end))
-                h.now = end.addingTimeInterval(40 * 3600) // off from 06:00 until 23:00 the next day
+                h.advance(to: end.addingTimeInterval(40 * 3600)) // off from 06:00 until 23:00 the next day
                 XCTAssertGreaterThan(try XCTUnwrap(old.templateOccurrence(at: h.now)).start, end)
                 if viaHost { _ = FlintSchedulesController(environment: h.environment).reload() }
                 else { _ = FlintRuleMonitor(environment: h.environment).handle(.start, activity: old.activityName) }
@@ -112,7 +112,7 @@ final class FlintRuleReviewTests: XCTestCase {
         _ = monitor.handle(.start, activity: zero.activityName)
         _ = monitor.handle(.start, activity: open.activityName)
         XCTAssertEqual(h.appliedSchedules, [schedule]); XCTAssertEqual(h.appliedLimits, [zero]); XCTAssertEqual(h.appliedOpens, [open])
-        h.now = try XCTUnwrap(schedule.protection?.occurrence?.end)
+        h.advance(to: try XCTUnwrap(schedule.protection?.occurrence?.end))
         _ = monitor.handle(.end, activity: schedule.activityName)
         XCTAssertTrue(h.cleared.isEmpty); XCTAssertTrue(h.center.stops.isEmpty); XCTAssertTrue(h.center.starts.isEmpty)
         XCTAssertEqual([FlintRuleStoreKey.schedules, .limits, .openLimits].map { h.defaults.data(forKey: $0.rawValue) }, source)
@@ -145,7 +145,7 @@ final class FlintRuleReviewTests: XCTestCase {
             _ = arbiter.upsert(future, confirmation: ticket)
             var refused = future; refused.protection?.activityRevision = old.revision + 2
             h.center.refused = [refused.activityName]
-            h.now = end.addingTimeInterval(9 * 3600); h.timeLimitExhausted = alreadyShielded
+            h.advance(to: end.addingTimeInterval(9 * 3600)); h.timeLimitExhausted = alreadyShielded
             var marks = 0; var resets = 0
             var environment = h.environment
             environment.markLimitThreshold = { _, _ in marks += 1 }
@@ -167,7 +167,7 @@ final class FlintRuleReviewTests: XCTestCase {
         var future = old; future.thresholdMinutes = 60
         let arbiter = FlintRuleArbiter(environment: h.environment)
         guard case let .deferRequired(ticket, end) = arbiter.upsert(future) else { return XCTFail() }
-        h.center.onStart = { _ in h.now = end.addingTimeInterval(1) }
+        h.center.onStart = { _ in h.advance(to: end.addingTimeInterval(1)) }
         XCTAssertEqual(arbiter.upsert(future, confirmation: ticket), .staleRevision)
         XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.limits.rawValue), source)
         XCTAssertEqual(h.center.activities.map(\.rawValue), [old.activityName])
@@ -269,8 +269,8 @@ final class FlintRuleReviewTests: XCTestCase {
         }
         let arbiter = FlintRuleArbiter(environment: h.environment)
         guard case let .deferRequired(ticket, latest) = arbiter.mutate(changes, confirmation: nil) else { return XCTFail() }
-        let nightEnd = try XCTUnwrap(original[0].occurrence(at: h.now)?.end)
-        let morningEnd = try XCTUnwrap(original[1].occurrence(at: h.now)?.end)
+        let nightEnd = try XCTUnwrap(original[0].occurrence(at: h.now, clock: h.clock)?.end)
+        let morningEnd = try XCTUnwrap(original[1].occurrence(at: h.now, clock: h.clock)?.end)
         XCTAssertEqual(latest, nightEnd)
         XCTAssertEqual(ticket.preview.map(\.deferredUntil), [nightEnd, morningEnd, nil, nil])
         XCTAssertTrue(ticket.preview[0].offersEarlierHarderEdit)
@@ -282,12 +282,12 @@ final class FlintRuleReviewTests: XCTestCase {
         XCTAssertEqual(saved[2].schedule.endHour, 22); XCTAssertNil(saved[2].protection?.queuedChange)
         XCTAssertFalse(saved[3].enabled); XCTAssertNil(saved[3].protection?.queuedChange)
         XCTAssertTrue(try h.ledger.read().get().harder.isEmpty, "natural-end deferral spends no Harder wait")
-        h.now = morningEnd
+        h.advance(to: morningEnd)
         _ = FlintRuleMonitor(environment: h.environment).handle(.end, activity: original[1].activityName)
         saved = h.load(FlintScheduleRule.self)
         XCTAssertFalse(saved[1].enabled)
         XCTAssertTrue(saved[0].enabled, "the still-active Harder night cannot be weakened at its sibling's end")
-        h.now = nightEnd
+        h.advance(to: nightEnd)
         _ = FlintRuleMonitor(environment: h.environment).handle(.start, activity: original[0].activityName)
         XCTAssertFalse(h.load(FlintScheduleRule.self)[0].enabled)
         let starts = h.center.starts.count
@@ -370,7 +370,7 @@ final class FlintRuleReviewTests: XCTestCase {
             let editor = FlintWebRestrictionEditor(load: { config }, snapshot: { .init(session: nil, rules: [rule]) },
                 persist: { config = $0; return true }, ledger: { h.ledger }, clock: h.clock)
             var draft = config; draft.applyDuringSchedules = false
-            let end = try XCTUnwrap(rule.occurrence(at: h.now)?.end)
+            let end = try XCTUnwrap(rule.occurrence(at: h.now, clock: h.clock)?.end)
             XCTAssertEqual(editor.save(draft, requestID: mode), .protected(until: end))
             XCTAssertTrue(config.applyDuringSchedules)
         }
@@ -379,7 +379,7 @@ final class FlintRuleReviewTests: XCTestCase {
     func testSafariAndRuleWeakeningShareOneOccurrenceCountSequence() throws {
         let h = try RuleHarness(); defer { h.clean() }
         let old = h.install(h.schedule(tier: .harder))
-        let cause = FlintRuleArbiter.causeID(old, window: old.occurrence(at: h.now))
+        let cause = FlintRuleArbiter.causeID(old, window: old.occurrence(at: h.now, clock: h.clock))
         var config = FlintWebRestrictions(enabled: true, applyDuringSchedules: true)
         let editor = FlintWebRestrictionEditor(load: { config }, snapshot: {
             .init(session: nil, rules: h.load(FlintScheduleRule.self))
@@ -404,7 +404,7 @@ final class FlintRuleReviewTests: XCTestCase {
     func testSafariAuthorizationCannotBeReusedAfterTheRuleRevisionChanges() throws {
         let h = try RuleHarness(); defer { h.clean() }
         let old = h.install(h.schedule(tier: .harder))
-        let cause = FlintRuleArbiter.causeID(old, window: old.occurrence(at: h.now))
+        let cause = FlintRuleArbiter.causeID(old, window: old.occurrence(at: h.now, clock: h.clock))
         var config = FlintWebRestrictions(enabled: true, applyDuringSchedules: true)
         var acceptsSave = false
         let editor = FlintWebRestrictionEditor(load: { config }, snapshot: {
@@ -434,7 +434,7 @@ final class FlintRuleReviewTests: XCTestCase {
     func testSafariMaturedWaitRequiresARefreshedConfirmationAfterARuleRename() throws {
         let h = try RuleHarness(); defer { h.clean() }
         let old = h.install(h.schedule(tier: .harder))
-        let cause = FlintRuleArbiter.causeID(old, window: old.occurrence(at: h.now))
+        let cause = FlintRuleArbiter.causeID(old, window: old.occurrence(at: h.now, clock: h.clock))
         var config = FlintWebRestrictions(enabled: true, applyDuringSchedules: true)
         let editor = FlintWebRestrictionEditor(load: { config }, snapshot: {
             .init(session: nil, rules: h.load(FlintScheduleRule.self))
@@ -461,7 +461,7 @@ final class FlintRuleReviewTests: XCTestCase {
         XCTAssertEqual(arbiter.upsert(future, confirmation: ticket), .queued(until: end))
         var refused = future; refused.protection?.activityRevision = old.revision + 2
         h.center.refused = [refused.activityName]
-        h.now = end
+        h.advance(to: end)
         _ = FlintRuleMonitor(environment: h.environment).handle(.start, activity: old.activityName)
         let retained = try XCTUnwrap(h.load(FlintLimitRule.self).first)
         let retry = try XCTUnwrap(retained.protection?.queuedChange)
@@ -476,7 +476,7 @@ final class FlintRuleReviewTests: XCTestCase {
         XCTAssertTrue(arbiter.applyQueued(FlintLimitRule.self))
         XCTAssertEqual(h.center.starts.count, starts, "foreground cannot retry into a new active Hardcore period")
         h.center.refused = []
-        h.now = retry.window.end
+        h.advance(to: retry.window.end)
         _ = FlintRuleMonitor(environment: h.environment).handle(.start, activity: old.activityName)
         XCTAssertEqual(h.load(FlintLimitRule.self).first?.thresholdMinutes, 60)
         XCTAssertNil(h.load(FlintLimitRule.self).first?.protection?.queuedChange)
@@ -511,16 +511,18 @@ final class FlintRuleReviewTests: XCTestCase {
 
     func testAuthorizedUnsavedChangeKeepsProtectionAndRequiresExplicitExactRetryWithoutDoubleCount() throws {
         let h = try RuleHarness(); defer { h.clean() }
-        let old = h.install(h.schedule(tier: .harder))
+        var old = h.install(h.schedule(tier: .harder))
         let controller = FlintSchedulesController(environment: h.environment)
         var weaker = old; weaker.schedule.endHour = 16
         guard case let .waiting(ticket, _, _) = controller.upsert(weaker) else { return XCTFail() }
-        h.advance(60); h.saveAllowed = false
+        h.advance(60)
+        old = try XCTUnwrap(h.environment.observedRules(FlintScheduleRule.self)?.first)
+        h.saveAllowed = false // fail the mutation flush, after the trusted-time checkpoint
         guard case let .authorizedButNotSaved(returned, end) = controller.upsert(weaker,
             confirmation: ticket, origin: .interactive) else { return XCTFail() }
         XCTAssertEqual(returned, ticket)
-        XCTAssertEqual(end, old.occurrence(at: h.now)?.end)
-        let cause = FlintRuleArbiter.causeID(old, window: old.occurrence(at: h.now))
+        XCTAssertEqual(end, old.occurrence(at: h.now, clock: h.clock)?.end)
+        let cause = FlintRuleArbiter.causeID(old, window: old.occurrence(at: h.now, clock: h.clock))
         var ledger = try h.ledger.read().get()
         XCTAssertEqual(ledger.harder[cause]?.committedCount, 1)
         XCTAssertTrue(ledger.hasCommittedHarderWait(cause: cause, operationID: ticket.fingerprint))
@@ -545,7 +547,9 @@ final class FlintRuleReviewTests: XCTestCase {
             let arbiter = FlintRuleArbiter(environment: h.environment)
             var weaker = old; weaker.schedule.endHour = 16
             guard case let .waiting(ticket, _, _) = arbiter.upsert(weaker) else { return XCTFail() }
-            h.advance(60); h.saveAllowed = false
+            h.advance(60)
+            _ = h.environment.observedRules(FlintScheduleRule.self)
+            h.saveAllowed = false
             guard case .authorizedButNotSaved = arbiter.upsert(weaker, confirmation: ticket) else { return XCTFail() }
             h.saveAllowed = true
             if revisionBump {
@@ -580,12 +584,14 @@ final class FlintRuleReviewTests: XCTestCase {
         let arbiter = FlintRuleArbiter(environment: h.environment)
         var weaker = old; weaker.schedule.endHour = 16
         guard case let .waiting(ticket, _, _) = arbiter.upsert(weaker) else { return XCTFail() }
-        h.advance(60); h.saveAllowed = false
+        h.advance(60)
+        _ = h.environment.observedRules(FlintScheduleRule.self)
+        h.saveAllowed = false
         guard case .authorizedButNotSaved = arbiter.upsert(weaker, confirmation: ticket) else { return XCTFail() }
         let end = try XCTUnwrap(old.protection?.occurrence?.end)
         let source = h.defaults.data(forKey: FlintRuleStoreKey.schedules.rawValue)
         h.saveAllowed = true
-        h.center.onStart = { _ in h.now = end.addingTimeInterval(1) }
+        h.center.onStart = { _ in h.advance(to: end.addingTimeInterval(1)) }
         XCTAssertEqual(arbiter.upsert(weaker, confirmation: ticket), .staleRevision)
         XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.schedules.rawValue), source)
         let cause = FlintRuleArbiter.causeID(old, window: old.protection?.occurrence)
@@ -598,6 +604,7 @@ final class FlintRuleReviewTests: XCTestCase {
             var rule = initial
             let window = rule.templateOccurrence(at: h.now)
             rule.protection?.occurrence = window
+            FlintRuleOccurrenceClock.observe(&rule, clock: h.clock)
             return rule
         }
         XCTAssertTrue(FlintDesiredRules.save(current, key: .schedules, to: h.defaults))
@@ -626,7 +633,7 @@ final class FlintQueuedRuleFlowTests: XCTestCase {
         XCTAssertEqual(reopened.result, .applied)
         XCTAssertNil(controller.rules().first?.protection?.queuedChange)
         XCTAssertEqual(controller.rules().first?.activityName, old.activityName)
-        h.now = end
+        h.advance(to: end)
         XCTAssertTrue(FlintRuleArbiter(environment: h.environment).applyQueued(FlintScheduleRule.self))
         XCTAssertEqual(controller.rules().first?.enabled, true)
         XCTAssertTrue(try h.ledger.read().get().harder.isEmpty)

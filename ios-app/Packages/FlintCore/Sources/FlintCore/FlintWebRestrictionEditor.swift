@@ -40,8 +40,8 @@ public final class FlintWebRestrictionEditor {
     public convenience init() {
         self.init(load: { .loadForEnforcement() }, snapshot: {
             guard let group = FlintGroupStore(),
-                  let rules = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: .flintGroup,
-                    migrating: false) else { return nil }
+                  FlintRuleArbiter(environment: .live).applyQueued(FlintScheduleRule.self),
+                  let rules = FlintRuleReloadEnvironment.live.observedRules(FlintScheduleRule.self) else { return nil }
             let active = group.loadActiveSession()
             guard active != nil || !group.hasActiveSessionRecord() else { return nil }
             return Snapshot(session: active, rules: rules)
@@ -87,7 +87,7 @@ public final class FlintWebRestrictionEditor {
         if !harder.isEmpty {
             guard let ledger = ledger() else { return .unavailable }
             let policy = try? snapshot.rules.compactMap { rule -> String? in
-                guard let window = rule.occurrence(at: now), harder.contains(where: {
+                guard let window = rule.occurrence(at: now, clock: clock), harder.contains(where: {
                     $0.causeID == FlintRuleArbiter.causeID(rule, window: window)
                 }) else { return nil }
                 return try rule.fingerprint(action: "web.current", includeName: false)
@@ -127,7 +127,7 @@ public final class FlintWebRestrictionEditor {
             guard case let .success(outcome) = result else { return .unavailable }
             guard outcome == .saved else { return outcome }
         }
-        guard load() == previous, self.snapshot() == snapshot,
+        guard load() == previous, self.snapshot().map({ Self.samePolicy($0, snapshot) }) == true,
               affected.allSatisfy({ $0.end.map { self.clock.now() < $0 } ?? true }) else { return .unavailable }
         if persist(candidate) { return .saved }
         if !harder.isEmpty {
@@ -159,11 +159,15 @@ public final class FlintWebRestrictionEditor {
         }
         if previous.applyDuringSchedules, !candidate.applyDuringSchedules || content {
             for rule in snapshot.rules where rule.enabled {
-                guard let window = rule.occurrence(at: now) else { continue }
+                let resolved = clock ?? .system
+                guard let window = rule.occurrence(at: now, clock: resolved) else { continue }
                 let identity = FlintRuleArbiter.causeID(rule, window: window)
                 causes.append(.init(causeID: identity, occurrenceID: identity, revision: rule.revision,
-                                    kind: rule.kind, tier: rule.breakLevel, isActive: true, end: window.end,
-                                    legacyRights: rule.protection?.legacyRightsUntil.map { now < $0 } ?? false))
+                                    kind: rule.kind, tier: rule.breakLevel, isActive: true,
+                                    end: FlintRuleOccurrenceClock.display(window, for: rule, clock: resolved).end,
+                                    legacyRights: rule.protection?.legacyRightsUntil.map {
+                                        FlintRuleOccurrenceClock.date(for: rule, clock: resolved) < $0
+                                    } ?? false))
             }
         }
         return causes
@@ -176,6 +180,15 @@ public final class FlintWebRestrictionEditor {
         let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
         let data = (try? encoder.encode(canonical)) ?? Data()
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func samePolicy(_ lhs: Snapshot, _ rhs: Snapshot) -> Bool {
+        func policy(_ snapshot: Snapshot) -> Snapshot {
+            var copy = snapshot
+            for index in copy.rules.indices { copy.rules[index].protection?.timeAnchor = nil }
+            return copy
+        }
+        return policy(lhs) == policy(rhs)
     }
 }
 #endif

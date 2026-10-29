@@ -36,6 +36,9 @@ public struct FlintRuleProtection: Codable, Equatable, Sendable {
     public var usesLegacyActivityName: Bool
     public var requiresTierReview: Bool
     public var occurrence: FlintRuleWindow?
+    /// Optional for pre-clock records. The first serialized observation establishes it.
+    public var timeAnchor: FlintRuleTimeAnchor?
+    public var carrierRepair: FlintRuleCarrierRepair?
     public var queuedChange: FlintQueuedRuleChange?
 
     public init(revision: Int = 1, timeZoneID: String = TimeZone.current.identifier,
@@ -56,6 +59,8 @@ public struct FlintRuleProtection: Codable, Equatable, Sendable {
             && revision > 0 && revision < Int.max / 2 && activityRevision > 0 && activityRevision <= revision
             && TimeZone(identifier: timeZoneID) != nil
             && (occurrence?.isValid ?? true)
+            && (timeAnchor?.isValid ?? true)
+            && (carrierRepair?.isValid ?? true)
             && (queuedChange.map { queue in
                 queue.baseRevision == revision && queue.window.isValid
                     && (occurrence.map { queue.window.end >= $0.end } ?? true)

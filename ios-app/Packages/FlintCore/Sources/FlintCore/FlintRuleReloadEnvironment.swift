@@ -122,8 +122,8 @@ struct FlintRuleReloadEnvironment {
     var validateSelection: (FamilyActivitySelection, FlintSelectionContext) -> FlintSelectionIssue? = {
         FlintSelectionValidation.issue(for: $0, context: $1)
     }
-    var applyRuleShield: (FlintScheduleRule) -> Bool = { FlintRuleShield.apply($0) }
-    var applyLimitShield: (FlintLimitRule) -> Bool = { FlintRuleShield.apply($0) }
+    var applyRuleShield: (FlintScheduleRule, FlintClock) -> Bool = { FlintRuleShield.apply($0, clock: $1) }
+    var applyLimitShield: (FlintLimitRule, FlintClock) -> Bool = { FlintRuleShield.apply($0, clock: $1) }
     var timeLimitIsShielded: (FlintLimitRule, Date) -> Bool = { limit, _ in
         let store = ManagedSettingsStore(named: .init(limit.storeName))
         return store.shield.applications != nil || store.shield.applicationCategories != nil
@@ -135,8 +135,8 @@ struct FlintRuleReloadEnvironment {
     var clearLimitThreshold: (String) -> Void = { _ in }
     var publishStatus: () -> Void = {}
     /// Positive-only restoration when a callback cannot commit a rule transition.
-    var addRuleShield: ((FlintScheduleRule) -> Bool)? = nil
-    var addLimitShield: ((FlintLimitRule) -> Bool)? = nil
+    var addRuleShield: ((FlintScheduleRule, FlintClock) -> Bool)? = nil
+    var addLimitShield: ((FlintLimitRule, FlintClock) -> Bool)? = nil
     var addOpenShield: ((FlintOpenLimitRule) -> Bool)? = nil
     var recoveryDirectory: URL? = FlintRuleRecovery.directory
     var recoveryGate: () -> FlintPassRecoveryGate = { .enforcing }
@@ -152,9 +152,9 @@ struct FlintRuleReloadEnvironment {
         }
         let applied: Bool
         if let schedule = rule as? FlintScheduleRule {
-            applied = (addingOnly ? addRuleShield ?? applyRuleShield : applyRuleShield)(schedule)
+            applied = (addingOnly ? addRuleShield ?? applyRuleShield : applyRuleShield)(schedule, clock)
         } else if let limit = rule as? FlintLimitRule {
-            applied = (addingOnly ? addLimitShield ?? applyLimitShield : applyLimitShield)(limit)
+            applied = (addingOnly ? addLimitShield ?? applyLimitShield : applyLimitShield)(limit, clock)
         } else if let open = rule as? FlintOpenLimitRule {
             applied = (addingOnly ? addOpenShield ?? applyOpenShield : applyOpenShield)(open)
         } else {
@@ -181,9 +181,67 @@ struct FlintRuleReloadEnvironment {
         record(domain, current)
     }
 
+    /// The caller holds the transition lock. Checkpoint before decisions, but do not freeze a
+    /// successor here: queued changes must apply before the next occurrence can be accepted.
+    func observedRules<Rule: FlintGatedRule>(_ type: Rule.Type) -> [Rule]? {
+        guard var rules = FlintDesiredRules.load(type, key: Rule.domain, from: defaults, at: clock.now(),
+            recoveryDirectory: recoveryDirectory) else { return nil }
+        let before = rules
+        var notes: [FlintArmingHealth.Failure] = []
+        for index in rules.indices {
+            let anchor = rules[index].protection?.timeAnchor
+            if let note = FlintRuleOccurrenceClock.observe(&rules[index], clock: clock) {
+                notes.append(.init(activityName: rules[index].activityName, reason: note))
+            } else if let anchor, let next = rules[index].protection?.timeAnchor,
+                      abs(next.timeline.timeIntervalSince(anchor.timeline)) < 1 {
+                // A read-only UI refresh need not rewrite every opaque selection. Every
+                // decision still projects the full monotonic delta from the durable anchor.
+                rules[index].protection?.timeAnchor = anchor
+            }
+        }
+        if rules != before {
+            guard acceptSave(), FlintDesiredRules.save(rules, key: Rule.domain, to: defaults) else { return nil }
+        }
+        if !notes.isEmpty {
+            let domain = "ruleTime." + Rule.domain.domain
+            var report = loadHealth().domains[domain] ?? .init(enabled: 0, attempted: 0, armed: 0, failures: [])
+            report.failures = Array((report.failures + notes).suffix(64))
+            record(domain, report)
+        }
+        return rules
+    }
+
+    /// Natural transitions are committed once, before resetting a daily budget or releasing a
+    /// shield. A callback's wall date is never sufficient authority for either operation.
+    func freezeOccurrences<Rule: FlintGatedRule>(_ rules: [Rule], resetShields: Bool = true) -> [Rule]? {
+        var next = rules
+        var changed: [Rule] = []
+        for index in next.indices {
+            // applyQueued normally precedes this call. A direct/misordered caller must not
+            // freeze the old template's successor across a due queue or invalidate its blob.
+            if let queue = next[index].protection?.queuedChange,
+               FlintRuleOccurrenceClock.isOver(queue.window, for: next[index], clock: clock) { continue }
+            let current = next[index].occurrence(at: clock.now(), clock: clock)
+            if next[index].protection?.occurrence != current {
+                next[index].protection?.occurrence = current
+                changed.append(next[index])
+            }
+        }
+        guard changed.isEmpty || (acceptSave() && FlintDesiredRules.save(next, key: Rule.domain, to: defaults)) else { return nil }
+        for rule in changed {
+            if let limit = rule as? FlintLimitRule {
+                if resetShields { clearStore(limit.storeName) }
+                clearLimitThreshold(limit.id)
+            } else if rule.kind != .openLimit, rule.occurrence(at: clock.now(), clock: clock) == nil {
+                clearStore(rule.storeName)
+            }
+        }
+        return next
+    }
+
     func rulesForDisplay<Rule: FlintGatedRule>(_ type: Rule.Type) -> [Rule]? {
         if let read = FlintRuleStoreLock.withLock(environment: self, {
-            FlintDesiredRules.load(type, key: Rule.domain, from: defaults, at: clock.now(), recoveryDirectory: recoveryDirectory)
+            observedRules(type)
         }) { return read }
         // A busy transition is not evidence that the saved blob is corrupt. A display-only
         // peek may show its valid revision; commits still acquire the boundary and re-check it.
@@ -218,8 +276,8 @@ struct FlintRuleReloadEnvironment {
             }, markLimitThreshold: { FlintLimitThresholds.markReached($0, at: $1) },
             clearLimitThreshold: { FlintLimitThresholds.clear($0) },
             publishStatus: { FlintProtectionStatus.publishAfterCommit() },
-            addRuleShield: { FlintRuleShield.add($0) },
-            addLimitShield: { FlintRuleShield.add($0) },
+            addRuleShield: { FlintRuleShield.add($0, clock: $1) },
+            addLimitShield: { FlintRuleShield.add($0, clock: $1) },
             addOpenShield: { FlintOpenCredit.addShieldFromSnapshot(for: $0) },
             recoveryGate: { FlintPassRecoveryGate.read() },
             observeLimitThreshold: { activity, event in

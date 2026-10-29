@@ -172,20 +172,21 @@ public final class FlintSchedulesController {
             environment.recordState("schedules", FlintDesiredRules.unavailable("schedules", previous: environment.loadHealth()))
             return []
         }
-        guard let all = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: environment.defaults,
-            recoveryDirectory: environment.recoveryDirectory) else {
+        guard let observed = environment.observedRules(FlintScheduleRule.self),
+              let all = environment.freezeOccurrences(observed) else {
             environment.recordState("schedules", FlintDesiredRules.unavailable("schedules", previous: environment.loadHealth()))
             return []
         }
-        let plan = Self.armPlan(for: all.filter { ($0.oneShot?.end ?? .distantFuture) > environment.clock.now() })
+        let plan = Self.armPlan(for: all.filter { rule in
+            rule.oneShot.map { !FlintRuleOccurrenceClock.isOver($0, for: rule, clock: environment.clock) } ?? true
+        })
         let previous = FlintScheduleRegistrationState.load(from: environment.defaults)
         let requests = plan.arm.map { rule in
-            var request = rule.registration()
+            var request = rule.registration(clock: environment.clock)
             request.configurationChanged = FlintScheduleRegistrationState.changed(rule, previous: previous[rule.monitorName])
-            request.retainedUntil = rule.oneShot?.end ?? FlintRetainedProtection.windowEnd(startHour: rule.schedule.startHour,
-                    startMinute: rule.schedule.startMinute, endHour: rule.schedule.endHour,
-                    endMinute: rule.schedule.endMinute, daysOfWeek: rule.schedule.daysOfWeek,
-                    now: environment.clock.now(), calendar: rule.ruleCalendar)
+            request.retainedUntil = rule.previewWindow(at: environment.clock.now(), clock: environment.clock).map {
+                FlintRuleOccurrenceClock.display($0, for: rule, clock: environment.clock).end
+            }
             return request
         }
         let validationFailures = plan.failures.map {
@@ -199,6 +200,10 @@ public final class FlintSchedulesController {
                 FlintRuleCleanup.clearRemoved(name, rules: all, environment: environment)
             })
         FlintScheduleRegistrationState.save(plan.arm, observed: report.observedActivities ?? [], to: environment.defaults)
+        for rule in plan.arm where rule.occurrence(at: environment.clock.now(), clock: environment.clock) != nil
+            && report.observedActivities?.contains(rule.monitorName) == true {
+            environment.applyProtection(rule)
+        }
         environment.recordState("schedules", report)
         return plan.failures + plan.arm.compactMap { rule in
             guard let failure = report.failures.first(where: { $0.activityName == rule.monitorName }) else { return nil }

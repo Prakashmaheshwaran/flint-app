@@ -8,11 +8,11 @@ final class FlintEmergencyPassResumeTests: XCTestCase {
     func testEveryRuleWriterReportsSkippedApplicationIncludingPositiveOnlyFallback() throws {
         let h = try RuleHarness(); defer { h.clean() }
         var environment = h.environment
-        environment.applyRuleShield = { _ in false }
-        environment.applyLimitShield = { _ in false }
+        environment.applyRuleShield = { _, _ in false }
+        environment.applyLimitShield = { _, _ in false }
         environment.applyOpenShield = { _ in false }
-        environment.addRuleShield = { _ in false }
-        environment.addLimitShield = { _ in false }
+        environment.addRuleShield = { _, _ in false }
+        environment.addLimitShield = { _, _ in false }
         environment.addOpenShield = { _ in false }
         for addingOnly in [false, true] {
             XCTAssertFalse(environment.applyProtection(h.schedule(tier: .hardcore), addingOnly: addingOnly))
@@ -32,7 +32,7 @@ final class FlintEmergencyPassResumeTests: XCTestCase {
         _ = h.install(h.schedule(tier: .hardcore))
         var canApply = false
         var environment = h.environment
-        environment.applyRuleShield = { _ in canApply }
+        environment.applyRuleShield = { _, _ in canApply }
         let controller = FlintEmergencyPassController(environment: .init(ledger: { h.ledger }, clock: h.clock,
             scope: { state, now in try FlintEmergencyPassScope.load(state: state, at: now,
                 defaults: h.defaults, calendar: h.clock.calendar(), hasThresholdShield: { _ in false }) },
