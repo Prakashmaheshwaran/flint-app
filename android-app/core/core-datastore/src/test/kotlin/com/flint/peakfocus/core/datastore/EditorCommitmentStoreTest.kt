@@ -231,16 +231,22 @@ class EditorCommitmentStoreTest {
         confirm(store, EditorChange("Time", limits = EditorLimitsChange("a", TimeLimit("a", 30), null)))
         val writes = disk.changedUpdates
         var refreshes = 0
+        val firstRefresh = CompletableDeferred<Unit>()
         val driver = launch {
             store.changes.collectLatest {
                 check(++refreshes <= 10) { "publication produced a self-sustaining write loop" }
                 store.reconcileRules(clock(refreshes * 1_000L))
+                firstRefresh.complete(Unit)
             }
         }
-        delay(50)
+        try {
+            withTimeout(5_000) { firstRefresh.await() }
+            repeat(20) { yield() }
+        } finally {
+            driver.cancelAndJoin()
+        }
         assertEquals(1, refreshes)
         assertEquals(writes, disk.changedUpdates)
-        driver.cancelAndJoin()
     }
 
     @Test fun `PC-20 cancellation spends nothing and another request restarts the full wait`() = runBlocking {

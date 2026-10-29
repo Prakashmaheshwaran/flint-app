@@ -12,6 +12,7 @@ import java.util.TimeZone
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 
 /** New Timer rights are identified durably; an old all-tier Timer never acquires new rights. */
 const val CONTRACT_TIMER_ID_PREFIX = "session-timer-v2-"
@@ -37,6 +38,7 @@ data class EditorCause(
     val interval: AnchoredInterval?,
     val zoneId: String,
     val legacyRights: Boolean = false,
+    val timerTerminal: EditorTimerTerminalState? = null,
 )
 data class PendingEditorChange(val id: Long, val change: EditorChange, val expected: EditorExpected,
     val outcome: CommitmentPolicy.Outcome, val wait: HarderWaitPolicy.Operation? = null)
@@ -64,6 +66,15 @@ interface EditorCommitmentStore {
     val state: Flow<StorageState<EditorCommitmentState>>
     /** Includes raw template changes made by other writers, even when the sidecar is unchanged. */
     val changes: Flow<Unit> get() = state.map { Unit }
+    val terminalEvents: Flow<StorageState<List<EditorTerminalEvent>>> get() = error("Terminal delivery is unsupported by this store")
+    val terminalDeliveryHealth: Flow<StorageState<EditorTerminalDeliveryHealth>> get() =
+        error("Terminal delivery health is unsupported by this store")
+    suspend fun readTerminalEvents(): List<EditorTerminalEvent> = when (val value = terminalEvents.first { it !is StorageState.Loading }) {
+        is StorageState.Ready -> value.value
+        is StorageState.Unavailable -> throw StorageUnavailableException(value.reason)
+        StorageState.Loading -> error("No terminal snapshot")
+    }
+    suspend fun ackTerminalEvents(ids: Set<String>) { error("Terminal acknowledgements are unsupported by this store") }
     suspend fun request(change: EditorChange, now: AccessClockStamp, safety: EditorSafety): EditorCommitResult
     suspend fun requestEnabled(ruleIds: Set<String>, enabled: Boolean, label: String, now: AccessClockStamp, safety: EditorSafety, requireAll: Boolean = true): EditorCommitResult
     suspend fun confirm(id: Long, now: AccessClockStamp, safety: EditorSafety): EditorCommitResult

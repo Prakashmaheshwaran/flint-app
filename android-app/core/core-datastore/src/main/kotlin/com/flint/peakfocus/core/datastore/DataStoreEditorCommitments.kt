@@ -11,9 +11,11 @@ import com.flint.peakfocus.core.model.*
 import java.util.TimeZone
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 
 internal val EDITOR_COMMITMENTS_KEY = stringPreferencesKey("editor_commitments_v1")
 internal val EDITOR_VERSION_KEY = longPreferencesKey("editor_commitments_version")
+internal const val MAX_EDITOR_CAUSES = 2_000
 private val ARCHIVE_RULES = stringPreferencesKey("editor_migration_rules_v1")
 private val ARCHIVE_TIMES = stringPreferencesKey("editor_migration_time_limits_v1")
 
@@ -26,6 +28,12 @@ class DataStoreEditorCommitmentStore(
     override val changes: Flow<Unit> = dataStore.data.map { Unit }
     override val state: Flow<StorageState<EditorCommitmentState>> = dataStore.data.storageStates {
         readEditorState(it).also { _ -> if (StrictPrefsCodec.string(it, EDITOR_COMMITMENTS_KEY) != null) readHarderWait(it) }
+    }
+    override val terminalEvents = dataStore.data.storageStates(::readTerminalEvents)
+    override val terminalDeliveryHealth = dataStore.data.storageStates(::readTerminalDeliveryHealth)
+    override suspend fun readTerminalEvents(): List<EditorTerminalEvent> = readTerminalEvents(dataStore.data.first())
+    override suspend fun ackTerminalEvents(ids: Set<String>) {
+        dataStore.edit { prefs -> prefs.ackTerminalEvents(ids, clockAtCommit?.invoke() ?: ProtectionClock.now()) }
     }
     private val policy = CommitmentPolicy()
     private val harder = HarderWaitPolicy()
@@ -178,6 +186,7 @@ class DataStoreEditorCommitmentStore(
         require(!rule.targets.allowListMode && rule.targets.apps.isNotEmpty() && rule.targets.apps.none { it.packageName.isBlank() || it.packageName in floor(safety) })
         require(isValidNewSessionDuration((rule.expiresAtEpochMs ?: 0) - now.wallEpochMs))
         val current = prefs.editorRules()
+        wireRequire(state.causes.size < MAX_EDITOR_CAUSES)
         if (!current.canStartSession(rule.id, now.wallEpochMs)) return@transact false
         val startDecision = policy.decide(CommitmentPolicy.Action.START_ADDITIONAL, rule.breakLevel, CommitmentPolicy.CauseActivity.Inactive)
         check(startDecision in setOf(CommitmentPolicy.Outcome.ALLOW, CommitmentPolicy.Outcome.ALLOW_AFTER_DISCLOSURE))
@@ -234,6 +243,7 @@ class DataStoreEditorCommitmentStore(
             readHarderWait(prefs) // Missing initialized friction state is not a fresh occurrence.
         }
         state = preserveDailyUntilQuotaReset(state, quota, now)
+        state = captureNaturalTimerTerminals(prefs, state, now)
         val due = state.queued.filter { q -> !q.needsReview && q.boundaries.values.all { it.remainingMs(now) == 0L } }
         val stale = mutableSetOf<Long>()
         for (q in due) {
@@ -293,8 +303,8 @@ class DataStoreEditorCommitmentStore(
         // Retain tombstones only until their natural boundary, preventing mid-period count resets.
         val liveKeys = prefs.editorRules().map { ruleCauseKey(it.id) }.toSet() +
             prefs.editorTimes().map { timeCauseKey(it.packageName) } + prefs.editorOpens().map { openCauseKey(it.packageName) }
-        causes.entries.removeAll { (key, c) -> key !in liveKeys && c.interval?.remainingMs(now) == 0L }
-        require(causes.size <= 2_000) { "Too many commitments" }
+        causes.entries.removeAll { (key, c) -> key !in liveKeys && c.interval?.remainingMs(now) == 0L && c.timerTerminal?.pending == null }
+        wireRequire(causes.size <= MAX_EDITOR_CAUSES)
         return state.copy(causes = causes.toMap(), timeline = timeline, quotaPeriodId = quota?.periodId ?: state.quotaPeriodId)
     }
 
@@ -387,6 +397,9 @@ class DataStoreEditorCommitmentStore(
     }
 
     private fun validation(prefs: Preferences, change: EditorChange, now: AccessClockStamp, safety: EditorSafety): String? {
+        val added = change.upserts.map { ruleCauseKey(it.id) }.toSet() +
+            change.limits?.let { listOfNotNull(it.time?.let { timeCauseKey(it.packageName) }, it.open?.let { openCauseKey(it.packageName) }) }.orEmpty()
+        if ((readEditorState(prefs).causes.keys + added).size > MAX_EDITOR_CAUSES) return "Protection capacity is full. Finish an existing commitment and try again."
         require(change.upserts.map { it.id }.distinct().size == change.upserts.size && change.upserts.none { it.id in change.deleteIds })
         val current = prefs.editorRules()
         change.upserts.forEach { rule ->
