@@ -184,6 +184,7 @@ final class FlintRuleArbiter {
                         next.revision += 1; next.activityRevision = next.revision
                         next.usesLegacyActivityName = false; next.legacyRightsUntil = nil
                         next.queuedChange = nil; next.occurrence = nil
+                        next.timeZoneID = future!.protection?.timeZoneID ?? metadata.timeZoneID
                         future!.protection = next
                     }
                     let snapshot = future.flatMap { try? JSONEncoder().encode($0) }

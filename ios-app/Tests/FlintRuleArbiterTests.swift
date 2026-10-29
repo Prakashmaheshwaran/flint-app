@@ -272,6 +272,40 @@ final class FlintRuleArbiterTests: XCTestCase {
         XCTAssertNil(h.load(FlintOpenLimitRule.self).first?.protection?.queuedChange)
     }
 
+    func testQueuedZoneChangeUsesConfirmedFutureZoneWithoutRestartPC11PC14PC15PC16() throws {
+        try queuedZoneChange(FlintScheduleRule(id: "schedule", name: "Schedule",
+            schedule: .init(startHour: 9, endHour: 17), breakLevel: .hardcore,
+            allowListMode: true, protection: .init(timeZoneID: "UTC")))
+        try queuedZoneChange(FlintLimitRule(id: "time", name: "Time", thresholdMinutes: 30,
+            breakLevel: .hardcore, protection: .init(timeZoneID: "UTC")))
+        try queuedZoneChange(FlintOpenLimitRule(id: "open", name: "Open", opensAllowed: 3,
+            breakLevel: .hardcore, protection: .init(timeZoneID: "UTC")))
+    }
+
+    private func queuedZoneChange<Rule: FlintGatedRule>(_ initial: Rule) throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let old = h.install(initial)
+        var future = old; future.protection?.timeZoneID = "America/Los_Angeles"
+        let arbiter = FlintRuleArbiter(environment: h.environment)
+        let ticket = try confirmation(arbiter.upsert(future))
+        guard case let .queued(end) = arbiter.upsert(future, confirmation: ticket) else { return XCTFail() }
+        let queued = try XCTUnwrap(h.load(Rule.self).first)
+        XCTAssertEqual(queued.protection?.timeZoneID, "UTC", "current occurrence keeps its saved zone")
+        XCTAssertEqual(queued.activityName, old.activityName)
+        h.now = end
+        let monitor = FlintRuleMonitor(environment: h.environment)
+        _ = monitor.handle(.end, activity: old.activityName)
+        let applied = try XCTUnwrap(h.load(Rule.self).first)
+        XCTAssertEqual(applied.protection?.timeZoneID, "America/Los_Angeles")
+        XCTAssertNil(applied.protection?.queuedChange)
+        XCTAssertNotEqual(applied.activityName, old.activityName)
+        XCTAssertEqual(applied.protection?.incarnation, old.protection?.incarnation)
+        let starts = h.center.starts.count
+        XCTAssertTrue(arbiter.applyQueued(Rule.self))
+        _ = monitor.handle(.end, activity: old.activityName)
+        XCTAssertEqual(h.center.starts.count, starts, "applied future zone cannot loop registration")
+    }
+
     func testQueueBoundaryCannotPrecedeItsFrozenCommitmentEndPC11PC14() throws {
         let h = try RuleHarness(); defer { h.clean() }
         var rule = h.install(h.schedule(tier: .hardcore))
