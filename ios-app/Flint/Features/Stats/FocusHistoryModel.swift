@@ -156,7 +156,9 @@ private enum FocusHistoryPreview {
             }
         }
         let store = FlintHistoryStore(directory: mode == "unavailable" ? nil : directory, clock: { now }, calendar: calendar)
-        return FocusHistoryModel(sink: FlintHistorySink(store: store), clock: { now }, calendar: calendar,
+        return FocusHistoryModel(sink: FlintHistorySink(store: store), clock: { now },
+            sessionClock: .init(now: { now }, monotonic: { 0 }, bootSessionID: { nil }, calendar: { calendar }),
+            calendar: calendar,
             activeSession: { active }, isPreview: true, presentsCompletions: mode == "complete",
             acknowledgementKey: "flint.history.previewAcknowledged.\(UUID().uuidString)")
     }
