@@ -52,6 +52,34 @@ Read-driven reconciliation retains equivalent anchors and does not persist a new
 checkpoint on every read. Actual policy entries/mutations and observed rollover,
 expiry, reboot or new uncertainty still checkpoint durably.
 
+## Natural Timer completion outbox
+
+Editor preparation captures natural native Timer endpoints from previously active
+same-boot anchors, in the same edit as the occurrence transition. The event stores
+the original logical end separately from its later observation, a stable occurrence
+ID and revision. Early removed/disabled Timers and cold already-expired rows produce
+no completion. Cross-boot uncertainty is preserved on the cause and omits completion;
+a later re-anchor cannot manufacture trusted powered-off time.
+
+`EditorCommitmentStore.terminalEvents`, `readTerminalEvents` and `ackTerminalEvents`
+expose delivery until ack. `deliverTerminalEvents` invokes the consumer's suspend
+sink and acknowledges each event only after true (a durable history append). False,
+exception, failed ack or cancellation leaves it pending. The history sink must dedupe
+by event.id, including a crash between its append and the separate editor ack.
+
+`editor_terminal_schema_v1=1` and `editor_terminal_events_v1` (`T|1`) are required
+together after initialization. The pending batch is capped at 256; compact overflow
+evidence stays in the existing bounded cause state, even after a natural queued
+deletion. Acks free space for the next reconciliation. Pending events are never
+age-deleted; acknowledged dedupe receipts are capped at 1024 and 30 days. A recorded
+cause marker prevents re-emission after those ack receipts are pruned.
+`terminalDeliveryHealth` exposes pending/overflow counts and the oldest observation,
+so absent or failing consumers are observable. History-domain corruption preserves
+raw records/evidence and reports unavailable without erasing unrelated protection.
+New editor `F|` metadata is unsupported in pre-terminal builds; downgrade is not a
+repair route. C3 may absorb this outbox into its lifecycle journal later while
+preserving stable IDs and acknowledgement semantics.
+
 Only transient IO is retried automatically. File corruption emits `CORRUPT` once
 and stops; corrupt/unsupported payloads emit an unavailable state without a polling
 loop and can recover only after valid backing data is supplied. Bounded work uses

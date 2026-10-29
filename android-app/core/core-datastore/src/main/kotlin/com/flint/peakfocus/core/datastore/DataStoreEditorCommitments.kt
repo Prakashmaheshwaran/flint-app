@@ -11,6 +11,7 @@ import com.flint.peakfocus.core.model.*
 import java.util.TimeZone
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 
 internal val EDITOR_COMMITMENTS_KEY = stringPreferencesKey("editor_commitments_v1")
 internal val EDITOR_VERSION_KEY = longPreferencesKey("editor_commitments_version")
@@ -26,6 +27,12 @@ class DataStoreEditorCommitmentStore(
     override val changes: Flow<Unit> = dataStore.data.map { Unit }
     override val state: Flow<StorageState<EditorCommitmentState>> = dataStore.data.storageStates {
         readEditorState(it).also { _ -> if (StrictPrefsCodec.string(it, EDITOR_COMMITMENTS_KEY) != null) readHarderWait(it) }
+    }
+    override val terminalEvents = dataStore.data.storageStates(::readTerminalEvents)
+    override val terminalDeliveryHealth = dataStore.data.storageStates(::readTerminalDeliveryHealth)
+    override suspend fun readTerminalEvents(): List<EditorTerminalEvent> = readTerminalEvents(dataStore.data.first())
+    override suspend fun ackTerminalEvents(ids: Set<String>) {
+        dataStore.edit { prefs -> prefs.ackTerminalEvents(ids, clockAtCommit?.invoke() ?: ProtectionClock.now()) }
     }
     private val policy = CommitmentPolicy()
     private val harder = HarderWaitPolicy()
@@ -234,6 +241,7 @@ class DataStoreEditorCommitmentStore(
             readHarderWait(prefs) // Missing initialized friction state is not a fresh occurrence.
         }
         state = preserveDailyUntilQuotaReset(state, quota, now)
+        state = captureNaturalTimerTerminals(prefs, state, now)
         val due = state.queued.filter { q -> !q.needsReview && q.boundaries.values.all { it.remainingMs(now) == 0L } }
         val stale = mutableSetOf<Long>()
         for (q in due) {
@@ -293,7 +301,7 @@ class DataStoreEditorCommitmentStore(
         // Retain tombstones only until their natural boundary, preventing mid-period count resets.
         val liveKeys = prefs.editorRules().map { ruleCauseKey(it.id) }.toSet() +
             prefs.editorTimes().map { timeCauseKey(it.packageName) } + prefs.editorOpens().map { openCauseKey(it.packageName) }
-        causes.entries.removeAll { (key, c) -> key !in liveKeys && c.interval?.remainingMs(now) == 0L }
+        causes.entries.removeAll { (key, c) -> key !in liveKeys && c.interval?.remainingMs(now) == 0L && c.timerTerminal?.pending == null }
         require(causes.size <= 2_000) { "Too many commitments" }
         return state.copy(causes = causes.toMap(), timeline = timeline, quotaPeriodId = quota?.periodId ?: state.quotaPeriodId)
     }
