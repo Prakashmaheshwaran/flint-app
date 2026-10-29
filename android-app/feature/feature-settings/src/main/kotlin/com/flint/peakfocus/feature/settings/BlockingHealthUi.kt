@@ -132,7 +132,7 @@ object BlockingHealthUi {
         val banner = when (status.level) {
             HealthLevel.HEALTHY -> BannerUi(
                 level = HealthLevel.HEALTHY,
-                headline = "Blocking is healthy",
+                headline = "App blocking is healthy",
                 body = "Both detection paths, the block screen, and the battery exemption are all " +
                     "in place. If blocking still stops on your phone, work through the " +
                     "manufacturer steps below.",
@@ -161,7 +161,7 @@ object BlockingHealthUi {
             WebCoverage.Paused -> "Website blocks paused: website rules need Accessibility."
             is WebCoverage.Available -> "Last browser check: address bar readable in ${coverage.browser.displayName}."
             is WebCoverage.Degraded -> "Last browser check: website blocking can't read ${coverage.browser.displayName}'s address bar."
-            is WebCoverage.Unconfirmed -> "Flint hasn't been able to confirm it can read ${coverage.browser.displayName}'s " +
+            is WebCoverage.Unconfirmed -> "Last browser check: Flint hasn't been able to confirm it can read ${coverage.browser.displayName}'s " +
                 "address bar; website rules may not apply there."
             is WebCoverage.Unsupported -> "Last website check: website blocking unavailable in ${coverage.displayName}: " +
                 if (coverage.isBrowser) "unsupported browser." else "unsupported link handler."

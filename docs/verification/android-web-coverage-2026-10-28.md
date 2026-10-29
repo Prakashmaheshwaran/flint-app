@@ -54,10 +54,12 @@ misses/recovery, switches/stale windows, unsupported handlers, the leading/trail
 synthetic service filtering, health presentation and event disclosure. The existing
 AccessibilityDisclosureNavigationTest retains all affirmative-consent gate checks.
 
-The first candidate passed 381 local changed-module tests and full Android CI. The review
+Latest targeted execution passed 392 local changed-module tests, including all review
+regressions. The first candidate also passed full Android CI. The review
 follow-up adds global-delivery disclosure guards, unchanged-scroll/stale-root/utility-screen
 and root-recycling regressions. Final execution results are linked from the PR and lane
-handoff report. Remaining ambiguity: a visible empty address field (for example a new-tab
+handoff report. The window fixture returns owned snapshots so resource recycling cannot
+mutate its backing identity. Remaining ambiguity: a visible empty address field (for example a new-tab
 or search surface after browsing) can still produce Degraded after three blank reads; this
 means no readable address, not a certified browser regression. A missing bar after a prior
 success retains only that last successful observation, not proof of current-page coverage.

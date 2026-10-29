@@ -130,7 +130,10 @@ class WebsiteEventsTest {
 
     @Test fun `overlay root is never probed or counted as a browser miss`() {
         CountingServiceShadow.root!!.packageName = service.packageName
-        shadowOf(CountingServiceShadow.root!!.window).setType(AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY)
+        val overlayWindow = AccessibilityWindowInfo.obtain()
+        shadowOf(overlayWindow).setId(7)
+        shadowOf(overlayWindow).setType(AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY)
+        shadowOf(CountingServiceShadow.root!!).setAccessibilityWindowInfo(overlayWindow)
         repeat(5) { now = it * 500L; content(CHROME) }
         assertTrue(AddressNodeShadow.lookups.isEmpty())
         assertEquals(WebCoverage.AwaitingBrowser, WebsiteCoverageHealth.snapshot(true, true))
@@ -298,6 +301,10 @@ class CountingServiceShadow : ShadowAccessibilityService() {
 
 @Implements(AccessibilityNodeInfo::class)
 class AddressNodeShadow : ShadowAccessibilityNodeInfo() {
+    // Android returns a separately owned window snapshot. Robolectric's default shadow
+    // returns its backing instance; recycling that would mutate the fixture's window ID.
+    @Implementation override fun getWindow(): AccessibilityWindowInfo? =
+        super.getWindow()?.let { AccessibilityWindowInfo.obtain(it) }
     @Implementation override fun recycle() { recycles++; super.recycle() }
     @Implementation fun findAccessibilityNodeInfosByViewId(id: String): List<AccessibilityNodeInfo> {
         lookups += id

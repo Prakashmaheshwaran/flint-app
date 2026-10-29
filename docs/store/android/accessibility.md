@@ -24,7 +24,7 @@ before any window-content access. It processes
 content changes in supported browsers only while a website rule is active, to
 re-read the address bar after same-tab navigation, throttled to one view-ID lookup
 per browser window per 500 ms with a final trailing read. Content-change events outside
-that scope return before reading window content; window-state events still identify
+that scope return before reading window content; window-state and recheck paths still identify
 the foreground app, including through root package metadata. URLs stay on device; this adds no new data
 category, collection or transmission. The existing affirmative consent gate is unchanged.
 No raw URL history or screen content is uploaded. There are no accounts,

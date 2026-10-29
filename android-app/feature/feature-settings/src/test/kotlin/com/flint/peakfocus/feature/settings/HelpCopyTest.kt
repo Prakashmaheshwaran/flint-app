@@ -34,6 +34,7 @@ class HelpCopyTest {
             "help_websites_title", "help_websites_text", "help_section_running", "help_battery_title",
             "help_battery_text", "help_privacy", "help_title", "help_intro", "help_back",
         ).forEach { assertTrue("missing $it", strings.containsKey(it)) }
+        assertEquals("Known browsers", strings.getValue("help_websites_title"))
     }
 
     @Test

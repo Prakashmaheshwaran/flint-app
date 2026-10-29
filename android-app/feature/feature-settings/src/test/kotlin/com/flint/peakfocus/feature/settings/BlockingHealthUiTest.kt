@@ -169,6 +169,7 @@ class BlockingHealthUiTest {
         val s = status()
         assertEquals(HealthLevel.HEALTHY, s.level)
         assertTrue(BlockingHealthUi.banner(s).headline.contains("healthy", ignoreCase = true))
+        assertEquals("App blocking is healthy", BlockingHealthUi.banner(s).headline)
     }
 
     @Test
