@@ -56,6 +56,7 @@ final class FlintRuleArbiter {
             var causes: [FlintCauseState] = []
             var scopes: [String] = [context]
             var previews: [FlintRuleChangePreview] = []
+            var nextOccurrenceEnds: [Date] = []
             var raisesTier = false
             for mutation in mutations {
                 let old = all.first { $0.id == mutation.id }
@@ -103,6 +104,16 @@ final class FlintRuleArbiter {
                     guard let impact = try? proposed.impact(comparedTo: old, at: now) else { return .unavailable }
                     let action: FlintProtectionAction = impact == .cosmetic ? .editCosmetic : (impact == .strengthen ? .editStrengthen : .editWeaken)
                     decision = FlintProtectionPolicy.decide(action, for: cause)
+                    if impact == .weaken, proposed.enabled, let occurrence,
+                       let before = old as? FlintLimitRule, let after = proposed as? FlintLimitRule,
+                       before.thresholdMinutes != after.thresholdMinutes || before.selection != after.selection
+                        || before.protection?.timeZoneID != after.protection?.timeZoneID,
+                       self.env.timeLimitIsShielded(before) {
+                        // DeviceActivity cannot synchronously report the used minutes for a
+                        // revised threshold/target set. Keep today's exhausted snapshot and
+                        // offer a future revision instead of claiming an inaccurate release.
+                        if case .deferUntil = decision {} else { nextOccurrenceEnds.append(occurrence.end) }
+                    }
                 } else { decision = .allow(confirm: mutation.proposed?.breakLevel == .hardcore) }
                 decisions.append(decision)
                 guard let fingerprint = try? sourceFingerprint(mutation) else { return .unavailable }
@@ -120,12 +131,12 @@ final class FlintRuleArbiter {
                 let cause = causes[index]
                 return .denied(reason, cause: mutations[index].id, tier: cause.tier, end: cause.end)
             }
-            if raisesTier, confirmation?.confirmsTierIncrease != true {
-                return .confirmationRequired(ticket, raisesTier: true)
-            }
-            let deferredUntil = decisions.compactMap { if case let .deferUntil(end) = $0 { return end }; return nil }.max()
+            let policyDeferrals = decisions.compactMap { if case let .deferUntil(end) = $0 { return end }; return nil }
+            let deferredUntil = (policyDeferrals + nextOccurrenceEnds).max()
             if let end = deferredUntil {
-                guard confirmation != nil else { return .deferRequired(ticket, until: end) }
+                guard confirmation != nil, !raisesTier || confirmation?.confirmsTierIncrease == true else {
+                    return policyDeferrals.isEmpty ? .nextOccurrenceRequired(ticket, until: end) : .deferRequired(ticket, until: end)
+                }
                 // The whole batch is future-only. Store every future snapshot in the same
                 // domain write, retaining each current rule's effective fields/registration.
                 let batchID = UUID().uuidString
@@ -140,6 +151,7 @@ final class FlintRuleArbiter {
                           let window = current.occurrence(at: now) ?? causes.compactMap({ cause -> FlintRuleWindow? in
                               guard let end = cause.end else { return nil }; return .init(start: now, end: end)
                           }).first else { return .unavailable }
+                    metadata.occurrence = current.occurrence(at: now)
                     metadata.revision += 1
                     var future = mutation.proposed
                     if future != nil {
@@ -160,6 +172,9 @@ final class FlintRuleArbiter {
                 guard self.save(all) else { return .unavailable }
                 self.notify()
                 return .queued(until: end)
+            }
+            if raisesTier, confirmation?.confirmsTierIncrease != true {
+                return .confirmationRequired(ticket, raisesTier: true)
             }
             let harder = zip(causes, decisions).compactMap { cause, decision -> FlintCauseState? in
                 if case .wait = decision { return cause }; return nil
@@ -278,7 +293,7 @@ final class FlintRuleArbiter {
                 all[index] = next
             }
             guard self.save(all) else { return failed() }
-            self.finish(prepared, replacing: due)
+            self.finish(prepared, replacing: due, resetTimeBudget: true)
             self.notify()
             return true
         } ?? false
@@ -371,16 +386,17 @@ final class FlintRuleArbiter {
         if !names.isEmpty { env.center.stopMonitoring(names) }
     }
 
-    private func finish<Rule: FlintGatedRule>(_ prepared: [Rule], replacing old: [Rule]) {
+    private func finish<Rule: FlintGatedRule>(_ prepared: [Rule], replacing old: [Rule], resetTimeBudget: Bool = false) {
         for rule in prepared where rule.enabled {
             if let schedule = rule as? FlintScheduleRule, schedule.occurrence(at: env.clock.now()) != nil {
                 env.applyRuleShield(schedule)
-            } else if let limit = rule as? FlintLimitRule,
-                      limit.thresholdMinutes == 0 || old.compactMap({ $0 as? FlintLimitRule })
-                        .contains(where: { $0.id == rule.id && env.timeLimitIsShielded($0) }) {
-                // Retain an exhausted shield while the new revision includes today's usage.
-                // Renaming a limit below quota must not itself exhaust its allowance.
-                env.applyLimitShield(limit)
+            } else if let limit = rule as? FlintLimitRule {
+                if limit.thresholdMinutes == 0 || (!resetTimeBudget && old.compactMap({ $0 as? FlintLimitRule })
+                    .contains(where: { $0.id == rule.id && env.timeLimitIsShielded($0) })) {
+                    // Strengthening keeps an exhausted shield. A cosmetic edit below quota
+                    // never exhausts the allowance; a due future revision starts a fresh day.
+                    env.applyLimitShield(limit)
+                } else if resetTimeBudget { env.clearStore(limit.storeName) }
             } else if let open = rule as? FlintOpenLimitRule { env.applyOpenShield(open) }
         }
         for previous in old {

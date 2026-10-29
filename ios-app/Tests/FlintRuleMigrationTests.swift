@@ -47,6 +47,18 @@ final class FlintRuleMigrationTests: XCTestCase {
         XCTAssertNil(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults))
     }
 
+    func testUnrepresentableBudgetAndRevisionAreUnavailableWithoutTrappingPC71() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        for invalidRevision in [false, true] {
+            var rule = FlintLimitRule(id: "invalid", name: "Invalid", thresholdMinutes: invalidRevision ? 30 : Int.max)
+            if invalidRevision { rule.protection?.revision = Int.max }
+            let source = try JSONEncoder().encode([rule])
+            h.defaults.set(source, forKey: FlintRuleStoreKey.limits.rawValue)
+            XCTAssertNil(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults))
+            XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.limits.rawValue), source)
+        }
+    }
+
     func testLegacyActiveSleepKeepsOldRightsOnlyThroughCapturedOccurrencePC14PC70() throws {
         let h = try RuleHarness(); defer { h.clean() }
         // Legacy rules used the device zone. Put the fixture at local noon on both UTC CI

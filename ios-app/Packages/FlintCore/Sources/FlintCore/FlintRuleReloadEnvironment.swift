@@ -65,6 +65,7 @@ enum FlintDesiredRules {
     static func save<Rule: FlintGatedRule>(_ rules: [Rule], key: Key, to defaults: UserDefaults?,
         encode: ([Rule]) throws -> Data = { try JSONEncoder().encode($0) }) -> Bool {
         guard let defaults, Set(rules.map(\.id)).count == rules.count,
+              rules.allSatisfy({ $0.validationIssue == nil }),
               let data = try? encode(rules) else { return false }
         defaults.set(data, forKey: key.rawValue)
         guard defaults.synchronize(), defaults.data(forKey: key.rawValue) == data else { return false }

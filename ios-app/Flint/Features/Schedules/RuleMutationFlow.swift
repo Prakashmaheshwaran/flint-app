@@ -26,7 +26,8 @@ final class RuleMutationFlow: ObservableObject {
     private func accept(_ result: FlintRuleMutationResult) {
         self.result = result; checkedAt = Date()
         switch result {
-        case let .confirmationRequired(ticket, _), let .deferRequired(ticket, _), let .waiting(ticket, _, _): self.ticket = ticket
+        case let .confirmationRequired(ticket, _), let .deferRequired(ticket, _),
+             let .nextOccurrenceRequired(ticket, _), let .waiting(ticket, _, _): self.ticket = ticket
         default: break
         }
         if result.didSave {
@@ -98,7 +99,14 @@ private struct RuleMutationSheet: View {
             Text("Protected until \(end.formatted(date: .abbreviated, time: .shortened)). Save for after this occurrence.")
             preview(ticket)
             Text("The current rule stays effective. Your queued change will appear separately.")
+            if ticket.confirmsTierIncrease { tierDisclosure }
             Button("Save for after this occurrence") { flow.confirm(ticket) }.buttonStyle(.borderedProminent)
+        case let .nextOccurrenceRequired(ticket, end):
+            Text("This change is unavailable for today's exhausted Time Limit. Today's rule stays effective until \(end.formatted(date: .abbreviated, time: .shortened)).")
+            preview(ticket)
+            Text("Save this change for the next daily occurrence. Your queued change will appear separately.")
+            if ticket.confirmsTierIncrease { tierDisclosure }
+            Button("Save for the next occurrence") { flow.confirm(ticket) }.buttonStyle(.borderedProminent)
         case let .denied(_, cause, tier, end):
             Text("\(cause) · \(tier.rawValue.capitalized)")
             if let end { Text("Protected until \(end.formatted(date: .abbreviated, time: .shortened)).") }
@@ -110,6 +118,10 @@ private struct RuleMutationSheet: View {
             Text("Rule changes are unavailable. Your draft and existing protection were kept. Go back and try again.")
         case .applied, .queued: EmptyView()
         }
+    }
+
+    private var tierDisclosure: some View {
+        Text("Confirm the saved tier. Harder requires a wait before weakening an active rule. Hardcore keeps its protection until the occurrence ends; an available Emergency Pass is a separate recovery option.")
     }
 
     @ViewBuilder private func preview(_ ticket: FlintRuleConfirmation) -> some View {

@@ -132,6 +132,52 @@ final class FlintRuleArbiterTests: XCTestCase {
         XCTAssertNil(h.load(FlintScheduleRule.self).first?.occurrence(at: h.now))
     }
 
+    func testExhaustedTimeWeakeningQueuesForNextDayWithoutChangingCurrentOrSpendingWait() throws {
+        for tier in [BreakLevel.easy, .harder] {
+            let h = try RuleHarness(); defer { h.clean() }
+            h.timeLimitExhausted = true
+            let old = h.install(FlintLimitRule(id: "time", name: "Time", thresholdMinutes: 30,
+                breakLevel: tier, protection: .init(timeZoneID: "UTC")))
+            var draft = old; draft.thresholdMinutes = 60
+            var ledgerTouches = 0
+            var env = h.environment; env.ledger = { ledgerTouches += 1; return h.ledger }
+            let arbiter = FlintRuleArbiter(environment: env)
+            guard case let .nextOccurrenceRequired(ticket, end) = arbiter.upsert(draft) else { return XCTFail() }
+            XCTAssertEqual(arbiter.upsert(draft, confirmation: ticket), .queued(until: end))
+            let retained = try XCTUnwrap(h.load(FlintLimitRule.self).first)
+            XCTAssertEqual(retained.thresholdMinutes, 30); XCTAssertEqual(retained.activityName, old.activityName)
+            XCTAssertTrue(h.cleared.isEmpty); XCTAssertTrue(h.center.starts.isEmpty)
+            XCTAssertEqual(ledgerTouches, 0, "future-only edits spend no current-occurrence wait")
+            h.now = end
+            _ = FlintRuleMonitor(environment: env).handle(.start, activity: old.activityName)
+            let next = try XCTUnwrap(h.load(FlintLimitRule.self).first)
+            XCTAssertEqual(next.thresholdMinutes, 60); XCTAssertNil(next.protection?.queuedChange)
+            XCTAssertEqual(h.cleared, [old.storeName], "yesterday's exhausted shield cannot exhaust the new day")
+            XCTAssertTrue(h.appliedLimits.isEmpty)
+            let starts = h.center.starts.count
+            XCTAssertTrue(arbiter.applyQueued(FlintLimitRule.self))
+            XCTAssertEqual(h.center.starts.count, starts, "applied queue never restarts")
+        }
+    }
+
+    func testExhaustedTimeStrengthenAndOffKeepOrdinaryTierRights() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        h.timeLimitExhausted = true
+        let old = h.install(FlintLimitRule(id: "time", name: "Time", thresholdMinutes: 30,
+            breakLevel: .easy, protection: .init(timeZoneID: "UTC")))
+        var draft = old; draft.thresholdMinutes = 20
+        let arbiter = FlintRuleArbiter(environment: h.environment)
+        guard case let .confirmationRequired(ticket, _) = arbiter.upsert(draft) else { return XCTFail() }
+        XCTAssertEqual(arbiter.upsert(draft, confirmation: ticket), .applied)
+        XCTAssertEqual(h.appliedLimits.count, 1); XCTAssertTrue(h.cleared.isEmpty)
+        let saved = try XCTUnwrap(h.load(FlintLimitRule.self).first)
+        guard case let .confirmationRequired(off, _) = arbiter.setEnabled(FlintLimitRule.self,
+            id: saved.id, enabled: false, revision: saved.revision, confirmation: nil) else { return XCTFail() }
+        XCTAssertEqual(arbiter.setEnabled(FlintLimitRule.self, id: saved.id, enabled: false,
+            revision: saved.revision, confirmation: off), .applied)
+        XCTAssertEqual(h.cleared, [saved.storeName])
+    }
+
     func testHarderWaitSequencePersistsAcrossRenameAndHostRecreationPC18PC21() throws {
         let h = try RuleHarness(); defer { h.clean() }
         _ = h.install(FlintLimitRule(id: "time", name: "Time", thresholdMinutes: 10, breakLevel: .harder,
@@ -410,6 +456,7 @@ final class RuleHarness {
     var boot = "test-boot"
     var marker: Date?
     var ledgerAvailable = true
+    var timeLimitExhausted = false
     var saveAllowed = true
     var cleared: [String] = []
     var appliedSchedules: [FlintScheduleRule] = []
@@ -439,7 +486,7 @@ final class RuleHarness {
             ledger: { self.ledgerAvailable ? self.ledger : nil }, lockDirectory: directory.appendingPathComponent("rules"),
             acceptSave: { self.saveAllowed }, validateSelection: { _, _ in nil },
             applyRuleShield: { self.appliedSchedules.append($0) }, applyLimitShield: { self.appliedLimits.append($0) },
-            timeLimitIsShielded: { _ in false })
+            timeLimitIsShielded: { _ in self.timeLimitExhausted })
     }
     func advance(_ seconds: TimeInterval) { now.addTimeInterval(seconds); monotonic += seconds }
     func schedule(tier: BreakLevel) -> FlintScheduleRule {

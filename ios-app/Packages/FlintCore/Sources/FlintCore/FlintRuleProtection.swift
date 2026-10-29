@@ -117,6 +117,7 @@ public enum FlintRuleMutationResult: Equatable, Sendable {
     case confirmationRequired(FlintRuleConfirmation, raisesTier: Bool)
     case waiting(FlintRuleConfirmation, remaining: TimeInterval, required: TimeInterval)
     case deferRequired(FlintRuleConfirmation, until: Date)
+    case nextOccurrenceRequired(FlintRuleConfirmation, until: Date)
     case staleRevision
     case denied(FlintDenialReason, cause: String, tier: BreakLevel, end: Date?)
     case invalid(String)
