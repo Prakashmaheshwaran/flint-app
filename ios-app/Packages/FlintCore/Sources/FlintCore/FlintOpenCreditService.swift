@@ -7,11 +7,14 @@ public struct FlintOpenCreditContext {
     public var blockedBy: FlintOpenCreditBlock?
     public var blockingContributors: [String]
     public var restoration: FlintOpenCreditRestoration?
+    public var fingerprints: [String: String]
     public init(coveringCaps: [String: Int], targetKeys: Set<String>, blockedBy: FlintOpenCreditBlock? = nil,
-                blockingContributors: [String] = [], restoration: FlintOpenCreditRestoration? = nil) {
+                blockingContributors: [String] = [], restoration: FlintOpenCreditRestoration? = nil,
+                fingerprints: [String: String] = [:]) {
         self.coveringCaps = coveringCaps; self.targetKeys = targetKeys; self.blockedBy = blockedBy
         self.blockingContributors = blockingContributors
         self.restoration = restoration
+        self.fingerprints = fingerprints
     }
 }
 
@@ -56,7 +59,8 @@ public final class FlintOpenCreditService {
             guard let context = self.context(), let restoration = context.restoration else { return .failure(.denied(.unavailable)) }
             let now = FlintLedgerInstant(clock: self.clock)
             return state.acceptOpenCredit(target: target, operationID: operationID,
-                coveringCaps: context.coveringCaps, targetKeys: context.targetKeys, restoration: restoration, at: now,
+                coveringCaps: context.coveringCaps, coveringFingerprints: context.fingerprints,
+                targetKeys: context.targetKeys, restoration: restoration, at: now,
                 setupCalendar: self.clock.calendar(),
                 blocking: { context.blockedBy }, register: { grant in
                     newRegistration = grant.activityName

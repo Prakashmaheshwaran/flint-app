@@ -64,6 +64,8 @@ public struct FlintOpenCreditGrant: Codable, Equatable, Sendable {
     public let deadline: Date
     public let duration: TimeInterval
     public let coveredCauses: Set<String>
+    /// Effective active fields at acceptance, excluding cosmetic/queued template metadata.
+    public let coveredFingerprints: [String: String]
     /// Exact local token/store snapshot, pruned with the grant. Never exported to status.
     public let restoration: FlintOpenCreditRestoration
     public var activityName: String {
@@ -72,6 +74,8 @@ public struct FlintOpenCreditGrant: Codable, Equatable, Sendable {
     }
     var isValid: Bool {
         !targetKey.isEmpty && !operationID.isEmpty && !coveredCauses.isEmpty && coveredCauses.count <= 64 &&
+        Set(coveredFingerprints.keys) == coveredCauses &&
+        coveredFingerprints.values.allSatisfy({ !$0.isEmpty && $0.count <= 128 }) &&
         duration.isFinite && duration > 0 && duration <= 300 && grantedAt.monotonic.isFinite &&
         grantedAt.monotonic >= 0 && deadline.timeIntervalSince1970.isFinite &&
         abs(deadline.timeIntervalSince(grantedAt.wall) - duration) < 0.001 &&
@@ -313,7 +317,7 @@ extension FlintLedgerState {
     /// One atomic acceptance. `register` must succeed before consumption; failure spends
     /// nothing and never releases. Callers release only after this transaction is durable.
     public mutating func acceptOpenCredit(
-        target: String, operationID: String, coveringCaps: [String: Int], targetKeys: Set<String>,
+        target: String, operationID: String, coveringCaps: [String: Int], coveringFingerprints: [String: String], targetKeys: Set<String>,
         restoration: FlintOpenCreditRestoration,
         at now: FlintLedgerInstant, setupCalendar: Calendar? = nil, blocking: () -> FlintOpenCreditBlock?,
         register: (FlintOpenCreditGrant) throws -> Void, reshield: (FlintOpenCreditGrant) -> Void
@@ -348,12 +352,14 @@ extension FlintLedgerState {
             return .failure(.denied(.unavailable))
         }
         let duration = min(300, openCredits.resetRemaining)
-        guard duration > 0, restoration.isValid(target: target, coveredCauses: Set(coveringCaps.keys)) else {
+        guard duration > 0, Set(coveringFingerprints.keys) == Set(coveringCaps.keys),
+              coveringFingerprints.values.allSatisfy({ !$0.isEmpty && $0.count <= 128 }),
+              restoration.isValid(target: target, coveredCauses: Set(coveringCaps.keys)) else {
             return .failure(.denied(.unavailable))
         }
         let grant = FlintOpenCreditGrant(targetKey: target, operationID: operationID, grantedAt: now,
             deadline: now.wall.addingTimeInterval(duration), duration: duration, coveredCauses: Set(coveringCaps.keys),
-            restoration: restoration)
+            coveredFingerprints: coveringFingerprints, restoration: restoration)
         do { try register(grant) } catch { return .failure(.denied(.registrationFailed)) }
         openCredits.counters[target]!.used += 1
         openCredits.grants[target] = grant

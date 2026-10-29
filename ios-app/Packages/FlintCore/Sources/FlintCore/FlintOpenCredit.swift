@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 #if canImport(FamilyControls) && canImport(ManagedSettings) && canImport(DeviceActivity)
 import FamilyControls
 import ManagedSettings
@@ -87,12 +88,15 @@ public enum FlintOpenCredit {
             guard let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup),
                   Set(rules.map(\.id)).count == rules.count else { return nil }
             let covering = rules.filter { rule in rule.enabled && target.map { keys(for: rule).contains($0) } == true }
+            guard let fingerprints = try? Dictionary(uniqueKeysWithValues: covering.map {
+                ($0.id, try effectiveFingerprint(for: $0))
+            }) else { return nil }
             let blocked = blockedBy()
             return .init(coveringCaps: Dictionary(uniqueKeysWithValues: covering.map { ($0.id, $0.opensAllowed) }),
                          targetKeys: targetKeys(rules), blockedBy:
                             target == "flint.openLimit.unencodable" ? .identityNeedsReselection : blocked.reason,
                          blockingContributors: blocked.contributors,
-                         restoration: restoration(Set(covering.map(\.storeName))))
+                         restoration: restoration(Set(covering.map(\.storeName))), fingerprints: fingerprints)
         }, register: { grant, remaining in
             guard remaining > 0 else { throw FlintOpenCreditRefusal.denied(.unavailable) }
             let plan = FlintOpenCreditCarrierPlan(start: Date(), remaining: remaining)
@@ -114,6 +118,20 @@ public enum FlintOpenCredit {
     private static func keys(for rule: FlintOpenLimitRule) -> Set<String> {
         Set(rule.selection.applicationTokens.map { FlintOpenLimit.key(for: $0) })
             .union(rule.selection.webDomainTokens.map { FlintOpenLimit.key(for: $0) })
+    }
+    /// `activityName` carries the active activityRevision after rule-gating migration. The
+    /// queued template revision/snapshot and display name never change this authorization.
+    static func effectiveFingerprint(for rule: FlintOpenLimitRule) throws -> String {
+        func tokens<T: Encodable>(_ values: Set<T>) throws -> [String] {
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+            return try values.map { try encoder.encode([$0]).base64EncodedString() }.sorted()
+        }
+        var parts = [rule.id, rule.activityName, rule.breakLevel.rawValue, String(rule.opensAllowed),
+                     String(rule.enabled), String(rule.selection.includeEntireCategory)]
+        parts += ["applications"] + (try tokens(rule.selection.applicationTokens))
+        parts += ["categories"] + (try tokens(rule.selection.categoryTokens))
+        parts += ["domains"] + (try tokens(rule.selection.webDomainTokens))
+        return SHA256.hash(data: try JSONEncoder().encode(parts)).map { String(format: "%02x", $0) }.joined()
     }
     private static func release(_ grant: FlintOpenCreditGrant) throws {
         guard let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup) else {
