@@ -67,6 +67,18 @@ class GlanceFixtureActivity : Activity() {
         configure(intent)
     }
 
+    override fun onStart() {
+        super.onStart()
+        if (fixtureOwner !== this) configure(intent)
+    }
+
+    override fun onStop() {
+        // Home/app switching need not destroy the Activity. Ordinary OS binding/consent
+        // screens may also stop us; onStart reinstalls the labeled fixture on return.
+        restoreProduction()
+        super.onStop()
+    }
+
     private fun configure(intent: Intent) {
         fixtureOwner = this
         fixtureScope?.cancel()

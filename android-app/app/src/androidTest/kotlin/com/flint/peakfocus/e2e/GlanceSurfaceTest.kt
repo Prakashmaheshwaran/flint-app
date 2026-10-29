@@ -55,15 +55,34 @@ class GlanceSurfaceTest : FlintE2EFixture() {
         openFixture("protected")
         visible(By.text("Protection active at last check")).click()
         visible(By.text("Today"))
-        shell("am start -W -n $target/com.flint.peakfocus.e2e.GlanceWidgetHostActivity")
-        device.wait(androidx.test.uiautomator.Until.findObject(By.text(java.util.regex.Pattern.compile("(?i)create|allow"))), timeout)?.click()
-        visible(By.text("Protection state unavailable"))
-        assertFalse(device.hasObject(By.textContains("Fixture local history")))
-        assertFalse(device.hasObject(By.textContains("Fixture focus")))
+        productionHost()
         screenshot("fixture-exit-restores-production-widget")
+
+        openFixture("protected")
+        visible(By.text("Protection active at last check"))
+        device.pressHome()
+        productionHost()
+        screenshot("fixture-home-restores-production-widget")
     }
 
     private fun openFixture(state: String) {
         assertTrue(shell("am start -W -n $app/.glance.GlanceFixtureActivity --es state $state").contains("Status: ok"))
+    }
+
+    private fun productionHost() {
+        shell("am start -W -n $target/com.flint.peakfocus.e2e.GlanceWidgetHostActivity")
+        val deadline = SystemClock.uptimeMillis() + timeout
+        var consented = false
+        while (SystemClock.uptimeMillis() < deadline) {
+            refreshAccessibilityCache()
+            if (device.hasObject(By.text("Protection state unavailable"))) break
+            if (!consented) device.findObject(By.text(java.util.regex.Pattern.compile("(?i)create|allow")))?.let {
+                it.click(); consented = true
+            }
+            SystemClock.sleep(100)
+        }
+        visible(By.text("Protection state unavailable"))
+        assertFalse(device.hasObject(By.textContains("Fixture local history")))
+        assertFalse(device.hasObject(By.textContains("Fixture focus")))
     }
 }
