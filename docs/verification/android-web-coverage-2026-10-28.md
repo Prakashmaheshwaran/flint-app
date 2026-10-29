@@ -57,9 +57,10 @@ misses/recovery, switches/stale windows, unsupported handlers, the leading/trail
 synthetic service filtering, health presentation and event disclosure. The existing
 AccessibilityDisclosureNavigationTest retains all affirmative-consent gate checks.
 
-The preceding candidate passed 392 local changed-module tests. The final delta adds a
-cached-overlay/MainActivity regression and a zero-window-info-call assertion; its exact-head
-execution results are recorded in the PR and planning handoff report. The first candidate also passed full Android CI. The review
+The five changed modules passed 392 local tests at 2edacf7. The final source/copy batch at
+6c42fbd passed its three changed modules again (88 tests), including realistic View roots
+with different window IDs and zero window-info calls. Final rebased exact-head CI and
+smoke results are recorded in the PR and planning handoff report. The first candidate also passed full Android CI. The review
 follow-up adds global-delivery disclosure guards, unchanged-scroll/stale-root/utility-screen
 and root-recycling regressions. Final execution results are linked from the PR and lane
 handoff report. The window fixture returns owned snapshots so resource recycling cannot
