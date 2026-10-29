@@ -45,6 +45,7 @@ struct FlintGlanceObservation: ViewModifier {
                     Task { await FlintGlanceActivityController.shared.refresh(optedIn: enabled) }
                 }
             }
+            .flintGlanceGallery()
     }
 }
 
@@ -54,8 +55,7 @@ final class FlintGlanceActivityController {
     static let shared = FlintGlanceActivityController()
     private var registered = false
     private let sink = GlanceLifecycleSink()
-    private var refreshing = false
-    private var pendingOptIn: Bool?
+    private let refreshQueue = FlintGlanceRefreshQueue()
     private var lastStates: [String: FlintFocusActivityAttributes.ContentState] = [:]
 
     func register() {
@@ -76,14 +76,9 @@ final class FlintGlanceActivityController {
     /// Serialize ActivityKit mutations so a slow update cannot recreate an activity after
     /// opt-out. Re-read the latest preference and authority on every queued pass.
     func refresh(optedIn: Bool) async {
-        pendingOptIn = optedIn
-        guard !refreshing else { return }
-        refreshing = true
-        defer { refreshing = false }
-        while let requested = pendingOptIn {
-            pendingOptIn = nil
+        await refreshQueue.refresh(optedIn: optedIn) { requested in
             let enabled = requested && UserDefaults.standard.bool(forKey: FlintLiveActivityPreference.key)
-            await apply(optedIn: enabled)
+            await self.apply(optedIn: enabled)
         }
     }
 
@@ -104,7 +99,9 @@ final class FlintGlanceActivityController {
                 await end(activity)
             }
         }
-        guard let plan else { return }
+        // Ending a replaced activity suspends. A newer signal/opt-out must win
+        // before an old plan can request a replacement display.
+        guard !refreshQueue.hasPending, let plan else { return }
         let state = FlintFocusActivityAttributes.ContentState(cause: plan.cause, tier: plan.tier,
             startedAt: plan.startedAt, endsAt: plan.endsAt, staleAt: plan.staleAt, needsCheck: false)
         if let activity = kept {

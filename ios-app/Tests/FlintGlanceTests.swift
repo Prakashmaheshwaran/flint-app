@@ -212,7 +212,7 @@ final class FlintGlanceTests: XCTestCase {
     func testBUnknownMissingUntrustedAndClockUncertainFailUnavailable() {
         for value in [project(version: 0), project(version: 2), project(state: "future_state"),
                       project(observed: 1), project(validity: nil), project(validity: 0),
-                      project(reasons: ["time_uncertain"]), project(ends: []), project(observed: -301)] {
+                      project(reasons: ["time_uncertain"]), project(ends: [])] {
             XCTAssertEqual(value.protection, .unavailable)
             XCTAssertNil(plan(value))
             // Independently readable F history does not become a fabricated zero.
@@ -222,16 +222,16 @@ final class FlintGlanceTests: XCTestCase {
 
     func testBDisplayFreshnessIsBoundedIndependentlyOfLogicalEnd() {
         let value = project()
-        XCTAssertEqual(value.validUntil, now.addingTimeInterval(290))
+        XCTAssertEqual(value.validUntil, now.addingTimeInterval(600))
         XCTAssertEqual(value.protectionEndsAt, now.addingTimeInterval(600))
-        XCTAssertEqual(plan(value)?.staleAt, now.addingTimeInterval(290))
+        XCTAssertEqual(plan(value)?.staleAt, now.addingTimeInterval(600))
         XCTAssertEqual(plan(value)?.endsAt, now.addingTimeInterval(600))
     }
 
     func testIdleRequiresTheWriterFreshnessDeadlineEvenWithoutUpcomingOccurrence() {
         let value = project(state: "not_protected")
         XCTAssertEqual(value.protection, .idle)
-        XCTAssertEqual(value.validUntil, now.addingTimeInterval(290))
+        XCTAssertEqual(value.validUntil, now.addingTimeInterval(600))
         XCTAssertEqual(FlintGlancePresentation(value, at: now).status, .idle)
         XCTAssertNil(plan(value))
         XCTAssertEqual(project(state: "not_protected", validity: nil).protection, .unavailable)
@@ -244,6 +244,62 @@ final class FlintGlanceTests: XCTestCase {
         let openEnded = project(ends: [nil, now.addingTimeInterval(600)])
         XCTAssertNil(openEnded.protectionEndsAt)
         XCTAssertNotNil(plan(openEnded), "An unrelated open-ended cause cannot erase a finite armed session")
+    }
+
+    func testQuietCommitRemainsSupportedForHoursUntilTheWriterDeadline() {
+        let value = project(observed: -7200, validity: 600)
+        XCTAssertEqual(value.protection, .enforcing)
+        XCTAssertEqual(value.checkedAt, now.addingTimeInterval(-7200))
+        XCTAssertNotNil(plan(value))
+        XCTAssertEqual(FlintGlancePresentation(value, at: now).status, .enforcing)
+        for offset: TimeInterval in [600, 601] {
+            let date = now.addingTimeInterval(offset)
+            XCTAssertNil(plan(value, at: date))
+            XCTAssertNil(FlintGlancePresentation(value, at: date).countdownEnd)
+        }
+    }
+
+    @MainActor
+    func testRapidSignalsCoalesceBehindAnAwaitAndOptOutWins() async {
+        let queue = FlintGlanceRefreshQueue()
+        var release: CheckedContinuation<Void, Never>?
+        var entered: CheckedContinuation<Void, Never>?
+        var passes: [Bool] = []
+        var requests = 0
+        let first = Task {
+            await queue.refresh(optedIn: true) { enabled in
+                passes.append(enabled)
+                if passes.count == 1 {
+                    await withCheckedContinuation { continuation in
+                        release = continuation
+                        entered?.resume()
+                    }
+                }
+                if enabled && !queue.hasPending { requests += 1 }
+            }
+        }
+        await withCheckedContinuation { continuation in
+            if release != nil { continuation.resume() } else { entered = continuation }
+        }
+        for _ in 0..<20 { await queue.refresh(optedIn: true) { _ in XCTFail("overlapping mutation") } }
+        await queue.refresh(optedIn: false) { _ in XCTFail("overlapping opt-out") }
+        release?.resume()
+        await first.value
+        XCTAssertEqual(passes, [true, false])
+        XCTAssertEqual(requests, 0, "the old refresh cannot request after opt-out")
+        XCTAssertFalse(queue.hasPending)
+        await queue.refresh(optedIn: true) { enabled in if enabled { requests += 1 } }
+        XCTAssertEqual(requests, 1, "fresh opt-in allows one serialized request")
+    }
+
+    func testNextStartWithdrawsTheCachedClaimWithoutPredictingArming() {
+        let value = input(valid: 3600, end: 2400, session: false)
+        let date = now.addingTimeInterval(1200)
+        let model = FlintGlancePresentation(value, at: date)
+        XCTAssertEqual(model.status, .stale)
+        XCTAssertNil(model.nextStart)
+        XCTAssertNil(model.countdownEnd)
+        XCTAssertTrue(FlintGlancePresentation.boundaries(value, after: now).contains(date))
     }
 
     func testNamedHeadlineKeepsItsOwnDeadlineAcrossOverlap() {
