@@ -14,17 +14,6 @@ class GlanceSurfaceTest : FlintE2EFixture() {
         // This class is selected only by the debug suite; release has exact separate selectors.
         // Explicit activity launch below must fail if the fixture is unexpectedly missing.
         openFixture("protected")
-        // Ordinary widget binding and POST_NOTIFICATIONS consent; never adopt/grant privileges.
-        val deadline = SystemClock.uptimeMillis() + timeout
-        var bound = false
-        var allowed = shell("dumpsys package $app").contains("android.permission.POST_NOTIFICATIONS: granted=true")
-        while (SystemClock.uptimeMillis() < deadline) {
-            refreshAccessibilityCache()
-            if (!bound) device.findObject(By.text(java.util.regex.Pattern.compile("(?i)create|allow")))?.let { it.click(); bound = true }
-            if (!allowed) device.findObject(By.res("com.android.permissioncontroller", "permission_allow_button"))?.let { it.click(); allowed = true }
-            if (allowed && device.findObject(By.text("Protection active at last check")) != null) break
-            SystemClock.sleep(100)
-        }
         visible(By.text("Protection active at last check"))
         visible(By.text("Emergency Pass unavailable"))
         visible(By.textContains("Fixture focus · Harder"))
@@ -67,6 +56,27 @@ class GlanceSurfaceTest : FlintE2EFixture() {
 
     private fun openFixture(state: String) {
         assertTrue(shell("am start -W -n $app/.glance.GlanceFixtureActivity --es state $state").contains("Status: ok"))
+        // Open Flint can retire the prior host Activity. Each newly allocated widget needs
+        // its own ordinary bind consent; never request an always-allow or privileged grant.
+        val expected = when (state) {
+            "protected" -> "Protection active at last check"
+            "inactive" -> "No active protection at last check"
+            else -> "Protection state unavailable"
+        }
+        val deadline = SystemClock.uptimeMillis() + timeout
+        var bound = false
+        var allowed = shell("dumpsys package $app").contains("android.permission.POST_NOTIFICATIONS: granted=true")
+        while (SystemClock.uptimeMillis() < deadline) {
+            refreshAccessibilityCache()
+            if (!bound) device.findObject(By.pkg("com.android.settings")
+                .text(java.util.regex.Pattern.compile("(?i)create")))?.let { it.click(); bound = true }
+            if (!allowed) device.findObject(By.res("com.android.permissioncontroller", "permission_allow_button"))?.let {
+                it.click(); allowed = true
+            }
+            if ((state != "protected" || allowed) && device.findObject(By.text(expected)) != null) return
+            SystemClock.sleep(100)
+        }
+        visible(By.text(expected))
     }
 
     private fun productionHost() {
