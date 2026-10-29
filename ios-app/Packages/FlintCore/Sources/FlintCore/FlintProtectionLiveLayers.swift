@@ -50,13 +50,14 @@ extension FlintProtectionReconciler {
             return group.loadArmingHealth().domains["openLimits"] ?? missingReport("openLimits")
         },
         FlintLiveProtectionLayer(domain: "webRestrictions") { _ in
-            // TODO(B1 phase 2, after B3b merges): call FlintWebRestrictionLifecycle.reconcile
-            // using FlintWebReconcileEligibility and the fresh session/schedules reports.
-            // This adapter intentionally performs no native web writes until that handoff.
-            let enabled = FlintWebRestrictions.load().enabled
-            return .init(enabled: enabled ? 1 : 0, attempted: 0, armed: 0,
-                         failures: enabled ? [.init(activityName: "flint.web",
-                            reason: "Website restriction reconciliation has not yet been integrated.")] : [])
+            guard let group = FlintGroupStore() else { throw FlintSessionError.appGroupUnavailable }
+            let active = group.loadActiveSession()
+            return FlintWebRestrictionHostReconciler.reconcile(
+                activeSession: active, hasActiveSessionRecord: group.hasActiveSessionRecord(),
+                rules: FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: .flintGroup),
+                config: FlintWebRestrictions.loadForEnforcement(), health: group.loadArmingHealth(),
+                lifecycle: FlintWebRestrictionLifecycle()
+            )
         }
     ])
 

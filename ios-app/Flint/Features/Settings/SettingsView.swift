@@ -197,6 +197,10 @@ struct SettingsView: View {
                 }
                 ForEach(health.domains.keys.sorted(), id: \.self) { domain in
                     if let report = health.domains[domain] {
+                        if domain == "webRestrictions" {
+                            Text("Website rules: \(report.armed) applied (not independently verifiable)")
+                                .font(FlintFont.text(13)).foregroundStyle(FlintBrand.stone)
+                        } else {
                         let summary = "\(domainTitle(domain)): \(report.enabled) enabled · \(report.attempted) attempted · \(report.armed) armed · "
                             + (report.observed.map { "\($0) observed registered" } ?? "registration not observed")
                         let currentFailure = report.failures.contains {
@@ -207,6 +211,7 @@ struct SettingsView: View {
                             Text(summary).font(FlintFont.text(13)).foregroundStyle(FlintBrand.stone)
                         } else {
                             check(!currentFailure && report.observed != nil, summary)
+                        }
                         }
                         ForEach(Array(report.failures.enumerated()), id: \.offset) { _, failure in
                             Text("\(causeTitle(failure.activityName, domain: domain)) — \(failure.reason)")

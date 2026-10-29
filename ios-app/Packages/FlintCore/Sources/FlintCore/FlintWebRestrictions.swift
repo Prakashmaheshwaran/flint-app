@@ -43,16 +43,13 @@ public enum FlintWebFilter: String, Codable, CaseIterable, Sendable {
 /// the unit tests all share one definition; the actual enforcement lives in
 /// `FlintWebRestrictionStore` behind `canImport(ManagedSettings)`.
 ///
-/// Lifecycle: the user edits this in Settings (it persists to the shared App Group). Whatever
-/// starts a session applies it via `FlintWebRestrictionStore().applySaved()` and clears it on
-/// session end via `.clear()` — the same "apply on start / clear on stop" shape the shield uses.
-///
-/// **Beating Opal:** Opal can't let you type a custom domain on iOS (it relies on Screen Time's
-/// frequently-used-site list). Flint can: `ManagedSettings`'s `WebDomain(domain:)` is built from a
-/// plain string, so `blockedDomains` / `allowedDomains` accept anything the user types.
+/// Each opted-in cause writes into its own shield store. Ending that cause clears its whole
+/// store; edits reconcile only the web keys, preserving shields and the uninstall guard.
 public struct FlintWebRestrictions: Codable, Equatable, Sendable {
-    /// Master switch. When false, `FlintWebRestrictionStore` leaves Safari untouched.
+    /// Apply during focus sessions (Block Now, Shortcuts/Pomodoro and Focus filters).
     public var enabled: Bool
+    /// Independently opt schedules and Sleep into the same Safari filter. Off for older configs.
+    public var applyDuringSchedules: Bool
     /// Which filtering mode to apply while enabled.
     public var filter: FlintWebFilter
     /// In `.limitAdult`: extra domains to always block ("Never Allow"). Ignored in `.allowedOnly`
@@ -66,16 +63,32 @@ public struct FlintWebRestrictions: Codable, Equatable, Sendable {
 
     public init(
         enabled: Bool = false,
+        applyDuringSchedules: Bool = false,
         filter: FlintWebFilter = .limitAdult,
         blockedDomains: [String] = [],
         allowedDomains: [String] = [],
         denyExplicitMedia: Bool = false
     ) {
         self.enabled = enabled
+        self.applyDuringSchedules = applyDuringSchedules
         self.filter = filter
         self.blockedDomains = blockedDomains
         self.allowedDomains = allowedDomains
         self.denyExplicitMedia = denyExplicitMedia
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled, applyDuringSchedules, filter, blockedDomains, allowedDomains, denyExplicitMedia
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try values.decode(Bool.self, forKey: .enabled)
+        applyDuringSchedules = try values.decodeIfPresent(Bool.self, forKey: .applyDuringSchedules) ?? false
+        filter = try values.decode(FlintWebFilter.self, forKey: .filter)
+        blockedDomains = try values.decode([String].self, forKey: .blockedDomains)
+        allowedDomains = try values.decode([String].self, forKey: .allowedDomains)
+        denyExplicitMedia = try values.decode(Bool.self, forKey: .denyExplicitMedia)
     }
 
     /// Off by default — the user opts in. Adult filtering is the mode they get when they do.
@@ -83,13 +96,12 @@ public struct FlintWebRestrictions: Codable, Equatable, Sendable {
 
     // MARK: Honest derived facts (used by the UI to tell the truth about side effects)
 
-    /// True when applying this config disables Safari Private Browsing. On iOS that's exactly
-    /// "a web filter is active", i.e. enabled with any mode.
-    public var disablesPrivateBrowsing: Bool { enabled }
+    /// Expected side effect while an opted-in cause's filter is active; not a live OS observation.
+    public var disablesPrivateBrowsing: Bool { enabled || applyDuringSchedules }
 
     /// True when applying this config also locks "Clear History and Website Data" in Safari —
     /// iOS gates that button behind the same web-content restriction.
-    public var locksHistoryClearing: Bool { enabled }
+    public var locksHistoryClearing: Bool { enabled || applyDuringSchedules }
 
     // MARK: Normalized domain views (what actually gets enforced)
 
@@ -98,6 +110,14 @@ public struct FlintWebRestrictions: Codable, Equatable, Sendable {
 
     /// `allowedDomains` cleaned + de-duplicated.
     public var normalizedAllowedDomains: [String] { Self.normalizedDomains(allowedDomains) }
+
+    public var validationMessage: String? {
+        guard normalizedAllowedDomains.count <= FlintShieldLimits.tokenCap,
+              normalizedBlockedDomains.count <= FlintShieldLimits.tokenCap else {
+            return "Use at most \(FlintShieldLimits.tokenCap) sites in each website list. Remove sites before saving."
+        }
+        return nil
+    }
 
     // MARK: Mutating helpers (used by the editor)
 
@@ -174,40 +194,48 @@ extension FlintWebRestrictions {
     private static let storageKey = "flint.webRestrictions"
 
     public static func load(from defaults: UserDefaults? = .flintGroup) -> FlintWebRestrictions {
-        guard let data = defaults?.data(forKey: storageKey),
-              let config = try? JSONDecoder().decode(FlintWebRestrictions.self, from: data) else {
-            return .default
-        }
-        return config
+        loadForEnforcement(from: defaults) ?? .default
     }
 
-    public func save(to defaults: UserDefaults? = .flintGroup) {
-        defaults?.set(try? JSONEncoder().encode(self), forKey: Self.storageKey)
+    /// Missing preferences mean the default opt-out. Unreadable saved data or unavailable
+    /// shared storage are unknown intent: production callers must preserve last-good keys,
+    /// rather than treating a failed decode as the user's instruction to disable protection.
+    public static func loadForEnforcement(from defaults: UserDefaults? = .flintGroup) -> FlintWebRestrictions? {
+        guard let defaults else { return nil }
+        guard let stored = defaults.object(forKey: storageKey) else { return .default }
+        guard let data = stored as? Data else { return nil }
+        return try? JSONDecoder().decode(FlintWebRestrictions.self, from: data)
+    }
+
+    @discardableResult
+    public func save(to defaults: UserDefaults? = .flintGroup) -> Bool {
+        guard validationMessage == nil, let defaults, let data = try? JSONEncoder().encode(self) else { return false }
+        defaults.set(data, forKey: Self.storageKey)
+        return defaults.data(forKey: Self.storageKey) == data
     }
 }
 
 // MARK: - Enforcement (ManagedSettings)
 
 #if canImport(ManagedSettings)
-/// Applies `FlintWebRestrictions` to Safari via a dedicated `ManagedSettingsStore`. Kept on its own
-/// named store ("flint.web") so it composes with — but never disturbs — the app/website *shield*
-/// tokens that `FlintShieldStore` writes to "flint". Both stores' settings union at the OS level.
-///
-/// Call `applySaved()` when a session begins and `clear()` when it ends. (The integrator wires this
-/// into the session lifecycle; this type deliberately owns no session state of its own.)
+/// Writes only the web/media keys in the owning cause's store. Scope is decided by
+/// `FlintWebRestrictionPolicy`; the session and schedule toggles are independent.
 public final class FlintWebRestrictionStore {
-    public static let storeName = "flint.web"
-
     private let store: ManagedSettingsStore
 
-    public init(named name: String = FlintWebRestrictionStore.storeName) {
+    public init(named name: String) {
         self.store = ManagedSettingsStore(named: ManagedSettingsStore.Name(name))
     }
 
-    /// Enforce a configuration now. A disabled config is equivalent to `clear()`.
+    /// Enforce an already-authorized cause's configuration now.
     public func apply(_ restrictions: FlintWebRestrictions) {
-        guard restrictions.enabled else { clear(); return }
+        guard restrictions.validationMessage == nil else { return } // preserve last-good keys
+        store.webContent.blockedByFilter = Self.filterPolicy(for: restrictions)
+        // nil = no assertion from this cause; another cause may still deny explicit content.
+        store.media.denyExplicitContent = restrictions.denyExplicitMedia ? true : nil
+    }
 
+    static func filterPolicy(for restrictions: FlintWebRestrictions) -> WebContentSettings.FilterPolicy {
         let allowed = Set(restrictions.normalizedAllowedDomains.map { WebDomain(domain: $0) })
         let blocked = Set(restrictions.normalizedBlockedDomains.map { WebDomain(domain: $0) })
 
@@ -215,22 +243,13 @@ public final class FlintWebRestrictionStore {
         case .limitAdult:
             // Apple's auto adult filter, with the typed extras layered on. Setting any filter is
             // what disables Private Browsing + locks history clearing.
-            store.webContent.blockedByFilter = .auto(blocked, except: allowed)
+            return .auto(blocked, except: allowed)
         case .allowedOnly:
-            store.webContent.blockedByFilter = .specific(allowed)
+            return .all(except: allowed)
         }
-
-        // `denyExplicitContent` is optional: nil = "don't assert", so leave it unset when off.
-        store.media.denyExplicitContent = restrictions.denyExplicitMedia ? true : nil
     }
 
-    /// Load the user's saved configuration and enforce it. The convenience a session-start hook calls.
-    public func applySaved(from defaults: UserDefaults? = .flintGroup) {
-        apply(FlintWebRestrictions.load(from: defaults))
-    }
-
-    /// Lift the restrictions — re-enables Private Browsing and unlocks history clearing. Surgical:
-    /// only resets the keys this store sets, leaving any unrelated settings alone.
+    /// Release this cause's web keys only. Other active causes may still restrict Safari.
     public func clear() {
         store.webContent.blockedByFilter = nil
         store.media.denyExplicitContent = nil

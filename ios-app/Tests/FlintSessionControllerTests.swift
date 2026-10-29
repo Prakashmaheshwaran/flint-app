@@ -53,6 +53,7 @@ final class FlintSessionControllerTests: XCTestCase {
         return FlintSessionController(environment: FlintSessionEnvironment(
             store: { storeAvailable ? store : nil },
             shield: shield,
+            webRestrictions: NoSessionWebRestrictions(),
             registrar: registrar,
             isAuthorized: { [unowned self] in self.authorized },
             clock: clock.flintClock,
@@ -827,6 +828,10 @@ final class FlintSessionControllerTests: XCTestCase {
 }
 
 // MARK: - Fakes
+
+private struct NoSessionWebRestrictions: FlintSessionWebRestricting {
+    func reconcile(_ session: FlintActiveSession, now: Date) {}
+}
 
 /// One ordered record of OS and store writes across all fakes.
 private final class CallLog {

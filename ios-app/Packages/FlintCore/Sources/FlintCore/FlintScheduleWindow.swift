@@ -44,3 +44,10 @@ public enum FlintScheduleWindow {
         return result
     }
 }
+
+extension FlintSchedule {
+    /// Uses the shared start-weekday and DST endpoint policy, including overnight tails.
+    public func isWindowActive(at date: Date = Date(), calendar: Calendar = .current) -> Bool {
+        FlintScheduleWindow.resolve(self, at: date, calendar: calendar)?.current != nil
+    }
+}

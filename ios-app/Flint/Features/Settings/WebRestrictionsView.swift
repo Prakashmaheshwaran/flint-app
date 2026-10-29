@@ -1,27 +1,46 @@
 import SwiftUI
 import FlintCore
 
-/// Configures Flint's Safari content restrictions + Private-Browsing lockdown (Opal features
-/// 1.8 / 1.9, FREE in Flint). This screen only edits + persists the `FlintWebRestrictions`
-/// preference; the session lifecycle is what calls `FlintWebRestrictionStore().applySaved()` /
-/// `.clear()` to enforce it. Reachable from `SettingsView`; the Wave-2 integrator owns app nav.
+/// Drafts changes, gates weakening across active causes, then reconciles an approved save.
 struct WebRestrictionsView: View {
-    @State private var restrictions = FlintWebRestrictions.load()
+    @State private var restrictions: FlintWebRestrictions
+    @State private var savedConfig: FlintWebRestrictions?
+    @State private var outcome: FlintWebRestrictionEditor.Outcome?
+    @State private var requestID = UUID().uuidString
+    private let editor = FlintWebRestrictionEditor()
+
+    init() {
+        let loaded = FlintWebRestrictions.loadForEnforcement()
+        _restrictions = State(initialValue: loaded ?? .default)
+        _savedConfig = State(initialValue: loaded)
+    }
 
     var body: some View {
         Form {
+            if savedConfig == nil {
+                Section {
+                    Text("Couldn't read website rules. Existing settings have been preserved; changes cannot be saved.")
+                    Button("Try again") {
+                        if let loaded = FlintWebRestrictions.loadForEnforcement() {
+                            savedConfig = loaded; restrictions = loaded; outcome = nil
+                        }
+                    }
+                }
+            } else {
             Section {
-                Toggle("Restrict Safari during sessions", isOn: $restrictions.enabled)
+                Toggle("Focus sessions", isOn: $restrictions.enabled)
+                    .tint(FlintBrand.spark)
+                Toggle("Schedules and Sleep", isOn: $restrictions.applyDuringSchedules)
                     .tint(FlintBrand.spark)
             } footer: {
                 Text("""
-                    While a focus session is running, Safari follows the rules below. Turning this \
-                    on also disables Private Browsing and locks Clear History and Website \
-                    Data — iOS ties both to web restrictions, so they can't be evaded mid-session.
+                    Apply the Safari web-content filter during focus sessions, or during schedules \
+                    and Sleep when that switch is on. While the filter is active, iOS also disables \
+                    Private Browsing and locks Clear History and Website Data as a side effect.
                     """)
             }
 
-            if restrictions.enabled {
+            if restrictions.enabled || restrictions.applyDuringSchedules {
                 Section {
                     Picker("Mode", selection: $restrictions.filter) {
                         ForEach(FlintWebFilter.allCases, id: \.self) { mode in
@@ -42,8 +61,7 @@ struct WebRestrictionsView: View {
                 } else {
                     DomainListSection(
                         title: "Also block",
-                        footer: "Block these sites on top of the adult-content filter. Opal can't do "
-                              + "this on iOS — Flint lets you type any domain.",
+                        footer: "Block these sites on top of the adult-content filter.",
                         addPrompt: "Add a site to block",
                         domains: $restrictions.blockedDomains
                     )
@@ -64,18 +82,61 @@ struct WebRestrictionsView: View {
             }
 
             Section {
-                Text("Safari is the only browser iOS filters uniformly. Restrictions take effect on a "
-                     + "real device — the Simulator can't apply them.")
+                Text("This filter applies only to Safari. Other browsers are not filtered. "
+                     + "Safari filtering and its side effects cannot be verified in the Simulator.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+            }
+                if let message = restrictions.validationMessage {
+                    Section { Text(message).foregroundStyle(FlintBrand.ember) }
+                }
+                if let outcome {
+                    Section {
+                        Text(message(for: outcome))
+                        if outcome == .confirmationRequired {
+                            Button("Confirm website changes") { attemptSave(confirmed: true) }
+                        } else if case .waiting = outcome {
+                            Button("Check wait") { attemptSave() }
+                        } else if case .protected = outcome {
+                            Button("Try saving again") { attemptSave() }
+                        }
+                    }
+                }
             }
         }
         .flintForm()
         .navigationTitle("Web & Safari")
         .navigationBarTitleDisplayMode(.inline)
-        // Persist every edit to the shared App Group so a starting session enforces the latest config.
         .onChange(of: restrictions) { newValue in
-            newValue.save()
+            guard savedConfig != nil, newValue != savedConfig else { outcome = nil; return }
+            requestID = UUID().uuidString
+            attemptSave()
+        }
+    }
+
+    private func attemptSave(confirmed: Bool = false) {
+        guard savedConfig != nil else { return }
+        let result = editor.save(restrictions, requestID: requestID, confirmed: confirmed)
+        outcome = result
+        if result == .saved {
+            savedConfig = restrictions
+            Task { await FlintProtectionReconciler.shared.reconcile(trigger: .configEdit) }
+        } else if result == .unavailable, FlintWebRestrictions.loadForEnforcement() == nil {
+            savedConfig = nil
+        }
+    }
+
+    private func message(for outcome: FlintWebRestrictionEditor.Outcome) -> String {
+        switch outcome {
+        case .saved: return "Website rules saved."
+        case let .protected(end):
+            let deadline = end.map { "Protected until \($0.formatted(date: .abbreviated, time: .shortened)). " }
+                ?? "Protected by an active block. "
+            return deadline + "This weakening edit can't be saved during the block. Your changes remain a draft; no automatic change is scheduled."
+        case let .waiting(seconds): return "Wait at least \(Int(ceil(seconds))) seconds, then check the wait and explicitly confirm these changes. Nothing has been saved."
+        case .confirmationRequired: return "The wait is complete. Review your draft, then confirm to save these website changes."
+        case .unavailable: return "Couldn't verify the current protection state or save changes. Existing website rules were preserved."
+        case let .invalid(message): return message
         }
     }
 }
@@ -93,7 +154,8 @@ private struct DomainListSection: View {
     private var normalizedInput: String? { FlintWebRestrictions.normalizedDomain(input) }
     private var canAdd: Bool {
         guard let candidate = normalizedInput else { return false }
-        return !FlintWebRestrictions.normalizedDomains(domains).contains(candidate)
+        let normalized = FlintWebRestrictions.normalizedDomains(domains)
+        return normalized.count < FlintShieldLimits.tokenCap && !normalized.contains(candidate)
     }
 
     var body: some View {
@@ -120,6 +182,9 @@ private struct DomainListSection: View {
             Text(title)
         } footer: {
             Text(footer)
+            if FlintWebRestrictions.normalizedDomains(domains).count >= FlintShieldLimits.tokenCap {
+                Text("Limit: \(FlintShieldLimits.tokenCap) sites per list. Remove a site before adding another.")
+            }
         }
     }
 
