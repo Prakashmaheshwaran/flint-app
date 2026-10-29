@@ -83,7 +83,11 @@ class FocusHistoryStore(
             .filter { it.outcome == SessionOutcome.RUNNING }.mapTo(mutableSetOf()) { it.id }
         val retained = retainForSessions(snapshot.events, running)
         val old = readMetadata()
-        val at = maxOf(old.cleared ?: Long.MIN_VALUE, clock.millis())
+        // A rollback cannot put already committed records after the clear boundary.
+        val recordedThrough = snapshot.events.filter { it.knownType != null }.maxOfOrNull {
+            maxOf(it.at, it.observedAt ?: it.at)
+        } ?: Long.MIN_VALUE
+        val at = maxOf(old.cleared ?: Long.MIN_VALUE, clock.millis(), recordedThrough)
         clearPhase(HistoryClearPhase.BEFORE_INTENT)
         val intent = old.copy(pendingClear = at, keepSessions = running)
         writeMetadata(intent)

@@ -4,6 +4,9 @@ import com.flint.peakfocus.core.datastore.*
 import com.flint.peakfocus.core.history.FocusHistoryAggregator
 import com.flint.peakfocus.core.history.FocusHistoryStore
 import com.flint.peakfocus.core.history.HistoryEvent
+import com.flint.peakfocus.core.history.HistoryClearPhase
+import com.flint.peakfocus.core.history.HistoryReconciler
+import com.flint.peakfocus.core.history.HistoryRule
 import com.flint.peakfocus.core.history.SessionOutcome
 import com.flint.peakfocus.core.model.*
 import java.io.IOException
@@ -25,6 +28,11 @@ class FocusHistoryTerminalDeliveryTest {
     private val terminal = EditorTerminalEvent("editor:completed:session-late", "session-late", "session-late",
         EditorTerminalKind.COMPLETED, AccessClockStamp(start + hour, hour, "boot"),
         AccessClockStamp(start + 2 * hour, 2 * hour, "boot"), 1L, false)
+    private class MutableClock(var now: Long) : Clock() {
+        override fun instant() = Instant.ofEpochMilli(now)
+        override fun getZone() = ZoneOffset.UTC
+        override fun withZone(zone: java.time.ZoneId): Clock = this
+    }
 
     @Test fun failedHistoryAppendNeverAcknowledgesOwnerIntent() = runTest {
         val owner = PendingOwner(terminal)
@@ -111,6 +119,45 @@ class FocusHistoryTerminalDeliveryTest {
         val session = FocusHistoryAggregator.sessions(restarted.load().events, clock.millis(), emptySet()).single()
         assertEquals(SessionOutcome.COMPLETED, session.outcome)
         assertEquals(hour, session.focusedMs)
+    }
+
+    @Test fun rollbackClearAndRecoveryNeverRearmOrReplayRemovedTimer() = runTest {
+        for (phase in listOf<HistoryClearPhase?>(null, HistoryClearPhase.INTENT_COMMITTED, HistoryClearPhase.LOG_REPLACED)) {
+            val clock = MutableClock(start + 2 * hour)
+            val store = FocusHistoryStore(temporary.newFolder(), clock)
+            val id = "session-timer-v2-$start-old"
+            val old = terminal.copy(id = "editor:completed:$id", sessionId = id, occurrenceId = id)
+            assertTrue(store.append(HistoryEvent(type = "started", session = id, at = start,
+                plannedEnd = start + hour, tz = "UTC", name = "Focus", tier = "easy", source = "manual")))
+            val owner = PendingOwner(old).apply { failAck = true }
+            runCatching { projectEditorHistoryTerminals(owner, store::update, ZoneOffset.UTC) }
+            assertEquals(3, store.load().events.size)
+            clock.now = start + hour / 2
+            FocusHistoryStore(store.directory, clock, clearPhase = { if (it == phase) error("interrupted") })
+                .clear(emptySet())
+            val reopened = FocusHistoryStore(store.directory, clock)
+            assertEquals(start + 2 * hour, reopened.load().clearedAt)
+            val observer = HistoryReconciler(reopened, clock, { ZoneOffset.UTC })
+            observer.observe(listOf(HistoryRule(id, "Focus", "easy", start + hour)))
+            assertTrue(reopened.load().events.isEmpty())
+            clock.now = start + 3 * hour
+            val freshId = "session-timer-v2-${clock.millis()}-fresh"
+            observer.observe(listOf(HistoryRule(freshId, "New focus", "easy", start + 4 * hour)))
+            owner.failAck = false
+            assertEquals(1, projectEditorHistoryTerminals(owner, reopened::update, ZoneOffset.UTC))
+            assertTrue(owner.pending.isEmpty())
+            assertFalse(reopened.load().events.any { it.session == id })
+            assertEquals(listOf(freshId), reopened.load().events.map { it.session })
+            clock.now = start + 5 * hour
+            val fresh = terminal.copy(id = "editor:completed:$freshId", sessionId = freshId, occurrenceId = freshId,
+                logicalEnd = AccessClockStamp(start + 4 * hour, 4 * hour, "boot"),
+                observedAt = AccessClockStamp(clock.millis(), 5 * hour, "boot"))
+            projectEditorHistoryTerminals(PendingOwner(fresh), reopened::update, ZoneOffset.UTC)
+            val session = FocusHistoryAggregator.sessions(reopened.load().events, clock.millis(), emptySet()).single()
+            assertEquals(freshId, session.id)
+            assertEquals(SessionOutcome.COMPLETED, session.outcome)
+            assertEquals(hour, session.focusedMs)
+        }
     }
 
     @Test fun cancelledAppendLeavesOwnerIntentPending() = runTest {

@@ -46,12 +46,13 @@ internal suspend fun projectEditorHistoryTerminals(
     // The rules observer may have missed an edit, or run after this delivery.
     // The authoritative endpoint must replace that stale plan in the same write.
     update { snapshot ->
-        val cleared = snapshot.clearedAt?.let { terminal.at <= it } == true
+        val cleared = snapshot.clearedAt != null
         val retained = snapshot.events.any {
             it.session == event.sessionId && it.knownType == HistoryEventType.STARTED
         }
         // Clear removed ended sessions and their dedupe IDs. A pending owner's
         // retry is acknowledged without restoring them; retained running IDs survive.
+        // A completed orphan has no later STARTED source, even after wall rollback.
         if (cleared && !retained) emptyList() else listOf(HistoryEvent(
             id = "${event.id}:deadline", type = "rescheduled", session = event.sessionId,
             at = terminal.at, plannedEnd = terminal.at, observedAt = terminal.observedAt,

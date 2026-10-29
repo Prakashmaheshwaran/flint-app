@@ -74,6 +74,9 @@ class HistoryReconciler(
             val known = snapshot.events.filter { it.knownType != null }.groupBy { it.session }
             sessions.values.filter { it.id in current }.forEach { rule ->
                 if (known[rule.id].orEmpty().none { it.knownType == HistoryEventType.STARTED }) {
+                    // An unacked raw Timer can look future-dated after wall rollback.
+                    // Wait for the persisted clear boundary before importing new IDs.
+                    if (snapshot.clearedAt?.let { now < it } == true) return@forEach
                     val native = rule.id.startsWith("session-timer-")
                     val timestamp = if (native) rule.id.removePrefix("session-timer-v2-").removePrefix("session-timer-").substringBefore('-').toLongOrNull() else null
                     val start = timestamp?.takeIf { it > 1_500_000_000_000L && (rule.plannedEnd == null || it < rule.plannedEnd) } ?: now

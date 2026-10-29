@@ -111,6 +111,23 @@ class FocusHistoryFinalIntegrityTest {
         assertTrue(store.compact())
     }
     @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun futureRuleRetriesAnUnrecordedStartBeforeItsDeadline() = runTest {
+        val clock = MutableClock(begin)
+        val source = MutableStateFlow<HistoryRulesSnapshot>(HistoryRulesSnapshot.Ready(
+            listOf(HistoryRule("session-a", "Focus", "easy", begin + 60 * minute))))
+        var started = false
+        val seen = mutableListOf<HistoryRulesSnapshot>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            source.withDeadlineObservations(clock, hasStarted = { started }).collect { seen += it }
+        }
+        runCurrent(); assertEquals(1, seen.size)
+        clock.now += 30_000; advanceTimeBy(30_000); runCurrent()
+        assertEquals(2, seen.size)
+        started = true
+        clock.now += 30_000; advanceTimeBy(30_000); runCurrent()
+        assertEquals(2, seen.size)
+    }
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test fun deadlineWakeupReobservesStableReadyAndCancelsOnEditLoadingAndUnavailable() = runTest {
         val clock = MutableClock(begin)
         val first = HistoryRulesSnapshot.Ready(listOf(HistoryRule("session-a", "Focus", "easy", begin + minute)))
