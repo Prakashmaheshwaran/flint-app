@@ -161,6 +161,67 @@ final class FlintOpenCreditMigrationTests: XCTestCase {
                                                                          from: JSONSerialization.data(withJSONObject: object)))
     }
 
+    func testEarlierV2MetadataOmissionsPreserveCounterPassAndQuota() throws {
+        var source = imported(.value(try legacy(["app": 4])))
+        source.importLegacyPass(.absent, at: instant)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: FlintProtectionLedger.makeEncoder().encode(source)) as? [String: Any])
+        var quota = try XCTUnwrap(object["openCredits"] as? [String: Any])
+        quota["previousAcceptedOperations"] = nil
+        var counters = try XCTUnwrap(quota["counters"] as? [String: [String: Any]])
+        counters["app"]?["lastSeen"] = nil
+        quota["counters"] = counters
+        object["openCredits"] = quota
+        let decoded = try FlintProtectionLedger.makeDecoder().decode(FlintLedgerState.self,
+            from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertEqual(decoded.openCredits.previousAcceptedOperations, [])
+        XCTAssertEqual(decoded.openCredits.counters["app"]?.lastSeen, source.openCredits.periodStart)
+        XCTAssertEqual(decoded.openCredits.counters["app"]?.used, 4)
+        XCTAssertEqual(decoded.pass, source.pass)
+        XCTAssertEqual(decoded.openCredits.resetRemaining, source.openCredits.resetRemaining)
+        XCTAssertEqual(decoded.openCreditPreview(target: "app", caps: [3], blockedBy: nil, at: instant).remaining, 0)
+        XCTAssertTrue(decoded.openCredits.isValid)
+    }
+
+    func testRequiredV2QuotaAndCounterFieldsRemainStrict() throws {
+        let source = imported(.value(try legacy(["app": 2])))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: FlintProtectionLedger.makeEncoder().encode(source)) as? [String: Any])
+        let original = try XCTUnwrap(object["openCredits"] as? [String: Any])
+        for key in ["availability", "resetRemaining", "counters", "knownTargets", "pendingTargets",
+                    "grants", "carrierCheckpoints", "acceptedOperations", "enrolled"] {
+            var fixture = object, quota = original
+            quota[key] = nil
+            fixture["openCredits"] = quota
+            XCTAssertThrowsError(try FlintProtectionLedger.makeDecoder().decode(FlintLedgerState.self,
+                from: JSONSerialization.data(withJSONObject: fixture)), "missing \(key) must not default")
+        }
+        for key in ["targetKey", "periodStart", "used"] {
+            var fixture = object, quota = original
+            var counters = try XCTUnwrap(quota["counters"] as? [String: [String: Any]])
+            counters["app"]?[key] = nil
+            quota["counters"] = counters; fixture["openCredits"] = quota
+            XCTAssertThrowsError(try FlintProtectionLedger.makeDecoder().decode(FlintLedgerState.self,
+                from: JSONSerialization.data(withJSONObject: fixture)), "missing counter \(key) must not default")
+        }
+    }
+
+    func testMalformedAdditiveV2MetadataIsNotTreatedAsAbsent() throws {
+        let source = imported(.value(try legacy(["app": 2])))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: FlintProtectionLedger.makeEncoder().encode(source)) as? [String: Any])
+        var fixture = object
+        var quota = try XCTUnwrap(fixture["openCredits"] as? [String: Any])
+        quota["previousAcceptedOperations"] = "invalid"
+        fixture["openCredits"] = quota
+        XCTAssertThrowsError(try FlintProtectionLedger.makeDecoder().decode(FlintLedgerState.self,
+            from: JSONSerialization.data(withJSONObject: fixture)))
+        fixture = object
+        quota = try XCTUnwrap(fixture["openCredits"] as? [String: Any])
+        var counters = try XCTUnwrap(quota["counters"] as? [String: [String: Any]])
+        counters["app"]?["lastSeen"] = "invalid"
+        quota["counters"] = counters; fixture["openCredits"] = quota
+        XCTAssertThrowsError(try FlintProtectionLedger.makeDecoder().decode(FlintLedgerState.self,
+            from: JSONSerialization.data(withJSONObject: fixture)))
+    }
+
     func testMigrationCrashCheckpointsAreAtomicAndIdempotent() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("flint-import-crash-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }

@@ -1,7 +1,7 @@
 import Foundation
 import CryptoKit
 
-/// ADR-012 §5/§9. All fields are required in schema v2; unavailable is never zero.
+/// ADR-012 §5/§9. Required quota/grant state stays strict; unavailable is never zero.
 public struct FlintOpenCreditState: Codable, Equatable, Sendable {
     public static let maximumTargets = 4096
     public static let maximumGrants = 128
@@ -27,6 +27,32 @@ public struct FlintOpenCreditState: Codable, Equatable, Sendable {
     public var enrolled: Bool = false
     public init() {}
 
+    private enum CodingKeys: String, CodingKey {
+        case availability, quotaZone, periodStart, checkpoint, trustedWall, resetRemaining
+        case counters, knownTargets, pendingTargets, grants, carrierCheckpoints
+        case acceptedOperations, previousAcceptedOperations, enrolled
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        availability = try values.decode(Availability.self, forKey: .availability)
+        quotaZone = try values.decodeIfPresent(String.self, forKey: .quotaZone)
+        periodStart = try values.decodeIfPresent(Date.self, forKey: .periodStart)
+        checkpoint = try values.decodeIfPresent(FlintLedgerInstant.self, forKey: .checkpoint)
+        trustedWall = try values.decodeIfPresent(Date.self, forKey: .trustedWall)
+        resetRemaining = try values.decode(TimeInterval.self, forKey: .resetRemaining)
+        counters = try values.decode([String: Counter].self, forKey: .counters)
+        knownTargets = try values.decode(Set<String>.self, forKey: .knownTargets)
+        pendingTargets = try values.decode(Set<String>.self, forKey: .pendingTargets)
+        grants = try values.decode([String: FlintOpenCreditGrant].self, forKey: .grants)
+        carrierCheckpoints = try values.decode([String: FlintLedgerInstant].self, forKey: .carrierCheckpoints)
+        acceptedOperations = try values.decode(Set<String>.self, forKey: .acceptedOperations)
+        // Earlier unmerged v2 builds did not retain prior-period aliases. This adds replay
+        // protection without changing a current counter, grant or migration decision.
+        previousAcceptedOperations = try values.decodeIfPresent(Set<String>.self, forKey: .previousAcceptedOperations) ?? []
+        enrolled = try values.decode(Bool.self, forKey: .enrolled)
+    }
+
     public struct Counter: Codable, Equatable, Sendable {
         public let targetKey: String
         public let periodStart: Date
@@ -35,6 +61,15 @@ public struct FlintOpenCreditState: Codable, Equatable, Sendable {
         public init(targetKey: String, periodStart: Date, used: Int, lastSeen: Date? = nil) {
             self.targetKey = targetKey; self.periodStart = periodStart; self.used = used
             self.lastSeen = lastSeen ?? periodStart
+        }
+        private enum CodingKeys: String, CodingKey { case targetKey, periodStart, used, lastSeen }
+        public init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            targetKey = try values.decode(String.self, forKey: .targetKey)
+            periodStart = try values.decode(Date.self, forKey: .periodStart)
+            used = try values.decode(Int.self, forKey: .used)
+            // Ordering metadata only: old records remain the oldest finished identities.
+            lastSeen = try values.decodeIfPresent(Date.self, forKey: .lastSeen) ?? periodStart
         }
     }
 
