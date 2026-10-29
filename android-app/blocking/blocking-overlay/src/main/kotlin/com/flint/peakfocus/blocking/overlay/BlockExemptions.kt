@@ -3,6 +3,8 @@ package com.flint.peakfocus.blocking.overlay
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.model.PersistedExemption
 import com.flint.peakfocus.core.model.ExemptionKind
+import com.flint.peakfocus.core.model.AccessClockStamp
+import com.flint.peakfocus.core.model.ProtectionRecovery
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -29,6 +31,22 @@ object BlockExemptions {
     private data class Projection(val revision: Long, val receipts: List<PersistedExemption>)
     private val projectionLock = Any()
     @Volatile private var committed = Projection(-1, emptyList())
+    private data class RecoveryProjection(val revision: Long, val recovery: ProtectionRecovery?, val clock: () -> AccessClockStamp)
+    @Volatile private var recoveryProjection: RecoveryProjection? = null
+
+    /** A durable global recovery is measured only on its original monotonic boot clock. */
+    internal fun restoreRecovery(recovery: ProtectionRecovery?, clock: () -> AccessClockStamp, revision: Long) {
+        synchronized(projectionLock) {
+            if (revision < (recoveryProjection?.revision ?: -1L)) return
+            recoveryProjection = RecoveryProjection(revision, recovery?.copy(affectedCauseKeys = recovery.affectedCauseKeys.toSet(),
+                affectedRuleIds = recovery.affectedRuleIds.toSet(), endedTransientIds = recovery.endedTransientIds.toSet()), clock)
+        }
+    }
+
+    fun hasGlobalRecovery(): Boolean {
+        val projection = recoveryProjection ?: return false
+        return GlobalRecoveryPolicy.remaining(projection.recovery, projection.clock()) > 0
+    }
 
     /** Replace only the durable projection. Call ONLY with a Ready or acknowledged snapshot. */
     fun restoreCommitted(receipts: Collection<PersistedExemption>, nowEpochMs: Long, revision: Long, bootSessionId: String) {
@@ -61,7 +79,7 @@ object BlockExemptions {
             active(exemptUntil, packageName, nowEpochMs) || active(exemptUntil, GLOBAL_PACKAGE, nowEpochMs)
 
     fun hasEmergencyExemption(packageName: String, nowEpochMs: Long): Boolean =
-        durable(packageName, nowEpochMs, true) ||
+        hasGlobalRecovery() || durable(packageName, nowEpochMs, true) ||
             active(emergencyUntil, packageName, nowEpochMs) || active(emergencyUntil, GLOBAL_PACKAGE, nowEpochMs)
 
     /** Evaluate the grant against the current restriction, not the tier when it was issued. */
@@ -80,7 +98,7 @@ object BlockExemptions {
     fun clearAll() {
         exemptUntil.clear()
         emergencyUntil.clear()
-        synchronized(projectionLock) { committed = Projection(-1, emptyList()) }
+        synchronized(projectionLock) { committed = Projection(-1, emptyList()); recoveryProjection = null }
     }
 
     private fun active(ledger: ConcurrentHashMap<String, Long>, key: String, nowEpochMs: Long): Boolean {

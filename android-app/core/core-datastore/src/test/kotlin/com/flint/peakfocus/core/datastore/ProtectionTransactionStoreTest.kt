@@ -155,4 +155,44 @@ class ProtectionTransactionStoreTest {
         assertEquals(setOf("session-one", "work"), accepted.snapshot.focus.protection!!.recovery!!.affectedRuleIds)
         assertEquals(setOf("session-one", "work"), accepted.snapshot.focus.protection!!.outbox.values.single().affectedRuleIds)
     }
+
+    @Test fun PC_44_PC_63_PC_65_crashBeforeDeliveryReplaysTheSameDurableEventThenAcknowledgesIt() = runBlocking {
+        val disk = Disk(); initialize(disk)
+        store(disk).transact { ProtectionMutation(consumed(it.focus), Unit) }
+        val original = store(disk).state.snapshotOrNull()!!.focus.protection!!.outbox.values.single()
+        val durableHistory = linkedSetOf<String>()
+        store(disk).deliverLifecycleEvents { event -> durableHistory.add(event.id); true }
+        assertEquals(setOf(original.id), durableHistory)
+        assertTrue(store(disk).state.snapshotOrNull()!!.focus.protection!!.outbox.isEmpty())
+        store(disk).deliverLifecycleEvents { fail("Acknowledged event replayed"); true }
+    }
+
+    @Test fun PC_44_PC_63_PC_65_crashAfterConsumerCommitBeforeOutboxAckRedeliversButConsumerDeduplicates() = runBlocking {
+        val disk = Disk(); initialize(disk)
+        store(disk).transact { ProtectionMutation(consumed(it.focus), Unit) }
+        val durableHistory = linkedSetOf<String>()
+        var deliveries = 0
+        try {
+            store(disk).deliverLifecycleEvents { event ->
+                deliveries++; durableHistory.add(event.id)
+                throw CancellationException("process died before outbox acknowledgement")
+            }
+            fail("Cancellation swallowed")
+        } catch (_: CancellationException) { }
+        assertEquals(1, store(disk).state.snapshotOrNull()!!.focus.protection!!.outbox.size)
+        store(disk).deliverLifecycleEvents { event -> deliveries++; durableHistory.add(event.id); true }
+        assertEquals(2, deliveries)
+        assertEquals(1, durableHistory.size)
+        assertTrue(store(disk).state.snapshotOrNull()!!.focus.protection!!.outbox.isEmpty())
+    }
+
+    @Test fun PC_63_PC_65_consumerFalseFailureOrFailedAckNeverLosesAnUndeliveredEvent() = runBlocking {
+        val disk = Disk(); initialize(disk)
+        store(disk).transact { ProtectionMutation(consumed(it.focus), Unit) }
+        for (attempt in 0..2) {
+            disk.fail = attempt == 2
+            store(disk).deliverLifecycleEvents { if (attempt == 0) false else if (attempt == 1) throw IOException("history unavailable") else true }
+            assertEquals(1, store(disk).state.snapshotOrNull()!!.focus.protection!!.outbox.size)
+        }
+    }
 }

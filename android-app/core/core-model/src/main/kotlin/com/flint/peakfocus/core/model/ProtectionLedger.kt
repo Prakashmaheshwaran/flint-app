@@ -54,4 +54,8 @@ data class ProtectionLifecycleEvent(
     val grantId: String? = null,
     val untilEpochMs: Long? = null,
     val breakEndReason: ProtectionBreakEndReason? = null,
+    /** Only these transient native session identities ended early; templates merely suspend. */
+    val endedTransientIds: Set<String> = emptySet(),
+    val revision: Long = 0,
+    val timeUncertain: Boolean = false,
 )

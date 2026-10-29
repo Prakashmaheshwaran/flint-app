@@ -1,6 +1,8 @@
 package com.flint.peakfocus.blocking.overlay
 
 import java.util.concurrent.CopyOnWriteArraySet
+import java.util.concurrent.atomic.AtomicReference
+import com.flint.peakfocus.core.model.ProtectionLifecycleEvent
 
 /**
  * Outbound, observe-only enforcement events for local history (lane F's focus-session store),
@@ -22,6 +24,26 @@ import java.util.concurrent.CopyOnWriteArraySet
  *    A throwing listener is isolated — it never breaks enforcement or other listeners.
  */
 object BlockEventHooks {
+
+    /** Return true only after a durable, event.id-deduplicated local history write. */
+    fun interface DurableConsumer {
+        suspend fun deliver(event: ProtectionLifecycleEvent): Boolean
+    }
+    private val durableConsumer = AtomicReference<DurableConsumer?>(null)
+    private val durableInvalidations = CopyOnWriteArraySet<() -> Unit>()
+
+    /** One local-history owner; registration also retries previously retained events. */
+    fun registerDurableConsumer(consumer: DurableConsumer): () -> Unit {
+        check(durableConsumer.compareAndSet(null, consumer)) { "A durable lifecycle consumer is already registered" }
+        durableInvalidations.forEach { runCatching(it) }
+        return { durableConsumer.compareAndSet(consumer, null); Unit }
+    }
+
+    internal fun currentDurableConsumer(): DurableConsumer? = durableConsumer.get()
+    internal fun subscribeDurableConsumer(listener: () -> Unit): () -> Unit {
+        durableInvalidations += listener
+        return { durableInvalidations -= listener }
+    }
 
     enum class BreakEndReason(val wireValue: String) {
         EXPIRED("expired"), RESUMED("resumed"), SUPERSEDED("superseded"), RECOVERY("recovery"),
@@ -70,13 +92,13 @@ object BlockEventHooks {
     internal fun emergencyPassUsed(ruleId: String?, atEpochMs: Long) =
         each { it.onEmergencyPassUsed(ruleId, atEpochMs) }
 
-    /** Caller must first commit and durably claim this operation's event exactly once. */
+    /** Observe-only compatibility hook, called after an acknowledged new acceptance. */
     internal fun emergencyPassCommitted(operationId: String, affectedRuleIds: Set<String>, recoveryEndEpochMs: Long, atEpochMs: Long) {
         val frozen = affectedRuleIds.toSet()
         each { it.onEmergencyPassCommitted(operationId, frozen, recoveryEndEpochMs, atEpochMs) }
     }
 
-    /** Caller must first commit and durably claim this grant's terminal event exactly once. */
+    /** Observe-only compatibility hook; durable history uses [DurableConsumer]. */
     internal fun breakEnded(ruleId: String?, grantId: String, reason: BreakEndReason, atEpochMs: Long) =
         each { it.onBreakEnded(ruleId, grantId, reason, atEpochMs) }
 

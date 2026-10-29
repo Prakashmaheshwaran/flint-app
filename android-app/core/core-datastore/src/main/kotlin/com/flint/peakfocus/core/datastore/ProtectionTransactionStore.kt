@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.edit
 import com.flint.peakfocus.blocking.engine.HarderWaitPolicy
 import com.flint.peakfocus.blocking.engine.ProtectionContract
+import com.flint.peakfocus.blocking.engine.trustedElapsedMs
 import com.flint.peakfocus.core.model.*
 import java.util.TimeZone
 import kotlinx.coroutines.flow.Flow
@@ -41,6 +42,12 @@ interface ProtectionTransactionStore {
     /** Reducer is pure; only the returned acknowledgement authorizes any desired release. */
     suspend fun <R> transact(transform: (ProtectionSnapshot) -> ProtectionMutation<R>): ProtectionCommit<R>
 }
+
+/** Same-edit gate for editor/manual starts: the user must resume protection first. */
+internal fun hasActiveProtectionRecovery(prefs: Preferences, now: AccessClockStamp): Boolean =
+    readFocus(prefs).protection?.recovery?.let { recovery ->
+        trustedElapsedMs(recovery.startedAt, now)?.let { it < recovery.durationMs } == true
+    } == true
 
 class DataStoreProtectionTransactionStore(
     private val dataStore: DataStore<Preferences>,
