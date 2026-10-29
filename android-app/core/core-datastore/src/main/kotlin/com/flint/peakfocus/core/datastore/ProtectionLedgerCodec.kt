@@ -109,7 +109,9 @@ internal object ProtectionLedgerCodec {
                     checkWire(version == 2)
                     val f = fields(line, 5); val id = atom(f[1])
                     val duration = number(f[4]).also { checkWire(it in 1..300_000) }
-                    checkWire(creditEnds.put(id, ProtectionCreditEventReceipt(id, atom(f[2]), AccessDuration(readClock(f[3]), duration))) == null)
+                    val start = readClock(f[3])
+                    checkWire(start.wallEpochMs <= Long.MAX_VALUE - duration && start.elapsedRealtimeMs <= Long.MAX_VALUE - duration)
+                    checkWire(creditEnds.put(id, ProtectionCreditEventReceipt(id, atom(f[2]), AccessDuration(start, duration))) == null)
                 }
                 else -> wireFuture()
             }

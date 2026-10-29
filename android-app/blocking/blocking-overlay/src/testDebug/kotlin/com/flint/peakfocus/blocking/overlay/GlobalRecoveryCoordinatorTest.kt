@@ -567,6 +567,22 @@ class GlobalRecoveryCoordinatorTest {
         assertNull(c.evaluateBlockCause(browser, browser, null, false, "https://elsewhere.example/"))
     }
 
+    @Test fun PC_54_PC_55_openResetDisplayUsesTheSavedElapsedQuotaClockAfterWallAndDeviceZoneChanges() = runTest {
+        var shift = 0L
+        val disk = Disk(initial()) { clock().let { it.copy(wallEpochMs = it.wallEpochMs + shift) } }
+        val c = coordinator(disk); runCurrent()
+        val remaining = disk.latest.openCredits!!.reset.remainingToResetMs
+        val zone = java.util.TimeZone.getDefault()
+        try {
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Pacific/Honolulu"))
+            shift = 3 * 86_400_000L + 3_600_000L
+            val cause = c.evaluateBlockCause(null, "c", null, false)!!
+            assertEquals(disk.clock().wallEpochMs + remaining, cause.endsAtEpochMs)
+            assertEquals(remaining, c.screenState("c", null, cause, disk.clock().wallEpochMs).remainingMillis)
+            assertEquals(remaining, c.currentBlockCause("c", openLimitBlockCause(disk.latest.opens.single(), disk.clock().wallEpochMs, 0))!!.endsAtEpochMs!! - disk.clock().wallEpochMs)
+        } finally { java.util.TimeZone.setDefault(zone) }
+    }
+
     @Test fun PC_28_PC_37_exhaustedQuotaUsesTierBreakWithoutAnotherCreditCharge() = runTest {
         val disk = Disk(initial().copy(opens = listOf(OpenLimit("c", 1, BreakLevel.EASY)), openCredits = OpenCreditLedgerPolicy.initial(base, "UTC"))) { clock() }
         val c = coordinator(disk); runCurrent()

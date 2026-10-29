@@ -519,7 +519,7 @@ class BlockScreenCoordinator(
             recordAllowedOpen = effectiveRule == null && timeCause == null && !ordinary && !emergency,
         )
         val openCause = (openDecision as? OpenLimitDecision.Blocked)?.let {
-            openLimitBlockCause(it.limit, now, offset)
+            currentOpenLimitCause(it.limit, now, offset)
         }
         val cause = BlockOverlapPolicy.afterExemptions(
             BlockOverlapPolicy.strongest(timeCause, effectiveRule, openCause),
@@ -562,13 +562,22 @@ class BlockScreenCoordinator(
         ) timeLimitBlockCause(currentTimeLimitBreakLevel(packageName), now, offset) else null
         val openDecision = inspectOpen(packageName)
         val openCause = (openDecision as? OpenLimitDecision.Blocked)?.let {
-            openLimitBlockCause(it.limit, now, offset)
+            currentOpenLimitCause(it.limit, now, offset)
         }
         val liveDisplayed = displayedCause?.takeIf { it.endsAtEpochMs == null || now < it.endsAtEpochMs }
             ?.takeUnless { it.ruleId != null && rulesState.value is StorageState.Ready && ActiveRulesHolder.rules.none { rule -> rule.id == it.ruleId } }
             ?.takeUnless { it.reason == BlockScreenReason.OPEN_LIMIT && openState.value is StorageState.Ready && openCause == null }
+            ?.let { if (recoveries != null && it.reason == BlockScreenReason.OPEN_LIMIT) openCause else it }
             ?.let { if (it.reason == BlockScreenReason.TIME_LIMIT) it.copy(breakLevel = currentTimeLimitBreakLevel(packageName)) else it }
         return BlockOverlapPolicy.strongest(timeCause, ruleCause, openCause, liveDisplayed)
+    }
+
+    /** Saved quota elapsed time supplies the estimate even after travel or wall edits. */
+    private fun currentOpenLimitCause(limit: OpenLimit, now: Long, offset: Long): BlockCause {
+        val fallback = openLimitBlockCause(limit, now, offset)
+        val owner = recoveries ?: return fallback
+        val remaining = owner.lastGood?.openCredits?.let { com.flint.peakfocus.blocking.engine.OpenCreditPolicy().remainingToResetMs(it.reset, statusClock()) }
+        return fallback.copy(endsAtEpochMs = remaining?.takeIf { now <= Long.MAX_VALUE - it }?.let { now + it })
     }
 
     /** HARDER cooldown remaining at [atEpochMs], or null when none is pending. */
