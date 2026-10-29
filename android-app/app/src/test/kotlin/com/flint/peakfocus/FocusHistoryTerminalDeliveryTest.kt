@@ -42,11 +42,11 @@ class FocusHistoryTerminalDeliveryTest {
         assertTrue(store.append(HistoryEvent(type = "started", session = terminal.sessionId, at = start,
             plannedEnd = start + hour, tz = "UTC", name = "Focus", tier = "easy", source = "manual")))
         val owner = PendingOwner(terminal).apply { failAck = true }
-        runCatching { projectEditorHistoryTerminals(owner, { batch -> store.update { batch } }, ZoneOffset.UTC) }
+        runCatching { projectEditorHistoryTerminals(owner, store::update, ZoneOffset.UTC) }
         assertEquals(listOf(terminal), owner.pending)
         assertEquals(3, store.load().events.size)
         owner.failAck = false
-        projectEditorHistoryTerminals(owner, { batch -> store.update { batch } }, ZoneOffset.UTC)
+        projectEditorHistoryTerminals(owner, store::update, ZoneOffset.UTC)
         assertTrue(owner.pending.isEmpty())
         val events = store.load().events
         assertEquals(3, events.size)
@@ -68,7 +68,7 @@ class FocusHistoryTerminalDeliveryTest {
             val final = terminal.copy(logicalEnd = AccessClockStamp(finalDeadline, 2 * hour, "boot"),
                 observedAt = AccessClockStamp(clock.millis(), 3 * hour, "boot"))
             val owner = PendingOwner(final)
-            projectEditorHistoryTerminals(owner, { batch -> store.update { batch } }, ZoneOffset.UTC)
+            projectEditorHistoryTerminals(owner, store::update, ZoneOffset.UTC)
             assertTrue(owner.pending.isEmpty())
             // A later rule observation cannot repair a terminal's plan; delivery owns it.
             val reconciler = com.flint.peakfocus.core.history.HistoryReconciler(store, clock, { ZoneOffset.UTC })
@@ -79,6 +79,38 @@ class FocusHistoryTerminalDeliveryTest {
             assertEquals(2 * hour, session.focusedMs)
             assertEquals(3, store.load().events.size)
         }
+    }
+
+    @Test fun failedAckThenClearSuppressesOldTerminalReplayAfterStoreRestart() = runTest {
+        val clock = Clock.fixed(Instant.ofEpochMilli(start + 2 * hour), ZoneOffset.UTC)
+        val store = FocusHistoryStore(temporary.newFolder(), clock)
+        assertTrue(store.append(HistoryEvent(type = "started", session = terminal.sessionId, at = start,
+            plannedEnd = start + hour, tz = "UTC", name = "Focus", tier = "easy", source = "manual")))
+        val owner = PendingOwner(terminal).apply { failAck = true }
+        runCatching { projectEditorHistoryTerminals(owner, store::update, ZoneOffset.UTC) }
+        assertEquals(3, store.load().events.size)
+        assertTrue(store.clear(emptySet()))
+        val restarted = FocusHistoryStore(store.directory, clock)
+        assertEquals(clock.millis(), restarted.load().clearedAt)
+        owner.failAck = false
+        projectEditorHistoryTerminals(owner, restarted::update, ZoneOffset.UTC)
+        assertTrue(owner.pending.isEmpty())
+        assertTrue(restarted.load().events.isEmpty())
+    }
+
+    @Test fun clearRetainsRunningIdentityForLateAuthoritativeShortening() = runTest {
+        val clock = Clock.fixed(Instant.ofEpochMilli(start + 2 * hour), ZoneOffset.UTC)
+        val store = FocusHistoryStore(temporary.newFolder(), clock)
+        assertTrue(store.append(HistoryEvent(type = "started", session = terminal.sessionId, at = start,
+            plannedEnd = start + 3 * hour, tz = "UTC", name = "Focus", tier = "easy", source = "manual")))
+        assertTrue(store.clear(setOf(terminal.sessionId)))
+        val restarted = FocusHistoryStore(store.directory, clock)
+        val owner = PendingOwner(terminal)
+        projectEditorHistoryTerminals(owner, restarted::update, ZoneOffset.UTC)
+        assertTrue(owner.pending.isEmpty())
+        val session = FocusHistoryAggregator.sessions(restarted.load().events, clock.millis(), emptySet()).single()
+        assertEquals(SessionOutcome.COMPLETED, session.outcome)
+        assertEquals(hour, session.focusedMs)
     }
 
     @Test fun cancelledAppendLeavesOwnerIntentPending() = runTest {

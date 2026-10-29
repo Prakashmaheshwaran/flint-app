@@ -8,6 +8,8 @@ import com.flint.peakfocus.core.datastore.FlintPreferences
 import com.flint.peakfocus.core.datastore.deliverTerminalEvents
 import com.flint.peakfocus.core.history.FocusHistoryBridge
 import com.flint.peakfocus.core.history.HistoryEvent
+import com.flint.peakfocus.core.history.HistoryEventType
+import com.flint.peakfocus.core.history.HistorySnapshot
 import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -25,7 +27,7 @@ internal object FocusHistoryTerminalAdapter {
         scope.launch(Dispatchers.IO) {
             // Retry even when IO recovers without a new rule/terminal flow emission.
             while (isActive) {
-                try { projectEditorHistoryTerminals(owner, { batch -> history.update { batch } }) }
+                try { projectEditorHistoryTerminals(owner, history::update) }
                 catch (cancelled: CancellationException) { throw cancelled }
                 catch (_: Exception) { /* Leave the owner's durable intent pending. */ }
                 delay(5_000)
@@ -37,17 +39,25 @@ internal object FocusHistoryTerminalAdapter {
 /** Commit the owner's final plan and terminal together before acknowledgement. */
 internal suspend fun projectEditorHistoryTerminals(
     owner: EditorCommitmentStore,
-    commit: suspend (List<HistoryEvent>) -> Boolean,
+    update: suspend ((HistorySnapshot) -> List<HistoryEvent>) -> Boolean,
     zone: ZoneId = ZoneId.systemDefault(),
 ) = owner.deliverTerminalEvents { event ->
     val terminal = event.toHistoryEvent(zone)
     // The rules observer may have missed an edit, or run after this delivery.
     // The authoritative endpoint must replace that stale plan in the same write.
-    commit(listOf(HistoryEvent(
-        id = "${event.id}:deadline", type = "rescheduled", session = event.sessionId,
-        at = terminal.at, plannedEnd = terminal.at, observedAt = terminal.observedAt,
-        inferred = true, tz = zone.id,
-    ), terminal))
+    update { snapshot ->
+        val cleared = snapshot.clearedAt?.let { terminal.at <= it } == true
+        val retained = snapshot.events.any {
+            it.session == event.sessionId && it.knownType == HistoryEventType.STARTED
+        }
+        // Clear removed ended sessions and their dedupe IDs. A pending owner's
+        // retry is acknowledged without restoring them; retained running IDs survive.
+        if (cleared && !retained) emptyList() else listOf(HistoryEvent(
+            id = "${event.id}:deadline", type = "rescheduled", session = event.sessionId,
+            at = terminal.at, plannedEnd = terminal.at, observedAt = terminal.observedAt,
+            inferred = true, tz = zone.id,
+        ), terminal)
+    }
 }
 
 internal fun EditorTerminalEvent.toHistoryEvent(zone: ZoneId): HistoryEvent = when (kind) {
