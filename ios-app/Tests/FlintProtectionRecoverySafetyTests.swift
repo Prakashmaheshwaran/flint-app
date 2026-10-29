@@ -22,7 +22,7 @@ final class FlintProtectionRecoverySafetyTests: XCTestCase {
                 // Editing must not turn an unavailable source into an authoritative array.
                 _ = FlintSchedulesController(environment: env).upsert(.init(name: "New",
                     schedule: .init(startHour: 9, endHour: 17), allowListMode: true))
-                FlintLimitsController(environment: env).delete("keep")
+                FlintLimitsController(environment: env).delete("keep", revision: 0)
                 FlintOpenLimitsController(environment: env).upsert(.init(name: "New", opensAllowed: 2))
                 XCTAssertEqual(Set(center.activities.map(\.rawValue)), Set(names))
                 XCTAssertTrue(center.starts.isEmpty)
@@ -202,7 +202,7 @@ final class FlintProtectionRecoverySafetyTests: XCTestCase {
     }
 
     @MainActor
-    func testOpenLimitLiveLayerPreservesForegroundGrantsAndRefusedLaunchShield() async throws {
+    func testOpenLimitLiveLayerUsesGrantAwareApplyForEveryTriggerAndPreservesRefusedLaunchShield() async throws {
         let suite = "flint.tests.openLayer.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -222,15 +222,16 @@ final class FlintProtectionRecoverySafetyTests: XCTestCase {
         for trigger in FlintProtectionTrigger.allCases where trigger != .launch {
             _ = try await layer.reconcile(trigger: trigger)
         }
-        XCTAssertEqual(applied, 0, "registration repair must not revoke an existing released grant")
+        XCTAssertEqual(applied, FlintProtectionTrigger.allCases.count - 1,
+                       "B5 apply is grant-aware; every observed trigger must restore expired/legacy releases")
         _ = try await layer.reconcile(trigger: .launch)
-        XCTAssertEqual(applied, 1)
+        XCTAssertEqual(applied, FlintProtectionTrigger.allCases.count)
         // Force an actual replacement refusal; the existing shield is last-good protection.
         center.held[.init(rule.activityName)] = activity(rule.activityName, hour: 8)
         FlintActivityDefinition.save([:], to: defaults)
         center.refused = [rule.activityName]
         let failed = try await layer.reconcile(trigger: .launch)
-        XCTAssertEqual(applied, 1)
+        XCTAssertEqual(applied, FlintProtectionTrigger.allCases.count)
         XCTAssertEqual(cleared, 0)
         XCTAssertTrue(center.stops.isEmpty)
         XCTAssertEqual(failed.failures.count, 1)

@@ -54,12 +54,21 @@ extension FlintProtectionReconciler {
             let active = group.loadActiveSession()
             return FlintWebRestrictionHostReconciler.reconcile(
                 activeSession: active, hasActiveSessionRecord: group.hasActiveSessionRecord(),
-                rules: FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: .flintGroup),
+                rules: FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: .flintGroup, migrating: false),
                 config: FlintWebRestrictions.loadForEnforcement(), health: group.loadArmingHealth(),
-                lifecycle: FlintWebRestrictionLifecycle()
+                lifecycle: FlintWebRestrictionLifecycle(), clock: .system
             )
         }
-    ])
+    ], publish: {
+        // The host initializes the ledger (and runs its one-time legacy pass import) so
+        // read-only peeks — extensions, the shield, App detail — find it (ADR-012 §8, §12).
+        // Only before its durable initialization marker exists (first launch of this build): a
+        // normal launch takes no ledger lock here, and a corrupt ledger isn't re-read each time.
+        if UserDefaults.flintGroup?.object(forKey: FlintProtectionLedger.initializedMarkerKey) == nil {
+            _ = FlintProtectionLedger.appGroup()?.read()
+        }
+        FlintProtectionStatus.publishAfterCommit(writer: .host)
+    })
 
     private static func missingReport(_ domain: String) -> FlintArmingHealth.DomainReport {
         .init(enabled: 0, attempted: 0, armed: 0,

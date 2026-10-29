@@ -8,9 +8,19 @@ extension FlintProtectionStatusBuilder.RuleInput {
     public static func schedule(_ rule: FlintScheduleRule,
                                 kind: FlintProtectionStatusSnapshot.Kind = .recurringSchedule,
                                 armed: Bool, observed: Bool, now: Date, calendar: Calendar) -> Self {
-        .schedule(id: rule.id, kind: kind, displayName: rule.name, tier: rule.breakLevel,
-                  schedule: rule.schedule, enabled: rule.enabled, armed: armed,
-                  observed: observed, now: now, calendar: calendar)
+        guard rule.protection != nil else {
+            return .schedule(id: rule.id, kind: kind, displayName: rule.name, tier: rule.breakLevel,
+                schedule: rule.schedule, enabled: rule.enabled, armed: armed, observed: observed, now: now, calendar: calendar)
+        }
+        let current = rule.occurrence(at: now).map { DateInterval(start: $0.start, end: $0.end) }
+        let next: DateInterval?
+        if let oneShot = rule.oneShot {
+            next = oneShot.start > now ? .init(start: oneShot.start, end: oneShot.end) : nil
+        } else { next = FlintScheduleWindow.resolve(rule.schedule, at: now, calendar: rule.ruleCalendar)?.next }
+        return .init(id: rule.id, kind: rule.oneShot == nil ? kind : .oneShotSchedule,
+            displayName: rule.name, tier: rule.breakLevel, enabled: rule.enabled,
+            armed: armed, observed: observed, available: rule.validationIssue == nil,
+            currentWindow: current, nextWindow: next)
     }
 }
 
@@ -101,9 +111,9 @@ extension FlintProtectionStatus {
                          timeIntegrity: nil, available: false, timeIntegrityApplies: false)
         }
         let active = environment.loadActiveSession()
-        let loadedSchedules = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: defaults)
-        let loadedLimits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: defaults)
-        let loadedOpens = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: defaults)
+        let loadedSchedules = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: defaults, at: now, migrating: false)
+        let loadedLimits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: defaults, at: now, migrating: false)
+        let loadedOpens = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: defaults, at: now, migrating: false)
         let unreadable = (active == nil && environment.hasActiveSessionRecord())
             || loadedSchedules == nil || loadedLimits == nil || loadedOpens == nil
         let schedules = loadedSchedules ?? []
@@ -130,24 +140,28 @@ extension FlintProtectionStatus {
             let status = observation(id: rule.id, activity: rule.activityName, domain: "limits")
             return .init(id: rule.id, kind: .timeLimit, displayName: rule.name, tier: rule.breakLevel,
                 enabled: rule.enabled, armed: status.armed, observed: status.observed,
+                currentWindow: rule.occurrence(at: now).map { .init(start: $0.start, end: $0.end) },
                 active: rule.enabled, thresholdReached: thresholdReached[rule.id])
         }
         rules += opens.map { rule in
             let status = observation(id: rule.id, activity: rule.activityName, domain: "openLimits")
             return .init(id: rule.id, kind: .openLimit, displayName: rule.name, tier: rule.breakLevel,
                 enabled: rule.enabled, armed: status.armed, observed: status.observed,
+                currentWindow: rule.occurrence(at: now).map { .init(start: $0.start, end: $0.end) },
                 active: rule.enabled, enforcing: openEnforcing[rule.id] == true,
                 opensAllowed: rule.opensAllowed)
         }
+        let clock = environment.clock
         // Legacy sessions predate origin tracking; absent origins retain the app UI default.
+        // The end shown and published is the logical one: a same-boot wall jump moves it (§9).
         let session = active.map {
             FlintProtectionStatusBuilder.SessionInput($0,
                 armed: sessionArmed ?? activities.contains($0.monitorName),
                 kind: sessionKind,
-                origin: sessionOrigin ?? $0.origin.flatMap(FlintProtectionStatusSnapshot.Session.Origin.init(rawValue:)) ?? .appUI)
+                origin: sessionOrigin ?? $0.origin.flatMap(FlintProtectionStatusSnapshot.Session.Origin.init(rawValue:)) ?? .appUI,
+                logicalEnd: $0.stableLogicalEnd(clock: clock))
         }
-        let clock = environment.clock
-        let liveActive = active.flatMap { $0.isExpired(at: now) ? nil : $0 }
+        let liveActive = active.flatMap { $0.isLogicallyExpired(clock: clock) ? nil : $0 }
         // A recent observed wall-clock anomaly remains relevant without a manual session.
         // Old diagnostic history and repaired zone/registration events are not clock verdicts.
         let anomaly = FlintSessionHealth.load(from: defaults).lastTimeAnomaly.flatMap { anomaly -> FlintTimeIntegrity.Verdict? in
@@ -166,7 +180,7 @@ extension FlintProtectionStatus {
                 currentBootSessionID: clock.bootSessionID())
         } ?? anomaly
         let timeIntegrityApplies = timeIntegrity != nil || liveActive != nil || anomaly != nil
-        let hasActiveCommitment = (session.map { !$0.session.isExpired(at: now) && $0.session.startedAt <= now }
+        let hasActiveCommitment = (session.map { ($0.logicalEnd.map { now < $0 } ?? true) && $0.session.startedAt <= now }
             ?? false) || rules.contains { $0.isActive(at: now) }
         let projectedPass = ledgerPass.map {
             FlintProtectionStatusSnapshot.Pass($0,

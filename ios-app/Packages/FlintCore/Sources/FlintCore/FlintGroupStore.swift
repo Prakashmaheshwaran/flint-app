@@ -46,12 +46,27 @@ public final class FlintGroupStore {
     // MARK: Active session
 
     public func saveActiveSession(_ session: FlintActiveSession) {
-        defaults.set(try? JSONEncoder().encode(session), forKey: Key.activeSession)
+        // An encoding failure keeps the previous record instead of erasing it (ADR-012 §8).
+        guard let data = try? JSONEncoder().encode(session) else { return }
+        defaults.set(data, forKey: Key.activeSession)
     }
 
     public func loadActiveSession() -> FlintActiveSession? {
         guard let data = defaults.data(forKey: Key.activeSession) else { return nil }
         return try? JSONDecoder().decode(FlintActiveSession.self, from: data)
+    }
+
+    /// True when anything is stored under the session key — including a record that doesn't
+    /// decode or has the wrong type — so unreadable state is never mistaken for "no session"
+    /// (ADR-012 §8).
+    public func hasActiveSessionRecord() -> Bool {
+        defaults.object(forKey: Key.activeSession) != nil
+    }
+
+    /// Whether this suite shows the protection ledger's initialization marker: evidence the shared
+    /// state was actually read, not a locked or unavailable container reading as empty.
+    public func isProtectionStateReadable() -> Bool {
+        defaults.object(forKey: FlintProtectionLedger.initializedMarkerKey) != nil
     }
 
     public func clearActiveSession() {
@@ -89,11 +104,13 @@ public final class FlintGroupStore {
 
     // MARK: Open-limit counters
 
+    @available(*, unavailable, message: "Legacy migration payload only; use FlintOpenCredit.preview/accept and the protection ledger.")
     public func loadOpenLimitState() -> FlintOpenLimitState {
         guard let data = defaults.data(forKey: Key.openLimitState) else { return FlintOpenLimitState() }
         return (try? JSONDecoder().decode(FlintOpenLimitState.self, from: data)) ?? FlintOpenLimitState()
     }
 
+    @available(*, unavailable, message: "Live Open counters are committed only through the protection ledger.")
     public func saveOpenLimitState(_ state: FlintOpenLimitState) {
         defaults.set(try? JSONEncoder().encode(state), forKey: Key.openLimitState)
     }

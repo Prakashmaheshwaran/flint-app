@@ -1,6 +1,7 @@
 package com.flint.peakfocus
 
 import android.content.Context
+import com.flint.peakfocus.blocking.engine.CachedRuleClockProjection
 import com.flint.peakfocus.core.data.BlocklistStore
 import com.flint.peakfocus.core.datastore.FlintPreferences
 import com.flint.peakfocus.core.datastore.editorPublicationFailure
@@ -39,6 +40,8 @@ object ActiveRulesBridge {
     /** Begin observing DataStore rules (idempotent). Call from [FlintApplication.onCreate]. */
     fun start(context: Context, scope: CoroutineScope) {
         if (!started.compareAndSet(false, true)) return
+        val projection = CachedRuleClockProjection(ProtectionClock::now)
+        ActiveRulesHolder.configureProjection(projection::project)
         val appContext = context.applicationContext
         scope.launch {
             val store = FlintPreferences.editorCommitments(appContext)

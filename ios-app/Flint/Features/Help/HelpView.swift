@@ -47,6 +47,11 @@ struct HelpView: View {
                              text: "Website blocks use Screen Time. Coverage in browsers other than Safari depends on iOS and the browser.")
                 }
 
+                HelpSection(title: "App lock") {
+                    HelpItem(title: "Can’t unlock?",
+                             text: "On the PIN screen, tap Emergency Pass & recovery. It shows whether a block is running and when it ends, lets you use an available Emergency Pass on a Hardcore block, and explains how to turn off Flint’s access in Settings — none of it needs your PIN.")
+                }
+
                 HelpSection(title: "Screen Time passcode") {
                     HelpParagraph("iOS has its own Screen Time passcode and Content & Privacy Restrictions in Settings → Screen Time. They’re separate from Flint: Flint can’t set, see or enforce them. Some people ask someone they trust to set the passcode.")
                 }

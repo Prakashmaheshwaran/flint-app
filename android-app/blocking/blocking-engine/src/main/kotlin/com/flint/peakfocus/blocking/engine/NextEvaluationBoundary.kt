@@ -23,7 +23,8 @@ object NextEvaluationBoundary {
         boundedRecovery: Boolean = false,
     ): Long? {
         val relevant = rules.filter { rule ->
-            rule.enabled && !rule.isExpired(nowMs) && with(rule.targets) {
+            rule.enabled && (rule.runtime?.evaluation?.let { it.active || it.nextBoundaryEpochMs != null }
+                ?: !rule.isExpired(nowMs)) && with(rule.targets) {
                 if (allowListMode) apps.none { it.packageName == foregroundPackage }
                 else apps.any { it.packageName == foregroundPackage } || domains.isNotEmpty()
             }
@@ -39,6 +40,11 @@ object NextEvaluationBoundary {
         remainingBudgetMs?.takeIf { interactive && it > 0L && it <= Long.MAX_VALUE - nowMs }
             ?.let { candidates += nowMs + it }
         for (rule in relevant) {
+            val occurrence = rule.runtime?.evaluation
+            if (occurrence != null) {
+                occurrence.nextBoundaryEpochMs?.let(candidates::add)
+                continue
+            }
             rule.expiresAtEpochMs?.takeIf { it > nowMs }?.let(candidates::add)
             val schedule = rule.schedule ?: continue
             val scheduleCandidates = mutableSetOf<Long>()

@@ -3,10 +3,14 @@ package com.flint.peakfocus.blocking.resilience
 import android.content.ComponentName
 import android.content.Context
 import android.provider.Settings
+import com.flint.peakfocus.blocking.engine.WebCoverage
+import com.flint.peakfocus.blocking.engine.WebsiteRulePolicy
+import com.flint.peakfocus.core.model.ActiveRulesHolder
 import com.flint.peakfocus.permissions.BatteryOptimization
 import com.flint.peakfocus.permissions.NotificationPermission
 import com.flint.peakfocus.permissions.OverlayPermission
 import com.flint.peakfocus.permissions.UsageAccess
+import java.time.ZoneId
 
 /**
  * "Is blocking healthy right now?" — the single source of truth (strategy doc §6.1: re-verify
@@ -55,6 +59,10 @@ data class HealthStatus(
     val batteryExemptionGranted: Boolean,
     val notificationsRequired: Boolean = false,
     val notificationsGranted: Boolean = true,
+    /** Last process-local browser observation; historical gaps remain readable in Settings. */
+    val websiteCoverage: WebCoverage = WebCoverage.NotRequired,
+    /** Historical observations are informational after leaving the browser. */
+    val websiteCoverageIsCurrent: Boolean = true,
 ) {
     /** The Path B service notification can show when Path B runs (nothing gated, or granted). */
     val serviceNotificationVisible: Boolean get() = !notificationsRequired || notificationsGranted
@@ -72,6 +80,8 @@ data class HealthStatus(
     val level: HealthLevel
         get() = when {
             !canEnforce -> HealthLevel.BROKEN
+            websiteCoverage == WebCoverage.Paused || (websiteCoverageIsCurrent &&
+                (websiteCoverage is WebCoverage.Degraded || websiteCoverage is WebCoverage.Unsupported)) -> HealthLevel.DEGRADED
             accessibilityEnabled && usageAccessGranted && overlayGranted && batteryExemptionGranted ->
                 HealthLevel.HEALTHY
             else -> HealthLevel.DEGRADED
@@ -85,14 +95,24 @@ data class HealthStatus(
  */
 object PermissionHealthChecker {
 
-    fun check(context: Context): HealthStatus = HealthStatus(
-        accessibilityEnabled = isFlintAccessibilityServiceEnabled(context),
-        usageAccessGranted = UsageAccess.isGranted(context),
-        overlayGranted = OverlayPermission.isGranted(context),
-        batteryExemptionGranted = BatteryOptimization.isIgnoring(context),
-        notificationsRequired = NotificationPermission.isRequired(),
-        notificationsGranted = NotificationPermission.isGranted(context),
-    )
+    fun check(context: Context): HealthStatus {
+        val accessibility = isFlintAccessibilityServiceEnabled(context)
+        return HealthStatus(
+            accessibilityEnabled = accessibility,
+            usageAccessGranted = UsageAccess.isGranted(context),
+            overlayGranted = OverlayPermission.isGranted(context),
+            batteryExemptionGranted = BatteryOptimization.isIgnoring(context),
+            notificationsRequired = NotificationPermission.isRequired(),
+            notificationsGranted = NotificationPermission.isGranted(context),
+            websiteCoverage = WebsiteCoverageHealth.snapshot(
+                WebsiteRulePolicy.hasActiveDomains(
+                    ActiveRulesHolder.rules, System.currentTimeMillis(), ZoneId.systemDefault(),
+                ),
+                accessibility,
+            ),
+            websiteCoverageIsCurrent = WebsiteCoverageHealth.isCurrentBrowser(),
+        )
+    }
 
     /**
      * True if any accessibility service belonging to Flint's package is enabled. Matching by

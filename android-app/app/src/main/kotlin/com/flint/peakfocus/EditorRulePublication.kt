@@ -1,6 +1,7 @@
 package com.flint.peakfocus
 
 import com.flint.peakfocus.blocking.engine.NextEvaluationBoundary
+import com.flint.peakfocus.blocking.engine.RuleClockProjection
 import com.flint.peakfocus.core.datastore.EditorCommitmentState
 import com.flint.peakfocus.core.datastore.ruleCauseKey
 import com.flint.peakfocus.core.model.AccessClockStamp
@@ -44,6 +45,11 @@ internal fun nextEditorReconciliationDelay(rules: List<BlockRule>, state: Editor
         it.remainingMs(now).takeIf { ms -> ms > 0 }?.let(delays::add)
     }
     rules.filter { it.enabled && it.schedule != null }.forEach { rule ->
+        val evaluation = RuleClockProjection.project(rule, now).runtime?.evaluation
+        if (evaluation != null) {
+            evaluation.nextBoundaryEpochMs?.let { delays += it - now.wallEpochMs }
+            return@forEach
+        }
         val zone = ZoneId.of(state.causes[ruleCauseKey(rule.id)]?.zoneId ?: ZoneId.systemDefault().id)
         val boundaryRule = rule.copy(targets = BlockTargets(apps = setOf(AppRef("editor-boundary"))))
         NextEvaluationBoundary.next(now.wallEpochMs, zone, "editor-boundary", listOf(boundaryRule))

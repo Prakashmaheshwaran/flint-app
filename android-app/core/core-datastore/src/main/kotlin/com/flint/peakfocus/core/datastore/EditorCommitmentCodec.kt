@@ -14,6 +14,10 @@ internal object EditorCommitmentCodec {
         state.quotaPeriodId?.let { add("D|$it") }
         state.causes.toSortedMap().forEach { (key, cause) ->
             add("C|${wireAtom(key)}|${wireAtom(cause.occurrenceId)}|${wireAtom(cause.zoneId)}|${cause.legacyRights}|${interval(cause.interval)}")
+            cause.timerTerminal?.let { terminal ->
+                val evidence = terminal.pending?.let { "T|${terminalClock(it.logicalEnd)}|${terminalClock(it.observedAt)}|${it.timeUncertain}" } ?: "-"
+                add("F|${wireAtom(key)}|${terminal.untrustedBoot}|${terminal.recorded}|$evidence")
+            }
         }
         state.pending?.let { p ->
             val wait = p.wait?.let { HarderWaitCodec.encode(HarderWaitPolicy.Ledger(pending =
@@ -33,6 +37,7 @@ internal object EditorCommitmentCodec {
         val rows = wireRows(raw, "E")
         var next: Long? = null; var notice = false; var timeline: AccessClockStamp? = null; var quotaPeriod: Long? = null
         val causes = linkedMapOf<String, EditorCause>()
+        val terminalFlags = linkedMapOf<String, EditorTimerTerminalState>()
         var pending: PendingEditorChange? = null
         val queued = mutableListOf<QueuedEditorChange>()
         rows.forEach { f ->
@@ -44,6 +49,17 @@ internal object EditorCommitmentCodec {
                     wireRequire(f.size == 6 || f.size == 11)
                     val cause = EditorCause(readWireAtom(f[2]), readInterval(f.drop(5)), readWireAtom(f[3]), bool(f[4]))
                     wireRequire(causes.put(readWireAtom(f[1]), cause) == null)
+                }
+                "F" -> {
+                    wireRequire(f.size == 5 || f.size == 12)
+                    val evidence = if (f.size == 5) { wireRequire(f[4] == "-"); null } else {
+                        wireRequire(f[4] == "T")
+                        EditorTerminalEvidence(readTerminalClock(f.subList(5, 8)), readTerminalClock(f.subList(8, 11)), terminalBool(f[11]))
+                            .also(::validateTerminalEvidence)
+                    }
+                    val flags = EditorTimerTerminalState(bool(f[2]), bool(f[3]), evidence)
+                    wireRequire(evidence == null || (!flags.recorded && !flags.untrustedBoot))
+                    wireRequire(terminalFlags.put(readWireAtom(f[1]), flags) == null)
                 }
                 "P" -> {
                     wireRequire(f.size == 6 && pending == null)
@@ -74,6 +90,11 @@ internal object EditorCommitmentCodec {
         }
         queued.forEach { q -> wireRequire(q.boundaries.isNotEmpty() && q.boundaries.keys.all { it in q.change.keys }) }
         causes.values.forEach { c -> wireRequire(java.util.TimeZone.getTimeZone(c.zoneId).id == c.zoneId) }
+        terminalFlags.forEach { (key, flags) ->
+            val cause = causes[key] ?: wireCorrupt()
+            wireRequire(key.startsWith("rule:$NATIVE_TIMER_ID_PREFIX") && cause.occurrenceId == key.removePrefix("rule:"))
+            causes[key] = cause.copy(timerTerminal = flags)
+        }
         return EditorCommitmentState(next!!, causes.toMap(), pending, queued.toList(), notice, timeline, quotaPeriod)
     }
 

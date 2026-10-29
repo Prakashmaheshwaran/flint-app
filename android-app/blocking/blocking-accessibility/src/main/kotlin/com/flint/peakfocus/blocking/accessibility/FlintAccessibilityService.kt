@@ -2,11 +2,14 @@ package com.flint.peakfocus.blocking.accessibility
 
 import android.accessibilityservice.AccessibilityService
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.PixelFormat
+import android.net.Uri
 import android.os.PowerManager
+import android.os.SystemClock
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
@@ -14,11 +17,15 @@ import android.view.accessibility.AccessibilityNodeInfo
 import androidx.core.content.ContextCompat
 import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
 import com.flint.peakfocus.blocking.engine.BrowserAddressBars
+import com.flint.peakfocus.blocking.engine.BrowserWindow
+import com.flint.peakfocus.blocking.engine.UrlReadThrottle
+import com.flint.peakfocus.blocking.engine.WebsiteRulePolicy
 import com.flint.peakfocus.blocking.engine.EvaluationTimer
 import com.flint.peakfocus.blocking.engine.NextEvaluationBoundary
 import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.blocking.overlay.BlockScreenCoordinator
 import com.flint.peakfocus.blocking.overlay.ruleBlockCause
+import com.flint.peakfocus.blocking.resilience.WebsiteCoverageHealth
 import com.flint.peakfocus.core.data.BlocklistStore
 import com.flint.peakfocus.core.data.LimitStore
 import com.flint.peakfocus.core.data.UsageQuery
@@ -79,6 +86,14 @@ class FlintAccessibilityService : AccessibilityService() {
     private var lastNonFloorPackage: String? = null
     private var lastBudgetDeadlineMs: Long? = null
     private var screenReceiverRegistered = false
+    private var urlThrottle: UrlReadThrottle<BrowserWindow>? = null
+    private var browserWindow: BrowserWindow? = null
+    private var mainBrowserWindow: BrowserWindow? = null
+    private var urlBarIndex = 0
+    private var contentReadRequested = false
+    private var websiteRulesActive = false
+    private var overlayAttached = false
+    private var overlayWindowId: Int? = null
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) { reevaluateForeground() }
     }
@@ -93,6 +108,14 @@ class FlintAccessibilityService : AccessibilityService() {
         BlocklistStore(this).load()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         serviceScope = scope
+        urlThrottle = UrlReadThrottle(
+            nowMs = SystemClock::uptimeMillis,
+            post = { delayMs, callback ->
+                val job = scope.launch { delay(delayMs); callback() }
+                ({ job.cancel() })
+            },
+            read = ::onUrlRead,
+        )
         boundaryTimer = EvaluationTimer(
             nowMs = System::currentTimeMillis,
             post = { delayMs, callback ->
@@ -129,8 +152,17 @@ class FlintAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        event ?: return
         val pkg = event.packageName?.toString() ?: return
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+            // Filter before root access, package queries, budget queries or any evaluation.
+            if (!BrowserAddressBars.isBrowser(pkg) || pkg != lastForegroundPackage) return
+            if (browserWindow != BrowserWindow(pkg, event.windowId)) return
+            val active = domainsActive()
+            if (active) refreshWebsiteCoverage(pkg, active, contentEvent = true)
+            return
+        }
+        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val previous = lastForegroundPackage
         val className = event.className?.toString()
         if (pkg == packageName) {
@@ -140,33 +172,84 @@ class FlintAccessibilityService : AccessibilityService() {
             if (className == "$packageName.MainActivity") {
                 lastForegroundPackage = pkg
                 lastForegroundUrl = null
+                clearBrowserWindow()
+                WebsiteCoverageHealth.foreground(null, domainsActive(), false)
                 boundaryTimer?.cancel()
                 evaluationJob?.cancel()
                 coordinator?.hideIfShown()
                 armFloorRecovery()
+            } else if (overlayAttached) {
+                val top = rootIdentity()
+                if (top != null && top.packageName == packageName && top.windowId == event.windowId) {
+                    overlayWindowId = event.windowId
+                }
             }
             return
         }
         if (pkg != previous) lastForegroundUrl = null
         lastForegroundPackage = pkg
+        val window = BrowserWindow(pkg, event.windowId)
+        if (window != browserWindow) {
+            clearBrowserWindow()
+            if (BrowserAddressBars.isBrowser(pkg)) browserWindow = window
+        }
+        // Activity events identify application windows without guessing per-browser class
+        // names. Root fallback also works after restart; absent bars are informational.
+        if (BrowserAddressBars.isBrowser(pkg) && className != null && runCatching {
+                @Suppress("DEPRECATION")
+                packageManager.getActivityInfo(ComponentName(pkg, className), 0)
+            }.isSuccess) mainBrowserWindow = window
         evaluateForeground(previous, pkg)
     }
 
     /** Re-run for the current app after a boundary, publication, boot or clock signal. */
-    private fun reevaluateForeground() {
-        val rootPkg = runCatching { rootInActiveWindow?.packageName?.toString() }.getOrNull()
-        val pkg = rootPkg?.takeUnless { it == packageName }
+    private fun reevaluateForeground() = reconcileForeground(refreshUrl = true)
+
+    /** Content callbacks must use the live root without scheduling a second URL read. */
+    private fun reconcileForeground(refreshUrl: Boolean, activeDomains: Boolean? = null) {
+        val live = rootIdentity()
+        if (!refreshUrl && live == null) return
+        val rootPkg = live?.packageName
+        val ownOverlay = live != null && rootPkg == packageName && overlayAttached &&
+            (overlayWindowId == null || overlayWindowId == live.windowId)
+        if (ownOverlay && overlayWindowId == null) overlayWindowId = live?.windowId
+        val pkg = rootPkg?.takeUnless { ownOverlay }
             ?: lastForegroundPackage
             ?: return
-        if (pkg == packageName) { evaluationJob?.cancel(); armFloorRecovery(); return }
-        if (pkg != lastForegroundPackage) lastForegroundUrl = null
+        if (pkg == packageName) {
+            lastForegroundPackage = pkg
+            clearBrowserWindow()
+            WebsiteCoverageHealth.foreground(null, activeDomains ?: domainsActive(), false)
+            evaluationJob?.cancel()
+            coordinator?.hideIfShown()
+            armFloorRecovery()
+            return
+        }
+        val contextChanged = pkg != lastForegroundPackage || (live != null && rootPkg == pkg &&
+            BrowserAddressBars.isBrowser(pkg) && live != browserWindow)
+        if (contextChanged) {
+            clearBrowserWindow()
+            if (rootPkg == pkg && BrowserAddressBars.isBrowser(pkg)) {
+                browserWindow = live
+                // A foreground root is sufficient for informational Unconfirmed coverage.
+                // Degraded additionally requires a prior URL read and visible address node.
+                mainBrowserWindow = browserWindow
+            }
+            if (!refreshUrl) WebsiteCoverageHealth.foreground(
+                browserWindow ?: BrowserWindow(pkg, -1), activeDomains ?: domainsActive(), false,
+            )
+        }
         lastForegroundPackage = pkg
         // A recheck is not a new open; the shared policy keeps the current visit intact.
-        evaluateForeground(previousPackage = pkg, pkg = pkg)
+        evaluateForeground(previousPackage = pkg, pkg = pkg, refreshUrl = refreshUrl, activeDomains = activeDomains)
     }
 
-    private fun evaluateForeground(previousPackage: String?, pkg: String) {
+    private fun evaluateForeground(
+        previousPackage: String?, pkg: String, refreshUrl: Boolean = true, activeDomains: Boolean? = null,
+    ) {
         val coordinator = coordinator ?: return // events never precede onServiceConnected
+        val active = activeDomains ?: domainsActive()
+        if (refreshUrl) refreshWebsiteCoverage(pkg, active)
         evaluationJob?.cancel()
         evaluationJob = serviceScope?.launch {
             boundaryTimer?.cancel() // each decision replaces the one pending deadline
@@ -215,11 +298,7 @@ class FlintAccessibilityService : AccessibilityService() {
             val timeLimitSpent = immediatelySpent || (remaining != null && remaining <= 0L)
 
             // Inspect rules even when a weaker time limit or an old ordinary break applies.
-            val root = runCatching { rootInActiveWindow }.getOrNull()
-            val url = if (BrowserAddressBars.isBrowser(pkg)) {
-                if (root?.packageName?.toString() == packageName) lastForegroundUrl else readUrl(root, pkg)
-            } else null
-            lastForegroundUrl = url
+            val url = lastForegroundUrl.takeIf { BrowserAddressBars.isBrowser(pkg) && active }
             val verdict = engine.decide(pkg, url, ActiveRulesHolder.rules, packageName, nowMin, weekday, now)
             val ruleCause = (verdict as? Verdict.Block)?.let {
                 ruleBlockCause(ActiveRulesHolder.rules.firstOrNull { rule -> rule.id == it.ruleId }, now, utcOffset)
@@ -272,13 +351,15 @@ class FlintAccessibilityService : AccessibilityService() {
                 0,
                 PixelFormat.OPAQUE,
             )
-            return runCatching { wm.addView(view, params) }.isSuccess
+            return runCatching { wm.addView(view, params) }.isSuccess.also { if (it) overlayAttached = true }
         }
 
         override fun detach(view: View) {
             runCatching {
                 (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(view)
             }
+            overlayAttached = false
+            overlayWindowId = null
         }
 
         override fun goHome() {
@@ -293,20 +374,112 @@ class FlintAccessibilityService : AccessibilityService() {
 
     // MARK: URL reading
 
-    /**
-     * Address-bar text for [pkg], or null when this browser exposes none. Only [pkg]'s own ids
-     * are tried — a Chrome id can never resolve inside Firefox. Node lookups run against a
-     * window that may go stale mid-read, so they are allowed to fail rather than kill the service.
-     */
-    private fun readUrl(root: AccessibilityNodeInfo?, pkg: String): String? {
-        root ?: return null
-        for (id in BrowserAddressBars.urlBarViewIds(pkg)) {
-            val text = runCatching {
-                root.findAccessibilityNodeInfosByViewId(id)?.firstOrNull()?.text?.toString()
-            }.getOrNull()
-            if (!text.isNullOrBlank()) return text
+    private fun domainsActive(): Boolean = WebsiteRulePolicy.hasActiveDomains(
+        ActiveRulesHolder.rules, System.currentTimeMillis(), ZoneId.systemDefault(),
+    )
+
+    private fun refreshWebsiteCoverage(pkg: String, active: Boolean, contentEvent: Boolean = false) {
+        websiteRulesActive = active
+        // Package-specific intent resolution, only on foreground reconciliations with website
+        // rules. No inventory enumeration or content inspection of unsupported applications.
+        val handler = active && !BrowserAddressBars.isBrowser(pkg) && isHttpHandler(pkg)
+        WebsiteCoverageHealth.foreground(
+            browserWindow ?: BrowserWindow(pkg, -1), active, handler,
+            handlerLabel = if (handler) labelFor(pkg).takeUnless { it == pkg } ?: "This app" else null,
+            isBrowserHandler = handler && resolvesAsBrowser(pkg),
+        )
+        if (!active || !BrowserAddressBars.isBrowser(pkg)) {
+            urlThrottle?.cancel()
+            lastForegroundUrl = null
+            return
         }
-        return null
+        val window = browserWindow ?: run {
+            val live = rootIdentity() ?: return
+            if (live.packageName != pkg) return
+            live.also { browserWindow = it; mainBrowserWindow = it }
+        }
+        WebsiteCoverageHealth.foreground(window, true, false)
+        contentReadRequested = contentEvent
+        try { urlThrottle?.request(window) } finally { contentReadRequested = false }
+    }
+
+    private fun isHttpHandler(pkg: String): Boolean = listOf("https", "http").any { scheme ->
+        runCatching {
+            @Suppress("DEPRECATION")
+            packageManager.queryIntentActivities(
+                Intent(Intent.ACTION_VIEW, Uri.parse("$scheme://example.com"))
+                    .addCategory(Intent.CATEGORY_BROWSABLE).setPackage(pkg), 0,
+            ).any { it.activityInfo?.packageName == pkg }
+        }.getOrDefault(false)
+    }
+
+    private fun resolvesAsBrowser(pkg: String): Boolean = runCatching {
+        @Suppress("DEPRECATION")
+        packageManager.queryIntentActivities(
+            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_BROWSER).setPackage(pkg), 0,
+        ).any { it.activityInfo?.packageName == pkg }
+    }.getOrDefault(false)
+
+    private enum class UrlReadOutcome { CHANGED, UNCHANGED, FOREGROUND_CHANGED }
+
+    private fun onUrlRead(window: BrowserWindow, trailing: Boolean) {
+        val active = if (trailing) domainsActive() else websiteRulesActive
+        val outcome = readBrowserWindow(window, active)
+        // Scrolling still updates coverage and the throttle, but never re-queries usage or
+        // runs the full coordinator while the URL is unchanged. Rule/deadline checks are
+        // independent. A foreign root must reconcile even if the cached URL did not change.
+        if ((trailing || contentReadRequested) && outcome != UrlReadOutcome.UNCHANGED) {
+            reconcileForeground(refreshUrl = false, activeDomains = active)
+        }
+    }
+
+    private fun rootIdentity(): BrowserWindow? {
+        val root = runCatching { rootInActiveWindow }.getOrNull() ?: return null
+        return try {
+            runCatching {
+                root.packageName?.toString()?.let { BrowserWindow(it, root.windowId) }
+            }.getOrNull()
+        } finally { recycle(root) }
+    }
+
+    private fun recycle(node: AccessibilityNodeInfo) {
+        @Suppress("DEPRECATION")
+        runCatching { node.recycle() }
+    }
+
+    /** Exactly one view-id lookup per throttle window; alternate legacy IDs rotate on misses. */
+    private fun readBrowserWindow(window: BrowserWindow, active: Boolean): UrlReadOutcome {
+        if (browserWindow != window || lastForegroundPackage != window.packageName || !active) return UrlReadOutcome.UNCHANGED
+        val root = runCatching { rootInActiveWindow }.getOrNull() ?: return UrlReadOutcome.UNCHANGED
+        return try {
+            // A foreign root never supplies a URL or counts as a miss. Reconcile its live
+            // identity before another decision; our own accessibility overlay keeps its target.
+            if (root.packageName?.toString() != window.packageName || root.windowId != window.windowId) {
+                return if (root.packageName?.toString() == packageName)
+                    UrlReadOutcome.UNCHANGED else UrlReadOutcome.FOREGROUND_CHANGED
+            }
+            val ids = BrowserAddressBars.urlBarViewIds(window.packageName)
+            if (ids.isEmpty()) return UrlReadOutcome.UNCHANGED
+            val id = ids[urlBarIndex % ids.size]
+            val nodes = runCatching { root.findAccessibilityNodeInfosByViewId(id) }.getOrNull().orEmpty()
+            val text = runCatching { nodes.firstOrNull()?.text?.toString()?.takeIf { it.isNotBlank() } }.getOrNull()
+            val nodePresent = nodes.any { runCatching { it.isVisibleToUser }.getOrDefault(false) }
+            nodes.forEach(::recycle)
+            val changed = text != lastForegroundUrl
+            lastForegroundUrl = text
+            if (text == null) urlBarIndex = (urlBarIndex + 1) % ids.size
+            if (text != null) mainBrowserWindow = window // startup/root fallback needs no activity event
+            WebsiteCoverageHealth.addressBarRead(window, text != null, window == mainBrowserWindow, System.currentTimeMillis(), nodePresent)
+            if (changed) UrlReadOutcome.CHANGED else UrlReadOutcome.UNCHANGED
+        } finally { recycle(root) }
+    }
+
+    private fun clearBrowserWindow() {
+        urlThrottle?.cancel()
+        browserWindow = null
+        mainBrowserWindow = null
+        urlBarIndex = 0
+        lastForegroundUrl = null
     }
 
     override fun onInterrupt() = Unit
@@ -322,6 +495,9 @@ class FlintAccessibilityService : AccessibilityService() {
     }
 
     private fun releaseDetection() {
+        clearBrowserWindow()
+        urlThrottle = null
+        WebsiteCoverageHealth.reset()
         stopSignals?.invoke()
         stopRules?.invoke()
         stopSignals = null
@@ -333,6 +509,8 @@ class FlintAccessibilityService : AccessibilityService() {
         if (screenReceiverRegistered) runCatching { unregisterReceiver(screenReceiver) }
         screenReceiverRegistered = false
         coordinator?.hideIfShown()
+        overlayAttached = false
+        overlayWindowId = null
         serviceScope?.cancel()
         serviceScope = null
         coordinator = null

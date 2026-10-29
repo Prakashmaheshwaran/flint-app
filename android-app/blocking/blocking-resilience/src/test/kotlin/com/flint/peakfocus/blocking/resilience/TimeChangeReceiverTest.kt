@@ -9,13 +9,11 @@ import com.flint.peakfocus.core.model.*
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.awaitCancellation
 import com.flint.peakfocus.blocking.engine.ClockShift
 
 /**
- * Pure-JVM: exercises the action filters and bounded store snapshot reads. The receiver itself
+ * Pure-JVM: exercises the action filters and independently bounded store transactions. The receiver itself
  * needs the framework and is exercised on a device/emulator, not here; the guard decisions it
  * applies are pure and covered in blocking-engine's ClockChangeGuardTest.
  */
@@ -68,10 +66,9 @@ class TimeChangeReceiverTest {
                     return FocusCommit.Unavailable(StorageFailure.CORRUPT)
                 }
             }
-            val session = BlockRule("session", "Focus", BlockTargets(), expiresAtEpochMs = 300_000)
-            val rules = InMemoryBlockRulesStore(listOf(session))
-            withTimeout(500) { applyClockGuards(focus, rules, shift) }
-            assertEquals(400_000L, rules.rulesState.snapshotOrNull()!!.single().expiresAtEpochMs)
+            var transactions = 0
+            withTimeout(500) { applyClockGuards(focus, shift) { transactions++ } }
+            assertEquals(1, transactions)
         }
     }
 
@@ -79,10 +76,9 @@ class TimeChangeReceiverTest {
         val focus = InMemoryFocusStateStore()
         val receipt = PersistedExemption("break", "app", "cause", ExemptionKind.BREAK, 120_000, "boot")
         focus.transact { FocusMutation(it.copy(exemptions = mapOf("break" to receipt)), Unit) }
-        val rules = object : BlockRulesStore by InMemoryBlockRulesStore() {
-            override val rulesState = flowOf<StorageState<List<BlockRule>>>(StorageState.Unavailable(StorageFailure.IO))
-        }
-        withTimeout(500) { applyClockGuards(focus, rules, ClockShift(100_000, 40_000, 0, 0)) }
+        withTimeout(500) { applyClockGuards(focus, ClockShift(100_000, 40_000, 0, 0)) {
+            throw java.io.IOException("editor unavailable")
+        } }
         assertEquals(60_000L, focus.state.snapshotOrNull()!!.exemptions.getValue("break").untilEpochMs)
     }
 
@@ -126,20 +122,16 @@ class TimeChangeReceiverTest {
         val focus = object : FocusStateStore by InMemoryFocusStateStore() {
             override suspend fun <R> transact(transform: (FocusSnapshot) -> FocusMutation<R>): FocusCommit<R> = awaitCancellation()
         }
-        val session = BlockRule("session", "Focus", BlockTargets(), expiresAtEpochMs = 300_000)
-        val rules = InMemoryBlockRulesStore(listOf(session))
-        withTimeout(1_000) { applyClockGuards(focus, rules, ClockShift(100_000, 200_000, 0, 0), perGuardTimeoutMs = 25) }
-        assertEquals(400_000L, rules.rulesState.snapshotOrNull()!!.single().expiresAtEpochMs)
+        var transactions = 0
+        withTimeout(1_000) { applyClockGuards(focus, ClockShift(100_000, 200_000, 0, 0), perGuardTimeoutMs = 25) { transactions++ } }
+        assertEquals(1, transactions)
     }
 
     @Test fun PC_55_stalledRulesReadCannotHoldTheFocusGuardPastItsOwnDeadline() = runTest {
         val focus = InMemoryFocusStateStore()
         val receipt = PersistedExemption("grant", "app", "cause", ExemptionKind.BREAK, 300_000, "boot")
         focus.transact { FocusMutation(it.copy(exemptions = mapOf("grant" to receipt)), Unit) }
-        val rules = object : BlockRulesStore by InMemoryBlockRulesStore() {
-            override val rulesState = flow<StorageState<List<BlockRule>>> { awaitCancellation() }
-        }
-        withTimeout(1_000) { applyClockGuards(focus, rules, ClockShift(100_000, 50_000, 0, 0), perGuardTimeoutMs = 25) }
+        withTimeout(1_000) { applyClockGuards(focus, ClockShift(100_000, 50_000, 0, 0), perGuardTimeoutMs = 25) { awaitCancellation() } }
         assertEquals(250_000L, focus.state.snapshotOrNull()!!.exemptions.getValue("grant").untilEpochMs)
     }
 

@@ -165,8 +165,9 @@ public enum FlintTimeIntegrity {
     /// completion to focus history (its provisional 120 s rule; ADR-012 §11 still forbids
     /// ending before the logical deadline, which `endSlack` enforces).
     public static let onTimeWindow: TimeInterval = 120
-    /// How early an end callback may arrive and still count as the planned end — DeviceActivity
-    /// resolves whole-second components. Anything earlier is premature and never ends a session.
+    /// How early an end callback may arrive and still be the planned end — DeviceActivity
+    /// resolves whole-second components. The monitor waits out that remainder before releasing
+    /// (ADR-012 §4: never before the logical deadline); anything earlier is premature.
     public static let endSlack: TimeInterval = 1
 
     public enum Verdict: Equatable, Sendable {
@@ -240,6 +241,9 @@ public struct FlintSessionHealth: Codable, Equatable, Sendable {
             /// A short session's end warning never arrived; its padded interval end finished it
             /// `seconds` after `endsAt` (the device check for the warning-time adapter).
             case missedEndWarning
+            /// An end callback arrived `seconds` after the logical deadline, so the block was
+            /// released that late (PC-76 records the latency).
+            case lateEnd
         }
 
         public let kind: Kind

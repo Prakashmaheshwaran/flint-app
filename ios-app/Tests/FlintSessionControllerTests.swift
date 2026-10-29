@@ -31,6 +31,9 @@ final class FlintSessionControllerTests: XCTestCase {
         events = LifecycleCapture()
         FlintSessionLifecycle.register(events)
         ledgerAvailable = true
+        publications = 0
+        waited = []
+        waitShortfall = 0
         ledgerDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("flint-session-ledger-\(UUID().uuidString)", isDirectory: true)
     }
@@ -63,9 +66,20 @@ final class FlintSessionControllerTests: XCTestCase {
                 guard self.ledgerAvailable else { return nil }
                 return FlintProtectionLedger(directory: directory, clock: flintClock,
                                              initializedMarker: { nil }, setInitializedMarker: { _ in })
-            }
+            },
+            publishStatus: { [unowned self] in self.publications += 1 },
+            transitionLock: { FlintSessionTransitionLock(directory: directory, timeout: 0.2) },
+            monitorLockTimeout: 1,
+            wait: { [unowned self] in self.waited.append($0); self.clock.advance($0 - self.waitShortfall) }
         ))
     }
+
+    /// Status projections published after committed changes.
+    private var publications = 0
+    /// Seconds the monitor waited out before acting on an end callback.
+    private var waited: [TimeInterval] = []
+    /// How far short of the requested time a wait returns (e.g. an interrupted sleep).
+    private var waitShortfall: TimeInterval = 0
 
     private var health: FlintSessionHealth { FlintSessionHealth.load(from: defaults) }
 
@@ -90,6 +104,258 @@ final class FlintSessionControllerTests: XCTestCase {
     private let selectionB = FamilyActivitySelection(includeEntireCategory: true)
 
     // MARK: ADR-012 arbitration (§1–§4)
+
+    func testEveryCommittedChangePublishesTheStatusProjection() throws {
+        let c = controller()
+        XCTAssertThrowsError(try start(c, minutes: 0, level: .hardcore))
+        XCTAssertEqual(publications, 0, "a refused start changes nothing and publishes nothing")
+        _ = try start(c, minutes: 30, level: .easy)
+        XCTAssertEqual(publications, 1, "start")
+        XCTAssertEqual(c.requestStop(route: .manualStop, confirmed: false), .needsConfirmation)
+        XCTAssertEqual(publications, 1, "an unconfirmed stop changes nothing")
+        XCTAssertEqual(c.requestStop(route: .manualStop, confirmed: true), .stopped)
+        XCTAssertEqual(publications, 2, "end")
+    }
+
+    // MARK: Session integrity (ADR-012 §9; R-05, R-20, R-25)
+
+    func testASameBootForwardClockJumpNeverEndsAHardcoreSessionEarlyPC54() throws {
+        let c = controller()
+        let session = try start(c, minutes: 60, level: .hardcore)
+        clock.advance(10 * 60)
+        clock.now = clock.now.addingTimeInterval(2 * 3600) // wall jumps; elapsed time doesn't
+        let logicalEnd = clock.now.addingTimeInterval(50 * 60)
+        XCTAssertEqual(c.requestStop(route: .manualStop, confirmed: true), .denied(.hardcoreCommitment, until: logicalEnd),
+                       "denied until the logical end, not the wall end that already looks past")
+        c.finishIfExpired()
+        XCTAssertNotNil(store.active, "still committed: 50 minutes remain")
+        // The old registration fires at its wall end: premature, so the block stays and re-arms.
+        c.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
+        let rearmed = try XCTUnwrap(store.active)
+        XCTAssertEqual(rearmed.id, session.id)
+        XCTAssertEqual(try XCTUnwrap(rearmed.endsAt).timeIntervalSince(clock.now), 50 * 60, accuracy: 1,
+                       "the end moves with the clock; remaining time is unchanged")
+        XCTAssertEqual(shield.denyAppRemoval, true)
+        clock.advance(50 * 60)
+        c.handleMonitorEvent(.intervalDidEnd, activity: rearmed.monitorName)
+        XCTAssertNil(store.active, "ends after the full committed duration")
+    }
+
+    func testAfterAForwardJumpAShortReplacementCannotOutlastHardcorePC54() throws {
+        let c = controller()
+        _ = try start(c, minutes: 60, level: .hardcore)
+        clock.advance(10 * 60)
+        clock.now = clock.now.addingTimeInterval(2 * 3600) // the recorded end now reads as past
+        let logicalEnd = clock.now.addingTimeInterval(50 * 60)
+        XCTAssertThrowsError(try start(c, minutes: 1, level: .hardcore)) {
+            XCTAssertEqual($0 as? FlintSessionError, .replacementDenied(until: logicalEnd),
+                           "a 1-minute block would end the commitment 49 minutes early")
+        }
+    }
+
+    func testClockChangeReArmsHaveTheirOwnBound() throws {
+        let c = controller()
+        var session = try start(c, minutes: 600, level: .hardcore)
+        for _ in 0..<FlintSessionController.maximumClockChangeRearms {
+            clock.advance(60)
+            clock.now = clock.now.addingTimeInterval(24 * 3600)
+            c.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
+            session = try XCTUnwrap(store.active)
+        }
+        XCTAssertEqual(session.clockRearmCount, FlintSessionController.maximumClockChangeRearms)
+        XCTAssertEqual(session.rearmCount ?? 0, 0, "the misfire budget is untouched")
+        clock.advance(60)
+        clock.now = clock.now.addingTimeInterval(24 * 3600)
+        c.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
+        XCTAssertEqual(store.active?.rearmCount, 1, "past its bound, a clock-ahead early end is a misfire again")
+    }
+
+    func testALogicalCompletionAfterABackwardJumpStillReportsIt() throws {
+        let c = controller()
+        _ = try start(c, minutes: 30)
+        clock.now = clock.now.addingTimeInterval(-3600)
+        clock.advance(30 * 60) // elapsed time completes it; the recorded end reads as future
+        events.log.removeAll()
+        c.finishIfExpired()
+        XCTAssertNil(store.active)
+        XCTAssertEqual(events.kinds, ["ended"], "one completion, not a silently dropped outcome")
+    }
+
+    func testAReconcileAfterAWallJumpReRegistersTheLogicalEnd() throws {
+        let c = controller()
+        _ = try start(c, minutes: 60, level: .harder)
+        clock.advance(61) // past the repair spacing
+        clock.now = clock.now.addingTimeInterval(-3600)
+        let report = c.reconcile()
+        XCTAssertTrue(report.rearmed)
+        XCTAssertEqual(try XCTUnwrap(store.active?.endsAt).timeIntervalSince(clock.now), 59 * 60, accuracy: 1)
+    }
+
+    func testABackwardClockJumpDoesNotExtendTheSessionPC55() throws {
+        let c = controller()
+        _ = try start(c, minutes: 30, level: .hardcore)
+        clock.now = clock.now.addingTimeInterval(-3600)
+        clock.advance(30 * 60)
+        c.finishIfExpired()
+        XCTAssertNil(store.active, "30 minutes of elapsed time ended it, whatever the wall clock says")
+    }
+
+    func testAcrossARebootTheBoundedWallFallbackApplies() throws {
+        let c = controller()
+        let session = try start(c, minutes: 60, level: .hardcore)
+        clock.boot = "boot-2"
+        clock.monotonic = 10
+        clock.now = clock.now.addingTimeInterval(10 * 60)
+        XCTAssertEqual(try XCTUnwrap(session.logicalRemaining(clock: clock.flintClock)), 50 * 60, accuracy: 1)
+        clock.now = clock.now.addingTimeInterval(3600)
+        c.finishIfExpired()
+        XCTAssertNil(store.active, "no trusted elapsed time across a reboot: a past wall end expires it (§9)")
+    }
+
+    func testARetriedStartReturnsTheSessionItStartedPC03() throws {
+        let c = controller()
+        let first = try c.startBlockNow(selection: FamilyActivitySelection(), duration: 1800, breakLevel: .easy,
+                                        origin: .appUI, requestID: "tap-1", confirmed: true)
+        clock.advance(2)
+        let retry = try c.startBlockNow(selection: FamilyActivitySelection(), duration: 1800, breakLevel: .easy,
+                                        origin: .appUI, requestID: "tap-1", confirmed: true)
+        XCTAssertEqual(retry, first, "no new id, deadline or registration")
+        XCTAssertEqual(registrar.started.count, 1)
+    }
+
+    func testATransitionHeldByAnotherProcessChangesNothingR20() throws {
+        let c = controller()
+        let session = try start(c, minutes: 30)
+        clock.advance(30 * 60)
+        let other = FlintSessionTransitionLock(directory: ledgerDirectory, timeout: 0.2)
+        let hold = try XCTUnwrap(other.acquire(), "the other process holds the lock")
+        c.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
+        XCTAssertNotNil(store.active, "a callback that can't take the lock does nothing")
+        XCTAssertThrowsError(try start(c, minutes: 10)) {
+            XCTAssertEqual($0 as? FlintSessionError, .protectionStateUnavailable)
+        }
+        hold.end()
+        c.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
+        XCTAssertNil(store.active)
+    }
+
+    func testAnOuterTransitionIsReentrantForControllerCalls() throws {
+        let c = controller()
+        let result = try c.withTransition { () -> FlintActiveSession in
+            try start(c, minutes: 30)
+        }
+        XCTAssertNotNil(result, "nested controller calls inside the transition don't deadlock")
+        let other = FlintSessionTransitionLock(directory: ledgerDirectory, timeout: 0.2)
+        let hold = try XCTUnwrap(other.acquire())
+        XCTAssertNil(c.withTransition { 1 }, "another holder: the body doesn't run")
+        hold.end()
+    }
+
+    func testAnOldCallbackNeverClearsAnUnreadableRecordR20() throws {
+        let c = controller()
+        _ = try start(c, minutes: 30)
+        store.active = nil
+        store.corruptRecord = true // a record is stored but no longer decodes
+        let cleared = shield.clearCount
+        c.handleMonitorEvent(.intervalDidEnd, activity: "flint.session.0123456789abcdef")
+        XCTAssertEqual(shield.clearCount, cleared, "unknown protection is kept, not treated as no session")
+    }
+
+    func testAMonitorEndWaitsOutAnotherProcessesShortTransitionR20() throws {
+        let c = controller()
+        let session = try start(c, minutes: 30)
+        clock.advance(30 * 60)
+        let other = FlintSessionTransitionLock(directory: ledgerDirectory, timeout: 0.2)
+        let hold = try XCTUnwrap(other.acquire())
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.4) { hold.end() }
+        // Longer than an app-side wait (0.2 s here): the extension doesn't give up on the end.
+        c.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
+        XCTAssertNil(store.active, "ended once the other transition finished")
+    }
+
+    func testABusyMonitorEndIsRepairedByTheNextReconcile() throws {
+        let c = controller()
+        let session = try start(c, minutes: 30)
+        clock.advance(30 * 60)
+        let other = FlintSessionTransitionLock(directory: ledgerDirectory, timeout: 0.2)
+        let hold = try XCTUnwrap(other.acquire())
+        c.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
+        XCTAssertNotNil(store.active, "still busy after the wait: nothing changes and the block stays")
+        XCTAssertTrue(c.reconcile().transitionBusy)
+        hold.end()
+        registrar.registered.remove(session.monitorName) // iOS consumed the one-shot interval
+        c.reconcile()
+        XCTAssertNil(store.active, "the host's next reconcile ends the session that is over")
+    }
+
+    func testStopsDuringAnotherProcessesTransitionChangeNothing() throws {
+        let c = controller()
+        _ = try start(c, minutes: 30, level: .easy)
+        let other = FlintSessionTransitionLock(directory: ledgerDirectory, timeout: 0.2)
+        let hold = try XCTUnwrap(other.acquire())
+        XCTAssertEqual(c.requestStop(route: .manualStop, confirmed: true), .unavailable)
+        c.stop()
+        XCTAssertNotNil(store.active, "a busy transition never ends the session")
+        hold.end()
+        XCTAssertEqual(c.requestStop(route: .manualStop, confirmed: true), .stopped)
+    }
+
+    func testAnOldCallbackKeepsShieldsWhenTheContainerReadsEmpty() throws {
+        let cleared = shield.clearCount
+        store.readable = false // e.g. before first unlock: the shared suite reads as empty
+        controller().handleMonitorEvent(.intervalDidEnd, activity: "flint.session.0123456789abcdef")
+        XCTAssertEqual(shield.clearCount, cleared, "an empty read is not proof there's no session")
+        controller(storeAvailable: false).handleMonitorEvent(.intervalDidEnd, activity: "flint.session.0123456789abcdef")
+        XCTAssertEqual(shield.clearCount, cleared, "nor is a missing container")
+        store.readable = true
+        controller().handleMonitorEvent(.intervalDidEnd, activity: "flint.session.0123456789abcdef")
+        XCTAssertEqual(shield.clearCount, cleared + 1, "a record proven absent leaves only a stale shield")
+    }
+
+    func testALegacyRecordWithoutAnchorsFollowsItsWallEnd() throws {
+        // Saved by an older build: no planned duration and no monotonic or boot anchors.
+        let started = clock.now
+        let json = """
+        {"id":"legacy","name":"Old","startedAt":\(started.timeIntervalSinceReferenceDate),\
+        "endsAt":\(started.addingTimeInterval(1800).timeIntervalSinceReferenceDate),\
+        "breakLevel":"hardcore","monitorName":"flint.session.legacy"}
+        """
+        let legacy = try JSONDecoder().decode(FlintActiveSession.self, from: Data(json.utf8))
+        XCTAssertNil(legacy.plannedDuration)
+        XCTAssertNil(legacy.monotonicStart)
+        clock.advance(600)
+        XCTAssertEqual(try XCTUnwrap(legacy.logicalRemaining(clock: clock.flintClock)), 1200, accuracy: 0.001)
+        clock.now = clock.now.addingTimeInterval(-3600)
+        XCTAssertEqual(try XCTUnwrap(legacy.logicalRemaining(clock: clock.flintClock)), 1800, accuracy: 0.001,
+                       "without anchors the wall fallback is still capped at the planned length")
+        clock.now = clock.now.addingTimeInterval(2 * 3600)
+        XCTAssertTrue(legacy.isLogicallyExpired(clock: clock.flintClock))
+    }
+
+    func testASecondReconcileAfterARepairDoesNotReArm() throws {
+        let c = controller()
+        _ = try start(c, minutes: 60, level: .harder)
+        clock.advance(61)
+        clock.now = clock.now.addingTimeInterval(-3600)
+        XCTAssertTrue(c.reconcile().rearmed)
+        let registrations = registrar.started.count
+        clock.advance(120)
+        XCTAssertFalse(c.reconcile().rearmed, "repaired: its end now matches logical time")
+        XCTAssertEqual(registrar.started.count, registrations)
+    }
+
+    func testClockJumpReArmsDoNotSpendTheMisfireBudget() throws {
+        let c = controller()
+        var session = try start(c, minutes: 600, level: .hardcore)
+        for _ in 0...FlintSessionController.maximumRearms {
+            clock.advance(60)
+            clock.now = clock.now.addingTimeInterval(24 * 3600) // past the registered wall end
+            c.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
+            session = try XCTUnwrap(store.active, "the block stays")
+        }
+        XCTAssertTrue(registrar.registered.contains(session.monitorName), "still re-registered after every jump")
+        XCTAssertNil(health.lastArmFailure)
+    }
 
     func testStrictSessionsNeedAnEndTimePC01() {
         XCTAssertThrowsError(try start(controller(), minutes: 0, level: .hardcore)) {
@@ -561,9 +827,56 @@ final class FlintSessionControllerTests: XCTestCase {
         c.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
         XCTAssertEqual(store.active?.id, session.id, "early interval end keeps the block")
         XCTAssertEqual(shield.clearCount, 0)
-        clock.advance(89) // one second before endsAt: whole-second slack
+        clock.advance(89) // one second before endsAt: whole-second resolution
+        let endsAt = try XCTUnwrap(session.endsAt)
+        let clearsBefore = shield.clearCount
+        shield.onClear = { [unowned self] in
+            XCTAssertGreaterThanOrEqual(self.clock.now, endsAt, "never released before the logical deadline (R-36)")
+        }
         c.handleMonitorEvent(.intervalWillEndWarning, activity: store.active!.monitorName)
+        XCTAssertEqual(waited, [1], "waited out the last second instead of releasing early")
+        XCTAssertEqual(shield.clearCount, clearsBefore + 1)
         XCTAssertNil(store.active)
+        XCTAssertEqual(events.kinds.suffix(1), ["ended"], "an on-time completion")
+    }
+
+    func testAnIntervalEndASecondEarlyWaitsThenCompletes() throws {
+        let c = controller()
+        let session = try start(c, minutes: 30)
+        clock.advance(30 * 60 - 1)
+        events.log.removeAll()
+        c.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
+        XCTAssertEqual(waited, [1])
+        XCTAssertNil(store.active)
+        XCTAssertEqual(events.kinds, ["ended"])
+        XCTAssertNotEqual(health.lastTimeAnomaly?.kind, .prematureEnd)
+    }
+
+    func testAWaitThatEndsShortKeepsTheBlockWithoutSpendingAMisfire() throws {
+        let c = controller()
+        let session = try start(c, minutes: 30)
+        clock.advance(30 * 60 - 1)
+        waitShortfall = 0.5 // the sleep returned half a second early
+        c.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
+        let kept = try XCTUnwrap(store.active, "not yet at the deadline: the block stays")
+        XCTAssertEqual(kept.id, session.id)
+        XCTAssertNotEqual(kept.monitorName, session.monitorName, "its end is re-registered")
+        XCTAssertEqual(kept.rearmCount ?? 0, 0, "a local clock effect isn't an iOS misfire")
+        XCTAssertEqual(kept.clockRearmCount, 1)
+        XCTAssertEqual(shield.clearCount, 0)
+    }
+
+    func testALateEndWarningRecordsItsLatencyPC76() throws {
+        let c = controller()
+        let session = try start(c, minutes: 5)
+        clock.advance(5 * 60 + 300) // the warning arrives five minutes late
+        events.log.removeAll()
+        c.handleMonitorEvent(.intervalWillEndWarning, activity: session.monitorName)
+        XCTAssertNil(store.active, "a late warning still ends the block")
+        XCTAssertEqual(health.lastTimeAnomaly?.kind, .lateEnd)
+        XCTAssertEqual(try XCTUnwrap(health.lastTimeAnomaly?.seconds), 300, accuracy: 1)
+        XCTAssertTrue(events.log.isEmpty, "a late observation isn't reported as an on-time completion")
+        XCTAssertTrue(waited.isEmpty)
     }
 
     func testOrphanEndWithNoSessionRecordClearsTheLeftoverShield() {
@@ -754,13 +1067,14 @@ final class FlintSessionControllerTests: XCTestCase {
         XCTAssertNil(health.unauthorizedSince)
     }
 
-    func testAForwardJumpThatExpiresTheSessionIsStillRecorded() throws {
+    func testAForwardJumpPastTheEndIsRecordedButNeverEndsTheSession() throws {
         let c = controller()
         _ = try start(c, minutes: 60)
         clock.advance(10 * 60)
         clock.now = clock.now.addingTimeInterval(2 * 3600)
         let report = c.reconcile()
-        XCTAssertEqual(report.outcome, .finishedExpired)
+        XCTAssertEqual(report.outcome, .running, "same boot: 50 minutes of elapsed time remain (ADR-012 §9, R-05)")
+        XCTAssertTrue(report.rearmed, "its OS end moves to the new wall-clock equivalent")
         XCTAssertEqual(report.timeVerdict, .wallAhead(seconds: 2 * 3600))
         XCTAssertEqual(health.lastTimeAnomaly?.kind, .wallAhead)
     }
@@ -830,7 +1144,7 @@ final class FlintSessionControllerTests: XCTestCase {
 // MARK: - Fakes
 
 private struct NoSessionWebRestrictions: FlintSessionWebRestricting {
-    func reconcile(_ session: FlintActiveSession, now: Date) {}
+    func reconcile(_ session: FlintActiveSession, clock: FlintClock) {}
 }
 
 /// One ordered record of OS and store writes across all fakes.
@@ -860,7 +1174,11 @@ private final class FakeShield: FlintSessionShielding {
         denyAppRemoval = deny
         log.entries.append("deny:\(deny)")
     }
+    /// Observes the moment of each release.
+    var onClear: (() -> Void)?
+
     func clear() {
+        onClear?()
         clearCount += 1
         denyAppRemoval = nil
         log.entries.append("clear")
@@ -936,6 +1254,9 @@ private final class FakeSessionStore: FlintSessionStateStoring {
     func loadSelection() -> FamilyActivitySelection? { selection }
     func emergencyPassLastUsed() -> Date? { passUsed }
     func recordEmergencyPassUse(_ date: Date) { passUsed = date }
+    /// false models a locked or unavailable container: everything reads as empty.
+    var readable = true
+    func isProtectionStateReadable() -> Bool { readable }
 }
 
 private final class FakeClock {

@@ -73,12 +73,12 @@ class BlockDecisionEngineTest {
     }
 
     @Test
-    fun equalTierTieBreaksTowardTheTimedSession() {
-        // So the block screen counts down to the session's real end, not an open-ended rule.
+    fun equalTierKeepsTheOpenEndedProtectionVisible() {
+        // A finite countdown would promise access while the open-ended rule still applies.
         val openEnded = rule(apps = setOf("com.x")).copy(id = "permanent")
         val timed = rule(apps = setOf("com.x")).copy(id = "session-1", expiresAtEpochMs = 10_000L)
         val v = engine.decide("com.x", null, listOf(openEnded, timed), self, nowEpochMs = 1_000L)
-        assertEquals("session-1", (v as Verdict.Block).ruleId)
+        assertEquals("permanent", (v as Verdict.Block).ruleId)
     }
 
     // MARK: telephony safety floor — emergency calling is never blockable

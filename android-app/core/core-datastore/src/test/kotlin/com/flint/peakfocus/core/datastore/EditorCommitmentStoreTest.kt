@@ -231,16 +231,22 @@ class EditorCommitmentStoreTest {
         confirm(store, EditorChange("Time", limits = EditorLimitsChange("a", TimeLimit("a", 30), null)))
         val writes = disk.changedUpdates
         var refreshes = 0
+        val firstRefresh = CompletableDeferred<Unit>()
         val driver = launch {
             store.changes.collectLatest {
                 check(++refreshes <= 10) { "publication produced a self-sustaining write loop" }
                 store.reconcileRules(clock(refreshes * 1_000L))
+                firstRefresh.complete(Unit)
             }
         }
-        delay(50)
+        try {
+            withTimeout(5_000) { firstRefresh.await() }
+            repeat(20) { yield() }
+        } finally {
+            driver.cancelAndJoin()
+        }
         assertEquals(1, refreshes)
         assertEquals(writes, disk.changedUpdates)
-        driver.cancelAndJoin()
     }
 
     @Test fun `PC-20 cancellation spends nothing and another request restarts the full wait`() = runBlocking {
@@ -383,7 +389,7 @@ class EditorCommitmentStoreTest {
         recreated.reconcile(clock(3_600_001))
         assertTrue(snapshot(recreated).queued.single().needsReview)
         assertEquals(listOf(changed), rules.rules.first())
-        assertEquals(listOf(changed), recreated.reconcileRules(clock(3_600_001)))
+        assertEquals(listOf(changed), recreated.reconcileRules(clock(3_600_001)).map { it.copy(runtime = null) })
     }
 
     @Test fun `PC-12 published unqueued schedules retain their next start boundary`() = runBlocking {
@@ -391,7 +397,7 @@ class EditorCommitmentStoreTest {
         val future = rule().copy(schedule = Schedule(startMinuteOfDay = 12 * 60, endMinuteOfDay = 13 * 60))
         DataStoreBlockRulesStore(disk).upsert(future)
         val published = store.reconcileRules(clock())
-        assertEquals(listOf(future), published)
+        assertEquals(listOf(future), published.map { it.copy(runtime = null) })
         assertEquals(at + 2 * 3_600_000, NextEvaluationBoundary.next(at, ZoneId.of("UTC"), "a", published))
     }
 

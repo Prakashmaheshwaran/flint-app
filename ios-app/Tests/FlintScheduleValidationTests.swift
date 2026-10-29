@@ -127,7 +127,8 @@ final class FlintScheduleValidationTests: XCTestCase {
         let plan = FlintSchedulesController.armPlan(for: [good, bad])
         XCTAssertEqual(plan.arm.map(\.id), ["ok"])
         XCTAssertEqual(plan.failures, [
-            FlintScheduleArmFailure(ruleID: "bad", ruleName: "Broken", issue: .zeroLengthWindow),
+            FlintScheduleArmFailure(ruleID: "bad", ruleName: "Broken", issue: .zeroLengthWindow,
+                activityName: bad.monitorName),
         ])
     }
 

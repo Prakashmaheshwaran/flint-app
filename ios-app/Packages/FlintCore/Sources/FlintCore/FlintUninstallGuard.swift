@@ -27,4 +27,11 @@ public enum FlintUninstallGuard {
         guard let endsAt = session.endsAt else { return true }
         return now < endsAt
     }
+
+    /// The same decision by the session's logical remaining time (ADR-012 §9): a same-boot
+    /// wall-clock change can't release the guard early.
+    public static func shouldDeny(for session: FlintActiveSession?, clock: FlintClock) -> Bool {
+        guard let session, session.breakLevel == .hardcore else { return false }
+        return !session.isLogicallyExpired(clock: clock)
+    }
 }

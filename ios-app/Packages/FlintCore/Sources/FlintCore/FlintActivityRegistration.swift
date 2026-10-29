@@ -36,6 +36,12 @@ struct FlintActivityRegistration {
         onRemove: (String) -> Void = { _ in }
     ) -> FlintArmingHealth.DomainReport {
         let wanted = Set(desired.map { DeviceActivityName($0.name) })
+        // Client-side refusal does not authorize retiring an already armed version of that
+        // rule. Keep its native end and last-good store within their saved finite bounds.
+        let invalidIDs = Set(validationFailures.compactMap { FlintRuleActivity.ruleID($0.activityName, prefix: prefix) })
+        func invalid(_ name: String) -> Bool {
+            FlintRuleActivity.ruleID(name, prefix: prefix).map(invalidIDs.contains) ?? false
+        }
         let before = Set(center.activities)
         var definitions = FlintActivityDefinition.load(from: defaults)
         let retainedRead = FlintRetainedProtection.load(from: defaults)
@@ -44,18 +50,11 @@ struct FlintActivityRegistration {
         case .available(let receipts): retained = receipts
         case .unavailable: retained = [:]
         }
-        let removed = before.filter { $0.rawValue.hasPrefix(prefix) && !wanted.contains($0) }
+        let removed = before.filter { $0.rawValue.hasPrefix(prefix) && !wanted.contains($0) && !invalid($0.rawValue) }
         // A removed cause can still have a retained store after its native activity vanished.
         let removedReceipts = retained.filter {
-            $0.key.hasPrefix(prefix) && !wanted.contains(.init($0.key)) && !$0.value.cleared
+            $0.key.hasPrefix(prefix) && !wanted.contains(.init($0.key)) && !$0.value.cleared && !invalid($0.key)
         }.map(\.key)
-        Set(removed.map(\.rawValue) + removedReceipts).forEach(onRemove)
-        // Never forward [] to Apple's stop-all default.
-        if !removed.isEmpty {
-            center.stopMonitoring(Array(removed))
-        }
-        definitions = definitions.filter { !$0.key.hasPrefix(prefix) || wanted.contains(.init($0.key)) }
-        retained = retained.filter { !$0.key.hasPrefix(prefix) || wanted.contains(.init($0.key)) }
         var attempted = 0
         var armed = 0
         var failures = validationFailures
@@ -100,6 +99,18 @@ struct FlintActivityRegistration {
             failures.append(.init(activityName: request.name,
                                   reason: "The requested registration was not observed in iOS after reconciliation."))
         }
+        // Retire only AFTER replacement registration/observation. A refused successor never
+        // authorizes removal of its predecessor's end callback or last-good shield (PC-12).
+        let retired = Set(removed.map(\.rawValue) + removedReceipts).filter { old in
+            guard let id = FlintRuleActivity.ruleID(old, prefix: prefix),
+                  let successor = desired.first(where: { FlintRuleActivity.ruleID($0.name, prefix: prefix) == id }) else { return true }
+            return observed.contains(successor.name)
+        }
+        retired.forEach(onRemove)
+        let stop = removed.filter { retired.contains($0.rawValue) }
+        if !stop.isEmpty { center.stopMonitoring(Array(stop)) }
+        definitions = definitions.filter { !retired.contains($0.key) }
+        retained = retained.filter { !retired.contains($0.key) }
         // Do not cache accepted-but-unobserved requests as a later no-churn baseline.
         let previous = FlintActivityDefinition.load(from: defaults)
         for request in desired where !observed.contains(request.name) {
