@@ -215,7 +215,9 @@ It diffs successfully read session-rule snapshots against history's open session
 **active** session rule → `started` (start instant from the `session-timer-<epochMs>-…` id,
 else observation time; expired rules with no recorded start create nothing); a present rule
 whose `expiresAt` differs from the effective planned end → `rescheduled`; a present, enabled
-rule is never completed from an older planned end;
+rule is never completed from an older planned end. For anchored rules, history persists the
+owner's committed logical endpoint, shared with its terminal, rather than the live display
+estimate (which can vary by a millisecond between wall/elapsed clock samples);
 a session rule gone with `now >= expiresAt` stays unconfirmed until the lifecycle owner
 records a terminal; gone earlier during live observation →
 `ended_early(route: unknown)` at observation time — observed in-process, so this one

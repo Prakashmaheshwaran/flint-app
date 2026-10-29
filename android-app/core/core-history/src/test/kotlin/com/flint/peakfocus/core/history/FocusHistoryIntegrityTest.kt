@@ -18,6 +18,9 @@ import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BlockTargets
 import com.flint.peakfocus.core.model.StorageFailure
 import com.flint.peakfocus.core.model.StorageState
+import com.flint.peakfocus.core.model.AccessClockStamp
+import com.flint.peakfocus.core.model.RuleRuntime
+import com.flint.peakfocus.core.model.RuleEvaluation
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -32,6 +35,33 @@ class FocusHistoryIntegrityTest {
         at = begin, tz = "UTC", plannedEnd = end, tier = "easy", source = "manual", name = "Focus")
     private fun focus(snapshot: HistorySnapshot, now: Long) =
         FocusHistoryAggregator.sessions(snapshot.events, now, setOf("session-a")).single().focusedMs
+
+    @Test fun projectedClockSamplingJitterNeverChangesTheCommittedLogicalPlan() = runTest {
+        val store = FocusHistoryStore(temporary.newFolder(), clock(begin))
+        val id = "session-timer-v2-$begin-jitter"
+        val end = begin + 5 * minute
+        val stamp = AccessClockStamp(begin, 10_000, "boot")
+        var rule = BlockRule(id, "Focus timer", BlockTargets(), expiresAtEpochMs = end - 1,
+            runtime = RuleRuntime(id, stamp, 5 * minute, end, "UTC", stamp,
+                evaluation = RuleEvaluation(true, end - 1, end - 1)))
+        val observer = HistoryReconciler(store, clock(begin), authoritativeSnapshot = {
+            historyRulesSnapshot(StorageState.Ready(listOf(rule)))
+        })
+        observer.observe(emptyList())
+        val started = store.load().events.single()
+        assertEquals(begin, started.at)
+        assertEquals(5 * minute, started.plannedEnd!! - started.at)
+        rule = rule.copy(expiresAtEpochMs = end + 1,
+            runtime = rule.runtime!!.copy(evaluation = RuleEvaluation(true, end + 1, end + 1)))
+        observer.observe(emptyList())
+        assertEquals(listOf(started), store.load().events)
+        // An actual owner checkpoint/edit still changes the logical plan.
+        rule = rule.copy(expiresAtEpochMs = end + minute + 1,
+            runtime = rule.runtime!!.copy(wallEndEpochMs = end + minute))
+        observer.observe(emptyList())
+        assertEquals(end + minute, store.load().events.last().plannedEnd)
+        assertEquals(listOf("started", "rescheduled"), store.load().events.map { it.type })
+    }
 
     @Test fun ownerEndWhileObservationWaitsForClearLockCannotReimportRemovedStart() = runTest {
         val dir = temporary.newFolder()
