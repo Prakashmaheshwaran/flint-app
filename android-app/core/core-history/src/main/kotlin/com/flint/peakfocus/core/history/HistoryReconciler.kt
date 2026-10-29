@@ -65,6 +65,8 @@ class HistoryReconciler(
     suspend fun observe(rules: List<HistoryRule>) = observeSnapshot(HistoryRulesSnapshot.Ready(rules))
 
     private suspend fun observeSnapshot(observation: HistoryRulesSnapshot.Ready) = observationMutex.withLock {
+        val initial = authoritativeSnapshot?.invoke() ?: observation
+        if (initial is HistoryRulesSnapshot.Ready) captureActive(initial, clock.millis())
         var acceptedRules = false
         var rulesDiagnostic: String? = null
         val success = store.update { snapshot ->
@@ -78,14 +80,7 @@ class HistoryReconciler(
             val now = clock.millis()
             val sessions = latest.rules.filter { it.id.startsWith("session-") }.associateBy { it.id }
             val current = sessions.filterValues { it.plannedEnd == null || it.plannedEnd > now }.keys
-            val previouslyActive = active.value
-            active.value = current
-            // An owner-ended cause awaits its durable terminal. Its disappearance
-            // must not race that terminal into a guessed early-end outcome.
-            latest.ownerInactiveIds.forEach(pendingEarlyEnds::remove)
-            if (!firstSuccessfulSnapshot) previouslyActive.filterNot {
-                it in current || it in latest.ownerInactiveIds
-            }.forEach { id -> pendingEarlyEnds.putIfAbsent(id, now) }
+            captureActive(latest, now)
             val events = mutableListOf<HistoryEvent>()
             val known = snapshot.events.filter { it.knownType != null }.groupBy { it.session }
             sessions.values.filter { it.id in current }.forEach { rule ->
@@ -139,6 +134,20 @@ class HistoryReconciler(
             readiness.value = true
             diagnostics.value = null
         } else diagnostics.value = rulesDiagnostic ?: "History write unavailable"
+    }
+
+    private fun captureActive(snapshot: HistoryRulesSnapshot.Ready, now: Long) {
+        val current = snapshot.rules.filter {
+            it.id.startsWith("session-") && (it.plannedEnd == null || it.plannedEnd > now)
+        }.mapTo(mutableSetOf()) { it.id }
+        val previouslyActive = active.value
+        active.value = current
+        // Public IDs and the first live observation survive even a history-lock
+        // failure; owner-ended causes instead await their durable terminal.
+        snapshot.ownerInactiveIds.forEach(pendingEarlyEnds::remove)
+        if (!firstSuccessfulSnapshot) previouslyActive.filterNot {
+            it in current || it in snapshot.ownerInactiveIds
+        }.forEach { id -> pendingEarlyEnds.putIfAbsent(id, now) }
     }
 
     private fun event(type: HistoryEventType, id: String, at: Long) =
