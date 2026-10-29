@@ -65,10 +65,26 @@ final class SleepPresentationTests: XCTestCase {
                                                 locale: english, style: .full).contains("2 hours"))
     }
 
-    func testAssistSummaryNamesTheCurrentTierMapping() {
-        XCTAssertEqual(SleepPresentation.assistSummary(.windDown), "Wind Down · Harder")
-        XCTAssertEqual(SleepPresentation.assistSummary(.fullAssist), "Full Assist · Hardcore")
-        XCTAssertEqual(SleepPresentation.assistSummary(.off), "Sleep Assist off")
+    func testAssistSummaryShowsTheSavedTierForEveryLevelPC82() {
+        let expected: [(FlintSleepAssistLevel, BreakLevel, String)] = [
+            (.windDown, .easy, "Wind Down · Easy"),
+            (.windDown, .harder, "Wind Down · Harder"),
+            (.windDown, .hardcore, "Wind Down · Hardcore"),
+            (.fullAssist, .easy, "Full Assist · Easy"),
+            (.fullAssist, .harder, "Full Assist · Harder"),
+            (.fullAssist, .hardcore, "Full Assist · Hardcore"),
+        ]
+        for (level, tier, text) in expected {
+            XCTAssertEqual(SleepPresentation.assistSummary(level, tier: tier), text)
+        }
+        for tier in [nil, BreakLevel.easy, .harder, .hardcore] {
+            XCTAssertEqual(SleepPresentation.assistSummary(.off, tier: tier), "Sleep Assist off")
+        }
+    }
+
+    func testAnUnknownSavedTierIsLeftOutNotGuessed() {
+        XCTAssertEqual(SleepPresentation.assistSummary(.windDown, tier: nil), "Wind Down")
+        XCTAssertEqual(SleepPresentation.assistSummary(.fullAssist, tier: nil), "Full Assist")
     }
 
     func testInvalidSavedValuesRemainReadableSoTheArmingErrorCanBeShown() {
