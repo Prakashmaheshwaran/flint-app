@@ -1,5 +1,9 @@
 package com.flint.peakfocus
 
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
+import com.flint.peakfocus.blocking.engine.RuleClockProjection
 import com.flint.peakfocus.core.datastore.*
 import com.flint.peakfocus.core.history.FocusHistoryAggregator
 import com.flint.peakfocus.core.history.FocusHistoryStore
@@ -7,6 +11,7 @@ import com.flint.peakfocus.core.history.HistoryEvent
 import com.flint.peakfocus.core.history.HistoryClearPhase
 import com.flint.peakfocus.core.history.HistoryReconciler
 import com.flint.peakfocus.core.history.HistoryRule
+import com.flint.peakfocus.core.history.historyRulesSnapshot
 import com.flint.peakfocus.core.history.SessionOutcome
 import com.flint.peakfocus.core.model.*
 import java.io.IOException
@@ -15,6 +20,11 @@ import java.time.Instant
 import java.time.ZoneOffset
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Rule
@@ -32,6 +42,82 @@ class FocusHistoryTerminalDeliveryTest {
         override fun instant() = Instant.ofEpochMilli(now)
         override fun getZone() = ZoneOffset.UTC
         override fun withZone(zone: java.time.ZoneId): Clock = this
+    }
+
+    private class OwnerDisk : DataStore<Preferences> {
+        val values = MutableStateFlow(emptyPreferences())
+        var fail = false
+        private val lock = Mutex()
+        override val data: Flow<Preferences> = values
+        override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences = lock.withLock {
+            val next = transform(values.value)
+            if (fail) throw IOException("ack unavailable")
+            values.value = next
+            next
+        }
+    }
+
+    @Test fun actualOwnerLogicalEndCannotResurrectClearedHistoryThroughFutureRawExpiry() = runTest {
+        val minute = 60_000L
+        for (rollback in listOf(false, true)) {
+            val disk = OwnerDisk()
+            var nativeNow = AccessClockStamp(start, 10_000, "boot")
+            val owner = DataStoreEditorCommitmentStore(disk, { nativeNow }, { "UTC" })
+            owner.reconcile(nativeNow)
+            // The owner's timeline advanced ten minutes while wall time advanced five.
+            nativeNow = AccessClockStamp(start + 5 * minute, 10_000 + 10 * minute, "boot")
+            val id = CONTRACT_TIMER_ID_PREFIX + "${nativeNow.wallEpochMs}-mismatch"
+            val rawRule = BlockRule(id, "Focus timer", BlockTargets(apps = setOf(AppRef("app"))),
+                expiresAtEpochMs = start + 15 * minute)
+            assertTrue(owner.startTimer(rawRule, nativeNow, EditorSafety(true)))
+            val published = owner.reconcileRules(nativeNow)
+            ActiveRulesHolder.configureProjection { RuleClockProjection.project(it, nativeNow) }
+            ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, published)
+            try {
+                val clock = MutableClock(nativeNow.wallEpochMs)
+                val store = FocusHistoryStore(temporary.newFolder(), clock)
+                val projection = { historyRulesSnapshot(ActiveRulesHolder.dataStoreState) }
+                HistoryReconciler(store, clock, { ZoneOffset.UTC }, projection)
+                    .observe(listOf(HistoryRule(id, "Focus timer", "easy", rawRule.expiresAtEpochMs)))
+                assertEquals(1, store.load().events.size)
+
+                nativeNow = AccessClockStamp(start + 10 * minute, 10_000 + 15 * minute, "boot")
+                clock.now = nativeNow.wallEpochMs
+                owner.reconcile(nativeNow)
+                val terminal = owner.readTerminalEvents().single()
+                assertEquals(start + 10 * minute, terminal.logicalEnd.wallEpochMs)
+                val raw = (DataStoreBlockRulesStore(disk).rulesState.first { it is StorageState.Ready }
+                    as StorageState.Ready).value.single()
+                assertEquals(start + 15 * minute, raw.expiresAtEpochMs)
+                assertTrue(runCatching {
+                    projectEditorHistoryTerminals(owner, { batch ->
+                        store.update(batch).also { disk.fail = true }
+                    }, ZoneOffset.UTC)
+                }.isFailure)
+                disk.fail = false
+                assertEquals(listOf(terminal), owner.readTerminalEvents())
+                if (rollback) clock.now = start + 8 * minute
+                assertTrue(store.clear(emptySet()))
+
+                // Keep the SAME cached owner publication and raw future rule through
+                // clear, restart, wall catch-up and terminal replay. Only read-time
+                // anchored evaluation can reject this stale STARTED candidate.
+                nativeNow = AccessClockStamp(start + 11 * minute, 10_000 + 16 * minute, "boot")
+                clock.now = nativeNow.wallEpochMs
+                val reopened = FocusHistoryStore(store.directory, clock)
+                reopened.load()
+                val observer = HistoryReconciler(reopened, clock, { ZoneOffset.UTC }, projection)
+                observer.observe(listOf(HistoryRule(id, "Focus timer", "easy", rawRule.expiresAtEpochMs)))
+                assertTrue(observer.activeSessionIds.value.isEmpty())
+                assertTrue(reopened.load().events.isEmpty())
+                assertEquals(1, projectEditorHistoryTerminals(owner, reopened::update, ZoneOffset.UTC))
+                assertTrue(owner.readTerminalEvents().isEmpty())
+                assertTrue(reopened.load().events.isEmpty())
+            } finally {
+                ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, emptyList())
+                ActiveRulesHolder.configureProjection { it }
+            }
+        }
     }
 
     @Test fun failedHistoryAppendNeverAcknowledgesOwnerIntent() = runTest {

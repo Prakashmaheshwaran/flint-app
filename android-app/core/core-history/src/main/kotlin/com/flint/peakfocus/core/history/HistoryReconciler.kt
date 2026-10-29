@@ -16,7 +16,7 @@ import kotlinx.coroutines.sync.withLock
 data class HistoryRule(val id: String, val name: String, val tier: String, val plannedEnd: Long?)
 
 sealed interface HistoryRulesSnapshot {
-    data class Ready(val rules: List<HistoryRule>) : HistoryRulesSnapshot
+    data class Ready(val rules: List<HistoryRule>, val ownerInactiveIds: Set<String> = emptySet()) : HistoryRulesSnapshot
     data class Unavailable(val reason: String) : HistoryRulesSnapshot
     data object Loading : HistoryRulesSnapshot
 }
@@ -25,6 +25,9 @@ class HistoryReconciler(
     private val store: FocusHistoryStore,
     private val clock: Clock = Clock.systemUTC(),
     private val zone: () -> ZoneId = { ZoneId.systemDefault() },
+    // Read again under the history transaction lock: a queued observation may be
+    // stale after clear, a clock edit, or the owner's natural terminal transition.
+    private val authoritativeSnapshot: (() -> HistoryRulesSnapshot)? = null,
 ) {
     private var firstSuccessfulSnapshot = true
     private val observationMutex = Mutex()
@@ -46,7 +49,7 @@ class HistoryReconciler(
             try {
                 rules.collect { snapshot ->
                     when (snapshot) {
-                        is HistoryRulesSnapshot.Ready -> observe(snapshot.rules)
+                        is HistoryRulesSnapshot.Ready -> observeSnapshot(snapshot)
                         is HistoryRulesSnapshot.Unavailable -> diagnostics.value = "Rules unavailable: ${snapshot.reason}"
                         HistoryRulesSnapshot.Loading -> diagnostics.value = "Rules loading"
                     }
@@ -59,17 +62,30 @@ class HistoryReconciler(
         }
     }
 
-    suspend fun observe(rules: List<HistoryRule>) = observationMutex.withLock {
-        val now = clock.millis()
-        val sessions = rules.filter { it.id.startsWith("session-") }.associateBy { it.id }
-        val current = sessions.filterValues { it.plannedEnd == null || it.plannedEnd > now }.keys
-        val previouslyActive = active.value
-        active.value = current
-        val coldStart = firstSuccessfulSnapshot
-        if (!coldStart) previouslyActive.filterNot { it in current }.forEach { id ->
-            pendingEarlyEnds.putIfAbsent(id, now)
-        }
+    suspend fun observe(rules: List<HistoryRule>) = observeSnapshot(HistoryRulesSnapshot.Ready(rules))
+
+    private suspend fun observeSnapshot(observation: HistoryRulesSnapshot.Ready) = observationMutex.withLock {
+        var acceptedRules = false
+        var rulesDiagnostic: String? = null
         val success = store.update { snapshot ->
+            val latest = authoritativeSnapshot?.invoke() ?: observation
+            if (latest !is HistoryRulesSnapshot.Ready) {
+                rulesDiagnostic = if (latest is HistoryRulesSnapshot.Unavailable)
+                    "Rules unavailable: ${latest.reason}" else "Rules loading"
+                return@update emptyList()
+            }
+            acceptedRules = true
+            val now = clock.millis()
+            val sessions = latest.rules.filter { it.id.startsWith("session-") }.associateBy { it.id }
+            val current = sessions.filterValues { it.plannedEnd == null || it.plannedEnd > now }.keys
+            val previouslyActive = active.value
+            active.value = current
+            // An owner-ended cause awaits its durable terminal. Its disappearance
+            // must not race that terminal into a guessed early-end outcome.
+            latest.ownerInactiveIds.forEach(pendingEarlyEnds::remove)
+            if (!firstSuccessfulSnapshot) previouslyActive.filterNot {
+                it in current || it in latest.ownerInactiveIds
+            }.forEach { id -> pendingEarlyEnds.putIfAbsent(id, now) }
             val events = mutableListOf<HistoryEvent>()
             val known = snapshot.events.filter { it.knownType != null }.groupBy { it.session }
             sessions.values.filter { it.id in current }.forEach { rule ->
@@ -117,12 +133,12 @@ class HistoryReconciler(
             }
             events
         }
-        if (success) {
+        if (success && acceptedRules) {
             pendingEarlyEnds.clear()
             firstSuccessfulSnapshot = false
             readiness.value = true
             diagnostics.value = null
-        } else diagnostics.value = "History write unavailable"
+        } else diagnostics.value = rulesDiagnostic ?: "History write unavailable"
     }
 
     private fun event(type: HistoryEventType, id: String, at: Long) =

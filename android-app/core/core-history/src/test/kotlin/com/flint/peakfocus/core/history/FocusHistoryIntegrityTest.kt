@@ -27,6 +27,34 @@ class FocusHistoryIntegrityTest {
     private fun focus(snapshot: HistorySnapshot, now: Long) =
         FocusHistoryAggregator.sessions(snapshot.events, now, setOf("session-a")).single().focusedMs
 
+    @Test fun authoritativeOwnerEndRejectsQueuedStartAndDoesNotGuessEarlyExit() = runTest {
+        val store = FocusHistoryStore(temporary.newFolder(), clock(begin))
+        val rule = HistoryRule("session-a", "Focus", "easy", begin + 60 * minute)
+        var current = HistoryRulesSnapshot.Ready(listOf(rule))
+        val observer = HistoryReconciler(store, clock(begin), authoritativeSnapshot = { current })
+        observer.observe(listOf(rule))
+        current = HistoryRulesSnapshot.Ready(emptyList(), setOf(rule.id))
+        observer.observe(listOf(rule)) // queued before the owner's anchored end
+        assertTrue(observer.activeSessionIds.value.isEmpty())
+        assertEquals(listOf("started"), store.load().events.map { it.type })
+        assertTrue(store.clear(emptySet()))
+        observer.observe(listOf(rule))
+        assertTrue(store.load().events.isEmpty())
+    }
+
+    @Test fun unavailableAuthoritativeReadRetainsLastActiveSetWithoutImportOrEarlyExit() = runTest {
+        val store = FocusHistoryStore(temporary.newFolder(), clock(begin))
+        val rule = HistoryRule("session-a", "Focus", "easy", begin + 60 * minute)
+        var current: HistoryRulesSnapshot = HistoryRulesSnapshot.Ready(listOf(rule))
+        val observer = HistoryReconciler(store, clock(begin), authoritativeSnapshot = { current })
+        observer.observe(listOf(rule))
+        current = HistoryRulesSnapshot.Unavailable("CORRUPT")
+        observer.observe(emptyList())
+        assertEquals(setOf(rule.id), observer.activeSessionIds.value)
+        assertEquals(listOf("started"), store.load().events.map { it.type })
+        assertTrue(observer.diagnostic.value!!.contains("CORRUPT"))
+    }
+
     @Test fun S1_strictRulesReadyCorruptReadyRetainsLastGoodWithoutTerminal() = runTest {
         val store = FocusHistoryStore(temporary.newFolder(), clock(begin))
         val observer = HistoryReconciler(store, clock(begin))
