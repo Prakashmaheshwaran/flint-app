@@ -52,7 +52,8 @@ public enum FlintOpenCredit {
         let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: defaults)
         let raw = defaults.object(forKey: FlintLedgerState.legacyOpenCreditKey)
         state.importLegacyOpenCredits(raw.map(FlintLegacyValue.value) ?? .absent,
-            targetKeys: rules.map(targetKeys), established: rules == nil || rules?.isEmpty == false,
+            targetKeys: rules.map(targetKeys), established: rules == nil ||
+                defaults.object(forKey: FlintRuleStoreKey.openLimits.rawValue) != nil,
             at: now, calendar: calendar)
     }
 
@@ -63,7 +64,8 @@ public enum FlintOpenCredit {
         let result = ledger.transaction { state -> Void in
             let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup)
             let valid = state.reconcileOpenCredits(at: FlintLedgerInstant(clock: .system),
-                targetKeys: rules.map(targetKeys) ?? state.openCredits.knownTargets, reshield: reshield)
+                targetKeys: rules.map(targetKeys) ?? state.openCredits.knownTargets,
+                setupCalendar: FlintClock.system.calendar(), reshield: reshield)
             apply(rule, grants: valid ? state.openCredits.grants : [:])
         }
         if case .failure = result { apply(rule, grants: [:]) }

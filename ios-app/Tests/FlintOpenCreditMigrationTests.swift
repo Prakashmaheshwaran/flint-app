@@ -70,6 +70,26 @@ final class FlintOpenCreditMigrationTests: XCTestCase {
                        .identityNeedsReselection)
     }
 
+    func testSavedEmptyLegacyRuleArrayIsEstablishedNotAFreshInstall() throws {
+        let suite = "flint.tests.empty-open-setup.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        FlintOpenLimitRule.saveAll([], to: defaults)
+        var state = FlintLedgerState(initializedAt: now)
+        FlintOpenCredit.importLegacy(into: &state, defaults: defaults, at: instant, calendar: calendar)
+        XCTAssertEqual(state.openCredits.availability, .unavailable,
+                       "deleted legacy rules plus a missing counter cannot mint a new pool")
+    }
+
+    func testQuotaZoneCapturedAtFirstTargetSetupThenSurvivesTravel() {
+        var state = imported(.absent, keys: [], established: false)
+        var setupZone = calendar; setupZone.timeZone = TimeZone(identifier: "America/New_York")!
+        XCTAssertTrue(state.reconcileOpenCredits(at: instant, targetKeys: ["app"], setupCalendar: setupZone, reshield: { _ in }))
+        XCTAssertEqual(state.openCredits.quotaZone, "America/New_York")
+        XCTAssertTrue(state.reconcileOpenCredits(at: instant, targetKeys: ["app"], setupCalendar: calendar, reshield: { _ in }))
+        XCTAssertEqual(state.openCredits.quotaZone, "America/New_York", "device travel does not move an established period")
+    }
+
     func testV1LedgerFixtureUpgradesAdditivelyWithoutChangingPassOrHarder() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("flint-v1-fixture-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }

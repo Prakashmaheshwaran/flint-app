@@ -222,7 +222,8 @@ extension FlintLedgerState {
     /// Expire/re-shield before advancing a period or considering another acceptance. Adapters
     /// execute inside the same cross-process lock as all release writes.
     public mutating func reconcileOpenCredits(
-        at now: FlintLedgerInstant, targetKeys: Set<String>, reshield: (FlintOpenCreditGrant) -> Void
+        at now: FlintLedgerInstant, targetKeys: Set<String>, setupCalendar: Calendar? = nil,
+        reshield: (FlintOpenCreditGrant) -> Void
     ) -> Bool {
         guard openCredits.isValid, now.monotonic.isFinite, now.monotonic >= 0,
               now.wall.timeIntervalSince1970.isFinite else { return false }
@@ -261,6 +262,14 @@ extension FlintLedgerState {
         }
         if !openCredits.enrolled && openCredits.availability == .ready && !targetKeys.isEmpty {
             guard targetKeys.count <= FlintOpenCreditState.maximumTargets else { return false }
+            // A ledger can exist for passes long before the first Open setup. No target has
+            // ever had a pool here; capture the quota zone at that first setup, not app launch.
+            if let setupCalendar, openCredits.counters.isEmpty, openCredits.pendingTargets.isEmpty {
+                openCredits.quotaZone = setupCalendar.timeZone.identifier
+                openCredits.periodStart = setupCalendar.startOfDay(for: now.wall)
+                openCredits.trustedWall = now.wall
+                openCredits.resetRemaining = Self.untilMidnight(now.wall, calendar: setupCalendar)
+            }
             for key in targetKeys {
                 openCredits.counters[key] = .init(targetKey: key, periodStart: openCredits.periodStart!, used: 0)
             }
@@ -304,10 +313,10 @@ extension FlintLedgerState {
     public mutating func acceptOpenCredit(
         target: String, operationID: String, coveringCaps: [String: Int], targetKeys: Set<String>,
         restoration: FlintOpenCreditRestoration,
-        at now: FlintLedgerInstant, blocking: () -> FlintOpenCreditBlock?,
+        at now: FlintLedgerInstant, setupCalendar: Calendar? = nil, blocking: () -> FlintOpenCreditBlock?,
         register: (FlintOpenCreditGrant) throws -> Void, reshield: (FlintOpenCreditGrant) -> Void
     ) -> Result<FlintOpenCreditReceipt, FlintOpenCreditRefusal> {
-        guard reconcileOpenCredits(at: now, targetKeys: targetKeys, reshield: reshield) else {
+        guard reconcileOpenCredits(at: now, targetKeys: targetKeys, setupCalendar: setupCalendar, reshield: reshield) else {
             return .failure(.denied(.unavailable))
         }
         let preview = openCreditPreview(target: target, caps: Array(coveringCaps.values), blockedBy: blocking(),

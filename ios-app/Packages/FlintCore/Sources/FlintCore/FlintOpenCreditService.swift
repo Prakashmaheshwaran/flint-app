@@ -42,7 +42,7 @@ public final class FlintOpenCreditService {
             return .init(remaining: nil, cap: nil, blockedBy: .unavailable)
         }
         let now = FlintLedgerInstant(clock: clock)
-        guard state.reconcileOpenCredits(at: now, targetKeys: context.targetKeys, reshield: { _ in }) else {
+        guard state.reconcileOpenCredits(at: now, targetKeys: context.targetKeys, setupCalendar: clock.calendar(), reshield: { _ in }) else {
             return .init(remaining: nil, cap: context.coveringCaps.values.min(), blockedBy: .unavailable)
         }
         return state.openCreditPreview(target: target, caps: Array(context.coveringCaps.values),
@@ -57,6 +57,7 @@ public final class FlintOpenCreditService {
             let now = FlintLedgerInstant(clock: self.clock)
             return state.acceptOpenCredit(target: target, operationID: operationID,
                 coveringCaps: context.coveringCaps, targetKeys: context.targetKeys, restoration: restoration, at: now,
+                setupCalendar: self.clock.calendar(),
                 blocking: { context.blockedBy }, register: { grant in
                     newRegistration = grant.activityName
                     try self.register(grant, grant.remaining(at: FlintLedgerInstant(clock: self.clock)))
@@ -125,7 +126,8 @@ public final class FlintOpenCreditService {
             let now = FlintLedgerInstant(clock: self.clock)
             let original = activity.flatMap { name in state.openCredits.grants.values.first { $0.activityName == name } }
             guard state.reconcileOpenCredits(at: now,
-                targetKeys: context?.targetKeys ?? state.openCredits.knownTargets, reshield: self.reshieldAndStop) else { return false }
+                targetKeys: context?.targetKeys ?? state.openCredits.knownTargets,
+                setupCalendar: self.clock.calendar(), reshield: self.reshieldAndStop) else { return false }
             if let activity, original == nil { self.stop(activity); return true }
             if let original, state.openCredits.grants[original.targetKey] == nil,
                let elapsed = original.grantedAt.elapsedForRelease(until: now), elapsed > original.duration + 1 {
