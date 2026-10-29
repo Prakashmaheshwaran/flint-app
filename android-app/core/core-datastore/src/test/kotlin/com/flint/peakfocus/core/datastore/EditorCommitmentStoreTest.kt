@@ -11,7 +11,7 @@ import java.util.Calendar
 import java.util.TimeZone
 import java.time.ZoneId
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.junit.Assert.*
@@ -23,6 +23,7 @@ class EditorCommitmentStoreTest {
         val lock = Mutex()
         var fail = false
         var updates = 0
+        var changedUpdates = 0
         var beforeUpdate: (() -> Unit)? = null
         override val data: Flow<Preferences> = values
         override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences = lock.withLock {
@@ -30,6 +31,7 @@ class EditorCommitmentStoreTest {
             beforeUpdate?.also { beforeUpdate = null }?.invoke()
             val next = transform(values.value)
             if (fail) throw IOException("disk full")
+            if (next != values.value) changedUpdates++
             values.value = next
             next
         }
@@ -145,6 +147,100 @@ class EditorCommitmentStoreTest {
         assertEquals(900_000, wait.remainingMs)
         assertEquals(EditorCommitResult.Applied(), store.confirm(wait.pending.id, clock(900_000), safe))
         assertEquals(3, HarderWaitCodec.decode(disk.values.value[HARDER_WAIT_KEY]).counts[occurrence])
+    }
+
+    @Test fun `PC-18 PC-54 reboot preserves daily occurrence and Harder n until trusted quota reset`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk)
+        confirm(store, EditorChange("Create", limits = EditorLimitsChange("a", TimeLimit("a", 30, BreakLevel.HARDER), null)))
+        val key = timeCauseKey("a")
+        val original = snapshot(store).causes.getValue(key)
+        val occurrence = editorOccurrence(key, original)
+        DataStoreHarderWaitStore(disk).transact { HarderWaitMutation(it.copy(counts = mapOf(occurrence to 2)), Unit) }
+        val reboot = clock(5, 3 * 86_400_000L, "reboot")
+        store.reconcile(reboot)
+        val resumed = snapshot(store).causes.getValue(key)
+        assertEquals(original.occurrenceId, resumed.occurrenceId)
+        assertEquals(14 * 3_600_000L, resumed.interval!!.remainingMs(reboot))
+        assertEquals(2, readHarderWait(disk.values.value).counts[occurrence])
+        store.reconcile(clock(5 + 14 * 3_600_000L, 3 * 86_400_000L + 14 * 3_600_000L, "reboot"))
+        assertNotEquals(original.occurrenceId, snapshot(store).causes.getValue(key).occurrenceId)
+        assertFalse(readHarderWait(disk.values.value).counts.containsKey(occurrence))
+    }
+
+    @Test fun `PC-14 PC-54 reboot cannot prematurely apply a queued daily weakening`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk)
+        val limit = TimeLimit("a", 30, BreakLevel.HARDCORE)
+        confirm(store, EditorChange("Create", limits = EditorLimitsChange("a", limit, null)))
+        assertEquals(EditorCommitResult.Applied(true), confirm(store, EditorChange("Remove", limits = EditorLimitsChange("a", null, null))))
+        val id = snapshot(store).queued.single().id
+        store.reconcile(clock(5, 3 * 86_400_000L, "reboot"))
+        assertEquals(listOf(limit), DataStoreLimitsStore(disk).timeLimits.first())
+        assertEquals(id, snapshot(store).queued.single().id)
+        store.reconcile(clock(5 + 14 * 3_600_000L, 3 * 86_400_000L + 14 * 3_600_000L, "reboot"))
+        assertTrue(DataStoreLimitsStore(disk).timeLimits.first().isEmpty())
+        assertTrue(snapshot(store).queued.isEmpty())
+    }
+
+    @Test fun `PC-70 adopting an existing C4c daily cause retains its identity and n across reboot`() = runBlocking {
+        val key = timeCauseKey("a")
+        val cause = EditorCause("legacy-daily-identity", com.flint.peakfocus.blocking.engine.AnchoredInterval(clock(), 14 * 3_600_000L, at + 14 * 3_600_000L), "UTC")
+        val occurrence = editorOccurrence(key, cause)
+        val disk = Disk(preferencesOf(PrefsKeys.TIME_LIMITS to "a~30~HARDER",
+            EDITOR_COMMITMENTS_KEY to EditorCommitmentCodec.encode(EditorCommitmentState(causes = mapOf(key to cause), timeline = clock())),
+            EDITOR_VERSION_KEY to 1L, HARDER_WAIT_KEY to HarderWaitCodec.encode(HarderWaitPolicy.Ledger(counts = mapOf(occurrence to 5)))))
+        val store = DataStoreEditorCommitmentStore(disk) { "UTC" }
+        store.reconcile(clock(5, 3 * 86_400_000L, "reboot"))
+        assertEquals(cause.occurrenceId, snapshot(store).causes.getValue(key).occurrenceId)
+        assertEquals(5, readHarderWait(disk.values.value).counts[occurrence])
+        assertNotNull(snapshot(store).quotaPeriodId)
+    }
+
+    @Test fun `PC-56 committing first Time Limit captures the shared zone before a later device zone change`() = runBlocking {
+        var zone = "UTC"
+        val disk = Disk(); val store = DataStoreEditorCommitmentStore(disk, defaultZone = { zone })
+        store.reconcile(clock())
+        assertNull(disk.values.value[QUOTA_ZONE])
+        confirm(store, EditorChange("Time", limits = EditorLimitsChange("a", TimeLimit("a", 30), null)))
+        assertEquals("UTC", disk.values.value[QUOTA_ZONE])
+        zone = "Asia/Tokyo"
+        confirm(store, EditorChange("Open", limits = EditorLimitsChange("b", null, OpenLimit("b", 3))))
+        assertEquals("UTC", disk.values.value[QUOTA_ZONE])
+        val causes = snapshot(store).causes
+        assertEquals(causes.getValue(timeCauseKey("a")).occurrenceId, causes.getValue(openCauseKey("b")).occurrenceId)
+        assertEquals(causes.getValue(timeCauseKey("a")).interval, causes.getValue(openCauseKey("b")).interval)
+    }
+
+    @Test fun `PC-56 daily reconcile with advancing clocks changes neither persisted snapshots nor emissions`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk)
+        confirm(store, EditorChange("Time", limits = EditorLimitsChange("a", TimeLimit("a", 30), null)))
+        confirm(store, EditorChange("Open", limits = EditorLimitsChange("b", null, OpenLimit("b", 3))))
+        val original = disk.values.value.asMap().toMap()
+        val writes = disk.changedUpdates
+        var emissions = 0
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) { disk.data.collect { emissions++ } }
+        repeat(8) { store.reconcileRules(clock((it + 1) * 1_000L)) }
+        yield()
+        assertEquals(original, disk.values.value.asMap())
+        assertEquals(writes, disk.changedUpdates)
+        assertEquals(1, emissions)
+        collector.cancelAndJoin()
+    }
+
+    @Test fun `PC-56 daily publication invalidation cannot sustain its own write loop`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk)
+        confirm(store, EditorChange("Time", limits = EditorLimitsChange("a", TimeLimit("a", 30), null)))
+        val writes = disk.changedUpdates
+        var refreshes = 0
+        val driver = launch {
+            store.changes.collectLatest {
+                check(++refreshes <= 10) { "publication produced a self-sustaining write loop" }
+                store.reconcileRules(clock(refreshes * 1_000L))
+            }
+        }
+        delay(50)
+        assertEquals(1, refreshes)
+        assertEquals(writes, disk.changedUpdates)
+        driver.cancelAndJoin()
     }
 
     @Test fun `PC-20 cancellation spends nothing and another request restarts the full wait`() = runBlocking {

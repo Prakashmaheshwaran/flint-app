@@ -1,12 +1,56 @@
 # Storage readiness and durable grants
 
 Production stores expose `StorageState.Loading`, `Ready(value)`, or
-`Unavailable(IO | CORRUPT | UNSUPPORTED_VERSION)`. A missing key after a
-successful read retains the existing v1 defaults. An unsuccessful read never
+`Unavailable(IO | CORRUPT | UNSUPPORTED_VERSION)`. Legacy stores retain their
+documented optional-key defaults before migration; initialized ADR-012 ledgers
+require every critical key. An unsuccessful read never
 publishes those defaults. Compatible value flows emit only successful reads;
 `rulesOrError` additionally throws an explicit storage exception for Timer retry.
 The rule bridge retains its last good rules on unavailable reads and never
 sweeps an unreadable snapshot.
+
+## ADR-012 timed Open-credit authority (R-11/R-19)
+
+`OpenCreditStore.kt` supplies synchronous `prepareOpenCredits`,
+`prepareOpenCreditPeriod`, `readOpenCredits` and `MutablePreferences.putOpenCredits`
+helpers. They run inside the existing `flint_preferences` edit; none opens a
+nested transaction. Runtime wiring must prepare the quota period first, run editor
+preparation for due daily changes, evaluate current caps/overlapping causes, then
+commit the pure `OpenCreditLedgerPolicy` result and its receipt together. Only the
+outer edit's acknowledgement permits access. This seam does not itself remove the
+older foreground-debit coordinator path described below; C4b owns that integration.
+
+`open_credit_schema_v1=1` requires all of `open_credit_state_v1` (`S|1`),
+`open_credit_counts_v1` (`O|1`), `open_credit_legacy_archive_v1` (`A|1`) and
+`quota_zone_v1`. Missing/malformed/unsupported initialized data is unavailable;
+there is no fallback to an empty counter or the legacy archive. The archive retains
+exact old `open_counts_v1` bytes and `open_counts_day_v1` with presence flags, and
+original legacy keys remain intact. Valid over-cap and removed-target counts survive
+import. A previous-day label alone does not reset them. Only a validated unused
+legacy Open domain may initialize explicit empty state once. Downgrade is unsupported;
+older builds must not become a second ledger writer.
+That one-time unused case includes configured legacy Open limits with both count
+keys absent and no Open receipt: old builds wrote those keys only on first use.
+The editor sidecar's new `D|periodId` row also makes pre-R-11 builds report the
+whole editor state as unsupported; preserve the archive and use a compatible build.
+
+The saved IANA `quota_zone_v1` is shared with Time Limits and captured at the first
+committed limit. One monotonic reset clock governs every target, including targets
+whose rule was removed/recreated. Actual accepted credits last at most 300 seconds,
+clipped at the reset. The ledger retains accepted operation IDs for the current and
+previous period, and distinguishes Accepted, AlreadyActive, Duplicate and Denied.
+Only Accepted spends; retries never restart the original interval. The caller passes
+the shared `ProtectionClock` stamp; this ledger adds no boot identity source.
+
+Wall discrepancies over five seconds mark uncertainty without minting quota.
+Reboot closes active credit access, retains spend, and resumes the last checkpoint's
+remaining-to-reset without credit for powered-off time. One subsequent reset selects
+the next saved-zone midnight; missed resets are never replayed. Daily editor occurrence
+IDs, queued boundaries and Harder counts use that same reset rather than finite-session
+wall fallback. An unprovable old Open release leaves a durable ended-access notice flag.
+Read-driven reconciliation retains equivalent anchors and does not persist a new
+checkpoint on every read. Actual policy entries/mutations and observed rollover,
+expiry, reboot or new uncertainty still checkpoint durably.
 
 Only transient IO is retried automatically. File corruption emits `CORRUPT` once
 and stops; corrupt/unsupported payloads emit an unavailable state without a polling

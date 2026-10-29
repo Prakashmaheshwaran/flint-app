@@ -49,6 +49,8 @@ data class EditorCommitmentState(
     val queued: List<QueuedEditorChange> = emptyList(),
     val migrationNotice: Boolean = false,
     val timeline: AccessClockStamp? = null,
+    /** Daily occurrence identity changes only when the trusted shared quota period rolls. */
+    val quotaPeriodId: Long? = null,
 )
 
 sealed interface EditorCommitResult {

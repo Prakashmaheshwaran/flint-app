@@ -11,6 +11,7 @@ internal object EditorCommitmentCodec {
         add("E|1")
         add("N|${state.nextId}|${state.migrationNotice}")
         state.timeline?.let { add("K|${clock(it)}") }
+        state.quotaPeriodId?.let { add("D|$it") }
         state.causes.toSortedMap().forEach { (key, cause) ->
             add("C|${wireAtom(key)}|${wireAtom(cause.occurrenceId)}|${wireAtom(cause.zoneId)}|${cause.legacyRights}|${interval(cause.interval)}")
         }
@@ -30,7 +31,7 @@ internal object EditorCommitmentCodec {
     fun decode(raw: String?): EditorCommitmentState {
         if (raw == null) return EditorCommitmentState()
         val rows = wireRows(raw, "E")
-        var next: Long? = null; var notice = false; var timeline: AccessClockStamp? = null
+        var next: Long? = null; var notice = false; var timeline: AccessClockStamp? = null; var quotaPeriod: Long? = null
         val causes = linkedMapOf<String, EditorCause>()
         var pending: PendingEditorChange? = null
         val queued = mutableListOf<QueuedEditorChange>()
@@ -38,6 +39,7 @@ internal object EditorCommitmentCodec {
             when (f[0]) {
                 "N" -> { wireRequire(f.size == 3 && next == null); next = wireLong(f[1]); notice = bool(f[2]); wireRequire(next!! > 0) }
                 "K" -> { wireRequire(f.size == 4 && timeline == null); timeline = readClock(f.drop(1)) }
+                "D" -> { wireRequire(f.size == 2 && quotaPeriod == null); quotaPeriod = wireLong(f[1]) }
                 "C" -> {
                     wireRequire(f.size == 6 || f.size == 11)
                     val cause = EditorCause(readWireAtom(f[2]), readInterval(f.drop(5)), readWireAtom(f[3]), bool(f[4]))
@@ -72,7 +74,7 @@ internal object EditorCommitmentCodec {
         }
         queued.forEach { q -> wireRequire(q.boundaries.isNotEmpty() && q.boundaries.keys.all { it in q.change.keys }) }
         causes.values.forEach { c -> wireRequire(java.util.TimeZone.getTimeZone(c.zoneId).id == c.zoneId) }
-        return EditorCommitmentState(next!!, causes.toMap(), pending, queued.toList(), notice, timeline)
+        return EditorCommitmentState(next!!, causes.toMap(), pending, queued.toList(), notice, timeline, quotaPeriod)
     }
 
     private fun bool(value: String) = value.toBooleanStrictOrNull() ?: wireCorrupt()
