@@ -18,35 +18,35 @@ final class FlintRuleArbiter {
     init(environment: FlintRuleReloadEnvironment) { env = environment }
 
     func upsert<Rule: FlintGatedRule>(_ rule: Rule, confirmation: FlintRuleConfirmation? = nil,
-                                     creating: Bool = false) -> FlintRuleMutationResult {
+                                     creating: Bool = false, origin: FlintRuleMutationOrigin = .interactive) -> FlintRuleMutationResult {
         mutate([Mutation(id: rule.id, proposed: rule, action: .edit,
-                         expectedRevision: rule.revision, creating: creating)], confirmation: confirmation)
+                         expectedRevision: rule.revision, creating: creating)], confirmation: confirmation, origin: origin)
     }
 
-    func delete<Rule: FlintGatedRule>(_ type: Rule.Type, id: String, revision: Int?,
-                                     confirmation: FlintRuleConfirmation?) -> FlintRuleMutationResult {
+    func delete<Rule: FlintGatedRule>(_ type: Rule.Type, id: String, revision: Int,
+                                     confirmation: FlintRuleConfirmation?, origin: FlintRuleMutationOrigin = .interactive) -> FlintRuleMutationResult {
         withLock {
             guard let all = self.load(type) else { return .unavailable }
-            guard let old = all.first(where: { $0.id == id }) else { return .staleRevision }
+            guard all.contains(where: { $0.id == id }) else { return .staleRevision }
             return self.mutate([Mutation<Rule>(id: id, proposed: nil, action: .delete,
-                expectedRevision: revision ?? old.revision)], confirmation: confirmation)
+                expectedRevision: revision)], confirmation: confirmation, origin: origin)
         }
     }
 
-    func setEnabled<Rule: FlintGatedRule>(_ type: Rule.Type, id: String, enabled: Bool, revision: Int?,
-                                         confirmation: FlintRuleConfirmation?) -> FlintRuleMutationResult {
+    func setEnabled<Rule: FlintGatedRule>(_ type: Rule.Type, id: String, enabled: Bool, revision: Int,
+                                         confirmation: FlintRuleConfirmation?, origin: FlintRuleMutationOrigin = .interactive) -> FlintRuleMutationResult {
         withLock {
             guard let all = self.load(type) else { return .unavailable }
             guard var rule = all.first(where: { $0.id == id }) else { return .staleRevision }
-            let expected = revision ?? rule.revision
             rule.enabled = enabled
             return self.mutate([Mutation(id: id, proposed: rule, action: enabled ? .edit : .turnOff,
-                expectedRevision: expected)], confirmation: confirmation)
+                expectedRevision: revision)], confirmation: confirmation, origin: origin)
         }
     }
 
     func mutate<Rule: FlintGatedRule>(_ mutations: [Mutation<Rule>],
-                                      confirmation: FlintRuleConfirmation?, context: String = "") -> FlintRuleMutationResult {
+                                      confirmation: FlintRuleConfirmation?, context: String = "",
+                                      origin: FlintRuleMutationOrigin = .interactive) -> FlintRuleMutationResult {
         withLock {
             guard !mutations.isEmpty, Set(mutations.map(\.id)).count == mutations.count,
                   self.applyQueued(Rule.self),
@@ -57,13 +57,20 @@ final class FlintRuleArbiter {
             var scopes: [String] = [context]
             var waitScopes: [String] = [context]
             var previews: [FlintRuleChangePreview] = []
-            var nextOccurrenceEnds: [Date] = []
+            var nextOccurrenceEnds: [String: Date] = [:]
             var raisesTier = false
             for mutation in mutations {
                 let old = all.first { $0.id == mutation.id }
                 if let old {
                     guard !mutation.creating, old.revision == mutation.expectedRevision else { return .staleRevision }
                     guard old.validationIssue == nil else { return .unavailable }
+                    if old.protection?.queuedChange != nil {
+                        guard mutation.action == .edit, let proposed = mutation.proposed,
+                              let impact = try? proposed.impact(comparedTo: old, at: now),
+                              impact == .strengthen || (impact == .cosmetic && proposed.name != old.name) else {
+                            return .invalid("This rule already has a queued change. Cancel it before saving another change.")
+                        }
+                    }
                 } else if mutation.action == .delete || (mutation.expectedRevision > 1 && !mutation.creating) {
                     return .staleRevision
                 }
@@ -114,11 +121,11 @@ final class FlintRuleArbiter {
                        let before = old as? FlintLimitRule, let after = proposed as? FlintLimitRule,
                        before.thresholdMinutes != after.thresholdMinutes || before.selection != after.selection
                         || before.protection?.timeZoneID != after.protection?.timeZoneID,
-                       self.env.timeLimitIsShielded(before) {
+                       self.env.timeLimitIsShielded(before, now) {
                         // DeviceActivity cannot synchronously report the used minutes for a
                         // revised threshold/target set. Keep today's exhausted snapshot and
                         // offer a future revision instead of claiming an inaccurate release.
-                        if case .deferUntil = decision {} else { nextOccurrenceEnds.append(occurrence.end) }
+                        if case .deferUntil = decision {} else { nextOccurrenceEnds[mutation.id] = occurrence.end }
                     }
                 } else { decision = .allow(confirm: mutation.proposed?.breakLevel == .hardcore) }
                 decisions.append(decision)
@@ -135,69 +142,46 @@ final class FlintRuleArbiter {
                 // persisted wait for the same exact protection change (ADR-012 §2/4).
                 waitScopes.append("\(cause.causeID):\(old?.activityName ?? "new"):\(cause.end?.timeIntervalSince1970 ?? 0):\(before):\(after)")
             }
+            let policyDeferrals = decisions.compactMap { if case let .deferUntil(end) = $0 { return end }; return nil }
+            var deferredEnds = nextOccurrenceEnds
+            if !policyDeferrals.isEmpty || !nextOccurrenceEnds.isEmpty {
+                for index in decisions.indices {
+                    switch decisions[index] {
+                    case let .deferUntil(end): deferredEnds[mutations[index].id] = end
+                    case .wait: deferredEnds[mutations[index].id] = causes[index].end
+                    default: break // Easy and inactive members apply in the atomic acceptance.
+                    }
+                }
+            }
+            for index in previews.indices {
+                previews[index].deferredUntil = deferredEnds[mutations[index].id]
+                previews[index].offersEarlierHarderEdit = deferredEnds[mutations[index].id] != nil && causes[index].tier == .harder
+            }
             let digest = SHA256.hash(data: Data(scopes.sorted().joined(separator: "|").utf8))
                 .map { String(format: "%02x", $0) }.joined()
             let ticket = FlintRuleConfirmation(revision: causes.map(\.revision).max() ?? 0,
                 fingerprint: digest, confirmsTierIncrease: raisesTier, preview: previews)
             if let confirmation {
                 guard confirmation.revision == ticket.revision, confirmation.fingerprint == ticket.fingerprint else { return .staleRevision }
+                guard origin == .interactive else { return .confirmationRequired(ticket, raisesTier: raisesTier) }
             }
             if let index = decisions.firstIndex(where: { if case .deny = $0 { return true }; return false }),
                case let .deny(reason) = decisions[index] {
                 let cause = causes[index]
                 return .denied(reason, cause: mutations[index].id, tier: cause.tier, end: cause.end)
             }
-            let policyDeferrals = decisions.compactMap { if case let .deferUntil(end) = $0 { return end }; return nil }
             if !policyDeferrals.isEmpty {
                 // An active Hardcore future weakening still depends on readable protection
                 // state (§8). Easy edits, including future exhausted-budget edits, need no
                 // ledger; natural expiry remains independently bounded by the saved window.
                 guard let ledger = self.env.ledger(), case .success = ledger.read() else { return .unavailable }
             }
-            let deferredUntil = (policyDeferrals + nextOccurrenceEnds).max()
+            let deferredUntil = deferredEnds.values.max()
             if let end = deferredUntil {
                 guard confirmation != nil, !raisesTier || confirmation?.confirmsTierIncrease == true else {
                     return policyDeferrals.isEmpty ? .nextOccurrenceRequired(ticket, until: end) : .deferRequired(ticket, until: end)
                 }
-                // The whole batch is future-only. Store every future snapshot in the same
-                // domain write, retaining each current rule's effective fields/registration.
-                let batchID = UUID().uuidString
-                for mutation in mutations {
-                    if !all.contains(where: { $0.id == mutation.id }), var placeholder = mutation.proposed {
-                        placeholder.enabled = false
-                        let draftProtection = placeholder.protection
-                        placeholder.protection = .init(timeZoneID: draftProtection?.timeZoneID ?? TimeZone.current.identifier,
-                            requiresTierReview: draftProtection?.requiresTierReview ?? false)
-                        all.append(placeholder)
-                    }
-                    guard let index = all.firstIndex(where: { $0.id == mutation.id }) else { return .unavailable }
-                    var current = all[index]
-                    guard var metadata = current.protection,
-                          let window = current.occurrence(at: now) ?? causes.compactMap({ cause -> FlintRuleWindow? in
-                              guard let end = cause.end else { return nil }; return .init(start: now, end: end)
-                          }).first else { return .unavailable }
-                    metadata.occurrence = current.occurrence(at: now)
-                    metadata.revision += 1
-                    var future = mutation.proposed
-                    if future != nil {
-                        var next = metadata
-                        next.revision += 1; next.activityRevision = next.revision
-                        next.usesLegacyActivityName = false; next.legacyRightsUntil = nil
-                        next.queuedChange = nil; next.occurrence = nil
-                        next.timeZoneID = future!.protection?.timeZoneID ?? metadata.timeZoneID
-                        future!.protection = next
-                    }
-                    let snapshot = future.flatMap { try? JSONEncoder().encode($0) }
-                    if future != nil && snapshot == nil { return .unavailable }
-                    metadata.queuedChange = .init(action: mutation.action, baseRevision: metadata.revision,
-                        window: .init(start: window.start, end: end), snapshot: snapshot,
-                        fingerprint: (try? sourceFingerprint(mutation)) ?? "", batchID: batchID)
-                    current.protection = metadata
-                    all[index] = current
-                }
-                guard self.save(all) else { return .unavailable }
-                self.notify()
-                return .queued(until: end)
+                return self.acceptDeferredBatch(mutations, all: all, ends: deferredEnds, at: now)
             }
             if raisesTier, confirmation?.confirmsTierIncrease != true {
                 return .confirmationRequired(ticket, raisesTier: true)
@@ -205,10 +189,23 @@ final class FlintRuleArbiter {
             let harder = zip(causes, decisions).compactMap { cause, decision -> FlintCauseState? in
                 if case .wait = decision { return cause }; return nil
             }
+            var authorizationCommitted = false
+            let enabledBefore = all.filter(\.enabled).count
+            let authorizationEnd = harder.compactMap(\.end).max() ?? now
+            func unavailableAfterAuthorization() -> FlintRuleMutationResult {
+                guard authorizationCommitted else { return .unavailable }
+                self.env.record(Rule.domain.domain, .init(enabled: enabledBefore,
+                    attempted: 0, armed: 0, failures: [.init(activityName: Rule.domain.domain,
+                        reason: "Change authorized but not saved — try again. Existing protection stays until \(authorizationEnd.formatted(date: .abbreviated, time: .shortened)).")]))
+                return .authorizedButNotSaved(ticket, until: authorizationEnd)
+            }
             if !harder.isEmpty {
                 let result = self.harderGate(harder, scope: waitScopes, operationID: digest, confirmation: false)
                 switch result {
                 case .applied: break
+                case .authorizedButNotSaved:
+                    authorizationCommitted = true
+                    if confirmation == nil { return unavailableAfterAuthorization() }
                 case let .waiting(_, remaining, required):
                     if remaining > 0 || confirmation == nil { return .waiting(ticket, remaining: remaining, required: required) }
                 case .confirmationRequired:
@@ -224,61 +221,29 @@ final class FlintRuleArbiter {
             for mutation in mutations {
                 let old = all.first { $0.id == mutation.id }
                 if let old { previous.append(old) }
-                guard var next = mutation.proposed else {
+                guard let proposed = mutation.proposed else {
                     all.removeAll { $0.id == mutation.id }; continue
                 }
-                var metadata = old?.protection ?? .init(timeZoneID: next.protection?.timeZoneID ?? TimeZone.current.identifier,
-                    requiresTierReview: next.protection?.requiresTierReview ?? false)
-                let impact = old.flatMap { try? next.impact(comparedTo: $0, at: now) }
-                metadata.revision = (old?.revision ?? 0) + 1
-                if impact != .cosmetic || old?.enabled != next.enabled {
-                    metadata.activityRevision = metadata.revision; metadata.usesLegacyActivityName = false
+                guard let next = self.successor(proposed, replacing: old, at: now) else {
+                    self.rollback(prepared, previous: previous); return unavailableAfterAuthorization()
                 }
-                metadata.contractVersion = 12
-                metadata.timeZoneID = next.protection?.timeZoneID ?? metadata.timeZoneID
-                metadata.queuedChange = nil
-                metadata.legacyRightsUntil = next.enabled && old?.enabled == true ? old?.protection?.legacyRightsUntil : nil
-                // Preserve the occurrence identity (and Harder count) across rename/strengthen.
-                if let window = old?.occurrence(at: now), next.enabled {
-                    if impact == .weaken {
-                        metadata.occurrence = next.templateOccurrence(at: now).map { .init(start: window.start, end: $0.end) }
-                    } else {
-                        metadata.occurrence = .init(start: window.start,
-                            end: max(window.end, next.templateOccurrence(at: now)?.end ?? window.end))
-                    }
-                } else { metadata.occurrence = next.templateOccurrence(at: now) }
-                if let queued = old?.protection?.queuedChange {
-                    guard let preserved = self.rebase(queued, type: Rule.self, revision: metadata.revision,
-                        end: max(queued.window.end, metadata.occurrence?.end ?? queued.window.end)) else { return .unavailable }
-                    metadata.queuedChange = preserved
-                }
-                next.protection = metadata
-                guard next.validationIssue == nil else { self.rollback(prepared, previous: previous); return .unavailable }
                 guard self.prepare(next, replacing: old) else {
                     self.rollback(prepared, previous: previous)
-                    return .unavailable
+                    return unavailableAfterAuthorization()
                 }
                 prepared.append(next)
                 if let index = all.firstIndex(where: { $0.id == next.id }) { all[index] = next }
                 else { all.append(next) }
             }
-            // A strengthening extension moves the batch's queued boundary with it; no sibling
-            // may apply the batch early while the newly extended occurrence is still active.
-            let batchEnds = prepared.compactMap { $0.protection?.queuedChange }.reduce(into: [String: Date]()) { ends, queue in
-                if let id = queue.batchID { ends[id] = max(ends[id] ?? queue.window.end, queue.window.end) }
-            }
-            for index in all.indices {
-                guard let queue = all[index].protection?.queuedChange, let id = queue.batchID,
-                      let end = batchEnds[id], end > queue.window.end else { continue }
-                guard let rebased = self.rebase(queue, type: Rule.self, revision: all[index].revision, end: end) else { return .unavailable }
-                all[index].protection?.queuedChange = rebased
-            }
             if !harder.isEmpty {
-                guard self.harderGate(harder, scope: waitScopes, operationID: digest, confirmation: true) == .applied else {
-                    self.rollback(prepared, previous: previous); return .unavailable
+                let gate = self.harderGate(harder, scope: waitScopes, operationID: digest, confirmation: true)
+                guard gate == .applied else {
+                    self.rollback(prepared, previous: previous)
+                    return gate == .staleRevision ? .staleRevision : unavailableAfterAuthorization()
                 }
+                authorizationCommitted = true
             }
-            guard self.save(all) else { self.rollback(prepared, previous: previous); return .unavailable }
+            guard self.save(all) else { self.rollback(prepared, previous: previous); return unavailableAfterAuthorization() }
             self.finish(prepared, replacing: previous)
             self.notify()
             return .applied
@@ -294,15 +259,47 @@ final class FlintRuleArbiter {
             let now = self.env.clock.now()
             let due = all.filter { ($0.protection?.queuedChange?.window.end ?? .distantFuture) <= now }
             guard !due.isEmpty else { return true }
+            let original = all
             var prepared: [Rule] = []
             func failed() -> Bool {
                 self.rollback(prepared, previous: due)
-                // Failed future arming cannot extend the expired current commitment. Its
-                // independently persisted end still authorizes natural teardown.
+                var recovery = original
+                let reason = "The queued change couldn't be applied. The saved rule remains scheduled; Flint will retry at a safe boundary."
                 for old in due {
-                    self.env.clearStore(old.storeName)
-                    self.env.center.stopMonitoring([.init(old.activityName)])
+                    guard let index = recovery.firstIndex(where: { $0.id == old.id }),
+                          let queue = old.protection?.queuedChange else { continue }
+                    var retained = old
+                    if let next = old.templateOccurrence(at: now), next.start >= queue.window.end {
+                        // The original recurring template already reached its next natural
+                        // occurrence. Keep that finite snapshot and retry only at its own end,
+                        // never weaken a newly active Hardcore occurrence on a later foreground.
+                        retained.protection?.occurrence = next
+                        var retry = FlintQueuedRuleChange(action: queue.action, baseRevision: queue.baseRevision,
+                            window: next, snapshot: queue.snapshot, fingerprint: queue.fingerprint, batchID: queue.batchID)
+                        retry.failureReason = reason
+                        retained.protection?.queuedChange = retry
+                    } else { retained.protection?.queuedChange?.failureReason = reason }
+                    recovery[index] = retained
                 }
+                let saved = self.save(recovery)
+                if saved {
+                    for rule in recovery where due.contains(where: { $0.id == rule.id }) {
+                        let endedOneShot = rule.absoluteWindow.map { $0.end <= now } ?? false
+                        if rule.enabled && !endedOneShot {
+                            let observed = self.env.center.activities.contains(.init(rule.activityName))
+                                && self.env.center.schedule(for: .init(rule.activityName)) != nil
+                            let armed = observed || self.prepare(rule, replacing: nil)
+                            if armed && rule.occurrence(at: now) != nil {
+                                self.finish([rule], replacing: [], resetTimeBudget: true)
+                            } else if rule.occurrence(at: now) == nil { self.env.clearStore(rule.storeName) } // independent natural end
+                        } else if endedOneShot {
+                            self.env.clearStore(rule.storeName)
+                            self.env.center.stopMonitoring([.init(rule.activityName)])
+                        }
+                    }
+                }
+                self.env.record(Rule.domain.domain, .init(enabled: recovery.filter(\.enabled).count,
+                    attempted: 0, armed: 0, failures: [.init(activityName: Rule.domain.domain, reason: reason)]))
                 return false
             }
             for old in due {
@@ -328,6 +325,25 @@ final class FlintRuleArbiter {
     }
 
     @discardableResult
+    func cancelQueued<Rule: FlintGatedRule>(_ type: Rule.Type, id: String,
+                                           expected: FlintRuleProtection) -> FlintRuleMutationResult {
+        withLock {
+            guard var all = self.load(type) else { return .unavailable }
+            guard let index = all.firstIndex(where: { $0.id == id }),
+                  var current = all[index].protection,
+                  current.incarnation == expected.incarnation, current.revision == expected.revision,
+                  let queue = expected.queuedChange, current.queuedChange == queue else { return .staleRevision }
+            // Removing a future weakening preserves the effective native revision and counters.
+            // Match the stored queue itself; a discarded wait/confirmation ticket is irrelevant.
+            current.queuedChange = nil; current.revision += 1
+            all[index].protection = current
+            guard self.save(all) else { return .unavailable }
+            self.notify()
+            return .applied
+        }
+    }
+
+    @discardableResult
     func cancel<Rule: FlintGatedRule>(_ type: Rule.Type, id: String, confirmation: FlintRuleConfirmation? = nil) -> Bool {
         FlintRuleStoreLock.withLock(environment: env) {
             guard let all = self.load(type), let rule = all.first(where: { $0.id == id }),
@@ -344,6 +360,7 @@ final class FlintRuleArbiter {
                             confirmation: Bool) -> FlintRuleMutationResult {
         guard let ledger = env.ledger() else { return .unavailable }
         let instant = FlintLedgerInstant(clock: env.clock)
+        guard causes.allSatisfy({ $0.end.map { instant.wall < $0 } ?? false }) else { return .staleRevision }
         return (try? ledger.transaction { state -> FlintRuleMutationResult in
             var remaining: TimeInterval = 0
             var required: TimeInterval = 0
@@ -360,7 +377,10 @@ final class FlintRuleArbiter {
                 }
             }
             let placeholder = FlintRuleConfirmation(revision: 0, fingerprint: operationID)
-            if allCommitted { return .applied }
+            if allCommitted {
+                return confirmation ? .applied : .authorizedButNotSaved(placeholder,
+                    until: causes.compactMap(\.end).max() ?? instant.wall)
+            }
             if remaining > 0 { return .waiting(placeholder, remaining: remaining, required: required) }
             guard confirmation else { return .waiting(placeholder, remaining: 0, required: required) }
             for cause in causes {
@@ -379,6 +399,93 @@ final class FlintRuleArbiter {
         return "delete:\(mutation.id)"
     }
 
+    private func acceptDeferredBatch<Rule: FlintGatedRule>(_ mutations: [Mutation<Rule>], all original: [Rule],
+                                                         ends: [String: Date], at now: Date) -> FlintRuleMutationResult {
+        var all = original
+        let batchID = UUID().uuidString
+        var preflight: [Rule] = []
+        var prepared: [Rule] = []
+        var previous: [Rule] = []
+        var accepted = false
+        defer {
+            rollback(preflight, previous: original)
+            if !accepted { rollback(prepared, previous: original) }
+        }
+        for mutation in mutations {
+            let old = all.first { $0.id == mutation.id }
+            if let end = ends[mutation.id] {
+                guard var current = old, var metadata = current.protection,
+                      let window = current.occurrence(at: now), window.end == end else { return .unavailable }
+                metadata.occurrence = window; metadata.revision += 1
+                var future = mutation.proposed
+                if future != nil {
+                    var next = metadata
+                    next.revision += 1; next.activityRevision = next.revision
+                    next.usesLegacyActivityName = false; next.legacyRightsUntil = nil
+                    next.queuedChange = nil; next.occurrence = nil
+                    next.timeZoneID = future!.protection?.timeZoneID ?? metadata.timeZoneID
+                    future!.protection = next
+                    guard future!.validationIssue == nil, prepare(future!, replacing: nil) else { return .unavailable }
+                    preflight.append(future!)
+                }
+                let snapshot = future.flatMap { try? JSONEncoder().encode($0) }
+                guard future == nil || snapshot != nil,
+                      let fingerprint = try? sourceFingerprint(mutation) else { return .unavailable }
+                metadata.queuedChange = .init(action: mutation.action, baseRevision: metadata.revision,
+                    window: window, snapshot: snapshot, fingerprint: fingerprint, batchID: batchID)
+                current.protection = metadata
+                guard current.validationIssue == nil, let index = all.firstIndex(where: { $0.id == current.id }) else { return .unavailable }
+                all[index] = current
+            } else {
+                if let old { previous.append(old) }
+                guard let proposed = mutation.proposed else {
+                    all.removeAll { $0.id == mutation.id }; continue
+                }
+                guard let next = successor(proposed, replacing: old, at: now), prepare(next, replacing: old) else { return .unavailable }
+                prepared.append(next)
+                if let index = all.firstIndex(where: { $0.id == next.id }) { all[index] = next }
+                else { all.append(next) }
+            }
+        }
+        // All native preflights and revision fences succeeded; one domain write accepts every
+        // member. Each active strict member keeps its own boundary, never a sibling's window.
+        guard save(all), let end = ends.values.max() else { return .unavailable }
+        accepted = true
+        finish(prepared, replacing: previous)
+        notify()
+        return .queued(until: end)
+    }
+
+    private func successor<Rule: FlintGatedRule>(_ proposed: Rule, replacing old: Rule?, at now: Date) -> Rule? {
+        var next = proposed
+        var metadata = old?.protection ?? .init(timeZoneID: next.protection?.timeZoneID ?? TimeZone.current.identifier,
+            requiresTierReview: next.protection?.requiresTierReview ?? false)
+        let impact = old.flatMap { try? next.impact(comparedTo: $0, at: now) }
+        metadata.revision = (old?.revision ?? 0) + 1
+        if impact != .cosmetic || old?.enabled != next.enabled {
+            metadata.activityRevision = metadata.revision; metadata.usesLegacyActivityName = false
+        }
+        metadata.contractVersion = 12
+        metadata.timeZoneID = next.protection?.timeZoneID ?? metadata.timeZoneID
+        metadata.queuedChange = nil
+        metadata.legacyRightsUntil = next.enabled && old?.enabled == true ? old?.protection?.legacyRightsUntil : nil
+        if let window = old?.occurrence(at: now), next.enabled {
+            if impact == .weaken {
+                metadata.occurrence = next.templateOccurrence(at: now).map { .init(start: window.start, end: $0.end) }
+            } else {
+                metadata.occurrence = .init(start: window.start,
+                    end: max(window.end, next.templateOccurrence(at: now)?.end ?? window.end))
+            }
+        } else { metadata.occurrence = next.templateOccurrence(at: now) }
+        if impact != .strengthen, let queued = old?.protection?.queuedChange {
+            guard let preserved = rebase(queued, type: Rule.self, revision: metadata.revision,
+                end: max(queued.window.end, metadata.occurrence?.end ?? queued.window.end)) else { return nil }
+            metadata.queuedChange = preserved
+        }
+        next.protection = metadata
+        return next.validationIssue == nil ? next : nil
+    }
+
     private func rebase<Rule: FlintGatedRule>(_ queue: FlintQueuedRuleChange, type: Rule.Type,
                                              revision: Int, end: Date) -> FlintQueuedRuleChange? {
         var payload: Data?
@@ -388,8 +495,11 @@ final class FlintRuleArbiter {
             guard let encoded = try? JSONEncoder().encode(future) else { return nil }
             payload = encoded
         }
-        return .init(action: queue.action, baseRevision: revision, window: .init(start: queue.window.start, end: end),
-            snapshot: payload, fingerprint: queue.fingerprint, batchID: queue.batchID)
+        var result = FlintQueuedRuleChange(action: queue.action, baseRevision: revision,
+            window: .init(start: queue.window.start, end: end), snapshot: payload,
+            fingerprint: queue.fingerprint, batchID: queue.batchID)
+        result.failureReason = queue.failureReason
+        return result
     }
 
     private func prepare<Rule: FlintGatedRule>(_ next: Rule, replacing old: Rule?) -> Bool {
@@ -415,16 +525,17 @@ final class FlintRuleArbiter {
     }
 
     private func finish<Rule: FlintGatedRule>(_ prepared: [Rule], replacing old: [Rule], resetTimeBudget: Bool = false) {
+        let now = env.clock.now()
         for rule in prepared where rule.enabled {
             if let schedule = rule as? FlintScheduleRule, schedule.occurrence(at: env.clock.now()) != nil {
                 env.applyRuleShield(schedule)
             } else if let limit = rule as? FlintLimitRule {
                 if limit.thresholdMinutes == 0 || (!resetTimeBudget && old.compactMap({ $0 as? FlintLimitRule })
-                    .contains(where: { $0.id == rule.id && env.timeLimitIsShielded($0) })) {
+                    .contains(where: { $0.id == rule.id && env.timeLimitIsShielded($0, now) })) {
                     // Strengthening keeps an exhausted shield. A cosmetic edit below quota
                     // never exhausts the allowance; a due future revision starts a fresh day.
                     env.applyLimitShield(limit)
-                    env.markLimitThreshold(limit)
+                    env.markLimitThreshold(limit, now)
                 } else if resetTimeBudget {
                     env.clearStore(limit.storeName)
                     env.clearLimitThreshold(limit.id)
@@ -454,8 +565,10 @@ final class FlintRuleArbiter {
         FlintRuleStoreLock.withLock(environment: env, body) ?? .unavailable
     }
     private func notify() {
-        env.publishStatus()
-        NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
+        FlintRuleStoreLock.afterUnlock(environment: env) {
+            self.env.publishStatus()
+            NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
+        }
     }
     static func causeID<Rule: FlintGatedRule>(_ rule: Rule, window: FlintRuleWindow?) -> String {
         "\(Rule.domain.rawValue):\(rule.id):\(rule.protection?.incarnation ?? "legacy")@\(window?.identity ?? "inactive")"

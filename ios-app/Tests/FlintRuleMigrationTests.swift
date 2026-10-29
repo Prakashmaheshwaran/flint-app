@@ -162,8 +162,8 @@ final class FlintRuleMigrationTests: XCTestCase {
         h.defaults.removeObject(forKey: FlintRuleStoreKey.schedules.rawValue)
         let controller = FlintSchedulesController(environment: h.environment)
         _ = controller.reload()
-        XCTAssertEqual(controller.delete(rule.id), .unavailable)
-        XCTAssertEqual(controller.setEnabled(rule.id, false), .unavailable)
+        XCTAssertEqual(controller.delete(rule.id, revision: rule.revision), .unavailable)
+        XCTAssertEqual(controller.setEnabled(rule.id, false, revision: rule.revision), .unavailable)
         XCTAssertTrue(h.cleared.isEmpty); XCTAssertTrue(h.center.starts.isEmpty); XCTAssertTrue(h.center.stops.isEmpty)
         XCTAssertTrue(h.reports["schedules"]?.failures.first?.reason.contains("unavailable") == true)
     }

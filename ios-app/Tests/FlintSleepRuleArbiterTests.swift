@@ -22,7 +22,7 @@ final class FlintSleepRuleArbiterTests: XCTestCase {
         let controller = FlintSleepRulesController(environment: h.environment)
         guard case let .deferRequired(ticket, end) = controller.save(draft) else { return XCTFail() }
         XCTAssertEqual(FlintSleepConfig.load(from: h.defaults), config, "unconfirmed draft cannot persist")
-        XCTAssertEqual(controller.save(draft, confirmation: ticket), .queued(until: end))
+        XCTAssertEqual(controller.save(draft, confirmation: ticket, origin: .interactive), .queued(until: end))
         XCTAssertEqual(h.load(FlintScheduleRule.self).first?.enabled, true)
         XCTAssertEqual(h.load(FlintScheduleRule.self).first?.activityName, active.activityName)
         h.now = end
@@ -36,7 +36,7 @@ final class FlintSleepRuleArbiterTests: XCTestCase {
             nightBreakLevel: .hardcore)
         let controller = FlintSleepRulesController(environment: h.environment)
         guard case let .confirmationRequired(ticket, raisesTier: true) = controller.save(config) else { return XCTFail() }
-        XCTAssertEqual(controller.save(config, confirmation: ticket), .applied)
+        XCTAssertEqual(controller.save(config, confirmation: ticket, origin: .interactive), .applied)
         config.nightBreakLevel = .easy
         config.revision = 99
         XCTAssertEqual(controller.save(config), .staleRevision)

@@ -38,16 +38,19 @@ final class SchedulesViewModel: ObservableObject {
     }
 
     func save(_ rule: FlintScheduleRule, confirmation: FlintRuleConfirmation? = nil, creating: Bool = false) -> FlintRuleMutationResult {
-        let result = controller.upsert(rule, confirmation: confirmation, creating: creating); refresh(); return result
+        let result = controller.upsert(rule, confirmation: confirmation, creating: creating, origin: .interactive); refresh(); return result
     }
     func delete(_ rule: FlintScheduleRule, confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
-        let result = controller.delete(rule.id, revision: rule.protection?.revision, confirmation: confirmation); refresh(); return result
+        let result = controller.delete(rule.id, revision: rule.protection?.revision ?? 0, confirmation: confirmation, origin: .interactive); refresh(); return result
     }
     func toggle(_ rule: FlintScheduleRule, confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
-        let result = controller.setEnabled(rule.id, !rule.enabled, revision: rule.protection?.revision,
-            confirmation: confirmation); refresh(); return result
+        let result = controller.setEnabled(rule.id, !rule.enabled, revision: rule.protection?.revision ?? 0,
+            confirmation: confirmation, origin: .interactive); refresh(); return result
     }
     func cancel(_ id: String, confirmation: FlintRuleConfirmation?) { controller.cancelPendingChange(id, confirmation: confirmation) }
+    func cancelQueued(_ rule: FlintScheduleRule, expected: FlintRuleProtection) -> FlintRuleMutationResult {
+        let result = controller.cancelQueuedChange(rule.id, expected: expected); refresh(); return result
+    }
 }
 
 /// The Rules tab: today's timeline, every schedule with its switch, templates, and the way
@@ -194,6 +197,7 @@ struct RulesView: View {
     }
 
     private func row(_ rule: FlintScheduleRule) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
         HStack(spacing: 14) {
             Button { editing = rule } label: {
                 VStack(alignment: .leading, spacing: 3) {
@@ -210,10 +214,6 @@ struct RulesView: View {
                             .monospacedDigit()
                     }
                     Text(meta(rule)).font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
-                    if let queued = rule.protection?.queuedChange {
-                        Text("\(queued.summary) · after \(queued.window.end.formatted(date: .abbreviated, time: .shortened))")
-                            .font(.caption).foregroundStyle(FlintBrand.ember)
-                    }
                     if rule.protection?.requiresTierReview == true {
                         Text("Review migrated tier before the next occurrence").font(.caption)
                     }
@@ -239,6 +239,12 @@ struct RulesView: View {
                 .fixedSize()
         }
         .frame(minHeight: 60)
+        if let protection = rule.protection, protection.queuedChange != nil {
+            QueuedRuleChangeView(protection: protection) {
+                flow.run(scope: rule.name, operation: { _ in vm.cancelQueued(rule, expected: protection) })
+            }
+        }
+        }
         .overlay(alignment: .bottom) { FlintHairline(opacity: 0.07) }
         .contextMenu {
             Button(role: .destructive) {
@@ -452,7 +458,12 @@ struct ScheduleEditor: View {
                             timeCard("Starts", start) { editingTime = .start }
                             timeCard("Ends", end) { editingTime = .end }
                         }
+                        .disabled(original?.oneShot != nil)
                         .padding(.top, 22)
+                        if let window = original?.oneShot {
+                            Text("One-time schedule: \(window.start.formatted(date: .abbreviated, time: .shortened)) – \(window.end.formatted(date: .abbreviated, time: .shortened)). Its saved date and time stay fixed in this editor.")
+                                .font(.caption).foregroundStyle(FlintBrand.stone).padding(.top, 6)
+                        }
                         Text("Times use \(original?.protection?.timeZoneID ?? TimeZone.current.identifier).")
                             .font(.caption).foregroundStyle(FlintBrand.stone).padding(.top, 6)
                         if let issue = draftSchedule.issues.first {
@@ -461,7 +472,7 @@ struct ScheduleEditor: View {
                             Text("Runs overnight, ending the next morning.").flintSecondary().padding(.top, 8)
                         }
 
-                        Text("Repeats · \(daysLabel)").flintEyebrow().padding(.top, 24)
+                        Text(original?.oneShot == nil ? "Repeats · \(daysLabel)" : "Does not repeat").flintEyebrow().padding(.top, 24)
                         HStack(spacing: 6) {
                             ForEach(weekdays, id: \.day) { item in
                                 let on = days.contains(item.day)
@@ -481,6 +492,7 @@ struct ScheduleEditor: View {
                                 .accessibilityAddTraits(on ? .isSelected : [])
                             }
                         }
+                        .disabled(original?.oneShot != nil)
                         .padding(.top, 10)
 
                         Button { showPicker = true } label: {

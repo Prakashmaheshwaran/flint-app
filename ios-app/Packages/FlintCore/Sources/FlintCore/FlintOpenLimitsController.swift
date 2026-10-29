@@ -57,9 +57,7 @@ public final class FlintOpenLimitsController {
     }
 
     public func rules() -> [FlintOpenLimitRule] {
-        guard let loaded = FlintRuleStoreLock.withLock(environment: environment, {
-            FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: environment.defaults, at: environment.clock.now())
-        }), let rules = loaded else {
+        guard let rules = environment.rulesForDisplay(FlintOpenLimitRule.self) else {
             environment.record("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
             return []
         }
@@ -68,22 +66,22 @@ public final class FlintOpenLimitsController {
 
     @discardableResult
     public func upsert(_ rule: FlintOpenLimitRule, confirmation: FlintRuleConfirmation? = nil,
-                       creating: Bool = false) -> FlintRuleMutationResult {
-        FlintRuleArbiter(environment: environment).upsert(rule, confirmation: confirmation, creating: creating)
+                       creating: Bool = false, origin: FlintRuleMutationOrigin = .background) -> FlintRuleMutationResult {
+        FlintRuleArbiter(environment: environment).upsert(rule, confirmation: confirmation, creating: creating, origin: origin)
     }
 
     @discardableResult
-    public func delete(_ ruleID: String, revision: Int? = nil,
-                       confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
+    public func delete(_ ruleID: String, revision: Int,
+                       confirmation: FlintRuleConfirmation? = nil, origin: FlintRuleMutationOrigin = .background) -> FlintRuleMutationResult {
         FlintRuleArbiter(environment: environment).delete(FlintOpenLimitRule.self, id: ruleID,
-            revision: revision, confirmation: confirmation)
+            revision: revision, confirmation: confirmation, origin: origin)
     }
 
     @discardableResult
-    public func setEnabled(_ ruleID: String, _ enabled: Bool, revision: Int? = nil,
-                           confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
+    public func setEnabled(_ ruleID: String, _ enabled: Bool, revision: Int,
+                           confirmation: FlintRuleConfirmation? = nil, origin: FlintRuleMutationOrigin = .background) -> FlintRuleMutationResult {
         FlintRuleArbiter(environment: environment).setEnabled(FlintOpenLimitRule.self, id: ruleID,
-            enabled: enabled, revision: revision, confirmation: confirmation)
+            enabled: enabled, revision: revision, confirmation: confirmation, origin: origin)
     }
 
     public func cancelPendingChange(_ id: String, confirmation: FlintRuleConfirmation? = nil) {
@@ -91,10 +89,15 @@ public final class FlintOpenLimitsController {
         _ = FlintRuleArbiter(environment: environment).cancel(FlintOpenLimitRule.self, id: id, confirmation: confirmation)
     }
 
-    public func deleteBatch(_ rules: [FlintOpenLimitRule], confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
+    public func cancelQueuedChange(_ id: String, expected: FlintRuleProtection) -> FlintRuleMutationResult {
+        FlintRuleArbiter(environment: environment).cancelQueued(FlintOpenLimitRule.self, id: id, expected: expected)
+    }
+
+    public func deleteBatch(_ rules: [FlintOpenLimitRule], confirmation: FlintRuleConfirmation? = nil,
+                            origin: FlintRuleMutationOrigin = .background) -> FlintRuleMutationResult {
         FlintRuleArbiter(environment: environment).mutate(rules.map {
             .init(id: $0.id, proposed: nil, action: .delete, expectedRevision: $0.protection?.revision ?? 0)
-        } as [FlintRuleArbiter.Mutation<FlintOpenLimitRule>], confirmation: confirmation)
+        } as [FlintRuleArbiter.Mutation<FlintOpenLimitRule>], confirmation: confirmation, origin: origin)
     }
 
     /// Re-arm every enabled rule: shield its selection and (re)register its day-boundary
@@ -118,9 +121,6 @@ public final class FlintOpenLimitsController {
             return
         }
         let plan = Self.armPlan(for: all, selectionIssue: selectionIssue)
-        for rule in all where plan.storesToClear.contains(rule.storeName) {
-            environment.clearStore(rule.storeName)
-        }
         let requests = plan.arm.map { $0.registration() }
         let report = FlintActivityRegistration.reconcile(
             requests, prefix: "flint.openLimit.", enabled: plan.enabled,

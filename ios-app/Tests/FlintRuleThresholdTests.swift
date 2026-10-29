@@ -82,7 +82,7 @@ final class FlintRuleThresholdTests: XCTestCase {
         let rule = h.install(FlintLimitRule(id: "time", name: "Time", thresholdMinutes: 30,
             protection: .init(timeZoneID: "UTC")))
         var env = h.environment
-        env.markLimitThreshold = { FlintLimitThresholds.markReached($0, at: h.now, in: h.defaults) }
+        env.markLimitThreshold = { FlintLimitThresholds.markReached($0, at: $1, in: h.defaults) }
         env.clearLimitThreshold = { FlintLimitThresholds.clear($0, in: h.defaults) }
         let monitor = FlintRuleMonitor(environment: env)
         _ = monitor.handle(.threshold(rule.eventName), activity: "flint.limit.other.r1")
@@ -118,7 +118,7 @@ final class FlintRuleThresholdTests: XCTestCase {
                 protection: .init(timeZoneID: "UTC")))
             h.now = try XCTUnwrap(rule.protection?.occurrence?.end).addingTimeInterval(60)
             var env = h.environment
-            env.markLimitThreshold = { FlintLimitThresholds.markReached($0, at: h.now, in: h.defaults) }
+            env.markLimitThreshold = { FlintLimitThresholds.markReached($0, at: $1, in: h.defaults) }
             env.clearLimitThreshold = { FlintLimitThresholds.clear($0, in: h.defaults) }
             let monitor = FlintRuleMonitor(environment: env)
             _ = monitor.handle(.threshold(rule.eventName), activity: rule.activityName)
@@ -137,7 +137,7 @@ final class FlintRuleThresholdTests: XCTestCase {
         var publications = 0
         var env = h.environment
         env.publishStatus = { publications += 1 }
-        env.markLimitThreshold = { FlintLimitThresholds.markReached($0, at: h.now, in: h.defaults) }
+        env.markLimitThreshold = { FlintLimitThresholds.markReached($0, at: $1, in: h.defaults) }
         let arbiter = FlintRuleArbiter(environment: env)
         let zero = FlintLimitRule(id: "zero", name: "Zero", thresholdMinutes: 0,
             protection: .init(timeZoneID: "UTC"))

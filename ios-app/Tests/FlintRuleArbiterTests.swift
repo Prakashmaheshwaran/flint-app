@@ -149,7 +149,8 @@ final class FlintRuleArbiterTests: XCTestCase {
             XCTAssertEqual(arbiter.upsert(draft, confirmation: ticket), .queued(until: end))
             let retained = try XCTUnwrap(h.load(FlintLimitRule.self).first)
             XCTAssertEqual(retained.thresholdMinutes, 30); XCTAssertEqual(retained.activityName, old.activityName)
-            XCTAssertTrue(h.cleared.isEmpty); XCTAssertTrue(h.center.starts.isEmpty)
+            XCTAssertTrue(h.cleared.isEmpty); XCTAssertTrue(h.appliedLimits.isEmpty)
+            XCTAssertEqual(h.center.activities.map(\.rawValue), [old.activityName], "future preflight must leave only the effective registration")
             XCTAssertEqual(ledgerTouches, 0, "future-only edits spend no current-occurrence wait")
             h.now = end
             _ = FlintRuleMonitor(environment: env).handle(.start, activity: old.activityName)
@@ -247,7 +248,7 @@ final class FlintRuleArbiterTests: XCTestCase {
         let old = h.install(h.schedule(tier: .hardcore))
         let controller = FlintSchedulesController(environment: h.environment)
         let ticket = try confirmation(controller.delete(old.id, revision: old.revision))
-        guard case let .queued(end) = controller.delete(old.id, revision: old.revision, confirmation: ticket) else { return XCTFail() }
+        guard case let .queued(end) = controller.delete(old.id, revision: old.revision, confirmation: ticket, origin: .interactive) else { return XCTFail() }
         h.now = end
         let monitor = FlintRuleMonitor(environment: h.environment)
         XCTAssertTrue(monitor.handle(.end, activity: old.activityName))
@@ -264,7 +265,7 @@ final class FlintRuleArbiterTests: XCTestCase {
             protection: .init(timeZoneID: "UTC")))
         let controller = FlintOpenLimitsController(environment: h.environment, selectionIssue: { _ in nil })
         let ticket = try confirmation(controller.setEnabled(old.id, false, revision: old.revision))
-        guard case let .queued(end) = controller.setEnabled(old.id, false, revision: old.revision, confirmation: ticket) else { return XCTFail() }
+        guard case let .queued(end) = controller.setEnabled(old.id, false, revision: old.revision, confirmation: ticket, origin: .interactive) else { return XCTFail() }
         h.now = end
         _ = FlintRuleMonitor(environment: h.environment).handle(.start, activity: old.activityName)
         XCTAssertEqual(h.load(FlintOpenLimitRule.self).first?.enabled, false)
@@ -403,8 +404,8 @@ final class FlintRuleArbiterTests: XCTestCase {
         guard case let .confirmationRequired(ticket, raisesTier: true) = controller.upsert(raised) else { return XCTFail() }
         XCTAssertEqual(h.load(FlintScheduleRule.self).first?.breakLevel, .easy)
         let forged = FlintRuleConfirmation(revision: ticket.revision, fingerprint: ticket.fingerprint)
-        guard case .confirmationRequired(_, raisesTier: true) = controller.upsert(raised, confirmation: forged) else { return XCTFail() }
-        XCTAssertEqual(controller.upsert(raised, confirmation: ticket), .applied)
+        guard case .confirmationRequired(_, raisesTier: true) = controller.upsert(raised, confirmation: forged, origin: .interactive) else { return XCTFail() }
+        XCTAssertEqual(controller.upsert(raised, confirmation: ticket, origin: .interactive), .applied)
     }
 
     func testEnablingSavedHardcoreRequiresFiniteScopeConfirmationPC11PC13() throws {
@@ -519,7 +520,7 @@ final class FlintRuleArbiterTests: XCTestCase {
         XCTAssertTrue(h.center.starts.isEmpty); XCTAssertTrue(h.center.stops.isEmpty); XCTAssertTrue(h.cleared.isEmpty)
     }
 
-    func testStrengtheningExtensionRetainsQueuedOffButCannotApplyItAtOldEndPC11PC12PC14() throws {
+    func testStrengtheningSupersedesQueuedOffAndCannotFireItLaterPC11PC12PC14() throws {
         let h = try RuleHarness(); defer { h.clean() }
         let old = h.install(h.schedule(tier: .hardcore))
         let arbiter = FlintRuleArbiter(environment: h.environment)
@@ -532,10 +533,10 @@ final class FlintRuleArbiterTests: XCTestCase {
         h.now = old.protection!.occurrence!.end
         XCTAssertTrue(arbiter.applyQueued(FlintScheduleRule.self))
         XCTAssertEqual(h.load(FlintScheduleRule.self).first?.enabled, true)
-        XCTAssertNotNil(h.load(FlintScheduleRule.self).first?.protection?.queuedChange)
+        XCTAssertNil(h.load(FlintScheduleRule.self).first?.protection?.queuedChange)
         h.advance(3600)
         XCTAssertTrue(arbiter.applyQueued(FlintScheduleRule.self))
-        XCTAssertEqual(h.load(FlintScheduleRule.self).first?.enabled, false)
+        XCTAssertEqual(h.load(FlintScheduleRule.self).first?.enabled, true)
     }
 
     func testOlderEditorCannotCancelAnotherOperationsWaitPC20() throws {
@@ -567,7 +568,7 @@ final class FlintRuleArbiterTests: XCTestCase {
         let controller = FlintOpenLimitsController(environment: h.environment)
         guard case let .waiting(ticket, remaining: 900, required: 900) = controller.deleteBatch([a, b]) else { return XCTFail() }
         h.advance(900)
-        XCTAssertEqual(controller.deleteBatch([a, b], confirmation: ticket), .applied)
+        XCTAssertEqual(controller.deleteBatch([a, b], confirmation: ticket, origin: .interactive), .applied)
         XCTAssertEqual(try h.ledger.read().get().harder[causeA]?.committedCount, 1)
         XCTAssertEqual(try h.ledger.read().get().harder[causeB]?.committedCount, 3)
         XCTAssertEqual(controller.deleteBatch([a, b], confirmation: ticket), .staleRevision)
@@ -653,7 +654,7 @@ final class RuleHarness {
             ledger: { self.ledgerAvailable ? self.ledger : nil }, lockDirectory: directory.appendingPathComponent("rules"),
             acceptSave: { self.saveAllowed }, validateSelection: { _, _ in nil },
             applyRuleShield: { self.appliedSchedules.append($0) }, applyLimitShield: { self.appliedLimits.append($0) },
-            timeLimitIsShielded: { _ in self.timeLimitExhausted })
+            timeLimitIsShielded: { _, _ in self.timeLimitExhausted })
     }
     func advance(_ seconds: TimeInterval) { now.addTimeInterval(seconds); monotonic += seconds }
     func schedule(tier: BreakLevel) -> FlintScheduleRule {

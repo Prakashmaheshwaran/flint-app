@@ -27,7 +27,8 @@ final class RuleMutationFlow: ObservableObject {
         self.result = result; checkedAt = Date()
         switch result {
         case let .confirmationRequired(ticket, _), let .deferRequired(ticket, _),
-             let .nextOccurrenceRequired(ticket, _), let .waiting(ticket, _, _): self.ticket = ticket
+             let .nextOccurrenceRequired(ticket, _), let .authorizedButNotSaved(ticket, _),
+             let .waiting(ticket, _, _): self.ticket = ticket
         default: break
         }
         if result.didSave {
@@ -39,6 +40,22 @@ final class RuleMutationFlow: ObservableObject {
 extension View {
     func ruleMutationFlow(_ flow: RuleMutationFlow) -> some View {
         modifier(RuleMutationPresenter(flow: flow))
+    }
+}
+
+/// Persisted future changes remain cancellable after their original sheet/ticket is gone.
+struct QueuedRuleChangeView: View {
+    let protection: FlintRuleProtection
+    let cancel: () -> Void
+    var body: some View {
+        if let queued = protection.queuedChange {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(queued.summary) · after \(queued.window.end.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption).foregroundStyle(FlintBrand.ember)
+                if let reason = queued.failureReason { Text(reason).font(.caption) }
+                Button("Cancel queued change", action: cancel).font(.caption).frame(minHeight: 44)
+            }
+        }
     }
 }
 
@@ -98,7 +115,9 @@ private struct RuleMutationSheet: View {
         case let .deferRequired(ticket, end):
             Text("Protected until \(end.formatted(date: .abbreviated, time: .shortened)). Save for after this occurrence.")
             preview(ticket)
-            Text("The current rule stays effective. Your queued change will appear separately.")
+            Text(ticket.preview.contains(where: { $0.deferredUntil == nil })
+                 ? "The rows marked for confirmation apply now. Each protected occurrence keeps its current snapshot until its own end; queued changes appear separately."
+                 : "The current rule stays effective. Your queued change will appear separately.")
             if ticket.confirmsTierIncrease { tierDisclosure }
             Button("Save for after this occurrence") { flow.confirm(ticket) }.buttonStyle(.borderedProminent)
         case let .nextOccurrenceRequired(ticket, end):
@@ -107,6 +126,11 @@ private struct RuleMutationSheet: View {
             Text("Save this change for the next daily occurrence. Your queued change will appear separately.")
             if ticket.confirmsTierIncrease { tierDisclosure }
             Button("Save for the next occurrence") { flow.confirm(ticket) }.buttonStyle(.borderedProminent)
+        case let .authorizedButNotSaved(ticket, end):
+            preview(ticket)
+            Text("Change authorized but not saved — try again. Existing protection stays until \(end.formatted(date: .abbreviated, time: .shortened)).")
+            Text("Confirm to retry this exact change. Its committed wait will not be spent again.")
+            Button("Confirm and retry saving") { flow.confirm(ticket) }.buttonStyle(.borderedProminent)
         case let .denied(_, cause, tier, end):
             Text("\(cause) · \(tier.rawValue.capitalized)")
             if let end { Text("Protected until \(end.formatted(date: .abbreviated, time: .shortened)).") }
@@ -136,6 +160,14 @@ private struct RuleMutationSheet: View {
                 }
                 if let window = rule.window {
                     Text(selectedWindow(window, zoneID: rule.timeZoneID))
+                }
+                if let end = rule.deferredUntil {
+                    Text("Applies when this occurrence ends at \(end.formatted(date: .abbreviated, time: .shortened)).")
+                    if rule.offersEarlierHarderEdit {
+                        Text("To change it sooner, edit this rule on its own and complete its wait.")
+                    }
+                } else if ticket.preview.contains(where: { $0.deferredUntil != nil }) {
+                    Text("Applies when you confirm this batch.")
                 }
             }
             .font(.subheadline)

@@ -6,13 +6,25 @@ import Darwin
 /// but still need a cross-process revision check. Never falls back to an unlocked mutation.
 enum FlintRuleStoreLock {
     private static let local = NSRecursiveLock()
+    private final class AfterUnlock: NSObject { var actions: [() -> Void] = [] }
     static func withLock<T>(environment: FlintRuleReloadEnvironment, _ body: () -> T) -> T? {
         guard let directory = environment.lockDirectory else { return nil }
         let key = "FlintRuleStoreLock." + directory.path
         if Thread.current.threadDictionary[key] != nil { return body() }
+        let afterKey = key + ".afterUnlock"
+        let after = AfterUnlock()
+        Thread.current.threadDictionary[afterKey] = after
         var result: T?
-        guard environment.withTransitionBoundary({ result = domainLock(directory: directory, body) }) else { return nil }
-        return result
+        let acquired = environment.withTransitionBoundary({ result = domainLock(directory: directory, body) })
+        Thread.current.threadDictionary.removeObject(forKey: afterKey)
+        after.actions.forEach { $0() }
+        return acquired ? result : nil
+    }
+
+    static func afterUnlock(environment: FlintRuleReloadEnvironment, _ action: @escaping () -> Void) {
+        let key = "FlintRuleStoreLock." + (environment.lockDirectory?.path ?? "") + ".afterUnlock"
+        if let pending = Thread.current.threadDictionary[key] as? AfterUnlock { pending.actions.append(action) }
+        else { action() }
     }
 
     private static func domainLock<T>(directory: URL?, _ body: () -> T) -> T? {

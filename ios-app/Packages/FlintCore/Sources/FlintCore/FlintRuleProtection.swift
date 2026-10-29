@@ -81,6 +81,7 @@ public struct FlintQueuedRuleChange: Codable, Equatable, Sendable {
     public let snapshot: Data?
     public let fingerprint: String
     public var batchID: String? = nil
+    public var failureReason: String? = nil
     public var summary: String {
         switch action {
         case .edit:
@@ -125,7 +126,11 @@ public struct FlintRuleChangePreview: Equatable, Sendable, Identifiable {
     public let isTimeLimit: Bool
     public let timeZoneID: String
     public let window: FlintRuleWindow?
+    public var deferredUntil: Date? = nil
+    public var offersEarlierHarderEdit = false
 }
+
+public enum FlintRuleMutationOrigin: Equatable, Sendable { case interactive, background }
 
 public enum FlintRuleMutationResult: Equatable, Sendable {
     case applied
@@ -134,6 +139,7 @@ public enum FlintRuleMutationResult: Equatable, Sendable {
     case waiting(FlintRuleConfirmation, remaining: TimeInterval, required: TimeInterval)
     case deferRequired(FlintRuleConfirmation, until: Date)
     case nextOccurrenceRequired(FlintRuleConfirmation, until: Date)
+    case authorizedButNotSaved(FlintRuleConfirmation, until: Date)
     case staleRevision
     case denied(FlintDenialReason, cause: String, tier: BreakLevel, end: Date?)
     case invalid(String)

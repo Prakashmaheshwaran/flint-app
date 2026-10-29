@@ -61,7 +61,7 @@ enum FlintDesiredRules {
     static func unavailable(_ domain: String, previous: FlintArmingHealth) -> FlintArmingHealth.DomainReport {
         .init(enabled: previous.domains[domain]?.enabled ?? 0, attempted: 0, armed: 0,
               failures: [.init(activityName: domain,
-                reason: "Saved rules are unavailable. Existing protection was preserved; Flint did not change registrations or shields.")])
+                reason: "Saved rules are unavailable and need recovery. Existing finite protection was preserved; Flint did not change registrations or shields. Restore a known-good device backup or try again after updating Flint. Your saved data was retained for recovery.")])
     }
 
     static func save<Rule: FlintGatedRule>(_ rules: [Rule], key: Key, to defaults: UserDefaults?,
@@ -100,16 +100,25 @@ struct FlintRuleReloadEnvironment {
     }
     var applyRuleShield: (FlintScheduleRule) -> Void = { FlintRuleShield.apply($0) }
     var applyLimitShield: (FlintLimitRule) -> Void = { FlintRuleShield.apply($0) }
-    var timeLimitIsShielded: (FlintLimitRule) -> Bool = {
-        let store = ManagedSettingsStore(named: .init($0.storeName))
+    var timeLimitIsShielded: (FlintLimitRule, Date) -> Bool = { limit, _ in
+        let store = ManagedSettingsStore(named: .init(limit.storeName))
         return store.shield.applications != nil || store.shield.applicationCategories != nil
             || store.shield.webDomains != nil || store.shield.webDomainCategories != nil
     }
     /// Production binds to the shared session-transition lock; tests can simulate busy scope.
     var withTransitionBoundary: (() -> Void) -> Bool = { body in body(); return true }
-    var markLimitThreshold: (FlintLimitRule) -> Void = { _ in }
+    var markLimitThreshold: (FlintLimitRule, Date) -> Void = { _, _ in }
     var clearLimitThreshold: (String) -> Void = { _ in }
     var publishStatus: () -> Void = {}
+
+    func rulesForDisplay<Rule: FlintGatedRule>(_ type: Rule.Type) -> [Rule]? {
+        if let read = FlintRuleStoreLock.withLock(environment: self, {
+            FlintDesiredRules.load(type, key: Rule.domain, from: defaults, at: clock.now())
+        }) { return read }
+        // A busy transition is not evidence that the saved blob is corrupt. A display-only
+        // peek may show its valid revision; commits still acquire the boundary and re-check it.
+        return FlintDesiredRules.load(type, key: Rule.domain, from: defaults, at: clock.now(), migrating: false)
+    }
 
     static var live: Self {
         let group = FlintGroupStore()
@@ -123,15 +132,15 @@ struct FlintRuleReloadEnvironment {
             reconcileOpenCredits: { FlintOpenCredit.reconcile() },
             lockDirectory: FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: FlintGroupStore.appGroupID)?
                 .appendingPathComponent("FlintRules", isDirectory: true),
-            timeLimitIsShielded: { limit in
+            timeLimitIsShielded: { limit, now in
                 let store = ManagedSettingsStore(named: .init(limit.storeName))
-                return FlintLimitThresholds.hasReached(limit, at: Date(), in: .flintGroup)
+                return FlintLimitThresholds.hasReached(limit, at: now, in: .flintGroup)
                     || store.shield.applications != nil || store.shield.applicationCategories != nil
                     || store.shield.webDomains != nil || store.shield.webDomainCategories != nil
             }, withTransitionBoundary: { body in
                 // One cross-process order: session transition → rule domain → ledger.
                 FlintSessionController().withTransition { body(); return true } ?? false
-            }, markLimitThreshold: { FlintLimitThresholds.markReached($0) },
+            }, markLimitThreshold: { FlintLimitThresholds.markReached($0, at: $1) },
             clearLimitThreshold: { FlintLimitThresholds.clear($0) },
             publishStatus: { FlintProtectionStatus.publishAfterCommit() })
     }

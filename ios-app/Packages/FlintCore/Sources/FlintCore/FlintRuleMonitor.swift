@@ -51,7 +51,7 @@ public final class FlintRuleMonitor {
             if let schedule = rule as? FlintScheduleRule { env.applyRuleShield(schedule) }
             else if let limit = rule as? FlintLimitRule {
                 if isNewOccurrence { env.clearStore(limit.storeName); env.clearLimitThreshold(limit.id) }
-                if limit.thresholdMinutes == 0 { env.applyLimitShield(limit); env.markLimitThreshold(limit) }
+                if limit.thresholdMinutes == 0 { env.applyLimitShield(limit); env.markLimitThreshold(limit, now) }
             } else if let open = rule as? FlintOpenLimitRule, isNewOccurrence { env.applyOpenShield(open) }
         case .end:
             // A delayed old end, including a callback delivered after the next start, cannot
@@ -78,7 +78,7 @@ public final class FlintRuleMonitor {
                 }
             }
             env.applyLimitShield(limit)
-            env.markLimitThreshold(limit)
+            env.markLimitThreshold(limit, now)
         }
     }
 }

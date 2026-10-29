@@ -38,9 +38,7 @@ public final class FlintLimitsController {
     }
 
     public func limits() -> [FlintLimitRule] {
-        guard let loaded = FlintRuleStoreLock.withLock(environment: environment, {
-            FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: environment.defaults, at: environment.clock.now())
-        }), let rules = loaded else {
+        guard let rules = environment.rulesForDisplay(FlintLimitRule.self) else {
             environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
             return []
         }
@@ -49,27 +47,31 @@ public final class FlintLimitsController {
 
     @discardableResult
     public func upsert(_ limit: FlintLimitRule, confirmation: FlintRuleConfirmation? = nil,
-                       creating: Bool = false) -> FlintRuleMutationResult {
-        FlintRuleArbiter(environment: environment).upsert(limit, confirmation: confirmation, creating: creating)
+                       creating: Bool = false, origin: FlintRuleMutationOrigin = .background) -> FlintRuleMutationResult {
+        FlintRuleArbiter(environment: environment).upsert(limit, confirmation: confirmation, creating: creating, origin: origin)
     }
 
     @discardableResult
-    public func delete(_ limitID: String, revision: Int? = nil,
-                       confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
+    public func delete(_ limitID: String, revision: Int,
+                       confirmation: FlintRuleConfirmation? = nil, origin: FlintRuleMutationOrigin = .background) -> FlintRuleMutationResult {
         FlintRuleArbiter(environment: environment).delete(FlintLimitRule.self, id: limitID,
-            revision: revision, confirmation: confirmation)
+            revision: revision, confirmation: confirmation, origin: origin)
     }
 
     @discardableResult
-    public func setEnabled(_ limitID: String, _ enabled: Bool, revision: Int? = nil,
-                           confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
+    public func setEnabled(_ limitID: String, _ enabled: Bool, revision: Int,
+                           confirmation: FlintRuleConfirmation? = nil, origin: FlintRuleMutationOrigin = .background) -> FlintRuleMutationResult {
         FlintRuleArbiter(environment: environment).setEnabled(FlintLimitRule.self, id: limitID,
-            enabled: enabled, revision: revision, confirmation: confirmation)
+            enabled: enabled, revision: revision, confirmation: confirmation, origin: origin)
     }
 
     public func cancelPendingChange(_ id: String, confirmation: FlintRuleConfirmation? = nil) {
         guard let confirmation else { return }
         _ = FlintRuleArbiter(environment: environment).cancel(FlintLimitRule.self, id: id, confirmation: confirmation)
+    }
+
+    public func cancelQueuedChange(_ id: String, expected: FlintRuleProtection) -> FlintRuleMutationResult {
+        FlintRuleArbiter(environment: environment).cancelQueued(FlintLimitRule.self, id: id, expected: expected)
     }
 
     /// Re-register all enabled limits. Idempotent; call on launch and after edits. Outcomes
@@ -91,9 +93,6 @@ public final class FlintLimitsController {
             return
         }
         let plan = Self.armPlan(for: all)
-        for name in plan.storesToClear {
-            environment.clearStore(name)
-        }
         let requests = plan.arm.map { limit in
             var request = limit.registration()
             request.retainedUntil = limit.occurrence(at: environment.clock.now())?.end
@@ -107,7 +106,7 @@ public final class FlintLimitsController {
             })
         for limit in plan.arm where limit.thresholdMinutes == 0 && report.observedActivities?.contains(limit.activityName) == true {
             environment.applyLimitShield(limit)
-            environment.markLimitThreshold(limit)
+            environment.markLimitThreshold(limit, environment.clock.now())
         }
         environment.record("limits", report)
     }

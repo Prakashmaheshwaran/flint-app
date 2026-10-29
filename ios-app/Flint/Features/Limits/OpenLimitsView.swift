@@ -19,18 +19,21 @@ final class OpenLimitsViewModel: ObservableObject {
         observation = FlintProtectionObservation.load()
     }
     func save(_ rule: FlintOpenLimitRule, confirmation: FlintRuleConfirmation? = nil, creating: Bool = false) -> FlintRuleMutationResult {
-        let result = controller.upsert(rule, confirmation: confirmation, creating: creating); refresh(); return result
+        let result = controller.upsert(rule, confirmation: confirmation, creating: creating, origin: .interactive); refresh(); return result
     }
     func delete(_ rule: FlintOpenLimitRule, confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
-        let result = controller.delete(rule.id, revision: rule.protection?.revision, confirmation: confirmation); refresh(); return result
+        let result = controller.delete(rule.id, revision: rule.protection?.revision ?? 0, confirmation: confirmation, origin: .interactive); refresh(); return result
     }
     func toggle(_ rule: FlintOpenLimitRule, confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
-        let result = controller.setEnabled(rule.id, !rule.enabled, revision: rule.protection?.revision,
-            confirmation: confirmation); refresh(); return result
+        let result = controller.setEnabled(rule.id, !rule.enabled, revision: rule.protection?.revision ?? 0,
+            confirmation: confirmation, origin: .interactive); refresh(); return result
     }
     func cancel(_ id: String, confirmation: FlintRuleConfirmation?) { controller.cancelPendingChange(id, confirmation: confirmation) }
+    func cancelQueued(_ rule: FlintOpenLimitRule, expected: FlintRuleProtection) -> FlintRuleMutationResult {
+        let result = controller.cancelQueuedChange(rule.id, expected: expected); refresh(); return result
+    }
     func delete(_ rules: [FlintOpenLimitRule], confirmation: FlintRuleConfirmation?) -> FlintRuleMutationResult {
-        let result = controller.deleteBatch(rules, confirmation: confirmation); refresh(); return result
+        let result = controller.deleteBatch(rules, confirmation: confirmation, origin: .interactive); refresh(); return result
     }
 }
 
@@ -104,9 +107,10 @@ struct OpenLimitsView: View {
                     .font(.caption).foregroundStyle(.secondary)
                 Text("\(rule.breakLevel.rawValue.capitalized) · \(rule.protection?.timeZoneID ?? TimeZone.current.identifier)")
                     .font(.caption).foregroundStyle(.secondary)
-                if let queued = rule.protection?.queuedChange {
-                    Text("\(queued.summary) · after \(queued.window.end.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.caption).foregroundStyle(FlintBrand.ember)
+                if let protection = rule.protection, protection.queuedChange != nil {
+                    QueuedRuleChangeView(protection: protection) {
+                        flow.run(scope: rule.name, operation: { _ in vm.cancelQueued(rule, expected: protection) })
+                    }
                 }
                 if rule.protection?.requiresTierReview == true { Text("Review migrated tier").font(.caption) }
                 if rule.enabled {

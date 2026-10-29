@@ -19,16 +19,19 @@ final class LimitsViewModel: ObservableObject {
         observation = FlintProtectionObservation.load()
     }
     func save(_ limit: FlintLimitRule, confirmation: FlintRuleConfirmation? = nil, creating: Bool = false) -> FlintRuleMutationResult {
-        let result = controller.upsert(limit, confirmation: confirmation, creating: creating); refresh(); return result
+        let result = controller.upsert(limit, confirmation: confirmation, creating: creating, origin: .interactive); refresh(); return result
     }
     func delete(_ limit: FlintLimitRule, confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
-        let result = controller.delete(limit.id, revision: limit.protection?.revision, confirmation: confirmation); refresh(); return result
+        let result = controller.delete(limit.id, revision: limit.protection?.revision ?? 0, confirmation: confirmation, origin: .interactive); refresh(); return result
     }
     func toggle(_ limit: FlintLimitRule, confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
-        let result = controller.setEnabled(limit.id, !limit.enabled, revision: limit.protection?.revision,
-            confirmation: confirmation); refresh(); return result
+        let result = controller.setEnabled(limit.id, !limit.enabled, revision: limit.protection?.revision ?? 0,
+            confirmation: confirmation, origin: .interactive); refresh(); return result
     }
     func cancel(_ id: String, confirmation: FlintRuleConfirmation?) { controller.cancelPendingChange(id, confirmation: confirmation) }
+    func cancelQueued(_ rule: FlintLimitRule, expected: FlintRuleProtection) -> FlintRuleMutationResult {
+        let result = controller.cancelQueuedChange(rule.id, expected: expected); refresh(); return result
+    }
 }
 
 struct LimitsView: View {
@@ -88,6 +91,7 @@ struct LimitsView: View {
     }
 
     private func row(_ limit: FlintLimitRule) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
         HStack(spacing: 14) {
             Button { editing = limit } label: {
                 VStack(alignment: .leading, spacing: 3) {
@@ -99,10 +103,6 @@ struct LimitsView: View {
                     }
                     Text("A day · \(limit.breakLevel.rawValue.capitalized) · \(limit.protection?.timeZoneID ?? TimeZone.current.identifier)")
                         .font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
-                    if let queued = limit.protection?.queuedChange {
-                        Text("\(queued.summary) · after \(queued.window.end.formatted(date: .abbreviated, time: .shortened))")
-                            .font(.caption).foregroundStyle(FlintBrand.ember)
-                    }
                     if limit.protection?.requiresTierReview == true { Text("Review migrated tier").font(.caption) }
                     if limit.enabled {
                         Text(FlintRuleProtectionStatus.status(enabled: limit.enabled, activityName: limit.activityName,
@@ -121,6 +121,12 @@ struct LimitsView: View {
                 .toggleStyle(EmberToggleStyle()).labelsHidden().fixedSize()
         }
         .frame(minHeight: 60)
+        if let protection = limit.protection, protection.queuedChange != nil {
+            QueuedRuleChangeView(protection: protection) {
+                flow.run(scope: limit.name, operation: { _ in vm.cancelQueued(limit, expected: protection) })
+            }
+        }
+        }
         .overlay(alignment: .bottom) { FlintHairline(opacity: 0.07) }
     }
 }

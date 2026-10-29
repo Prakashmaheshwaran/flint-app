@@ -15,7 +15,8 @@ public final class FlintSleepRulesController {
     init(environment: FlintRuleReloadEnvironment) { env = environment }
 
     @discardableResult
-    public func save(_ draft: FlintSleepConfig, confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
+    public func save(_ draft: FlintSleepConfig, confirmation: FlintRuleConfirmation? = nil,
+                     origin: FlintRuleMutationOrigin = .background) -> FlintRuleMutationResult {
         FlintRuleStoreLock.withLock(environment: env) {
             guard draft.contractVersion == nil || draft.contractVersion == 12,
                   draft.revision.map({ $0 > 0 }) ?? true else { return .unavailable }
@@ -58,7 +59,7 @@ public final class FlintSleepRulesController {
                 nightTier.rawValue, morningTier.rawValue, draft.schedule.daysOfWeek.sorted().map(String.init).joined(separator: ",")]
                 .joined(separator: "|")
             let result = mutations.isEmpty ? FlintRuleMutationResult.applied
-                : FlintRuleArbiter(environment: self.env).mutate(mutations, confirmation: confirmation, context: context)
+                : FlintRuleArbiter(environment: self.env).mutate(mutations, confirmation: confirmation, context: context, origin: origin)
             guard result.didSave else { return result }
             var saved = draft
             saved.revision = (previous?.revision ?? 0) + 1; saved.contractVersion = 12

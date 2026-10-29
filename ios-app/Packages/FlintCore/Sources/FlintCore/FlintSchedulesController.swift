@@ -50,9 +50,7 @@ public final class FlintSchedulesController {
     init(environment: FlintRuleReloadEnvironment) { self.environment = environment }
 
     public func rules() -> [FlintScheduleRule] {
-        guard let loaded = FlintRuleStoreLock.withLock(environment: environment, {
-            FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: environment.defaults, at: environment.clock.now())
-        }), let rules = loaded else {
+        guard let rules = environment.rulesForDisplay(FlintScheduleRule.self) else {
             environment.record("schedules", FlintDesiredRules.unavailable("schedules", previous: environment.loadHealth()))
             return []
         }
@@ -62,22 +60,22 @@ public final class FlintSchedulesController {
     /// Insert or update a rule, then re-register monitoring.
     @discardableResult
     public func upsert(_ rule: FlintScheduleRule, confirmation: FlintRuleConfirmation? = nil,
-                       creating: Bool = false) -> FlintRuleMutationResult {
-        FlintRuleArbiter(environment: environment).upsert(rule, confirmation: confirmation, creating: creating)
+                       creating: Bool = false, origin: FlintRuleMutationOrigin = .background) -> FlintRuleMutationResult {
+        FlintRuleArbiter(environment: environment).upsert(rule, confirmation: confirmation, creating: creating, origin: origin)
     }
 
     @discardableResult
-    public func delete(_ ruleID: String, revision: Int? = nil,
-                       confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
+    public func delete(_ ruleID: String, revision: Int,
+                       confirmation: FlintRuleConfirmation? = nil, origin: FlintRuleMutationOrigin = .background) -> FlintRuleMutationResult {
         FlintRuleArbiter(environment: environment).delete(FlintScheduleRule.self, id: ruleID,
-            revision: revision, confirmation: confirmation)
+            revision: revision, confirmation: confirmation, origin: origin)
     }
 
     @discardableResult
-    public func setEnabled(_ ruleID: String, _ enabled: Bool, revision: Int? = nil,
-                           confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
+    public func setEnabled(_ ruleID: String, _ enabled: Bool, revision: Int,
+                           confirmation: FlintRuleConfirmation? = nil, origin: FlintRuleMutationOrigin = .background) -> FlintRuleMutationResult {
         FlintRuleArbiter(environment: environment).setEnabled(FlintScheduleRule.self, id: ruleID,
-            enabled: enabled, revision: revision, confirmation: confirmation)
+            enabled: enabled, revision: revision, confirmation: confirmation, origin: origin)
     }
 
     public func cancelPendingChange(_ ruleID: String, confirmation: FlintRuleConfirmation? = nil) {
@@ -85,13 +83,17 @@ public final class FlintSchedulesController {
         _ = FlintRuleArbiter(environment: environment).cancel(FlintScheduleRule.self, id: ruleID, confirmation: confirmation)
     }
 
+    public func cancelQueuedChange(_ ruleID: String, expected: FlintRuleProtection) -> FlintRuleMutationResult {
+        FlintRuleArbiter(environment: environment).cancelQueued(FlintScheduleRule.self, id: ruleID, expected: expected)
+    }
+
     @discardableResult
     public func applyBatch(_ rules: [FlintScheduleRule], deleting: [FlintScheduleRule] = [],
-                           confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
+                           confirmation: FlintRuleConfirmation? = nil, origin: FlintRuleMutationOrigin = .background) -> FlintRuleMutationResult {
         let edits = rules.map { FlintRuleArbiter.Mutation(id: $0.id, proposed: $0, action: .edit, expectedRevision: $0.revision) }
         let deletes = deleting.map { FlintRuleArbiter.Mutation<FlintScheduleRule>(id: $0.id,
             proposed: nil, action: .delete, expectedRevision: $0.revision) }
-        return FlintRuleArbiter(environment: environment).mutate(edits + deletes, confirmation: confirmation)
+        return FlintRuleArbiter(environment: environment).mutate(edits + deletes, confirmation: confirmation, origin: origin)
     }
 
     /// Which of `rules` can be handed to `DeviceActivityCenter`, and which can't and why. Disabled
@@ -175,9 +177,6 @@ public final class FlintSchedulesController {
             return []
         }
         let plan = Self.armPlan(for: all.filter { ($0.oneShot?.end ?? .distantFuture) > environment.clock.now() })
-        for name in plan.storesToClear {
-            environment.clearStore(name)
-        }
         let previous = FlintScheduleRegistrationState.load(from: environment.defaults)
         let requests = plan.arm.map { rule in
             var request = rule.registration()

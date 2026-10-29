@@ -30,14 +30,14 @@ struct SleepModeController {
 
     /// Explicit save only; every affected rule is decided again at commit time.
     func apply(_ config: FlintSleepConfig, confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
-        rules.save(config, confirmation: confirmation)
+        rules.save(config, confirmation: confirmation, origin: .interactive)
     }
 
     /// Request removal through the same tier/confirmation gate as an explicit Sleep save.
     @discardableResult
     func removeAll(confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
         var config = FlintSleepConfig.load(); config.enabled = false
-        return rules.save(config, confirmation: confirmation)
+        return rules.save(config, confirmation: confirmation, origin: .interactive)
     }
 
     func cancel(confirmation: FlintRuleConfirmation?) { rules.cancel(confirmation: confirmation) }

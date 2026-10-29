@@ -36,9 +36,10 @@ struct SleepModeView: View {
                             Text("Current occurrence until \(window.end.formatted(date: .abbreviated, time: .shortened))")
                                 .font(.footnote)
                         }
-                        if let queued = rule.protection?.queuedChange {
-                            Text("\(queued.summary) · after \(queued.window.end.formatted(date: .abbreviated, time: .shortened))")
-                                .font(.footnote).foregroundStyle(FlintBrand.ember)
+                        if let protection = rule.protection, protection.queuedChange != nil {
+                            QueuedRuleChangeView(protection: protection) {
+                                vm.cancelQueued(rule, expected: protection)
+                            }
                         }
                     }
                 }
@@ -310,6 +311,14 @@ final class SleepModeViewModel: ObservableObject {
             cancel: { [controller] in controller.cancel(confirmation: $0) }, onSaved: {
                 self.config = FlintSleepConfig.load(); self.refreshHealth()
             })
+    }
+
+    func cancelQueued(_ rule: FlintScheduleRule, expected: FlintRuleProtection) {
+        flow.run(scope: rule.name, operation: { _ in
+            let result = FlintSchedulesController().cancelQueuedChange(rule.id, expected: expected)
+            self.refreshHealth()
+            return result
+        })
     }
 
     // MARK: Derived state for the view

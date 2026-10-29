@@ -36,6 +36,12 @@ struct FlintActivityRegistration {
         onRemove: (String) -> Void = { _ in }
     ) -> FlintArmingHealth.DomainReport {
         let wanted = Set(desired.map { DeviceActivityName($0.name) })
+        // Client-side refusal does not authorize retiring an already armed version of that
+        // rule. Keep its native end and last-good store within their saved finite bounds.
+        let invalidIDs = Set(validationFailures.compactMap { FlintRuleActivity.ruleID($0.activityName, prefix: prefix) })
+        func invalid(_ name: String) -> Bool {
+            FlintRuleActivity.ruleID(name, prefix: prefix).map(invalidIDs.contains) ?? false
+        }
         let before = Set(center.activities)
         var definitions = FlintActivityDefinition.load(from: defaults)
         let retainedRead = FlintRetainedProtection.load(from: defaults)
@@ -44,10 +50,10 @@ struct FlintActivityRegistration {
         case .available(let receipts): retained = receipts
         case .unavailable: retained = [:]
         }
-        let removed = before.filter { $0.rawValue.hasPrefix(prefix) && !wanted.contains($0) }
+        let removed = before.filter { $0.rawValue.hasPrefix(prefix) && !wanted.contains($0) && !invalid($0.rawValue) }
         // A removed cause can still have a retained store after its native activity vanished.
         let removedReceipts = retained.filter {
-            $0.key.hasPrefix(prefix) && !wanted.contains(.init($0.key)) && !$0.value.cleared
+            $0.key.hasPrefix(prefix) && !wanted.contains(.init($0.key)) && !$0.value.cleared && !invalid($0.key)
         }.map(\.key)
         var attempted = 0
         var armed = 0
