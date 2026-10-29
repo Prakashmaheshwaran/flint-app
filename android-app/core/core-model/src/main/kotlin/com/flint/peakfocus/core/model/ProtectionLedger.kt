@@ -15,6 +15,16 @@ data class ProtectionLedger(
     val previousAccessEnded: Boolean = false,
     /** Retained after cooldown expiry so required legacy accounting cannot disappear silently. */
     val lastUsedAtEpochMs: Long? = null,
+    val ordinaryGrants: Map<String, ProtectionOrdinaryGrant> = emptyMap(),
+)
+
+/** Frozen target and contributing occurrences. New/changed contributors never inherit access. */
+data class ProtectionOrdinaryGrant(
+    val operationId: String,
+    val target: AccessTarget,
+    val lifetime: AccessDuration,
+    val scopes: Set<AccessCauseScope>,
+    val affectedRuleIds: Set<String>,
 )
 
 data class ProtectionCooldown(

@@ -602,11 +602,11 @@ private fun BreakActions(
                         .fillMaxWidth()
                         .heightIn(min = 48.dp),
                 ) {
-                    Text("Use an Emergency Pass")
+                    Text("Review Emergency Pass")
                 }
             } else {
                 Text(
-                    text = "Emergency Pass used — a new one arrives Monday.",
+                    text = "The next pass is available seven days after use. Open Flint for the next eligibility time.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,

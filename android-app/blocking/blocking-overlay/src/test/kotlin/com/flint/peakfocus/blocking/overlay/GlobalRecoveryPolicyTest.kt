@@ -102,6 +102,29 @@ class GlobalRecoveryPolicyTest {
         assertEquals(s.focus.emergencyPass, next.emergencyPass)
     }
 
+    @Test fun PC_83_exactChosenTemplatesDisableOrDeleteAndUnchosenCausesAndAllCountersSurviveResume() {
+        for (delete in listOf(false, true)) {
+            val s = consumed()
+            val preview = GlobalRecoveryPolicy.previewEnd(s, setOf("rule:work", "open:c"), delete)!!
+            val next = GlobalRecoveryPolicy.endAndResume(s, preview)
+            assertTrue(next.result)
+            assertNull(next.focus.protection!!.recovery)
+            assertEquals(s.focus.protection!!.cooldown, next.focus.protection!!.cooldown)
+            assertEquals(s.focus.openCounts, next.focus.openCounts)
+            assertEquals(s.times, next.times)
+            assertTrue(next.opens!!.isEmpty())
+            if (delete) assertTrue(next.rules!!.isEmpty()) else assertFalse(next.rules!!.single().enabled)
+        }
+    }
+
+    @Test fun PC_83_staleEndSelectionCannotDisableANewRevisionOrEndAnExpiredRecovery() {
+        val s = consumed(); val p = GlobalRecoveryPolicy.previewEnd(s, setOf("rule:work"), false)!!
+        val changed = s.copy(rules = listOf(schedule.copy(name = "New")))
+        assertFalse(GlobalRecoveryPolicy.endAndResume(changed, p).result)
+        val ended = s.copy(observedAt = now.copy(elapsedRealtimeMs = now.elapsedRealtimeMs + 3_600_000))
+        assertFalse(GlobalRecoveryPolicy.endAndResume(ended, p).result)
+    }
+
     @Test fun PC_41_pendingWaitsCancelAndQueuedDraftTouchingEndedTransientNeedsReview() {
         val s = snapshot()
         val queued = QueuedEditorChange(1, EditorChange("edit", upserts = listOf(session, schedule)),

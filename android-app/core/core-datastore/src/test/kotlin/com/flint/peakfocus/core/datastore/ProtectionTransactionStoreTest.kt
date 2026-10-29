@@ -40,7 +40,7 @@ class ProtectionTransactionStoreTest {
     }
 
     @Test fun PC_47_PC_70_literalUnusedRecordHasRequiredRowsAndLegacyFocusFormatsRemainReadable() {
-        val raw = "P|1\nM|0%7C0%7Cboot|0%7C0%7Cboot|0|false|0|0|\nC\nR"
+        val raw = "P|1\nM|0%7C0%7Cboot|0%7C0%7Cboot|0|false|0|0||0\nC\nR"
         val expected = ProtectionLedger(AccessClockStamp(0, 0, "boot"), AccessClockStamp(0, 0, "boot"))
         assertEquals(expected, ProtectionLedgerCodec.decode(raw))
         assertEquals(raw, ProtectionLedgerCodec.encode(expected))

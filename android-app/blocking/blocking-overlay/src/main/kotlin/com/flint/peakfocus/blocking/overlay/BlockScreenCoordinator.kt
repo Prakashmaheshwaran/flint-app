@@ -8,7 +8,7 @@ import android.os.SystemClock
 import android.view.View
 import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
 import com.flint.peakfocus.blocking.engine.BreakPolicy
-import com.flint.peakfocus.blocking.engine.EmergencyPassPolicy
+import com.flint.peakfocus.blocking.engine.RollingEmergencyPassPolicy
 import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.blocking.engine.OpenLimitPolicy
 import com.flint.peakfocus.core.datastore.BlockRulesStore
@@ -18,11 +18,15 @@ import com.flint.peakfocus.core.datastore.LimitsStore
 import com.flint.peakfocus.core.datastore.EditorCommitmentStore
 import com.flint.peakfocus.core.datastore.EditorCommitmentState
 import com.flint.peakfocus.core.datastore.ProtectionClock
+import com.flint.peakfocus.core.datastore.ProtectionTransactionStore
+import com.flint.peakfocus.core.datastore.ProtectionSnapshot
 import com.flint.peakfocus.core.model.ActiveRulesHolder
 import com.flint.peakfocus.core.model.AccessClockStamp
 import com.flint.peakfocus.core.model.EnforcementSignals
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.model.BreakSessionState
+import com.flint.peakfocus.core.model.BreakRequestState
+import com.flint.peakfocus.blocking.engine.HarderWaitPolicy
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.StorageState
 import com.flint.peakfocus.core.model.OpenLimit
@@ -110,6 +114,8 @@ class BlockScreenCoordinator(
     editorCommitmentStore: EditorCommitmentStore? = null,
     private val statusClock: () -> AccessClockStamp = ProtectionClock::now,
     private val statusDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    /** A custom focus backend must supply the same atomic rules/pass transaction domain. */
+    protectionTransactionStore: ProtectionTransactionStore? = null,
 ) {
 
     /** How a path actually mounts the block surface. Implementations own the window type. */
@@ -147,7 +153,6 @@ class BlockScreenCoordinator(
     private val rulesStore = blockRulesStore ?: FlintPreferences.blockRules(appContext)
     private val editorStore = editorCommitmentStore ?: FlintPreferences.editorCommitments(appContext)
 
-    private val passPolicy = EmergencyPassPolicy()
     private val openLimitPolicy = OpenLimitPolicy()
     private val ruleEngine = BlockDecisionEngine()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -155,7 +160,14 @@ class BlockScreenCoordinator(
     private data class Observation(val timeLimitSpent: Boolean, val epochDay: Long, val url: String?)
     private val observations = ConcurrentHashMap<String, Observation>()
 
-    private val grants = DurableGrantController(focusStore, scope, nowEpochMs, ::utcOffsetMs, BootIdentity.current(appContext))
+    private val grants = DurableGrantController(focusStore, scope, nowEpochMs, ::utcOffsetMs,
+        if (focusStateStore == null) null else BootIdentity.current(appContext), bootClock = statusClock)
+    private val recoveries = (protectionTransactionStore ?: if (focusStateStore == null) FlintPreferences.protectionTransactions(appContext) else null)?.let { store ->
+        GlobalRecoveryController(store, scope, statusClock,
+            { ActiveRulesHolder.rulesOutside(ActiveRulesHolder.SOURCE_DATASTORE) },
+            { EnforcementSignals.detectors.requestEvaluation(); onEnforcementChanged?.invoke(); rerenderNow() }, statusDispatcher)
+    }
+    internal val recoveryState get() = recoveries?.state
     private val openState = MutableStateFlow<StorageState<List<OpenLimit>>>(StorageState.Loading)
     private val timeState = MutableStateFlow<StorageState<List<TimeLimit>>>(StorageState.Loading)
     private val rulesState = MutableStateFlow<StorageState<List<BlockRule>>>(StorageState.Loading)
@@ -177,11 +189,12 @@ class BlockScreenCoordinator(
         var breakId: GrantRequestId? = null
         var passId: GrantRequestId? = null
         var retired = false
-        fun id(emergency: Boolean, now: Long): GrantRequestId {
+        fun id(emergency: Boolean, now: Long, clock: AccessClockStamp? = null): GrantRequestId {
             val previous = if (emergency) passId else breakId
-            if (previous != null && previous.issuedAtEpochMs <= now &&
-                now - previous.issuedAtEpochMs < DurableGrantController.RETRY_HORIZON_MS) return previous
-            return GrantRequestId.issue(now).also { if (emergency) passId = it else breakId = it }
+            if (previous != null && (if (clock != null) previous.issuedAtClock?.let {
+                com.flint.peakfocus.blocking.engine.trustedElapsedMs(it, clock)?.let { age -> age < GlobalRecoveryPolicy.REQUEST_LIFETIME_MS }
+            } == true else previous.issuedAtEpochMs <= now && now - previous.issuedAtEpochMs < DurableGrantController.RETRY_HORIZON_MS)) return previous
+            return (clock?.let(GrantRequestId::issue) ?: GrantRequestId.issue(now)).also { if (emergency) passId = it else breakId = it }
         }
         fun recordResult(emergency: Boolean, result: GrantResult) {
             // A stronger cause may keep this mount visible after an acknowledged grant.
@@ -335,19 +348,62 @@ class BlockScreenCoordinator(
         timeLimits.firstOrNull { it.packageName == packageName }?.dailyMinutes
 
     /** Snapshot of the HARDER break bookkeeping (BlockActivity rebuilds its state from this). */
-    fun currentBreakSession(): BreakSessionState = grants.lastGood?.breakSession ?: BreakSessionState()
+    fun currentBreakSession(): BreakSessionState {
+        val pending = recoveries?.lastGood?.harder?.pending
+        if (recoveries == null) return grants.lastGood?.breakSession ?: BreakSessionState()
+        if (pending == null) return BreakSessionState()
+        val now = statusClock()
+        val remaining = pending?.let { HarderWaitPolicy().remainingMs(it, now) } ?: return BreakSessionState()
+        return BreakSessionState(pending = BreakRequestState(now.wallEpochMs - (pending.requiredMs - remaining), now.wallEpochMs + remaining))
+    }
+
+    internal fun requestClock(): AccessClockStamp? = recoveries?.lastGood?.let { statusClock() }
 
     /** True while this week's Emergency Pass is unspent — drives the HARDCORE CTA's state. */
     fun isEmergencyPassAvailable(): Boolean {
-        val now = nowEpochMs()
-        val focus = (grants.state.value as? StorageState.Ready)?.value ?: return false
-        return passPolicy.isAvailable(focus.emergencyPass, now, utcOffsetMs(now))
+        val snapshot = (recoveries?.state?.value as? StorageState.Ready)?.value ?: return false
+        val ledger = snapshot.focus.protection ?: return false
+        return RollingEmergencyPassPolicy().eligibility(GlobalRecoveryPolicy.passState(ledger), statusClock()) == RollingEmergencyPassPolicy.Eligibility.Available
     }
+
+    suspend fun previewEmergencyPass(): RecoveryPreview? = recoveries?.preview()
+    suspend fun confirmEmergencyPass(preview: RecoveryPreview): RecoveryResult {
+        val result = recoveries?.confirm(preview) ?: RecoveryResult.Unavailable()
+        if (result is RecoveryResult.Accepted && result.newlyAccepted) result.recovery?.let {
+            BlockEventHooks.emergencyPassCommitted(it.operationId, it.affectedRuleIds,
+                it.startedAt.wallEpochMs + it.durationMs, it.startedAt.wallEpochMs)
+        }
+        invalidateProtectionStatus()
+        return result
+    }
+    suspend fun resumeProtectionNow(): Boolean = recoveries?.resumeNow() == true
+    suspend fun previewEndCommitments(selected: Set<String>, delete: Boolean): RecoveryEndPreview? = recoveries?.previewEnd(selected, delete)
+    suspend fun endCommitmentsAndResume(preview: RecoveryEndPreview): Boolean = recoveries?.endAndResume(preview) == true
+    suspend fun retryProtectionState(): Boolean = recoveries?.reconcile() == true
 
     /** Re-check protection before a surface hides in response to a previously issued grant. */
     fun isExempt(packageName: String, displayedCause: BlockCause? = null): Boolean {
         val cause = currentBlockCause(packageName, displayedCause)
+        if (recoveries != null) return BlockExemptions.hasGlobalRecovery() ||
+            (cause?.breakLevel != BreakLevel.HARDCORE && ordinaryExempt(packageName, cause))
         return BlockExemptions.isExempt(packageName, nowEpochMs(), cause?.breakLevel ?: BreakLevel.EASY)
+    }
+
+    private fun ordinaryInput(packageName: String, cause: BlockCause? = null) = OrdinaryProtectionInput(packageName, appContext.packageName,
+        observations[packageName]?.timeLimitSpent == true || cause?.reason == BlockScreenReason.TIME_LIMIT,
+        inspectOpen(packageName) is OpenLimitDecision.Blocked, observations[packageName]?.url,
+        cause?.endsAtEpochMs.takeIf { cause?.reason == BlockScreenReason.TIME_LIMIT })
+
+    private fun ordinaryExempt(packageName: String, cause: BlockCause? = null): Boolean {
+        val owner = recoveries ?: return BlockExemptions.hasOrdinaryExemption(packageName, nowEpochMs())
+        val snapshot = owner.lastGood ?: return false
+        val input = ordinaryInput(packageName, cause)
+        owner.observeOrdinary(input)
+        // A faster raw-source update cannot lend an old frozen grant to a new contributor.
+        if ((rulesState.value as? StorageState.Ready)?.value != snapshot.rules ||
+            (timeState.value as? StorageState.Ready)?.value != snapshot.times ||
+            (openState.value as? StorageState.Ready)?.value != snapshot.opens) return false
+        return owner.ordinaryCovers(input, statusClock())
     }
 
     /**
@@ -365,12 +421,13 @@ class BlockScreenCoordinator(
         // bookkeeping is untouched too — a floor app is not an open, and leaving one for an app
         // is still decided by countsAsOpen on the next real transition.
         if (isSafetyFloor(packageName)) return null
+        if (BlockExemptions.hasGlobalRecovery()) return null
         val now = nowEpochMs()
         val offset = utcOffsetMs(now)
         observations[packageName] = Observation(timeLimitSpent, openLimitPolicy.epochDay(now, offset), foregroundUrl)
         val timeCause = if (timeLimitSpent) timeLimitBlockCause(currentTimeLimitBreakLevel(packageName), now, offset) else null
-        val ordinary = BlockExemptions.hasOrdinaryExemption(packageName, now)
-        val emergency = BlockExemptions.hasEmergencyExemption(packageName, now)
+        val ordinary = ordinaryExempt(packageName, timeCause)
+        val emergency = if (recoveries != null) BlockExemptions.hasGlobalRecovery() else BlockExemptions.hasEmergencyExemption(packageName, now)
         val openDecision = onForegroundChanged(
             previousPackage,
             packageName,
@@ -398,6 +455,7 @@ class BlockScreenCoordinator(
         val now = nowEpochMs()
         // Safety floor: no cause of any kind stands on a floor surface (ADR-012 §7, §10).
         if (safetyFloor.protects(packageName)) return null
+        if (BlockExemptions.hasGlobalRecovery()) return null
         val offset = utcOffsetMs(now)
         val observation = observations[packageName]
         val cal = Calendar.getInstance().apply { timeInMillis = now }
@@ -421,6 +479,7 @@ class BlockScreenCoordinator(
             openLimitBlockCause(it.limit, now, offset)
         }
         val liveDisplayed = displayedCause?.takeIf { it.endsAtEpochMs == null || now < it.endsAtEpochMs }
+            ?.takeUnless { it.ruleId != null && rulesState.value is StorageState.Ready && ActiveRulesHolder.rules.none { rule -> rule.id == it.ruleId } }
             ?.takeUnless { it.reason == BlockScreenReason.OPEN_LIMIT && openState.value is StorageState.Ready && openCause == null }
             ?.let { if (it.reason == BlockScreenReason.TIME_LIMIT) it.copy(breakLevel = currentTimeLimitBreakLevel(packageName)) else it }
         return BlockOverlapPolicy.strongest(timeCause, ruleCause, openCause, liveDisplayed)
@@ -447,6 +506,7 @@ class BlockScreenCoordinator(
         recordAllowedOpen: Boolean = true,
     ): OpenLimitDecision {
         if (isSafetyFloor(foregroundPackage)) return OpenLimitDecision.Allowed(null)
+        if (BlockExemptions.hasGlobalRecovery()) return OpenLimitDecision.Allowed(null)
         val visit = visits.observe(
             foregroundPackage,
             openLimitPolicy.countsAsOpen(null, foregroundPackage, appContext.packageName),
@@ -636,7 +696,7 @@ class BlockScreenCoordinator(
      * Callers retain requestId on failure and only dismiss after an acknowledged result.
      */
     suspend fun requestBreak(packageName: String, cause: BlockCause, requestId: GrantRequestId): GrantResult =
-        requestGrant(packageName, cause, requestId, emergency = false)
+        if (BlockExemptions.hasGlobalRecovery()) GrantResult.Denied else requestGrant(packageName, cause, requestId, emergency = false)
 
     /**
      * Explicitly spend this week's Emergency Pass ([EmergencyPassPolicy.consume]). True →
@@ -645,10 +705,12 @@ class BlockScreenCoordinator(
      * can't stop the session itself; rule mutation belongs to the app layer). False → the
      * pass was already spent this week; the block stands.
      */
+    @Deprecated("Open launchRecovery and explicitly confirm its complete RecoveryPreview")
     suspend fun requestEmergencyPass(packageName: String, cause: BlockCause, requestId: GrantRequestId): GrantResult =
-        requestGrant(packageName, cause, requestId, emergency = true)
+        if (safetyFloor.protects(packageName)) GrantResult.Denied else GrantResult.Unavailable()
 
     private suspend fun requestGrant(packageName: String, cause: BlockCause, id: GrantRequestId, emergency: Boolean): GrantResult {
+        if (recoveries != null) return requestContractBreak(packageName, cause, id)
         if (safetyFloor.protectsFresh(packageName)) return GrantResult.Denied
         if (grants.state.value !is StorageState.Ready) return GrantResult.Unavailable()
         if (!busy.add(packageName)) return GrantResult.Unavailable()
@@ -690,6 +752,27 @@ class BlockScreenCoordinator(
             busy.remove(packageName)
             rerenderNow()
         }
+    }
+
+    private suspend fun requestContractBreak(packageName: String, displayed: BlockCause, id: GrantRequestId): GrantResult {
+        val owner = recoveries ?: return GrantResult.Unavailable()
+        if (safetyFloor.protectsFresh(packageName)) return GrantResult.Denied
+        if (owner.state.value !is StorageState.Ready || listOf(rulesState.value, timeState.value, openState.value, editorState.value).any { it !is StorageState.Ready })
+            return GrantResult.Unavailable()
+        if (!busy.add(packageName)) return GrantResult.Unavailable()
+        failures.remove(packageName); rerenderNow()
+        return try {
+            val cause = currentBlockCause(packageName, displayed) ?: return GrantResult.Denied
+            val result = owner.requestOrdinary(ordinaryInput(packageName, cause), id)
+            if (result is GrantResult.Unavailable || result == GrantResult.Unconfirmed) failures.add(packageName)
+            if (result is GrantResult.Granted && result.newlyAccepted) {
+                val grant = owner.lastGood?.focus?.protection?.ordinaryGrants?.get(result.receipts.single().requestId)
+                val ids = grant?.affectedRuleIds.orEmpty()
+                if (ids.isEmpty()) BlockEventHooks.breakGranted(null, result.receipts.single().requestId, result.receipts.single().untilEpochMs, result.atEpochMs)
+                else ids.forEach { BlockEventHooks.breakGranted(it, result.receipts.single().requestId, result.receipts.single().untilEpochMs, result.atEpochMs) }
+            }
+            result
+        } finally { busy.remove(packageName); invalidateProtectionStatus(); rerenderNow() }
     }
 
     private fun causeKey(packageName: String, cause: BlockCause): String = MessageDigest.getInstance("SHA-256")
@@ -749,8 +832,9 @@ class BlockScreenCoordinator(
 
     private fun handleGrantRequested(packageName: String, requests: SurfaceRequests, emergency: Boolean) {
         if (requests.retired || surfaceRequests !== requests || visiblePackage != packageName || packageName in busy) return
+        if (emergency) { BlockActivity.launchRecovery(appContext); return }
         val cause = shownCause ?: return
-        val id = requests.id(emergency, nowEpochMs())
+        val id = requests.id(emergency, nowEpochMs(), requestClock())
         scope.launch {
             val result = if (emergency) requestEmergencyPass(packageName, cause, id) else requestBreak(packageName, cause, id)
             requests.recordResult(emergency, result)
