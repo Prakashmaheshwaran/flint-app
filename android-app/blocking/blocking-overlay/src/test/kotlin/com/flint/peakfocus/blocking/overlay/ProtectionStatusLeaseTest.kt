@@ -76,4 +76,17 @@ class ProtectionStatusLeaseTest {
         assertEquals(policy.validUntilElapsedRealtimeMs, publisher.status.value.validUntilElapsedRealtimeMs)
         assertFalse("path-b-health-expired" in publisher.status.value.detectors.degradedReasons)
     }
+
+    @Test fun PC_73_pinnedClockCannotCreateAnUnboundedLeaseExpiryLoop() = runTest {
+        var now = 0L
+        val publisher = ProtectionStatusPublisher({ now }, backgroundScope)
+        publisher.publish(policy)
+        publisher.publishPathBHealth(ProtectionStatus.PathBState.ENFORCING, leaseUntilElapsedRealtimeMs = 10)
+        runCurrent()
+        advanceTimeBy(100_000)
+        runCurrent()
+        assertEquals(ProtectionStatus.PathBState.ENFORCING, publisher.status.value.detectors.pathB)
+        now = 10
+        assertEquals(ProtectionStatus.PathBState.UNKNOWN, publisher.status.value.detectors.pathB)
+    }
 }

@@ -44,6 +44,16 @@ object ActiveRulesHolder {
         get() = snapshot.rules
 
     /**
+     * Read another source without mistaking this source's slower replica for a new owner.
+     * A consumer still combines independently observed sources; there can be a transient
+     * publication window. This read is not a transaction or authority for a release.
+     */
+    fun rulesOutside(source: String): List<BlockRule> = synchronized(contributions) {
+        knownOrder.filterNot { it == source }.flatMap { contributions[it].orEmpty() } +
+            contributions.entries.filter { it.key != source && it.key !in knownOrder }.flatMap { it.value }
+    }
+
+    /**
      * Replace [source]'s contribution with [rules] (empty clears it) and refresh the combined
      * list atomically. Safe from any thread; readers never see a partially-merged list.
      */

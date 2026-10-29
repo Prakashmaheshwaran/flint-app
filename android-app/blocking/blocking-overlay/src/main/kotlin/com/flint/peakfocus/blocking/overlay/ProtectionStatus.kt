@@ -21,7 +21,9 @@ import kotlinx.coroutines.delay
  * Until enforcement publishes a snapshot (lane C: coordinator + detectors), [ProtectionStatusHub]
  * holds [ProtectionStatus.UNKNOWN]: readiness UNAVAILABLE and no causes — show "unavailable",
  * never "protected". Countdowns use [ActiveCause.logicalEndElapsedRealtimeMs] (same boot only,
- * per ADR-012 §9); the wall-clock end is a display estimate.
+ * per ADR-012 §9); the wall-clock end is a display estimate. Stored occurrence ends here
+ * are anchored; legacy engine window enforcement remains wall-based until the separate
+ * R-18 detector clock integration lands. A snapshot does not prove exact enforcement.
  *
  * Boot identity: the hub is process memory, so a snapshot read from [ProtectionStatusHub.status]
  * always belongs to the current boot (a reboot restarts the process and the hub at [UNKNOWN]). A
@@ -43,6 +45,8 @@ data class ProtectionStatus(
      * or recovery end, or a freshness horizon); null for [UNKNOWN]. Enforcement republishes by then.
      */
     val validUntilElapsedRealtimeMs: Long?,
+    /** Runtime provenance and the latest lookup health; sticky resolution alone is insufficient. */
+    val safetyFloor: SafetyFloorStatus? = null,
 ) {
     /** Last actual policy check, not the time a widget or detector-health publisher read it. */
     val lastCheckedEpochMs: Long? get() = observedAt?.wallEpochMs
@@ -50,6 +54,14 @@ data class ProtectionStatus(
     enum class Readiness { LOADING, READY, UNAVAILABLE }
 
     enum class CauseKind { SESSION, TIMER, SCHEDULE, SLEEP, TIME_LIMIT, OPEN_LIMIT }
+
+    data class SafetyFloorStatus(
+        val requiredSources: Set<String>,
+        val resolvedSources: Set<String>,
+        val failedSources: Set<String>,
+        val checkedAtElapsedRealtimeMs: Long?,
+        val degraded: Boolean,
+    )
 
     data class ActiveCause(
         val ruleId: String?,
@@ -110,10 +122,11 @@ data class ProtectionStatus(
         )
 
         const val MAX_DISPLAY_NAME = 64
+        private val DISPLAY_WHITESPACE = Regex("[\\p{Cntrl}\\s]+")
 
         /** Collapse whitespace/control characters and cap at [MAX_DISPLAY_NAME] for display surfaces. */
         fun sanitizeDisplayName(raw: String): String =
-            raw.replace(Regex("[\\p{Cntrl}\\s]+"), " ").trim().take(MAX_DISPLAY_NAME)
+            raw.replace(DISPLAY_WHITESPACE, " ").trim().take(MAX_DISPLAY_NAME)
     }
 }
 
@@ -144,6 +157,8 @@ internal class ProtectionStatusPublisher(
      */
     fun publish(status: ProtectionStatus) = synchronized(lock) {
         policy = status.copy(activeCauses = status.activeCauses.toList(),
+            safetyFloor = status.safetyFloor?.let { it.copy(requiredSources = it.requiredSources.toSet(),
+                resolvedSources = it.resolvedSources.toSet(), failedSources = it.failedSources.toSet()) },
             detectors = status.detectors.copy(degradedReasons = status.detectors.degradedReasons.toSet()))
         publishLocked()
     }
@@ -170,13 +185,17 @@ internal class ProtectionStatusPublisher(
         leaseGeneration++
         val generation = leaseGeneration
         leaseExpiry = leaseUntilElapsedRealtimeMs?.let { deadline -> expiryScope.launch {
-            while (true) {
-                val remaining = (deadline - nowElapsedMs()).coerceAtLeast(0L)
+            repeat(8) {
+                val before = nowElapsedMs()
+                val remaining = (deadline - before).coerceAtLeast(0L)
                 if (remaining > 0L) delay(remaining)
                 synchronized(lock) {
                     if (generation != leaseGeneration) return@launch
                     publishLocked()
                     if (nowElapsedMs() >= deadline) return@launch
+                    // System elapsed time progresses across delay. A pinned/inconsistent
+                    // injected clock must not leave an unbounded timer retry loop.
+                    if (nowElapsedMs() <= before) return@launch
                 }
             }
         } }
@@ -207,6 +226,11 @@ internal class ProtectionStatusPublisher(
 object ProtectionStatusHub {
     private val publisher = ProtectionStatusPublisher(SystemClock::elapsedRealtime,
         CoroutineScope(SupervisorJob() + Dispatchers.Default))
+    /**
+     * Display surfaces read .value before rendering: it applies lease expiry synchronously.
+     * A collector's first replay may precede the expiry job; a health view must not treat
+     * that replay or a passed validUntilElapsedRealtimeMs as a newly checked policy.
+     */
     val status: StateFlow<ProtectionStatus> = publisher.status
 
     /** Coordinator-only complete policy snapshot; preserves the service-owned Path B report. */
