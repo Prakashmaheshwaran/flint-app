@@ -84,7 +84,7 @@ struct SessionView: View {
             case .harder:
                 Button("End session") { vm.stop() }.buttonStyle(GhostButtonStyle())
             case .hardcore:
-                Button(vm.emergencyPassAvailable ? "Emergency Pass · 1" : "Pass used this week") {
+                Button(vm.emergencyPassAvailable ? "Emergency Pass" : "Pass not available yet") {
                     withAnimation(.easeOut(duration: 0.3)) { showPass = true }
                 }
                 .buttonStyle(GhostButtonStyle())
@@ -271,7 +271,8 @@ struct BreakWaitView: View {
     }
 }
 
-/// The weekly way out of Hardcore, behind a press-and-hold so it is never an accident.
+/// The way out of Hardcore — one pass, renewed seven days after use — behind a two-second
+/// press-and-hold so it is never an accident.
 struct EmergencyPassSheet: View {
     let sessionName: String
     let available: Bool
@@ -280,7 +281,7 @@ struct EmergencyPassSheet: View {
 
     @State private var holding = false
     @State private var fill: CGFloat = 0
-    private let holdSeconds = 1.6
+    private let holdSeconds = 2.0 // ADR-012 §6: a two-second hold
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -300,13 +301,13 @@ struct EmergencyPassSheet: View {
                     .flintTitle(26)
                     .multilineTextAlignment(.center)
                     .padding(.top, 18)
-                Text("This ends \(sessionName) now, even in Hardcore. You get one every seven days.")
+                Text("This ends \(sessionName) now, even in Hardcore. After you use it, the next pass is available seven days later.")
                     .flintSecondary(15)
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)
                     .frame(maxWidth: 300)
                     .padding(.top, 10)
-                Text(available ? "1 pass left this week" : "No pass left this week")
+                Text(available ? "Pass available" : "Not available yet")
                     .font(FlintFont.text(12, weight: .medium))
                     .foregroundStyle(Color(hex: 0xF4C27E))
                     .padding(.horizontal, 12)

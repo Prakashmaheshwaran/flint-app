@@ -136,6 +136,8 @@ struct PINGateView: View {
     @ObservedObject var lock: FlintAppLock
     @State private var pin = ""
     @State private var showError = false
+    /// The PIN never blocks the pass or recovery route (ADR-012 §7, PC-50).
+    @State private var showRecovery = false
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
@@ -174,12 +176,28 @@ struct PINGateView: View {
                             }
                         }
                         .buttonStyle(EmberButtonStyle())
+                        Button("Emergency Pass & recovery") {
+                            // Drop the PIN keypad so it can't cover the pass controls.
+                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                                            to: nil, from: nil, for: nil)
+                            showRecovery = true
+                        }
+                            .buttonStyle(QuietButtonStyle(color: FlintBrand.mist))
+                            .accessibilityHint("Use the Emergency Pass or see how to lift blocks without the PIN")
                     }
                     .padding(.top, typeSize.isAccessibilitySize ? 40 : 110)
                     .padding(.horizontal, 24)
                     .padding(.bottom, 12)
                     .frame(minHeight: geometry.size.height)
                 }
+            }
+        }
+        // In place, not a presented cover: the gate's privacy curtain must stay above it, and a
+        // re-lock that swaps the gate out discards it.
+        .accessibilityHidden(showRecovery)
+        .overlay {
+            if showRecovery {
+                LockedRecoveryView { showRecovery = false }
             }
         }
     }
