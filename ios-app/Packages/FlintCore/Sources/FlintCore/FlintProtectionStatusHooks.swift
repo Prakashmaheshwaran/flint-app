@@ -41,7 +41,7 @@ extension FlintProtectionStatus {
         }
         // Forget threshold marks of limits that were disabled, deleted or re-armed with another
         // threshold since they fired: their shield was cleared or replaced (ADR-012 §8).
-        if let limits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: defaults) {
+        if let limits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: defaults, at: now, migrating: false) {
             FlintLimitThresholds.prune(keeping: limits, in: defaults)
         }
         let inputs = currentInputs(now: now, defaults: defaults, ledgerPass: pass,
@@ -98,46 +98,85 @@ extension FlintProtectionStatusSnapshot {
 /// cleared by that limit's new-day interval start; absent = unknown, never "not reached".
 public enum FlintLimitThresholds {
     static let key = "flint.limits.thresholdReached"
-
-    public static func markReached(_ limit: FlintLimitRule, at date: Date = Date(), in defaults: UserDefaults? = .flintGroup) {
-        guard let defaults else { return }
-        var all = load(from: defaults)
-        all[limit.id] = date.timeIntervalSince1970
-        defaults.set(all, forKey: key)
-        var thresholds = (defaults.dictionary(forKey: thresholdKey) as? [String: Int]) ?? [:]
-        thresholds[limit.id] = limit.thresholdMinutes
-        defaults.set(thresholds, forKey: thresholdKey)
-    }
-
-    /// Keep marks only for limits still enabled with the threshold that fired.
-    static func prune(keeping limits: [FlintLimitRule], in defaults: UserDefaults?) {
-        guard let defaults else { return }
-        let thresholds = (defaults.dictionary(forKey: thresholdKey) as? [String: Int]) ?? [:]
-        let valid = Set(limits.filter { $0.enabled && thresholds[$0.id] == $0.thresholdMinutes }.map(\.id))
-        let all = load(from: defaults)
-        let kept = all.filter { valid.contains($0.key) }
-        if kept.count != all.count { defaults.set(kept, forKey: key) }
-    }
-
     static let thresholdKey = "flint.limits.thresholdReached.minutes"
+    static let observationKey = key + ".adr012"
 
-    public static func clear(_ limitID: String, in defaults: UserDefaults? = .flintGroup) {
-        guard let defaults else { return }
-        var all = load(from: defaults)
-        all[limitID] = nil
-        defaults.set(all, forKey: key)
-    }
-
-    /// Limits reached on the current calendar day.
-    public static func reachedToday(now: Date, calendar: Calendar = .current,
-                                    in defaults: UserDefaults? = .flintGroup) -> [String: Bool] {
-        guard let defaults else { return [:] }
-        return load(from: defaults).reduce(into: [:]) { result, entry in
-            if calendar.isDate(Date(timeIntervalSince1970: entry.value), inSameDayAs: now) { result[entry.key] = true }
+    private struct Mark: Codable {
+        let schema: Int
+        let activity: String
+        let fingerprint: String
+        let window: FlintRuleWindow
+        let reachedAt: Date
+        var isValid: Bool {
+            schema == 1 && !activity.isEmpty && fingerprint.count == 64
+                && window.isValid && window.contains(reachedAt)
         }
     }
 
-    private static func load(from defaults: UserDefaults) -> [String: TimeInterval] {
-        (defaults.dictionary(forKey: key) as? [String: TimeInterval]) ?? [:]
+    public static func markReached(_ limit: FlintLimitRule, at date: Date = Date(), in defaults: UserDefaults? = .flintGroup) {
+        guard let defaults, limit.validationIssue == nil, let window = limit.occurrence(at: date),
+              let fingerprint = fingerprint(limit), var all = load(from: defaults) else { return }
+        all[limit.id] = .init(schema: 1, activity: limit.activityName, fingerprint: fingerprint,
+            window: window, reachedAt: date)
+        save(all, to: defaults)
+    }
+
+    /// A rename or future-only queue keeps its observation. A changed native incarnation /
+    /// revision, effective selection, quota or saved zone never inherits the old mark.
+    static func prune(keeping limits: [FlintLimitRule], in defaults: UserDefaults?) {
+        guard let defaults, Set(limits.map(\.id)).count == limits.count,
+              let all = load(from: defaults) else { return }
+        let kept = all.filter { entry in
+            limits.contains { $0.id == entry.key && matches(entry.value, rule: $0) }
+        }
+        if kept.count != all.count { save(kept, to: defaults) }
+    }
+
+    public static func clear(_ limitID: String, in defaults: UserDefaults? = .flintGroup) {
+        guard let defaults, var all = load(from: defaults) else { return }
+        all[limitID] = nil
+        save(all, to: defaults)
+        // Old unbound marks are never accepted as observations, but clear this rule's legacy
+        // cache too so an older reader cannot project it after a daily reset.
+        if var legacy = defaults.dictionary(forKey: key) { legacy[limitID] = nil; defaults.set(legacy, forKey: key) }
+        if var legacy = defaults.dictionary(forKey: thresholdKey) { legacy[limitID] = nil; defaults.set(legacy, forKey: thresholdKey) }
+    }
+
+    /// Calendar is retained for source compatibility; each rule's saved zone is authoritative.
+    /// Missing/legacy-unbound/corrupt observations remain unknown, never an inferred false.
+    public static func reachedToday(now: Date, calendar _: Calendar = .current,
+                                    in defaults: UserDefaults? = .flintGroup) -> [String: Bool] {
+        guard let limits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: defaults, at: now, migrating: false) else { return [:] }
+        return limits.reduce(into: [:]) { result, limit in
+            if hasReached(limit, at: now, in: defaults) { result[limit.id] = true }
+        }
+    }
+
+    static func hasReached(_ limit: FlintLimitRule, at now: Date, in defaults: UserDefaults?) -> Bool {
+        guard let defaults, let mark = load(from: defaults)?[limit.id], matches(mark, rule: limit),
+              mark.reachedAt <= now, let current = limit.occurrence(at: now), current == mark.window else { return false }
+        return true
+    }
+
+    private static func matches(_ mark: Mark, rule: FlintLimitRule) -> Bool {
+        rule.enabled && rule.validationIssue == nil && mark.activity == rule.activityName
+            && mark.fingerprint == fingerprint(rule)
+    }
+
+    private static func fingerprint(_ rule: FlintLimitRule) -> String? {
+        var effective = rule
+        effective.name = ""; effective.enabled = true; effective.breakLevel = .easy
+        return try? effective.fingerprint(action: "time.threshold")
+    }
+
+    private static func load(from defaults: UserDefaults) -> [String: Mark]? {
+        guard let raw = defaults.object(forKey: observationKey) else { return [:] }
+        guard let data = raw as? Data, let decoded = try? JSONDecoder().decode([String: Mark].self, from: data),
+              decoded.allSatisfy({ !$0.key.isEmpty && $0.value.isValid }) else { return nil }
+        return decoded
+    }
+
+    private static func save(_ marks: [String: Mark], to defaults: UserDefaults) {
+        if let data = try? JSONEncoder().encode(marks) { defaults.set(data, forKey: observationKey) }
     }
 }

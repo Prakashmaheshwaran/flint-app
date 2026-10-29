@@ -54,7 +54,7 @@ extension FlintProtectionReconciler {
             let active = group.loadActiveSession()
             return FlintWebRestrictionHostReconciler.reconcile(
                 activeSession: active, hasActiveSessionRecord: group.hasActiveSessionRecord(),
-                rules: FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: .flintGroup),
+                rules: FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: .flintGroup, migrating: false),
                 config: FlintWebRestrictions.loadForEnforcement(), health: group.loadArmingHealth(),
                 lifecycle: FlintWebRestrictionLifecycle(), clock: .system
             )

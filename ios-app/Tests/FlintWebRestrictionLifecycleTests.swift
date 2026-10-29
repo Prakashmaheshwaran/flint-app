@@ -866,7 +866,8 @@ private final class WebEditorHarness {
               breakLevel: tier, monitorName: "flint.session")
     }
     func rule(_ tier: BreakLevel) -> FlintScheduleRule {
-        .init(id: "sleep.night", name: "Sleep", schedule: .init(daysOfWeek: [2], startHour: 22, endHour: 7), breakLevel: tier)
+        .init(id: "sleep.night", name: "Sleep", schedule: .init(daysOfWeek: [2], startHour: 22, endHour: 7),
+              breakLevel: tier, protection: .init(timeZoneID: calendar.timeZone.identifier))
     }
     func ledger() -> FlintProtectionLedger {
         .init(directory: directory, clock: clock, initializedMarker: { [self] in marker },

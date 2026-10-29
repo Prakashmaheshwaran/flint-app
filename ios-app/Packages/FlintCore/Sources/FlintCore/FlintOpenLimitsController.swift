@@ -4,17 +4,16 @@ import FamilyControls
 import ManagedSettings
 import DeviceActivity
 
-/// Manages daily Open Limits (launch-count caps) — the host-app arming side of the
+/// Manages daily Open Limit credits — the host-app arming side of the
 /// `FlintOpenLimitEnforcer` seam. Mirrors `FlintLimitsController` (same CRUD + `reload()` shape).
 ///
 /// Arming is two idempotent moves, both re-done by every `reload()`:
 ///  1. each enabled rule's selection is shielded into the rule's own store
-///     (`FlintOpenLimitEnforcer.applyShield`) — this also puts tokens released by earlier
-///     grants back behind the shield;
+///     (`FlintOpenLimitEnforcer.applyShield`), preserving only verifiable live timed grants;
 ///  2. each enabled rule registers an all-day repeating `DeviceActivitySchedule`
 ///     (`rule.activityName`), so the monitor extension re-applies the shield at the day
-///     boundary even if the app never launches. The daily open counter itself resets via
-///     `FlintOpenLimitState.dayStart` — no schedule needed for that.
+///     boundary even if the app never launches. The ledger governs the saved-zone quota
+///     boundary using observed elapsed time; callbacks cannot independently mint credits.
 public final class FlintOpenLimitsController {
 
     private let environment: FlintRuleReloadEnvironment
@@ -58,92 +57,83 @@ public final class FlintOpenLimitsController {
     }
 
     public func rules() -> [FlintOpenLimitRule] {
-        FlintOpenLimitRule.loadAll()
+        guard let rules = environment.rulesForDisplay(FlintOpenLimitRule.self) else {
+            environment.record("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
+            return []
+        }
+        return rules
     }
 
-    public func upsert(_ rule: FlintOpenLimitRule) {
-        guard var all = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: environment.defaults) else {
-            environment.record("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
-            return
-        }
-        if let index = all.firstIndex(where: { $0.id == rule.id }) {
-            all[index] = rule
-        } else {
-            all.append(rule)
-        }
-        guard FlintDesiredRules.save(all, key: .openLimits, to: environment.defaults) else {
-            environment.record("openLimits", FlintDesiredRules.saveFailure("openLimits", previous: environment.loadHealth()))
-            return
-        }
-        reload()
-        NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
+    @discardableResult
+    public func upsert(_ rule: FlintOpenLimitRule, confirmation: FlintRuleConfirmation? = nil,
+                       creating: Bool = false, origin: FlintRuleMutationOrigin = .background) -> FlintRuleMutationResult {
+        FlintRuleArbiter(environment: environment).upsert(rule, confirmation: confirmation, creating: creating, origin: origin)
     }
 
-    public func delete(_ ruleID: String) {
-        guard var all = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: environment.defaults) else {
-            environment.record("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
-            return
-        }
-        guard let index = all.firstIndex(where: { $0.id == ruleID }) else { return }
-        let removed = all.remove(at: index)
-        guard FlintDesiredRules.save(all, key: .openLimits, to: environment.defaults) else {
-            environment.record("openLimits", FlintDesiredRules.saveFailure("openLimits", previous: environment.loadHealth()))
-            return
-        }
-        FlintOpenLimitEnforcer.clearShield(for: removed)
-        FlintScheduling.stopMonitoring([removed.activityName])
-        reload()
-        NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
+    @discardableResult
+    public func delete(_ ruleID: String, revision: Int,
+                       confirmation: FlintRuleConfirmation? = nil, origin: FlintRuleMutationOrigin = .background) -> FlintRuleMutationResult {
+        FlintRuleArbiter(environment: environment).delete(FlintOpenLimitRule.self, id: ruleID,
+            revision: revision, confirmation: confirmation, origin: origin)
     }
 
-    public func setEnabled(_ ruleID: String, _ enabled: Bool) {
-        guard var all = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: environment.defaults) else {
-            environment.record("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
-            return
-        }
-        guard let index = all.firstIndex(where: { $0.id == ruleID }) else { return }
-        all[index].enabled = enabled
-        guard FlintDesiredRules.save(all, key: .openLimits, to: environment.defaults) else {
-            environment.record("openLimits", FlintDesiredRules.saveFailure("openLimits", previous: environment.loadHealth()))
-            return
-        }
-        if !enabled {
-            FlintOpenLimitEnforcer.clearShield(for: all[index])
-        }
-        reload()
-        NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
+    @discardableResult
+    public func setEnabled(_ ruleID: String, _ enabled: Bool, revision: Int,
+                           confirmation: FlintRuleConfirmation? = nil, origin: FlintRuleMutationOrigin = .background) -> FlintRuleMutationResult {
+        FlintRuleArbiter(environment: environment).setEnabled(FlintOpenLimitRule.self, id: ruleID,
+            enabled: enabled, revision: revision, confirmation: confirmation, origin: origin)
+    }
+
+    public func cancelPendingChange(_ id: String, confirmation: FlintRuleConfirmation? = nil) {
+        guard let confirmation else { return }
+        _ = FlintRuleArbiter(environment: environment).cancel(FlintOpenLimitRule.self, id: id, confirmation: confirmation)
+    }
+
+    public func cancelQueuedChange(_ id: String, expected: FlintRuleProtection) -> FlintRuleMutationResult {
+        FlintRuleArbiter(environment: environment).cancelQueued(FlintOpenLimitRule.self, id: id, expected: expected)
+    }
+
+    public func deleteBatch(_ rules: [FlintOpenLimitRule], confirmation: FlintRuleConfirmation? = nil,
+                            origin: FlintRuleMutationOrigin = .background) -> FlintRuleMutationResult {
+        FlintRuleArbiter(environment: environment).mutate(rules.map {
+            .init(id: $0.id, proposed: nil, action: .delete, expectedRevision: $0.protection?.revision ?? 0)
+        } as [FlintRuleArbiter.Mutation<FlintOpenLimitRule>], confirmation: confirmation, origin: origin)
     }
 
     /// Re-arm every enabled rule: shield its selection and (re)register its day-boundary
     /// activity. Idempotent; call on launch and after edits.
     public func reload(reapplyShields: Bool = true) {
-        guard let all = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: environment.defaults) else {
+        if case .none = FlintRuleStoreLock.withLock(environment: environment, { reloadLocked(reapplyShields: reapplyShields) }) {
+            environment.record("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
+        }
+    }
+
+    private func reloadLocked(reapplyShields: Bool) {
+        // Credit recovery precedes every rule read, including queued revision recovery.
+        // Applying shields later preserves only verifiable live grants.
+        environment.reconcileOpenCredits()
+        guard FlintRuleArbiter(environment: environment).applyQueued(FlintOpenLimitRule.self) else {
+            environment.record("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
+            return
+        }
+        guard let all = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: environment.defaults,
+            recoveryDirectory: environment.recoveryDirectory) else {
             environment.record("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
             return
         }
         let plan = Self.armPlan(for: all, selectionIssue: selectionIssue)
-        for rule in all where plan.storesToClear.contains(rule.storeName) {
-            environment.clearStore(rule.storeName)
-        }
-        let requests = plan.arm.map { rule in
-            let schedule = DeviceActivitySchedule(
-                intervalStart: DateComponents(hour: 0, minute: 0),
-                intervalEnd: DateComponents(hour: 23, minute: 59),
-                repeats: true
-            )
-            return FlintActivityRegistration(name: rule.activityName, schedule: schedule)
-        }
+        let requests = plan.arm.map { $0.registration() }
         let report = FlintActivityRegistration.reconcile(
             requests, prefix: "flint.openLimit.", enabled: plan.enabled,
             validationFailures: plan.failures, center: environment.center, defaults: environment.defaults,
-            onRemove: { name in
-                let id = name.dropFirst("flint.openLimit.".count)
-                environment.clearStore("flintO.\(id)")
+            now: environment.clock.now(), onRemove: { name in
+                FlintRuleCleanup.clearRemoved(name, rules: all, environment: environment)
             })
-        if reapplyShields {
-            for rule in plan.arm where report.observedActivities?.contains(rule.activityName) == true {
-                environment.applyOpenShield(rule)
-            }
+        // Every trigger restores expired/legacy releases only after the daily registration
+        // is observed. applyOpenShield now preserves bounded live grants under the ledger lock;
+        // the launch-only flag remains a source-compatible parameter for existing clients.
+        for rule in plan.arm where report.observedActivities?.contains(rule.activityName) == true {
+            environment.applyOpenShield(rule)
         }
         environment.record("openLimits", report)
     }

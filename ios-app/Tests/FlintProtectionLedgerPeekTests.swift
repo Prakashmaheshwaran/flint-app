@@ -85,7 +85,7 @@ final class FlintProtectionLedgerPeekTests: XCTestCase {
         state.version = FlintLedgerState.currentVersion + 1
         try write(state)
         let bytes = try Data(contentsOf: file)
-        XCTAssertEqual(ledger().peek(), .failure(.unavailable("ledger schema 2 is newer than this build")))
+        XCTAssertEqual(ledger().peek(), .failure(.unavailable("ledger schema \(state.version) is newer than this build")))
         XCTAssertEqual(try Data(contentsOf: file), bytes)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), [FlintProtectionLedger.fileName])
     }

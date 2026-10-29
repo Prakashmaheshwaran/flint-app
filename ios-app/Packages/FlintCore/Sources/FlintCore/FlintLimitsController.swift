@@ -38,97 +38,77 @@ public final class FlintLimitsController {
     }
 
     public func limits() -> [FlintLimitRule] {
-        FlintGroupStore()?.loadLimits() ?? []
+        guard let rules = environment.rulesForDisplay(FlintLimitRule.self) else {
+            environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
+            return []
+        }
+        return rules
     }
 
-    public func upsert(_ limit: FlintLimitRule) {
-        guard var all = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: environment.defaults) else {
-            environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
-            return
-        }
-        if let index = all.firstIndex(where: { $0.id == limit.id }) {
-            all[index] = limit
-        } else {
-            all.append(limit)
-        }
-        guard FlintDesiredRules.save(all, key: .limits, to: environment.defaults) else {
-            environment.record("limits", FlintDesiredRules.saveFailure("limits", previous: environment.loadHealth()))
-            return
-        }
-        reload()
-        NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
+    @discardableResult
+    public func upsert(_ limit: FlintLimitRule, confirmation: FlintRuleConfirmation? = nil,
+                       creating: Bool = false, origin: FlintRuleMutationOrigin = .background) -> FlintRuleMutationResult {
+        FlintRuleArbiter(environment: environment).upsert(limit, confirmation: confirmation, creating: creating, origin: origin)
     }
 
-    public func delete(_ limitID: String) {
-        guard var all = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: environment.defaults) else {
-            environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
-            return
-        }
-        all.removeAll { $0.id == limitID }
-        guard FlintDesiredRules.save(all, key: .limits, to: environment.defaults) else {
-            environment.record("limits", FlintDesiredRules.saveFailure("limits", previous: environment.loadHealth()))
-            return
-        }
-        ManagedSettingsStore(named: ManagedSettingsStore.Name("flintL.\(limitID)")).clearAllSettings()
-        FlintScheduling.stopMonitoring(["flint.limit.\(limitID)"])
-        reload()
-        NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
+    @discardableResult
+    public func delete(_ limitID: String, revision: Int,
+                       confirmation: FlintRuleConfirmation? = nil, origin: FlintRuleMutationOrigin = .background) -> FlintRuleMutationResult {
+        FlintRuleArbiter(environment: environment).delete(FlintLimitRule.self, id: limitID,
+            revision: revision, confirmation: confirmation, origin: origin)
     }
 
-    public func setEnabled(_ limitID: String, _ enabled: Bool) {
-        guard var all = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: environment.defaults) else {
-            environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
-            return
-        }
-        guard let index = all.firstIndex(where: { $0.id == limitID }) else { return }
-        all[index].enabled = enabled
-        guard FlintDesiredRules.save(all, key: .limits, to: environment.defaults) else {
-            environment.record("limits", FlintDesiredRules.saveFailure("limits", previous: environment.loadHealth()))
-            return
-        }
-        if !enabled {
-            ManagedSettingsStore(named: ManagedSettingsStore.Name("flintL.\(limitID)")).clearAllSettings()
-        }
-        reload()
-        NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
+    @discardableResult
+    public func setEnabled(_ limitID: String, _ enabled: Bool, revision: Int,
+                           confirmation: FlintRuleConfirmation? = nil, origin: FlintRuleMutationOrigin = .background) -> FlintRuleMutationResult {
+        FlintRuleArbiter(environment: environment).setEnabled(FlintLimitRule.self, id: limitID,
+            enabled: enabled, revision: revision, confirmation: confirmation, origin: origin)
+    }
+
+    public func cancelPendingChange(_ id: String, confirmation: FlintRuleConfirmation? = nil) {
+        guard let confirmation else { return }
+        _ = FlintRuleArbiter(environment: environment).cancel(FlintLimitRule.self, id: id, confirmation: confirmation)
+    }
+
+    public func cancelQueuedChange(_ id: String, expected: FlintRuleProtection) -> FlintRuleMutationResult {
+        FlintRuleArbiter(environment: environment).cancelQueued(FlintLimitRule.self, id: id, expected: expected)
     }
 
     /// Re-register all enabled limits. Idempotent; call on launch and after edits. Outcomes
     /// are recorded in `FlintArmingHealth` — each limit holds an OS activity slot, and a
     /// rejected registration is a budget that never trips.
     public func reload() {
-        guard let all = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: environment.defaults) else {
+        if case .none = FlintRuleStoreLock.withLock(environment: environment, { reloadLocked() }) {
+            environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
+        }
+    }
+
+    private func reloadLocked() {
+        guard FlintRuleArbiter(environment: environment).applyQueued(FlintLimitRule.self) else {
+            environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
+            return
+        }
+        guard let all = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: environment.defaults,
+            recoveryDirectory: environment.recoveryDirectory) else {
             environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
             return
         }
         let plan = Self.armPlan(for: all)
-        for name in plan.storesToClear {
-            environment.clearStore(name)
-        }
         let requests = plan.arm.map { limit in
-            let schedule = DeviceActivitySchedule(
-                intervalStart: DateComponents(hour: 0, minute: 0),
-                intervalEnd: DateComponents(hour: 23, minute: 59),
-                repeats: true
-            )
-            let event = DeviceActivityEvent(
-                applications: limit.selection.applicationTokens,
-                categories: limit.selection.categoryTokens,
-                webDomains: limit.selection.webDomainTokens,
-                threshold: DateComponents(minute: limit.thresholdMinutes)
-            )
-            return FlintActivityRegistration(name: limit.activityName, schedule: schedule,
-                events: [DeviceActivityEvent.Name(limit.eventName): event],
-                retainedUntil: FlintRetainedProtection.windowEnd(startHour: 0, startMinute: 0,
-                    endHour: 23, endMinute: 59, now: Date()))
+            var request = limit.registration()
+            request.retainedUntil = limit.occurrence(at: environment.clock.now())?.end
+            return request
         }
         let report = FlintActivityRegistration.reconcile(
             requests, prefix: "flint.limit.", enabled: plan.enabled,
             validationFailures: plan.failures, center: environment.center, defaults: environment.defaults,
-            onRemove: { name in
-                let id = name.dropFirst("flint.limit.".count)
-                environment.clearStore("flintL.\(id)")
+            now: environment.clock.now(), onRemove: { name in
+                FlintRuleCleanup.clearRemoved(name, rules: all, environment: environment)
             })
+        for limit in plan.arm where limit.thresholdMinutes == 0 && report.observedActivities?.contains(limit.activityName) == true {
+            environment.applyLimitShield(limit)
+            environment.markLimitThreshold(limit, environment.clock.now())
+        }
         environment.record("limits", report)
     }
 }

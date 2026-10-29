@@ -173,6 +173,11 @@ public enum FlintProtectionStatusBuilder {
         let midnight = inputs.quotaCalendar.date(byAdding: .day, value: 1,
                                                  to: inputs.quotaCalendar.startOfDay(for: now))
         for rule in enabled {
+            // Only a window containing now is a current saved quota period. Legacy callers
+            // without one retain the shared quota-calendar boundary.
+            let savedPeriodEnd = rule.currentWindow.flatMap { window -> Date? in
+                window.start <= now && now < window.end ? window.end : nil
+            }
             // An unresolved rule is uncertain without suppressing unrelated known causes.
             if !rule.available { reasons.insert("state_unavailable") }
             if !rule.armed { reasons.insert("registration_failed") }
@@ -184,11 +189,11 @@ public enum FlintProtectionStatusBuilder {
                     displayName: rule.displayName, start: window.start, end: window.end))
             }
             if rule.isLimit {
-                if let midnight, midnight > now { boundaries.append(midnight) }
+                if let end = savedPeriodEnd ?? midnight, end > now { boundaries.append(end) }
                 else { unavailable = true; reasons.insert("state_unavailable") }
             }
             guard rule.isActive(at: now) else { continue }
-            let end = rule.isLimit ? midnight : rule.currentWindow?.end
+            let end = rule.isLimit ? (savedPeriodEnd ?? midnight) : rule.currentWindow?.end
             if let end { boundaries.append(end) }
             let reached = rule.kind != .timeLimit || rule.thresholdReached == true
             causes.append(.init(id: rule.id, kind: rule.kind, displayName: rule.displayName,
