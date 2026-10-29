@@ -128,6 +128,9 @@ struct FlintRuleReloadEnvironment {
                 return FlintLimitThresholds.hasReached(limit, at: Date(), in: .flintGroup)
                     || store.shield.applications != nil || store.shield.applicationCategories != nil
                     || store.shield.webDomains != nil || store.shield.webDomainCategories != nil
+            }, withTransitionBoundary: { body in
+                // One cross-process order: session transition → rule domain → ledger.
+                FlintSessionController().withTransition { body(); return true } ?? false
             }, markLimitThreshold: { FlintLimitThresholds.markReached($0) },
             clearLimitThreshold: { FlintLimitThresholds.clear($0) },
             publishStatus: { FlintProtectionStatus.publishAfterCommit() })
