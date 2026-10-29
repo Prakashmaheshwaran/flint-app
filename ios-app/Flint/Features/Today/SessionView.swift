@@ -375,6 +375,7 @@ struct UnevenTop: Shape {
 
 /// The ember has set: a session ran to its end.
 struct SessionCompleteView: View {
+    @ObservedObject private var history = FocusHistoryModel.shared
     let finished: SessionViewModel.Finished
     let onDone: () -> Void
     let onAgain: () -> Void
@@ -393,6 +394,8 @@ struct SessionCompleteView: View {
                 VStack(spacing: 6) {
                     Text(FocusHistoryText.duration(finished.todaySeconds)).flintNumber(36)
                     Text("Focused today").flintEyebrow()
+                    if let day = history.summary?.days.last,
+                       let note = FocusHistoryText.unconfirmed([day]) { Text(note).flintSecondary(13) }
                 }
                 .padding(.vertical, 24)
                 .accessibilityElement(children: .combine)

@@ -59,17 +59,63 @@ class FocusHistoryContractTest {
         assertEquals(SessionOutcome.COMPLETED, summary(listOf(started(), complete(), stop)).sessions.single().outcome)
         assertEquals(SessionOutcome.ENDED_EARLY, summary(listOf(started(), stop, complete())).sessions.single().outcome)
     }
-    @Test fun FH05_expiredMissingSessionInferredCompleted() {
-        val session = summary(listOf(started())).sessions.single()
-        assertEquals(SessionOutcome.COMPLETED, session.outcome)
+    @Test fun FH05_expiredMissingSessionIsUnconfirmed() {
+        val result = summary(listOf(started()))
+        val session = result.sessions.single()
+        assertEquals(SessionOutcome.UNCONFIRMED, session.outcome)
         assertTrue(session.inferred)
-        assertEquals(hour, session.focusedMs)
+        assertEquals(0L, session.focusedMs)
+        assertEquals(0, result.days.sumOf { it.completed })
+        assertEquals(1, result.days.sumOf { it.unconfirmed })
+        assertEquals(0, result.streak)
     }
     @Test fun FH06_coldMissingFutureSessionGetsZero() {
         val result = summary(listOf(started()), start + hour / 2).sessions.single()
-        assertEquals(SessionOutcome.ENDED_EARLY, result.outcome)
+        assertEquals(SessionOutcome.UNCONFIRMED, result.outcome)
         assertEquals(0L, result.focusedMs)
         assertEquals(0L, focused(listOf(started(), event(HistoryEventType.ENDED_EARLY, start + hour / 2, inferred = true))))
+    }
+    @Test fun R17_killedSessionOnlyCreditsPositiveCoverageAndSubtractsGaps() {
+        val result = summary(listOf(started(),
+            event(HistoryEventType.BREAK_STARTED, start + 600_000),
+            event(HistoryEventType.BREAK_ENDED, start + 900_000),
+            event(HistoryEventType.PROTECTION_DEGRADED, start + 1_200_000),
+            event(HistoryEventType.PROTECTION_RESTORED, start + 1_800_000)))
+        assertEquals(SessionOutcome.UNCONFIRMED, result.sessions.single().outcome)
+        assertEquals(900_000L, result.sessions.single().focusedMs)
+        assertEquals(0, result.days.sumOf { it.completed })
+        assertEquals(0L, summary(listOf(started()), active = setOf("a")).sessions.single().focusedMs)
+    }
+    @Test fun R17_coldReconcileDoesNotBlockLateIdempotentOutboxTerminal() = runTest {
+        val clock = MutableClock(start); val dir = temporary.newFolder(); val store = store(clock, dir)
+        assertTrue(store.append(started(id = "session-killed")))
+        for (elapsed in listOf(hour / 2, 2 * hour, 3 * hour)) {
+            clock.value = start + elapsed
+            HistoryReconciler(store(dir = dir, clock = clock), clock).observe(emptyList())
+            assertEquals(1, store.load().events.size)
+        }
+        val terminal = complete(id = "session-killed").copy(inferred = true, originRoute = "service", observedAt = clock.value)
+        assertTrue(store.append(terminal)); assertTrue(store.append(terminal))
+        val result = summary(store(dir = dir, clock = clock).load().events, now = clock.value)
+        assertEquals(hour, result.sessions.single().focusedMs)
+        assertEquals(1, result.days.sumOf { it.completed })
+        assertEquals(0, result.days.sumOf { it.unconfirmed })
+    }
+    @Test fun R17_unconfirmedDstAndMidnightStayZeroUntilLogicalTerminalArrives() {
+        for ((begin, finish) in listOf("2026-03-08T01:30:00" to "2026-03-08T03:30:00",
+            "2026-11-01T00:30:00" to "2026-11-01T02:30:00",
+            "2026-03-08T23:30:00" to "2026-03-09T00:30:00",
+            "2026-11-01T23:30:00" to "2026-11-02T00:30:00")) {
+            val a = time(begin); val b = time(finish)
+            val events = listOf(started(a).copy(plannedEnd = b), complete(b))
+            val unknown = summary(events.take(1), now = b + hour, historyStart = a)
+            assertEquals(0L, unknown.days.sumOf { it.focusedMs ?: 0 })
+            assertEquals(1, unknown.days.sumOf { it.unconfirmed })
+            assertEquals(0, unknown.days.sumOf { it.completed })
+            val confirmed = summary(events, now = b + hour, historyStart = a)
+            assertEquals(b - a, confirmed.days.sumOf { it.focusedMs ?: 0 })
+            if (begin.take(10) != finish.take(10)) assertEquals(listOf(hour / 2, hour / 2), confirmed.days.takeLast(2).map { it.focusedMs })
+        }
     }
     @Test fun FH07_midnightSplitsFocusedTimeAndCountsEndDay() {
         val begin = time("2026-10-27T23:30:00")
@@ -244,7 +290,7 @@ class FocusHistoryContractTest {
         val clock = MutableClock(start); val store = store(clock)
         val id = "session-timer-$start-uuid"
         val rule = HistoryRule(id, "Focus timer", "easy", start + hour)
-        val bridge = HistoryReconciler(store, clock) { zone }
+        val bridge = HistoryReconciler(store, clock, zone = { zone })
         bridge.observe(listOf(rule)); bridge.observe(listOf(rule))
         assertEquals(1, store.snapshots.value.events.size)
         assertEquals(start, store.snapshots.value.events.single().at)
@@ -252,35 +298,35 @@ class FocusHistoryContractTest {
         bridge.observe(emptyList())
         assertFalse(store.snapshots.value.events.last().inferred)
         assertEquals(hour / 2, FocusHistoryAggregator.sessions(store.snapshots.value.events, clock.value, emptySet()).single().focusedMs)
-        HistoryReconciler(store, clock) { zone }.observe(emptyList())
+        HistoryReconciler(store, clock, zone = { zone }).observe(emptyList())
         assertEquals(2, store.snapshots.value.events.size)
         val coldId = "session-cold"
         store.append(started(id = coldId))
-        HistoryReconciler(store, clock) { zone }.observe(emptyList())
-        assertTrue(store.snapshots.value.events.last().inferred)
+        HistoryReconciler(store, clock, zone = { zone }).observe(emptyList())
+        assertEquals(HistoryEventType.STARTED, store.snapshots.value.events.last().knownType)
         assertEquals(0L, FocusHistoryAggregator.sessions(store.snapshots.value.events, clock.value, emptySet()).first { it.id == coldId }.focusedMs)
     }
     @Test fun bridgeReadFailureDoesNotMeanMissingAndFirstSuccessfulSnapshotReconciles() = runTest {
         val clock = MutableClock(start); val store = store(clock)
         store.append(started(id = "session-existing"))
         var attempts = 0
-        HistoryReconciler(store, clock) { zone }.collect(flow {
+        HistoryReconciler(store, clock, zone = { zone }).collect(flow {
             if (attempts++ == 0) throw java.io.IOException("read failed")
             assertEquals(1, store.snapshots.value.events.size)
             emit(emptyList())
         })
         assertEquals(2, attempts)
-        assertTrue(store.snapshots.value.events.last().inferred)
+        assertEquals(HistoryEventType.STARTED, store.snapshots.value.events.last().knownType)
     }
     @Test fun bridgeReconcilesExpiredRuleAndLegacyObservationTime() = runTest {
         val clock = MutableClock(start); val store = store(clock)
-        val bridge = HistoryReconciler(store, clock) { zone }
+        val bridge = HistoryReconciler(store, clock, zone = { zone })
         bridge.observe(listOf(HistoryRule("session-legacy", "Old focus", "harder", start + hour)))
         assertEquals("legacy", store.snapshots.value.events.single().source)
         clock.value += 2 * hour
         bridge.observe(emptyList())
-        assertEquals(start + hour, store.snapshots.value.events.last().at)
-        assertEquals(HistoryEventType.COMPLETED, store.snapshots.value.events.last().knownType)
+        assertEquals(1, store.snapshots.value.events.size)
+        assertEquals(SessionOutcome.UNCONFIRMED, FocusHistoryAggregator.sessions(store.snapshots.value.events, clock.value, emptySet()).single().outcome)
     }
     @Test fun runningAndOptionalMeasuredCountersStayTruthful() {
         val result = summary(listOf(started()), start + hour / 2, active = setOf("a"))

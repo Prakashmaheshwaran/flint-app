@@ -18,7 +18,7 @@ class TimerIdentityCompatibilityTest {
         for (prefix in listOf("session-timer-", "session-timer-v2-")) {
             val store = FocusHistoryStore(temporary.newFolder(), clock) { ZoneOffset.UTC }
             val id = "$prefix$start-uuid"
-            HistoryReconciler(store, clock) { ZoneOffset.UTC }.observe(listOf(
+            HistoryReconciler(store, clock, zone = { ZoneOffset.UTC }).observe(listOf(
                 HistoryRule(id, "Focus timer", "easy", start + 300_000),
             ))
             val event = store.snapshots.value.events.single()

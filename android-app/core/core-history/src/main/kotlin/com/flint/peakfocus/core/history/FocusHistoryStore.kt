@@ -83,7 +83,11 @@ class FocusHistoryStore(
             .filter { it.outcome == SessionOutcome.RUNNING }.mapTo(mutableSetOf()) { it.id }
         val retained = retainForSessions(snapshot.events, running)
         val old = readMetadata()
-        val at = maxOf(old.cleared ?: Long.MIN_VALUE, clock.millis())
+        // A rollback cannot put already committed records after the clear boundary.
+        val recordedThrough = snapshot.events.filter { it.knownType != null }.maxOfOrNull {
+            maxOf(it.at, it.observedAt ?: it.at)
+        } ?: Long.MIN_VALUE
+        val at = maxOf(old.cleared ?: Long.MIN_VALUE, clock.millis(), recordedThrough)
         clearPhase(HistoryClearPhase.BEFORE_INTENT)
         val intent = old.copy(pendingClear = at, keepSessions = running)
         writeMetadata(intent)
@@ -174,7 +178,8 @@ class FocusHistoryStore(
         }
         return HistorySnapshot(events, maxOf(createdAt, clearedAt ?: createdAt),
             readable = !bad || events.isNotEmpty(), degraded = degraded,
-            diagnostic = if (degraded) "Some history couldn't be read" else null).also { state.value = it }
+            diagnostic = if (degraded) "Some history couldn't be read" else null,
+            clearedAt = clearedAt).also { state.value = it }
     }
 
     private data class Metadata(
@@ -273,7 +278,17 @@ class FocusHistoryStore(
         } }
     private fun retainForSessions(events: List<HistoryEvent>, retained: Set<String>): List<HistoryEvent> {
         val owners = groupOwners(events.groupBy { it.session })
-        return events.filter { event -> owners.getValue(event.session).any { it in retained } }
+        return events.filter { event -> owners.getValue(event.session).any { it in retained } }.map { event ->
+            if (event.knownType != HistoryEventType.PASS_USED || event.sessions == null) return@map event
+            val references = event.sessions.filter { it in retained }
+            if (references == event.sessions) return@map event
+            // A shared pass may survive for a running session; clear the other IDs
+            // while retaining unrelated forward-compatible fields in its envelope.
+            val line = event.originalLine?.let { original ->
+                FlatJson.encode(FlatJson.decode(original).toMutableMap().apply { put("sessions", references) })
+            }
+            event.copy(sessions = references, originalLine = line)
+        }
     }
 
     private fun quarantine(bytes: ByteArray, label: String = "events") {
