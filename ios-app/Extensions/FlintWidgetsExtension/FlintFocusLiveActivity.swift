@@ -7,33 +7,7 @@ import FlintCore
 struct FlintFocusLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: FlintFocusActivityAttributes.self) { context in
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Label("Flint · \(context.state.cause)", systemImage: "flame.fill")
-                    Spacer()
-                    Text(context.state.tier)
-                }.font(.headline)
-                if needsCheck(context) {
-                    Text("Open Flint to check")
-                } else {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(context.state.countdownLabel).font(.caption)
-                            countdown(context.state).font(.title2)
-                        }
-                        Spacer()
-                        VStack(alignment: .trailing) {
-                            Text("Planned end").font(.caption)
-                            Text(context.state.endsAt, style: .time)
-                        }
-                    }
-                    // Static wording stays truthful even on iOS 16.1, where ActivityKit
-                    // has no staleDate: a zero timer never asserts continuing protection.
-                    Text("At zero, open Flint to check").font(.caption)
-                }
-                Text("Open Flint").font(.caption.weight(.semibold))
-            }
-            .padding(16)
+            FlintFocusActivityView(state: context.state, needsCheck: needsCheck(context))
             .activityBackgroundTint(FlintBrand.ground)
             .activitySystemActionForegroundColor(FlintBrand.bone)
             .foregroundStyle(FlintBrand.bone)

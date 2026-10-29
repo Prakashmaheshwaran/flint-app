@@ -87,12 +87,14 @@ struct FlintGlancePresentation: Equatable {
             && input.validUntil.map { $0 > date && $0 > (input.checkedAt ?? $0) } == true
         let expired = input.protectionEndsAt.map { $0 <= date } == true
         let headlineExpired = input.headline?.endsAt.map { $0 <= date } == true
+        let sessionExpired = input.session.map { $0.endsAt <= date } == true
+        let nextStarted = input.next.map { $0.startsAt <= date } == true
         let displayEnd = input.headline.map { $0.endsAt } ?? input.protectionEndsAt
         if input.protection == .unavailable || input.checkedAt == nil || input.validUntil == nil {
             status = .unavailable
         } else if expired {
             status = .expired
-        } else if !valid || headlineExpired {
+        } else if !valid || headlineExpired || sessionExpired || nextStarted {
             status = .stale
         } else {
             switch input.protection {
@@ -143,7 +145,7 @@ struct FlintGlancePresentation: Equatable {
                 historyValue = "No sessions yet"; historyNote = nil
             case .degraded, .value:
                 let duration = history.seconds.map(Self.duration) ?? "No data"
-                let supported = valid && !expired && (input.session.map { date < $0.endsAt } ?? true)
+                let supported = valid && !expired && !headlineExpired && !sessionExpired && !nextStarted
                 if history.inProgress {
                     historyValue = supported ? "\(duration) · in progress at update" : "\(duration) · as of update"
                 } else { historyValue = duration }
@@ -207,5 +209,25 @@ struct FlintGlanceActivityPlan: Equatable {
                      cause: FlintGlancePresentation.sanitizedName(session.name ?? session.cause.rawValue.capitalized),
                      tier: session.tier, startedAt: session.startedAt,
                      endsAt: session.endsAt, staleAt: min(valid, session.endsAt))
+    }
+}
+
+/// Coalesce lifecycle/Darwin/preferences while an ActivityKit operation is suspended.
+/// Only one mutation pass runs at a time; each pass re-reads authority and consent.
+@MainActor
+final class FlintGlanceRefreshQueue {
+    private var refreshing = false
+    private var pendingOptIn: Bool?
+    var hasPending: Bool { pendingOptIn != nil }
+
+    func refresh(optedIn: Bool, apply: (Bool) async -> Void) async {
+        pendingOptIn = optedIn
+        guard !refreshing else { return }
+        refreshing = true
+        defer { refreshing = false }
+        while let requested = pendingOptIn {
+            pendingOptIn = nil
+            await apply(requested)
+        }
     }
 }

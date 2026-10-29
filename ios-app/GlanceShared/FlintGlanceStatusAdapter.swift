@@ -3,8 +3,6 @@ import Foundation
 /// Field projection of B's public v1 contract. This is not a stored schema or writer.
 /// Its primitive seam lets fixtures test mapping before the FlintCore reader is available.
 enum FlintGlanceStatusAdapter {
-    static let maximumDisplayAge: TimeInterval = 300
-
     static func project(version: Int, observedAt: Date, validUntil: Date?, state: String,
                         session: FlintGlanceInput.Session?, enforcingEnds: [Date?],
                         next: FlintGlanceInput.Occurrence?, recoveryUntil: Date?,
@@ -19,8 +17,8 @@ enum FlintGlanceStatusAdapter {
               let validUntil, validUntil.timeIntervalSince1970.isFinite,
               validUntil > date, validUntil > observedAt,
               !degradedReasons.contains("time_uncertain") else { return unavailable() }
-        let freshness = min(validUntil, observedAt.addingTimeInterval(maximumDisplayAge))
-        guard freshness > date else { return unavailable() }
+        // B publishes on enforcement commits, not on a heartbeat. A quiet but valid
+        // observation remains authoritative until its earliest known boundary.
         let protection: FlintGlanceInput.Protection
         switch state {
         case "protected":
@@ -41,7 +39,7 @@ enum FlintGlanceStatusAdapter {
         else if !enforcingEnds.isEmpty && enforcingEnds.allSatisfy({ $0 != nil }) {
             end = enforcingEnds.compactMap { $0 }.max()
         } else { end = nil }
-        return .init(protection: protection, checkedAt: observedAt, validUntil: freshness,
+        return .init(protection: protection, checkedAt: observedAt, validUntil: validUntil,
                      session: session, protectionEndsAt: end, next: next, history: history, headline: headline)
     }
 }
