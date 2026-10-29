@@ -1,6 +1,7 @@
 package com.flint.peakfocus.blocking.overlay
 
 import com.flint.peakfocus.core.model.SafetyFloor
+import com.flint.peakfocus.core.common.RuntimeSafetySurfaces
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,7 +21,11 @@ import kotlinx.coroutines.flow.asStateFlow
  *
  * The resolver reports each source separately (null = that lookup failed). A failed source keeps
  * its last known packages, so a transient binder failure can never shrink the floor — e.g. drop a
- * custom default dialer while the home lookup still succeeds. Plain JVM, clock and executor
+ * custom default dialer while the home lookup still succeeds. While a required source is
+ * unresolved, candidate calling/Home surfaces remain accessible. If candidate discovery also
+ * fails, only positively classified ordinary launchers remain blockable; unclassifiable
+ * packages stay accessible for phone safety. Publish degraded coverage until resolution recovers. This is permission
+ * to leave access open, not proof that the package is a safety identity. Plain JVM, clock and executor
  * injected, unit-tested in `SafetyFloorGateTest`.
  */
 class SafetyFloorGate(
@@ -52,23 +57,34 @@ class SafetyFloorGate(
     @Volatile private var bySource: Map<String, Set<String>> = emptyMap()
     @Volatile private var runtime: Set<String> = emptySet()
     @Volatile private var resolvedAtMs: Long? = null
+    private var candidates: Set<String> = emptySet()
+    private var candidatesUnavailable = true
+    private var ordinaryLaunchers: Set<String> = emptySet()
 
     /** Floor check against the cached runtime set; schedules a background refresh when stale. */
     fun protects(packageName: String): Boolean {
         if (SafetyFloor.isProtected(packageName, selfPackage)) return true
         if (resolvedAtMs == null) {
             refreshIfOlderThan(0L) // cold start: one inline resolve, never an empty first answer
+        } else if (runtimeResolution.value.degraded && isOlderThan(UNRESOLVED_RETRY_MS)) {
+            refreshIfOlderThan(UNRESOLVED_RETRY_MS)
         } else if (isOlderThan(refreshIntervalMs)) {
             scheduleRefresh()
         }
-        return packageName in runtime
+        return allowForSafety(packageName)
     }
 
     /** Floor check for a decision about to block: resolves inline when older than [maxAgeMs]. */
     fun protectsFresh(packageName: String, maxAgeMs: Long = freshIntervalMs): Boolean {
         if (SafetyFloor.isProtected(packageName, selfPackage)) return true
-        refreshIfOlderThan(maxAgeMs)
-        return packageName in runtime
+        refreshIfOlderThan(if (runtimeResolution.value.degraded) minOf(maxAgeMs, UNRESOLVED_RETRY_MS) else maxAgeMs)
+        return allowForSafety(packageName)
+    }
+
+    /** Never combine a refreshed set with the previous successful resolution metadata. */
+    private fun allowForSafety(packageName: String): Boolean = synchronized(lock) {
+        packageName in runtime || (resolution.value.degraded &&
+            (packageName in candidates || (candidatesUnavailable && packageName !in ordinaryLaunchers)))
     }
 
     /** Ask for a background refresh if the cache is older than [maxAgeMs] (e.g. while a shield is up). */
@@ -110,10 +126,17 @@ class SafetyFloorGate(
             // one keeps its last known packages.
             val merged = HashMap(bySource)
             for ((source, packages) in resolved) {
-                if (packages != null) merged[source] = packages
+                if (source !in RuntimeSafetySurfaces.CANDIDATE_SOURCES && packages != null) merged[source] = packages
             }
             bySource = merged
             runtime = merged.values.flatMapTo(HashSet()) { it }
+            val home = resolved[RuntimeSafetySurfaces.SOURCE_CANDIDATE_HOME]
+            val calling = resolved[RuntimeSafetySurfaces.SOURCE_CANDIDATE_CALLING]
+            candidatesUnavailable = home == null || calling == null
+            val currentCandidates = home.orEmpty() + calling.orEmpty()
+            candidates = if (candidatesUnavailable) candidates + currentCandidates else currentCandidates
+            // Positive ordinary classifications must never survive a failed new snapshot.
+            ordinaryLaunchers = resolved[RuntimeSafetySurfaces.SOURCE_ORDINARY_LAUNCHERS].orEmpty()
             // Stamp even on failure so a broken resolver is retried at the interval, not on
             // every event; the previous sets stay in force meanwhile.
             resolvedAtMs = nowElapsedMs()
@@ -129,5 +152,7 @@ class SafetyFloorGate(
         const val DEFAULT_REFRESH_INTERVAL_MS: Long = 30_000L
         /** Also the coordinator's visible-shield refresh age, so re-renders never resolve inline more often. */
         const val DEFAULT_FRESH_INTERVAL_MS: Long = 5_000L
+        /** Unresolved coverage is retried on the next evaluation after this bounded backoff. */
+        const val UNRESOLVED_RETRY_MS: Long = 1_000L
     }
 }
