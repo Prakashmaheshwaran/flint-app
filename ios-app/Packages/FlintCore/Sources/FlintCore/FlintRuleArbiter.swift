@@ -79,7 +79,11 @@ final class FlintRuleArbiter {
                 }
                 let source = old ?? mutation.proposed!
                 let occurrence = old?.occurrence(at: now)
-                let cause = FlintCauseState(causeID: Self.causeID(source, window: occurrence),
+                // A new draft has no committed incarnation yet (Sleep rebuilds it for each
+                // request). Mint that only on commit, after a stable creation preview.
+                let identity = old.map { Self.causeID($0, window: occurrence) }
+                    ?? "\(Rule.domain.rawValue):\(mutation.id)@new"
+                let cause = FlintCauseState(causeID: identity,
                     occurrenceID: occurrence?.identity, revision: old?.revision ?? 0, kind: source.kind,
                     tier: source.breakLevel, isActive: occurrence != nil, end: occurrence?.end,
                     legacyRights: source.protection?.legacyRightsUntil.map { now < $0 } ?? false)
@@ -118,7 +122,8 @@ final class FlintRuleArbiter {
                 } else { decision = .allow(confirm: mutation.proposed?.breakLevel == .hardcore) }
                 decisions.append(decision)
                 guard let fingerprint = try? sourceFingerprint(mutation) else { return .unavailable }
-                scopes.append("\(cause.causeID):\(old?.revision ?? 0):\(cause.end?.timeIntervalSince1970 ?? 0):\(fingerprint)")
+                let activation = occurrence == nil ? mutation.proposed?.previewWindow(at: now) : nil
+                scopes.append("\(cause.causeID):\(old?.revision ?? 0):\(cause.end?.timeIntervalSince1970 ?? 0):\(activation?.start.timeIntervalSince1970 ?? 0):\(activation?.end.timeIntervalSince1970 ?? 0):\(fingerprint)")
             }
             let digest = SHA256.hash(data: Data(scopes.sorted().joined(separator: "|").utf8))
                 .map { String(format: "%02x", $0) }.joined()

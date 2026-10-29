@@ -338,6 +338,24 @@ final class FlintRuleArbiterTests: XCTestCase {
         XCTAssertEqual(h.load(FlintScheduleRule.self), [old])
     }
 
+    func testCreationPreviewSurvivesRegeneratedDraftButRejectsAnotherOccurrencePC10() throws {
+        for nextDay in [false, true] {
+            let h = try RuleHarness(); defer { h.clean() }
+            let draft = h.schedule(tier: .hardcore)
+            let arbiter = FlintRuleArbiter(environment: h.environment)
+            guard case let .confirmationRequired(ticket, _) = arbiter.upsert(draft, creating: true) else { return XCTFail() }
+            var rebuilt = draft; rebuilt.protection = .init(timeZoneID: "UTC")
+            XCTAssertNotEqual(rebuilt.protection?.incarnation, draft.protection?.incarnation)
+            if nextDay { h.advance(86400) }
+            XCTAssertEqual(arbiter.upsert(rebuilt, confirmation: ticket, creating: true), nextDay ? .staleRevision : .applied)
+            if nextDay { XCTAssertTrue(h.load(FlintScheduleRule.self).isEmpty) }
+            else {
+                XCTAssertNotEqual(h.load(FlintScheduleRule.self).first?.protection?.incarnation,
+                    rebuilt.protection?.incarnation, "commit authority mints the incarnation")
+            }
+        }
+    }
+
     func testSameIDRecreationMintsNewIncarnationAndRejectsOldConfirmationsAndCallbacksPC10PC64PC66() throws {
         let h = try RuleHarness(); defer { h.clean() }
         let old = h.install(h.schedule(tier: .easy))
