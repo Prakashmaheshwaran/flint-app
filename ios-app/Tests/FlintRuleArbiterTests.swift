@@ -276,7 +276,8 @@ final class FlintRuleArbiterTests: XCTestCase {
         let h = try RuleHarness(); defer { h.clean() }
         var rule = h.install(h.schedule(tier: .hardcore))
         let frozen = try XCTUnwrap(rule.protection?.occurrence)
-        rule.protection?.queuedChange = .init(action: .delete, baseRevision: rule.revision,
+        let revision = rule.revision
+        rule.protection?.queuedChange = .init(action: .delete, baseRevision: revision,
             window: .init(start: frozen.start, end: h.now.addingTimeInterval(3600)),
             snapshot: nil, fingerprint: "delete:\(rule.id)")
         XCTAssertFalse(FlintDesiredRules.save([rule], key: .schedules, to: h.defaults))
