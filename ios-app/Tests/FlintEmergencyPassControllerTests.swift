@@ -25,6 +25,7 @@ final class FlintEmergencyPassControllerTests: XCTestCase {
     private var effects: [String] = []
     private var emitted: [FlintPassRecovery] = []
     private var registered: [String] = []
+    private var registrationTimes: [Date] = []
     private var cancelledCarriers: [String] = []
     private var observedScopeTimes: [FlintLedgerInstant] = []
 
@@ -61,6 +62,7 @@ final class FlintEmergencyPassControllerTests: XCTestCase {
         }, registerCarrier: { name, _, _ in
             if self.carrierFails { throw Fault.injected }
             self.registered.append(name)
+            self.registrationTimes.append(self.now)
             self.registrationWork?()
             if self.changesScopeDuringRegistration { self.revision = "crossed a natural boundary" }
         }, stopCarrier: { self.effects.append("stop:\($0)") }, terminate: { sessions, _ in
@@ -301,6 +303,20 @@ final class FlintEmergencyPassControllerTests: XCTestCase {
         XCTAssertEqual(emitted.count, 1)
     }
 
+    func testCommittedReplayRepairsResumeCarrierBeforeReleasingAnything() throws {
+        let preview = try controller().preview().get()
+        crash = true
+        XCTAssertEqual(controller().use(previewRevision: preview.revision, operationID: "repair-first"), .failure(.applying))
+        carrierFails = true
+        XCTAssertEqual(controller().reconcile(), .failure(.applying))
+        XCTAssertTrue(effects.isEmpty, "lost carrier cannot authorize a new release on replay")
+        XCTAssertTrue(try ledger().peek().get().emergencyRecovery?.releasePending == true)
+        carrierFails = false
+        _ = try controller().reconcile().get()
+        XCTAssertTrue(effects.contains("release"))
+        XCTAssertEqual(try ledger().peek().get().operations.filter { $0.kind == "pass" }.count, 1)
+    }
+
     func testSecondRedemptionCannotExtendRecoveryPC45() throws {
         _ = try use()
         advance(500)
@@ -367,10 +383,12 @@ final class FlintEmergencyPassControllerTests: XCTestCase {
     }
 
     func testApplicationDelayPastExpiryImmediatelyResumesAndNeverRearmsRecovery() throws {
+        let acceptedAt = now
         advanceDuringRelease = 4000
         let status = try use()
         XCTAssertFalse(status.pass.isRecovering)
-        XCTAssertEqual(registered.count, 1, "only the original pre-commit carrier; no new recovery after expiry")
+        XCTAssertTrue(registrationTimes.allSatisfy { $0 < acceptedAt.addingTimeInterval(3600) },
+                      "pre-commit arm and pre-release verification only; no new recovery after expiry")
         XCTAssertTrue(effects.contains("resume"))
         XCTAssertEqual(try ledger().read().get().pass.cooldownRemaining, 600800)
     }

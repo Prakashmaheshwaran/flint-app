@@ -634,6 +634,14 @@ public final class FlintEmergencyPassController {
         }
         var recovering = false
         do {
+            // The pre-commit carrier may have disappeared (or an ambiguous write stopped it).
+            // Verify/repair it before any release on replay, never after clearing the stores.
+            var instant = FlintLedgerInstant(clock: env.clock)
+            var current = snapshot.pass.status(at: instant, hasActiveCommitment: true)
+            if current.isRecovering {
+                try env.registerCarrier(recovery.carrierName, instant.wall,
+                    instant.wall.addingTimeInterval(current.recoveryRemaining))
+            }
             if recovery.releasePending {
                 // Terminations remain final even after reboot/early resume. Only the exact
                 // committed session IDs may be ended, so a later session is never cleared.
@@ -649,14 +657,8 @@ public final class FlintEmergencyPassController {
                     if snapshot.pass.status(at: .init(clock: env.clock), hasActiveCommitment: true).isRecovering { throw error }
                 }
             }
-            var instant = FlintLedgerInstant(clock: env.clock)
-            var current = snapshot.pass.status(at: instant, hasActiveCommitment: true)
-            if current.isRecovering {
-                try env.registerCarrier(recovery.carrierName, instant.wall,
-                    instant.wall.addingTimeInterval(current.recoveryRemaining))
-                instant = .init(clock: env.clock)
-                current = snapshot.pass.status(at: instant, hasActiveCommitment: true)
-            }
+            instant = .init(clock: env.clock)
+            current = snapshot.pass.status(at: instant, hasActiveCommitment: true)
             recovering = current.isRecovering
             if !recovering && recovery.resumePending {
                 try env.resume(snapshot, instant)
