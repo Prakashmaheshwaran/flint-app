@@ -8,13 +8,21 @@ public struct FlintOpenCreditContext {
     public var blockingContributors: [String]
     public var restoration: FlintOpenCreditRestoration?
     public var fingerprints: [String: String]
+    public var scopes: [String: String]
+    public var activities: [String: String]
     public init(coveringCaps: [String: Int], targetKeys: Set<String>, blockedBy: FlintOpenCreditBlock? = nil,
                 blockingContributors: [String] = [], restoration: FlintOpenCreditRestoration? = nil,
-                fingerprints: [String: String] = [:]) {
+                fingerprints: [String: String] = [:], scopes: [String: String]? = nil,
+                activities: [String: String]? = nil) {
         self.coveringCaps = coveringCaps; self.targetKeys = targetKeys; self.blockedBy = blockedBy
         self.blockingContributors = blockingContributors
         self.restoration = restoration
         self.fingerprints = fingerprints
+        self.scopes = scopes ?? fingerprints
+        self.activities = activities ?? coveringCaps.mapValues { _ in "legacy" }
+    }
+    func authorizes(_ grant: FlintOpenCreditGrant) -> Bool {
+        grant.authorizes(caps: coveringCaps, fingerprints: fingerprints, scopes: scopes, activities: activities)
     }
 }
 
@@ -29,14 +37,21 @@ public final class FlintOpenCreditService {
     private let release: (FlintOpenCreditGrant) throws -> Void
     private let reshield: (FlintOpenCreditGrant) -> Void
     private let stop: (String) -> Void
+    private let transition: (() -> Void) -> Bool
+    private let authorized: (FlintOpenCreditGrant) -> Bool
+    private let unavailable: () -> Void
 
     public init(ledger: FlintProtectionLedger, clock: FlintClock,
                 context: @escaping () -> FlintOpenCreditContext?,
                 register: @escaping (FlintOpenCreditGrant, TimeInterval) throws -> Void,
                 registered: @escaping (String) -> Bool, release: @escaping (FlintOpenCreditGrant) throws -> Void,
-                reshield: @escaping (FlintOpenCreditGrant) -> Void, stop: @escaping (String) -> Void) {
+                reshield: @escaping (FlintOpenCreditGrant) -> Void, stop: @escaping (String) -> Void,
+                transition: @escaping (() -> Void) -> Bool = { body in body(); return true },
+                authorized: @escaping (FlintOpenCreditGrant) -> Bool = { _ in true },
+                unavailable: @escaping () -> Void = {}) {
         self.ledger = ledger; self.clock = clock; self.context = context; self.register = register
         self.registered = registered; self.release = release; self.reshield = reshield; self.stop = stop
+        self.transition = transition; self.authorized = authorized; self.unavailable = unavailable
     }
 
     /// Does not consume, register, or release. Advancing a snapshot never replaces the ledger.
@@ -50,16 +65,26 @@ public final class FlintOpenCreditService {
         }
         return state.openCreditPreview(target: target, caps: Array(context.coveringCaps.values),
             blockedBy: context.blockedBy, at: now, contributors: context.blockingContributors,
-            coveringCauseIDs: Set(context.coveringCaps.keys))
+            coveringCauseIDs: Set(context.coveringCaps.keys), authorized: context.authorizes)
     }
 
     public func accept(target: String, operationID: String) -> Result<FlintOpenCreditReceipt, FlintOpenCreditRefusal> {
+        var result: Result<FlintOpenCreditReceipt, FlintOpenCreditRefusal> = .failure(.denied(.unavailable))
+        guard transition({ result = acceptLocked(target: target, operationID: operationID) }) else {
+            return .failure(.denied(.unavailable))
+        }
+        return result
+    }
+
+    private func acceptLocked(target: String, operationID: String) -> Result<FlintOpenCreditReceipt, FlintOpenCreditRefusal> {
         var newRegistration: String?
         let committed = ledger.transaction { state -> Result<FlintOpenCreditReceipt, FlintOpenCreditRefusal> in
             guard let context = self.context(), let restoration = context.restoration else { return .failure(.denied(.unavailable)) }
             let now = FlintLedgerInstant(clock: self.clock)
             return state.acceptOpenCredit(target: target, operationID: operationID,
                 coveringCaps: context.coveringCaps, coveringFingerprints: context.fingerprints,
+                coveringScopes: context.scopes,
+                coveringActivities: context.activities,
                 targetKeys: context.targetKeys, restoration: restoration, at: now,
                 setupCalendar: self.clock.calendar(),
                 blocking: { context.blockedBy }, register: { grant in
@@ -91,7 +116,7 @@ public final class FlintOpenCreditService {
                 at: FlintLedgerInstant(clock: self.clock), targetKeys: context.targetKeys, reshield: self.reshieldAndStop),
                 let grant = state.openCredits.grants[receipt.grant.targetKey],
                 grant.operationID == receipt.grant.operationID else { return .failure(.denied(.applying)) }
-            guard context.blockedBy == nil, Set(context.coveringCaps.keys).isSubset(of: grant.coveredCauses) else {
+            guard context.blockedBy == nil, context.authorizes(grant) else {
                 return .failure(.denied(.applying))
             }
             do {
@@ -107,7 +132,7 @@ public final class FlintOpenCreditService {
                 return .failure(.denied(.applying))
             }
             guard let current = self.context(), current.blockedBy == nil,
-                  Set(current.coveringCaps.keys).isSubset(of: grant.coveredCauses) else {
+                  current.authorizes(grant) else {
                 return .failure(.denied(.applying))
             }
             // Native store writes occur while the same lock used by expiry is held.
@@ -125,6 +150,12 @@ public final class FlintOpenCreditService {
     /// Exact grant identity only. Early callbacks keep the logical deadline; a missed warning
     /// at carrier end is recorded as recovery rather than an on-time five-minute result.
     public func reconcile(activity: String? = nil, callback: Callback? = nil) -> Bool {
+        var result = false
+        guard transition({ result = reconcileLocked(activity: activity, callback: callback) }) else { return false }
+        return result
+    }
+
+    private func reconcileLocked(activity: String?, callback: Callback?) -> Bool {
         let result = ledger.transaction { state -> Bool in
             // Expiry remains possible using the frozen target when saved rules are corrupt.
             // New acceptance still requires a readable live context above.
@@ -142,6 +173,12 @@ public final class FlintOpenCreditService {
                     at: now.wall))
             }
             for grant in Array(state.openCredits.grants.values) {
+                guard self.authorized(grant) else {
+                    self.reshieldAndStop(grant)
+                    state.openCredits.grants[grant.targetKey] = nil
+                    state.openCredits.carrierCheckpoints[grant.targetKey] = nil
+                    continue
+                }
                 // Warnings before the elapsed deadline (including clock edits) must re-arm.
                 // Do not re-register on intervalDidStart: that would create a callback loop.
                 let repair = !self.registered(grant.activityName) ||
@@ -164,7 +201,9 @@ public final class FlintOpenCreditService {
             }
             return true
         }
-        return (try? result.get()) ?? false
+        let success = (try? result.get()) ?? false
+        if !success { unavailable() }
+        return success
     }
 
     private func reshieldAndStop(_ grant: FlintOpenCreditGrant) {

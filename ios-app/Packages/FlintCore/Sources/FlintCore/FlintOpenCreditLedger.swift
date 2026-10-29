@@ -66,6 +66,9 @@ public struct FlintOpenCreditGrant: Codable, Equatable, Sendable {
     public let coveredCauses: Set<String>
     /// Effective active fields at acceptance, excluding cosmetic/queued template metadata.
     public let coveredFingerprints: [String: String]
+    public let coveredScopes: [String: String]
+    public let coveredCaps: [String: Int]
+    public let coveredActivities: [String: String]
     /// Exact local token/store snapshot, pruned with the grant. Never exported to status.
     public let restoration: FlintOpenCreditRestoration
     public var activityName: String {
@@ -75,7 +78,10 @@ public struct FlintOpenCreditGrant: Codable, Equatable, Sendable {
     var isValid: Bool {
         !targetKey.isEmpty && !operationID.isEmpty && !coveredCauses.isEmpty && coveredCauses.count <= 64 &&
         Set(coveredFingerprints.keys) == coveredCauses &&
+        Set(coveredScopes.keys) == coveredCauses && Set(coveredCaps.keys) == coveredCauses &&
+        Set(coveredActivities.keys) == coveredCauses &&
         coveredFingerprints.values.allSatisfy({ !$0.isEmpty && $0.count <= 128 }) &&
+        coveredScopes.values.allSatisfy({ !$0.isEmpty && $0.count <= 128 }) &&
         duration.isFinite && duration > 0 && duration <= 300 && grantedAt.monotonic.isFinite &&
         grantedAt.monotonic >= 0 && deadline.timeIntervalSince1970.isFinite &&
         abs(deadline.timeIntervalSince(grantedAt.wall) - duration) < 0.001 &&
@@ -84,6 +90,35 @@ public struct FlintOpenCreditGrant: Codable, Equatable, Sendable {
     public func remaining(at now: FlintLedgerInstant) -> TimeInterval {
         guard isValid, let elapsed = grantedAt.elapsedForRelease(until: now), elapsed.isFinite else { return 0 }
         return max(0, duration - elapsed)
+    }
+    /// Cap decreases alone preserve planned access. Every other effective field, including
+    /// the active registration revision, must still match; a queued template is excluded.
+    func authorizes(caps: [String: Int], fingerprints: [String: String], scopes: [String: String],
+                    activities: [String: String]) -> Bool {
+        guard Set(caps.keys) == coveredCauses else { return false }
+        return caps.allSatisfy { id, cap in
+            coveredFingerprints[id] == fingerprints[id] && fingerprints[id] != nil ||
+                (coveredScopes[id] == scopes[id] && scopes[id] != nil &&
+                 coveredCaps[id].map { cap < $0 } == true &&
+                 Self.sameOrAdvancedActivity(from: coveredActivities[id], to: activities[id]))
+        }
+    }
+    func authorizes(cause: String, cap: Int, fingerprint: String, scope: String, activity: String) -> Bool {
+        var caps = coveredCaps, fingerprints = coveredFingerprints, scopes = coveredScopes, activities = coveredActivities
+        guard coveredCauses.contains(cause) else { return false }
+        caps[cause] = cap; fingerprints[cause] = fingerprint; scopes[cause] = scope; activities[cause] = activity
+        return authorizes(caps: caps, fingerprints: fingerprints, scopes: scopes, activities: activities)
+    }
+    private static func sameOrAdvancedActivity(from old: String?, to new: String?) -> Bool {
+        guard let old, let new else { return false }
+        if old == new { return true }
+        func parts(_ name: String) -> (String, Int)? {
+            guard let marker = name.range(of: ".r", options: .backwards),
+                  let revision = Int(name[marker.upperBound...]) else { return nil }
+            return (String(name[..<marker.lowerBound]), revision)
+        }
+        guard let before = parts(old), let after = parts(new) else { return false }
+        return before.0 == after.0 && after.1 > before.1
     }
 }
 
@@ -290,7 +325,8 @@ extension FlintLedgerState {
 
     public func openCreditPreview(target: String, caps: [Int], blockedBy: FlintOpenCreditBlock?,
                                   at now: FlintLedgerInstant, contributors: [String] = [],
-                                  coveringCauseIDs: Set<String>? = nil) -> FlintOpenCreditPreview {
+                                  coveringCauseIDs: Set<String>? = nil,
+                                  authorized: ((FlintOpenCreditGrant) -> Bool)? = nil) -> FlintOpenCreditPreview {
         let cap = caps.min()
         guard let cap else { return .init(remaining: nil, cap: nil, blockedBy: .notOpenLimited) }
         guard openCredits.isValid, openCredits.availability == .ready else {
@@ -302,7 +338,8 @@ extension FlintLedgerState {
         let remaining = max(0, cap) > counter.used ? max(0, cap) - counter.used : 0
         let grant = openCredits.grants[target].flatMap { $0.remaining(at: now) > 0 ? $0 : nil }
         let additionalOpenCause = grant.map { grant in
-            coveringCauseIDs.map { !$0.isSubset(of: grant.coveredCauses) } ?? false
+            (coveringCauseIDs.map { !$0.isSubset(of: grant.coveredCauses) } ?? false) ||
+                (authorized.map { !$0(grant) } ?? false)
         } ?? false
         return .init(remaining: remaining, cap: cap,
                      blockedBy: blockedBy ?? (additionalOpenCause ? .otherContributor :
@@ -317,13 +354,23 @@ extension FlintLedgerState {
     /// One atomic acceptance. `register` must succeed before consumption; failure spends
     /// nothing and never releases. Callers release only after this transaction is durable.
     public mutating func acceptOpenCredit(
-        target: String, operationID: String, coveringCaps: [String: Int], coveringFingerprints: [String: String], targetKeys: Set<String>,
+        target: String, operationID: String, coveringCaps: [String: Int], coveringFingerprints: [String: String],
+        coveringScopes: [String: String]? = nil, coveringActivities: [String: String]? = nil, targetKeys: Set<String>,
         restoration: FlintOpenCreditRestoration,
         at now: FlintLedgerInstant, setupCalendar: Calendar? = nil, blocking: () -> FlintOpenCreditBlock?,
         register: (FlintOpenCreditGrant) throws -> Void, reshield: (FlintOpenCreditGrant) -> Void
     ) -> Result<FlintOpenCreditReceipt, FlintOpenCreditRefusal> {
         guard reconcileOpenCredits(at: now, targetKeys: targetKeys, setupCalendar: setupCalendar, reshield: reshield) else {
             return .failure(.denied(.unavailable))
+        }
+        let scopes = coveringScopes ?? coveringFingerprints
+        let activities = coveringActivities ?? coveringCaps.mapValues { _ in "legacy" }
+        if let grant = openCredits.grants[target],
+           !grant.authorizes(caps: coveringCaps, fingerprints: coveringFingerprints, scopes: scopes, activities: activities) {
+            reshield(grant)
+            openCredits.grants[target] = nil
+            openCredits.carrierCheckpoints[target] = nil
+            return .failure(.denied(.otherContributor))
         }
         let preview = openCreditPreview(target: target, caps: Array(coveringCaps.values), blockedBy: blocking(),
                                         at: now, coveringCauseIDs: Set(coveringCaps.keys))
@@ -353,13 +400,17 @@ extension FlintLedgerState {
         }
         let duration = min(300, openCredits.resetRemaining)
         guard duration > 0, Set(coveringFingerprints.keys) == Set(coveringCaps.keys),
+              Set(scopes.keys) == Set(coveringCaps.keys),
+              Set(activities.keys) == Set(coveringCaps.keys),
               coveringFingerprints.values.allSatisfy({ !$0.isEmpty && $0.count <= 128 }),
+              scopes.values.allSatisfy({ !$0.isEmpty && $0.count <= 128 }),
               restoration.isValid(target: target, coveredCauses: Set(coveringCaps.keys)) else {
             return .failure(.denied(.unavailable))
         }
         let grant = FlintOpenCreditGrant(targetKey: target, operationID: operationID, grantedAt: now,
             deadline: now.wall.addingTimeInterval(duration), duration: duration, coveredCauses: Set(coveringCaps.keys),
-            coveredFingerprints: coveringFingerprints, restoration: restoration)
+            coveredFingerprints: coveringFingerprints, coveredScopes: scopes,
+            coveredCaps: coveringCaps, coveredActivities: activities, restoration: restoration)
         do { try register(grant) } catch { return .failure(.denied(.registrationFailed)) }
         openCredits.counters[target]!.used += 1
         openCredits.grants[target] = grant

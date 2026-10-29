@@ -18,6 +18,10 @@ final class FlintOpenCreditTests: XCTestCase {
     private var block: FlintOpenCreditBlock?
     private var contributors: [FlintOpenCreditContributor] = []
     private var fingerprintOverride: [String: String]?
+    private var scopeOverride: [String: String]?
+    private var activityOverride: [String: String]?
+    private var transitionAvailable = true
+    private var transitionHeld = false
     private var unavailableContext = false
     private var refuses = false
     private var registrations: [String: TimeInterval] = [:]
@@ -34,6 +38,8 @@ final class FlintOpenCreditTests: XCTestCase {
         block = nil; unavailableContext = false; refuses = false
         contributors = []
         fingerprintOverride = nil
+        scopeOverride = nil; activityOverride = nil
+        transitionAvailable = true; transitionHeld = false
         registrations = [:]; released = []; shielded = []; order = []
     }
     override func tearDown() {
@@ -51,6 +57,8 @@ final class FlintOpenCreditTests: XCTestCase {
         .init(kind: .application, encodedToken: openAppPayload, storeNames: Set(caps.keys.map { "flintO." + $0 }))
     }
     private var fingerprints: [String: String] { fingerprintOverride ?? caps.mapValues { "mock-effective-cap-\($0)" } }
+    private var scopes: [String: String] { scopeOverride ?? caps.mapValues { _ in "mock-effective-scope" } }
+    private var activities: [String: String] { activityOverride ?? caps.mapValues { _ in "flint.openLimit.open-a.r1" } }
     private func advance(_ seconds: TimeInterval) { now = now.addingTimeInterval(seconds); monotonic += seconds }
     private func ledger(importing legacy: FlintLegacyValue = .absent, established: Bool = false) -> FlintProtectionLedger {
         FlintProtectionLedger(directory: directory, clock: clock, lockTimeout: 10,
@@ -65,12 +73,13 @@ final class FlintOpenCreditTests: XCTestCase {
             let blocking = FlintOpenCreditBlocking.query(target: openAppKey, kind: .application, stores: self.contributors)
             return self.unavailableContext ? nil : .init(coveringCaps: self.caps, targetKeys: self.targets,
                 blockedBy: self.block ?? blocking.reason, blockingContributors: blocking.contributors,
-                restoration: self.restoration, fingerprints: self.fingerprints)
+                restoration: self.restoration, fingerprints: self.fingerprints, scopes: self.scopes, activities: self.activities)
         }, register: { grant, remaining in
             self.order.append("register")
             if self.refuses { throw FlintOpenCreditRefusal.denied(.registrationFailed) }
             self.registrations[grant.activityName] = remaining
         }, registered: { self.registrations[$0] != nil }, release: { grant in
+            XCTAssertTrue(self.transitionHeld, "outer rule-transition lock spans commit and native release")
             self.order.append("release")
             self.released.append(grant.targetKey)
             // A separate transaction would be nested here, so inspect durable bytes directly.
@@ -79,7 +88,16 @@ final class FlintOpenCreditTests: XCTestCase {
             XCTAssertEqual(durable.openCredits.grants[grant.targetKey], grant, "persist before native release")
             XCTAssertNotNil(self.registrations[grant.activityName], "expiry registered before native release")
         }, reshield: { grant in self.shielded.append(grant.targetKey); self.order.append("reshield") },
-        stop: { self.registrations[$0] = nil })
+        stop: { self.registrations[$0] = nil }, transition: { body in
+            guard self.transitionAvailable else { return false }
+            self.transitionHeld = true
+            defer { self.transitionHeld = false }
+            body()
+            return true
+        }, authorized: { grant in
+            grant.authorizes(caps: self.caps, fingerprints: self.fingerprints,
+                             scopes: self.scopes, activities: self.activities)
+        })
     }
     private func accepted(_ op: String = UUID().uuidString, using service: FlintOpenCreditService? = nil) throws -> FlintOpenCreditReceipt {
         try (service ?? self.service()).accept(target: openAppKey, operationID: op).get()
@@ -270,12 +288,43 @@ final class FlintOpenCreditTests: XCTestCase {
     func testCapDecreaseAloneDoesNotRevokeOrExtendAnAcceptedGrant() throws {
         let first = try accepted()
         caps = ["open-a": 0]
+        activityOverride = ["open-a": "flint.openLimit.open-a.r2"]
         advance(100)
         let next = try accepted()
         XCTAssertEqual(next.grant, first.grant)
         XCTAssertEqual(next.remaining, 0)
         XCTAssertEqual(next.grant.remaining(at: instant), 200)
         XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
+    }
+
+    func testCommittedTierOrSelectionChangeClosesGrantWithoutNewCharge() throws {
+        let first = try accepted("first")
+        fingerprintOverride = ["open-a": "new-tier"]
+        scopeOverride = ["open-a": "new-tier-scope"]
+        activityOverride = ["open-a": "flint.openLimit.open-a.r2"]
+        XCTAssertEqual(service().preview(target: openAppKey).blockedBy, .otherContributor)
+        denied(.otherContributor, op: "stale-revision")
+        XCTAssertEqual(shielded, [openAppKey])
+        XCTAssertNil(registrations[first.grant.activityName])
+        XCTAssertNil(try state().openCredits.grants[openAppKey])
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
+    }
+
+    func testRecreatedCauseOrUnclassifiedRevisionCannotReuseLiveGrant() throws {
+        _ = try accepted()
+        caps = ["open-a": 2]
+        activityOverride = ["open-a": "flint.openLimit.open-a.r0"]
+        denied(.otherContributor)
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
+        XCTAssertEqual(shielded, [openAppKey])
+    }
+
+    func testUnavailableOuterTransitionLockNeverTouchesLedgerRegistrarOrStores() throws {
+        transitionAvailable = false
+        denied(.unavailable)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("ledger.json").path))
+        XCTAssertTrue(order.isEmpty)
+        XCTAssertNil(marker)
     }
 
     func testPC35MidnightClipsAndReshieldsBeforeNewPeriodAcceptance() throws {
@@ -445,6 +494,24 @@ final class FlintOpenCreditTests: XCTestCase {
         XCTAssertEqual(shielded, [openAppKey])
         XCTAssertTrue(try state().openCredits.grants.isEmpty)
         XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
+    }
+
+    func testCorruptLedgerCarrierInvokesOnlyScopedKnownRuleRecoveryWithoutRefill() throws {
+        let first = try accepted()
+        var stores: [String: Set<String>] = ["flintO.open-a": ["sibling"], "session": ["unrelated"]]
+        let bytes = Data("corrupt ledger".utf8)
+        let file = directory.appendingPathComponent("ledger.json")
+        try bytes.write(to: file)
+        let recovery = FlintOpenCreditService(ledger: ledger(), clock: clock,
+            context: { nil }, register: { _, _ in XCTFail("unavailable never registers") },
+            registered: { _ in false }, release: { _ in XCTFail("unavailable never releases") },
+            reshield: { _ in XCTFail("corrupt grant cannot supply a target") }, stop: { _ in },
+            unavailable: { stores["flintO.open-a", default: []].insert(openAppKey) })
+        XCTAssertFalse(recovery.reconcile(activity: first.grant.activityName, callback: .warning))
+        XCTAssertEqual(stores["flintO.open-a"], ["sibling", openAppKey])
+        XCTAssertEqual(stores["session"], ["unrelated"])
+        XCTAssertEqual(try Data(contentsOf: file), bytes)
+        XCTAssertEqual(marker, first.grant.grantedAt.wall)
     }
 
     func testCorruptRuleJSONMidGrantRestoresOnlyFrozenTargetAndCoveredStores() throws {

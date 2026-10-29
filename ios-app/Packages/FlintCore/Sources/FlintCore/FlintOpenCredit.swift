@@ -40,7 +40,11 @@ public enum FlintOpenCredit {
         guard activity == nil || isCarrier(activity!) else { return false }
         // Grant expiry uses its frozen target even when rules are unreadable. Bulk/legacy
         // re-arming belongs to the controller, after validated registration observation.
-        return service(target: nil, blockedBy: { .init(reason: nil, contributors: []) })?.reconcile(activity: activity, callback: callback) ?? false
+        guard let service = service(target: nil, blockedBy: { .init(reason: nil, contributors: []) }) else {
+            restoreObservedRules()
+            return false
+        }
+        return service.reconcile(activity: activity, callback: callback)
     }
 
     static func importLegacy(into state: inout FlintLedgerState, defaults: UserDefaults,
@@ -90,13 +94,16 @@ public enum FlintOpenCredit {
             let covering = rules.filter { rule in rule.enabled && target.map { keys(for: rule).contains($0) } == true }
             guard let fingerprints = try? Dictionary(uniqueKeysWithValues: covering.map {
                 ($0.id, try effectiveFingerprint(for: $0))
+            }), let scopes = try? Dictionary(uniqueKeysWithValues: covering.map {
+                ($0.id, try effectiveFingerprint(for: $0, includingCap: false))
             }) else { return nil }
             let blocked = blockedBy()
             return .init(coveringCaps: Dictionary(uniqueKeysWithValues: covering.map { ($0.id, $0.opensAllowed) }),
                          targetKeys: targetKeys(rules), blockedBy:
                             target == "flint.openLimit.unencodable" ? .identityNeedsReselection : blocked.reason,
                          blockingContributors: blocked.contributors,
-                         restoration: restoration(Set(covering.map(\.storeName))), fingerprints: fingerprints)
+                         restoration: restoration(Set(covering.map(\.storeName))), fingerprints: fingerprints, scopes: scopes,
+                         activities: Dictionary(uniqueKeysWithValues: covering.map { ($0.id, $0.activityName) }))
         }, register: { grant, remaining in
             guard remaining > 0 else { throw FlintOpenCreditRefusal.denied(.unavailable) }
             let plan = FlintOpenCreditCarrierPlan(start: Date(), remaining: remaining)
@@ -109,7 +116,13 @@ public enum FlintOpenCredit {
             }
         }, registered: { name in
             center.activities.contains(DeviceActivityName(name)) && center.schedule(for: DeviceActivityName(name)) != nil
-        }, release: release, reshield: reshield, stop: { FlintScheduling.stopMonitoring([$0]) })
+        }, release: release, reshield: reshield, stop: { FlintScheduling.stopMonitoring([$0]) },
+        authorized: { grant in
+            guard let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup),
+                  Set(rules.map(\.id)).count == rules.count else { return false }
+            let covering = rules.filter { $0.enabled && keys(for: $0).contains(grant.targetKey) }
+            return Set(covering.map(\.id)) == grant.coveredCauses && covering.allSatisfy { authorizes(grant, rule: $0) }
+        }, unavailable: restoreObservedRules)
     }
 
     private static func targetKeys(_ rules: [FlintOpenLimitRule]) -> Set<String> {
@@ -121,13 +134,21 @@ public enum FlintOpenCredit {
     }
     /// `activityName` carries the active activityRevision after rule-gating migration. The
     /// queued template revision/snapshot and display name never change this authorization.
-    static func effectiveFingerprint(for rule: FlintOpenLimitRule) throws -> String {
+    static func effectiveFingerprint(for rule: FlintOpenLimitRule, includingCap: Bool = true) throws -> String {
         func tokens<T: Encodable>(_ values: Set<T>) throws -> [String] {
             let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
             return try values.map { try encoder.encode([$0]).base64EncodedString() }.sorted()
         }
-        var parts = [rule.id, rule.activityName, rule.breakLevel.rawValue, String(rule.opensAllowed),
+        var parts = [rule.id, includingCap ? rule.activityName : "active-revision", rule.breakLevel.rawValue,
+                     includingCap ? String(rule.opensAllowed) : "quota",
                      String(rule.enabled), String(rule.selection.includeEntireCategory)]
+        // Select only incarnation/time-basis fields; queued metadata and template revisions
+        // are deliberately absent. This also works across the additive rule-gating schema.
+        let fields = try JSONSerialization.jsonObject(with: JSONEncoder().encode(rule)) as? [String: Any]
+        if let metadata = fields?["protection"] as? [String: Any] {
+            let start = (metadata["occurrence"] as? [String: Any])?["start"]
+            parts += [String(describing: start ?? "unknown"), String(describing: metadata["timeZoneID"] ?? "unknown")]
+        }
         parts += ["applications"] + (try tokens(rule.selection.applicationTokens))
         parts += ["categories"] + (try tokens(rule.selection.categoryTokens))
         parts += ["domains"] + (try tokens(rule.selection.webDomainTokens))
@@ -138,6 +159,7 @@ public enum FlintOpenCredit {
             throw FlintOpenCreditRefusal.denied(.applying)
         }
         for rule in rules where rule.enabled && grant.coveredCauses.contains(rule.id) {
+            guard authorizes(grant, rule: rule) else { throw FlintOpenCreditRefusal.denied(.applying) }
             let store = ManagedSettingsStore(named: .init(rule.storeName))
             var apps = store.shield.applications ?? []
             var domains = store.shield.webDomains ?? []
@@ -145,6 +167,28 @@ public enum FlintOpenCredit {
             domains = domains.filter { FlintOpenLimit.key(for: $0) != grant.targetKey }
             store.shield.applications = apps.isEmpty ? nil : apps
             store.shield.webDomains = domains.isEmpty ? nil : domains
+        }
+    }
+    private static func authorizes(_ grant: FlintOpenCreditGrant, rule: FlintOpenLimitRule) -> Bool {
+        guard let fingerprint = try? effectiveFingerprint(for: rule),
+              let scope = try? effectiveFingerprint(for: rule, includingCap: false) else { return false }
+        return grant.authorizes(cause: rule.id, cap: rule.opensAllowed, fingerprint: fingerprint, scope: scope,
+                                activity: rule.activityName)
+    }
+    /// A corrupt ledger cannot identify its hashed carrier. Restore only readable rules
+    /// whose daily registration is already observed; never create an unarmed/global shield.
+    private static func restoreObservedRules() {
+        guard let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup),
+              Set(rules.map(\.id)).count == rules.count else { return }
+        let center = DeviceActivityCenter()
+        var grants: [String: FlintOpenCreditGrant] = [:]
+        if let ledger = FlintProtectionLedger.appGroup(), case let .success(state) = ledger.peek(), state.openCredits.isValid {
+            grants = state.openCredits.grants
+        }
+        for rule in rules where rule.enabled && FlintSelectionValidation.issue(for: rule.selection, context: .openLimit) == nil &&
+            center.activities.contains(DeviceActivityName(rule.activityName)) &&
+            center.schedule(for: DeviceActivityName(rule.activityName)) != nil {
+            apply(rule, grants: grants)
         }
     }
     private static func reshield(_ grant: FlintOpenCreditGrant) {
@@ -177,7 +221,7 @@ public enum FlintOpenCredit {
         let now = FlintLedgerInstant(clock: .system)
         let center = DeviceActivityCenter()
         func covered(_ key: String) -> Bool {
-            guard let grant = grants[key], grant.coveredCauses.contains(rule.id), grant.remaining(at: now) > 0,
+            guard let grant = grants[key], authorizes(grant, rule: rule), grant.remaining(at: now) > 0,
                   center.schedule(for: DeviceActivityName(grant.activityName)) != nil else { return false }
             return true
         }
