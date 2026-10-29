@@ -169,7 +169,10 @@ omits it in v1 (a shield-button tap is not an open count).
   a diagnostic and surface as the absent/degraded states above.
 - **Clear history** (user action in You/Settings, with confirmation): replaces the log with
   an empty one, sets `clearedAt`, and keeps only the events of a currently running session
-  so its completion still records.
+  so its completion still records. Android preserves the timestamp high-water mark across
+  wall rollback and trims removed session IDs from retained shared pass records. Durable
+  owner retries for removed identities are acknowledged without restoring those records;
+  retained running STARTED identities may still receive late authoritative evidence.
 - **Persisted-data compatibility**: existing session/rule stores are not changed. Upgrading
   users get `historyStart` = first launch of a build with this store; earlier days show "no
   data". The legacy iOS `flint.sessions` key is left untouched.
@@ -206,8 +209,9 @@ events; it never manufactures an end from a missed callback or a missing active 
 
 ### Android — observed transitions
 
-The app process observes `BlockRulesStore.rules` (as `ActiveRulesBridge` already does) and
-diffs successfully read session-rule snapshots against the history's open sessions: a new
+The app process observes the public `ActiveRulesHolder.dataStoreState` read-time anchored
+projection and rechecks it under the history transaction lock before admitting changes.
+It diffs successfully read session-rule snapshots against history's open sessions: a new
 **active** session rule → `started` (start instant from the `session-timer-<epochMs>-…` id,
 else observation time; expired rules with no recorded start create nothing); a present rule
 whose `expiresAt` differs from the effective planned end → `rescheduled`; a present, enabled
@@ -215,7 +219,13 @@ rule is never completed from an older planned end;
 a session rule gone with `now >= expiresAt` stays unconfirmed until the lifecycle owner
 records a terminal; gone earlier during live observation →
 `ended_early(route: unknown)` at observation time — observed in-process, so this one
-credits time to the observation instant. A cold-start missing row emits no terminal. Explicit
+credits time to the observation instant. An owner-inactive occurrence instead awaits its
+durable terminal; a stale future-looking raw expiry cannot recreate its STARTED after clear.
+Unavailable owner reads preserve the last good active set and expose a diagnostic.
+A cold-start missing row emits no terminal. The app consumes the editor owner's natural
+Timer outbox on an independent IO loop, appending the authoritative final deadline and
+terminal atomically before acknowledgement. Stable IDs make failed-ack replay idempotent.
+Explicit
 route, break, pass and `open_intercepted` emission needs one call each in
 `BlockScreenCoordinator` / the rules store, added only with lane C's agreement.
 
