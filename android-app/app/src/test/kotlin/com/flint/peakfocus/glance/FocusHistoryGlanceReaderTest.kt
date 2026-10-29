@@ -1,7 +1,10 @@
 package com.flint.peakfocus.glance
 
 import com.flint.peakfocus.core.history.FocusDay
+import com.flint.peakfocus.core.history.FocusHistoryAggregator
 import com.flint.peakfocus.core.history.FocusSummary
+import com.flint.peakfocus.core.history.HistoryEvent
+import com.flint.peakfocus.core.history.HistorySnapshot
 import com.flint.peakfocus.core.history.HistoryAvailability
 import java.io.IOException
 import java.time.LocalDate
@@ -74,5 +77,25 @@ class FocusHistoryGlanceReaderTest {
         val reader = FocusHistoryGlanceReader(source, backgroundScope) { day }
         runCurrent()
         assertEquals("Focus history unavailable", reader.read().text)
+    }
+
+    @Test fun publicDeliveryLossReachesGlanceWithoutChangingTheRecordedTotal() = runTest {
+        val start = day.atStartOfDay(ZoneId.of("UTC")).toInstant().toEpochMilli()
+        val snapshot = HistorySnapshot(events = listOf(
+            HistoryEvent(type = "started", session = "session-a", at = start, tz = "UTC",
+                plannedEnd = start + 300_000, tier = "easy", source = "manual", name = "Focus"),
+            HistoryEvent(type = "completed", session = "session-a", at = start + 300_000, tz = "UTC"),
+        ), historyStart = start, readable = true)
+        val recorded = FocusHistoryAggregator.summarize(snapshot, start + 600_000, ZoneId.of("UTC"), emptySet())
+        val source = MutableStateFlow<FocusSummary?>(recorded)
+        val reader = FocusHistoryGlanceReader(source, backgroundScope) { day }
+        runCurrent()
+        assertEquals("5m", reader.read().text)
+        assertNull(reader.read().note)
+        source.value = recorded.copy(availability = HistoryAvailability.DEGRADED, lifecycleEventsMissing = true)
+        runCurrent()
+        assertEquals("5m", reader.read().text)
+        assertEquals("Some focus events may be missing", reader.read().note)
+        assertEquals(day, reader.read().day)
     }
 }

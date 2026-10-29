@@ -320,8 +320,8 @@ It does not also record breaks or passes after durable registration. Natural Tim
 delivery is a separate owner outbox and app adapter. This consumer does not prove that every
 production break boundary emits an event: start, deadline, resume, supersession and recovery
 producer coverage must be verified in C's implementation. C also owns bounded-outbox loss
-diagnostics. The app observes `ProtectionStatus.detectors.degradedReasons` for
-`lifecycle-events-dropped` and marks history summaries degraded with the note "Some focus
+diagnostics. The app observes a positive `ProtectionStatus.lifecycleEventsDropped` or
+`detectors.degradedReasons` containing `lifecycle-events-dropped` and marks history summaries degraded with the note "Some focus
 events may be missing". That observation is sticky within the process; a later loading or
 stale status cannot erase known loss, and C persists its counter across process restarts.
 Existing totals stay unchanged; no events, loss start date or missing duration are invented.

@@ -251,8 +251,10 @@ class ProtectionHistoryConsumerTest {
         assertFalse(events.joinToString("\n", transform = HistoryCodec::encode).contains("private-boot-identity"))
     }
 
-    @Test fun historyLossUsesOnlyTheOwnersPublicDiagnosticReason() {
+    @Test fun historyLossUsesTheOwnersPublicCountOrDiagnosticReason() {
         assertFalse(hasMissingProtectionEvents(ProtectionStatus.UNKNOWN))
+        assertTrue(hasMissingProtectionEvents(ProtectionStatus.UNKNOWN.copy(lifecycleEventsDropped = 1)))
+        assertFalse(hasMissingProtectionEvents(ProtectionStatus.UNKNOWN.copy(lifecycleEventsDropped = 0)))
         val status = ProtectionStatus.UNKNOWN.copy(detectors = ProtectionStatus.UNKNOWN.detectors.copy(
             degradedReasons = setOf("lifecycle-events-dropped")))
         assertTrue(hasMissingProtectionEvents(status))
