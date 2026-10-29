@@ -73,6 +73,27 @@ class FocusHistoryIntegrityTest {
             assertEquals(20 * minute, focus(FocusHistoryStore(dir, clock(now)).load(), now))
         }
     }
+    @Test fun clearAndInterruptedRecoveryRemoveClearedIdsFromSharedPassReferences() = runTest {
+        for (phase in listOf<HistoryClearPhase?>(null, HistoryClearPhase.INTENT_COMMITTED, HistoryClearPhase.LOG_REPLACED)) {
+            val dir = temporary.newFolder(); val now = begin + 30 * minute
+            val store = FocusHistoryStore(dir, clock(now))
+            assertTrue(store.append(start()))
+            assertTrue(store.append(start(begin + 10 * minute).copy(id = "start-b", session = "session-b")))
+            assertTrue(store.append(HistoryEvent(type = "completed", session = "session-b", at = begin + 10 * minute, tz = "UTC")))
+            val pass = HistoryEvent(type = "pass_used", session = "global-pass", at = begin + 5 * minute,
+                tz = "UTC", sessions = listOf("session-a", "session-b"), recoveryEnd = begin + 6 * minute)
+            val raw = HistoryCodec.encode(pass).dropLast(1) + ",\"future\":{\"fraction\":1.20}}"
+            assertTrue(store.append(HistoryCodec.decode(raw)))
+            assertNull(store.load().clearedAt)
+            FocusHistoryStore(dir, clock(now), clearPhase = { if (it == phase) error("interrupted") }).clear(setOf("session-a"))
+            val snapshot = FocusHistoryStore(dir, clock(now)).load()
+            assertEquals(now, snapshot.clearedAt)
+            assertEquals(listOf("session-a"), snapshot.events.single { it.type == "pass_used" }.sessions)
+            val log = File(dir, "events.v1.jsonl").readText()
+            assertFalse(log.contains("session-b"))
+            assertTrue(log.contains("\"fraction\":1.20"))
+        }
+    }
     @Test fun FH21_N2_hardCapTrimsOldOwnerWithoutDroppingSharedPassOfRetainedOwner() = runTest {
         val dir = temporary.newFolder(); val now = begin + 30 * minute
         val store = FocusHistoryStore(dir, clock(now))

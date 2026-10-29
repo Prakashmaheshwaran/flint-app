@@ -274,7 +274,17 @@ class FocusHistoryStore(
         } }
     private fun retainForSessions(events: List<HistoryEvent>, retained: Set<String>): List<HistoryEvent> {
         val owners = groupOwners(events.groupBy { it.session })
-        return events.filter { event -> owners.getValue(event.session).any { it in retained } }
+        return events.filter { event -> owners.getValue(event.session).any { it in retained } }.map { event ->
+            if (event.knownType != HistoryEventType.PASS_USED || event.sessions == null) return@map event
+            val references = event.sessions.filter { it in retained }
+            if (references == event.sessions) return@map event
+            // A shared pass may survive for a running session; clear the other IDs
+            // while retaining unrelated forward-compatible fields in its envelope.
+            val line = event.originalLine?.let { original ->
+                FlatJson.encode(FlatJson.decode(original).toMutableMap().apply { put("sessions", references) })
+            }
+            event.copy(sessions = references, originalLine = line)
+        }
     }
 
     private fun quarantine(bytes: ByteArray, label: String = "events") {
