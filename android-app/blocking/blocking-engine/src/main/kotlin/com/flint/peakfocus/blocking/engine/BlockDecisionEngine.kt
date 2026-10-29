@@ -45,8 +45,8 @@ class BlockDecisionEngine {
         // Strictest match wins, not first match: overlapping rules are normal (the legacy
         // quick blocklist projects the same targets a Block Now session freezes), and taking
         // the first would let an EASY rule shadow a HARDCORE session — its free break would
-        // then stand down *all* enforcement for the exemption window. Ties break toward a
-        // rule with a session expiry so the block screen counts down to the real end.
+        // then stand down *all* enforcement for the exemption window. At equal tier, the
+        // latest end wins; an ongoing/unknown end must not promise a finite unblock time.
         var strictest: BlockRule? = null
         var strictestReason = ""
         for (rule in activeRules) {
@@ -74,7 +74,7 @@ class BlockDecisionEngine {
                 else -> null
             } ?: continue
 
-            if (stricterThan(rule, strictest)) {
+            if (stricterThan(rule, strictest, nowEpochMs, nowMinutesOfDay)) {
                 strictest = rule
                 strictestReason = reason
             }
@@ -82,14 +82,18 @@ class BlockDecisionEngine {
         return strictest?.let { Verdict.Block(it.id, strictestReason) } ?: Verdict.Allow
     }
 
-    /** Rule ordering for overlapping blocks: higher tier wins; at equal tier, a timed session
-     *  (defined expiry) beats an open-ended rule so countdowns render the real end. */
-    private fun stricterThan(candidate: BlockRule, incumbent: BlockRule?): Boolean {
+    /** Higher tier, then latest/unknown end, then stable rule ID; input order is irrelevant. */
+    private fun stricterThan(candidate: BlockRule, incumbent: BlockRule?, nowEpochMs: Long, nowMinutesOfDay: Int): Boolean {
         incumbent ?: return true
         if (candidate.breakLevel != incumbent.breakLevel) {
             return candidate.breakLevel.ordinal > incumbent.breakLevel.ordinal
         }
-        return candidate.expiresAtEpochMs != null && incumbent.expiresAtEpochMs == null
+        val candidateEnd = ruleWindowEnd(candidate, nowEpochMs, nowMinutesOfDay)
+        val incumbentEnd = ruleWindowEnd(incumbent, nowEpochMs, nowMinutesOfDay)
+        if (candidateEnd != incumbentEnd) {
+            return candidateEnd == null || (incumbentEnd != null && candidateEnd > incumbentEnd)
+        }
+        return candidate.id < incumbent.id
     }
 
     /** True if [url]'s host equals [domain] or is a subdomain of it. */
