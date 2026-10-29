@@ -1,9 +1,12 @@
 package com.flint.peakfocus.feature.settings
 
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -23,10 +26,10 @@ import org.robolectric.annotation.Config
 class SettingsSemanticsTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
-    private fun row(granted: Boolean) = PermissionRowUi(
+    private fun row(granted: Boolean, affectsEnforcement: Boolean = true) = PermissionRowUi(
         kind = PermissionKind.OVERLAY,
         granted = granted,
-        affectsEnforcement = true,
+        affectsEnforcement = affectsEnforcement,
         title = "Display over other apps",
         role = "Shows the block screen",
         disclosure = "Fixture disclosure",
@@ -35,23 +38,35 @@ class SettingsSemanticsTest {
 
     private fun state(value: String) = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, value)
 
-    @Test fun missingGrantIsOneLabelledStopAndTheFixStaysSeparate() {
-        compose.setContent { FlintTheme { PermissionCard(row(granted = false), onFix = {}) } }
-        val merged = compose.onNodeWithText("Display over other apps", substring = true).assert(state("Off"))
-        // The pill is visual only: the merged row speaks title and role, never "OFF".
+    /** The header is one stop: title and role, plus exactly one On/Off state and no "ON"/"OFF" pill text. */
+    private fun assertOneLabelledHeader(expectedState: String) {
+        val merged = compose.onNodeWithText("Display over other apps", substring = true).assert(state(expectedState))
         val spoken = merged.fetchSemanticsNode().config.getOrElse(SemanticsProperties.Text) { emptyList() }.map { it.text }
         assertEquals(listOf("Display over other apps", "Shows the block screen"), spoken)
-        assertEquals(0, compose.onAllNodesWithText("OFF").fetchSemanticsNodes().size)
-        assertEquals(
-            1,
-            compose.onAllNodes(state("Off"), useUnmergedTree = true).fetchSemanticsNodes().size,
-        )
-        compose.onNodeWithText("Fixture fix").assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription))
+        assertEquals(0, compose.onAllNodesWithText(expectedState.uppercase()).fetchSemanticsNodes().size)
+        assertEquals(1, compose.onAllNodes(state(expectedState), useUnmergedTree = true).fetchSemanticsNodes().size)
+    }
+
+    @Test fun missingGrantIsOneLabelledStopAndTheFixStaysSeparate() {
+        val affectsEnforcement = mutableStateOf(true)
+        var fixes = 0
+        compose.setContent { FlintTheme { PermissionCard(row(false, affectsEnforcement.value), onFix = { fixes++ }) } }
+        listOf(true, false).forEachIndexed { index, required ->
+            compose.runOnIdle { affectsEnforcement.value = required }
+            assertOneLabelledHeader("Off")
+            // Required (filled) and recommended (outlined) fixes are their own actionable stop.
+            val fix = compose.onNodeWithText("Fixture fix")
+                .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription))
+                .assertHasClickAction()
+                .assertIsEnabled()
+            fix.performClick()
+            compose.runOnIdle { assertEquals(index + 1, fixes) }
+        }
     }
 
     @Test fun grantedRowSaysOn() {
         compose.setContent { FlintTheme { PermissionCard(row(granted = true), onFix = {}) } }
-        compose.onNodeWithText("Display over other apps", substring = true).assert(state("On"))
+        assertOneLabelledHeader("On")
         assertEquals(0, compose.onAllNodesWithText("Fixture fix").fetchSemanticsNodes().size)
     }
 
