@@ -119,6 +119,10 @@ DST/weekday boundaries, cursor retention, ongoing accounting, cache deadlines an
 ownership have deterministic JVM coverage. The small screen/permission fixtures here do
 not certify every device or establish a worst-case recovery bound.
 
+For the follow-up service device pass, also check failed foreground startup: catching the
+initial binder exception does not prove Android cannot later deliver an FGS-timeout
+`RemoteServiceException` before `stopSelf` is processed; this platform failure path is unverified.
+
 ## Existing implementation validation
 
 At #88 head `861335a45d289cef7d08e75843629c34c805b76a`, 427 targeted local JVM tests passed

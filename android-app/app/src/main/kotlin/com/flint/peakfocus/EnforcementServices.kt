@@ -1,6 +1,7 @@
 package com.flint.peakfocus
 
 import android.content.Context
+import android.util.Log
 import com.flint.peakfocus.blocking.usagestats.UsageStatsForegroundService
 import com.flint.peakfocus.permissions.UsageAccess
 
@@ -16,7 +17,13 @@ internal const val A11Y_SERVICE_CLASS =
  */
 internal object PathBServiceGate {
     fun sync(context: Context) {
-        if (UsageAccess.isGranted(context)) UsageStatsForegroundService.start(context)
-        else UsageStatsForegroundService.stop(context)
+        val granted = try { UsageAccess.isGranted(context) }
+        catch (failure: RuntimeException) {
+            UsageStatsForegroundService.permissionCheckFailed()
+            Log.w("FlintFallback", "Usage Access observation unavailable", failure)
+            return
+        }
+        if (granted) UsageStatsForegroundService.start(context)
+        else UsageStatsForegroundService.stop(context, setOf("usage-access-missing"))
     }
 }

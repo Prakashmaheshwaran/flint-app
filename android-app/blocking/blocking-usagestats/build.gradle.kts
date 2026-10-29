@@ -7,6 +7,8 @@ android {
     namespace = "com.flint.peakfocus.blocking.usagestats"
     compileSdk = 35
     defaultConfig { minSdk = 23 }
+    buildFeatures { buildConfig = true }
+    testOptions.unitTests.isIncludeAndroidResources = true
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -26,4 +28,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
+    testDebugImplementation(libs.androidx.junit)
+    testDebugImplementation(libs.robolectric)
+    testDebugImplementation(libs.kotlinx.coroutines.test)
 }
