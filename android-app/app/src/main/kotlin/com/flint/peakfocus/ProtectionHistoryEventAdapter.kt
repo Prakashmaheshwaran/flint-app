@@ -2,6 +2,8 @@ package com.flint.peakfocus
 
 import android.content.Context
 import com.flint.peakfocus.blocking.overlay.BlockEventHooks
+import com.flint.peakfocus.blocking.overlay.ProtectionStatus
+import com.flint.peakfocus.blocking.overlay.ProtectionStatusHub
 import com.flint.peakfocus.core.history.FocusHistoryBridge
 import com.flint.peakfocus.core.history.FocusHistoryStore
 import com.flint.peakfocus.core.history.HistoryEvent
@@ -12,13 +14,24 @@ import com.flint.peakfocus.core.model.ProtectionLifecycleKind
 import java.time.ZoneId
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
 /** The app shell connects C's durable outbox to F's independent history store. */
 internal object ProtectionHistoryEventAdapter {
-    fun start(context: Context) {
+    fun start(context: Context, scope: CoroutineScope) {
         BlockEventHooks.registerDurableConsumer(ProtectionHistoryConsumer(FocusHistoryBridge.store(context)))
+        scope.launch {
+            ProtectionStatusHub.status.collect { status ->
+                if (hasMissingProtectionEvents(status)) FocusHistoryBridge.noteLifecycleEventsDropped()
+            }
+        }
     }
 }
+
+/** Consume only the public health projection; no history reader opens C's private ledger. */
+internal fun hasMissingProtectionEvents(status: ProtectionStatus): Boolean =
+    "lifecycle-events-dropped" in status.detectors.degradedReasons
 
 /** Returning true acknowledges the whole projection, including all pass terminals, on disk. */
 internal class ProtectionHistoryConsumer(

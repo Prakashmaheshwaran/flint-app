@@ -1,6 +1,7 @@
 package com.flint.peakfocus
 
 import com.flint.peakfocus.blocking.engine.HarderWaitPolicy
+import com.flint.peakfocus.blocking.overlay.ProtectionStatus
 import com.flint.peakfocus.core.datastore.EditorCommitmentState
 import com.flint.peakfocus.core.datastore.ProtectionCommit
 import com.flint.peakfocus.core.datastore.ProtectionMutation
@@ -248,6 +249,15 @@ class ProtectionHistoryConsumerTest {
         val events = store.load().events
         assertTrue(events.all { it.inferred })
         assertFalse(events.joinToString("\n", transform = HistoryCodec::encode).contains("private-boot-identity"))
+    }
+
+    @Test fun historyLossUsesOnlyTheOwnersPublicDiagnosticReason() {
+        assertFalse(hasMissingProtectionEvents(ProtectionStatus.UNKNOWN))
+        val status = ProtectionStatus.UNKNOWN.copy(detectors = ProtectionStatus.UNKNOWN.detectors.copy(
+            degradedReasons = setOf("lifecycle-events-dropped")))
+        assertTrue(hasMissingProtectionEvents(status))
+        assertFalse(hasMissingProtectionEvents(status.copy(detectors = status.detectors.copy(
+            degradedReasons = setOf("usage-access-missing")))))
     }
 
     /** Real C drain/ack algorithm, with only its transaction backing replaced by a fixture. */
