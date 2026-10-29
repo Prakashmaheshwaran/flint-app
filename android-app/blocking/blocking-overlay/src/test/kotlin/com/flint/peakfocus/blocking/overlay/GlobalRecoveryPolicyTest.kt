@@ -21,7 +21,7 @@ class GlobalRecoveryPolicyTest {
             EditorCommitmentState(causes = causes, timeline = now), HarderWaitPolicy.Ledger(), at)
     }
     private fun consumed(s: ProtectionSnapshot = snapshot()): ProtectionSnapshot {
-        val p = GlobalRecoveryPolicy.preview(s, emptyList())!!
+        val p = GlobalRecoveryPolicy.preview(s, emptyList(), "p1-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")!!
         val m = GlobalRecoveryPolicy.consume(s, p, emptyList())
         assertTrue(m.result is RecoveryResult.Accepted)
         return s.copy(focus = m.focus, rules = m.rules!!, editor = m.editor!!, harder = m.harder!!)
@@ -38,7 +38,7 @@ class GlobalRecoveryPolicyTest {
 
     @Test fun PC_41_allKindsIncludingUnspentLimitsArePreviewedTransientEndsAndCountersNeverReset() {
         val s = snapshot()
-        val preview = GlobalRecoveryPolicy.preview(s, emptyList())!!
+        val preview = GlobalRecoveryPolicy.preview(s, emptyList(), "p1-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")!!
         assertEquals(setOf("rule:${session.id}", "rule:work", "time:b", "open:c"), preview.affected.map { it.causeKey }.toSet())
         val m = GlobalRecoveryPolicy.consume(s, preview, emptyList())
         val recovery = m.focus.protection!!.recovery!!
@@ -53,7 +53,7 @@ class GlobalRecoveryPolicyTest {
     }
 
     @Test fun PC_44_PC_45_retrySameOperationReturnsOriginalRecoveryAndDifferentOperationCannotExtendIt() {
-        val s = snapshot(); val preview = GlobalRecoveryPolicy.preview(s, emptyList())!!
+        val s = snapshot(); val preview = GlobalRecoveryPolicy.preview(s, emptyList(), "p1-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")!!
         val mutation = GlobalRecoveryPolicy.consume(s, preview, emptyList())
         val after = s.copy(focus = mutation.focus, rules = mutation.rules!!, editor = mutation.editor!!)
         val retry = GlobalRecoveryPolicy.consume(after.copy(observedAt = now.copy(elapsedRealtimeMs = 110_000)), preview, emptyList())
@@ -65,12 +65,12 @@ class GlobalRecoveryPolicyTest {
     }
 
     @Test fun PC_43_PC_47_scopeChangesOrMissingOccurrenceCannotSpendFromAStaleConfirmation() {
-        val s = snapshot(); val p = GlobalRecoveryPolicy.preview(s, emptyList())!!
+        val s = snapshot(); val p = GlobalRecoveryPolicy.preview(s, emptyList(), "p1-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")!!
         val changed = s.copy(times = listOf(TimeLimit("b", 1, BreakLevel.HARDCORE)))
         assertEquals(RecoveryResult.StalePreview, GlobalRecoveryPolicy.consume(changed, p, emptyList()).result)
         assertNull(changed.focus.emergencyPass.usedAtEpochMs)
         val missing = s.copy(editor = s.editor.copy(causes = s.editor.causes - "time:b"))
-        assertNull(GlobalRecoveryPolicy.preview(missing, emptyList()))
+        assertNull(GlobalRecoveryPolicy.preview(missing, emptyList(), "p1-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
         assertTrue(GlobalRecoveryPolicy.consume(missing, p, emptyList()).result is RecoveryResult.Unavailable)
     }
 
@@ -132,7 +132,7 @@ class GlobalRecoveryPolicyTest {
         val count = HarderWaitPolicy.Occurrence("rule:work", "occurrence")
         val pending = HarderWaitPolicy.PendingWait(HarderWaitPolicy.Operation(HarderWaitPolicy.OperationKind.BREAK, mapOf(count to "revision")), now, 60_000)
         val withWait = s.copy(editor = s.editor.copy(queued = listOf(queued)), harder = HarderWaitPolicy.Ledger(mapOf(count to 2), pending))
-        val m = GlobalRecoveryPolicy.consume(withWait, GlobalRecoveryPolicy.preview(withWait, emptyList())!!, emptyList())
+        val m = GlobalRecoveryPolicy.consume(withWait, GlobalRecoveryPolicy.preview(withWait, emptyList(), "p1-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")!!, emptyList())
         assertNull(m.harder!!.pending)
         assertEquals(2, m.harder!!.counts[count])
         assertTrue(m.editor!!.queued.single().needsReview)
@@ -141,13 +141,13 @@ class GlobalRecoveryPolicyTest {
 
     @Test fun PC_47_foreignTransientCannotPretendItsTerminationIsAtomicButLegacyRuleIsInScope() {
         val s = snapshot()
-        assertNull(GlobalRecoveryPolicy.preview(s, listOf(session.copy(id = "session-external"))))
-        val p = GlobalRecoveryPolicy.preview(s, listOf(session.copy(id = "blocklist", expiresAtEpochMs = null)))!!
+        assertNull(GlobalRecoveryPolicy.preview(s, listOf(session.copy(id = "session-external")), "p1-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+        val p = GlobalRecoveryPolicy.preview(s, listOf(session.copy(id = "blocklist", expiresAtEpochMs = null)), "p1-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")!!
         assertTrue(p.affected.any { it.ruleId == "blocklist" && !it.transient })
     }
 
     @Test fun PC_45_staleOperationCannotBecomeFreshFromWallRollback() {
-        val s = snapshot(); val p = GlobalRecoveryPolicy.preview(s, emptyList())!!
+        val s = snapshot(); val p = GlobalRecoveryPolicy.preview(s, emptyList(), "p1-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")!!
         val old = s.copy(observedAt = now.copy(wallEpochMs = 0, elapsedRealtimeMs = now.elapsedRealtimeMs + 3_600_000))
         assertEquals(RecoveryResult.Denied, GlobalRecoveryPolicy.consume(old, p, emptyList()).result)
     }

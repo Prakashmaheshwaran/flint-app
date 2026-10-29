@@ -279,14 +279,15 @@ class BlockActivity : ComponentActivity() {
             date((now?.wallEpochMs ?: p.issuedAt.wallEpochMs) + ProtectionContract.PASS_COOLDOWN_MS)) }
         RecoveryScreen(
             RecoveryScreenState(loading = storage == null || storage is StorageState.Loading,
-                unavailable = storage is StorageState.Unavailable || eligibility == RollingEmergencyPassPolicy.Eligibility.Unavailable,
+                unavailable = storage is StorageState.Unavailable || (storage is StorageState.Ready && eligibility == RollingEmergencyPassPolicy.Eligibility.Unavailable),
                 available = eligibility == RollingEmergencyPassPolicy.Eligibility.Available, remainingRecoveryMillis = remaining,
                 resumeAt = now?.let { if (remaining > 0) date(it.wallEpochMs + remaining) else null },
                 nextPassAt = (eligibility as? RollingEmergencyPassPolicy.Eligibility.CoolingDown)?.let { date(it.nextEligibleEstimateEpochMs) },
                 timeUncertain = (eligibility as? RollingEmergencyPassPolicy.Eligibility.CoolingDown)?.clockUncertain == true,
                 previousAccessEnded = ledger?.previousAccessEnded == true,
                 choices = snapshot?.let { GlobalRecoveryPolicy.recoveryChoices(it).map { (key, name) -> RecoveryChoice(key, name) } }.orEmpty(),
-                confirmation = confirmation, endConfirmation = endPreview?.displayNames, error = error, saving = saving),
+                confirmation = confirmation, endConfirmation = endPreview?.displayNames, error = error, saving = saving,
+                activeOrdinaryBreaks = ledger?.ordinaryGrants?.values?.count { now != null && it.lifetime.remainingMs(now)?.let { ms -> ms > 0 } == true } ?: 0),
             onBack = { openFlint(); finish() },
             onPreview = { launch {
                 preview = coordinator.previewEmergencyPass()
@@ -310,6 +311,7 @@ class BlockActivity : ComponentActivity() {
                 else { endPreview = null; error = "The selection was not changed. Review and try again." }
             } },
             onRetry = { launch { if (!coordinator.retryProtectionState()) error = "Protection state unavailable. Try again." } },
+            onResumeBreaks = { launch { if (!coordinator.resumeOrdinaryBreaks()) error = "Protection state unavailable. Try again." } },
         )
     }
 
@@ -327,10 +329,10 @@ class BlockActivity : ComponentActivity() {
         private const val NO_END = -1L
 
         /** App-shell entry independent of a blocked target. Opening it never spends a pass. */
-        fun launchRecovery(context: Context) {
+        fun launchRecovery(context: Context): Boolean = runCatching {
             context.startActivity(Intent(context, BlockActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 .putExtra(EXTRA_RECOVERY, true))
-        }
+        }.isSuccess
 
         /** Launch the fallback block screen for [packageName] with a resolved [cause]. */
         fun launch(context: Context, packageName: String, label: String?, cause: BlockCause) {

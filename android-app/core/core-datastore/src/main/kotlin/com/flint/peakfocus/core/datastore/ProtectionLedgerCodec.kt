@@ -32,7 +32,7 @@ internal object ProtectionLedgerCodec {
             val one = TemporaryAccess(1, grant.target, grant.scopes, PersonalGrantKind.ORDINARY_BREAK, grant.lifetime)
             add(row("G", atom(id), AccessLedgerCodec.encode(AccessLedgerV2(nextSequence = 2, grants = mapOf(1L to one))), strings(grant.affectedRuleIds)))
         }
-    }.joinToString("\n").also { require(it.length <= MAX_BYTES); decode(it) }
+    }.joinToString("\n").also { checkWire(it.length <= MAX_BYTES); decode(it) }
 
     fun decode(raw: String): ProtectionLedger {
         checkWire(raw.length <= MAX_BYTES)
@@ -110,8 +110,10 @@ internal object ProtectionLedgerCodec {
         recovery?.let { r ->
             checkWire(r.affectedCauseKeys.isNotEmpty() && r.endedTransientIds.all { it in r.affectedRuleIds })
             checkWire(cooldown?.operationId == r.operationId && cooldown?.usedAtWallEpochMs == r.startedAt.wallEpochMs)
+            checkWire(operations[r.operationId]?.acceptedAt == r.startedAt)
         }
         checkWire(grants.values.map { it.target }.distinct().size == grants.size)
+        checkWire(grants.values.all { operations[it.operationId]?.acceptedAt == it.lifetime.startedAt })
         return ProtectionLedger(readClock(m[1]), readClock(m[2]), cooldown, recovery, operations.toMap(), events.toMap(), number(m[3]), bool(m[4]), lastUsed, grants.toMap())
     }
 

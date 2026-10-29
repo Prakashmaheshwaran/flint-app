@@ -26,6 +26,7 @@ data class RecoveryScreenState(
     val endConfirmation: List<String>? = null,
     val error: String? = null,
     val saving: Boolean = false,
+    val activeOrdinaryBreaks: Int = 0,
 )
 
 /** Independent in-Flint recovery. Navigation and preview never consume a pass. */
@@ -40,6 +41,7 @@ fun RecoveryScreen(
     onPreviewEnd: (Set<String>, Boolean) -> Unit,
     onConfirmEnd: () -> Unit,
     onRetry: () -> Unit,
+    onResumeBreaks: () -> Unit,
 ) {
     var selected by remember { mutableStateOf(emptySet<String>()) }
     val allowed = state.choices.map { it.key }.toSet()
@@ -56,6 +58,10 @@ fun RecoveryScreen(
             }
             if (state.previousAccessEnded) Text("Access ended after restart; no extra credit was spent.")
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            if (state.activeOrdinaryBreaks > 0) {
+                Text("Active ordinary breaks: ${state.activeOrdinaryBreaks}. A new request cannot extend them.")
+                OutlinedButton(onClick = onResumeBreaks, enabled = !state.saving) { Text("Resume protection for ordinary breaks") }
+            }
             if (state.remainingRecoveryMillis > 0) {
                 Text("Recovery ends in ${formatDuration(state.remainingRecoveryMillis)}", style = MaterialTheme.typography.titleLarge)
                 state.resumeAt?.let { Text("Protection resumes: $it") }

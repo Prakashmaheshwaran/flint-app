@@ -8,6 +8,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.util.concurrent.ConcurrentHashMap
+import java.util.UUID
 
 /** One durable authority shared by the two detector adapters; no UI callback writes accounting. */
 internal class GlobalRecoveryController(
@@ -39,7 +40,8 @@ internal class GlobalRecoveryController(
                 val now = clock()
                 val remaining = GlobalRecoveryPolicy.remaining(lastGood?.focus?.protection?.recovery, now)
                 val ordinary = lastGood?.focus?.protection?.ordinaryGrants?.values.orEmpty().mapNotNull { it.lifetime.remainingMs(now)?.takeIf { ms -> ms > 0 } }
-                val wait = (ordinary + listOfNotNull(remaining.takeIf { it > 0 }) + CHECKPOINT_MS).minOrNull() ?: CHECKPOINT_MS
+                val quota = lastGood?.openCredits?.let { com.flint.peakfocus.blocking.engine.OpenCreditPolicy().remainingToResetMs(it.reset, now) }
+                val wait = (ordinary + listOfNotNull(remaining.takeIf { it > 0 }, quota?.takeIf { it > 0 }) + CHECKPOINT_MS).minOrNull() ?: CHECKPOINT_MS
                 withTimeoutOrNull(wait) { boundarySignals.receive() }
                 // Deadlines still stop release when storage becomes unavailable at expiry.
                 runCatching(enforcementChanged)
@@ -100,9 +102,10 @@ internal class GlobalRecoveryController(
 
     /** Explicit preview/retry refreshes storage, occurrences and cooldown in the same edit. */
     suspend fun preview(): RecoveryPreview? {
+        val operationId = "p1-${UUID.randomUUID()}"
         val committed = commit { original ->
             val snapshot = GlobalRecoveryPolicy.checkpoint(original)
-            ProtectionMutation(snapshot.focus, GlobalRecoveryPolicy.preview(snapshot, foreignRules().toList()))
+            ProtectionMutation(snapshot.focus, GlobalRecoveryPolicy.preview(snapshot, foreignRules().toList(), operationId))
         }
         return (committed as? ProtectionCommit.Committed)?.result
     }
@@ -137,7 +140,10 @@ internal class GlobalRecoveryController(
 
     suspend fun requestOrdinary(input: OrdinaryProtectionInput, id: GrantRequestId): GrantResult {
         val stamp = id.issuedAtClock ?: return GrantResult.Unavailable()
-        return when (val accepted = commit { OrdinaryProtectionPolicy.request(it, input, "p1-${id.nonce}", stamp, foreignRules().toList()) }) {
+        val snapshot = (state.value as? StorageState.Ready)?.value ?: return GrantResult.Unavailable()
+        val frozen = OrdinaryProtectionPolicy.frozenScopes(snapshot, input, foreignRules().toList(), clock())?.toSet()
+            ?: return GrantResult.Unavailable()
+        return when (val accepted = commit { OrdinaryProtectionPolicy.request(it, input, "p1-${id.nonce}", stamp, foreignRules().toList(), frozen) }) {
             is ProtectionCommit.Committed -> accepted.result
             is ProtectionCommit.Unavailable -> GrantResult.Unavailable(accepted.reason)
             null -> GrantResult.Unconfirmed

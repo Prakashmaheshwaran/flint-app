@@ -75,8 +75,9 @@ internal object GlobalRecoveryPolicy {
             previousAccessEnded = ledger.previousAccessEnded || rebootClosed || ended.any { trustedElapsedMs(it.lifetime.startedAt, now) == null }), now)))
     }
 
-    fun preview(snapshot: ProtectionSnapshot, foreignRules: List<BlockRule>, operationId: String = "p1-${UUID.randomUUID()}"): RecoveryPreview? {
+    fun preview(snapshot: ProtectionSnapshot, foreignRules: List<BlockRule>, operationId: String): RecoveryPreview? {
         val ledger = snapshot.focus.protection ?: return null
+        if (remaining(ledger.recovery, snapshot.observedAt) > 0) return null
         if (pass.eligibility(passState(ledger), snapshot.observedAt) != RollingEmergencyPassPolicy.Eligibility.Available) return null
         val affected = commitments(snapshot, foreignRules) ?: return null
         if (affected.isEmpty()) return null
@@ -114,7 +115,7 @@ internal object GlobalRecoveryPolicy {
         val nextLedger = bound(ledger.copy(cooldown = ProtectionCooldown(preview.operationId, now.wallEpochMs, now, ProtectionContract.PASS_COOLDOWN_MS),
             recovery = recovery, operations = ledger.operations + (preview.operationId to ProtectionPassReceipt(preview.operationId, preview.issuedAt, now, preview.scopeIdentity)),
             outbox = ledger.outbox + (endedBreaks + event).associateBy { it.id }, lastUsedAtEpochMs = now.wallEpochMs,
-            ordinaryGrants = emptyMap()), now)
+            ordinaryGrants = emptyMap(), previousAccessEnded = false), now)
         val endedKeys = transientIds.map(::ruleCauseKey).toSet()
         val terminal = snapshot.editor.causes.filterKeys { it in endedKeys }.map { (key, cause) -> editorOccurrence(key, cause) }.toSet()
         val editor = snapshot.editor.copy(causes = snapshot.editor.causes - endedKeys, pending = null,

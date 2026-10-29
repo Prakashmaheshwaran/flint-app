@@ -74,8 +74,12 @@ class GlobalRecoveryCoordinatorTest {
         }
     }
 
-    private fun <A, B> Flow<StorageState<A>>.project(transform: (A) -> B): Flow<StorageState<B>> = map<StorageState<A>, StorageState<B>> {
-        when (it) { is StorageState.Ready -> StorageState.Ready(transform(it.value)); is StorageState.Unavailable -> it; StorageState.Loading -> it }
+    private fun <A, B> Flow<StorageState<A>>.project(transform: (A) -> B): Flow<StorageState<B>> = map<StorageState<A>, StorageState<B>> { state ->
+        when (state) {
+            is StorageState.Ready -> StorageState.Ready<B>(transform(state.value))
+            is StorageState.Unavailable -> StorageState.Unavailable(state.reason)
+            StorageState.Loading -> StorageState.Loading
+        }
     }
 
     private fun TestScope.coordinator(disk: Disk, changed: () -> Unit = {}): BlockScreenCoordinator {
@@ -172,6 +176,27 @@ class GlobalRecoveryCoordinatorTest {
         assertNotNull(disk.latest.focus.protection!!.cooldown)
     }
 
+    @Test fun PC_42_newScheduleWindowsStaySuppressedAndOnlyTheStillActiveTemplateResumes() = runTest {
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = base.wallEpochMs }
+        val minute = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
+        val long = session.copy(id = "future-long", name = "Long", expiresAtEpochMs = null,
+            schedule = Schedule(startMinuteOfDay = (minute + 30) % 1_440, endMinuteOfDay = (minute + 120) % 1_440))
+        val short = long.copy(id = "future-short", name = "Short", schedule = long.schedule!!.copy(endMinuteOfDay = (minute + 45) % 1_440))
+        val inactive = EditorCause("inactive", AnchoredInterval(base, 0, base.wallEpochMs), java.util.TimeZone.getDefault().id)
+        val initial = initial().let { it.copy(rules = it.rules + long + short,
+            editor = it.editor.copy(causes = it.editor.causes + ("rule:future-long" to inactive) + ("rule:future-short" to inactive))) }
+        val disk = Disk(initial) { clock() }; val c = coordinator(disk); runCurrent()
+        c.confirmEmergencyPass(c.previewEmergencyPass()!!); runCurrent()
+        advanceTimeBy(33 * 60_000L); runCurrent()
+        assertNull(c.evaluateBlockCause(pkg, pkg, ruleBlockCause(long, clock().wallEpochMs, 0), false))
+        assertNull(c.evaluateBlockCause(pkg, pkg, ruleBlockCause(short, clock().wallEpochMs, 0), false))
+        advanceTimeBy(27 * 60_000L); runCurrent()
+        assertFalse(BlockExemptions.hasGlobalRecovery())
+        assertEquals("future-long", c.currentBlockCause(pkg)!!.ruleId)
+        assertEquals(setOf("future-long", "future-short"), disk.latest.rules.map { it.id }.toSet())
+        assertEquals(9, disk.latest.openCredits!!.counters.getValue("c").used)
+    }
+
     @Test fun PC_59_PC_60_rebootClosesGlobalAccessKeepsSpendAndReportsTheAdjustedCooldown() = runTest {
         var boot = "boot"
         var wallOffset = 0L
@@ -185,6 +210,7 @@ class GlobalRecoveryCoordinatorTest {
         assertEquals(saved, disk.latest.focus.protection!!.cooldown!!.remainingAtCheckpointMs)
         assertTrue(disk.latest.focus.protection!!.previousAccessEnded)
         assertEquals(base.wallEpochMs, disk.latest.focus.emergencyPass.usedAtEpochMs)
+        advanceTimeBy(BlockScreenCoordinator.STATUS_COALESCE_MS + 1); runCurrent()
         val status = ProtectionStatusHub.status.value
         assertTrue(status.pass is ProtectionStatus.PassStatus.CoolingDown)
         assertTrue("access-ended-after-restart" in status.detectors.degradedReasons)
@@ -199,6 +225,20 @@ class GlobalRecoveryCoordinatorTest {
         assertTrue(c.requestEmergencyPass(pkg, ruleBlockCause(session, base.wallEpochMs, 0), GrantRequestId.issue(base)) is GrantResult.Unavailable)
         assertNull(disk.latest.focus.emergencyPass.usedAtEpochMs)
         assertFalse(BlockExemptions.hasGlobalRecovery())
+    }
+
+    @Test fun PC_28_PC_47_foregroundNeverWritesLegacyQuotaAndAnUnspentCreditCannotBecomeAFreeOrdinaryBreak() = runTest {
+        val s = initial().copy(openCredits = OpenCreditLedgerPolicy.initial(base, "UTC"))
+        val disk = Disk(s) { clock() }; val c = coordinator(disk); runCurrent()
+        val before = disk.latest.focus.openCounts
+        assertTrue(c.onForegroundChanged(null, "c") is OpenLimitDecision.Blocked)
+        runCurrent()
+        assertEquals(before, disk.latest.focus.openCounts)
+        assertTrue(disk.latest.openCredits!!.counters.isEmpty())
+        val cause = openLimitBlockCause(OpenLimit("c", 2), clock().wallEpochMs, 0)
+        assertTrue(c.requestBreak("c", cause, GrantRequestId.issue(clock())) is GrantResult.Unavailable)
+        assertEquals(before, disk.latest.focus.openCounts)
+        assertTrue(disk.latest.openCredits!!.counters.isEmpty())
     }
 
     @Test fun PC_22_PC_25_PC_63_ordinaryGrantHasRealScopeAndNewHardcoreRuleBlocksAndProducesMatchingEnd() = runTest {

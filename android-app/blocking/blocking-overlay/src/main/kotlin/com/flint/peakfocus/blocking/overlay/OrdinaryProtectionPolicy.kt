@@ -19,6 +19,9 @@ internal object OrdinaryProtectionPolicy {
     private data class Cause(val scope: AccessCauseScope, val tier: BreakLevel, val remaining: Long, val legacyRights: Boolean)
     private val harder = HarderWaitPolicy()
 
+    fun frozenScopes(snapshot: ProtectionSnapshot, input: OrdinaryProtectionInput, foreign: List<BlockRule>, now: AccessClockStamp): Set<AccessCauseScope>? =
+        causes(snapshot.copy(observedAt = now), input, foreign)?.map { it.scope }?.toSet()
+
     fun covers(snapshot: ProtectionSnapshot, input: OrdinaryProtectionInput, foreign: List<BlockRule>, now: AccessClockStamp): Boolean {
         val grant = snapshot.focus.protection?.ordinaryGrants?.values?.firstOrNull { it.target == AccessTarget.App(input.packageName) } ?: return false
         if (grant.lifetime.remainingMs(now)?.let { it > 0 } != true) return false
@@ -27,7 +30,7 @@ internal object OrdinaryProtectionPolicy {
     }
 
     fun request(original: ProtectionSnapshot, input: OrdinaryProtectionInput, id: String, issuedAt: AccessClockStamp,
-        foreign: List<BlockRule>): ProtectionMutation<GrantResult> {
+        foreign: List<BlockRule>, expectedScopes: Set<AccessCauseScope>): ProtectionMutation<GrantResult> {
         val snapshot = GlobalRecoveryPolicy.checkpoint(original)
         val current = snapshot.focus
         val ledger = current.protection ?: return ProtectionMutation(current, GrantResult.Unavailable())
@@ -36,6 +39,9 @@ internal object OrdinaryProtectionPolicy {
         val causes = causes(snapshot, input, foreign) ?: return unchanged(GrantResult.Unavailable())
         if (causes.isEmpty() || causes.any { it.tier == BreakLevel.HARDCORE }) return unchanged(GrantResult.Denied)
         val scopes = causes.map { it.scope }.toSet()
+        // A contributor arriving after the explicit click never joins that request.
+        if (scopes != expectedScopes) return unchanged(GrantResult.Denied)
+        if (scopes.size > AccessLedgerValidation.MAX_SCOPES) return unchanged(GrantResult.Unavailable())
         val scopeId = hash("ordinary|${input.packageName}|${scopes.sortedBy { it.toString() }}")
         val prior = ledger.operations[id]
         if (prior != null && (prior.issuedAt != issuedAt || prior.scopeIdentity != scopeId)) return unchanged(GrantResult.Denied)
@@ -50,6 +56,7 @@ internal object OrdinaryProtectionPolicy {
             return ProtectionMutation(current.copy(protection = next), GrantResult.Denied)
         }
         if (prior != null) return unchanged(GrantResult.Denied)
+        if (ledger.operations.size >= 2_000) return unchanged(GrantResult.Unavailable())
         if (!validId(id) || trustedElapsedMs(issuedAt, snapshot.observedAt)?.let { it < GlobalRecoveryPolicy.REQUEST_LIFETIME_MS } != true)
             return unchanged(GrantResult.Unavailable())
         var waits = snapshot.harder
@@ -75,7 +82,7 @@ internal object OrdinaryProtectionPolicy {
         val event = ProtectionLifecycleEvent("break-started:$id", id, ProtectionLifecycleKind.BREAK_STARTED, rules, now,
             grantId = id, untilEpochMs = now.wallEpochMs + duration, revision = current.revision + 1)
         val next = GlobalRecoveryPolicy.bound(ledger.copy(ordinaryGrants = ledger.ordinaryGrants + (id to grant),
-            operations = ledger.operations + (id to ProtectionPassReceipt(id, issuedAt, now, scopeId)), outbox = ledger.outbox + (event.id to event)), now)
+            operations = ledger.operations + (id to ProtectionPassReceipt(id, issuedAt, now, scopeId)), outbox = ledger.outbox + (event.id to event), previousAccessEnded = false), now)
         return ProtectionMutation(current.copy(protection = next), granted(grant, true, now), harder = waits)
     }
 
@@ -109,7 +116,12 @@ internal object OrdinaryProtectionPolicy {
             return true
         }
         for (rule in snapshot.rules.filter { it.enabled && targets(it, input) }) {
-            if (!add("rule", rule.id, rule.breakLevel, rule.toString(), snapshot.editor.causes[ruleCauseKey(rule.id)])) return null
+            val cause = snapshot.editor.causes[ruleCauseKey(rule.id)]
+            val endIdentity = cause?.interval?.let { "${it.anchor.bootSessionId}:${it.anchor.elapsedRealtimeMs + it.remainingAtAnchorMs}" }
+                ?: rule.expiresAtEpochMs?.toString().orEmpty()
+            // R-18 may rewrite a finite rule's wall display end after a clock change.
+            // Its anchored elapsed end/occurrence remains the same authority.
+            if (!add("rule", rule.id, rule.breakLevel, "${rule.copy(expiresAtEpochMs = null)}|$endIdentity", cause)) return null
         }
         for (rule in foreign.filter { it.enabled && it.id !in snapshot.rules.map { r -> r.id } && targets(it, input) }) {
             if (!GlobalRecoveryPolicy.foreignActive(rule, snapshot.observedAt, snapshot.editor.timeline)) continue

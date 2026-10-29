@@ -78,6 +78,9 @@ class DataStoreProtectionTransactionStore(
                 // The editor owns migration, due queued edits and occurrence materialization;
                 // no independent occurrence resolver or Harder count ledger is introduced.
                 editors.prepare(prefs, now)
+                val friction = readHarderWait(prefs)
+                if (friction.pending?.let { trustedElapsedMs(it.startedAt, now) == null } == true)
+                    prefs.putHarderWait(friction.copy(pending = null))
                 var current = readSnapshot(prefs, now)
                 if (current.focus.protection == null) {
                     val initial = migrateLegacyPass(current.focus, now)
@@ -86,6 +89,12 @@ class DataStoreProtectionTransactionStore(
                         // Old package receipts lack the global/frozen recovery scope. Preserve
                         // their spend/archive, but never let them masquerade as ADR-012 access.
                         exemptions = current.focus.exemptions.filterValues { it.untilEpochMs == 0L }))
+                    // Explicit empty values establish which configuration domains are unused.
+                    // Later key deletion is corruption rather than a new empty/default policy.
+                    if (StrictPrefsCodec.string(prefs, PrefsKeys.BLOCK_RULES) == null) prefs[PrefsKeys.BLOCK_RULES] = PrefsCodec.encodeRules(current.rules)
+                    if (StrictPrefsCodec.string(prefs, PrefsKeys.TIME_LIMITS) == null) prefs[PrefsKeys.TIME_LIMITS] = PrefsCodec.encodeTimeLimits(current.times)
+                    if (StrictPrefsCodec.string(prefs, PrefsKeys.OPEN_LIMITS) == null) prefs[PrefsKeys.OPEN_LIMITS] = PrefsCodec.encodeOpenLimits(current.opens)
+                    if (StrictPrefsCodec.string(prefs, PrefsKeys.DEFAULT_BREAK_LEVEL) == null) prefs[PrefsKeys.DEFAULT_BREAK_LEVEL] = current.focus.defaultBreakLevel.name
                 }
                 val mutation = transform(current)
                 mutation.rules?.let(prefs::putEditorRules)
@@ -134,7 +143,8 @@ class DataStoreProtectionTransactionStore(
 
     private fun legacyArchive(prefs: Preferences): String = buildList {
         add("A|1")
-        for (key in listOf(PrefsKeys.FOCUS_LEDGER, PrefsKeys.BREAK_SESSION, PrefsKeys.OPEN_COUNTS, PrefsKeys.DEFAULT_BREAK_LEVEL)) {
+        for (key in listOf(PrefsKeys.FOCUS_LEDGER, PrefsKeys.BREAK_SESSION, PrefsKeys.OPEN_COUNTS, PrefsKeys.DEFAULT_BREAK_LEVEL,
+            PrefsKeys.BLOCK_RULES, PrefsKeys.TIME_LIMITS, PrefsKeys.OPEN_LIMITS)) {
             val raw = StrictPrefsCodec.string(prefs, key)
             add(listOf(PrefsCodec.escape(key.name), (raw != null).toString(), PrefsCodec.escape(raw.orEmpty())).joinToString("|"))
         }

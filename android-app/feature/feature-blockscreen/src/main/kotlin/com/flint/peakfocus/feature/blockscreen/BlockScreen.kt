@@ -546,13 +546,11 @@ private fun BreakActions(
         BreakAffordance.Saving -> CircularProgressIndicator(
             modifier = modifier.size(32.dp).semantics { liveRegion = LiveRegionMode.Polite },
         )
-        BreakAffordance.Unavailable -> Text(
-            "Protection state unavailable",
-            modifier = modifier.semantics { liveRegion = LiveRegionMode.Polite },
-            color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.Center,
-        )
+        BreakAffordance.Unavailable -> Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Protection state unavailable", modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+            QuietButton("Review protection state", onEmergencyPassRequested)
+        }
         BreakAffordance.RetryOpen -> QuietButton("Try again", onBreakRequested, modifier = modifier)
         // 48dp minimum keeps the deliberate 52/48/48 exit ladder under "Go back".
         BreakAffordance.TakeABreak -> QuietButton("Take a break", onBreakRequested, modifier = modifier)

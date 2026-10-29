@@ -99,19 +99,23 @@ internal object ProtectionStatusProjection {
             ProtectionStatus.Readiness.UNAVAILABLE else readiness
         val next = if (derivedReadiness == ProtectionStatus.Readiness.READY && sidecar != null)
             nextOccurrence(currentRules, configuredIds, sidecar, now, legacyZone) else null
+        val recoveryRemaining = GlobalRecoveryPolicy.remaining(ledger?.recovery, now)
+        val eligibility = ledger?.let { RollingEmergencyPassPolicy().eligibility(GlobalRecoveryPolicy.passState(it), now) }
+        val passBoundary = if (recoveryRemaining > 0) recoveryRemaining else
+            (eligibility as? RollingEmergencyPassPolicy.Eligibility.CoolingDown)?.remainingMs
         val deadline = (causes.mapNotNull { it.logicalEndElapsedRealtimeMs } + listOfNotNull(
             next?.let { addBounded(now.elapsedRealtimeMs, (it.startWallEstimateEpochMs - now.wallEpochMs).coerceAtLeast(0)) },
             addBounded(now.elapsedRealtimeMs, FRESHNESS_MS),
+            passBoundary?.let { addBounded(now.elapsedRealtimeMs, it) },
         )).minOrNull()
         return ProtectionStatus(derivedReadiness, causes.sortedWith(compareByDescending<ProtectionStatus.ActiveCause> { it.tier.ordinal }
             .thenByDescending { it.remainingMs ?: Long.MAX_VALUE }.thenBy { it.ruleId.orEmpty() }), next,
             if (derivedReadiness == ProtectionStatus.Readiness.READY && ledger != null) {
-                val remaining = GlobalRecoveryPolicy.remaining(ledger.recovery, now)
-                if (remaining > 0) ProtectionStatus.PassStatus.RecoveryActive(remaining, addBounded(now.elapsedRealtimeMs, remaining))
-                else when (val eligibility = RollingEmergencyPassPolicy().eligibility(GlobalRecoveryPolicy.passState(ledger), now)) {
+                if (recoveryRemaining > 0) ProtectionStatus.PassStatus.RecoveryActive(recoveryRemaining, addBounded(now.elapsedRealtimeMs, recoveryRemaining))
+                else when (eligibility) {
                     RollingEmergencyPassPolicy.Eligibility.Available -> ProtectionStatus.PassStatus.Available
                     is RollingEmergencyPassPolicy.Eligibility.CoolingDown -> ProtectionStatus.PassStatus.CoolingDown(eligibility.nextEligibleEstimateEpochMs, eligibility.clockUncertain)
-                    RollingEmergencyPassPolicy.Eligibility.Unavailable -> ProtectionStatus.PassStatus.Unavailable
+                    RollingEmergencyPassPolicy.Eligibility.Unavailable, null -> ProtectionStatus.PassStatus.Unavailable
                 }
             } else ProtectionStatus.PassStatus.Unavailable,
             ProtectionStatus.DetectorHealth(pathAConnected, ProtectionStatus.PathBState.UNKNOWN, reasons.toSet()),

@@ -35,10 +35,36 @@ internal object PrefsKeys {
     val PROTECTION_ARCHIVE = stringPreferencesKey("protection_legacy_archive_v1")
 }
 
-private fun Preferences.rules() = StrictPrefsCodec.rules(StrictPrefsCodec.string(this, PrefsKeys.BLOCK_RULES).orEmpty())
+private fun Preferences.rules(): List<BlockRule> {
+    validateInitializedProtectionChildren(this)
+    return StrictPrefsCodec.rules(StrictPrefsCodec.string(this, PrefsKeys.BLOCK_RULES).orEmpty())
+}
 private fun Preferences.groups() = StrictPrefsCodec.groups(StrictPrefsCodec.string(this, PrefsKeys.APP_GROUPS).orEmpty())
-private fun Preferences.timeLimits() = StrictPrefsCodec.timeLimits(StrictPrefsCodec.string(this, PrefsKeys.TIME_LIMITS).orEmpty())
-private fun Preferences.openLimits() = StrictPrefsCodec.openLimits(StrictPrefsCodec.string(this, PrefsKeys.OPEN_LIMITS).orEmpty())
+private fun Preferences.timeLimits(): List<TimeLimit> {
+    validateInitializedProtectionChildren(this)
+    return StrictPrefsCodec.timeLimits(StrictPrefsCodec.string(this, PrefsKeys.TIME_LIMITS).orEmpty(),
+        StrictPrefsCodec.level(StrictPrefsCodec.string(this, PrefsKeys.DEFAULT_BREAK_LEVEL)))
+}
+private fun Preferences.openLimits(): List<OpenLimit> {
+    validateInitializedProtectionChildren(this)
+    return StrictPrefsCodec.openLimits(StrictPrefsCodec.string(this, PrefsKeys.OPEN_LIMITS).orEmpty())
+}
+
+/** After the pass marker, optional legacy absence is never a fresh configuration or wait. */
+internal fun validateInitializedProtectionChildren(prefs: Preferences) {
+    val schema = StrictPrefsCodec.long(prefs, PrefsKeys.PROTECTION_SCHEMA)
+    if (schema == null) {
+        if (StrictPrefsCodec.string(prefs, PrefsKeys.PROTECTION_LEDGER) != null ||
+            StrictPrefsCodec.string(prefs, PrefsKeys.PROTECTION_ARCHIVE) != null ||
+            FocusLedgerCodec.decode(StrictPrefsCodec.string(prefs, PrefsKeys.FOCUS_LEDGER)).protectionInitialized) wireCorrupt()
+        return
+    }
+    if (schema != 1L) wireFuture()
+    for (key in listOf(PrefsKeys.BLOCK_RULES, PrefsKeys.TIME_LIMITS, PrefsKeys.OPEN_LIMITS, PrefsKeys.DEFAULT_BREAK_LEVEL,
+        EDITOR_COMMITMENTS_KEY, HARDER_WAIT_KEY)) if (StrictPrefsCodec.string(prefs, key) == null) wireCorrupt()
+    if (StrictPrefsCodec.long(prefs, EDITOR_VERSION_KEY) == null || StrictPrefsCodec.long(prefs, OPEN_CREDIT_SCHEMA) == null) wireCorrupt()
+    readEditorState(prefs); readHarderWait(prefs); readOpenCredits(prefs)
+}
 private fun MutablePreferences.putRules(rules: List<BlockRule>) {
     val encoded = PrefsCodec.encodeRules(rules)
     StrictPrefsCodec.rules(encoded)
@@ -267,6 +293,7 @@ internal fun writeFocus(prefs: MutablePreferences, current: FocusSnapshot, propo
 }
 
 internal fun readFocus(prefs: Preferences): FocusSnapshot {
+    validateInitializedProtectionChildren(prefs)
     val ledger = FocusLedgerCodec.decode(StrictPrefsCodec.string(prefs, PrefsKeys.FOCUS_LEDGER))
     val usedAt = StrictPrefsCodec.long(prefs, PrefsKeys.EMERGENCY_PASS_USED_AT)
     if (usedAt != null && usedAt < 0) throw StorageUnavailableException(StorageFailure.CORRUPT)

@@ -3,6 +3,7 @@ package com.flint.peakfocus.core.datastore
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import com.flint.peakfocus.core.model.*
+import com.flint.peakfocus.blocking.engine.HarderWaitPolicy
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.*
@@ -87,7 +88,9 @@ class ProtectionTransactionStoreTest {
         store(disk).transact { ProtectionMutation(consumed(it.focus), Unit) }
         val good = disk.values.value
         for (key in listOf(PrefsKeys.PROTECTION_SCHEMA, PrefsKeys.PROTECTION_LEDGER, PrefsKeys.PROTECTION_ARCHIVE,
-            PrefsKeys.FOCUS_LEDGER, PrefsKeys.EMERGENCY_PASS_USED_AT)) {
+            PrefsKeys.FOCUS_LEDGER, PrefsKeys.EMERGENCY_PASS_USED_AT, PrefsKeys.BLOCK_RULES, PrefsKeys.TIME_LIMITS,
+            PrefsKeys.OPEN_LIMITS, PrefsKeys.DEFAULT_BREAK_LEVEL, EDITOR_COMMITMENTS_KEY, EDITOR_VERSION_KEY,
+            HARDER_WAIT_KEY, OPEN_CREDIT_SCHEMA, OPEN_CREDIT_STATE, OPEN_CREDIT_COUNTS, OPEN_CREDIT_ARCHIVE, QUOTA_ZONE)) {
             val missing = good.toMutablePreferences().apply { remove(key) }
             disk.values.value = missing
             var called = false
@@ -154,6 +157,24 @@ class ProtectionTransactionStoreTest {
         ids.clear()
         assertEquals(setOf("session-one", "work"), accepted.snapshot.focus.protection!!.recovery!!.affectedRuleIds)
         assertEquals(setOf("session-one", "work"), accepted.snapshot.focus.protection!!.outbox.values.single().affectedRuleIds)
+    }
+
+    @Test fun PC_21_initializedHarderWaitRoundTripsThenRebootReconciliationCancelsPendingOnly() = runBlocking {
+        val rule = BlockRule("session-one", "One", BlockTargets(apps = setOf(AppRef("a"))),
+            breakLevel = BreakLevel.HARDER, expiresAtEpochMs = stamp.wallEpochMs + 600_000)
+        val disk = Disk(mutablePreferencesOf(PrefsKeys.BLOCK_RULES to PrefsCodec.encodeRules(listOf(rule))))
+        initialize(disk)
+        val s = store(disk).state.snapshotOrNull()!!
+        val occurrence = editorOccurrence("rule:session-one", s.editor.causes.getValue("rule:session-one"))
+        val operation = HarderWaitPolicy.Operation(HarderWaitPolicy.OperationKind.BREAK, mapOf(occurrence to "revision"), setOf("a"))
+        val ledger = HarderWaitPolicy.Ledger(mapOf(occurrence to 2), HarderWaitPolicy.PendingWait(operation, stamp, 900_000))
+        store(disk).transact { ProtectionMutation(it.focus, Unit, harder = ledger) }
+        assertEquals(ledger, store(disk).state.snapshotOrNull()!!.harder)
+        val rebooted = DataStoreProtectionTransactionStore(disk, { stamp.copy(bootSessionId = "other", elapsedRealtimeMs = 0) }) { "UTC" }
+        val accepted = rebooted.transact { ProtectionMutation(it.focus, Unit) } as ProtectionCommit.Committed
+        assertNull(accepted.snapshot.harder.pending)
+        assertEquals(mapOf(occurrence to 2), accepted.snapshot.harder.counts)
+        assertEquals(accepted.snapshot.harder, rebooted.state.snapshotOrNull()!!.harder)
     }
 
     @Test fun PC_44_PC_63_PC_65_crashBeforeDeliveryReplaysTheSameDurableEventThenAcknowledgesIt() = runBlocking {
