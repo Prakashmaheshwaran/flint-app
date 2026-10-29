@@ -66,7 +66,7 @@ internal object ProtectionStatusProjection {
                 causes += ProtectionStatus.ActiveCause(ruleId, ProtectionStatus.sanitizeDisplayName(name), kind, tier,
                     remaining, remaining?.let { addBounded(now.elapsedRealtimeMs, it) },
                     remaining?.let { addBounded(now.wallEpochMs, it) },
-                    interval?.let { clockDiscontinuity(it.anchor, now) } ?: true)
+                    interval?.let { clockDiscontinuity(it.anchor, now) } ?: true, occurrence.occurrenceId)
             }
             currentRules.filter { it.enabled }.forEach { rule ->
                 val kind = when {

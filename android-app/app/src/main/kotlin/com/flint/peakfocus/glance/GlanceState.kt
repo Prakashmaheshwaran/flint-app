@@ -25,6 +25,13 @@ enum class GlanceCauseKind { FOCUS_SESSION, SCHEDULE, SLEEP, TIME_LIMIT, OPEN_LI
 /** PATH_A requires positively live A AND positively absent Path B FGS, not permission bits. */
 enum class GlanceDetector { UNKNOWN, PATH_A_CONFIRMED, PATH_B_FOREGROUND }
 
+sealed interface GlancePass {
+    data object Unavailable : GlancePass
+    data object Available : GlancePass
+    data object Recovery : GlancePass
+    data class CoolingDown(val nextEligibleEpochMs: Long, val clockUncertain: Boolean) : GlancePass
+}
+
 /** Deadlines are same-boot elapsedRealtime, supplied by the authority, never inferred from rules. */
 data class ProtectionReading(
     val status: ProtectionStatus = ProtectionStatus.UNAVAILABLE,
@@ -37,6 +44,7 @@ data class ProtectionReading(
     val timeUncertain: Boolean = false,
     val detector: GlanceDetector = GlanceDetector.UNKNOWN,
     val checkedEpochMs: Long? = null,
+    val pass: GlancePass = GlancePass.Unavailable,
 )
 
 data class ActiveGlanceCause(
@@ -69,6 +77,7 @@ data class GlanceDisplay(
     val focusedTodayLabel: String = "Focused today",
     val detector: GlanceDetector = GlanceDetector.UNKNOWN,
     val session: GlanceOngoingSession? = null,
+    val pass: String = "Emergency Pass unavailable",
 )
 
 data class GlanceOngoingSession(val occurrenceId: String, val logicalEndElapsedMs: Long?)
@@ -120,7 +129,14 @@ object GlanceDisplayMapper {
             nowElapsedMs + (it.startsAtEpochMs - nowEpochMs)
         }
         val refresh = listOfNotNull(checked!! + MAX_AGE_MS, validUntil, historyBoundary, nextBoundary).min()
-        val available = base.copy(next = next, refreshAtElapsedMs = refresh, detector = reading.detector)
+        val pass = when (val value = reading.pass) {
+            GlancePass.Unavailable -> "Emergency Pass unavailable"
+            GlancePass.Available -> "Emergency Pass available at last check"
+            GlancePass.Recovery -> "Emergency Pass recovery"
+            is GlancePass.CoolingDown -> "Emergency Pass · Next eligibility estimate ${at(value.nextEligibleEpochMs)}" +
+                if (value.clockUncertain) " · Time uncertain" else ""
+        }
+        val available = base.copy(next = next, refreshAtElapsedMs = refresh, detector = reading.detector, pass = pass)
         return when (reading.status) {
             ProtectionStatus.UNAVAILABLE -> base
             ProtectionStatus.DEGRADED -> available.copy(

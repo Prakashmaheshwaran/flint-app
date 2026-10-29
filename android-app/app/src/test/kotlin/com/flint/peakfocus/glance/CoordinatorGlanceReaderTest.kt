@@ -8,16 +8,36 @@ import org.junit.Test
 
 class CoordinatorGlanceReaderTest {
     private val timer = C.ActiveCause("timer-fixture", "Deep study", C.CauseKind.TIMER, BreakLevel.HARDCORE,
-        300_000, 400_000, 1_800_000_300_000, false)
+        300_000, 400_000, 1_800_000_300_000, false, "occurrence-fixture")
     private val ready = C(C.Readiness.READY, listOf(timer), null, C.PassStatus.Available,
         C.DetectorHealth(true, C.PathBState.OFF, emptySet()), true,
-        AccessClockStamp(1_800_000_000_000, 100_000, "fixture-boot"), 130_000)
+        AccessClockStamp(1_800_000_000_000, 100_000, "fixture-boot"), 130_000,
+        C.SafetyFloorStatus(setOf("home"), setOf("home"), emptySet(), 100_000, false))
 
-    @Test fun unknownLoadingUnavailableMissingValidityAndPassFailureStayUnavailable() {
+    @Test fun unknownLoadingUnavailableAndMissingValidityStayUnavailable() {
         listOf(C.UNKNOWN, ready.copy(readiness = C.Readiness.LOADING), ready.copy(readiness = C.Readiness.UNAVAILABLE),
-            ready.copy(pass = C.PassStatus.Unavailable), ready.copy(observedAt = null),
+            ready.copy(observedAt = null),
             ready.copy(validUntilElapsedRealtimeMs = null)).forEach {
             assertEquals(ProtectionStatus.UNAVAILABLE, coordinatorGlanceReading(it).status)
+        }
+    }
+
+    @Test fun unavailablePassIsIndependentButOtherDegradationCannotBeIgnored() {
+        val pending = ready.copy(pass = C.PassStatus.Unavailable,
+            detectors = ready.detectors.copy(degradedReasons = setOf("pass-contract-unavailable")))
+        val reading = coordinatorGlanceReading(pending)
+        assertEquals(ProtectionStatus.ACTIVE, reading.status)
+        assertEquals(GlancePass.Unavailable, reading.pass)
+        assertEquals(ProtectionStatus.DEGRADED, coordinatorGlanceReading(pending.copy(
+            detectors = pending.detectors.copy(degradedReasons = setOf("pass-contract-unavailable", "policy-check-failed")))).status)
+    }
+
+    @Test fun stickySafetyBitCannotOverrideMissingFailedOrFutureProvenance() {
+        val floor = ready.safetyFloor!!
+        listOf(null, floor.copy(degraded = true), floor.copy(failedSources = setOf("home")),
+            floor.copy(resolvedSources = emptySet()), floor.copy(checkedAtElapsedRealtimeMs = null),
+            floor.copy(checkedAtElapsedRealtimeMs = 100_001)).forEach {
+            assertEquals(ProtectionStatus.DEGRADED, coordinatorGlanceReading(ready.copy(safetyFloor = it)).status)
         }
     }
 
@@ -37,6 +57,7 @@ class CoordinatorGlanceReaderTest {
     @Test fun sessionKindNameLogicalEndAndAuthorityValidityAreProjectedWithoutPrivateReads() {
         val result = coordinatorGlanceReading(ready)
         assertEquals(GlanceCauseKind.FOCUS_SESSION, result.cause?.kind)
+        assertEquals("occurrence-fixture", result.cause?.occurrenceId)
         assertEquals(400_000L, result.cause?.logicalEndElapsedMs)
         assertEquals("Deep study", result.cause?.name)
         assertEquals(130_000L, result.validUntilElapsedMs)
@@ -61,7 +82,7 @@ class CoordinatorGlanceReaderTest {
 
     @Test fun nullRuleIdentityIsPreservedWithoutInventingAnOccurrenceId() {
         val reading = coordinatorGlanceReading(ready.copy(activeCauses = listOf(
-            timer.copy(ruleId = null, kind = C.CauseKind.TIME_LIMIT))))
+            timer.copy(ruleId = null, occurrenceId = null, kind = C.CauseKind.TIME_LIMIT))))
         assertNull(reading.cause?.occurrenceId)
         assertEquals(GlanceCauseKind.TIME_LIMIT, reading.cause?.kind)
     }

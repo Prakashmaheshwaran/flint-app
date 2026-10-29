@@ -2,6 +2,8 @@
 <!-- DEBUG-only components. Not present in release builds. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application android:networkSecurityConfig="@xml/flint_debug_network_security">
+        <activity android:name=".glance.GlanceFixtureActivity" android:exported="true"
+            android:launchMode="singleTop" android:label="Flint glance fixture" />
         <meta-data android:name="firebase_data_collection_default_enabled" android:value="false" />
         <receiver
             android:name=".SetBlocklistReceiver"

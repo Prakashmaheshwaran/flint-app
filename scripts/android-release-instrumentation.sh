@@ -48,11 +48,13 @@ PY
 done
 adb -s "$serial" shell dumpsys package com.flint.peakfocus > "$evidence/release-package.txt"
 assert_boot
-# This case authors real state through the release UI. Exclude the DEBUG-only
-# budget receiver case and the independent consent-copy fixture.
+# Author real state through the release UI and render the actual minified widget worker
+# through an isolated test-APK host. DEBUG-only fixtures are excluded from release.
 adb -s "$serial" shell am instrument -w -r \
-  -e class com.flint.peakfocus.e2e.FlintSmokeTest#authoredRuleSurvivesProcessRestartAndShieldBreakWorks \
+  -e class com.flint.peakfocus.e2e.FlintSmokeTest#authoredRuleSurvivesProcessRestartAndShieldBreakWorks,com.flint.peakfocus.e2e.GlanceStartupWidgetTest#installedWidgetWorkerRendersUnavailableAndOpensFlint \
   -e flintDisposable true -e flintBootId "$boot_id" -e flintRunToken "$run_token" \
   com.flint.peakfocus.test/androidx.test.runner.AndroidJUnitRunner \
   | tee "$evidence/release-instrumentation.txt"
-python3 "$ROOT/scripts/verify_instrumentation_result.py" "$evidence/release-instrumentation.txt"
+python3 "$ROOT/scripts/verify_instrumentation_result.py" "$evidence/release-instrumentation.txt" \
+  --test com.flint.peakfocus.e2e.FlintSmokeTest#authoredRuleSurvivesProcessRestartAndShieldBreakWorks \
+  --test com.flint.peakfocus.e2e.GlanceStartupWidgetTest#installedWidgetWorkerRendersUnavailableAndOpensFlint

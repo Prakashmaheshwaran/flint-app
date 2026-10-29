@@ -7,7 +7,8 @@ import kotlinx.coroutines.flow.map
 
 /**
  * Only C's in-process/current-boot hub is read; no protection snapshot is persisted by K.
- * Until C's live producers publish, the Hub's UNKNOWN default stays unavailable on this surface.
+ * C's coordinator owns policy observations; its service owns Path B leases. Pass availability
+ * is independent of protection readiness and never reconstructed from legacy preferences.
  */
 class CoordinatorGlanceReader : GlanceProtectionReader {
     override val changes = ProtectionStatusHub.status.map { Unit }
@@ -18,8 +19,7 @@ class CoordinatorGlanceReader : GlanceProtectionReader {
 internal fun coordinatorGlanceReading(status: CoordinatorStatus): ProtectionReading {
     val checked = status.observedAt
     if (status.readiness != CoordinatorStatus.Readiness.READY || checked == null ||
-        status.validUntilElapsedRealtimeMs == null ||
-        status.pass == CoordinatorStatus.PassStatus.Unavailable) return ProtectionReading()
+        status.validUntilElapsedRealtimeMs == null) return ProtectionReading()
     val pathBForegroundActive = when (status.detectors.pathB) {
         CoordinatorStatus.PathBState.STANDBY, CoordinatorStatus.PathBState.ENFORCING -> true
         CoordinatorStatus.PathBState.OFF -> false
@@ -37,13 +37,23 @@ internal fun coordinatorGlanceReading(status: CoordinatorStatus): ProtectionRead
         // C explicitly guarantees the Hub resets at process/reboot. K never restores a cache.
         sameBootVerified = true,
         detector = detector,
+        pass = when (val pass = status.pass) {
+            CoordinatorStatus.PassStatus.Unavailable -> GlancePass.Unavailable
+            CoordinatorStatus.PassStatus.Available -> GlancePass.Available
+            is CoordinatorStatus.PassStatus.CoolingDown -> GlancePass.CoolingDown(pass.nextEligibleEstimateEpochMs, pass.clockUncertain)
+            is CoordinatorStatus.PassStatus.RecoveryActive -> GlancePass.Recovery
+        },
         next = status.nextOccurrence?.let { NextGlanceSession(displayName(it.displayName, it.kind), it.startWallEstimateEpochMs) },
     )
     val pass = status.pass
     if (pass is CoordinatorStatus.PassStatus.RecoveryActive) return base.copy(
         status = ProtectionStatus.PASS_RECOVERY, recoveryEndElapsedMs = pass.logicalEndElapsedRealtimeMs,
     )
-    if (!status.safetyFloorResolved || status.detectors.degradedReasons.isNotEmpty() ||
+    val floor = status.safetyFloor
+    val floorHealthy = status.safetyFloorResolved && floor != null && !floor.degraded &&
+        floor.failedSources.isEmpty() && floor.resolvedSources.containsAll(floor.requiredSources) &&
+        floor.checkedAtElapsedRealtimeMs?.let { it in 0..checked.elapsedRealtimeMs } == true
+    if (!floorHealthy || (status.detectors.degradedReasons - "pass-contract-unavailable").isNotEmpty() ||
         (!status.detectors.accessibilityConnected && pathBForegroundActive != true && status.activeCauses.isNotEmpty())) {
         return base.copy(status = ProtectionStatus.DEGRADED)
     }
@@ -59,7 +69,7 @@ internal fun coordinatorGlanceReading(status: CoordinatorStatus): ProtectionRead
     }
     return base.copy(status = ProtectionStatus.ACTIVE,
         timeUncertain = status.activeCauses.any { it.timeUncertain },
-        cause = ActiveGlanceCause(selected.ruleId, displayName(selected.displayName, selected.kind),
+        cause = ActiveGlanceCause(selected.occurrenceId, displayName(selected.displayName, selected.kind),
             when (selected.tier) {
                 BreakLevel.EASY -> GlanceTier.EASY
                 BreakLevel.HARDER -> GlanceTier.HARDER

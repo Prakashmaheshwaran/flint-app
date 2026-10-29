@@ -21,6 +21,19 @@ class GlanceDisplayMapperTest {
         assertEquals("Next session unavailable", result.next)
         assertEquals("Focus history unavailable", result.focusedToday)
         assertNull(result.countdownEndElapsedMs)
+        assertEquals("Emergency Pass unavailable", result.pass)
+    }
+
+    @Test fun passAvailabilityCooldownAndUncertainEstimateDoNotInventRecoveryOrProtection() {
+        assertEquals("Emergency Pass unavailable", display(active).pass)
+        assertEquals("Emergency Pass available at last check", display(active.copy(pass = GlancePass.Available)).pass)
+        val cooling = active.copy(pass = GlancePass.CoolingDown(1_800_100_000_000, true))
+        assertTrue(display(cooling).pass.contains("Next eligibility estimate"))
+        assertTrue(display(cooling).pass.contains("Time uncertain"))
+        assertEquals("Protection active at last check", display(cooling).status)
+        assertEquals("Emergency Pass recovery", display(active.copy(pass = GlancePass.Recovery)).pass)
+        assertEquals("Emergency Pass unavailable", display(active.copy(pass = GlancePass.Available,
+            validUntilElapsedMs = now)).pass)
     }
 
     @Test fun allTiersUseAuthoritativeLogicalDeadlineAndObservationLabel() {

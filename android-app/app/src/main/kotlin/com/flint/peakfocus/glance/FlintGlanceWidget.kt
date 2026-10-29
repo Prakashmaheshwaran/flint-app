@@ -53,6 +53,7 @@ class FlintGlanceWidget : GlanceAppWidget() {
                     item { Text(display.detail, GlanceModifier.clickable(open), style = primary) }
                     item { Spacer(GlanceModifier.height(8.dp)) }
                     item { Text(display.next, GlanceModifier.clickable(open), style = primary) }
+                    item { Text(display.pass, GlanceModifier.clickable(open), style = secondary) }
                     item { Text("${display.focusedTodayLabel}: ${display.focusedToday}",
                         GlanceModifier.clickable(open), style = primary) }
                     display.historyNote?.let { note ->
