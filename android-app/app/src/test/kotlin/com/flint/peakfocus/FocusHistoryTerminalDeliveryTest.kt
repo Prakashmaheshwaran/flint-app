@@ -42,20 +42,43 @@ class FocusHistoryTerminalDeliveryTest {
         assertTrue(store.append(HistoryEvent(type = "started", session = terminal.sessionId, at = start,
             plannedEnd = start + hour, tz = "UTC", name = "Focus", tier = "easy", source = "manual")))
         val owner = PendingOwner(terminal).apply { failAck = true }
-        runCatching { projectEditorHistoryTerminals(owner, store::append, ZoneOffset.UTC) }
+        runCatching { projectEditorHistoryTerminals(owner, { batch -> store.update { batch } }, ZoneOffset.UTC) }
         assertEquals(listOf(terminal), owner.pending)
-        assertEquals(2, store.load().events.size)
+        assertEquals(3, store.load().events.size)
         owner.failAck = false
-        projectEditorHistoryTerminals(owner, store::append, ZoneOffset.UTC)
+        projectEditorHistoryTerminals(owner, { batch -> store.update { batch } }, ZoneOffset.UTC)
         assertTrue(owner.pending.isEmpty())
         val events = store.load().events
-        assertEquals(2, events.size)
+        assertEquals(3, events.size)
         val record = events.single { it.id == terminal.id }
         assertEquals(terminal.logicalEnd.wallEpochMs, record.at)
         assertEquals(terminal.observedAt.wallEpochMs, record.observedAt)
         val session = FocusHistoryAggregator.sessions(events, clock.millis(), emptySet()).single()
         assertEquals(SessionOutcome.COMPLETED, session.outcome)
         assertEquals(hour, session.focusedMs)
+    }
+
+    @Test fun terminalBeforeRuleObservationCommitsMissedFinalDeadlineAtomically() = runTest {
+        val clock = Clock.fixed(Instant.ofEpochMilli(start + 3 * hour), ZoneOffset.UTC)
+        for (oldDeadline in listOf(start + hour, start + 3 * hour)) {
+            val store = FocusHistoryStore(temporary.newFolder(), clock)
+            assertTrue(store.append(HistoryEvent(type = "started", session = terminal.sessionId, at = start,
+                plannedEnd = oldDeadline, tz = "UTC", name = "Focus", tier = "easy", source = "manual")))
+            val finalDeadline = start + 2 * hour
+            val final = terminal.copy(logicalEnd = AccessClockStamp(finalDeadline, 2 * hour, "boot"),
+                observedAt = AccessClockStamp(clock.millis(), 3 * hour, "boot"))
+            val owner = PendingOwner(final)
+            projectEditorHistoryTerminals(owner, { batch -> store.update { batch } }, ZoneOffset.UTC)
+            assertTrue(owner.pending.isEmpty())
+            // A later rule observation cannot repair a terminal's plan; delivery owns it.
+            val reconciler = com.flint.peakfocus.core.history.HistoryReconciler(store, clock, { ZoneOffset.UTC })
+            reconciler.observe(emptyList())
+            val session = FocusHistoryAggregator.sessions(store.load().events, clock.millis(), emptySet()).single()
+            assertEquals(SessionOutcome.COMPLETED, session.outcome)
+            assertEquals(finalDeadline, session.plannedEnd)
+            assertEquals(2 * hour, session.focusedMs)
+            assertEquals(3, store.load().events.size)
+        }
     }
 
     @Test fun cancelledAppendLeavesOwnerIntentPending() = runTest {

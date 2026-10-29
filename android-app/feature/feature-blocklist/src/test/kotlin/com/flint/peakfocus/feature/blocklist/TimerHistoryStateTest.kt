@@ -31,6 +31,20 @@ class TimerHistoryStateTest {
         assertNull(completionFromHistory(summary(session(end = now - 1000), session("b", outcome = SessionOutcome.ENDED_EARLY)), null, now, zone))
         assertNotNull(completionFromHistory(summary(session(), session("b", end = now + 1000)), "a", now + 1000, zone))
     }
+    @Test fun olderUnconfirmedObservationDoesNotHideGenuineCompletion() {
+        for (oldDeadline in listOf<Long?>(null, now + 3_600_000)) {
+            val events = listOf(
+                HistoryEvent(type = "started", session = "old", at = now - 7_200_000,
+                    plannedEnd = oldDeadline, tz = zone.id, tier = "easy", source = "legacy", name = "Old"),
+                HistoryEvent(type = "started", session = "new", at = now - 600_000,
+                    plannedEnd = now - 300_000, tz = zone.id, tier = "easy", source = "manual", name = "New"),
+                HistoryEvent(type = "completed", session = "new", at = now - 300_000, tz = zone.id),
+            )
+            val sessions = FocusHistoryAggregator.sessions(events, now, emptySet())
+            assertEquals(SessionOutcome.UNCONFIRMED, sessions.single { it.id == "old" }.outcome)
+            assertEquals("new", completionFromHistory(summary(*sessions.toTypedArray()), null, now, zone)?.id)
+        }
+    }
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test fun dismissedCompletionStaysDismissedAcrossNewViewModelInstance() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))

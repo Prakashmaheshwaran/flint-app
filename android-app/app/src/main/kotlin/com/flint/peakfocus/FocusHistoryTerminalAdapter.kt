@@ -25,7 +25,7 @@ internal object FocusHistoryTerminalAdapter {
         scope.launch(Dispatchers.IO) {
             // Retry even when IO recovers without a new rule/terminal flow emission.
             while (isActive) {
-                try { projectEditorHistoryTerminals(owner, history::append) }
+                try { projectEditorHistoryTerminals(owner, { batch -> history.update { batch } }) }
                 catch (cancelled: CancellationException) { throw cancelled }
                 catch (_: Exception) { /* Leave the owner's durable intent pending. */ }
                 delay(5_000)
@@ -34,12 +34,21 @@ internal object FocusHistoryTerminalAdapter {
     }
 }
 
-/** The owner acknowledges only true delivery; stable ids make a crash before ack safe. */
+/** Commit the owner's final plan and terminal together before acknowledgement. */
 internal suspend fun projectEditorHistoryTerminals(
     owner: EditorCommitmentStore,
-    append: suspend (HistoryEvent) -> Boolean,
+    commit: suspend (List<HistoryEvent>) -> Boolean,
     zone: ZoneId = ZoneId.systemDefault(),
-) = owner.deliverTerminalEvents { event -> append(event.toHistoryEvent(zone)) }
+) = owner.deliverTerminalEvents { event ->
+    val terminal = event.toHistoryEvent(zone)
+    // The rules observer may have missed an edit, or run after this delivery.
+    // The authoritative endpoint must replace that stale plan in the same write.
+    commit(listOf(HistoryEvent(
+        id = "${event.id}:deadline", type = "rescheduled", session = event.sessionId,
+        at = terminal.at, plannedEnd = terminal.at, observedAt = terminal.observedAt,
+        inferred = true, tz = zone.id,
+    ), terminal))
+}
 
 internal fun EditorTerminalEvent.toHistoryEvent(zone: ZoneId): HistoryEvent = when (kind) {
     EditorTerminalKind.COMPLETED -> HistoryEvent(
