@@ -39,6 +39,11 @@ extension FlintProtectionStatus {
         if let active, active.endsAt == nil {
             armed = sessionTargets(active.id)
         }
+        // Forget threshold marks of limits that were disabled, deleted or re-armed with another
+        // threshold since they fired: their shield was cleared or replaced (ADR-012 §8).
+        if let limits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: defaults) {
+            FlintLimitThresholds.prune(keeping: limits, in: defaults)
+        }
         let inputs = currentInputs(now: now, defaults: defaults, ledgerPass: pass,
                                    thresholdReached: FlintLimitThresholds.reachedToday(now: now, in: defaults),
                                    sessionArmed: armed,
@@ -94,12 +99,27 @@ extension FlintProtectionStatusSnapshot {
 public enum FlintLimitThresholds {
     static let key = "flint.limits.thresholdReached"
 
-    public static func markReached(_ limitID: String, at date: Date = Date(), in defaults: UserDefaults? = .flintGroup) {
+    public static func markReached(_ limit: FlintLimitRule, at date: Date = Date(), in defaults: UserDefaults? = .flintGroup) {
         guard let defaults else { return }
         var all = load(from: defaults)
-        all[limitID] = date.timeIntervalSince1970
+        all[limit.id] = date.timeIntervalSince1970
         defaults.set(all, forKey: key)
+        var thresholds = (defaults.dictionary(forKey: thresholdKey) as? [String: Int]) ?? [:]
+        thresholds[limit.id] = limit.thresholdMinutes
+        defaults.set(thresholds, forKey: thresholdKey)
     }
+
+    /// Keep marks only for limits still enabled with the threshold that fired.
+    static func prune(keeping limits: [FlintLimitRule], in defaults: UserDefaults?) {
+        guard let defaults else { return }
+        let thresholds = (defaults.dictionary(forKey: thresholdKey) as? [String: Int]) ?? [:]
+        let valid = Set(limits.filter { $0.enabled && thresholds[$0.id] == $0.thresholdMinutes }.map(\.id))
+        let all = load(from: defaults)
+        let kept = all.filter { valid.contains($0.key) }
+        if kept.count != all.count { defaults.set(kept, forKey: key) }
+    }
+
+    static let thresholdKey = "flint.limits.thresholdReached.minutes"
 
     public static func clear(_ limitID: String, in defaults: UserDefaults? = .flintGroup) {
         guard let defaults else { return }

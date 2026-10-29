@@ -76,7 +76,7 @@ final class FlintMonitor: DeviceActivityMonitor {
         // unmatched event is stale — a no-op, never a cue to shield the session's selection.
         guard let limit = limit(forEvent: event) else { return }
         applyLimitShield(limit) // daily budget hit → shield until the day resets
-        FlintLimitThresholds.markReached(limit.id) // the projection may now claim it enforcing
+        FlintLimitThresholds.markReached(limit) // the projection may now claim it enforcing
         publishStatus()
     }
 

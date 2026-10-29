@@ -83,13 +83,29 @@ final class FlintProtectionStatusHooksTests: XCTestCase {
 
     func testThresholdsAreKnownOnlyForToday() {
         let now = Date(timeIntervalSince1970: 1_793_206_800)
-        FlintLimitThresholds.markReached("limit-a", at: now, in: defaults)
-        FlintLimitThresholds.markReached("limit-b", at: now.addingTimeInterval(-86_400 * 2), in: defaults)
+        let a = FlintLimitRule(id: "limit-a", name: "A", thresholdMinutes: 30)
+        let b = FlintLimitRule(id: "limit-b", name: "B", thresholdMinutes: 30)
+        FlintLimitThresholds.markReached(a, at: now, in: defaults)
+        FlintLimitThresholds.markReached(b, at: now.addingTimeInterval(-86_400 * 2), in: defaults)
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
         XCTAssertEqual(FlintLimitThresholds.reachedToday(now: now, calendar: calendar, in: defaults), ["limit-a": true])
         FlintLimitThresholds.clear("limit-a", in: defaults)
         XCTAssertEqual(FlintLimitThresholds.reachedToday(now: now, calendar: calendar, in: defaults), [:])
+    }
+
+    func testAMarkDoesNotOutliveADisableOrAThresholdChange() {
+        let now = Date(timeIntervalSince1970: 1_793_206_800)
+        var limit = FlintLimitRule(id: "limit-a", name: "A", thresholdMinutes: 30)
+        FlintLimitThresholds.markReached(limit, at: now, in: defaults)
+        limit.enabled = false
+        FlintLimitThresholds.prune(keeping: [limit], in: defaults)
+        XCTAssertEqual(FlintLimitThresholds.reachedToday(now: now, in: defaults), [:], "disabled: its shield was cleared")
+        limit.enabled = true
+        FlintLimitThresholds.markReached(limit, at: now, in: defaults)
+        limit.thresholdMinutes = 60
+        FlintLimitThresholds.prune(keeping: [limit], in: defaults)
+        XCTAssertEqual(FlintLimitThresholds.reachedToday(now: now, in: defaults), [:], "a new threshold hasn't fired")
     }
 
     func testAnOpenEndedSessionIsArmedOnlyWithItsTargets() {

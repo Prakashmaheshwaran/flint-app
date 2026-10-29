@@ -861,15 +861,14 @@ public final class FlintSessionController {
                 $0.lastArmFailure = .init(sessionName: session.name, reason: message, at: now)
             }
             FlintSessionLifecycle.didFailToArm(session, reason: "monitor_registration_failed", at: now)
-            env.publishStatus()
             return .failed
         }
         store.saveActiveSession(session.rearmed(monitorName: name, plan: plan, at: now,
                                                 countsTowardLimit: reason == .prematureEnd))
         if session.monitorName != name { env.registrar.stopMonitoring([session.monitorName]) }
         // The running session is armed again: an earlier refusal is no longer current.
+        // (Callers publish: the monitor callback, the reconcile, the start that repaired it.)
         FlintSessionHealth.update(in: env.healthDefaults()) { $0.lastArmFailure = nil }
-        env.publishStatus()
         return .rearmed
     }
 

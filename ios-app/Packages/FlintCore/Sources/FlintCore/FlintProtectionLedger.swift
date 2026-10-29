@@ -233,11 +233,14 @@ public final class FlintProtectionLedger {
     }
 
     /// The production ledger in the App Group container; nil without the entitlement.
+    /// The App Group key of the durable initialization marker kept outside the ledger file.
+    public static let initializedMarkerKey = "flint.ledger.initializedAt"
+
     public static func appGroup(clock: FlintClock = .system) -> FlintProtectionLedger? {
         guard let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: FlintGroupStore.appGroupID),
             let defaults = UserDefaults.flintGroup else { return nil }
-        let key = "flint.ledger.initializedAt"
+        let key = initializedMarkerKey
         return FlintProtectionLedger(
             directory: container.appendingPathComponent("FlintLedger", isDirectory: true),
             clock: clock,
