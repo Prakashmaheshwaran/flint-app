@@ -149,7 +149,9 @@ final class FlintRuleArbiter {
                 for mutation in mutations {
                     if !all.contains(where: { $0.id == mutation.id }), var placeholder = mutation.proposed {
                         placeholder.enabled = false
-                        placeholder.protection?.incarnation = UUID().uuidString
+                        let draftProtection = placeholder.protection
+                        placeholder.protection = .init(timeZoneID: draftProtection?.timeZoneID ?? TimeZone.current.identifier,
+                            requiresTierReview: draftProtection?.requiresTierReview ?? false)
                         all.append(placeholder)
                     }
                     guard let index = all.firstIndex(where: { $0.id == mutation.id }) else { return .unavailable }
@@ -208,8 +210,8 @@ final class FlintRuleArbiter {
                 guard var next = mutation.proposed else {
                     all.removeAll { $0.id == mutation.id }; continue
                 }
-                var metadata = old?.protection ?? next.protection ?? .init()
-                if old == nil { metadata.incarnation = UUID().uuidString }
+                var metadata = old?.protection ?? .init(timeZoneID: next.protection?.timeZoneID ?? TimeZone.current.identifier,
+                    requiresTierReview: next.protection?.requiresTierReview ?? false)
                 let impact = old.flatMap { try? next.impact(comparedTo: $0, at: now) }
                 metadata.revision = (old?.revision ?? 0) + 1
                 if impact != .cosmetic || old?.enabled != next.enabled {

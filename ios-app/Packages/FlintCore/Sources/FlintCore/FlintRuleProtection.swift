@@ -27,7 +27,7 @@ public enum FlintRuleActivity {
 public struct FlintRuleProtection: Codable, Equatable, Sendable {
     /// Minted by the arbiter on create, preserved through edits/queues/off-on. A reused rule
     /// ID cannot inherit another incarnation's native callback, wait count or Open credit.
-    public var incarnation: String
+    public let incarnation: String
     public var revision: Int
     public var contractVersion: Int
     public var activityRevision: Int
