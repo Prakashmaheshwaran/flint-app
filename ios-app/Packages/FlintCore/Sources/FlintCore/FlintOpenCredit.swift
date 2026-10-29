@@ -68,6 +68,12 @@ public enum FlintOpenCredit {
             let valid = state.reconcileOpenCredits(at: FlintLedgerInstant(clock: .system),
                 targetKeys: rules.map(targetKeys) ?? state.openCredits.knownTargets,
                 setupCalendar: FlintClock.system.calendar(), reshield: reshield)
+            if valid, let rules {
+                state.reconcileOpenCreditAuthorization(authorized: { authorized($0, rules: rules) }, reshield: { grant in
+                    reshield(grant)
+                    FlintScheduling.stopMonitoring([grant.activityName])
+                })
+            }
             apply(rule, grants: valid ? state.openCredits.grants : [:])
         }
         if case .failure = result { apply(rule, grants: [:]) }
@@ -125,8 +131,7 @@ public enum FlintOpenCredit {
         authorized: { grant in
             guard let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup),
                   Set(rules.map(\.id)).count == rules.count else { return false }
-            let covering = rules.filter { $0.enabled && keys(for: $0).contains(grant.targetKey) }
-            return Set(covering.map(\.id)) == grant.coveredCauses && covering.allSatisfy { authorizes(grant, rule: $0) }
+            return authorized(grant, rules: rules)
         }, unavailable: restoreObservedRules)
     }
 
@@ -180,6 +185,11 @@ public enum FlintOpenCredit {
               let scope = try? effectiveFingerprint(for: rule, includingCap: false) else { return false }
         return grant.authorizes(cause: rule.id, cap: rule.opensAllowed, fingerprint: fingerprint, scope: scope,
                                 activity: rule.activityName)
+    }
+    private static func authorized(_ grant: FlintOpenCreditGrant, rules: [FlintOpenLimitRule]) -> Bool {
+        guard Set(rules.map(\.id)).count == rules.count else { return false }
+        let covering = rules.filter { $0.enabled && keys(for: $0).contains(grant.targetKey) }
+        return Set(covering.map(\.id)) == grant.coveredCauses && covering.allSatisfy { authorizes(grant, rule: $0) }
     }
     /// A corrupt ledger cannot identify its hashed carrier. Restore only readable rules
     /// whose daily registration is already observed; never create an unarmed/global shield.

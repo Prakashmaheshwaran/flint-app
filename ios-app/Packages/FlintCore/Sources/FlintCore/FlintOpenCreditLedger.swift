@@ -211,6 +211,16 @@ extension FlintLedgerState {
     public static let legacyOpenCreditMigration = "openCredits.v0"
     public static let legacyOpenCreditKey = "flint.openLimit.state"
 
+    /// A revoked authorization cannot reappear if a later edit restores its old fields.
+    mutating func reconcileOpenCreditAuthorization(authorized: (FlintOpenCreditGrant) -> Bool,
+                                                   reshield: (FlintOpenCreditGrant) -> Void) {
+        for grant in Array(openCredits.grants.values) where !authorized(grant) {
+            reshield(grant)
+            openCredits.grants[grant.targetKey] = nil
+            openCredits.carrierCheckpoints[grant.targetKey] = nil
+        }
+    }
+
     /// Run inside the ledger migration hook. Original legacy bytes are deliberately retained.
     public mutating func importLegacyOpenCredits(
         _ raw: FlintLegacyValue, targetKeys: Set<String>?, established: Bool,

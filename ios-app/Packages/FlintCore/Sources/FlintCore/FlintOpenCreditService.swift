@@ -172,13 +172,8 @@ public final class FlintOpenCreditService {
                     result: callback == .end ? "missed_warning_recovered" : "late_reshield",
                     at: now.wall))
             }
+            state.reconcileOpenCreditAuthorization(authorized: self.authorized, reshield: self.reshieldAndStop)
             for grant in Array(state.openCredits.grants.values) {
-                guard self.authorized(grant) else {
-                    self.reshieldAndStop(grant)
-                    state.openCredits.grants[grant.targetKey] = nil
-                    state.openCredits.carrierCheckpoints[grant.targetKey] = nil
-                    continue
-                }
                 // Warnings before the elapsed deadline (including clock edits) must re-arm.
                 // Do not re-register on intervalDidStart: that would create a callback loop.
                 let repair = !self.registered(grant.activityName) ||

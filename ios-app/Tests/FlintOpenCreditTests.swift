@@ -192,8 +192,10 @@ final class FlintOpenCreditTests: XCTestCase {
     func testNewIndependentOpenCauseDuringGrantDeniesWithoutAnotherCharge() throws {
         _ = try accepted()
         caps["new-independent-open"] = 1
-        denied(.otherContributor)
         XCTAssertEqual(service().preview(target: openAppKey).blockedBy, .otherContributor)
+        denied(.otherContributor)
+        XCTAssertEqual(service().preview(target: openAppKey).blockedBy, .exhausted)
+        XCTAssertNil(try state().openCredits.grants[openAppKey])
         XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
     }
 
@@ -318,6 +320,18 @@ final class FlintOpenCreditTests: XCTestCase {
         caps = ["open-a": 2]
         activityOverride = ["open-a": "flint.openLimit.open-a.r0"]
         denied(.otherContributor)
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
+        XCTAssertEqual(shielded, [openAppKey])
+    }
+
+    func testEffectiveTierRevocationPersistsBeforeAChangeBackCanReplayIt() throws {
+        let first = try accepted("original-tier")
+        fingerprintOverride = ["open-a": "changed-tier"]
+        scopeOverride = ["open-a": "changed-tier"]
+        XCTAssertTrue(service().reconcile(activity: first.grant.activityName, callback: .start))
+        XCTAssertNil(try state().openCredits.grants[openAppKey])
+        fingerprintOverride = nil; scopeOverride = nil
+        denied(.staleOperation, op: "original-tier")
         XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
         XCTAssertEqual(shielded, [openAppKey])
     }
