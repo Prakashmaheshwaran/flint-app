@@ -67,6 +67,7 @@ import com.flint.peakfocus.core.common.ui.FlintTimeField
 import com.flint.peakfocus.core.common.ui.rememberFlintHaptics
 import com.flint.peakfocus.core.common.ui.rememberReducedMotion
 import com.flint.peakfocus.core.model.AppRef
+import com.flint.peakfocus.core.model.BreakLevel
 
 /**
  * Author the one [SleepConfig] (spec 3.3 — free; blocking only, no bundled audio content).
@@ -272,9 +273,14 @@ internal fun SleepEditorScreen(
 
                 SleepSectionLabel(R.string.sleep_tier)
                 Text(stringResource(R.string.sleep_tier_value, stringResource(presentation.tier)))
-                BreakLevelSelector(selected = config.breakLevel, onSelect = { config = config.copy(breakLevel = it) })
+                SleepTierSelector(selected = config.breakLevel, onSelect = { config = config.copy(breakLevel = it) })
                 Text(
                     stringResource(presentation.offExplanation),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    stringResource(R.string.sleep_legacy_rights),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -440,6 +446,25 @@ private fun AssistSelector(
 @Composable
 private fun SleepSectionLabel(@androidx.annotation.StringRes text: Int) {
     SectionLabel(stringResource(text), Modifier.semantics { heading() })
+}
+
+/** Tier choice only; no promise about an unmerged pass or a re-derived active occurrence. */
+@Composable
+private fun SleepTierSelector(selected: BreakLevel, onSelect: (BreakLevel) -> Unit) {
+    Column(Modifier.fillMaxWidth().selectableGroup()) {
+        BreakLevel.entries.forEach { tier ->
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    .selectable(selected = tier == selected, role = Role.RadioButton, onClick = { onSelect(tier) })
+                    .padding(FlintSpacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = tier == selected, onClick = null)
+                Spacer(Modifier.width(FlintSpacing.sm))
+                Text(stringResource(sleepPresentation(SleepConfig(breakLevel = tier)).tier))
+            }
+        }
+    }
 }
 
 /** Wrap rather than shrinking seven touch targets into the viewport. */

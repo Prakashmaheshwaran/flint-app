@@ -23,8 +23,9 @@
     <string name="sleep_tier_harder">Harder</string>
     <string name="sleep_tier_hardcore">Hardcore</string>
     <string name="sleep_off_easy">Turning Sleep off requires confirmation. Active Easy Sleep occurrences end after you confirm.</string>
-    <string name="sleep_off_harder">During an active Harder Sleep occurrence, turning Sleep off requires a wait and final confirmation. Outside an active occurrence, no wait is required.</string>
-    <string name="sleep_off_hardcore">During an active Hardcore Sleep occurrence, turning Sleep off is saved for after that occurrence ends. Outside an active occurrence, you can turn Sleep off after confirmation.</string>
+    <string name="sleep_off_harder">Under the current commitment rules, turning Sleep off during an active Harder occurrence requires a wait and final confirmation. Outside an active occurrence, no wait is required.</string>
+    <string name="sleep_off_hardcore">Under the current commitment rules, turning Sleep off during an active Hardcore occurrence is saved for after that occurrence ends. Outside an active occurrence, you can turn Sleep off after confirmation.</string>
+    <string name="sleep_legacy_rights">Migrated active occurrences keep their earlier edit and off rights until they end. The confirmation shows which change will apply.</string>
     <string name="sleep_allowed">Allowed overnight</string>
     <string name="sleep_allowed_empty">No extra apps allowed. Known safety apps are excluded from Sleep rules.</string>
     <string name="sleep_choose_apps">Choose apps</string>

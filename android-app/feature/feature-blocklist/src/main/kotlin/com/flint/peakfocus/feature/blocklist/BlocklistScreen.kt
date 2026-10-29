@@ -2,6 +2,8 @@ package com.flint.peakfocus.feature.blocklist
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FiniteAnimationSpec
@@ -192,13 +194,16 @@ fun BlocklistScreen(
     }
 
     val slideDistance = with(LocalDensity.current) { EditorSlideDistance.roundToPx() }
+    val reducedMotion = rememberReducedMotion()
 
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         AnimatedContent(
             targetState = destination,
             modifier = Modifier.fillMaxSize(),
             transitionSpec = {
-                if (initialState is BlocklistDestination.Overview) {
+                if (reducedMotion && (initialState is BlocklistDestination.EditSleep || targetState is BlocklistDestination.EditSleep)) {
+                    EnterTransition.None togetherWith ExitTransition.None
+                } else if (initialState is BlocklistDestination.Overview) {
                     // Push: editor slides in from the end while the overview fades away.
                     (
                         slideInHorizontally(
@@ -513,7 +518,7 @@ private fun BlocklistOverview(
             Crossfade(
                 targetState = rulesState !is RulesUiState.Ready,
                 modifier = Modifier.padding(horizontal = FlintSpacing.gutter),
-                animationSpec = tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard),
+                animationSpec = if (rememberReducedMotion()) snap() else tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard),
                 label = "sleepSection",
             ) { loading ->
                 if (loading) {
