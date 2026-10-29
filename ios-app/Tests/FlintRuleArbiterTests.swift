@@ -269,6 +269,81 @@ final class FlintRuleArbiterTests: XCTestCase {
         XCTAssertEqual(h.load(FlintScheduleRule.self), [old])
     }
 
+    func testConfirmationFromPreviousOccurrenceCannotQueueAgainstNextOccurrencePC10() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let old = h.install(h.schedule(tier: .hardcore))
+        let arbiter = FlintRuleArbiter(environment: h.environment)
+        let ticket = try confirmation(arbiter.delete(FlintScheduleRule.self, id: old.id, revision: old.revision, confirmation: nil))
+        h.advance(86400)
+        XCTAssertEqual(arbiter.delete(FlintScheduleRule.self, id: old.id, revision: old.revision, confirmation: ticket), .staleRevision)
+        XCTAssertNil(h.load(FlintScheduleRule.self).first?.protection?.queuedChange)
+    }
+
+    func testBusySharedTransitionBoundaryMakesNoRuleOrOSChange() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let old = h.install(h.schedule(tier: .easy))
+        var environment = h.environment
+        environment.withTransitionBoundary = { _ in false }
+        XCTAssertEqual(FlintRuleArbiter(environment: environment).upsert(old), .unavailable)
+        XCTAssertEqual(h.load(FlintScheduleRule.self), [old])
+        XCTAssertTrue(h.center.starts.isEmpty); XCTAssertTrue(h.center.stops.isEmpty); XCTAssertTrue(h.cleared.isEmpty)
+    }
+
+    func testStrengtheningExtensionRetainsQueuedOffButCannotApplyItAtOldEndPC11PC12PC14() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let old = h.install(h.schedule(tier: .hardcore))
+        let arbiter = FlintRuleArbiter(environment: h.environment)
+        let off = try confirmation(arbiter.setEnabled(FlintScheduleRule.self, id: old.id, enabled: false,
+            revision: old.revision, confirmation: nil))
+        _ = arbiter.setEnabled(FlintScheduleRule.self, id: old.id, enabled: false, revision: old.revision, confirmation: off)
+        var stronger = try XCTUnwrap(h.load(FlintScheduleRule.self).first); stronger.schedule.endHour = 18
+        let extend = try confirmation(arbiter.upsert(stronger))
+        XCTAssertEqual(arbiter.upsert(stronger, confirmation: extend), .applied)
+        h.now = old.protection!.occurrence!.end
+        XCTAssertTrue(arbiter.applyQueued(FlintScheduleRule.self))
+        XCTAssertEqual(h.load(FlintScheduleRule.self).first?.enabled, true)
+        XCTAssertNotNil(h.load(FlintScheduleRule.self).first?.protection?.queuedChange)
+        h.advance(3600)
+        XCTAssertTrue(arbiter.applyQueued(FlintScheduleRule.self))
+        XCTAssertEqual(h.load(FlintScheduleRule.self).first?.enabled, false)
+    }
+
+    func testOlderEditorCannotCancelAnotherOperationsWaitPC20() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let old = h.install(h.schedule(tier: .harder))
+        let arbiter = FlintRuleArbiter(environment: h.environment)
+        var a = old; a.schedule.endHour = 16
+        let first = try confirmation(arbiter.upsert(a))
+        var b = old; b.schedule.endHour = 15
+        _ = arbiter.upsert(b)
+        XCTAssertFalse(arbiter.cancel(FlintScheduleRule.self, id: old.id, confirmation: first))
+        h.advance(60)
+        guard case .waiting(_, remaining: 0, required: _) = arbiter.upsert(b) else { return XCTFail("other operation's wait must remain") }
+    }
+
+    func testRuleBatchWaitsLongestAndCommitsEachCauseExactlyOncePC18PC19() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        var a = FlintOpenLimitRule(id: "a", name: "A", opensAllowed: 2, breakLevel: .harder,
+            protection: .init(timeZoneID: "UTC"))
+        var b = a; b.id = "b"; b.name = "B"
+        let windowA = a.templateOccurrence(at: h.now)
+        let windowB = b.templateOccurrence(at: h.now)
+        a.protection?.occurrence = windowA
+        b.protection?.occurrence = windowB
+        XCTAssertTrue(FlintDesiredRules.save([a, b], key: .openLimits, to: h.defaults))
+        let causeA = FlintRuleArbiter.causeID(a, window: a.occurrence(at: h.now))
+        let causeB = FlintRuleArbiter.causeID(b, window: b.occurrence(at: h.now))
+        _ = h.ledger.transaction { $0.harder[causeB] = .init(committedCount: 2) }
+        let controller = FlintOpenLimitsController(environment: h.environment)
+        guard case let .waiting(ticket, remaining: 900, required: 900) = controller.deleteBatch([a, b]) else { return XCTFail() }
+        h.advance(900)
+        XCTAssertEqual(controller.deleteBatch([a, b], confirmation: ticket), .applied)
+        XCTAssertEqual(try h.ledger.read().get().harder[causeA]?.committedCount, 1)
+        XCTAssertEqual(try h.ledger.read().get().harder[causeB]?.committedCount, 3)
+        XCTAssertEqual(controller.deleteBatch([a, b], confirmation: ticket), .staleRevision)
+        XCTAssertEqual(try h.ledger.read().get().harder[causeB]?.committedCount, 3)
+    }
+
     private func confirmation(_ result: FlintRuleMutationResult) throws -> FlintRuleConfirmation {
         switch result {
         case let .confirmationRequired(ticket, _), let .deferRequired(ticket, _), let .waiting(ticket, _, _): return ticket
@@ -325,7 +400,9 @@ final class RuleHarness {
             allowListMode: true, protection: .init(timeZoneID: "UTC"))
     }
     @discardableResult func install<Rule: FlintGatedRule>(_ initial: Rule) -> Rule {
-        var rule = initial; rule.protection?.occurrence = rule.templateOccurrence(at: now)
+        var rule = initial
+        let occurrence = rule.templateOccurrence(at: now)
+        rule.protection?.occurrence = occurrence
         XCTAssertTrue(FlintDesiredRules.save([rule], key: Rule.domain, to: defaults))
         if rule.enabled { center.held[.init(rule.activityName)] = rule.registration() }
         return rule

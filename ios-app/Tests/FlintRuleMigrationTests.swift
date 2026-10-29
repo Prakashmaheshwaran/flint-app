@@ -49,6 +49,9 @@ final class FlintRuleMigrationTests: XCTestCase {
 
     func testLegacyActiveSleepKeepsOldRightsOnlyThroughCapturedOccurrencePC14PC70() throws {
         let h = try RuleHarness(); defer { h.clean() }
+        // Legacy rules used the device zone. Put the fixture at local noon on both UTC CI
+        // and the developer's device zone before capturing its grandfathered occurrence.
+        h.now = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: h.now)!
         let source = try fixture("legacy-sleep-hardcore")
         h.defaults.set(source, forKey: FlintRuleStoreKey.schedules.rawValue)
         let first = try XCTUnwrap(FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: h.defaults, at: h.now)?.first)
@@ -95,6 +98,15 @@ final class FlintRuleMigrationTests: XCTestCase {
             h.defaults.set(marker, forKey: FlintRuleStoreKey.limits.marker)
             XCTAssertNil(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults))
         }
+    }
+
+    func testUnknownRuleSchemaFieldIsUnavailableInsteadOfLegacyDefaultPC71() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let data = try fixture("legacy-time-tierless") { $0["contractVersion"] = 99 }
+        h.defaults.set(data, forKey: FlintRuleStoreKey.limits.rawValue)
+        XCTAssertNil(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults))
+        XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.limits.rawValue), data)
+        XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.limits.rawValue + ".quarantine.adr012"), data)
     }
 
     func testCrashAfterBackupOrMigratedBlobFinishesIdempotentlyPC70() throws {

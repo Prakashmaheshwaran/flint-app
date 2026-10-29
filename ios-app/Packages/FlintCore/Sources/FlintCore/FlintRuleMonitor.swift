@@ -14,7 +14,7 @@ public final class FlintRuleMonitor {
     public func handle(_ callback: Callback, activity: String) -> Bool {
         let domain = FlintRuleStoreKey.allCases.first { activity.hasPrefix($0.prefix) }
         guard let domain else { return false }
-        _ = FlintRuleStoreLock.withLock(directory: env.lockDirectory) {
+        _ = FlintRuleStoreLock.withLock(environment: env) {
             switch domain {
             case .schedules: process(FlintScheduleRule.self, callback: callback, activity: activity)
             case .limits: process(FlintLimitRule.self, callback: callback, activity: activity)

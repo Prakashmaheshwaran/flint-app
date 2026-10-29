@@ -37,8 +37,8 @@ final class SchedulesViewModel: ObservableObject {
         }
     }
 
-    func save(_ rule: FlintScheduleRule, confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
-        let result = controller.upsert(rule, confirmation: confirmation); refresh(); return result
+    func save(_ rule: FlintScheduleRule, confirmation: FlintRuleConfirmation? = nil, creating: Bool = false) -> FlintRuleMutationResult {
+        let result = controller.upsert(rule, confirmation: confirmation, creating: creating); refresh(); return result
     }
     func delete(_ rule: FlintScheduleRule, confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
         let result = controller.delete(rule.id, revision: rule.protection?.revision, confirmation: confirmation); refresh(); return result
@@ -47,7 +47,7 @@ final class SchedulesViewModel: ObservableObject {
         let result = controller.setEnabled(rule.id, !rule.enabled, revision: rule.protection?.revision,
             confirmation: confirmation); refresh(); return result
     }
-    func cancel(_ id: String) { controller.cancelPendingChange(id) }
+    func cancel(_ id: String, confirmation: FlintRuleConfirmation?) { controller.cancelPendingChange(id, confirmation: confirmation) }
 }
 
 /// The Rules tab: today's timeline, every schedule with its switch, templates, and the way
@@ -85,6 +85,9 @@ struct RulesView: View {
                     if !vm.armFailures.isEmpty { armFailures.padding(.top, 22) }
 
                     Text("Schedules").flintEyebrow().padding(.top, 22)
+                    if vm.health.domains["schedules"]?.failures.contains(where: { $0.activityName == "schedules" }) == true {
+                        Text("Saved schedules are unavailable. Existing protection was preserved.").foregroundStyle(FlintBrand.danger)
+                    }
                     if vm.rules.isEmpty {
                         Text("No schedules yet. Recurring blocks for work hours, study or bedtime — start from a template below or tap +.")
                             .flintSecondary(14)
@@ -131,14 +134,14 @@ struct RulesView: View {
             .flintTabBarInset()
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showAdd) {
-                ScheduleEditor(rule: nil, onSave: { vm.save($0, confirmation: $1) })
+                ScheduleEditor(rule: nil, onSave: { vm.save($0, confirmation: $1, creating: true) })
             }
             .sheet(item: $editing) { rule in
                 ScheduleEditor(rule: rule, onSave: { vm.save($0, confirmation: $1) },
                     onDelete: { vm.delete(rule, confirmation: $0) })
             }
             .sheet(item: $startingTemplate) { preset in
-                ScheduleEditor(rule: preset.draftRule(), asNew: true, onSave: { vm.save($0, confirmation: $1) })
+                ScheduleEditor(rule: preset.draftRule(), asNew: true, onSave: { vm.save($0, confirmation: $1, creating: true) })
             }
             .onAppear {
                 vm.refresh()
@@ -229,7 +232,7 @@ struct RulesView: View {
             }
             .buttonStyle(.plain)
             Toggle(rule.name, isOn: Binding(get: { rule.enabled }, set: { _ in
-                flow.run(scope: rule.name, operation: { vm.toggle(rule, confirmation: $0) }, cancel: { vm.cancel(rule.id) })
+                flow.run(scope: rule.name, operation: { vm.toggle(rule, confirmation: $0) }, cancel: { vm.cancel(rule.id, confirmation: $0) })
             }))
                 .toggleStyle(EmberToggleStyle())
                 .labelsHidden()
@@ -239,7 +242,7 @@ struct RulesView: View {
         .overlay(alignment: .bottom) { FlintHairline(opacity: 0.07) }
         .contextMenu {
             Button(role: .destructive) {
-                flow.run(scope: rule.name, operation: { vm.delete(rule, confirmation: $0) }, cancel: { vm.cancel(rule.id) })
+                flow.run(scope: rule.name, operation: { vm.delete(rule, confirmation: $0) }, cancel: { vm.cancel(rule.id, confirmation: $0) })
             } label: { Label("Delete", systemImage: "trash") }
         }
     }
@@ -525,7 +528,7 @@ struct ScheduleEditor: View {
                         if let onDelete {
                             Button("Delete schedule") {
                                 flow.run(scope: name, operation: onDelete,
-                                    cancel: { if let existingID { FlintSchedulesController().cancelPendingChange(existingID) } },
+                                    cancel: { ticket in if let existingID { FlintSchedulesController().cancelPendingChange(existingID, confirmation: ticket) } },
                                     onSaved: { dismiss() })
                             }
                             .font(FlintFont.text(14, weight: .medium))
@@ -621,7 +624,7 @@ struct ScheduleEditor: View {
             protection: original?.protection ?? .init(), oneShot: original?.oneShot
         )
         flow.run(scope: rule.name, operation: { onSave(rule, $0) },
-            cancel: { if let existingID { FlintSchedulesController().cancelPendingChange(existingID) } },
+            cancel: { ticket in if let existingID { FlintSchedulesController().cancelPendingChange(existingID, confirmation: ticket) } },
             onSaved: { dismiss() })
     }
 }

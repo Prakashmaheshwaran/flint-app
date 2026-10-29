@@ -10,21 +10,27 @@ final class RuleMutationFlow: ObservableObject {
     private(set) var scope = "Rule"
     private(set) var checkedAt = Date()
     private var operation: ((FlintRuleConfirmation?) -> FlintRuleMutationResult)?
-    private var cancellation: () -> Void = {}
+    private var cancellation: (FlintRuleConfirmation?) -> Void = { _ in }
+    private var ticket: FlintRuleConfirmation?
     private var saved: () -> Void = {}
 
     func run(scope: String, operation: @escaping (FlintRuleConfirmation?) -> FlintRuleMutationResult,
-             cancel: @escaping () -> Void = {}, onSaved: @escaping () -> Void = {}) {
+             cancel: @escaping (FlintRuleConfirmation?) -> Void = { _ in }, onSaved: @escaping () -> Void = {}) {
         self.scope = scope; self.operation = operation; cancellation = cancel; saved = onSaved
+        ticket = nil
         accept(operation(nil))
     }
     func confirm(_ ticket: FlintRuleConfirmation) { if let operation { accept(operation(ticket)) } }
     func checkAgain() { if let operation { accept(operation(nil)) } }
-    func cancel() { cancellation(); operation = nil; cancellation = {}; isPresented = false }
+    func cancel() { cancellation(ticket); operation = nil; cancellation = { _ in }; ticket = nil; isPresented = false }
     private func accept(_ result: FlintRuleMutationResult) {
         self.result = result; checkedAt = Date()
+        switch result {
+        case let .confirmationRequired(ticket, _), let .deferRequired(ticket, _), let .waiting(ticket, _, _): self.ticket = ticket
+        default: break
+        }
         if result.didSave {
-            operation = nil; cancellation = {}; isPresented = false; saved()
+            operation = nil; cancellation = { _ in }; ticket = nil; isPresented = false; saved()
         } else { isPresented = true }
     }
 }

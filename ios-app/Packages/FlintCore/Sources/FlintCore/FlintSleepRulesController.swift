@@ -16,7 +16,7 @@ public final class FlintSleepRulesController {
 
     @discardableResult
     public func save(_ draft: FlintSleepConfig, confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
-        FlintRuleStoreLock.withLock(directory: env.lockDirectory) {
+        FlintRuleStoreLock.withLock(environment: env) {
             guard let defaults = self.env.defaults,
                   let all = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules,
                     from: defaults, at: self.env.clock.now()) else { return .unavailable }
@@ -71,10 +71,11 @@ public final class FlintSleepRulesController {
         } ?? .unavailable
     }
 
-    public func cancel() {
+    public func cancel(confirmation: FlintRuleConfirmation? = nil) {
+        guard let confirmation else { return }
         let arbiter = FlintRuleArbiter(environment: env)
-        _ = arbiter.cancel(FlintScheduleRule.self, id: Self.nightID)
-        _ = arbiter.cancel(FlintScheduleRule.self, id: Self.morningID)
+        _ = arbiter.cancel(FlintScheduleRule.self, id: Self.nightID, confirmation: confirmation)
+        _ = arbiter.cancel(FlintScheduleRule.self, id: Self.morningID, confirmation: confirmation)
     }
 
     private static func morningWindow(_ config: FlintSleepConfig) -> FlintSchedule? {

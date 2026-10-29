@@ -18,8 +18,8 @@ final class LimitsViewModel: ObservableObject {
         health = FlintGroupStore()?.loadArmingHealth() ?? FlintArmingHealth()
         observation = FlintProtectionObservation.load()
     }
-    func save(_ limit: FlintLimitRule, confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
-        let result = controller.upsert(limit, confirmation: confirmation); refresh(); return result
+    func save(_ limit: FlintLimitRule, confirmation: FlintRuleConfirmation? = nil, creating: Bool = false) -> FlintRuleMutationResult {
+        let result = controller.upsert(limit, confirmation: confirmation, creating: creating); refresh(); return result
     }
     func delete(_ limit: FlintLimitRule, confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
         let result = controller.delete(limit.id, revision: limit.protection?.revision, confirmation: confirmation); refresh(); return result
@@ -28,7 +28,7 @@ final class LimitsViewModel: ObservableObject {
         let result = controller.setEnabled(limit.id, !limit.enabled, revision: limit.protection?.revision,
             confirmation: confirmation); refresh(); return result
     }
-    func cancel(_ id: String) { controller.cancelPendingChange(id) }
+    func cancel(_ id: String, confirmation: FlintRuleConfirmation?) { controller.cancelPendingChange(id, confirmation: confirmation) }
 }
 
 struct LimitsView: View {
@@ -49,6 +49,9 @@ struct LimitsView: View {
                 }
 
                 Text("Daily time budgets").flintEyebrow().padding(.top, 22)
+                if vm.health.domains["limits"]?.failures.contains(where: { $0.activityName == "limits" }) == true {
+                    Text("Saved Time Limits are unavailable. Existing protection was preserved.").foregroundStyle(FlintBrand.danger)
+                }
                 if vm.limits.isEmpty {
                     Text("Cap daily usage — say 30 minutes of social, then it rests until tomorrow.")
                         .flintSecondary(14).lineSpacing(3).padding(.vertical, 14)
@@ -75,7 +78,7 @@ struct LimitsView: View {
         .background(FlintGroundBackground())
         .flintTabBarInset()
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showAdd) { LimitEditor(limit: nil) { vm.save($0, confirmation: $1) } }
+        .sheet(isPresented: $showAdd) { LimitEditor(limit: nil) { vm.save($0, confirmation: $1, creating: true) } }
         .sheet(item: $editing) { limit in
             LimitEditor(limit: limit, onDelete: { vm.delete(limit, confirmation: $0) }) { vm.save($0, confirmation: $1) }
         }
@@ -112,7 +115,7 @@ struct LimitsView: View {
             }
             .buttonStyle(.plain)
             Toggle(limit.name, isOn: Binding(get: { limit.enabled }, set: { _ in
-                flow.run(scope: limit.name, operation: { vm.toggle(limit, confirmation: $0) }, cancel: { vm.cancel(limit.id) })
+                flow.run(scope: limit.name, operation: { vm.toggle(limit, confirmation: $0) }, cancel: { vm.cancel(limit.id, confirmation: $0) })
             }))
                 .toggleStyle(EmberToggleStyle()).labelsHidden().fixedSize()
         }
@@ -247,7 +250,7 @@ struct LimitEditor: View {
                         if let onDelete {
                             Button("Delete limit") {
                                 flow.run(scope: name, operation: onDelete,
-                                    cancel: { if let existingID { FlintLimitsController().cancelPendingChange(existingID) } },
+                                    cancel: { ticket in if let existingID { FlintLimitsController().cancelPendingChange(existingID, confirmation: ticket) } },
                                     onSaved: { dismiss() })
                             }
                             .font(FlintFont.text(14, weight: .medium))
@@ -282,7 +285,7 @@ struct LimitEditor: View {
             enabled: existingEnabled, protection: original?.protection ?? .init()
         )
         flow.run(scope: limit.name, operation: { onSave(limit, $0) },
-            cancel: { if let existingID { FlintLimitsController().cancelPendingChange(existingID) } },
+            cancel: { ticket in if let existingID { FlintLimitsController().cancelPendingChange(existingID, confirmation: ticket) } },
             onSaved: { dismiss() })
     }
 

@@ -302,7 +302,7 @@ final class SleepModeViewModel: ObservableObject {
     func applyNow() {
         let snapshot = config
         flow.run(scope: "Sleep and Morning Assist", operation: { [controller] in controller.apply(snapshot, confirmation: $0) },
-            cancel: { [controller] in controller.cancel() }, onSaved: {
+            cancel: { [controller] in controller.cancel(confirmation: $0) }, onSaved: {
                 self.config = FlintSleepConfig.load(); self.refreshHealth()
             })
     }

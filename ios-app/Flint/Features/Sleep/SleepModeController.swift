@@ -39,7 +39,7 @@ struct SleepModeController {
         _ = rules.save(config)
     }
 
-    func cancel() { rules.cancel() }
+    func cancel(confirmation: FlintRuleConfirmation?) { rules.cancel(confirmation: confirmation) }
 
     // MARK: Window math (pure — shared by apply() and the view's status/summary rows)
 

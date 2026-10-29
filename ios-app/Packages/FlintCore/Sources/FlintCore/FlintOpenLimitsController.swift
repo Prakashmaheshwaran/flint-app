@@ -57,7 +57,12 @@ public final class FlintOpenLimitsController {
     }
 
     public func rules() -> [FlintOpenLimitRule] {
-        FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: environment.defaults, at: environment.clock.now()) ?? []
+        guard let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits,
+            from: environment.defaults, at: environment.clock.now()) else {
+            environment.record("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
+            return []
+        }
+        return rules
     }
 
     @discardableResult
@@ -80,7 +85,10 @@ public final class FlintOpenLimitsController {
             enabled: enabled, revision: revision, confirmation: confirmation)
     }
 
-    public func cancelPendingChange(_ id: String) { _ = FlintRuleArbiter(environment: environment).cancel(FlintOpenLimitRule.self, id: id) }
+    public func cancelPendingChange(_ id: String, confirmation: FlintRuleConfirmation? = nil) {
+        guard let confirmation else { return }
+        _ = FlintRuleArbiter(environment: environment).cancel(FlintOpenLimitRule.self, id: id, confirmation: confirmation)
+    }
 
     public func deleteBatch(_ rules: [FlintOpenLimitRule], confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
         FlintRuleArbiter(environment: environment).mutate(rules.map {
@@ -91,7 +99,9 @@ public final class FlintOpenLimitsController {
     /// Re-arm every enabled rule: shield its selection and (re)register its day-boundary
     /// activity. Idempotent; call on launch and after edits.
     public func reload(reapplyShields: Bool = true) {
-        _ = FlintRuleStoreLock.withLock(directory: environment.lockDirectory) { reloadLocked(reapplyShields: reapplyShields) }
+        if case .none = FlintRuleStoreLock.withLock(environment: environment, { reloadLocked(reapplyShields: reapplyShields) }) {
+            environment.record("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
+        }
     }
 
     private func reloadLocked(reapplyShields: Bool) {

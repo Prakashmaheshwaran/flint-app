@@ -38,7 +38,12 @@ public final class FlintLimitsController {
     }
 
     public func limits() -> [FlintLimitRule] {
-        FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: environment.defaults, at: environment.clock.now()) ?? []
+        guard let rules = FlintDesiredRules.load(FlintLimitRule.self, key: .limits,
+            from: environment.defaults, at: environment.clock.now()) else {
+            environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
+            return []
+        }
+        return rules
     }
 
     @discardableResult
@@ -61,13 +66,18 @@ public final class FlintLimitsController {
             enabled: enabled, revision: revision, confirmation: confirmation)
     }
 
-    public func cancelPendingChange(_ id: String) { _ = FlintRuleArbiter(environment: environment).cancel(FlintLimitRule.self, id: id) }
+    public func cancelPendingChange(_ id: String, confirmation: FlintRuleConfirmation? = nil) {
+        guard let confirmation else { return }
+        _ = FlintRuleArbiter(environment: environment).cancel(FlintLimitRule.self, id: id, confirmation: confirmation)
+    }
 
     /// Re-register all enabled limits. Idempotent; call on launch and after edits. Outcomes
     /// are recorded in `FlintArmingHealth` — each limit holds an OS activity slot, and a
     /// rejected registration is a budget that never trips.
     public func reload() {
-        _ = FlintRuleStoreLock.withLock(directory: environment.lockDirectory) { reloadLocked() }
+        if case .none = FlintRuleStoreLock.withLock(environment: environment, { reloadLocked() }) {
+            environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
+        }
     }
 
     private func reloadLocked() {

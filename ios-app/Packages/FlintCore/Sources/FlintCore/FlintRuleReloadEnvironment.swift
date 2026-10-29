@@ -24,6 +24,8 @@ enum FlintDesiredRules {
             return marker == nil && defaults.object(forKey: key.original) == nil ? [] : nil
         }
         guard let data = object as? Data,
+              let objects = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]],
+              objects.allSatisfy({ Set($0.keys).isSubset(of: Rule.storedKeys) }),
               var rules = try? JSONDecoder().decode([Rule].self, from: data),
               Set(rules.map(\.id)).count == rules.count,
               rules.allSatisfy({ $0.validationIssue == nil }) else {
@@ -96,6 +98,8 @@ struct FlintRuleReloadEnvironment {
         return store.shield.applications != nil || store.shield.applicationCategories != nil
             || store.shield.webDomains != nil || store.shield.webDomainCategories != nil
     }
+    /// Production binds to the shared session-transition lock; tests can simulate busy scope.
+    var withTransitionBoundary: (() -> Void) -> Bool = { body in body(); return true }
 
     static var live: Self {
         let group = FlintGroupStore()

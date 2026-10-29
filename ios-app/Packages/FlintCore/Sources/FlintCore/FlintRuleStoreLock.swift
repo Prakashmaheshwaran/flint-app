@@ -1,11 +1,21 @@
 import Foundation
 import Darwin
+#if canImport(FamilyControls) && canImport(DeviceActivity) && canImport(ManagedSettings)
 
 /// Serializes host/extension read–check–arm–save operations. Easy mutations need no ledger,
 /// but still need a cross-process revision check. Never falls back to an unlocked mutation.
 enum FlintRuleStoreLock {
     private static let local = NSRecursiveLock()
-    static func withLock<T>(directory: URL?, _ body: () -> T) -> T? {
+    static func withLock<T>(environment: FlintRuleReloadEnvironment, _ body: () -> T) -> T? {
+        guard let directory = environment.lockDirectory else { return nil }
+        let key = "FlintRuleStoreLock." + directory.path
+        if Thread.current.threadDictionary[key] != nil { return body() }
+        var result: T?
+        guard environment.withTransitionBoundary({ result = domainLock(directory: directory, body) }) else { return nil }
+        return result
+    }
+
+    private static func domainLock<T>(directory: URL?, _ body: () -> T) -> T? {
         guard let directory else { return nil }
         local.lock(); defer { local.unlock() }
         let key = "FlintRuleStoreLock." + directory.path
@@ -27,3 +37,4 @@ enum FlintRuleStoreLock {
         return body()
     }
 }
+#endif

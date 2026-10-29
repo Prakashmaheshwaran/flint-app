@@ -50,7 +50,12 @@ public final class FlintSchedulesController {
     init(environment: FlintRuleReloadEnvironment) { self.environment = environment }
 
     public func rules() -> [FlintScheduleRule] {
-        FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: environment.defaults, at: environment.clock.now()) ?? []
+        guard let rules = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules,
+            from: environment.defaults, at: environment.clock.now()) else {
+            environment.record("schedules", FlintDesiredRules.unavailable("schedules", previous: environment.loadHealth()))
+            return []
+        }
+        return rules
     }
 
     /// Insert or update a rule, then re-register monitoring.
@@ -74,7 +79,10 @@ public final class FlintSchedulesController {
             enabled: enabled, revision: revision, confirmation: confirmation)
     }
 
-    public func cancelPendingChange(_ ruleID: String) { _ = FlintRuleArbiter(environment: environment).cancel(FlintScheduleRule.self, id: ruleID) }
+    public func cancelPendingChange(_ ruleID: String, confirmation: FlintRuleConfirmation? = nil) {
+        guard let confirmation else { return }
+        _ = FlintRuleArbiter(environment: environment).cancel(FlintScheduleRule.self, id: ruleID, confirmation: confirmation)
+    }
 
     @discardableResult
     public func applyBatch(_ rules: [FlintScheduleRule], deleting: [FlintScheduleRule] = [],
@@ -149,7 +157,11 @@ public final class FlintSchedulesController {
     /// `try?` that hides the refusal and leaves the rule's toggle lying about it.
     @discardableResult
     public func reload() -> [FlintScheduleArmFailure] {
-        FlintRuleStoreLock.withLock(directory: environment.lockDirectory) { reloadLocked() } ?? []
+        guard let failures = FlintRuleStoreLock.withLock(environment: environment, { reloadLocked() }) else {
+            environment.record("schedules", FlintDesiredRules.unavailable("schedules", previous: environment.loadHealth()))
+            return []
+        }
+        return failures
     }
 
     private func reloadLocked() -> [FlintScheduleArmFailure] {

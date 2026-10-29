@@ -23,6 +23,14 @@ protocol FlintGatedRule: Codable, Equatable, Identifiable where ID == String {
 }
 
 extension FlintGatedRule {
+    static var storedKeys: Set<String> {
+        let common: Set<String> = ["id", "name", "enabled", "breakLevel", "selection", "protection"]
+        switch domain {
+        case .schedules: return common.union(["schedule", "allowListMode", "oneShot"])
+        case .limits: return common.union(["thresholdMinutes", "tierNeedsReview"])
+        case .openLimits: return common.union(["opensAllowed", "tierNeedsReview"])
+        }
+    }
     var revision: Int { protection?.revision ?? 0 }
     var absoluteWindow: FlintRuleWindow? { nil }
     var allowList: Bool { false }
@@ -46,21 +54,8 @@ extension FlintGatedRule {
             guard let end = calendar.date(byAdding: .day, value: 1, to: today) else { return nil }
             return .init(start: today, end: end)
         }
-        guard window.isValid else { return nil }
-        // Use the shared retained-window resolver's DST policy (next valid gap, last fold end).
-        let end = FlintRetainedProtection.windowEnd(startHour: window.startHour, startMinute: window.startMinute,
-            endHour: window.endHour, endMinute: window.endMinute, daysOfWeek: window.daysOfWeek,
-            now: now, calendar: calendar)
-        guard end > now else { return nil }
-        for offset in 0...1 {
-            guard let day = calendar.date(byAdding: .day, value: -offset, to: today),
-                  window.daysOfWeek.isEmpty || window.daysOfWeek.contains(calendar.component(.weekday, from: day)),
-                  let start = calendar.date(bySettingHour: window.startHour, minute: window.startMinute, second: 0,
-                    of: day, matchingPolicy: .nextTime, repeatedTimePolicy: .first), start <= now else { continue }
-            let occurrence = FlintRuleWindow(start: start, end: end)
-            if occurrence.isValid, occurrence.contains(now) { return occurrence }
-        }
-        return nil
+        guard let interval = FlintScheduleWindow.resolve(window, at: now, calendar: calendar)?.current else { return nil }
+        return .init(start: interval.start, end: interval.end)
     }
 
     func snapshot(end: Date?) throws -> FlintProtectionSnapshot<String> {
@@ -89,7 +84,9 @@ extension FlintGatedRule {
                   before.start == after.start, after.end >= before.end else { return .weaken }
         }
         if let a = old.window, let b = window, a != b {
-            guard a.daysOfWeek == b.daysOfWeek, a.startMinuteOfDay == b.startMinuteOfDay,
+            let oldDays = a.daysOfWeek.isEmpty ? Set(1...7) : a.daysOfWeek
+            let newDays = b.daysOfWeek.isEmpty ? Set(1...7) : b.daysOfWeek
+            guard newDays.isSuperset(of: oldDays), a.startMinuteOfDay == b.startMinuteOfDay,
                   b.windowMinutes >= a.windowMinutes else { return .weaken }
         } else if (old.window == nil) != (window == nil) { return .weaken }
         return FlintProtectionPolicy.editImpact(from: try old.snapshot(end: old.occurrence(at: now)?.end),
