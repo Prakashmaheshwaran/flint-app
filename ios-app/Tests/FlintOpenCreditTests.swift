@@ -130,6 +130,7 @@ final class FlintOpenCreditTests: XCTestCase {
     }
 
     func testPC23PC31RepeatedRequestsReturnUnchangedGrantAcrossProcessRestart() throws {
+        now = now.addingTimeInterval(0.1234567)
         let first = try accepted("first")
         advance(100)
         let next = try accepted("different-surface", using: service(ledger()))

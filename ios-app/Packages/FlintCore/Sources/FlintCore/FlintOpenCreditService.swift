@@ -108,7 +108,9 @@ public final class FlintOpenCreditService {
             }
             // Native store writes occur while the same lock used by expiry is held.
             do { try self.release(grant) } catch { return .failure(.denied(.applying)) }
-            return .success(receipt)
+            // Return the committed representation, including the encoder's date precision,
+            // so a replay is exactly the same grant even for fractional-second clock samples.
+            return .success(.init(grant: grant, remaining: receipt.remaining, replayed: receipt.replayed))
         }
         guard case let .success(result) = applied else { return .failure(.denied(.applying)) }
         return result
