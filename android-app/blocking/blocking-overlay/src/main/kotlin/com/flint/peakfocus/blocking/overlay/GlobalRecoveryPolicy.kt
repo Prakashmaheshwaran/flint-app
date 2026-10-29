@@ -123,7 +123,8 @@ internal object GlobalRecoveryPolicy {
             exemptions = emptyMap(), breakSession = current.breakSession.copy(pending = null),
             breaksByCause = current.breaksByCause.mapValues { it.value.copy(pending = null) })
         return ProtectionMutation(next, RecoveryResult.Accepted(recovery, true), rules = snapshot.rules.filterNot { it.id in transientIds },
-            editor = editor, harder = HarderWaitPolicy().withoutTerminated(snapshot.harder.copy(pending = null), terminal))
+            editor = editor, harder = HarderWaitPolicy().withoutTerminated(snapshot.harder.copy(pending = null), terminal),
+            openCredits = snapshot.openCredits?.copy(active = emptyMap()))
     }
 
     fun resume(original: ProtectionSnapshot): ProtectionMutation<Boolean> {

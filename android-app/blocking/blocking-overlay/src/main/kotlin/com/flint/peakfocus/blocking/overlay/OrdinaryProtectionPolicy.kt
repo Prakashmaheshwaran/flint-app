@@ -125,9 +125,12 @@ internal object OrdinaryProtectionPolicy {
             if (time != null) {
                 if (!add("time", time.packageName, time.breakLevel, time.toString(), snapshot.editor.causes[timeCauseKey(time.packageName)])) return null
             } else {
-                val end = input.legacyTimeEndEpochMs ?: return null
-                val cause = EditorCause("legacy-time-$end", AnchoredInterval(snapshot.observedAt,
-                    (end - snapshot.observedAt.wallEpochMs).coerceAtLeast(0), end), "UTC", legacyRights = true)
+                val quota = snapshot.openCredits
+                val left = quota?.let { OpenCreditPolicy().remainingToResetMs(it.reset, snapshot.observedAt) }
+                    ?: input.legacyTimeEndEpochMs?.let { (it - snapshot.observedAt.wallEpochMs).coerceAtLeast(0) } ?: return null
+                val end = snapshot.observedAt.wallEpochMs + left
+                val cause = EditorCause("legacy-time-${quota?.periodId ?: input.legacyTimeEndEpochMs}", AnchoredInterval(snapshot.observedAt,
+                    left, end), quota?.quotaZone ?: "UTC", legacyRights = true)
                 if (!add("legacy-time", input.packageName, snapshot.focus.defaultBreakLevel, "legacy-time:${snapshot.focus.defaultBreakLevel}", cause)) return null
             }
         }

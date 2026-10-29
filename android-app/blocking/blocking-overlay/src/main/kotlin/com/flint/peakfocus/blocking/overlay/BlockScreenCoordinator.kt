@@ -532,7 +532,7 @@ class BlockScreenCoordinator(
         listOf(grants.state.value) + when {
             // A package Emergency Pass covers all cause tiers; configuration cannot change
             // its accounting decision. The durable focus ledger must still be Ready.
-            emergency -> emptyList()
+            emergency -> listOf(recoveries?.state?.value ?: StorageState.Unavailable(com.flint.peakfocus.core.model.StorageFailure.IO))
             cause.reason == BlockScreenReason.OPEN_LIMIT -> listOf(openState.value)
             cause.reason == BlockScreenReason.TIME_LIMIT -> listOf(timeState.value)
             else -> listOf(rulesState.value, ActiveRulesHolder.dataStoreState)

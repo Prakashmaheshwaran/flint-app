@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import com.flint.peakfocus.blocking.engine.HarderWaitPolicy
 import com.flint.peakfocus.blocking.engine.ProtectionContract
 import com.flint.peakfocus.blocking.engine.trustedElapsedMs
+import com.flint.peakfocus.blocking.engine.OpenCreditLedger
 import com.flint.peakfocus.core.model.*
 import java.util.TimeZone
 import kotlinx.coroutines.flow.Flow
@@ -20,6 +21,7 @@ data class ProtectionSnapshot(
     val editor: EditorCommitmentState,
     val harder: HarderWaitPolicy.Ledger,
     val observedAt: AccessClockStamp,
+    val openCredits: OpenCreditLedger? = null,
 )
 
 data class ProtectionMutation<R>(
@@ -30,6 +32,7 @@ data class ProtectionMutation<R>(
     val opens: List<OpenLimit>? = null,
     val editor: EditorCommitmentState? = null,
     val harder: HarderWaitPolicy.Ledger? = null,
+    val openCredits: OpenCreditLedger? = null,
 )
 
 sealed interface ProtectionCommit<out R> {
@@ -68,6 +71,10 @@ class DataStoreProtectionTransactionStore(
                 val now = clockAtCommit()
                 val original = readFocus(prefs)
                 val archive = if (original.protection == null) legacyArchive(prefs) else null
+                if (original.protection != null && StrictPrefsCodec.long(prefs, OPEN_CREDIT_SCHEMA) == null) wireCorrupt()
+                // One shared trusted quota roll precedes deferred editor changes and cause
+                // materialization. C4c remains the sole counter/migration authority.
+                prepareOpenCreditPeriod(prefs, now, defaultZone())
                 // The editor owns migration, due queued edits and occurrence materialization;
                 // no independent occurrence resolver or Harder count ledger is introduced.
                 editors.prepare(prefs, now)
@@ -92,9 +99,10 @@ class DataStoreProtectionTransactionStore(
                 }
                 mutation.editor?.let(prefs::putEditorState)
                 mutation.harder?.let(prefs::putHarderWait)
+                mutation.openCredits?.let(prefs::putOpenCredits)
                 // Include editor/config changes in the store-owned focus revision too. The
                 // acknowledgement projection can reject an older pre-commit reader snapshot.
-                val changedOther = mutation.rules != null || mutation.times != null || mutation.opens != null || mutation.editor != null || mutation.harder != null
+                val changedOther = mutation.rules != null || mutation.times != null || mutation.opens != null || mutation.editor != null || mutation.harder != null || mutation.openCredits != null
                 writeFocus(prefs, original, mutation.focus, forceRevision = changedOther || prefs.asMap() != before)
                 committed = ProtectionCommit.Committed(readSnapshot(prefs, now), mutation.result)
             }
@@ -104,10 +112,13 @@ class DataStoreProtectionTransactionStore(
         }
     }
 
-    private fun readSnapshot(prefs: Preferences, now: AccessClockStamp) = ProtectionSnapshot(
-        readFocus(prefs), prefs.editorRules(), prefs.editorTimes(), prefs.editorOpens(),
-        readEditorState(prefs), readHarderWait(prefs), now,
-    )
+    private fun readSnapshot(prefs: Preferences, now: AccessClockStamp): ProtectionSnapshot {
+        val focus = readFocus(prefs)
+        val credits = if (StrictPrefsCodec.long(prefs, OPEN_CREDIT_SCHEMA) != null) readOpenCredits(prefs)
+            else { if (focus.protection != null) wireCorrupt(); null }
+        return ProtectionSnapshot(focus, prefs.editorRules(), prefs.editorTimes(), prefs.editorOpens(),
+            readEditorState(prefs), readHarderWait(prefs), now, credits)
+    }
 
     private fun migrateLegacyPass(focus: FocusSnapshot, now: AccessClockStamp): ProtectionLedger {
         val used = focus.emergencyPass.usedAtEpochMs
