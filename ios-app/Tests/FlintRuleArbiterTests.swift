@@ -262,6 +262,22 @@ final class FlintRuleArbiterTests: XCTestCase {
         XCTAssertEqual(controller.upsert(raised, confirmation: ticket), .applied)
     }
 
+    func testEnablingSavedHardcoreRequiresFiniteScopeConfirmationPC11PC13() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        var initial = h.schedule(tier: .hardcore); initial.enabled = false
+        let old = h.install(initial)
+        let arbiter = FlintRuleArbiter(environment: h.environment)
+        guard case let .confirmationRequired(ticket, raisesTier) = arbiter.setEnabled(FlintScheduleRule.self,
+            id: old.id, enabled: true, revision: old.revision, confirmation: nil) else { return XCTFail() }
+        XCTAssertFalse(raisesTier)
+        let preview = try XCTUnwrap(ticket.preview.first)
+        XCTAssertEqual(preview.name, old.name); XCTAssertEqual(preview.tier, .hardcore)
+        XCTAssertEqual(preview.window?.end, h.now.addingTimeInterval(5 * 3600))
+        XCTAssertEqual(h.load(FlintScheduleRule.self).first?.enabled, false)
+        XCTAssertEqual(arbiter.setEnabled(FlintScheduleRule.self, id: old.id, enabled: true,
+            revision: old.revision, confirmation: ticket), .applied)
+    }
+
     func testExplicitCreateCannotOverwriteDuplicateIDR31() throws {
         let h = try RuleHarness(); defer { h.clean() }
         let old = h.install(h.schedule(tier: .hardcore))

@@ -17,11 +17,14 @@ enum FlintDesiredRules {
         let marker = defaults.object(forKey: key.marker)
         if let marker {
             guard let data = marker as? Data,
+                  let fields = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  Set(fields.keys) == ["schema"],
                   let decoded = try? JSONDecoder().decode(Marker.self, from: data), decoded.schema == 1 else { return nil }
         }
         guard let object = defaults.object(forKey: key.rawValue) else {
             // A deleted key on an established domain must never mean "remove all activities".
-            return marker == nil && defaults.object(forKey: key.original) == nil ? [] : nil
+            return marker == nil && defaults.object(forKey: key.original) == nil
+                && defaults.object(forKey: key.rawValue + ".quarantine.adr012") == nil ? [] : nil
         }
         guard let data = object as? Data,
               let objects = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]],

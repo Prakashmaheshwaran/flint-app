@@ -77,6 +77,29 @@ final class FlintRuleMigrationTests: XCTestCase {
         XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.openLimits.original), source)
     }
 
+    func testLegacyRightsCannotReviveAfterOffAndNewEnablePC70() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        h.now = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: h.now)!
+        h.defaults.set(try fixture("legacy-sleep-hardcore"), forKey: FlintRuleStoreKey.schedules.rawValue)
+        let old = try XCTUnwrap(h.load(FlintScheduleRule.self).first)
+        XCTAssertNotNil(old.protection?.legacyRightsUntil)
+        let arbiter = FlintRuleArbiter(environment: h.environment)
+        guard case let .confirmationRequired(off, _) = arbiter.setEnabled(FlintScheduleRule.self,
+            id: old.id, enabled: false, revision: old.revision, confirmation: nil) else { return XCTFail() }
+        XCTAssertEqual(arbiter.setEnabled(FlintScheduleRule.self, id: old.id, enabled: false,
+            revision: old.revision, confirmation: off), .applied)
+        let disabled = try XCTUnwrap(h.load(FlintScheduleRule.self).first)
+        XCTAssertNil(disabled.protection?.legacyRightsUntil)
+        guard case let .confirmationRequired(on, _) = arbiter.setEnabled(FlintScheduleRule.self,
+            id: old.id, enabled: true, revision: disabled.revision, confirmation: nil) else { return XCTFail() }
+        XCTAssertEqual(arbiter.setEnabled(FlintScheduleRule.self, id: old.id, enabled: true,
+            revision: disabled.revision, confirmation: on), .applied)
+        let enabled = try XCTUnwrap(h.load(FlintScheduleRule.self).first)
+        XCTAssertNil(enabled.protection?.legacyRightsUntil)
+        guard case .deferRequired = arbiter.setEnabled(FlintScheduleRule.self, id: old.id,
+            enabled: false, revision: enabled.revision, confirmation: nil) else { return XCTFail() }
+    }
+
     func testDeleteOnlyRuleKeyAfterInitializationIsUnavailableR22PC37PC62() throws {
         let h = try RuleHarness(); defer { h.clean() }
         let rule = h.install(h.schedule(tier: .hardcore))
@@ -94,10 +117,22 @@ final class FlintRuleMigrationTests: XCTestCase {
         let h = try RuleHarness(); defer { h.clean() }
         XCTAssertEqual(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults), [])
         XCTAssertNil(h.defaults.object(forKey: FlintRuleStoreKey.limits.marker))
-        for marker in [Data("{partial".utf8), Data("{\"schema\":99}".utf8)] {
+        for marker in [Data("{partial".utf8), Data("{\"schema\":99}".utf8),
+                       Data("{\"schema\":1,\"future\":true}".utf8)] {
             h.defaults.set(marker, forKey: FlintRuleStoreKey.limits.marker)
             XCTAssertNil(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults))
         }
+    }
+
+    func testDeletedCorruptPreMigrationBlobCannotBecomeFreshEmptyR22PC71() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let key = FlintRuleStoreKey.limits
+        let source = Data("{unreadable".utf8)
+        h.defaults.set(source, forKey: key.rawValue)
+        XCTAssertNil(FlintDesiredRules.load(FlintLimitRule.self, key: key, from: h.defaults))
+        h.defaults.removeObject(forKey: key.rawValue)
+        XCTAssertNil(FlintDesiredRules.load(FlintLimitRule.self, key: key, from: h.defaults))
+        XCTAssertEqual(h.defaults.data(forKey: key.rawValue + ".quarantine.adr012"), source)
     }
 
     func testUnknownRuleSchemaFieldIsUnavailableInsteadOfLegacyDefaultPC71() throws {

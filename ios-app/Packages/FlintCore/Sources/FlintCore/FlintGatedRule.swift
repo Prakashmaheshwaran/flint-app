@@ -58,6 +58,14 @@ extension FlintGatedRule {
         return .init(start: interval.start, end: interval.end)
     }
 
+    func previewWindow(at now: Date) -> FlintRuleWindow? {
+        guard enabled else { return nil }
+        if let absoluteWindow { return absoluteWindow.end > now ? absoluteWindow : nil }
+        if let current = templateOccurrence(at: now) { return current }
+        guard let window, let next = FlintScheduleWindow.resolve(window, at: now, calendar: ruleCalendar)?.next else { return nil }
+        return .init(start: next.start, end: next.end)
+    }
+
     func snapshot(end: Date?) throws -> FlintProtectionSnapshot<String> {
         func keys<T: Encodable>(_ set: Set<T>) throws -> Set<String> {
             let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
@@ -121,6 +129,7 @@ extension FlintGatedRule {
         if let absoluteWindow, !absoluteWindow.isValid { return "Choose a finite window of at most 26 hours." }
         if let window, let issue = window.issues.first { return issue.message }
         if let budget, budget < 0 { return "The daily allowance cannot be negative." }
+        if kind == .timeLimit, let budget, budget > Int.max / 60 { return "The daily allowance cannot be represented safely." }
         return nil
     }
 

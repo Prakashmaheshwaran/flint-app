@@ -55,6 +55,7 @@ final class FlintRuleArbiter {
             var decisions: [FlintProtectionDecision] = []
             var causes: [FlintCauseState] = []
             var scopes: [String] = [context]
+            var previews: [FlintRuleChangePreview] = []
             var raisesTier = false
             for mutation in mutations {
                 let old = all.first { $0.id == mutation.id }
@@ -82,10 +83,22 @@ final class FlintRuleArbiter {
                     tier: source.breakLevel, isActive: occurrence != nil, end: occurrence?.end,
                     legacyRights: source.protection?.legacyRightsUntil.map { now < $0 } ?? false)
                 causes.append(cause)
+                let displayed = mutation.proposed ?? source
+                previews.append(.init(id: displayed.id, name: displayed.name, action: mutation.action,
+                    tier: displayed.breakLevel, applicationCount: displayed.selection.applicationTokens.count,
+                    categoryCount: displayed.selection.categoryTokens.count,
+                    webDomainCount: displayed.selection.webDomainTokens.count, allowList: displayed.allowList,
+                    budget: displayed.budget, isTimeLimit: displayed.kind == .timeLimit,
+                    window: displayed.previewWindow(at: now) ?? occurrence))
                 let decision: FlintProtectionDecision
                 if mutation.action == .delete { decision = FlintProtectionPolicy.decide(.delete, for: cause) }
                 else if mutation.action == .turnOff || (old?.enabled == true && mutation.proposed?.enabled == false) {
                     decision = FlintProtectionPolicy.decide(.toggleOff, for: cause)
+                } else if old?.enabled == false, mutation.proposed?.enabled == true,
+                          mutation.proposed?.breakLevel == .hardcore {
+                    // Enabling a saved Hardcore template begins a new commitment and must
+                    // disclose its finite window even when the tier itself did not change.
+                    decision = .allow(confirm: true)
                 } else if let old, let proposed = mutation.proposed {
                     guard let impact = try? proposed.impact(comparedTo: old, at: now) else { return .unavailable }
                     let action: FlintProtectionAction = impact == .cosmetic ? .editCosmetic : (impact == .strengthen ? .editStrengthen : .editWeaken)
@@ -98,7 +111,7 @@ final class FlintRuleArbiter {
             let digest = SHA256.hash(data: Data(scopes.sorted().joined(separator: "|").utf8))
                 .map { String(format: "%02x", $0) }.joined()
             let ticket = FlintRuleConfirmation(revision: causes.map(\.revision).max() ?? 0,
-                fingerprint: digest, confirmsTierIncrease: raisesTier)
+                fingerprint: digest, confirmsTierIncrease: raisesTier, preview: previews)
             if let confirmation {
                 guard confirmation.revision == ticket.revision, confirmation.fingerprint == ticket.fingerprint else { return .staleRevision }
             }
@@ -182,7 +195,7 @@ final class FlintRuleArbiter {
                 metadata.contractVersion = 12
                 metadata.timeZoneID = next.protection?.timeZoneID ?? metadata.timeZoneID
                 metadata.queuedChange = nil
-                metadata.legacyRightsUntil = old?.protection?.legacyRightsUntil
+                metadata.legacyRightsUntil = next.enabled && old?.enabled == true ? old?.protection?.legacyRightsUntil : nil
                 // Preserve the occurrence identity (and Harder count) across rename/strengthen.
                 if let window = old?.occurrence(at: now), next.enabled {
                     if impact == .weaken {

@@ -41,7 +41,7 @@ public struct FlintRuleProtection: Codable, Equatable, Sendable {
     }
 
     var isValid: Bool {
-        contractVersion == 12 && revision > 0 && activityRevision > 0 && activityRevision <= revision
+        contractVersion == 12 && revision > 0 && revision < Int.max / 2 && activityRevision > 0 && activityRevision <= revision
             && TimeZone(identifier: timeZoneID) != nil
             && (occurrence?.isValid ?? true)
             && (queuedChange.map { $0.baseRevision == revision && $0.window.isValid } ?? true)
@@ -85,11 +85,30 @@ public struct FlintRuleConfirmation: Equatable, Sendable {
     public let revision: Int
     public let fingerprint: String
     public let confirmsTierIncrease: Bool
-    public init(revision: Int, fingerprint: String, confirmsTierIncrease: Bool = false) {
+    public let preview: [FlintRuleChangePreview]
+    public init(revision: Int, fingerprint: String, confirmsTierIncrease: Bool = false,
+                preview: [FlintRuleChangePreview] = []) {
         self.revision = revision
         self.fingerprint = fingerprint
         self.confirmsTierIncrease = confirmsTierIncrease
+        self.preview = preview
     }
+}
+
+/// Human-readable scope derived from the exact snapshot whose fingerprint is confirmed.
+/// Opaque target identities stay out of presentation data.
+public struct FlintRuleChangePreview: Equatable, Sendable, Identifiable {
+    public let id: String
+    public let name: String
+    public let action: FlintQueuedRuleChange.Action
+    public let tier: BreakLevel
+    public let applicationCount: Int
+    public let categoryCount: Int
+    public let webDomainCount: Int
+    public let allowList: Bool
+    public let budget: Int?
+    public let isTimeLimit: Bool
+    public let window: FlintRuleWindow?
 }
 
 public enum FlintRuleMutationResult: Equatable, Sendable {

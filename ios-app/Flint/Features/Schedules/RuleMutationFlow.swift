@@ -54,13 +54,15 @@ private struct RuleMutationSheet: View {
     @ObservedObject var flow: RuleMutationFlow
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 18) {
-                Text(flow.scope).font(.title2).bold()
-                content
-                Spacer(minLength: 0)
-                Button("Go back", role: .cancel) { flow.cancel() }.frame(minHeight: 44)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text(flow.scope).font(.title2).bold()
+                    content
+                    Button("Go back", role: .cancel) { flow.cancel() }.frame(minHeight: 44)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(24)
             }
-            .padding(24)
             .navigationTitle("Rule change")
             .navigationBarTitleDisplayMode(.inline)
         }
@@ -70,11 +72,16 @@ private struct RuleMutationSheet: View {
     @ViewBuilder private var content: some View {
         switch flow.result {
         case let .confirmationRequired(ticket, raisesTier):
+            preview(ticket)
             Text(raisesTier
                  ? "Confirm the new tier. Harder requires a wait before weakening an active rule. Hardcore keeps its protection until the occurrence ends; an available Emergency Pass is a separate recovery option."
                  : "Confirm this change to the named rule. Its saved revision will be checked again before anything changes.")
+            if !raisesTier, ticket.preview.contains(where: { $0.action == .edit && $0.tier == .hardcore }) {
+                Text("Hardcore keeps its protection until the occurrence ends. An available Emergency Pass is a separate recovery option.")
+            }
             Button(raisesTier ? "Confirm tier and save" : "Confirm change") { flow.confirm(ticket) }.buttonStyle(.borderedProminent)
         case let .waiting(ticket, remaining, required):
+            preview(ticket)
             Text("Available in \(Int(required / 60)) \(required == 60 ? "minute" : "minutes")")
             Text("The wait belongs to this rule and this exact change. Coming back to this screen does not reset committed waits.")
             TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -89,6 +96,7 @@ private struct RuleMutationSheet: View {
             }
         case let .deferRequired(ticket, end):
             Text("Protected until \(end.formatted(date: .abbreviated, time: .shortened)). Save for after this occurrence.")
+            preview(ticket)
             Text("The current rule stays effective. Your queued change will appear separately.")
             Button("Save for after this occurrence") { flow.confirm(ticket) }.buttonStyle(.borderedProminent)
         case let .denied(_, cause, tier, end):
@@ -101,6 +109,24 @@ private struct RuleMutationSheet: View {
         case .unavailable:
             Text("Rule changes are unavailable. Your draft and existing protection were kept. Go back and try again.")
         case .applied, .queued: EmptyView()
+        }
+    }
+
+    @ViewBuilder private func preview(_ ticket: FlintRuleConfirmation) -> some View {
+        ForEach(ticket.preview) { rule in
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(rule.name) · \(rule.tier.rawValue.capitalized)").font(.headline)
+                if rule.action == .delete { Text("Delete this rule.") }
+                else if rule.action == .turnOff { Text("Turn off this rule.") }
+                else {
+                    Text("\(rule.allowList ? "Allow" : "Block"): \(rule.applicationCount) apps, \(rule.categoryCount) categories, \(rule.webDomainCount) websites")
+                    if let budget = rule.budget { Text(rule.isTimeLimit ? "\(budget) minutes per day" : "\(budget) credits per day") }
+                }
+                if let window = rule.window {
+                    Text("Selected window: \(window.start.formatted(date: .abbreviated, time: .shortened)) – \(window.end.formatted(date: .abbreviated, time: .shortened))")
+                }
+            }
+            .font(.subheadline)
         }
     }
 
