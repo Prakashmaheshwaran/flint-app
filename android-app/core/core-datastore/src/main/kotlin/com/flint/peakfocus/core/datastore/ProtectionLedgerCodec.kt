@@ -22,7 +22,8 @@ internal object ProtectionLedgerCodec {
         s.outbox.toSortedMap().forEach { (id, event) ->
             require(id == event.id)
             add(row("E", atom(id), atom(event.operationId), event.kind.name, strings(event.affectedRuleIds), clock(event.at),
-                event.grantId.orEmpty(), event.untilEpochMs?.toString().orEmpty(), event.breakEndReason?.name.orEmpty()))
+                event.grantId.orEmpty(), event.untilEpochMs?.toString().orEmpty(), event.breakEndReason?.name.orEmpty(),
+                strings(event.endedTransientIds), event.revision, event.timeUncertain))
         }
     }.joinToString("\n").also { require(it.length <= MAX_BYTES); decode(it) }
 
@@ -64,10 +65,12 @@ internal object ProtectionLedgerCodec {
                     checkWire(operations.put(id, ProtectionPassReceipt(id, readClock(f[2]), readClock(f[3]), atom(f[4]))) == null)
                 }
                 "E" -> {
-                    val f = fields(line, 9); val id = atom(f[1])
+                    val f = fields(line, 12); val id = atom(f[1])
                     val event = ProtectionLifecycleEvent(id, atom(f[2]), enum(f[3]), readStrings(f[4]), readClock(f[5]),
                         f[6].takeIf(String::isNotEmpty)?.let(::atom), f[7].takeIf(String::isNotEmpty)?.let(::number),
-                        f[8].takeIf(String::isNotEmpty)?.let { enum<ProtectionBreakEndReason>(it) })
+                        f[8].takeIf(String::isNotEmpty)?.let { enum<ProtectionBreakEndReason>(it) },
+                        readStrings(f[9]), number(f[10]), bool(f[11]))
+                    checkWire(event.endedTransientIds.all { it in event.affectedRuleIds })
                     val until = event.untilEpochMs
                     checkWire(when (event.kind) {
                         ProtectionLifecycleKind.PASS_COMMITTED -> event.grantId == null && event.breakEndReason == null && until != null && until >= event.at.wallEpochMs
