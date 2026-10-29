@@ -66,14 +66,24 @@ class OverlapHeadlineProjectionTest {
         }
     }
 
-    @Test fun R_33_stableIdentityBreaksEqualEndTiesAcrossRulesAndLimitKinds() {
+    @Test fun R_33_stableTiesPreserveCausePriorityAndOpenBreakAccounting() {
         for (end in listOf(null, now + hour)) {
             val a = BlockCause(BlockScreenReason.SCHEDULE, BreakLevel.HARDER, end, "a")
             val z = a.copy(ruleId = "z")
             for (order in permutations(listOf(a, z))) assertEquals(a, BlockOverlapPolicy.strongest(*order.toTypedArray()))
             val time = BlockCause(BlockScreenReason.TIME_LIMIT, BreakLevel.HARDER, end)
             val open = BlockCause(BlockScreenReason.OPEN_LIMIT, BreakLevel.HARDER, end)
-            for (order in permutations(listOf(z, time, open))) assertEquals(open, BlockOverlapPolicy.strongest(*order.toTypedArray()))
+            for (order in permutations(listOf(z, time, open))) {
+                val cause = BlockOverlapPolicy.strongest(*order.toTypedArray())!!
+                assertEquals(time, cause)
+                assertFalse(cause.spendsOpenOnBreak)
+            }
+            for (order in permutations(listOf(z, open))) {
+                val cause = BlockOverlapPolicy.strongest(*order.toTypedArray())!!
+                assertEquals(z, cause)
+                assertFalse(cause.spendsOpenOnBreak)
+            }
+            assertTrue(BlockOverlapPolicy.strongest(open)!!.spendsOpenOnBreak)
         }
     }
 
