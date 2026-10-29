@@ -78,6 +78,27 @@ class TimerArmingViewModelTest {
         assertTrue(vm.uiState.value.error!!.contains("service is not connected"))
     }
 
+    @Test fun `PC-44 recovery committed after the screen check keeps the draft without a Timer write`() = runTest(dispatcher) {
+        val start = clock()
+        val committed = DataStoreProtectionTransactionStore(disk, ::clock) { "UTC" }.transact { snapshot ->
+            val ledger = checkNotNull(snapshot.focus.protection)
+            ProtectionMutation(snapshot.focus.copy(emergencyPass = snapshot.focus.emergencyPass.copy(usedAtEpochMs = start.wallEpochMs),
+                protection = ledger.copy(cooldown = ProtectionCooldown("pass", start.wallEpochMs, start, 604_800_000),
+                    recovery = ProtectionRecovery("pass", start, setOf("rule:work"), setOf("work"), emptySet(), 3_600_000),
+                    operations = mapOf("pass" to ProtectionPassReceipt("pass", start, start, "scope")),
+                    lastUsedAtEpochMs = start.wallEpochMs)), Unit)
+        }
+        assertTrue(committed is ProtectionCommit.Committed)
+        // The deliberately older public status still looks ready; the serialized store must win.
+        val vm = model(); runCurrent(); vm.selectApps(listOf(app)); vm.selectDuration(5)
+        val draft = vm.uiState.value.draft; val writes = disk.writes
+        vm.start(); runCurrent()
+        assertEquals(writes, disk.writes); assertTrue(rules.rules.first().isEmpty())
+        assertEquals(draft, vm.uiState.value.draft); assertEquals(0, requests)
+        assertTrue(vm.uiState.value.error!!.contains("Resume protection first."))
+        assertFalse((vm.uiState.value.arming as TimerArmingState.Degraded).committed)
+    }
+
     @Test fun `PC-01 persisted success is Applying until a fresh exact-ID backend observation`() = runTest(dispatcher) {
         val vm = model(); runCurrent(); vm.selectApps(listOf(app)); vm.selectDuration(5); vm.start(); runCurrent()
         val saved = rules.rules.first().single()

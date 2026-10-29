@@ -31,6 +31,7 @@ class DataStoreEditorCommitmentStore(
 ) : EditorCommitmentStore {
     override val changes: Flow<Unit> = dataStore.data.map { Unit }
     override val state: Flow<StorageState<EditorCommitmentState>> = dataStore.data.storageStates {
+        validateInitializedProtectionChildren(it)
         readEditorState(it).also { _ -> if (StrictPrefsCodec.string(it, EDITOR_COMMITMENTS_KEY) != null) readHarderWait(it) }
     }
     override val terminalEvents = dataStore.data.storageStates(::readTerminalEvents)
@@ -248,6 +249,7 @@ class DataStoreEditorCommitmentStore(
         commitTimer(rule, now, safety) is TimerStartResult.Applying
 
     override suspend fun commitTimer(rule: BlockRule, now: AccessClockStamp, safety: EditorSafety): TimerStartResult = transact(now) { prefs, now ->
+        if (hasActiveProtectionRecovery(prefs, now)) return@transact TimerStartResult.Rejected("Resume protection first.")
         var state = prepare(prefs, now)
         require(rule.id.startsWith(CONTRACT_TIMER_ID_PREFIX) && rule.schedule == null && rule.enabled)
         require(!rule.targets.allowListMode && rule.targets.apps.isNotEmpty() && rule.targets.apps.none { it.packageName.isBlank() || it.packageName in floor(safety) })
@@ -274,6 +276,7 @@ class DataStoreEditorCommitmentStore(
 
     /** Call inside one DataStore edit: migrate, apply queued changes, then materialize new occurrences. */
     internal fun prepare(prefs: MutablePreferences, now: AccessClockStamp, checkpointQuota: Boolean = true): EditorCommitmentState {
+        validateInitializedProtectionChildren(prefs)
         // Validate established domains before quota preparation or any migration write.
         val decoded = readEditorState(prefs)
         val previous = if (StrictPrefsCodec.string(prefs, EDITOR_COMMITMENTS_KEY) != null) decoded else null

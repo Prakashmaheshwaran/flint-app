@@ -244,7 +244,7 @@ internal class TimerViewModel(
     }
 
     fun start() {
-        if (!state.value.canStart) return
+        if (!clockReady || !state.value.canStart) return
         val draft = state.value.draft.copy(apps = state.value.draft.apps.toSet())
         state.update { it.copy(busy = true, error = null, message = null) }
         viewModelScope.launch {
