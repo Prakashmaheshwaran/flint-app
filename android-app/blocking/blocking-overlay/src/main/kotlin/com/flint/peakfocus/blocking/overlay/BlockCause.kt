@@ -1,5 +1,6 @@
 package com.flint.peakfocus.blocking.overlay
 
+import com.flint.peakfocus.blocking.engine.ruleWindowEnd
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.model.BreakSessionState
@@ -46,8 +47,8 @@ data class BlockCause(
  * rule at [BreakLevel.HARDCORE] is a Deep Focus session → [BlockScreenReason.DEEP_FOCUS];
  * any other manual rule → [BlockScreenReason.MANUAL_SESSION].
  *
- * A one-shot session's [BlockRule.expiresAtEpochMs] is the block's true end — it wins over
- * any schedule-derived end, so the countdown ticks to the session timer, not to a window.
+ * The engine's headline comparator uses the same end resolver, including anchored runtime
+ * and the legacy schedule fallback. An ongoing runtime end must remain ongoing in the UI.
  */
 fun ruleBlockCause(rule: BlockRule?, nowEpochMs: Long, utcOffsetMs: Long): BlockCause {
     val level = rule?.breakLevel ?: BreakLevel.EASY
@@ -57,8 +58,8 @@ fun ruleBlockCause(rule: BlockRule?, nowEpochMs: Long, utcOffsetMs: Long): Block
         level == BreakLevel.HARDCORE -> BlockScreenReason.DEEP_FOCUS
         else -> BlockScreenReason.MANUAL_SESSION
     }
-    val endsAt = rule?.expiresAtEpochMs
-        ?: schedule?.let { nowEpochMs + millisUntilScheduleEnd(it, nowEpochMs, utcOffsetMs) }
+    val localMinute = (floorMod(nowEpochMs + utcOffsetMs, DAY_MS) / 60_000L).toInt()
+    val endsAt = rule?.let { ruleWindowEnd(it, nowEpochMs, localMinute) }
     return BlockCause(reason = reason, breakLevel = level, endsAtEpochMs = endsAt, ruleId = rule?.id)
 }
 
