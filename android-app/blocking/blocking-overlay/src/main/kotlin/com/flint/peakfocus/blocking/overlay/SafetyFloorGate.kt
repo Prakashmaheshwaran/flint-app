@@ -88,11 +88,13 @@ class SafetyFloorGate(
         return allowForSafety(packageName)
     }
 
-    /** Display-only provenance for this target, using the same cached floor as [protects]. */
+    /**
+     * Display-only retained provenance for this target. Does not resolve, schedule a refresh,
+     * or change health timestamps; enforcement owns cache refresh through [protects].
+     */
     fun readIdentity(packageName: String): FloorIdentity? {
         if (packageName == selfPackage) return FloorIdentity(FloorIdentity.Kind.SELF)
         if (SafetyFloor.isProtected(packageName, selfPackage)) return FloorIdentity(FloorIdentity.Kind.STATIC_SYSTEM)
-        protects(packageName) // Resolve/refresh off main in display hosts, as in the detectors.
         return synchronized(lock) {
             val source = listOf("home", "default-dialer", "system-dialer", "uninstaller")
                 .firstOrNull { packageName in bySource[it].orEmpty() } ?: return@synchronized null

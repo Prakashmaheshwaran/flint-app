@@ -1,6 +1,40 @@
 package com.flint.peakfocus.blocking.overlay
 
 import com.flint.peakfocus.core.model.BreakLevel
+import kotlinx.coroutines.flow.Flow
+
+/**
+ * Display-only target queries. Collecting never migrates/checkpoints storage, changes a rule,
+ * accepts access, or debits a counter. A null blocking decision is unknown, not permission.
+ * Hosts share one reader in their scope and use the supplied summary instead of reducing rows.
+ */
+interface TargetProtectionReader {
+    fun observe(target: TargetRef): Flow<TargetProtection>
+}
+
+/** Facts about the requested identity only; no inventory of other apps or domains. */
+data class TargetProtection(
+    val readiness: Readiness,
+    /** Independently resolved; an unavailable policy never hides a known safety identity. */
+    val floor: FloorIdentity? = null,
+    val coveringCauses: List<CoveringCause> = emptyList(),
+    val openCredit: OpenCreditView? = null,
+    val timeLimit: TimeLimitView? = null,
+    val nextChangeAtWall: Long? = null,
+    val blockingNow: Boolean? = null,
+    /** Latest known enforcing end, distinct from the strongest-tier headline's own end. */
+    val blockingUntilWall: Long? = null,
+    /** True only for known open-ended enforcement, never merely because an end is unknown. */
+    val blockingOngoing: Boolean = false,
+    val recoveryEndsAtWall: Long? = null,
+    val headline: CoveringCause? = null,
+    val websiteCoverage: TargetWebsiteCoverage? = null,
+)
+
+/** Target-scoped interpretation of the actual supported-browser health observation. */
+enum class TargetWebsiteCoverage {
+    AVAILABLE, UNCONFIRMED, DEGRADED, UNSUPPORTED, NEEDS_ACCESSIBILITY, AWAITING_BROWSER,
+}
 
 /** An explicit read request; a target observation never includes another target's inventory. */
 sealed interface TargetRef {

@@ -25,6 +25,7 @@ class TargetFloorIdentityTest {
 
     @Test fun eachRuntimeSourceHasItsOwnIdentityAndSuccessfulTimestamp() {
         val floor = gate()
+        floor.protects("custom.home")
         for ((pkg, kind) in listOf("custom.home" to FloorIdentity.Kind.RUNTIME_HOME,
             "custom.dialer" to FloorIdentity.Kind.RUNTIME_DIALER,
             "system.dialer" to FloorIdentity.Kind.RUNTIME_DIALER,
@@ -38,9 +39,11 @@ class TargetFloorIdentityTest {
 
     @Test fun failedSourceRetainsTheFloorAndItsSuccessfulTimeRatherThanTheFailedCheckTime() {
         val floor = gate()
+        floor.protects("custom.dialer")
         val first = floor.readIdentity("custom.dialer")!!
         now += 31_000
         sources = sources + ("default-dialer" to null)
+        floor.protects("custom.dialer")
         val failed = floor.readIdentity("custom.dialer")!!
         assertEquals(first.resolvedAtElapsedMs, failed.resolvedAtElapsedMs)
         assertEquals(now, floor.runtimeResolution.value.checkedAtElapsedMs)
@@ -51,18 +54,23 @@ class TargetFloorIdentityTest {
 
     @Test fun successfullyChangedRoleReplacesItsOldIdentity() {
         val floor = gate()
+        floor.protects("custom.home")
         assertNotNull(floor.readIdentity("custom.home"))
         now += 31_000
         sources = sources + ("home" to setOf("new.home"))
+        floor.protects("custom.home")
         assertNull(floor.readIdentity("custom.home"))
         assertEquals(FloorIdentity(FloorIdentity.Kind.RUNTIME_HOME, now), floor.readIdentity("new.home"))
     }
 
     @Test fun staleBackgroundIdentityIsDegradedUntilItsQueuedRefreshCompletes() {
         val floor = gate(background = true)
+        floor.protects("custom.home")
         assertFalse(floor.readIdentity("custom.home")!!.degraded)
         now += 31_000
         assertTrue(floor.readIdentity("custom.home")!!.degraded)
+        assertTrue(pending.isEmpty())
+        floor.protects("custom.home")
         assertEquals(1, pending.size)
         pending.removeAt(0).invoke()
         assertEquals(FloorIdentity(FloorIdentity.Kind.RUNTIME_HOME, now), floor.readIdentity("custom.home"))
@@ -73,6 +81,18 @@ class TargetFloorIdentityTest {
         val floor = gate()
         assertNull(floor.readIdentity("custom.dialer"))
         assertTrue(floor.runtimeResolution.value.degraded)
-        assertEquals(now, floor.runtimeResolution.value.checkedAtElapsedMs)
+        assertNull(floor.runtimeResolution.value.checkedAtElapsedMs)
+        assertEquals(0, calls)
+    }
+
+    @Test fun repeatedDisplayReadsNeverRefreshOrChangeTheLastActualCheck() {
+        val floor = gate(background = true)
+        floor.protects("custom.home")
+        val checked = floor.runtimeResolution.value.checkedAtElapsedMs
+        now += 31_000
+        repeat(50) { assertTrue(floor.readIdentity("custom.home")!!.degraded) }
+        assertEquals(1, calls)
+        assertTrue(pending.isEmpty())
+        assertEquals(checked, floor.runtimeResolution.value.checkedAtElapsedMs)
     }
 }
