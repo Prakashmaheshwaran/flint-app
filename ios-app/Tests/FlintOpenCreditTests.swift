@@ -501,6 +501,54 @@ final class FlintOpenCreditTests: XCTestCase {
         XCTAssertTrue(released.isEmpty)
     }
 
+    func testPC37BusyShieldFallbackPreservesValidPeekedGrant() throws {
+        caps = ["open-a": 1]
+        let receipt = try accepted()
+        let fd = open(directory.appendingPathComponent("ledger.lock").path, O_RDWR)
+        XCTAssertGreaterThanOrEqual(fd, 0); XCTAssertEqual(flock(fd, LOCK_EX), 0)
+        defer { flock(fd, LOCK_UN); close(fd) }
+        var ticks = 0.0
+        let timeoutClock = FlintClock(now: { self.now }, monotonic: { ticks += 1; return ticks },
+            bootSessionID: { self.boot }, calendar: { self.calendar })
+        let busy = FlintProtectionLedger(directory: directory, clock: timeoutClock, lockTimeout: 0,
+            initializedMarker: { self.marker }, setInitializedMarker: { _ in })
+        for _ in 0..<2 {
+            let result = busy.transaction { _ in XCTFail("both shield transactions must be busy") }
+            guard case .failure(.busy) = result else { return XCTFail("expected busy") }
+        }
+        // The same read-only fallback used after both retries preserves a last-credit grant;
+        // native application separately requires its live deadline and registered carrier.
+        let fallback = FlintOpenCredit.fallbackGrants(peek: try busy.peek().get())
+        XCTAssertEqual(fallback, [openAppKey: receipt.grant])
+        XCTAssertEqual(fallback[openAppKey]?.remaining(at: instant), 300)
+        XCTAssertNotNil(registrations[receipt.grant.activityName])
+        XCTAssertTrue(shielded.isEmpty)
+    }
+
+    func testPC37ShieldFallbackRejectsDecodableInvalidGrantState() throws {
+        _ = try accepted()
+        let valid = try state()
+        for missingOperation in [true, false] {
+            var invalid = valid
+            if missingOperation { invalid.openCredits.acceptedOperations.removeAll() }
+            else { invalid.openCredits.carrierCheckpoints.removeAll() }
+            let bytes = try FlintProtectionLedger.makeEncoder().encode(invalid)
+            let peeked = try FlintProtectionLedger.makeDecoder().decode(FlintLedgerState.self, from: bytes)
+            XCTAssertFalse(peeked.openCredits.isValid)
+            XCTAssertTrue(FlintOpenCredit.fallbackGrants(peek: peeked).isEmpty,
+                          "invalid state must apply the full selection")
+        }
+    }
+
+    func testPC37ShieldFallbackWithNoLedgerOrUnreadablePeekAppliesFullSelection() throws {
+        XCTAssertTrue(FlintOpenCredit.fallbackGrants(peek: nil).isEmpty)
+        _ = try accepted()
+        try Data(#"{"version":999}"#.utf8).write(to: directory.appendingPathComponent("ledger.json"))
+        let peek = try? ledger().peek().get()
+        XCTAssertNil(peek)
+        XCTAssertTrue(FlintOpenCredit.fallbackGrants(peek: peek).isEmpty)
+    }
+
     func testPC38RotatedIdentityKeepsOldCountAndNoMidPeriodPool() throws {
         _ = try accepted()
         targets = ["rotated"]

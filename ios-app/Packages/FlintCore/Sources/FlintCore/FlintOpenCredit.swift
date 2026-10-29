@@ -79,8 +79,14 @@ public enum FlintOpenCredit {
         }
         // Still busy or unreadable: shield, keeping only grants a read-only snapshot proves live
         // (their deadlines still end them, PC-30). An unreadable ledger proves none.
-        let live = (try? ledger.peek().get())?.openCredits.grants ?? [:]
-        apply(rule, grants: live)
+        apply(rule, grants: fallbackGrants(peek: try? ledger.peek().get()))
+    }
+
+    /// Decodable corruption cannot prove a release. Native application still checks each
+    /// retained grant's deadline, rule authorization and observed carrier registration.
+    static func fallbackGrants(peek: FlintLedgerState?) -> [String: FlintOpenCreditGrant] {
+        guard let peek, peek.openCredits.isValid else { return [:] }
+        return peek.openCredits.grants
     }
 
     @discardableResult
@@ -222,10 +228,8 @@ public enum FlintOpenCredit {
         guard let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup),
               Set(rules.map(\.id)).count == rules.count else { return }
         let center = DeviceActivityCenter()
-        var grants: [String: FlintOpenCreditGrant] = [:]
-        if let ledger = FlintProtectionLedger.appGroup(), case let .success(state) = ledger.peek(), state.openCredits.isValid {
-            grants = state.openCredits.grants
-        }
+        let peek = FlintProtectionLedger.appGroup().flatMap { try? $0.peek().get() }
+        let grants = fallbackGrants(peek: peek)
         for rule in rules where rule.enabled && FlintSelectionValidation.issue(for: rule.selection, context: .openLimit) == nil &&
             center.activities.contains(DeviceActivityName(rule.activityName)) &&
             center.schedule(for: DeviceActivityName(rule.activityName)) != nil {
