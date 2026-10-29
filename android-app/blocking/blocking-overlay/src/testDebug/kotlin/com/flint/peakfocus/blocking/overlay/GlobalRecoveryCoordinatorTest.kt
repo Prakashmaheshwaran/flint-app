@@ -60,6 +60,7 @@ class GlobalRecoveryCoordinatorTest {
         val values = MutableStateFlow<StorageState<ProtectionSnapshot>>(StorageState.Ready(initial))
         override val state: StateFlow<StorageState<ProtectionSnapshot>> = values
         private val lock = Mutex()
+        var writes = 0
         var fail = false
         var loseAck = false
         var release: CompletableDeferred<Unit>? = null
@@ -67,10 +68,11 @@ class GlobalRecoveryCoordinatorTest {
         override suspend fun <R> transact(transform: (ProtectionSnapshot) -> ProtectionMutation<R>): ProtectionCommit<R> = lock.withLock {
             val state = values.value
             if (state !is StorageState.Ready) return@withLock ProtectionCommit.Unavailable((state as? StorageState.Unavailable)?.reason ?: StorageFailure.IO)
-            val before = latest.copy(observedAt = clock())
+            val before = latest.copy(observedAt = clock(), openCredits = latest.openCredits?.let { OpenCreditLedgerPolicy.reconcile(it, clock()).next })
             val mutation = transform(before)
-            val accepting = (mutation.result as? RecoveryResult.Accepted)?.newlyAccepted == true || (mutation.result as? GrantResult.Granted)?.newlyAccepted == true
+            val accepting = (mutation.result == GrantResult.OpenAllowed && mutation.openCredits?.counters != before.openCredits?.counters) || (mutation.result as? RecoveryResult.Accepted)?.newlyAccepted == true || (mutation.result as? GrantResult.Granted)?.newlyAccepted == true
             if (accepting) { started.complete(Unit); release?.await(); if (fail) return@withLock ProtectionCommit.Unavailable(StorageFailure.IO) }
+            writes++
             val focus = mutation.focus.copy(revision = latest.focus.revision + if (mutation.focus != latest.focus || mutation.rules != null || mutation.harder != null) 1 else 0)
             latest = before.copy(focus = focus, rules = mutation.rules ?: before.rules, times = mutation.times ?: before.times,
                 opens = mutation.opens ?: before.opens, editor = mutation.editor ?: before.editor, harder = mutation.harder ?: before.harder,
@@ -485,9 +487,98 @@ class GlobalRecoveryCoordinatorTest {
         assertEquals(before, disk.latest.focus.openCounts)
         assertTrue(disk.latest.openCredits!!.counters.isEmpty())
         val cause = openLimitBlockCause(OpenLimit("c", 2), clock().wallEpochMs, 0)
-        assertTrue(c.requestBreak("c", cause, GrantRequestId.issue(clock())) is GrantResult.Unavailable)
+        assertEquals(GrantResult.Denied, c.requestBreak("c", cause, GrantRequestId.issue(clock())))
         assertEquals(before, disk.latest.focus.openCounts)
         assertTrue(disk.latest.openCredits!!.counters.isEmpty())
+    }
+
+    @Test fun PC_65_idleControllerWakesDoNotRewriteTheStoreOrBumpItsRevision() = runTest {
+        val s = initial().copy(rules = emptyList(), times = emptyList(), opens = emptyList(),
+            editor = EditorCommitmentState(timeline = base), openCredits = OpenCreditLedgerPolicy.initial(base, "UTC"))
+        val disk = Disk(s) { clock() }; coordinator(disk); runCurrent()
+        val writes = disk.writes; val revision = disk.latest.focus.revision
+        advanceTimeBy(4 * GlobalRecoveryController.CHECKPOINT_MS); runCurrent()
+        assertEquals(writes, disk.writes); assertEquals(revision, disk.latest.focus.revision)
+    }
+
+    @Test fun PC_29_PC_30_PC_31_explicitCreditAcrossBothPathsCommitsOnceAndExpiryWakesStationaryForeground() = runTest {
+        val s = initial().copy(opens = listOf(OpenLimit("c", 1, BreakLevel.HARDCORE)), openCredits = OpenCreditLedgerPolicy.initial(base, "UTC"))
+        val disk = Disk(s) { clock() }; var wakes = 0
+        val a = coordinator(disk) { wakes++ }; val b = coordinator(disk) { wakes++ }; runCurrent()
+        val cause = openLimitBlockCause(s.opens.single(), clock().wallEpochMs, 0)
+        val ui = a.screenState("c", "C", cause, clock().wallEpochMs)
+        assertEquals(1, ui.openCreditsRemaining); assertNotNull(ui.openCreditRequestScope)
+        val first = GrantRequestId.issue(clock(), ui.openCreditRequestScope)
+        val second = GrantRequestId.issue(clock(), ui.openCreditRequestScope)
+        val results = awaitAll(async { a.requestBreak("c", cause, first) }, async { b.requestBreak("c", cause, second) }); runCurrent()
+        assertTrue(results.all { it == GrantResult.OpenAllowed })
+        assertEquals(1, disk.latest.openCredits!!.counters.getValue("c").used)
+        assertEquals(1, disk.latest.focus.protection!!.outbox.values.count { it.kind == ProtectionLifecycleKind.ACCESS_STARTED })
+        assertNull(a.evaluateBlockCause(null, "c", null, false))
+        val deadline = disk.latest.openCredits!!.active.getValue("c").grant
+        repeat(5) { a.onForegroundChanged(null, "c"); b.onForegroundChanged("self", "c") }
+        assertEquals(deadline, disk.latest.openCredits!!.active.getValue("c").grant)
+        val before = wakes; advanceTimeBy(300_000); runCurrent()
+        assertTrue(wakes > before)
+        assertNotNull(a.evaluateBlockCause("c", "c", null, false))
+        assertEquals(1, disk.latest.openCredits!!.counters.getValue("c").used)
+        assertEquals(1, disk.latest.focus.protection!!.outbox.values.count { it.kind == ProtectionLifecycleKind.ACCESS_ENDED })
+    }
+
+    @Test fun PC_32_PC_37_creditNeverPublishesBeforeAckAndNewIndependentCauseBlocksACommittedCreditRetry() = runTest {
+        val disk = Disk(initial().copy(openCredits = OpenCreditLedgerPolicy.initial(base, "UTC"))) { clock() }
+        val c = coordinator(disk); runCurrent()
+        val cause = openLimitBlockCause(disk.latest.opens.single(), clock().wallEpochMs, 0)
+        val id = GrantRequestId.issue(clock(), c.screenState("c", null, cause, clock().wallEpochMs).openCreditRequestScope)
+        disk.release = CompletableDeferred(); disk.fail = true
+        val request = async { c.requestBreak("c", cause, id) }; disk.started.await()
+        assertTrue(c.onForegroundChanged(null, "c") is OpenLimitDecision.Blocked)
+        assertTrue(disk.latest.openCredits!!.counters.isEmpty())
+        disk.release!!.complete(Unit)
+        assertTrue(request.await() is GrantResult.Unavailable)
+        disk.fail = false; disk.release = null
+        assertTrue(c.retryProtectionState()); runCurrent()
+        assertEquals(GrantResult.OpenAllowed, c.requestBreak("c", cause, id)); runCurrent()
+        val blocker = session.copy(id = "block-c", name = "New focus", targets = BlockTargets(apps = setOf(AppRef("c"))))
+        disk.latest = disk.latest.copy(rules = disk.latest.rules + blocker, editor = disk.latest.editor.copy(causes = disk.latest.editor.causes +
+            ("rule:block-c" to EditorCause("block-c", null, "UTC"))))
+        disk.values.value = StorageState.Ready(disk.latest); runCurrent()
+        assertEquals(GrantResult.Denied, c.requestBreak("c", cause, id))
+        assertFalse(c.canDismiss("c", cause))
+        assertEquals(1, disk.latest.openCredits!!.counters.getValue("c").used)
+    }
+
+    @Test fun PC_28_PC_37_exhaustedQuotaUsesTierBreakWithoutAnotherCreditCharge() = runTest {
+        val disk = Disk(initial().copy(opens = listOf(OpenLimit("c", 1, BreakLevel.EASY)), openCredits = OpenCreditLedgerPolicy.initial(base, "UTC"))) { clock() }
+        val c = coordinator(disk); runCurrent()
+        val cause = openLimitBlockCause(disk.latest.opens.single(), clock().wallEpochMs, 0)
+        val id = GrantRequestId.issue(clock(), c.screenState("c", null, cause, clock().wallEpochMs).openCreditRequestScope)
+        assertEquals(GrantResult.OpenAllowed, c.requestBreak("c", cause, id))
+        advanceTimeBy(300_000); runCurrent()
+        assertTrue(c.requestBreak("c", cause, GrantRequestId.issue(clock())) is GrantResult.Granted)
+        assertEquals(1, disk.latest.openCredits!!.counters.getValue("c").used)
+        assertTrue(disk.latest.openCredits!!.active.isEmpty())
+        assertEquals(1, disk.latest.focus.protection!!.ordinaryGrants.size)
+    }
+
+    @Test fun PC_31_PC_59_PC_65_creditLostAckRestartsAtSameDeadlineAndRebootKeepsItsSpend() = runTest {
+        val disk = Disk(initial().copy(openCredits = OpenCreditLedgerPolicy.initial(base, "UTC"))) { clock() }
+        val c = coordinator(disk); runCurrent()
+        val cause = openLimitBlockCause(disk.latest.opens.single(), clock().wallEpochMs, 0)
+        val id = GrantRequestId.issue(clock(), c.screenState("c", null, cause, clock().wallEpochMs).openCreditRequestScope)
+        disk.loseAck = true
+        try { c.requestBreak("c", cause, id); fail("lost acknowledgement returned") } catch (_: CancellationException) { }
+        disk.loseAck = false
+        val restored = coordinator(disk); runCurrent()
+        assertEquals(GrantResult.OpenAllowed, restored.requestBreak("c", cause, id))
+        assertEquals(1, disk.latest.openCredits!!.counters.getValue("c").used)
+        val end = disk.latest.openCredits!!.active.getValue("c").grant
+        assertEquals(base.elapsedRealtimeMs + 300_000, end.startedAt.elapsedRealtimeMs + end.durationMs)
+        val reboot = AccessClockStamp(base.wallEpochMs + 1_000, 0, "other")
+        val credits = OpenCreditLedgerPolicy.reconcile(disk.latest.openCredits!!, reboot).next
+        val closed = GlobalRecoveryPolicy.checkpoint(disk.latest.copy(observedAt = reboot, openCredits = credits))
+        assertTrue(closed.openCredits!!.active.isEmpty()); assertEquals(1, closed.openCredits!!.counters.getValue("c").used)
+        assertTrue(closed.focus.protection!!.previousAccessEnded)
     }
 
     @Test fun PC_22_PC_25_PC_63_ordinaryGrantHasRealScopeAndNewHardcoreRuleBlocksAndProducesMatchingEnd() = runTest {

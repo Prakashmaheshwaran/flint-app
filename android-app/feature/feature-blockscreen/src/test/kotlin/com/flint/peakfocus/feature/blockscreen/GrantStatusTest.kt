@@ -26,4 +26,24 @@ class GrantStatusTest {
             assertEquals(BreakAffordance.RetryOpen, blockScreenContent(state(level, GrantStatus.RETRY_OPEN)).breakAffordance)
         }
     }
+    @org.junit.Test fun PC_28_PC_30_positiveCreditsOfferExplicitTimedAccessAtEveryTierIncludingHardcore() {
+        for (level in BreakLevel.entries) {
+            val ready = state(level, GrantStatus.READY).copy(openCreditsRemaining = 2, openCreditDurationMillis = 300_000)
+            assertEquals(BreakAffordance.UseCredit(2, 300_000), blockScreenContent(ready).breakAffordance)
+            assertEquals(BreakAffordance.Unavailable, blockScreenContent(ready.copy(grantStatus = GrantStatus.UNAVAILABLE)).breakAffordance)
+            assertEquals(BreakAffordance.Saving, blockScreenContent(ready.copy(grantStatus = GrantStatus.SAVING)).breakAffordance)
+        }
+    }
+
+    @org.junit.Test fun PC_32_knownOverlapNamesTheContributorAndOffersNoCreditOrFreeBreak() {
+        val ready = state(BreakLevel.EASY, GrantStatus.READY).copy(openCreditsRemaining = 3,
+            openCreditDurationMillis = 120_000, openCreditBlockingContributors = listOf("Focus"))
+        assertEquals(BreakAffordance.CreditBlocked(listOf("Focus")), blockScreenContent(ready).breakAffordance)
+    }
+
+    @org.junit.Test fun PC_28_PC_35_exhaustionKeepsTierExceptionsAndShortCreditShowsItsActualDuration() {
+        val ready = state(BreakLevel.HARDER, GrantStatus.READY).copy(openCreditsRemaining = 1, openCreditDurationMillis = 120_000)
+        assertEquals(BreakAffordance.UseCredit(1, 120_000), blockScreenContent(ready).breakAffordance)
+        assertEquals(BreakAffordance.HoldToRequest(BREAK_HOLD_MILLIS), blockScreenContent(ready.copy(openCreditsRemaining = 0)).breakAffordance)
+    }
 }

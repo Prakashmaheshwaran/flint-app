@@ -35,13 +35,18 @@ internal class GlobalRecoveryController(
         scope.launch(dispatcher) {
             // Migrate/reconcile once before a pass is advertised. Thereafter persist elapsed
             // checkpoints at bounded intervals, and exactly at an active recovery boundary.
+            var initial = true
             while (isActive) {
-                reconcile()
+                if (initial || needsCheckpoint(lastGood)) reconcile()
+                initial = false
                 val now = clock()
                 val remaining = GlobalRecoveryPolicy.remaining(lastGood?.focus?.protection?.recovery, now)
                 val ordinary = lastGood?.focus?.protection?.ordinaryGrants?.values.orEmpty().mapNotNull { it.lifetime.remainingMs(now)?.takeIf { ms -> ms > 0 } }
+                val credits = lastGood?.openCredits?.active?.values.orEmpty().mapNotNull {
+                    com.flint.peakfocus.blocking.engine.OpenCreditPolicy().remainingMs(it.grant, now).takeIf { ms -> ms > 0 }
+                }
                 val quota = lastGood?.openCredits?.let { com.flint.peakfocus.blocking.engine.OpenCreditPolicy().remainingToResetMs(it.reset, now) }
-                val wait = (ordinary + listOfNotNull(remaining.takeIf { it > 0 }, quota?.takeIf { it > 0 }) + CHECKPOINT_MS).minOrNull() ?: CHECKPOINT_MS
+                val wait = (ordinary + credits + listOfNotNull(remaining.takeIf { it > 0 }, quota?.takeIf { it > 0 }) + CHECKPOINT_MS).minOrNull() ?: CHECKPOINT_MS
                 withTimeoutOrNull(wait) { boundarySignals.receive() }
                 // Deadlines still stop release when storage becomes unavailable at expiry.
                 runCatching(enforcementChanged)
@@ -61,6 +66,7 @@ internal class GlobalRecoveryController(
         scope.launch(dispatcher) {
             for (ignored in ordinarySignals) {
                 val inputs = ordinaryInputs.values.toList()
+                if (inputs.isEmpty()) continue
                 commit { original ->
                     var snapshot = GlobalRecoveryPolicy.checkpoint(original)
                     for (input in inputs) snapshot = snapshot.copy(focus = OrdinaryProtectionPolicy.retireInvalid(snapshot, input, foreignRules()))
@@ -68,6 +74,13 @@ internal class GlobalRecoveryController(
                 }
             }
         }
+    }
+
+    private fun needsCheckpoint(snapshot: ProtectionSnapshot?): Boolean {
+        val ledger = snapshot?.focus?.protection ?: return true
+        return ledger.cooldown != null || ledger.recovery != null || ledger.ordinaryGrants.isNotEmpty() ||
+            ledger.pendingCreditEnds.isNotEmpty() || ledger.outbox.isNotEmpty() || snapshot.times.isNotEmpty() ||
+            snapshot.opens.isNotEmpty() || snapshot.openCredits?.counters?.isNotEmpty() == true || snapshot.openCredits?.active?.isNotEmpty() == true
     }
 
     private fun publish(next: StorageState<ProtectionSnapshot>) {
@@ -81,6 +94,7 @@ internal class GlobalRecoveryController(
                 }
                 changed = next.value.focus.protection?.recovery != lastGood?.focus?.protection?.recovery ||
                     next.value.focus.protection?.ordinaryGrants != lastGood?.focus?.protection?.ordinaryGrants ||
+                    next.value.openCredits?.active != lastGood?.openCredits?.active ||
                     lastGood == null
                 if (lastGood?.rules != next.value.rules || lastGood?.times != next.value.times || lastGood?.opens != next.value.opens)
                     ordinarySignals.trySend(Unit)
@@ -149,6 +163,25 @@ internal class GlobalRecoveryController(
             null -> GrantResult.Unconfirmed
         }
     }
+
+    fun creditView(input: OrdinaryProtectionInput, now: AccessClockStamp): TimedCreditView? = lastGood?.let {
+        TimedOpenCreditPolicy.view(it, input, foreignRules(), now)
+    }
+
+    fun creditRemaining(packageName: String, now: AccessClockStamp): Long {
+        val credits = lastGood?.openCredits ?: return 0
+        val policy = com.flint.peakfocus.blocking.engine.OpenCreditPolicy()
+        return credits.active[packageName]?.grant?.let { minOf(policy.remainingMs(it, now), policy.remainingToResetMs(credits.reset, now)) } ?: 0
+    }
+
+    suspend fun requestCredit(input: OrdinaryProtectionInput, id: GrantRequestId, onSafetyFloor: () -> Boolean): GrantResult =
+        when (val accepted = commit { TimedOpenCreditPolicy.request(it, input, id, foreignRules().toList(), onSafetyFloor()) }) {
+            is ProtectionCommit.Committed -> accepted.result
+            is ProtectionCommit.Unavailable -> GrantResult.Unavailable(accepted.reason)
+            null -> GrantResult.Unconfirmed
+        }
+
+    suspend fun resumeCredits(): Boolean = (commit(TimedOpenCreditPolicy::resume) as? ProtectionCommit.Committed)?.result == true
 
     fun ordinaryCovers(input: OrdinaryProtectionInput, now: AccessClockStamp): Boolean = lastGood?.let {
         OrdinaryProtectionPolicy.covers(it, input, foreignRules(), now)

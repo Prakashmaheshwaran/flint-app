@@ -552,6 +552,17 @@ private fun BreakActions(
             QuietButton("Review protection state", onEmergencyPassRequested)
         }
         BreakAffordance.RetryOpen -> QuietButton("Try again", onBreakRequested, modifier = modifier)
+        is BreakAffordance.UseCredit -> Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("${affordance.remaining} access credits remaining", style = MaterialTheme.typography.bodyMedium)
+            QuietButton(if (affordance.durationMillis >= 300_000) "Use one credit · 5 minutes"
+                else "Use one credit · ${formatDuration(affordance.durationMillis)}", onBreakRequested)
+            if (affordance.durationMillis < 300_000) Text("Access ends at the quota reset.", style = MaterialTheme.typography.bodySmall)
+        }
+        is BreakAffordance.CreditBlocked -> Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Still blocked by ${affordance.contributors.joinToString(", ")}. No credit used.",
+                style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+            QuietButton("Review protection state", onEmergencyPassRequested)
+        }
         // 48dp minimum keeps the deliberate 52/48/48 exit ladder under "Go back".
         BreakAffordance.TakeABreak -> QuietButton("Take a break", onBreakRequested, modifier = modifier)
 

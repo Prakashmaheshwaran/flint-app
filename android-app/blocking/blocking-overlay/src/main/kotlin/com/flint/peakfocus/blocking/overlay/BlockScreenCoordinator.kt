@@ -200,12 +200,12 @@ class BlockScreenCoordinator(
         var breakId: GrantRequestId? = null
         var passId: GrantRequestId? = null
         var retired = false
-        fun id(emergency: Boolean, now: Long, clock: AccessClockStamp? = null): GrantRequestId {
+        fun id(emergency: Boolean, now: Long, clock: AccessClockStamp? = null, creditScope: String? = null): GrantRequestId {
             val previous = if (emergency) passId else breakId
             if (previous != null && (if (clock != null) previous.issuedAtClock?.let {
                 com.flint.peakfocus.blocking.engine.trustedElapsedMs(it, clock)?.let { age -> age < GlobalRecoveryPolicy.REQUEST_LIFETIME_MS }
             } == true else previous.issuedAtEpochMs <= now && now - previous.issuedAtEpochMs < DurableGrantController.RETRY_HORIZON_MS)) return previous
-            return (clock?.let(GrantRequestId::issue) ?: GrantRequestId.issue(now)).also { if (emergency) passId = it else breakId = it }
+            return (clock?.let { GrantRequestId.issue(it, creditScope) } ?: GrantRequestId.issue(now)).also { if (emergency) passId = it else breakId = it }
         }
         fun recordResult(emergency: Boolean, result: GrantResult) {
             // A stronger cause may keep this mount visible after an acknowledged grant.
@@ -398,6 +398,7 @@ class BlockScreenCoordinator(
     suspend fun previewEndCommitments(selected: Set<String>, delete: Boolean): RecoveryEndPreview? = recoveries?.previewEnd(selected, delete)
     suspend fun endCommitmentsAndResume(preview: RecoveryEndPreview): Boolean = recoveries?.endAndResume(preview) == true
     suspend fun retryProtectionState(): Boolean = recoveries?.reconcile() == true
+    suspend fun resumeOpenCredits(): Boolean = recoveries?.resumeCredits() == true
 
     /** Move to Flint's review surface without granting access to the blocked target. */
     internal fun launchRecovery(fallbackTarget: String? = null): Boolean {
@@ -626,9 +627,15 @@ class BlockScreenCoordinator(
         grantInputs(cause, emergency).all { it is StorageState.Ready }
 
     private fun inspectOpen(packageName: String, includeUnpaidVisit: Boolean = true): OpenLimitDecision {
-        val limit = openLimits.firstOrNull { it.packageName == packageName } ?: return OpenLimitDecision.Allowed(null)
-        if (recoveries != null) return OpenLimitDecision.Blocked(limit,
-            if (recoveries.state.value is StorageState.Ready) "explicit timed credit required" else "storage unavailable")
+        val covering = openLimits.filter { it.packageName == packageName }
+        val first = covering.firstOrNull() ?: return OpenLimitDecision.Allowed(null)
+        val limit = if (recoveries == null) first else first.copy(dailyOpens = covering.minOf { it.dailyOpens }, breakLevel = covering.maxBy { it.breakLevel.ordinal }.breakLevel)
+        recoveries?.let { owner ->
+            if (owner.creditRemaining(packageName, statusClock()) > 0) return OpenLimitDecision.Allowed(
+                owner.lastGood?.openCredits?.let { OpenCreditLedgerPolicy.remainingCredits(it, packageName,
+                    openLimits.filter { row -> row.packageName == packageName }.map { row -> row.dailyOpens }) })
+            return OpenLimitDecision.Blocked(limit, if (owner.state.value is StorageState.Ready) "explicit timed credit required" else "storage unavailable")
+        }
         val focus = focusLastGood
         if (visits.current(packageName)?.paid == true && focus != null) {
             val day = openLimitPolicy.epochDay(nowEpochMs(), utcOffsetMs(nowEpochMs()))
@@ -744,7 +751,7 @@ class BlockScreenCoordinator(
             context = appContext,
             onDismiss = ::handleDismiss,
             onOpenFlint = ::handleOpenFlint,
-            onBreakRequested = { handleGrantRequested(packageName, requests, emergency = false) },
+            onBreakRequested = { creditScope -> handleGrantRequested(packageName, requests, emergency = false, creditScope = creditScope) },
             onEmergencyPassRequested = { handleGrantRequested(packageName, requests, emergency = true) },
         )
         view.render(screenState(packageName, appLabel, cause, now))
@@ -835,14 +842,21 @@ class BlockScreenCoordinator(
         if (!busy.add(packageName)) return GrantResult.Unavailable()
         failures.remove(packageName); rerenderNow()
         return try {
-            val cause = currentBlockCause(packageName, displayed) ?: return GrantResult.Denied
+            val current = currentBlockCause(packageName, displayed)
+            if (id.creditScope != null) {
+                val result = owner.requestCredit(ordinaryInput(packageName, current ?: displayed), id) { safetyFloor.protectsFresh(packageName) }
+                if (result is GrantResult.Unavailable || result == GrantResult.Unconfirmed) failures.add(packageName)
+                return result
+            }
+            val cause = current ?: return GrantResult.Denied
             val limit = openLimits.firstOrNull { it.packageName == packageName }
             if (limit != null) {
                 val credits = owner.lastGood?.openCredits ?: return GrantResult.Unavailable()
-                // A free ordinary break cannot replace an unspent credit. R-11 supplies
-                // the explicit credit CTA in the following PR; exhaustion keeps tier exits.
-                if (OpenCreditLedgerPolicy.remainingCredits(credits, packageName, listOf(limit.dailyOpens)) != 0)
-                    return GrantResult.Unavailable()
+                // A stale ordinary action never silently becomes a credit purchase.
+                if (owner.creditRemaining(packageName, statusClock()) == 0L &&
+                    OpenCreditLedgerPolicy.remainingCredits(credits, packageName,
+                        openLimits.filter { it.packageName == packageName }.map { it.dailyOpens }) != 0)
+                    return GrantResult.Denied
             }
             val result = owner.requestOrdinary(ordinaryInput(packageName, cause), id)
             if (result is GrantResult.Unavailable || result == GrantResult.Unconfirmed) failures.add(packageName)
@@ -877,14 +891,15 @@ class BlockScreenCoordinator(
     }
 
     fun screenState(packageName: String, label: String?, cause: BlockCause, now: Long): BlockScreenState {
-        val inputs = grantInputs(cause, emergency = cause.breakLevel == BreakLevel.HARDCORE)
-        val openEntryPending = recoveries?.lastGood?.openCredits?.let { credits ->
-            openLimits.firstOrNull { it.packageName == packageName }?.let { OpenCreditLedgerPolicy.remainingCredits(credits, packageName, listOf(it.dailyOpens)) != 0 }
-        } == true
+        val inputs = if (recoveries != null) listOf(recoveries.state.value, focusState.value, rulesState.value, timeState.value, openState.value, editorState.value)
+            else grantInputs(cause, emergency = cause.breakLevel == BreakLevel.HARDCORE)
+        val credit = recoveries?.creditView(ordinaryInput(packageName, cause), statusClock())
+        val unavailableCredit = recoveries != null && openLimits.any { it.packageName == packageName } &&
+            (credit == null || credit.durationMs == 0L)
         val status = when {
             inputs.any { it is StorageState.Loading } -> GrantStatus.LOADING
             inputs.any { it !is StorageState.Ready } -> GrantStatus.UNAVAILABLE
-            openEntryPending -> GrantStatus.UNAVAILABLE
+            unavailableCredit -> GrantStatus.UNAVAILABLE
             packageName in busy || visits.current(packageName)?.let { it.id.prefix in pendingOpens } == true -> GrantStatus.SAVING
             packageName in failures && openRetryNeeded(packageName, cause) -> GrantStatus.RETRY_OPEN
             packageName in failures -> GrantStatus.FAILED
@@ -893,7 +908,10 @@ class BlockScreenCoordinator(
         // These neutral values feed display only. Every policy/credit decision above requires
         // Ready and reads real accounting again inside the transaction.
         return blockScreenState(packageName, label, cause, currentBreakSession(), now, isEmergencyPassAvailable())
-            .copy(grantStatus = status)
+            .copy(grantStatus = status, openCreditsRemaining = credit?.remainingCredits, openCreditDurationMillis = credit?.durationMs,
+                openCreditActiveRemainingMillis = credit?.activeRemainingMs,
+                openCreditBlockingContributors = credit?.blockingContributors.orEmpty(),
+                openCreditRequestScope = credit?.takeIf { it.remainingCredits > 0 && it.activeRemainingMs == 0L }?.requestScope)
     }
 
     // MARK: Surface callbacks (Compose invokes these on the main thread)
@@ -915,14 +933,14 @@ class BlockScreenCoordinator(
         }
     }
 
-    private fun handleGrantRequested(packageName: String, requests: SurfaceRequests, emergency: Boolean) {
+    private fun handleGrantRequested(packageName: String, requests: SurfaceRequests, emergency: Boolean, creditScope: String? = null) {
         if (requests.retired || surfaceRequests !== requests || visiblePackage != packageName || packageName in busy) return
         if (emergency) {
             if (!launchRecovery()) { failures.add(packageName); rerenderNow() }
             return
         }
         val cause = shownCause ?: return
-        val id = requests.id(emergency, nowEpochMs(), requestClock())
+        val id = requests.id(emergency, nowEpochMs(), requestClock(), creditScope)
         scope.launch {
             val result = requestBreak(packageName, cause, id)
             requests.recordResult(emergency, result)

@@ -68,11 +68,11 @@ internal object GlobalRecoveryPolicy {
         val endedEvents = ended.map { grant -> ordinaryEnded(grant, now, ProtectionBreakEndReason.EXPIRED, snapshot.focus.revision + 1) }
         val retained = ledger.operations.filterValues { it.operationId == cooldown?.operationId ||
             trustedElapsedMs(it.acceptedAt, now)?.let { age -> age < REQUEST_LIFETIME_MS } == true }
-        return snapshot.copy(focus = snapshot.focus.copy(protection = bound(ledger.copy(checkpoint = now,
+        return TimedOpenCreditPolicy.closeExpired(snapshot.copy(focus = snapshot.focus.copy(protection = bound(ledger.copy(checkpoint = now,
             cooldown = cooldown, recovery = recovery, operations = retained,
             ordinaryGrants = ledger.ordinaryGrants - ended.map { it.operationId }.toSet(),
             outbox = ledger.outbox + endedEvents.associateBy { it.id },
-            previousAccessEnded = ledger.previousAccessEnded || rebootClosed || ended.any { trustedElapsedMs(it.lifetime.startedAt, now) == null }), now)))
+            previousAccessEnded = ledger.previousAccessEnded || rebootClosed || ended.any { trustedElapsedMs(it.lifetime.startedAt, now) == null }), now))))
     }
 
     fun preview(snapshot: ProtectionSnapshot, foreignRules: List<BlockRule>, operationId: String): RecoveryPreview? {
@@ -112,10 +112,11 @@ internal object GlobalRecoveryPolicy {
         val endedBreaks = ledger.ordinaryGrants.values.map { grant ->
             ordinaryEnded(grant, now, ProtectionBreakEndReason.RECOVERY, current.revision + 1)
         }
+        val endedCredits = ledger.pendingCreditEnds.values.map { TimedOpenCreditPolicy.ended(it, now, ProtectionBreakEndReason.RECOVERY, current.revision + 1) }
         val nextLedger = bound(ledger.copy(cooldown = ProtectionCooldown(preview.operationId, now.wallEpochMs, now, ProtectionContract.PASS_COOLDOWN_MS),
             recovery = recovery, operations = ledger.operations + (preview.operationId to ProtectionPassReceipt(preview.operationId, preview.issuedAt, now, preview.scopeIdentity)),
-            outbox = ledger.outbox + (endedBreaks + event).associateBy { it.id }, lastUsedAtEpochMs = now.wallEpochMs,
-            ordinaryGrants = emptyMap(), previousAccessEnded = false), now)
+            outbox = ledger.outbox + (endedBreaks + endedCredits + event).associateBy { it.id }, lastUsedAtEpochMs = now.wallEpochMs,
+            ordinaryGrants = emptyMap(), pendingCreditEnds = emptyMap(), previousAccessEnded = false), now)
         val endedKeys = transientIds.map(::ruleCauseKey).toSet()
         val terminal = snapshot.editor.causes.filterKeys { it in endedKeys }.map { (key, cause) -> editorOccurrence(key, cause) }.toSet()
         val editor = snapshot.editor.copy(causes = snapshot.editor.causes - endedKeys, pending = null,
@@ -209,6 +210,8 @@ internal object GlobalRecoveryPolicy {
     }
 
     internal fun foreignActive(rule: BlockRule, now: AccessClockStamp, timeline: AccessClockStamp?): Boolean {
+        // Legacy sources have no saved schedule zone. Retain their device-zone semantics;
+        // initialized DataStore schedules use the editor's saved occurrence/zone instead.
         val logicalWall = timeline?.let { t -> trustedElapsedMs(t, now)?.let { t.wallEpochMs + it } } ?: now.wallEpochMs
         if (rule.expiresAtEpochMs?.let { it <= logicalWall } == true) return false
         val schedule = rule.schedule ?: return true
