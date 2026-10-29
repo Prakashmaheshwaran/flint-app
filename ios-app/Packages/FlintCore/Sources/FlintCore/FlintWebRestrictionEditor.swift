@@ -52,7 +52,7 @@ public final class FlintWebRestrictionEditor {
         if let message = candidate.validationMessage { return .invalid(message) }
         let now = clock.now()
         let affected = Self.affectedCauses(previous: previous, candidate: candidate, snapshot: snapshot,
-                                           now: now, calendar: clock.calendar())
+                                           now: now, calendar: clock.calendar(), clock: clock)
         let decisions = affected.map { cause -> FlintProtectionDecision in
             let off = cause.isRuleBacked ? !candidate.applyDuringSchedules : !candidate.enabled
             return FlintProtectionPolicy.decide(off ? .toggleOff : .editWeaken, for: cause)
@@ -110,12 +110,17 @@ public final class FlintWebRestrictionEditor {
     }
 
     public static func affectedCauses(previous: FlintWebRestrictions, candidate: FlintWebRestrictions,
-                                     snapshot: Snapshot, now: Date, calendar: Calendar) -> [FlintCauseState] {
+                                     snapshot: Snapshot, now: Date, calendar: Calendar,
+                                     clock: FlintClock? = nil) -> [FlintCauseState] {
         let content = weakensContent(previous, candidate)
         var causes: [FlintCauseState] = []
-        if previous.enabled, !candidate.enabled || content, let session = snapshot.session, !session.isExpired(at: now) {
+        // A session's eligibility and end come from logical time when a clock is given: a
+        // same-boot wall jump must not make a live session's frozen policy freely editable (§9).
+        if previous.enabled, !candidate.enabled || content, let session = snapshot.session,
+           session.isEnforcing(at: now, clock: clock) {
+            let end = clock.flatMap(session.stableLogicalEnd) ?? session.endsAt
             causes.append(.init(causeID: session.id, kind: .session, tier: session.breakLevel,
-                                isActive: true, end: session.endsAt, legacyRights: session.contractVersion == nil))
+                                isActive: true, end: end, legacyRights: session.contractVersion == nil))
         }
         if previous.applyDuringSchedules, !candidate.applyDuringSchedules || content {
             for rule in snapshot.rules where rule.enabled {

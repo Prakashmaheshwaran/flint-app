@@ -56,7 +56,7 @@ extension FlintProtectionReconciler {
                 activeSession: active, hasActiveSessionRecord: group.hasActiveSessionRecord(),
                 rules: FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: .flintGroup),
                 config: FlintWebRestrictions.loadForEnforcement(), health: group.loadArmingHealth(),
-                lifecycle: FlintWebRestrictionLifecycle()
+                lifecycle: FlintWebRestrictionLifecycle(), clock: .system
             )
         }
     ], publish: {

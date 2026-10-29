@@ -11,14 +11,19 @@ public enum FlintProtectionStatusBuilder {
         public var enforcing: Bool
         public var kind: Snapshot.Session.Kind
         public var origin: Snapshot.Session.Origin
+        /// The session's end by logical time (ADR-012 §9), which differs from its recorded wall
+        /// end after a same-boot clock change. nil = the recorded end.
+        public var logicalEnd: Date?
 
         public init(_ session: FlintActiveSession, armed: Bool, enforcing: Bool = true,
-                    kind: Snapshot.Session.Kind = .session, origin: Snapshot.Session.Origin = .appUI) {
+                    kind: Snapshot.Session.Kind = .session, origin: Snapshot.Session.Origin = .appUI,
+                    logicalEnd: Date? = nil) {
             self.session = session
             self.armed = armed
             self.enforcing = enforcing
             self.kind = kind
             self.origin = origin
+            self.logicalEnd = logicalEnd ?? session.endsAt
         }
     }
 
@@ -150,17 +155,17 @@ public enum FlintProtectionStatusBuilder {
                 unavailable = true
                 reasons.insert("time_uncertain")
                 reasons.insert("state_unavailable")
-            } else if !active.isExpired(at: now) {
-                if let end = active.endsAt { boundaries.append(end) }
+            } else if input.logicalEnd.map({ now < $0 }) ?? true {
+                if let end = input.logicalEnd { boundaries.append(end) }
                 if !input.armed { reasons.insert("registration_failed") }
                 if input.armed && !inputs.recordUnreadable && !unavailable && recovery == nil {
                     session = Snapshot.Session(id: active.id, kind: input.kind, name: active.name,
-                        tier: active.breakLevel, startedAt: active.startedAt, logicalEnd: active.endsAt,
+                        tier: active.breakLevel, startedAt: active.startedAt, logicalEnd: input.logicalEnd,
                         origin: input.origin, armed: true)
                 }
                 causes.append(Snapshot.Cause(id: active.id,
                     kind: input.kind == .pomodoro ? .pomodoro : .session, displayName: active.name,
-                    tier: active.breakLevel, end: active.endsAt,
+                    tier: active.breakLevel, end: input.logicalEnd,
                     enforcing: canEnforce && input.armed && input.enforcing))
             }
         }

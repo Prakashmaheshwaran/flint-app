@@ -53,6 +53,22 @@ final class FlintProtectionStatusCurrentStateTests: XCTestCase {
         XCTAssertEqual(FlintProtectionStatus.load(now: now, from: defaults), snapshot)
     }
 
+    func testAForwardWallJumpKeepsTheSessionLiveWithItsLogicalEndPC54() throws {
+        let (defaults, store) = try fixture()
+        // One minute of real time has passed (monotonic 40 → 100); the wall clock reads 30
+        // minutes later, so the recorded wall end already looks past.
+        store.saveActiveSession(.init(id: "live", name: "Focus", startedAt: now.addingTimeInterval(-1860),
+            endsAt: now.addingTimeInterval(-60), breakLevel: .hardcore, monitorName: "flint.session.live",
+            monotonicStart: 40, bootSessionID: "fixture-boot", plannedDuration: 1800))
+        let inputs = FlintProtectionStatus.currentInputs(now: now, defaults: defaults,
+            ledgerPass: pass, ruleObservations: observations, quotaCalendar: calendar, environment: environment(store: store))
+        XCTAssertEqual(try XCTUnwrap(inputs.activeSession?.logicalEnd).timeIntervalSince(now), 1740, accuracy: 1)
+        XCTAssertTrue(inputs.timeIntegrityApplies, "a live session's clock verdict applies")
+        let snapshot = FlintProtectionStatusBuilder.make(inputs)
+        XCTAssertTrue(snapshot.degradedReasons.contains("registration_failed"),
+                      "treated as running (here without a registration), not as over")
+    }
+
     func testExpiredSessionDoesNotMakeScheduleTimeUncertain() throws {
         let (defaults, store) = try fixture()
         store.saveActiveSession(.init(id: "old", name: "Old", startedAt: now.addingTimeInterval(-120),

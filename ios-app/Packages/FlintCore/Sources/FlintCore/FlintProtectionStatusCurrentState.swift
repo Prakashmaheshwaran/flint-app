@@ -139,15 +139,17 @@ extension FlintProtectionStatus {
                 active: rule.enabled, enforcing: openEnforcing[rule.id] == true,
                 opensAllowed: rule.opensAllowed)
         }
+        let clock = environment.clock
         // Legacy sessions predate origin tracking; absent origins retain the app UI default.
+        // The end shown and published is the logical one: a same-boot wall jump moves it (§9).
         let session = active.map {
             FlintProtectionStatusBuilder.SessionInput($0,
                 armed: sessionArmed ?? activities.contains($0.monitorName),
                 kind: sessionKind,
-                origin: sessionOrigin ?? $0.origin.flatMap(FlintProtectionStatusSnapshot.Session.Origin.init(rawValue:)) ?? .appUI)
+                origin: sessionOrigin ?? $0.origin.flatMap(FlintProtectionStatusSnapshot.Session.Origin.init(rawValue:)) ?? .appUI,
+                logicalEnd: $0.stableLogicalEnd(clock: clock))
         }
-        let clock = environment.clock
-        let liveActive = active.flatMap { $0.isExpired(at: now) ? nil : $0 }
+        let liveActive = active.flatMap { $0.isLogicallyExpired(clock: clock) ? nil : $0 }
         // A recent observed wall-clock anomaly remains relevant without a manual session.
         // Old diagnostic history and repaired zone/registration events are not clock verdicts.
         let anomaly = FlintSessionHealth.load(from: defaults).lastTimeAnomaly.flatMap { anomaly -> FlintTimeIntegrity.Verdict? in
@@ -166,7 +168,7 @@ extension FlintProtectionStatus {
                 currentBootSessionID: clock.bootSessionID())
         } ?? anomaly
         let timeIntegrityApplies = timeIntegrity != nil || liveActive != nil || anomaly != nil
-        let hasActiveCommitment = (session.map { !$0.session.isExpired(at: now) && $0.session.startedAt <= now }
+        let hasActiveCommitment = (session.map { ($0.logicalEnd.map { now < $0 } ?? true) && $0.session.startedAt <= now }
             ?? false) || rules.contains { $0.isActive(at: now) }
         let projectedPass = ledgerPass.map {
             FlintProtectionStatusSnapshot.Pass($0,

@@ -11,7 +11,7 @@ import FlintCore
 /// caveat as `StartSessionIntent`.
 struct StartPomodoroIntent: AppIntent {
     static var title: LocalizedStringResource = "Start Pomodoro"
-    static var description = IntentDescription("Begin a focus / break Pomodoro cycle over your blocked apps.")
+    static var description = IntentDescription("Start a Pomodoro focus round over your blocked apps. Each run starts one round; run it again after your break for the next.")
     static var openAppWhenRun = false
 
     @Parameter(title: "Focus minutes", default: 25)
@@ -42,7 +42,7 @@ struct StartPomodoroIntent: AppIntent {
             { try FlintShortcutsRunner.startPomodoro(config, appGroupID: appGroup?.id, breakLevel: .easy, confirmed: $0) },
             hardcore: false, minutes: config.focusMinutes)
         return .result(
-            dialog: "Pomodoro started — \(config.focusMinutes) minutes of focus, then a \(config.breakMinutes)-minute break."
+            dialog: "Focus round started — blocking for \(config.focusMinutes) minutes. After your \(config.breakMinutes)-minute break, run this again for the next round."
         )
     }
 }

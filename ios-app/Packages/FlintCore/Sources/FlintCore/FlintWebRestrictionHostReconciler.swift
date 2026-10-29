@@ -7,7 +7,8 @@ enum FlintWebRestrictionHostReconciler {
     static func reconcile(
         activeSession: FlintActiveSession?, hasActiveSessionRecord: Bool,
         rules: [FlintScheduleRule]?, config: FlintWebRestrictions?, health: FlintArmingHealth,
-        lifecycle: FlintWebRestrictionLifecycle, now: Date = Date(), calendar: Calendar = .autoupdatingCurrent
+        lifecycle: FlintWebRestrictionLifecycle, now: Date = Date(), calendar: Calendar = .autoupdatingCurrent,
+        clock: FlintClock? = nil
     ) -> FlintArmingHealth.DomainReport {
         guard let rules, let config, let sessionReport = health.domains["session"],
               let rulesReport = health.domains["schedules"],
@@ -40,11 +41,12 @@ enum FlintWebRestrictionHostReconciler {
         let eligibleRules = FlintWebReconcileEligibility.rules(rules, report: rulesReport)
         lifecycle.reconcile(
             activeSession: eligibleSession, rules: eligibleRules, config: config,
-            now: now, calendar: calendar, preservingStores: preserving
+            now: now, calendar: calendar, preservingStores: preserving, clock: clock
         )
 
         let applied = (!preserving.contains(FlintWebRestrictionLifecycle.sessionStoreName)
-            && FlintWebRestrictionPolicy.shouldApply(to: .session(eligibleSession), config: config, now: now) ? 1 : 0)
+            && FlintWebRestrictionPolicy.shouldApply(to: .session(eligibleSession), config: config, now: now,
+                                                   clock: clock) ? 1 : 0)
             + eligibleRules.filter { !preserving.contains($0.storeName) && FlintWebRestrictionPolicy.shouldApply(
                 to: .schedule($0.schedule, enabled: $0.enabled), config: config, now: now, calendar: calendar
             ) }.count

@@ -61,19 +61,21 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
         let adapter = FlintSessionWebRestrictionAdapter(writer: writer, configuration: {
             FlintWebRestrictions.loadForEnforcement(from: defaults)
         })
-        adapter.reconcile(session(), now: now)
+        let fixedNow = now
+        let clock = FlintClock(now: { fixedNow }, monotonic: { 0 }, bootSessionID: { nil }, calendar: { .current })
+        adapter.reconcile(session(), clock: clock)
         for malformed in [Data("{".utf8), Data("{\"enabled\":true}".utf8)] {
             defaults.set(malformed, forKey: "flint.webRestrictions")
-            adapter.reconcile(session(), now: now)
+            adapter.reconcile(session(), clock: clock)
             XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults))
             XCTAssertEqual(writer.web["flint"], config)
         }
         defaults.set("wrong storage type", forKey: "flint.webRestrictions")
-        adapter.reconcile(session(), now: now)
+        adapter.reconcile(session(), clock: clock)
         XCTAssertEqual(writer.web["flint"], config)
         XCTAssertTrue(writer.cleared.isEmpty)
         defaults.removeObject(forKey: "flint.webRestrictions")
-        adapter.reconcile(session(), now: now)
+        adapter.reconcile(session(), clock: clock)
         XCTAssertNil(writer.web["flint"])
     }
 
@@ -235,6 +237,30 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
                        .all(except: [WebDomain(domain: "example.com")]))
         XCTAssertEqual(FlintWebRestrictionStore.filterPolicy(for: FlintWebRestrictions(filter: .allowedOnly)),
                        .all(except: []))
+    }
+
+    func testHostKeepsALiveSessionsSafariSettingsAfterAWallJumpPC54() {
+        let writer = RecordingWebWriter()
+        let config = FlintWebRestrictions(enabled: true)
+        var wall = now
+        var monotonic: TimeInterval = 1_000
+        let clock = FlintClock(now: { wall }, monotonic: { monotonic }, bootSessionID: { "host-boot" },
+                               calendar: { [calendar] in calendar })
+        let live = FlintActiveSession(name: "Focus", startedAt: now, endsAt: now.addingTimeInterval(1800),
+                                      breakLevel: .hardcore, monitorName: "flint.session",
+                                      monotonicStart: monotonic, bootSessionID: "host-boot", plannedDuration: 1800)
+        wall = now.addingTimeInterval(3600) // the wall clock jumps an hour…
+        monotonic += 60                     // …one minute after the start
+        _ = FlintWebRestrictionHostReconciler.reconcile(
+            activeSession: live, hasActiveSessionRecord: true, rules: [], config: config, health: hostHealth([]),
+            lifecycle: FlintWebRestrictionLifecycle(writer: writer), now: wall, calendar: calendar, clock: clock)
+        XCTAssertEqual(writer.web["flint"], config, "29 minutes remain: the session keeps its Safari settings")
+        XCTAssertFalse(writer.cleared.contains("flint"))
+        monotonic += 29 * 60
+        _ = FlintWebRestrictionHostReconciler.reconcile(
+            activeSession: live, hasActiveSessionRecord: true, rules: [], config: config, health: hostHealth([]),
+            lifecycle: FlintWebRestrictionLifecycle(writer: writer), now: wall, calendar: calendar, clock: clock)
+        XCTAssertTrue(writer.cleared.contains("flint"), "released once its committed time has elapsed")
     }
 
     private func hostHealth(_ rules: [FlintScheduleRule], failures: [FlintArmingHealth.Failure] = [],
@@ -520,6 +546,9 @@ final class FlintSessionWebRestrictionTests: XCTestCase {
 private final class WebSessionHarness {
     var config = FlintWebRestrictions(enabled: true, applyDuringSchedules: true)
     var now = ISO8601DateFormatter().date(from: "2026-10-26T23:00:00-04:00")!
+    /// Moving `now` models real time passing: monotonic elapsed time moves with it (a session's
+    /// remaining time follows elapsed time, ADR-012 §9).
+    private let origin = ISO8601DateFormatter().date(from: "2026-10-26T23:00:00-04:00")!
     let writer = RecordingWebWriter()
     let store = WebSessionState()
     lazy var shield = WebSessionShield(writer: writer)
@@ -530,7 +559,8 @@ private final class WebSessionHarness {
             store: { [self] in store }, shield: shield,
             webRestrictions: FlintSessionWebRestrictionAdapter(writer: writer, configuration: { [self] in config }),
             registrar: registrar, isAuthorized: { true },
-            clock: FlintClock(now: { [self] in now }, monotonic: { 50_000 }, bootSessionID: { "test-boot" },
+            clock: FlintClock(now: { [self] in now }, monotonic: { [self] in 50_000 + now.timeIntervalSince(origin) },
+                              bootSessionID: { "test-boot" },
                               calendar: {
                                   var calendar = Calendar(identifier: .gregorian)
                                   calendar.timeZone = TimeZone(identifier: "America/New_York")!
@@ -682,6 +712,25 @@ final class FlintWebRestrictionEditorTests: XCTestCase {
         XCTAssertEqual(h.writes, 0)
         draft = h.config; draft.enabled = false // only the Easy session changes
         XCTAssertEqual(h.editor().save(draft, requestID: "session-only"), .saved)
+    }
+
+    func testAWallJumpCannotMakeALiveSessionsSafariPolicyFreelyEditablePC54() throws {
+        let h = WebEditorHarness()
+        // Started a minute ago in this boot, an hour committed.
+        h.active = FlintActiveSession(name: "Focus", startedAt: h.now.addingTimeInterval(-60),
+                                      endsAt: h.now.addingTimeInterval(3540), breakLevel: .hardcore,
+                                      monitorName: "flint.session", monotonicStart: h.monotonic - 60,
+                                      bootSessionID: "web-boot", plannedDuration: 3600)
+        h.now = h.now.addingTimeInterval(2 * 3600) // the wall clock jumps; elapsed time doesn't
+        var draft = h.config; draft.enabled = false
+        let causes = FlintWebRestrictionEditor.affectedCauses(previous: h.config, candidate: draft,
+            snapshot: .init(session: h.active, rules: []), now: h.now, calendar: h.calendar, clock: h.clock)
+        let session = try XCTUnwrap(h.active)
+        XCTAssertEqual(causes.map(\.causeID), [session.id], "still a live cause by logical time")
+        let end = try XCTUnwrap(causes.first?.end)
+        XCTAssertEqual(end.timeIntervalSince(h.now), 3540, accuracy: 1)
+        XCTAssertEqual(h.editor().save(draft, requestID: "jump"), .protected(until: end))
+        XCTAssertEqual(h.writes, 0)
     }
 
     func testHarderScheduleCountsAreScopedToItsOccurrence() throws {
