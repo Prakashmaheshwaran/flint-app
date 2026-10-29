@@ -272,6 +272,22 @@ final class FlintRuleArbiterTests: XCTestCase {
         XCTAssertNil(h.load(FlintOpenLimitRule.self).first?.protection?.queuedChange)
     }
 
+    func testQueueBoundaryCannotPrecedeItsFrozenCommitmentEndPC11PC14() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        var rule = h.install(h.schedule(tier: .hardcore))
+        let frozen = try XCTUnwrap(rule.protection?.occurrence)
+        rule.protection?.queuedChange = .init(action: .delete, baseRevision: rule.revision,
+            window: .init(start: frozen.start, end: h.now.addingTimeInterval(3600)),
+            snapshot: nil, fingerprint: "delete:\(rule.id)")
+        XCTAssertFalse(FlintDesiredRules.save([rule], key: .schedules, to: h.defaults))
+        let corrupt = try JSONEncoder().encode([rule])
+        h.defaults.set(corrupt, forKey: FlintRuleStoreKey.schedules.rawValue)
+        h.advance(3600)
+        _ = FlintRuleMonitor(environment: h.environment).handle(.end, activity: rule.activityName)
+        XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.schedules.rawValue), corrupt)
+        XCTAssertTrue(h.cleared.isEmpty); XCTAssertTrue(h.center.stops.isEmpty)
+    }
+
     func testQueueAppliesOnForegroundOnceAndFailedArmKeepsPending() throws {
         for refuse in [false, true] {
             let h = try RuleHarness(); defer { h.clean() }
