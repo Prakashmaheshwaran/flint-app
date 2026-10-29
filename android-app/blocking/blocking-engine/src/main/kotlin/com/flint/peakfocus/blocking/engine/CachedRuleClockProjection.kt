@@ -10,6 +10,8 @@ class CachedRuleClockProjection(private val clock: () -> AccessClockStamp) {
     private data class Entry(val at: AccessClockStamp, val projected: List<BlockRule>, val boundaryDelayMs: Long?)
     private val entries = IdentityHashMap<List<BlockRule>, Entry>()
 
+    // The projection is pure and cheap; serialize both detector reads so they share one
+    // recomputation. At most four immutable lists are retained, never a publication history.
     @Synchronized
     fun project(rules: List<BlockRule>): List<BlockRule> {
         val now = clock()

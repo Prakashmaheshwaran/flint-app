@@ -334,15 +334,17 @@ class DataStoreEditorCommitmentStore(
         val timeline = state.timeline ?: now
         val logical = logicalClock(state, now)
         val causes = state.causes.toMutableMap()
-        fun keepOrResolve(key: String, recurring: Boolean = false, finite: Boolean = false, resolve: (String) -> EditorCause?) {
+        fun keepOrResolve(key: String, recurring: Boolean = false, finite: Boolean? = null, resolve: (String) -> EditorCause?) {
             val old = causes[key]
-            val changedFromOpenEnded = old != null && old.interval == null && finite
-            if (old != null && !changedFromOpenEnded && (old.interval == null || old.interval.remainingMs(now) > 0)) return
+            // A queued edit can change either runtime shape without changing the rule ID.
+            // Daily causes do not supply a template shape; their reset remains independent.
+            val shapeChanged = old != null && finite != null && ((old.interval == null) != !finite)
+            if (old != null && !shapeChanged && (old.interval == null || old.interval.remainingMs(now) > 0)) return
             val zone = old?.zoneId ?: defaultZone()
             val candidate = resolve(zone)
             // Retain the last expired identity even between windows, so a later rollback
             // cannot replay the same local occurrence or reset its accounting.
-            if (old != null && !changedFromOpenEnded && (candidate == null || candidate.occurrenceId == old.occurrenceId ||
+            if (old != null && !shapeChanged && (candidate == null || candidate.occurrenceId == old.occurrenceId ||
                 (recurring && ScheduleOccurrences.sameStartDate(candidate.occurrenceId, old.occurrenceId, ZoneId.of(zone))))) return
             val resolved = candidate
                 ?: EditorCause("inactive", AnchoredInterval(now, 0, now.wallEpochMs), zone)
@@ -362,7 +364,7 @@ class DataStoreEditorCommitmentStore(
             // A newly started finite Timer already carries a duration in the current wall
             // estimate. Only recurring templates use the saved schedule timeline.
             keepOrResolve(key, recurring = rule.schedule != null && rule.expiresAtEpochMs == null,
-                finite = rule.schedule != null || rule.expiresAtEpochMs != null) { zone ->
+                finite = if (rule.enabled) rule.schedule != null || rule.expiresAtEpochMs != null else null) { zone ->
                 ruleOccurrence(rule, zone, if (rule.expiresAtEpochMs != null) now else logical)
             }
         }

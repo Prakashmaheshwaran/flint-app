@@ -323,6 +323,37 @@ class AnchoredEditorClockTest {
         }
     }
 
+    @Test fun `R-18 deferred Hardcore Timer and schedule become an enforcing Easy open-ended rule at the boundary`() = runBlocking {
+        for (scheduled in listOf(false, true)) {
+            val disk = Disk(); val store = fresh(disk)
+            val original = if (scheduled) rule().copy(schedule = Schedule(startMinuteOfDay = 9 * 60, endMinuteOfDay = 11 * 60))
+                else timer()
+            val duration = if (scheduled) hour else 300_000L
+            DataStoreBlockRulesStore(disk).upsert(original); store.reconcile(clock())
+            val open = original.copy(breakLevel = BreakLevel.EASY, schedule = null, expiresAtEpochMs = null)
+            val preview = store.request(EditorChange("Continue open-ended", upserts = listOf(open)), clock(), EditorSafety(true)) as EditorCommitResult.Preview
+            assertEquals(CommitmentPolicy.Outcome.DEFER, preview.pending.outcome)
+            assertEquals(EditorCommitResult.Applied(true), store.confirm(preview.pending.id, clock(), EditorSafety(true)))
+            val before = clock(duration - 1)
+            assertTrue(blocked(store.reconcileRules(before), before))
+            assertEquals(original, DataStoreBlockRulesStore(disk).rules.first().single())
+            val end = clock(duration)
+            val projected = store.reconcileRules(end).single()
+            assertEquals(open, DataStoreBlockRulesStore(disk).rules.first().single())
+            assertEquals(BreakLevel.EASY, projected.breakLevel)
+            assertTrue(blocked(listOf(projected), end))
+            assertNull(projected.expiresAtEpochMs)
+            assertNull(state(store).causes.getValue(ruleCauseKey(open.id)).interval)
+            assertTrue(state(store).queued.isEmpty())
+            val restarted = DataStoreEditorCommitmentStore(disk, defaultZone = { "UTC" })
+            val reboot = clock(1, duration + hour, "boot-b")
+            repeat(2) {
+                assertTrue(blocked(restarted.reconcileRules(reboot), reboot))
+                assertNull(state(restarted).causes.getValue(ruleCauseKey(open.id)).interval)
+            }
+        }
+    }
+
     @Test fun `R-18 materialization repairs a published finite shape left with an open-ended cause`() = runBlocking {
         for (tier in BreakLevel.entries) for (schedule in listOf(true, false)) {
             val disk = Disk(); val store = fresh(disk)
