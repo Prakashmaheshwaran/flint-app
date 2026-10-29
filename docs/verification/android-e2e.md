@@ -22,6 +22,27 @@ ordinary always-uploaded artifact even when no emulator starts. The 25-minute
 job cap remains, including the emulator action's subsequent standard SDK checks.
 The cache runner is CI-only; local execution below is unchanged.
 
+Both hosted smoke jobs explicitly use two cores, 3 GB RAM, a 512 MB VM heap,
+SwiftShader, cold boot without snapshot loading/saving, no boot animation/audio
+and no emulated cameras. The existing runner disables all three global animation
+scales. The pristine AVD cache records the actual RAM/heap/core configuration.
+System UI, navigation and notifications remain enabled so their app interactions
+are still exercised.
+
+Before each fixture clears Flint, setup requests Home and requires repeated fresh
+launcher accessibility samples and a stable System UI process. Its 30-second
+polling budget permits at most two recognized system/launcher ANR dismissals,
+preferring the resource-ID-identified Wait control, with Close app allowed only
+for an identified non-Flint system/launcher owner. A dialog click must disappear
+within five seconds and is never blindly replayed. Flint/unknown-owner ANRs fail
+setup. Recovery never runs inside visibility helpers, test bodies or assertions.
+`smoke/setup-events.jsonl` records every detection/dismissal, per-test readiness
+and setup failure with a run token; pre-dismissal PNG/XML captures remain visible.
+`setup-summary.json` and the job summary report counts for that run only, including
+zero dismissals and whether a setup log was collected. A green run with zero
+dismissals proves the stable path, not live ANR recovery; the policy regression
+case separately checks allowed owners, Unicode titles and fail-closed behavior.
+
 The opt-in `:e2e` module instruments itself and contains a harmless launchable **Flint E2E
 Target** activity. UIAutomator interacts with the separately installed Flint
 app, so stopping Flint really terminates its process while the test survives.

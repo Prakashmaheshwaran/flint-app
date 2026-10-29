@@ -16,6 +16,15 @@ PACKAGE = "system-images;android-36;google_apis;x86_64"
 REPOSITORY = "https://dl.google.com/android/repository/sys-img/google_apis/sys-img2-3.xml"
 AVD = "flint-ci-api36"
 RESULTS = Path("artifacts/android-e2e")
+HARDWARE = {"hw.ramSize": "3072", "vm.heapSize": "512", "hw.cpu.ncore": "2"}
+
+
+def configure_avd(config):
+    # Set the emulator's actual VM heap key as well as the runner's heap input.
+    # This is still a never-booted AVD, saved before tests or grants can mutate it.
+    lines = [line for line in config.read_text().splitlines()
+             if line.partition("=")[0].strip() not in HARDWARE]
+    config.write_text("\n".join(lines + [f"{key}={value}" for key, value in HARDWARE.items()]) + "\n")
 
 
 def revision(package):
@@ -104,7 +113,7 @@ def main():
                     "preparer_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                     "runner_image": os.environ.get("ImageOS"), "runner_arch": os.environ.get("RUNNER_ARCH"),
                     "sdk_path": str(sdk), "avd_home": str(Path.home() / ".android/avd"),
-                    "avd": AVD, "profile": "pixel_2", "ram": "2048M", "cores": 2}
+                    "avd": AVD, "profile": "pixel_2", "hardware": HARDWARE}
         key = "flint-api36-pristine-v1-" + hashlib.sha256(json.dumps(metadata, sort_keys=True).encode()).hexdigest()
         metadata["cache_key"] = key
         metadata_path.write_text(json.dumps(metadata, indent=2) + "\n")
@@ -127,6 +136,7 @@ def main():
             raise RuntimeError(f"AVD creation failed with exit {status}; no retry")
     if not (avd_dir / "config.ini").is_file() or not (avd_home / f"{AVD}.ini").is_file():
         raise RuntimeError("Incomplete cached AVD; bump cache key after inspecting setup artifacts")
+    configure_avd(avd_dir / "config.ini")
     print("Verified image and pristine unbooted AVD; cache is saved before tests")
 
 

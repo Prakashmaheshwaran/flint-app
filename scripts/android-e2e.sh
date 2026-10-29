@@ -39,6 +39,24 @@ collect() {
   if [[ $(adb -s "$serial" shell cat /proc/sys/kernel/random/boot_id 2>/dev/null | tr -d '\r') == "$boot_id" ]]; then
     adb -s "$serial" logcat -d > artifacts/android-e2e/logcat.txt 2>&1 || true
     adb -s "$serial" pull /sdcard/Android/data/com.flint.peakfocus.test/files/smoke artifacts/android-e2e/ || true
+    python3 - "$run_token" <<'PY' || true
+import json, os, pathlib, sys
+root = pathlib.Path('artifacts/android-e2e')
+log = root / 'smoke/setup-events.jsonl'
+events = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+events = [event for event in events if event.get('runToken') == sys.argv[1]]
+summary = {'setup_started': sum(e['event'] == 'setup-start' for e in events),
+           'launcher_ready': sum(e['event'] == 'launcher-ready' for e in events),
+           'anr_detected': sum(e['event'] == 'anr-detected' for e in events),
+           'anr_dismissed': sum(e['event'] == 'anr-dismissed' for e in events),
+           'setup_failed': sum(e['event'] == 'setup-failed' for e in events),
+           'log_present': log.exists(), 'run_token': sys.argv[1]}
+(root / 'setup-summary.json').write_text(json.dumps(summary, indent=2) + '\n')
+print('Setup ANR evidence: ' + json.dumps(summary))
+if os.environ.get('GITHUB_STEP_SUMMARY'):
+    with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+        output.write('\n## Emulator setup ANR evidence\n\n```json\n' + json.dumps(summary, indent=2) + '\n```\n')
+PY
     adb -s "$serial" exec-out screencap -p > artifacts/android-e2e/final.png || true
     # A test writes this run's token before granting Flint. Never erase another service.
     if [[ $(adb -s "$serial" shell cat "$marker" 2>/dev/null | tr -d '\r') == "$run_token" ]]; then

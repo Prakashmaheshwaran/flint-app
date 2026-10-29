@@ -55,6 +55,16 @@ class EmulatorSetupTests(unittest.TestCase):
             ci.install_image("sdkmanager", self.image, "7.0.0", run=run)
             run.assert_not_called()
 
+    def test_hardware_config_replaces_duplicates_and_is_idempotent(self):
+        config = self.root / "config.ini"
+        config.write_text("hw.ramSize=2048\nvm.heapSize=48\nhw.cpu.ncore=4\nhw.ramSize=1024\nhw.keyboard=yes\n")
+        ci.configure_avd(config)
+        first = config.read_text()
+        ci.configure_avd(config)
+        self.assertEqual(first, config.read_text())
+        self.assertEqual(dict(line.split("=", 1) for line in first.splitlines()),
+                         {**ci.HARDWARE, "hw.keyboard": "yes"})
+
     def test_download_failure_then_verified_install_stops_after_second(self):
         calls, delays = [], []
 

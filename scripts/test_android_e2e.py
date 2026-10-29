@@ -39,6 +39,13 @@ elif args[:4] == ["shell", "settings", "get", "secure"]:
     elif not ran: print("other.app/.Service" if mode == "preexisting" else "null")
     elif mode == "other-service": print(service + ":other.app/.Service")
     else: print(service)
+elif args[:2] == ["pull", "/sdcard/Android/data/com.flint.peakfocus.test/files/smoke"] and mode == "summary":
+    token = next(x.split("=", 1)[1] for x in (root / "artifacts/android-e2e/device.txt").read_text().splitlines() if x.startswith("run_token="))
+    smoke = root / "artifacts/android-e2e/smoke"
+    smoke.mkdir()
+    events = [{"runToken": token, "event": event} for event in ("setup-start", "anr-detected", "anr-dismissed", "launcher-ready")]
+    events.append({"runToken": "stale-run", "event": "anr-dismissed"})
+    (smoke / "setup-events.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
 ''')
             adb.chmod(0o755)
             gradle = root / "android-app/gradlew"
@@ -46,6 +53,7 @@ elif args[:4] == ["shell", "settings", "get", "secure"]:
             gradle.chmod(0o755)
             env = {**os.environ, "CI": "true", "FLINT_E2E_DISPOSABLE": consent,
                    "AVD": serial, "FIXTURE_ROOT": str(root), "FIXTURE_MODE": mode,
+                   "GITHUB_STEP_SUMMARY": str(root / "summary.md"),
                    "PATH": str(root / "bin") + os.pathsep + os.environ["PATH"]}
             result = subprocess.run(["bash", "scripts/android-e2e.sh"], cwd=root,
                                     env=env, capture_output=True, text=True, timeout=20)
@@ -87,3 +95,20 @@ elif args[:4] == ["shell", "settings", "get", "secure"]:
         self.assertEqual(result.returncode, 7)
         mutations = [c for c in calls if c[:3] == ["shell", "settings", "put"]]
         self.assertEqual(mutations[-1], ["shell", "settings", "put", "secure", "accessibility_enabled", "0"])
+
+    def test_setup_summary_counts_current_run_and_preserves_failure_exit(self):
+        result, _ = self.run_fixture(mode="summary")
+        self.assertEqual(result.returncode, 7)
+        summary = json.loads(next(line.removeprefix("Setup ANR evidence: ")
+                                  for line in result.stdout.splitlines() if line.startswith("Setup ANR evidence: ")))
+        self.assertEqual(summary["anr_detected"], 1)
+        self.assertEqual(summary["anr_dismissed"], 1)
+        self.assertEqual(summary["launcher_ready"], 1)
+        self.assertTrue(summary["log_present"])
+
+    def test_missing_setup_log_is_explicit_in_summary(self):
+        result, _ = self.run_fixture()
+        summary = json.loads(next(line.removeprefix("Setup ANR evidence: ")
+                                  for line in result.stdout.splitlines() if line.startswith("Setup ANR evidence: ")))
+        self.assertFalse(summary["log_present"])
+        self.assertEqual(summary["anr_dismissed"], 0)
