@@ -43,14 +43,24 @@ collect() {
 import json, os, pathlib, sys
 root = pathlib.Path('artifacts/android-e2e')
 log = root / 'smoke/setup-events.jsonl'
-events = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
-events = [event for event in events if event.get('runToken') == sys.argv[1]]
+events, malformed = [], []
+for number, line in enumerate(log.read_bytes().splitlines() if log.exists() else [], 1):
+    try:
+        event = json.loads(line)
+        if not isinstance(event, dict) or not all(isinstance(event.get(key), str) for key in ('runToken', 'event')):
+            raise ValueError('Invalid setup event')
+        if event['runToken'] == sys.argv[1]:
+            events.append(event)
+    except (ValueError, UnicodeDecodeError):
+        malformed.append(number)
 summary = {'setup_started': sum(e['event'] == 'setup-start' for e in events),
            'launcher_ready': sum(e['event'] == 'launcher-ready' for e in events),
            'anr_detected': sum(e['event'] == 'anr-detected' for e in events),
            'anr_dismissed': sum(e['event'] == 'anr-dismissed' for e in events),
            'setup_failed': sum(e['event'] == 'setup-failed' for e in events),
-           'log_present': log.exists(), 'run_token': sys.argv[1]}
+           'log_present': log.exists(), 'malformed_records': len(malformed),
+           'malformed_lines': malformed[:20], 'evidence_complete': log.exists() and not malformed,
+           'run_token': sys.argv[1]}
 (root / 'setup-summary.json').write_text(json.dumps(summary, indent=2) + '\n')
 print('Setup ANR evidence: ' + json.dumps(summary))
 if os.environ.get('GITHUB_STEP_SUMMARY'):

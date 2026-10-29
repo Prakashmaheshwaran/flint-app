@@ -39,13 +39,16 @@ elif args[:4] == ["shell", "settings", "get", "secure"]:
     elif not ran: print("other.app/.Service" if mode == "preexisting" else "null")
     elif mode == "other-service": print(service + ":other.app/.Service")
     else: print(service)
-elif args[:2] == ["pull", "/sdcard/Android/data/com.flint.peakfocus.test/files/smoke"] and mode == "summary":
+elif args[:2] == ["pull", "/sdcard/Android/data/com.flint.peakfocus.test/files/smoke"] and mode.startswith("summary"):
     token = next(x.split("=", 1)[1] for x in (root / "artifacts/android-e2e/device.txt").read_text().splitlines() if x.startswith("run_token="))
     smoke = root / "artifacts/android-e2e/smoke"
     smoke.mkdir()
     events = [{"runToken": token, "event": event} for event in ("setup-start", "anr-detected", "anr-dismissed", "launcher-ready")]
     events.append({"runToken": "stale-run", "event": "anr-dismissed"})
-    (smoke / "setup-events.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
+    contents = "".join(json.dumps(e) + "\n" for e in events)
+    if mode == "summary-truncated":
+        contents = 'malformed-stale-record\n' + contents + '{"runToken":'
+    (smoke / "setup-events.jsonl").write_text(contents)
 ''')
             adb.chmod(0o755)
             gradle = root / "android-app/gradlew"
@@ -112,3 +115,13 @@ elif args[:2] == ["pull", "/sdcard/Android/data/com.flint.peakfocus.test/files/s
                                   for line in result.stdout.splitlines() if line.startswith("Setup ANR evidence: ")))
         self.assertFalse(summary["log_present"])
         self.assertEqual(summary["anr_dismissed"], 0)
+
+    def test_truncated_log_retains_valid_counts_and_marks_incomplete_evidence(self):
+        result, _ = self.run_fixture(mode="summary-truncated")
+        self.assertEqual(result.returncode, 7)
+        summary = json.loads(next(line.removeprefix("Setup ANR evidence: ")
+                                  for line in result.stdout.splitlines() if line.startswith("Setup ANR evidence: ")))
+        self.assertEqual(summary["anr_dismissed"], 1)
+        self.assertEqual(summary["malformed_records"], 2)
+        self.assertEqual(summary["malformed_lines"], [1, 7])
+        self.assertFalse(summary["evidence_complete"])

@@ -90,7 +90,7 @@ abstract class FlintE2EFixture {
             do {
                 assertEquals("Boot changed during setup", bootId, shell("cat /proc/sys/kernel/random/boot_id").trim())
                 refreshAccessibilityCache()
-                val title = device.findObject(By.textMatches("(?is).*isn['’]t responding.*"))
+                val title = device.findObject(By.text(java.util.regex.Pattern.compile("(?is).*isn['’]t responding.*")))
                 if (title != null) {
                     val text = title.text
                     val wait = device.findObject(By.res("android", "aerr_wait").enabled(true))
@@ -105,8 +105,9 @@ abstract class FlintE2EFixture {
                     check(!button.visibleBounds.isEmpty) { "ANR control has no visible bounds" }
                     button.click() // one input for this observed dialog, never replay a failed click
                     dismissals++
-                    setupEvent("anr-dismissed", "$text; action=$action; count=$dismissals")
+                    setupEvent("anr-dismiss-requested", "$text; action=$action; count=$dismissals")
                     check(device.wait(Until.gone(By.text(text)), 5_000)) { "ANR dialog did not dismiss: $text" }
+                    setupEvent("anr-dismissed", "$text; action=$action; count=$dismissals")
                     homeRequested = false
                     stableSamples = 0
                 } else {
