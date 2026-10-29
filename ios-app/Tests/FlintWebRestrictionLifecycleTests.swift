@@ -49,34 +49,45 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
         XCTAssertEqual(FlintWebRestrictions.load(from: defaults), updated)
     }
 
-    func testUnreadableConfigPreservesLastGoodKeysWhileMissingKeyIsOptOut() throws {
+    func testUnreadableOrDeletedConfigPreservesActiveHardcoreSessionWebKeys() throws {
         let suite = "test.flint.web.unavailable.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults), .default)
         XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: nil))
-        let config = FlintWebRestrictions(enabled: true)
-        config.save(to: defaults)
+        let config = FlintWebRestrictions(enabled: true, denyExplicitMedia: true)
+        XCTAssertTrue(config.save(to: defaults))
         let writer = RecordingWebWriter()
         let adapter = FlintSessionWebRestrictionAdapter(writer: writer, configuration: {
             FlintWebRestrictions.loadForEnforcement(from: defaults)
         })
         let fixedNow = now
         let clock = FlintClock(now: { fixedNow }, monotonic: { 0 }, bootSessionID: { nil }, calendar: { .current })
-        adapter.reconcile(session(), clock: clock)
+        let active = FlintActiveSession(name: "Hardcore", startedAt: now.addingTimeInterval(-60),
+            endsAt: now.addingTimeInterval(3600), breakLevel: .hardcore, monitorName: "flint.session",
+            contractVersion: 12)
+        defaults.set(try JSONEncoder().encode(active), forKey: "flint.activeSession")
+        adapter.reconcile(active, clock: clock)
         for malformed in [Data("{".utf8), Data("{\"enabled\":true}".utf8)] {
             defaults.set(malformed, forKey: "flint.webRestrictions")
-            adapter.reconcile(session(), clock: clock)
+            adapter.reconcile(active, clock: clock)
             XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults))
             XCTAssertEqual(writer.web["flint"], config)
         }
         defaults.set("wrong storage type", forKey: "flint.webRestrictions")
-        adapter.reconcile(session(), clock: clock)
+        adapter.reconcile(active, clock: clock)
         XCTAssertEqual(writer.web["flint"], config)
         XCTAssertTrue(writer.cleared.isEmpty)
         defaults.removeObject(forKey: "flint.webRestrictions")
-        adapter.reconcile(session(), clock: clock)
-        XCTAssertNil(writer.web["flint"])
+        adapter.reconcile(active, clock: clock)
+        XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults))
+        let report = FlintWebRestrictionHostReconciler.reconcile(activeSession: active,
+            hasActiveSessionRecord: true, rules: [], config: .loadForEnforcement(from: defaults),
+            health: hostHealth([], observed: []), lifecycle: .init(writer: writer),
+            now: now, calendar: calendar, clock: clock)
+        XCTAssertFalse(report.failures.isEmpty)
+        XCTAssertEqual(writer.web["flint"], config)
+        XCTAssertTrue(writer.cleared.isEmpty, "R2-N01: foreground must not release the finite Hardcore child")
     }
 
     func testIndependentScopesExcludeTimeAndOpenLimits() {

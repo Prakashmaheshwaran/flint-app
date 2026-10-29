@@ -1,6 +1,11 @@
 import XCTest
 @testable import FlintCore
 
+private final class FailingWebDefaults: UserDefaults {
+    var failFlush = false
+    override func synchronize() -> Bool { failFlush ? false : super.synchronize() }
+}
+
 final class FlintWebRestrictionsTests: XCTestCase {
 
     // MARK: Codable
@@ -99,5 +104,91 @@ final class FlintWebRestrictionsTests: XCTestCase {
         let config = FlintWebRestrictions(enabled: true, blockedDomains: ["x.com"], denyExplicitMedia: true)
         config.save(to: defaults)
         XCTAssertEqual(FlintWebRestrictions.load(from: defaults), config)
+    }
+
+    func testFreshMissingDomainIsOptOutWithoutCreatingAMarker() throws {
+        let suite = "test.flint.web.fresh.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), .default)
+        XCTAssertNil(defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
+    }
+
+    func testSuccessfulSaveMarksDomainAndMissingKeyStaysUnavailableAcrossReloads() throws {
+        let suite = "test.flint.web.presence.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertTrue(FlintWebRestrictions(enabled: true).save(to: defaults))
+        XCTAssertNotNil(defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
+        defaults.removeObject(forKey: "flint.webRestrictions")
+        let reopened = try XCTUnwrap(UserDefaults(suiteName: suite))
+        XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: reopened, existingWebStores: { false }))
+        XCTAssertNil(reopened.object(forKey: "flint.webRestrictions"), "unavailable is never rewritten as opt-out")
+    }
+
+    func testLegacyPresentKeyBackfillsMarkerWithoutChangingItsBytes() throws {
+        for bytes in [try JSONEncoder().encode(FlintWebRestrictions(enabled: true)), Data("{broken".utf8)] {
+            let suite = "test.flint.web.backfill.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            defaults.set(bytes, forKey: "flint.webRestrictions")
+            _ = FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false })
+            XCTAssertNotNil(defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
+            XCTAssertEqual(defaults.data(forKey: "flint.webRestrictions"), bytes)
+            defaults.removeObject(forKey: "flint.webRestrictions")
+            XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }))
+        }
+    }
+
+    func testEstablishedEvidenceWithoutWebMarkerMakesMissingDomainUnavailable() throws {
+        let evidence = ["flint.activeSession", FlintProtectionLedger.initializedMarkerKey]
+            + FlintRuleStoreKey.allCases.map(\.marker)
+        for key in evidence {
+            let suite = "test.flint.web.established.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            // Presence is evidence even if another domain's value itself is unreadable.
+            defaults.set("established", forKey: key)
+            XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), key)
+            XCTAssertNil(defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
+        }
+    }
+
+    func testExistingNativeWebStoreMakesMissingDomainUnavailable() throws {
+        let suite = "test.flint.web.native-evidence.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { true }))
+    }
+
+    func testInvalidSaveCannotInitializeOrReplaceTheDomain() throws {
+        let suite = "test.flint.web.invalid-save.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let invalid = FlintWebRestrictions(blockedDomains: (0...FlintShieldLimits.tokenCap).map { "s\($0).example" })
+        XCTAssertFalse(invalid.save(to: defaults))
+        XCTAssertNil(defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
+        XCTAssertNil(defaults.object(forKey: "flint.webRestrictions"))
+    }
+
+    func testFailedFlushPreservesSavedPolicyAndDoesNotInitializeFreshDomain() throws {
+        let suite = "test.flint.web.failed-save.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(FailingWebDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.failFlush = true
+        XCTAssertFalse(FlintWebRestrictions.default.save(to: defaults))
+        XCTAssertNil(defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
+        XCTAssertNil(defaults.object(forKey: "flint.webRestrictions"))
+        defaults.failFlush = false
+        let previous = FlintWebRestrictions(enabled: true, denyExplicitMedia: true)
+        XCTAssertTrue(previous.save(to: defaults))
+        let bytes = defaults.data(forKey: "flint.webRestrictions")
+        defaults.failFlush = true
+        XCTAssertFalse(FlintWebRestrictions.default.save(to: defaults))
+        XCTAssertEqual(defaults.data(forKey: "flint.webRestrictions"), bytes)
+        XCTAssertNotNil(defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
+        XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }))
+        defaults.failFlush = false
+        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults), previous)
     }
 }

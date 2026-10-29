@@ -2,6 +2,9 @@ import Foundation
 #if canImport(ManagedSettings)
 import ManagedSettings
 #endif
+#if canImport(DeviceActivity)
+import DeviceActivity
+#endif
 
 // MARK: - Web filter mode
 
@@ -192,17 +195,29 @@ extension FlintWebRestrictions {
     /// `FlintGroupStore` itself because that file is a shared/locked scaffold file — same suite,
     /// same JSON, no edits to the hot file (mirrors how the Wave-1 stubs persist).
     private static let storageKey = "flint.webRestrictions"
+    static let initializedMarkerKey = storageKey + ".initialized.adr012"
 
     public static func load(from defaults: UserDefaults? = .flintGroup) -> FlintWebRestrictions {
         loadForEnforcement(from: defaults) ?? .default
     }
 
-    /// Missing preferences mean the default opt-out. Unreadable saved data or unavailable
-    /// shared storage are unknown intent: production callers must preserve last-good keys,
-    /// rather than treating a failed decode as the user's instruction to disable protection.
-    public static func loadForEnforcement(from defaults: UserDefaults? = .flintGroup) -> FlintWebRestrictions? {
-        guard let defaults else { return nil }
-        guard let stored = defaults.object(forKey: storageKey) else { return .default }
+    /// Only a genuinely fresh installation may interpret missing preferences as opt-out.
+    /// Established-but-missing or unreadable intent preserves the last-good finite keys.
+    /// The optional native-store probe keeps isolated persistence tests independent of the OS.
+    public static func loadForEnforcement(from defaults: UserDefaults? = .flintGroup,
+                                          existingWebStores: (() -> Bool)? = nil) -> FlintWebRestrictions? {
+        guard let defaults, defaults.synchronize() else { return nil }
+        guard let stored = defaults.object(forKey: storageKey) else {
+            let evidence = [initializedMarkerKey, "flint.activeSession", FlintProtectionLedger.initializedMarkerKey]
+                + FlintRuleStoreKey.allCases.flatMap { [$0.marker, $0.rawValue, $0.original,
+                    $0.rawValue + ".quarantine.adr012"] }
+            guard !evidence.contains(where: { defaults.object(forKey: $0) != nil }),
+                  !(existingWebStores?() ?? hasExistingWebStores()) else { return nil }
+            return .default
+        }
+        // Even malformed legacy bytes prove this domain existed. Retain the original bytes
+        // and back-fill the marker before decoding; losing the key later cannot reset intent.
+        guard markInitialized(in: defaults) else { return nil }
         guard let data = stored as? Data else { return nil }
         return try? JSONDecoder().decode(FlintWebRestrictions.self, from: data)
     }
@@ -210,8 +225,50 @@ extension FlintWebRestrictions {
     @discardableResult
     public func save(to defaults: UserDefaults? = .flintGroup) -> Bool {
         guard validationMessage == nil, let defaults, let data = try? JSONEncoder().encode(self) else { return false }
+        let previous = defaults.object(forKey: Self.storageKey)
+        let previousMarker = defaults.object(forKey: Self.initializedMarkerKey)
+        var committed = false
+        defer {
+            if !committed {
+                if let previous { defaults.set(previous, forKey: Self.storageKey) }
+                else { defaults.removeObject(forKey: Self.storageKey) }
+                if let previousMarker { defaults.set(previousMarker, forKey: Self.initializedMarkerKey) }
+                else { defaults.removeObject(forKey: Self.initializedMarkerKey) }
+                defaults.synchronize()
+            }
+        }
         defaults.set(data, forKey: Self.storageKey)
-        return defaults.data(forKey: Self.storageKey) == data
+        guard defaults.synchronize(), defaults.data(forKey: Self.storageKey) == data else { return false }
+        guard Self.markInitialized(in: defaults) else { return false }
+        committed = true
+        return true
+    }
+
+    private static func markInitialized(in defaults: UserDefaults) -> Bool {
+        if defaults.object(forKey: initializedMarkerKey) != nil { return true }
+        defaults.set(true, forKey: initializedMarkerKey)
+        return defaults.synchronize() && defaults.object(forKey: initializedMarkerKey) != nil
+    }
+
+    private static func hasExistingWebStores() -> Bool {
+        #if canImport(ManagedSettings)
+        // Read the historical stores and stores identified by surviving native schedules.
+        // Store enumeration is unavailable on the app's older supported iOS releases.
+        var names: Set<String> = ["flint", "flint.web"]
+        #if canImport(FamilyControls) && canImport(DeviceActivity)
+        for activity in DeviceActivityCenter().activities {
+            if let id = FlintRuleActivity.ruleID(activity.rawValue, prefix: FlintRuleStoreKey.schedules.prefix) {
+                names.insert("flint." + id)
+            }
+        }
+        #endif
+        return names.contains { name in
+            let store = ManagedSettingsStore(named: .init(name))
+            return store.webContent.blockedByFilter != nil || store.media.denyExplicitContent == true
+        }
+        #else
+        return false
+        #endif
     }
 }
 
