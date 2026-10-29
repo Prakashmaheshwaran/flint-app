@@ -92,6 +92,11 @@ public enum FlintOpenCredit {
             guard let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup),
                   Set(rules.map(\.id)).count == rules.count else { return nil }
             let covering = rules.filter { rule in rule.enabled && target.map { keys(for: rule).contains($0) } == true }
+            guard covering.allSatisfy({ rule in
+                FlintSelectionValidation.issue(for: rule.selection, context: .openLimit) == nil &&
+                    center.activities.contains(DeviceActivityName(rule.activityName)) &&
+                    center.schedule(for: DeviceActivityName(rule.activityName)) != nil
+            }) else { return nil }
             guard let fingerprints = try? Dictionary(uniqueKeysWithValues: covering.map {
                 ($0.id, try effectiveFingerprint(for: $0))
             }), let scopes = try? Dictionary(uniqueKeysWithValues: covering.map {
@@ -147,7 +152,8 @@ public enum FlintOpenCredit {
         let fields = try JSONSerialization.jsonObject(with: JSONEncoder().encode(rule)) as? [String: Any]
         if let metadata = fields?["protection"] as? [String: Any] {
             let start = (metadata["occurrence"] as? [String: Any])?["start"]
-            parts += [String(describing: start ?? "unknown"), String(describing: metadata["timeZoneID"] ?? "unknown")]
+            parts += [String(describing: start ?? "unknown"), String(describing: metadata["timeZoneID"] ?? "unknown"),
+                      metadata["incarnation"] as? String ?? "legacy-incarnation"]
         }
         parts += ["applications"] + (try tokens(rule.selection.applicationTokens))
         parts += ["categories"] + (try tokens(rule.selection.categoryTokens))
