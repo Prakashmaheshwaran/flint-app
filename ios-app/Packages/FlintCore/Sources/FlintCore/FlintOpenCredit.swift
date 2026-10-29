@@ -37,13 +37,9 @@ public enum FlintOpenCredit {
     @discardableResult
     public static func reconcile(activity: String? = nil, callback: FlintOpenCreditService.Callback? = nil) -> Bool {
         guard activity == nil || isCarrier(activity!) else { return false }
-        let result = service(target: nil, blockedBy: { .init(reason: nil, contributors: []) })?.reconcile(activity: activity, callback: callback) ?? false
-        // Also closes pre-upgrade unbounded releases; only this domain's saved targets are
-        // touched. applyShield excludes verifiable live grants under the same ledger lock.
-        if let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup) {
-            for rule in rules where rule.enabled { applyShield(for: rule) }
-        }
-        return result
+        // Grant expiry uses its frozen target even when rules are unreadable. Bulk/legacy
+        // re-arming belongs to the controller, after validated registration observation.
+        return service(target: nil, blockedBy: { .init(reason: nil, contributors: []) })?.reconcile(activity: activity, callback: callback) ?? false
     }
 
     static func importLegacy(into state: inout FlintLedgerState, defaults: UserDefaults,

@@ -142,10 +142,11 @@ public final class FlintOpenLimitsController {
                 let id = name.dropFirst("flint.openLimit.".count)
                 environment.clearStore("flintO.\(id)")
             })
-        if reapplyShields {
-            for rule in plan.arm where report.observedActivities?.contains(rule.activityName) == true {
-                environment.applyOpenShield(rule)
-            }
+        // Every trigger restores expired/legacy releases only after the daily registration
+        // is observed. applyOpenShield now preserves bounded live grants under the ledger lock;
+        // the launch-only flag remains a source-compatible parameter for existing clients.
+        for rule in plan.arm where report.observedActivities?.contains(rule.activityName) == true {
+            environment.applyOpenShield(rule)
         }
         environment.record("openLimits", report)
     }
