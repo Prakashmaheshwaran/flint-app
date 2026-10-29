@@ -23,13 +23,12 @@ final class OpenLimitsViewModel: ObservableObject {
     func toggle(_ rule: FlintOpenLimitRule) { controller.setEnabled(rule.id, !rule.enabled); refresh() }
 }
 
-/// Create/edit daily Open Limits (launch-count caps). A pushable `View` (no own
+/// Create/edit daily quotas of bounded, explicitly accepted access credits. A pushable `View` (no own
 /// `NavigationStack`, like `SleepModeView`) — `LimitsView` links here.
 ///
-/// How the enforcement actually works (honest UX): the selected apps/sites *stay shielded*;
-/// tapping the block screen's "Use app (N left)" button spends one of the day's opens and lets
-/// the next launch through. `FlintOpenLimitsController` arms the shields; the ShieldAction
-/// extension spends the opens. Like every shield, it only enforces on a real device.
+/// Selected apps/sites stay shielded between accepted credits. Each credit lasts up to five
+/// minutes, clipped at the quota reset; another protection can prevent its use. Native shield
+/// delivery and re-application require physical-device verification.
 struct OpenLimitsView: View {
     @StateObject private var vm = OpenLimitsViewModel()
     @State private var showAdd = false
@@ -67,8 +66,9 @@ struct OpenLimitsView: View {
             Image(systemName: "hand.tap")
                 .font(.system(size: 44)).foregroundStyle(FlintBrand.spark)
             Text("No open limits yet").font(.headline)
-            Text("Cap how many times a day an app can be opened — e.g. 3 opens of social. "
-                 + "Each pass-through from the block screen spends one. Free.")
+            Text("Choose how many access credits you can use each day for an app or website. "
+                 + "Each accepted credit gives up to 5 minutes, ending sooner at the daily reset. "
+                 + "Apps and sites stay blocked between credits; another rule may prevent their use.")
                 .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
             Button { showAdd = true } label: { Text("Add an open limit") }
                 .buttonStyle(.borderedProminent).tint(FlintBrand.spark)
@@ -80,7 +80,7 @@ struct OpenLimitsView: View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
                 Text(rule.name).font(.body.weight(.medium))
-                Text("\(rule.opensAllowed) \(rule.opensAllowed == 1 ? "open" : "opens")/day")
+                Text("\(rule.opensAllowed) \(rule.opensAllowed == 1 ? "credit" : "credits")/day")
                     .font(.caption).foregroundStyle(.secondary)
                 if rule.enabled {
                     Text(FlintRuleProtectionStatus.status(enabled: rule.enabled, activityName: rule.activityName,
@@ -124,7 +124,7 @@ struct OpenLimitEditor: View {
         NavigationStack {
             Form {
                 Section { TextField("Name", text: $name) }
-                Section("Opens allowed: \(opensAllowed)/day") {
+                Section("Credits per day: \(opensAllowed)") {
                     Stepper("", value: $opensAllowed, in: 1...20, step: 1).labelsHidden()
                 }
                 Section {
@@ -178,11 +178,11 @@ struct OpenLimitEditor: View {
                 ? " Open Limits require specific apps or websites; categories cannot be open-limited." : ""))
         }
         if !selection.categoryTokens.isEmpty {
-            return Text("Whole categories can't be open-limited (an Apple token limitation) — "
-                        + "only the specific apps & sites picked here are counted.")
+            return Text("Categories stay saved but cannot use access credits. "
+                        + "Choose individual apps or websites for up to 5 minutes per credit.")
         }
-        return Text("The apps stay shielded; the block screen's button spends one of the day's "
-                    + "opens to let you through.")
+        return Text("Apps and sites stay blocked between credits. Each accepted credit gives up to 5 minutes, "
+                    + "ending sooner at the daily reset. Another protection may prevent credit use.")
     }
 
     private func save() {
