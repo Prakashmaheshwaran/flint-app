@@ -22,6 +22,7 @@ final class FlintOpenCreditTests: XCTestCase {
     private var activityOverride: [String: String]?
     private var transitionAvailable = true
     private var transitionHeld = false
+    private let transitionLock = NSRecursiveLock()
     private var unavailableContext = false
     private var refuses = false
     private var registrations: [String: TimeInterval] = [:]
@@ -89,6 +90,8 @@ final class FlintOpenCreditTests: XCTestCase {
             XCTAssertNotNil(self.registrations[grant.activityName], "expiry registered before native release")
         }, reshield: { grant in self.shielded.append(grant.targetKey); self.order.append("reshield") },
         stop: { self.registrations[$0] = nil }, transition: { body in
+            self.transitionLock.lock()
+            defer { self.transitionLock.unlock() }
             guard self.transitionAvailable else { return false }
             self.transitionHeld = true
             defer { self.transitionHeld = false }
