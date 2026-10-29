@@ -75,8 +75,10 @@ final class FlintSessionLifecycleTests: XCTestCase {
         let logicalEnd = t0.addingTimeInterval(1800)
         FlintSessionLifecycle.didEnd(s, route: .completed, at: logicalEnd.addingTimeInterval(5),
                                     logicalEnd: logicalEnd)
-        XCTAssertEqual(sink.events, [.ended(s, route: .completed, at: logicalEnd)])
+        XCTAssertEqual(sink.events.map(\.unannotated), [.ended(s, route: .completed, at: logicalEnd)])
         XCTAssertEqual(FlintHistoryEvent(sink.events[0]).date, logicalEnd)
+        XCTAssertEqual(FlintHistoryEvent(sink.events[0]).observedAt,
+                       FlintHistoryEvent.milliseconds(logicalEnd.addingTimeInterval(5)))
     }
 
     func testExplicitLogicalEndCannotCompleteEarlyAndKeepsObservedMetadata() {
@@ -87,12 +89,22 @@ final class FlintSessionLifecycleTests: XCTestCase {
         XCTAssertTrue(sink.events.isEmpty)
         let observed = logicalEnd.addingTimeInterval(5)
         FlintSessionLifecycle.didEnd(s, route: .completed, at: observed, origin: "monitor",
-                                    reason: "deadline", observedAt: observed, logicalEnd: logicalEnd)
+                                    reason: "deadline", logicalEnd: logicalEnd)
         let record = FlintHistoryEvent(sink.events[0])
         XCTAssertEqual(record.date, logicalEnd)
         XCTAssertEqual(record.observedAt, FlintHistoryEvent.milliseconds(observed))
         XCTAssertEqual(record.originRoute, "monitor")
         XCTAssertEqual(record.reason, "deadline")
+    }
+
+    func testExplicitObservationIsPreservedWhenLogicalCompletionIsDeliveredLater() {
+        let s = session("delayed", start: 0, end: 3600)
+        let logicalEnd = t0.addingTimeInterval(1800), observed = t0.addingTimeInterval(1805)
+        FlintSessionLifecycle.didEnd(s, route: .completed, at: observed.addingTimeInterval(10),
+                                    origin: "monitor", observedAt: observed, logicalEnd: logicalEnd)
+        let record = FlintHistoryEvent(sink.events[0])
+        XCTAssertEqual(record.date, logicalEnd)
+        XCTAssertEqual(record.observedAt, FlintHistoryEvent.milliseconds(observed))
     }
 
     func testEarlyEndKeepsObservedTime() {

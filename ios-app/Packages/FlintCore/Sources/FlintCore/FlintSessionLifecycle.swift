@@ -108,7 +108,8 @@ public enum FlintSessionLifecycle {
         let deadline = logicalEnd ?? session.endsAt
         guard route != .completed || deadline.map({ $0 <= date }) == true else { return }
         let when = route == .completed ? (deadline ?? date) : date
-        emit(.ended(session, route: route, at: when), origin: origin, reason: reason, observedAt: observedAt)
+        let observation = observedAt ?? (route == .completed && logicalEnd != nil && date != when ? date : nil)
+        emit(.ended(session, route: route, at: when), origin: origin, reason: reason, observedAt: observation)
     }
 
     /// Compatibility overload for a pass observed for one session. Prefer the operation-ID
