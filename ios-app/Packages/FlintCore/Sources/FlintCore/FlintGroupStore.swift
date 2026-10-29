@@ -104,11 +104,13 @@ public final class FlintGroupStore {
 
     // MARK: Open-limit counters
 
+    @available(*, unavailable, message: "Legacy migration payload only; use FlintOpenCredit.preview/accept and the protection ledger.")
     public func loadOpenLimitState() -> FlintOpenLimitState {
         guard let data = defaults.data(forKey: Key.openLimitState) else { return FlintOpenLimitState() }
         return (try? JSONDecoder().decode(FlintOpenLimitState.self, from: data)) ?? FlintOpenLimitState()
     }
 
+    @available(*, unavailable, message: "Live Open counters are committed only through the protection ledger.")
     public func saveOpenLimitState(_ state: FlintOpenLimitState) {
         defaults.set(try? JSONEncoder().encode(state), forKey: Key.openLimitState)
     }

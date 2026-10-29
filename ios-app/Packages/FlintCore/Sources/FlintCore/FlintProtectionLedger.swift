@@ -79,7 +79,7 @@ public struct FlintLedgerInstant: Codable, Equatable, Sendable {
 // MARK: - State
 
 public struct FlintLedgerState: Codable, Equatable, Sendable {
-    public static let currentVersion = 1
+    public static let currentVersion = 2
     /// Bounded idempotency memory (§8 "query by operation ID").
     public static let operationMemory = 200
 
@@ -92,6 +92,8 @@ public struct FlintLedgerState: Codable, Equatable, Sendable {
     public var harder: [String: Harder]
     /// Recent committed operations, newest last.
     public var operations: [Operation]
+    /// Shared target quotas and bounded access, never stored in UserDefaults (§5).
+    public var openCredits: FlintOpenCreditState
 
     public init(initializedAt: Date) {
         version = Self.currentVersion
@@ -100,6 +102,27 @@ public struct FlintLedgerState: Codable, Equatable, Sendable {
         pass = Pass()
         harder = [:]
         operations = []
+        openCredits = FlintOpenCreditState()
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version, initializedAt, migrations, pass, harder, operations, openCredits
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        let oldVersion = try values.decode(Int.self, forKey: .version)
+        guard (1...Self.currentVersion).contains(oldVersion) else {
+            throw DecodingError.dataCorruptedError(forKey: .version, in: values, debugDescription: "Unsupported ledger version")
+        }
+        version = oldVersion
+        initializedAt = try values.decode(Date.self, forKey: .initializedAt)
+        migrations = try values.decode(Set<String>.self, forKey: .migrations)
+        pass = try values.decode(Pass.self, forKey: .pass)
+        harder = try values.decode([String: Harder].self, forKey: .harder)
+        operations = try values.decode([Operation].self, forKey: .operations)
+        // Only the known v1 schema may lack this field. A missing v2 quota is corruption.
+        openCredits = oldVersion == 1 ? FlintOpenCreditState() : try values.decode(FlintOpenCreditState.self, forKey: .openCredits)
     }
 
     // MARK: Emergency Pass (§6)
@@ -251,7 +274,8 @@ public final class FlintProtectionLedger {
             setInitializedMarker: { defaults.set($0.timeIntervalSince1970, forKey: key) },
             // Required for a usable pass: without it a new ledger stays `pendingImport` (closed).
             migrate: { state, now in
-                guard !state.migrations.contains(FlintLedgerState.legacyPassMigration) else { return }
+                // Inspect the pre-import initialization evidence before adding the pass marker.
+                FlintOpenCredit.importLegacy(into: &state, defaults: defaults, at: now, calendar: clock.calendar())
                 // The App Group suite opened, so absence of the legacy key is the old "never
                 // used" state. `UserDefaults` has no per-key failure channel: an unreadable
                 // container is caught earlier (no suite / no ledger directory), never here.
@@ -316,6 +340,7 @@ public final class FlintProtectionLedger {
         case let .failure(error): return .failure(error)
         }
         let before = state
+        state.version = FlintLedgerState.currentVersion
         migrate(&state, FlintLedgerInstant(clock: clock))
         let result: T
         do {
@@ -323,7 +348,7 @@ public final class FlintProtectionLedger {
         } catch {
             return .failure(.unavailable("transaction aborted: \(error)"))
         }
-        if state != before || !existed {
+        if state != before || !existed || before.version != FlintLedgerState.currentVersion {
             if let failure = write(state) { return .failure(failure) }
         }
         if initializedMarker() == nil { setInitializedMarker(state.initializedAt) }

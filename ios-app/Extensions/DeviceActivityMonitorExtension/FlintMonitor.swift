@@ -24,6 +24,10 @@ final class FlintMonitor: DeviceActivityMonitor {
 
     override func intervalDidStart(for activity: DeviceActivityName) {
         super.intervalDidStart(for: activity)
+        if FlintOpenCredit.isCarrier(activity.rawValue) {
+            FlintOpenCredit.reconcile(activity: activity.rawValue, callback: .start)
+            return
+        }
         if let limit = limit(for: activity) {
             clearLimitShield(limit) // new day → fresh budget
             FlintLimitThresholds.clear(limit.id)
@@ -42,6 +46,10 @@ final class FlintMonitor: DeviceActivityMonitor {
 
     override func intervalDidEnd(for activity: DeviceActivityName) {
         super.intervalDidEnd(for: activity)
+        if FlintOpenCredit.isCarrier(activity.rawValue) {
+            FlintOpenCredit.reconcile(activity: activity.rawValue, callback: .end)
+            return
+        }
         if let limit = limit(for: activity) {
             clearLimitShield(limit)
         } else if let rule = rule(for: activity) {
@@ -63,6 +71,10 @@ final class FlintMonitor: DeviceActivityMonitor {
     /// end inside the padded interval DeviceActivity requires.
     override func intervalWillEndWarning(for activity: DeviceActivityName) {
         super.intervalWillEndWarning(for: activity)
+        if FlintOpenCredit.isCarrier(activity.rawValue) {
+            FlintOpenCredit.reconcile(activity: activity.rawValue, callback: .warning)
+            return
+        }
         guard FlintSessionController.isSessionActivity(activity.rawValue) else { return }
         FlintSessionController().handleMonitorEvent(.intervalWillEndWarning, activity: activity.rawValue)
     }

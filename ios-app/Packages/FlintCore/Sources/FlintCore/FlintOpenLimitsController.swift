@@ -4,17 +4,16 @@ import FamilyControls
 import ManagedSettings
 import DeviceActivity
 
-/// Manages daily Open Limits (launch-count caps) — the host-app arming side of the
+/// Manages daily Open Limit credits — the host-app arming side of the
 /// `FlintOpenLimitEnforcer` seam. Mirrors `FlintLimitsController` (same CRUD + `reload()` shape).
 ///
 /// Arming is two idempotent moves, both re-done by every `reload()`:
 ///  1. each enabled rule's selection is shielded into the rule's own store
-///     (`FlintOpenLimitEnforcer.applyShield`) — this also puts tokens released by earlier
-///     grants back behind the shield;
+///     (`FlintOpenLimitEnforcer.applyShield`), preserving only verifiable live timed grants;
 ///  2. each enabled rule registers an all-day repeating `DeviceActivitySchedule`
 ///     (`rule.activityName`), so the monitor extension re-applies the shield at the day
-///     boundary even if the app never launches. The daily open counter itself resets via
-///     `FlintOpenLimitState.dayStart` — no schedule needed for that.
+///     boundary even if the app never launches. The ledger governs the saved-zone quota
+///     boundary using observed elapsed time; callbacks cannot independently mint credits.
 public final class FlintOpenLimitsController {
 
     private let environment: FlintRuleReloadEnvironment
@@ -117,6 +116,9 @@ public final class FlintOpenLimitsController {
     /// Re-arm every enabled rule: shield its selection and (re)register its day-boundary
     /// activity. Idempotent; call on launch and after edits.
     public func reload(reapplyShields: Bool = true) {
+        // Every trigger closes expired/legacy releases, including foreground/time changes.
+        // Live bounded grants survive applyShield; the old launch-only flag is source-compatible.
+        environment.reconcileOpenCredits()
         guard let all = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: environment.defaults) else {
             environment.record("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
             return
@@ -140,10 +142,11 @@ public final class FlintOpenLimitsController {
                 let id = name.dropFirst("flint.openLimit.".count)
                 environment.clearStore("flintO.\(id)")
             })
-        if reapplyShields {
-            for rule in plan.arm where report.observedActivities?.contains(rule.activityName) == true {
-                environment.applyOpenShield(rule)
-            }
+        // Every trigger restores expired/legacy releases only after the daily registration
+        // is observed. applyOpenShield now preserves bounded live grants under the ledger lock;
+        // the launch-only flag remains a source-compatible parameter for existing clients.
+        for rule in plan.arm where report.observedActivities?.contains(rule.activityName) == true {
+            environment.applyOpenShield(rule)
         }
         environment.record("openLimits", report)
     }
