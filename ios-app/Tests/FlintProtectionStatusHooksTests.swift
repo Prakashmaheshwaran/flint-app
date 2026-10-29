@@ -74,5 +74,31 @@ final class FlintProtectionStatusHooksTests: XCTestCase {
 
     func testTheHostIsTheWriterOutsideAnExtension() {
         XCTAssertEqual(FlintProtectionStatus.Writer.current, .host)
+        typealias W = FlintProtectionStatus.Writer
+        XCTAssertEqual(W.writer(forBundleID: "com.flint.peakfocus.shield-action", isExtension: true), .shieldAction)
+        XCTAssertEqual(W.writer(forBundleID: "com.flint.peakfocus.monitor", isExtension: true), .monitor)
+        XCTAssertEqual(W.writer(forBundleID: "com.flint.peakfocus.widgets", isExtension: true), .host,
+                       "read-only extensions aren't labelled as an enforcement writer")
+    }
+
+    func testThresholdsAreKnownOnlyForToday() {
+        let now = Date(timeIntervalSince1970: 1_793_206_800)
+        FlintLimitThresholds.markReached("limit-a", at: now, in: defaults)
+        FlintLimitThresholds.markReached("limit-b", at: now.addingTimeInterval(-86_400 * 2), in: defaults)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        XCTAssertEqual(FlintLimitThresholds.reachedToday(now: now, calendar: calendar, in: defaults), ["limit-a": true])
+        FlintLimitThresholds.clear("limit-a", in: defaults)
+        XCTAssertEqual(FlintLimitThresholds.reachedToday(now: now, calendar: calendar, in: defaults), [:])
+    }
+
+    func testAnOpenEndedSessionIsArmedOnlyWithItsTargets() {
+        let now = Date(timeIntervalSince1970: 1_793_206_800)
+        active = FlintActiveSession(name: "Focus", startedAt: now, endsAt: nil, breakLevel: .easy,
+                                    monitorName: "flint.session.0000000000000000")
+        let withoutTargets = FlintProtectionStatus.publishAfterCommit(
+            writer: .host, now: now, defaults: defaults, ledger: { nil }, environment: environment,
+            sessionTargets: { _ in false }, effects: effects)
+        XCTAssertNil(withoutTargets.session, "no frozen targets: not shown as an armed session")
     }
 }

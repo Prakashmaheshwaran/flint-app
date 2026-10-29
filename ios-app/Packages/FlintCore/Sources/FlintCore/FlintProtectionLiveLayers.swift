@@ -62,7 +62,10 @@ extension FlintProtectionReconciler {
     ], publish: {
         // The host initializes the ledger (and runs its one-time legacy pass import) so
         // read-only peeks — extensions, the shield, App detail — find it (ADR-012 §8, §12).
-        _ = FlintProtectionLedger.appGroup()?.read()
+        // Only while a peek can't read it: a normal launch takes no ledger lock here.
+        if let ledger = FlintProtectionLedger.appGroup(), case .failure = ledger.peek() {
+            _ = ledger.read()
+        }
         FlintProtectionStatus.publishAfterCommit(writer: .host)
     })
 

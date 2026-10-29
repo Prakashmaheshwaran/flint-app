@@ -26,6 +26,7 @@ final class FlintMonitor: DeviceActivityMonitor {
         super.intervalDidStart(for: activity)
         if let limit = limit(for: activity) {
             clearLimitShield(limit) // new day → fresh budget
+            FlintLimitThresholds.clear(limit.id)
         } else if let rule = rule(for: activity) {
             applyRule(rule)
         } else if let openLimit = openLimit(for: activity) {
@@ -75,6 +76,7 @@ final class FlintMonitor: DeviceActivityMonitor {
         // unmatched event is stale — a no-op, never a cue to shield the session's selection.
         guard let limit = limit(forEvent: event) else { return }
         applyLimitShield(limit) // daily budget hit → shield until the day resets
+        FlintLimitThresholds.markReached(limit.id) // the projection may now claim it enforcing
         publishStatus()
     }
 

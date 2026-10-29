@@ -1,11 +1,17 @@
 import Foundation
 
 extension FlintProtectionStatus.Writer {
-    /// The process that is publishing: the host app, or one of Flint's app extensions.
-    public static var current: Self {
-        guard Bundle.main.bundleURL.pathExtension == "appex" else { return .host }
-        let id = Bundle.main.bundleIdentifier ?? ""
-        return id.localizedCaseInsensitiveContains("ShieldAction") ? .shieldAction : .monitor
+    /// The process that is publishing: the host app, or one of the two extensions that commit
+    /// enforcement changes. Read-only extensions (widgets, shield configuration, report) never
+    /// publish; if one ever does, it's labelled by bundle rather than guessed.
+    public static var current: Self { writer(forBundleID: Bundle.main.bundleIdentifier,
+                                             isExtension: Bundle.main.bundleURL.pathExtension == "appex") }
+
+    static func writer(forBundleID id: String?, isExtension: Bool) -> Self {
+        guard isExtension, let id else { return .host }
+        if id.hasSuffix(".shield-action") { return .shieldAction }
+        if id.hasSuffix(".monitor") { return .monitor }
+        return .host
     }
 }
 
@@ -22,14 +28,20 @@ extension FlintProtectionStatus {
         defaults: UserDefaults? = .flintGroup,
         ledger: () -> FlintProtectionLedger? = { FlintProtectionLedger.appGroup() },
         environment: ObservationEnvironment = .system,
+        sessionTargets: (String) -> Bool = { FlintGroupStore()?.loadSessionSelection(sessionID: $0) != nil },
         effects: PublicationEffects = .system
     ) -> FlintProtectionStatusSnapshot {
         let pass = ledger().flatMap { try? $0.peek().get() }?.pass
         let active = environment.loadActiveSession()
-        // An open-ended Easy session has no out-of-app end to register; its shield is its
-        // whole enforcement, so it counts as armed while it runs.
-        let armed: Bool? = active.map { $0.endsAt == nil } == true ? true : nil
-        let inputs = currentInputs(now: now, defaults: defaults, ledgerPass: pass, sessionArmed: armed,
+        // An open-ended Easy session has no out-of-app end to register; it counts as armed only
+        // while its own frozen target snapshot exists (what the shield is applied from).
+        var armed: Bool?
+        if let active, active.endsAt == nil {
+            armed = sessionTargets(active.id)
+        }
+        let inputs = currentInputs(now: now, defaults: defaults, ledgerPass: pass,
+                                   thresholdReached: FlintLimitThresholds.reachedToday(now: now, in: defaults),
+                                   sessionArmed: armed,
                                    sessionKind: active?.name == pomodoroSessionName ? .pomodoro : .session,
                                    environment: environment)
         let snapshot = FlintProtectionStatusBuilder.make(inputs).withWriter(writer.rawValue)
@@ -74,4 +86,38 @@ extension FlintProtectionStatusSnapshot {
     }
 
     static let validityNudge: TimeInterval = 3600
+}
+
+/// Time Limits whose daily threshold the monitor saw today (ADR-012 §8: a limit's enforcement
+/// is claimed only when known). Written by the DeviceActivityMonitor's threshold callback,
+/// cleared by that limit's new-day interval start; absent = unknown, never "not reached".
+public enum FlintLimitThresholds {
+    static let key = "flint.limits.thresholdReached"
+
+    public static func markReached(_ limitID: String, at date: Date = Date(), in defaults: UserDefaults? = .flintGroup) {
+        guard let defaults else { return }
+        var all = load(from: defaults)
+        all[limitID] = date.timeIntervalSince1970
+        defaults.set(all, forKey: key)
+    }
+
+    public static func clear(_ limitID: String, in defaults: UserDefaults? = .flintGroup) {
+        guard let defaults else { return }
+        var all = load(from: defaults)
+        all[limitID] = nil
+        defaults.set(all, forKey: key)
+    }
+
+    /// Limits reached on the current calendar day.
+    public static func reachedToday(now: Date, calendar: Calendar = .current,
+                                    in defaults: UserDefaults? = .flintGroup) -> [String: Bool] {
+        guard let defaults else { return [:] }
+        return load(from: defaults).reduce(into: [:]) { result, entry in
+            if calendar.isDate(Date(timeIntervalSince1970: entry.value), inSameDayAs: now) { result[entry.key] = true }
+        }
+    }
+
+    private static func load(from defaults: UserDefaults) -> [String: TimeInterval] {
+        (defaults.dictionary(forKey: key) as? [String: TimeInterval]) ?? [:]
+    }
 }

@@ -905,6 +905,9 @@ public final class FlintSessionController {
     ///  - any other session name is a replaced registration: deregistered at its end, ignored.
     public func handleMonitorEvent(_ event: FlintSessionMonitorEvent, activity: String) {
         Self.lock.lock(); defer { Self.lock.unlock() }
+        // The monitor's callbacks are the app-closed path: always republish what they changed
+        // (unchanged content skips the widget reload).
+        defer { env.publishStatus() }
         let store = env.store()
         let now = env.clock.now()
         let session = store?.loadActiveSession()
