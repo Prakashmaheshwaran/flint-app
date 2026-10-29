@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import com.flint.peakfocus.blocking.engine.OpenCreditLedger
+import com.flint.peakfocus.blocking.engine.RuleClockProjection
 import com.flint.peakfocus.core.model.AccessClockStamp
+import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.StorageState
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -41,3 +43,11 @@ class DataStoreProtectionSnapshotReader internal constructor(
 /** A read-only facade over the same production preference file and strict decoder. */
 fun FlintPreferences.protectionSnapshots(context: Context): ProtectionSnapshotReader =
     DataStoreProtectionSnapshotReader(protectionTransactions(context).state)
+
+/**
+ * Pure R-18 view of an already atomic rule/sidecar snapshot. Uses the same adapter as the
+ * editor publication, including queued boundaries; never reconciles or initializes storage.
+ * Missing occurrence authority fails explicitly rather than dropping a restrictive record.
+ */
+fun ProtectionSnapshot.projectedRulesForRead(now: AccessClockStamp): List<BlockRule> =
+    RuleClockProjection.project(editorRulesWithRuntime(rules, editor, now), now)

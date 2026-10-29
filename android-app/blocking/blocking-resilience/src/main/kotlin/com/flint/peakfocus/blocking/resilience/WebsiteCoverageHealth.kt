@@ -7,6 +7,7 @@ import com.flint.peakfocus.blocking.engine.WebCoverageTracker
 
 /** Process-local observation only: no URL, browsing history, persistence or network. */
 object WebsiteCoverageHealth {
+    data class Observation(val coverage: WebCoverage, val currentBrowser: Boolean)
     private var tracker = WebCoverageTracker()
     private var lastBrowserObservation: WebCoverage? = null
     private var currentBrowser = false
@@ -35,6 +36,10 @@ object WebsiteCoverageHealth {
     }
 
     @Synchronized fun isCurrentBrowser(): Boolean = currentBrowser
+
+    /** One atomic retained observation for display readers; no new check or timestamp. */
+    @Synchronized fun read(domainsActive: Boolean, accessibilityEnabled: Boolean): Observation =
+        Observation(snapshot(domainsActive, accessibilityEnabled), currentBrowser)
 
     @Synchronized fun snapshot(domainsActive: Boolean, accessibilityEnabled: Boolean): WebCoverage = when {
         !domainsActive -> WebCoverage.NotRequired

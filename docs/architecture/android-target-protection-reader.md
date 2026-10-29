@@ -6,6 +6,16 @@ App/Site detail. This is a display API, never authority to grant access or chang
 protection. Lane H must copy its resolved summary rather than derive a blocking
 decision from attribution rows or the aggregate `ProtectionStatus` inventory.
 
+Production hosts call `createTargetProtectionReader(context, scope,
+readFloorIdentity)` from the app module, passing the existing enforcement
+coordinator's retained floor accessor. The factory creates no coordinator and
+starts no reconciler. `ObservedTargetProtectionReader` is the injectable flow
+implementation for tests/other hosts. It shares the strict snapshot decoder
+once, projects cached records on a shared one-second clock, conflates results,
+and stops upstream work when its last collector leaves. Usage is sampled only
+for the requested app/current browser with a positive budget, at most once per
+15 seconds; Usage Access is rechecked before returning any cached measurement.
+
 The reader has no edit, reconcile, migrate, checkpoint, grant, debit or event
 delivery entry point. `ProtectionSnapshotReader` reuses the protection transaction
 store's atomic decoder through its read-only state flow. Its `openCredits` flow
@@ -22,6 +32,9 @@ creates a zero-used pool. A read cannot initialize the new protection contract.
 - `coveringCauses`: target attribution, including inactive templates. Each
   `CoveringCause` has a stable `causeKey`, optional `occurrenceId`, stored tier,
   activity, nullable enforcement, finite end estimate and next boundary.
+  A recurrence projected before its owner publishes its new occurrence has a
+  null `occurrenceId`; consumers must not turn that absence into a new identity
+  or use this display API to authorize edits/access.
 - `blockingNow`, `blockingUntilWall`, `blockingOngoing`, `headline` and
   `recoveryEndsAtWall`: the resolved decision. The headline is the strongest
   enforcing tier, ties by latest end and stable identity. The total blocking end
@@ -29,6 +42,8 @@ creates a zero-used pool. A read cannot initialize the new protection contract.
 - `openCredit`: readable used/cap accounting independently of availability,
   active accepted-credit end and quota-period end. Until timed-credit enforcement
   can honor the access, `available` is false and the reason is explicit.
+  `activeCreditEndsAtWall` remains null while that runtime path is unavailable;
+  readable ledger data must not be treated as access the shield will honor.
 - `timeLimit`: effective quota, stored tier and optional measured usage. A null
   measurement is unavailable usage, never a fresh zero; zero quota is exhausted
   even without Usage Access.
@@ -36,6 +51,10 @@ creates a zero-used pool. A read cannot initialize the new protection contract.
   end. These wall values are display estimates, not new deadlines.
 - `websiteCoverage`: target-scoped supported-browser health. Accessibility and
   actual browser observations bound it; it is never an all-websites promise.
+  A retained observation from a browser that is no longer foreground is shown
+  as `AWAITING_BROWSER`. Site counts are not browser-app counts: `openCredit`
+  and `timeLimit` are null for Sites, while an identified current browser's
+  app/limit causes still contribute to attribution and the blocking summary.
 
 `active` describes a commitment, while `enforcingNow` describes its current
 target denial. A break, global pass recovery or unspent Time Limit can leave a

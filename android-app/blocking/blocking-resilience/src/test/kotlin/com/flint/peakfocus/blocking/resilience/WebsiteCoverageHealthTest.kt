@@ -68,4 +68,19 @@ class WebsiteCoverageHealthTest {
         assertTrue(observed is WebCoverage.Unconfirmed)
         assertEquals(HealthLevel.HEALTHY, HealthStatus(true, true, true, true, websiteCoverage = observed).level)
     }
+
+    @Test fun `target reader receives retained coverage and current context atomically without refreshing it`() {
+        val window = BrowserWindow("com.android.chrome", 1)
+        WebsiteCoverageHealth.foreground(window, true, true)
+        WebsiteCoverageHealth.addressBarRead(window, true, true, 100)
+        val first = WebsiteCoverageHealth.read(true, true)
+        assertTrue(first.currentBrowser)
+        assertTrue(first.coverage is WebCoverage.Available)
+        repeat(20) { assertEquals(first, WebsiteCoverageHealth.read(true, true)) }
+        WebsiteCoverageHealth.foreground(null, true, false)
+        val retained = WebsiteCoverageHealth.read(true, true)
+        assertEquals(first.coverage, retained.coverage)
+        assertFalse(retained.currentBrowser)
+        assertEquals(WebCoverage.Paused, WebsiteCoverageHealth.read(true, false).coverage)
+    }
 }
