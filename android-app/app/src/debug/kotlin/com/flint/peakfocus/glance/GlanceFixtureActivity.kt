@@ -2,6 +2,7 @@ package com.flint.peakfocus.glance
 
 import android.Manifest
 import android.app.Activity
+import android.app.Application
 import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
@@ -30,9 +31,22 @@ class GlanceFixtureActivity : Activity() {
     private var widgetId = AppWidgetManager.INVALID_APPWIDGET_ID
     private var fixtureScope: CoroutineScope? = null
     private var sessionEnd = 0L
+    private val lifecycle = object : Application.ActivityLifecycleCallbacks {
+        override fun onActivityResumed(activity: Activity) {
+            if (activity !is GlanceFixtureActivity) restoreProduction()
+        }
+        override fun onActivityCreated(activity: Activity, state: Bundle?) = Unit
+        override fun onActivityStarted(activity: Activity) = Unit
+        override fun onActivityPaused(activity: Activity) = Unit
+        override fun onActivityStopped(activity: Activity) = Unit
+        override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) = Unit
+        override fun onActivityDestroyed(activity: Activity) = Unit
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        application.registerActivityLifecycleCallbacks(lifecycle)
+        fixtureOwner = this
         host = AppWidgetHost(this, 12028)
         host.startListening()
         layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(16, 24, 16, 16) }
@@ -54,6 +68,7 @@ class GlanceFixtureActivity : Activity() {
     }
 
     private fun configure(intent: Intent) {
+        fixtureOwner = this
         fixtureScope?.cancel()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         fixtureScope = scope
@@ -98,9 +113,24 @@ class GlanceFixtureActivity : Activity() {
     }
 
     override fun onDestroy() {
+        application.unregisterActivityLifecycleCallbacks(lifecycle)
         fixtureScope?.cancel()
+        restoreProduction()
         host.stopListening()
         if (widgetId != AppWidgetManager.INVALID_APPWIDGET_ID) host.deleteAppWidgetId(widgetId)
         super.onDestroy()
+    }
+
+    private fun restoreProduction() {
+        if (fixtureOwner !== this) return // An old Activity cannot retire a newer fixture.
+        fixtureOwner = null
+        fixtureScope?.cancel()
+        GlanceSurfaceBridge.start(applicationContext, productionScope, CoordinatorGlanceReader(),
+            FocusHistoryGlanceReader(applicationContext, productionScope))
+    }
+
+    private companion object {
+        var fixtureOwner: GlanceFixtureActivity? = null
+        val productionScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     }
 }

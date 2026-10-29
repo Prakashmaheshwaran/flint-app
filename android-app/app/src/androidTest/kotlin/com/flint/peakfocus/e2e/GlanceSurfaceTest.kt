@@ -49,6 +49,18 @@ class GlanceSurfaceTest : FlintE2EFixture() {
         assertFalse(device.wait(androidx.test.uiautomator.Until.hasObject(By.text("Flint · Protection active at last check")), 1_000))
         screenshot("fixture-notification-unavailable-absent")
         device.pressBack()
+
+        // Open Flint from an active fixture: production readers must replace the fake global
+        // observer even while the fixture Activity remains on the back stack.
+        openFixture("protected")
+        visible(By.text("Protection active at last check")).click()
+        visible(By.text("Today"))
+        shell("am start -W -n $target/com.flint.peakfocus.e2e.GlanceWidgetHostActivity")
+        device.wait(androidx.test.uiautomator.Until.findObject(By.text(java.util.regex.Pattern.compile("(?i)create|allow"))), timeout)?.click()
+        visible(By.text("Protection state unavailable"))
+        assertFalse(device.hasObject(By.textContains("Fixture local history")))
+        assertFalse(device.hasObject(By.textContains("Fixture focus")))
+        screenshot("fixture-exit-restores-production-widget")
     }
 
     private fun openFixture(state: String) {
