@@ -42,6 +42,10 @@ struct SettingsView: View {
                                 FlintRow(title: "Remove PIN")
                             }
                         }
+                        NavigationLink { AppsListView() } label: {
+                            FlintRow(title: String(localized: "Apps and sites"),
+                                     subtitle: String(localized: "What covers each one now"), chevron: true)
+                        }
                         NavigationLink { WebRestrictionsView() } label: {
                             FlintRow(title: "Website rules", subtitle: "Safari restrictions and Private Browsing", chevron: true)
                         }
