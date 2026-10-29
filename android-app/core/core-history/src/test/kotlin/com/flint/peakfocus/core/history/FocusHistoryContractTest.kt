@@ -290,7 +290,7 @@ class FocusHistoryContractTest {
         val clock = MutableClock(start); val store = store(clock)
         val id = "session-timer-$start-uuid"
         val rule = HistoryRule(id, "Focus timer", "easy", start + hour)
-        val bridge = HistoryReconciler(store, clock) { zone }
+        val bridge = HistoryReconciler(store, clock, zone = { zone })
         bridge.observe(listOf(rule)); bridge.observe(listOf(rule))
         assertEquals(1, store.snapshots.value.events.size)
         assertEquals(start, store.snapshots.value.events.single().at)
@@ -298,11 +298,11 @@ class FocusHistoryContractTest {
         bridge.observe(emptyList())
         assertFalse(store.snapshots.value.events.last().inferred)
         assertEquals(hour / 2, FocusHistoryAggregator.sessions(store.snapshots.value.events, clock.value, emptySet()).single().focusedMs)
-        HistoryReconciler(store, clock) { zone }.observe(emptyList())
+        HistoryReconciler(store, clock, zone = { zone }).observe(emptyList())
         assertEquals(2, store.snapshots.value.events.size)
         val coldId = "session-cold"
         store.append(started(id = coldId))
-        HistoryReconciler(store, clock) { zone }.observe(emptyList())
+        HistoryReconciler(store, clock, zone = { zone }).observe(emptyList())
         assertEquals(HistoryEventType.STARTED, store.snapshots.value.events.last().knownType)
         assertEquals(0L, FocusHistoryAggregator.sessions(store.snapshots.value.events, clock.value, emptySet()).first { it.id == coldId }.focusedMs)
     }
@@ -310,7 +310,7 @@ class FocusHistoryContractTest {
         val clock = MutableClock(start); val store = store(clock)
         store.append(started(id = "session-existing"))
         var attempts = 0
-        HistoryReconciler(store, clock) { zone }.collect(flow {
+        HistoryReconciler(store, clock, zone = { zone }).collect(flow {
             if (attempts++ == 0) throw java.io.IOException("read failed")
             assertEquals(1, store.snapshots.value.events.size)
             emit(emptyList())
@@ -320,7 +320,7 @@ class FocusHistoryContractTest {
     }
     @Test fun bridgeReconcilesExpiredRuleAndLegacyObservationTime() = runTest {
         val clock = MutableClock(start); val store = store(clock)
-        val bridge = HistoryReconciler(store, clock) { zone }
+        val bridge = HistoryReconciler(store, clock, zone = { zone })
         bridge.observe(listOf(HistoryRule("session-legacy", "Old focus", "harder", start + hour)))
         assertEquals("legacy", store.snapshots.value.events.single().source)
         clock.value += 2 * hour
