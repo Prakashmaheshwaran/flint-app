@@ -50,13 +50,24 @@ class PathBServiceLifecycleTest {
         health.unavailable(owner, "usage-access-missing")
         assertEquals(PathBState.UNKNOWN, events.last().state)
         health.stopped(owner)
-        assertEquals(Published(PathBState.OFF, emptySet(), null), events.last())
+        assertEquals(Published(PathBState.OFF, setOf("usage-access-missing"), null), events.last())
     }
 
     @Test fun `clean destruction is off and has no live lease`() {
         health.starting(owner); health.foregroundStarted(owner)
         health.mode(owner, FallbackMode.STANDBY); health.stopped(owner)
         assertEquals(Published(PathBState.OFF, emptySet(), null), events.last())
+    }
+
+    @Test fun `permission recovery replaces the missing access reason retained after shutdown`() {
+        health.starting(owner); health.foregroundStarted(owner)
+        health.unavailable(owner, "usage-access-missing")
+        health.stopped(owner)
+        assertEquals(setOf("usage-access-missing"), events.last().reasons)
+        val next = Any()
+        health.starting(next); health.foregroundStarted(next)
+        health.mode(next, FallbackMode.STANDBY)
+        assertEquals(Published(PathBState.STANDBY, emptySet(), 91_000L), events.last())
     }
 
     @Test fun `a stop request is unknown until the running instance ends`() {
