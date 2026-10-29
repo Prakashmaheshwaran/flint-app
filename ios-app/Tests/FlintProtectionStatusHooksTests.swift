@@ -119,4 +119,46 @@ final class FlintProtectionStatusHooksTests: XCTestCase {
             sessionTargets: { _ in false }, effects: effects)
         XCTAssertNil(withoutTargets.session, "no frozen targets: not shown as an armed session")
     }
+
+    func testCommittedPassPublishesApplyingUntilReleaseAndResumeAcknowledgements() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("status-pass-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var wall = Date(timeIntervalSince1970: 1_793_206_800)
+        var monotonic: TimeInterval = 1000
+        var marker: Date?
+        var resumeFails = false
+        enum Fault: Error { case injected }
+        let clock = FlintClock(now: { wall }, monotonic: { monotonic }, bootSessionID: { "test-boot" }, calendar: { .current })
+        let ledger = FlintProtectionLedger(directory: directory, clock: clock, initializedMarker: { marker },
+            setInitializedMarker: { marker = $0 }, migrate: { $0.importLegacyPass(.absent, at: $1) })
+        let scope = FlintPassScope(revision: "status-review", sessions: [], rules: [
+            .init(id: "schedule:test", name: "Fixture rule", kind: .schedule,
+                naturalStart: wall.addingTimeInterval(-60), naturalEnd: wall.addingTimeInterval(7200),
+                storeName: "flint.test", activityName: "flint.rule.test")
+        ], stores: ["flint.test"])
+        let controller = FlintEmergencyPassController(environment: .init(ledger: { ledger }, clock: clock,
+            scope: { _, _ in scope }, registerCarrier: { _, _, _ in }, terminate: { _, _ in }, release: { _ in },
+            resume: { _, _ in if resumeFails { throw Fault.injected } }, emit: { _ in }, afterCommit: { throw Fault.injected }))
+        let observation = FlintProtectionStatus.ObservationEnvironment(authorized: { true }, registeredActivities: { [] },
+            clock: clock, loadActiveSession: { nil }, hasActiveSessionRecord: { false }, loadArmingHealth: { .init() })
+        func status() -> FlintProtectionStatusSnapshot {
+            FlintProtectionStatus.publishAfterCommit(now: wall, defaults: defaults, ledger: { ledger },
+                environment: observation, effects: .silent)
+        }
+        let preview = try controller.preview().get()
+        XCTAssertEqual(controller.use(previewRevision: preview.revision, operationID: "status-pass"), .failure(.applying))
+        XCTAssertEqual(status().state, .degraded)
+        XCTAssertTrue(status().degradedReasons.contains("recovery_applying"))
+        _ = try controller.reconcile().get()
+        XCTAssertEqual(status().state, .suspended, "only after release acknowledgement")
+        wall.addTimeInterval(3600); monotonic += 3600
+        resumeFails = true
+        XCTAssertEqual(controller.reconcile(), .failure(.applying))
+        XCTAssertEqual(status().state, .degraded)
+        XCTAssertTrue(status().degradedReasons.contains("recovery_applying"))
+        resumeFails = false
+        _ = try controller.reconcile().get()
+        XCTAssertFalse(status().degradedReasons.contains("recovery_applying"))
+        XCTAssertEqual(try ledger.peek().get().operations.filter { $0.kind == "pass" }.count, 1)
+    }
 }

@@ -205,6 +205,20 @@ final class FlintEmergencyPassControllerTests: XCTestCase {
         XCTAssertEqual(try ledger().peek().get().operations.filter { $0.kind == "pass" }.count, 1)
     }
 
+    func testInvalidElapsedClockNeverAdvertisesAnAvailablePassOrAuthorizesApply() throws {
+        let preview = try controller().preview().get()
+        for value in [TimeInterval.nan, .infinity, -1] {
+            monotonic = value
+            XCTAssertEqual(controller().status(), .failure(.unavailable))
+            XCTAssertEqual(controller().preview(), .failure(.unavailable))
+            XCTAssertEqual(controller().use(previewRevision: preview.revision, operationID: "invalid-clock"), .failure(.unavailable))
+            XCTAssertEqual(FlintPassRecoveryGate.read(ledger: ledger(), at: .init(clock: clock)), .unavailable)
+            XCTAssertTrue(effects.isEmpty)
+        }
+        monotonic = 10000
+        XCTAssertEqual(try ledger().peek().get().pass.usage, .neverUsed)
+    }
+
     func testCarrierMustArmBeforeCommitPC43() throws {
         let preview = try controller().preview().get()
         carrierFails = true

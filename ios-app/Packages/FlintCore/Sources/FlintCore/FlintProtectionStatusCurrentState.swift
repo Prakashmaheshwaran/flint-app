@@ -79,13 +79,15 @@ extension FlintProtectionStatus {
         timeIntegrity: FlintTimeIntegrity.Verdict? = nil, quotaCalendar: Calendar = .current,
         writer: Writer = .host,
         environment: ObservationEnvironment = .system,
-        effects: PublicationEffects = .system
+        effects: PublicationEffects = .system,
+        recoveryApplying: Bool = false
     ) -> FlintProtectionStatusSnapshot {
         let inputs = currentInputs(now: now, defaults: defaults, pass: pass, ledgerPass: ledgerPass,
             ruleObservations: ruleObservations, thresholdReached: thresholdReached,
             openEnforcing: openEnforcing, sessionArmed: sessionArmed,
             sessionKind: sessionKind, sessionOrigin: sessionOrigin,
-            timeIntegrity: timeIntegrity, quotaCalendar: quotaCalendar, environment: environment)
+            timeIntegrity: timeIntegrity, quotaCalendar: quotaCalendar, environment: environment,
+            recoveryApplying: recoveryApplying)
         let snapshot = FlintProtectionStatusBuilder.make(inputs).withWriter(writer.rawValue)
         publish(snapshot, to: defaults, writer: writer, effects: effects)
         return snapshot
@@ -104,7 +106,8 @@ extension FlintProtectionStatus {
         sessionArmed: Bool? = nil, sessionKind: FlintProtectionStatusSnapshot.Session.Kind = .session,
         sessionOrigin: FlintProtectionStatusSnapshot.Session.Origin? = nil,
         timeIntegrity: FlintTimeIntegrity.Verdict? = nil, quotaCalendar: Calendar = .current,
-        environment: ObservationEnvironment = .system
+        environment: ObservationEnvironment = .system,
+        recoveryApplying: Bool = false
     ) -> FlintProtectionStatusBuilder.Inputs {
         guard defaults != nil else {
             return .init(now: now, quotaCalendar: quotaCalendar, authorized: nil, pass: pass,
@@ -191,7 +194,7 @@ extension FlintProtectionStatus {
             recordUnreadable: unreadable, rules: rules,
             authorized: environment.authorized(),
             pass: projectedPass, timeIntegrity: verdict, available: defaults != nil,
-            timeIntegrityApplies: timeIntegrityApplies)
+            timeIntegrityApplies: timeIntegrityApplies, recoveryApplying: recoveryApplying)
     }
 }
 #endif
@@ -200,13 +203,20 @@ extension FlintProtectionStatusSnapshot.Pass {
     /// Projects a read-only ledger observation without migrating or checkpointing its state.
     public init(_ state: FlintLedgerState, at instant: FlintLedgerInstant,
                 hasActiveCommitment: Bool) {
+        guard state.hasValidPassRecovery else { self.init(eligibility: .unavailable); return }
         self.init(state.pass, at: instant, hasActiveCommitment: hasActiveCommitment)
     }
 
     /// Uses the ledger's elapsed-time status; never projects its raw stored remainders.
     public init(_ pass: FlintLedgerState.Pass, at instant: FlintLedgerInstant,
                 hasActiveCommitment: Bool) {
+        guard instant.wall.timeIntervalSinceReferenceDate.isFinite, instant.monotonic.isFinite, instant.monotonic >= 0 else {
+            self.init(eligibility: .unavailable); return
+        }
         let status = pass.status(at: instant, hasActiveCommitment: hasActiveCommitment)
+        guard instant.bootID != nil || (status.eligibility != .available && status.eligibility != .nothingToRecover) else {
+            self.init(eligibility: .unavailable); return
+        }
         let eligibility: Eligibility
         let next: Date?
         switch status.eligibility {

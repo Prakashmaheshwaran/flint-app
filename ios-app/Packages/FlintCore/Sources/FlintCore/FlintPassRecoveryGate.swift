@@ -15,7 +15,8 @@ public enum FlintPassRecoveryGate: Equatable, Sendable {
     }
 
     public static func evaluate(_ state: FlintLedgerState, at instant: FlintLedgerInstant) -> Self {
-        guard state.hasValidPassRecovery else { return .unavailable }
+        guard instant.wall.timeIntervalSinceReferenceDate.isFinite, instant.monotonic.isFinite, instant.monotonic >= 0,
+              state.hasValidPassRecovery else { return .unavailable }
         let status = state.pass.status(at: instant, hasActiveCommitment: true)
         guard status.eligibility != .unavailable else { return .unavailable }
         if status.isRecovering {

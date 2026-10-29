@@ -6,7 +6,7 @@ final class FlintProtectionStatusReaderTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_793_188_800)
 
     private func fixture(version: Int = 1, observedAt: Date? = nil, validUntil: Date? = nil,
-                         state: Snapshot.State = .protected) -> Snapshot {
+                         state: Snapshot.State = .protected, reasons: [String] = []) -> Snapshot {
         let end = now.addingTimeInterval(600)
         let cause = Snapshot.Cause(id: "session", kind: .session, displayName: "Study",
                                   tier: .harder, end: end, enforcing: true)
@@ -14,7 +14,7 @@ final class FlintProtectionStatusReaderTests: XCTestCase {
             state: state, session: .init(id: "session", kind: .session, name: "Study", tier: .harder,
                 startedAt: now.addingTimeInterval(-60), logicalEnd: end, origin: .appUI, armed: true),
             headline: cause, causes: [cause], nextOccurrence: nil,
-            pass: .init(eligibility: .available), degradedReasons: [], writer: "host")
+            pass: .init(eligibility: .available), degradedReasons: reasons, writer: "host")
     }
 
     private func encode(_ snapshot: Snapshot) throws -> Data {
@@ -76,5 +76,28 @@ final class FlintProtectionStatusReaderTests: XCTestCase {
                      .sleep, .timeLimit, .openLimit] {
             XCTAssertEqual(try JSONDecoder().decode(Snapshot.Kind.self, from: JSONEncoder().encode(kind)), kind)
         }
+    }
+
+    func testUnknownReasonsAndApplyingCannotInheritSuccessOrSuspension() throws {
+        for state in [Snapshot.State.protected, .notProtected, .suspended] {
+            for reason in ["future_unknown_reason", "recovery_applying"] {
+                let result = try XCTUnwrap(FlintProtectionStatus.decode(encode(fixture(state: state, reasons: [reason])), now: now))
+                XCTAssertEqual(result.state, .degraded)
+                XCTAssertEqual(result.degradedReasons, [reason])
+                XCTAssertNil(result.session)
+                XCTAssertNil(result.headline)
+                XCTAssertTrue(result.causes.allSatisfy { !$0.enforcing })
+            }
+        }
+    }
+
+    func testRecoveryApplyingWireFixture() throws {
+        let file = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "recovery-applying", withExtension: "json"))
+        let result = try XCTUnwrap(FlintProtectionStatus.decode(Data(contentsOf: file), now: now))
+        XCTAssertEqual(result.state, .degraded)
+        XCTAssertEqual(result.degradedReasons, ["recovery_applying"])
+        XCTAssertNil(result.headline)
+        XCTAssertTrue(result.causes.allSatisfy { !$0.enforcing })
+        XCTAssertEqual(result.pass.recoveryUntil, now.addingTimeInterval(3600))
     }
 }

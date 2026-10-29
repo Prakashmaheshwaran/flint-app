@@ -3,6 +3,9 @@ import Foundation
 /// Privacy-safe, advisory projection. It contains no selections, tokens or target keys and
 /// must never authorize an enforcement mutation. Dates on the wire are seconds since 1970.
 public struct FlintProtectionStatusSnapshot: Codable, Equatable, Sendable {
+    /// Additive string codes, not a wire enum. Readers degrade unknown future reasons.
+    static let knownDegradedReasons: Set<String> = ["record_unreadable", "state_unavailable", "not_authorized",
+        "time_uncertain", "registration_failed", "registration_unobserved", "recovery_applying"]
     public enum State: String, Codable, Sendable {
         case protected, notProtected = "not_protected", degraded, suspended, unavailable
     }

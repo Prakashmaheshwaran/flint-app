@@ -31,7 +31,12 @@ extension FlintProtectionStatus {
         sessionTargets: (String) -> Bool = { FlintGroupStore()?.loadSessionSelection(sessionID: $0) != nil },
         effects: PublicationEffects = .system
     ) -> FlintProtectionStatusSnapshot {
-        let pass = ledger().flatMap { try? $0.peek().get() }?.pass
+        let loaded = ledger().flatMap { try? $0.peek().get() }
+        let state = loaded.flatMap { $0.hasValidPassRecovery ? $0 : nil }
+        let instant = FlintLedgerInstant(wall: now, monotonic: environment.clock.monotonic(),
+            bootID: environment.clock.bootSessionID())
+        let recovering = state?.pass.status(at: instant, hasActiveCommitment: true).isRecovering ?? false
+        let recoveryApplying = state?.emergencyRecovery?.needsApplication(isRecovering: recovering) ?? false
         let active = environment.loadActiveSession()
         // An open-ended Easy session has no out-of-app end to register; it counts as armed only
         // while its own frozen target snapshot exists (what the shield is applied from).
@@ -44,11 +49,11 @@ extension FlintProtectionStatus {
         if let limits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: defaults, at: now, migrating: false) {
             FlintLimitThresholds.prune(keeping: limits, in: defaults)
         }
-        let inputs = currentInputs(now: now, defaults: defaults, ledgerPass: pass,
+        let inputs = currentInputs(now: now, defaults: defaults, ledgerPass: state?.pass,
                                    thresholdReached: FlintLimitThresholds.reachedToday(now: now, in: defaults),
                                    sessionArmed: armed,
                                    sessionKind: active?.name == pomodoroSessionName ? .pomodoro : .session,
-                                   environment: environment)
+                                   environment: environment, recoveryApplying: recoveryApplying)
         let snapshot = FlintProtectionStatusBuilder.make(inputs).withWriter(writer.rawValue)
         // Compare with whatever is stored, valid or not: an unchanged unavailable projection
         // must not reload widgets either.

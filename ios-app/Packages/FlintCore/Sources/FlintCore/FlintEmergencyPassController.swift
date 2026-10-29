@@ -130,6 +130,10 @@ public struct FlintPassRecovery: Codable, Equatable, Sendable {
         cancelledCarriers = []
     }
 
+    func needsApplication(isRecovering: Bool) -> Bool {
+        releasePending || eventPending || !disabledRules.isEmpty || (!isRecovering && resumePending)
+    }
+
     var isValid: Bool {
         version == 1 && !operationID.isEmpty && operationID.utf8.count <= 128
             && !scope.revision.isEmpty && scope.revision.utf8.count <= 512 && scope.hasActiveCommitment
@@ -218,9 +222,7 @@ public struct FlintEmergencyPassStatus: Equatable, Sendable {
     public let recovery: FlintPassRecovery?
     public let timeUncertain: Bool
     public var needsApplication: Bool {
-        guard let recovery else { return false }
-        return recovery.releasePending || recovery.eventPending || !recovery.disabledRules.isEmpty
-            || (!pass.isRecovering && recovery.resumePending)
+        recovery?.needsApplication(isRecovering: pass.isRecovering) ?? false
     }
     public var isAvailable: Bool { pass.eligibility == .available && !pass.isRecovering && !needsApplication }
 
@@ -393,7 +395,8 @@ public final class FlintEmergencyPassController {
         guard let ledger = env.ledger() else { return .failure(.unavailable) }
         let result = ledger.transaction { state -> Result<FlintEmergencyPassStatus, FlintEmergencyPassError> in
             let now = FlintLedgerInstant(clock: env.clock)
-            guard Self.hasValidRecovery(state) else { return .failure(.unavailable) }
+            guard now.wall.timeIntervalSinceReferenceDate.isFinite, now.monotonic.isFinite, now.monotonic >= 0,
+                  Self.hasValidRecovery(state) else { return .failure(.unavailable) }
             state.pass.checkpoint(at: now)
             guard Self.hasValidRecovery(state), state.pass.policyUsage != .unknown else { return .failure(.unavailable) }
             guard let scope = try? env.scope(state, now) else { return .failure(.scopeUnavailable) }

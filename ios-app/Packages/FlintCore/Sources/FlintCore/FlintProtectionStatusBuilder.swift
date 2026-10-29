@@ -40,6 +40,9 @@ public enum FlintProtectionStatusBuilder {
         public var observed: Bool
         /// False degrades this rule without erasing unrelated observed enforcement.
         public var available: Bool
+        /// A committed pass outbox still needs release/disable/resume acknowledgement.
+        /// Advisory only: never use this projection to authorize a mutation.
+        public var recoveryApplying: Bool
         public var currentWindow: DateInterval?
         public var nextWindow: DateInterval?
         public var active: Bool
@@ -111,7 +114,7 @@ public enum FlintProtectionStatusBuilder {
         public init(now: Date, quotaCalendar: Calendar = .current, activeSession: SessionInput? = nil,
                     recordUnreadable: Bool = false, rules: [RuleInput] = [], authorized: Bool?,
                     pass: Snapshot.Pass, timeIntegrity: FlintTimeIntegrity.Verdict?, available: Bool = true,
-                    timeIntegrityApplies: Bool = true) {
+                    timeIntegrityApplies: Bool = true, recoveryApplying: Bool = false) {
             self.now = now
             self.quotaCalendar = quotaCalendar
             self.activeSession = activeSession
@@ -122,6 +125,7 @@ public enum FlintProtectionStatusBuilder {
             self.timeIntegrity = timeIntegrity
             self.timeIntegrityApplies = timeIntegrityApplies
             self.available = available
+            self.recoveryApplying = recoveryApplying
         }
     }
 
@@ -138,15 +142,17 @@ public enum FlintProtectionStatusBuilder {
         }
         if unavailable { reasons.insert("state_unavailable") }
         if inputs.authorized == false { reasons.insert("not_authorized") }
+        if inputs.recoveryApplying { reasons.insert("recovery_applying") }
         let timeTrusted = !inputs.timeIntegrityApplies || inputs.timeIntegrity == .consistent
         if inputs.timeIntegrityApplies && inputs.timeIntegrity != nil && !timeTrusted { reasons.insert("time_uncertain") }
         let recovery = inputs.pass.recoveryUntil.flatMap { $0 > now ? $0 : nil }
-        let canEnforce = !unavailable && inputs.authorized == true && timeTrusted && recovery == nil
+        let canEnforce = !unavailable && inputs.authorized == true && timeTrusted && recovery == nil && !inputs.recoveryApplying
         var boundaries = [now.addingTimeInterval(24 * 3600)]
         var causes: [Snapshot.Cause] = []
         var session: Snapshot.Session?
         var occurrences: [Snapshot.Occurrence] = []
         if let recovery { boundaries.append(recovery) }
+        if inputs.recoveryApplying { boundaries.append(now.addingTimeInterval(60)) }
         if let next = inputs.pass.nextAvailableAt, next > now { boundaries.append(next) }
 
         if let input = inputs.activeSession {
@@ -158,7 +164,7 @@ public enum FlintProtectionStatusBuilder {
             } else if input.logicalEnd.map({ now < $0 }) ?? true {
                 if let end = input.logicalEnd { boundaries.append(end) }
                 if !input.armed { reasons.insert("registration_failed") }
-                if input.armed && !inputs.recordUnreadable && !unavailable && recovery == nil {
+                if input.armed && !inputs.recordUnreadable && !unavailable && recovery == nil && !inputs.recoveryApplying {
                     session = Snapshot.Session(id: active.id, kind: input.kind, name: active.name,
                         tier: active.breakLevel, startedAt: active.startedAt, logicalEnd: input.logicalEnd,
                         origin: input.origin, armed: true)
@@ -209,6 +215,7 @@ public enum FlintProtectionStatusBuilder {
         let headline = causes.first(where: \.enforcing)
         let state: Snapshot.State
         if unavailable { state = .unavailable }
+        else if inputs.recoveryApplying { state = .degraded }
         else if recovery != nil { state = .suspended }
         else if !reasons.isEmpty { state = .degraded }
         else if headline != nil { state = .protected }
