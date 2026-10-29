@@ -107,7 +107,10 @@ final class FlintRuleArbiterTests: XCTestCase {
             var stronger = old; stronger.schedule.endHour = 18
             let arbiter = FlintRuleArbiter(environment: h.environment)
             let ticket = try confirmation(arbiter.upsert(stronger))
-            if fail { h.center.refused = ["flint.rule.work.r2"] }
+            if fail {
+                var refused = old; refused.protection?.activityRevision = 2
+                h.center.refused = [refused.activityName]
+            }
             h.center.onStart = { _ in
                 XCTAssertNotNil(h.center.held[.init(old.activityName)], "old end must still be armed")
                 XCTAssertEqual(h.load(FlintScheduleRule.self).first?.schedule.endHour, 17, "arm precedes persistence")
@@ -256,7 +259,10 @@ final class FlintRuleArbiterTests: XCTestCase {
             let ticket = try confirmation(arbiter.upsert(weaker))
             guard case let .queued(end) = arbiter.upsert(weaker, confirmation: ticket) else { return XCTFail() }
             h.now = end
-            if refuse { h.center.refused = ["flint.rule.work.r3"] }
+            if refuse {
+                var refused = old; refused.protection?.activityRevision = 3
+                h.center.refused = [refused.activityName]
+            }
             _ = FlintSchedulesController(environment: h.environment).reload()
             let saved = try XCTUnwrap(h.load(FlintScheduleRule.self).first)
             XCTAssertEqual(saved.schedule.endHour, refuse ? 17 : 16)
@@ -330,6 +336,56 @@ final class FlintRuleArbiterTests: XCTestCase {
         var other = old; other.name = "Duplicate"
         XCTAssertEqual(FlintSchedulesController(environment: h.environment).upsert(other, creating: true), .staleRevision)
         XCTAssertEqual(h.load(FlintScheduleRule.self), [old])
+    }
+
+    func testSameIDRecreationMintsNewIncarnationAndRejectsOldConfirmationsAndCallbacksPC10PC64PC66() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let old = h.install(h.schedule(tier: .easy))
+        let arbiter = FlintRuleArbiter(environment: h.environment)
+        let ticket = try confirmation(arbiter.delete(FlintScheduleRule.self, id: old.id,
+            revision: old.revision, confirmation: nil))
+        XCTAssertEqual(arbiter.delete(FlintScheduleRule.self, id: old.id,
+            revision: old.revision, confirmation: ticket), .applied)
+        XCTAssertEqual(arbiter.upsert(old, creating: true), .applied, "even a reused draft must receive a fresh incarnation")
+        let recreated = try XCTUnwrap(h.load(FlintScheduleRule.self).first)
+        XCTAssertNotEqual(recreated.protection?.incarnation, old.protection?.incarnation)
+        XCTAssertEqual(recreated.protection?.revision, 1)
+        XCTAssertNotEqual(recreated.activityName, old.activityName)
+        XCTAssertEqual(FlintRuleActivity.ruleID(recreated.activityName, prefix: "flint.rule."), old.id)
+        XCTAssertEqual(arbiter.delete(FlintScheduleRule.self, id: old.id,
+            revision: recreated.revision, confirmation: ticket), .staleRevision)
+        let cleared = h.cleared.count
+        _ = FlintRuleMonitor(environment: h.environment).handle(.end, activity: old.activityName)
+        XCTAssertEqual(h.cleared.count, cleared)
+        XCTAssertNotNil(h.center.held[.init(recreated.activityName)])
+    }
+
+    func testSameIDRecreationStartsNewHarderCauseButOffOnPreservesIncarnationAndCountPC18() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let old = h.install(FlintLimitRule(id: "time", name: "Time", thresholdMinutes: 10,
+            breakLevel: .harder, protection: .init(timeZoneID: "UTC")))
+        let arbiter = FlintRuleArbiter(environment: h.environment)
+        guard case let .waiting(off, _, _) = arbiter.setEnabled(FlintLimitRule.self, id: old.id,
+            enabled: false, revision: old.revision, confirmation: nil) else { return XCTFail() }
+        h.advance(60)
+        XCTAssertEqual(arbiter.setEnabled(FlintLimitRule.self, id: old.id, enabled: false,
+            revision: old.revision, confirmation: off), .applied)
+        let disabled = try XCTUnwrap(h.load(FlintLimitRule.self).first)
+        XCTAssertEqual(arbiter.setEnabled(FlintLimitRule.self, id: old.id, enabled: true,
+            revision: disabled.revision, confirmation: nil), .applied)
+        let enabled = try XCTUnwrap(h.load(FlintLimitRule.self).first)
+        XCTAssertEqual(enabled.protection?.incarnation, old.protection?.incarnation)
+        guard case let .waiting(deletion, remaining, _) = arbiter.delete(FlintLimitRule.self,
+            id: old.id, revision: enabled.revision, confirmation: nil) else { return XCTFail() }
+        XCTAssertEqual(remaining, 300, "off/on cannot reset the current cause's committed count")
+        h.advance(300)
+        XCTAssertEqual(arbiter.delete(FlintLimitRule.self, id: old.id,
+            revision: enabled.revision, confirmation: deletion), .applied)
+        XCTAssertEqual(arbiter.upsert(old, creating: true), .applied)
+        let recreated = try XCTUnwrap(h.load(FlintLimitRule.self).first)
+        XCTAssertNotEqual(recreated.protection?.incarnation, old.protection?.incarnation)
+        var draft = recreated; draft.thresholdMinutes += 5
+        guard case .waiting(_, remaining: 60, required: 60) = arbiter.upsert(draft) else { return XCTFail("new cause starts at its first wait") }
     }
 
     func testConfirmationFromPreviousOccurrenceCannotQueueAgainstNextOccurrencePC10() throws {

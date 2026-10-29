@@ -12,6 +12,7 @@ final class FlintRuleCallbackTests: XCTestCase {
         guard case let .confirmationRequired(ticket, _) = arbiter.upsert(next) else { return XCTFail() }
         XCTAssertEqual(arbiter.upsert(next, confirmation: ticket), .applied)
         let saved = try XCTUnwrap(h.load(FlintScheduleRule.self).first)
+        XCTAssertEqual(saved.protection?.incarnation, old.protection?.incarnation)
         XCTAssertNotEqual(saved.monitorName, old.monitorName)
         h.now = old.protection!.occurrence!.end
         let monitor = FlintRuleMonitor(environment: h.environment)

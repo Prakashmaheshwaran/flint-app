@@ -29,7 +29,7 @@ public struct FlintScheduleArmFailure: Equatable, Sendable {
         self.selectionIssue = selectionIssue
         self.selectionContext = selectionContext
         self.registrationReason = registrationReason
-        self.activityName = activityName ?? "flint.rule.\(ruleID).r1"
+        self.activityName = activityName ?? "flint.rule.\(ruleID)"
     }
 
     /// Why the requested monitoring is not verified. A prior shield can still be present.

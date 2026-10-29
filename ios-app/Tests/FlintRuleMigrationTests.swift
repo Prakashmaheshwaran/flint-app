@@ -23,6 +23,7 @@ final class FlintRuleMigrationTests: XCTestCase {
         XCTAssertEqual(first[0].protection?.requiresTierReview, true)
         XCTAssertEqual(first[0].protection?.contractVersion, 12)
         XCTAssertEqual(first[0].protection?.revision, 1)
+        XCTAssertNotNil(first[0].protection.flatMap { UUID(uuidString: $0.incarnation) })
         XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.limits.original), source)
         let migratedBytes = h.defaults.data(forKey: FlintRuleStoreKey.limits.rawValue)
         XCTAssertEqual(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults, at: h.now), first)
@@ -45,6 +46,18 @@ final class FlintRuleMigrationTests: XCTestCase {
         object.removeValue(forKey: "breakLevel")
         h.defaults.set(try JSONSerialization.data(withJSONObject: [object]), forKey: FlintRuleStoreKey.limits.rawValue)
         XCTAssertNil(FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: h.defaults))
+    }
+
+    func testPartialCurrentMetadataCannotMintAnIncarnationDuringReadPC71() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let rule = h.schedule(tier: .hardcore)
+        var fields = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(rule)) as? [String: Any])
+        var metadata = try XCTUnwrap(fields["protection"] as? [String: Any])
+        metadata.removeValue(forKey: "incarnation"); fields["protection"] = metadata
+        let source = try JSONSerialization.data(withJSONObject: [fields])
+        h.defaults.set(source, forKey: FlintRuleStoreKey.schedules.rawValue)
+        XCTAssertNil(FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: h.defaults))
+        XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.schedules.rawValue), source)
     }
 
     func testUnrepresentableBudgetAndRevisionAreUnavailableWithoutTrappingPC71() throws {

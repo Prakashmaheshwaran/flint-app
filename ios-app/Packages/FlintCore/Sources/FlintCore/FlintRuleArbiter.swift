@@ -144,6 +144,7 @@ final class FlintRuleArbiter {
                 for mutation in mutations {
                     if !all.contains(where: { $0.id == mutation.id }), var placeholder = mutation.proposed {
                         placeholder.enabled = false
+                        placeholder.protection?.incarnation = UUID().uuidString
                         all.append(placeholder)
                     }
                     guard let index = all.firstIndex(where: { $0.id == mutation.id }) else { return .unavailable }
@@ -203,6 +204,7 @@ final class FlintRuleArbiter {
                     all.removeAll { $0.id == mutation.id }; continue
                 }
                 var metadata = old?.protection ?? next.protection ?? .init()
+                if old == nil { metadata.incarnation = UUID().uuidString }
                 let impact = old.flatMap { try? next.impact(comparedTo: $0, at: now) }
                 metadata.revision = (old?.revision ?? 0) + 1
                 if impact != .cosmetic || old?.enabled != next.enabled {
@@ -284,6 +286,7 @@ final class FlintRuleArbiter {
                 if queue.action == .delete { all.removeAll { $0.id == old.id }; continue }
                 guard let data = queue.snapshot, var next = try? JSONDecoder().decode(Rule.self, from: data),
                       next.id == old.id, next.revision == old.revision + 1, next.validationIssue == nil,
+                      next.protection?.incarnation == old.protection?.incarnation,
                       next.protection?.queuedChange == nil,
                       (try? next.fingerprint(action: queue.action.rawValue)) == queue.fingerprint else { return failed() }
                 let nextOccurrence = next.templateOccurrence(at: now)
@@ -423,7 +426,7 @@ final class FlintRuleArbiter {
     }
     private func notify() { NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil) }
     static func causeID<Rule: FlintGatedRule>(_ rule: Rule, window: FlintRuleWindow?) -> String {
-        "\(Rule.domain.rawValue):\(rule.id)@\(window?.identity ?? "inactive")"
+        "\(Rule.domain.rawValue):\(rule.id):\(rule.protection?.incarnation ?? "legacy")@\(window?.identity ?? "inactive")"
     }
 }
 #endif

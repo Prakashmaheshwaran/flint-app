@@ -10,11 +10,12 @@ final class FlintOpenLimitsTests: XCTestCase {
     // MARK: Rule model + persistence
 
     func testOpenLimitRuleRoundTripsAndNames() throws {
-        let rule = FlintOpenLimitRule(name: "Social", opensAllowed: 3, breakLevel: .harder)
+        let rule = FlintOpenLimitRule(name: "Social", opensAllowed: 3, breakLevel: .harder,
+            protection: .init(incarnation: "00000000-0000-0000-0000-000000000001"))
         let data = try JSONEncoder().encode(rule)
         XCTAssertEqual(rule, try JSONDecoder().decode(FlintOpenLimitRule.self, from: data))
         XCTAssertEqual(rule.storeName, "flintO.\(rule.id)")
-        XCTAssertEqual(rule.activityName, "flint.openLimit.\(rule.id).r1")
+        XCTAssertEqual(rule.activityName, "flint.openLimit.\(rule.id).i00000000000000000000000000000001.r1")
     }
 
     func testOpenLimitRulesSaveLoadRoundTrip() throws {

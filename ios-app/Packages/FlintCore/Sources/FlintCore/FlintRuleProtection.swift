@@ -3,14 +3,21 @@ import Foundation
 public enum FlintRuleActivity {
     public static func name(prefix: String, id: String, protection: FlintRuleProtection?) -> String {
         guard let protection, !protection.usesLegacyActivityName else { return prefix + id }
-        return "\(prefix)\(id).r\(protection.activityRevision)"
+        return "\(prefix)\(id).i\(protection.incarnation.replacingOccurrences(of: "-", with: "").lowercased()).r\(protection.activityRevision)"
     }
 
     static func ruleID(_ name: String, prefix: String) -> String? {
         guard name.hasPrefix(prefix) else { return nil }
         let suffix = String(name.dropFirst(prefix.count))
         if let marker = suffix.range(of: ".r", options: .backwards),
-           Int(suffix[marker.upperBound...]) != nil { return String(suffix[..<marker.lowerBound]) }
+           Int(suffix[marker.upperBound...]) != nil {
+            let identity = String(suffix[..<marker.lowerBound])
+            if let incarnation = identity.range(of: ".i", options: .backwards) {
+                let value = identity[incarnation.upperBound...]
+                if value.count == 32, value.allSatisfy({ $0.isHexDigit }) { return String(identity[..<incarnation.lowerBound]) }
+            }
+            return identity
+        }
         return suffix
     }
 }
@@ -18,6 +25,9 @@ public enum FlintRuleActivity {
 /// Versioned, persisted rule authority. A queued edit changes the template revision without
 /// changing the active registration's revision or its frozen window (ADR-012 PC-10/11/14).
 public struct FlintRuleProtection: Codable, Equatable, Sendable {
+    /// Minted by the arbiter on create, preserved through edits/queues/off-on. A reused rule
+    /// ID cannot inherit another incarnation's native callback, wait count or Open credit.
+    public var incarnation: String
     public var revision: Int
     public var contractVersion: Int
     public var activityRevision: Int
@@ -30,7 +40,8 @@ public struct FlintRuleProtection: Codable, Equatable, Sendable {
 
     public init(revision: Int = 1, timeZoneID: String = TimeZone.current.identifier,
                 legacyRightsUntil: Date? = nil, usesLegacyActivityName: Bool = false,
-                requiresTierReview: Bool = false) {
+                requiresTierReview: Bool = false, incarnation: String = UUID().uuidString) {
+        self.incarnation = incarnation
         self.revision = revision
         contractVersion = 12
         activityRevision = revision
@@ -41,7 +52,8 @@ public struct FlintRuleProtection: Codable, Equatable, Sendable {
     }
 
     var isValid: Bool {
-        contractVersion == 12 && revision > 0 && revision < Int.max / 2 && activityRevision > 0 && activityRevision <= revision
+        contractVersion == 12 && UUID(uuidString: incarnation) != nil
+            && revision > 0 && revision < Int.max / 2 && activityRevision > 0 && activityRevision <= revision
             && TimeZone(identifier: timeZoneID) != nil
             && (occurrence?.isValid ?? true)
             && (queuedChange.map { $0.baseRevision == revision && $0.window.isValid } ?? true)
