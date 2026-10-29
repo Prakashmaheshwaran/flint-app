@@ -738,8 +738,7 @@ private fun RuleCard(
                 if (status?.activeNow == true) {
                     Spacer(Modifier.height(FlintSpacing.xs))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        FlintStatusDot(MaterialTheme.colorScheme.primary, pulsing = true,
-                            stateDescription = stringResource(R.string.rules_active_now))
+                        FlintStatusDot(MaterialTheme.colorScheme.primary, pulsing = true)
                         Spacer(Modifier.width(FlintSpacing.xs))
                         Text(
                             text = stringResource(R.string.rules_active_now),

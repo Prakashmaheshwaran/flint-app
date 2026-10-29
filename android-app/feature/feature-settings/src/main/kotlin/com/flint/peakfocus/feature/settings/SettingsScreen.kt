@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.tooling.preview.Preview
@@ -212,7 +213,7 @@ private fun HealthBannerCard(banner: BannerUi) {
     FlintCard(containerColor = container, contentColor = headlineColor) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             when (banner.level) {
-                HealthLevel.HEALTHY -> FlintStatusDot(MaterialTheme.colorScheme.primary, stateDescription = banner.headline)
+                HealthLevel.HEALTHY -> FlintStatusDot(MaterialTheme.colorScheme.primary)
                 HealthLevel.DEGRADED -> Icon(
                     imageVector = Icons.Filled.Warning,
                     contentDescription = null,
@@ -245,10 +246,14 @@ private fun HealthBannerCard(banner: BannerUi) {
  * button (consent language before the hand-off — ADR-007); the redirect fires only on the tap.
  */
 @Composable
-private fun PermissionCard(row: PermissionRowUi, onFix: () -> Unit) {
+internal fun PermissionCard(row: PermissionRowUi, onFix: () -> Unit) {
     val grantState = stringResource(if (row.granted) R.string.health_on else R.string.health_off)
     FlintCard {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // One TalkBack stop names the grant and its state; the fix button stays separate.
+        Row(
+            modifier = Modifier.semantics(mergeDescendants = true) { stateDescription = grantState },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             // Dot vocabulary: primary = granted, error = enforcement at risk, muted = the
             // merely-recommended grant missing (never dressed as mandatory).
             FlintStatusDot(
@@ -257,7 +262,6 @@ private fun PermissionCard(row: PermissionRowUi, onFix: () -> Unit) {
                     row.affectsEnforcement -> MaterialTheme.colorScheme.error
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 },
-                stateDescription = grantState,
             )
             Spacer(Modifier.width(FlintSpacing.sm))
             Column(Modifier.weight(1f)) {
@@ -274,7 +278,8 @@ private fun PermissionCard(row: PermissionRowUi, onFix: () -> Unit) {
                 )
             }
             Spacer(Modifier.width(FlintSpacing.cardGap))
-            FlintBadge(text = grantState)
+            // The row's state description already speaks On/Off; the uppercase pill is visual.
+            FlintBadge(text = grantState, modifier = Modifier.clearAndSetSemantics {})
         }
         if (!row.granted) {
             Spacer(Modifier.height(FlintSpacing.sm))
@@ -313,7 +318,7 @@ private fun collapseTransition(): ExitTransition =
 
 /** Static, local, per-manufacturer survival steps — expandable, no deep links, no network. */
 @Composable
-private fun OemGuidanceCard(guidance: OemGuidance) {
+internal fun OemGuidanceCard(guidance: OemGuidance) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     val expansionState = stringResource(if (expanded) R.string.settings_expanded else R.string.settings_collapsed)
     val reducedMotion = rememberReducedMotion()
