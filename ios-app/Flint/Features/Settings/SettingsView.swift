@@ -211,7 +211,10 @@ struct SettingsView: View {
                 }
                 ForEach(health.domains.keys.sorted(), id: \.self) { domain in
                     if let report = health.domains[domain] {
-                        if domain == "webRestrictions" {
+                        if let until = report.suspendedUntil {
+                            Text("\(domainTitle(domain)): suspended for recovery until \(FlintEmergencyPassStatus.dateText(until))")
+                                .font(FlintFont.text(13)).foregroundStyle(FlintBrand.stone)
+                        } else if domain == "webRestrictions" {
                             Text("Website rules: \(report.armed) applied (not independently verifiable)")
                                 .font(FlintFont.text(13)).foregroundStyle(FlintBrand.stone)
                         } else {
@@ -266,7 +269,8 @@ struct SettingsView: View {
                 Circle().fill(healthy ? FlintBrand.ember : FlintBrand.danger).frame(width: 12, height: 12)
             }
             .accessibilityHidden(true)
-            Text(healthy ? "No recorded protection issues" : "Protection needs attention")
+            Text(passStatus?.pass.isRecovering == true ? "Protection suspended for recovery"
+                : healthy ? "No recorded protection issues" : "Protection needs attention")
                 .font(FlintFont.text(16, weight: .medium)).foregroundStyle(FlintBrand.bone)
                 .fixedSize(horizontal: false, vertical: true)
         }

@@ -13,6 +13,15 @@ enum FlintSessionProtectionReport {
         scheduleIsCurrent: Bool = true,
         now: Date = Date()
     ) -> FlintArmingHealth.DomainReport {
+        if recovery.recoveryApplying {
+            return .init(enabled: active == nil ? 0 : 1, attempted: 0, armed: 0,
+                failures: [.init(activityName: "session", reason: "Emergency Pass recovery needs reconciliation. Open Flint to retry.")],
+                updatedAt: now, observedActivities: [])
+        }
+        if let until = recovery.suspendedUntil {
+            return .init(enabled: active == nil ? 0 : 1, attempted: 0, armed: 0, failures: [],
+                updatedAt: now, observedActivities: [], suspendedUntil: until)
+        }
         // Presence is a fresh fact: a record can become unreadable between recovery and the
         // following decode. Neither case is an authoritative "no session" or an arm attempt.
         if recovery.recordUnreadable || (active == nil && hasActiveSessionRecord) {

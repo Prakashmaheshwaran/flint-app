@@ -51,7 +51,7 @@ public final class FlintSchedulesController {
 
     public func rules() -> [FlintScheduleRule] {
         guard let rules = environment.rulesForDisplay(FlintScheduleRule.self) else {
-            environment.record("schedules", FlintDesiredRules.unavailable("schedules", previous: environment.loadHealth()))
+            environment.recordState("schedules", FlintDesiredRules.unavailable("schedules", previous: environment.loadHealth()))
             return []
         }
         return rules
@@ -161,7 +161,7 @@ public final class FlintSchedulesController {
     @discardableResult
     public func reload() -> [FlintScheduleArmFailure] {
         guard let failures = FlintRuleStoreLock.withLock(environment: environment, { reloadLocked() }) else {
-            environment.record("schedules", FlintDesiredRules.unavailable("schedules", previous: environment.loadHealth()))
+            environment.recordState("schedules", FlintDesiredRules.unavailable("schedules", previous: environment.loadHealth()))
             return []
         }
         return failures
@@ -169,12 +169,12 @@ public final class FlintSchedulesController {
 
     private func reloadLocked() -> [FlintScheduleArmFailure] {
         guard FlintRuleArbiter(environment: environment).applyQueued(FlintScheduleRule.self) else {
-            environment.record("schedules", FlintDesiredRules.unavailable("schedules", previous: environment.loadHealth()))
+            environment.recordState("schedules", FlintDesiredRules.unavailable("schedules", previous: environment.loadHealth()))
             return []
         }
         guard let all = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: environment.defaults,
             recoveryDirectory: environment.recoveryDirectory) else {
-            environment.record("schedules", FlintDesiredRules.unavailable("schedules", previous: environment.loadHealth()))
+            environment.recordState("schedules", FlintDesiredRules.unavailable("schedules", previous: environment.loadHealth()))
             return []
         }
         let plan = Self.armPlan(for: all.filter { ($0.oneShot?.end ?? .distantFuture) > environment.clock.now() })
@@ -199,7 +199,7 @@ public final class FlintSchedulesController {
                 FlintRuleCleanup.clearRemoved(name, rules: all, environment: environment)
             })
         FlintScheduleRegistrationState.save(plan.arm, observed: report.observedActivities ?? [], to: environment.defaults)
-        environment.record("schedules", report)
+        environment.recordState("schedules", report)
         return plan.failures + plan.arm.compactMap { rule in
             guard let failure = report.failures.first(where: { $0.activityName == rule.monitorName }) else { return nil }
             return FlintScheduleArmFailure(ruleID: rule.id, ruleName: rule.name, issue: nil,

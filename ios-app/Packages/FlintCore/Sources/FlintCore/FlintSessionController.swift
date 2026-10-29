@@ -26,6 +26,8 @@ public enum FlintSessionError: Error, LocalizedError, Equatable {
     case replacementWaiting(remaining: TimeInterval)
     /// Protection state couldn't be read, so no weakening is allowed (ADR-012 §8).
     case protectionStateUnavailable
+    case resumeProtectionFirst
+    case focusCycleRequired
     /// A Harder wait has passed, but a background request (Shortcut, Focus) never completes it:
     /// the final confirmation happens in Flint (ADR-012 §2).
     case confirmInFlint
@@ -55,6 +57,10 @@ public enum FlintSessionError: Error, LocalizedError, Equatable {
             return "The running session is Harder: wait \(Self.minutesText(remaining)), then ask again to replace it."
         case .protectionStateUnavailable:
             return "Flint couldn't read its protection state, so nothing was changed. Open Flint to check."
+        case .resumeProtectionFirst:
+            return "Resume protection first. Emergency Pass recovery is active; open Flint to resume protection now."
+        case .focusCycleRequired:
+            return "Turn this Focus off and on again before starting another Focus session."
         case .confirmInFlint:
             return "The wait is over, but the running session is Harder: open Flint to confirm the change."
         case .needsConfirmation:
@@ -167,8 +173,6 @@ public protocol FlintSessionStateStoring: AnyObject {
     func saveSessionSelection(_ selection: FamilyActivitySelection, sessionID: String)
     func loadSessionSelection(sessionID: String) -> FamilyActivitySelection?
     func clearSessionSelection()
-    func emergencyPassLastUsed() -> Date?
-    func recordEmergencyPassUse(_ date: Date)
     /// Positive evidence the shared state was read, not an empty locked or unavailable
     /// container: only then is a missing record "no session" (ADR-012 §8).
     func isProtectionStateReadable() -> Bool
@@ -234,6 +238,10 @@ public struct FlintSessionEnvironment {
     /// Blocks the calling thread for the given seconds: the monitor waits out an end callback
     /// that arrived up to `FlintTimeIntegrity.endSlack` early.
     public var wait: (TimeInterval) -> Void
+    /// Live paths drain accepted pass work before any ordinary session transition.
+    public var reconcileEmergencyPass: () -> Bool
+    public var prepareNewSession: (String?) -> Result<Void, FlintEmergencyPassError>
+    public var recoveryGate: () -> FlintPassRecoveryGate
 
     public init(
         store: @escaping () -> FlintSessionStateStoring?,
@@ -248,7 +256,10 @@ public struct FlintSessionEnvironment {
         publishStatus: @escaping () -> Void = {},
         transitionLock: @escaping () -> FlintSessionTransitionLock? = { nil },
         monitorLockTimeout: TimeInterval = 6,
-        wait: @escaping (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }
+        wait: @escaping (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) },
+        reconcileEmergencyPass: @escaping () -> Bool = { true },
+        prepareNewSession: @escaping (String?) -> Result<Void, FlintEmergencyPassError> = { _ in .success(()) },
+        recoveryGate: @escaping () -> FlintPassRecoveryGate = { .enforcing }
     ) {
         self.store = store
         self.shield = shield
@@ -263,6 +274,9 @@ public struct FlintSessionEnvironment {
         self.transitionLock = transitionLock
         self.monitorLockTimeout = monitorLockTimeout
         self.wait = wait
+        self.reconcileEmergencyPass = reconcileEmergencyPass
+        self.prepareNewSession = prepareNewSession
+        self.recoveryGate = recoveryGate
     }
 
     public static var live: FlintSessionEnvironment {
@@ -270,7 +284,8 @@ public struct FlintSessionEnvironment {
             store: { FlintGroupStore() },
             shield: LiveSessionShield(),
             webRestrictions: FlintSessionWebRestrictionAdapter(
-                writer: FlintManagedWebRestrictionWriter(), configuration: { .loadForEnforcement() }
+                writer: FlintManagedWebRestrictionWriter(), configuration: { .loadForEnforcement() },
+                recoveryGate: { FlintPassRecoveryGate.read() }, clock: .system
             ),
             registrar: LiveSessionRegistrar(),
             isAuthorized: { AuthorizationCenter.shared.authorizationStatus == .approved },
@@ -278,7 +293,10 @@ public struct FlintSessionEnvironment {
             healthDefaults: { .flintGroup },
             ledger: { FlintProtectionLedger.appGroup() },
             publishStatus: { FlintProtectionStatus.publishAfterCommit() },
-            transitionLock: { FlintSessionTransitionLock.appGroup() }
+            transitionLock: { FlintSessionTransitionLock.appGroup() },
+            reconcileEmergencyPass: { FlintEmergencyPassController.prepareForPolicyMutation() },
+            prepareNewSession: { FlintEmergencyPassController().prepareForNewSession(focusOwnerID: $0) },
+            recoveryGate: { FlintPassRecoveryGate.read() }
         )
     }
 }
@@ -310,6 +328,8 @@ public struct FlintSessionReconcileReport: Equatable, Sendable {
     public var transitionBusy = false
     /// A session record is stored but can't be read: its shield is kept, nothing is released.
     public var recordUnreadable = false
+    public var recoveryApplying = false
+    public var suspendedUntil: Date?
     public var timeVerdict: FlintTimeIntegrity.Verdict = .unverifiable
 }
 
@@ -366,9 +386,9 @@ public final class FlintSessionController {
     /// Emergency Pass, rule edits) can hold the transition around their own read-decide-persist
     /// and still call into this controller. nil = another process held it past the timeout and
     /// `body` didn't run. Lock order: this transition, then any ledger transaction.
-    public func withTransition<T>(_ body: () throws -> T) rethrows -> T? {
+    public func withTransition<T>(timeout: TimeInterval? = nil, _ body: () throws -> T) rethrows -> T? {
         Self.lock.lock(); defer { Self.lock.unlock() }
-        guard let transition = beginTransition() else { return nil }
+        guard let transition = beginTransition(timeout: timeout) else { return nil }
         defer { endTransition(transition) }
         return try body()
     }
@@ -428,6 +448,22 @@ public final class FlintSessionController {
         Self.lock.lock(); defer { Self.lock.unlock() }
         guard let transition = beginTransition() else { throw FlintSessionError.protectionStateUnavailable }
         defer { endTransition(transition) }
+
+        // This precedes even the idempotent request return: a pass-ended request must not
+        // appear protected or recreate its occurrence under the global exception.
+        let focusOwner = origin == .focusFilter ? ownerID ?? Self.focusFilterOwnerID : nil
+        if case let .failure(error) = env.prepareNewSession(focusOwner) {
+            switch error {
+            case .resumeProtectionFirst: throw FlintSessionError.resumeProtectionFirst
+            case .focusCycleRequired: throw FlintSessionError.focusCycleRequired
+            default: throw FlintSessionError.protectionStateUnavailable
+            }
+        }
+        switch env.recoveryGate() {
+        case .enforcing: break
+        case .suspended: throw FlintSessionError.resumeProtectionFirst
+        case .unavailable: throw FlintSessionError.protectionStateUnavailable
+        }
 
         guard let store = env.store() else { throw FlintSessionError.appGroupUnavailable }
         guard env.isAuthorized() else { throw FlintSessionError.notAuthorized }
@@ -634,6 +670,9 @@ public final class FlintSessionController {
         Self.lock.lock(); defer { Self.lock.unlock() }
         guard let transition = beginTransition() else { return .unavailable }
         defer { endTransition(transition) }
+        guard env.reconcileEmergencyPass() else {
+            return finishNaturalEndWithoutOutcome() ? .stopped : .unavailable
+        }
         let store = env.store()
         let now = env.clock.now()
         guard let session = store?.loadActiveSession() else {
@@ -682,10 +721,11 @@ public final class FlintSessionController {
 
     /// Unconditional teardown, kept for tests and for paths that already passed the policy. App
     /// entry points use `requestStop(route:confirmed:)`.
-    public func stop(route: FlintSessionEndRoute = .manualStop) {
+    func stop(route: FlintSessionEndRoute = .manualStop) {
         Self.lock.lock(); defer { Self.lock.unlock() }
         guard let transition = beginTransition() else { return }
         defer { endTransition(transition) }
+        guard env.reconcileEmergencyPass() else { _ = finishNaturalEndWithoutOutcome(); return }
         let store = env.store()
         guard let session = store?.loadActiveSession() else {
             env.shield.clear()
@@ -700,6 +740,7 @@ public final class FlintSessionController {
         Self.lock.lock(); defer { Self.lock.unlock() }
         guard let transition = beginTransition() else { return }
         defer { endTransition(transition) }
+        guard env.reconcileEmergencyPass() else { _ = finishNaturalEndWithoutOutcome(); return }
         let store = env.store()
         let now = env.clock.now()
         guard let session = store?.loadActiveSession(), isOver(session) else { return }
@@ -727,6 +768,42 @@ public final class FlintSessionController {
         // committed-operation records stay in the ledger's bounded memory.
         _ = env.ledger()?.transaction { $0.resetHarder(cause: session.id) }
         env.publishStatus()
+    }
+
+    /// Unknown pass storage cannot extend a positively known finite restriction. Retire only
+    /// at its logical end, without inventing a completed outcome: a later readable pass outbox
+    /// can still emit its accepted early end. Callers already hold the session transition.
+    private func finishNaturalEndWithoutOutcome(activity: String? = nil) -> Bool {
+        guard let store = env.store(), store.isProtectionStateReadable(), let session = store.loadActiveSession(),
+              activity == nil || session.monitorName == activity, isOver(session) else { return false }
+        env.shield.clear()
+        store.clearActiveSession(); store.clearSessionSelection()
+        env.registrar.stopMonitoring([session.monitorName])
+        env.publishStatus()
+        return true
+    }
+
+    /// Only the positively read-back termination outbox authorizes this route. In particular,
+    /// a late replay still ends at acceptance, even if the session's natural end has passed.
+    /// A successor or unreadable record is never cleared on the old operation's authority.
+    @discardableResult
+    func endCommittedEmergencyPass(_ committed: FlintActiveSession, at acceptedAt: Date) -> Bool {
+        withTransition {
+            guard let ledger = self.env.ledger(), case let .success(state) = ledger.peek(),
+                  state.hasValidPassRecovery, let recovery = state.emergencyRecovery,
+                  state.pass.lastOperationID == recovery.operationID, recovery.releasePending,
+                  recovery.acceptedAt.wall == acceptedAt, recovery.scope.sessions.contains(committed),
+                  let store = self.env.store(), store.isProtectionStateReadable() else { return false }
+            let current = store.loadActiveSession()
+            guard current != nil || !store.hasActiveSessionRecord() else { return false }
+            guard current == nil || (current?.id == committed.id && current?.startedAt == committed.startedAt) else { return false }
+            // A repaired registration may have changed its name; retire that actual owner.
+            self.end(current ?? committed, route: .emergencyPass, at: acceptedAt, in: store)
+            if let current, current.monitorName != committed.monitorName {
+                self.env.registrar.stopMonitoring([committed.monitorName])
+            }
+            return true
+        } ?? false
     }
 
     // MARK: Policy adapters (ADR-012)
@@ -831,6 +908,22 @@ public final class FlintSessionController {
             return busy
         }
         defer { endTransition(transition) }
+        guard env.reconcileEmergencyPass() else {
+            var applying = FlintSessionReconcileReport(outcome: finishNaturalEndWithoutOutcome() ? .finishedExpired : .running)
+            applying.recoveryApplying = true
+            return applying
+        }
+        switch env.recoveryGate() {
+        case .enforcing: break
+        case let .suspended(until):
+            var suspended = FlintSessionReconcileReport(outcome: .noSession)
+            suspended.suspendedUntil = until
+            return suspended
+        case .unavailable:
+            var unavailable = FlintSessionReconcileReport(outcome: finishNaturalEndWithoutOutcome() ? .finishedExpired : .running)
+            unavailable.recoveryApplying = true
+            return unavailable
+        }
         let store = env.store()
         let now = env.clock.now()
         guard let session = store?.loadActiveSession() else {
@@ -1042,6 +1135,10 @@ public final class FlintSessionController {
         // The monitor's callbacks are the app-closed path: always republish what they changed
         // (unchanged content skips the widget reload).
         defer { env.publishStatus() }
+        guard env.reconcileEmergencyPass(), env.recoveryGate().permitsApplication else {
+            _ = finishNaturalEndWithoutOutcome(activity: activity)
+            return
+        }
         let store = env.store()
         let now = env.clock.now()
         let session = store?.loadActiveSession()
@@ -1113,31 +1210,6 @@ public final class FlintSessionController {
         }
     }
 
-    // MARK: Emergency pass (free, one per week)
-
-    public func emergencyPassAvailable(now: Date? = nil) -> Bool {
-        FlintEmergencyPass.isAvailable(lastUsed: env.store()?.emergencyPassLastUsed(), now: now ?? env.clock.now())
-    }
-
-    /// Spend the weekly Emergency Pass to end a running Hardcore session early. Returns false if
-    /// there's no eligible Hardcore session or the pass isn't available yet.
-    @discardableResult
-    public func useEmergencyPass() -> Bool {
-        Self.lock.lock(); defer { Self.lock.unlock() }
-        guard let transition = beginTransition() else { return false }
-        defer { endTransition(transition) }
-        let store = env.store()
-        let now = env.clock.now()
-        guard let session = store?.loadActiveSession(), session.breakLevel == .hardcore,
-              !isOver(session) else {
-            return false
-        }
-        guard emergencyPassAvailable(now: now) else { return false }
-        store?.recordEmergencyPassUse(now)
-        FlintSessionLifecycle.didUsePass(session, at: now)
-        end(session, route: .emergencyPass, at: now, in: store)
-        return true
-    }
 }
 
 // MARK: - Live adapters

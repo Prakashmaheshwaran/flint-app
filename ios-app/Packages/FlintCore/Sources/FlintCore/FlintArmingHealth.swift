@@ -45,6 +45,8 @@ public struct FlintArmingHealth: Codable, Equatable {
         public var notAuthorized: Bool?
         public var rearmFailed: Bool?
         public var recordUnreadable: Bool?
+        /// Intentional Emergency Pass suspension, distinct from a failed registration.
+        public var suspendedUntil: Date?
 
         public init(
             enabled: Int,
@@ -55,7 +57,8 @@ public struct FlintArmingHealth: Codable, Equatable {
             observedActivities: [String]? = nil,
             notAuthorized: Bool? = nil,
             rearmFailed: Bool? = nil,
-            recordUnreadable: Bool? = nil
+            recordUnreadable: Bool? = nil,
+            suspendedUntil: Date? = nil
         ) {
             self.enabled = enabled
             self.attempted = attempted
@@ -66,6 +69,7 @@ public struct FlintArmingHealth: Codable, Equatable {
             self.notAuthorized = notAuthorized
             self.rearmFailed = rearmFailed
             self.recordUnreadable = recordUnreadable
+            self.suspendedUntil = suspendedUntil
         }
 
         /// Source-compatible initializer for callers that only know the pre-funnel model. Old
@@ -82,7 +86,7 @@ public struct FlintArmingHealth: Codable, Equatable {
         }
 
         private enum CodingKeys: String, CodingKey {
-            case enabled, attempted, armed, failures, updatedAt, observedActivities, notAuthorized, rearmFailed, recordUnreadable
+            case enabled, attempted, armed, failures, updatedAt, observedActivities, notAuthorized, rearmFailed, recordUnreadable, suspendedUntil
         }
 
         /// Existing installs persisted only `attempted`, `failures`, and `updatedAt`. Decode that
@@ -100,6 +104,7 @@ public struct FlintArmingHealth: Codable, Equatable {
             notAuthorized = try values.decodeIfPresent(Bool.self, forKey: .notAuthorized)
             rearmFailed = try values.decodeIfPresent(Bool.self, forKey: .rearmFailed)
             recordUnreadable = try values.decodeIfPresent(Bool.self, forKey: .recordUnreadable)
+            suspendedUntil = try values.decodeIfPresent(Date.self, forKey: .suspendedUntil)
         }
     }
 

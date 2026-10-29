@@ -134,12 +134,13 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
             configuration: { FlintWebRestrictions(enabled: true) }, recoveryGate: { gate })
         let config = FlintWebRestrictions(enabled: true, applyDuringSchedules: true)
         writer.web["flint.web"] = config
+        let clock = FlintClock(now: { self.now }, monotonic: { 0 }, bootSessionID: { nil }, calendar: { self.calendar })
         for value in [gate, .unavailable] {
             gate = value
             lifecycle.reconcileSession(session(), config: config, now: now)
             lifecycle.reconcileRule(rule("a"), config: config, now: now, calendar: calendar)
             lifecycle.reconcile(activeSession: session(), rules: [rule("a")], config: config, now: now, calendar: calendar)
-            adapter.reconcile(session(), now: now)
+            adapter.reconcile(session(), clock: clock)
         }
         XCTAssertTrue(writer.applied.isEmpty)
         XCTAssertTrue(writer.cleared.isEmpty)

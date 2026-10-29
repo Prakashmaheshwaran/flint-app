@@ -67,7 +67,8 @@ final class FlintEmergencyPassResumeTests: XCTestCase {
         try FlintEmergencyPassRuleEffects.resume(state: h.ledger.read().get(), at: .init(clock: h.clock),
             environment: h.environment, web: .init(writer: PassResumeWebWriter(), clock: h.clock))
         XCTAssertTrue(h.appliedLimits.isEmpty)
-        XCTAssertEqual(h.appliedOpens.map(\.id), [saved.id])
+        // B5 reload and the fresh recovery derivation may both idempotently write this cause.
+        XCTAssertEqual(Set(h.appliedOpens.map(\.id)), [saved.id])
         XCTAssertEqual(h.load(FlintOpenLimitRule.self).first?.opensAllowed, 3)
     }
 

@@ -39,7 +39,7 @@ public final class FlintLimitsController {
 
     public func limits() -> [FlintLimitRule] {
         guard let rules = environment.rulesForDisplay(FlintLimitRule.self) else {
-            environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
+            environment.recordState("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
             return []
         }
         return rules
@@ -79,18 +79,18 @@ public final class FlintLimitsController {
     /// rejected registration is a budget that never trips.
     public func reload() {
         if case .none = FlintRuleStoreLock.withLock(environment: environment, { reloadLocked() }) {
-            environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
+            environment.recordState("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
         }
     }
 
     private func reloadLocked() {
         guard FlintRuleArbiter(environment: environment).applyQueued(FlintLimitRule.self) else {
-            environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
+            environment.recordState("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
             return
         }
         guard let all = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: environment.defaults,
             recoveryDirectory: environment.recoveryDirectory) else {
-            environment.record("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
+            environment.recordState("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
             return
         }
         let plan = Self.armPlan(for: all)
@@ -106,10 +106,10 @@ public final class FlintLimitsController {
                 FlintRuleCleanup.clearRemoved(name, rules: all, environment: environment)
             })
         for limit in plan.arm where limit.thresholdMinutes == 0 && report.observedActivities?.contains(limit.activityName) == true {
-            environment.applyLimitShield(limit)
+            environment.applyProtection(limit)
             environment.markLimitThreshold(limit, environment.clock.now())
         }
-        environment.record("limits", report)
+        environment.recordState("limits", report)
     }
 }
 #endif

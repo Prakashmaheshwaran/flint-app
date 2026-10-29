@@ -80,7 +80,7 @@ enum FlintEmergencyPassScope {
                 storeName: rule.storeName, activityName: rule.activityName, tier: rule.breakLevel))
         }
         commitments.sort { $0.id < $1.id }
-        var knownStores = ["flint", FlintWebRestrictionStore.storeName] + schedules.map(\.storeName)
+        var knownStores = ["flint", FlintWebRestrictionLifecycle.legacyStoreName] + schedules.map(\.storeName)
             + limits.map(\.storeName) + opens.map(\.storeName)
         // A crash after retiring a template can leave a positively identified last-good store.
         // Its retained receipt remains part of the global release scope; unknown receipts close
@@ -157,6 +157,16 @@ enum FlintEmergencyPassScope {
 /// Native re-application is a consequence of ending recovery, never a new commitment. Only
 /// currently enabled templates and their naturally active occurrences are considered.
 enum FlintEmergencyPassRuleEffects {
+    static func timeLimitReached(_ rule: FlintLimitRule, at now: Date, ledger: FlintProtectionLedger?) -> Bool {
+        guard let ledger, case let .success(state) = ledger.peek(), state.hasValidPassRecovery,
+              let window = rule.occurrence(at: now),
+              let current = try? FlintEmergencyPassScope.thresholdRecord(rule, window: .init(start: window.start, end: window.end)) else { return false }
+        return state.passLimitThresholds?[rule.id]?.provesExhaustion(of: current, at: now) == true
+            || state.emergencyRecovery?.scope.rules.contains(where: {
+                $0.id == "timeLimit:\(rule.id)" && $0.wasEnforcing
+                    && $0.timeLimitThreshold?.provesExhaustion(of: current, at: now) == true
+            }) == true
+    }
     static func resume(state: FlintLedgerState, at now: FlintLedgerInstant,
                        environment: FlintRuleReloadEnvironment = .live,
                        web: FlintWebRestrictionLifecycle = .init()) throws {
@@ -199,7 +209,7 @@ enum FlintEmergencyPassRuleEffects {
                 env.clearStore(rule.storeName); continue
             }
             guard observed(rule.activityName, domain: "schedules") else { incomplete = true; continue }
-            env.applyRuleShield(rule)
+            guard env.applyProtection(rule) else { incomplete = true; continue }
             web.reconcileRule(rule, config: config, now: env.clock.now(), calendar: rule.ruleCalendar)
         }
         for rule in limits {
@@ -209,14 +219,14 @@ enum FlintEmergencyPassRuleEffects {
                 env.clearStore(rule.storeName); continue
             }
             guard observed(rule.activityName, domain: "limits") else { incomplete = true; continue }
-            env.applyLimitShield(rule)
+            guard env.applyProtection(rule) else { incomplete = true; continue }
         }
         for rule in opens {
             guard rule.enabled, rule.occurrence(at: env.clock.now()) != nil else {
                 env.clearStore(rule.storeName); continue
             }
             guard observed(rule.activityName, domain: "openLimits") else { incomplete = true; continue }
-            env.applyOpenShield(rule)
+            guard env.applyProtection(rule) else { incomplete = true; continue }
         }
         if incomplete { throw FlintEmergencyPassError.applying }
     }
@@ -241,7 +251,7 @@ enum FlintEmergencyPassRuleEffects {
     static func noteThreshold(rule: FlintLimitRule, at now: FlintLedgerInstant, ledger: FlintProtectionLedger?) -> Bool {
         guard rule.enabled, let day = rule.occurrence(at: now.wall), let ledger,
               let receipt = try? FlintEmergencyPassScope.thresholdRecord(rule, window: .init(start: day.start, end: day.end)) else { return false }
-        return (try? ledger.transaction { state in
+        return (try? ledger.transaction { state -> Void in
             state.passLimitThresholds = (state.passLimitThresholds ?? [:]).filter { $0.value.window.end > now.wall }
             state.passLimitThresholds?[rule.id] = receipt
         }.get()) != nil

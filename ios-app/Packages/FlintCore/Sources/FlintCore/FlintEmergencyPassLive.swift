@@ -7,6 +7,18 @@ import DeviceActivity
 extension FlintEmergencyPassController {
     public convenience init() { self.init(environment: .live) }
 
+    /// Extension entry never redeems. Keep the session monitor's longer contention budget;
+    /// unreadable accepted work preserves finite resources for a later callback/foreground.
+    public static func prepareForMonitorCallback(activity: String) -> Bool {
+        let controller = FlintEmergencyPassController(environment: .live(monitorTimeout: 6))
+        if isRecoveryActivity(activity) {
+            controller.handleRecoveryBoundary(activity: activity)
+            return false
+        }
+        if case .success = controller.reconcile() { return true }
+        return false
+    }
+
     /// Called only at ordinary live mutation boundaries, before their domain/ledger locks.
     /// Pass effects already own that transition and must not recursively replay themselves.
     static func prepareForPolicyMutation() -> Bool {
@@ -23,7 +35,9 @@ extension FlintEmergencyPassController {
 }
 
 extension FlintEmergencyPassEnvironment {
-    static var live: Self {
+    static var live: Self { live(monitorTimeout: nil) }
+
+    static func live(monitorTimeout: TimeInterval?) -> Self {
         let session = FlintSessionController()
         return .init(ledger: { FlintProtectionLedger.appGroup() }, clock: .system,
             scope: { state, now in
@@ -68,6 +82,15 @@ extension FlintEmergencyPassEnvironment {
                     guard FlintPassRecoveryGate.read().isRecovering else { throw FlintEmergencyPassError.applying }
                     ManagedSettingsStore(named: .init(name)).clearAllSettings()
                 }
+                if case let .suspended(until) = FlintPassRecoveryGate.read(), let group = FlintGroupStore() {
+                    var health = group.loadArmingHealth()
+                    for domain in ["session", "schedules", "limits", "openLimits", "webRestrictions"] {
+                        var report = health.domains[domain] ?? .init(enabled: 0, attempted: 0, armed: 0, failures: [])
+                        report.armed = 0; report.suspendedUntil = until; report.updatedAt = Date()
+                        health.domains[domain] = report
+                    }
+                    group.saveArmingHealth(health)
+                }
             }, resume: { state, now in
                 try FlintEmergencyPassRuleEffects.resume(state: state, at: now)
             }, disable: { try FlintEmergencyPassRuleEffects.disable($0) },
@@ -78,7 +101,7 @@ extension FlintEmergencyPassEnvironment {
             }, publish: {
                 FlintProtectionStatus.publishAfterCommit()
             }, transition: { work in
-                session.withTransition {
+                session.withTransition(timeout: monitorTimeout) {
                     FlintRuleStoreLock.withLock(environment: .live) {
                         work(); return true
                     } ?? false

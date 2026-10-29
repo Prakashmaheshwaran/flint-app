@@ -182,8 +182,9 @@ final class FlintEmergencyPassScopeTests: XCTestCase {
 
     func testPassAuthorizedDisableCancelsQueueAndSleepMaterializerIdempotently() throws {
         var rule = schedule("sleep.night", from: now.addingTimeInterval(-300), until: now.addingTimeInterval(7200))
-        rule.protection?.queuedChange = .init(action: .turnOff, baseRevision: 1,
+        let queued = FlintQueuedRuleChange(action: .turnOff, baseRevision: 1,
             window: try XCTUnwrap(rule.oneShot), snapshot: try JSONEncoder().encode(rule), fingerprint: "reviewed")
+        rule.protection?.queuedChange = queued
         XCTAssertTrue(FlintDesiredRules.save([rule], key: .schedules, to: defaults))
         defaults.set(try JSONEncoder().encode(FlintSleepConfig(enabled: true, sleepAssist: .fullAssist)), forKey: "flint.sleepConfig")
         let reviewed = try load().rules

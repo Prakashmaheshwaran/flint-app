@@ -40,9 +40,6 @@ public enum FlintProtectionStatusBuilder {
         public var observed: Bool
         /// False degrades this rule without erasing unrelated observed enforcement.
         public var available: Bool
-        /// A committed pass outbox still needs release/disable/resume acknowledgement.
-        /// Advisory only: never use this projection to authorize a mutation.
-        public var recoveryApplying: Bool
         public var currentWindow: DateInterval?
         public var nextWindow: DateInterval?
         public var active: Bool
@@ -110,6 +107,9 @@ public enum FlintProtectionStatusBuilder {
         /// No live duration anchor needs assessment. This is distinct from a trusted clock.
         public var timeIntegrityApplies: Bool
         public var available: Bool
+        /// A committed pass outbox still needs release/disable/resume acknowledgement.
+        /// Advisory only: never use this projection to authorize a mutation.
+        public var recoveryApplying: Bool
 
         public init(now: Date, quotaCalendar: Calendar = .current, activeSession: SessionInput? = nil,
                     recordUnreadable: Bool = false, rules: [RuleInput] = [], authorized: Bool?,

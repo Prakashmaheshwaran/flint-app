@@ -195,7 +195,7 @@ final class FlintRuleArbiter {
             let authorizationEnd = harder.compactMap(\.end).max() ?? now
             func unavailableAfterAuthorization() -> FlintRuleMutationResult {
                 guard authorizationCommitted else { return .unavailable }
-                self.env.record(Rule.domain.domain, .init(enabled: enabledBefore,
+                self.env.recordState(Rule.domain.domain, .init(enabled: enabledBefore,
                     attempted: 0, armed: 0, failures: [.init(activityName: Rule.domain.domain,
                         reason: "Change authorized but not saved — try again. Existing protection stays until \(authorizationEnd.formatted(date: .abbreviated, time: .shortened)).")]))
                 return .authorizedButNotSaved(ticket, until: authorizationEnd)
@@ -305,7 +305,7 @@ final class FlintRuleArbiter {
                         }
                     }
                 }
-                self.env.record(Rule.domain.domain, .init(enabled: recovery.filter(\.enabled).count,
+                self.env.recordState(Rule.domain.domain, .init(enabled: recovery.filter(\.enabled).count,
                     attempted: 0, armed: 0, failures: [.init(activityName: Rule.domain.domain, reason: reason)]))
                 return false
             }
@@ -546,19 +546,19 @@ final class FlintRuleArbiter {
         let now = env.clock.now()
         for rule in prepared where rule.enabled {
             if let schedule = rule as? FlintScheduleRule, schedule.occurrence(at: env.clock.now()) != nil {
-                env.applyRuleShield(schedule)
+                env.applyProtection(schedule)
             } else if let limit = rule as? FlintLimitRule {
                 if limit.thresholdMinutes == 0 || (!resetTimeBudget && old.compactMap({ $0 as? FlintLimitRule })
                     .contains(where: { $0.id == rule.id && env.timeLimitIsShielded($0, now) })) {
                     // Strengthening keeps an exhausted shield. A cosmetic edit below quota
                     // never exhausts the allowance; a due future revision starts a fresh day.
-                    env.applyLimitShield(limit)
+                    env.applyProtection(limit)
                     env.markLimitThreshold(limit, now)
                 } else if resetTimeBudget {
                     env.clearStore(limit.storeName)
                     env.clearLimitThreshold(limit.id)
                 }
-            } else if let open = rule as? FlintOpenLimitRule { env.applyOpenShield(open) }
+            } else if let open = rule as? FlintOpenLimitRule { env.applyProtection(open) }
         }
         for previous in old {
             let replacement = prepared.first { $0.id == previous.id }
@@ -610,7 +610,7 @@ final class FlintRuleArbiter {
             report.failures.removeAll { keys.contains($0.activityName) }
             report.failures.append(contentsOf: notes)
             report.updatedAt = self.env.clock.now()
-            self.env.record(Rule.domain.domain, report)
+            self.env.recordState(Rule.domain.domain, report)
         }
     }
     static func causeID<Rule: FlintGatedRule>(_ rule: Rule, window: FlintRuleWindow?) -> String {
