@@ -52,8 +52,7 @@ struct FlintUIPreviewGlance: View {
     }
 
     private func widget(_ family: WidgetFamily, width: CGFloat, height: CGFloat) -> some View {
-        FlintGlanceWidgetView(entry: .init(date: now, input: input))
-            .environment(\.widgetFamily, family)
+        FlintGlanceWidgetView(entry: .init(date: now, input: input), familyOverride: family)
             .padding(family == .systemSmall || family == .systemMedium ? 14 : 0)
             .frame(width: width, height: height)
             .background(FlintBrand.ground).clipShape(RoundedRectangle(cornerRadius: 18))

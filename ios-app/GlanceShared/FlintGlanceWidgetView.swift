@@ -10,7 +10,9 @@ struct FlintGlanceEntry: TimelineEntry {
 
 struct FlintGlanceWidgetView: View {
     let entry: FlintGlanceEntry
-    @Environment(\.widgetFamily) private var family
+    var familyOverride: WidgetFamily? = nil
+    @Environment(\.widgetFamily) private var systemFamily
+    private var family: WidgetFamily { familyOverride ?? systemFamily }
     private var model: FlintGlancePresentation { entry.presentation }
 
     var body: some View {
