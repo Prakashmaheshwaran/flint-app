@@ -117,7 +117,7 @@ class ProtectionTransactionStoreTest {
         disk.fail = false; disk.loseAck = true
         try { accept(); fail("lost acknowledgement returned") } catch (_: CancellationException) { }
         disk.loseAck = false
-        val restarted = store(disk).state.first() as StorageState.Ready
+        val restarted = store(disk).state.first { it !is StorageState.Loading } as StorageState.Ready
         assertEquals(1, restarted.value.openCredits!!.counters.getValue("com.example.a").used)
         assertEquals(1, restarted.value.focus.protection!!.pendingCreditEnds.size)
         assertEquals(1, restarted.value.focus.protection!!.outbox.size)

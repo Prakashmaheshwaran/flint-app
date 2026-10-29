@@ -548,6 +548,25 @@ class GlobalRecoveryCoordinatorTest {
         assertEquals(1, disk.latest.openCredits!!.counters.getValue("c").used)
     }
 
+    @Test fun PC_32_PC_33_websiteCauseArrivingDuringBrowserCreditBlocksEvenWithoutAReadableAddress() = runTest {
+        val browser = "com.android.chrome"
+        val s = initial().let { it.copy(opens = listOf(OpenLimit(browser, 2)), openCredits = OpenCreditLedgerPolicy.initial(base, "UTC"),
+            editor = it.editor.copy(causes = it.editor.causes + ("open:$browser" to it.editor.causes.getValue("open:c")))) }
+        val disk = Disk(s) { clock() }; val c = coordinator(disk); runCurrent()
+        val cause = openLimitBlockCause(s.opens.single(), clock().wallEpochMs, 0)
+        val id = GrantRequestId.issue(clock(), c.screenState(browser, null, cause, clock().wallEpochMs).openCreditRequestScope)
+        assertEquals(GrantResult.OpenAllowed, c.requestBreak(browser, cause, id)); runCurrent()
+        val website = BlockRule("web", "Website focus", BlockTargets(domains = setOf(DomainRef("example.com"))), breakLevel = BreakLevel.HARDCORE)
+        disk.latest = disk.latest.copy(rules = disk.latest.rules + website, editor = disk.latest.editor.copy(causes = disk.latest.editor.causes +
+            ("rule:web" to EditorCause("web", null, "UTC"))))
+        disk.values.value = StorageState.Ready(disk.latest); runCurrent()
+        assertNotNull(c.evaluateBlockCause(browser, browser, null, false, null))
+        assertFalse(c.canDismiss(browser, cause))
+        assertEquals(GrantResult.Denied, c.requestBreak(browser, cause, id))
+        assertEquals(1, disk.latest.openCredits!!.counters.getValue(browser).used)
+        assertNull(c.evaluateBlockCause(browser, browser, null, false, "https://elsewhere.example/"))
+    }
+
     @Test fun PC_28_PC_37_exhaustedQuotaUsesTierBreakWithoutAnotherCreditCharge() = runTest {
         val disk = Disk(initial().copy(opens = listOf(OpenLimit("c", 1, BreakLevel.EASY)), openCredits = OpenCreditLedgerPolicy.initial(base, "UTC"))) { clock() }
         val c = coordinator(disk); runCurrent()

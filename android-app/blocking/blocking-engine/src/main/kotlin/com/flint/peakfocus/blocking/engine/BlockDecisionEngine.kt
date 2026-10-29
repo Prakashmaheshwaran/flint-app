@@ -115,7 +115,7 @@ class BlockDecisionEngine {
     }
 
     /** Host of a browser address bar, in the same shape rule domains are stored in. */
-    internal fun extractHost(url: String): String? = HostCanonicalizer.canonicalize(url)
+    fun extractHost(url: String): String? = HostCanonicalizer.canonicalize(url)
 
     /**
      * Whether a rule's schedule is active now. A null schedule = always active. A negative

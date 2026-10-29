@@ -508,19 +508,21 @@ class BlockScreenCoordinator(
         val now = nowEpochMs()
         val offset = utcOffsetMs(now)
         observations[packageName] = Observation(timeLimitSpent, epochDay(now, offset), foregroundUrl)
+        val effectiveRule = ruleCause ?: recoveries?.unverifiedWebsiteRule(
+            OrdinaryProtectionInput(packageName, appContext.packageName, false, false, foregroundUrl), statusClock())?.let { ruleBlockCause(it, now, offset) }
         val timeCause = if (timeLimitSpent) timeLimitBlockCause(currentTimeLimitBreakLevel(packageName), now, offset) else null
         val ordinary = ordinaryExempt(packageName, timeCause)
         val emergency = if (recoveries != null) BlockExemptions.hasGlobalRecovery() else BlockExemptions.hasEmergencyExemption(packageName, now)
         val openDecision = onForegroundChanged(
             previousPackage,
             packageName,
-            recordAllowedOpen = ruleCause == null && timeCause == null && !ordinary && !emergency,
+            recordAllowedOpen = effectiveRule == null && timeCause == null && !ordinary && !emergency,
         )
         val openCause = (openDecision as? OpenLimitDecision.Blocked)?.let {
             openLimitBlockCause(it.limit, now, offset)
         }
         val cause = BlockOverlapPolicy.afterExemptions(
-            BlockOverlapPolicy.strongest(timeCause, ruleCause, openCause),
+            BlockOverlapPolicy.strongest(timeCause, effectiveRule, openCause),
             ordinary,
             emergency,
         )
@@ -553,7 +555,8 @@ class BlockScreenCoordinator(
         )
         val ruleCause = (verdict as? Verdict.Block)?.let { block ->
             ruleBlockCause(ActiveRulesHolder.rules.firstOrNull { it.id == block.ruleId }, now, offset)
-        }
+        } ?: recoveries?.unverifiedWebsiteRule(OrdinaryProtectionInput(packageName, appContext.packageName, false, false, observation?.url), statusClock())
+            ?.let { ruleBlockCause(it, now, offset) }
         val timeCause = if (observation?.timeLimitSpent == true &&
             observation.epochDay == epochDay(now, offset)
         ) timeLimitBlockCause(currentTimeLimitBreakLevel(packageName), now, offset) else null

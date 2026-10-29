@@ -174,6 +174,16 @@ internal class GlobalRecoveryController(
         return credits.active[packageName]?.grant?.let { minOf(policy.remainingMs(it, now), policy.remainingToResetMs(credits.reset, now)) } ?: 0
     }
 
+    fun unverifiedWebsiteRule(input: OrdinaryProtectionInput, now: AccessClockStamp): BlockRule? {
+        val snapshot = lastGood ?: return null
+        if (!com.flint.peakfocus.blocking.engine.BrowserAddressBars.isBrowser(input.packageName) ||
+            input.url?.let { com.flint.peakfocus.blocking.engine.BlockDecisionEngine().extractHost(it) } != null) return null
+        val foreign = foreignRules()
+        val scopes = OrdinaryProtectionPolicy.frozenScopes(snapshot, input.copy(timeSpent = false, openBlocked = false), foreign, now) ?: return null
+        val ids = scopes.filter { it.counter.rule.source == "rule" || it.counter.rule.source == "foreign" }.map { it.counter.rule.ruleId }.toSet()
+        return (snapshot.rules + foreign).filter { it.id in ids && it.targets.domains.isNotEmpty() }.maxByOrNull { it.breakLevel.ordinal }
+    }
+
     suspend fun requestCredit(input: OrdinaryProtectionInput, id: GrantRequestId, onSafetyFloor: () -> Boolean): GrantResult =
         when (val accepted = commit { TimedOpenCreditPolicy.request(it, input, id, foreignRules().toList(), onSafetyFloor()) }) {
             is ProtectionCommit.Committed -> accepted.result

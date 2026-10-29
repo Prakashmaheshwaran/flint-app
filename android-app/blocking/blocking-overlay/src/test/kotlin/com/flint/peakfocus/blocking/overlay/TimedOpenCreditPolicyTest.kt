@@ -92,6 +92,30 @@ class TimedOpenCreditPolicyTest {
         assertEquals(1, s.openCredits!!.counters.getValue("a").used)
     }
 
+    @Test fun PC_32_PC_33_browserWithUnknownAddressDeniesUnprovableWebsiteOverlapButProvenDisjointTargetCanUseCredit() {
+        val domain = BlockRule("web", "Website focus", BlockTargets(domains = setOf(DomainRef("example.com"))))
+        val original = snapshot()
+        val browser = "com.android.chrome"
+        val s = original.copy(opens = listOf(OpenLimit(browser, 3), OpenLimit("a", 3)), editor = original.editor.copy(causes = original.editor.causes +
+            ("open:$browser" to original.editor.causes.getValue("open:a")) + ("rule:web" to EditorCause("web", null, "UTC"))), rules = listOf(domain))
+        val target = input.copy(packageName = browser)
+        val view = TimedOpenCreditPolicy.view(s, target, emptyList(), now)!!
+        assertTrue(view.blockingContributors.single().contains("Website focus"))
+        val id = id(s).copy(creditScope = view.requestScope)
+        val denied = request(s, id, target)
+        assertEquals(GrantResult.Denied, denied.result); assertTrue(denied.openCredits!!.counters.isEmpty())
+        val disjoint = target.copy(url = "https://elsewhere.example/")
+        assertEquals(GrantResult.OpenAllowed, request(s, id, disjoint).result)
+        assertEquals(GrantResult.OpenAllowed, request(s).result)
+    }
+
+    @Test fun PC_34_exhaustedOverlappingOpenRulesUseTheStrongestTierForOrdinaryExceptions() {
+        val s = snapshot().let { it.copy(opens = listOf(OpenLimit("a", 2, BreakLevel.EASY), OpenLimit("a", 5, BreakLevel.HARDCORE))) }
+        val scopes = OrdinaryProtectionPolicy.frozenScopes(s, input, emptyList(), now)!!
+        assertEquals(GrantResult.Denied, OrdinaryProtectionPolicy.request(s, input,
+            "p1-11111111-1111-4111-8111-111111111111", now, emptyList(), scopes).result)
+    }
+
     @Test fun PC_35_midnightClipsAccessClosesBeforeOneResetAndAnOldReviewedActionCannotSpendNewQuota() {
         val midnight = AccessClockStamp(java.time.Instant.parse("2026-10-28T23:58:00Z").toEpochMilli(), 10_000, "boot")
         val original = snapshot(at = midnight); val stale = id(original, 2)

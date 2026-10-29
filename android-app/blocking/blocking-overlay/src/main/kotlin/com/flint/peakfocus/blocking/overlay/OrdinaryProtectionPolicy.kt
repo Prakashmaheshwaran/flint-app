@@ -147,14 +147,20 @@ internal object OrdinaryProtectionPolicy {
             }
         }
         if (input.openBlocked) {
-            val open = snapshot.opens.firstOrNull { it.packageName == input.packageName } ?: return null
-            if (!add("open", open.packageName, open.breakLevel, open.toString(), snapshot.editor.causes[openCauseKey(open.packageName)])) return null
+            val covering = snapshot.opens.filter { it.packageName == input.packageName }
+            val open = covering.maxByOrNull { it.breakLevel.ordinal } ?: return null
+            if (!add("open", open.packageName, open.breakLevel, covering.sortedBy { it.toString() }.toString(), snapshot.editor.causes[openCauseKey(open.packageName)])) return null
         }
         return result
     }
 
-    private fun targets(rule: BlockRule, input: OrdinaryProtectionInput): Boolean = BlockDecisionEngine().decide(input.packageName,
-        input.url, listOf(rule.copy(schedule = null, expiresAtEpochMs = null)), input.selfPackage, 0, 1, 0) is Verdict.Block
+    private fun targets(rule: BlockRule, input: OrdinaryProtectionInput): Boolean {
+        val engine = BlockDecisionEngine()
+        // An unreadable browser address cannot prove disjointness from an active website
+        // rule. Native app targets remain provably disjoint; a known address uses the engine.
+        if (BrowserAddressBars.isBrowser(input.packageName) && input.url?.let(engine::extractHost) == null && rule.targets.domains.isNotEmpty()) return true
+        return engine.decide(input.packageName, input.url, listOf(rule.copy(schedule = null, expiresAtEpochMs = null)), input.selfPackage, 0, 1, 0) is Verdict.Block
+    }
 
     private fun granted(grant: ProtectionOrdinaryGrant, newly: Boolean, now: AccessClockStamp) = GrantResult.Granted(listOf(
         PersistedExemption(grant.operationId, (grant.target as AccessTarget.App).packageName, hash(grant.scopes.toString()), ExemptionKind.BREAK,

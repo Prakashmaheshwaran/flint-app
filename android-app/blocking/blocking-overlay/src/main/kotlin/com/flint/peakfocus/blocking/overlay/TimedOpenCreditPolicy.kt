@@ -23,13 +23,13 @@ internal object TimedOpenCreditPolicy {
         val names = others.map { scope -> when (scope.counter.rule.source) {
             "time", "legacy-time" -> "Time limit"
             else -> ProtectionStatus.sanitizeDisplayName((snapshot.rules + foreign).firstOrNull { it.id == scope.counter.rule.ruleId }?.name ?: "Another commitment")
-        } }.distinct().sorted()
+        } }
         val reset = policy.remainingToResetMs(credits.reset, now)
         val remaining = OpenCreditLedgerPolicy.remainingCredits(credits, input.packageName, limits.map { it.dailyOpens }) ?: return null
         val live = credits.active[input.packageName]?.grant?.let { minOf(policy.remainingMs(it, now), reset) } ?: 0L
         val raw = "${credits.periodId}|${cause.occurrenceId}|${limits.sortedBy { it.toString() }}"
         val identity = MessageDigest.getInstance("SHA-256").digest(raw.toByteArray()).joinToString("") { "%02x".format(it) }
-        return TimedCreditView(remaining, minOf(ProtectionContract.OPEN_CREDIT_MS, reset), live, names, "${credits.periodId}:$identity")
+        return TimedCreditView(remaining, minOf(ProtectionContract.OPEN_CREDIT_MS, reset), live, names.distinct().sorted(), "${credits.periodId}:$identity")
     }
 
     fun request(original: ProtectionSnapshot, input: OrdinaryProtectionInput, id: GrantRequestId, foreign: List<BlockRule>, onSafetyFloor: Boolean): ProtectionMutation<GrantResult> {
