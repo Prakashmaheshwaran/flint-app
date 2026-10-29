@@ -111,7 +111,11 @@ fun SettingsScreen(
                 nowMillis = System.currentTimeMillis(),
                 onAccount = onAccount,
                 onOpenLegal = openLegal,
-                onOpenHelp = openHelp,
+                onOpenHelp = {
+                    // Help states website coverage "now": take a fresh snapshot as it opens.
+                    health = PermissionHealthChecker.check(context)
+                    openHelp()
+                },
                 onFix = { kind ->
                     routePermissionFix(kind, discloseAccessibility = onEnableAccessibility) { otherKind ->
                         val intent = when (otherKind) {

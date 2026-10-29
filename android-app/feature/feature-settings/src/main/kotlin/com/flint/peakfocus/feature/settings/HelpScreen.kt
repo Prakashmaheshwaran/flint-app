@@ -34,10 +34,16 @@ import com.flint.peakfocus.core.common.ui.FlintSectionLabel
  * "How Flint works": what Flint cannot prevent on Android and its platform limits. Every
  * sentence must stay true of the shipped code and ADR-012 (docs/architecture/protection-contract.md).
  * Strictness and Emergency Pass sections are added with lane C's ADR-012 behavior; until then
- * this screen makes no tier or pass claims. Copy lives in res/values/strings.xml
- * (`help_*`) and is guarded by HelpCopyTest.
+ * this screen makes no tier or pass claims. Authored copy lives in res/values/strings.xml
+ * (`help_*`). The Websites fact also renders lane C's shared website-coverage projection
+ * (BlockingHealthUi.websiteCoverage), the same text You shows. HelpCopyTest guards both.
  */
-internal data class HelpFact(@StringRes val title: Int, @StringRes val text: Int)
+internal data class HelpFact(
+    @StringRes val title: Int,
+    @StringRes val text: Int,
+    /** Appends the supplied website-coverage projection; Help never derives coverage itself. */
+    val showsWebsiteCoverage: Boolean = false,
+)
 
 internal data class HelpSection(@StringRes val title: Int, val facts: List<HelpFact>)
 
@@ -54,7 +60,7 @@ internal object HelpContent {
         ),
         HelpSection(
             R.string.help_section_websites,
-            listOf(HelpFact(R.string.help_websites_title, R.string.help_websites_text)),
+            listOf(HelpFact(R.string.help_websites_title, R.string.help_websites_text, showsWebsiteCoverage = true)),
         ),
         HelpSection(
             R.string.help_section_running,
@@ -135,13 +141,20 @@ internal fun HelpScreen(onBack: () -> Unit, websiteCoverageText: String, modifie
                             )
                             Spacer(Modifier.height(FlintSpacing.xs))
                             Text(
-                                // Lane C owns both the observation wording and browser matrix.
-                                // Render its same read-only health projection used on You.
-                                if (fact.text == R.string.help_websites_text) websiteCoverageText
-                                else stringResource(fact.text),
+                                stringResource(fact.text),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            if (fact.showsWebsiteCoverage) {
+                                // Lane C owns the observation wording and browser matrix; this is
+                                // the same read-only projection rendered on You.
+                                Spacer(Modifier.height(FlintSpacing.sm))
+                                Text(
+                                    websiteCoverageText,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 }

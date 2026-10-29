@@ -14,13 +14,17 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
-/** The Help route must preserve C5's canonical matrix and update its observation. */
+/**
+ * Help renders its own website prerequisite plus exactly the projection Settings supplies (the
+ * one You shows), and recomposes when that supplied snapshot changes. Settings takes a fresh
+ * snapshot when Help opens and on every resume; it is not a live subscription.
+ */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
 class HelpWebsiteContentTest {
     @get:Rule val compose = createComposeRule()
 
-    @Test fun helpUsesTheSharedWebsiteProjectionAndUpdatesWhileOpen() {
+    @Test fun helpRendersTheSuppliedWebsiteProjectionBesideItsPrerequisite() {
         val initial = HealthStatus(false, true, true, true, websiteCoverage = WebCoverage.Paused)
         val health = mutableStateOf(initial)
         compose.setContent {
@@ -32,6 +36,8 @@ class HelpWebsiteContentTest {
         }
         compose.onNodeWithText("Open Help fixture").performClick()
         val pausedCopy = BlockingHealthUi.websiteCoverage(initial)
+        compose.onNodeWithText("Website coverage").assertExists()
+        compose.onNodeWithText("Website rules need Accessibility and a browser whose address bar Flint can read.").assertExists()
         compose.onNodeWithText(pausedCopy).assertExists()
         val updated = initial.copy(accessibilityEnabled = true, websiteCoverage = WebCoverage.AwaitingBrowser)
         compose.runOnIdle { health.value = updated }

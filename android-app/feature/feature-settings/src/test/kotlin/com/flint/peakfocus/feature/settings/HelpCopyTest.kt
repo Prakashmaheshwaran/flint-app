@@ -1,5 +1,8 @@
 package com.flint.peakfocus.feature.settings
 
+import com.flint.peakfocus.blocking.engine.BrowserAddressBars
+import com.flint.peakfocus.blocking.engine.WebCoverage
+import com.flint.peakfocus.blocking.resilience.HealthStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -24,6 +27,32 @@ class HelpCopyTest {
 
     private val helpCopy get() = strings.filterKeys { it.startsWith("help_") }
 
+    private val banned = listOf(
+        "non-bypassable", "only way out", "only exit", "sole exit", "per week", "this week",
+        "monday", "can't be removed", "can't be uninstalled", "prevents uninstall",
+        "can't be turned off", "anti-uninstall", "guaranteed", "every browser", "all websites",
+    )
+
+    private val tierAndPassTerms = listOf("Hardcore", "Emergency Pass", "Harder")
+
+    /**
+     * Every branch of the website-coverage projection Help renders beside its own copy. Unsupported
+     * handler labels come from the device, so they use a neutral fixture name here.
+     */
+    private val websiteCoverageCopy: List<String> by lazy {
+        val browsers = BrowserAddressBars.supportedBrowsers
+        val states = listOf(WebCoverage.NotRequired, WebCoverage.AwaitingBrowser, WebCoverage.Paused) +
+            browsers.flatMap { listOf(WebCoverage.Available(it), WebCoverage.Degraded(it, 1L), WebCoverage.Unconfirmed(it)) } +
+            listOf(true, false).map { WebCoverage.Unsupported("fixture.handler", "Fixture handler", isBrowser = it) }
+        states.flatMap { coverage ->
+            listOf(true, false).map { current ->
+                BlockingHealthUi.websiteCoverage(
+                    HealthStatus(true, true, true, true, websiteCoverage = coverage, websiteCoverageIsCurrent = current),
+                )
+            }
+        }
+    }
+
     @Test
     fun `every help string referenced by the screen exists`() {
         val referenced = HelpContent.sections.size
@@ -34,17 +63,18 @@ class HelpCopyTest {
             "help_websites_title", "help_websites_text", "help_section_running", "help_battery_title",
             "help_battery_text", "help_privacy", "help_title", "help_intro", "help_back",
         ).forEach { assertTrue("missing $it", strings.containsKey(it)) }
-        assertEquals("Known browsers", strings.getValue("help_websites_title"))
+        assertEquals("Website coverage", strings.getValue("help_websites_title"))
+        val websites = HelpContent.sections.flatMap { it.facts }.single { it.showsWebsiteCoverage }
+        assertEquals(R.string.help_websites_text, websites.text)
+        assertEquals(
+            "Website rules need Accessibility and a browser whose address bar Flint can read.",
+            strings.getValue("help_websites_text"),
+        )
     }
 
     @Test
     fun `no overclaims from ADR-012 copy list`() {
-        val banned = listOf(
-            "non-bypassable", "only way out", "only exit", "sole exit", "per week", "this week",
-            "monday", "can't be removed", "can't be uninstalled", "prevents uninstall",
-            "can't be turned off", "anti-uninstall", "guaranteed", "every browser", "all websites",
-        )
-        helpCopy.forEach { (key, text) ->
+        (helpCopy + websiteCoverageCopy.mapIndexed { i, text -> "websiteCoverage#$i" to text }).forEach { (key, text) ->
             banned.forEach { phrase ->
                 assertFalse("$key contains '$phrase'", text.lowercase().contains(phrase))
             }
@@ -66,10 +96,20 @@ class HelpCopyTest {
 
     @Test
     fun `no tier or pass promises until lane C's ADR-012 behavior lands`() {
-        helpCopy.values.forEach { text ->
-            listOf("Hardcore", "Emergency Pass", "Harder").forEach { term ->
+        (helpCopy.values + websiteCoverageCopy).forEach { text ->
+            tierAndPassTerms.forEach { term ->
                 assertFalse("help copy names $term before its behavior is settled", text.contains(term))
             }
+        }
+    }
+
+    @Test
+    fun `website coverage branches all reach Help with the shared qualifications`() {
+        // 3 fixed + 3 per known browser + 2 unsupported, each current and historical.
+        assertEquals((3 + 3 * BrowserAddressBars.supportedBrowsers.size + 2) * 2, websiteCoverageCopy.size)
+        websiteCoverageCopy.forEach { text ->
+            assertTrue(text.contains("Known browsers (not verified on this device)"))
+            assertTrue(text.contains("Other browsers and the usage-access backup path do not filter websites."))
         }
     }
 }
