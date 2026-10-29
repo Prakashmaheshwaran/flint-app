@@ -81,16 +81,41 @@ final class FlintOpenCreditMigrationTests: XCTestCase {
                        "deleted legacy rules plus a missing counter cannot mint a new pool")
     }
 
-    func testEstablishedLedgerWithMissingLegacyDefaultsCannotBecomeAFreshPool() throws {
+    func testPassOnlyLedgerDoesNotInventAnEstablishedOpenSetup() throws {
         let suite = "flint.tests.established-open-migration.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         var state = FlintLedgerState(initializedAt: now)
         state.importLegacyPass(.absent, at: instant)
         FlintOpenCredit.importLegacy(into: &state, defaults: defaults, at: instant, calendar: calendar)
-        XCTAssertEqual(state.openCredits.availability, .unavailable)
-        XCTAssertTrue(state.reconcileOpenCredits(at: instant, targetKeys: ["recovered-token"], reshield: { _ in }))
-        XCTAssertNil(state.openCreditPreview(target: "recovered-token", caps: [3], blockedBy: nil, at: instant).remaining)
+        XCTAssertEqual(state.openCredits.availability, .ready)
+        XCTAssertFalse(state.openCredits.enrolled)
+    }
+
+    func testFirstEverOpenRuleAfterPassOnlyMigrationGetsItsFirstPoolImmediately() throws {
+        let suite = "flint.tests.first-open.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var state = FlintLedgerState(initializedAt: now)
+        state.importLegacyPass(.absent, at: instant)
+        FlintOpenCredit.importLegacy(into: &state, defaults: defaults, at: instant, calendar: calendar)
+        XCTAssertTrue(FlintOpenLimitRule.saveAll([.init(id: "first-rule", name: "First", opensAllowed: 3)], to: defaults))
+        XCTAssertTrue(state.reconcileOpenCredits(at: instant, targetKeys: ["first-target"], setupCalendar: calendar, reshield: { _ in }))
+        XCTAssertEqual(state.openCreditPreview(target: "first-target", caps: [3], blockedBy: nil, at: instant).remaining, 3)
+        XCTAssertEqual(state.openCredits.counters["first-target"]?.used, 0)
+    }
+
+    func testStaleLegacyDayStartWaitsForOneObservedBoundaryBeforeRefill() throws {
+        var state = imported(.value(try legacy(["app": 9], dayStart: now.addingTimeInterval(-86_400))))
+        XCTAssertTrue(state.reconcileOpenCredits(at: instant, targetKeys: ["app"], reshield: { _ in }))
+        XCTAssertEqual(state.openCredits.counters["app"]?.used, 9)
+        var reset = instant
+        reset.monotonic += state.openCredits.resetRemaining
+        reset.wall = now.addingTimeInterval(state.openCredits.resetRemaining)
+        XCTAssertTrue(state.reconcileOpenCredits(at: reset, targetKeys: ["app"], reshield: { _ in }))
+        XCTAssertEqual(state.openCreditPreview(target: "app", caps: [3], blockedBy: nil, at: reset).remaining, 3)
+        XCTAssertTrue(state.reconcileOpenCredits(at: reset, targetKeys: ["app"], reshield: { _ in }))
+        XCTAssertEqual(state.openCredits.counters["app"]?.used, 0)
     }
 
     func testQuotaZoneCapturedAtFirstTargetSetupThenSurvivesTravel() {

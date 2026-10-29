@@ -98,7 +98,7 @@ final class FlintOpenCreditTests: XCTestCase {
             body()
             return true
         }, authorized: { grant in
-            grant.authorizes(caps: self.caps, fingerprints: self.fingerprints,
+            self.unavailableContext ? nil : grant.authorizes(caps: self.caps, fingerprints: self.fingerprints,
                              scopes: self.scopes, activities: self.activities)
         })
     }
@@ -253,13 +253,28 @@ final class FlintOpenCreditTests: XCTestCase {
         XCTAssertEqual(FlintOpenCreditBlocking.query(target: openAppKey, kind: .application, stores: nil).reason, .unavailable)
     }
 
+    func testPC32SafariFilterDeniesDomainCreditWithoutChargeButDoesNotBlockAppCredit() throws {
+        let filter = FlintOpenCreditContributor(name: "Schedule Safari filter", webContentMayBlock: true)
+        XCTAssertEqual(FlintOpenCreditBlocking.query(target: "opaque-domain", kind: .webDomain, stores: [filter]).reason,
+                       .otherContributor)
+        XCTAssertNil(FlintOpenCreditBlocking.query(target: openAppKey, kind: .application, stores: [filter]).reason)
+        block = FlintOpenCreditBlocking.query(target: "opaque-domain", kind: .webDomain, stores: [filter]).reason
+        denied(.otherContributor)
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 0)
+        XCTAssertTrue(registrations.isEmpty); XCTAssertTrue(released.isEmpty)
+    }
+
     func testPC34SharedMinimumCapAndRenameNeverReset() throws {
         caps = ["open-a": 2, "open-b": 5]
         let first = try accepted()
         XCTAssertEqual(first.grant.coveredCauses, ["open-a", "open-b"])
         XCTAssertEqual(service().preview(target: openAppKey).cap, 2)
         advance(300); _ = service().reconcile()
-        caps = ["renamed-a": 2, "open-b": 5]
+        var renamed = FlintOpenLimitRule(id: "open-a", name: "Original", opensAllowed: 2)
+        let before = try FlintOpenCredit.effectiveFingerprint(for: renamed)
+        renamed.name = "Renamed"
+        XCTAssertEqual(renamed.id, "open-a")
+        XCTAssertEqual(try FlintOpenCredit.effectiveFingerprint(for: renamed), before)
         XCTAssertEqual(try accepted().remaining, 0)
         XCTAssertEqual(try state().openCredits.counters.count, 1)
     }
@@ -300,6 +315,65 @@ final class FlintOpenCreditTests: XCTestCase {
         XCTAssertEqual(next.remaining, 0)
         XCTAssertEqual(next.grant.remaining(at: instant), 200)
         XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
+    }
+
+    func testCapIncreaseAloneKeepsAcceptedDeadlineAndConsumption() throws {
+        let first = try accepted()
+        caps = ["open-a": 5]; activityOverride = ["open-a": "flint.openLimit.open-a.r2"]
+        advance(100)
+        let next = try accepted()
+        XCTAssertEqual(next.grant, first.grant)
+        XCTAssertEqual(next.remaining, 4)
+        XCTAssertEqual(next.grant.remaining(at: instant), 200)
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
+    }
+
+    func testUnreadableRulesKeepPaidGrantUntilItsFrozenDeadline() throws {
+        let first = try accepted()
+        unavailableContext = true
+        advance(100)
+        XCTAssertTrue(service().reconcile(activity: first.grant.activityName, callback: .warning))
+        XCTAssertEqual(try state().openCredits.grants[openAppKey], first.grant)
+        XCTAssertTrue(shielded.isEmpty)
+        denied(.unavailable)
+        advance(200)
+        XCTAssertTrue(service().reconcile(activity: first.grant.activityName, callback: .warning))
+        XCTAssertNil(try state().openCredits.grants[openAppKey])
+        XCTAssertEqual(shielded, [openAppKey])
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 1)
+    }
+
+    func testBoundPrunesOldestFinishedIdentityAtResetInsteadOfPermanentlyDisablingQuota() throws {
+        _ = try state()
+        _ = ledger().transaction { state in
+            for index in 0..<(FlintOpenCreditState.maximumTargets - 1) {
+                let key = "old-\(index)"
+                state.openCredits.counters[key] = .init(targetKey: key, periodStart: state.openCredits.periodStart!, used: 2,
+                                                       lastSeen: self.now.addingTimeInterval(-Double(index + 1)))
+                state.openCredits.knownTargets.insert(key)
+            }
+        }
+        targets.insert("replacement")
+        advance(12 * 3600)
+        XCTAssertTrue(service().reconcile())
+        let quota = try state().openCredits
+        XCTAssertEqual(quota.counters.count, FlintOpenCreditState.maximumTargets)
+        XCTAssertEqual(quota.counters["replacement"]?.used, 0)
+        XCTAssertNil(quota.counters["old-4094"], "oldest completed identity is pruned")
+        XCTAssertEqual(try accepted().remaining, 2)
+    }
+
+    func testPreviousPeriodDelayedAliasCannotChargeTheNewPoolAfterGeneralHistoryEviction() throws {
+        now = ISO8601DateFormatter().date(from: "2026-10-28T23:59:00Z")!
+        _ = try accepted("original")
+        _ = try accepted("alias")
+        advance(60)
+        XCTAssertTrue(service().reconcile())
+        _ = ledger().transaction { $0.operations.removeAll() }
+        denied(.staleOperation, op: "alias")
+        denied(.staleOperation, op: "original")
+        XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 0)
+        XCTAssertEqual(try accepted("new-period").remaining, 2)
     }
 
     func testCommittedTierOrSelectionChangeClosesGrantWithoutNewCharge() throws {
@@ -419,6 +493,11 @@ final class FlintOpenCreditTests: XCTestCase {
         let busy = FlintProtectionLedger(directory: directory, clock: clock, lockTimeout: 0,
                                           initializedMarker: { self.marker }, setInitializedMarker: { _ in })
         denied(.unavailable, using: service(busy))
+        let reconcile = FlintOpenCreditService(ledger: busy, clock: clock, context: { nil },
+            register: { _, _ in XCTFail("busy") }, registered: { _ in false },
+            release: { _ in XCTFail("busy") }, reshield: { _ in XCTFail("busy") }, stop: { _ in XCTFail("busy") },
+            unavailable: { XCTFail("busy must not write fallback shields outside the transaction") })
+        XCTAssertFalse(reconcile.reconcile())
         XCTAssertTrue(released.isEmpty)
     }
 

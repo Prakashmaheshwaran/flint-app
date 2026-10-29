@@ -57,16 +57,15 @@ public enum FlintOpenCredit {
         let raw = defaults.object(forKey: FlintLedgerState.legacyOpenCreditKey)
         state.importLegacyOpenCredits(raw.map(FlintLegacyValue.value) ?? .absent,
             targetKeys: rules.map(targetKeys), established: rules == nil ||
-                defaults.object(forKey: FlintRuleStoreKey.openLimits.rawValue) != nil ||
-                state.pass.usage != .pendingImport || !state.migrations.isEmpty,
+                defaults.object(forKey: FlintRuleStoreKey.openLimits.rawValue) != nil || raw != nil,
             at: now, calendar: calendar)
     }
 
     /// Preserve a live grant through reloads; close legacy unbounded releases by applying
     /// the full selection when there is no verifiable ledger grant. Never clear categories.
     static func applyShield(for rule: FlintOpenLimitRule) {
-        guard let ledger = FlintProtectionLedger.appGroup() else { apply(rule, grants: [:]); return }
-        let result = ledger.transaction { state -> Void in
+        guard let ledger = FlintProtectionLedger.appGroup() else { return }
+        _ = ledger.transaction { state -> Void in
             let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup)
             let valid = state.reconcileOpenCredits(at: FlintLedgerInstant(clock: .system),
                 targetKeys: rules.map(targetKeys) ?? state.openCredits.knownTargets,
@@ -79,7 +78,6 @@ public enum FlintOpenCredit {
             }
             apply(rule, grants: valid ? state.openCredits.grants : [:])
         }
-        if case .failure = result { apply(rule, grants: [:]) }
     }
 
     private static func preview(target: String, blockedBy: @escaping () -> FlintOpenCreditBlocking) -> FlintOpenCreditPreview {
@@ -134,7 +132,7 @@ public enum FlintOpenCredit {
         }, release: release, reshield: reshield, stop: { FlintScheduling.stopMonitoring([$0]) },
         authorized: { grant in
             guard let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup),
-                  Set(rules.map(\.id)).count == rules.count else { return false }
+                  Set(rules.map(\.id)).count == rules.count else { return nil }
             return authorized(grant, rules: rules)
         }, unavailable: restoreObservedRules)
     }
@@ -265,7 +263,8 @@ public enum FlintOpenCredit {
                 applications: Set((store.shield.applications ?? []).map { FlintOpenLimit.key(for: $0) }),
                 webDomains: Set((store.shield.webDomains ?? []).map { FlintOpenLimit.key(for: $0) }),
                 applicationCategoryExceptions: categoryExceptions(store.shield.applicationCategories, key: { FlintOpenLimit.key(for: $0) }),
-                webCategoryExceptions: categoryExceptions(store.shield.webDomainCategories, key: { FlintOpenLimit.key(for: $0) }))
+                webCategoryExceptions: categoryExceptions(store.shield.webDomainCategories, key: { FlintOpenLimit.key(for: $0) }),
+                webContentMayBlock: store.webContent.blockedByFilter != nil)
         }
     }
     private static func blocking(application token: ApplicationToken) -> FlintOpenCreditBlocking {

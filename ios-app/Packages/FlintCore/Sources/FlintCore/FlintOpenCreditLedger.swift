@@ -23,6 +23,7 @@ public struct FlintOpenCreditState: Codable, Equatable, Sendable {
     /// Daily request idempotency (including aliases of a live grant) survives eviction from
     /// the ledger's general recent-operation list.
     public var acceptedOperations: Set<String> = []
+    public var previousAcceptedOperations: Set<String> = []
     public var enrolled: Bool = false
     public init() {}
 
@@ -30,8 +31,10 @@ public struct FlintOpenCreditState: Codable, Equatable, Sendable {
         public let targetKey: String
         public let periodStart: Date
         public var used: Int
-        public init(targetKey: String, periodStart: Date, used: Int) {
+        public var lastSeen: Date
+        public init(targetKey: String, periodStart: Date, used: Int, lastSeen: Date? = nil) {
             self.targetKey = targetKey; self.periodStart = periodStart; self.used = used
+            self.lastSeen = lastSeen ?? periodStart
         }
     }
 
@@ -46,9 +49,11 @@ public struct FlintOpenCreditState: Codable, Equatable, Sendable {
               Set(counters.keys) == knownTargets,
               grants.count <= Self.maximumGrants,
               Set(grants.keys) == Set(carrierCheckpoints.keys),
-              acceptedOperations.count <= Self.maximumOperations else { return false }
+              acceptedOperations.count <= Self.maximumOperations,
+              previousAcceptedOperations.count <= Self.maximumOperations else { return false }
         return counters.allSatisfy { key, counter in
-            !key.isEmpty && counter.targetKey == key && counter.periodStart == periodStart && counter.used >= 0
+            !key.isEmpty && counter.targetKey == key && counter.periodStart == periodStart && counter.used >= 0 &&
+                counter.lastSeen.timeIntervalSince1970.isFinite
         } && grants.allSatisfy { key, grant in
             key == grant.targetKey && counters[key] != nil && grant.isValid &&
                 acceptedOperations.contains(grant.operationID) && carrierCheckpoints[key]!.monotonic.isFinite
@@ -91,15 +96,15 @@ public struct FlintOpenCreditGrant: Codable, Equatable, Sendable {
         guard isValid, let elapsed = grantedAt.elapsedForRelease(until: now), elapsed.isFinite else { return 0 }
         return max(0, duration - elapsed)
     }
-    /// Cap decreases alone preserve planned access. Every other effective field, including
-    /// the active registration revision, must still match; a queued template is excluded.
+    /// Cap-only changes preserve planned access; weakening authorization belongs to rule CRUD.
+    /// Other effective fields must match. The active revision may advance for a cap change.
     func authorizes(caps: [String: Int], fingerprints: [String: String], scopes: [String: String],
                     activities: [String: String]) -> Bool {
         guard Set(caps.keys) == coveredCauses else { return false }
         return caps.allSatisfy { id, cap in
             coveredFingerprints[id] == fingerprints[id] && fingerprints[id] != nil ||
                 (coveredScopes[id] == scopes[id] && scopes[id] != nil &&
-                 coveredCaps[id].map { cap < $0 } == true &&
+                 coveredCaps[id].map { cap != $0 } == true &&
                  Self.sameOrAdvancedActivity(from: coveredActivities[id], to: activities[id]))
         }
     }
@@ -212,9 +217,9 @@ extension FlintLedgerState {
     public static let legacyOpenCreditKey = "flint.openLimit.state"
 
     /// A revoked authorization cannot reappear if a later edit restores its old fields.
-    mutating func reconcileOpenCreditAuthorization(authorized: (FlintOpenCreditGrant) -> Bool,
+    mutating func reconcileOpenCreditAuthorization(authorized: (FlintOpenCreditGrant) -> Bool?,
                                                    reshield: (FlintOpenCreditGrant) -> Void) {
-        for grant in Array(openCredits.grants.values) where !authorized(grant) {
+        for grant in Array(openCredits.grants.values) where authorized(grant) == false {
             reshield(grant)
             openCredits.grants[grant.targetKey] = nil
             openCredits.carrierCheckpoints[grant.targetKey] = nil
@@ -289,11 +294,18 @@ extension FlintLedgerState {
         }
         openCredits.checkpoint = now // reboot preserves remaining-to-reset; no wall-date refill
         if openCredits.resetRemaining <= 0 {
-            let keys = openCredits.knownTargets.union(targetKeys).union(openCredits.pendingTargets)
-            guard keys.count <= FlintOpenCreditState.maximumTargets else { return false }
+            guard targetKeys.count <= FlintOpenCreditState.maximumTargets else { return false }
+            // Only finished periods may be pruned. Current targets always fit first; retain
+            // the most recently observed historical identities in the remaining bounded space.
+            let historical = openCredits.knownTargets.subtracting(targetKeys).sorted {
+                let left = openCredits.counters[$0]!.lastSeen, right = openCredits.counters[$1]!.lastSeen
+                return left == right ? $0 < $1 : left > right
+            }
+            let keys = targetKeys.union(historical.prefix(FlintOpenCreditState.maximumTargets - targetKeys.count))
             for grant in openCredits.grants.values { reshield(grant) }
             openCredits.grants.removeAll()
             openCredits.carrierCheckpoints.removeAll()
+            openCredits.previousAcceptedOperations = openCredits.acceptedOperations
             openCredits.acceptedOperations.removeAll()
             var calendar = Calendar(identifier: .gregorian)
             calendar.timeZone = TimeZone(identifier: openCredits.quotaZone!)!
@@ -304,12 +316,16 @@ extension FlintLedgerState {
             // identities so later reselection is provable, including across deletion/reset.
             // Unknown identities become eligible here, never in their first observed period.
             openCredits.counters = Dictionary(uniqueKeysWithValues: keys.map {
-                ($0, .init(targetKey: $0, periodStart: openCredits.periodStart!, used: 0))
+                ($0, .init(targetKey: $0, periodStart: openCredits.periodStart!, used: 0,
+                          lastSeen: targetKeys.contains($0) ? trusted : openCredits.counters[$0]?.lastSeen))
             })
             openCredits.knownTargets = keys
             openCredits.pendingTargets = []
             openCredits.enrolled = !keys.isEmpty
             openCredits.availability = .ready
+        }
+        for key in targetKeys where openCredits.counters[key] != nil {
+            openCredits.counters[key]!.lastSeen = openCredits.trustedWall!
         }
         if !openCredits.enrolled && openCredits.availability == .ready && !targetKeys.isEmpty {
             guard targetKeys.count <= FlintOpenCreditState.maximumTargets else { return false }
@@ -401,7 +417,8 @@ extension FlintLedgerState {
             blockingContributors: []) == .allow(confirm: true) else { return .failure(.denied(.exhausted)) }
         // A delayed retry after expiry must not charge again or recreate access (PC-23).
         guard operation(operationID) == nil,
-              !openCredits.acceptedOperations.contains(operationID) else { return .failure(.denied(.staleOperation)) }
+              !openCredits.acceptedOperations.contains(operationID),
+              !openCredits.previousAcceptedOperations.contains(operationID) else { return .failure(.denied(.staleOperation)) }
         guard openCredits.grants.count < FlintOpenCreditState.maximumGrants, coveringCaps.count <= 64 else {
             return .failure(.denied(.unavailable))
         }

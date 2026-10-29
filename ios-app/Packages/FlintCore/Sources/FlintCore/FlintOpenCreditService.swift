@@ -38,7 +38,7 @@ public final class FlintOpenCreditService {
     private let reshield: (FlintOpenCreditGrant) -> Void
     private let stop: (String) -> Void
     private let transition: (() -> Void) -> Bool
-    private let authorized: (FlintOpenCreditGrant) -> Bool
+    private let authorized: (FlintOpenCreditGrant) -> Bool?
     private let unavailable: () -> Void
 
     public init(ledger: FlintProtectionLedger, clock: FlintClock,
@@ -47,7 +47,7 @@ public final class FlintOpenCreditService {
                 registered: @escaping (String) -> Bool, release: @escaping (FlintOpenCreditGrant) throws -> Void,
                 reshield: @escaping (FlintOpenCreditGrant) -> Void, stop: @escaping (String) -> Void,
                 transition: @escaping (() -> Void) -> Bool = { body in body(); return true },
-                authorized: @escaping (FlintOpenCreditGrant) -> Bool = { _ in true },
+                authorized: @escaping (FlintOpenCreditGrant) -> Bool? = { _ in true },
                 unavailable: @escaping () -> Void = {}) {
         self.ledger = ledger; self.clock = clock; self.context = context; self.register = register
         self.registered = registered; self.release = release; self.reshield = reshield; self.stop = stop
@@ -197,6 +197,7 @@ public final class FlintOpenCreditService {
             return true
         }
         let success = (try? result.get()) ?? false
+        if case .failure(.busy) = result { return false }
         if !success { unavailable() }
         return success
     }
