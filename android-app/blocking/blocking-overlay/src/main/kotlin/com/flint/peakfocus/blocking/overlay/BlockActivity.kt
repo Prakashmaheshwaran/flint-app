@@ -72,6 +72,8 @@ class BlockActivity : ComponentActivity() {
      *  recreate(), so the glow and breathing mark run continuously across re-used instances. */
     private var target by mutableStateOf<BlockedTarget?>(null)
     private var recoveryMode by mutableStateOf(false)
+    /** Recovery is a Flint settings surface, not a fallback shield owned by Path B. */
+    internal val isRecoverySurface: Boolean get() = recoveryMode
 
     /** Refusal counter fed to `BlockScreen`'s nudge parameter — increments animate. */
     private var nudge by mutableIntStateOf(0)

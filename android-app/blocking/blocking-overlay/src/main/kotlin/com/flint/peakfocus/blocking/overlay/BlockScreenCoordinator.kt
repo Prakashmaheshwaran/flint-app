@@ -236,20 +236,6 @@ class BlockScreenCoordinator(
             val unsubscribe = EnforcementSignals.detectors.subscribe(::publishPathAHealth)
             try { kotlinx.coroutines.awaitCancellation() } finally { unsubscribe() }
         }
-        scope.launch(statusDispatcher) {
-            // ProtectionClock resolves the OS boot identity lazily. Initialize it here so
-            // status publication on an accessibility/main callback never opens /proc.
-            var first = true
-            while (isActive) {
-                if (!first) {
-                    withTimeoutOrNull(ProtectionStatusProjection.TICK_MS) { statusInvalidations.receive() }
-                    delay(STATUS_COALESCE_MS)
-                    statusInvalidations.tryReceive() // one conflated signal represents every latest input
-                }
-                first = false
-                publishProtectionStatus()
-            }
-        }
         scope.launch { (legacyGrants?.state ?: focusStore.state).collect { state ->
             if (state is StorageState.Ready) {
                 if (state.value.revision < (focusLastGood?.revision ?: -1L)) return@collect
@@ -264,6 +250,21 @@ class BlockScreenCoordinator(
             rerenderNow()
             invalidateProtectionStatus()
         } }
+        scope.launch(statusDispatcher) {
+            // Start after every source collector, including the focus projection. A Ready
+            // synchronous source must reach the first publication without a coalescing delay.
+            // ProtectionClock's lazy OS boot lookup still stays on this worker dispatcher.
+            var first = true
+            while (isActive) {
+                if (!first) {
+                    withTimeoutOrNull(ProtectionStatusProjection.TICK_MS) { statusInvalidations.receive() }
+                    delay(STATUS_COALESCE_MS)
+                    statusInvalidations.tryReceive()
+                }
+                first = false
+                publishProtectionStatus()
+            }
+        }
         scope.launch {
             // Include readiness (and recovery), but exclude counters/receipts from the config
             // signal so our own debits cannot create an event-driven re-evaluation loop.
