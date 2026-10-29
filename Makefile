@@ -31,6 +31,8 @@ endif
 override IOS_DIR := $(value IOS_DIR)
 override ANDROID_DIR := $(value ANDROID_DIR)
 override IOS_DERIVED_DATA := $(value IOS_DERIVED_DATA)
+override IOS_UI_RESULTS := $(value IOS_UI_RESULTS)
+override FLINT_UI_DISPOSABLE := $(value FLINT_UI_DISPOSABLE)
 override IOS_SIM := $(value IOS_SIM)
 override AVD := $(value AVD)
 override DRY_RUN := $(value DRY_RUN)
@@ -44,6 +46,7 @@ override ANDROID_HOME := $(value ANDROID_HOME)
 override ANDROID_SDK_ROOT := $(value ANDROID_SDK_ROOT)
 override DEVELOPER_DIR := $(value DEVELOPER_DIR)
 export IOS_DIR ANDROID_DIR IOS_DERIVED_DATA IOS_SIM AVD DRY_RUN CONFIRM TAG
+export IOS_UI_RESULTS FLINT_UI_DISPOSABLE
 export ORPHAN_PLAN ORPHAN_DIGEST
 ifeq ($(origin MAKE),default)
 export FLINT_MAKE := $(value MAKE_COMMAND)
@@ -89,6 +92,9 @@ ios-test: ios-gen ## Run the iOS unit tests on the first available iPhone simula
 	xcodebuild test -project "$$IOS_DIR/Flint.xcodeproj" -scheme Flint \
 		-derivedDataPath "$$IOS_DERIVED_DATA" \
 		-destination "platform=iOS Simulator,name=$$DEVICE" CODE_SIGNING_ALLOWED=NO
+
+ios-ui: ## Run DEBUG UI fixtures (Large/AX5) on an empty dedicated IOS_SIM; no Screen Time proof
+	@bash scripts/ios-ui.sh
 
 android: ## Assemble the Android debug APK
 	@bash scripts/flint-env-report.sh --check-android
@@ -167,6 +173,6 @@ clean-orphans: ## Preview orphans; deletion needs CONFIRM=1 ORPHAN_PLAN=file ORP
 	[ "$$CONFIRM" != 1 ] || args+=(--confirm --plan-digest "$$ORPHAN_DIGEST"); \
 	bash scripts/clean-devices.sh "$${args[@]}"
 
-.PHONY: help env doctor ios-gen ios ios-build ios-test android android-release android-bundle android-install android-test \
+.PHONY: help env doctor ios-gen ios ios-build ios-test ios-ui android android-release android-bundle android-install android-test \
 	verify verify-ios verify-android android-e2e selftest release-check clean clean-devices clean-orphans \
 	gates ios-run android-run logs-ios logs-android pr-status ancestry

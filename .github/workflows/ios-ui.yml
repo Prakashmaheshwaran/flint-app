@@ -1,0 +1,52 @@
+# DEBUG fixtures exercise the shipped UI. Simulator results cannot prove Screen Time.
+name: iOS UI fixtures
+
+on:
+  # Hosted startup is unreliable; retain the full suite as an explicit diagnostic.
+  # The maintained local gate remains make ios-ui on a dedicated simulator.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  fixture-ui:
+    runs-on: macos-latest
+    timeout-minutes: 35
+    env:
+      IOS_UI_RESULTS: ios-app/build/ios-ui
+      FLINT_UI_DISPOSABLE: '1'
+      # Match the observed green unit-test destination; never depend on JSON order.
+      IOS_UI_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-26-5
+      IOS_UI_DEVICE_NAME: iPhone 17 Pro
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Resolve the pinned available runtime and iPhone to an exact UDID
+        run: |
+          xcrun simctl list devices available --json > "$RUNNER_TEMP/devices.json"
+          python3 - "$RUNNER_TEMP/devices.json" >> "$GITHUB_ENV" <<'PY'
+          import json, os, sys
+          devices = json.load(open(sys.argv[1]))["devices"]
+          runtime, name = os.environ["IOS_UI_RUNTIME"], os.environ["IOS_UI_DEVICE_NAME"]
+          phones = [d for d in devices.get(runtime, [])
+                    if d.get("isAvailable", True) and d["name"] == name]
+          if len(phones) != 1:
+              sys.exit(f"Expected one available {name} on {runtime}; found {len(phones)}")
+          print("IOS_SIM=" + phones[0]["udid"])
+          PY
+      - name: Test DEBUG UI fixtures and report empty-state renders (no assertion retries)
+        run: make ios-ui
+      - name: Upload xcresult, screenshots, accessibility hierarchies and provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ui-fixtures-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ios-app/build/ios-ui/
+          if-no-files-found: error
+          retention-days: 14

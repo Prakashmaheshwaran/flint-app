@@ -187,3 +187,30 @@ targets:
       - package: FlintCore
       # Host app dependency lets @testable import Flint exercise the shipped model.
       - target: Flint
+
+  # ── Fixture-only UI tests (kept out of the Flint unit-test scheme) ──
+  FlintUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - UITests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.uitests
+        GENERATE_INFOPLIST_FILE: "YES"
+        TEST_TARGET_NAME: Flint
+    dependencies:
+      - target: Flint
+
+schemes:
+  FlintUI:
+    build:
+      targets:
+        Flint: all
+        FlintUITests: [test]
+        FlintTests: [test]
+    test:
+      config: Debug
+      targets:
+        - FlintUITests
+        - FlintTests
