@@ -42,7 +42,10 @@ internal suspend fun guardCurrentFocus(store: FocusStateStore, shift: ClockShift
         ), Unit)
     }
 
-/** Legacy weekly migration mirror only; initialized rolling-ledger state bypasses this hook. */
+/**
+ * Legacy weekly migration mirror only. When FocusSnapshot gains its rolling protection ledger,
+ * the caller must bypass this hook for initialized ledger state and keep the original mirror.
+ */
 private fun guardedLegacyPassForMigration(pass: EmergencyPassState, shift: ClockShift): EmergencyPassState =
     ClockChangeGuard().guardedEmergencyPass(pass, shift)
 
@@ -114,8 +117,9 @@ class TimeChangeReceiver : BroadcastReceiver() {
             applyGuards(appContext, shift, goAsync())
         }
 
-        // 4. App-registered re-arm hooks. Failures are isolated so one bad hook cannot
-        //    break the rest of re-arm.
+        // 4. Immediate re-arm keeps detection responsive even if either write stalls. The
+        //    second wake in applyGuards is distinct: it observes the acknowledged transaction.
+        //    Failures are isolated so one bad hook cannot break the rest of re-arm.
         rearmDetectors(rearmActions.map { rearm -> { rearm(appContext) } })
     }
 

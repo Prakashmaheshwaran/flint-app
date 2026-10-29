@@ -185,6 +185,161 @@ class AnchoredEditorClockTest {
         assertEquals(hour, state(store).causes.getValue(ruleCauseKey(old.id)).interval!!.remainingMs(now))
     }
 
+    @Test fun `R-18 explicitly confirmed Easy changes between open-ended finite and disabled replace runtime activity`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk)
+        val open = rule().copy(schedule = null, breakLevel = BreakLevel.EASY)
+        DataStoreBlockRulesStore(disk).upsert(open); store.reconcile(clock())
+        suspend fun save(rule: BlockRule, now: AccessClockStamp) {
+            val preview = store.request(EditorChange("Edit", upserts = listOf(rule)), now, EditorSafety(true)) as EditorCommitResult.Preview
+            assertEquals(EditorCommitResult.Applied(), store.confirm(preview.pending.id, now, EditorSafety(true)))
+        }
+        val finite = open.copy(schedule = Schedule(startMinuteOfDay = 9 * 60, endMinuteOfDay = 11 * 60))
+        save(finite, clock())
+        assertEquals((base - hour).toString(), state(store).causes.getValue(ruleCauseKey(open.id)).occurrenceId)
+        assertEquals(base + hour, store.reconcileRules(clock()).single().expiresAtEpochMs)
+        val end = clock(hour)
+        assertFalse(blocked(store.reconcileRules(end), end))
+        save(open, end)
+        assertTrue(blocked(store.reconcileRules(end), end))
+        assertNull(store.reconcileRules(end).single().expiresAtEpochMs)
+        save(open.copy(enabled = false), end)
+        assertFalse(blocked(store.reconcileRules(end), end))
+        save(open, end)
+        assertTrue(blocked(store.reconcileRules(end), end))
+    }
+
+    @Test fun `R-18 edited schedule start retains accounting identity but cannot replay its local day after reboot`() = runBlocking {
+        val disk = Disk(); val store = fresh(disk); val old = rule().copy(breakLevel = BreakLevel.EASY)
+        DataStoreBlockRulesStore(disk).upsert(old); store.reconcile(clock())
+        val identity = state(store).causes.getValue(ruleCauseKey(old.id)).occurrenceId
+        val changed = old.copy(schedule = Schedule(startMinuteOfDay = 10 * 60, endMinuteOfDay = 11 * 60))
+        val preview = store.request(EditorChange("Shorten", upserts = listOf(changed)), clock(), EditorSafety(true)) as EditorCommitResult.Preview
+        assertEquals(EditorCommitResult.Applied(), store.confirm(preview.pending.id, clock(), EditorSafety(true)))
+        assertEquals(identity, state(store).causes.getValue(ruleCauseKey(old.id)).occurrenceId)
+        assertFalse(blocked(store.reconcileRules(clock(hour)), clock(hour)))
+        val reboot = clock(1, 30 * 60_000, "boot-b")
+        assertFalse(blocked(store.reconcileRules(reboot), reboot))
+        val nextDay = clock(1 + 24 * hour, 30 * 60_000 + 24 * hour, "boot-b")
+        assertTrue(blocked(store.reconcileRules(nextDay), nextDay))
+    }
+
+    @Test fun `R-18 all four open-ended schedule and Timer transitions honor every tier without stale runtime shape`() = runBlocking {
+        for (tier in BreakLevel.entries) {
+            val open = rule().copy(schedule = null, breakLevel = tier)
+            val scheduled = open.copy(schedule = Schedule(startMinuteOfDay = 9 * 60, endMinuteOfDay = 11 * 60))
+            val timed = open.copy(expiresAtEpochMs = base + 300_000)
+            for ((before, after) in listOf(open to scheduled, open to timed, scheduled to open, timed to open)) {
+                val disk = Disk(); val store = fresh(disk)
+                DataStoreBlockRulesStore(disk).upsert(before); store.reconcile(clock())
+                val result = store.request(EditorChange("Change shape", upserts = listOf(after)), clock(), EditorSafety(true))
+                if (after == open && tier != BreakLevel.EASY) {
+                    // New strict open-ended protection is forbidden by the finite-end contract.
+                    assertTrue(result is EditorCommitResult.Rejected)
+                    assertEquals(before, DataStoreBlockRulesStore(disk).rules.first().single())
+                    continue
+                }
+                val id = when (result) {
+                    is EditorCommitResult.Preview -> result.pending.id
+                    is EditorCommitResult.Waiting -> result.pending.id
+                    else -> error("Unexpected shape preview: $tier $result")
+                }
+                if (tier == BreakLevel.HARDCORE) {
+                    assertEquals(CommitmentPolicy.Outcome.DEFER, (result as EditorCommitResult.Preview).pending.outcome)
+                    val denied = store.confirm(id, clock(), EditorSafety(true)) as EditorCommitResult.Rejected
+                    assertTrue(denied.reason.contains("no scheduled end"))
+                    assertEquals(before, DataStoreBlockRulesStore(disk).rules.first().single())
+                    assertTrue(blocked(store.reconcileRules(clock(2 * hour)), clock(2 * hour)))
+                    continue
+                }
+                val commitAt = if (tier == BreakLevel.HARDER) {
+                    assertEquals(60_000L, (result as EditorCommitResult.Waiting).remainingMs)
+                    assertTrue(blocked(store.reconcileRules(clock(59_999)), clock(59_999)))
+                    clock(60_000)
+                } else clock()
+                assertEquals(EditorCommitResult.Applied(), store.confirm(id, commitAt, EditorSafety(true)))
+                assertEquals(after, DataStoreBlockRulesStore(disk).rules.first().single())
+                val projected = store.reconcileRules(commitAt).single()
+                assertTrue(blocked(listOf(projected), commitAt))
+                if (tier == BreakLevel.HARDER) {
+                    val currentCause = state(store).causes.getValue(ruleCauseKey(after.id))
+                    assertEquals(1, readHarderWait(disk.values.value).counts[editorOccurrence(ruleCauseKey(after.id), currentCause)])
+                    val again = store.requestEnabled(setOf(after.id), false, "Off", commitAt, EditorSafety(true)) as EditorCommitResult.Waiting
+                    assertEquals(300_000L, again.remainingMs)
+                }
+                if (after == open) {
+                    assertNull(projected.expiresAtEpochMs)
+                    assertTrue(blocked(store.reconcileRules(clock(2 * hour)), clock(2 * hour)))
+                } else {
+                    val duration = if (after.schedule != null) hour else 300_000L
+                    assertEquals(base + duration, projected.expiresAtEpochMs)
+                    assertFalse(blocked(store.reconcileRules(clock(duration)), clock(duration)))
+                }
+            }
+        }
+    }
+
+    @Test fun `R-18 off then on across every shape and tier preserves allowed waiting and deferred boundaries`() = runBlocking {
+        for (tier in BreakLevel.entries) {
+            val open = rule().copy(schedule = null, breakLevel = tier)
+            for (original in listOf(open, open.copy(schedule = Schedule(startMinuteOfDay = 9 * 60, endMinuteOfDay = 11 * 60)),
+                open.copy(expiresAtEpochMs = base + 300_000))) {
+                val disk = Disk(); val store = fresh(disk)
+                DataStoreBlockRulesStore(disk).upsert(original); store.reconcile(clock())
+                val off = store.requestEnabled(setOf(original.id), false, "Off", clock(), EditorSafety(true))
+                val id = when (off) {
+                    is EditorCommitResult.Preview -> off.pending.id
+                    is EditorCommitResult.Waiting -> off.pending.id
+                    else -> error("Unexpected off result: $off")
+                }
+                var at = if (tier == BreakLevel.HARDER) clock(60_000) else clock()
+                val result = store.confirm(id, at, EditorSafety(true))
+                if (tier == BreakLevel.HARDCORE && original == open) {
+                    assertTrue((result as EditorCommitResult.Rejected).reason.contains("no scheduled end"))
+                    assertTrue(blocked(store.reconcileRules(at), at))
+                    continue
+                }
+                if (tier == BreakLevel.HARDCORE) {
+                    assertEquals(EditorCommitResult.Applied(true), result)
+                    assertTrue(blocked(store.reconcileRules(at), at))
+                    at = clock(if (original.schedule != null) hour else 300_000)
+                    store.reconcile(at)
+                } else assertEquals(EditorCommitResult.Applied(), result)
+                assertFalse(DataStoreBlockRulesStore(disk).rules.first().single().enabled)
+                assertFalse(blocked(store.reconcileRules(at), at))
+                val on = store.requestEnabled(setOf(original.id), true, "On", at, EditorSafety(true))
+                if (original == open && tier == BreakLevel.HARDER) {
+                    // A stopped legacy strict open-ended session cannot become a new one.
+                    assertTrue(on is EditorCommitResult.Rejected)
+                    assertFalse(blocked(store.reconcileRules(at), at))
+                } else {
+                    assertEquals(EditorCommitResult.Applied(), store.confirm((on as EditorCommitResult.Preview).pending.id, at, EditorSafety(true)))
+                    assertEquals(tier != BreakLevel.HARDCORE, blocked(store.reconcileRules(at), at))
+                    if (tier == BreakLevel.HARDCORE) {
+                        val tomorrow = clock(24 * hour + 30 * 60_000)
+                        assertEquals(original.schedule != null, blocked(store.reconcileRules(tomorrow), tomorrow))
+                    }
+                }
+            }
+        }
+    }
+
+    @Test fun `R-18 materialization repairs a published finite shape left with an open-ended cause`() = runBlocking {
+        for (tier in BreakLevel.entries) for (schedule in listOf(true, false)) {
+            val disk = Disk(); val store = fresh(disk)
+            val open = rule().copy(schedule = null, breakLevel = tier)
+            DataStoreBlockRulesStore(disk).upsert(open); store.reconcile(clock())
+            assertNull(state(store).causes.getValue(ruleCauseKey(open.id)).interval)
+            val finite = if (schedule) open.copy(schedule = Schedule(startMinuteOfDay = 12 * 60, endMinuteOfDay = 13 * 60))
+                else open.copy(expiresAtEpochMs = base + 300_000)
+            DataStoreBlockRulesStore(disk).upsert(finite)
+            val projected = store.reconcileRules(clock()).single()
+            assertEquals(!schedule, projected.runtime!!.evaluation!!.active)
+            assertNotNull(state(store).causes.getValue(ruleCauseKey(open.id)).interval)
+            if (schedule) assertTrue(blocked(store.reconcileRules(clock(2 * hour)), clock(2 * hour)))
+            else assertFalse(blocked(store.reconcileRules(clock(300_000)), clock(300_000)))
+        }
+    }
+
     @Test fun `R-18 clock display rekey preserves a current Harder wait without weakening its exact revision check`() = runBlocking {
         val disk = Disk(); val store = fresh(disk); val timer = timer(BreakLevel.HARDER)
         assertTrue(store.startTimer(timer, clock()))

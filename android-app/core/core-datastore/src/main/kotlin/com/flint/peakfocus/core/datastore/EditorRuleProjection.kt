@@ -8,6 +8,8 @@ import com.flint.peakfocus.core.model.RuleRuntime
 internal fun editorRulesWithRuntime(rules: List<BlockRule>, state: EditorCommitmentState, now: AccessClockStamp): List<BlockRule> =
     rules.map { rule ->
         val key = ruleCauseKey(rule.id)
+        // Fail the publication and retain the holder's last-good contribution. Silently
+        // skipping an invalid cause would publish Ready with a missing restriction.
         val cause = requireNotNull(state.causes[key]) { "Missing materialized occurrence for $key" }
         val boundary = state.queued.firstOrNull { !it.needsReview && key in it.change.keys }?.boundaries?.get(key)
         val interval = boundary ?: cause.interval

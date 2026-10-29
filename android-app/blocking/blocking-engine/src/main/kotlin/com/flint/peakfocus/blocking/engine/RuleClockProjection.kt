@@ -23,8 +23,13 @@ object RuleClockProjection {
         val runtime = requireNotNull(rule.runtime)
         if (!rule.enabled) return RuleEvaluation(false, null, null)
         if (runtime.occurrenceId != "inactive") {
+            if (runtime.remainingAtAnchorMs != null && runtime.wallEndEpochMs == null) {
+                // Runtime metadata is not durable authority; a malformed adapter must not
+                // throw from every detector read or invent an open-ended commitment.
+                return RuleEvaluation(false, null, null)
+            }
             val remaining = runtime.remainingAtAnchorMs?.let {
-                AnchoredInterval(runtime.anchor, it, requireNotNull(runtime.wallEndEpochMs)).remainingMs(now)
+                AnchoredInterval(runtime.anchor, it, runtime.wallEndEpochMs!!).remainingMs(now)
             }
             if (remaining == null) return RuleEvaluation(true, null, null)
             if (remaining > 0) {
@@ -42,7 +47,7 @@ object RuleClockProjection {
         val zone = ZoneId.of(runtime.zoneId)
         val occurrence = ScheduleOccurrences.containing(schedule, zone, logicalWall)
         // A completed occurrence cannot replay after a reboot/rollback or a duplicate callback.
-        if (occurrence != null && occurrence.id != runtime.occurrenceId) {
+        if (occurrence != null && !ScheduleOccurrences.sameStartDate(occurrence.id, runtime.occurrenceId, zone)) {
             val end = addBounded(now.wallEpochMs, occurrence.endsAtEpochMs - logicalWall)
             return RuleEvaluation(true, end, end)
         }

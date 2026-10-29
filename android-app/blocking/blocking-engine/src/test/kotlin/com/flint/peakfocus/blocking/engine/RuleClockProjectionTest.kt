@@ -141,4 +141,11 @@ class RuleClockProjectionTest {
         assertEquals(legacy, RuleClockProjection.project(legacy, now))
         assertEquals(Verdict.Allow, verdict(legacy, now))
     }
+
+    @Test fun `R_18 malformed finite runtime cannot throw or become open ended on a detector read`() {
+        val malformed = rule().copy(runtime = rule().runtime!!.copy(wallEndEpochMs = null))
+        val projected = RuleClockProjection.project(malformed, anchor)
+        assertFalse(projected.runtime!!.evaluation!!.active)
+        assertEquals(Verdict.Allow, verdict(projected, anchor))
+    }
 }

@@ -24,6 +24,14 @@ object ScheduleOccurrences {
             .filter { it > afterEpochMs }.minOrNull()
     }
 
+    /** An in-occurrence edit can move the start minute while retaining its accounting ID. */
+    fun sameStartDate(firstId: String, secondId: String, zone: ZoneId): Boolean {
+        val first = firstId.toLongOrNull() ?: return false
+        val second = secondId.toLongOrNull() ?: return false
+        return Instant.ofEpochMilli(first).atZone(zone).toLocalDate() ==
+            Instant.ofEpochMilli(second).atZone(zone).toLocalDate()
+    }
+
     fun onDate(schedule: Schedule, zone: ZoneId, date: LocalDate): Occurrence? {
         val start = schedule.startMinuteOfDay
         val end = schedule.endMinuteOfDay
