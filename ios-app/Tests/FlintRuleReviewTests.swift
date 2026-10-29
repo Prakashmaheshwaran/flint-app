@@ -16,6 +16,86 @@ private final class FailingRuleDefaults: UserDefaults {
 }
 
 final class FlintRuleReviewTests: XCTestCase {
+    func testAdjacentDailyQueuesApplyBeforeTheFirstCallbackInEitherOrderPC11PC15PC16() throws {
+        for startFirst in [false, true] {
+            let time = try RuleHarness(); defer { time.clean() }
+            let oldTime = time.install(FlintLimitRule(id: "time", name: "Time", thresholdMinutes: 30,
+                breakLevel: .hardcore, protection: .init(timeZoneID: "UTC")))
+            var futureTime = oldTime; futureTime.thresholdMinutes = 60
+            try adjacentQueue(oldTime, future: futureTime, harness: time, startFirst: startFirst)
+            XCTAssertEqual(time.load(FlintLimitRule.self).first?.thresholdMinutes, 60)
+
+            let open = try RuleHarness(); defer { open.clean() }
+            let oldOpen = open.install(FlintOpenLimitRule(id: "open", name: "Open", opensAllowed: 3,
+                breakLevel: .hardcore, protection: .init(timeZoneID: "UTC")))
+            var futureOpen = oldOpen; futureOpen.opensAllowed = 4
+            try adjacentQueue(oldOpen, future: futureOpen, harness: open, startFirst: startFirst)
+            XCTAssertEqual(open.load(FlintOpenLimitRule.self).first?.opensAllowed, 4)
+        }
+    }
+
+    private func adjacentQueue<Rule: FlintGatedRule>(_ old: Rule, future: Rule, harness h: RuleHarness,
+                                                    startFirst: Bool) throws {
+        let arbiter = FlintRuleArbiter(environment: h.environment)
+        guard case let .deferRequired(ticket, end) = arbiter.upsert(future) else { return XCTFail() }
+        XCTAssertEqual(arbiter.upsert(future, confirmation: ticket), .queued(until: end))
+        let starts = h.center.starts.count
+        h.now = end.addingTimeInterval(1) // callbacks need not land on the exact wall instant
+        let monitor = FlintRuleMonitor(environment: h.environment)
+        _ = monitor.handle(startFirst ? .start : .end, activity: old.activityName)
+        let effective = try XCTUnwrap(h.load(Rule.self).first)
+        XCTAssertNil(effective.protection?.queuedChange)
+        XCTAssertEqual(effective.protection?.occurrence?.start, end)
+        XCTAssertEqual(try effective.fingerprint(action: "edit"), try future.fingerprint(action: "edit"))
+        XCTAssertEqual(h.center.starts.count, starts + 1)
+        let clears = h.cleared.count
+        _ = monitor.handle(startFirst ? .end : .start, activity: old.activityName)
+        XCTAssertEqual(h.cleared.count, clears, "the old revision's second callback cannot clear its successor")
+        XCTAssertEqual(h.center.starts.count, starts + 1, "callback order must not restart the successor")
+        XCTAssertFalse(h.reports[Rule.domain.domain]?.failures.contains { $0.reason.contains("applied late") } ?? false)
+    }
+
+    func testMissedSleepBoundaryAppliesAcceptedOffDeleteOrWeakenLateBeforeAnyLaterFreezePC11PC14() throws {
+        for viaHost in [false, true] {
+            for action: FlintQueuedRuleChange.Action in [.turnOff, .delete, .edit] {
+                let h = try RuleHarness(); defer { h.clean() }
+                h.now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-28T23:00:00Z"))
+                let old = h.install(FlintScheduleRule(id: "sleep.night", name: "Sleep Mode",
+                    schedule: .init(startHour: 22, endHour: 7), breakLevel: .hardcore,
+                    allowListMode: true, protection: .init(timeZoneID: "UTC")))
+                var future = old
+                if action == .turnOff { future.enabled = false }
+                if action == .edit { future.breakLevel = .easy }
+                let mutation = FlintRuleArbiter.Mutation<FlintScheduleRule>(id: old.id,
+                    proposed: action == .delete ? nil : future, action: action, expectedRevision: old.revision)
+                let arbiter = FlintRuleArbiter(environment: h.environment)
+                guard case let .deferRequired(ticket, end) = arbiter.mutate([mutation], confirmation: nil) else { return XCTFail() }
+                XCTAssertEqual(arbiter.mutate([mutation], confirmation: ticket), .queued(until: end))
+                h.now = end.addingTimeInterval(40 * 3600) // off from 06:00 until 23:00 the next day
+                XCTAssertGreaterThan(try XCTUnwrap(old.templateOccurrence(at: h.now)).start, end)
+                if viaHost { _ = FlintSchedulesController(environment: h.environment).reload() }
+                else { _ = FlintRuleMonitor(environment: h.environment).handle(.start, activity: old.activityName) }
+                let current = h.load(FlintScheduleRule.self).first
+                switch action {
+                case .delete: XCTAssertNil(current)
+                case .turnOff: XCTAssertEqual(current?.enabled, false)
+                case .edit: XCTAssertEqual(current?.breakLevel, .easy)
+                }
+                XCTAssertNil(current?.protection?.queuedChange)
+                XCTAssertFalse(h.appliedSchedules.contains { $0.activityName == old.activityName },
+                    "the obsolete occurrence cannot be frozen or restored before the accepted change applies")
+                let report = try XCTUnwrap(h.reports["schedules"])
+                let note = try XCTUnwrap(report.failures.first { $0.activityName == "queued.\(old.id)" })
+                XCTAssertTrue(note.reason.contains("Queued change to Sleep Mode applied late (due"))
+                XCTAssertNotEqual(note.activityName, current?.activityName)
+                let clears = h.cleared.count
+                _ = FlintRuleMonitor(environment: h.environment).handle(.end, activity: old.activityName)
+                XCTAssertEqual(h.cleared.count, clears)
+                XCTAssertTrue(try h.ledger.read().get().harder.isEmpty, "late replay spends no new wait/count")
+            }
+        }
+    }
+
     func testBusyRuleStartAddsOnlyTheExactReadableRevisionAndEndDoesNothing() throws {
         let h = try RuleHarness(); defer { h.clean() }
         let schedule = h.install(h.schedule(tier: .hardcore))

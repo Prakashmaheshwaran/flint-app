@@ -326,6 +326,7 @@ final class FlintRuleArbiter {
             }
             guard self.save(all) else { return failed() }
             self.finish(prepared, replacing: due, resetTimeBudget: true)
+            self.recordLateQueues(due, remaining: all)
             self.notify()
             return true
         } ?? false
@@ -586,6 +587,30 @@ final class FlintRuleArbiter {
         FlintRuleStoreLock.afterUnlock(environment: env) {
             self.env.publishStatus()
             NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
+        }
+    }
+    private func recordLateQueues<Rule: FlintGatedRule>(_ applied: [Rule], remaining: [Rule]) {
+        let now = env.clock.now()
+        let notes = applied.compactMap { rule -> FlintArmingHealth.Failure? in
+            guard let queue = rule.protection?.queuedChange,
+                  now.timeIntervalSince(queue.window.end) > 60 else { return nil }
+            // This minute is a diagnostic threshold, never a grace period or release authority.
+            let formatter = DateFormatter()
+            formatter.timeZone = rule.zone; formatter.dateStyle = .medium; formatter.timeStyle = .short
+            return .init(activityName: "queued.\(rule.id)",
+                reason: "Queued change to \(rule.name) applied late (due \(formatter.string(from: queue.window.end))).")
+        }
+        guard !notes.isEmpty else { return }
+        FlintRuleStoreLock.afterUnlock(environment: env) {
+            // A containing reload records native observations before unlocking. Preserve that
+            // report and append a diagnostic that cannot masquerade as an activity failure.
+            var report = self.env.loadHealth().domains[Rule.domain.domain]
+                ?? .init(enabled: remaining.filter(\.enabled).count, attempted: 0, armed: 0, failures: [])
+            let keys = Set(notes.map(\.activityName))
+            report.failures.removeAll { keys.contains($0.activityName) }
+            report.failures.append(contentsOf: notes)
+            report.updatedAt = self.env.clock.now()
+            self.env.record(Rule.domain.domain, report)
         }
     }
     static func causeID<Rule: FlintGatedRule>(_ rule: Rule, window: FlintRuleWindow?) -> String {
