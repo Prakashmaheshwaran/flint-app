@@ -88,7 +88,7 @@ final class FlintCompletionControllerIntegrationTests: XCTestCase {
 }
 
 private struct ControllerNotificationWebRestrictions: FlintSessionWebRestricting {
-    func reconcile(_ session: FlintActiveSession, now: Date) {}
+    func reconcile(_ session: FlintActiveSession, clock: FlintClock) {}
 }
 
 private final class ControllerNotificationCenter: FlintNotificationCenter {

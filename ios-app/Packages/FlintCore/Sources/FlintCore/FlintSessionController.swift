@@ -169,6 +169,13 @@ public protocol FlintSessionStateStoring: AnyObject {
     func clearSessionSelection()
     func emergencyPassLastUsed() -> Date?
     func recordEmergencyPassUse(_ date: Date)
+    /// Positive evidence the shared state was read, not an empty locked or unavailable
+    /// container: only then is a missing record "no session" (ADR-012 §8).
+    func isProtectionStateReadable() -> Bool
+}
+
+public extension FlintSessionStateStoring {
+    func isProtectionStateReadable() -> Bool { true }
 }
 
 extension FlintGroupStore: FlintSessionStateStoring {
@@ -220,6 +227,10 @@ public struct FlintSessionEnvironment {
     /// The cross-process session-transition lock (R-20). nil = no App Group container, where
     /// only the process-local lock applies (and no shared record can be read anyway).
     public var transitionLock: () -> FlintSessionTransitionLock?
+    /// How long a monitor callback waits for that lock. Longer than an app-side wait: a skipped
+    /// end leaves the block on until the host next reconciles, so the extension waits out
+    /// another process's short transition rather than give up.
+    public var monitorLockTimeout: TimeInterval
 
     public init(
         store: @escaping () -> FlintSessionStateStoring?,
@@ -232,7 +243,8 @@ public struct FlintSessionEnvironment {
         healthDefaults: @escaping () -> UserDefaults?,
         ledger: @escaping () -> FlintProtectionLedger? = { nil },
         publishStatus: @escaping () -> Void = {},
-        transitionLock: @escaping () -> FlintSessionTransitionLock? = { nil }
+        transitionLock: @escaping () -> FlintSessionTransitionLock? = { nil },
+        monitorLockTimeout: TimeInterval = 6
     ) {
         self.store = store
         self.shield = shield
@@ -245,6 +257,7 @@ public struct FlintSessionEnvironment {
         self.ledger = ledger
         self.publishStatus = publishStatus
         self.transitionLock = transitionLock
+        self.monitorLockTimeout = monitorLockTimeout
     }
 
     public static var live: FlintSessionEnvironment {
@@ -328,10 +341,10 @@ public final class FlintSessionController {
     /// Take the cross-process transition lock for the outermost transition in this process (the
     /// caller holds `Self.lock`). nil = another process holds it past the timeout: the caller
     /// changes nothing.
-    private func beginTransition() -> FlintSessionTransitionLock.Hold? {
+    private func beginTransition(timeout: TimeInterval? = nil) -> FlintSessionTransitionLock.Hold? {
         if Self.transitionDepth > 0 { Self.transitionDepth += 1; return .nested }
         guard let lock = env.transitionLock() else { Self.transitionDepth += 1; return .nested }
-        guard let hold = lock.acquire() else { return nil }
+        guard let hold = lock.acquire(timeout: timeout) else { return nil }
         Self.transitionDepth += 1
         return hold
     }
@@ -571,7 +584,7 @@ public final class FlintSessionController {
 
         // The auto-end is armed and the shield succeeded. Safari belongs to this same cause's
         // store, so every existing whole-store teardown releases it without a second clear.
-        env.webRestrictions.reconcile(session, now: now)
+        env.webRestrictions.reconcile(session, clock: env.clock)
 
         // Uninstall guard: a Hardcore block also denies app removal (deleting Flint is otherwise
         // the one-tap escape). Same store as the shield, so every teardown path drops both
@@ -798,7 +811,11 @@ public final class FlintSessionController {
     @discardableResult
     public func reconcile() -> FlintSessionReconcileReport {
         Self.lock.lock(); defer { Self.lock.unlock() }
-        guard let transition = beginTransition() else { var busy = FlintSessionReconcileReport(outcome: .running); busy.transitionBusy = true; return busy }
+        guard let transition = beginTransition() else {
+            var busy = FlintSessionReconcileReport(outcome: .running)
+            busy.transitionBusy = true
+            return busy
+        }
         defer { endTransition(transition) }
         let store = env.store()
         let now = env.clock.now()
@@ -865,7 +882,7 @@ public final class FlintSessionController {
            let selection = sessionSelection(for: current, in: store) {
             try? env.shield.applyBlockList(selection)
             if current.endsAt == nil || env.registrar.registeredActivityNames().contains(current.monitorName) {
-                env.webRestrictions.reconcile(current, now: now)
+                env.webRestrictions.reconcile(current, clock: env.clock)
             }
         }
 
@@ -878,7 +895,9 @@ public final class FlintSessionController {
         reconcile()
     }
 
-    enum RearmReason { case repair, prematureEnd }
+    /// `clockChange`: the interval ended early because the wall clock moved ahead — not iOS
+    /// misfiring, so it neither waits out `repairInterval` nor spends `maximumRearms`.
+    enum RearmReason { case repair, prematureEnd, clockChange }
     enum RearmOutcome { case rearmed, failed, deferred }
 
     /// Minimum spacing between repair re-registrations of one session (launch, foreground and
@@ -917,9 +936,13 @@ public final class FlintSessionController {
                 return .failed
             }
         case .repair:
+            // A backward jump (now < last) isn't deferred: the end must move with it now. The
+            // re-arm stamps `lastRearmAt = now`, so repairs after it are spaced again.
             if let last = session.lastRearmAt, now.timeIntervalSince(last) < Self.repairInterval, now >= last {
                 return .deferred
             }
+        case .clockChange:
+            break
         }
         let start = FlintSessionAutoClearPlan.wholeSecond(atOrAfter: now)
         // Register the logical end: after a same-boot wall-clock change it differs from the
@@ -981,7 +1004,9 @@ public final class FlintSessionController {
     ///  - any other session name is a replaced registration: deregistered at its end, ignored.
     public func handleMonitorEvent(_ event: FlintSessionMonitorEvent, activity: String) {
         Self.lock.lock(); defer { Self.lock.unlock() }
-        guard let transition = beginTransition() else { return }
+        // Still busy after the longer wait: change nothing. The host's next reconcile finds the
+        // registration missing or drifted and repairs it; shields stay on meanwhile.
+        guard let transition = beginTransition(timeout: env.monitorLockTimeout) else { return }
         defer { endTransition(transition) }
         // The monitor's callbacks are the app-closed path: always republish what they changed
         // (unchanged content skips the widget reload).
@@ -996,8 +1021,11 @@ public final class FlintSessionController {
             // from a replaced registration: never touch the newer session.
             if event == .intervalDidEnd {
                 // An unreadable record is unknown protection, not "no session": keep its shield
-                // (ADR-012 §8; R-20). Only a truly absent record leaves a stale shield to clear.
-                if session == nil, store?.hasActiveSessionRecord() != true { env.shield.clear() }
+                // (ADR-012 §8; R-20). Only a record proven absent — in a store proven readable
+                // (not a locked or missing container that reads empty) — leaves a stale shield.
+                if session == nil, let store, store.isProtectionStateReadable(), !store.hasActiveSessionRecord() {
+                    env.shield.clear()
+                }
                 env.registrar.stopMonitoring([activity])
             }
             return
@@ -1007,7 +1035,7 @@ public final class FlintSessionController {
         case .intervalDidStart:
             if let store, let selection = sessionSelection(for: session, in: store) {
                 try? env.shield.applyBlockList(selection)
-                env.webRestrictions.reconcile(session, now: now)
+                env.webRestrictions.reconcile(session, clock: env.clock)
             }
             env.shield.setDenyAppRemoval(FlintUninstallGuard.shouldDeny(for: session, clock: env.clock))
 
@@ -1032,10 +1060,17 @@ public final class FlintSessionController {
                 store?.clearSessionSelection()
                 env.registrar.stopMonitoring([activity])
             } else if event == .intervalDidEnd, let store {
-                // The interval is over, but the session isn't: keep the shield, re-register.
-                recordAnomaly(.prematureEnd, seconds: session.logicalRemaining(clock: env.clock) ?? 0,
-                              session: session, at: now)
-                rearm(session, in: store, now: now, reason: .prematureEnd)
+                // The interval is over, but the session isn't: keep the shield, re-register. A
+                // forward wall-clock jump explains it; otherwise iOS ended it early.
+                let verdict = FlintTimeIntegrity.verdict(for: session, clock: env.clock)
+                if case .wallAhead = verdict {
+                    recordTimeVerdict(verdict, for: session, at: now)
+                    rearm(session, in: store, now: now, reason: .clockChange)
+                } else {
+                    recordAnomaly(.prematureEnd, seconds: session.logicalRemaining(clock: env.clock) ?? 0,
+                                  session: session, at: now)
+                    rearm(session, in: store, now: now, reason: .prematureEnd)
+                }
             }
             // An early warning is ignored: the interval end that follows still ends the session.
         }

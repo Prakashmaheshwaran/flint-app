@@ -119,6 +119,26 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         logicalRemaining(clock: clock).map { clock.now().addingTimeInterval($0) }
     }
 
+    /// `logicalEnd` for display, publication and cause identity: the recorded wall end while the
+    /// clock is steady (so it doesn't jitter between reads), the logical end in whole seconds
+    /// after a real discontinuity. Later than `clock.now()` exactly while time remains.
+    public func stableLogicalEnd(clock: FlintClock) -> Date? {
+        guard let remaining = logicalRemaining(clock: clock) else { return nil }
+        let now = clock.now()
+        let end = now.addingTimeInterval(remaining)
+        guard remaining > 0 else { return min(end, endsAt ?? end) }
+        if let endsAt, endsAt > now,
+           abs(end.timeIntervalSince(endsAt)) <= FlintTimeIntegrity.discontinuityThreshold { return endsAt }
+        return FlintSessionAutoClearPlan.wholeSecond(atOrAfter: end)
+    }
+
+    /// Whether the session still enforces: by logical time when a clock is given (ADR-012 §9),
+    /// else by its wall end at `now`, for pure callers that hold only a date.
+    public func isEnforcing(at now: Date, clock: FlintClock?) -> Bool {
+        guard let clock else { return !isExpired(at: now) }
+        return !isLogicallyExpired(clock: clock)
+    }
+
     public var isExpired: Bool { isExpired(at: Date()) }
 
     public func isExpired(at now: Date) -> Bool {

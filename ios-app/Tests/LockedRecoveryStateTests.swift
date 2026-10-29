@@ -13,6 +13,24 @@ final class LockedRecoveryStateTests: XCTestCase {
                            monitorName: "flint.session.0000000000000000")
     }
 
+    func testAWallJumpKeepsTheBlockAndShowsItsLogicalEnd() {
+        var wall = now
+        var monotonic: TimeInterval = 100
+        let clock = FlintClock(now: { wall }, monotonic: { monotonic }, bootSessionID: { "boot" },
+                               calendar: { .current })
+        let active = FlintActiveSession(name: "Focus", startedAt: now, endsAt: now.addingTimeInterval(1800),
+                                        breakLevel: .hardcore, monitorName: "flint.session.0000000000000000",
+                                        monotonicStart: 100, bootSessionID: "boot", plannedDuration: 1800)
+        wall = now.addingTimeInterval(3600)
+        monotonic += 600
+        let state = LockedRecoveryState.make(active: active, hasRecord: true, passAvailable: true,
+                                             passLastUsed: nil, now: wall, clock: clock)
+        guard case let .session(tier, until) = state.running else { return XCTFail("still blocked") }
+        XCTAssertEqual(tier, .hardcore)
+        XCTAssertEqual(until?.timeIntervalSince(wall) ?? 0, 1200, accuracy: 1)
+        XCTAssertTrue(state.canUsePass)
+    }
+
     func testARunningHardcoreBlockOffersThePassWithoutItsName() {
         let state = LockedRecoveryState.make(active: session(.hardcore), hasRecord: true, passAvailable: true,
                                              passLastUsed: nil, now: now)

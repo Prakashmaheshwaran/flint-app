@@ -63,6 +63,12 @@ public final class FlintGroupStore {
         defaults.object(forKey: Key.activeSession) != nil
     }
 
+    /// Whether this suite shows the protection ledger's initialization marker: evidence the shared
+    /// state was actually read, not a locked or unavailable container reading as empty.
+    public func isProtectionStateReadable() -> Bool {
+        defaults.object(forKey: FlintProtectionLedger.initializedMarkerKey) != nil
+    }
+
     public func clearActiveSession() {
         defaults.removeObject(forKey: Key.activeSession)
     }

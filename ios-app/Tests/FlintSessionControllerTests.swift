@@ -66,7 +66,8 @@ final class FlintSessionControllerTests: XCTestCase {
                                              initializedMarker: { nil }, setInitializedMarker: { _ in })
             },
             publishStatus: { [unowned self] in self.publications += 1 },
-            transitionLock: { FlintSessionTransitionLock(directory: directory, timeout: 0.2) }
+            transitionLock: { FlintSessionTransitionLock(directory: directory, timeout: 0.2) },
+            monitorLockTimeout: 1
         ))
     }
 
@@ -209,6 +210,102 @@ final class FlintSessionControllerTests: XCTestCase {
         let cleared = shield.clearCount
         c.handleMonitorEvent(.intervalDidEnd, activity: "flint.session.0123456789abcdef")
         XCTAssertEqual(shield.clearCount, cleared, "unknown protection is kept, not treated as no session")
+    }
+
+    func testAMonitorEndWaitsOutAnotherProcessesShortTransitionR20() throws {
+        let c = controller()
+        let session = try start(c, minutes: 30)
+        clock.advance(30 * 60)
+        let other = FlintSessionTransitionLock(directory: ledgerDirectory, timeout: 0.2)
+        let hold = try XCTUnwrap(other.acquire())
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.4) { hold.end() }
+        // Longer than an app-side wait (0.2 s here): the extension doesn't give up on the end.
+        c.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
+        XCTAssertNil(store.active, "ended once the other transition finished")
+    }
+
+    func testABusyMonitorEndIsRepairedByTheNextReconcile() throws {
+        let c = controller()
+        let session = try start(c, minutes: 30)
+        clock.advance(30 * 60)
+        let other = FlintSessionTransitionLock(directory: ledgerDirectory, timeout: 0.2)
+        let hold = try XCTUnwrap(other.acquire())
+        c.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
+        XCTAssertNotNil(store.active, "still busy after the wait: nothing changes and the block stays")
+        XCTAssertTrue(c.reconcile().transitionBusy)
+        hold.end()
+        registrar.registered.remove(session.monitorName) // iOS consumed the one-shot interval
+        c.reconcile()
+        XCTAssertNil(store.active, "the host's next reconcile ends the session that is over")
+    }
+
+    func testStopsDuringAnotherProcessesTransitionChangeNothing() throws {
+        let c = controller()
+        _ = try start(c, minutes: 30, level: .easy)
+        let other = FlintSessionTransitionLock(directory: ledgerDirectory, timeout: 0.2)
+        let hold = try XCTUnwrap(other.acquire())
+        XCTAssertEqual(c.requestStop(route: .manualStop, confirmed: true), .unavailable)
+        c.stop()
+        XCTAssertNotNil(store.active, "a busy transition never ends the session")
+        hold.end()
+        XCTAssertEqual(c.requestStop(route: .manualStop, confirmed: true), .stopped)
+    }
+
+    func testAnOldCallbackKeepsShieldsWhenTheContainerReadsEmpty() throws {
+        let cleared = shield.clearCount
+        store.readable = false // e.g. before first unlock: the shared suite reads as empty
+        controller().handleMonitorEvent(.intervalDidEnd, activity: "flint.session.0123456789abcdef")
+        XCTAssertEqual(shield.clearCount, cleared, "an empty read is not proof there's no session")
+        controller(storeAvailable: false).handleMonitorEvent(.intervalDidEnd, activity: "flint.session.0123456789abcdef")
+        XCTAssertEqual(shield.clearCount, cleared, "nor is a missing container")
+        store.readable = true
+        controller().handleMonitorEvent(.intervalDidEnd, activity: "flint.session.0123456789abcdef")
+        XCTAssertEqual(shield.clearCount, cleared + 1, "a record proven absent leaves only a stale shield")
+    }
+
+    func testALegacyRecordWithoutAnchorsFollowsItsWallEnd() throws {
+        // Saved by an older build: no planned duration and no monotonic or boot anchors.
+        let started = clock.now
+        let json = """
+        {"id":"legacy","name":"Old","startedAt":\(started.timeIntervalSinceReferenceDate),\
+        "endsAt":\(started.addingTimeInterval(1800).timeIntervalSinceReferenceDate),\
+        "breakLevel":"hardcore","monitorName":"flint.session.legacy"}
+        """
+        let legacy = try JSONDecoder().decode(FlintActiveSession.self, from: Data(json.utf8))
+        XCTAssertNil(legacy.plannedDuration)
+        XCTAssertNil(legacy.monotonicStart)
+        clock.advance(600)
+        XCTAssertEqual(try XCTUnwrap(legacy.logicalRemaining(clock: clock.flintClock)), 1200, accuracy: 0.001)
+        clock.now = clock.now.addingTimeInterval(-3600)
+        XCTAssertEqual(try XCTUnwrap(legacy.logicalRemaining(clock: clock.flintClock)), 1800, accuracy: 0.001,
+                       "without anchors the wall fallback is still capped at the planned length")
+        clock.now = clock.now.addingTimeInterval(2 * 3600)
+        XCTAssertTrue(legacy.isLogicallyExpired(clock: clock.flintClock))
+    }
+
+    func testASecondReconcileAfterARepairDoesNotReArm() throws {
+        let c = controller()
+        _ = try start(c, minutes: 60, level: .harder)
+        clock.advance(61)
+        clock.now = clock.now.addingTimeInterval(-3600)
+        XCTAssertTrue(c.reconcile().rearmed)
+        let registrations = registrar.started.count
+        clock.advance(120)
+        XCTAssertFalse(c.reconcile().rearmed, "repaired: its end now matches logical time")
+        XCTAssertEqual(registrar.started.count, registrations)
+    }
+
+    func testClockJumpReArmsDoNotSpendTheMisfireBudget() throws {
+        let c = controller()
+        var session = try start(c, minutes: 600, level: .hardcore)
+        for _ in 0...FlintSessionController.maximumRearms {
+            clock.advance(60)
+            clock.now = clock.now.addingTimeInterval(24 * 3600) // past the registered wall end
+            c.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
+            session = try XCTUnwrap(store.active, "the block stays")
+        }
+        XCTAssertTrue(registrar.registered.contains(session.monitorName), "still re-registered after every jump")
+        XCTAssertNil(health.lastArmFailure)
     }
 
     func testStrictSessionsNeedAnEndTimePC01() {
@@ -951,7 +1048,7 @@ final class FlintSessionControllerTests: XCTestCase {
 // MARK: - Fakes
 
 private struct NoSessionWebRestrictions: FlintSessionWebRestricting {
-    func reconcile(_ session: FlintActiveSession, now: Date) {}
+    func reconcile(_ session: FlintActiveSession, clock: FlintClock) {}
 }
 
 /// One ordered record of OS and store writes across all fakes.
@@ -1057,6 +1154,9 @@ private final class FakeSessionStore: FlintSessionStateStoring {
     func loadSelection() -> FamilyActivitySelection? { selection }
     func emergencyPassLastUsed() -> Date? { passUsed }
     func recordEmergencyPassUse(_ date: Date) { passUsed = date }
+    /// false models a locked or unavailable container: everything reads as empty.
+    var readable = true
+    func isProtectionStateReadable() -> Bool { readable }
 }
 
 private final class FakeClock {

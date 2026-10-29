@@ -17,11 +17,12 @@ struct LockedRecoveryState: Equatable {
     var passAvailable: Bool
     var nextPass: Date?
 
+    /// With a `clock`, the running block and its end follow logical time (ADR-012 §9).
     static func make(active: FlintActiveSession?, hasRecord: Bool, passAvailable: Bool,
-                     passLastUsed: Date?, now: Date) -> Self {
+                     passLastUsed: Date?, now: Date, clock: FlintClock? = nil) -> Self {
         let running: Running
-        if let active, !active.isExpired(at: now) {
-            running = .session(tier: active.breakLevel, until: active.endsAt)
+        if let active, active.isEnforcing(at: now, clock: clock) {
+            running = .session(tier: active.breakLevel, until: clock.flatMap(active.stableLogicalEnd) ?? active.endsAt)
         } else if active == nil, hasRecord {
             running = .unreadable
         } else {
@@ -37,7 +38,7 @@ struct LockedRecoveryState: Equatable {
         // Without the App Group nothing can be read — a block may still be enforced, so say so.
         return make(active: controller.activeSession, hasRecord: store?.hasActiveSessionRecord() ?? true,
                     passAvailable: controller.emergencyPassAvailable(now: now),
-                    passLastUsed: store?.emergencyPassLastUsed(), now: now)
+                    passLastUsed: store?.emergencyPassLastUsed(), now: now, clock: .system)
     }
 
     /// The pass ends a running Hardcore block (the only block the app can't end otherwise).

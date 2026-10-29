@@ -24,13 +24,13 @@ public final class FlintSessionTransitionLock {
         return FlintSessionTransitionLock(directory: container.appendingPathComponent("FlintLedger", isDirectory: true))
     }
 
-    /// Acquire the lock, waiting up to the timeout; nil when it can't be had. Release the
-    /// returned hold with `end()` (idempotent).
-    public func acquire() -> Hold? {
+    /// Acquire the lock, waiting up to `timeout` (default: this lock's); nil when it can't be
+    /// had. Release the returned hold with `end()` (idempotent).
+    public func acquire(timeout: TimeInterval? = nil) -> Hold? {
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let fd = open(url.path, O_RDWR | O_CREAT | O_CLOEXEC, 0o600)
         guard fd >= 0 else { return nil }
-        let deadline = ProcessInfo.processInfo.systemUptime + timeout
+        let deadline = ProcessInfo.processInfo.systemUptime + (timeout ?? self.timeout)
         while flock(fd, LOCK_EX | LOCK_NB) != 0 {
             guard errno == EWOULDBLOCK || errno == EINTR,
                   ProcessInfo.processInfo.systemUptime < deadline else { close(fd); return nil }

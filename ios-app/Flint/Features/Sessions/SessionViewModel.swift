@@ -240,6 +240,9 @@ final class SessionViewModel: ObservableObject {
             active = nil
             remaining = 0
             timer?.invalidate()
+        } else if controller.emergencyPassAvailable() {
+            // Available but not used: another part of Flint was mid-change. Nothing was spent.
+            errorText = "Flint couldn't use the Emergency Pass just now. Nothing was spent — try again."
         } else {
             errorText = "Emergency Pass isn't available yet — it renews seven days after you use it."
         }
@@ -256,8 +259,10 @@ final class SessionViewModel: ObservableObject {
 
     private func tick() {
         guard let active else { remaining = 0; return }
-        remaining = active.remaining
-        if active.isExpired {
+        // Logical time, as enforcement uses it: a wall-clock change can't end the UI's block
+        // while shields stay armed (ADR-012 §9).
+        remaining = active.logicalRemaining(clock: .system) ?? 0
+        if active.isLogicallyExpired(clock: .system) {
             // On a real device the monitor clears the shield; mirror that here for the UI and as
             // a fallback (the Simulator doesn't run the monitor extension).
             controller.finishIfExpired()
