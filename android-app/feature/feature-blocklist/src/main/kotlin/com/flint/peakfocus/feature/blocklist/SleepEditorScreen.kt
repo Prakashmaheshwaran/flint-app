@@ -237,14 +237,22 @@ internal fun SleepEditorScreen(
                     if (bed != null && wake != null) {
                         val morningShown = config.morningEnabled && morningEnd != null
                         Spacer(Modifier.height(FlintSpacing.md))
-                        FlintDayStrip(
-                            startMinute = bed,
-                            endMinute = wake,
-                            startLabel = stringResource(R.string.sleep_bed),
-                            endLabel = stringResource(R.string.sleep_wake),
-                            secondaryStartMinute = if (morningShown) wake else null,
-                            secondaryEndMinute = if (morningShown) morningEnd else null,
-                        )
+                        if (sleepTimeFieldsStack(maxWidth.value, LocalDensity.current.fontScale)) {
+                            Column(verticalArrangement = Arrangement.spacedBy(FlintSpacing.xs)) {
+                                Text(stringResource(R.string.sleep_time_value, stringResource(R.string.sleep_bed), formatMinuteOfDay(bed)))
+                                Text(stringResource(R.string.sleep_time_value, stringResource(R.string.sleep_wake), formatMinuteOfDay(wake)))
+                                if (morningShown) Text(stringResource(R.string.sleep_time_value, stringResource(R.string.sleep_morning), formatMinuteOfDay(morningEnd!!)))
+                            }
+                        } else {
+                            FlintDayStrip(
+                                startMinute = bed,
+                                endMinute = wake,
+                                startLabel = stringResource(R.string.sleep_bed),
+                                endLabel = stringResource(R.string.sleep_wake),
+                                secondaryStartMinute = if (morningShown) wake else null,
+                                secondaryEndMinute = if (morningShown) morningEnd else null,
+                            )
+                        }
                     }
                     Spacer(Modifier.height(FlintSpacing.xs))
                     Text(

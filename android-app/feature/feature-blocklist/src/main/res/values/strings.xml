@@ -10,6 +10,7 @@
     <string name="sleep_bedtime">Bedtime</string>
     <string name="sleep_wake">Wake</string>
     <string name="sleep_bed">Bed</string>
+    <string name="sleep_time_value">%1$s %2$s</string>
     <string name="sleep_time_note">24-hour time. A window can continue past midnight.</string>
     <string name="sleep_assist">Assist level</string>
     <string name="sleep_wind_down">Wind down</string>
