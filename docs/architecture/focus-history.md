@@ -293,6 +293,36 @@ Explicit
 route, break, pass and `open_intercepted` emission needs one call each in
 `BlockScreenCoordinator` / the rules store, added only with lane C's agreement.
 
+### Android — durable pass and break projection
+
+The app shell registers `ProtectionHistoryConsumer` with
+`BlockEventHooks.registerDurableConsumer`. C owns the serialized outbox drain and exact-id
+acknowledgement; F returns `true` only after `FocusHistoryStore.update` commits. A failed
+write returns `false`, and cancellation propagates. Multi-record projections commit in one
+atomic history rewrite; deterministic UUIDs derived from the owner event id, history type
+and session id make replay after a crash before acknowledgement idempotent.
+
+- `PASS_COMMITTED` writes one `pass_used`, with the opaque operation id as `session` and
+  `grant`. Its `sessions` contains only `session-*` ids from `affectedRuleIds`, and
+  `recoveryEnd` is the owner's deadline. Only focus sessions in `endedTransientIds` receive
+  `ended_early(route: emergency_pass)` in the same batch. Ordinary rules never become focus
+  sessions, and a pass with no affected focus sessions still records one operation.
+- `BREAK_STARTED` / `BREAK_ENDED` write one record per affected focus session, carrying
+  the same grant id. End reasons preserve `expired`, `resumed`, `superseded`, or `recovery`.
+  The owner supplies the exact frozen session scope on both events; replay may persist an
+  end before its start without looking up current rules or fabricating a start.
+- The projection preserves the schema-1 wire vocabulary. Owner clock uncertainty is
+  marked `inferred`; boot identity, elapsed clock, targets and non-session rule ids are
+  excluded. No origin route is invented when the owner did not provide one.
+
+The compatibility `Unit` listener records only genuine `open_intercepted` measurements.
+It does not also record breaks or passes after durable registration. Natural Timer terminal
+delivery is a separate owner outbox and app adapter. This consumer does not prove that every
+production break boundary emits an event: start, deadline, resume, supersession and recovery
+producer coverage must be verified in C's implementation. C also owns bounded-outbox loss
+diagnostics; consumers must use its public `ProtectionStatus` degradation surface, never read
+the private protection ledger or treat a missing event as evidence of uninterrupted focus.
+
 ## Notifications (local only)
 
 - Copy (ADR-012 §11): a pre-scheduled alert says only that the **planned focus time has

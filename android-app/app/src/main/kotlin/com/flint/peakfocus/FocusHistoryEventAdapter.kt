@@ -11,6 +11,7 @@ internal object FocusHistoryEventAdapter {
     @Synchronized fun start(context: Context, scope: CoroutineScope) {
         FocusHistoryBridge.start(context, scope)
         if (listener != null) return
+        ProtectionHistoryEventAdapter.start(context)
         listener = FocusHistoryHookListener().also(BlockEventHooks::register)
         FocusHistoryTerminalAdapter.start(context, scope)
     }
@@ -18,13 +19,10 @@ internal object FocusHistoryEventAdapter {
 
 internal class FocusHistoryHookListener(
     private val open: (String?, Long) -> Unit = FocusHistoryBridge::noteOpenIntercepted,
-    private val ordinaryBreak: (String?, Long, Long) -> Unit = FocusHistoryBridge::noteBreakGranted,
 ) : BlockEventHooks.Listener {
     override fun onOpenIntercepted(ruleId: String?, atEpochMs: Long) {
         if (ruleId?.startsWith("session-") == true) open(ruleId, atEpochMs)
     }
-    override fun onBreakGranted(ruleId: String?, untilEpochMs: Long, atEpochMs: Long) {
-        if (ruleId?.startsWith("session-") == true && untilEpochMs > atEpochMs) ordinaryBreak(ruleId, untilEpochMs, atEpochMs)
-    }
-    // The legacy pass callback has no operation id/affected ids/recovery end. Omit it.
+    // Pass and break records belong solely to the durable consumer. Compatibility Unit
+    // callbacks cannot acknowledge a disk write and would duplicate its break records.
 }
