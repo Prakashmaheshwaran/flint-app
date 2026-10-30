@@ -5,6 +5,8 @@ import Darwin
 /// Serializes host/extension read–check–arm–save operations. Easy mutations need no ledger,
 /// but still need a cross-process revision check. Never falls back to an unlocked mutation.
 enum FlintRuleStoreLock {
+    enum InitializationReadiness: Equatable { case ready, contended, failed }
+    private enum LockResult<Value> { case value(Value), contended, failed }
     private static let local = NSRecursiveLock()
     private final class AfterUnlock: NSObject { var actions: [() -> Void] = [] }
     static func withLock<T>(environment: FlintRuleReloadEnvironment, _ body: () -> T) -> T? {
@@ -25,23 +27,32 @@ enum FlintRuleStoreLock {
     @discardableResult
     static func prepareInitialization(environment: FlintRuleReloadEnvironment,
                                       timeout: TimeInterval = Thread.isMainThread ? 0 : 2) -> Bool {
-        guard let defaults = environment.defaults else { return false }
+        initializationReadiness(environment: environment, timeout: timeout) == .ready
+    }
+
+    static func initializationReadiness(environment: FlintRuleReloadEnvironment,
+                                        timeout: TimeInterval = Thread.isMainThread ? 0 : 2) -> InitializationReadiness {
+        guard let defaults = environment.defaults else { return .failed }
         switch FlintRuleInitialization.receipt(in: defaults) {
-        case .complete: return true
-        case .invalid: return false
+        case .complete: return .ready
+        case .invalid: return .failed
         case .absent:
             // Each domain has its own evidence. A sibling's presence cannot skip another
             // domain's one-time upgrade initialization.
             if FlintRuleStoreKey.allCases.allSatisfy({ defaults.object(forKey: $0.marker) != nil
-                || (defaults.object(forKey: $0.rawValue) != nil && defaults.object(forKey: $0.ownership) != nil) }) { return true }
+                || (defaults.object(forKey: $0.rawValue) != nil && defaults.object(forKey: $0.ownership) != nil) }) { return .ready }
         case .preparing: break
         }
         // Initialization takes only the domain lock, never a ledger/session lock. Taking it
         // before withTransitionBoundary prevents first-launch ledger creation from becoming
         // false legacy evidence. Upgrade evidence uses only read-only ledger peek, no lock.
-        return domainLock(directory: environment.lockDirectory, timeout: timeout) {
+        switch domainLockResult(directory: environment.lockDirectory, timeout: timeout, {
             FlintRuleInitialization.prepare(environment: environment)
-        } ?? false
+        }) {
+        case let .value(ready): return ready ? .ready : .failed
+        case .contended: return .contended
+        case .failed: return .failed
+        }
     }
 
     static func afterUnlock(environment: FlintRuleReloadEnvironment, _ action: @escaping () -> Void) {
@@ -51,29 +62,34 @@ enum FlintRuleStoreLock {
     }
 
     private static func domainLock<T>(directory: URL?, timeout: TimeInterval = 2, _ body: () -> T) -> T? {
-        guard let directory else { return nil }
+        guard case let .value(result) = domainLockResult(directory: directory, timeout: timeout, body) else { return nil }
+        return result
+    }
+
+    private static func domainLockResult<T>(directory: URL?, timeout: TimeInterval, _ body: () -> T) -> LockResult<T> {
+        guard let directory else { return .failed }
         let deadline = ProcessInfo.processInfo.systemUptime + timeout
         while !local.try() {
-            guard ProcessInfo.processInfo.systemUptime < deadline else { return nil }
+            guard ProcessInfo.processInfo.systemUptime < deadline else { return .contended }
             usleep(10_000)
         }
         defer { local.unlock() }
         let key = "FlintRuleStoreLock." + directory.path
-        if Thread.current.threadDictionary[key] != nil { return body() }
+        if Thread.current.threadDictionary[key] != nil { return .value(body()) }
         do { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
-        catch { return nil }
+        catch { return .failed }
         let fd = open(directory.appendingPathComponent("mutation.lock").path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0o600)
-        guard fd >= 0 else { return nil }
+        guard fd >= 0 else { return .failed }
         defer { close(fd) }
         while flock(fd, LOCK_EX | LOCK_NB) != 0 {
-            guard errno == EWOULDBLOCK || errno == EAGAIN,
-                  ProcessInfo.processInfo.systemUptime < deadline else { return nil }
+            guard errno == EWOULDBLOCK || errno == EAGAIN else { return .failed }
+            guard ProcessInfo.processInfo.systemUptime < deadline else { return .contended }
             usleep(10_000)
         }
         defer { flock(fd, LOCK_UN) }
         Thread.current.threadDictionary[key] = true
         defer { Thread.current.threadDictionary.removeObject(forKey: key) }
-        return body()
+        return .value(body())
     }
 }
 #endif

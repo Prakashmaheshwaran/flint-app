@@ -236,7 +236,11 @@ extension FlintWebRestrictions {
                      transition: (TimeInterval?, () -> Void) -> Bool) -> FlintWebRestrictionRead {
         // Initialize rule domains before our first web marker or session lock can become
         // installation evidence. Domain-specific legacy migration remains the rule owner's.
-        guard FlintRuleStoreLock.prepareInitialization(environment: environment, timeout: uiRead ? 0 : 2) else { return .busy }
+        switch FlintRuleStoreLock.initializationReadiness(environment: environment, timeout: uiRead ? 0 : 2) {
+        case .ready: break
+        case .contended: return .busy
+        case .failed: return .unavailable
+        }
         return read(uiRead: uiRead, load: {
             loadForEnforcement(from: environment.defaults, existingWebStores: existingWebStores)
         }, transition: transition)

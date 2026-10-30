@@ -21,7 +21,11 @@ enum FlintWebRestrictionHostReconciler {
     static func reconcileLive() -> FlintArmingHealth.DomainReport {
         // Read owners, intent and eligibility and perform native writes in one transition.
         // A strengthening cannot commit between our config read and an older native write.
-        guard FlintRuleStoreLock.prepareInitialization(environment: .live) else { return busyReport() }
+        switch FlintRuleStoreLock.initializationReadiness(environment: .live) {
+        case .ready: break
+        case .contended: return busyReport()
+        case .failed: return unavailableReport(health: FlintGroupStore()?.loadArmingHealth() ?? .init(), now: Date())
+        }
         return FlintSessionController().withTransition {
             withRead(FlintWebRestrictions.readForEnforcement) { config in
                 guard let group = FlintGroupStore() else { return busyReport() }

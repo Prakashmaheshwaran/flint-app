@@ -48,6 +48,7 @@ public final class FlintWebRestrictionEditor {
     private let ledger: () -> FlintProtectionLedger?
     private let clock: FlintClock
     private let withTransitionBoundary: (() -> Void) -> Bool
+    private let prepare: () -> Outcome?
 
     public convenience init(load: @escaping () -> FlintWebRestrictions?, snapshot: @escaping () -> Snapshot?,
                 persist: @escaping (FlintWebRestrictions) -> Bool,
@@ -61,9 +62,11 @@ public final class FlintWebRestrictionEditor {
     init(read: @escaping () -> FlintWebRestrictionRead, snapshot: @escaping () -> Snapshot?,
          persist: @escaping (FlintWebRestrictions) -> Bool,
          ledger: @escaping () -> FlintProtectionLedger?, clock: FlintClock,
+         prepare: @escaping () -> Outcome? = { nil },
          withTransitionBoundary: @escaping (() -> Void) -> Bool = { body in body(); return true }) {
         self.read = read; self.snapshot = snapshot; self.persist = persist
         self.ledger = ledger; self.clock = clock; self.withTransitionBoundary = withTransitionBoundary
+        self.prepare = prepare
     }
 
     public convenience init() {
@@ -74,6 +77,13 @@ public final class FlintWebRestrictionEditor {
             return Snapshot.observing(session: group.loadActiveSession(), recordPresent: group.hasActiveSessionRecord(),
                 rules: rules, ledgerState: try? FlintProtectionLedger.appGroup()?.peek().get(), clock: .system)
         }, persist: { $0.saveRecoveringUnavailableIntent() }, ledger: { FlintProtectionLedger.appGroup() }, clock: .system,
+           prepare: {
+               switch FlintRuleStoreLock.initializationReadiness(environment: .live) {
+               case .ready: return nil
+               case .contended: return .busy
+               case .failed: return .unavailable
+               }
+           },
            withTransitionBoundary: { body in
                FlintRuleStoreLock.withLock(environment: .live) { body(); return true } ?? false
            })
@@ -82,6 +92,7 @@ public final class FlintWebRestrictionEditor {
     /// Only a final explicit user confirmation may commit matured Harder waits. The request id
     /// stays stable for retries of this draft; its scope is the canonical new-config fingerprint.
     public func save(_ candidate: FlintWebRestrictions, requestID: String, confirmed: Bool = false) -> Outcome {
+        if let outcome = prepare() { return outcome }
         var result = Outcome.unavailable
         guard withTransitionBoundary({ result = saveLocked(candidate, requestID: requestID, confirmed: confirmed) }) else {
             return .busy
