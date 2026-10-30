@@ -11,7 +11,7 @@ import ManagedSettings
 /// is `.defer`, which asks iOS to redraw the shield from current state.
 enum ShieldCreditAction {
     /// `accept` returns true only for a committed, released (or replayed live) grant. With the
-    /// release gate off it is never called; a stray secondary press only redraws the shield.
+    /// release gate off it is never called; a stray secondary press only requests a redraw.
     static func response(to action: ShieldAction, acceptanceEnabled: Bool,
                          accept: () -> Bool) -> ShieldActionResponse {
         switch action {
