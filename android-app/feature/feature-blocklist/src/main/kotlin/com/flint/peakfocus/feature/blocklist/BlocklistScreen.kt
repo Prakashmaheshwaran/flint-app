@@ -259,7 +259,7 @@ fun BlocklistScreen(
                         destination = BlocklistDestination.EditSleep(visit = ++editorVisits)
                     },
                     onToggleSleep = blocklistViewModel::setSleepEnabled,
-                    saveError = saveState.error ?: if (commitmentStorage is StorageState.Unavailable) "Protection state unavailable. Open recovery or retry." else null,
+                    saveError = saveState.error ?: if (commitmentStorage is StorageState.Unavailable) "Saved protection couldn't be read. Your records were kept. Open recovery for help." else null,
                     commitmentState = commitmentState,
                     saveResult = saveState.result,
                     onDismissMigrationNotice = blocklistViewModel::dismissMigrationNotice,

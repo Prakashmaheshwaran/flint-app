@@ -50,7 +50,7 @@ private fun Preferences.openLimits(): List<OpenLimit> {
     return StrictPrefsCodec.openLimits(StrictPrefsCodec.string(this, PrefsKeys.OPEN_LIMITS).orEmpty())
 }
 
-/** After the pass marker, optional legacy absence is never a fresh configuration or wait. */
+/** Pass-owned children stay required; editor policy domains validate their own initialization. */
 internal fun validateInitializedProtectionChildren(prefs: Preferences) {
     val schema = StrictPrefsCodec.long(prefs, PrefsKeys.PROTECTION_SCHEMA)
     if (schema == null) {
@@ -60,8 +60,8 @@ internal fun validateInitializedProtectionChildren(prefs: Preferences) {
         return
     }
     if (schema != 1L) wireFuture()
-    for (key in listOf(PrefsKeys.BLOCK_RULES, PrefsKeys.TIME_LIMITS, PrefsKeys.OPEN_LIMITS, PrefsKeys.DEFAULT_BREAK_LEVEL,
-        EDITOR_COMMITMENTS_KEY, HARDER_WAIT_KEY)) if (StrictPrefsCodec.string(prefs, key) == null) wireCorrupt()
+    for (key in listOf(EDITOR_COMMITMENTS_KEY, HARDER_WAIT_KEY))
+        if (StrictPrefsCodec.string(prefs, key) == null) wireCorrupt()
     if (StrictPrefsCodec.long(prefs, EDITOR_VERSION_KEY) == null || StrictPrefsCodec.long(prefs, OPEN_CREDIT_SCHEMA) == null) wireCorrupt()
     readEditorState(prefs); readHarderWait(prefs); readOpenCredits(prefs)
 }

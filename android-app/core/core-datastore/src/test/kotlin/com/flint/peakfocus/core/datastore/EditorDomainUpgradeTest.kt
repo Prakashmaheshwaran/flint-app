@@ -41,12 +41,28 @@ class EditorDomainUpgradeTest {
         stringPreferencesKey("fictional_history_fixture") to "retained fictional history",
     )
     private fun editor(disk: Disk) = DataStoreEditorCommitmentStore(disk, defaultZone = { "UTC" })
-    private suspend fun unavailable(disk: Disk) {
+    private suspend fun c3V1(initial: Preferences = emptyPreferences()): Disk {
+        val disk = Disk(initial)
+        val result = DataStoreProtectionTransactionStore(disk, { now }) { "UTC" }
+            .transact { ProtectionMutation(it.focus, Unit) }
+        assertTrue(result is ProtectionCommit.Committed)
+        assertEquals(ProtectionLedger(now, now), readFocus(disk.values.value).protection)
+        // Recreate C3's prior editor-v1 wire: E|1 is unchanged, groups were optional,
+        // and an unused Open domain may have no source list. Literal P|1 remains supported.
+        val clock = "${now.wallEpochMs}%7C${now.elapsedRealtimeMs}%7Cboot"
+        disk.values.value = disk.values.value.toMutablePreferences().apply {
+            this[EDITOR_VERSION_KEY] = 1L
+            this[PrefsKeys.PROTECTION_LEDGER] = "P|1\nM|$clock|$clock|0|false|0|0||0\nC\nR"
+            remove(PrefsKeys.APP_GROUPS); remove(PrefsKeys.OPEN_LIMITS)
+        }
+        return disk
+    }
+    private suspend fun unavailable(disk: Disk, reason: StorageFailure = StorageFailure.CORRUPT) {
         val before = disk.values.value.asMap().toMap(); val writes = disk.changedWrites
         val store = editor(disk)
-        assertEquals(StorageState.Unavailable(StorageFailure.CORRUPT), store.state.first { it !is StorageState.Loading })
+        assertEquals(StorageState.Unavailable(reason), store.state.first { it !is StorageState.Loading })
         try { store.reconcile(now); fail("Missing referenced domain accepted") }
-        catch (failure: StorageUnavailableException) { assertEquals(StorageFailure.CORRUPT, failure.reason) }
+        catch (failure: StorageUnavailableException) { assertEquals(reason, failure.reason) }
         assertEquals(before, disk.values.value.asMap()); assertEquals(writes, disk.changedWrites)
     }
 
@@ -103,6 +119,151 @@ class EditorDomainUpgradeTest {
         assertTrue(readHarderWait(disk.values.value).counts.isEmpty())
         assertNull(disk.values.value[OPEN_CREDIT_SCHEMA])
         assertTrue(store.readTerminalEvents().isEmpty())
+    }
+
+    @Test fun `R2-N03 PC-70 C3 before editor upgrade keeps unused groups and Open available through real transactions`() = runBlocking {
+        val id = "session-timer-${now.wallEpochMs - 120_000}"
+        val end = now.wallEpochMs + 180_000
+        val raw = "$id|Main Timer|true|HARDCORE|false|com.target~|||-1|-1|$end"
+        val disk = c3V1(preferencesOf(PrefsKeys.BLOCK_RULES to raw))
+        val original = disk.values.value
+        val before = readEditorState(original).causes.getValue(ruleCauseKey(id))
+        val protection = DataStoreProtectionTransactionStore(disk, { now }) { "UTC" }
+        assertTrue(protection.state.first { it !is StorageState.Loading } is StorageState.Ready)
+        assertTrue(protection.transact { ProtectionMutation(it.focus, Unit) } is ProtectionCommit.Committed)
+        assertEquals(2L, disk.values.value[EDITOR_VERSION_KEY])
+        assertEquals("", disk.values.value[PrefsKeys.APP_GROUPS])
+        assertEquals("", disk.values.value[PrefsKeys.OPEN_LIMITS])
+        assertEquals(original[PrefsKeys.PROTECTION_LEDGER], disk.values.value[PrefsKeys.PROTECTION_LEDGER])
+        assertEquals(original[PrefsKeys.PROTECTION_ARCHIVE], disk.values.value[PrefsKeys.PROTECTION_ARCHIVE])
+        assertEquals(before, readEditorState(disk.values.value).causes.getValue(ruleCauseKey(id)))
+        val store = editor(disk)
+        val rule = DataStoreBlockRulesStore(disk).rules.first().single()
+        val preview = store.request(EditorChange("Rename", upserts = listOf(rule.copy(name = "Reviewed"))), now,
+            EditorSafety(true)) as EditorCommitResult.Preview
+        assertEquals(EditorCommitResult.Applied(), store.confirm(preview.pending.id, now, EditorSafety(true)))
+        assertEquals(id, DataStoreBlockRulesStore(disk).rules.first().single().id)
+        assertEquals(end, DataStoreBlockRulesStore(disk).rules.first().single().expiresAtEpochMs)
+        assertEquals(before, readEditorState(disk.values.value).causes.getValue(ruleCauseKey(id)))
+        assertTrue(protection.state.first { it !is StorageState.Loading } is StorageState.Ready)
+    }
+
+    @Test fun `R2-N03 PC-71 typed C3 recovery grant credit and native end owners forbid missing domains`() = runBlocking {
+        for (kind in listOf("recovery", "grant", "credit", "native-end")) {
+            val disk = c3V1()
+            var ledger = ProtectionLedgerCodec.decode(disk.values.value[PrefsKeys.PROTECTION_LEDGER]!!)
+            when (kind) {
+                "recovery" -> {
+                    ledger = ledger.copy(cooldown = ProtectionCooldown("pass", now.wallEpochMs, now, 604_800_000),
+                        recovery = ProtectionRecovery("pass", now, setOf("group:saved"), emptySet(), emptySet(), 3_600_000),
+                        operations = mapOf("pass" to ProtectionPassReceipt("pass", now, now, "scope")), lastUsedAtEpochMs = now.wallEpochMs)
+                }
+                "grant" -> {
+                    val scope = AccessCauseScope(AccessCounterKey(AccessRuleKey(RuleAuthority.Personal, "group", "saved"), "old"), "revision")
+                    ledger = ledger.copy(ordinaryGrants = mapOf("break" to ProtectionOrdinaryGrant("break", AccessTarget.App("com.target"),
+                        AccessDuration(now, 60_000), setOf(scope), emptySet())),
+                        operations = mapOf("break" to ProtectionPassReceipt("break", now, now, "scope")))
+                }
+                "credit" -> ledger = ledger.copy(pendingCreditEnds = mapOf("credit" to
+                    ProtectionCreditEventReceipt("credit", "com.target", AccessDuration(now, 60_000))))
+                else -> ledger = ledger.copy(outbox = mapOf("pass-event" to ProtectionLifecycleEvent("pass-event", "pass",
+                    ProtectionLifecycleKind.PASS_COMMITTED, setOf("session-timer-old"), now,
+                    untilEpochMs = now.wallEpochMs + 3_600_000, endedTransientIds = setOf("session-timer-old"))))
+            }
+            disk.values.value = disk.values.value.toMutablePreferences().apply {
+                this[PrefsKeys.PROTECTION_LEDGER] = ProtectionLedgerCodec.encode(ledger)
+                ledger.lastUsedAtEpochMs?.let { this[PrefsKeys.EMERGENCY_PASS_USED_AT] = it }
+                if (kind == "native-end") remove(PrefsKeys.BLOCK_RULES)
+            }
+            unavailable(disk)
+        }
+    }
+
+    @Test fun `R2-N03 PC-70 foreign recovery and history IDs do not own an unused native rules domain`() = runBlocking {
+        val disk = c3V1()
+        val recovery = ProtectionRecovery("foreign-pass", now, setOf("foreign:foreign-rule"), setOf("foreign-rule"), emptySet(), 60_000)
+        val ledger = ProtectionLedger(now, now, cooldown = ProtectionCooldown("foreign-pass", now.wallEpochMs, now, 604_800_000),
+            recovery = recovery, operations = mapOf("foreign-pass" to ProtectionPassReceipt("foreign-pass", now, now, "scope")),
+            outbox = mapOf("foreign-history" to ProtectionLifecycleEvent("foreign-history", "foreign-pass",
+                ProtectionLifecycleKind.PASS_COMMITTED, setOf("foreign-rule"), now, untilEpochMs = now.wallEpochMs + 60_000)),
+            lastUsedAtEpochMs = now.wallEpochMs)
+        disk.values.value = disk.values.value.toMutablePreferences().apply {
+            remove(PrefsKeys.BLOCK_RULES)
+            this[PrefsKeys.PROTECTION_LEDGER] = ProtectionLedgerCodec.encode(ledger)
+            this[PrefsKeys.EMERGENCY_PASS_USED_AT] = now.wallEpochMs
+        }
+        editor(disk).reconcile(now)
+        assertEquals(2L, disk.values.value[EDITOR_VERSION_KEY])
+        assertEquals("", disk.values.value[PrefsKeys.BLOCK_RULES])
+        assertEquals(ledger, readFocus(disk.values.value).protection)
+    }
+
+    @Test fun `R2-N03 PC-71 own editor archive and pending terminal preserve a missing rules domain`() = runBlocking {
+        val id = "session-timer-old"
+        val raw = "$id|Old|true|HARDCORE|false|com.target~|||-1|-1|${now.wallEpochMs}"
+        unavailable(Disk(literalV1().toMutablePreferences().apply {
+            this[stringPreferencesKey("editor_migration_rules_v1")] = raw
+        }))
+        val event = EditorTerminalEvent("editor:completed:$id", id, id, EditorTerminalKind.COMPLETED, now, now, 1, false)
+        unavailable(Disk(literalV1().toMutablePreferences().apply {
+            this[EDITOR_TERMINAL_SCHEMA] = 2L
+            this[EDITOR_TERMINALS] = EditorTerminalCodec.encode(EditorTerminalLedger(revision = 1, pending = mapOf(event.id to event)))
+        }))
+    }
+
+    @Test fun `R2-N03 PC-71 legacy Open archive remains ownership even when current counters are empty`() = runBlocking {
+        val disk = Disk(literalV1().toMutablePreferences().apply {
+            this[PrefsKeys.OPEN_COUNTS] = "com.target~2"
+            this[PrefsKeys.OPEN_COUNTS_DAY] = OpenCreditLedgerPolicy.epochDay(now.wallEpochMs, "UTC")
+        })
+        disk.edit { prepareOpenCredits(it, now, "UTC") }
+        disk.values.value = disk.values.value.toMutablePreferences().apply {
+            val credits = readOpenCredits(this)
+            putOpenCredits(credits.copy(counters = emptyMap()))
+            remove(PrefsKeys.OPEN_COUNTS)
+        }
+        unavailable(disk)
+    }
+
+    @Test fun `R2-N03 PC-71 C3 legacy policy and written default copies cannot become fresh empty or Easy`() = runBlocking {
+        for (key in listOf(PrefsKeys.OPEN_LIMITS, PrefsKeys.DEFAULT_BREAK_LEVEL)) {
+            val initial = if (key == PrefsKeys.OPEN_LIMITS) preferencesOf(key to "com.target~3~EASY")
+                else preferencesOf(key to "HARDCORE")
+            val disk = c3V1(initial)
+            disk.values.value = disk.values.value.toMutablePreferences().apply {
+                val saved = EditorCommitmentCodec.decode(this[EDITOR_COMMITMENTS_KEY])
+                remove(key)
+                this[EDITOR_COMMITMENTS_KEY] = EditorCommitmentCodec.encode(saved.copy(causes = emptyMap()))
+            }
+            unavailable(disk)
+        }
+    }
+
+    @Test fun `R2-N03 PC-71 every v2 domain deletion remains unavailable in the initialized C3 backend`() = runBlocking {
+        for (key in listOf(PrefsKeys.BLOCK_RULES, PrefsKeys.APP_GROUPS, PrefsKeys.TIME_LIMITS, PrefsKeys.OPEN_LIMITS, PrefsKeys.DEFAULT_BREAK_LEVEL)) {
+            val disk = c3V1()
+            editor(disk).reconcile(now)
+            disk.values.value = disk.values.value.toMutablePreferences().apply { remove(key) }
+            unavailable(disk)
+            assertEquals(ProtectionCommit.Unavailable(StorageFailure.CORRUPT),
+                DataStoreProtectionTransactionStore(disk, { now }) { "UTC" }.transact { ProtectionMutation(it.focus, Unit) })
+        }
+    }
+
+    @Test fun `R2-N03 PC-71 malformed incomplete duplicate or future C3 archive never proves unused domains`() = runBlocking {
+        for (kind in listOf("duplicate", "missing", "presence", "future")) {
+            val disk = c3V1()
+            disk.values.value = disk.values.value.toMutablePreferences().apply {
+                val original = this[PrefsKeys.PROTECTION_ARCHIVE]!!
+                this[PrefsKeys.PROTECTION_ARCHIVE] = when (kind) {
+                    "duplicate" -> original + "\n" + original.lines()[1]
+                    "missing" -> original.lines().dropLast(1).joinToString("\n")
+                    "presence" -> original.replaceFirst("|false|", "|unknown|")
+                    else -> original.replaceFirst("A|1", "A|2")
+                }
+            }
+            unavailable(disk, if (kind == "future") StorageFailure.UNSUPPORTED_VERSION else StorageFailure.CORRUPT)
+        }
     }
 
     @Test fun `R2-N03 PC-37 PC-71 missing v1 Time Limits is corrupt even with no references`() = runBlocking {

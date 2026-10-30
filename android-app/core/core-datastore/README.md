@@ -58,12 +58,29 @@ marker. It always wrote Time Limits, so a missing `time_limits_v1` is corrupt ev
 with no current cause. Other previously optional domains may initialize empty only
 when no surviving cause, inactive/tombstoned occurrence, pending/queued operation,
 Harder count/wait, legacy receipt, Open counter/credit or recovery ownership refers
-to them. Unreadable or opaque ownership is not proof of unused state. Groups are
-copied target snapshots in this schema; rules contain no group-ID reference.
+to them. Ownership also includes editor terminal intents and migration archives,
+C3 recovery cause keys, personal grant scopes, pending credit ends and native
+transient end IDs. C3's `P|1` and `P|2` ledger formats use the shared typed decoder;
+its `A|1` archive is validated before its preserved source records are inspected.
+An unqualified foreign history rule ID, receipt hash, cooldown or generic
+initialization marker does not establish ownership of an unrelated editor domain.
+Unreadable ownership is not proof of unused state. Groups are copied target
+snapshots in this schema; rules contain no group-ID reference.
 Under PC-13 an unreferenced inactive template remains freely deletable; optional
 absence cannot erase any active or pending owner. Every absence after version 2
 is unavailable. A failed/crashed upgrade retains original bytes and version 1;
 a lost acknowledgement reopens the same version 2 without a second import.
+
+Shipped main could save only a Timer rule without ever writing unused groups,
+Time Limits, Open Limits or a default tier. Markerless main input may initialize
+those absent domains once; the initialized version-1 Time Limit requirement does
+not apply to that input. C3's initialized-child check keeps its own mandatory
+children and delegates the editor's domain/version rules to this validator.
+
+Unavailable records are retained. There is no automatic reset or in-app storage
+repair; OS recovery remains reachable, but does not repair policy bytes. A future
+repair flow must preserve/export the original bytes and require owner-confirmed
+restore before replacing them. Unsupported versions need a compatible build.
 
 Editor marker allocation is sequential; each implementation must accept supported
 lower versions, perform each intervening upgrade once and never downgrade a marker.

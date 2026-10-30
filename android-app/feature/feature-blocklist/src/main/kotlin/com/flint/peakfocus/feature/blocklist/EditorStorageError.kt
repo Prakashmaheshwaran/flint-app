@@ -16,7 +16,7 @@ import com.flint.peakfocus.core.common.theme.FlintSpacing
 @Composable
 internal fun StorageEditorUnavailable(onClose: () -> Unit, loading: Boolean = false) {
     Column(Modifier.padding(FlintSpacing.gutter)) {
-        if (loading) CircularProgressIndicator() else ErrorMessages(listOf("Couldn't load. Try again."))
+        if (loading) CircularProgressIndicator() else ErrorMessages(listOf("Saved protection couldn't be read. Your records were kept. Open recovery for help."))
         TextButton(onClick = onClose) { Text("Back") }
     }
 }

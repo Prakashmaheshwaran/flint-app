@@ -580,7 +580,11 @@ internal fun readEditorState(prefs: Preferences): EditorCommitmentState {
     return EditorCommitmentCodec.decode(raw).also { validateEditorDomains(prefs, it, version) }
 }
 
-/** Never turn missing established policy into authoritative empty protection. No writes. */
+/**
+ * Never turn missing established policy into authoritative empty protection. No writes.
+ * Read boundaries revalidate their exact snapshot, including callers outside prepare. Ownership
+ * is bounded by MAX_EDITOR_CAUSES; legacy configuration decoding is linear in saved records.
+ */
 private fun validateEditorDomains(prefs: Preferences, state: EditorCommitmentState, version: Long?) {
     if (version != null && version !in 1L..EDITOR_DOMAIN_VERSION) wireFuture()
     val tier = StrictPrefsCodec.level(StrictPrefsCodec.string(prefs, PrefsKeys.DEFAULT_BREAK_LEVEL))
@@ -595,7 +599,8 @@ private fun validateEditorDomains(prefs: Preferences, state: EditorCommitmentSta
         // v1 always wrote Time Limits, including the empty list. Its absence is never unused.
         wireRequire(rawTimes != null)
         val missing = listOf("rule:" to PrefsKeys.BLOCK_RULES, "group:" to PrefsKeys.APP_GROUPS,
-            "open:" to PrefsKeys.OPEN_LIMITS).filter { StrictPrefsCodec.string(prefs, it.second) == null }
+            "open:" to PrefsKeys.OPEN_LIMITS, "default:" to PrefsKeys.DEFAULT_BREAK_LEVEL)
+            .filter { StrictPrefsCodec.string(prefs, it.second) == null }
         if (missing.isNotEmpty()) {
             val references = editorDomainReferences(prefs, state)
             for ((prefix, _) in missing) wireRequire(references.none { it.startsWith(prefix) })
@@ -617,11 +622,22 @@ private fun editorDomainReferences(prefs: Preferences, state: EditorCommitmentSt
     state.queued.forEach { addAll(it.change.keys); addAll(it.boundaries.keys); expected(it.expected) }
     val harder = readHarderWait(prefs)
     addAll(harder.counts.keys.map { it.causeId }); wait(harder.pending?.operation)
-    val focus = FocusLedgerCodec.decode(StrictPrefsCodec.string(prefs, PrefsKeys.FOCUS_LEDGER))
-    addAll(focus.breaksByCause.keys)
-    focus.exemptions.values.forEach {
-        add(it.causeKey)
-        if (it.kind == ExemptionKind.OPEN_LIMIT) add(openCauseKey(it.packageName))
+    fun focusReferences(raw: String?): Boolean {
+        val focus = FocusLedgerCodec.decode(raw)
+        addAll(focus.breaksByCause.keys)
+        focus.exemptions.values.forEach {
+            add(it.causeKey)
+            if (it.kind == ExemptionKind.OPEN_LIMIT) add(openCauseKey(it.packageName))
+        }
+        return focus.protectionInitialized
+    }
+    val protectionInitialized = focusReferences(StrictPrefsCodec.string(prefs, PrefsKeys.FOCUS_LEDGER))
+    readEditorTerminals(prefs).pending.values.forEach { add(ruleCauseKey(it.sessionId)) }
+    StrictPrefsCodec.string(prefs, ARCHIVE_RULES)?.let { raw ->
+        addAll(StrictPrefsCodec.rules(raw).map { ruleCauseKey(it.id) })
+    }
+    StrictPrefsCodec.string(prefs, ARCHIVE_TIMES)?.let { raw ->
+        addAll(StrictPrefsCodec.timeLimits(raw).map { timeCauseKey(it.packageName) })
     }
     StrictPrefsCodec.string(prefs, PrefsKeys.OPEN_COUNTS)?.let {
         addAll(StrictPrefsCodec.counts(it).keys.map(::openCauseKey))
@@ -629,15 +645,73 @@ private fun editorDomainReferences(prefs: Preferences, state: EditorCommitmentSt
     if (StrictPrefsCodec.long(prefs, OPEN_CREDIT_SCHEMA) != null) {
         val credits = readOpenCredits(prefs)
         addAll((credits.counters.keys + credits.active.keys).map(::openCauseKey))
+        OpenCreditCodec.readArchive(StrictPrefsCodec.string(prefs, OPEN_CREDIT_ARCHIVE) ?: wireCorrupt()).first?.let {
+            addAll(StrictPrefsCodec.counts(it).keys.map(::openCauseKey))
+        }
     } else {
         // An orphan/future ledger cannot establish that an absent domain is unused.
         for (key in listOf(OPEN_CREDIT_STATE, OPEN_CREDIT_COUNTS, OPEN_CREDIT_ARCHIVE))
             wireRequire(StrictPrefsCodec.string(prefs, key) == null)
     }
-    // This baseline predates C3's typed recovery codec. Opaque surviving protection
-    // records cannot prove optional absence; do not guess or introduce a second decoder.
-    if (StrictPrefsCodec.string(prefs, stringPreferencesKey("protection_pass_outbox_v1")) != null ||
-        StrictPrefsCodec.long(prefs, longPreferencesKey("protection_schema_v1")) != null) {
-        addAll(listOf("rule:", "group:", "open:"))
+    val schema = StrictPrefsCodec.long(prefs, PrefsKeys.PROTECTION_SCHEMA)
+    val rawProtection = StrictPrefsCodec.string(prefs, PrefsKeys.PROTECTION_LEDGER)
+    val rawArchive = StrictPrefsCodec.string(prefs, PrefsKeys.PROTECTION_ARCHIVE)
+    if (schema == null) {
+        wireRequire(rawProtection == null && rawArchive == null && !protectionInitialized)
+    } else {
+        if (schema != 1L) wireFuture()
+        wireRequire(protectionInitialized)
+        // Never call readFocus/validateInitializedProtectionChildren here: they call readEditorState.
+        val protection = ProtectionLedgerCodec.decode(rawProtection ?: wireCorrupt())
+        wireRequire(protection.lastUsedAtEpochMs == StrictPrefsCodec.long(prefs, PrefsKeys.EMERGENCY_PASS_USED_AT))
+        protection.recovery?.let {
+            addAll(it.affectedCauseKeys)
+            addAll(it.endedTransientIds.map(::ruleCauseKey))
+        }
+        protection.ordinaryGrants.values.forEach { grant -> grant.scopes.forEach { scope ->
+            if (scope.counter.rule.authority == RuleAuthority.Personal)
+                add("${scope.counter.rule.source}:${scope.counter.rule.ruleId}")
+        } }
+        protection.pendingCreditEnds.values.forEach { add(openCauseKey(it.target)) }
+        protection.outbox.values.forEach { addAll(it.endedTransientIds.map(::ruleCauseKey)) }
+        // Unqualified affectedRuleIds may name foreign rules. History, receipt hashes and
+        // cooldown alone cannot establish ownership of every optional editor domain.
+        val archive = readProtectionArchiveDomains(rawArchive ?: wireCorrupt())
+        archive[PrefsKeys.FOCUS_LEDGER.name]?.let { focusReferences(it) }
+        archive[PrefsKeys.BLOCK_RULES.name]?.let { addAll(StrictPrefsCodec.rules(it).map { ruleCauseKey(it.id) }) }
+        archive[PrefsKeys.OPEN_LIMITS.name]?.let { addAll(StrictPrefsCodec.openLimits(it).map { openCauseKey(it.packageName) }) }
+        archive[PrefsKeys.OPEN_COUNTS.name]?.let { addAll(StrictPrefsCodec.counts(it).keys.map(::openCauseKey)) }
+        val tier = archive[PrefsKeys.DEFAULT_BREAK_LEVEL.name]?.let {
+            add("default:"); StrictPrefsCodec.level(it)
+        } ?: BreakLevel.EASY
+        archive[PrefsKeys.TIME_LIMITS.name]?.let { addAll(StrictPrefsCodec.timeLimits(it, tier).map { timeCauseKey(it.packageName) }) }
+        archive[PrefsKeys.BREAK_SESSION.name]?.let { StrictPrefsCodec.session(it) }
     }
+}
+
+/** Read C3's preserved A|1 inputs without reopening a transaction or interpreting them as live rights. */
+private fun readProtectionArchiveDomains(raw: String): Map<String, String?> {
+    val strings = setOf(PrefsKeys.FOCUS_LEDGER.name, PrefsKeys.BREAK_SESSION.name, PrefsKeys.OPEN_COUNTS.name,
+        PrefsKeys.DEFAULT_BREAK_LEVEL.name, PrefsKeys.BLOCK_RULES.name, PrefsKeys.TIME_LIMITS.name, PrefsKeys.OPEN_LIMITS.name)
+    val longs = setOf(PrefsKeys.EMERGENCY_PASS_USED_AT.name, PrefsKeys.EMERGENCY_PASS_WEEK_START.name, PrefsKeys.OPEN_COUNTS_DAY.name)
+    val names = strings + longs
+    val values = linkedMapOf<String, String?>()
+    for (row in wireRows(raw, "A")) {
+        wireRequire(row.size == 3)
+        val key = readWireAtom(row[0])
+        if (key !in names) wireFuture()
+        wireRequire(!values.containsKey(key))
+        val value = PrefsCodec.unescape(row[2]).also { wireRequire(PrefsCodec.escape(it) == row[2]) }
+        values[key] = when (row[1]) {
+            "false" -> { wireRequire(value.isEmpty()); null }
+            "true" -> {
+                // Historical day/week sentinels can be negative; the archive writer accepted Long.
+                if (key in longs) wireRequire(value.toLongOrNull()?.toString() == value)
+                value
+            }
+            else -> wireCorrupt()
+        }
+    }
+    wireRequire(values.keys == names)
+    return values
 }
