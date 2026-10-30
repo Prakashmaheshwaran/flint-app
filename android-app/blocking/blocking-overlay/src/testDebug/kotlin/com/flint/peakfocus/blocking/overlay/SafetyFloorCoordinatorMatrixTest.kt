@@ -127,12 +127,18 @@ class SafetyFloorCoordinatorMatrixTest {
     }
 
     @Test fun `daily time limit never shields a floor surface`() {
+        val stamp = com.flint.peakfocus.core.datastore.ProtectionClock.now()
+        val day = com.flint.peakfocus.blocking.engine.TimeLimitDayAccounting.initial(stamp, "UTC")
+        fun budget(pkg: String) = TrustedTimeLimitBudget(pkg, 0, day, 0L,
+            TrustedTimeLimitBudget.Measurement.NOT_NEEDED)
         assertEquals(
             BlockScreenReason.TIME_LIMIT,
-            coordinator.evaluateBlockCause(other, control, ruleCause = null, timeLimitSpent = true)?.reason,
+            coordinator.evaluateBlockCause(other, control, ruleCause = null, timeLimitSpent = false,
+                timeBudget = budget(control))?.reason,
         )
         for (pkg in floor) {
-            assertNull(pkg, coordinator.evaluateBlockCause(other, pkg, ruleCause = null, timeLimitSpent = true))
+            assertNull(pkg, coordinator.evaluateBlockCause(other, pkg, ruleCause = null, timeLimitSpent = false,
+                timeBudget = budget(pkg)))
         }
     }
 

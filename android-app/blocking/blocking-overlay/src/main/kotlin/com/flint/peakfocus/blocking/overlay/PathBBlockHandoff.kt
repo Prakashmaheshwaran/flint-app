@@ -46,6 +46,7 @@ object PathBBlockHandoff {
 
     @Volatile private var coordinator: BlockScreenCoordinator? = null
     @Volatile private var lastForegroundPackage: String? = null
+    private val timeQueries = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
      * The process-wide Path B coordinator (lazily created). [BlockActivity] also uses this
@@ -60,24 +61,26 @@ object PathBBlockHandoff {
     }
 
     /**
-     * Compatibility entry for a daily Time Limit hit. Also evaluate current rules, so callers
-     * using this entry cannot accidentally shadow a Hardcore session with an EASY budget.
+     * Compatibility notification of a possible Time hit. Verify it against the same durable
+     * reader before enforcing, and include current rules in the overlap decision.
      */
     fun onTimeLimitExceeded(context: Context, packageName: String) {
         val appContext = context.applicationContext
-        val now = System.currentTimeMillis()
-        val rules = ActiveRulesHolder.rules
-        val cal = Calendar.getInstance().apply { timeInMillis = now }
-        val verdict = BlockDecisionEngine().decide(
-            packageName,
-            null,
-            rules,
-            appContext.packageName,
-            cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE),
-            IsoWeekday.fromCalendar(cal.get(Calendar.DAY_OF_WEEK)),
-            now,
-        )
-        onForegroundPolled(appContext, packageName, verdict, timeLimitSpent = true, rules = rules)
+        timeQueries.launch {
+            val c = coordinator(appContext)
+            val minutes = listOfNotNull(com.flint.peakfocus.core.data.LimitStore(appContext).limitMinutes(packageName),
+                c.timeLimitMinutes(packageName)).minOrNull()
+            val budget = minutes?.let { TrustedTimeLimitReader.create(appContext).read(packageName, it) }
+            val now = System.currentTimeMillis()
+            val rules = ActiveRulesHolder.rules
+            val cal = Calendar.getInstance().apply { timeInMillis = now }
+            val verdict = BlockDecisionEngine().decide(
+                packageName, null, rules, appContext.packageName,
+                cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE),
+                IsoWeekday.fromCalendar(cal.get(Calendar.DAY_OF_WEEK)), now,
+            )
+            onForegroundPolled(appContext, packageName, verdict, rules = rules, timeBudget = budget)
+        }
     }
 
     /**

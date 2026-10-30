@@ -31,15 +31,18 @@ internal object ProtectionStatusProjection {
         legacyZone: String = TimeZone.getDefault().id,
         timeLimitTier: (TimeLimit) -> BreakLevel = { it.breakLevel },
         usageAccessMissing: Boolean = false,
+        timeMeasurementUnavailable: Boolean = false,
+        timeMeasurementStorageUnavailable: Boolean = false,
     ): ProtectionStatus {
         val inputs = listOf(focus, rulesReadiness, times, opens, editor)
         val readiness = when {
-            inputs.any { it is StorageState.Unavailable } -> ProtectionStatus.Readiness.UNAVAILABLE
+            timeMeasurementStorageUnavailable || inputs.any { it is StorageState.Unavailable } -> ProtectionStatus.Readiness.UNAVAILABLE
             inputs.any { it is StorageState.Loading } -> ProtectionStatus.Readiness.LOADING
             else -> ProtectionStatus.Readiness.READY
         }
         val reasons = linkedSetOf<String>()
         if (!pathAConnected) reasons += "path-a-disconnected"
+        if (timeMeasurementUnavailable) reasons += "time-limit-measurement-unavailable"
         // Derived context only: the service owns the raw permission observation. Copying
         // its missing-access reason here would feed stale policy state back after recovery.
         if (usageAccessMissing) {

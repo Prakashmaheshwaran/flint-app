@@ -39,6 +39,7 @@ class TrustedTimeLimitReader internal constructor(
     private val record: suspend (TimeLimitMeasurementContext, Long?, AccessClockStamp) -> TimeLimitUsageObservation,
     private val query: (String, Long, Long) -> Long?,
     private val clock: () -> AccessClockStamp,
+    private val publish: (TrustedTimeLimitBudget) -> Unit = {},
 ) {
     private val lastGood = ConcurrentHashMap<String, TimeLimitDayState>()
 
@@ -46,6 +47,7 @@ class TrustedTimeLimitReader internal constructor(
         require(dailyMinutes >= 0)
         try {
             val ticket = contextFor(packageName, clock())
+            ticket.committedDay?.let { lastGood[packageName] = it }
             val total = if (dailyMinutes > 0) try {
                 query(packageName, ticket.windowStartEpochMs, ticket.observedAt.wallEpochMs)
             } catch (cancelled: CancellationException) {
@@ -78,7 +80,7 @@ class TrustedTimeLimitReader internal constructor(
             quality == TrustedTimeLimitBudget.Measurement.OBSERVED -> measured
             else -> null
         }
-        return TrustedTimeLimitBudget(pkg, minutes, day, remaining, quality)
+        return TrustedTimeLimitBudget(pkg, minutes, day, remaining, quality).also(publish)
     }
 
     companion object {
@@ -90,6 +92,7 @@ class TrustedTimeLimitReader internal constructor(
                 record = store::record,
                 query = { pkg, start, now -> UsageQuery.foregroundMillisForWindowIfGranted(app, pkg, start, now) },
                 clock = ProtectionClock::now,
+                publish = TimeLimitMeasurementHealth.publisher::record,
             )
         }
     }

@@ -161,6 +161,7 @@ class BlockScreenCoordinator(
     private val limitsStore = configuredLimitsStore ?: FlintPreferences.limits(appContext)
     private val rulesStore = blockRulesStore ?: FlintPreferences.blockRules(appContext)
     private val editorStore = editorCommitmentStore ?: FlintPreferences.editorCommitments(appContext)
+    private val observeProductionTimeMeasurements = focusStateStore == null
 
     /** Retained only for constructor-injected v1 adapter fixtures, never production charging. */
     private val openLimitPolicy by lazy { OpenLimitPolicy() }
@@ -231,6 +232,9 @@ class BlockScreenCoordinator(
     @Volatile private var visiblePackage: String? = null
 
     init {
+        if (observeProductionTimeMeasurements) scope.launch {
+            TimeLimitMeasurementHealth.publisher.state.collect { invalidateProtectionStatus() }
+        }
         scope.launch { limitsStore.openLimitsState.collect { state ->
             if (state is StorageState.Ready) {
                 openLimits = state.value
@@ -312,12 +316,21 @@ class BlockScreenCoordinator(
         try {
             safetyFloor.refreshSoonIfOlderThan(SafetyFloorGate.DEFAULT_REFRESH_INTERVAL_MS)
             val now = statusClock() // first call stays off main, including lazy OS boot identity lookup
+            // Legacy budgets remain a stricter fallback. Resolve them on this worker, never
+            // from a display read or the Accessibility callback. Fixtures own their stores.
+            val budgets = if (observeProductionTimeMeasurements) {
+                val legacy = com.flint.peakfocus.core.data.LimitStore(appContext).all().filterValues { it >= 0 }
+                val canonical = timeLimits.associate { it.packageName to it.dailyMinutes }
+                (legacy.keys + canonical.keys).associateWith { pkg -> listOfNotNull(legacy[pkg], canonical[pkg]).min() }
+            } else emptyMap()
             val snapshot = ProtectionStatusProjection.evaluate(focusState.value, rulesState.value,
                 timeState.value, openState.value, editorState.value, ActiveRulesHolder.rulesOutside(ActiveRulesHolder.SOURCE_DATASTORE),
                 safetyFloor.runtimeResolution.value, EnforcementSignals.detectors.pathAConnected, now,
                 timeLimitTier = { currentTimeLimitBreakLevel(it.packageName) },
                 usageAccessMissing = "usage-access-missing" in
-                    ProtectionStatusHub.status.value.detectors.degradedReasons)
+                    ProtectionStatusHub.status.value.detectors.degradedReasons,
+                timeMeasurementUnavailable = TimeLimitMeasurementHealth.publisher.unavailable(budgets, now),
+                timeMeasurementStorageUnavailable = TimeLimitMeasurementHealth.publisher.storageUnavailable(budgets))
             synchronized(statusLock) {
                 val connected = EnforcementSignals.detectors.pathAConnected
                 val health = snapshot.detectors.copy(accessibilityConnected = connected,
@@ -537,10 +550,15 @@ class BlockScreenCoordinator(
         return BlockExemptions.isExempt(packageName, nowEpochMs(), cause?.breakLevel ?: BreakLevel.EASY)
     }
 
-    private fun ordinaryInput(packageName: String, cause: BlockCause? = null) = OrdinaryProtectionInput(packageName, appContext.packageName,
-        observations[packageName]?.timeLimitSpent == true || cause?.reason == BlockScreenReason.TIME_LIMIT,
-        inspectOpen(packageName) !is OpenLimitDecision.Allowed, observations[packageName]?.url,
-        cause?.endsAtEpochMs.takeIf { cause?.reason == BlockScreenReason.TIME_LIMIT })
+    private fun ordinaryInput(packageName: String, cause: BlockCause? = null): OrdinaryProtectionInput {
+        val now = nowEpochMs()
+        val observation = observations[packageName]
+        val time = cause?.takeIf { it.reason == BlockScreenReason.TIME_LIMIT } ?:
+            trustedTimeCause(packageName, observation?.budget, now) ?:
+            observation?.fixtureTimeCause?.takeIf { it.endsAtEpochMs == null || now < it.endsAtEpochMs }
+        return OrdinaryProtectionInput(packageName, appContext.packageName, time != null,
+            inspectOpen(packageName) !is OpenLimitDecision.Allowed, observation?.url, time?.endsAtEpochMs)
+    }
 
     private fun ordinaryExempt(packageName: String, cause: BlockCause? = null): Boolean {
         val owner = recoveries ?: return BlockExemptions.hasOrdinaryExemption(packageName, nowEpochMs())
@@ -632,6 +650,7 @@ class BlockScreenCoordinator(
             ?.let { ruleBlockCause(it, now, offset) }
         val timeCause = trustedTimeCause(packageName, observation?.budget, now) ?:
             observation?.fixtureTimeCause?.takeIf { it.endsAtEpochMs == null || now < it.endsAtEpochMs }
+                ?.copy(breakLevel = currentTimeLimitBreakLevel(packageName))
         val openDecision = inspectOpen(packageName)
         val openCause = openBlockCause(openDecision, now, offset)
         val liveDisplayed = displayedCause?.takeIf { it.endsAtEpochMs == null || now < it.endsAtEpochMs }
@@ -647,8 +666,9 @@ class BlockScreenCoordinator(
     private fun trustedTimeCause(packageName: String, budget: TrustedTimeLimitBudget?, now: Long): BlockCause? {
         if (budget?.spent != true) return null
         val remaining = budget.resetRemainingMs(statusClock())
-        // At elapsed zero, retain evidenced exhaustion until the serialized editor/reset
-        // transaction commits. A raw midnight or a failed store read cannot refill quota.
+        // Last-good exhaustion is bounded by its proven trusted end. Losing storage cannot
+        // extend that finite restriction or mint any Open credit/pass/editor permission.
+        if (remaining == 0L) return null
         return BlockCause(BlockScreenReason.TIME_LIMIT, currentTimeLimitBreakLevel(packageName),
             remaining?.takeIf { it > 0L }?.let { now + it })
     }

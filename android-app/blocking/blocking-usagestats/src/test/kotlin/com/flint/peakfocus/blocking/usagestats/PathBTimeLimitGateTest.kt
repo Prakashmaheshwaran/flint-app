@@ -3,6 +3,7 @@ package com.flint.peakfocus.blocking.usagestats
 import com.flint.peakfocus.blocking.engine.*
 import com.flint.peakfocus.blocking.overlay.TrustedTimeLimitBudget
 import com.flint.peakfocus.core.model.AccessClockStamp
+import com.flint.peakfocus.core.model.DailyUsageTimeline
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

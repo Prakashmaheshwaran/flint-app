@@ -104,6 +104,16 @@ class TrustedTimeLimitReaderTest {
         assertEquals(TrustedTimeLimitBudget.Measurement.QUERY_FAILED, result.measurement)
     }
 
+    @Test fun PC_60_recreatedReaderRetainsLoadedExhaustionWhenOnlyItsSampleCommitFails() = runBlocking {
+        val disk = Disk()
+        assertTrue(reader(disk) { _, _, _ -> 60_000 }.read("app", 1).spent)
+        val recreated = reader(disk) { _, _, _ -> disk.fail = true; 0 }
+        val result = recreated.read("app", 1)
+        assertTrue(result.spent)
+        assertEquals(TrustedTimeLimitBudget.Measurement.STORAGE_UNAVAILABLE, result.measurement)
+        assertEquals(60_000L, result.day!!.usedMs)
+    }
+
     @Test fun PC_60_zeroBudgetHasACommittedResetWithoutAnOsQuery() = runBlocking {
         val result = reader(Disk()) { _, _, _ -> error("zero needs no usage access") }.read("app", 0)
         assertTrue(result.spent)

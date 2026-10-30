@@ -15,7 +15,9 @@ data class TimeLimitUsageLedger(val migrationZoneId: String, val targets: Map<St
 
 /** Immutable sampling ticket; OS queries run outside the serialized preference edit. */
 data class TimeLimitMeasurementContext(val packageName: String, val periodId: Long, val zoneId: String,
-    val windowStartEpochMs: Long, val observedAt: AccessClockStamp)
+    val windowStartEpochMs: Long, val observedAt: AccessClockStamp,
+    /** Acknowledged floor before the OS read; retained if the later sample commit fails. */
+    val committedDay: TimeLimitDayState? = null)
 
 data class TimeLimitUsageObservation(val state: TimeLimitDayState, val sampleAccepted: Boolean)
 
@@ -45,7 +47,7 @@ class DataStoreTimeLimitUsageStore(
             ledger = ledger.copy(targets = ledger.targets + (packageName to row))
             prefs.putTimeLimitUsage(ledger)
             val start = DailyUsageTimeline.startOfDay(stamp.wallEpochMs, OpenCreditLedgerPolicy.quotaZone(row.zoneId))
-            result = TimeLimitMeasurementContext(packageName, row.periodId, row.zoneId, start, stamp)
+            result = TimeLimitMeasurementContext(packageName, row.periodId, row.zoneId, start, stamp, row)
         }
         return checkNotNull(result)
     }
