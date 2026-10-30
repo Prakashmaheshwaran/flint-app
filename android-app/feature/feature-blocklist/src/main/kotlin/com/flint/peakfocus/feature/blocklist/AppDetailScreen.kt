@@ -17,6 +17,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -25,6 +27,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.flint.peakfocus.blocking.overlay.Readiness
+import com.flint.peakfocus.blocking.overlay.TargetProtection
+import com.flint.peakfocus.blocking.overlay.TargetProtectionReader
 import com.flint.peakfocus.core.common.theme.FlintSpacing
 import com.flint.peakfocus.core.common.ui.FlintCard
 import com.flint.peakfocus.core.common.ui.FlintChevron
@@ -34,7 +40,8 @@ import com.flint.peakfocus.core.common.ui.flintLoading
 /** Resolves a [DetailLine]: its args in order, then the formatted time if it has one. */
 @Composable
 internal fun detailText(line: DetailLine, nowMs: Long): String {
-    val args = (line.args + listOfNotNull(line.time?.let { detailTimeText(it, nowMs) })).toTypedArray()
+    val resolved = line.args.map { if (it is ResArg) stringResource(it.id) else it }
+    val args = (resolved + listOfNotNull(line.time?.let { detailTimeText(it, nowMs) })).toTypedArray()
     return if (line.plural != 0) pluralStringResource(line.plural, line.count, *args)
     else stringResource(line.text, *args)
 }
@@ -123,6 +130,7 @@ internal fun AppDetailContent(
     label: String,
     presentation: AppDetailPresentation,
     nowMs: Long,
+    isSite: Boolean = false,
     onBack: () -> Unit,
 ) {
     TargetScaffold(onBack, "app-detail") {
@@ -158,17 +166,37 @@ internal fun AppDetailContent(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        if (cause.timeUncertain) {
+                            Text(
+                                stringResource(R.string.target_cause_time_uncertain),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }
         }
+        presentation.timeLimit?.let { limit ->
+            Spacer(Modifier.height(FlintSpacing.lg))
+            FlintSectionLabel(stringResource(R.string.target_time), Modifier.semantics { heading() })
+            Spacer(Modifier.height(FlintSpacing.sm))
+            Text(detailText(timeLimitLine(limit), nowMs), style = MaterialTheme.typography.bodyMedium)
+        }
         presentation.credits?.let { credits ->
             Spacer(Modifier.height(FlintSpacing.lg))
-            FlintSectionLabel(stringResource(R.string.target_opens), Modifier.semantics { heading() })
+            FlintSectionLabel(stringResource(R.string.target_credits), Modifier.semantics { heading() })
             Spacer(Modifier.height(FlintSpacing.sm))
             Text(detailText(creditLine(credits), nowMs), style = MaterialTheme.typography.bodyMedium)
+            presentation.activeCreditEndsAtWall?.let { end ->
+                Text(
+                    detailText(DetailLine(R.string.target_credit_active_until, time = end), nowMs),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
         }
-        presentation.websiteCoverage?.let { coverage ->
+        // Website health describes the browser, so it belongs on a site's detail only.
+        presentation.websiteCoverage?.takeIf { isSite }?.let { coverage ->
             Spacer(Modifier.height(FlintSpacing.lg))
             FlintSectionLabel(stringResource(R.string.target_websites), Modifier.semantics { heading() })
             Spacer(Modifier.height(FlintSpacing.sm))
@@ -191,4 +219,19 @@ internal fun AppDetailContent(
             )
         }
     }
+}
+
+/** Collects lane C's read-only reader for one picked target; no store reads happen here. */
+@Composable
+internal fun AppDetailRoute(picked: PickedTarget, reader: TargetProtectionReader, onBack: () -> Unit) {
+    val protection by remember(picked.target, reader) { reader.observe(picked.target.toTargetRef()) }
+        .collectAsStateWithLifecycle(TargetProtection(Readiness.Loading))
+    val presentation = remember(protection) { appDetailPresentation(appDetailSnapshot(protection)) }
+    AppDetailContent(
+        label = picked.label,
+        presentation = presentation,
+        nowMs = remember(protection) { System.currentTimeMillis() },
+        isSite = picked.target is AppDetailTarget.Site,
+        onBack = onBack,
+    )
 }

@@ -41,9 +41,9 @@ class AppDetailLargeTextTest {
         )
         narrow { AppDetailContent("Video app", appDetailPresentation(snapshot), nowMs = 0L, onBack = {}) }
         compose.onNodeWithText("Video app").assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
-        compose.onNodeWithText("Blocked now by Deep work, until you stop it.").assertExists()
+        compose.onNodeWithText("Blocked now by Deep work (Hardcore), with no set end.").assertExists()
         compose.onNodeWithText("Schedule · Hardcore", substring = true, useUnmergedTree = true).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Opens used today: 2 of 3").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Open credits used today: 2 of 3").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("To change what covers this, edit the rule in Rules.").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Back").assertIsDisplayed()
     }
@@ -53,7 +53,7 @@ class AppDetailLargeTextTest {
             AppDetailContent("Video app", appDetailPresentation(AppDetailSnapshot(AppDetailReadiness.UNAVAILABLE, null)), 0L) {}
         }
         compose.onNodeWithText("Protection state is unavailable right now, so Flint won't guess what covers this.").assertExists()
-        compose.onAllNodesWithText("Opens used today", substring = true).assertCountEquals(0)
+        compose.onAllNodesWithText("Open credits used today", substring = true).assertCountEquals(0)
         compose.onAllNodesWithText("Covering it", substring = true, ignoreCase = true).assertCountEquals(0)
     }
 

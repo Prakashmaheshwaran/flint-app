@@ -64,21 +64,6 @@
     <string name="target_unavailable">Protection state is unavailable right now, so Flint won\'t guess what covers this.</string>
     <string name="target_safety_floor">Flint\'s rules don\'t block this app.</string>
     <string name="target_paused_until">Blocking is paused until %1$s.</string>
-    <string name="target_blocked">Blocked now by %1$s.</string>
-    <string name="target_blocked_until">Blocked now by %1$s, until %2$s.</string>
-    <string name="target_blocked_ongoing">Blocked now by %1$s, until you stop it.</string>
-    <plurals name="target_blocked_more">
-        <item quantity="one">Blocked now by %1$s and %2$d more.</item>
-        <item quantity="other">Blocked now by %1$s and %2$d more.</item>
-    </plurals>
-    <plurals name="target_blocked_more_until">
-        <item quantity="one">Blocked now by %1$s and %2$d more, until %3$s.</item>
-        <item quantity="other">Blocked now by %1$s and %2$d more, until %3$s.</item>
-    </plurals>
-    <plurals name="target_blocked_more_ongoing">
-        <item quantity="one">Blocked now by %1$s and %2$d more, until you stop them.</item>
-        <item quantity="other">Blocked now by %1$s and %2$d more, until you stop them.</item>
-    </plurals>
     <string name="target_covered_not_blocking">Covered, but not blocked right now.</string>
     <string name="target_coverage_unconfirmed">Flint can\'t confirm right now whether this is blocked.</string>
     <string name="target_not_covered">No rule covers this right now.</string>
@@ -86,24 +71,18 @@
     <string name="target_cause_kind_tier">%1$s · %2$s</string>
     <string name="target_cause_blocking">Blocking now</string>
     <string name="target_cause_blocking_until">Blocking now · until %1$s</string>
-    <string name="target_cause_blocking_ongoing">Blocking now · until you stop it</string>
     <string name="target_cause_active">Active, not blocking right now</string>
     <string name="target_cause_active_ends">Active, not blocking right now · ends %1$s</string>
     <string name="target_cause_inactive">Not active right now</string>
     <string name="target_cause_unknown">Flint can\'t confirm whether this is blocking now</string>
     <string name="target_kind_session">Focus session</string>
-    <string name="target_kind_pomodoro">Pomodoro</string>
     <string name="target_kind_schedule">Schedule</string>
-    <string name="target_kind_one_shot">One-time schedule</string>
     <string name="target_kind_sleep">Sleep</string>
     <string name="target_kind_time_limit">Time limit</string>
     <string name="target_kind_open_limit">Open limit</string>
     <string name="target_tier_easy">Easy</string>
     <string name="target_tier_harder">Harder</string>
     <string name="target_tier_hardcore">Hardcore</string>
-    <string name="target_opens">Opens today</string>
-    <string name="target_opens_used">Opens used today: %1$d of %2$d</string>
-    <string name="target_opens_unavailable">Today\'s count isn\'t available.</string>
     <string name="target_websites">Website check</string>
     <string name="target_web_available">Last browser check: the address bar was readable.</string>
     <string name="target_web_unconfirmed">Flint hasn\'t confirmed it can read the current browser\'s address bar.</string>
@@ -112,4 +91,31 @@
     <string name="target_web_needs_accessibility">Website blocking needs Accessibility.</string>
     <string name="target_next_change">Next change: %1$s</string>
     <string name="target_edit_hint">To change what covers this, edit the rule in Rules.</string>
+    <string name="target_blocked">Blocked now by %1$s (%2$s).</string>
+    <string name="target_blocked_until">Blocked now by %1$s (%2$s), until %3$s.</string>
+    <string name="target_blocked_ongoing">Blocked now by %1$s (%2$s), with no set end.</string>
+    <plurals name="target_blocked_more">
+        <item quantity="one">Blocked now by %1$s (%2$s) and %3$d more.</item>
+        <item quantity="other">Blocked now by %1$s (%2$s) and %3$d more.</item>
+    </plurals>
+    <plurals name="target_blocked_more_until">
+        <item quantity="one">Blocked now by %1$s (%2$s) and %3$d more, until %4$s.</item>
+        <item quantity="other">Blocked now by %1$s (%2$s) and %3$d more, until %4$s.</item>
+    </plurals>
+    <plurals name="target_blocked_more_ongoing">
+        <item quantity="one">Blocked now by %1$s (%2$s) and %3$d more, with no set end.</item>
+        <item quantity="other">Blocked now by %1$s (%2$s) and %3$d more, with no set end.</item>
+    </plurals>
+    <string name="target_blocked_unattributed">Blocked now.</string>
+    <string name="target_kind_timer">Timer</string>
+    <string name="target_cause_time_uncertain">Time uncertain after a clock change or restart</string>
+    <string name="target_credits">Open credits</string>
+    <string name="target_credits_used">Open credits used today: %1$d of %2$d</string>
+    <string name="target_credits_unavailable">Today\'s credit count isn\'t available.</string>
+    <string name="target_credit_active_until">A credit\'s access is running until %1$s.</string>
+    <string name="target_time">Time limit</string>
+    <string name="target_time_used">Used today: %1$s of %2$s</string>
+    <string name="target_time_unmeasured">Daily limit: %1$s. Today\'s use can\'t be measured right now.</string>
+    <string name="target_web_awaiting">Website coverage is awaiting confirmation from a supported browser.</string>
+    <string name="target_web_not_required">No active website rule covers this site now.</string>
 </resources>

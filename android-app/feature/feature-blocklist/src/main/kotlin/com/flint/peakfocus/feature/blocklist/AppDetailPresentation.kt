@@ -1,25 +1,22 @@
 package com.flint.peakfocus.feature.blocklist
 
 import com.flint.peakfocus.core.model.BreakLevel
-import kotlinx.coroutines.flow.Flow
 
 /**
- * Presentation boundary pending lane C's per-target reader. No implementation reads rule
- * stores or decides coverage here. The production adapter must copy C's resolved headline,
- * end, recovery and counter readability; an aggregate health snapshot cannot supply them.
+ * Presentation of lane C's read-only per-target reader (TargetProtection, #177). Nothing here
+ * reads rule stores or decides coverage: [appDetailSnapshot] copies C's resolved headline,
+ * blocking end, recovery and counter readability, and this file only orders and words them.
  */
-internal interface AppDetailReader {
-    fun observe(target: AppDetailTarget): Flow<AppDetailSnapshot>
-}
-
 internal sealed interface AppDetailTarget {
     data class App(val packageName: String) : AppDetailTarget
     data class Site(val domain: String) : AppDetailTarget
 }
 
 internal enum class AppDetailReadiness { LOADING, READY, UNAVAILABLE }
-internal enum class AppDetailKind { SESSION, POMODORO, SCHEDULE, ONE_SHOT, SLEEP, TIME_LIMIT, OPEN_LIMIT }
-internal enum class AppDetailWebCoverage { AVAILABLE, UNCONFIRMED, DEGRADED, UNSUPPORTED, NEEDS_ACCESSIBILITY }
+internal enum class AppDetailKind { SESSION, TIMER, SCHEDULE, SLEEP, TIME_LIMIT, OPEN_LIMIT }
+internal enum class AppDetailWebCoverage {
+    AVAILABLE, UNCONFIRMED, DEGRADED, UNSUPPORTED, NEEDS_ACCESSIBILITY, AWAITING_BROWSER, NOT_REQUIRED,
+}
 
 /** This decision is supplied by enforcement, including its tie-break and latest end. */
 internal sealed interface AppDetailResolvedState {
@@ -31,6 +28,8 @@ internal sealed interface AppDetailResolvedState {
         val untilWall: Long?,
         val ongoing: Boolean,
     ) : AppDetailResolvedState
+    /** Blocked, but the reader named no headline cause; never guess one from rows. */
+    data object BlockedUnattributed : AppDetailResolvedState
     data object CoveredNotBlocking : AppDetailResolvedState
     data object CoverageUnconfirmed : AppDetailResolvedState
     data object NotCovered : AppDetailResolvedState
@@ -38,7 +37,8 @@ internal sealed interface AppDetailResolvedState {
 
 internal data class AppDetailCause(
     val causeKey: String,
-    val occurrenceId: String,
+    /** Null until the owner publishes the occurrence; never invent an identity. */
+    val occurrenceId: String?,
     val ruleId: String?,
     val name: String,
     val kind: AppDetailKind,
@@ -50,7 +50,16 @@ internal data class AppDetailCause(
     val timeUncertain: Boolean = false,
 )
 
-internal data class AppDetailCredits(val readable: Boolean, val used: Int?, val cap: Int?)
+internal data class AppDetailCredits(
+    val readable: Boolean,
+    val used: Int?,
+    val cap: Int?,
+    /** An accepted credit's access end; null when none is running. */
+    val activeCreditEndsAtWall: Long? = null,
+)
+
+/** Null [usedMs] is unmeasured use, never a fresh zero. */
+internal data class AppDetailTimeLimit(val quotaMs: Long, val usedMs: Long?, val tier: BreakLevel)
 
 internal data class AppDetailSnapshot(
     val readiness: AppDetailReadiness,
@@ -60,6 +69,7 @@ internal data class AppDetailSnapshot(
     val safetyFloor: Boolean = false,
     val nextChangeAtWall: Long? = null,
     val websiteCoverage: AppDetailWebCoverage? = null,
+    val timeLimit: AppDetailTimeLimit? = null,
 )
 
 internal sealed interface AppDetailHeadline {
@@ -81,6 +91,8 @@ internal data class AppDetailPresentation(
     val showsSafetyFloorNote: Boolean,
     val nextChangeAtWall: Long?,
     val websiteCoverage: AppDetailWebCoverage? = null,
+    val timeLimit: AppDetailTimeLimit? = null,
+    val activeCreditEndsAtWall: Long? = null,
 )
 
 /** Orders attribution for display; it never computes the blocking decision from these rows. */
@@ -106,7 +118,7 @@ internal fun appDetailPresentation(input: AppDetailSnapshot): AppDetailPresentat
             } }
             .thenByDescending { if (it.ongoing) Long.MAX_VALUE else it.endsAtWall ?: Long.MIN_VALUE }
             .thenBy { it.causeKey }
-            .thenBy { it.occurrenceId },
+            .thenBy { it.occurrenceId.orEmpty() },
     )
     val credits = input.credits?.let {
         if (it.readable && it.used != null && it.used >= 0 && it.cap != null && it.cap >= 0)
@@ -114,5 +126,6 @@ internal fun appDetailPresentation(input: AppDetailSnapshot): AppDetailPresentat
         else AppDetailCreditLine.Unavailable
     }
     return AppDetailPresentation(AppDetailHeadline.Resolved(input.resolved), rows, credits, false,
-        input.nextChangeAtWall, input.websiteCoverage)
+        input.nextChangeAtWall, input.websiteCoverage, input.timeLimit,
+        input.credits?.takeIf { it.readable }?.activeCreditEndsAtWall)
 }

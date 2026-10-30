@@ -28,6 +28,7 @@ dependencies {
     implementation(project(":core:core-datastore"))
     implementation(project(":core:core-history"))
     implementation(project(":blocking:blocking-engine"))
+    implementation(project(":blocking:blocking-overlay")) // read-only per-target protection (C6)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.tooling.preview)

@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.sp
+import com.flint.peakfocus.blocking.overlay.TargetFloorIdentities
 import com.flint.peakfocus.core.common.RuntimeSafetySurfaces
 import com.flint.peakfocus.core.common.theme.FlintPalette
 import com.flint.peakfocus.core.common.ui.EmberButton
@@ -95,6 +96,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
@@ -192,6 +194,14 @@ private fun FlintApp() {
     var health by remember { mutableStateOf(PermissionHealthChecker.check(context)) }
     val store = remember { BlocklistStore(context) }
     var blockedCount by remember { mutableStateOf(store.blockedPackages.size) }
+    // One read-only per-target reader for App/Site detail (lane C, #177). Floor identities come
+    // from a live detector's gate; without one, only Flint itself and the static floor are known.
+    val readerScope = rememberCoroutineScope()
+    val targetProtection = remember {
+        createTargetProtectionReader(context, readerScope) { pkg ->
+            TargetFloorIdentities.read(pkg) ?: TargetFloorIdentities.staticIdentity(pkg, context.packageName)
+        }
+    }
 
     // Result is deliberately unused: the FGS runs with or without the grant — the permission
     // only controls whether its ongoing notification is visible on Android 13+.
@@ -321,6 +331,7 @@ private fun FlintApp() {
                                     quickBlockSummary = if (blockedCount == 0) "Apps blocked whenever Flint is on"
                                     else "$blockedCount ${if (blockedCount == 1) "app" else "apps"} always blocked",
                                     onQuickBlock = { detail = Detail.QuickBlock },
+                                    targetProtection = targetProtection,
                                 )
                                 FlintTabGlyph.Insights -> StatsScreen(Modifier.fillMaxSize())
                                 FlintTabGlyph.You -> SettingsScreen(
