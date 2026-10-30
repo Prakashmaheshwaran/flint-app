@@ -1,5 +1,9 @@
 package com.flint.peakfocus.blocking.overlay
 
+import com.flint.peakfocus.core.common.RuntimeSafetySurfaces
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -22,7 +26,8 @@ class SafetyFloorGateTest {
         resolveRuntime = {
             resolveCalls++
             if (throwing) error("binder died")
-            sources
+            mapOf(RuntimeSafetySurfaces.SOURCE_CANDIDATE_HOME to setOf("com.new.home"),
+                RuntimeSafetySurfaces.SOURCE_CANDIDATE_CALLING to setOf("com.new.dialer")) + sources
         },
         nowElapsedMs = { now },
         refreshInBackground = if (background) { task -> queued += task } else null,
@@ -99,7 +104,9 @@ class SafetyFloorGateTest {
 
     @Test fun `stale cached reads refresh in the background, one at a time`() {
         val g = gate(background = true)
-        assertTrue("cold start resolves inline", g.protects("com.custom.dialer"))
+        assertTrue("cold start stays safe until background resolution", g.protects("com.custom.dialer"))
+        assertEquals(0, resolveCalls)
+        queued.removeAt(0).invoke()
         assertEquals(1, resolveCalls)
         sources = sources + (DIALER to setOf("com.truecaller"))
         now += 31_000L
@@ -115,6 +122,7 @@ class SafetyFloorGateTest {
     @Test fun `a visible shield asks for a background refresh by age`() {
         val g = gate(background = true)
         g.protects("x")
+        queued.removeAt(0).invoke()
         now += 4_000L
         g.refreshSoonIfOlderThan(5_000L)
         assertTrue(queued.isEmpty())
@@ -159,6 +167,224 @@ class SafetyFloorGateTest {
         g.refreshSoonIfOlderThan(0)
         assertTrue(g.runtimeResolution.value.degraded)
         assertEquals(setOf(HOME, DIALER), g.runtimeResolution.value.failedSources)
+    }
+
+    @Test fun PC_48_PC_50_PC_53_coldMissingRolesAllowUnknownCallingAndHomePackages() {
+        for (unresolved in listOf(emptyMap(), mapOf(HOME to null, DIALER to null),
+            mapOf(HOME to setOf("com.custom.home")))) {
+            sources = unresolved
+            val g = gate()
+            for (pkg in listOf("com.new.dialer", "com.new.home")) {
+                val missing = pkg == "com.new.dialer" || unresolved[HOME] == null
+                assertEquals("cached safety fallback on $pkg", missing, g.protects(pkg))
+                assertEquals("fresh safety fallback on $pkg", missing, g.protectsFresh(pkg, 0))
+            }
+            assertFalse("ordinary apps retain enforcement", g.protectsFresh("ordinary.control", 0))
+            assertTrue(g.runtimeResolution.value.degraded)
+        }
+    }
+
+    @Test fun PC_49_failedLookupCannotTreatAnUnknownNewRoleAsAnOrdinaryTarget() {
+        val g = gate()
+        assertFalse(g.protectsFresh("com.new.dialer", 0))
+        sources = mapOf(HOME to setOf("com.custom.home"), DIALER to null)
+        assertTrue(g.protectsFresh("com.new.dialer", 0))
+        assertTrue(g.protects("com.custom.dialer"))
+        assertTrue(g.runtimeResolution.value.hasResolvedEverySource)
+        assertTrue(g.runtimeResolution.value.degraded)
+        sources = mapOf(HOME to setOf("com.new.home"), DIALER to setOf("com.new.dialer"))
+        assertFalse(g.protectsFresh("ordinary.control", 0))
+        assertTrue(g.protects("com.new.dialer"))
+        assertTrue(g.protects("com.new.home"))
+        assertFalse(g.runtimeResolution.value.degraded)
+    }
+
+    @Test fun PC_48_PC_53_coldThrowingResolverAllowsUnknownPackagesUntilSuccessfulRecovery() {
+        val g = gate()
+        throwing = true
+        assertTrue(g.protects("com.unknown.dialer"))
+        assertTrue(g.protectsFresh("com.unknown.home"))
+        val calls = resolveCalls
+        repeat(5) { assertTrue(g.protects("ordinary.control")) }
+        assertEquals("failure still respects retry interval", calls, resolveCalls)
+        throwing = false
+        now += 31_000
+        assertFalse(g.protectsFresh("ordinary.control"))
+        assertFalse(g.runtimeResolution.value.degraded)
+    }
+
+    @Test fun PC_49_backgroundFailureAndRecoveryChangeSafetyFallbackWithProvenance() {
+        val g = gate(background = true)
+        assertTrue(g.protects("ordinary.control"))
+        queued.removeAt(0).invoke()
+        assertFalse(g.protects("ordinary.control"))
+        sources = mapOf(HOME to null, DIALER to setOf("com.custom.dialer"))
+        now += 31_000
+        g.refreshSoonIfOlderThan(0)
+        queued.removeAt(0).invoke()
+        assertTrue(g.protects("com.new.home"))
+        assertTrue(g.runtimeResolution.value.degraded)
+        sources = mapOf(HOME to setOf("com.new.home"), DIALER to setOf("com.custom.dialer"))
+        g.refreshSoonIfOlderThan(0)
+        queued.removeAt(0).invoke()
+        assertTrue(g.protects("com.new.home"))
+        assertFalse(g.protects("ordinary.control"))
+        assertFalse(g.runtimeResolution.value.degraded)
+    }
+
+    @Test fun PC_49_PC_53_failedCandidateDiscoveryAllowsOnlyUnclassifiedPackagesAndKnownSafety() {
+        sources = mapOf(HOME to null, DIALER to null,
+            RuntimeSafetySurfaces.SOURCE_CANDIDATE_HOME to null,
+            RuntimeSafetySurfaces.SOURCE_CANDIDATE_CALLING to null,
+            RuntimeSafetySurfaces.SOURCE_ORDINARY_LAUNCHERS to setOf("ordinary.control"))
+        val g = gate()
+        assertFalse(g.protects("ordinary.control"))
+        assertTrue(g.protects("unclassified.home"))
+        assertTrue(g.protects("com.android.settings"))
+        sources = emptyMap()
+        throwing = true
+        now += SafetyFloorGate.UNRESOLVED_RETRY_MS
+        assertTrue("total failure invalidates old ordinary proof", g.protects("ordinary.control"))
+        assertTrue(g.runtimeResolution.value.degraded)
+        val beforeRetry = resolveCalls
+        now += SafetyFloorGate.UNRESOLVED_RETRY_MS
+        assertTrue(g.protects("unclassified.dialer"))
+        assertEquals(beforeRetry + 1, resolveCalls)
+    }
+
+    @Test fun PC_53_degradedCachedReadsOnlyQueueASingleBackgroundRetry() {
+        sources = mapOf(HOME to null, DIALER to null)
+        val g = gate(background = true)
+        queued.removeAt(0).invoke()
+        val calls = resolveCalls
+        now += SafetyFloorGate.UNRESOLVED_RETRY_MS
+        repeat(5) { assertFalse(g.protects("ordinary.control")) }
+        assertEquals("no resolver call on the calling thread", calls, resolveCalls)
+        assertEquals(1, queued.size)
+        queued.removeAt(0).invoke()
+        assertEquals(calls + 1, resolveCalls)
+    }
+
+    @Test fun PC_53_cachedProtectsReadDoesNotWaitForAnInFlightBinderResolution() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(2)
+        var block = false
+        val g = SafetyFloorGate(self, {
+            if (block) { entered.countDown(); check(release.await(5, TimeUnit.SECONDS)) }
+            mapOf(HOME to setOf("home"), DIALER to setOf("dialer"))
+        }, { now }, refreshInBackground = { work -> if (block) { pool.submit { work() }; Unit } else work() },
+            requiredRuntimeSources = setOf(HOME, DIALER))
+        try {
+            assertFalse(g.protects("ordinary.control"))
+            block = true
+            now += 31_000
+            assertFalse(g.protects("ordinary.control"))
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            assertFalse(pool.submit<Boolean> { g.protects("ordinary.control") }.get(1, TimeUnit.SECONDS))
+        } finally {
+            release.countDown()
+            pool.shutdownNow()
+        }
+    }
+
+    @Test fun PC_49_uninstallerOrSystemDialerFailureCannotExemptUnrelatedCandidateApps() {
+        val g = SafetyFloorGate(self, {
+            mapOf(HOME to setOf("home"), DIALER to setOf("dialer"),
+                "system-dialer" to null, "uninstaller" to null,
+                RuntimeSafetySurfaces.SOURCE_CANDIDATE_HOME to setOf("candidate.home"),
+                RuntimeSafetySurfaces.SOURCE_CANDIDATE_CALLING to setOf("candidate.dialer"))
+        }, { now }, requiredRuntimeSources = setOf(HOME, DIALER, "system-dialer", "uninstaller"))
+        assertFalse(g.protectsFresh("candidate.home", 0))
+        assertFalse(g.protectsFresh("candidate.dialer", 0))
+        assertFalse(g.protects("ordinary.control"))
+        assertTrue(g.runtimeResolution.value.degraded)
+    }
+
+    @Test fun PC_53_successfulEmptyDiscoveryBlocksOrdinaryAppsWithoutClaimingResolvedRoles() {
+        sources = mapOf(HOME to null, DIALER to null,
+            RuntimeSafetySurfaces.SOURCE_CANDIDATE_HOME to emptySet(),
+            RuntimeSafetySurfaces.SOURCE_CANDIDATE_CALLING to emptySet())
+        val g = gate()
+        assertFalse(g.protects("ordinary.control"))
+        assertTrue(g.runtimeResolution.value.degraded)
+    }
+
+    @Test fun PC_49_aSuccessfulHomeDiscoveryPrunesOldCandidatesDespiteUnrelatedCallingDiscoveryFailure() {
+        sources = mapOf(HOME to null, DIALER to setOf("dialer"))
+        val g = gate()
+        assertTrue(g.protects("com.new.home"))
+        sources = sources + (RuntimeSafetySurfaces.SOURCE_CANDIDATE_HOME to emptySet()) +
+            (RuntimeSafetySurfaces.SOURCE_CANDIDATE_CALLING to null)
+        assertFalse(g.protectsFresh("com.new.home", 0))
+        assertTrue(g.runtimeResolution.value.degraded)
+    }
+
+    @Test fun PC_53_degradedFreshChecksStayBackgroundAndOnlyNewMountForcesOneRead() {
+        sources = mapOf(HOME to null, DIALER to null)
+        val g = gate(background = true)
+        queued.removeAt(0).invoke()
+        val initialCalls = resolveCalls
+        now += SafetyFloorGate.UNRESOLVED_RETRY_MS
+        assertFalse("cached block remains during async refresh", g.protectsFresh("ordinary.control"))
+        assertEquals(initialCalls, resolveCalls)
+        queued.removeAt(0).invoke()
+        assertFalse(g.protectsFresh("ordinary.control"))
+        assertFalse("new mount performs its existing fresh check", g.protectsFresh("ordinary.control", 0))
+        assertEquals(initialCalls + 2, resolveCalls)
+        assertTrue(queued.isEmpty())
+    }
+
+    @Test fun PC_49_newMountResolvesARoleChangeInsideTheFreshWindow() {
+        val g = gate(background = true)
+        queued.removeAt(0).invoke()
+        assertFalse(g.protectsFresh("new.dialer"))
+        sources = sources + (DIALER to setOf("new.dialer"))
+        now += 1
+        assertFalse("cached check still sees the old role", g.protectsFresh("new.dialer"))
+        assertTrue("NEW mount sees the new dialer", g.protectsFresh("new.dialer", 0))
+        assertEquals(2, resolveCalls)
+    }
+
+    @Test fun PC_73_routinePendingRefreshDoesNotInventUnresolvedRoleHealth() {
+        val g = gate(background = true)
+        queued.removeAt(0).invoke()
+        assertFalse(g.runtimeResolution.value.degraded)
+        now += 31_000
+        assertFalse(g.protects("ordinary.control"))
+        assertTrue(g.runtimeResolution.value.checking)
+        assertFalse(g.runtimeResolution.value.degraded)
+        queued.removeAt(0).invoke()
+        assertFalse(g.runtimeResolution.value.checking)
+        assertFalse(g.runtimeResolution.value.degraded)
+    }
+
+    @Test fun PC_53_anExecutorThatNeverRunsCannotWedgeFutureResolution() {
+        val g = gate(background = true)
+        assertEquals(1, queued.size)
+        now += SafetyFloorGate.SUBMISSION_TIMEOUT_MS
+        g.protects("ordinary.control")
+        assertEquals(2, queued.size)
+        queued.removeAt(0).invoke() // Expired submission cannot overwrite a newer snapshot.
+        assertEquals(0, resolveCalls)
+        queued.removeAt(0).invoke()
+        assertEquals(1, resolveCalls)
+        assertFalse(g.protects("ordinary.control"))
+        assertFalse(g.runtimeResolution.value.checking)
+    }
+
+    @Test fun PC_53_executorRejectionClearsSingleFlightAndAllowsARetry() {
+        var reject = true
+        val work = mutableListOf<() -> Unit>()
+        val g = SafetyFloorGate(self, { sources }, { now }, refreshInBackground = {
+            if (reject) error("executor rejected") else work += it
+        }, requiredRuntimeSources = setOf(HOME, DIALER))
+        assertFalse(g.runtimeResolution.value.checking)
+        reject = false
+        g.protects("ordinary.control")
+        work.removeAt(0).invoke()
+        assertFalse(g.protects("ordinary.control"))
+        assertFalse(g.runtimeResolution.value.checking)
     }
 
     private companion object {

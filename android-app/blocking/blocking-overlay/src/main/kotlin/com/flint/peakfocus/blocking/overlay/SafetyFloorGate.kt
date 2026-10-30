@@ -1,6 +1,8 @@
 package com.flint.peakfocus.blocking.overlay
 
 import com.flint.peakfocus.core.model.SafetyFloor
+import com.flint.peakfocus.core.model.EnforcementSignals
+import com.flint.peakfocus.core.common.RuntimeSafetySurfaces
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -12,15 +14,20 @@ import kotlinx.coroutines.flow.asStateFlow
  *
  *  - [protects] is a pure read of the cached set. When the cache is older than
  *    [refreshIntervalMs] it hands a refresh to [refreshInBackground] (one in flight at a time)
- *    and answers from the last known set meanwhile. Only the very first call resolves inline,
- *    so a cold start has no hole.
- *  - [protectsFresh] is for a decision that is about to *block* (rare): it resolves inline when
- *    the cache is older than [maxAgeMs], so a dialer or launcher the user just made default is
- *    not shielded from stale data. Pass 0 to force a resolve (a new shield mount).
+ *    and answers from the last known set meanwhile. An unresolved cold start allows
+ *    unclassifiable packages until the background snapshot arrives.
+ *  - [protectsFresh] keeps the cached decision during background refresh. Only maxAgeMs=0
+ *    performs the pre-existing synchronous check before a new mount, never on an existing
+ *    shield's poll/re-render. Snapshot completion wakes both detectors, including a stationary
+ *    target that was conservatively allowed during cold start.
  *
  * The resolver reports each source separately (null = that lookup failed). A failed source keeps
  * its last known packages, so a transient binder failure can never shrink the floor — e.g. drop a
- * custom default dialer while the home lookup still succeeds. Plain JVM, clock and executor
+ * custom default dialer while the home lookup still succeeds. While a required source is
+ * unresolved, candidate calling/Home surfaces remain accessible. If candidate discovery also
+ * fails, only positively classified ordinary launchers remain blockable; unclassifiable
+ * packages stay accessible for phone safety. Publish degraded coverage until resolution recovers. This is permission
+ * to leave access open, not proof that the package is a safety identity. Plain JVM, clock and executor
  * injected, unit-tested in `SafetyFloorGateTest`.
  */
 class SafetyFloorGate(
@@ -38,6 +45,7 @@ class SafetyFloorGate(
         val resolvedSources: Set<String> = emptySet(),
         val failedSources: Set<String> = emptySet(),
         val checkedAtElapsedMs: Long? = null,
+        val checking: Boolean = false,
     ) {
         /** Sticky provenance only; health consumers must also read degraded and checkedAtElapsedMs. */
         val hasResolvedEverySource: Boolean get() = resolvedSources.containsAll(requiredSources)
@@ -48,27 +56,70 @@ class SafetyFloorGate(
     /** Read-only provenance; a failed/missing lookup is never counted as a resolved source. */
     val runtimeResolution = resolution.asStateFlow()
     private val lock = Any()
+    private val refreshLock = Any()
     private val refreshing = AtomicBoolean(false)
     @Volatile private var bySource: Map<String, Set<String>> = emptyMap()
     @Volatile private var runtime: Set<String> = emptySet()
     @Volatile private var resolvedAtMs: Long? = null
+    private var homeCandidates: Set<String> = emptySet()
+    private var callingCandidates: Set<String> = emptySet()
+    private var homeCandidatesUnavailable = true
+    private var callingCandidatesUnavailable = true
+    private var ordinaryLaunchers: Set<String> = emptySet()
+    private var refreshRequestId = 0L
+    private var submittedAtMs: Long? = null
+    private var taskStarted = false
+
+    init {
+        if (refreshInBackground != null) scheduleRefresh()
+    }
 
     /** Floor check against the cached runtime set; schedules a background refresh when stale. */
     fun protects(packageName: String): Boolean {
         if (SafetyFloor.isProtected(packageName, selfPackage)) return true
         if (resolvedAtMs == null) {
-            refreshIfOlderThan(0L) // cold start: one inline resolve, never an empty first answer
+            scheduleRefresh()
+        } else if (runtimeResolution.value.degraded && isOlderThan(UNRESOLVED_RETRY_MS)) {
+            scheduleRefresh()
         } else if (isOlderThan(refreshIntervalMs)) {
             scheduleRefresh()
         }
-        return packageName in runtime
+        return allowForSafety(packageName)
     }
 
-    /** Floor check for a decision about to block: resolves inline when older than [maxAgeMs]. */
+    /** Cached decision with background refresh; maxAgeMs=0 retains the one-per-new-mount check. */
     fun protectsFresh(packageName: String, maxAgeMs: Long = freshIntervalMs): Boolean {
         if (SafetyFloor.isProtected(packageName, selfPackage)) return true
-        refreshIfOlderThan(maxAgeMs)
-        return packageName in runtime
+        // showBlocked requests zero only for a NEW mount attempt. Retain its existing fresh
+        // role guarantee; an opaque asynchronous mount request is a separate integration task.
+        if (maxAgeMs == 0L) {
+            refreshIfOlderThan(0L)
+            return allowForSafety(packageName)
+        }
+        // Explicit null is the synchronous fake/simple-host seam.
+        if (refreshInBackground == null) {
+            refreshIfOlderThan(if (runtimeResolution.value.degraded) minOf(maxAgeMs, UNRESOLVED_RETRY_MS) else maxAgeMs)
+            return allowForSafety(packageName)
+        }
+        val age = if (runtimeResolution.value.degraded) minOf(maxAgeMs, UNRESOLVED_RETRY_MS) else maxAgeMs
+        if (isOlderThan(age)) {
+            scheduleRefresh()
+            return allowForSafety(packageName)
+        }
+        return allowForSafety(packageName)
+    }
+
+    /** Never combine a refreshed set with the previous successful resolution metadata. */
+    private fun allowForSafety(packageName: String): Boolean = synchronized(lock) {
+        val provenance = resolution.value
+        fun unresolved(source: String) = source in provenance.requiredSources &&
+            (source !in provenance.resolvedSources || source in provenance.failedSources)
+        val homeMissing = unresolved(RuntimeSafetySurfaces.SOURCE_HOME)
+        val callingMissing = unresolved(RuntimeSafetySurfaces.SOURCE_DEFAULT_DIALER)
+        packageName in runtime || (homeMissing && packageName in homeCandidates) ||
+            (callingMissing && packageName in callingCandidates) ||
+            (((homeMissing && homeCandidatesUnavailable) || (callingMissing && callingCandidatesUnavailable)) &&
+                packageName !in ordinaryLaunchers)
     }
 
     /** Ask for a background refresh if the cache is older than [maxAgeMs] (e.g. while a shield is up). */
@@ -88,40 +139,83 @@ class SafetyFloorGate(
             refreshIfOlderThan(0L)
             return
         }
-        if (!refreshing.compareAndSet(false, true)) return
+        val request = synchronized(lock) {
+            val at = submittedAtMs
+            val now = nowElapsedMs()
+            // A cancelled/rejected executor may never enter the callback. Expire only an
+            // unstarted submission; a slow running binder never spawns competing refreshes.
+            if (refreshing.get() && !taskStarted && at != null && (now < at || now - at >= SUBMISSION_TIMEOUT_MS)) {
+                refreshing.set(false)
+            }
+            if (!refreshing.compareAndSet(false, true)) return
+            refreshRequestId++
+            submittedAtMs = now
+            taskStarted = false
+            resolution.value = resolution.value.copy(checking = true)
+            refreshRequestId
+        }
         val submitted = runCatching {
             executor {
+                val current = synchronized(lock) {
+                    (request == refreshRequestId).also { if (it) taskStarted = true }
+                }
+                if (!current) return@executor
                 try {
                     refreshIfOlderThan(0L)
+                    EnforcementSignals.detectors.requestEvaluation()
                 } finally {
-                    refreshing.set(false)
+                    synchronized(lock) {
+                        if (request == refreshRequestId) {
+                            refreshing.set(false)
+                            submittedAtMs = null
+                            taskStarted = false
+                            resolution.value = resolution.value.copy(checking = false)
+                        }
+                    }
                 }
             }
         }
-        if (submitted.isFailure) refreshing.set(false)
+        if (submitted.isFailure) synchronized(lock) {
+            if (request == refreshRequestId) {
+                refreshing.set(false)
+                submittedAtMs = null
+                resolution.value = resolution.value.copy(checking = false)
+            }
+        }
     }
 
     private fun refreshIfOlderThan(maxAgeMs: Long) {
         if (maxAgeMs > 0L && !isOlderThan(maxAgeMs)) return
-        synchronized(lock) {
+        synchronized(refreshLock) {
             if (maxAgeMs > 0L && !isOlderThan(maxAgeMs)) return
             val resolved = runCatching(resolveRuntime).getOrNull().orEmpty()
-            // Per source: a successful lookup replaces that source; a failed (null) or missing
-            // one keeps its last known packages.
-            val merged = HashMap(bySource)
-            for ((source, packages) in resolved) {
-                if (packages != null) merged[source] = packages
+            synchronized(lock) {
+                // Per source: a successful lookup replaces that source; a failed (null) or missing
+                // one keeps its last known packages. Binder work never holds this membership lock.
+                val merged = HashMap(bySource)
+                for ((source, packages) in resolved) {
+                    if (source !in RuntimeSafetySurfaces.CANDIDATE_SOURCES && packages != null) merged[source] = packages
+                }
+                bySource = merged
+                runtime = merged.values.flatMapTo(HashSet()) { it }
+                val home = resolved[RuntimeSafetySurfaces.SOURCE_CANDIDATE_HOME]
+                val calling = resolved[RuntimeSafetySurfaces.SOURCE_CANDIDATE_CALLING]
+                homeCandidatesUnavailable = home == null
+                callingCandidatesUnavailable = calling == null
+                if (home != null) homeCandidates = home
+                if (calling != null) callingCandidates = calling
+                // Positive ordinary classifications must never survive a failed new snapshot.
+                ordinaryLaunchers = resolved[RuntimeSafetySurfaces.SOURCE_ORDINARY_LAUNCHERS].orEmpty()
+                // Stamp even on failure so a broken resolver is retried at the interval, not on
+                // every event; the previous sets stay in force meanwhile.
+                resolvedAtMs = nowElapsedMs()
+                resolution.value = resolution.value.copy(
+                    resolvedSources = merged.keys.toSet(),
+                    failedSources = resolution.value.requiredSources.filterTo(HashSet()) { resolved[it] == null },
+                    checkedAtElapsedMs = resolvedAtMs,
+                    checking = false,
+                )
             }
-            bySource = merged
-            runtime = merged.values.flatMapTo(HashSet()) { it }
-            // Stamp even on failure so a broken resolver is retried at the interval, not on
-            // every event; the previous sets stay in force meanwhile.
-            resolvedAtMs = nowElapsedMs()
-            resolution.value = resolution.value.copy(
-                resolvedSources = merged.keys.toSet(),
-                failedSources = resolution.value.requiredSources.filterTo(HashSet()) { resolved[it] == null },
-                checkedAtElapsedMs = resolvedAtMs,
-            )
         }
     }
 
@@ -129,5 +223,8 @@ class SafetyFloorGate(
         const val DEFAULT_REFRESH_INTERVAL_MS: Long = 30_000L
         /** Also the coordinator's visible-shield refresh age, so re-renders never resolve inline more often. */
         const val DEFAULT_FRESH_INTERVAL_MS: Long = 5_000L
+        /** Unresolved coverage is retried on the next evaluation after this bounded backoff. */
+        const val UNRESOLVED_RETRY_MS: Long = 1_000L
+        const val SUBMISSION_TIMEOUT_MS: Long = 5_000L
     }
 }
