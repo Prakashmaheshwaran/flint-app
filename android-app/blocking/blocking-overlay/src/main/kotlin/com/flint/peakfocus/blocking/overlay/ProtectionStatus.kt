@@ -47,6 +47,8 @@ data class ProtectionStatus(
     val validUntilElapsedRealtimeMs: Long?,
     /** Runtime provenance and the latest lookup health; sticky resolution alone is insufficient. */
     val safetyFloor: SafetyFloorStatus? = null,
+    /** Persisted loss under bounded history retention; never read the enforcement ledger in UI. */
+    val lifecycleEventsDropped: Long = 0,
 ) {
     /** Last actual policy check, not the time a widget or detector-health publisher read it. */
     val lastCheckedEpochMs: Long? get() = observedAt?.wallEpochMs

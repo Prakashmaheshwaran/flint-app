@@ -145,7 +145,8 @@ class StorageReadinessTest {
         assertEquals(987654321L, rules.last().expiresAtEpochMs)
         assertEquals(BreakLevel.HARDCORE, rules.last().breakLevel)
         assertEquals("Name~", DataStoreGroupsStore(disk).groups.first().single().name)
-        assertEquals(listOf(TimeLimit("app", 15)), DataStoreLimitsStore(disk).timeLimits.first())
+        // ADR-012 imports this valid tierless row using its old global Harder tier once.
+        assertEquals(listOf(TimeLimit("app", 15, BreakLevel.HARDER)), DataStoreLimitsStore(disk).timeLimits.first())
         assertEquals(listOf(OpenLimit("app", 3, BreakLevel.HARDCORE)), DataStoreLimitsStore(disk).openLimits.first())
         val original = disk.values.value.asMap().toMap()
         val store = DataStoreFocusStateStore(disk)
@@ -315,7 +316,7 @@ class StorageReadinessTest {
             "H|2|1|0\nE|id|app|cause|BREAK|123|" to StorageFailure.CORRUPT,
             "H|2|1|0\nE|id|app|cause|BREAK|123|%ZZ" to StorageFailure.CORRUPT,
             "H|2|1|0|future" to StorageFailure.UNSUPPORTED_VERSION,
-            "H|3|1|0" to StorageFailure.UNSUPPORTED_VERSION,
+            "H|4|1|0" to StorageFailure.UNSUPPORTED_VERSION,
         )) {
             val disk = Disk(mutablePreferencesOf(PrefsKeys.FOCUS_LEDGER to payload))
             val store = DataStoreFocusStateStore(disk)

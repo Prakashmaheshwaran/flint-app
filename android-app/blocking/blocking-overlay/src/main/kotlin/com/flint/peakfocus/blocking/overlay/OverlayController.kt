@@ -51,4 +51,18 @@ class OverlayController(private val context: Context) {
             current = null
         }
     }
+
+    /** Keep the opaque touch shield while a drawn fullscreen recovery acquires key focus. */
+    fun setRecoveryHandoffFocus(enabled: Boolean) {
+        val view = current ?: return
+        val old = view.layoutParams as? WindowManager.LayoutParams ?: return
+        val flags = if (enabled) old.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+            else old.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+        if (flags == old.flags) return
+        val next = WindowManager.LayoutParams().apply { copyFrom(old); this.flags = flags }
+        runCatching { wm.updateViewLayout(view, next) }.onFailure {
+            if (!enabled) runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_MAIN)
+                .addCategory(android.content.Intent.CATEGORY_HOME).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        }
+    }
 }

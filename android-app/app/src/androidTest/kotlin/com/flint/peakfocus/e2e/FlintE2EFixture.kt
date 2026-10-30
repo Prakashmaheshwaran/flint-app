@@ -84,7 +84,8 @@ abstract class FlintE2EFixture {
             }.getOrDefault(launcher)
             val deadline = SystemClock.uptimeMillis() + 30_000
             var dismissals = 0
-            var homeRequested = false
+            val homeInput = SetupHomeInputPolicy()
+            val homeAttempts = mutableListOf<String>()
             var stableSamples = 0
             var previousSystemUi = ""
             do {
@@ -108,13 +109,9 @@ abstract class FlintE2EFixture {
                     setupEvent("anr-dismiss-requested", "$text; action=$action; count=$dismissals")
                     check(device.wait(Until.gone(By.text(text)), 5_000)) { "ANR dialog did not dismiss: $text" }
                     setupEvent("anr-dismissed", "$text; action=$action; count=$dismissals")
-                    homeRequested = false
+                    homeInput.afterAnr()
                     stableSamples = 0
                 } else {
-                    if (!homeRequested) {
-                        check(device.pressHome()) { "Home input failed during setup" }
-                        homeRequested = true
-                    }
                     val systemUi = shell("pidof com.android.systemui").trim()
                     val home = device.findObject(By.pkg(launcher).enabled(true))
                     val responsive = device.currentPackageName == launcher && home != null &&
@@ -125,10 +122,18 @@ abstract class FlintE2EFixture {
                         setupEvent("launcher-ready", "package=$launcher; systemUiPid=$systemUi; dismissals=$dismissals")
                         return
                     }
+                    // A rejected input can still arrive: observe readiness before any retry.
+                    if (homeInput.shouldAttempt(SystemClock.uptimeMillis(), deadline, responsive)) {
+                        val accepted = device.pressHome()
+                        val backoff = homeInput.recordResult(accepted, SystemClock.uptimeMillis())
+                        val detail = "attempt=${homeInput.attempts}/3; pressHome returned $accepted; backoffMs=$backoff"
+                        homeAttempts += detail
+                        setupEvent(if (accepted) "home-input-accepted" else "home-input-failed", detail)
+                    }
                 }
                 SystemClock.sleep(1_000)
             } while (SystemClock.uptimeMillis() < deadline)
-            error("Launcher/System UI did not settle within 30 seconds")
+            error("Launcher/System UI did not settle within 30 seconds; Home attempts: $homeAttempts")
         } catch (failure: Throwable) {
             setupEvent("setup-failed", failure.toString())
             throw failure

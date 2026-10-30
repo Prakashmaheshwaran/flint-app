@@ -546,13 +546,11 @@ private fun BreakActions(
         BreakAffordance.Saving -> CircularProgressIndicator(
             modifier = modifier.size(32.dp).semantics { liveRegion = LiveRegionMode.Polite },
         )
-        BreakAffordance.Unavailable -> Text(
-            "Protection state unavailable",
-            modifier = modifier.semantics { liveRegion = LiveRegionMode.Polite },
-            color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.Center,
-        )
+        BreakAffordance.Unavailable -> Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Protection state unavailable", modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+            QuietButton("Review protection state", onEmergencyPassRequested)
+        }
         BreakAffordance.RetryOpen -> QuietButton("Try again", onBreakRequested, modifier = modifier)
         // 48dp minimum keeps the deliberate 52/48/48 exit ladder under "Go back".
         BreakAffordance.TakeABreak -> QuietButton("Take a break", onBreakRequested, modifier = modifier)
@@ -602,11 +600,11 @@ private fun BreakActions(
                         .fillMaxWidth()
                         .heightIn(min = 48.dp),
                 ) {
-                    Text("Use an Emergency Pass")
+                    Text("Review Emergency Pass")
                 }
             } else {
                 Text(
-                    text = "Emergency Pass used — a new one arrives Monday.",
+                    text = "The next pass is available seven days after use. Open Flint for the next eligibility time.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,

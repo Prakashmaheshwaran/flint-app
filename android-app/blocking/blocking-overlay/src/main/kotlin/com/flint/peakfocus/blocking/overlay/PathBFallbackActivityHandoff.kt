@@ -18,7 +18,7 @@ class PathBFallbackActivityHandoff(application: Application) : Application.Activ
         EnforcementSignals.detectors.subscribe {
             val update = Runnable {
                 policy.pathAChanged(EnforcementSignals.detectors.pathAConnected).forEach { activity ->
-                    if (!activity.isFinishing && !activity.isDestroyed) activity.finish()
+                    if (!activity.isRecoverySurface && !activity.isFinishing && !activity.isDestroyed) activity.finish()
                 }
             }
             if (Looper.myLooper() == Looper.getMainLooper()) update.run() else main.post(update)
@@ -26,6 +26,10 @@ class PathBFallbackActivityHandoff(application: Application) : Application.Activ
     }
 
     override fun onActivityStarted(activity: Activity) {
+        if (activity is BlockActivity && activity.isRecoverySurface) {
+            policy.stopped(activity)
+            return
+        }
         if (activity is BlockActivity && policy.started(activity, EnforcementSignals.detectors.pathAConnected)) {
             if (!activity.isFinishing && !activity.isDestroyed) activity.finish()
         }

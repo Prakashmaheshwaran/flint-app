@@ -49,6 +49,7 @@ class CoordinatorProtectionStatusTest {
             safetyFloorGate = SafetyFloorGate(app.packageName, { mapOf("home" to emptySet()) }, { clock.elapsedRealtimeMs }, requiredRuntimeSources = setOf("home")),
             statusClock = { clock }, statusDispatcher = StandardTestDispatcher(testScheduler))
         runCurrent()
+        advanceTimeBy(BlockScreenCoordinator.STATUS_COALESCE_MS + 1); runCurrent()
         val published = ProtectionStatusHub.status.value
         assertEquals(ProtectionStatus.Readiness.READY, published.readiness)
         assertEquals(rule.id, published.activeCauses.single().ruleId)
@@ -79,6 +80,7 @@ class CoordinatorProtectionStatusTest {
             editorCommitmentStore = editor, statusClock = ::clock, statusDispatcher = StandardTestDispatcher(testScheduler),
             safetyFloorGate = SafetyFloorGate(app.packageName, { mapOf("home" to emptySet()) }, { clock().elapsedRealtimeMs }, requiredRuntimeSources = setOf("home")))
         runCurrent()
+        advanceTimeBy(BlockScreenCoordinator.STATUS_COALESCE_MS + 1); runCurrent()
         assertEquals(1, ProtectionStatusHub.status.value.activeCauses.size)
         advanceTimeBy(4_000 + ProtectionStatusProjection.TICK_MS + BlockScreenCoordinator.STATUS_COALESCE_MS)
         runCurrent()

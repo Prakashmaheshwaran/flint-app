@@ -329,15 +329,36 @@ public enum FlintOpenCredit {
         return true
     }
 
+    /// The read-only cause states the shield uses to decide whether to name the pass. A rule
+    /// read without migration (`protection == nil`) keeps its pre-contract rights. nil (no
+    /// claim) when a covering rule's queued change is already due: the next reconcile applies
+    /// it, possibly opening an ordinary exit, and boundary delivery is not guaranteed.
+    public static func exitCauses(covering rules: [FlintOpenLimitRule], at now: Date) -> [FlintCauseState]? {
+        let enabled = rules.filter(\.enabled)
+        guard !enabled.contains(where: { $0.protection?.queuedChange.map { $0.window.end <= now } == true })
+        else { return nil }
+        return enabled.map { rule in
+            let occurrence = rule.occurrence(at: now)
+            return FlintCauseState(causeID: rule.id, occurrenceID: occurrence?.identity, revision: rule.revision,
+                kind: .openLimit, tier: rule.breakLevel, isActive: occurrence != nil, end: occurrence?.end,
+                legacyRights: rule.protection.map { $0.legacyRightsUntil.map { now < $0 } ?? false } ?? true)
+        }
+    }
+
+    /// Every non-Open store that can block an Open target, with its kind.
+    static func contributorStores(schedules: [FlintScheduleRule], limits: [FlintLimitRule])
+        -> [(kind: FlintOpenCreditContributorKind, storeName: String)] {
+        [(.session, FlintWebRestrictionLifecycle.sessionStoreName),
+         (.safariRestriction, FlintWebRestrictionLifecycle.legacyStoreName)] +
+            schedules.map { (.schedule, $0.storeName) } + limits.map { (.timeLimit, $0.storeName) }
+    }
+
     private static func otherStores() -> [FlintOpenCreditContributor]? {
         guard let schedules = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: .flintGroup, migrating: false),
               let limits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: .flintGroup, migrating: false) else { return nil }
-        let names = [("Current session", "flint"), ("Safari restriction", FlintWebRestrictionLifecycle.legacyStoreName)] +
-            schedules.map { ("Schedule: " + $0.name, $0.storeName) } +
-            limits.map { ("Time Limit: " + $0.name, $0.storeName) }
-        return names.map { name, storeName in
+        return contributorStores(schedules: schedules, limits: limits).map { kind, storeName in
             let store = ManagedSettingsStore(named: .init(storeName))
-            return .init(name: name,
+            return .init(kind: kind,
                 applications: Set((store.shield.applications ?? []).map { FlintOpenLimit.key(for: $0) }),
                 webDomains: Set((store.shield.webDomains ?? []).map { FlintOpenLimit.key(for: $0) }),
                 applicationCategoryExceptions: categoryExceptions(store.shield.applicationCategories, key: { FlintOpenLimit.key(for: $0) }),

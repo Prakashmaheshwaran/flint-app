@@ -97,22 +97,22 @@ final class FocusHistoryPresentationTests: XCTestCase {
         XCTAssertTrue(store.append(.init(.started(active, source: .manual, at: now))))
         XCTAssertTrue(store.append(.init(type: .started, session: "old", at: now.addingTimeInterval(-3600),
                                         tier: "easy", source: "manual", name: "Old")))
-        let sink = FlintHistorySink(store: store, activity: { $0(false) })
+        let sink = FlintHistorySink(store: store, isExtension: false, activity: { $0(false) })
         let model = FocusHistoryModel(sink: sink, clock: { wall }, sessionClock: sessionClock,
                                       activeSession: { active })
-        let cleared = expectation(description: "clear committed")
-        model.clear { success, kept in
-            XCTAssertTrue(success)
-            XCTAssertEqual(kept, keepsRunning)
-            cleared.fulfill()
+        let (success, kept) = await withCheckedContinuation { continuation in
+            model.clear { success, kept in
+                continuation.resume(returning: (success, kept))
+            }
         }
-        // Real atomic writes/fsync and queue startup can exceed five seconds on a
-        // hosted simulator. Keep the completion and durable-state assertions intact.
-        await fulfillment(of: [cleared], timeout: 30)
-        // clear enqueues a refresh; drain it before inspecting/removing the real fixture.
-        let drained = expectation(description: "refresh drained")
-        sink.perform { _ in drained.fulfill() }
-        await fulfillment(of: [drained], timeout: 30)
+        XCTAssertTrue(success)
+        XCTAssertEqual(kept, keepsRunning)
+        // Await the actual commit and subsequent ordered refresh, rather than racing
+        // XCTest's wall-clock expectation deadlines on the main actor. This also
+        // finishes fixture IO before its directory is removed.
+        let _: FlintHistorySummary = await withCheckedContinuation { continuation in
+            model.refresh { continuation.resume(returning: $0) }
+        }
         XCTAssertEqual(Set(store.read().events.map(\.session)), keepsRunning ? ["running"] : [])
     }
     func testRunningSummaryIsLabelledAndNeverPresentedAsComplete() {

@@ -37,6 +37,10 @@ object FlintPreferences {
     fun focusState(context: Context): FocusStateStore =
         DataStoreFocusStateStore(context.applicationContext.flintPreferencesDataStore)
 
+    /** Caller collects/commits off main, initializing ProtectionClock's OS boot source there. */
+    fun protectionTransactions(context: Context): ProtectionTransactionStore =
+        DataStoreProtectionTransactionStore(context.applicationContext.flintPreferencesDataStore, ProtectionClock::now)
+
     /** Additive v2 ledger; existing v1 rules and discipline state keep their own keys. */
     fun accessState(context: Context): AccessStateStore =
         DataStoreAccessStateStore(context.applicationContext.flintPreferencesDataStore)
