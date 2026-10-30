@@ -179,8 +179,10 @@ targets:
       # Compile the report's actual presentation in tests without launching Apple's service.
       - Extensions/DeviceActivityReportExtension/ActivitySummary.swift
       - Extensions/DeviceActivityReportExtension/TotalActivityView.swift
-      # Exercise the exact shield presenter without launching Apple's shield service.
+      # Exercise the exact shield presenter and credit-spending action seam without
+      # launching Apple's shield services.
       - Extensions/ShieldConfigurationExtension/ShieldCopy.swift
+      - Extensions/ShieldActionExtension/ShieldCreditAction.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.tests

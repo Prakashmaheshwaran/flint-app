@@ -2,37 +2,28 @@ import ManagedSettings
 import ManagedSettingsUI
 import FlintCore
 
-/// The configured primary button is the explicit “Use one credit · 5 minutes” acceptance.
-/// All other actions close without charging, including category and future SDK actions.
+/// "Go back" (primary) closes without charging. Only the secondary "Use one credit · N minutes"
+/// button, drawn solely for an available credit, can spend one; see `ShieldCreditAction`.
+/// Category and future SDK actions close without charging.
 final class FlintShieldAction: ShieldActionDelegate {
     override func handle(
         action: ShieldAction, for application: ApplicationToken,
         completionHandler: @escaping (ShieldActionResponse) -> Void
     ) {
-        switch action {
-        case .primaryButtonPressed:
-            if FlintOpenCredit.shieldAcceptanceEnabled { _ = FlintOpenCredit.accept(for: application) }
-            completionHandler(.close)
-        case .secondaryButtonPressed:
-            completionHandler(.close)
-        default:
-            completionHandler(.close)
-        }
+        completionHandler(ShieldCreditAction.response(to: action,
+                                                      acceptanceEnabled: FlintOpenCredit.shieldAcceptanceEnabled) {
+            (try? FlintOpenCredit.accept(for: application).get()) != nil
+        })
     }
 
     override func handle(
         action: ShieldAction, for webDomain: WebDomainToken,
         completionHandler: @escaping (ShieldActionResponse) -> Void
     ) {
-        switch action {
-        case .primaryButtonPressed:
-            if FlintOpenCredit.shieldAcceptanceEnabled { _ = FlintOpenCredit.accept(for: webDomain) }
-            completionHandler(.close)
-        case .secondaryButtonPressed:
-            completionHandler(.close)
-        default:
-            completionHandler(.close)
-        }
+        completionHandler(ShieldCreditAction.response(to: action,
+                                                      acceptanceEnabled: FlintOpenCredit.shieldAcceptanceEnabled) {
+            (try? FlintOpenCredit.accept(for: webDomain).get()) != nil
+        })
     }
 
     override func handle(

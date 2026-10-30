@@ -51,6 +51,16 @@ J acceptance ledger/docs. H owns presentation only; it adds UI for an action onl
 | — Help & limitations (new) | none (X8) | ADR-012 requires users to learn tiers, pass, what cannot be prevented, and platform limits. | — | — | **H** |
 | — App/site detail (new) | none | Needs read-only "which causes cover this target today" and per-target Open counts from B; F for opens/credits history. | — | — | **H**, blocked on B read API |
 
+**E07 follow-up (2026-10-29; not part of the `ae1e2a1` baseline above):**
+- #147 added the read-only cause and end subtitle.
+- Lane B's bounded credits (#155) and #189 replaced the baseline launch-count copy (**C16/C17/C19**) with:
+  - "N of M credits left today";
+  - a secondary "Use one credit · N minutes" button, drawn only for an available credit;
+  - "no credit used" states.
+- "Go back" never spends.
+- An ordinary break action is still absent (R-23).
+- Real shield rendering is device-unverified.
+
 ## 3. Screen matrix — Android
 
 Paths are under `android-app/`.

@@ -121,3 +121,33 @@ instead of resetting usage. An exhausted budget/target/zone weakening uses RULE-
 revision because Flint cannot accurately decide whether the revised live quota is exhausted.
 These API and callback boundaries remain **device-unverified** until the rows above are run.
 
+
+## Shield Open credits — "Use one credit · 5 minutes" (PR #189)
+
+PC-28–35, PC-75. ADR-012 §5.
+
+How the buttons work:
+- The primary "Go back" closes without charging. So does every action other than the secondary button, including iOS 26.4 submenu items.
+- Only the secondary "Use one credit · N minutes" button can spend a credit, and it is drawn only when the preview shows an available credit.
+- A press refused before commitment charges nothing and returns `.defer`. Examples: the pool ran out, another cause blocks, the state is unavailable, or registration failed.
+- A failure after commitment, while releasing, keeps the spent credit. While the grant is retained, the redraw shows it as an active credit. If recovery closes it without a refund, a blocked shield reports the credit counts, never "no credit used".
+- `.defer` asks iOS to redraw the shield; whether iOS does so is part of what these rows check.
+
+Known limit: the action extension cannot see which labels iOS drew. A delayed press on an old "Use one credit" label therefore spends the one credit it offered, if a credit is still available at press time. The grant is clipped at press time, so it can be shorter than the old label said.
+
+Apple's configuration caching, button delivery, and which response actually releases the shield are **device-unverified** until these rows are run. This is a hard pre-release gate. If PC-28–38 fail on a signed iPhone, set `FlintOpenCredit.shieldAcceptanceEnabled` back to `false`; the shield then shows "Open credits aren't available yet".
+
+Use an Easy Open Limit with a cap of 2 on one app, unless a row says otherwise.
+
+| ID | Steps | Expected |
+| --- | --- | --- |
+| CRED-01 | Open the limited app and record the shield. Tap "Go back". Reopen it and tap "Use one credit · 5 minutes". | First shield: "2 of 2 credits left today", primary "Go back", secondary "Use one credit · 5 minutes". "Go back" closes and spends nothing. The credit press spends exactly one credit. A successful accept returns `.close`. Record whether that opens the app directly or closes it so it must be relaunched within the credit window, and how long that takes. If `.defer` would refresh the shield in place and open the app, switch the success response in a one-line follow-up. The credit stays bounded and charged once either way. |
+| CRED-02 | During the credit, leave the app and reopen it several times. | No second charge and the deadline does not move. If a shield appears, it reads "Credit active for N more min · no extra credit used" with no secondary button. |
+| CRED-03 | Let the credit expire with Flint force-quit. Reopen the app and spend the last credit. Let it expire again. | It re-shields at about five minutes; record the latency. Then "Last credit today". After the last credit: "No credits left today · resets about <time>", where the time is the estimate shown in the device's current time zone. No secondary button. |
+| CRED-04 | Leave a "Use one credit" shield on screen. Then press its secondary button in three cases: (a) during a live grant started elsewhere; (b) after that grant expired, with a credit remaining; (c) after the pool ran out. | (a) Replays the grant with no extra charge. (b) Spends exactly the one offered credit (known limit). (c) Spends nothing and returns `.defer`. Record whether iOS redraws after `.defer` and what it shows. |
+| CRED-05 | Stale "Go back" across a boundary. Leave an exhausted shield on screen past midnight in the quota zone, then tap "Go back". Repeat with a blocking schedule that ends while its shield is displayed. | "Go back" never spends or opens the app. The next drawn shield shows the new period's credits. |
+| CRED-06 | Block the app with, in turn: a focus session, a schedule, an exhausted Time Limit, and an unprovable category rule. Repeat while a spent credit is still live, then again in the same quota period after it has expired. | Each shield names only the kind. With an untouched pool: "A focus session still blocks this app · no credit used" (and similarly for the others), or "Another category rule may still block this app; no credit used". While the spent credit is live, the ending reads "· credit active for N more min" (after "; " for the category rule). After it expires, the ending reads "· 1 of 2 credits left today" (category: "; 1 of 2 credits left today"). No secondary button. Nothing more is spent. |
+| CRED-07 | Within 5 minutes of the quota-zone midnight, open the app. Repeat, waiting before you press. | The label reads "· N minutes", rounded down. The access ends at midnight even if the press came late. |
+| CRED-08 | Use a cap of 0, then a Hardcore limit that is exhausted. | Cap 0: "This Open Limit allows no credits". Exhausted Hardcore: the reset estimate only, with no Emergency Pass or early-exit promise. No secondary button. |
+| CRED-09 | Pick a category in an Open Limit, then open an app from it that another rule blocks through that category. | "Open credits work for individual apps — pick apps in Flint". No secondary button. |
+| CRED-10 | Turn on VoiceOver and the largest text size on every shield above. | All drawn buttons are reachable and their labels are complete. Record any truncation; Apple owns the layout. |

@@ -7,23 +7,21 @@ import FlintCore
 /// the ember as its icon, "<App> is resting." Apple fixes the layout (icon, title, subtitle,
 /// buttons); only text and colours are ours.
 ///
-/// **Open Limits:** for a token an enabled `FlintOpenLimitRule` covers (and no other layer hard-
-/// blocks), the primary button reads "Use app (N left)" — the same
-/// `FlintOpenLimitEnforcer` lookup the ShieldAction extension spends against, so the label and
-/// the tap behavior can't drift apart. Category-driven shields keep the plain screen: category
-/// blocks can't be open-limited (opaque tokens — see `FlintOpenLimitRule`), and a grant wouldn't
-/// lift them.
+/// **Open Limits:** for a token an enabled `FlintOpenLimitRule` covers, the copy follows the
+/// read-only `FlintOpenCredit.preview` — the same service the ShieldAction extension accepts
+/// through, which re-checks everything at press time. Only an available credit draws the
+/// secondary "Use one credit · 5 minutes" button; "Go back" never spends. Category-driven
+/// shields never offer credits: opaque category tokens are not Open-credit targets.
 final class FlintShieldConfiguration: ShieldConfigurationDataSource {
 
     private func flintShield(
         for name: String?, unit: ShieldCopy.Unit = .app, targetKey: String? = nil,
-        remainingOpens: Int? = nil
+        openCredit: ShieldCopy.OpenCredit? = nil
     ) -> ShieldConfiguration {
         let now = Date()
         let copy = ShieldCopy(name: name, unit: unit,
                               contributors: targetKey.flatMap { contributors(for: $0, now: now) },
-                              now: now, remainingOpens: remainingOpens,
-                              openStoreAvailable: FlintGroupStore() != nil)
+                              now: now, openCredit: openCredit)
         return ShieldConfiguration(
             backgroundBlurStyle: nil,
             backgroundColor: FlintBrand.nightUI,
@@ -31,8 +29,30 @@ final class FlintShieldConfiguration: ShieldConfigurationDataSource {
             title: ShieldConfiguration.Label(text: copy.title, color: FlintBrand.boneUI),
             subtitle: ShieldConfiguration.Label(text: copy.subtitle, color: FlintBrand.mistUI),
             primaryButtonLabel: ShieldConfiguration.Label(text: copy.primaryButtonLabel, color: FlintBrand.onEmberUI),
-            primaryButtonBackgroundColor: FlintBrand.emberUI
+            primaryButtonBackgroundColor: FlintBrand.emberUI,
+            secondaryButtonLabel: copy.secondaryButtonLabel.map {
+                ShieldConfiguration.Label(text: $0, color: FlintBrand.boneUI)
+            }
         )
+    }
+
+    /// Covering rules come from the saved Open Limits; the preview never initializes or
+    /// mutates the ledger. With the acceptance gate off, no preview runs and no button is drawn.
+    private func openCredit(targetKey: String, preview: () -> FlintOpenCreditPreview) -> ShieldCopy.OpenCredit? {
+        let covering = FlintOpenLimitRule.loadAll().filter { rule in
+            rule.enabled && (rule.selection.applicationTokens.contains { FlintOpenLimit.key(for: $0) == targetKey } ||
+                rule.selection.webDomainTokens.contains { FlintOpenLimit.key(for: $0) == targetKey })
+        }
+        guard !covering.isEmpty else { return nil }
+        guard FlintOpenCredit.shieldAcceptanceEnabled else { return .acceptanceDisabled }
+        return .target(preview())
+    }
+
+    private func categoryOpenCredit(_ token: ActivityCategoryToken?) -> ShieldCopy.OpenCredit? {
+        guard let token,
+              FlintOpenLimitRule.loadAll().contains(where: { $0.enabled && $0.selection.categoryTokens.contains(token) })
+        else { return nil }
+        return FlintOpenCredit.shieldAcceptanceEnabled ? .categoryTarget : .acceptanceDisabled
     }
 
     private func contributors(for targetKey: String, now: Date) -> FlintProtectionStatus.Contributors? {
@@ -90,8 +110,8 @@ final class FlintShieldConfiguration: ShieldConfigurationDataSource {
         flintShield(
             for: application.localizedDisplayName,
             targetKey: application.token.map { FlintOpenLimit.key(for: $0) },
-            remainingOpens: application.token.flatMap {
-                FlintOpenLimitEnforcer.remainingOpens(application: $0)
+            openCredit: application.token.flatMap { token in
+                openCredit(targetKey: FlintOpenLimit.key(for: token)) { FlintOpenCredit.preview(for: token) }
             }
         )
     }
@@ -100,7 +120,7 @@ final class FlintShieldConfiguration: ShieldConfigurationDataSource {
         shielding application: Application,
         in category: ActivityCategory
     ) -> ShieldConfiguration {
-        flintShield(for: application.localizedDisplayName)
+        flintShield(for: application.localizedDisplayName, openCredit: categoryOpenCredit(category.token))
     }
 
     override func configuration(shielding webDomain: WebDomain) -> ShieldConfiguration {
@@ -108,8 +128,8 @@ final class FlintShieldConfiguration: ShieldConfigurationDataSource {
             for: webDomain.domain,
             unit: .site,
             targetKey: webDomain.token.map { FlintOpenLimit.key(for: $0) },
-            remainingOpens: webDomain.token.flatMap {
-                FlintOpenLimitEnforcer.remainingOpens(webDomain: $0)
+            openCredit: webDomain.token.flatMap { token in
+                openCredit(targetKey: FlintOpenLimit.key(for: token)) { FlintOpenCredit.preview(for: token) }
             }
         )
     }
@@ -118,6 +138,6 @@ final class FlintShieldConfiguration: ShieldConfigurationDataSource {
         shielding webDomain: WebDomain,
         in category: ActivityCategory
     ) -> ShieldConfiguration {
-        flintShield(for: webDomain.domain, unit: .site)
+        flintShield(for: webDomain.domain, unit: .site, openCredit: categoryOpenCredit(category.token))
     }
 }
