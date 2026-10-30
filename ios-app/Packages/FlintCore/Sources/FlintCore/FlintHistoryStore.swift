@@ -185,9 +185,7 @@ public final class FlintHistoryStore: @unchecked Sendable {
         if metadata?.pendingClear == true {
             events.removeAll { !kept($0) }; bad = true
         }
-        let admittedStarts = metadata?.clearedAt.map { boundary in
-            Set((events + inbox).filter { $0.type == .started && (kept($0) || $0.at >= boundary) }.map(\.session))
-        } ?? []
+        let admittedStarts = Self.admittedStartIDs(events + inbox, boundary: metadata?.clearedAt, keep: metadata?.keepSession)
         func visible(_ event: FlintHistoryEvent) -> Bool {
             guard let boundary = metadata?.clearedAt else { return true }
             if kept(event) { return true }
@@ -439,11 +437,10 @@ public final class FlintHistoryStore: @unchecked Sendable {
         loaded.bad = loaded.bad || inbox.bad
         var ids = Set(loaded.lines.compactMap(\.id))
         var additions: [Line] = []
-        let admittedStarts = metadata.clearedAt.map { boundary in
-            Set((loaded.lines + inbox.entries.map(\.line)).compactMap(\.event).filter {
-                $0.type == .started && ($0.session == metadata.keepSession || $0.at >= boundary)
-            }.map(\.session))
-        } ?? []
+        let currentEvents = loaded.lines.compactMap(\.event)
+        let incomingEvents = inbox.entries.compactMap { $0.line.event }
+        let admittedStarts = Self.admittedStartIDs(currentEvents + incomingEvents,
+                                                 boundary: metadata.clearedAt, keep: metadata.keepSession)
         for entry in inbox.entries {
             let line = entry.line
             if let clearedAt = metadata.clearedAt, !belongs(line, to: metadata.keepSession) {
@@ -559,6 +556,15 @@ public final class FlintHistoryStore: @unchecked Sendable {
     private static func uncertainNonFocus(_ event: FlintHistoryEvent) -> Bool {
         (event.timeConfidence?.isUncertain == true || event.reason == "time_uncertain") &&
             [.breakStarted, .breakEnded, .passUsed, .protectionDegraded, .protectionRestored].contains(event.type)
+    }
+
+    private static func admittedStartIDs(_ events: [FlintHistoryEvent], boundary: Int64?, keep: String?) -> Set<String> {
+        var result = Set<String>()
+        guard let boundary else { return result }
+        for event in events where event.type == .started {
+            if event.session == keep || event.at >= boundary { result.insert(event.session) }
+        }
+        return result
     }
 
     private static func referencesStart(_ event: FlintHistoryEvent, in sessions: Set<String>) -> Bool {
