@@ -145,7 +145,11 @@ final class FlintFixtureUITests: XCTestCase {
         XCTAssertEqual(allowList.value as? String, "0")
         try tap(toggle)
         XCTAssertEqual(allowList.value as? String, "1")
-        XCTAssertTrue(save.isEnabled, "A valid allow-list draft can be saved without tokens")
+        // R-26: an allow list must name the apps to keep. The fixture can't pick real apps, so
+        // the window checks below assert their own messages; Save stays disabled throughout.
+        let keepApps = app.staticTexts["Choose the apps to keep available, for example Phone and Messages."]
+        XCTAssertTrue(keepApps.waitForExistence(timeout: 5))
+        XCTAssertFalse(save.isEnabled, "An allow list that keeps no apps cannot save")
 
         let ends = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Ends '")).firstMatch
         try reveal(ends, direction: .down)
@@ -169,7 +173,10 @@ final class FlintFixtureUITests: XCTestCase {
         try tap(ends)
         app.pickerWheels.element(boundBy: 1).adjust(toPickerWheelValue: "15")
         try tap(app.buttons["Done"])
-        XCTAssertTrue(save.isEnabled, "The exact 15-minute boundary must be valid")
+        let tooShort = app.staticTexts["iOS needs at least 15 minutes between start and end, or the block never arms."]
+        XCTAssertTrue(tooShort.waitForNonExistence(timeout: 5), "The exact 15-minute boundary must be valid")
+        XCTAssertTrue(keepApps.exists)
+        XCTAssertFalse(save.isEnabled, "Only the missing allowed apps keep Save disabled")
         try tap(app.buttons["Cancel"]) // Never arm a real schedule from this suite.
         XCTAssertTrue(app.buttons["New schedule"].waitForExistence(timeout: 5))
     }

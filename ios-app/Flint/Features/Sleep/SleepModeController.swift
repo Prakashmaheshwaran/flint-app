@@ -113,18 +113,4 @@ struct SleepModeController {
     private static func applies(_ schedule: FlintSchedule, onWeekday weekday: Int) -> Bool {
         schedule.daysOfWeek.isEmpty || schedule.daysOfWeek.contains(weekday)
     }
-
-    // MARK: Allow list
-
-    /// The apps that stay reachable during Wind Down / Full Assist: a saved preset's selection,
-    /// or an empty selection (= allow nothing beyond the system's own "Always Allowed" apps,
-    /// which supersede every shield). Note the monitor's allow-list path excepts *application*
-    /// tokens only — whole-category picks in a preset don't carry over to a night shield.
-    private func allowedSelection(_ groupID: String?) -> FamilyActivitySelection {
-        guard let id = groupID,
-              let group = FlintGroupStore()?.loadAppGroups().first(where: { $0.id == id }) else {
-            return FamilyActivitySelection()
-        }
-        return group.selection
-    }
 }

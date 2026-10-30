@@ -51,11 +51,8 @@ final class FlintSelectionValidationTests: XCTestCase {
         XCTAssertFalse(FlintSelectionValidation.needsAllowedApps(applications: 1, allowList: true))
         XCTAssertFalse(FlintSelectionValidation.needsAllowedApps(applications: 0, allowList: false))
 
-        // A main-shaped saved Sleep rule: allow list, no selection field at all.
-        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-            .appendingPathComponent("Fixtures/Rules/legacy-sleep-hardcore.json")
-        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
-        json["selection"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(FamilyActivitySelection()))
+        // A main-shaped saved Sleep rule: an allow list that keeps no app.
+        let json = try RuleFixture.object("legacy-sleep-hardcore")
         let saved = try JSONDecoder().decode(FlintScheduleRule.self, from: JSONSerialization.data(withJSONObject: json))
         XCTAssertTrue(saved.allowListMode)
         let plan = FlintSchedulesController.armPlan(for: [saved])
@@ -83,8 +80,53 @@ final class FlintSelectionValidationTests: XCTestCase {
         XCTAssertTrue(saved.selection.applicationTokens.isEmpty)
         var retimed = saved; retimed.schedule = .init(startHour: 10, endHour: 18)
         XCTAssertEqual(arbiter.upsert(retimed), .invalid(message), "the next edit must choose the apps to keep")
+        // Turning it off takes the ordinary Easy path; the selection never blocks it.
+        assertOrdinaryOutcome(arbiter.setEnabled(FlintScheduleRule.self, id: saved.id, enabled: false,
+                                                 revision: saved.revision, confirmation: nil))
+    }
+
+    private func assertOrdinaryOutcome(_ result: FlintRuleMutationResult, line: UInt = #line) {
+        switch result {
+        case .applied, .confirmationRequired: break
+        default: XCTFail("expected the ordinary tier outcome, got \(result)", line: line)
+        }
+    }
+
+    /// The production environment carries the refusal; RuleHarness stubs it away.
+    func testLiveRuleEnvironmentRefusesAnEmptyAllowList() {
+        XCTAssertEqual(FlintRuleReloadEnvironment.live.validateSelection(FamilyActivitySelection(), .allowList),
+                       .emptyAllowList)
+        XCTAssertEqual(FlintRuleReloadEnvironment.live.validateSelection(FamilyActivitySelection(), .blockList),
+                       .emptySelection)
+    }
+
+    /// Sleep has no editor pre-gate, so the controller refusal must name where to choose apps.
+    /// Turning Sleep off removes its windows and is never blocked by the selection.
+    func testSleepRefusesAnEmptyAllowListButCanStillBeTurnedOff() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        var env = h.environment
+        env.validateSelection = { FlintSelectionValidation.issue(for: $0, context: $1) }
+        let controller = FlintSleepRulesController(environment: env)
+        for assist in [FlintSleepAssistLevel.windDown, .fullAssist] {
+            let config = FlintSleepConfig(enabled: true, schedule: .init(startHour: 22, endHour: 7), sleepAssist: assist)
+            XCTAssertEqual(controller.save(config), .invalid(FlintSleepRulesController.allowedAppsRequired))
+            XCTAssertTrue(h.load(FlintScheduleRule.self).isEmpty, "nothing is written")
+            XCTAssertNil(h.defaults.object(forKey: FlintSleepRulesController.key))
+        }
+        let morningOnly = FlintSleepConfig(enabled: true, schedule: .init(startHour: 22, endHour: 7),
+            morningAssist: .fullAssist)
+        XCTAssertEqual(controller.save(morningOnly), .invalid(FlintSleepRulesController.allowedAppsRequired))
+
+        // A Sleep config saved by an earlier build with no allowed app.
+        var night = h.schedule(tier: .easy); night.id = FlintSleepRulesController.nightID
+        _ = h.install(night)
+        let saved = FlintSleepConfig(enabled: true, schedule: night.schedule, sleepAssist: .windDown,
+            nightBreakLevel: .easy)
+        h.defaults.set(try JSONEncoder().encode(saved), forKey: FlintSleepRulesController.key)
+        var retimed = saved; retimed.schedule = .init(startHour: 23, endHour: 7)
+        XCTAssertEqual(controller.save(retimed), .invalid(FlintSleepRulesController.allowedAppsRequired))
         var off = saved; off.enabled = false
-        XCTAssertNotEqual(arbiter.upsert(off), .invalid(message), "turning it off is never blocked by the selection")
+        assertOrdinaryOutcome(controller.save(off))
     }
 
     func testSelectionCopyMatchesSessionErrors() {

@@ -225,6 +225,13 @@ struct RulesView: View {
                         Text(status.label).font(FlintFont.text(12))
                             .foregroundStyle(status == .needsAttention ? FlintBrand.danger : FlintBrand.stone)
                     }
+                    // R-26: a saved allow list that keeps no app still runs as saved (§12).
+                    if rule.enabled, FlintSelectionValidation.needsAllowedApps(
+                        applications: rule.selection.applicationTokens.count, allowList: rule.allowListMode) {
+                        Label("Needs attention — \(FlintSelectionIssue.emptyAllowList.message) It keeps running as saved until you change it.",
+                              systemImage: "exclamationmark.triangle")
+                            .font(FlintFont.text(12)).foregroundStyle(FlintBrand.danger)
+                    }
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -262,10 +269,7 @@ struct RulesView: View {
         }
         let count = rule.selection.applicationTokens.count + rule.selection.categoryTokens.count
             + rule.selection.webDomainTokens.count
-        let target = !rule.allowListMode ? "\(count) \(count == 1 ? "item" : "items")"
-            : FlintSelectionValidation.needsAllowedApps(applications: rule.selection.applicationTokens.count,
-                                                        allowList: true)
-                ? "Allow list · choose apps to keep available" : "Allow list"
+        let target = rule.allowListMode ? "Allow list" : "\(count) \(count == 1 ? "item" : "items")"
         return "\(Self.daysSummary(rule.schedule)) · \(level) · \(target) · \(rule.protection?.timeZoneID ?? TimeZone.current.identifier)"
     }
 
