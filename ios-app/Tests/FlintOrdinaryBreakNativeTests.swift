@@ -142,13 +142,39 @@ final class FlintOrdinaryBreakNativeTests: XCTestCase {
                 register: { _, _ in XCTFail("Expired grant must not register") }, registered: { _ in true }, stop: { _ in },
                 apply: { records, context, now in
                     XCTAssertNil(context)
-                    try FlintOrdinaryBreaks.restoreUnavailableAuthorities(records, at: now, writer: { _ in writer })
+                    try FlintOrdinaryBreaks.restoreUnavailableAuthorities(records, at: now, writer: { _ in writer },
+                        currentSessionID: { legacySession.id })
                     throw FlintOrdinaryBreakError.unavailable // retain retry until the domain becomes readable
                 })
             XCTAssertFalse(service.reconcile())
             XCTAssertEqual(writer.currentApplications, ownerEnd == 100 ? nil : Set([token]))
             XCTAssertEqual(try ledger.peek().get().ordinaryGrants?.records.first?.endReason, .deadline)
         }
+    }
+
+    /// R2p2-N02: Easy X's break grant on A outlives X once a stronger Hardcore Y on A+B is
+    /// applied to the same `flint` store. With rule context unavailable, the fallback must not
+    /// write X's A-only policy over Y, nor recreate an ended or unreadable session's policy.
+    func testUnavailableContextNeverRestoresAStaleSessionOwnerOverItsSuccessor() throws {
+        let a: ApplicationToken = try fictionalRuleToken("target A")
+        var selection = FamilyActivitySelection(); selection.applicationTokens = [a]
+        let x = FlintActiveSession(name: "X", startedAt: now.wall, endsAt: now.wall.addingTimeInterval(3600),
+            breakLevel: .easy, monitorName: "x")
+        let (record, _) = try fixture(selection, releasing: FlintOrdinaryBreaks.scope(selection),
+            ownerEnd: 3600, causeID: x.id)
+        XCTAssertEqual(record.authorities.first?.focusSessionID, x.id)
+        for current in ["successor-Y", nil] as [String?] {
+            let writer = OrdinaryWriter()
+            try FlintOrdinaryBreaks.restoreUnavailableAuthorities([record], at: now, writer: { _ in writer },
+                currentSessionID: { current })
+            XCTAssertTrue(writer.currentApplications == nil && writer.currentApplicationCategories == nil
+                && writer.currentWebDomains == nil && writer.currentWebDomainCategories == nil,
+                "the stale owner never writes the reused session store")
+        }
+        let writer = OrdinaryWriter()
+        try FlintOrdinaryBreaks.restoreUnavailableAuthorities([record], at: now, writer: { _ in writer },
+            currentSessionID: { x.id })
+        XCTAssertEqual(writer.currentApplications, Set([a]), "the still-current owner is restored")
     }
 
     func testFailureHealthPreservesOtherFailuresUpdatesTimeAndClearsRecoveredCarrier() throws {

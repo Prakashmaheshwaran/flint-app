@@ -340,11 +340,22 @@ public enum FlintOrdinaryBreaks {
 
     /// Restore the owner's frozen policy, including an existing untimed Easy commitment.
     /// An expired finite owner is never recreated; reboot re-anchoring belongs to session reconcile.
+    /// Every session reuses the `flint` store, so a session owner is restored only while it is
+    /// still the current session. A successor, an ended session or an unreadable record owns
+    /// the store instead; writing the stale owner's narrower policy would release targets the
+    /// current commitment blocks (R2p2-N02). That session's own reconcile repairs its store.
     static func restoreUnavailableAuthorities(_ records: [FlintOrdinaryGrantState.Record], at now: FlintLedgerInstant,
-                                             writer: ((String) -> FlintRuleShieldWriting)? = nil) throws {
+                                             writer: ((String) -> FlintRuleShieldWriting)? = nil,
+                                             currentSessionID: () -> String? = { FlintGroupStore()?.loadActiveSession()?.id }) throws {
+        var current: String??
+        func isCurrent(_ sessionID: String) -> Bool {
+            if current == nil { current = .some(currentSessionID()) }
+            return current! == sessionID
+        }
         for record in records {
             for owner in record.authorities where owner.logicalEnd == nil ||
                 owner.logicalEnd.map({ $0.bootID == now.bootID && $0.monotonic > now.monotonic }) == true {
+                if let sessionID = owner.focusSessionID, !isCurrent(sessionID) { continue }
                 let selection: FlintBreakContributor.Selection = owner.allowList
                     ? .allowList(allowedApplications: owner.selection.targets) : .blockList(owner.selection)
                 try write(selection, storeName: owner.storeName, releasing: [], to: writer?(owner.storeName))
