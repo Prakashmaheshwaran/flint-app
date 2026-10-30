@@ -121,6 +121,10 @@ For one session:
   its own new endpoint; exact-boundary changes and delayed observations remain valid.
   An invalid/uncertain later plan freezes extension and cannot erase a prefix already
   confirmed under an earlier trusted plan.
+  Rejected time barriers take effect in original append order: an uncertain or invalid
+  backdated timestamp cannot establish that it preceded an already recorded trusted
+  witness, select that witness's plan, or subtract an earlier break/pass/gap from it.
+  Accepted grant pairs and coverage cuts still use their logical effective order.
   Uncertain or contradictory evidence freezes later prefix extension; later cleanup after
   an accepted terminal does not invalidate that terminal. Accepted logical terminal duration
   is not truncated merely because a reader's wall clock subsequently moves backward.
