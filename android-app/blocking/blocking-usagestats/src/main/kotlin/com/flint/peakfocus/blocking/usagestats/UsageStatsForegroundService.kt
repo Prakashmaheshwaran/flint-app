@@ -59,6 +59,7 @@ class UsageStatsForegroundService : Service() {
     @Volatile private var ready = false
     private var foregroundPosted = false
     @Volatile private var stopping = false
+    @Volatile private var displayGeneration = 0L
     private var forceDisplayPending = false
     private var resetObservation = true
     private var confirmedMode: FallbackMode? = null
@@ -98,7 +99,14 @@ class UsageStatsForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Only mandatory platform channel/startForeground calls precede this return path.
         // No customizer, preference, AppOps, UsageStats or PackageManager query runs here.
-        if (stopping || !ensureForeground()) return START_NOT_STICKY
+        // Android can deliver a new start before the stopSelf/onDestroy pair completes.
+        // It carries a new FGS obligation, including after permission or initialization failure.
+        if (stopping) {
+            stopping = false
+            confirmedMode = null
+            health.starting(this)
+        }
+        if (!ensureForeground()) return START_NOT_STICKY
         requestNotification(force = true)
         resetObservation = true
         wake.trySend(Unit)
@@ -188,6 +196,7 @@ class UsageStatsForegroundService : Service() {
         val reset = resetObservation
         resetObservation = false
         val now = System.currentTimeMillis()
+        val rules = ActiveRulesHolder.rules
         val pkg = withContext(queryDispatcher) {
             queryRuntime.foregroundPackage(now, reset)
         }
@@ -199,13 +208,13 @@ class UsageStatsForegroundService : Service() {
         // Cached membership is nonblocking. Keep its visit-departure mutation on Main,
         // after ownership revalidation, so an invalidated Path B sample cannot end A's visit.
         if (queryRuntime.coordinator.isSafetyFloor(pkg)) {
-            PathBBlockHandoff.onForegroundPolled(this, pkg, Verdict.Allow)
+            PathBBlockHandoff.onForegroundPolled(this, pkg, Verdict.Allow, rules = rules)
             logDuration("tick_to_handoff_ms", tickStarted)
             return true
         }
-        val observation = withContext(queryDispatcher) { queryRuntime.observeTarget(pkg, now) }
+        val observation = withContext(queryDispatcher) { queryRuntime.observeTarget(pkg, now, rules) }
         if (observationInvalidated()) return false
-        PathBBlockHandoff.onForegroundPolled(this, pkg, observation.verdict, observation.timeLimitSpent, observation.appLabel)
+        PathBBlockHandoff.onForegroundPolled(this, pkg, observation.verdict, observation.timeLimitSpent, observation.appLabel, rules)
         // This measures the handoff's return, not first window visibility or painted pixels.
         logDuration("tick_to_handoff_ms", tickStarted)
         return true
@@ -240,6 +249,7 @@ class UsageStatsForegroundService : Service() {
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(
                 NotificationChannel(PathBForegroundNotification.CHANNEL_ID, "Focus enforcement", NotificationManager.IMPORTANCE_LOW))
+            val generation = displayGeneration
             notification = PathBForegroundNotification(this, { n ->
                 if (Build.VERSION.SDK_INT >= 34) startForeground(PathBForegroundNotification.NOTIFICATION_ID,
                     n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
@@ -247,7 +257,7 @@ class UsageStatsForegroundService : Service() {
             }, { n ->
                 // A customizer may finish after cancellation; never republish for a retired
                 // service instance or after a permission-driven stop.
-                if (ready && !stopping && health.isOwner(this)) {
+                if (generation == displayGeneration && ready && !stopping && health.isOwner(this)) {
                     manager.notify(PathBForegroundNotification.NOTIFICATION_ID, n)
                 }
             })
@@ -273,12 +283,15 @@ class UsageStatsForegroundService : Service() {
         if (!ready) return
         // A failed display update must neither stop enforcement nor renew its lease.
         val mode = confirmedMode
-        try { withContext(notificationDispatcher) { notification.refresh(mode, force) } }
+        val display = notification
+        try { withContext(notificationDispatcher) { display.refresh(mode, force) } }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: RuntimeException) { Log.w("FlintFallback", "Notification refresh unavailable", failure) }
     }
 
     private fun removeForegroundNotification() {
+        foregroundPosted = false
+        displayGeneration++ // Retire even a still-blocked customizer before the next start.
         if (Build.VERSION.SDK_INT >= 24) stopForeground(STOP_FOREGROUND_REMOVE)
         else {
             @Suppress("DEPRECATION")

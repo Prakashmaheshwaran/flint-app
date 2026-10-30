@@ -181,7 +181,15 @@ class UsageStatsForegroundServiceTest {
         assertEquals(0, CountingUsageStats.calls)
         assertTrue(shadowOf(service).isForegroundStopped)
         assertTrue(shadowOf(service).isStoppedBySelf)
-        assertEquals(Service.START_NOT_STICKY, startLoop())
+        val failedPromotion = shadowOf(service).lastForegroundNotification
+        service.beforeRuntimeInitialization = null
+        assertEquals(Service.START_STICKY, startLoop())
+        assertNotSame(failedPromotion, shadowOf(service).lastForegroundNotification)
+        assertEquals(PathBState.UNKNOWN, health())
+        scheduler.runCurrent()
+        assertEquals(PathBState.ENFORCING, health())
+        assertTrue(CountingUsageStats.calls > 0)
+        assertFalse("service-initialization-failed" in ProtectionStatusHub.status.value.detectors.degradedReasons)
     }
 
     @Test fun `blocked rich customizer does not delay foreground or observation and cannot repost after stop`() {
@@ -256,6 +264,24 @@ class UsageStatsForegroundServiceTest {
         assertFalse("usage-access-missing" in ProtectionStatusHub.status.value.detectors.degradedReasons)
         assertTrue(shadowOf(service).isForegroundStopped)
         assertTrue(shadowOf(service).isStoppedBySelf)
+    }
+
+    @Test fun `new start before permission stop destroys instance promotes again and observes recovery`() {
+        controller.create(); startLoop(); scheduler.runCurrent()
+        grantUsage(false)
+        startLoop(); scheduler.runCurrent()
+        assertEquals(PathBState.OFF, health())
+        val before = shadowOf(service).lastForegroundNotification
+        val queries = CountingUsageStats.calls
+        grantUsage(true)
+        assertEquals(Service.START_STICKY, startLoop())
+        assertNotSame("new foreground-service obligation must promote again", before,
+            shadowOf(service).lastForegroundNotification)
+        assertEquals(PathBState.UNKNOWN, health())
+        assertEquals(queries, CountingUsageStats.calls)
+        scheduler.runCurrent()
+        assertEquals(PathBState.ENFORCING, health())
+        assertTrue(CountingUsageStats.calls > queries)
     }
 
     @Test fun `failed foreground observation is unknown and a later successful tick recovers`() {

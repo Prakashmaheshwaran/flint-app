@@ -8,7 +8,7 @@ import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.blocking.overlay.PathBBlockHandoff
 import com.flint.peakfocus.core.data.LimitStore
 import com.flint.peakfocus.core.data.UsageQuery
-import com.flint.peakfocus.core.model.ActiveRulesHolder
+import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.Verdict
 import java.util.Calendar
 
@@ -40,13 +40,15 @@ internal class PathBQueryRuntime(context: Context) {
         return timed("usage_events_query_ms") { poller.currentForegroundPackage(now) }
     }
 
-    fun observeTarget(pkg: String, now: Long): PathBObservation {
+    fun observeTarget(pkg: String, now: Long, rules: List<BlockRule>): PathBObservation {
         val spent = timed("budget_query_ms") { timeLimitGate.isSpent(pkg, now) }
         val cal = Calendar.getInstance().apply { timeInMillis = now }
-        val verdict = engine.decide(pkg, null, ActiveRulesHolder.rules, app.packageName,
+        val verdict = engine.decide(pkg, null, rules, app.packageName,
             cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE),
             IsoWeekday.fromCalendar(cal.get(Calendar.DAY_OF_WEEK)), now)
         val at = SystemClock.elapsedRealtime()
+        // Labels are presentation only: up to60s of staleness is intentional, and no
+        // enforcement identity, target or tier decision depends on the cached display name.
         if (pkg != labelPackage || labelCheckedAt?.let { at < it || at - it >= LABEL_REFRESH_MS } != false) {
             labelPackage = pkg
             labelCheckedAt = at
