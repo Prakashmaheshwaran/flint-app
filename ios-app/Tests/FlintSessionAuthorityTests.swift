@@ -50,6 +50,8 @@ final class FlintSessionAuthorityTests: XCTestCase {
         try authority.terminate(session("X"), outcome: .stopped, route: "manual_stop", at: wall)
         authority = try JSONDecoder().decode(FlintSessionAuthority.self, from: JSONEncoder().encode(authority))
         XCTAssertEqual(authority.acceptedStart("request.X")?.outcome, .stopped)
+        XCTAssertEqual(authority.acceptedStart("request.X")?.endedAt, wall)
+        XCTAssertEqual(authority.acceptedStart("request.X")?.endRoute, "manual_stop")
         XCTAssertThrowsError(try authority.install(session("X"), selection: Data(), source: .manual,
             operationID: "request.X", fingerprint: "parameters", expectedRevision: authority.revision, at: instant)) {
             XCTAssertEqual($0 as? FlintSessionAuthorityError, .alreadyAccepted)
