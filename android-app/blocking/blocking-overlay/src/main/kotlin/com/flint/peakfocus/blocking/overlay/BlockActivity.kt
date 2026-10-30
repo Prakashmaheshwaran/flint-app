@@ -192,7 +192,7 @@ class BlockActivity : ComponentActivity() {
                         }
                     },
                     onEmergencyPassRequested = {
-                        if (!requests.retired) recoveryMode = true
+                        if (!requests.retired && coordinator.launchRecovery()) requests.retired = true
                     },
                     nudge = nudge,
                 )

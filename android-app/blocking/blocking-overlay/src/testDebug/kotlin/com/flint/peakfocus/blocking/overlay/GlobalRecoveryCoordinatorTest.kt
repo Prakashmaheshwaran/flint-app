@@ -82,7 +82,7 @@ class GlobalRecoveryCoordinatorTest {
         }
     }
 
-    private fun TestScope.coordinator(disk: Disk, changed: () -> Unit = {}): BlockScreenCoordinator {
+    private fun TestScope.coordinator(disk: Disk, surface: BlockScreenCoordinator.SurfaceHost = host, changed: () -> Unit = {}): BlockScreenCoordinator {
         val focus = object : FocusStateStore by InMemoryFocusStateStore() { override val state = disk.state.project { it.focus } }
         val rules = object : BlockRulesStore by InMemoryBlockRulesStore() { override val rulesState = disk.state.project { it.rules } }
         val limits = object : LimitsStore by InMemoryLimitsStore() {
@@ -101,13 +101,57 @@ class GlobalRecoveryCoordinatorTest {
             override suspend fun startTimer(rule: BlockRule, now: AccessClockStamp, safety: EditorSafety): Boolean = error("unused")
         }
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { disk.state.collect { s -> if (s is StorageState.Ready) ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, s.value.rules) } }
-        return BlockScreenCoordinator(app, backgroundScope, host, nowEpochMs = { disk.clock().wallEpochMs },
+        return BlockScreenCoordinator(app, backgroundScope, surface, nowEpochMs = { disk.clock().wallEpochMs },
             onEnforcementChanged = changed, safetyFloorGate = SafetyFloorGate(app.packageName, { emptyMap() }, { disk.clock().elapsedRealtimeMs }, requiredRuntimeSources = emptySet()),
             focusStateStore = focus, configuredLimitsStore = limits, blockRulesStore = rules, editorCommitmentStore = editor,
             statusClock = disk.clock, statusDispatcher = StandardTestDispatcher(testScheduler), protectionTransactionStore = disk)
     }
 
     private fun TestScope.clock() = base.copy(wallEpochMs = base.wallEpochMs + testScheduler.currentTime, elapsedRealtimeMs = base.elapsedRealtimeMs + testScheduler.currentTime)
+
+    @Test fun PC_41_PC_43_PC_76_recoveryReviewRemovesShieldButFailedCommitReblocksTarget() = recoveryHandoff(fail = true)
+    @Test fun PC_41_PC_44_PC_76_recoveryReviewRemovesShieldAndOnlyDurableCommitReleasesTarget() = recoveryHandoff(fail = false)
+
+    private fun recoveryHandoff(fail: Boolean) = runTest {
+        var mounted = false
+        val surface = object : BlockScreenCoordinator.SurfaceHost {
+            override fun attach(view: View): Boolean { mounted = true; return true }
+            override fun detach(view: View) { mounted = false }
+            override fun goHome() = Unit
+        }
+        val disk = Disk(initial()) { clock() }
+        val c = coordinator(disk, surface = surface); runCurrent()
+        val cause = c.currentBlockCause(pkg)!!
+        c.showBlocked(pkg, null, cause)
+        assertTrue(mounted)
+        assertTrue(c.launchRecovery()) // shared by overlay and fallback Activity callbacks
+        assertFalse("No shield can cover the recovery review controls", mounted)
+        assertFalse(c.canDismiss(pkg, cause))
+        val preview = c.previewEmergencyPass()!!
+        assertFalse(mounted)
+        val before = disk.latest
+        disk.release = CompletableDeferred(); disk.fail = fail
+        val pending = async { c.confirmEmergencyPass(preview) }; runCurrent(); disk.started.await()
+        assertFalse(mounted)
+        assertFalse("Navigation/review does not authorize target access", c.canDismiss(pkg, cause))
+        assertFalse(BlockExemptions.hasGlobalRecovery())
+        disk.release!!.complete(Unit)
+        val result = pending.await(); runCurrent()
+        assertFalse("Commit publication does not put a shield over recovery", mounted)
+        if (fail) {
+            assertTrue(result is RecoveryResult.Unavailable)
+            assertEquals(before.focus, disk.latest.focus)
+            assertEquals(before.rules, disk.latest.rules)
+        } else assertTrue(result is RecoveryResult.Accepted)
+        // Returning to the target is evaluated again on either detector, without another
+        // grant action. A failed commit must restore the shield; success permits access.
+        val returnedCause = c.evaluateBlockCause(app.packageName, pkg,
+            ruleBlockCause(session, clock().wallEpochMs, 0), timeLimitSpent = false)
+        returnedCause?.let { c.showBlocked(pkg, null, it) } ?: c.hideIfShown()
+        assertEquals(fail, mounted)
+        assertEquals(!fail, BlockExemptions.hasGlobalRecovery())
+        c.hideIfShown()
+    }
 
     @Test fun PC_41_PC_43_beforeAcknowledgementNoGlobalReleaseOrEventAndFailedWritePreservesEverything() = runTest {
         val disk = Disk(initial()) { clock() }; val c = coordinator(disk); runCurrent()

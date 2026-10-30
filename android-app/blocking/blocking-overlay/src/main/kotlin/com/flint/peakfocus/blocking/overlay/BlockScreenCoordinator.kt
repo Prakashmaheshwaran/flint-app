@@ -392,6 +392,13 @@ class BlockScreenCoordinator(
     suspend fun endCommitmentsAndResume(preview: RecoveryEndPreview): Boolean = recoveries?.endAndResume(preview) == true
     suspend fun retryProtectionState(): Boolean = recoveries?.reconcile() == true
 
+    /** Move to Flint's review surface without granting access to the blocked target. */
+    internal fun launchRecovery(): Boolean = BlockActivity.launchRecovery(appContext).also { launched ->
+        // Both the overlay and Activity callbacks use this order. A rejected launch keeps
+        // the shield; an accepted launch must not leave it covering the recovery controls.
+        if (launched) hideIfShown()
+    }
+
     /** Re-check protection before a surface hides in response to a previously issued grant. */
     fun isExempt(packageName: String, displayedCause: BlockCause? = null): Boolean {
         val cause = currentBlockCause(packageName, displayedCause)
@@ -843,7 +850,7 @@ class BlockScreenCoordinator(
     private fun handleGrantRequested(packageName: String, requests: SurfaceRequests, emergency: Boolean) {
         if (requests.retired || surfaceRequests !== requests || visiblePackage != packageName || packageName in busy) return
         if (emergency) {
-            if (!BlockActivity.launchRecovery(appContext)) { failures.add(packageName); rerenderNow() }
+            if (!launchRecovery()) { failures.add(packageName); rerenderNow() }
             return
         }
         val cause = shownCause ?: return
