@@ -58,7 +58,8 @@ public final class FlintSleepRulesController {
             add(Self.nightID, oldNight, draft.enabled && draft.sleepAssist != .off ? draft.schedule : nil, nightTier, "Sleep Mode")
             add(Self.morningID, oldMorning, Self.morningWindow(draft), morningTier, "Morning Assist")
             // R-26: Sleep takes its allowed apps from a saved group, so its refusal says where to
-            // choose them. Removing the windows (turning Sleep off) is never blocked by this.
+            // choose them. Any save that keeps a window needs them (the arbiter checks each enabled
+            // window too); turning Sleep off removes both windows and is never blocked by this.
             if mutations.contains(where: { $0.proposed?.enabled == true }),
                self.env.validateSelection(selection, .allowList) == .emptyAllowList {
                 return .invalid(Self.allowedAppsRequired)

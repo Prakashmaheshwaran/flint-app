@@ -85,6 +85,33 @@ final class FlintSelectionValidationTests: XCTestCase {
                                                  revision: saved.revision, confirmation: nil))
     }
 
+    /// Turning only one Sleep window off still saves the other, so it needs the apps to keep;
+    /// turning Sleep off removes both and is never blocked (documented in R26-03).
+    func testSleepPartialTurnOffNeedsAppsButFullOffDoesNot() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        // Saved by an earlier build with nothing chosen (the harness doesn't validate selections).
+        let earlier = FlintSleepRulesController(environment: h.environment)
+        let both = FlintSleepConfig(enabled: true, schedule: .init(startHour: 22, endHour: 7),
+            sleepAssist: .windDown, morningAssist: .fullAssist)
+        var result = earlier.save(both)
+        if case let .confirmationRequired(ticket, _) = result {
+            result = earlier.save(both, confirmation: ticket, origin: .interactive)
+        }
+        XCTAssertEqual(result, .applied)
+        XCTAssertEqual(Set(h.load(FlintScheduleRule.self).map(\.id)),
+                       [FlintSleepRulesController.nightID, FlintSleepRulesController.morningID])
+        let saved = FlintSleepConfig.load(from: h.defaults)
+
+        var env = h.environment
+        env.validateSelection = { FlintSelectionValidation.issue(for: $0, context: $1) }
+        let controller = FlintSleepRulesController(environment: env)
+        var nightOff = saved; nightOff.sleepAssist = .off
+        XCTAssertEqual(controller.save(nightOff), .invalid(FlintSleepRulesController.allowedAppsRequired))
+        XCTAssertEqual(h.load(FlintScheduleRule.self).count, 2, "nothing changes on a refused save")
+        var off = saved; off.enabled = false
+        assertOrdinaryOutcome(controller.save(off))
+    }
+
     private func assertOrdinaryOutcome(_ result: FlintRuleMutationResult, line: UInt = #line) {
         switch result {
         case .applied, .confirmationRequired: break

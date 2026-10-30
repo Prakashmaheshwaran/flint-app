@@ -228,7 +228,8 @@ struct RulesView: View {
                     // R-26: a saved allow list that keeps no app still runs as saved (§12).
                     if rule.enabled, FlintSelectionValidation.needsAllowedApps(
                         applications: rule.selection.applicationTokens.count, allowList: rule.allowListMode) {
-                        Label("Needs attention — \(FlintSelectionIssue.emptyAllowList.message) It keeps running as saved until you change it.",
+                        let note = "\(FlintSelectionIssue.emptyAllowList.message) It keeps running as saved until you change it."
+                        Label(status == .needsAttention ? note : "Needs attention — \(note)",
                               systemImage: "exclamationmark.triangle")
                             .font(FlintFont.text(12)).foregroundStyle(FlintBrand.danger)
                     }

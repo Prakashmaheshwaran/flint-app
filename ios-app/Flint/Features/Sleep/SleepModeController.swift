@@ -1,5 +1,4 @@
 import Foundation
-import FamilyControls
 import FlintCore
 
 /// Bridges `FlintSleepConfig` (the persisted Sleep Mode settings in FlintCore) to the real

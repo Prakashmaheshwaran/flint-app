@@ -259,7 +259,7 @@ struct SleepModeView: View {
         } footer: {
             VStack(alignment: .leading, spacing: 6) {
                 if vm.savedGroups.isEmpty {
-                    Text("Sleep keeps only the apps you choose. Save an app group in Block Now with the apps you need overnight, like Phone, Messages and your alarm, then choose it here.")
+                    Text("Sleep shields everything except the apps you choose. Save an app group in Block Now with the apps you need overnight, like Phone, Messages and your alarm, then choose it here.")
                 } else {
                     Text("Only individually picked apps in this group stay reachable during Wind Down and Full Assist. Whole-category and website picks don't carry over, so a group needs at least one app. Include the ones you need, like Phone and Messages.")
                 }
@@ -339,16 +339,17 @@ final class SleepModeViewModel: ObservableObject {
     var nightArmed: Bool { effectiveRules.contains { $0.id == SleepModeController.nightRuleID && $0.enabled } }
     var morningArmed: Bool { effectiveRules.contains { $0.id == SleepModeController.morningRuleID && $0.enabled } }
 
-    /// A Sleep rule saved by an earlier build with no allowed app keeps running (§12), but the
-    /// user should choose the apps to keep; the next Sleep save requires it (ADR-012 §7).
     /// The draft would save a Sleep or Morning window whose chosen group keeps no app (R-26);
-    /// the save is refused, so say so before the user tries.
+    /// the controller refuses that save, so say so before the user tries.
     var allowedAppsMissing: Bool {
-        guard config.enabled, config.sleepAssist != .off || config.morningAssist == .fullAssist else { return false }
+        guard config.enabled, config.sleepAssist != .off
+                || (config.morningAssist == .fullAssist && config.schedule.hasValidEndpoints) else { return false }
         let group = savedGroups.first { $0.id == config.allowGroupID }
         return (group?.selection.applicationTokens.count ?? 0) == 0
     }
 
+    /// A Sleep rule saved by an earlier build with no allowed app keeps running (§12), but the
+    /// user should choose the apps to keep; the next Sleep save that keeps a window requires it (ADR-012 §7).
     var allowListNote: String? {
         effectiveRules.contains {
             $0.enabled && FlintSelectionValidation.needsAllowedApps(
