@@ -52,6 +52,8 @@ internal data class TimerUiState(
     val nowEpochMs: Long = 0,
     val busy: Boolean = false,
     val error: String? = null,
+    /** Health refusals follow fresh checks; a failed save remains visible until retried. */
+    val startErrorIsPrerequisite: Boolean = false,
     val message: String? = null,
     val exit: TimerExitConfirmation? = null,
     val arming: TimerArmingState = TimerArmingState.Idle,
@@ -61,6 +63,10 @@ internal data class TimerUiState(
     val canEdit: Boolean get() = rulesLoaded && rulesError == null && !busy && sessions.isEmpty() && exit == null
     val canStart: Boolean get() = canEdit && validTimerDraft(draft)
 }
+
+/** Presentation only: the serialized backend remains the authority for recovery rejection. */
+internal fun timerStartFailureText(reason: String): String = if (reason == "Resume protection first.")
+    "Protection recovery is active. Try again after recovery ends." else reason
 
 internal fun validTimerDraft(draft: TimerDraft): Boolean =
     draft.apps.isNotEmpty() && draft.apps.all { it.packageName.isNotBlank() } &&

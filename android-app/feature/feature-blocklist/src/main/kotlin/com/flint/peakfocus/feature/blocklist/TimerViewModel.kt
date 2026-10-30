@@ -77,6 +77,7 @@ internal class TimerViewModel(
     private var permissionsCheckedAt: AccessClockStamp? = null
     private var checkingHealth = true
     private var lastDiagnostic: String? = null
+    private var recoveryRefusedAt: AccessClockStamp? = null
 
     init {
         viewModelScope.launch {
@@ -191,15 +192,21 @@ internal class TimerViewModel(
             armAttempt?.takeIf { it.ruleId == first.id } ?: TimerArmAttempt(first.id, null, stamp)
         } else null
         armAttempt = attempt
+        val status = protectionStatus.value
+        val recoveryRefusal = recoveryRefusedAt?.let { refused ->
+            val newer = status.observedAt?.let { trustedElapsedMs(refused, it) }?.let { it > 0 } == true
+            if (newer) { recoveryRefusedAt = null; null }
+            else timerStartFailureText("Resume protection first.")
+        }
+        val prerequisite = if (checkingHealth) "Checking protection…"
+            else timerPrerequisiteFailure(status, permissions, livePathA(), stamp)?.let(::timerStartFailureText) ?: recoveryRefusal
         val arming = when {
+            attempt == null && state.value.startErrorIsPrerequisite && prerequisite == null -> TimerArmingState.Idle
             attempt == null -> (state.value.arming as? TimerArmingState.Degraded)?.takeUnless { it.committed }
                 ?: TimerArmingState.Idle
             editorUnavailable -> TimerArmingState.Degraded(attempt.ruleId, "Timer state is unavailable. Retry or check setup.", committed = true)
             else -> timerArmingState(attempt, protectionStatus.value, permissions, livePathA(), stamp)
         }
-        val prerequisite = if (checkingHealth) "Checking protection…"
-            else timerPrerequisiteFailure(protectionStatus.value, permissions, livePathA(), stamp)
-        val status = protectionStatus.value
         val statusDiagnostic = "readiness=${status.readiness} pathA=${livePathA()} " +
             "accessibility=${permissions.accessibilityEnabled} usageAccess=${permissions.usageAccess} " +
             "pathB=${status.detectors.pathB} startReady=${prerequisite == null} " +
@@ -223,6 +230,8 @@ internal class TimerViewModel(
                 exit = exit,
                 arming = arming,
                 startPrerequisite = prerequisite,
+                error = if (current.startErrorIsPrerequisite) prerequisite else current.error,
+                startErrorIsPrerequisite = current.startErrorIsPrerequisite && prerequisite != null,
                 message = if (expired && sessions.isEmpty()) {
                     "Timer finished. Other rules may still apply."
                 } else {
@@ -240,7 +249,7 @@ internal class TimerViewModel(
             val preserved = current.draft.apps.filter { it.packageName !in visible }
             val chosen = picked.filter { it.packageName in visible }
                 .map { AppRef(it.packageName, it.label) }
-            current.copy(draft = current.draft.copy(apps = (preserved + chosen).toSet()), error = null)
+            current.copy(draft = current.draft.copy(apps = (preserved + chosen).toSet()), error = null, startErrorIsPrerequisite = false)
         }
     }
 
@@ -268,7 +277,7 @@ internal class TimerViewModel(
     fun start() {
         if (!clockReady || !state.value.canStart) return
         val draft = state.value.draft.copy(apps = state.value.draft.apps.toSet())
-        state.update { it.copy(busy = true, error = null, message = null) }
+        state.update { it.copy(busy = true, error = null, startErrorIsPrerequisite = false, message = null) }
         viewModelScope.launch {
             try {
                 permissions = withContext(ioDispatcher) { loadPermissions() }
@@ -279,7 +288,9 @@ internal class TimerViewModel(
                     ?: if (!freshSafety.resolved) "Calling or Home safety could not be checked. Retry before starting protection." else null
                 if (unavailable != null) {
                     diagnostic("start refused: $unavailable")
-                    state.update { it.copy(arming = TimerArmingState.Degraded(null, unavailable, committed = false), error = "Not armed. $unavailable") }
+                    val reason = timerStartFailureText(unavailable)
+                    state.update { it.copy(arming = TimerArmingState.Degraded(null, reason, committed = false),
+                        error = reason, startErrorIsPrerequisite = true, startPrerequisite = reason) }
                     return@launch
                 }
                 val timestamp = now()
@@ -295,15 +306,21 @@ internal class TimerViewModel(
                     diagnostic("start refused by editor")
                     latestRules = rulesStore.rulesOrError.first()
                     refreshClock()
-                    val reason = (result as TimerStartResult.Rejected).reason
-                    state.update { it.copy(error = "Not armed. $reason",
+                    val rejection = (result as TimerStartResult.Rejected).reason
+                    val reason = timerStartFailureText(rejection)
+                    // The legacy backend reason identifies display provenance only. No
+                    // mutation/permission decision depends on parsing an error string.
+                    val prerequisiteRejection = rejection == "Resume protection first."
+                    if (prerequisiteRejection) recoveryRefusedAt = protectionClock()
+                    state.update { it.copy(error = reason, startErrorIsPrerequisite = prerequisiteRejection,
+                        startPrerequisite = if (prerequisiteRejection) reason else it.startPrerequisite,
                         arming = if (it.sessions.isEmpty()) TimerArmingState.Degraded(null, reason, committed = false) else it.arming) }
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
                 state.update { it.copy(arming = TimerArmingState.Degraded(null, "The Timer could not be saved. Your selection is kept here.", committed = false),
-                    error = "Not armed. Couldn't start the timer. Your selection is saved here; try again.") }
+                    error = "Couldn't start the timer. Your selection is saved here; try again.", startErrorIsPrerequisite = false) }
             } finally {
                 state.update { it.copy(busy = false) }
             }
@@ -313,7 +330,7 @@ internal class TimerViewModel(
     /** Re-check prerequisites only. The user must explicitly press Begin after recovery. */
     fun retryStartProtection() {
         if (state.value.busy || state.value.sessions.isNotEmpty()) return
-        state.update { it.copy(error = null, arming = TimerArmingState.Idle) }
+        state.update { it.copy(error = null, startErrorIsPrerequisite = false, arming = TimerArmingState.Idle) }
         wakeProtection()
         refreshHealth()
     }

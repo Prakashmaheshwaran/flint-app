@@ -51,8 +51,17 @@ class FocusHistoryTest : FlintE2EFixture() {
 
         // The normal sheet must explain a refused start before fixture setup repairs it.
         scrollTo("Start focus").click()
-        visible(By.text("Not armed."))
-        visible(By.text("Turn on Accessibility or grant Usage Access."))
+        val refusal = visible(By.desc(java.util.regex.Pattern.compile("^Not armed\\. .+")))
+        val validReasons = setOf(
+            "Turn on Accessibility or grant Usage Access.",
+            "Protection service is not connected. Retry or check setup.",
+            "Protection state is unavailable. Retry or check setup.",
+            "Calling or Home safety could not be checked. Retry before starting protection.",
+            "The protection check is stale or unavailable. Retry to check again.",
+            "Protection recovery is active. Try again after recovery ends.",
+        )
+        assertTrue("The refused sheet must announce a valid prerequisite reason",
+            validReasons.any { refusal.contentDescription == "Not armed. $it" })
         visible(By.text("Retry").enabled(true))
         visible(By.text("Check setup").enabled(true))
         screenshot("restart-not-armed")

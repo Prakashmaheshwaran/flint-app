@@ -48,7 +48,10 @@ class TimerStartReadinessScreenTest {
         }
         compose.onNodeWithText("Not armed.").assertIsDisplayed()
         compose.onNodeWithText(reason).assertIsDisplayed()
-        compose.onNode(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite)).assertExists()
+        compose.onNodeWithContentDescription("Not armed. $reason")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
+        assertTrue(compose.onNodeWithContentDescription("Not armed. $reason")
+            .fetchSemanticsNode().config.isMergingSemanticsOfDescendants)
         compose.onNodeWithText("Retry").assertIsDisplayed()
         compose.onNodeWithText("Check setup").assertIsDisplayed().performClick()
         assertEquals(1, setups)
@@ -64,5 +67,34 @@ class TimerStartReadinessScreenTest {
         begin.assertIsEnabled()
         begin.performClick()
         assertEquals("Only the next explicit Begin can start", 1, starts)
+    }
+
+    @Test fun `PC-61 Checking is announced without an Armed claim or a nonexistent setup action`() {
+        compose.setContent {
+            FlintTheme {
+                StartFocusSheet(TimerUiState(rulesLoaded = true), {}, {}, {}, {}, {}, {}, {}, {}, {}, setupAvailable = false)
+            }
+        }
+        compose.onNodeWithContentDescription("Checking protection…").assertIsDisplayed()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
+        compose.onAllNodesWithText("Not armed.").assertCountEquals(0)
+        compose.onAllNodesWithText("Check setup").assertCountEquals(0)
+        compose.onNodeWithText("Retry").assertIsDisplayed()
+        compose.onNodeWithText("Begin 30m").assertIsNotEnabled()
+    }
+
+    @Test fun `PC-65 recovery announcement gives an honest wait with retry and no empty setup destination`() {
+        val reason = "Protection recovery is active. Try again after recovery ends."
+        compose.setContent {
+            FlintTheme {
+                StartFocusSheet(TimerUiState(rulesLoaded = true, startPrerequisite = reason),
+                    {}, {}, {}, {}, {}, {}, {}, {}, {}, setupAvailable = false)
+            }
+        }
+        compose.onNodeWithContentDescription("Not armed. $reason").assertIsDisplayed()
+        compose.onAllNodesWithText("Resume protection first.").assertCountEquals(0)
+        compose.onAllNodesWithText("Check setup").assertCountEquals(0)
+        compose.onNodeWithText("Retry").assertIsDisplayed()
+        compose.onNodeWithText("Begin 30m").assertIsNotEnabled()
     }
 }
