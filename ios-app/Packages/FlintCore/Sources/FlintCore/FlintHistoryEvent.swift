@@ -67,6 +67,7 @@ public struct FlintHistoryEvent: Codable, Equatable, Sendable, Identifiable {
     public var grant: String?
     public var sessions: [String]?
     public var recoveryEnd: Int64?
+    public var timeConfidence: FlintEventTimeConfidence?
 
     public init(type: FlintHistoryEventType, session: String, at: Date,
                 id: String = UUID().uuidString, timeZone: TimeZone = .current,
@@ -74,7 +75,8 @@ public struct FlintHistoryEvent: Codable, Equatable, Sendable, Identifiable {
                 source: String? = nil, name: String? = nil, route: String? = nil,
                 by: String? = nil, breakEnd: Date? = nil, reason: String? = nil, v: Int = 1,
                 originRoute: String? = nil, observedAt: Date? = nil, kind: String? = nil,
-                grant: String? = nil, sessions: [String]? = nil, recoveryEnd: Date? = nil) {
+                grant: String? = nil, sessions: [String]? = nil, recoveryEnd: Date? = nil,
+                timeConfidence: FlintEventTimeConfidence? = nil) {
         self.v = v; self.id = id; self.type = type; self.session = session
         self.at = Self.milliseconds(at); tz = timeZone.identifier
         self.inferred = inferred; self.plannedEnd = plannedEnd.map(Self.milliseconds)
@@ -84,6 +86,7 @@ public struct FlintHistoryEvent: Codable, Equatable, Sendable, Identifiable {
         self.originRoute = originRoute; self.observedAt = observedAt.map(Self.milliseconds)
         self.kind = kind; self.grant = grant; self.sessions = sessions
         self.recoveryEnd = recoveryEnd.map(Self.milliseconds)
+        self.timeConfidence = timeConfidence
     }
 
     public var date: Date { Self.date(at) }
@@ -125,10 +128,11 @@ public struct FlintHistoryEvent: Codable, Equatable, Sendable, Identifiable {
                       timeZone: timeZone, sessions: sessions.map(\.id), recoveryEnd: recoveryEnd)
         case let .failedToArm(s, reason, at):
             self.init(type: .failedToArm, session: s.id, at: at, timeZone: timeZone, reason: reason)
-        case let .annotated(event, origin, reason, observedAt):
+        case let .annotated(event, origin, reason, observedAt, timeConfidence):
             self.init(event, timeZone: timeZone)
             self.originRoute = origin; self.reason = reason ?? self.reason
             self.observedAt = observedAt.map(Self.milliseconds)
+            self.timeConfidence = timeConfidence ?? self.timeConfidence
         }
     }
 }
