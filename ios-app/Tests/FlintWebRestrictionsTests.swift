@@ -3,7 +3,15 @@ import XCTest
 
 private final class FailingWebDefaults: UserDefaults {
     var failFlush = false
-    override func synchronize() -> Bool { failFlush ? false : super.synchronize() }
+    var successfulFlushesBeforeFailure: Int?
+    override func synchronize() -> Bool {
+        if failFlush { return false }
+        if let remaining = successfulFlushesBeforeFailure {
+            guard remaining > 0 else { successfulFlushesBeforeFailure = nil; return false }
+            successfulFlushesBeforeFailure = remaining - 1
+        }
+        return super.synchronize()
+    }
 }
 
 final class FlintWebRestrictionsTests: XCTestCase {
@@ -196,14 +204,16 @@ final class FlintWebRestrictionsTests: XCTestCase {
     }
 
     func testFailedFreshInitializationIsUnavailableAndCanRetryWhileStillFresh() throws {
-        let suite = "test.flint.web.failed-init.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(FailingWebDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.failFlush = true
-        XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }))
-        XCTAssertNil(defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
-        XCTAssertNil(defaults.object(forKey: "flint.webRestrictions"))
-        defaults.failFlush = false
-        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), .default)
+        // First flush is the validated read; fail either the config or marker commit next.
+        for successfulFlushes in [1, 2] {
+            let suite = "test.flint.web.failed-init.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(FailingWebDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            defaults.successfulFlushesBeforeFailure = successfulFlushes
+            XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }))
+            XCTAssertNil(defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
+            XCTAssertNil(defaults.object(forKey: "flint.webRestrictions"))
+            XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), .default)
+        }
     }
 }
