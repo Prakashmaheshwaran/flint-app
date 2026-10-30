@@ -292,12 +292,15 @@ final class FlintBreakAuthorizationTests: XCTestCase {
         XCTAssertEqual(accepted.increments.map(\.ledgerKey), ["rule-a", "rule-b"])
     }
 
-    /// Test-only additive-field envelope: does not modify or wire the production ledger.
+    /// Historical phase-1 fixture used a test-only array before there was a shipping field.
+    /// Decode that array separately; phase 2 tests the actual additive object in the real ledger.
     private struct LedgerEnvelope: Codable {
         let state: FlintLedgerState
         let ordinaryGrants: [FlintBreakGrant]?
-        enum CodingKeys: String, CodingKey { case ordinaryGrants }
+        enum CodingKeys: String, CodingKey { case ordinaryGrants = "phase1OrdinaryGrants" }
         init(from decoder: Decoder) throws {
+            // The old prototype never shipped. Preserve its evidence under a test-only key,
+            // rather than teaching production to mistake it for valid runtime authority.
             state = try FlintLedgerState(from: decoder)
             ordinaryGrants = try decoder.container(keyedBy: CodingKeys.self)
                 .decodeIfPresent([FlintBreakGrant].self, forKey: .ordinaryGrants)

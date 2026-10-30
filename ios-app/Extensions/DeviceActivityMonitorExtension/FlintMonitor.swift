@@ -25,6 +25,10 @@ final class FlintMonitor: DeviceActivityMonitor {
     override func intervalDidStart(for activity: DeviceActivityName) {
         super.intervalDidStart(for: activity)
         guard FlintEmergencyPassController.prepareForMonitorCallback(activity: activity.rawValue) else { return }
+        if FlintOrdinaryBreaks.isCarrier(activity.rawValue) {
+            FlintOrdinaryBreaks.reconcile(activity: activity.rawValue, callback: .start)
+            publishStatus(); return
+        }
         if FlintOpenCredit.isCarrier(activity.rawValue) {
             FlintOpenCredit.reconcile(activity: activity.rawValue, callback: .start)
             return
@@ -49,6 +53,10 @@ final class FlintMonitor: DeviceActivityMonitor {
                 FlintSessionController().handleMonitorEvent(.intervalDidEnd, activity: activity.rawValue)
             }
             return
+        }
+        if FlintOrdinaryBreaks.isCarrier(activity.rawValue) {
+            FlintOrdinaryBreaks.reconcile(activity: activity.rawValue, callback: .end)
+            publishStatus(); return
         }
         if FlintOpenCredit.isCarrier(activity.rawValue) {
             FlintOpenCredit.reconcile(activity: activity.rawValue, callback: .end)
@@ -78,6 +86,10 @@ final class FlintMonitor: DeviceActivityMonitor {
                 FlintSessionController().handleMonitorEvent(.intervalWillEndWarning, activity: activity.rawValue)
             }
             return
+        }
+        if FlintOrdinaryBreaks.isCarrier(activity.rawValue) {
+            FlintOrdinaryBreaks.reconcile(activity: activity.rawValue, callback: .warning)
+            publishStatus(); return
         }
         if FlintOpenCredit.isCarrier(activity.rawValue) {
             FlintOpenCredit.reconcile(activity: activity.rawValue, callback: .warning)

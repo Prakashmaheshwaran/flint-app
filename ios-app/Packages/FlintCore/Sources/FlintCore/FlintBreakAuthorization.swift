@@ -2,7 +2,7 @@ import Foundation
 
 /// Pure planning only. No ledger writes, OS registration, token decoding or release occurs here.
 public enum FlintBreakAuthorization {
-    public struct Request: Equatable, Sendable {
+    public struct Request: Codable, Equatable, Sendable {
         public let operationID: String
         public let scope: FlintBreakScope
         public init(operationID: String, scope: FlintBreakScope) {
@@ -140,6 +140,15 @@ public enum FlintBreakAuthorization {
             guard let cause = contributor.cause,
                   let bytes = try? encoder.encode(FlintBreakGrant.Cause(cause)) else { return [] }
             parts.append(bytes.base64EncodedString())
+            if let end = contributor.logicalEnd {
+                // Bind revision-zero session end changes without binding editable wall time.
+                parts += [end.bootID ?? "unknown", String((end.monotonic * 100).rounded() / 100)]
+            } else { parts.append("unbounded") }
+            switch contributor.selection {
+            case let .blockList(frozen): parts += ["block"] + frozen.targets.map(\.key).sorted()
+            case let .allowList(allowed): parts += ["allow"] + allowed.map(\.key).sorted()
+            case nil: return []
+            }
         }
         return parts
     }

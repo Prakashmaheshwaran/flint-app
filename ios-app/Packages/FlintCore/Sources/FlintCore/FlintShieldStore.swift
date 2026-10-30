@@ -1,6 +1,7 @@
 import Foundation
 #if canImport(ManagedSettings)
 import ManagedSettings
+import FamilyControls
 #endif
 
 /// The ~50-token shield cap is real and **fails silently**: assigning more than this to a
@@ -34,9 +35,11 @@ public enum FlintShieldError: Error, Equatable, LocalizedError {
 /// is shared so the app, monitor, and shield-action extensions speak the same store.
 public final class FlintShieldStore {
     private let store: ManagedSettingsStore
+    private let name: String
 
     public init(named name: String = "flint") {
         self.store = ManagedSettingsStore(named: ManagedSettingsStore.Name(name))
+        self.name = name
     }
 
     /// Apply a block-list shield. Throws if a token set exceeds the silent cap.
@@ -57,9 +60,12 @@ public final class FlintShieldStore {
             case .suspended: throw FlintShieldError.recoverySuspended
             case .unavailable: throw FlintShieldError.protectionStateUnavailable
             }
-            store.shield.applications = applications.isEmpty ? nil : applications
-            store.shield.applicationCategories = categories.isEmpty ? nil : .specific(categories)
-            store.shield.webDomains = webDomains.isEmpty ? nil : webDomains
+            var selection = FamilyActivitySelection()
+            selection.applicationTokens = applications; selection.categoryTokens = categories; selection.webDomainTokens = webDomains
+            let effective = FlintOrdinaryBreaks.filteredSelection(selection, storeName: name)
+            store.shield.applications = effective.applicationTokens.isEmpty ? nil : effective.applicationTokens
+            store.shield.applicationCategories = effective.categoryTokens.isEmpty ? nil : .specific(effective.categoryTokens)
+            store.shield.webDomains = effective.webDomainTokens.isEmpty ? nil : effective.webDomainTokens
         }) else { throw FlintShieldError.transitionBusy }
     }
 
@@ -69,7 +75,9 @@ public final class FlintShieldStore {
     public func applyAllowList(allowedApplications: Set<ApplicationToken> = []) {
         _ = FlintSessionController().withTransition {
             guard FlintPassRecoveryGate.read().permitsApplication else { return }
-            store.shield.applicationCategories = .all(except: allowedApplications)
+            var selection = FamilyActivitySelection(); selection.applicationTokens = allowedApplications
+            let effective = FlintOrdinaryBreaks.filteredSelection(selection, storeName: name, allowList: true)
+            store.shield.applicationCategories = .all(except: effective.applicationTokens)
             store.shield.webDomainCategories = .all()
         }
     }

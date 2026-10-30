@@ -154,6 +154,7 @@ struct FlintRuleReloadEnvironment {
     var recoveryGate: () -> FlintPassRecoveryGate = { .enforcing }
     /// Positive threshold evidence precedes lock acquisition and any outbox recovery.
     var observeLimitThreshold: (String, String) -> Void = { _, _ in }
+    var ordinaryPolicyDidChange: () -> Void = {}
 
     @discardableResult
     func applyProtection<Rule: FlintGatedRule>(_ rule: Rule, addingOnly: Bool = false) -> Bool {
@@ -177,6 +178,7 @@ struct FlintRuleReloadEnvironment {
                 attempted: 1, armed: 0, failures: [.init(activityName: rule.activityName,
                     reason: "Protection could not be applied yet. Flint will retry saved protection.")], updatedAt: clock.now()))
         }
+        if applied { ordinaryPolicyDidChange() }
         return applied
     }
 
@@ -297,7 +299,7 @@ struct FlintRuleReloadEnvironment {
             recoveryGate: { FlintPassRecoveryGate.read() },
             observeLimitThreshold: { activity, event in
                 _ = FlintEmergencyPassController().noteTimeLimitThreshold(activity: activity, event: event)
-            })
+            }, ordinaryPolicyDidChange: { FlintOrdinaryBreaks.policyDidChange() })
     }
 }
 #endif

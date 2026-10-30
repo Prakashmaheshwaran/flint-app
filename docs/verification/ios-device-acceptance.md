@@ -17,6 +17,28 @@ with notes). Attach screenshots or a screen recording where the step says so.
 - One saved app group with 2–3 everyday apps (e.g. Safari is NOT in it), one category pick.
 - Settings → You shows "Protection is healthy" before starting.
 
+## R-23 — ordinary scoped breaks (phase 2; device-pending)
+
+These CRED-style rows require a signed physical device. Simulator tests cover transaction,
+clock, callback and injected-store behavior only. Record the carrier warning time, actual
+re-shield time and any delay separately; a callback or durable acceptance is not shield proof.
+History emission is a separate integration: this phase persists replayable event intents,
+and does not count a Void sink return as a durable append receipt.
+
+| ID / contract | Setup and action | Required observation | Status |
+| --- | --- | --- | --- |
+| BREAK-01 / PC-18 | Harder session; accept successive breaks, using Resume now between them. | Persisted waits are 60, 300, 900, 900 seconds; final confirmation is required, closing/reopening does not reset the wait, and Resume now does not refund a charge. | device-pending |
+| BREAK-02 / PC-19 | Target A covered by two Harder occurrences at counts 0 and 2. | One 900-second wait; both counts increase exactly once after acceptance, including double taps and host death at commit. | device-pending |
+| BREAK-03 / PC-22 | Accept a break on A; force-quit Flint and remain in A through its logical deadline. Repeat while locked. | A re-shields at the deadline without opening Flint; record actual delay and missed warning separately. Early or duplicate callbacks must not end the break early. | device-pending |
+| BREAK-04 / PC-24 | Session blocks A and B; request A-only through the scoped adapter. Repeat an explicit whole-category selection. | Only A releases; B remains shielded. A whole-category request clearly discloses that scope; unknown category membership refuses access. | device-pending |
+| BREAK-05 / PC-26 | A and B have a live break; activate a new Hardcore then Easy cause on A, change a contributor revision/end, or replace the session. | Unauthorized targets re-shield immediately; still-authorized targets keep their original deadline; no count refund or resurrection after removing the new cause. | device-pending |
+| BREAK-06 / PC-59, PC-65 | Accept then force-quit/relaunch in the same boot; separately reboot and roll the wall clock back. | Same-boot remaining duration is preserved; reboot closes access and retains the charge, with “Access ended after restart; no extra credit was spent.” | device-pending |
+| BREAK-07 / PC-75 | Exhaust/refuse carrier registration, then request a break. Separately interrupt native application after durable acceptance. | Registration refusal says “Access unavailable” with no grant or charge. Application recovery uses the same accepted grant and remaining time, with no extra charge. | device-pending |
+| BREAK-08 / §6 | Use Emergency Pass during an ordinary break, then Resume protection. | The pass cancels the ordinary grant, stops its exact carrier, and preserves all charges; it never resurrects after recovery. | device-pending |
+| BREAK-09 / PC-72 | Application break overlaps a Safari owner; separately request a domain/category whose filter scope is unprovable. | Application-only scope leaves Safari policy intact; unprovable domain/category access is unavailable with no charge. | device-pending |
+| BREAK-10 / C09 | Inspect Easy, Harder and Hardcore session controls with VoiceOver and largest text. | Separate “Take a 5-minute break” and “End early” controls show the exact action/tier preview; denied/unavailable breaks show an explanation without an action, and an active break exposes remaining time and Resume now. | device-pending |
+| BREAK-11 / §8 | During a live break, make carrier repair fail; reopen or foreground Flint without replaying the request. | Targets re-shield without a refund, the terminal reason is carrier_failed, health records the failure, and the screen says “Access couldn't be enforced; protection is back”. | device-pending |
+
 ## B2 — session registration and time integrity (PR #91)
 
 | ID | Steps | Expected |

@@ -179,7 +179,7 @@ public struct FlintPassRecovery: Codable, Equatable, Sendable {
             && Set(scope.rules.map(\.id)).count == scope.rules.count
             && Set(disabledRules.map(\.id)).count == disabledRules.count
             && cancelledCarriers != nil
-            && (cancelledCarriers?.allSatisfy(Self.isOpenCreditCarrier) ?? false)
+            && (cancelledCarriers?.allSatisfy { Self.isOpenCreditCarrier($0) || Self.isOrdinaryCarrier($0) } ?? false)
             && scope.rules.allSatisfy { Self.validRule($0)
                 && $0.containsAcceptance(acceptedAt)
                 && scope.stores.contains($0.storeName) }
@@ -230,6 +230,9 @@ public struct FlintPassRecovery: Codable, Equatable, Sendable {
             && rule.hasValidTrustedRuleTime
     }
 
+    private static func isOrdinaryCarrier(_ name: String) -> Bool {
+        FlintOrdinaryGrantState.isCarrier(name)
+    }
     private static func isOpenCreditCarrier(_ name: String) -> Bool {
         let prefix = "flint.open."
         let suffix = name.dropFirst(prefix.count)
@@ -371,10 +374,17 @@ extension FlintLedgerState {
     /// Same transaction as consumption. Grant/callback authority ends now; the carrier stops
     /// only after the containing recovery intent has been durably read back.
     public mutating func cancelAccessGrantsForPass() -> [String] {
-        let carriers = openCredits.grants.values.map(\.activityName).sorted()
+        var carriers = openCredits.grants.values.map(\.activityName)
+        if let now = emergencyRecovery?.acceptedAt, var grants = ordinaryGrants {
+            for i in grants.records.indices where grants.records[i].endReason == nil {
+                carriers.append(grants.records[i].activityName)
+                grants.records[i].end(.pass, at: now)
+            }
+            grants.pending = nil; ordinaryGrants = grants
+        }
         openCredits.grants = [:]
         openCredits.carrierCheckpoints = [:]
-        return carriers
+        return carriers.sorted()
     }
 }
 

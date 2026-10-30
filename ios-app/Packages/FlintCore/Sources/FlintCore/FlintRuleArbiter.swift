@@ -610,6 +610,7 @@ final class FlintRuleArbiter {
         FlintRuleStoreLock.withLock(environment: env, body) ?? .unavailable
     }
     private func notify() {
+        env.ordinaryPolicyDidChange()
         FlintRuleStoreLock.afterUnlock(environment: env) {
             self.env.publishStatus()
             NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
