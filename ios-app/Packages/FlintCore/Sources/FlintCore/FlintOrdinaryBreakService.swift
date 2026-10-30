@@ -58,6 +58,8 @@ public enum FlintBreakOutcome: Equatable {
     case refused(FlintOrdinaryBreakError)
 }
 
+public enum FlintOrdinaryBreakResumeOutcome: Equatable { case ended, applying, unavailable }
+
 /// Injectable transaction/native seam. The live transition takes session → rules locks;
 /// context is read again inside every ledger transaction. Native effects never authorize a
 /// grant: a registered carrier and positively read-back durable record precede release.
@@ -73,6 +75,7 @@ public final class FlintOrdinaryBreakService {
     private let apply: ([FlintOrdinaryGrantState.Record], FlintBreakContext?, FlintLedgerInstant) throws -> Void
     private let gate: () -> Bool
     private let reportFailure: (String, String) -> Void
+    private let reportRecovery: ([String]) -> Void
 
     public init(ledger: FlintProtectionLedger, clock: FlintClock,
                 transition: @escaping (() -> Void) -> Bool,
@@ -81,10 +84,12 @@ public final class FlintOrdinaryBreakService {
                 registered: @escaping (String) -> Bool, stop: @escaping (String) -> Void,
                 apply: @escaping ([FlintOrdinaryGrantState.Record], FlintBreakContext?, FlintLedgerInstant) throws -> Void,
                 gate: @escaping () -> Bool = { true },
-                reportFailure: @escaping (String, String) -> Void = { _, _ in }) {
+                reportFailure: @escaping (String, String) -> Void = { _, _ in },
+                reportRecovery: @escaping ([String]) -> Void = { _ in }) {
         self.ledger = ledger; self.clock = clock; self.transition = transition; self.context = context
         self.register = register; self.registered = registered; self.stop = stop; self.apply = apply; self.gate = gate
         self.reportFailure = reportFailure
+        self.reportRecovery = reportRecovery
     }
 
     public func request(scope: FlintBreakScope, operationID: String? = nil) -> FlintBreakOutcome {
@@ -220,7 +225,11 @@ public final class FlintOrdinaryBreakService {
     }
 
     public func resumeNow(grantID: String) -> Bool {
-        var success = false
+        resumeNowOutcome(grantID: grantID) == .ended
+    }
+
+    public func resumeNowOutcome(grantID: String) -> FlintOrdinaryBreakResumeOutcome {
+        var outcome: FlintOrdinaryBreakResumeOutcome = .unavailable
         guard transition({
             guard case .success = self.ledger.transaction({ state in
                 guard let i = state.ordinaryGrants?.records.firstIndex(where: { $0.grant.id == grantID }) else {
@@ -228,9 +237,9 @@ public final class FlintOrdinaryBreakService {
                 }
                 state.ordinaryGrants?.records[i].end(.resumeNow, at: .init(clock: self.clock))
             }) else { return }
-            success = self.reconcileLocked()
-        }) else { return false }
-        return success
+            outcome = self.reconcileLocked() ? .ended : .applying
+        }) else { return .unavailable }
+        return outcome
     }
 
     @discardableResult
@@ -299,7 +308,7 @@ public final class FlintOrdinaryBreakService {
         }
         guard case let .success(records) = result else { return false }
         if let activity, !records.contains(where: { $0.activityName == activity }) { stop(activity) }
-        guard !records.isEmpty else { return true }
+        guard !records.isEmpty else { reportRecovery([]); return true }
         // Native application follows a fresh durable snapshot while the outer transition
         // still excludes callbacks and policy changes. Deadlines are checked again here.
         guard case let .success(state) = ledger.peek() else { return false }
@@ -310,11 +319,15 @@ public final class FlintOrdinaryBreakService {
             stop(record.activityName)
             if record.endReason == .carrierFailed { reportFailure(record.activityName, FlintBreakEndReason.carrierFailed.message) }
         }
-        return (try? ledger.transaction { state in
+        let applied = (try? ledger.transaction { state in
             guard var grants = state.ordinaryGrants else { return }
             for i in grants.records.indices { grants.records[i].applicationPending = false }
             try grants.archiveFinished(); state.ordinaryGrants = grants
         }.get()) != nil
+        if applied && !records.contains(where: { $0.endReason == .carrierFailed }) {
+            reportRecovery(records.filter { $0.remaining(at: now) > 0 }.map(\.activityName))
+        }
+        return applied
     }
 
     /// Until F2 supplies an append receipt the live adapter does not call this. A sink retry

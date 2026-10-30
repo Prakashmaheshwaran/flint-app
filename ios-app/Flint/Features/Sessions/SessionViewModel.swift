@@ -41,10 +41,16 @@ final class SessionViewModel: ObservableObject {
     @Published private(set) var ordinaryBreak: FlintOrdinaryGrantState.Record?
     @Published private(set) var breakRemaining: TimeInterval = 0
     @Published private(set) var breakPreview = FlintOrdinaryBreakPreview.unavailable
+    @Published private(set) var breakNotice: String?
+    @Published private(set) var resumingBreak = false
     @Published var confirmingBreak = false
     private var breakRequest: FlintBreakAuthorization.Request?
     private let readBreakStatus: () -> FlintOrdinaryBreakStatus
     private let readBreakPreview: () -> FlintOrdinaryBreakPreview
+    private let readNoticeAcknowledgement: () -> String?
+    private let saveNoticeAcknowledgement: (String) -> Void
+    private let resumeOrdinaryBreak: (String) -> FlintOrdinaryBreakResumeOutcome
+    private var breakNoticeID: String?
     private var breakReconcilePending = false
     private let observesLifecycle: Bool
 
@@ -76,8 +82,13 @@ final class SessionViewModel: ObservableObject {
 
     init(initialSession: FlintActiveSession? = nil, observeLifecycle: Bool = true,
          breakStatus: @escaping () -> FlintOrdinaryBreakStatus = FlintOrdinaryBreaks.status,
-         breakPreview: @escaping () -> FlintOrdinaryBreakPreview = FlintOrdinaryBreaks.previewForCurrentSession) {
+         breakPreview: @escaping () -> FlintOrdinaryBreakPreview = FlintOrdinaryBreaks.previewForCurrentSession,
+         readNoticeAcknowledgement: @escaping () -> String? = { UserDefaults.standard.string(forKey: "flint.ordinaryBreak.acknowledgedNotice") },
+         saveNoticeAcknowledgement: @escaping (String) -> Void = { UserDefaults.standard.set($0, forKey: "flint.ordinaryBreak.acknowledgedNotice") },
+         resumeOrdinaryBreak: @escaping (String) -> FlintOrdinaryBreakResumeOutcome = FlintOrdinaryBreaks.resumeNowOutcome) {
         readBreakStatus = breakStatus; readBreakPreview = breakPreview; observesLifecycle = observeLifecycle
+        self.readNoticeAcknowledgement = readNoticeAcknowledgement; self.saveNoticeAcknowledgement = saveNoticeAcknowledgement
+        self.resumeOrdinaryBreak = resumeOrdinaryBreak
         if !observeLifecycle { active = initialSession; return }
         if let saved = FlintGroupStore()?.loadSelection() { selection = saved }
         savedGroups = FlintGroupStore()?.loadAppGroups() ?? []
@@ -270,8 +281,13 @@ final class SessionViewModel: ObservableObject {
 
     func resumeBreakNow() {
         guard let ordinaryBreak else { return }
-        if !controller.resumeBreakNow(grantID: ordinaryBreak.grant.id) { errorText = "Access unavailable" }
+        let outcome = resumeOrdinaryBreak(ordinaryBreak.grant.id)
         refreshBreakStatus()
+        switch outcome {
+        case .ended: resumingBreak = false
+        case .applying: resumingBreak = true
+        case .unavailable: errorText = "Access unavailable"
+        }
     }
 
     func refreshBreakStatus() {
@@ -280,7 +296,15 @@ final class SessionViewModel: ObservableObject {
         ordinaryBreak = status.record
         breakRemaining = ordinaryBreak?.remaining(at: .init(clock: .system)) ?? 0
         breakPreview = readBreakPreview()
-        if let notice = status.notice { errorText = notice.message }
+        resumingBreak = status.isRestoring
+        if let notice = status.notice, let id = status.noticeID, id != readNoticeAcknowledgement() {
+            breakNotice = notice.message; breakNoticeID = id
+        } else if breakNoticeID == readNoticeAcknowledgement() { breakNotice = nil; breakNoticeID = nil }
+    }
+
+    func acknowledgeBreakNotice() {
+        if let breakNoticeID { saveNoticeAcknowledgement(breakNoticeID) }
+        breakNotice = nil; breakNoticeID = nil
     }
 
     private func applyBreak(_ outcome: FlintBreakOutcome) {
@@ -288,6 +312,7 @@ final class SessionViewModel: ObservableObject {
         switch outcome {
         case let .waiting(request, remaining, total):
             breakRequest = request; breakWait = .waiting(until: Date().addingTimeInterval(remaining), total: total)
+            breakPreview = readBreakPreview()
             confirmingBreak = false
         case let .confirmation(request):
             breakRequest = request
@@ -299,7 +324,7 @@ final class SessionViewModel: ObservableObject {
             NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
         case let .ended(reason):
             breakRequest = nil; breakWait = nil; confirmingBreak = false
-            errorText = reason.message
+            if reason != .reboot && reason != .carrierFailed { errorText = reason.message }
             refreshBreakStatus()
         case let .refused(error):
             errorText = error.localizedDescription

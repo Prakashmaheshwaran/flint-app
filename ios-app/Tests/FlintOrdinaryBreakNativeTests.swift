@@ -7,15 +7,17 @@ import ManagedSettings
 final class FlintOrdinaryBreakNativeTests: XCTestCase {
     private let now = FlintLedgerInstant(wall: Date(timeIntervalSince1970: 1_800_000_000), monotonic: 1000, bootID: "boot")
     private func fixture(_ selection: FamilyActivitySelection, releasing scope: FlintBreakScope,
-                         allowList: Bool = false, tier: BreakLevel = .easy)
+                         allowList: Bool = false, tier: BreakLevel = .easy, ownerEnd: TimeInterval? = 3600,
+                         causeID: String = "session")
         throws -> (FlintOrdinaryGrantState.Record, FlintBreakContext) {
-        let cause = FlintCauseState(causeID: "session", kind: .session, tier: tier, isActive: true)
+        let cause = FlintCauseState(causeID: causeID, kind: .session, tier: tier, isActive: true)
         let frozen = try FlintOrdinaryBreaks.scope(selection)
         let contributor = FlintBreakContributor(cause: cause,
             selection: allowList ? .allowList(allowedApplications: frozen.targets) : .blockList(frozen),
-            logicalEnd: .init(wall: now.wall.addingTimeInterval(3600), monotonic: 4600, bootID: now.bootID), timeKnown: true, harder: .init())
+            logicalEnd: ownerEnd.map { .init(wall: now.wall.addingTimeInterval($0), monotonic: now.monotonic + $0, bootID: now.bootID) }, timeKnown: true, harder: .init())
+        let duration = min(300, ownerEnd ?? 300)
         let grant = FlintBreakGrant(id: "grant", operationID: "operation", scope: scope, causes: [.init(cause)],
-            acceptedAt: now, deadline: .init(wall: now.wall.addingTimeInterval(300), monotonic: 1300, bootID: now.bootID))
+            acceptedAt: now, deadline: .init(wall: now.wall.addingTimeInterval(duration), monotonic: now.monotonic + duration, bootID: now.bootID))
         return (.init(grant: grant, authorities: [try .init(contributor: contributor, storeName: "owner")]),
                 .init(owners: [.init(contributor, storeName: "owner")]))
     }
@@ -108,11 +110,97 @@ final class FlintOrdinaryBreakNativeTests: XCTestCase {
         let vm = SessionViewModel(initialSession: session, observeLifecycle: false, breakStatus: { status }, breakPreview: { .unavailable })
         vm.updateActive(session)
         XCTAssertEqual(vm.ordinaryBreak?.grant.id, record.grant.id)
-        status = .init(notice: .reboot)
+        status = .init(notice: .reboot, noticeID: "fixture.reboot")
         vm.updateActive(session)
         XCTAssertNil(vm.ordinaryBreak)
-        XCTAssertEqual(vm.errorText, "Access ended after restart; no extra credit was spent.")
+        XCTAssertEqual(vm.breakNotice, "Access ended after restart; no extra credit was spent.")
+        XCTAssertNil(vm.errorText)
         XCTAssertEqual(vm.active, session)
+    }
+
+    func testUnreadableRuleContextRestoresUntimedAndFutureOwnersButNeverExpiredOwners() throws {
+        let token: ApplicationToken = try fictionalRuleToken("legacy session target")
+        var selection = FamilyActivitySelection(); selection.applicationTokens = [token]
+        let observation = FlintLedgerInstant(wall: now.wall.addingTimeInterval(300), monotonic: now.monotonic + 300, bootID: now.bootID)
+        for ownerEnd in [nil, 3600, 100] as [TimeInterval?] {
+            let legacySession = FlintActiveSession(name: "Legacy", startedAt: now.wall,
+                endsAt: ownerEnd.map { now.wall.addingTimeInterval($0) }, breakLevel: .easy, monitorName: "legacy")
+            let (frozen, _) = try fixture(selection, releasing: FlintOrdinaryBreaks.scope(selection),
+                ownerEnd: legacySession.endsAt.map { $0.timeIntervalSince(now.wall) }, causeID: legacySession.id)
+            var grants = FlintOrdinaryGrantState()
+            let operation = try grants.newOperationID()
+            let grant = FlintBreakGrant(id: frozen.grant.id, operationID: operation, scope: frozen.grant.scope,
+                causes: frozen.grant.causes, acceptedAt: frozen.grant.acceptedAt, deadline: frozen.grant.deadline)
+            grants.records = [.init(grant: grant, authorities: frozen.authorities)]; grants.acceptedOperations = [operation]
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let ledger = FlintProtectionLedger(directory: directory, clock: observation.clock, initializedMarker: { nil }, setInitializedMarker: { _ in })
+            try ledger.transaction { $0.ordinaryGrants = grants }.get()
+            let writer = OrdinaryWriter()
+            let service = FlintOrdinaryBreakService(ledger: ledger, clock: observation.clock,
+                transition: { body in body(); return true }, context: { _, _ in nil }, // unreadable rule domain
+                register: { _, _ in XCTFail("Expired grant must not register") }, registered: { _ in true }, stop: { _ in },
+                apply: { records, context, now in
+                    XCTAssertNil(context)
+                    try FlintOrdinaryBreaks.restoreUnavailableAuthorities(records, at: now, writer: { _ in writer })
+                    throw FlintOrdinaryBreakError.unavailable // retain retry until the domain becomes readable
+                })
+            XCTAssertFalse(service.reconcile())
+            XCTAssertEqual(writer.currentApplications, ownerEnd == 100 ? nil : Set([token]))
+            XCTAssertEqual(try ledger.peek().get().ordinaryGrants?.records.first?.endReason, .deadline)
+        }
+    }
+
+    func testFailureHealthPreservesOtherFailuresUpdatesTimeAndClearsRecoveredCarrier() throws {
+        let suite = "flint.tests.breakHealth.\(UUID().uuidString)"
+        let group = try XCTUnwrap(FlintGroupStore(suiteName: suite))
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let unrelated = FlintArmingHealth.Failure(activityName: "unrelated", reason: "Keep this failure")
+        let old = FlintArmingHealth.DomainReport(enabled: 2, attempted: 2, armed: 1, failures: [unrelated], updatedAt: .distantPast)
+        group.saveArmingHealth(.init(domains: ["ordinaryBreaks": old, "schedules": old]))
+        let carrier = FlintOrdinaryGrantState.Record.activityName("failed grant")
+        let started = Date()
+        FlintOrdinaryBreaks.recordHealthFailure(carrier, reason: "carrier failed", in: group)
+        let failed = group.loadArmingHealth()
+        XCTAssertEqual(failed.domains["schedules"], old)
+        XCTAssertEqual(failed.domains["ordinaryBreaks"]?.failures.map(\.activityName), ["unrelated", carrier])
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(failed.domains["ordinaryBreaks"]?.updatedAt), started)
+        FlintOrdinaryBreaks.clearHealthFailures(in: group)
+        XCTAssertEqual(group.loadArmingHealth().domains["ordinaryBreaks"]?.failures, [unrelated])
+        XCTAssertEqual(group.loadArmingHealth().domains["ordinaryBreaks"]?.enabled, 0)
+        XCTAssertEqual(group.loadArmingHealth().domains["schedules"], old)
+    }
+
+    @MainActor
+    func testNoticeAcknowledgementSurvivesViewRecreationAndDoesNotOverwriteErrors() {
+        var acknowledgement: String?
+        var status = FlintOrdinaryBreakStatus(notice: .reboot, noticeID: "grant.reboot")
+        func model() -> SessionViewModel {
+            SessionViewModel(observeLifecycle: false, breakStatus: { status }, breakPreview: { .unavailable },
+                readNoticeAcknowledgement: { acknowledgement }, saveNoticeAcknowledgement: { acknowledgement = $0 })
+        }
+        let vm = model(); vm.errorText = "Unrelated save failed"
+        vm.refreshBreakStatus(); vm.refreshBreakStatus()
+        XCTAssertEqual(vm.errorText, "Unrelated save failed")
+        XCTAssertEqual(vm.breakNotice, FlintBreakEndReason.reboot.message)
+        vm.acknowledgeBreakNotice(); vm.refreshBreakStatus()
+        XCTAssertNil(vm.breakNotice); XCTAssertEqual(acknowledgement, "grant.reboot")
+        let reopened = model(); reopened.refreshBreakStatus(); XCTAssertNil(reopened.breakNotice)
+        status = .init(notice: .carrierFailed, noticeID: "next.carrier_failed")
+        reopened.refreshBreakStatus(); XCTAssertEqual(reopened.breakNotice, FlintBreakEndReason.carrierFailed.message)
+    }
+
+    @MainActor
+    func testDeferredResumeShowsApplyingProtectionWithoutUnavailableError() throws {
+        let token: ApplicationToken = try fictionalRuleToken("target")
+        var selection = FamilyActivitySelection(); selection.applicationTokens = [token]
+        let (record, _) = try fixture(selection, releasing: FlintOrdinaryBreaks.scope(selection))
+        var status = FlintOrdinaryBreakStatus(record: record)
+        let vm = SessionViewModel(observeLifecycle: false, breakStatus: { status }, breakPreview: { .unavailable },
+            resumeOrdinaryBreak: { _ in status = .init(isRestoring: true); return .applying })
+        vm.refreshBreakStatus(); vm.resumeBreakNow()
+        XCTAssertTrue(vm.resumingBreak); XCTAssertNil(vm.errorText); XCTAssertNil(vm.ordinaryBreak)
+        status = .init(); vm.refreshBreakStatus(); XCTAssertFalse(vm.resumingBreak)
     }
 }
 

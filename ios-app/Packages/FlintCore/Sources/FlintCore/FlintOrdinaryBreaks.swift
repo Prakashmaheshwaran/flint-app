@@ -15,24 +15,31 @@ public struct FlintOrdinaryBreakPreview: Equatable {
 public struct FlintOrdinaryBreakStatus {
     public let record: FlintOrdinaryGrantState.Record?
     public let notice: FlintBreakEndReason?
-    public init(record: FlintOrdinaryGrantState.Record? = nil, notice: FlintBreakEndReason? = nil) {
-        self.record = record; self.notice = notice
+    public let noticeID: String?
+    public let isRestoring: Bool
+    public init(record: FlintOrdinaryGrantState.Record? = nil, notice: FlintBreakEndReason? = nil,
+                noticeID: String? = nil, isRestoring: Bool = false) {
+        self.record = record; self.notice = notice; self.noticeID = noticeID; self.isRestoring = isRestoring
     }
     static func project(_ grants: FlintOrdinaryGrantState?, at now: FlintLedgerInstant) -> Self {
         guard let grants else { return .init() }
-        if let record = grants.records.first(where: { $0.remaining(at: now) > 0 }) { return .init(record: record) }
+        let restoring = grants.records.contains(where: { $0.endReason != nil && $0.applicationPending })
+        let active = grants.records.first(where: { $0.remaining(at: now) > 0 })
         // A read can precede reconciliation after restart; display the same conservative
         // expiry result without requiring an operation replay or mutating protection.
         if let record = grants.records.last {
             if record.endReason == .reboot || (record.endReason == nil &&
                 (record.grant.acceptedAt.bootID != now.bootID || now.monotonic < record.grant.acceptedAt.monotonic)) {
-                return .init(notice: .reboot)
+                return .init(record: active, notice: .reboot, noticeID: record.grant.id + ".reboot", isRestoring: record.applicationPending)
             }
         }
+        // Later normal endings and new grants do not dismiss an unacknowledged notice.
+        // Carrier-failure copy claims restoration, so expose it only after native apply.
         let receipt = grants.receipts.reversed().compactMap {
             try? FlintProtectionLedger.makeDecoder().decode(FlintOrdinaryGrantState.Receipt.self, from: $0)
-        }.first
-        return .init(notice: receipt.flatMap { [.reboot, .carrierFailed].contains($0.reason) ? $0.reason : nil })
+        }.first(where: { [.reboot, .carrierFailed].contains($0.reason) })
+        return .init(record: active, notice: receipt?.reason,
+                     noticeID: receipt.map { $0.grantID + "." + $0.reason.rawValue }, isRestoring: restoring)
     }
 }
 
@@ -69,6 +76,9 @@ public enum FlintOrdinaryBreaks {
     }
     public static func cancel(_ request: FlintBreakAuthorization.Request) { service()?.cancel(request) }
     public static func resumeNow(grantID: String) -> Bool { service()?.resumeNow(grantID: grantID) ?? false }
+    public static func resumeNowOutcome(grantID: String) -> FlintOrdinaryBreakResumeOutcome {
+        service()?.resumeNowOutcome(grantID: grantID) ?? .unavailable
+    }
 
     @discardableResult
     public static func reconcile(activity: String? = nil, callback: FlintOrdinaryBreakService.Callback? = nil) -> Bool {
@@ -97,7 +107,8 @@ public enum FlintOrdinaryBreaks {
     static func preview(scope: FlintBreakScope, context: FlintBreakContext?, grants: FlintOrdinaryGrantState?,
                         clock: FlintClock) -> FlintOrdinaryBreakPreview {
         guard let context, context.canRelease(scope) else { return .unavailable }
-        let request = FlintBreakAuthorization.Request(operationID: "preview", scope: scope)
+        let request = grants?.pending.flatMap { $0.scope == scope ? $0 : nil }
+            ?? FlintBreakAuthorization.Request(operationID: "preview", scope: scope)
         let suffix = scope.wholeCategories.isEmpty ? "" : " Selected categories are released as whole categories."
         switch FlintBreakAuthorization.decide(contributors: context.contributors,
             existingGrants: grants?.records.filter { $0.endReason == nil }.map(\.grant) ?? [],
@@ -105,13 +116,33 @@ public enum FlintOrdinaryBreaks {
         case .confirmEasy:
             guard grants?.canRequest ?? true else { return .init(kind: .unavailable, message: FlintOrdinaryBreakError.capacity.localizedDescription) }
             return .init(kind: .confirm, message: "Confirm up to 5 minutes of access to this session’s targets." + suffix)
-        case let .wait(seconds, _):
+        case let .wait(seconds, causes):
             guard grants?.canRequest ?? true else { return .init(kind: .unavailable, message: FlintOrdinaryBreakError.capacity.localizedDescription) }
-            return .init(kind: .wait, message: "Wait \(Int(seconds / 60)) minutes, then confirm up to 5 minutes of access." + suffix)
+            let binding = FlintBreakAuthorization.waitScope(request: request, contributors: context.contributors)
+            let now = FlintLedgerInstant(clock: clock)
+            let remaining = causes.map { cause -> TimeInterval in
+                guard let harder = context.contributors.first(where: { $0.cause?.causeID == cause.causeID })?.harder else { return seconds }
+                let total = FlintProtectionPolicy.harderWait(forCount: harder.committedCount)
+                guard let pending = harder.pending, pending.operationID == request.operationID,
+                      pending.kind == "break", pending.scope == binding, pending.wait.isFinite, pending.wait >= total,
+                      let elapsed = pending.requestedAt.elapsed(until: now) else { return total }
+                return max(0, pending.wait - elapsed)
+            }.max() ?? seconds
+            if remaining == 0 { return .init(kind: .confirm, message: "Your wait is complete. Confirm up to 5 minutes of access." + suffix) }
+            return .init(kind: .wait, message: "Wait \(waitDescription(remaining)), then confirm up to 5 minutes of access." + suffix)
         case .deny(.hardcore): return .init(kind: .deniedHardcore, message: FlintOrdinaryBreakError.hardcore.localizedDescription)
         case let .deny(.activeGrant(left)): return .init(kind: .activeGrant, message: "A break is already active (\(Int(left)) seconds left)")
         case .deny(.unavailable), .replay, .replayExpired: return .unavailable
         }
+    }
+
+    static func waitDescription(_ remaining: TimeInterval) -> String {
+        let seconds = Int(ceil(min(remaining, 86_400)))
+        let minutes = seconds / 60, rest = seconds % 60
+        var parts: [String] = []
+        if minutes > 0 { parts.append("\(minutes) \(minutes == 1 ? "minute" : "minutes")") }
+        if rest > 0 { parts.append("\(rest) \(rest == 1 ? "second" : "seconds")") }
+        return parts.joined(separator: " ")
     }
 
     /// Single narrow hook used by policy materialization. Re-entrant on the owning thread;
@@ -180,12 +211,25 @@ public enum FlintOrdinaryBreaks {
             }
         }, registered: { center.activities.contains(.init($0)) && center.schedule(for: .init($0)) != nil },
         stop: { FlintScheduling.stopMonitoring([$0]) }, apply: apply,
-        gate: { FlintPassRecoveryGate.read().permitsApplication }, reportFailure: { name, reason in
-            guard let group = FlintGroupStore() else { return }
-            let health = group.loadArmingHealth()
-            group.saveArmingHealth(health.replacing("ordinaryBreaks", with: .init(enabled: 1, attempted: 1, armed: 0,
-                failures: [.init(activityName: name, reason: reason)])))
-        })
+        gate: { FlintPassRecoveryGate.read().permitsApplication },
+        reportFailure: { recordHealthFailure($0, reason: $1) }, reportRecovery: { clearHealthFailures(activeActivities: $0) })
+    }
+
+    static func recordHealthFailure(_ name: String, reason: String, in group: FlintGroupStore? = FlintGroupStore()) {
+        guard let group else { return }
+        let previous = group.loadArmingHealth().domains["ordinaryBreaks"]
+        let failures = (previous?.failures ?? []).filter { $0.activityName != name } + [.init(activityName: name, reason: reason)]
+        FlintArmingHealth.record(domain: "ordinaryBreaks", enabled: max(1, previous?.enabled ?? 0),
+            attempted: max(1, previous?.attempted ?? 0), armed: previous?.armed ?? 0,
+            failures: failures, in: group, observedActivities: previous?.observedActivities)
+    }
+
+    static func clearHealthFailures(activeActivities: [String] = [], in group: FlintGroupStore? = FlintGroupStore()) {
+        guard let group, let previous = group.loadArmingHealth().domains["ordinaryBreaks"],
+              previous.failures.contains(where: { isCarrier($0.activityName) }) else { return }
+        FlintArmingHealth.record(domain: "ordinaryBreaks", enabled: activeActivities.count, attempted: activeActivities.count,
+            armed: activeActivities.count, failures: previous.failures.filter { !isCarrier($0.activityName) },
+            in: group, observedActivities: activeActivities)
     }
 
     private static func context(_ state: FlintLedgerState, at now: FlintLedgerInstant) -> FlintBreakContext? {
@@ -281,16 +325,22 @@ public enum FlintOrdinaryBreaks {
                 try write(selection, storeName: owner.storeName, releasing: allowed)
             }
         } else {
-            // Unavailable current state never authorizes release. Restore only frozen,
-            // finite still-active owners; do not create a permanent fallback restriction.
-            for record in records {
-                for owner in record.authorities where owner.logicalEnd.map({ $0.bootID == now.bootID && $0.monotonic > now.monotonic }) == true {
-                    let selection: FlintBreakContributor.Selection = owner.allowList
-                        ? .allowList(allowedApplications: owner.selection.targets) : .blockList(owner.selection)
-                    try write(selection, storeName: owner.storeName, releasing: [])
-                }
-            }
+            try restoreUnavailableAuthorities(records, at: now)
             throw FlintOrdinaryBreakError.unavailable
+        }
+    }
+
+    /// Restore the owner's frozen policy, including an existing untimed Easy commitment.
+    /// An expired finite owner is never recreated; reboot re-anchoring belongs to session reconcile.
+    static func restoreUnavailableAuthorities(_ records: [FlintOrdinaryGrantState.Record], at now: FlintLedgerInstant,
+                                             writer: ((String) -> FlintRuleShieldWriting)? = nil) throws {
+        for record in records {
+            for owner in record.authorities where owner.logicalEnd == nil ||
+                owner.logicalEnd.map({ $0.bootID == now.bootID && $0.monotonic > now.monotonic }) == true {
+                let selection: FlintBreakContributor.Selection = owner.allowList
+                    ? .allowList(allowedApplications: owner.selection.targets) : .blockList(owner.selection)
+                try write(selection, storeName: owner.storeName, releasing: [], to: writer?(owner.storeName))
+            }
         }
     }
 
