@@ -699,6 +699,9 @@ public final class FlintSessionController {
         ).checkpointed(clock: env.clock)
         let previous = current
         let previousSelection = previous.flatMap { store.loadSessionSelection(sessionID: $0.id) }
+        guard env.webRestrictions.prepareReplacement(session, replacing: previous, clock: env.clock) else {
+            throw FlintSessionError.protectionStateUnavailable
+        }
 
         // 1. The out-of-app end, before anything changes.
         if let plan {
