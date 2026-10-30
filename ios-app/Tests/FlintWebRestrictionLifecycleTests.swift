@@ -60,7 +60,7 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
         let writer = RecordingWebWriter()
         let adapter = FlintSessionWebRestrictionAdapter(writer: writer, configuration: {
             FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false })
-        })
+        }, children: .init(defaults: defaults))
         let fixedNow = now
         let clock = FlintClock(now: { fixedNow }, monotonic: { 0 }, bootSessionID: { nil }, calendar: { .current })
         let active = FlintActiveSession(name: "Hardcore", startedAt: now.addingTimeInterval(-60),
@@ -119,7 +119,7 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
                 uiRead: false, load: load, transition: contended
             ) else { return nil }
             return config
-        })
+        }, children: .isolated())
         let instant = now
         let clock = FlintClock(now: { instant }, monotonic: { 0 }, bootSessionID: { nil },
                                calendar: { self.calendar })
@@ -174,7 +174,7 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
         var gate = FlintPassRecoveryGate.suspended(until: now.addingTimeInterval(3600))
         let lifecycle = FlintWebRestrictionLifecycle(writer: writer, recoveryGate: { gate })
         let adapter = FlintSessionWebRestrictionAdapter(writer: writer,
-            configuration: { FlintWebRestrictions(enabled: true) }, recoveryGate: { gate })
+            configuration: { FlintWebRestrictions(enabled: true) }, recoveryGate: { gate }, children: .isolated())
         let config = FlintWebRestrictions(enabled: true, applyDuringSchedules: true)
         writer.web["flint.web"] = config
         let clock = FlintClock(now: { self.now }, monotonic: { 0 }, bootSessionID: { nil }, calendar: { self.calendar })
@@ -219,36 +219,47 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
         XCTAssertEqual(writer.applied, [oneShot.storeName])
     }
 
-    func testDisableBothScopesClearsAllKnownOwnersAndLegacy() {
+    func testRawScopeDisableKeepsLiveChildrenUntilAnAuthorizedEdit() {
         let writer = RecordingWebWriter()
-        let lifecycle = FlintWebRestrictionLifecycle(writer: writer)
+        let children = FlintWebRestrictionChildren.isolated()
+        let lifecycle = FlintWebRestrictionLifecycle(writer: writer, children: children)
+        let active = session(), rules = [rule("a"), rule("b")]
+        let clock = FlintClock(now: { self.now }, monotonic: { 0 }, bootSessionID: { nil }, calendar: { self.calendar })
         let config = FlintWebRestrictions(enabled: true, applyDuringSchedules: true)
         writer.web["flint.web"] = config
-        lifecycle.reconcile(activeSession: session(), rules: [rule("a"), rule("b")],
+        lifecycle.reconcile(activeSession: active, rules: rules,
                             config: config, now: now, calendar: calendar)
         XCTAssertNil(writer.web["flint.web"])
-        lifecycle.reconcile(activeSession: session(), rules: [rule("a"), rule("b")],
+        lifecycle.reconcile(activeSession: active, rules: rules,
                             config: .default, now: now, calendar: calendar)
+        XCTAssertEqual(Set(writer.web.keys), ["flint", "flint.a", "flint.b"])
+        XCTAssertTrue(children.saveAuthorized(.default, snapshot: .init(session: active, rules: rules), clock: clock))
+        lifecycle.reconcile(activeSession: active, rules: rules, config: .default, now: now, calendar: calendar)
         XCTAssertTrue(writer.web.isEmpty)
         XCTAssertEqual(Set(writer.cleared), ["flint", "flint.a", "flint.b", "flint.web"])
     }
 
     func testApprovedConfigReappliesToEligibleOwnersAndScheduleOnlyWorks() {
         let writer = RecordingWebWriter()
-        let lifecycle = FlintWebRestrictionLifecycle(writer: writer)
+        let children = FlintWebRestrictionChildren.isolated()
+        let lifecycle = FlintWebRestrictionLifecycle(writer: writer, children: children)
+        let active = session(), rules = [rule("a")]
+        let clock = FlintClock(now: { self.now }, monotonic: { 0 }, bootSessionID: { nil }, calendar: { self.calendar })
         var config = FlintWebRestrictions(enabled: true, applyDuringSchedules: true)
-        lifecycle.reconcile(activeSession: session(), rules: [rule("a")], config: config,
+        lifecycle.reconcile(activeSession: active, rules: rules, config: config,
                             now: now, calendar: calendar)
         config.filter = .allowedOnly
         config.allowedDomains = ["example.com"]
         config.denyExplicitMedia = true
-        lifecycle.reconcile(activeSession: session(), rules: [rule("a")], config: config,
+        XCTAssertTrue(children.saveAuthorized(config, snapshot: .init(session: active, rules: rules), clock: clock))
+        lifecycle.reconcile(activeSession: active, rules: rules, config: config,
                             now: now, calendar: calendar)
         XCTAssertEqual(writer.web["flint"], config)
         XCTAssertEqual(writer.web["flint.a"], config)
         XCTAssertEqual(writer.applied, ["flint", "flint.a", "flint", "flint.a"])
         config.enabled = false
-        lifecycle.reconcile(activeSession: session(), rules: [rule("a")], config: config,
+        XCTAssertTrue(children.saveAuthorized(config, snapshot: .init(session: active, rules: rules), clock: clock))
+        lifecycle.reconcile(activeSession: active, rules: rules, config: config,
                             now: now, calendar: calendar)
         XCTAssertNil(writer.web["flint"])
         XCTAssertEqual(writer.web["flint.a"], config)
@@ -438,7 +449,7 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
             breakLevel: .hardcore, monitorName: "flint.session", monotonicStart: 1000,
             bootSessionID: "adapter-end", plannedDuration: 60)
         writer.web["flint"] = config
-        let adapter = FlintSessionWebRestrictionAdapter(writer: writer, configuration: { nil })
+        let adapter = FlintSessionWebRestrictionAdapter(writer: writer, configuration: { nil }, children: .isolated())
         adapter.reconcile(active, clock: clock)
         XCTAssertEqual(writer.web["flint"], config)
         monotonic += 60; adapter.reconcile(active, clock: clock)
@@ -636,6 +647,7 @@ final class FlintSessionWebRestrictionTests: XCTestCase {
         let h = WebSessionHarness()
         let controller = h.controller()
         let session = try h.start(controller)
+        let frozen = h.config
         h.writer.web.removeValue(forKey: "flint") // crash / missing OS keys
         controller.handleMonitorEvent(.intervalDidStart, activity: session.monitorName)
         XCTAssertEqual(h.writer.web["flint"], h.config)
@@ -643,13 +655,14 @@ final class FlintSessionWebRestrictionTests: XCTestCase {
         XCTAssertEqual(h.writer.applied, ["flint", "flint"])
         h.config.enabled = false
         controller.handleMonitorEvent(.intervalDidStart, activity: session.monitorName)
-        XCTAssertNil(h.writer.web["flint"])
+        XCTAssertEqual(h.writer.web["flint"], frozen, "A raw future preference cannot release the live Hardcore child")
     }
 
     func testReconcileReappliesOnlyAfterSuccessfulRegistrationRepair() throws {
         let h = WebSessionHarness()
         let controller = h.controller()
         _ = try h.start(controller)
+        let frozen = h.config
         h.registrar.registered.removeAll()
         h.registrar.refuse = true
         XCTAssertTrue(controller.reconcile().rearmFailed)
@@ -658,7 +671,7 @@ final class FlintSessionWebRestrictionTests: XCTestCase {
         h.config.allowedDomains = ["example.com"]
         h.config.filter = .allowedOnly
         XCTAssertTrue(controller.reconcile().rearmed)
-        XCTAssertEqual(h.writer.web["flint"], h.config)
+        XCTAssertEqual(h.writer.web["flint"], frozen)
         XCTAssertEqual(h.writer.applied, ["flint", "flint"])
     }
 
@@ -779,6 +792,7 @@ private final class WebSessionHarness {
     /// remaining time follows elapsed time, ADR-012 §9).
     private let origin = ISO8601DateFormatter().date(from: "2026-10-26T23:00:00-04:00")!
     let writer = RecordingWebWriter()
+    let children = FlintWebRestrictionChildren.isolated()
     let store = WebSessionState()
     lazy var shield = WebSessionShield(writer: writer)
     lazy var registrar = WebSessionRegistrar(writer: writer)
@@ -794,7 +808,7 @@ private final class WebSessionHarness {
             initializedMarker: { nil }, setInitializedMarker: { _ in })
         return FlintSessionController(environment: FlintSessionEnvironment(
             store: { [self] in store }, shield: shield,
-            webRestrictions: FlintSessionWebRestrictionAdapter(writer: writer, configuration: { [self] in config }),
+            webRestrictions: FlintSessionWebRestrictionAdapter(writer: writer, configuration: { [self] in config }, children: children),
             registrar: registrar, isAuthorized: { true },
             clock: clock, healthDefaults: { nil }, ledger: { sessionLedger }
         ))
@@ -1158,12 +1172,12 @@ final class FlintWebRestrictionEditorTests: XCTestCase {
         XCTAssertEqual(h.writes, 0)
         let writer = RecordingWebWriter()
         writer.web["flint"] = h.config
-        let report = FlintWebRestrictionHostReconciler.reconcile(activeSession: nil, hasActiveSessionRecord: false,
+        let report = FlintWebRestrictionHostReconciler.reconcile(activeSession: h.session(.hardcore), hasActiveSessionRecord: true,
             rules: [], config: draft, health: .init(domains: [
                 "session": .init(enabled: 0, attempted: 0, armed: 0, failures: []),
                 "schedules": .init(enabled: 0, attempted: 0, armed: 0, failures: [])
             ]), lifecycle: .init(writer: writer), now: h.now, calendar: h.calendar)
-        XCTAssertEqual(report.failures.first?.reason, draft.validationMessage)
+        XCTAssertTrue(report.failures.contains { $0.reason == draft.validationMessage })
         XCTAssertTrue(writer.applied.isEmpty); XCTAssertTrue(writer.cleared.isEmpty)
         XCTAssertEqual(writer.web["flint"], h.config)
         draft.blockedDomains.removeLast()

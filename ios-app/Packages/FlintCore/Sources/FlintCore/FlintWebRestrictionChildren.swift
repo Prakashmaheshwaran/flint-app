@@ -143,6 +143,17 @@ final class FlintWebRestrictionChildren {
         }
     }
 
+    @discardableResult
+    func retire(scope: Cause.Scope, ownerID: String? = nil, keeping cause: Cause? = nil) -> Bool {
+        guard case var .available(envelope) = read() else { return false }
+        let before = envelope
+        envelope.children.removeAll {
+            $0.cause.scope == scope && (ownerID == nil || $0.cause.ownerID == ownerID)
+                && $0.cause.key != cause?.key
+        }
+        return envelope == before || persist(envelope)
+    }
+
     /// Only a complete, trusted actual-owner snapshot grants pruning or repair authority.
     @discardableResult
     func prune(_ snapshot: FlintWebRestrictionEditor.Snapshot, clock: FlintClock) -> Bool {

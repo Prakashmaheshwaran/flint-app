@@ -32,8 +32,8 @@ public enum FlintWebRestrictionPolicy {
     public static func shouldApply(to rule: FlintScheduleRule, config: FlintWebRestrictions,
                                   now: Date, calendar: Calendar = .current, clock: FlintClock? = nil) -> Bool {
         guard config.applyDuringSchedules, rule.enabled else { return false }
-        if rule.protection != nil || rule.oneShot != nil { return rule.occurrence(at: now, clock: clock) != nil }
-        return rule.schedule.isWindowActive(at: now, calendar: calendar)
+        guard rule.protection != nil else { return false }
+        return rule.occurrence(at: now, clock: clock) != nil
     }
     #endif
 }
@@ -47,6 +47,7 @@ public protocol FlintWebRestrictionWriting {
 
 /// Shared host/extension entry point. Reconciliation never clears a whole cause's store:
 /// shields and uninstall protection belong to their own lifecycle.
+#if canImport(FamilyControls) && canImport(ManagedSettings) && canImport(DeviceActivity)
 public final class FlintWebRestrictionLifecycle {
     public static let sessionStoreName = "flint"
     public static let legacyStoreName = "flint.web"
@@ -54,28 +55,43 @@ public final class FlintWebRestrictionLifecycle {
     private let writer: any FlintWebRestrictionWriting
     private let recoveryGate: () -> FlintPassRecoveryGate
     private let clock: FlintClock?
+    private let children: FlintWebRestrictionChildren
+    private(set) var appliedStores: Set<String> = []
+    private(set) var unavailableStores: Set<String> = []
 
-    public init(writer: any FlintWebRestrictionWriting,
+    public convenience init(writer: any FlintWebRestrictionWriting,
                 recoveryGate: @escaping () -> FlintPassRecoveryGate = { .enforcing },
                 clock: FlintClock? = nil) {
+        self.init(writer: writer, recoveryGate: recoveryGate, clock: clock, children: .isolated())
+    }
+
+    init(writer: any FlintWebRestrictionWriting, recoveryGate: @escaping () -> FlintPassRecoveryGate = { .enforcing },
+         clock: FlintClock? = nil, children: FlintWebRestrictionChildren) {
         self.writer = writer
         self.recoveryGate = recoveryGate
         self.clock = clock
+        self.children = children
     }
 
     public func reconcileSession(
         _ session: FlintActiveSession?, config: FlintWebRestrictions?, now: Date = Date(),
         clock: FlintClock? = nil
     ) {
-        guard let config else {
-            guard recoveryGate().permitsApplication,
-                  session.map({ !$0.isEnforcing(at: now, clock: clock ?? self.clock) }) ?? true else { return }
+        guard recoveryGate().permitsApplication else { return }
+        let resolved = resolvedClock(now: now, clock: clock)
+        guard let session, session.isEnforcing(at: now, clock: resolved) else {
             writer.clear(store: Self.sessionStoreName)
+            _ = children.retire(scope: .session)
             return
         }
+        let cause = FlintWebRestrictionChildren.Cause.session(session)
+        guard let frozen = children.resolve(cause, global: config) else {
+            unavailableStores.insert(Self.sessionStoreName); return
+        }
+        _ = children.retire(scope: .session, keeping: cause)
         update(store: Self.sessionStoreName, shouldApply: FlintWebRestrictionPolicy.shouldApply(
-            to: .session(session), config: config, now: now, clock: clock ?? self.clock
-        ), config: config)
+            to: .session(session), config: frozen, now: now, clock: resolved
+        ), config: frozen)
     }
 
     #if canImport(FamilyControls)
@@ -84,25 +100,48 @@ public final class FlintWebRestrictionLifecycle {
     func clearEndedOwners(activeSession: FlintActiveSession?, rules: [FlintScheduleRule],
                           now: Date, clock: FlintClock? = nil) {
         guard recoveryGate().permitsApplication else { return }
-        let resolved = clock ?? self.clock
-        reconcileSession(activeSession, config: nil, now: now, clock: resolved)
-        for rule in rules where !rule.enabled || rule.occurrence(at: now, clock: resolved) == nil {
+        let resolved = resolvedClock(now: now, clock: clock)
+        _ = children.prune(.init(session: activeSession, rules: rules), clock: resolved)
+        if !(activeSession?.isEnforcing(at: now, clock: resolved) ?? false) {
+            reconcileSession(activeSession, config: nil, now: now, clock: resolved)
+        }
+        for rule in rules where !rule.enabled || (rule.protection != nil && rule.occurrence(at: now, clock: resolved) == nil) {
             writer.clear(store: rule.storeName)
         }
         // The legacy shared store can only be released when every known owner has ended.
         if !(activeSession?.isEnforcing(at: now, clock: resolved) ?? false),
-           !rules.contains(where: { $0.enabled && $0.occurrence(at: now, clock: resolved) != nil }) {
+           !rules.contains(where: { $0.enabled && ($0.protection == nil || $0.occurrence(at: now, clock: resolved) != nil) }) {
             writer.clear(store: Self.legacyStoreName)
         }
     }
 
     public func reconcileRule(
-        _ rule: FlintScheduleRule, config: FlintWebRestrictions,
+        _ rule: FlintScheduleRule, config: FlintWebRestrictions?,
         now: Date = Date(), calendar: Calendar = .current, clock: FlintClock? = nil
     ) {
+        guard recoveryGate().permitsApplication else { return }
+        let resolved = resolvedClock(now: now, clock: clock)
+        if !rule.enabled {
+            writer.clear(store: rule.storeName)
+            _ = children.retire(scope: .rule, ownerID: rule.id)
+            return
+        }
+        // An unmigrated legacy rule has no saved zone. It cannot prove either a live
+        // occurrence or a natural end using the device calendar.
+        guard rule.protection != nil else { unavailableStores.insert(rule.storeName); return }
+        guard let window = rule.occurrence(at: now, clock: resolved) else {
+            writer.clear(store: rule.storeName)
+            _ = children.retire(scope: .rule, ownerID: rule.id)
+            return
+        }
+        let cause = FlintWebRestrictionChildren.Cause.rule(rule, window: window)
+        guard let frozen = children.resolve(cause, global: config) else {
+            unavailableStores.insert(rule.storeName); return
+        }
+        _ = children.retire(scope: .rule, ownerID: rule.id, keeping: cause)
         update(store: rule.storeName, shouldApply: FlintWebRestrictionPolicy.shouldApply(
-            to: rule, config: config, now: now, calendar: calendar, clock: clock ?? self.clock
-        ), config: config)
+            to: rule, config: frozen, now: now, clock: resolved
+        ), config: frozen)
     }
 
     /// Call after saving preferences and on launch/foreground with current, armed causes.
@@ -113,18 +152,34 @@ public final class FlintWebRestrictionLifecycle {
     /// DeviceActivity registrations.
     /// Deleted rules are cleared by their controller before removal from persisted state.
     public func reconcile(
-        activeSession: FlintActiveSession?, rules: [FlintScheduleRule], config: FlintWebRestrictions,
+        activeSession: FlintActiveSession?, rules: [FlintScheduleRule], config: FlintWebRestrictions?,
         now: Date = Date(), calendar: Calendar = .current, preservingStores: Set<String> = [],
-        clock: FlintClock? = nil
+        clock: FlintClock? = nil, actualOwners: FlintWebRestrictionEditor.Snapshot? = nil
     ) {
-        guard config.validationMessage == nil, recoveryGate().permitsApplication else { return }
-        if !preservingStores.contains(Self.sessionStoreName) {
+        appliedStores.removeAll(); unavailableStores.removeAll()
+        guard recoveryGate().permitsApplication else { return }
+        let resolved = resolvedClock(now: now, clock: clock)
+        let owners = actualOwners ?? .init(session: activeSession, rules: rules)
+        _ = children.prune(owners, clock: resolved)
+        _ = children.capture(FlintWebRestrictionChildren.causes(owners, clock: resolved), global: config)
+        if !(owners.session?.isEnforcing(at: now, clock: resolved) ?? false) {
+            reconcileSession(owners.session, config: config, now: now, clock: resolved)
+        } else if !preservingStores.contains(Self.sessionStoreName) {
             reconcileSession(activeSession, config: config, now: now, clock: clock)
         }
-        for rule in rules where !preservingStores.contains(rule.storeName) {
-            reconcileRule(rule, config: config, now: now, calendar: calendar, clock: clock)
+        for owner in owners.rules {
+            let ended = !owner.enabled || (owner.protection != nil && owner.occurrence(at: now, clock: resolved) == nil)
+            if ended {
+                reconcileRule(owner, config: config, now: now, clock: resolved)
+            } else if !preservingStores.contains(owner.storeName), let eligible = rules.first(where: { $0.id == owner.id }) {
+                reconcileRule(eligible, config: config, now: now, clock: resolved)
+            }
         }
-        writer.clear(store: Self.legacyStoreName)
+        let liveSession = owners.session?.isEnforcing(at: now, clock: resolved) ?? false
+        let liveRules = owners.rules.filter { $0.enabled && ($0.protection == nil || $0.occurrence(at: now, clock: resolved) != nil) }
+        if (!liveSession && liveRules.isEmpty) || (unavailableStores.isEmpty && preservingStores.isEmpty) {
+            writer.clear(store: Self.legacyStoreName)
+        }
     }
     #endif
 
@@ -134,9 +189,16 @@ public final class FlintWebRestrictionLifecycle {
         guard config.validationMessage == nil, recoveryGate().permitsApplication else { return }
         if shouldApply {
             writer.apply(config, toStore: store)
+            appliedStores.insert(store)
         } else {
             writer.clear(store: store)
         }
+    }
+
+    private func resolvedClock(now: Date, clock: FlintClock?) -> FlintClock {
+        var resolved = clock ?? self.clock ?? .system
+        resolved.now = { now }
+        return resolved
     }
 }
 
@@ -147,22 +209,35 @@ public protocol FlintSessionWebRestricting {
     func reconcile(_ session: FlintActiveSession, clock: FlintClock)
 }
 
-/// Uses the same policy/writer as host reconciliation. Config is loaded at the point of use,
-/// so edits and disabling a scope update running owners rather than leaving stale web keys.
+/// First reconcile freezes the session's child under the same transition as its owner.
+/// Later raw global preference changes cannot weaken that occurrence's captured policy.
 public struct FlintSessionWebRestrictionAdapter: FlintSessionWebRestricting {
     private let lifecycle: FlintWebRestrictionLifecycle
     private let configuration: () -> FlintWebRestrictions?
+    private let transition: (() -> Void) -> Bool
 
     public init(writer: any FlintWebRestrictionWriting,
                 configuration: @escaping () -> FlintWebRestrictions?,
                 recoveryGate: @escaping () -> FlintPassRecoveryGate = { .enforcing },
                 clock: FlintClock? = nil) {
-        self.lifecycle = FlintWebRestrictionLifecycle(writer: writer, recoveryGate: recoveryGate, clock: clock)
+        self.init(writer: writer, configuration: configuration, recoveryGate: recoveryGate, clock: clock,
+            children: .live, transition: { body in
+                FlintSessionController().withTransition { body(); return true } ?? false
+            })
+    }
+
+    init(writer: any FlintWebRestrictionWriting, configuration: @escaping () -> FlintWebRestrictions?,
+         recoveryGate: @escaping () -> FlintPassRecoveryGate = { .enforcing }, clock: FlintClock? = nil,
+         children: FlintWebRestrictionChildren, transition: @escaping (() -> Void) -> Bool = { body in body(); return true }) {
+        self.lifecycle = FlintWebRestrictionLifecycle(writer: writer, recoveryGate: recoveryGate, clock: clock, children: children)
         self.configuration = configuration
+        self.transition = transition
     }
 
     public func reconcile(_ session: FlintActiveSession, clock: FlintClock) {
-        lifecycle.reconcileSession(session, config: configuration(), now: clock.now(), clock: clock)
+        _ = transition {
+            lifecycle.reconcileSession(session, config: configuration(), now: clock.now(), clock: clock)
+        }
     }
 }
 #endif
@@ -182,7 +257,8 @@ public struct FlintManagedWebRestrictionWriter: FlintWebRestrictionWriting {
 
 extension FlintWebRestrictionLifecycle {
     public convenience init() {
-        self.init(writer: FlintManagedWebRestrictionWriter(), recoveryGate: { .read() }, clock: .system)
+        self.init(writer: FlintManagedWebRestrictionWriter(), recoveryGate: { .read() }, clock: .system, children: .live)
     }
 }
+#endif
 #endif
