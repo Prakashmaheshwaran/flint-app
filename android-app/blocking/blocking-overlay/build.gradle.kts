@@ -44,4 +44,5 @@ dependencies {
     testDebugImplementation(libs.androidx.junit)
     testDebugImplementation(libs.robolectric)
     testDebugImplementation(libs.androidx.ui.test.junit4)
+    testDebugImplementation(libs.androidx.datastore.preferences) // real atomic-store coordinator regressions
 }

@@ -16,7 +16,11 @@ data class ProtectionLedger(
     /** Retained after cooldown expiry so required legacy accounting cannot disappear silently. */
     val lastUsedAtEpochMs: Long? = null,
     val ordinaryGrants: Map<String, ProtectionOrdinaryGrant> = emptyMap(),
+    /** Event bookkeeping only. The shared Open ledger alone authorizes credit access. */
+    val pendingCreditEnds: Map<String, ProtectionCreditEventReceipt> = emptyMap(),
 )
+
+data class ProtectionCreditEventReceipt(val operationId: String, val target: String, val lifetime: AccessDuration)
 
 /** Frozen target and contributing occurrences. New/changed contributors never inherit access. */
 data class ProtectionOrdinaryGrant(
@@ -51,10 +55,13 @@ data class ProtectionPassReceipt(
     val scopeIdentity: String,
 )
 
-enum class ProtectionLifecycleKind { PASS_COMMITTED, BREAK_STARTED, BREAK_ENDED }
+enum class ProtectionLifecycleKind { PASS_COMMITTED, BREAK_STARTED, BREAK_ENDED, ACCESS_STARTED, ACCESS_ENDED }
 enum class ProtectionBreakEndReason { EXPIRED, RESUMED, SUPERSEDED, RECOVERY }
 
-/** No package/domain/target identifiers cross the history boundary. */
+/**
+ * No package/domain/target identifiers cross the history boundary. Consumers deliberately
+ * acknowledge unhandled additive kinds as a no-op; they never reinterpret access as a break.
+ */
 data class ProtectionLifecycleEvent(
     val id: String,
     val operationId: String,

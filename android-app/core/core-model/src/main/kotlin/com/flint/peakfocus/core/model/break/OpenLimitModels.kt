@@ -3,13 +3,14 @@
 package com.flint.peakfocus.core.model
 
 /**
- * An **Open Limit**: cap on how many times per day an app may be opened ("Opens Allowed").
- * After the quota, the block screen appears until the next day. Opal ships this on iOS only
- * and paywalls the no-reset tier; Flint ships it on Android too, free, including [BreakLevel.HARDCORE].
+ * An **Open Limit**: daily cap on explicit five-minute access credits. The app stays
+ * shielded between intervals, including before its first credit. Foreground events do
+ * not charge. The historical property name [dailyOpens] is retained for wire compatibility.
  *
  * [breakLevel] is the limit's protection tier (spec 2.3 applies to Open Limits as well):
  * EASY may be overridden from the block screen, HARDER only after the friction delay,
- * HARDCORE not at all (weekly Emergency Pass excepted). Mirrors [TimeLimit]'s shape.
+ * HARDCORE permits no ordinary exception after exhaustion. Positive quota credits need
+ * no Harder wait at any tier; the distinct Emergency Pass follows its rolling cooldown.
  */
 data class OpenLimit(
     val packageName: String,
@@ -40,6 +41,9 @@ data class OpenCountState(
  * screen needs the limit (and its [BreakLevel]) to offer the right affordances.
  */
 sealed interface OpenLimitDecision {
+    /** Configuration has not loaded; absence of a limit has not been established. */
+    data object Unavailable : OpenLimitDecision
+
     /** Under (or without) a limit. [remainingOpens] is null when the app has no Open Limit. */
     data class Allowed(val remainingOpens: Int?) : OpenLimitDecision
 

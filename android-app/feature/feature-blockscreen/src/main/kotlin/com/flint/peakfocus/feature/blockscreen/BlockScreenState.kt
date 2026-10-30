@@ -17,7 +17,7 @@ enum class BlockScreenReason {
     /** The app's daily time budget is used up. */
     TIME_LIMIT,
 
-    /** The app's daily open quota is used up. */
+    /** The app is shielded between timed credits, or its daily credit quota is used up. */
     OPEN_LIMIT,
 
     /** A hardcore Deep Focus session is running. */
@@ -25,7 +25,7 @@ enum class BlockScreenReason {
 }
 
 /** Host persistence status; only READY/FAILED may offer a new tier-dependent request. */
-enum class GrantStatus { READY, LOADING, SAVING, UNAVAILABLE, FAILED, RETRY_OPEN }
+enum class GrantStatus { READY, LOADING, SAVING, UNAVAILABLE, FAILED, RETRY_OPEN, RESETTING }
 
 /**
  * Everything [BlockScreen] needs to render, supplied by the host (accessibility overlay or
@@ -59,6 +59,12 @@ data class BlockScreenState(
      */
     val emergencyPassAvailable: Boolean = true,
     val grantStatus: GrantStatus = GrantStatus.READY,
+    val openCreditsRemaining: Int? = null,
+    val openCreditDurationMillis: Long? = null,
+    val openCreditActiveRemainingMillis: Long? = null,
+    val openCreditBlockingContributors: List<String> = emptyList(),
+    /** Opaque reviewed-action token. The host revalidates it in the accepting transaction. */
+    val openCreditRequestScope: String? = null,
 )
 
 /** How long the HARDER-level control must be held before `onBreakRequested` fires. */
@@ -69,6 +75,9 @@ internal sealed interface BreakAffordance {
     data object Saving : BreakAffordance
     data object Unavailable : BreakAffordance
     data object RetryOpen : BreakAffordance
+    data object QuotaPending : BreakAffordance
+    data class UseCredit(val remaining: Int, val durationMillis: Long) : BreakAffordance
+    data class CreditBlocked(val contributors: List<String>) : BreakAffordance
     /** EASY: a plain "Take a break" button. */
     data object TakeABreak : BreakAffordance
 
@@ -112,7 +121,12 @@ internal fun blockScreenContent(state: BlockScreenState): BlockScreenContent {
     return BlockScreenContent(
         displayName = name,
         headline = "$name is resting.",
-        reasonLine = reasonLineFor(state.reason),
+        reasonLine = (if (state.grantStatus == GrantStatus.RESETTING)
+            "Access credits are updating. This app stays protected."
+            else if (state.reason == BlockScreenReason.OPEN_LIMIT && (state.openCreditsRemaining ?: 0) > 0)
+            "This app stays protected between 5-minute access credits." else reasonLineFor(state.reason)) +
+            (if ((state.openCreditActiveRemainingMillis ?: 0) > 0) " Credit access ends in ${formatDuration(state.openCreditActiveRemainingMillis!!)}; ${state.openCreditsRemaining ?: 0} credits remain." else "") +
+            if (state.openCreditBlockingContributors.isNotEmpty()) " Also blocked by ${state.openCreditBlockingContributors.joinToString(", ")}." else "",
         badge = badgeFor(state.reason, state.breakLevel),
         countdownLabel = countdownLabelFor(state.reason, state.remainingMillis),
         encouragement = encouragementFor(state.packageName),
@@ -120,13 +134,19 @@ internal fun blockScreenContent(state: BlockScreenState): BlockScreenContent {
             GrantStatus.LOADING, GrantStatus.SAVING -> BreakAffordance.Saving
             GrantStatus.UNAVAILABLE -> BreakAffordance.Unavailable
             GrantStatus.RETRY_OPEN -> BreakAffordance.RetryOpen
-            GrantStatus.READY, GrantStatus.FAILED -> breakAffordanceFor(
+            GrantStatus.RESETTING -> BreakAffordance.QuotaPending
+            GrantStatus.READY, GrantStatus.FAILED -> when {
+                (state.openCreditsRemaining ?: 0) > 0 && (state.openCreditActiveRemainingMillis ?: 0) == 0L ->
+                    if (state.openCreditBlockingContributors.isNotEmpty()) BreakAffordance.CreditBlocked(state.openCreditBlockingContributors)
+                    else BreakAffordance.UseCredit(state.openCreditsRemaining!!, state.openCreditDurationMillis ?: 0)
+                else -> breakAffordanceFor(
             state.reason,
             state.breakLevel,
             state.breakWaitRemainingMillis,
             state.breakWaitTotalMillis,
             state.emergencyPassAvailable,
             )
+            }
         },
     )
 }
@@ -138,7 +158,7 @@ internal fun reasonLineFor(reason: BlockScreenReason): String = when (reason) {
     BlockScreenReason.MANUAL_SESSION -> "A focus session you started is running."
     BlockScreenReason.SCHEDULE -> "This hour belongs to one of your schedules."
     BlockScreenReason.TIME_LIMIT -> "You’ve used today’s time for this app."
-    BlockScreenReason.OPEN_LIMIT -> "You’ve used today’s opens for this app."
+    BlockScreenReason.OPEN_LIMIT -> "You’ve used today’s access credits for this app."
     BlockScreenReason.DEEP_FOCUS -> "Deep Focus is on until the session ends."
 }
 

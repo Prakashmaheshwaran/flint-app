@@ -86,6 +86,9 @@ class OpenLimitPolicy {
         // open even while a stale grant still names it.
         if (countsAsOpen(previousPackage, foregroundPackage, selfPackage)) {
             return when (val decision = decide(foregroundPackage, rolled, limits, epochDay)) {
+                // Exhaustiveness only: this pure policy's decide never emits Unavailable;
+                // the coordinator's inspectOpen emits it for unresolved storage readiness.
+                OpenLimitDecision.Unavailable -> OpenTransition(decision, rolled, granted = null)
                 is OpenLimitDecision.Blocked -> OpenTransition(decision, rolled, granted = null)
                 is OpenLimitDecision.Allowed -> if (!recordAllowedOpen) {
                     // Another restriction (or an existing exemption) controls access. Inspect
