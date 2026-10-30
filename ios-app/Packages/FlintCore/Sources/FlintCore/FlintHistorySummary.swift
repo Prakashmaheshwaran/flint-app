@@ -108,8 +108,11 @@ public enum FlintHistoryAggregator {
             guard let start = original.first(where: { $0.type == .started }) else { return nil }
             let terminalIndex = events.firstIndex(where: { $0.type.isTerminal })
             let terminal = terminalIndex.map { events[$0] }
-            let recordedPlans = events.prefix(terminalIndex ?? events.count)
-                .filter { $0.type == .started || $0.type == .rescheduled }
+            let planIDs = Set(events.prefix(terminalIndex ?? events.count)
+                .filter { $0.type == .started || $0.type == .rescheduled }.map(\.id))
+            // Equal observation milliseconds retain append/revision order, independently
+            // of the logical order used to pair phases and locate the terminal.
+            let recordedPlans = original.filter { planIDs.contains($0.id) }
             let plans = recordedPlans.isEmpty ? [start] : recordedPlans
             func latestPlan(_ candidates: [FlintHistoryEvent]) -> FlintHistoryEvent {
                 candidates.enumerated().max {
@@ -154,17 +157,22 @@ public enum FlintHistoryAggregator {
                     let paired = event.type != .breakEnded || event.grant == nil || events.contains {
                         $0.type == .breakStarted && $0.grant == event.grant && $0.at <= event.at
                     }
-                    if event.uncertainTime || !inPlan(event) || !paired || (!validTerminal && event.date > now) {
+                    let invertedBreak = event.type == .breakStarted && event.breakEnd.map { $0 < event.at } == true
+                    if event.uncertainTime || !inPlan(event) || !paired || invertedBreak || (!validTerminal && event.date > now) {
                         trusted = false
                     } else if trusted { coverageEnd = max(coverageEnd, event.date) }
-                } else if event.type == .passUsed && event.uncertainTime { trusted = false }
+                } else if event.type == .passUsed && (event.uncertainTime || event.recoveryEnd.map { $0 < event.at } == true) {
+                    trusted = false
+                }
             }
             let outcome: FlintHistoryOutcome
             let end: Date
             let inferred: Bool
             let route: String?
             if !trusted || (terminal != nil && !validTerminal) {
-                outcome = .unconfirmed; end = terminal?.date ?? plannedEnd ?? now
+                outcome = .unconfirmed
+                // A rejected terminal is raw evidence, not a trustworthy display day.
+                end = validPlan(plan) ? min(plannedEnd ?? now, now) : now
                 inferred = true; route = terminal?.route
             } else if let terminal {
                 outcome = terminal.type == .completed ? .completed : terminal.type == .superseded ? .superseded : .endedEarly

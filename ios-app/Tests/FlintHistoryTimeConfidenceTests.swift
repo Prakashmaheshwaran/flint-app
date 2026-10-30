@@ -223,4 +223,38 @@ final class FlintHistoryTimeConfidenceTests: XCTestCase {
         pass.sessions = ["session-a"]; pass.recoveryEnd = event(.passUsed, 240).at
         assertUnconfirmed([started(), event(.openIntercepted, 120), pass, event(.completed, 600)], focused: 120)
     }
+
+    func testInvertedBreakWindowCannotConfirmCompletionOrExtendTrustedPrefix() {
+        var pause = event(.breakStarted, 120); pause.grant = "g"
+        pause.breakEnd = event(.breakEnded, 60).at
+        assertUnconfirmed([started(), pause, event(.completed, 600)])
+        assertUnconfirmed([started(), event(.openIntercepted, 60), pause, event(.completed, 600)], focused: 60)
+    }
+
+    func testEqualObservationPlanTiesFollowAppendRevisionOrder() {
+        var first = event(.rescheduled, 540)
+        first.plannedEnd = event(.completed, 1200).at; first.observedAt = event(.rescheduled, 7260).at
+        var last = event(.rescheduled, 300)
+        last.plannedEnd = event(.completed, 600).at; last.observedAt = first.observedAt
+        assertUnconfirmed([started(), first, last, event(.completed, 1200)])
+        first.plannedEnd = event(.completed, 540).at; last.plannedEnd = event(.completed, 1200).at
+        let result = summary([started(), first, last, event(.completed, 1200)])
+        XCTAssertEqual(result.sessions.first?.outcome, .completed)
+        XCTAssertEqual(result.focusedSeconds, 1200)
+    }
+
+    func testRejectedTerminalCannotHideUnconfirmedCountOnAnotherDay() {
+        for seconds in [93_660.0, -10 * 86400.0] {
+            var rejected = event(.endedEarly, seconds); rejected.route = "manual_stop"
+            let result = summary([started(), rejected], now: 1200)
+            XCTAssertEqual(result.sessions.first?.outcome, .unconfirmed)
+            XCTAssertEqual(result.sessions.first?.endedAt, begin.addingTimeInterval(600))
+            XCTAssertEqual(result.days.last?.unconfirmed, 1)
+            XCTAssertEqual(result.focusedSeconds, 0)
+        }
+        var tomorrow = started(uncertain); tomorrow.plannedEnd = event(.completed, 93_660).at
+        let result = summary([tomorrow], now: 1200)
+        XCTAssertEqual(result.sessions.first?.endedAt, begin.addingTimeInterval(1200))
+        XCTAssertEqual(result.days.last?.unconfirmed, 1)
+    }
 }

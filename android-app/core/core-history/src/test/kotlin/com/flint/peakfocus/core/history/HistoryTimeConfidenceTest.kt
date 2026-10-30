@@ -33,6 +33,64 @@ class HistoryTimeConfidenceTest {
         assertEquals(0, result.streak)
     }
 
+    @Test fun invertedBreakWindowCannotConfirmOrExtendPriorPrefix() {
+        val pause = event("break_started", begin + 2 * minute).copy(grant = "g", breakEnd = begin + minute)
+        assertUnconfirmed(listOf(start(), pause, event("completed", deadline)))
+        assertUnconfirmed(listOf(start(), event("open_intercepted", begin + minute), pause,
+            event("completed", deadline)), credit = minute)
+        val snapshot = HistorySnapshot(listOf(start(), pause, event("completed", deadline)), begin, true)
+        assertEquals(FocusCompletionDelivery.SUPPRESS, FocusCompletionPolicy.decision(snapshot, "session-a", deadline))
+        assertTrue(FocusCompletionPolicy.alarms(snapshot, emptySet(), deadline).isEmpty())
+    }
+
+    @Test fun equalObservationPlanTiesUseAppendRevisionOrderAndSameNotificationDeadline() {
+        val observation = begin + 121 * minute
+        val first = event("rescheduled", begin + 9 * minute).copy(plannedEnd = begin + 20 * minute, observedAt = observation)
+        val last = event("rescheduled", begin + 5 * minute).copy(plannedEnd = deadline, observedAt = observation)
+        val completion = event("completed", begin + 20 * minute)
+        assertUnconfirmed(listOf(start(), first, last, completion))
+        val valid = listOf(start(), first.copy(plannedEnd = begin + 9 * minute),
+            last.copy(plannedEnd = begin + 20 * minute), completion)
+        assertEquals(SessionOutcome.COMPLETED, summary(valid).sessions.single().outcome)
+        assertEquals(20 * minute, summary(valid).sessions.single().focusedMs)
+        val snapshot = HistorySnapshot(valid, begin, true)
+        assertEquals(FocusCompletionDelivery.WAIT, FocusCompletionPolicy.decision(snapshot, "session-a", begin + 15 * minute))
+        assertEquals(listOf(FocusCompletionAlarm("session-a", begin + 20 * minute)),
+            FocusCompletionPolicy.alarms(snapshot, emptySet(), begin + 15 * minute))
+    }
+
+    @Test fun rejectedTerminalCannotMoveUnconfirmedCountOutsideVisibleDay() {
+        for (offset in listOf(1561 * minute, -10 * 24 * 60 * minute)) {
+            val result = summary(listOf(start(), event("ended_early", begin + offset).copy(route = "manual_stop")),
+                now = begin + 20 * minute)
+            assertEquals(SessionOutcome.UNCONFIRMED, result.sessions.single().outcome)
+            assertEquals(deadline, result.sessions.single().end)
+            assertEquals(1, result.days.last().unconfirmed)
+            assertEquals(0L, result.sessions.single().focusedMs)
+        }
+        val result = summary(listOf(start(uncertain).copy(plannedEnd = begin + 2 * 24 * 60 * minute)),
+            now = begin + 20 * minute)
+        assertEquals(begin + 20 * minute, result.sessions.single().end)
+        assertEquals(1, result.days.last().unconfirmed)
+    }
+
+    @Test(timeout = 5000) fun extremeReadRecordsCannotCreateUnboundedDaySplittingOrOverflow() {
+        for (extreme in listOf(Long.MIN_VALUE, Long.MAX_VALUE)) {
+            val records = listOf(start().copy(plannedEnd = extreme), event("completed", extreme))
+                .map { HistoryCodec.decode(HistoryCodec.encode(it)) }
+            assertUnconfirmed(records, now = begin + minute)
+        }
+        // A supported long-lived interval is still accepted after reader rollback, but
+        // only the requested seven dates are bucketed rather than every intervening day.
+        val distant = 253_402_300_799_000L
+        val result = summary(listOf(start().copy(plannedEnd = distant), event("completed", distant)), now = begin + minute)
+        assertEquals(SessionOutcome.COMPLETED, result.sessions.single().outcome)
+        assertEquals(distant - begin, result.sessions.single().focusedMs)
+        assertEquals(7, result.days.size)
+        assertTrue(result.days.sumOf { it.focusedMs ?: 0 } <= 7 * 24 * 60 * minute)
+        assertTrue(result.days.all { (it.focusedMs ?: 0) >= 0 })
+    }
+
     @Test fun oldAbsentAndNullConfidenceFixturesRemainLegacyAndRoundTrip() {
         val old = """{"v":1,"id":"old","type":"completed","session":"session-a","at":$deadline,"tz":"UTC","future":{"fraction":1.20}}"""
         for (line in listOf(old, old.dropLast(1) + ",\"timeConfidence\":null}")) {

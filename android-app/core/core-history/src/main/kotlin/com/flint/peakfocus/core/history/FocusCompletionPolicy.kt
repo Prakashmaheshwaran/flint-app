@@ -35,19 +35,13 @@ object FocusCompletionPolicy {
     }
 
     private fun evaluate(group: List<HistoryEvent>, now: Long, session: FocusSession?): Pair<Long?, FocusCompletionDelivery> {
-        val events = group.filter { it.knownType != null }
-            .distinctBy { it.id }.sortedBy { it.at }
-        val start = events.firstOrNull { it.knownType == HistoryEventType.STARTED }
+        val terminalRecorded = group.any { it.knownType?.terminal == true }
+        // Reuse Insights' exact plan selection, including equal-observation revision ties.
+        val end = session?.plannedEnd?.takeIf { it in FocusHistoryAggregator.SUPPORTED_TIMES }
             ?: return null to FocusCompletionDelivery.SUPPRESS
-        val terminalIndex = events.indexOfFirst { it.knownType?.terminal == true }
-        val terminal = events.getOrNull(terminalIndex)
-        val plan = events.take(if (terminalIndex < 0) events.size else terminalIndex).sortedBy { it.observedAt ?: it.at }.lastOrNull {
-            it.knownType in setOf(HistoryEventType.STARTED, HistoryEventType.RESCHEDULED)
-        } ?: start
-        val end = plan.plannedEnd ?: return null to FocusCompletionDelivery.SUPPRESS
         // Completed rows must satisfy the same evidence rule as Insights. Planned-only
         // reminders keep their existing copy/behavior and never assert completion.
-        if (terminal != null && session?.outcome != SessionOutcome.COMPLETED)
+        if (terminalRecorded && session.outcome != SessionOutcome.COMPLETED)
             return end to FocusCompletionDelivery.SUPPRESS
         if (now < end) return end to FocusCompletionDelivery.WAIT
         val oldest = if (now < Long.MIN_VALUE + MAX_LATENESS_MS) Long.MIN_VALUE else now - MAX_LATENESS_MS

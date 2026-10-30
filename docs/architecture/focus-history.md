@@ -114,6 +114,9 @@ For one session:
   bounded by the plan. Early exact-deadline ties remain readable. Explicit certainty does
   not admit impossible early timing. Outbox append order is not logical phase order: a break
   end delivered before its start is paired using its effective time and exact grant.
+  Plan revisions use `(observedAt ?? at, append ordinal)`, so equal observation milliseconds
+  preserve the last recorded revision rather than the largest effective timestamp.
+  An inverted break/pass window is contradictory evidence even when its start is in-plan.
   Uncertain or contradictory evidence freezes later prefix extension; later cleanup after
   an accepted terminal does not invalidate that terminal. Accepted logical terminal duration
   is not truncated merely because a reader's wall clock subsequently moves backward.
@@ -123,7 +126,8 @@ For one session:
   than time uncertainty, so a valid recovered logical completion with a later observation
   still counts. Existing `reason: time_uncertain` is also conservatively recognized.
 - Unconfirmed sessions never count as completed, ended early, or toward a completion
-  streak. Count them separately on the planned-end day (or observation day when not expired)
+  streak. Count them separately on a valid expired planned-end day (otherwise the reader's
+  observation day); a rejected raw terminal cannot move the warning onto another day.
   and show a localized “1 session couldn't be confirmed” note in the selected UI range.
 - Subtract break intervals `[break_started.at, break_ended.at ?? breakEnd ?? end)`, pass
   windows `[pass_used.at, recoveryEnd)` for sessions listed in `sessions`, and coverage gaps
@@ -136,6 +140,12 @@ For one session:
 
 Across sessions, focused intervals are **unioned** before summing so malformed overlapping
 data can never double count.
+
+Android accepts aggregate timing only within the same supported civil range as iOS
+(years 1–9999). Persisted out-of-range Long values cannot prove a duration or completion.
+Day splitting first intersects intervals with the requested display window, and duration
+addition/subtraction is overflow-safe; a long accepted interval after reader rollback does
+not require traversing all historical or future dates to render one week.
 
 ### Day attribution
 
