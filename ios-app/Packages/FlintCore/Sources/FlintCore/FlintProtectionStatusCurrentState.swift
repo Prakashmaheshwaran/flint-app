@@ -128,16 +128,19 @@ extension FlintProtectionStatus {
                          timeIntegrity: nil, available: false, timeIntegrityApplies: false)
         }
         let active = environment.loadActiveSession()
-        let loadedSchedules = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: defaults, at: now, migrating: false)
-        let loadedLimits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: defaults, at: now, migrating: false)
-        let loadedOpens = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: defaults, at: now, migrating: false)
+        let activities = environment.registeredActivities()
+        let loadedSchedules = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: defaults,
+            at: now, migrating: false, nativeActivities: activities, ledgerState: environment.loadLedgerState)
+        let loadedLimits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: defaults,
+            at: now, migrating: false, nativeActivities: activities, ledgerState: environment.loadLedgerState)
+        let loadedOpens = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: defaults,
+            at: now, migrating: false, nativeActivities: activities, ledgerState: environment.loadLedgerState)
         let unreadable = (active == nil && environment.hasActiveSessionRecord())
             || loadedSchedules == nil || loadedLimits == nil || loadedOpens == nil
         let schedules = loadedSchedules ?? []
         let limits = loadedLimits ?? []
         let opens = loadedOpens ?? []
         let health = environment.loadArmingHealth()
-        let activities = environment.registeredActivities()
         func observation(id: String, activity: String, domain: String) -> RuleObservation {
             if let supplied = ruleObservations[id] { return supplied }
             // Aggregate health proves this rule armed only when the entire domain succeeded.

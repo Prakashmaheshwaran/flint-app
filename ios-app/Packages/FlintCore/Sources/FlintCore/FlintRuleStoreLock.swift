@@ -29,15 +29,15 @@ enum FlintRuleStoreLock {
         case .complete: return true
         case .invalid: return false
         case .absent:
-            // Established domains never need a fresh-install write, even if a sibling is
-            // unavailable. The strict loader checks absence using installation evidence.
-            if FlintRuleStoreKey.allCases.contains(where: { defaults.object(forKey: $0.rawValue) != nil
+            // Each domain has its own evidence. A sibling's presence cannot skip another
+            // domain's one-time upgrade initialization.
+            if FlintRuleStoreKey.allCases.allSatisfy({ defaults.object(forKey: $0.rawValue) != nil
                 || defaults.object(forKey: $0.marker) != nil }) { return true }
         case .preparing: break
         }
         // Initialization takes only the domain lock, never a ledger/session lock. Taking it
         // before withTransitionBoundary prevents first-launch ledger creation from becoming
-        // false legacy evidence; it cannot invert locks because it acquires no further lock.
+        // false legacy evidence. Upgrade evidence uses only read-only ledger peek, no lock.
         return domainLock(directory: environment.lockDirectory) {
             FlintRuleInitialization.prepare(environment: environment)
         } ?? false

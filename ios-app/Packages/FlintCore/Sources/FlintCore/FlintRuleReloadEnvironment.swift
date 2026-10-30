@@ -14,7 +14,7 @@ enum FlintDesiredRules {
                                          at now: Date = Date(), migrating: Bool = true,
                                          recoveryDirectory: URL? = FlintRuleRecovery.directory,
                                          nativeActivities: Set<String>? = nil,
-                                         externalEvidence: (() -> Bool)? = nil) -> [Rule]? {
+                                         ledgerState: (() -> FlintLedgerState?)? = nil) -> [Rule]? {
         guard let defaults, defaults.synchronize() else { return nil }
         let initialization = FlintRuleInitialization.receipt(in: defaults)
         guard initialization != .invalid, initialization != .preparing else { return nil }
@@ -33,10 +33,10 @@ enum FlintDesiredRules {
             // A deleted key on an established domain must never mean "remove all activities".
             guard marker == nil, defaults.object(forKey: key.original) == nil,
                   defaults.object(forKey: key.rawValue + ".quarantine.adr012") == nil,
-                  !FlintRuleInitialization.hasProtectionEvidence(in: defaults, activities: [], external: false),
-                  !FlintRuleInitialization.hasProtectionEvidence(in: defaults,
+                  !FlintRuleInitialization.hasDomainEvidence(key, in: defaults,
                     activities: nativeActivities ?? Set(DeviceActivityCenter().activities.map(\.rawValue)),
-                    external: (externalEvidence ?? FlintRuleInitialization.externalEvidence)()) else { return nil }
+                    ledger: (ledgerState ?? { FlintProtectionLedger.appGroup().flatMap { try? $0.peek().get() } })(),
+                    directory: recoveryDirectory) else { return nil }
             // A read-only peek may describe an actually empty installation. Serialized host
             // startup/mutation writes the positive receipt and all three domains together.
             return []
@@ -199,7 +199,7 @@ struct FlintRuleReloadEnvironment {
     func observedRules<Rule: FlintGatedRule>(_ type: Rule.Type) -> [Rule]? {
         guard var rules = FlintDesiredRules.load(type, key: Rule.domain, from: defaults, at: clock.now(),
             recoveryDirectory: recoveryDirectory, nativeActivities: Set(center.activities.map(\.rawValue)),
-            externalEvidence: installationEvidence) else { return nil }
+            ledgerState: { ledger().flatMap { try? $0.peek().get() } }) else { return nil }
         let before = rules
         var notes: [FlintArmingHealth.Failure] = []
         for index in rules.indices {
@@ -261,7 +261,7 @@ struct FlintRuleReloadEnvironment {
         // peek may show its valid revision; commits still acquire the boundary and re-check it.
         return FlintDesiredRules.load(type, key: Rule.domain, from: defaults, at: clock.now(), migrating: false,
             recoveryDirectory: recoveryDirectory, nativeActivities: Set(center.activities.map(\.rawValue)),
-            externalEvidence: installationEvidence)
+            ledgerState: { ledger().flatMap { try? $0.peek().get() } })
     }
 
     static var live: Self {
