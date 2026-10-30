@@ -10,7 +10,11 @@ internal fun prepareTimeLimitEditorDays(prefs: MutablePreferences, previous: Edi
     if (readTimeLimitBootstrapCapture(prefs) is TimeLimitBootstrapCapture.Unavailable) return null
     val initialized = StrictPrefsCodec.long(prefs, TIME_USAGE_SCHEMA) != null
     val oldQuota = if (StrictPrefsCodec.long(prefs, OPEN_CREDIT_SCHEMA) != null) readOpenCredits(prefs) else null
-    var ledger = prepareTimeLimitSavedZones(prefs, now, deviceZone)
+    // A Time-owned failure must not poison pass/Open/rule snapshots. Stage the one-time
+    // rewrite so an unprovable old Time anchor cannot publish half a migration.
+    val working = if (initialized) prefs else prefs.toPreferences().toMutablePreferences()
+    return try {
+    var ledger = prepareTimeLimitSavedZones(working, now, deviceZone)
     if (!initialized) {
         ledger = ledger.copy(targets = ledger.targets.mapValues { (pkg, row) ->
             val cause = previous?.causes?.get(timeCauseKey(pkg))
@@ -30,9 +34,14 @@ internal fun prepareTimeLimitEditorDays(prefs: MutablePreferences, previous: Edi
                         (interval != null && trustedElapsedMs(interval.anchor, now) == null))
             }
         })
-        prefs.putTimeLimitUsage(ledger)
+        working.putTimeLimitUsage(ledger)
+        working.asMap().forEach { (key, value) ->
+            @Suppress("UNCHECKED_CAST")
+            prefs[key as Preferences.Key<Any>] = value
+        }
     }
-    return ledger
+    ledger
+    } catch (_: StorageUnavailableException) { null }
 }
 
 /** Before applying due edits, expose the OLD Time period's proven end (including zero). */

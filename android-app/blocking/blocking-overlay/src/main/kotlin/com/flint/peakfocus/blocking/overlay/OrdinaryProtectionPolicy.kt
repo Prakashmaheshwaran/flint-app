@@ -13,6 +13,7 @@ internal data class OrdinaryProtectionInput(
     val openBlocked: Boolean,
     val url: String? = null,
     val legacyTimeEndEpochMs: Long? = null,
+    val timePeriodId: Long? = null,
 )
 
 internal object OrdinaryProtectionPolicy {
@@ -135,13 +136,16 @@ internal object OrdinaryProtectionPolicy {
         if (input.timeSpent) {
             val time = snapshot.times.firstOrNull { it.packageName == input.packageName }
             if (time != null) {
-                if (!add("time", time.packageName, time.breakLevel, time.toString(), snapshot.editor.causes[timeCauseKey(time.packageName)])) return null
+                // The active occurrence owns its reset zone. Capturing a template's saved
+                // zone must not revoke a live break written by the pre-zone model.
+                val definition = "TimeLimit(packageName=${time.packageName}, dailyMinutes=${time.dailyMinutes}, breakLevel=${time.breakLevel})"
+                if (!add("time", time.packageName, time.breakLevel, definition, snapshot.editor.causes[timeCauseKey(time.packageName)])) return null
             } else {
                 val quota = snapshot.openCredits
-                val left = quota?.let { OpenCreditPolicy().remainingToResetMs(it.reset, snapshot.observedAt) }
-                    ?: input.legacyTimeEndEpochMs?.let { (it - snapshot.observedAt.wallEpochMs).coerceAtLeast(0) } ?: return null
+                val left = input.legacyTimeEndEpochMs?.let { (it - snapshot.observedAt.wallEpochMs).coerceAtLeast(0) }
+                    ?: quota?.let { OpenCreditPolicy().remainingToResetMs(it.reset, snapshot.observedAt) } ?: return null
                 val end = snapshot.observedAt.wallEpochMs + left
-                val cause = EditorCause("legacy-time-${quota?.periodId ?: input.legacyTimeEndEpochMs}", AnchoredInterval(snapshot.observedAt,
+                val cause = EditorCause("legacy-time-${input.timePeriodId ?: quota?.periodId ?: input.legacyTimeEndEpochMs}", AnchoredInterval(snapshot.observedAt,
                     left, end), quota?.quotaZone ?: "UTC", legacyRights = true)
                 if (!add("legacy-time", input.packageName, snapshot.focus.defaultBreakLevel, "legacy-time:${snapshot.focus.defaultBreakLevel}", cause)) return null
             }

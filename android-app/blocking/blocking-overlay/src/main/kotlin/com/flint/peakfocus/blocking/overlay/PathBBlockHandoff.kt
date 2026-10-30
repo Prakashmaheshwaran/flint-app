@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 
 /**
@@ -68,6 +69,7 @@ object PathBBlockHandoff {
         val appContext = context.applicationContext
         timeQueries.launch {
             val c = coordinator(appContext)
+            if (withContext(Dispatchers.Main.immediate) { c.isSafetyFloor(packageName) }) return@launch
             val minutes = listOfNotNull(com.flint.peakfocus.core.data.LimitStore(appContext).limitMinutes(packageName),
                 c.timeLimitMinutes(packageName)).minOrNull()
             val budget = minutes?.let { TrustedTimeLimitReader.create(appContext).read(packageName, it) }

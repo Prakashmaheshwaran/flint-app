@@ -560,7 +560,8 @@ class BlockScreenCoordinator(
             trustedTimeCause(packageName, observation?.budget, now) ?:
             observation?.fixtureTimeCause?.takeIf { it.endsAtEpochMs == null || now < it.endsAtEpochMs }
         return OrdinaryProtectionInput(packageName, appContext.packageName, time != null,
-            inspectOpen(packageName) !is OpenLimitDecision.Allowed, observation?.url, time?.endsAtEpochMs)
+            inspectOpen(packageName) !is OpenLimitDecision.Allowed, observation?.url, time?.endsAtEpochMs,
+            observation?.budget?.day?.periodId)
     }
 
     private fun ordinaryExempt(packageName: String, cause: BlockCause? = null): Boolean {
