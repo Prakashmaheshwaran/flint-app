@@ -796,6 +796,33 @@ class ProtectionHistoryConsumerTest {
         }
     }
 
+    @Test fun PC_54_PC_55_lateUncertainGapNeedsLaneFSubtractionWithoutRelabellingItsConfidence() = runBlocking {
+        // Characterize the existing aggregator limitation for lane F: a late uncertain
+        // gap cannot cut an already admitted prefix. The adapter must not label it Certain
+        // or manufacture another lifecycle event merely to force a subtraction.
+        for (raw in listOf(breakStart().copy(affectedRuleIds = setOf("session-a")),
+            pass().copy(affectedRuleIds = setOf("session-a"), endedTransientIds = emptySet()))) {
+            for (uncertain in listOf(false, true)) {
+                val store = store()
+                val end = begin + 20 * minute
+                assertTrue(store.update { listOf(start("session-a").copy(plannedEnd = end),
+                    HistoryEvent(type = "open_intercepted", session = "session-a", at = end, tz = "UTC",
+                        timeConfidence = HistoryEventTimeConfidence.Certain),
+                    HistoryEvent(type = "completed", session = "session-a", at = end, tz = "UTC",
+                        timeConfidence = HistoryEventTimeConfidence.Certain)) })
+                val event = raw.copy(observedAtEpochMs = raw.at.wallEpochMs + 120 * minute,
+                    timeConfidence = if (uncertain) ProtectionEventTimeConfidence.Uncertain("same_boot_drift") else ProtectionEventTimeConfidence.Certain,
+                    timeUncertain = uncertain)
+                assertTrue(consumer(store).deliver(event))
+                val summary = FocusHistoryAggregator.summarize(store.load(), end, ZoneOffset.UTC, emptySet())
+                assertEquals(if (uncertain) SessionOutcome.UNCONFIRMED else SessionOutcome.COMPLETED, summary.sessions.single().outcome)
+                // The current error is upward by this five-minute gap, not an assertion
+                // that those minutes were focused. Keep the exact case for the F follow-up.
+                assertEquals((if (uncertain) 20 else 15) * minute, summary.days.last().focusedMs)
+            }
+        }
+    }
+
     @Test fun historyLossUsesTheOwnersPublicCountOrDiagnosticReason() {
         assertFalse(hasMissingProtectionEvents(ProtectionStatus.UNKNOWN))
         assertTrue(hasMissingProtectionEvents(ProtectionStatus.UNKNOWN.copy(lifecycleEventsDropped = 1)))
