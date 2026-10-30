@@ -99,11 +99,11 @@ jobs:
           free -m > artifacts/android-e2e/host-after-suite.txt
           df -m . /tmp >> artifacts/android-e2e/host-after-suite.txt
           sudo dmesg --ctime 2>&1 | tee artifacts/android-e2e/host-kernel.txt > /dev/null || true
-          # Emulator stdout/stderr remains in the action log; preserve its native
-          # crash database too, independently of adb and boot-identity checks.
+          # Emulator stdout/stderr remains in the action log. Inventory Crashpad
+          # reports without publishing raw process memory/environment from dumps.
           if [[ -d /tmp/android-runner ]]; then
-            find /tmp/android-runner -maxdepth 1 -name 'emu-crash-*' -type f \
-              -exec cp -- {} artifacts/android-e2e/ \;
+            find /tmp/android-runner -path '*/emu-crash-*' -type f -printf '%P %s bytes\n' \
+              > artifacts/android-e2e/emulator-crash-inventory.txt
           fi
       - name: Retain exact release mapping and runtime evidence
         if: always()
