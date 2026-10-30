@@ -122,13 +122,38 @@ public enum FlintHistoryAggregator {
                 }?.element ?? start
             }
             func planAt(_ at: Int64) -> FlintHistoryEvent { latestPlan(plans.filter { $0.at <= at }) }
-            let plan = latestPlan(plans)
-            let plannedEnd = plan.plannedEnd.map(FlintHistoryEvent.date)
-            func validPlan(_ event: FlintHistoryEvent) -> Bool {
-                !event.uncertainTime && event.at >= start.at && (event.plannedEnd.map { $0 > start.at } ?? true)
+            func plausiblePlan(_ event: FlintHistoryEvent) -> Bool {
+                !event.uncertainTime && event.at >= start.at &&
+                    (event.plannedEnd.map { $0 > start.at && $0 >= event.at } ?? true)
             }
+            var validPlanIDs: Set<String> = plausiblePlan(start) ? [start.id] : []
+            var precedingPlan = start
+            func ownerFinalPlan(_ revision: FlintHistoryEvent) -> Bool {
+                guard let terminal else { return false }
+                return revision.type == .rescheduled && revision.reason == "owner_final_plan" &&
+                    revision.originRoute == "editor_terminal" && revision.timeConfidence == .certain &&
+                    terminal.type == .completed && terminal.originRoute == "editor_terminal" &&
+                    terminal.timeConfidence == .certain && !terminal.uncertainTime &&
+                    revision.at == terminal.at && revision.plannedEnd == terminal.at
+            }
+            let revisions = plans.enumerated().sorted {
+                let a = $0.element.observedAt ?? $0.element.at
+                let b = $1.element.observedAt ?? $1.element.at
+                return a == b ? $0.offset < $1.offset : a < b
+            }.map(\.element)
+            for revision in revisions where revision.id != start.id {
+                if validPlanIDs.contains(precedingPlan.id), plausiblePlan(revision),
+                   ownerFinalPlan(revision) || (precedingPlan.plannedEnd.map({ revision.at <= $0 }) ?? true) {
+                    validPlanIDs.insert(revision.id)
+                    precedingPlan = revision
+                }
+            }
+            func validPlan(_ event: FlintHistoryEvent) -> Bool { validPlanIDs.contains(event.id) }
+            let authoritativePlan = revisions.last { validPlan($0) && ownerFinalPlan($0) }
+            let plan = authoritativePlan ?? latestPlan(plans)
+            let plannedEnd = plan.plannedEnd.map(FlintHistoryEvent.date)
             func inPlan(_ event: FlintHistoryEvent) -> Bool {
-                let plan = planAt(event.at)
+                let plan = authoritativePlan ?? planAt(event.at)
                 return event.at >= start.at && validPlan(plan) && (plan.plannedEnd.map { event.at <= $0 } ?? true)
             }
             let unknownEnd = terminal?.type == .endedEarly && terminal?.inferred == true && terminal?.route == "unknown"
@@ -152,7 +177,8 @@ public enum FlintHistoryAggregator {
             var coverageEnd = start.date
             for event in evidence {
                 if event.type == .started || event.type == .rescheduled {
-                    if !validPlan(event) { trusted = false }
+                    let supersededOrdinaryPlan = authoritativePlan != nil && event.type == .rescheduled && !event.uncertainTime
+                    if !validPlan(event) && !supersededOrdinaryPlan { trusted = false }
                 } else if Self.coverageTypes.contains(event.type) {
                     let paired = event.type != .breakEnded || event.grant == nil || events.contains {
                         $0.type == .breakStarted && $0.grant == event.grant && $0.at <= event.at
@@ -188,7 +214,10 @@ public enum FlintHistoryAggregator {
             // can confirm only the prefix through that observation, never the planned tail.
             let evidencedEnd = outcome == .unconfirmed ? coverageEnd : end
             let readCeiling = outcome == .running || terminal == nil ? now : evidencedEnd
-            let clippedEnd = min(evidencedEnd, plannedEnd ?? evidencedEnd, readCeiling)
+            // Each accepted witness was already bounded by its then-valid plan. A later
+            // rejected revision cannot retroactively erase that independent prefix.
+            let planCeiling = outcome == .unconfirmed ? evidencedEnd : plannedEnd ?? evidencedEnd
+            let clippedEnd = min(evidencedEnd, planCeiling, readCeiling)
             var intervals: [DateInterval] = []
             if clippedEnd > start.date {
                 let whole = DateInterval(start: start.date, end: clippedEnd)

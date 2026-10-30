@@ -117,9 +117,24 @@ For one session:
   Plan revisions use `(observedAt ?? at, append ordinal)`, so equal observation milliseconds
   preserve the last recorded revision rather than the largest effective timestamp.
   An inverted break/pass window is contradictory evidence even when its start is in-plan.
+  Each ordinary revision must occur at/before the preceding accepted deadline and at/before
+  its own new endpoint; exact-boundary changes and delayed observations remain valid.
+  An invalid/uncertain later plan freezes extension and cannot erase a prefix already
+  confirmed under an earlier trusted plan.
   Uncertain or contradictory evidence freezes later prefix extension; later cleanup after
   an accepted terminal does not invalidate that terminal. Accepted logical terminal duration
   is not truncated merely because a reader's wall clock subsequently moves backward.
+- The durable policy owner may assert a final plan when history missed an edit. That is
+  distinct from an ordinary revision: the final plan carries `originRoute: editor_terminal`,
+  `reason: owner_final_plan` and certain time confidence, with its endpoint/effective time
+  equal to a matching certain completed terminal from the same owner origin. Only that
+  explicit pair may repair a stale earlier deadline. The public EditorTerminalEvent adapter
+  supplies the assertion from the owner's logical endpoint when `timeUncertain` is false;
+  uncertain owner finals remain unconfirmed and cannot extend the prior evidenced prefix.
+  A matching certain owner pair supersedes rejected ordinary plan-only observations in
+  either delivery order, without inventing an edit time. It does not override explicitly
+  uncertain starts, plan times or coverage phases.
+  Observation time is never substituted as proof of an edit or elapsed focus duration.
 - Confidence is additive in schema v1. Old readers ignore the optional object; new readers
   treat unknown/malformed confidence as `uncertain(unsupported_time_confidence)`, retaining
   the original raw line through maintenance. `inferred` alone remains provenance rather

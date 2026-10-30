@@ -231,6 +231,67 @@ final class FlintHistoryTimeConfidenceTests: XCTestCase {
         assertUnconfirmed([started(), event(.openIntercepted, 60), pause, event(.completed, 600)], focused: 60)
     }
 
+    func testUntrustedLaterPlanCannotEraseEarlierIndependentPrefix() {
+        for seconds in [30.0, -60.0] {
+            var revision = event(.rescheduled, 120, confidence: uncertain)
+            revision.plannedEnd = event(.completed, seconds).at
+            assertUnconfirmed([started(), event(.openIntercepted, 60), revision, event(.completed, 600)], focused: 60)
+            revision.timeConfidence = nil
+            assertUnconfirmed([started(), event(.openIntercepted, 60), revision,
+                               event(.completed, 600, confidence: .certain)], focused: 60)
+        }
+    }
+
+    func testRevisionAfterPriorExpiryCannotReviveOccurrenceOrCompletion() {
+        for confidence in [nil, .certain] as [FlintEventTimeConfidence?] {
+            var revision = event(.rescheduled, 7260, confidence: confidence)
+            revision.plannedEnd = event(.completed, 8000).at; revision.observedAt = event(.rescheduled, 120).at
+            let rows = [started(), event(.openIntercepted, 60), revision, event(.completed, 8000, confidence: confidence)]
+            assertUnconfirmed(rows, focused: 60)
+            XCTAssertEqual(summary(rows, now: 1200).focusedSeconds, 60)
+        }
+        var boundary = event(.rescheduled, 600); boundary.plannedEnd = event(.completed, 1200).at
+        boundary.observedAt = event(.rescheduled, 7260).at
+        let valid = summary([started(), boundary, event(.completed, 1200)], now: 60)
+        XCTAssertEqual(valid.sessions.first?.outcome, .completed)
+        XCTAssertEqual(valid.focusedSeconds, 1200)
+    }
+
+    func testOnlyCertainMatchingOwnerFinalPlanCanRepairMissedExtension() {
+        var plan = event(.rescheduled, 8000, confidence: .certain)
+        plan.plannedEnd = plan.at; plan.originRoute = "editor_terminal"; plan.reason = "owner_final_plan"
+        var end = event(.completed, 8000, confidence: .certain); end.originRoute = "editor_terminal"
+        let repaired = summary([started(), plan, end])
+        XCTAssertEqual(repaired.sessions.first?.outcome, .completed)
+        XCTAssertEqual(repaired.focusedSeconds, 8000)
+        var rejectedObserver = event(.rescheduled, 700); rejectedObserver.plannedEnd = plan.at
+        rejectedObserver.observedAt = event(.rescheduled, 12000).at
+        for rows in [[started(), rejectedObserver, plan, end], [started(), plan, end, rejectedObserver]] {
+            let recovered = summary(rows)
+            XCTAssertEqual(recovered.sessions.first?.outcome, .completed)
+            XCTAssertEqual(recovered.focusedSeconds, 8000)
+        }
+        let prefix = [started(), event(.openIntercepted, 60)]
+        rejectedObserver.timeConfidence = uncertain
+        assertUnconfirmed(prefix + [rejectedObserver, plan, end], focused: 60)
+        assertUnconfirmed([started(uncertain), plan, end])
+        assertUnconfirmed(prefix + [event(.protectionDegraded, 120, confidence: uncertain), plan, end], focused: 60)
+        var ordinary = plan; ordinary.reason = nil
+        assertUnconfirmed(prefix + [ordinary, end], focused: 60)
+        ordinary = plan; ordinary.originRoute = nil
+        assertUnconfirmed(prefix + [ordinary, end], focused: 60)
+        ordinary = plan; ordinary.timeConfidence = nil
+        assertUnconfirmed(prefix + [ordinary, end], focused: 60)
+        var unknownEnd = end; unknownEnd.timeConfidence = uncertain
+        assertUnconfirmed(prefix + [plan, unknownEnd], focused: 60)
+        unknownEnd = end; unknownEnd.originRoute = nil
+        assertUnconfirmed(prefix + [plan, unknownEnd], focused: 60)
+        unknownEnd = end; unknownEnd.at += 1
+        assertUnconfirmed(prefix + [plan, unknownEnd], focused: 60)
+        plan.timeConfidence = uncertain; end.timeConfidence = uncertain
+        assertUnconfirmed(prefix + [plan, end], focused: 60)
+    }
+
     func testEqualObservationPlanTiesFollowAppendRevisionOrder() {
         var first = event(.rescheduled, 540)
         first.plannedEnd = event(.completed, 1200).at; first.observedAt = event(.rescheduled, 7260).at

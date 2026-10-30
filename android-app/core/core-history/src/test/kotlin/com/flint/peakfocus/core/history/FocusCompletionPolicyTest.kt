@@ -57,8 +57,10 @@ class FocusCompletionPolicyTest {
     }
     @Test fun FH20_recoveredSameTimestampPlanPrecedesCompletionAndLaterEditsCannotReviveTerminal() {
         val deadline = end + 300_000
-        val plan = HistoryEvent(type = "rescheduled", session = "session-a", at = deadline, tz = "UTC", plannedEnd = deadline, inferred = true)
-        val natural = terminal(HistoryEventType.COMPLETED, deadline)
+        val plan = HistoryEvent(type = "rescheduled", session = "session-a", at = deadline, tz = "UTC", plannedEnd = deadline,
+            inferred = true, originRoute = "editor_terminal", reason = "owner_final_plan", timeConfidence = HistoryEventTimeConfidence.Certain)
+        val natural = terminal(HistoryEventType.COMPLETED, deadline).copy(originRoute = "editor_terminal",
+            timeConfidence = HistoryEventTimeConfidence.Certain)
         assertEquals(FocusCompletionDelivery.POST, FocusCompletionPolicy.decision(snapshot(started(), plan, natural), "session-a", deadline))
         val stopped = terminal(HistoryEventType.ENDED_EARLY, start + 60_000)
         assertTrue(FocusCompletionPolicy.alarms(snapshot(started(), stopped, plan), emptySet(), deadline).isEmpty())

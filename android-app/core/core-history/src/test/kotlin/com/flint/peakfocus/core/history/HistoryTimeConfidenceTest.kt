@@ -43,6 +43,64 @@ class HistoryTimeConfidenceTest {
         assertTrue(FocusCompletionPolicy.alarms(snapshot, emptySet(), deadline).isEmpty())
     }
 
+    @Test fun untrustedLaterDeadlineCannotEraseAnEarlierIndependentlyValidPrefix() {
+        for (end in listOf(begin + 30_000, begin - minute)) {
+            val revision = event("rescheduled", begin + 2 * minute, uncertain).copy(plannedEnd = end)
+            val prefix = listOf(start(), event("open_intercepted", begin + minute))
+            assertUnconfirmed(prefix + listOf(revision, event("completed", deadline)), credit = minute)
+            assertUnconfirmed(prefix + listOf(revision.copy(timeConfidence = null),
+                event("completed", deadline, certain)), credit = minute)
+        }
+    }
+
+    @Test fun revisionAfterPriorExpiryCannotReviveOccurrenceOrCompletionDelivery() {
+        for (confidence in listOf(null, certain)) {
+            val revision = event("rescheduled", begin + 121 * minute, confidence)
+                .copy(plannedEnd = begin + 8_000_000, observedAt = begin + 2 * minute)
+            val rows = listOf(start(), event("open_intercepted", begin + minute), revision,
+                event("completed", begin + 8_000_000, confidence))
+            assertUnconfirmed(rows, credit = minute)
+            assertUnconfirmed(rows, credit = minute, now = begin + 20 * minute)
+            val snapshot = HistorySnapshot(rows, begin, true)
+            assertEquals(FocusCompletionDelivery.SUPPRESS,
+                FocusCompletionPolicy.decision(snapshot, "session-a", begin + 8_000_000))
+            assertTrue(FocusCompletionPolicy.alarms(snapshot, emptySet(), begin + 8_000_000).isEmpty())
+        }
+        val boundary = event("rescheduled", deadline).copy(plannedEnd = begin + 20 * minute,
+            observedAt = begin + 121 * minute)
+        val valid = summary(listOf(start(), boundary, event("completed", begin + 20 * minute)), now = begin + minute)
+        assertEquals(SessionOutcome.COMPLETED, valid.sessions.single().outcome)
+        assertEquals(20 * minute, valid.sessions.single().focusedMs)
+    }
+
+    @Test fun onlyCertainMatchingOwnerFinalPlanCanRepairMissedExtension() {
+        val at = begin + 8_000_000
+        val plan = event("rescheduled", at, certain).copy(plannedEnd = at, originRoute = "editor_terminal", reason = "owner_final_plan")
+        val end = event("completed", at, certain).copy(originRoute = "editor_terminal")
+        val repaired = summary(listOf(start(), plan, end))
+        assertEquals(SessionOutcome.COMPLETED, repaired.sessions.single().outcome)
+        assertEquals(8_000_000L, repaired.sessions.single().focusedMs)
+        val observer = event("rescheduled", begin + 700_000).copy(plannedEnd = at, observedAt = begin + 12_000_000)
+        for (rows in listOf(listOf(start(), observer, plan, end), listOf(start(), plan, end, observer))) {
+            val recovered = summary(rows)
+            assertEquals(SessionOutcome.COMPLETED, recovered.sessions.single().outcome)
+            assertEquals(8_000_000L, recovered.sessions.single().focusedMs)
+        }
+        val prefix = listOf(start(), event("open_intercepted", begin + minute))
+        assertUnconfirmed(prefix + listOf(observer.copy(timeConfidence = uncertain), plan, end), credit = minute)
+        assertUnconfirmed(listOf(start(uncertain), plan, end))
+        assertUnconfirmed(prefix + listOf(event("protection_degraded", begin + 2 * minute, uncertain), plan, end), credit = minute)
+        for ((revision, terminal) in listOf(
+            plan.copy(reason = null) to end,
+            plan.copy(originRoute = null) to end,
+            plan.copy(timeConfidence = null) to end,
+            plan to end.copy(timeConfidence = uncertain),
+            plan to end.copy(originRoute = null),
+            plan to end.copy(at = at + 1),
+            plan.copy(timeConfidence = uncertain) to end.copy(timeConfidence = uncertain),
+        )) assertUnconfirmed(prefix + listOf(revision, terminal), credit = minute)
+    }
+
     @Test fun equalObservationPlanTiesUseAppendRevisionOrderAndSameNotificationDeadline() {
         val observation = begin + 121 * minute
         val first = event("rescheduled", begin + 9 * minute).copy(plannedEnd = begin + 20 * minute, observedAt = observation)
