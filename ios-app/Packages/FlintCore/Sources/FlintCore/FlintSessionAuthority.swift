@@ -94,7 +94,9 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
         if let old = routeRequests.last(where: { $0.route == route && $0.fingerprint == fingerprint }) {
             let result = acceptedStart(old.token.operationID)
             let stillRunning = result.map { $0.outcome == .running && !$0.session.isLogicallyExpired(clock: now.clock) } ?? true
-            if old.untilDeactivation || (stillRunning && old.at.elapsed(until: now).map { $0 <= Self.retryWindow } == true) {
+            let currentPreview = result != nil || old.token.expectedRevision == revision
+            if old.untilDeactivation || (currentPreview && stillRunning
+                && old.at.elapsed(until: now).map { $0 <= Self.retryWindow } == true) {
                 return old.token
             }
         }

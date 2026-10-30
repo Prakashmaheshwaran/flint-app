@@ -103,6 +103,15 @@ final class FlintSessionAuthorityTests: XCTestCase {
         XCTAssertNotEqual(authority.requestToken(route: "shortcut", fingerprint: "parameters", at: instant), token)
     }
 
+    func testUnacceptedShortcutTokenRefreshesWhenThePreviewRevisionChangedPC10() {
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        let stale = authority.requestToken(route: "shortcut", fingerprint: "parameters", at: instant)
+        authority.adopt(session("other-process"))
+        let fresh = authority.requestToken(route: "shortcut", fingerprint: "parameters", at: instant)
+        XCTAssertNotEqual(fresh.operationID, stale.operationID)
+        XCTAssertEqual(fresh.expectedRevision, authority.revision)
+    }
+
     func testDuplicateFocusActivationKeepsTokenAfterEndUntilFocusOff() throws {
         var authority = FlintSessionAuthority(initializedAt: wall)
         let token = authority.requestToken(route: "focus.activation", fingerprint: "parameters",
