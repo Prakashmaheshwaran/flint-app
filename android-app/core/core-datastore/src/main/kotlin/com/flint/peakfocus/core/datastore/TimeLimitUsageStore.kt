@@ -34,6 +34,7 @@ class DataStoreTimeLimitUsageStore(
     private val dataStore: DataStore<Preferences>,
     private val clockAtCommit: (() -> AccessClockStamp)? = null,
     private val deviceZone: () -> String = { TimeZone.getDefault().id },
+    private val prepareEditor: ((MutablePreferences, AccessClockStamp) -> Unit)? = null,
 ) {
     val state = dataStore.data.storageStates(::readTimeLimitUsage)
 
@@ -45,6 +46,8 @@ class DataStoreTimeLimitUsageStore(
     suspend fun observeForeground(observation: TimeLimitForegroundObservation, isCurrentOwner: () -> Boolean = { true }) {
         dataStore.edit { prefs ->
             if (!observation.closeOnly && !isCurrentOwner()) return@edit
+            val beforeEditor = if (prepareEditor != null) readTimeLimitEditorDays(prefs) else null
+            prepareEditor?.invoke(prefs, clockAtCommit?.invoke() ?: observation.observedAt)
             var ledger = prepareTimeLimitSavedZones(prefs, observation.observedAt, deviceZone())
             val previous = ledger.foreground
             if (observation.closeOnly && previous?.ownerId != observation.ownerId) return@edit
@@ -65,6 +68,16 @@ class DataStoreTimeLimitUsageStore(
                     val desiredZone = prefs.editorTimes().singleOrNull { it.packageName == previous.packageName }?.zoneId ?: row.zoneId
                     val advanced = reconcileForegroundRow(row, stamp, desiredZone)
                     row = if (advanced.rolled) TimeLimitDayAccounting.observe(advanced.state, elapsed - beforeReset) else advanced.state
+                } else if (elapsed != null && beforeEditor != null) {
+                    // Editor preparation may have applied a queued zone edit and advanced
+                    // the day. Charge only the continuously observed new-period suffix.
+                    val before = beforeEditor.targets[previous.packageName]
+                    if (before?.periodId == previous.periodId && old.periodId == before.periodId + 1) {
+                        val ahead = trustedElapsedMs(previous.checkpoint, before.reset.checkpoint)
+                        val left = if (ahead == null) OpenCreditPolicy().remainingToResetMs(before.reset, previous.checkpoint)
+                            else Math.addExact(before.reset.remainingToResetMs, ahead)
+                        row = TimeLimitDayAccounting.observe(row, (elapsed - left).coerceAtLeast(0L))
+                    }
                 } else if (elapsed == null) row = row.copy(accountingUnknownUntilReset = true)
                 ledger = ledger.copy(targets = ledger.targets + (previous.packageName to row))
             }
@@ -91,6 +104,7 @@ class DataStoreTimeLimitUsageStore(
         var result: TimeLimitMeasurementContext? = null
         dataStore.edit { prefs ->
             val stamp = clockAtCommit?.invoke() ?: now
+            prepareEditor?.invoke(prefs, stamp)
             var ledger = prepareTimeLimitSavedZones(prefs, stamp, deviceZone())
             timeUsageRequire(packageName.isNotBlank() && packageName.length <= OpenCreditLedgerPolicy.MAX_ATOM)
             val previous = ledger.targets[packageName]
@@ -113,6 +127,7 @@ class DataStoreTimeLimitUsageStore(
         var result: TimeLimitUsageObservation? = null
         dataStore.edit { prefs ->
             val stamp = clockAtCommit?.invoke() ?: now
+            prepareEditor?.invoke(prefs, stamp)
             val ledger = readTimeLimitUsage(prefs)
             val current = ledger.targets[context.packageName] ?: wireCorrupt()
             val desiredZone = prefs.editorTimes().singleOrNull { it.packageName == context.packageName }?.zoneId ?: current.zoneId

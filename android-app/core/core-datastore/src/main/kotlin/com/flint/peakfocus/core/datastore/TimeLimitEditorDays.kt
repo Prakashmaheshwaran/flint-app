@@ -4,6 +4,31 @@ import androidx.datastore.preferences.core.*
 import com.flint.peakfocus.blocking.engine.*
 import com.flint.peakfocus.core.model.*
 
+internal fun readTimeLimitEditorDays(prefs: Preferences): TimeLimitUsageLedger? =
+    try { readTimeLimitUsage(prefs) } catch (_: StorageUnavailableException) { null }
+
+internal fun timeLimitEditorEnded(cause: EditorCause, now: AccessClockStamp): Boolean = cause.interval?.let {
+    it.remainingAtAnchorMs == 0L || trustedElapsedMs(it.anchor, now) != null && it.remainingMs(now) == 0L
+} == true
+
+internal fun materializeTimeLimitEditorCause(ledger: TimeLimitUsageLedger?, packageName: String,
+    old: EditorCause?, now: AccessClockStamp, fallbackZone: String): EditorCause {
+    // A placeholder describes the recovery scope only. Time authorization separately
+    // requires the healthy ledger, so a capture fault cannot disable Emergency Pass.
+    if (ledger == null) return old ?: EditorCause("time-unavailable",
+        AnchoredInterval(now, 86_400_000, now.wallEpochMs + 86_400_000), fallbackZone)
+    if (old != null && old.occurrenceId !in setOf("inactive", "time-unavailable") && !timeLimitEditorEnded(old, now)) return old
+    val row = ledger.targets[packageName] ?: wireCorrupt()
+    val left = OpenCreditPolicy().remainingToResetMs(row.reset, now)
+    return EditorCause("time:${row.periodId}", AnchoredInterval(now, left, now.wallEpochMs + left), row.zoneId)
+}
+
+internal fun validateTimeLimitEditorChange(prefs: Preferences, change: EditorChange): String? {
+    val limits = change.limits ?: return null
+    if (limits.time == prefs.editorTimes().singleOrNull { it.packageName == limits.packageName }) return null
+    return if (readTimeLimitEditorDays(prefs) == null) "Time limit accounting is unavailable. Restore access and try again." else null
+}
+
 /** Editor-owned preparation. Read old anchors before any shared Open period can roll. */
 internal fun prepareTimeLimitEditorDays(prefs: MutablePreferences, previous: EditorCommitmentState?,
     now: AccessClockStamp, deviceZone: String): TimeLimitUsageLedger? {

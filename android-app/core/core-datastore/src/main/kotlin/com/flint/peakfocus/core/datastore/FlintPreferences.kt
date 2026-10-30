@@ -20,8 +20,12 @@ private val Context.flintPreferencesDataStore: DataStore<Preferences> by prefere
 
 object FlintPreferences {
 
-    fun timeLimitUsage(context: Context): DataStoreTimeLimitUsageStore =
-        DataStoreTimeLimitUsageStore(context.applicationContext.flintPreferencesDataStore, ProtectionClock::now)
+    fun timeLimitUsage(context: Context): DataStoreTimeLimitUsageStore {
+        val dataStore = context.applicationContext.flintPreferencesDataStore
+        val editor = DataStoreEditorCommitmentStore(dataStore)
+        return DataStoreTimeLimitUsageStore(dataStore, ProtectionClock::now,
+            prepareEditor = { prefs, now -> editor.prepare(prefs, now, checkpointQuota = false) })
+    }
 
     fun harderWait(context: Context): HarderWaitStore =
         DataStoreHarderWaitStore(context.applicationContext.flintPreferencesDataStore)

@@ -88,7 +88,7 @@ class EditorCommitmentStoreTest {
         val preview = store.request(EditorChange("Increase", limits = EditorLimitsChange("a", limit.copy(dailyMinutes = 60), null)), clock(), safe) as EditorCommitResult.Preview
         assertEquals(CommitmentPolicy.Outcome.DEFER, preview.pending.outcome)
         assertEquals(EditorCommitResult.Applied(true), store.confirm(preview.pending.id, clock(), safe))
-        assertEquals(listOf(limit), limits.timeLimits.first())
+        assertEquals(listOf(limit.copy(zoneId = "UTC")), limits.timeLimits.first())
         store.reconcile(clock(14 * 3_600_000L)) // Midnight, adjacent daily occurrence.
         assertEquals(60, limits.timeLimits.first().single().dailyMinutes)
         assertFalse(snapshot(store).causes.getValue(timeCauseKey("a")).legacyRights)
@@ -174,7 +174,7 @@ class EditorCommitmentStoreTest {
         assertEquals(EditorCommitResult.Applied(true), confirm(store, EditorChange("Remove", limits = EditorLimitsChange("a", null, null))))
         val id = snapshot(store).queued.single().id
         store.reconcile(clock(5, 3 * 86_400_000L, "reboot"))
-        assertEquals(listOf(limit), DataStoreLimitsStore(disk).timeLimits.first())
+        assertEquals(listOf(limit.copy(zoneId = "UTC")), DataStoreLimitsStore(disk).timeLimits.first())
         assertEquals(id, snapshot(store).queued.single().id)
         store.reconcile(clock(5 + 14 * 3_600_000L, 3 * 86_400_000L + 14 * 3_600_000L, "reboot"))
         assertTrue(DataStoreLimitsStore(disk).timeLimits.first().isEmpty())
@@ -206,7 +206,8 @@ class EditorCommitmentStoreTest {
         confirm(store, EditorChange("Open", limits = EditorLimitsChange("b", null, OpenLimit("b", 3))))
         assertEquals("UTC", disk.values.value[QUOTA_ZONE])
         val causes = snapshot(store).causes
-        assertEquals(causes.getValue(timeCauseKey("a")).occurrenceId, causes.getValue(openCauseKey("b")).occurrenceId)
+        assertTrue(causes.getValue(timeCauseKey("a")).occurrenceId.startsWith("time:"))
+        assertTrue(causes.getValue(openCauseKey("b")).occurrenceId.startsWith("quota:"))
         assertEquals(causes.getValue(timeCauseKey("a")).interval, causes.getValue(openCauseKey("b")).interval)
     }
 
@@ -345,7 +346,9 @@ class EditorCommitmentStoreTest {
         val disk = Disk(preferencesOf(PrefsKeys.TIME_LIMITS to "a~30", PrefsKeys.DEFAULT_BREAK_LEVEL to "HARDER"))
         val store = EditorMigratingLimitsStore(disk) { clock() }
         assertEquals(BreakLevel.HARDER, store.timeLimits.first().single().breakLevel)
-        assertEquals("a~30~HARDER", disk.values.value[PrefsKeys.TIME_LIMITS])
+        val capturedZone = java.util.TimeZone.getDefault().id
+        assertEquals("a~30~HARDER~${PrefsCodec.escape(capturedZone)}", disk.values.value[PrefsKeys.TIME_LIMITS])
+        assertEquals("a~30" to "HARDER", TimeLimitUsageCodec.readArchive(disk.values.value[TIME_USAGE_ARCHIVE]!!))
         assertNotNull(disk.values.value[EDITOR_COMMITMENTS_KEY])
         DataStoreFocusStateStore(disk).setDefaultBreakLevel(BreakLevel.EASY)
         assertEquals(BreakLevel.HARDER, store.timeLimits.first().single().breakLevel)

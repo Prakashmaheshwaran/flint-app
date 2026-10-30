@@ -110,11 +110,11 @@ class EditorDomainUpgradeTest {
         assertEquals(id, cause.occurrenceId)
         assertEquals(180_000L, cause.interval!!.remainingMs(now))
         assertEquals(end, cause.interval.wallEndEpochMs)
-        assertEquals(2L, disk.values.value[EDITOR_VERSION_KEY])
+        assertEquals(3L, disk.values.value[EDITOR_VERSION_KEY])
         assertEquals(rawRules, disk.values.value[stringPreferencesKey("editor_migration_rules_v1")])
         for (key in listOf(PrefsKeys.APP_GROUPS, PrefsKeys.OPEN_LIMITS))
             assertEquals("", disk.values.value[key])
-        assertEquals(if (withUsageTallies) "com.limited~30~EASY" else "", disk.values.value[PrefsKeys.TIME_LIMITS])
+        assertEquals(if (withUsageTallies) "com.limited~30~EASY~UTC" else "", disk.values.value[PrefsKeys.TIME_LIMITS])
         assertEquals("EASY", disk.values.value[PrefsKeys.DEFAULT_BREAK_LEVEL])
         val rule = DataStoreBlockRulesStore(disk).rules.first().single { it.id == id }
         assertEquals(id, rule.id); assertEquals(end, rule.expiresAtEpochMs)
@@ -127,7 +127,7 @@ class EditorDomainUpgradeTest {
         assertEquals(if (withUsageTallies) 2 else 1, DataStoreBlockRulesStore(disk).rules.first().size)
         assertEquals(cause, (store.state.first { it !is StorageState.Loading } as StorageState.Ready)
             .value.causes.getValue(ruleCauseKey(id)))
-        assertEquals(2L, disk.values.value[EDITOR_VERSION_KEY])
+        assertEquals(3L, disk.values.value[EDITOR_VERSION_KEY])
         assertTrue(readHarderWait(disk.values.value).counts.isEmpty())
         assertTrue(store.readTerminalEvents().isEmpty())
         if (withUsageTallies) {
@@ -143,7 +143,7 @@ class EditorDomainUpgradeTest {
             assertTrue(snapshot.opens.isEmpty())
             assertEquals(recurring, snapshot.rules.single { it.id == recurring.id })
             assertTrue(snapshot.editor.causes.getValue(ruleCauseKey(recurring.id)).legacyRights)
-            assertEquals(TimeLimit("com.limited", 30, BreakLevel.EASY), snapshot.times.single())
+            assertEquals(TimeLimit("com.limited", 30, BreakLevel.EASY, "UTC"), snapshot.times.single())
             assertTrue(snapshot.editor.causes.getValue(timeCauseKey("com.limited")).legacyRights)
             assertEquals(mapOf("com.instagram.android" to 7, "com.other" to 2),
                 snapshot.openCredits!!.counters.mapValues { it.value.used })
@@ -161,7 +161,7 @@ class EditorDomainUpgradeTest {
         val disk = Disk(literalV1()); val before = disk.values.value.asMap().toMap()
         val store = editor(disk)
         store.reconcile(now)
-        assertEquals(2L, disk.values.value[EDITOR_VERSION_KEY])
+        assertEquals(3L, disk.values.value[EDITOR_VERSION_KEY])
         for (key in listOf(PrefsKeys.BLOCK_RULES, PrefsKeys.APP_GROUPS, PrefsKeys.TIME_LIMITS, PrefsKeys.OPEN_LIMITS))
             assertEquals("", disk.values.value[key])
         assertEquals("EASY", disk.values.value[PrefsKeys.DEFAULT_BREAK_LEVEL])
@@ -185,7 +185,7 @@ class EditorDomainUpgradeTest {
         val protection = DataStoreProtectionTransactionStore(disk, { now }) { "UTC" }
         assertTrue(protection.state.first { it !is StorageState.Loading } is StorageState.Ready)
         assertTrue(protection.transact { ProtectionMutation(it.focus, Unit) } is ProtectionCommit.Committed)
-        assertEquals(2L, disk.values.value[EDITOR_VERSION_KEY])
+        assertEquals(3L, disk.values.value[EDITOR_VERSION_KEY])
         assertEquals("", disk.values.value[PrefsKeys.APP_GROUPS])
         assertEquals("", disk.values.value[PrefsKeys.OPEN_LIMITS])
         assertEquals(original[PrefsKeys.PROTECTION_LEDGER], disk.values.value[PrefsKeys.PROTECTION_LEDGER])
@@ -251,7 +251,7 @@ class EditorDomainUpgradeTest {
             this[PrefsKeys.EMERGENCY_PASS_USED_AT] = now.wallEpochMs
         }
         editor(disk).reconcile(now)
-        assertEquals(2L, disk.values.value[EDITOR_VERSION_KEY])
+        assertEquals(3L, disk.values.value[EDITOR_VERSION_KEY])
         assertEquals("", disk.values.value[PrefsKeys.BLOCK_RULES])
         assertEquals(ledger, readFocus(disk.values.value).protection)
     }
@@ -414,7 +414,7 @@ class EditorDomainUpgradeTest {
             this[PrefsKeys.OPEN_COUNTS_DAY] = OpenCreditLedgerPolicy.epochDay(now.wallEpochMs, "UTC")
         })
         editor(usage).reconcile(now)
-        assertEquals(2L, usage.values.value[EDITOR_VERSION_KEY])
+        assertEquals(3L, usage.values.value[EDITOR_VERSION_KEY])
         assertEquals("", usage.values.value[PrefsKeys.OPEN_LIMITS])
         assertEquals("com.target~2", usage.values.value[PrefsKeys.OPEN_COUNTS])
         val disk = Disk(literalV1().toMutablePreferences().apply {
@@ -440,7 +440,7 @@ class EditorDomainUpgradeTest {
             val disk = Disk(literalV1())
             val before = disk.values.value.asMap().toMap()
             disk.beforeCommit = { next ->
-                assertEquals(2L, next[EDITOR_VERSION_KEY])
+                assertEquals(3L, next[EDITOR_VERSION_KEY])
                 assertEquals("", next[PrefsKeys.APP_GROUPS])
                 if (crash) throw CancellationException("simulated exit before durable upgrade")
                 else throw IOException("simulated disk failure before durable upgrade")
@@ -450,7 +450,7 @@ class EditorDomainUpgradeTest {
             assertEquals(before, disk.values.value.asMap()); assertEquals(0, disk.changedWrites)
             disk.beforeCommit = {}
             repeat(2) { editor(disk).reconcile(now) }
-            assertEquals(2L, disk.values.value[EDITOR_VERSION_KEY]); assertEquals(1, disk.changedWrites)
+            assertEquals(3L, disk.values.value[EDITOR_VERSION_KEY]); assertEquals(1, disk.changedWrites)
         }
     }
 
@@ -461,7 +461,7 @@ class EditorDomainUpgradeTest {
         val committed = disk.values.value.asMap().toMap(); val writes = disk.changedWrites
         disk.loseAck = false
         repeat(2) { editor(disk).reconcile(now) }
-        assertEquals(2L, disk.values.value[EDITOR_VERSION_KEY])
+        assertEquals(3L, disk.values.value[EDITOR_VERSION_KEY])
         assertEquals(committed, disk.values.value.asMap()); assertEquals(writes, disk.changedWrites)
     }
 }

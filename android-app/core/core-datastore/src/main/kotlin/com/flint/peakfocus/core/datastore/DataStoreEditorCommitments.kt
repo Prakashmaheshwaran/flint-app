@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.first
 
 internal val EDITOR_COMMITMENTS_KEY = stringPreferencesKey("editor_commitments_v1")
 internal val EDITOR_VERSION_KEY = longPreferencesKey("editor_commitments_version")
-private const val EDITOR_DOMAIN_VERSION = 2L
+internal const val EDITOR_DOMAIN_VERSION = 3L
 private val EDITOR_DOMAINS = listOf(PrefsKeys.BLOCK_RULES, PrefsKeys.APP_GROUPS, PrefsKeys.TIME_LIMITS,
     PrefsKeys.OPEN_LIMITS, PrefsKeys.DEFAULT_BREAK_LEVEL)
 internal const val MAX_EDITOR_CAUSES = 2_000
@@ -120,7 +120,8 @@ class DataStoreEditorCommitmentStore(
 
     private fun request(prefs: MutablePreferences, now: AccessClockStamp, safety: EditorSafety, changeAtCommit: () -> EditorChange?): EditorCommitResult {
         var state = prepare(prefs, now)
-        val change = changeAtCommit() ?: return EditorCommitResult.Rejected("This rule changed. Refresh and try again.")
+        val draft = changeAtCommit() ?: return EditorCommitResult.Rejected("This rule changed. Refresh and try again.")
+        val change = normalizeTimeLimitEditorChange(draft, prefs.editorTimes(), readTimeLimitEditorDays(prefs), defaultZone())
         validation(prefs, state, change, now, safety)?.let { return EditorCommitResult.Rejected(it) }
         val expected = expected(prefs, state, change, now)
         val decision = decision(prefs, state, change, now)
@@ -192,7 +193,7 @@ class DataStoreEditorCommitmentStore(
                 // Initialize while the old domain is still intact, before adding its first limit.
                 prepareOpenCredits(prefs, now, defaultZone())
             }
-            apply(prefs, change)
+            apply(prefs, change, now)
             // Explicitly confirmed edits may shorten or extend an active snapshot. Ordinary
             // reconciliation and clock-display rewrites never acquire that authority.
             val causes = state.causes.toMutableMap()
@@ -280,6 +281,10 @@ class DataStoreEditorCommitmentStore(
         // Validate established domains before quota preparation or any migration write.
         val decoded = readEditorState(prefs)
         val previous = if (StrictPrefsCodec.string(prefs, EDITOR_COMMITMENTS_KEY) != null) decoded else null
+        val originalTimeBytes = StrictPrefsCodec.string(prefs, PrefsKeys.TIME_LIMITS).orEmpty()
+        val beforeTimes = prefs.editorTimes()
+        val rebindTime = (StrictPrefsCodec.long(prefs, EDITOR_VERSION_KEY) ?: 0L) < EDITOR_DOMAIN_VERSION || beforeTimes.any { it.zoneId == null }
+        var timeDays = prepareTimeLimitEditorDays(prefs, previous, now, defaultZone())
         val quota = if (prefs.editorTimes().isNotEmpty() || prefs.editorOpens().isNotEmpty() ||
             StrictPrefsCodec.long(prefs, OPEN_CREDIT_SCHEMA) != null) {
             val zone = previous?.causes?.entries?.firstOrNull { dailyKey(it.key) }?.value?.zoneId ?: defaultZone()
@@ -289,7 +294,7 @@ class DataStoreEditorCommitmentStore(
         if (StrictPrefsCodec.string(prefs, EDITOR_COMMITMENTS_KEY) == null) {
             if (StrictPrefsCodec.long(prefs, EDITOR_VERSION_KEY) != null) wireCorrupt()
             val rawRules = StrictPrefsCodec.string(prefs, PrefsKeys.BLOCK_RULES).orEmpty()
-            val rawTimes = StrictPrefsCodec.string(prefs, PrefsKeys.TIME_LIMITS).orEmpty()
+            val rawTimes = originalTimeBytes
             val rules = StrictPrefsCodec.rules(rawRules)
             val oldTier = StrictPrefsCodec.level(StrictPrefsCodec.string(prefs, PrefsKeys.DEFAULT_BREAK_LEVEL))
             val times = StrictPrefsCodec.timeLimits(rawTimes, oldTier)
@@ -312,12 +317,18 @@ class DataStoreEditorCommitmentStore(
             prefs.putHarderWait(ledger.copy(counts = seeded.toMap()))
             prefs[ARCHIVE_RULES] = rawRules
             prefs[ARCHIVE_TIMES] = rawTimes
-            prefs[PrefsKeys.TIME_LIMITS] = PrefsCodec.encodeTimeLimits(times)
+            // Saved-zone capture already wrote the normalized Time templates.
         } else {
             state = checkNotNull(previous)
             readHarderWait(prefs) // Missing initialized friction state is not a fresh occurrence.
         }
+        if (rebindTime && timeDays != null) {
+            val original = state
+            state = rebindTimeLimitEditorZones(prefs, original, beforeTimes, timeDays, defaultZone(), now,
+                expected = { expected(prefs, original, it, now) }, decision = { decision(prefs, original, it, now) })
+        }
         state = preserveDailyUntilQuotaReset(state, quota, now)
+        state = preserveTimeLimitEditorEnds(state, timeDays, now)
         state = captureNaturalTimerTerminals(prefs, state, now)
         // Timer terminal capture belongs before this checkpoint: a reboot fallback is
         // bounded protection, not evidence that elapsed completion was observed.
@@ -326,14 +337,16 @@ class DataStoreEditorCommitmentStore(
         val stale = mutableSetOf<Long>()
         for (q in due) {
             // Exact records: an unrelated writer cannot make an old queue delete a new revision.
-            if (records(prefs, q.change) == q.expected.copy(occurrences = emptyMap())) apply(prefs, q.change)
+            if (records(prefs, q.change) == q.expected.copy(occurrences = emptyMap()) && validateTimeLimitEditorChange(prefs, q.change) == null) apply(prefs, q.change, now)
             else stale += q.id
         }
         state = state.copy(queued = state.queued.filter { it !in due || it.id in stale }
             .map { if (it.id in stale) it.copy(needsReview = true) else it })
-        val terminal = state.causes.filterValues { it.occurrenceId != "inactive" && it.interval?.remainingMs(now) == 0L }
+        val terminal = state.causes.filter { (key, cause) -> cause.occurrenceId != "inactive" &&
+            if (key.startsWith("time:")) timeDays != null && timeLimitEditorEnded(cause, now) else cause.interval?.remainingMs(now) == 0L }
             .map { (key, cause) -> editorOccurrence(key, cause) }.toSet()
         if (terminal.isNotEmpty()) prefs.putHarderWait(harder.withoutTerminated(readHarderWait(prefs), terminal))
+        advanceTimeLimitEditorDays(prefs, timeDays, now, checkpointQuota)
         state = materialize(prefs, state, now)
         // A real editor state change is a relevant mutation; an unchanged publication is not.
         if (quota != null && EditorCommitmentCodec.encode(state) != StrictPrefsCodec.string(prefs, EDITOR_COMMITMENTS_KEY)) {
@@ -348,6 +361,7 @@ class DataStoreEditorCommitmentStore(
         val timeline = state.timeline ?: now
         val logical = logicalClock(state, now)
         val causes = state.causes.toMutableMap()
+        val timeDays = readTimeLimitEditorDays(prefs)
         fun keepOrResolve(key: String, recurring: Boolean = false, finite: Boolean? = null, resolve: (String) -> EditorCause?) {
             val old = causes[key]
             // A queued edit can change either runtime shape without changing the rule ID.
@@ -389,7 +403,10 @@ class DataStoreEditorCommitmentStore(
             val remaining = OpenCreditPolicy().remainingToResetMs(quota.reset, now)
             causes[key] = EditorCause("quota:${quota.periodId}", AnchoredInterval(now, remaining, now.wallEpochMs + remaining), quota.quotaZone)
         }
-        prefs.editorTimes().forEach { daily(timeCauseKey(it.packageName)) }
+        prefs.editorTimes().forEach { limit ->
+            val key = timeCauseKey(limit.packageName)
+            causes[key] = materializeTimeLimitEditorCause(timeDays, limit.packageName, causes[key], now, limit.zoneId ?: defaultZone())
+        }
         prefs.editorOpens().forEach { daily(openCauseKey(it.packageName)) }
         // Retain tombstones only until their natural boundary, preventing mid-period count resets.
         val liveKeys = prefs.editorRules().map { ruleCauseKey(it.id) }.toSet() +
@@ -431,11 +448,11 @@ class DataStoreEditorCommitmentStore(
         fun unchanged(original: AnchoredInterval) = !rolled && trustedElapsedMs(original.anchor, now) != null &&
             original.remainingMs(now) == remaining
         val causes = state.causes.mapValues { (key, cause) ->
-            if (!dailyKey(key) || cause.occurrenceId == "inactive" || cause.interval?.let(::unchanged) == true) cause
+            if (!key.startsWith("open:") || cause.occurrenceId == "inactive" || cause.interval?.let(::unchanged) == true) cause
             else cause.copy(interval = interval)
         }
         val queued = state.queued.map { q -> q.copy(boundaries = q.boundaries.mapValues { (key, original) ->
-            if (dailyKey(key) && q.expected.occurrences[key] == state.causes[key]?.occurrenceId && !unchanged(original)) interval else original
+            if (key.startsWith("open:") && q.expected.occurrences[key] == state.causes[key]?.occurrenceId && !unchanged(original)) interval else original
         }) }
         return state.copy(causes = causes, queued = queued)
     }
@@ -488,16 +505,16 @@ class DataStoreEditorCommitmentStore(
         change.limits?.let { l ->
             val beforeTime = prefs.editorTimes().singleOrNull { it.packageName == l.packageName }
             val beforeOpen = prefs.editorOpens().singleOrNull { it.packageName == l.packageName }
-            fun limit(key: String, beforeBudget: Int?, beforeTier: BreakLevel?, afterBudget: Int?, afterTier: BreakLevel?) {
+            fun limit(key: String, beforeBudget: Int?, beforeTier: BreakLevel?, afterBudget: Int?, afterTier: BreakLevel?, beforeZone: String? = null, afterZone: String? = null) {
                 val activity = if (state.causes[key]?.legacyRights == true) CommitmentPolicy.CauseActivity.Inactive else CommitmentPolicy.CauseActivity.DailyLimit(beforeBudget != null)
                 val outcome = when {
                     beforeBudget == null -> policy.decide(CommitmentPolicy.Action.START_ADDITIONAL, afterTier ?: BreakLevel.EASY, CommitmentPolicy.CauseActivity.Inactive)
                     afterBudget == null -> policy.decide(CommitmentPolicy.Action.DELETE, beforeTier!!, activity)
-                    else -> policy.decideEdit(limitShape(l.packageName, beforeTier!!, beforeBudget), limitShape(l.packageName, afterTier!!, afterBudget), activity)
+                    else -> policy.decideEdit(limitShape(l.packageName, beforeTier!!, beforeBudget, beforeZone), limitShape(l.packageName, afterTier!!, afterBudget, afterZone), activity)
                 }
-                add(key, beforeTier ?: BreakLevel.EASY, "$beforeBudget:$beforeTier", outcome)
+                add(key, beforeTier ?: BreakLevel.EASY, "$beforeBudget:$beforeTier" + if (key.startsWith("time:")) ":$beforeZone" else "", outcome)
             }
-            limit(timeCauseKey(l.packageName), beforeTime?.dailyMinutes, beforeTime?.breakLevel, l.time?.dailyMinutes, l.time?.breakLevel)
+            limit(timeCauseKey(l.packageName), beforeTime?.dailyMinutes, beforeTime?.breakLevel, l.time?.dailyMinutes, l.time?.breakLevel, beforeTime?.zoneId, l.time?.zoneId)
             limit(openCauseKey(l.packageName), beforeOpen?.dailyOpens, beforeOpen?.breakLevel, l.open?.dailyOpens, l.open?.breakLevel)
         }
         val outcome = listOf(CommitmentPolicy.Outcome.DENY, CommitmentPolicy.Outcome.DEFER, CommitmentPolicy.Outcome.WAIT, CommitmentPolicy.Outcome.ALLOW_AFTER_DISCLOSURE)
@@ -509,6 +526,7 @@ class DataStoreEditorCommitmentStore(
     }
 
     private fun validation(prefs: Preferences, state: EditorCommitmentState, change: EditorChange, now: AccessClockStamp, safety: EditorSafety): String? {
+        validateTimeLimitEditorChange(prefs, change)?.let { return it }
         val added = change.upserts.map { ruleCauseKey(it.id) }.toSet() +
             change.limits?.let { listOfNotNull(it.time?.let { timeCauseKey(it.packageName) }, it.open?.let { openCauseKey(it.packageName) }) }.orEmpty()
         if ((state.causes.keys + added).size > MAX_EDITOR_CAUSES) return "Protection capacity is full. Finish an existing commitment and try again."
@@ -541,11 +559,13 @@ class DataStoreEditorCommitmentStore(
         return "${rule?.name ?: "Protection"} · ${rule?.breakLevel ?: BreakLevel.HARDCORE} · Protected until $deadline. Emergency Pass status is unavailable here; check recovery."
     }
 
-    private fun apply(prefs: MutablePreferences, change: EditorChange) {
+    private fun apply(prefs: MutablePreferences, change: EditorChange, now: AccessClockStamp) {
         if (change.upserts.isNotEmpty() || change.deleteIds.isNotEmpty()) prefs.putEditorRules(
             prefs.editorRules().filterNot { it.id in change.deleteIds || it.id in change.upserts.map(BlockRule::id) } + change.upserts)
         change.limits?.let { l ->
-            prefs[PrefsKeys.TIME_LIMITS] = PrefsCodec.encodeTimeLimits(prefs.editorTimes().filterNot { it.packageName == l.packageName } + listOfNotNull(l.time))
+            val previous = prefs.editorTimes()
+            val times = normalizeTimeLimitMutation(prefs, previous.filterNot { it.packageName == l.packageName } + listOfNotNull(l.time), previous, now, defaultZone())
+            prefs[PrefsKeys.TIME_LIMITS] = PrefsCodec.encodeTimeLimits(times)
             prefs[PrefsKeys.OPEN_LIMITS] = PrefsCodec.encodeOpenLimits(prefs.editorOpens().filterNot { it.packageName == l.packageName } + listOfNotNull(l.open))
         }
     }
@@ -571,7 +591,7 @@ internal fun MutablePreferences.putEditorState(state: EditorCommitmentState) {
     validateEditorDomains(this, state, version)
     // Old editor v1 allowed absent unused domains. Establish explicit empty values only
     // during the validated one-time upgrade, in the same commit as its version marker.
-    if (version != EDITOR_DOMAIN_VERSION) {
+    if (version == null || version < 2L) {
         for (key in EDITOR_DOMAINS) if (StrictPrefsCodec.string(this, key) == null) {
             this[key] = if (key == PrefsKeys.DEFAULT_BREAK_LEVEL) BreakLevel.EASY.name else ""
         }
@@ -605,7 +625,7 @@ private fun validateEditorDomains(prefs: Preferences, state: EditorCommitmentSta
     val rawTimes = StrictPrefsCodec.string(prefs, PrefsKeys.TIME_LIMITS)
     StrictPrefsCodec.timeLimits(rawTimes.orEmpty(), tier)
     StrictPrefsCodec.openLimits(StrictPrefsCodec.string(prefs, PrefsKeys.OPEN_LIMITS).orEmpty())
-    if (version == EDITOR_DOMAIN_VERSION) {
+    if (version != null && version >= 2L) {
         for (key in EDITOR_DOMAINS) wireRequire(StrictPrefsCodec.string(prefs, key) != null)
     } else {
         // v1 always wrote Time Limits, including the empty list. Its absence is never unused.

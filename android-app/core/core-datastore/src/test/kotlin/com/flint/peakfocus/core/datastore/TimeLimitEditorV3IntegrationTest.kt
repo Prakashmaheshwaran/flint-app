@@ -34,6 +34,8 @@ class TimeLimitEditorV3IntegrationTest {
     private var zone = "Asia/Tokyo"
     private val safe = EditorSafety(true)
     private fun editor(disk: Disk) = DataStoreEditorCommitmentStore(disk, { now }, { zone })
+    private fun usage(disk: Disk) = DataStoreTimeLimitUsageStore(disk, { now }, { zone },
+        prepareEditor = { prefs, stamp -> editor(disk).prepare(prefs, stamp, checkpointQuota = false) })
     private fun literalV2() = preferencesOf(
         EDITOR_VERSION_KEY to 2L,
         EDITOR_COMMITMENTS_KEY to "E|1\nN|1|false\nK|${base.wallEpochMs}|10000|boot\n" +
@@ -150,5 +152,66 @@ class TimeLimitEditorV3IntegrationTest {
         assertEquals(EditorCommitResult.Applied(false), store.confirm(pending.id, now, safe))
         assertEquals("Asia/Tokyo", disk.values.value.editorTimes().single().zoneId)
         assertEquals("Asia/Tokyo", readTimeLimitUsage(disk.values.value).targets.getValue("new").zoneId)
+    }
+
+    @Test fun PC_54_PC_56_firstProductionMeasurementUsesSerializedEditorUpgradeBeforeAnyZoneRewrite() = runBlocking {
+        val disk = Disk(literalV2())
+        val ticket = usage(disk).measurementContext("app", now)
+        assertEquals(3L, disk.values.value[EDITOR_VERSION_KEY])
+        assertEquals("UTC", ticket.zoneId)
+        assertEquals("Asia/Tokyo", disk.values.value.editorTimes().single().zoneId)
+        val state = readEditorState(disk.values.value)
+        assertEquals("old-exact-id", state.causes.getValue("time:app").occurrenceId)
+        assertEquals(hour, state.causes.getValue("time:app").interval!!.remainingMs(now))
+        assertEquals(2, readHarderWait(disk.values.value).counts.getValue(HarderWaitPolicy.Occurrence("time:app", "old-exact-id")))
+        assertEquals("app~30~HARDER" to "EASY", TimeLimitUsageCodec.readArchive(disk.values.value[TIME_USAGE_ARCHIVE]!!))
+    }
+
+    @Test fun PC_54_PC_56_foregroundCrossingQueuedZoneBoundaryChargesOnlyTheObservedNewDaySuffix() = runBlocking {
+        val disk = Disk(literalV2().toMutablePreferences().apply { this[PrefsKeys.TIME_LIMITS] = "app~30~HARDCORE" }.toPreferences())
+        val store = editor(disk); store.reconcile(now)
+        val oldPeriod = readTimeLimitUsage(disk.values.value).targets.getValue("app").periodId
+        val old = disk.values.value.editorTimes().single()
+        val preview = store.request(EditorChange("next zone", limits = EditorLimitsChange("app", old.copy(zoneId = "Pacific/Auckland"), null)), now, safe) as EditorCommitResult.Preview
+        assertEquals(EditorCommitResult.Applied(true), store.confirm(preview.pending.id, now, safe))
+        now = base.copy(wallEpochMs = base.wallEpochMs + hour - 15_000, elapsedRealtimeMs = base.elapsedRealtimeMs + hour - 15_000)
+        val observer = usage(disk)
+        observer.observeForeground(TimeLimitForegroundObservation("owner", null, "visit", "app", now))
+        now = base.copy(wallEpochMs = base.wallEpochMs + hour + 5_000, elapsedRealtimeMs = base.elapsedRealtimeMs + hour + 5_000)
+        observer.observeForeground(TimeLimitForegroundObservation("owner", "visit", "visit", "app", now))
+        val row = readTimeLimitUsage(disk.values.value).targets.getValue("app")
+        assertEquals(oldPeriod + 1, row.periodId)
+        assertEquals("Pacific/Auckland", row.zoneId)
+        assertEquals(5_000L, row.observedUsedMs)
+        assertEquals(5_000L, row.usedMs)
+        assertTrue(readEditorState(disk.values.value).queued.isEmpty())
+    }
+
+    @Test fun PC_60_timeOwnedCorruptionLeavesProductionOpenAndSharedRecoveryMetadataReady() = runBlocking {
+        val disk = Disk(literalV2()); editor(disk).reconcile(now)
+        disk.updateData { it.toMutablePreferences().apply { this[TIME_USAGE_STATE] = "corrupt" }.toPreferences() }
+        val limits = EditorMigratingLimitsStore(disk, { now })
+        assertEquals(StorageState.Unavailable(StorageFailure.CORRUPT), limits.timeLimitsState.first { it !is StorageState.Loading })
+        assertEquals(StorageState.Ready(emptyList<OpenLimit>()), limits.openLimitsState.first { it !is StorageState.Loading })
+        assertTrue(editor(disk).state.first { it !is StorageState.Loading } is StorageState.Ready)
+        val shared = DataStoreProtectionTransactionStore(disk, { now }, { zone })
+        assertTrue(shared.transact { ProtectionMutation(it.focus, true) } is ProtectionCommit.Committed)
+        assertTrue(shared.state.first { it !is StorageState.Loading } is StorageState.Ready)
+        assertTrue(editor(disk).request(EditorChange("change Time", limits = EditorLimitsChange("app", disk.values.value.editorTimes().single().copy(dailyMinutes = 60), null)), now, safe) is EditorCommitResult.Rejected)
+    }
+
+    @Test fun PC_56_productionLimitMutatorsCaptureAndRetainTheRegisteredUsedFloor() = runBlocking {
+        val disk = Disk(); val limits = EditorMigratingLimitsStore(disk, { now })
+        limits.setTimeLimit(TimeLimit("app", 30))
+        val originalZone = disk.values.value.editorTimes().single().zoneId
+        assertNotNull(originalZone)
+        val observer = usage(disk)
+        val ticket = observer.measurementContext("app", now)
+        observer.record(ticket, 25 * 60_000L, now)
+        limits.clearTimeLimit("app")
+        limits.setLimits("app", TimeLimit("app", 30), OpenLimit("app", 2))
+        assertEquals(originalZone, disk.values.value.editorTimes().single().zoneId)
+        assertEquals(25 * 60_000L, readTimeLimitUsage(disk.values.value).targets.getValue("app").usedMs)
+        assertEquals(2, disk.values.value.editorOpens().single().dailyOpens)
     }
 }
