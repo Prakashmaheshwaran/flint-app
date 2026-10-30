@@ -31,7 +31,7 @@ class ObservedTargetProtectionReaderTest {
         })
         val clock = MutableStateFlow(now)
         val reader = ObservedTargetProtectionReader(raw, backgroundScope, "flint", { _, _, _ -> TargetReadEnvironment() },
-            ticks = clock, worker = StandardTestDispatcher(testScheduler))
+            clock = { clock.value }, ticks = clock, worker = StandardTestDispatcher(testScheduler))
         val first = mutableListOf<TargetProtection>()
         val second = mutableListOf<TargetProtection>()
         val a = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { reader.observe(TargetRef.App("one.app")).collect(first::add) }
@@ -53,7 +53,7 @@ class ObservedTargetProtectionReaderTest {
     @Test fun loadingAndIoFailureNeverBecomeReadyEmptyProtectionAndStaticFloorStillWins() = runTest {
         val reader = ObservedTargetProtectionReader(snapshots(flow { throw IOException("private path must not leak") }),
             backgroundScope, "flint", { _, _, _ -> TargetReadEnvironment() }, ticks = flowOf(now),
-            worker = StandardTestDispatcher(testScheduler))
+            clock = { now }, worker = StandardTestDispatcher(testScheduler))
         val values = mutableListOf<TargetProtection>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { reader.observe(TargetRef.App("flint")).collect(values::add) }
         runCurrent()
@@ -67,7 +67,7 @@ class ObservedTargetProtectionReaderTest {
     @Test fun loadingPropagatesWhileTheInitialStoreReadIsPending() = runTest {
         val source = MutableStateFlow<StorageState<ProtectionSnapshot>>(StorageState.Loading)
         val reader = ObservedTargetProtectionReader(snapshots(source), backgroundScope, "flint",
-            { _, _, _ -> TargetReadEnvironment() }, ticks = flowOf(now), worker = StandardTestDispatcher(testScheduler))
+            { _, _, _ -> TargetReadEnvironment() }, clock = { now }, ticks = flowOf(now), worker = StandardTestDispatcher(testScheduler))
         val values = mutableListOf<TargetProtection>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { reader.observe(TargetRef.App("one.app")).collect(values::add) }
         runCurrent()
@@ -82,12 +82,29 @@ class ObservedTargetProtectionReaderTest {
     @Test fun observationFailureIsSanitizedAndDoesNotEraseAnIndependentStaticFloor() = runTest {
         val reader = ObservedTargetProtectionReader(snapshots(flowOf(StorageState.Ready(snapshot()))), backgroundScope, "flint",
             { _, _, _ -> throw IllegalStateException("private observation") }, ticks = flowOf(now),
-            worker = StandardTestDispatcher(testScheduler))
+            clock = { now }, worker = StandardTestDispatcher(testScheduler))
         val values = mutableListOf<TargetProtection>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { reader.observe(TargetRef.App("com.android.settings")).collect(values::add) }
         runCurrent()
         assertEquals(Readiness.Unavailable("runtime-observation-unavailable"), values.last().readiness)
         assertEquals(FloorIdentity.Kind.STATIC_SYSTEM, values.last().floor!!.kind)
         assertEquals(false, values.last().blockingNow)
+    }
+
+    @Test fun projectionSamplesTheClockAfterObservationsInsteadOfUsingAnOlderInvalidatingTick() = runTest {
+        var sampled = now
+        val stored = snapshot().let { it.copy(focus = it.focus.copy(protection = it.focus.protection!!.copy(
+            recovery = ProtectionRecovery("pass", now, emptySet(), emptySet(), emptySet(), 300_000)))) }
+        val reader = ObservedTargetProtectionReader(snapshots(flowOf(StorageState.Ready(stored))), backgroundScope, "flint",
+            { _, _, _ ->
+                sampled = now.copy(wallEpochMs = now.wallEpochMs + 86_400_000, elapsedRealtimeMs = now.elapsedRealtimeMs + 500)
+                TargetReadEnvironment()
+            }, clock = { sampled }, ticks = flowOf(now), worker = StandardTestDispatcher(testScheduler))
+        val values = mutableListOf<TargetProtection>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { reader.observe(TargetRef.Site("example.com")).collect(values::add) }
+        runCurrent()
+        assertEquals(sampled.wallEpochMs + 299_500, values.last().recoveryEndsAtWall)
+        assertEquals(false, values.last().blockingNow)
+        assertEquals(now, stored.observedAt)
     }
 }

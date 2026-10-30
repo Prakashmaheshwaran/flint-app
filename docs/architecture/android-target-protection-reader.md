@@ -15,6 +15,9 @@ once, projects cached records on a shared one-second clock, conflates results,
 and stops upstream work when its last collector leaves. Usage is sampled only
 for the requested app/current browser with a positive budget, at most once per
 15 seconds; Usage Access is rechecked before returning any cached measurement.
+Projection takes a fresh clock sample after gathering observations: a health or
+store publication newer than the invalidating tick is never mistaken for a
+clock regression.
 
 The reader has no edit, reconcile, migrate, checkpoint, grant, debit or event
 delivery entry point. `ProtectionSnapshotReader` reuses the protection transaction
