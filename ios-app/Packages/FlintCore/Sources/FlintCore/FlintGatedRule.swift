@@ -227,8 +227,14 @@ enum FlintRuleShield {
     private static func applyLocked<Rule: FlintGatedRule>(_ rule: Rule, clock: FlintClock) {
         apply(rule, to: FlintManagedRuleShieldWriter(store: ManagedSettingsStore(named: .init(rule.storeName))))
         if let schedule = rule as? FlintScheduleRule {
-            reconcileWeb(schedule, config: FlintWebRestrictions.loadForEnforcement(), at: clock.now(),
-                writer: FlintManagedWebRestrictionWriter(), clock: clock)
+            switch FlintWebRestrictions.readForEnforcement() {
+            case let .available(config):
+                reconcileWeb(schedule, config: config, at: clock.now(), writer: FlintManagedWebRestrictionWriter(), clock: clock)
+            case .busy:
+                recordWebNote(schedule, note: "Safari reconciliation deferred because website rules are busy. Existing keys were preserved; retry on the next rule or host reconciliation.")
+            case .unavailable:
+                recordWebNote(schedule, note: "Saved website rules are unavailable. Existing Safari settings were preserved pending repair.")
+            }
         }
     }
 
@@ -268,9 +274,18 @@ enum FlintRuleShield {
     private static func addLocked<Rule: FlintGatedRule>(_ rule: Rule, clock: FlintClock) {
         let store = ManagedSettingsStore(named: .init(rule.storeName))
         add(rule, to: FlintManagedRuleShieldWriter(store: store))
-        if let schedule = rule as? FlintScheduleRule, schedule.occurrence(at: clock.now(), clock: clock) != nil,
-           let config = FlintWebRestrictions.loadForEnforcement(), config.applyDuringSchedules,
-           config.validationMessage == nil {
+        if let schedule = rule as? FlintScheduleRule, schedule.occurrence(at: clock.now(), clock: clock) != nil {
+            let config: FlintWebRestrictions
+            switch FlintWebRestrictions.readForEnforcement() {
+            case let .available(available): config = available
+            case .busy:
+                recordWebNote(schedule, note: "Safari reconciliation deferred because website rules are busy. Existing keys were preserved; retry on the next rule or host reconciliation.")
+                return
+            case .unavailable:
+                recordWebNote(schedule, note: "Saved website rules are unavailable. Existing Safari settings were preserved pending repair.")
+                return
+            }
+            guard config.applyDuringSchedules, config.validationMessage == nil else { return }
             if store.webContent.blockedByFilter == nil {
                 store.webContent.blockedByFilter = FlintWebRestrictionStore.filterPolicy(for: config)
             }

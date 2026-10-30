@@ -64,15 +64,38 @@ public final class FlintWebRestrictionLifecycle {
     }
 
     public func reconcileSession(
-        _ session: FlintActiveSession?, config: FlintWebRestrictions, now: Date = Date(),
+        _ session: FlintActiveSession?, config: FlintWebRestrictions?, now: Date = Date(),
         clock: FlintClock? = nil
     ) {
+        guard let config else {
+            guard recoveryGate().permitsApplication,
+                  session.map({ !$0.isEnforcing(at: now, clock: clock ?? self.clock) }) ?? true else { return }
+            writer.clear(store: Self.sessionStoreName)
+            return
+        }
         update(store: Self.sessionStoreName, shouldApply: FlintWebRestrictionPolicy.shouldApply(
             to: .session(session), config: config, now: now, clock: clock ?? self.clock
         ), config: config)
     }
 
     #if canImport(FamilyControls)
+    /// Unavailable preferences cannot extend a positively ended owner. These must be the
+    /// actual saved owners, before registration eligibility masks them as nil/disabled.
+    func clearEndedOwners(activeSession: FlintActiveSession?, rules: [FlintScheduleRule],
+                          now: Date, clock: FlintClock? = nil) {
+        guard recoveryGate().permitsApplication else { return }
+        let resolved = clock ?? self.clock
+        reconcileSession(activeSession, config: nil, now: now, clock: resolved)
+        for rule in rules where !rule.enabled || rule.occurrence(at: now, clock: resolved) == nil {
+            writer.clear(store: rule.storeName)
+        }
+        // The legacy shared store can only be released when every known owner has ended.
+        if !(activeSession?.isEnforcing(at: now, clock: resolved) ?? false),
+           !rules.contains(where: { $0.enabled && $0.occurrence(at: now, clock: resolved) != nil }) {
+            writer.clear(store: Self.legacyStoreName)
+        }
+    }
+
     public func reconcileRule(
         _ rule: FlintScheduleRule, config: FlintWebRestrictions,
         now: Date = Date(), calendar: Calendar = .current, clock: FlintClock? = nil
@@ -139,8 +162,7 @@ public struct FlintSessionWebRestrictionAdapter: FlintSessionWebRestricting {
     }
 
     public func reconcile(_ session: FlintActiveSession, clock: FlintClock) {
-        guard let config = configuration() else { return } // unknown desired intent preserves keys
-        lifecycle.reconcileSession(session, config: config, now: clock.now(), clock: clock)
+        lifecycle.reconcileSession(session, config: configuration(), now: clock.now(), clock: clock)
     }
 }
 #endif

@@ -5,6 +5,74 @@ import Darwin
 @testable import FlintCore
 
 final class FlintRuleInitializationTests: XCTestCase {
+    func testInitializationFailureIsUnavailableForUIRatherThanPermanentBusy() throws {
+        for failure in ["invalid-receipt", "preparing-mismatch", "missing-defaults", "failed-write", "invalid-directory"] {
+            let h = try RuleHarness(); defer { h.clean() }
+            var environment = h.environment
+            switch failure {
+            case "invalid-receipt": h.defaults.set(Data("future receipt".utf8), forKey: FlintRuleInitialization.receiptKey)
+            case "preparing-mismatch":
+                h.defaults.set(Data("{\"schema\":1,\"phase\":\"preparing\"}".utf8), forKey: FlintRuleInitialization.receiptKey)
+                h.defaults.set(Data("not the known empty after-image".utf8), forKey: FlintRuleStoreKey.schedules.rawValue)
+            case "missing-defaults": environment.defaults = nil
+            case "failed-write": environment.acceptSave = { false }
+            default:
+                let file = h.directory.appendingPathComponent("not-a-directory")
+                try Data("retained".utf8).write(to: file)
+                environment.lockDirectory = file
+            }
+            XCTAssertEqual(FlintRuleStoreLock.initializationReadiness(environment: environment, timeout: 0), .failed, failure)
+            let read = FlintWebRestrictions.read(uiRead: true, environment: environment, existingWebStores: { false },
+                transition: { _, _ in XCTFail("Failed initialization must not enter the web transition"); return false })
+            XCTAssertEqual(read, .unavailable, failure)
+            let editor = FlintWebRestrictionEditor(read: { read }, snapshot: { nil }, persist: { _ in false },
+                ledger: { nil }, clock: h.clock, prepare: { .unavailable })
+            XCTAssertEqual(editor.save(.default, requestID: failure), .unavailable)
+            XCTAssertNil(h.defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
+        }
+    }
+
+    @MainActor
+    func testOnlyInitializationLockContentionIsBusyAndCanRetryWithoutWaiting() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let directory = try XCTUnwrap(h.environment.lockDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fd = open(directory.appendingPathComponent("mutation.lock").path, O_CREAT | O_RDWR, 0o600)
+        XCTAssertGreaterThanOrEqual(fd, 0)
+        guard fd >= 0 else { return }
+        defer { flock(fd, LOCK_UN); close(fd) }
+        XCTAssertEqual(flock(fd, LOCK_EX | LOCK_NB), 0)
+        XCTAssertEqual(FlintRuleStoreLock.initializationReadiness(environment: h.environment, timeout: 0), .contended)
+        let read = {
+            FlintWebRestrictions.read(uiRead: true, environment: h.environment, existingWebStores: { false },
+                transition: { _, body in body(); return true })
+        }
+        XCTAssertEqual(read(), .busy)
+        XCTAssertNil(h.defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
+        XCTAssertEqual(flock(fd, LOCK_UN), 0)
+        XCTAssertEqual(read(), .available(.default))
+    }
+
+    func testWebAndRuleInitializationOrdersBothEstablishKnownEmptyDomains() throws {
+        for webFirst in [false, true] {
+            let h = try RuleHarness(); defer { h.clean() }
+            let readWeb = {
+                FlintWebRestrictions.read(uiRead: false, environment: h.environment, existingWebStores: { false },
+                    transition: { _, body in body(); return true })
+            }
+            if webFirst { XCTAssertEqual(readWeb(), .available(.default)) }
+            XCTAssertTrue(FlintRuleStoreLock.prepareInitialization(environment: h.environment))
+            XCTAssertEqual(h.environment.observedRules(FlintScheduleRule.self), [])
+            XCTAssertEqual(h.environment.observedRules(FlintLimitRule.self), [])
+            XCTAssertEqual(h.environment.observedRules(FlintOpenLimitRule.self), [])
+            if !webFirst { XCTAssertEqual(readWeb(), .available(.default)) }
+            XCTAssertEqual(FlintRuleInitialization.receipt(in: h.defaults), .complete)
+            XCTAssertNotNil(h.defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
+            XCTAssertTrue(h.center.starts.isEmpty); XCTAssertTrue(h.cleared.isEmpty)
+            XCTAssertNil(h.defaults.object(forKey: "flint.activeSession"), "Initialization invents no owner")
+        }
+    }
+
     func testR22PreparationLatchesEveryPresentLegacyDomainBeforeItsKeyAndActivityDisappear() throws {
         for lost in FlintRuleStoreKey.allCases {
             let h = try RuleHarness(); defer { h.clean() }
@@ -206,7 +274,8 @@ final class FlintRuleInitializationTests: XCTestCase {
                 defaults: h.defaults, calendar: h.clock.calendar(), hasThresholdShield: { _ in false }) },
             registerCarrier: { _, _, _ in }, terminate: { _, _ in h.defaults.removeObject(forKey: "flint.activeSession") },
             release: { _ in }, resume: { state, at in try FlintEmergencyPassRuleEffects.resume(state: state, at: at,
-                environment: h.environment, web: .init(writer: InitializationNoWebWriter(), clock: h.clock)) }, emit: { _ in }))
+                environment: h.environment, web: .init(writer: InitializationNoWebWriter(), clock: h.clock),
+                existingWebStores: { false }) }, emit: { _ in }))
         let preview = try pass.preview().get()
         _ = try pass.use(previewRevision: preview.revision, operationID: "legacy-upgrade").get()
         _ = try pass.resumeNow().get()

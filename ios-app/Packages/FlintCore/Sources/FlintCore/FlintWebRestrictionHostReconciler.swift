@@ -4,20 +4,78 @@ import Foundation
 /// The host's read/eligibility boundary, shared with tests. Unknown desired intent never
 /// authorizes cleanup; failed repairs leave their last-good cause store to its bounded end.
 enum FlintWebRestrictionHostReconciler {
+    static func busyReport(now: Date = Date()) -> FlintArmingHealth.DomainReport {
+        .init(enabled: 0, attempted: 0, armed: 0, failures: [.init(activityName: "webRestrictions",
+            reason: "Website rules are busy. Existing settings were preserved; try reconciliation again shortly.")], updatedAt: now)
+    }
+
+    static func withRead(_ read: () -> FlintWebRestrictionRead,
+                         reconcile: (FlintWebRestrictions?) -> FlintArmingHealth.DomainReport) -> FlintArmingHealth.DomainReport {
+        switch read() {
+        case .busy: return busyReport()
+        case .unavailable: return reconcile(nil)
+        case let .available(config): return reconcile(config)
+        }
+    }
+
+    static func reconcileLive() -> FlintArmingHealth.DomainReport {
+        // Read owners, intent and eligibility and perform native writes in one transition.
+        // A strengthening cannot commit between our config read and an older native write.
+        switch FlintRuleStoreLock.initializationReadiness(environment: .live) {
+        case .ready: break
+        case .contended: return busyReport()
+        case .failed: return unavailableReport(health: FlintGroupStore()?.loadArmingHealth() ?? .init(), now: Date())
+        }
+        return FlintSessionController().withTransition {
+            withRead(FlintWebRestrictions.readForEnforcement) { config in
+                guard let group = FlintGroupStore() else { return busyReport() }
+                let snapshot = FlintWebRestrictionEditor.Snapshot.observing(session: group.loadActiveSession(),
+                    recordPresent: group.hasActiveSessionRecord(),
+                    rules: FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: .flintGroup, migrating: false),
+                    ledgerState: try? FlintProtectionLedger.appGroup()?.peek().get(), clock: .system)
+                return reconcile(snapshot: snapshot, config: config, health: group.loadArmingHealth(),
+                    lifecycle: .init(), clock: .system)
+            }
+        } ?? busyReport()
+    }
+
+    static func reconcile(snapshot: FlintWebRestrictionEditor.Snapshot?, config: FlintWebRestrictions?,
+                          health: FlintArmingHealth, lifecycle: FlintWebRestrictionLifecycle,
+                          now: Date = Date(), clock: FlintClock) -> FlintArmingHealth.DomainReport {
+        guard let snapshot else { return unavailableReport(health: health, now: now) }
+        return reconcile(activeSession: snapshot.session, hasActiveSessionRecord: snapshot.session != nil,
+            rules: snapshot.rules, config: config, health: health, lifecycle: lifecycle, now: now, clock: clock)
+    }
+
+    private static func unavailableReport(health: FlintArmingHealth, now: Date) -> FlintArmingHealth.DomainReport {
+        .init(enabled: health.domains["webRestrictions"]?.enabled ?? 0, attempted: 0, armed: 0,
+              failures: [.init(activityName: "webRestrictions",
+                 reason: "Saved protection state is unavailable. Existing Safari settings were preserved.")], updatedAt: now)
+    }
+
     static func reconcile(
         activeSession: FlintActiveSession?, hasActiveSessionRecord: Bool,
         rules: [FlintScheduleRule]?, config: FlintWebRestrictions?, health: FlintArmingHealth,
         lifecycle: FlintWebRestrictionLifecycle, now: Date = Date(), calendar: Calendar = .autoupdatingCurrent,
         clock: FlintClock? = nil
     ) -> FlintArmingHealth.DomainReport {
-        guard let rules, let config, let sessionReport = health.domains["session"],
+        guard let rules, let sessionReport = health.domains["session"],
               let rulesReport = health.domains["schedules"],
               !(activeSession == nil && hasActiveSessionRecord), sessionReport.recordUnreadable != true,
+              activeSession.map({ session in
+                  (session.contractVersion == nil || session.contractVersion == FlintActiveSession.currentContractVersion)
+                  && session.startedAt.timeIntervalSinceReferenceDate.isFinite
+                  && (session.endsAt.map { $0.timeIntervalSinceReferenceDate.isFinite && $0 > session.startedAt } ?? true)
+              }) ?? true,
               !sessionReport.failures.contains(where: { $0.activityName == "session" }),
               !rulesReport.failures.contains(where: { $0.activityName == "schedules" }) else {
+            return unavailableReport(health: health, now: now)
+        }
+        guard let config else {
+            lifecycle.clearEndedOwners(activeSession: activeSession, rules: rules, now: now, clock: clock)
             return .init(enabled: health.domains["webRestrictions"]?.enabled ?? 0, attempted: 0, armed: 0,
                          failures: [.init(activityName: "webRestrictions",
-                            reason: "Saved protection state is unavailable. Existing Safari settings were preserved.")],
+                            reason: "Saved website rules are unavailable. Live owners were preserved; verified ended owners were released.")],
                          updatedAt: now)
         }
         if let message = config.validationMessage {

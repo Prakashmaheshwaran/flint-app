@@ -41,42 +41,53 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(legacy, forKey: "flint.webRestrictions")
-        XCTAssertEqual(FlintWebRestrictions.load(from: defaults), expected)
-        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults), expected)
+        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), expected)
+        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), expected)
         var updated = expected
         updated.applyDuringSchedules = true
         updated.save(to: defaults)
-        XCTAssertEqual(FlintWebRestrictions.load(from: defaults), updated)
+        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), updated)
     }
 
-    func testUnreadableConfigPreservesLastGoodKeysWhileMissingKeyIsOptOut() throws {
+    func testUnreadableOrDeletedConfigPreservesActiveHardcoreSessionWebKeys() throws {
         let suite = "test.flint.web.unavailable.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults), .default)
+        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), .default)
         XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: nil))
-        let config = FlintWebRestrictions(enabled: true)
-        config.save(to: defaults)
+        let config = FlintWebRestrictions(enabled: true, denyExplicitMedia: true)
+        XCTAssertTrue(config.save(to: defaults))
         let writer = RecordingWebWriter()
         let adapter = FlintSessionWebRestrictionAdapter(writer: writer, configuration: {
-            FlintWebRestrictions.loadForEnforcement(from: defaults)
+            FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false })
         })
         let fixedNow = now
         let clock = FlintClock(now: { fixedNow }, monotonic: { 0 }, bootSessionID: { nil }, calendar: { .current })
-        adapter.reconcile(session(), clock: clock)
+        let active = FlintActiveSession(name: "Hardcore", startedAt: now.addingTimeInterval(-60),
+            endsAt: now.addingTimeInterval(3600), breakLevel: .hardcore, monitorName: "flint.session",
+            contractVersion: FlintActiveSession.currentContractVersion)
+        defaults.set(try JSONEncoder().encode(active), forKey: "flint.activeSession")
+        adapter.reconcile(active, clock: clock)
         for malformed in [Data("{".utf8), Data("{\"enabled\":true}".utf8)] {
             defaults.set(malformed, forKey: "flint.webRestrictions")
-            adapter.reconcile(session(), clock: clock)
-            XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults))
+            adapter.reconcile(active, clock: clock)
+            XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }))
             XCTAssertEqual(writer.web["flint"], config)
         }
         defaults.set("wrong storage type", forKey: "flint.webRestrictions")
-        adapter.reconcile(session(), clock: clock)
+        adapter.reconcile(active, clock: clock)
         XCTAssertEqual(writer.web["flint"], config)
         XCTAssertTrue(writer.cleared.isEmpty)
         defaults.removeObject(forKey: "flint.webRestrictions")
-        adapter.reconcile(session(), clock: clock)
-        XCTAssertNil(writer.web["flint"])
+        adapter.reconcile(active, clock: clock)
+        XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }))
+        let report = FlintWebRestrictionHostReconciler.reconcile(activeSession: active,
+            hasActiveSessionRecord: true, rules: [], config: .loadForEnforcement(from: defaults),
+            health: hostHealth([], observed: []), lifecycle: .init(writer: writer),
+            now: now, calendar: calendar, clock: clock)
+        XCTAssertFalse(report.failures.isEmpty)
+        XCTAssertEqual(writer.web["flint"], config)
+        XCTAssertTrue(writer.cleared.isEmpty, "R2-N01: foreground must not release the finite Hardcore child")
     }
 
     func testIndependentScopesExcludeTimeAndOpenLimits() {
@@ -92,6 +103,38 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
                 XCTAssertFalse(FlintWebRestrictionPolicy.shouldApply(to: .openLimit, config: config))
             }
         }
+    }
+
+    func testBusyUIReadDoesNotSkipNormalSessionEnforcementOfStrengthening() {
+        let writer = RecordingWebWriter()
+        var desired = FlintWebRestrictions(enabled: true)
+        var reads = 0
+        let load = { reads += 1; return desired as FlintWebRestrictions? }
+        let contended: (TimeInterval?, () -> Void) -> Bool = { timeout, body in
+            guard timeout != 0 else { return false }
+            body(); return true
+        }
+        let adapter = FlintSessionWebRestrictionAdapter(writer: writer, configuration: {
+            guard case let .available(config) = FlintWebRestrictions.read(
+                uiRead: false, load: load, transition: contended
+            ) else { return nil }
+            return config
+        })
+        let instant = now
+        let clock = FlintClock(now: { instant }, monotonic: { 0 }, bootSessionID: { nil },
+                               calendar: { self.calendar })
+        let active = session(endsAt: now.addingTimeInterval(3600))
+        adapter.reconcile(active, clock: clock)
+        desired.blockedDomains = ["example.com"]
+        desired.denyExplicitMedia = true
+
+        XCTAssertEqual(FlintWebRestrictions.read(uiRead: true, load: load, transition: contended), .busy)
+        XCTAssertEqual(reads, 1, "The opportunistic UI read neither initializes nor loads intent")
+        adapter.reconcile(active, clock: clock)
+        XCTAssertEqual(reads, 2, "Enforcement retains its normal acquisition and reads the strengthening")
+        XCTAssertEqual(writer.web["flint"], desired)
+        XCTAssertEqual(writer.applied, ["flint", "flint"])
+        XCTAssertTrue(writer.cleared.isEmpty)
     }
 
     func testSessionExpiryBoundaryAndAbsentSessionClearOnlySessionWebKeys() {
@@ -311,6 +354,95 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
             activeSession: live, hasActiveSessionRecord: true, rules: [], config: config, health: hostHealth([]),
             lifecycle: FlintWebRestrictionLifecycle(writer: writer), now: wall, calendar: calendar, clock: clock)
         XCTAssertTrue(writer.cleared.contains("flint"), "released once its committed time has elapsed")
+    }
+
+    func testUnavailableIntentClearsOnlyTrustedEndedOwnersDespiteFailedEligibility() {
+        let writer = RecordingWebWriter()
+        let config = FlintWebRestrictions(enabled: true, applyDuringSchedules: true)
+        var wall = now
+        var monotonic: TimeInterval = 1000
+        let clock = FlintClock(now: { wall }, monotonic: { monotonic }, bootSessionID: { "end-boot" },
+                               calendar: { self.calendar })
+        let active = FlintActiveSession(name: "Hardcore", startedAt: now, endsAt: now.addingTimeInterval(1800),
+            breakLevel: .hardcore, monitorName: "flint.session", monotonicStart: monotonic,
+            bootSessionID: "end-boot", contractVersion: FlintActiveSession.currentContractVersion, plannedDuration: 1800)
+        var frozen = rule("frozen")
+        frozen.protection?.occurrence = .init(start: now, end: now.addingTimeInterval(1800))
+        FlintRuleOccurrenceClock.observe(&frozen, clock: clock)
+        var health = hostHealth([frozen]); health.domains["session"]?.rearmFailed = true
+        health.domains["schedules"]?.observedActivities = []
+        health.domains["schedules"]?.failures = [.init(activityName: frozen.monitorName, reason: "repair failed")]
+        writer.web = ["flint": config, frozen.storeName: config, "flint.web": config]
+        wall.addTimeInterval(86400); monotonic += 60
+        _ = FlintWebRestrictionHostReconciler.reconcile(activeSession: active, hasActiveSessionRecord: true,
+            rules: [frozen], config: nil, health: health, lifecycle: .init(writer: writer), now: wall, clock: clock)
+        XCTAssertEqual(writer.web.count, 3, "Unarmed masks and a wall jump cannot prove the actual owners ended")
+        monotonic += 1740
+        var ended = frozen; ended.enabled = false
+        _ = FlintWebRestrictionHostReconciler.reconcile(activeSession: active, hasActiveSessionRecord: true,
+            rules: [ended], config: nil, health: health, lifecycle: .init(writer: writer), now: wall, clock: clock)
+        XCTAssertTrue(writer.web.isEmpty, "The last logical end releases the primary and legacy web keys")
+    }
+
+    @MainActor
+    func testWebLiveLayerRunsNormalAcquisitionOffMainAndRetriesBusyWithoutCorruption() async throws {
+        let writer = RecordingWebWriter()
+        let config = FlintWebRestrictions(enabled: true, blockedDomains: ["strengthened.example"])
+        let active = session()
+        let health = hostHealth([])
+        let instant = now
+        var acquired = false
+        let layer = FlintWebProtectionLayer {
+            XCTAssertFalse(Thread.isMainThread)
+            return FlintWebRestrictionHostReconciler.withRead({ acquired ? .available(config) : .busy }) { read in
+                FlintWebRestrictionHostReconciler.reconcile(activeSession: active, hasActiveSessionRecord: true,
+                    rules: [], config: read, health: health, lifecycle: .init(writer: writer), now: instant)
+            }
+        }
+        let busy = try await layer.reconcile(trigger: .foreground)
+        XCTAssertTrue(writer.applied.isEmpty); XCTAssertTrue(writer.cleared.isEmpty)
+        XCTAssertTrue(busy.failures.first?.reason.contains("busy") == true)
+        XCTAssertFalse(busy.failures.first?.reason.contains("unavailable") == true)
+        acquired = true
+        let applied = try await layer.reconcile(trigger: .foreground)
+        XCTAssertEqual(applied.armed, 1)
+        XCTAssertEqual(writer.web["flint"], config)
+        XCTAssertTrue(applied.failures.isEmpty)
+    }
+
+    func testUnavailableIntentReleasesTrustedOneShotEndButNotUnknownSnapshotOrPassGate() {
+        let writer = RecordingWebWriter()
+        let config = FlintWebRestrictions(applyDuringSchedules: true)
+        var ended = rule("ended")
+        ended.oneShot = .init(start: now.addingTimeInterval(-120), end: now)
+        writer.web = [ended.storeName: config, "flint.web": config]
+        _ = FlintWebRestrictionHostReconciler.reconcile(activeSession: nil, hasActiveSessionRecord: true,
+            rules: [ended], config: nil, health: hostHealth([ended]), lifecycle: .init(writer: writer), now: now)
+        XCTAssertEqual(writer.web.count, 2, "A missing session record is unknown, not an ended owner")
+        let blocked = FlintWebRestrictionLifecycle(writer: writer, recoveryGate: { .unavailable })
+        blocked.clearEndedOwners(activeSession: nil, rules: [ended], now: now)
+        XCTAssertEqual(writer.web.count, 2)
+        _ = FlintWebRestrictionHostReconciler.reconcile(activeSession: nil, hasActiveSessionRecord: false,
+            rules: [ended], config: nil, health: hostHealth([ended]), lifecycle: .init(writer: writer), now: now)
+        XCTAssertTrue(writer.web.isEmpty)
+    }
+
+    func testSessionAdapterUnavailableIntentUsesLogicalExpiryForCleanup() {
+        let writer = RecordingWebWriter()
+        let config = FlintWebRestrictions(enabled: true)
+        var monotonic: TimeInterval = 1000
+        let wall = now.addingTimeInterval(86400)
+        let clock = FlintClock(now: { wall }, monotonic: { monotonic }, bootSessionID: { "adapter-end" },
+                               calendar: { self.calendar })
+        let active = FlintActiveSession(name: "Focus", startedAt: now, endsAt: now.addingTimeInterval(60),
+            breakLevel: .hardcore, monitorName: "flint.session", monotonicStart: 1000,
+            bootSessionID: "adapter-end", plannedDuration: 60)
+        writer.web["flint"] = config
+        let adapter = FlintSessionWebRestrictionAdapter(writer: writer, configuration: { nil })
+        adapter.reconcile(active, clock: clock)
+        XCTAssertEqual(writer.web["flint"], config)
+        monotonic += 60; adapter.reconcile(active, clock: clock)
+        XCTAssertNil(writer.web["flint"])
     }
 
     private func hostHealth(_ rules: [FlintScheduleRule], failures: [FlintArmingHealth.Failure] = [],
@@ -886,18 +1018,136 @@ final class FlintWebRestrictionEditorTests: XCTestCase {
         XCTAssertEqual(h.writes, 0)
     }
 
-    func testUnreadableConfigCannotBeOverwrittenByADefaultDraft() throws {
+    func testUnreadableConfigRecoveryRespectsHardcoreThenRetainsOriginalBytes() throws {
         let suite = "test.flint.web.editor.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let original = Data("{broken user configuration".utf8)
         defaults.set(original, forKey: "flint.webRestrictions")
         let h = WebEditorHarness()
-        let editor = FlintWebRestrictionEditor(load: { .loadForEnforcement(from: defaults) },
-            snapshot: { .init(session: nil, rules: []) }, persist: { $0.save(to: defaults) },
+        h.active = h.session(.hardcore)
+        let recovery = h.directory.appendingPathComponent("Recovery")
+        let editor = FlintWebRestrictionEditor(load: { .loadForEnforcement(from: defaults, existingWebStores: { false }) },
+            snapshot: { .init(session: h.active, rules: []) },
+            persist: { $0.saveRecoveringUnavailableIntent(to: defaults, recoveryDirectory: recovery) },
             ledger: { nil }, clock: h.clock)
-        XCTAssertEqual(editor.save(.default, requestID: "bad"), .unavailable)
+        XCTAssertEqual(editor.save(.default, requestID: "repair"), .protected(until: h.active?.endsAt))
         XCTAssertEqual(defaults.data(forKey: "flint.webRestrictions"), original)
+        h.active = nil
+        XCTAssertEqual(editor.save(.default, requestID: "repair"), .saved)
+        let key = try XCTUnwrap(defaults.dictionaryRepresentation().keys.first {
+            $0.hasPrefix("flint.webRestrictions.recovered.")
+        })
+        let reference = try XCTUnwrap(defaults.object(forKey: key))
+        XCTAssertEqual(FlintRuleRecovery.read(reference, key: key, directory: recovery), original)
+        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), .default)
+    }
+
+    func testUnavailableIntentAllowsEasyOrNoOwnerButNotUnknownOwners() {
+        for active in [false, true] {
+            let h = WebEditorHarness(); h.readOverride = .unavailable
+            h.active = active ? h.session(.easy) : nil
+            XCTAssertEqual(h.editor().save(.default, requestID: "repair"), .saved)
+            XCTAssertEqual(h.writes, 1)
+        }
+        let h = WebEditorHarness(); h.readOverride = .unavailable; h.snapshotAvailable = false
+        XCTAssertEqual(h.editor().save(.default, requestID: "unknown"), .unavailable)
+        XCTAssertEqual(h.writes, 0)
+    }
+
+    func testWebHostAndEditorPreserveWhenAppliedGenerationLosesItsProjectionOrIsInstalling() throws {
+        let h = WebEditorHarness()
+        let active = h.session(.hardcore)
+        var state = try h.ledger().read().get()
+        var authority = FlintSessionAuthority(initializedAt: h.now)
+        authority.adopt(active)
+        state.sessionAuthority = authority; state.sessionAuthorityVersion = 1
+        let valid = FlintWebRestrictionEditor.Snapshot.observing(session: active, recordPresent: true,
+            rules: [], ledgerState: state, clock: h.clock)
+        XCTAssertEqual(valid?.session?.id, active.id)
+        for installing in [false, true] {
+            if installing { state.sessionAuthority?.latest?.phase = .installing }
+            let snapshot = FlintWebRestrictionEditor.Snapshot.observing(session: installing ? active : nil,
+                recordPresent: installing, rules: [], ledgerState: state, clock: h.clock)
+            XCTAssertNil(snapshot, "A lost projection or an installing generation is unknown, never idle")
+            let writer = RecordingWebWriter(); writer.web["flint"] = h.config
+            let health = FlintArmingHealth(domains: [
+                "session": .init(enabled: 1, attempted: 1, armed: 1, failures: []),
+                "schedules": .init(enabled: 0, attempted: 0, armed: 0, failures: [])
+            ])
+            let report = FlintWebRestrictionHostReconciler.reconcile(snapshot: snapshot, config: nil,
+                health: health, lifecycle: .init(writer: writer), now: h.now, clock: h.clock)
+            XCTAssertFalse(report.failures.isEmpty)
+            XCTAssertEqual(writer.web["flint"], h.config)
+            XCTAssertTrue(writer.cleared.isEmpty)
+            let editor = FlintWebRestrictionEditor(read: { .unavailable }, snapshot: { snapshot },
+                persist: { _ in XCTFail("Unknown owner cannot authorize repair"); return false },
+                ledger: { h.ledger() }, clock: h.clock)
+            XCTAssertEqual(editor.save(.default, requestID: "lost-projection"), .unavailable)
+        }
+        state.sessionAuthority = .init(initializedAt: h.now)
+        XCTAssertNotNil(FlintWebRestrictionEditor.Snapshot.observing(session: nil, recordPresent: false,
+            rules: [], ledgerState: state, clock: h.clock), "The explicit idle tombstone permits an owner snapshot")
+        XCTAssertNil(FlintWebRestrictionEditor.Snapshot.observing(session: nil, recordPresent: false,
+            rules: [], ledgerState: nil, clock: h.clock), "Ledger outage is not idle")
+    }
+
+    func testUnavailableIntentHarderRepairWaitsAndFailedWriteRetrySpendsOnce() throws {
+        let h = WebEditorHarness(); h.readOverride = .unavailable
+        h.active = h.session(.harder); h.rules = [h.rule(.harder)]
+        XCTAssertEqual(h.editor().save(.default, requestID: "repair"), .waiting(seconds: 60))
+        h.advance(60)
+        XCTAssertEqual(h.editor().save(.default, requestID: "repair"), .confirmationRequired)
+        h.saveAllowed = false
+        guard case .invalid = h.editor().save(.default, requestID: "repair", confirmed: true) else {
+            return XCTFail("An authorized failed repair must retain a retryable draft")
+        }
+        let spent = try h.ledger().read().get().harder.mapValues(\.committedCount)
+        XCTAssertEqual(spent.count, 2)
+        XCTAssertTrue(spent.values.allSatisfy { $0 == 1 })
+        h.saveAllowed = true
+        XCTAssertEqual(h.editor().save(.default, requestID: "repair", confirmed: true), .saved)
+        XCTAssertEqual(try h.ledger().read().get().harder.mapValues(\.committedCount), spent)
+    }
+
+    func testUnavailableIntentHardcoreRuleDefersEvenAnOptInDraft() {
+        let h = WebEditorHarness(); h.readOverride = .unavailable; h.rules = [h.rule(.hardcore)]
+        let end = h.rules[0].occurrence(at: h.now, clock: h.clock)?.end
+        XCTAssertEqual(h.editor().save(h.config, requestID: "repair"), .protected(until: end))
+        XCTAssertEqual(h.writes, 0)
+        h.now = end!; h.monotonic += 8 * 3600
+        XCTAssertEqual(h.editor().save(h.config, requestID: "repair"), .saved)
+    }
+
+    func testUnknownSafariIntentRepairDoesNotInheritLegacyHardcoreWeakeningRights() {
+        for sessionOwner in [false, true] {
+            let h = WebEditorHarness(); h.readOverride = .unavailable
+            let end: Date
+            if sessionOwner {
+                let active = FlintActiveSession(name: "Legacy", startedAt: h.now.addingTimeInterval(-60),
+                    endsAt: h.now.addingTimeInterval(3600), breakLevel: .hardcore, monitorName: "flint.session.legacy")
+                h.active = active; end = active.endsAt!
+            } else {
+                var rule = h.rule(.hardcore)
+                end = rule.occurrence(at: h.now, clock: h.clock)!.end
+                rule.protection?.legacyRightsUntil = end
+                h.rules = [rule]
+            }
+            XCTAssertEqual(h.editor().save(.default, requestID: "legacy-repair"), .protected(until: end))
+            XCTAssertEqual(h.writes, 0, "Unknown original web intent cannot import an easier exit")
+            h.advance(end.timeIntervalSince(h.now))
+            XCTAssertEqual(h.editor().save(.default, requestID: "legacy-repair"), .saved)
+        }
+    }
+
+    func testBusyEditorReadAndBoundaryAreRetryableWithoutMutation() {
+        let h = WebEditorHarness(); h.readOverride = .busy
+        XCTAssertEqual(h.editor().save(.default, requestID: "busy"), .busy)
+        let editor = FlintWebRestrictionEditor(load: { h.config }, snapshot: { .init(session: nil, rules: []) },
+            persist: { _ in XCTFail("No mutation without the boundary"); return false }, ledger: { nil },
+            clock: h.clock, withTransitionBoundary: { _ in false })
+        XCTAssertEqual(editor.save(.default, requestID: "lock-busy"), .busy)
+        XCTAssertEqual(h.writes, 0)
     }
 
     func testDomainCapRefusesSaveAndReportsWithoutNativeWrites() throws {
@@ -934,7 +1184,7 @@ final class FlintWebRestrictionEditorTests: XCTestCase {
         draft.allowedDomains.append("overflow.example")
         XCTAssertNotNil(draft.validationMessage)
         XCTAssertFalse(draft.save(to: defaults))
-        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults), previous)
+        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), previous)
     }
 }
 
@@ -947,6 +1197,9 @@ private final class WebEditorHarness {
     var monotonic: TimeInterval = 1000
     var marker: Date?
     var ledgerAvailable = true
+    var readOverride: FlintWebRestrictionRead?
+    var snapshotAvailable = true
+    var saveAllowed = true
     var writes = 0
     var snapshotReads = 0
     var changeSnapshotOnRead: Int?
@@ -961,7 +1214,7 @@ private final class WebEditorHarness {
     func advance(_ seconds: TimeInterval) { now = now.addingTimeInterval(seconds); monotonic += seconds }
     func session(_ tier: BreakLevel, end: Date? = nil) -> FlintActiveSession {
         .init(name: "Focus", startedAt: now.addingTimeInterval(-60), endsAt: end ?? now.addingTimeInterval(3600),
-              breakLevel: tier, monitorName: "flint.session")
+              breakLevel: tier, monitorName: "flint.session", contractVersion: FlintActiveSession.currentContractVersion)
     }
     func rule(_ tier: BreakLevel) -> FlintScheduleRule {
         .init(id: "sleep.night", name: "Sleep", schedule: .init(daysOfWeek: [2], startHour: 22, endHour: 7),
@@ -972,11 +1225,15 @@ private final class WebEditorHarness {
               setInitializedMarker: { [self] in marker = $0 })
     }
     func editor() -> FlintWebRestrictionEditor {
-        .init(load: { [self] in config }, snapshot: { [self] in
+        .init(read: { [self] in readOverride ?? .available(config) }, snapshot: { [self] in
+            guard snapshotAvailable else { return nil }
             snapshotReads += 1
             if snapshotReads == changeSnapshotOnRead { active = session(.hardcore) }
             return .init(session: active, rules: rules)
-        }, persist: { [self] in config = $0; writes += 1; return true },
+        }, persist: { [self] in
+            guard saveAllowed else { return false }
+            config = $0; readOverride = nil; writes += 1; return true
+        },
         ledger: { [self] in ledgerAvailable ? ledger() : nil }, clock: clock)
     }
 }
