@@ -105,7 +105,7 @@ class EditorDomainCompletenessTest {
         assertEquals(StorageState.Ready(emptyList<BlockRule>()), ActiveRulesHolder.dataStoreState)
         assertTrue(ActiveRulesHolder.rules.isEmpty())
         val first = disk.values.value.asMap().toMap(); val writes = disk.changedWrites
-        assertEquals(2L, disk.values.value[longPreferencesKey("editor_commitments_version")])
+        assertEquals(3L, disk.values.value[longPreferencesKey("editor_commitments_version")])
         for (key in listOf("block_rules_v1", "app_groups_v1", "time_limits_v1", "open_limits_v1"))
             assertEquals("", disk.values.value[stringPreferencesKey(key)])
         assertEquals("EASY", disk.values.value[stringPreferencesKey("default_break_level_v1")])

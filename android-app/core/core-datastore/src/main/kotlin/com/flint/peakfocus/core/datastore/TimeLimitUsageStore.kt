@@ -50,10 +50,19 @@ class DataStoreTimeLimitUsageStore(
             prepareEditor?.invoke(prefs, clockAtCommit?.invoke() ?: observation.observedAt)
             var ledger = prepareTimeLimitSavedZones(prefs, observation.observedAt, deviceZone())
             val previous = ledger.foreground
+            var canStartTarget = true
             if (observation.closeOnly && previous?.ownerId != observation.ownerId) return@edit
             val stamp = observation.observedAt
             if (previous?.ownerId == observation.ownerId && previous.checkpoint.bootSessionId == stamp.bootSessionId &&
-                trustedElapsedMs(previous.checkpoint, stamp) == null) return@edit
+                trustedElapsedMs(previous.checkpoint, stamp) == null) {
+                // An independent editor roll may clip the span to a boundary newer than
+                // this queued departure. Clear only its exact visit, without rewinding
+                // the day or starting another span from an older timestamp.
+                if (observation.previousVisitId == previous.visitId && (observation.closeOnly ||
+                    observation.visitId != previous.visitId || observation.packageName != previous.packageName))
+                    prefs.putTimeLimitUsage(ledger.copy(foreground = null))
+                return@edit
+            }
             if (previous?.ownerId == observation.ownerId && previous.visitId == observation.previousVisitId && isCurrentOwner()) {
                 val elapsed = trustedElapsedMs(previous.checkpoint, stamp)?.takeIf { it <= MAX_FOREGROUND_GAP_MS }
                 val old = ledger.targets[previous.packageName] ?: wireCorrupt()
@@ -77,11 +86,15 @@ class DataStoreTimeLimitUsageStore(
                         val left = if (ahead == null) OpenCreditPolicy().remainingToResetMs(before.reset, previous.checkpoint)
                             else Math.addExact(before.reset.remainingToResetMs, ahead)
                         row = TimeLimitDayAccounting.observe(row, (elapsed - left).coerceAtLeast(0L))
+                        if (elapsed < left) {
+                            canStartTarget = false
+                            if (observation.packageName != null) row = row.copy(accountingUnknownUntilReset = true)
+                        }
                     }
                 } else if (elapsed == null) row = row.copy(accountingUnknownUntilReset = true)
                 ledger = ledger.copy(targets = ledger.targets + (previous.packageName to row))
             }
-            val target = observation.packageName.takeUnless { observation.closeOnly || !isCurrentOwner() }
+            val target = observation.packageName.takeUnless { observation.closeOnly || !isCurrentOwner() || !canStartTarget }
             val next = if (target == null) null else {
                 val visit = observation.visitId ?: wireCorrupt()
                 val templateZone = prefs.editorTimes().singleOrNull { it.packageName == target }?.zoneId

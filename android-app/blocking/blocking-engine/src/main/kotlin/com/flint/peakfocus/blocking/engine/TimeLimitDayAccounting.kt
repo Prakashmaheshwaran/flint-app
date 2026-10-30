@@ -67,7 +67,7 @@ object TimeLimitDayAccounting {
 
     /**
      * A delayed response cannot charge/refund another trusted period. New raw OS windows and
-     * clock discontinuities begin additive sample segments instead of replacing consumed usage.
+     * clock discontinuities start overlapping sample segments without refunding consumed usage.
      * A missing measurement is not zero and never poisons the persisted floor with MAX_VALUE.
      */
     fun record(current: TimeLimitDayState, requestedPeriodId: Long, sample: TimeLimitUsageSample?,

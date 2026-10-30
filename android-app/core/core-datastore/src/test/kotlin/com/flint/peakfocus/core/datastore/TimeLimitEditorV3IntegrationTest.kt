@@ -214,4 +214,49 @@ class TimeLimitEditorV3IntegrationTest {
         assertEquals(25 * 60_000L, readTimeLimitUsage(disk.values.value).targets.getValue("app").usedMs)
         assertEquals(2, disk.values.value.editorOpens().single().dailyOpens)
     }
+
+    @Test fun PC_54_independentEditorRolloverPreservesTheContinuouslyObservedNewDaySuffix() = runBlocking {
+        val disk = Disk(literalV2()); val store = editor(disk); store.reconcile(now)
+        now = base.copy(wallEpochMs = base.wallEpochMs + hour - 15_000, elapsedRealtimeMs = base.elapsedRealtimeMs + hour - 15_000)
+        val observer = usage(disk)
+        observer.observeForeground(TimeLimitForegroundObservation("owner", null, "visit", "app", now))
+        now = base.copy(wallEpochMs = base.wallEpochMs + hour + 3_000, elapsedRealtimeMs = base.elapsedRealtimeMs + hour + 3_000)
+        store.reconcile(now)
+        now = now.copy(wallEpochMs = now.wallEpochMs + 2_000, elapsedRealtimeMs = now.elapsedRealtimeMs + 2_000)
+        observer.observeForeground(TimeLimitForegroundObservation("owner", "visit", "visit", "app", now))
+        assertEquals(5_000L, readTimeLimitUsage(disk.values.value).targets.getValue("app").usedMs)
+    }
+
+    @Test fun PC_54_queuedFloorDepartureBeforeAnIndependentRollCannotChargeTheNewDayOrKeepItsSpan() = runBlocking {
+        val disk = Disk(literalV2()); val store = editor(disk); store.reconcile(now)
+        now = base.copy(wallEpochMs = base.wallEpochMs + hour - 15_000, elapsedRealtimeMs = base.elapsedRealtimeMs + hour - 15_000)
+        val observer = usage(disk)
+        observer.observeForeground(TimeLimitForegroundObservation("owner", null, "visit", "app", now))
+        val departed = base.copy(wallEpochMs = base.wallEpochMs + hour - 1_000, elapsedRealtimeMs = base.elapsedRealtimeMs + hour - 1_000)
+        now = base.copy(wallEpochMs = base.wallEpochMs + hour + 5_000, elapsedRealtimeMs = base.elapsedRealtimeMs + hour + 5_000)
+        store.reconcile(now)
+        observer.observeForeground(TimeLimitForegroundObservation("owner", "visit", null, null, departed))
+        val ledger = readTimeLimitUsage(disk.values.value)
+        assertNull(ledger.foreground)
+        assertEquals(0L, ledger.targets.getValue("app").usedMs)
+        now = now.copy(wallEpochMs = now.wallEpochMs + 15_000, elapsedRealtimeMs = now.elapsedRealtimeMs + 15_000)
+        observer.observeForeground(TimeLimitForegroundObservation("owner", null, "new-visit", "app", now))
+        assertEquals(0L, readTimeLimitUsage(disk.values.value).targets.getValue("app").usedMs)
+    }
+
+    @Test fun PC_54_delayedPreBoundaryObservationCannotStartANewPeriodSpanBeforeItsBoundary() = runBlocking {
+        val disk = Disk(literalV2()); editor(disk).reconcile(now)
+        now = base.copy(wallEpochMs = base.wallEpochMs + hour - 15_000, elapsedRealtimeMs = base.elapsedRealtimeMs + hour - 15_000)
+        val observer = usage(disk)
+        observer.observeForeground(TimeLimitForegroundObservation("owner", null, "visit", "app", now))
+        val captured = base.copy(wallEpochMs = base.wallEpochMs + hour - 1_000, elapsedRealtimeMs = base.elapsedRealtimeMs + hour - 1_000)
+        now = base.copy(wallEpochMs = base.wallEpochMs + hour + 60_000, elapsedRealtimeMs = base.elapsedRealtimeMs + hour + 60_000)
+        observer.observeForeground(TimeLimitForegroundObservation("owner", "visit", "visit", "app", captured))
+        val ledger = readTimeLimitUsage(disk.values.value)
+        assertNull(ledger.foreground)
+        assertEquals(0L, ledger.targets.getValue("app").usedMs)
+        assertTrue(ledger.targets.getValue("app").accountingUnknownUntilReset)
+        observer.observeForeground(TimeLimitForegroundObservation("owner", "visit", "visit", "app", now))
+        assertEquals(0L, readTimeLimitUsage(disk.values.value).targets.getValue("app").usedMs)
+    }
 }

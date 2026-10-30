@@ -110,7 +110,25 @@ internal fun advanceTimeLimitEditorDays(prefs: MutablePreferences, ledger: TimeL
         val next = TimeLimitDayAccounting.reconcile(row, now, templates[pkg]?.zoneId ?: row.zoneId)
         if (checkpoint || next.rolled || trustedElapsedMs(row.observedAt, now) == null || clockDiscontinuity(row.observedAt, now)) next.state else row
     }
-    val next = ledger.copy(targets = targets)
+    val foreground = ledger.foreground?.let { span ->
+        val before = ledger.targets[span.packageName]
+        val after = targets[span.packageName]
+        val elapsed = trustedElapsedMs(span.checkpoint, now)
+        if (before?.periodId == span.periodId && after?.periodId == before.periodId + 1 &&
+            elapsed != null && elapsed <= DataStoreTimeLimitUsageStore.MAX_FOREGROUND_GAP_MS) {
+            val ahead = trustedElapsedMs(span.checkpoint, before.reset.checkpoint)
+            val left = if (ahead == null) OpenCreditPolicy().remainingToResetMs(before.reset, span.checkpoint)
+                else Math.addExact(before.reset.remainingToResetMs, ahead)
+            if (left <= elapsed) {
+                // Keep the proven boundary, without charging here. The next observation
+                // still rechecks the owner and visit before spending its elapsed suffix.
+                val boundary = now.copy(wallEpochMs = (now.wallEpochMs - (elapsed - left)).coerceAtLeast(0),
+                    elapsedRealtimeMs = Math.addExact(span.checkpoint.elapsedRealtimeMs, left))
+                span.copy(periodId = after.periodId, startedAt = boundary, checkpoint = boundary)
+            } else span
+        } else span
+    }
+    val next = ledger.copy(targets = targets, foreground = foreground)
     if (next != ledger) prefs.putTimeLimitUsage(next)
     return next
 }
