@@ -34,9 +34,9 @@ No automated or simulator result establishes physical-device enforcement.
 | 1.1 Blocking sessions | Android | CI-EMULATOR-VERIFIED | UI-authored rule survives process restart; real Accessibility shield and Easy release. Service is explicitly re-enabled by the test; no automatic recovery claim. | [AE], [AG] | PC-01, PC-22, PC-61, PC-65 |
 | 1.2 Block Now / instant timer | iOS | UNIT-TESTED | Finite manual/Shortcut sessions use logical elapsed expiry and bounded reboot re-anchoring; early end callbacks cannot release early. Host-dead delivery/re-registration remains a device gate; no Pomodoro chain is inferred. | [IS], [IH], [BFINAL] | PC-01–10, PC-63–66, PC-74–76 |
 | 1.2 Block Now / instant timer | Android | CI-EMULATOR-VERIFIED | Actual five-minute Timer completion/early end and restart persistence have hosted history evidence with blocking off. #173 now refuses arming without a live detector and distinguishes Applying/Armed/Degraded; mount-failure health remains open. | [AH], [CFINAL] | PC-01, PC-63–64, PC-67–68, PC-84 |
-| 1.3 Date-specific one-shot future session | iOS | ABSENT | Personal model/editor registers weekday recurrence; immediate finite sessions do not supply a future date. | [IM] | PC-13–14, PC-81 |
+| 1.3 Date-specific one-shot future session | iOS | ABSENT | The persisted optional oneShot window and arbiter fixtures exist, but production authoring cannot create one; no complete future-date/terminal run is evidenced. | [IM], [BFINAL], [REDTEAM] | PC-13–14, PC-81 |
 | 1.3 Date-specific one-shot future session | Android | ABSENT | Personal Schedule/RuleDraft has weekdays and local minutes; no future absolute occurrence authoring. | [AM] | PC-13–14, PC-81 |
-| 1.4 Recurring / Smart Schedules | iOS | UNIT-TESTED | Gated revisions, frozen active selections, trusted occurrence clocks, bounded retained repair and queued weakening are tested. R-07 no-anchor upgrade and R-28 saved-zone/one-shot remainder remain; native DST/overnight/capacity acceptance is unrun. | [IR], [IM], [BFINAL], [REDTEAM] | PC-02, PC-14, PC-54–58, PC-62, PC-73 |
+| 1.4 Recurring / Smart Schedules | iOS | UNIT-TESTED | Saved-zone registration/callback day checks, DST identity, gated revisions, frozen selections, trusted occurrence clocks and queued weakening are tested. R-07 no-anchor upgrade remains; native DST/overnight/capacity acceptance is unrun. | [IR], [IM], [BFINAL], [REDTEAM] | PC-02, PC-14, PC-54–58, PC-62, PC-73 |
 | 1.4 Recurring / Smart Schedules | Android | UNIT-TESTED | Saved/anchored occurrence and DST/boundary reconciliation plus deferred editor changes are tested. Earlier stationary activation is local emulator evidence, not hosted schedule E2E; remaining migration/Time-Limit-day work is explicit below. | [AC], [CFINAL] | PC-14, PC-54–58, PC-61–62, PC-77 |
 | 1.5 Arbitrary future start beyond 24 h | iOS | ABSENT | Weekly recurrence can reach later weeks; arbitrary date-specific delayed first activation is absent. | [IM] | PC-81 |
 | 1.5 Arbitrary future start beyond 24 h | Android | ABSENT | No arbitrary future date in release personal authoring; debug managed fields are not personal scheduling. | [AM] | PC-81 |
@@ -52,7 +52,7 @@ No automated or simulator result establishes physical-device enforcement.
 | 1.10 Saved groups / routine presets | Android | UNIT-TESTED | Five presets, named groups and transactional gated apply/delete are tested. General editor-domain archive/template migration remains parked; full current UI group flow is unobserved. | [AM], [CFINAL] | PC-13, PC-80 |
 | 2.1 Time Limits | iOS | UNIT-TESTED | Threshold registration/observation, current-tier editor rights and trusted rule boundaries are tested. Real threshold delivery/reset remains unrun; R-07 no-anchor upgrade and R-28 remainder prevent whole-contract acceptance. | [IR], [IM], [BFINAL], [REDTEAM] | PC-15, PC-37, PC-54–58, PC-61–62 |
 | 2.1 Time Limits | Android | CI-EMULATOR-VERIFIED | Hosted shield uses an already-exhausted zero budget. Saved per-limit tiers are consumed by both detectors; positive-budget latency has narrower local observations. R-18 daily reset/measurement and lifecycle/migration work are tracked separately. | [AE], [AC], [CFINAL], [REDTEAM] | PC-15, PC-37, PC-54–58, PC-61–62 |
-| 2.2 Open Limits | iOS | DEVICE-PENDING | SOURCE-COMPLETE for R-12: #155 atomic per-target up-to-300 s grants, strict counters/import, no-charge overlap and final-credit logic; #189 enables shield acceptance. Hard pre-release signed-device PC-28..38: killed-host 300 s expiry, midnight, re-registration and lock contention. One-line flag revert plus fallback copy if any fails. | [IO], [BFINAL], [DEVICE] | PC-16, PC-28–38, PC-59–60, PC-75–76 |
+| 2.2 Open Limits | iOS | DEVICE-PENDING | Coordinator R-12 bounded-grant decision: source-complete, runtime DEVICE-PENDING; #155 atomic up-to-300 s grants and #189 enabled acceptance. Separate first-use import defect R2p2-N03 remains open. Hard signed-device PC-28..38 gate: killed-host 300 s expiry, midnight, re-registration, lock contention; one-line revert plus fallback copy on failure. | [IO], [BFINAL], [DEVICE], [REDTEAM] | PC-16, PC-28–38, PC-59–60, PC-75–76 |
 | 2.2 Open Limits | Android | UNIT-TESTED | #160/#175/#178 wire explicit up-to-300 s credits, minimum covering cap, durable per-target quota/import, trusted midnight clipping and both detectors; foreground entry does not charge. R2p2-N01 stale Time-Limit overlap race remains; physical expiry/midnight is unverified. | [AG], [AP], [CFINAL], [REDTEAM] | PC-16, PC-28–38, PC-59–60 |
 | 2.3 Easy / Harder / Hardcore | iOS | UNIT-TESTED | Session/rule/limit/Sleep mutation authority, persisted Harder waits and scoped five-minute ordinary breaks are merged/tested. R2p2-N02 stale fallback and R-07 upgrade residual prevent universal closure. | [IS], [IP], [BFINAL], [REDTEAM] | PC-04–27, PC-67–68, PC-79 |
 | 2.3 Easy / Harder / Hardcore | Android | UNIT-TESTED | #139 durable editor/deferred rights and new/legacy Timer split are merged; #156/#175/#178 wire per-limit tiers, global pass and scoped breaks/credits. R-16 legacy Harder friction remains a distinct residual. | [AP], [AG], [CFINAL], [REDTEAM] | PC-04–27, PC-67–68, PC-79 |
@@ -79,7 +79,7 @@ No automated or simulator result establishes physical-device enforcement.
 
 | ID / capability | Platform | Status | Evidenced slice and remaining boundary | Evidence | Relevant PC IDs |
 | --- | --- | --- | --- | --- | --- |
-| F01 Full repeated Pomodoro focus/rest chain | iOS | ABSENT | Intent starts first focus round and saves cadence; remaining rounds do not chain. | [IM] | PC-27, PC-63–64, PC-84 |
+| F01 Full repeated Pomodoro focus/rest chain | iOS | ABSENT | Intent explicitly exposes one focus round; legacy cadence arguments do not chain or overwrite saved in-app cadence. No repeated parent/round execution. | [IM], [BFINAL], [REDTEAM] | PC-27, PC-63–64, PC-84 |
 | F01 Full repeated Pomodoro focus/rest chain | Android | ABSENT | Native finite Timer exists; repeated focus/rest configuration/execution absent. | [AM] | PC-27, PC-63–64, PC-84 |
 | F02 Immediate Allow List session | iOS | ABSENT | Allow List is schedule/Sleep-specific at this checkpoint. | [IM], [IS] | PC-01, PC-48–50 |
 | F02 Immediate Allow List session | Android | ABSENT | Timer targets apps as a block list; separate rule editor supports Allow List. | [AM] | PC-01, PC-48–50 |
@@ -371,17 +371,19 @@ PR, lane claim, green unrelated test or softened copy does not close a finding.
 | R-20 (P0 residual, iOS) | Pre-migration missing/unavailable session authority is not closed by post-generation fixtures. | PARTIAL. |
 | R-04 (P1 residual, iOS) | Retained legacy predecessor can make Emergency Pass scope unavailable. | PARTIAL; ordinary global recovery is merged. |
 | R-16 (P1 residual, Android) | Legacy Harder break/friction route remains outside full cause-scoped rights. | PARTIAL; final in-flight fix must be checked. |
-| R2p2-N01 (P1, Android) | Credit acceptance can charge through a newly exhausted zero-minute Time Limit using stale measurement. | OPEN; positive-budget API also depends on R-18b. |
+| R2p2-N01 (P1, Android) | Credit acceptance can charge after a zero-minute Time Limit is added using stale measurement; the next evaluation still blocks, so this is a no-charge violation, not a demonstrated Hardcore access bypass. | OPEN; positive-budget API also depends on R-18b. |
 | R-30 (P1 residual, Android) | Overlay mount failure is not reflected in health/Armed acknowledgement. | PARTIAL; no-live-detector refusal in #173 is merged. |
-| R-24 / F01 (P1, iOS) | Pomodoro input still starts one ordinary focus round; no full repeated focus/rest parent. | PARTIAL; one-round copy is fixed. |
-| R-28 (P1, iOS) | Complete saved-zone/immutable occurrence/date-specific one-shot model remains incomplete. | PARTIAL; trusted active-clock fixes are narrower. |
+| R-24 / F01 (P1 original, iOS) | Interim one-round honesty is source-closed; full repeated focus/rest parent remains absent. | Full rounds remain open scope; do not reopen the fixed interim-copy finding. |
+| R-28 (P1, iOS) | Saved zone, dated/repeating registration, callback day checks and DST identity are source-closed; persisted one-shot terminal state, production one-shot creation/PC-81 and a rule-zone editor remain absent. | PARTIAL; no promotion of the closed source slice into whole-case/device acceptance. |
 | R-18 daily Time Limits (P0 residual, Android) | Trusted saved-zone day/reset and retained measurement floor. | #225 in flight; not counted merged at this checkpoint. |
 | R-08 iOS removal guard | Explicit consent/derived finite-owner runtime. | Pure phase 1 #200 merged; #226 in flight. |
 | iOS required-reason API inventory | Later lock deadlines call listed SystemBootTime API systemUptime. | #230 declarations/verifier in flight; final signed-archive re-inventory remains required. |
 | PC-84 Android terminal arbitration | Duplicate natural/explicit terminal histories. | #227 in flight; no whole-history exactly-once claim. |
 
 **Coordinator release decisions:** R-12 is source-complete with Open acceptance enabled
-by #189, runtime **DEVICE-PENDING**, a hard signed-device PC-28..38 gate. Revert
+by #189, runtime **DEVICE-PENDING**, a hard signed-device PC-28..38 gate. That coordinator
+label covers the bounded-grant implementation; the separate first-use import defect
+R2p2-N03 prevents whole-Open-capability closure. Revert
 `FlintOpenCredit.shieldAcceptanceEnabled` in one line and restore fallback shield
 copy if killed-host 300 s expiry, midnight, re-registration or lock contention fails.
 R-26 uses option A: refuse new empty allow lists, retain saved empty ones with attention;
@@ -404,8 +406,10 @@ Screen Time, calling/category safety, killed-host callbacks, thresholds, Siri/Fo
 Safari/private-mode effects, pass/credit resumption and delivered widgets/ActivityKit
 remain unrun. Android needs stock/OEM/API/browser/Doze/reboot, safety, positive-budget
 measurement and real launcher/notification/permission-transition evidence. Generic reminders
-do not prove completion. Typed durable iOS ordinary-break history and complete
-operation history remain incomplete; no source-wide exactly-once guarantee is made.
+do not prove completion. iOS owner lifecycle confidence call sites, typed acknowledged
+ordinary-break history and complete operation history remain incomplete; consumer
+plausibility cannot detect every internally consistent unmarked clock jump. No source-wide
+exactly-once or complete time-confidence guarantee is made.
 
 Six-bundle iOS signing/provisioning, five Family Controls distribution approvals, final
 archive/privacy validation, owner-signed Android AAB/Play split/update evidence, genuine

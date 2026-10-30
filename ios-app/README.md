@@ -65,13 +65,16 @@ Shortcut intents. Known boundaries at this checkpoint:
 
 - Future date-specific one-shot scheduling is absent; recurring later-week windows are
   distinct from arbitrary future dates. The Social detox preset has a 23:59–00:00 gap.
-- The Pomodoro intent starts its first focus round and saves cadence; full focus/rest
-  chaining is absent. Immediate Allow List sessions are not implemented.
+- The Pomodoro intent exposes one focus round; legacy cadence arguments neither chain
+  rounds nor overwrite the saved in-app cadence. Full focus/rest chaining and immediate
+  Allow List sessions are absent.
 - Open credits are enabled by [#189](https://github.com/Prakashmaheshwaran/flint-app/pull/189).
   R-12 is source-complete, runtime **DEVICE-PENDING**, with a hard pre-release signed-device
   PC-28..38 gate: killed-host 300 s expiry, midnight, re-registration and lock contention.
   If it fails, revert `FlintOpenCredit.shieldAcceptanceEnabled` in one line and restore
   fallback copy. These are explicit accepted grants, not DeviceActivity launch counts.
+  The separate R2p2-N03 first-use import defect remains open; the bounded-grant source
+  decision does not close that availability regression.
 - Settings → **Web & Safari** applies the Safari web-content filter during focus sessions
   (Block Now, Shortcuts/Pomodoro and Focus filters), and independently during schedules/Sleep
   when **Schedules and Sleep** is on. Choose adult-content filtering with extra block/allow
