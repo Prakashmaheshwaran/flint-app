@@ -80,6 +80,46 @@ final class FlintSessionAuthorityTests: XCTestCase {
         XCTAssertNil(authority.acceptedStart("request.Y"))
     }
 
+    func testOlderSessionProjectionCannotRestoreTheLedgersSavedRemainingR05() throws {
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        let initialClock = FlintClock(now: { self.wall }, monotonic: { 50_000 },
+            bootSessionID: { "boot" }, calendar: { .current })
+        let original = session("X").checkpointed(clock: initialClock)
+        authority.adopt(original)
+        let now = FlintClock(now: { self.wall.addingTimeInterval(1790) }, monotonic: { 51_790 },
+                             bootSessionID: { "boot" }, calendar: { .current })
+        let saved = original.checkpointed(clock: now)
+        try authority.checkpoint(saved)
+        let recovered = try XCTUnwrap(authority.observedSession(matching: original, clock: now))
+        XCTAssertEqual(recovered.remainingCheckpoint?.remaining, 10)
+    }
+
+    func testCurrentBootCheckpointFromLedgerOutageSurvivesLaterForwardJumpR05() throws {
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        let original = session("X")
+        authority.adopt(original)
+        let rebootClock = FlintClock(now: { self.wall.addingTimeInterval(60) }, monotonic: { 10 },
+                                     bootSessionID: { "new-boot" }, calendar: { .current })
+        let observed = original.checkpointed(clock: rebootClock)
+        let jumped = FlintClock(now: { self.wall.addingTimeInterval(7260) }, monotonic: { 20 },
+                                bootSessionID: { "new-boot" }, calendar: { .current })
+        let recovered = try XCTUnwrap(authority.observedSession(matching: observed, clock: jumped))
+        XCTAssertEqual(recovered.logicalRemaining(clock: jumped), 1730)
+    }
+
+    func testProjectionCannotChangeAnAcceptedCommitment() throws {
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        let original = session("X")
+        authority.adopt(original)
+        let weakened = FlintActiveSession(id: original.id, name: original.name, startedAt: original.startedAt,
+            endsAt: original.endsAt, breakLevel: .easy, monitorName: original.monitorName,
+            monotonicStart: original.monotonicStart, bootSessionID: original.bootSessionID,
+            plannedDuration: original.plannedDuration, startRequestID: original.startRequestID)
+        let clock = FlintClock(now: { self.wall }, monotonic: { 50_000 },
+                               bootSessionID: { "boot" }, calendar: { .current })
+        XCTAssertNil(authority.observedSession(matching: weakened, clock: clock))
+    }
+
     func testShortcutHostRecreationReusesDurableTokenForTwoMinutes() throws {
         var authority = FlintSessionAuthority(initializedAt: wall)
         let first = authority.requestToken(route: "shortcut", fingerprint: "parameters", at: instant)

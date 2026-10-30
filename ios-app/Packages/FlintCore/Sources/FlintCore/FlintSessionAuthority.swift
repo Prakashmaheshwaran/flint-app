@@ -86,6 +86,59 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
         acceptedStarts.last { $0.operationID == operationID }
     }
 
+    /// UserDefaults is a projection of the ledger generation. A crash after a ledger checkpoint
+    /// must not let an older projection restore time. Conversely, during a policy-ledger outage
+    /// the positively decoded record can observe a new boot; keep that bounded current-boot
+    /// observation when the ledger becomes readable again.
+    public func observedSession(matching stored: FlintActiveSession, clock: FlintClock) -> FlintActiveSession? {
+        guard let latest, latest.matches(stored), !provesIdle,
+              stored.remainingCheckpoint?.isValid != false,
+              let committed = Self.commitmentData(latest.session),
+              committed == Self.commitmentData(stored) else { return nil }
+        let canonical = latest.session
+        var selected = canonical
+        if let observed = stored.remainingCheckpoint {
+            let saved = canonical.remainingCheckpoint
+            let ceiling = saved?.remaining ?? canonical.plannedDuration
+                ?? canonical.endsAt.map { max(0, $0.timeIntervalSince(canonical.startedAt)) }
+            if let saved, let boot = observed.bootID, boot == saved.bootID {
+                if observed.monotonic >= saved.monotonic {
+                    guard ceiling.map({ observed.remaining <= $0 + 0.000_001 }) != false else { return nil }
+                    let oldDeadline = saved.monotonic + saved.remaining - saved.overrun
+                    let newDeadline = observed.monotonic + observed.remaining - observed.overrun
+                    guard abs(oldDeadline - newDeadline) < 0.000_001 else { return nil }
+                    selected = stored
+                }
+            } else {
+                guard ceiling.map({ observed.remaining <= $0 + 0.000_001 }) != false else { return nil }
+                if saved == nil, let boot = observed.bootID, canonical.bootSessionID == boot,
+                   let start = canonical.monotonicStart, let planned = ceiling {
+                    guard abs(start + planned - (observed.monotonic + observed.remaining - observed.overrun))
+                        < 0.000_001 else { return nil }
+                }
+                if observed.bootID != nil && observed.bootID == clock.bootSessionID() {
+                    selected = stored
+                } else if saved == nil || observed.remaining < (saved?.remaining ?? .infinity) {
+                    selected = stored
+                }
+            }
+        }
+        if let observedEnd = stored.naturalEndObservedAt {
+            guard stored.remainingCheckpoint?.remaining == 0,
+                  stored.isLogicallyExpired(clock: clock) else { return nil }
+            selected = selected.checkpointed(clock: clock, naturalEndObservedAt: observedEnd)
+        }
+        return selected
+    }
+
+    /// Exclude observations explicitly, so future commitment fields participate by default.
+    private static func commitmentData(_ session: FlintActiveSession) -> Data? {
+        guard let data = try? JSONEncoder().encode(session),
+              var object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        for key in ["remainingCheckpoint", "naturalEndObservedAt"] { object.removeValue(forKey: key) }
+        return try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    }
+
     /// A token is saved before confirmation/start. Without an OS invocation ID identical
     /// Shortcuts within two minutes intentionally share one attempt; explicit IDs avoid that
     /// ambiguity. Terminal outcomes immediately end the heuristic Shortcut retry window.
