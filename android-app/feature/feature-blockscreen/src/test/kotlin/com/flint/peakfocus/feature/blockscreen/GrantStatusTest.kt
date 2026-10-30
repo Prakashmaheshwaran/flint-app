@@ -5,6 +5,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class GrantStatusTest {
+    @Test fun PC_28_PC_35_pendingQuotaExplainsProtectionAndOffersNoCreditOrOrdinaryExit() {
+        for (level in BreakLevel.entries) {
+            val content = blockScreenContent(state(level, GrantStatus.RESETTING).copy(openCreditsRemaining = 3))
+            assertEquals(BreakAffordance.QuotaPending, content.breakAffordance)
+            assertEquals("Access credits are updating. This app stays protected.", content.reasonLine)
+        }
+    }
     private fun state(level: BreakLevel, status: GrantStatus) = BlockScreenState(
         "com.app", reason = BlockScreenReason.OPEN_LIMIT, breakLevel = level, grantStatus = status,
     )

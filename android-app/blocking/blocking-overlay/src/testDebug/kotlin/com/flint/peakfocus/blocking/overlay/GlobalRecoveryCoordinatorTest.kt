@@ -93,12 +93,13 @@ class GlobalRecoveryCoordinatorTest {
     }
 
     private fun TestScope.coordinator(disk: Disk, surface: BlockScreenCoordinator.SurfaceHost = host,
-        context: Context = app, changed: () -> Unit = {}): BlockScreenCoordinator {
+        context: Context = app, openFlow: Flow<StorageState<List<OpenLimit>>>? = null,
+        changed: () -> Unit = {}): BlockScreenCoordinator {
         val focus = object : FocusStateStore by InMemoryFocusStateStore() { override val state = disk.state.project { it.focus } }
         val rules = object : BlockRulesStore by InMemoryBlockRulesStore() { override val rulesState = disk.state.project { it.rules } }
         val limits = object : LimitsStore by InMemoryLimitsStore() {
             override val timeLimitsState = disk.state.project { it.times }
-            override val openLimitsState = disk.state.project { it.opens }
+            override val openLimitsState = openFlow ?: disk.state.project { it.opens }
         }
         val editor = object : EditorCommitmentStore {
             override val state = disk.state.project { it.editor }
@@ -119,6 +120,62 @@ class GlobalRecoveryCoordinatorTest {
     }
 
     private fun TestScope.clock() = base.copy(wallEpochMs = base.wallEpochMs + testScheduler.currentTime, elapsedRealtimeMs = base.elapsedRealtimeMs + testScheduler.currentTime)
+
+    @Test fun PC_28_PC_47_openConfigurationLoadingOrUnavailableCannotReleaseAnActiveCredit() = runTest {
+        val s = initial().copy(opens = listOf(OpenLimit("c", 1, BreakLevel.HARDCORE)),
+            openCredits = OpenCreditLedgerPolicy.initial(base, "UTC"))
+        val disk = Disk(s) { clock() }
+        val openFlow = MutableStateFlow<StorageState<List<OpenLimit>>>(StorageState.Loading)
+        val c = coordinator(disk, openFlow = openFlow); runCurrent()
+        assertEquals(OpenLimitDecision.Unavailable, c.onForegroundChanged(null, "c"))
+        val unknownCause = c.currentBlockCause("c")!!
+        assertFalse(c.canDismiss("c", unknownCause))
+        assertTrue(c.requestBreak("c", unknownCause, GrantRequestId.issue(clock())) is GrantResult.Unavailable)
+        openFlow.value = StorageState.Ready(s.opens); runCurrent()
+        val cause = c.currentBlockCause("c")!!
+        assertNull(c.currentBlockCause("com.example.unlimited"))
+        val token = GrantRequestId.issue(clock(), c.screenState("c", null, cause, clock().wallEpochMs).openCreditRequestScope)
+        assertNotNull(token.creditScope)
+        assertEquals(GrantResult.OpenAllowed, c.requestBreak("c", cause, token)); runCurrent()
+        assertNull(c.currentBlockCause("c"))
+        val accepted = disk.latest.openCredits!!
+        openFlow.value = StorageState.Unavailable(StorageFailure.IO); runCurrent()
+        assertEquals(OpenLimitDecision.Unavailable, c.onForegroundChanged("c", "c"))
+        assertNotNull(c.currentBlockCause("c"))
+        assertFalse(c.canDismiss("c", cause))
+        assertTrue(c.requestBreak("c", cause, token) is GrantResult.Unavailable)
+        assertNull("Known unlimited targets remain accessible on a storage fault", c.currentBlockCause("com.example.unlimited"))
+        assertEquals(com.flint.peakfocus.feature.blockscreen.GrantStatus.UNAVAILABLE,
+            c.screenState("c", null, cause, clock().wallEpochMs).grantStatus)
+        assertNull(c.currentBlockCause("com.android.settings"))
+        openFlow.value = StorageState.Loading; runCurrent()
+        assertNotNull(c.currentBlockCause("c"))
+        assertNull(c.currentBlockCause("com.example.unlimited"))
+        assertNull(c.currentBlockCause("com.android.settings"))
+        assertEquals(accepted, disk.latest.openCredits)
+        openFlow.value = StorageState.Ready(s.opens); runCurrent()
+        assertNull(c.currentBlockCause("c"))
+        assertEquals(accepted.active, disk.latest.openCredits!!.active)
+        assertEquals(accepted.counters, disk.latest.openCredits!!.counters)
+    }
+
+    @Test fun PC_47_PC_51_unknownOpenConfigurationCannotCreateAnIndefiniteDeviceWideBlock() = runTest {
+        val disk = Disk(initial()) { clock() }
+        val unreadable = MutableStateFlow<StorageState<List<OpenLimit>>>(StorageState.Loading)
+        var wakes = 0
+        val c = coordinator(disk, openFlow = unreadable) { wakes++ }; runCurrent()
+        val target = "com.example.unlimited"
+        val coldCause = c.currentBlockCause(target)!!
+        assertNull(c.currentBlockCause("com.android.settings"))
+        unreadable.value = StorageState.Unavailable(StorageFailure.IO); runCurrent()
+        val before = wakes
+        org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(BlockScreenCoordinator.OPEN_LOAD_GRACE_MS))
+        advanceTimeBy(BlockScreenCoordinator.OPEN_LOAD_GRACE_MS); runCurrent()
+        assertTrue("Cold-load boundary wakes stationary detectors", wakes > before)
+        assertNull("A displayed cold-load cause cannot outlive its bounded window", c.currentBlockCause(target, coldCause))
+        assertNull(c.evaluateBlockCause(target, target, null, false))
+        assertNull(c.currentBlockCause("com.android.settings"))
+    }
 
     @Test fun PC_41_PC_43_PC_76_recoveryReviewRemovesShieldButFailedCommitReblocksTarget() = recoveryHandoff(fail = true)
     @Test fun PC_41_PC_44_PC_76_recoveryReviewRemovesShieldAndOnlyDurableCommitReleasesTarget() = recoveryHandoff(fail = false)

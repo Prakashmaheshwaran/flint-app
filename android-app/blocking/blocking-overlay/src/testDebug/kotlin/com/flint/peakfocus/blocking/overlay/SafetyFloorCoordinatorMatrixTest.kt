@@ -86,6 +86,9 @@ class SafetyFloorCoordinatorMatrixTest {
                 requiredRuntimeSources = setOf("default-dialer", "home"),
             ),
         )
+        awaitTrue("initial Open configuration") {
+            coordinator.onForegroundChanged(null, control) !is com.flint.peakfocus.core.model.OpenLimitDecision.Unavailable
+        }
     }
 
     @After fun tearDown() {

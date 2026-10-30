@@ -188,6 +188,8 @@ class BlockScreenCoordinator(
     private val statusInvalidations = Channel<Unit>(Channel.CONFLATED)
     // Lists are last-known-good only, never a replacement emitted because a read failed.
     @Volatile private var openLimits: List<OpenLimit> = emptyList()
+    @Volatile private var openConfigurationKnown = false
+    private val openLoadStartedAt = SystemClock.elapsedRealtime()
     @Volatile private var timeLimits: List<TimeLimit> = emptyList()
     private val visits = OpenVisits.process
     private val pendingOpens = ConcurrentHashMap.newKeySet<String>()
@@ -227,10 +229,24 @@ class BlockScreenCoordinator(
 
     init {
         scope.launch { limitsStore.openLimitsState.collect { state ->
-            if (state is StorageState.Ready) openLimits = state.value
+            if (state is StorageState.Ready) {
+                openLimits = state.value
+                openConfigurationKnown = true
+            }
             openState.value = state
             invalidateProtectionStatus()
         } }
+        scope.launch {
+            // Unknown configuration cannot justify indefinitely blocking every app. The
+            // bounded cold-load shield ends with a stationary-detector wake; a remembered
+            // configured limit remains protected through subsequent read failures.
+            delay(OPEN_LOAD_GRACE_MS)
+            if (!openConfigurationKnown) {
+                EnforcementSignals.detectors.requestEvaluation()
+                onEnforcementChanged?.invoke()
+                rerenderNow()
+            }
+        }
         scope.launch { limitsStore.timeLimitsState.collect { state ->
             if (state is StorageState.Ready) timeLimits = state.value
             timeState.value = state
@@ -479,7 +495,7 @@ class BlockScreenCoordinator(
 
     private fun ordinaryExempt(packageName: String, cause: BlockCause? = null): Boolean {
         val owner = recoveries ?: return BlockExemptions.hasOrdinaryExemption(packageName, nowEpochMs())
-        if (openState.value !is StorageState.Ready) return false
+        if (openState.value !is StorageState.Ready && unresolvedOpenBlocks(packageName)) return false
         // A configured Open limit with an elapsed/unmaterialized quota occurrence is
         // pending, not absent. An unrelated ordinary grant cannot lend it free access.
         if (openLimits.any { it.packageName == packageName } && owner.openOccurrenceActive(packageName, statusClock()) != true) return false
@@ -566,7 +582,8 @@ class BlockScreenCoordinator(
         val openCause = openBlockCause(openDecision, now, offset)
         val liveDisplayed = displayedCause?.takeIf { it.endsAtEpochMs == null || now < it.endsAtEpochMs }
             ?.takeUnless { it.ruleId != null && rulesState.value is StorageState.Ready && ActiveRulesHolder.rules.none { rule -> rule.id == it.ruleId } }
-            ?.takeUnless { it.reason == BlockScreenReason.OPEN_LIMIT && openState.value is StorageState.Ready && openCause == null }
+            ?.takeUnless { it.reason == BlockScreenReason.OPEN_LIMIT && openCause == null &&
+                (openState.value is StorageState.Ready || (recoveries != null && !unresolvedOpenBlocks(packageName))) }
             ?.let { if (recoveries != null && it.reason == BlockScreenReason.OPEN_LIMIT) openCause else it }
             ?.let { if (it.reason == BlockScreenReason.TIME_LIMIT) it.copy(breakLevel = currentTimeLimitBreakLevel(packageName)) else it }
         return BlockOverlapPolicy.strongest(timeCause, ruleCause, openCause, liveDisplayed)
@@ -642,7 +659,8 @@ class BlockScreenCoordinator(
         grantInputs(cause, emergency).all { it is StorageState.Ready }
 
     private fun inspectOpen(packageName: String, includeUnpaidVisit: Boolean = true): OpenLimitDecision {
-        if (recoveries != null && openState.value !is StorageState.Ready) return OpenLimitDecision.Unavailable
+        if (recoveries != null && openState.value !is StorageState.Ready && unresolvedOpenBlocks(packageName))
+            return OpenLimitDecision.Unavailable
         val covering = openLimits.filter { it.packageName == packageName }
         val first = covering.firstOrNull() ?: return OpenLimitDecision.Allowed(null)
         val limit = if (recoveries == null) first else first.copy(dailyOpens = covering.minOf { it.dailyOpens }, breakLevel = covering.maxBy { it.breakLevel.ordinal }.breakLevel)
@@ -669,6 +687,10 @@ class BlockScreenCoordinator(
         }
         return decision
     }
+
+    private fun unresolvedOpenBlocks(packageName: String): Boolean =
+        openLimits.any { it.packageName == packageName } ||
+            (!openConfigurationKnown && SystemClock.elapsedRealtime() - openLoadStartedAt < OPEN_LOAD_GRACE_MS)
 
     private fun queueOpen(visit: OpenVisits.Visit) {
         if (recoveries != null) return // never write legacy launch counts after ADR-012 activation
@@ -1071,6 +1093,7 @@ class BlockScreenCoordinator(
     }
 
     companion object {
+        internal const val OPEN_LOAD_GRACE_MS = 5_000L
         /**
          * How long a granted break lifts the shield. Opal lets users pick a duration; Flint's
          * MVP fixes 5 minutes (a duration picker is UI-layer work, not this seam's).
