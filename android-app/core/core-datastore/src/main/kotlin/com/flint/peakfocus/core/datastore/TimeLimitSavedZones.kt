@@ -7,7 +7,8 @@ import com.flint.peakfocus.core.model.*
 internal val TIME_LIMIT_ZONE_SCHEMA = longPreferencesKey("time_limit_saved_zone_schema_v1")
 
 /** D5: validated migration preserves explicit zones/tiers and stamps legacy zones once at upgrade. */
-internal fun prepareTimeLimitSavedZones(prefs: MutablePreferences, now: AccessClockStamp, deviceZone: String): TimeLimitUsageLedger {
+internal fun prepareTimeLimitSavedZones(prefs: MutablePreferences, now: AccessClockStamp, deviceZone: String,
+    legacyTargets: Set<String> = emptySet()): TimeLimitUsageLedger {
     if (StrictPrefsCodec.long(prefs, TIME_LIMIT_ZONE_SCHEMA) != null) {
         readTimeLimitZoneVersion(prefs)
         return readTimeLimitUsage(prefs)
@@ -16,7 +17,7 @@ internal fun prepareTimeLimitSavedZones(prefs: MutablePreferences, now: AccessCl
     // is never a reason to perform a second migration or capture a different travel zone.
     timeUsageRequire(StrictPrefsCodec.long(prefs, TIME_USAGE_SCHEMA) == null)
     val limits = prefs.editorTimes()
-    val ledger = prepareTimeLimitUsage(prefs, now, deviceZone)
+    val ledger = prepareTimeLimitUsage(prefs, now, deviceZone, legacyTargets)
     val migrated = limits.map { limit ->
         limit.withSavedTimeLimitZone(previous = null, zoneForNewTarget = ledger.targets.getValue(limit.packageName).zoneId)
     }

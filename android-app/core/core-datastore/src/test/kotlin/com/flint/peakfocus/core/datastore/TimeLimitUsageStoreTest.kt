@@ -60,6 +60,40 @@ class TimeLimitUsageStoreTest {
         assertEquals(1L, disk.values.value[TIME_USAGE_SCHEMA])
     }
 
+    @Test fun PC_56_PC_70_legacyOnlyTargetsShareTheAtomicMigrationWithoutBecomingEditorTemplates() = runBlocking {
+        val original = "app~1~HARDCORE~America/New_York"
+        val disk = Disk(preferencesOf(PrefsKeys.TIME_LIMITS to original))
+        disk.edit { prepareTimeLimitSavedZones(it, at(), "UTC", setOf("legacy-only", "app")) }
+        val ledger = readTimeLimitUsage(disk.values.value)
+        assertEquals(setOf("app", "legacy-only"), ledger.targets.keys)
+        assertEquals("America/New_York", ledger.targets.getValue("app").zoneId)
+        assertEquals("UTC", ledger.targets.getValue("legacy-only").zoneId)
+        assertEquals(original, disk.values.value[PrefsKeys.TIME_LIMITS])
+        assertEquals(original to null, TimeLimitUsageCodec.readArchive(disk.values.value[TIME_USAGE_ARCHIVE]!!))
+        val reader = store(disk) { "Asia/Tokyo" }
+        val jumped = at(1_000, 48 * hour)
+        val ticket = reader.measurementContext("legacy-only", jumped)
+        assertEquals("UTC", ticket.zoneId)
+        assertEquals(ledger.targets.getValue("legacy-only").periodId, ticket.periodId)
+        val measured = reader.record(ticket, 60_000, jumped)
+        assertEquals(0L, TimeLimitDayAccounting.remainingMs(measured.state, 1))
+        assertEquals(hour - 1_000, measured.state.reset.remainingToResetMs)
+    }
+
+    @Test fun PC_70_PC_71_invalidLegacyTargetSnapshotCannotPartiallyPublishTheMigration() = runBlocking {
+        for (targets in listOf(setOf(""), (0..2_000).map { "legacy-$it" }.toSet())) {
+            val disk = Disk(legacy())
+            val original = disk.values.value
+            try {
+                disk.edit { prepareTimeLimitSavedZones(it, at(), "UTC", targets) }
+                fail("invalid legacy snapshot accepted")
+            } catch (_: StorageUnavailableException) { }
+            assertEquals(original, disk.values.value)
+            disk.edit { prepareTimeLimitSavedZones(it, at(), "Asia/Tokyo", setOf("legacy-only")) }
+            assertEquals("Asia/Tokyo", readTimeLimitUsage(disk.values.value).targets.getValue("legacy-only").zoneId)
+        }
+    }
+
     @Test fun PC_54_exhaustionSurvivesWallMidnightAndStoreRecreationAcrossBothReaders() = runBlocking {
         val disk = Disk(legacy()); val old = spent(disk)
         val jumped = at(1_000, 48 * hour)

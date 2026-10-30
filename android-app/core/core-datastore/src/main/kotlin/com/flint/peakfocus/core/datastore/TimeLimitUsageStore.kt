@@ -72,16 +72,21 @@ class DataStoreTimeLimitUsageStore(
 }
 
 /** One-time saved-zone capture archives the untouched legacy limits/default-tier bytes in the same edit. */
-internal fun prepareTimeLimitUsage(prefs: MutablePreferences, now: AccessClockStamp, zone: String): TimeLimitUsageLedger {
+internal fun prepareTimeLimitUsage(prefs: MutablePreferences, now: AccessClockStamp, zone: String,
+    legacyTargets: Set<String> = emptySet()): TimeLimitUsageLedger {
     if (StrictPrefsCodec.long(prefs, TIME_USAGE_SCHEMA) != null) return readTimeLimitUsage(prefs)
     timeUsageRequire(StrictPrefsCodec.string(prefs, TIME_USAGE_STATE) == null &&
         StrictPrefsCodec.string(prefs, TIME_USAGE_ARCHIVE) == null && StrictPrefsCodec.string(prefs, TIME_USAGE_TARGETS) == null)
     val raw = StrictPrefsCodec.string(prefs, PrefsKeys.TIME_LIMITS)
     val tier = StrictPrefsCodec.string(prefs, PrefsKeys.DEFAULT_BREAK_LEVEL)
     val limits = StrictPrefsCodec.timeLimits(raw.orEmpty(), StrictPrefsCodec.level(tier))
-    val ledger = timeUsageValid { TimeLimitUsageLedger(zone, limits.associate {
-        it.packageName to TimeLimitDayAccounting.initial(now, it.zoneId ?: zone)
-    }) }
+    // Legacy SharedPreferences budgets remain a stricter fallback, not editor templates.
+    // Capture their target periods in the same first migration so later first queries
+    // cannot choose a travel zone or begin a new day after a clock jump.
+    val ledger = timeUsageValid { TimeLimitUsageLedger(zone,
+        legacyTargets.associateWith { TimeLimitDayAccounting.initial(now, zone) } + limits.associate {
+            it.packageName to TimeLimitDayAccounting.initial(now, it.zoneId ?: zone)
+        }) }
     val archive = TimeLimitUsageCodec.archive(raw, tier)
     val encoded = TimeLimitUsageCodec.encode(ledger)
     prefs[TIME_USAGE_ARCHIVE] = archive
