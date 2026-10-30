@@ -12,13 +12,9 @@ import android.os.IBinder
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
-import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
-import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.blocking.overlay.PathBBlockHandoff
 import com.flint.peakfocus.blocking.overlay.PathBNotification
 import com.flint.peakfocus.blocking.overlay.ProtectionStatusHub
-import com.flint.peakfocus.core.data.LimitStore
-import com.flint.peakfocus.core.data.UsageQuery
 import com.flint.peakfocus.core.model.ActiveRulesHolder
 import com.flint.peakfocus.core.model.DetectorCadence
 import com.flint.peakfocus.core.model.DetectorFailover
@@ -35,6 +31,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -49,15 +47,20 @@ class UsageStatsForegroundService : Service() {
     // Serialize shield ownership on Main with Path A; expensive platform reads run on IO and
     // re-check ownership after suspension before they can hand off a decision.
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val engine = BlockDecisionEngine()
     private val wake = Channel<Unit>(Channel.CONFLATED)
     private val displayWake = Channel<Unit>(Channel.CONFLATED)
     internal var queryDispatcher: CoroutineDispatcher = Dispatchers.IO
-    private lateinit var poller: UsagePoller
-    private lateinit var timeLimitGate: PathBTimeLimitGate
+    internal var notificationDispatcher: CoroutineDispatcher = Dispatchers.IO
+    /** Fault-injection seam for a cold store/provider; invoked only on the query dispatcher. */
+    internal var beforeRuntimeInitialization: (() -> Unit)? = null
+    private lateinit var queryRuntime: PathBQueryRuntime
     private lateinit var notification: PathBForegroundNotification
     private var loop: Job? = null
-    private var ready = false
+    @Volatile private var ready = false
+    private var foregroundPosted = false
+    @Volatile private var stopping = false
+    @Volatile private var displayGeneration = 0L
+    private var forceDisplayPending = false
     private var resetObservation = true
     private var confirmedMode: FallbackMode? = null
     private var lastPathAConnected = EnforcementSignals.detectors.pathAConnected
@@ -68,36 +71,6 @@ class UsageStatsForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         health.starting(this)
-        // Meet the FGS startup obligation before disk/AppOps/UsageStats work. This cannot
-        // eliminate a system-server stall inside startForeground itself.
-        try {
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(
-                NotificationChannel(PathBForegroundNotification.CHANNEL_ID, "Focus enforcement", NotificationManager.IMPORTANCE_LOW),
-            )
-            notification = PathBForegroundNotification(this, { n ->
-                if (Build.VERSION.SDK_INT >= 34) startForeground(PathBForegroundNotification.NOTIFICATION_ID,
-                    n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-                else startForeground(PathBForegroundNotification.NOTIFICATION_ID, n)
-            }, { n -> manager.notify(PathBForegroundNotification.NOTIFICATION_ID, n) })
-            notification.refresh(null)
-            health.foregroundStarted(this)
-        } catch (failure: RuntimeException) {
-            health.unavailable(this, "foreground-start-failed")
-            Log.w("FlintFallback", "Foreground startup unavailable", failure)
-            stopSelf()
-            return
-        }
-        poller = UsagePoller(this)
-        val tracker = DailyLimitTracker(this)
-        val limits = LimitStore(this)
-        timeLimitGate = PathBTimeLimitGate(
-            limitMinutesFor = { pkg -> listOfNotNull(
-                limits.limitMinutes(pkg),
-                PathBBlockHandoff.coordinator(this).timeLimitMinutes(pkg),
-            ).minOrNull() },
-            foregroundMillisToday = tracker::foregroundMillisToday,
-        )
         stopSignals = EnforcementSignals.detectors.subscribe {
             scope.launch {
                 resetObservation = true
@@ -108,27 +81,62 @@ class UsageStatsForegroundService : Service() {
                     health.handoff(this@UsageStatsForegroundService)
                     displayWake.trySend(Unit)
                 }
-                if (connected) runCatching { PathBBlockHandoff.coordinator(this@UsageStatsForegroundService).hideIfShown() }
+                if (connected && ready) runCatching { queryRuntime.coordinator.hideIfShown() }
                 wake.trySend(Unit)
             }
         }
         stopRules = ActiveRulesHolder.subscribe { wake.trySend(Unit) }
         stopDisplay = PathBNotification.subscribeRefresh { displayWake.trySend(Unit) }
-        ready = true
         scope.launch {
-            for (ignored in displayWake) if (ready) refreshNotification()
+            for (ignored in displayWake) if (ready) {
+                val force = forceDisplayPending
+                forceDisplayPending = false
+                refreshNotification(force)
+            }
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Re-post after a notification permission grant and wake an existing loop after boot
-        // or a clock-change start command; do not wait for its polling delay to elapse.
-        if (!ready) return START_NOT_STICKY
-        refreshNotification(force = true)
+        // Only mandatory platform channel/startForeground calls precede this return path.
+        // No customizer, preference, AppOps, UsageStats or PackageManager query runs here.
+        // Android can deliver a new start before the stopSelf/onDestroy pair completes.
+        // It carries a new FGS obligation, including after permission or initialization failure.
+        if (stopping) {
+            stopping = false
+            confirmedMode = null
+            health.starting(this)
+        }
+        if (!ensureForeground()) return START_NOT_STICKY
+        requestNotification(force = true)
         resetObservation = true
         wake.trySend(Unit)
         if (loop?.isActive != true) {
             loop = scope.launch {
+                if (!ready) {
+                    try {
+                        val runtime = withContext(queryDispatcher) {
+                            beforeRuntimeInitialization?.invoke()
+                            currentCoroutineContext().ensureActive()
+                            PathBQueryRuntime(this@UsageStatsForegroundService)
+                        }
+                        if (stopping || !health.isOwner(this@UsageStatsForegroundService)) return@launch
+                        queryRuntime = runtime
+                        ready = true
+                        requestNotification(force = true)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        health.unavailable(this@UsageStatsForegroundService, "service-initialization-failed")
+                        stopping = true
+                        try { removeForegroundNotification() }
+                        catch (stopFailure: RuntimeException) {
+                            Log.w("FlintFallback", "Foreground stop unavailable", stopFailure)
+                        }
+                        finally { stopSelf() }
+                        Log.w("FlintFallback", "Foreground observation initialization unavailable", failure)
+                        return@launch
+                    }
+                }
                 while (isActive && ready) {
                     val connected = EnforcementSignals.detectors.pathAConnected
                     var mode = if (connected) FallbackMode.STANDBY else FallbackMode.ENFORCING
@@ -142,6 +150,7 @@ class UsageStatsForegroundService : Service() {
                                 DetectorFailover.mode(usageAccessGranted(), connected)
                             }
                         }
+                        if (!health.isOwner(this@UsageStatsForegroundService)) return@launch
                         if (connected != EnforcementSignals.detectors.pathAConnected) {
                             // A connection change invalidated this probe. Yield before retrying
                             // so binding churn cannot create a tight AppOps binder loop.
@@ -151,19 +160,19 @@ class UsageStatsForegroundService : Service() {
                         failureReason = "foreground-observation-unavailable"
                         if (mode == FallbackMode.OFF) {
                             health.unavailable(this@UsageStatsForegroundService, "usage-access-missing")
-                            try { PathBBlockHandoff.coordinator(this@UsageStatsForegroundService).hideIfShown() }
+                            try { queryRuntime.coordinator.hideIfShown() }
                             finally { stopForegroundAndEvaluation() }
                             return@launch
                         }
                         val completed = if (mode == FallbackMode.ENFORCING) tick(tickStarted) else {
-                            PathBBlockHandoff.coordinator(this@UsageStatsForegroundService).hideIfShown()
+                            queryRuntime.coordinator.hideIfShown()
                             true
                         }
                         if (completed) {
                             val modeChanged = confirmedMode != mode
                             confirmedMode = mode
                             health.mode(this@UsageStatsForegroundService, mode)
-                            if (modeChanged) refreshNotification()
+                            if (modeChanged) requestNotification()
                         }
                     } catch (cancelled: CancellationException) {
                         throw cancelled
@@ -173,7 +182,7 @@ class UsageStatsForegroundService : Service() {
                         val modeChanged = confirmedMode != null
                         confirmedMode = null
                         health.unavailable(this@UsageStatsForegroundService, failureReason)
-                        if (modeChanged) refreshNotification()
+                        if (modeChanged) requestNotification()
                         Log.w("FlintFallback", "Foreground observation unavailable", failure)
                     }
                     withTimeoutOrNull(DetectorCadence.delayMs(mode)) { wake.receive() }
@@ -184,42 +193,35 @@ class UsageStatsForegroundService : Service() {
     }
 
     private suspend fun tick(tickStarted: Long): Boolean {
-        if (resetObservation) {
-            poller.reset()
-            timeLimitGate.invalidate()
-            UsageQuery.invalidate()
-            resetObservation = false
-        }
+        val reset = resetObservation
+        resetObservation = false
         val now = System.currentTimeMillis()
+        val rules = ActiveRulesHolder.rules
         val pkg = withContext(queryDispatcher) {
-            timedQuery("usage_events_query_ms") { poller.currentForegroundPackage(now) }
+            queryRuntime.foregroundPackage(now, reset)
         }
-        if (EnforcementSignals.detectors.pathAConnected || resetObservation) return false
+        if (observationInvalidated()) return false
         if (pkg == null) {
-            PathBBlockHandoff.coordinator(this).hideIfShown()
+            queryRuntime.coordinator.hideIfShown()
             return true
         }
-        // C1 safety floor always precedes time budgets and ordinary rule/open causes.
-        if (PathBBlockHandoff.coordinator(this).isSafetyFloor(pkg)) {
-            PathBBlockHandoff.onForegroundPolled(this, pkg, Verdict.Allow)
+        // Cached membership is nonblocking. Keep its visit-departure mutation on Main,
+        // after ownership revalidation, so an invalidated Path B sample cannot end A's visit.
+        if (queryRuntime.coordinator.isSafetyFloor(pkg)) {
+            PathBBlockHandoff.onForegroundPolled(this, pkg, Verdict.Allow, rules = rules)
             logDuration("tick_to_handoff_ms", tickStarted)
             return true
         }
-        val spent = withContext(queryDispatcher) {
-            timedQuery("budget_query_ms") { timeLimitGate.isSpent(pkg, now) }
-        }
-        if (EnforcementSignals.detectors.pathAConnected || resetObservation) return false
-        val cal = java.util.Calendar.getInstance()
-        val verdict = engine.decide(
-            pkg, null, ActiveRulesHolder.rules, packageName,
-            cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE),
-            IsoWeekday.fromCalendar(cal.get(java.util.Calendar.DAY_OF_WEEK)), cal.timeInMillis,
-        )
-        PathBBlockHandoff.onForegroundPolled(this, pkg, verdict, spent)
+        val observation = withContext(queryDispatcher) { queryRuntime.observeTarget(pkg, now, rules) }
+        if (observationInvalidated()) return false
+        PathBBlockHandoff.onForegroundPolled(this, pkg, observation.verdict, observation.timeLimitSpent, observation.appLabel, rules)
         // This measures the handoff's return, not first window visibility or painted pixels.
         logDuration("tick_to_handoff_ms", tickStarted)
         return true
     }
+
+    private fun observationInvalidated() =
+        !health.isOwner(this) || EnforcementSignals.detectors.pathAConnected || resetObservation
 
     private inline fun <T> timedQuery(label: String, query: () -> T): T {
         val started = SystemClock.elapsedRealtime()
@@ -241,14 +243,55 @@ class UsageStatsForegroundService : Service() {
         return permission == AppOpsManager.MODE_ALLOWED
     }
 
-    private fun refreshNotification(force: Boolean = false) {
+    private fun ensureForeground(): Boolean {
+        if (foregroundPosted) return true
+        return try {
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(
+                NotificationChannel(PathBForegroundNotification.CHANNEL_ID, "Focus enforcement", NotificationManager.IMPORTANCE_LOW))
+            val generation = displayGeneration
+            notification = PathBForegroundNotification(this, { n ->
+                if (Build.VERSION.SDK_INT >= 34) startForeground(PathBForegroundNotification.NOTIFICATION_ID,
+                    n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+                else startForeground(PathBForegroundNotification.NOTIFICATION_ID, n)
+            }, { n ->
+                // A customizer may finish after cancellation; never republish for a retired
+                // service instance or after a permission-driven stop.
+                if (generation == displayGeneration && ready && !stopping && health.isOwner(this)) {
+                    manager.notify(PathBForegroundNotification.NOTIFICATION_ID, n)
+                }
+            })
+            notification.startMinimal()
+            foregroundPosted = true
+            health.foregroundStarted(this)
+            true
+        } catch (failure: RuntimeException) {
+            stopping = true
+            health.unavailable(this, "foreground-start-failed")
+            Log.w("FlintFallback", "Foreground startup unavailable", failure)
+            stopSelf()
+            false
+        }
+    }
+
+    private fun requestNotification(force: Boolean = false) {
+        forceDisplayPending = forceDisplayPending || force
+        displayWake.trySend(Unit)
+    }
+
+    private suspend fun refreshNotification(force: Boolean = false) {
         if (!ready) return
         // A failed display update must neither stop enforcement nor renew its lease.
-        try { notification.refresh(confirmedMode, force) }
+        val mode = confirmedMode
+        val display = notification
+        try { withContext(notificationDispatcher) { display.refresh(mode, force) } }
+        catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: RuntimeException) { Log.w("FlintFallback", "Notification refresh unavailable", failure) }
     }
 
     private fun removeForegroundNotification() {
+        foregroundPosted = false
+        displayGeneration++ // Retire even a still-blocked customizer before the next start.
         if (Build.VERSION.SDK_INT >= 24) stopForeground(STOP_FOREGROUND_REMOVE)
         else {
             @Suppress("DEPRECATION")
@@ -258,6 +301,7 @@ class UsageStatsForegroundService : Service() {
 
     private fun stopForegroundAndEvaluation() {
         ready = false
+        stopping = true
         try {
             removeForegroundNotification()
             health.stopped(this)
@@ -269,6 +313,7 @@ class UsageStatsForegroundService : Service() {
 
     override fun onDestroy() {
         ready = false
+        stopping = true
         stopSignals?.invoke()
         stopRules?.invoke()
         stopDisplay?.invoke()
@@ -277,7 +322,7 @@ class UsageStatsForegroundService : Service() {
         displayWake.close()
         try {
             if (health.isOwner(this)) {
-                if (::poller.isInitialized) runCatching { PathBBlockHandoff.coordinator(this).hideIfShown() }
+                if (::queryRuntime.isInitialized) runCatching { queryRuntime.coordinator.hideIfShown() }
                 removeForegroundNotification()
             }
         } finally {

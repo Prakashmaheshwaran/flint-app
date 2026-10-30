@@ -16,6 +16,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 object PathBNotification {
 
     fun interface Customizer {
+        /** Runs on the service's background display dispatcher; must not touch views. */
         fun customize(context: Context, builder: Notification.Builder)
     }
 

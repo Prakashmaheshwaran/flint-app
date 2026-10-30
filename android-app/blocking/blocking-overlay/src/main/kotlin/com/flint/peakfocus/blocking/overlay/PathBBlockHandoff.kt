@@ -6,6 +6,7 @@ import android.view.View
 import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
 import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.core.model.ActiveRulesHolder
+import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.EnforcementSignals
 import com.flint.peakfocus.core.model.Verdict
 import com.flint.peakfocus.core.datastore.FocusStateStore
@@ -65,17 +66,18 @@ object PathBBlockHandoff {
     fun onTimeLimitExceeded(context: Context, packageName: String) {
         val appContext = context.applicationContext
         val now = System.currentTimeMillis()
+        val rules = ActiveRulesHolder.rules
         val cal = Calendar.getInstance().apply { timeInMillis = now }
         val verdict = BlockDecisionEngine().decide(
             packageName,
             null,
-            ActiveRulesHolder.rules,
+            rules,
             appContext.packageName,
             cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE),
             IsoWeekday.fromCalendar(cal.get(Calendar.DAY_OF_WEEK)),
             now,
         )
-        onForegroundPolled(appContext, packageName, verdict, timeLimitSpent = true)
+        onForegroundPolled(appContext, packageName, verdict, timeLimitSpent = true, rules = rules)
     }
 
     /**
@@ -87,6 +89,10 @@ object PathBBlockHandoff {
         packageName: String,
         verdict: Verdict,
         timeLimitSpent: Boolean = false,
+        /** Resolved by the detector on IO; missing labels use the existing UI fallback. */
+        appLabel: String? = null,
+        /** Same immutable snapshot used to produce [verdict], even across a detector's IO suspension. */
+        rules: List<BlockRule> = ActiveRulesHolder.rules,
     ) {
         val appContext = context.applicationContext
         val c = coordinator(appContext)
@@ -97,11 +103,11 @@ object PathBBlockHandoff {
         val now = System.currentTimeMillis()
         val utcOffset = TimeZone.getDefault().getOffset(now).toLong()
         val ruleCause = (verdict as? Verdict.Block)?.let {
-            ruleBlockCause(ActiveRulesHolder.rules.firstOrNull { rule -> rule.id == it.ruleId }, now, utcOffset)
+            ruleBlockCause(rules.firstOrNull { rule -> rule.id == it.ruleId }, now, utcOffset)
         }
         val cause = c.evaluateBlockCause(previous, packageName, ruleCause, timeLimitSpent)
         if (cause != null) {
-            c.showBlocked(packageName, labelFor(appContext, packageName), cause)
+            c.showBlocked(packageName, appLabel, cause)
         } else {
             c.hideIfShown()
         }
@@ -163,8 +169,4 @@ object PathBBlockHandoff {
         )
     }
 
-    private fun labelFor(context: Context, packageName: String): String? = runCatching {
-        val pm = context.packageManager
-        pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
-    }.getOrNull()
 }

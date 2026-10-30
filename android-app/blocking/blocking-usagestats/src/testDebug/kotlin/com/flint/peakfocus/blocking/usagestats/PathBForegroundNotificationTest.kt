@@ -30,6 +30,34 @@ class PathBForegroundNotificationTest {
         customizers += customizer; PathBNotification.register(customizer)
     }
 
+    @Test fun `minimal foreground bypasses customizers until a rich display refresh`() {
+        var calls = 0
+        customize { calls++; it.setContentTitle("Rich display") }
+        notifications.startMinimal()
+        notifications.startMinimal()
+        assertEquals(0, calls)
+        assertEquals(1, starts.size)
+        assertTrue(starts.single().flags and Notification.FLAG_ONGOING_EVENT != 0)
+        assertNotNull(starts.single().smallIcon)
+        assertEquals("Checking protection availability.", starts.single().extras.getCharSequence(Notification.EXTRA_TEXT))
+        if (Build.VERSION.SDK_INT >= 26) assertEquals(PathBForegroundNotification.CHANNEL_ID, starts.single().channelId)
+        notifications.refresh(FallbackMode.ENFORCING)
+        assertEquals(1, calls)
+        assertEquals(1, starts.size)
+        assertEquals("Rich display", refreshes.single().extras.getCharSequence(Notification.EXTRA_TITLE))
+    }
+
+    @Test fun `failed minimal foreground post remains retryable`() {
+        var calls = 0
+        val controller = PathBForegroundNotification(context, {
+            calls++
+            if (calls == 1) throw SecurityException("foreground denied")
+        }, { fail("Must retry foreground start") })
+        try { controller.startMinimal(); fail("Expected startup failure") } catch (_: SecurityException) { }
+        controller.startMinimal()
+        assertEquals(2, calls)
+    }
+
     @Test fun `fresh MainActivity intents do not repost unchanged display`() {
         var request = 0
         val intents = mutableListOf<PendingIntent>()
