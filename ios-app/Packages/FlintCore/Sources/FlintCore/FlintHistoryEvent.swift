@@ -114,7 +114,7 @@ public struct FlintHistoryEvent: Codable, Equatable, Sendable, Identifiable {
                       source: source.rawValue, name: s.name)
         case let .ended(s, route, at):
             self.init(type: route == .completed ? .completed : .endedEarly, session: s.id,
-                      at: route == .completed ? (s.endsAt ?? at) : at, timeZone: timeZone,
+                      at: at, timeZone: timeZone,
                       route: route == .completed ? nil : route.rawValue)
         case let .superseded(s, next, at):
             self.init(type: .superseded, session: s.id, at: at, timeZone: timeZone, by: next.id)
