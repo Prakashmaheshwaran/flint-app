@@ -153,6 +153,7 @@ class BlockScreenCoordinator(
     private var cancelRecoveryHandoff: (() -> Unit)? = null
     private var recoveryHandoffTarget: String? = null
     private var recoveryHandoffRequests: SurfaceRequests? = null
+    private var recoveryFocusRestoreRequests: SurfaceRequests? = null
     private var recoveryFocusRequested = false
     private var recoveryFocusAttempts = 0
     private var recoveryHandoffTimeout: Job? = null
@@ -424,6 +425,7 @@ class BlockScreenCoordinator(
     internal fun launchRecovery(fallbackTarget: String? = null): Boolean {
         val expectedPackage = visiblePackage ?: return BlockActivity.launchRecovery(appContext, targetPackage = fallbackTarget)
         val expectedRequests = surfaceRequests ?: return false
+        if (!retryRecoveryFocusRestore(expectedRequests)) return false
         if (!clearRecoveryHandoff()) { abandonRecoveryHandoff(expectedPackage, expectedRequests); return false }
         val (id, cancel) = RecoverySurfaceHandoff.register(onReady = { ready ->
             runOnMain {
@@ -502,11 +504,19 @@ class BlockScreenCoordinator(
     private fun abandonRecoveryHandoff(expectedPackage: String, expectedRequests: SurfaceRequests) {
         if (visiblePackage != expectedPackage || surfaceRequests !== expectedRequests) return
         clearRecoveryHandoff(restoreFocus = false)
+        recoveryFocusRestoreRequests = expectedRequests
         // Home can be rejected without throwing (or by background-launch restrictions).
         // Keep the opaque touch shield until the detector actually observes departure;
         // an attempted navigation cannot authorize a gap over the still-blocked target.
         runCatching { surfaceHost.goHome() }
         wakeAfterRecoveryHandoff()
+    }
+
+    private fun retryRecoveryFocusRestore(requests: SurfaceRequests): Boolean {
+        if (recoveryFocusRestoreRequests !== requests) return true
+        if (!runCatching { surfaceHost.setRecoveryHandoffFocus(false) }.getOrDefault(false)) return false
+        recoveryFocusRestoreRequests = null
+        return true
     }
 
     private fun wakeAfterRecoveryHandoff() {
@@ -809,6 +819,9 @@ class BlockScreenCoordinator(
         pendingSurface = null
         pendingSurfacePackage = null
         if (existing != null && visiblePackage == packageName) {
+            // A failed handoff restore retains touch coverage. Repeated detector evaluations
+            // must also restore key blocking once the transient window-manager fault clears.
+            surfaceRequests?.let(::retryRecoveryFocusRestore)
             // Same app, refreshed cause (e.g. new tick, or a different rule took over).
             shownCause = cause
             shownLabel = appLabel
@@ -1048,6 +1061,7 @@ class BlockScreenCoordinator(
 
     /** Main-thread body of hide. Only call via [runOnMain]/[hideIfShown]. */
     private fun hideLocked() {
+        recoveryFocusRestoreRequests = null
         if (recoveryHandoffTarget != null && recoveryHandoffTarget == (visiblePackage ?: mountedPackage ?: pendingSurfacePackage))
             clearRecoveryHandoff(restoreFocus = false) // This view is about to be detached.
         (visiblePackage ?: mountedPackage ?: pendingSurfacePackage)?.let { failures.remove(it) }

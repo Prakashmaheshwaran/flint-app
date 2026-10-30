@@ -225,6 +225,7 @@ class BlockActivity : ComponentActivity() {
         recoveryHandoffId = intent.getStringExtra(EXTRA_RECOVERY_HANDOFF)
         recoveryTarget = intent.getStringExtra(EXTRA_RECOVERY_TARGET)
         recoveryFrameDrawn = false
+        recoveryWindowFocused = false
         recoveryFocusRevoked = false
         if (recoveryMode && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED))
             refreshRecoverySurface()

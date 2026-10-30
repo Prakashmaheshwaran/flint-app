@@ -351,6 +351,11 @@ class GlobalRecoveryCoordinatorTest {
                 assertEquals("Abandoned handoff cannot yield again", 1, host.attempts)
                 c.showBlocked(pkg, null, c.currentBlockCause(pkg)!!)
                 assertTrue("Reevaluation still on the target keeps its shield", host.mounted)
+                assertTrue("A repeated window fault keeps touch coverage and the restore pending", host.yielded)
+                host.failRestore = false
+                c.showBlocked(pkg, null, c.currentBlockCause(pkg)!!)
+                assertTrue(host.mounted); assertFalse("Next evaluation restores key blocking", host.yielded)
+                assertEquals("Restoration never opens a detach gap", 0, host.detachments)
                 // The detector owns removal after actually observing Home/a floor departure.
                 c.hideIfShown(); assertFalse(host.mounted)
             } finally { activity.pause().stop().destroy(); c.hideIfShown() }
@@ -416,6 +421,25 @@ class GlobalRecoveryCoordinatorTest {
             advanceTimeBy(BlockScreenCoordinator.RECOVERY_SURFACE_TIMEOUT_MS); runCurrent()
             assertTrue(host.mounted); assertFalse(host.yielded); assertEquals(0, host.detachments)
             assertFalse(RecoverySurfaceHandoff.isShowing(pkg)); assertFalse(BlockExemptions.hasGlobalRecovery())
+        } finally { activity.pause().stop().destroy(); c.hideIfShown() }
+    }
+
+    @Test fun PC_41_PC_76_reusedRecoveryRequiresFreshWindowFocusForTheNewHandoff() = runTest {
+        val host = FocusHost(); val c = coordinator(Disk(initial()) { clock() }, surface = host); runCurrent()
+        val activity = drawnRecovery(c, focused = true)
+        try {
+            assertFalse(host.mounted)
+            val other = "com.example.different"
+            c.showBlocked(other, null, c.currentBlockCause(pkg)!!)
+            assertTrue(c.launchRecovery())
+            activity.newIntent(shadowOf(app as android.app.Application).nextStartedActivity)
+            compose.waitForIdle(); activity.get().window.decorView.viewTreeObserver.dispatchOnDraw(); shadowOf(Looper.getMainLooper()).idle()
+            assertTrue("Old focus cannot detach the new target shield", host.mounted)
+            assertTrue(host.yielded); assertFalse(RecoverySurfaceHandoff.isShowing(other))
+            activity.get().onWindowFocusChanged(false)
+            assertTrue("Initial lack of new focus does not revoke the yield", host.yielded)
+            activity.get().onWindowFocusChanged(true)
+            assertFalse(host.mounted); assertTrue(RecoverySurfaceHandoff.isShowing(other))
         } finally { activity.pause().stop().destroy(); c.hideIfShown() }
     }
 
