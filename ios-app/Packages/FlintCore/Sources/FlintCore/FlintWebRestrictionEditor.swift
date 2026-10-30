@@ -21,6 +21,25 @@ public final class FlintWebRestrictionEditor {
         public init(session: FlintActiveSession?, rules: [FlintScheduleRule]) {
             self.session = session; self.rules = rules
         }
+
+        /// The caller holds the session transition. A projection gap is not idle when a
+        /// durable generation remains live; installing generations cannot authorize edits.
+        static func observing(session: FlintActiveSession?, recordPresent: Bool, rules: [FlintScheduleRule]?,
+                              ledgerState: FlintLedgerState?, clock: FlintClock) -> Self? {
+            guard let rules, let state = ledgerState,
+                  !FlintSessionAuthority.recordIsUnavailable(session, recordPresent: recordPresent,
+                    authority: state.sessionAuthority, authorityVersion: state.sessionAuthorityVersion, clock: clock),
+                  state.sessionAuthority?.latest?.phase != .installing || state.sessionAuthority?.provesIdle == true else { return nil }
+            if let session {
+                guard session.contractVersion == nil || session.contractVersion == FlintActiveSession.currentContractVersion,
+                      session.startedAt.timeIntervalSinceReferenceDate.isFinite,
+                      session.endsAt.map({ $0.timeIntervalSinceReferenceDate.isFinite && $0 > session.startedAt }) ?? true,
+                      session.plannedDuration.map({ $0.isFinite && $0 > 0 }) ?? true,
+                      session.remainingCheckpoint?.isValid != false else { return nil }
+            }
+            return .init(session: FlintSessionAuthority.observedProjection(session,
+                authority: state.sessionAuthority, clock: clock), rules: rules)
+        }
     }
 
     private let read: () -> FlintWebRestrictionRead
@@ -52,14 +71,8 @@ public final class FlintWebRestrictionEditor {
             guard let group = FlintGroupStore(),
                   FlintRuleArbiter(environment: .live).applyQueued(FlintScheduleRule.self),
                   let rules = FlintRuleReloadEnvironment.live.observedRules(FlintScheduleRule.self) else { return nil }
-            let active = group.loadActiveSession()
-            guard active != nil || !group.hasActiveSessionRecord() else { return nil }
-            if let active {
-                guard active.contractVersion == nil || active.contractVersion == FlintActiveSession.currentContractVersion,
-                      active.startedAt.timeIntervalSinceReferenceDate.isFinite,
-                      active.endsAt.map({ $0.timeIntervalSinceReferenceDate.isFinite && $0 > active.startedAt }) ?? true else { return nil }
-            }
-            return Snapshot(session: active, rules: rules)
+            return Snapshot.observing(session: group.loadActiveSession(), recordPresent: group.hasActiveSessionRecord(),
+                rules: rules, ledgerState: try? FlintProtectionLedger.appGroup()?.peek().get(), clock: .system)
         }, persist: { $0.saveRecoveringUnavailableIntent() }, ledger: { FlintProtectionLedger.appGroup() }, clock: .system,
            withTransitionBoundary: { body in
                FlintRuleStoreLock.withLock(environment: .live) { body(); return true } ?? false

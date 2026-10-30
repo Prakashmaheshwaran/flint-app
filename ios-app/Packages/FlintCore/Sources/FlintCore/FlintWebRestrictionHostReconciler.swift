@@ -25,11 +25,28 @@ enum FlintWebRestrictionHostReconciler {
         return FlintSessionController().withTransition {
             withRead(FlintWebRestrictions.readForEnforcement) { config in
                 guard let group = FlintGroupStore() else { return busyReport() }
-                return reconcile(activeSession: group.loadActiveSession(), hasActiveSessionRecord: group.hasActiveSessionRecord(),
+                let snapshot = FlintWebRestrictionEditor.Snapshot.observing(session: group.loadActiveSession(),
+                    recordPresent: group.hasActiveSessionRecord(),
                     rules: FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: .flintGroup, migrating: false),
-                    config: config, health: group.loadArmingHealth(), lifecycle: .init(), clock: .system)
+                    ledgerState: try? FlintProtectionLedger.appGroup()?.peek().get(), clock: .system)
+                return reconcile(snapshot: snapshot, config: config, health: group.loadArmingHealth(),
+                    lifecycle: .init(), clock: .system)
             }
         } ?? busyReport()
+    }
+
+    static func reconcile(snapshot: FlintWebRestrictionEditor.Snapshot?, config: FlintWebRestrictions?,
+                          health: FlintArmingHealth, lifecycle: FlintWebRestrictionLifecycle,
+                          now: Date = Date(), clock: FlintClock) -> FlintArmingHealth.DomainReport {
+        guard let snapshot else { return unavailableReport(health: health, now: now) }
+        return reconcile(activeSession: snapshot.session, hasActiveSessionRecord: snapshot.session != nil,
+            rules: snapshot.rules, config: config, health: health, lifecycle: lifecycle, now: now, clock: clock)
+    }
+
+    private static func unavailableReport(health: FlintArmingHealth, now: Date) -> FlintArmingHealth.DomainReport {
+        .init(enabled: health.domains["webRestrictions"]?.enabled ?? 0, attempted: 0, armed: 0,
+              failures: [.init(activityName: "webRestrictions",
+                 reason: "Saved protection state is unavailable. Existing Safari settings were preserved.")], updatedAt: now)
     }
 
     static func reconcile(
@@ -48,10 +65,7 @@ enum FlintWebRestrictionHostReconciler {
               }) ?? true,
               !sessionReport.failures.contains(where: { $0.activityName == "session" }),
               !rulesReport.failures.contains(where: { $0.activityName == "schedules" }) else {
-            return .init(enabled: health.domains["webRestrictions"]?.enabled ?? 0, attempted: 0, armed: 0,
-                         failures: [.init(activityName: "webRestrictions",
-                            reason: "Saved protection state is unavailable. Existing Safari settings were preserved.")],
-                         updatedAt: now)
+            return unavailableReport(health: health, now: now)
         }
         guard let config else {
             lifecycle.clearEndedOwners(activeSession: activeSession, rules: rules, now: now, clock: clock)

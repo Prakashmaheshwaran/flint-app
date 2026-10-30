@@ -1055,6 +1055,43 @@ final class FlintWebRestrictionEditorTests: XCTestCase {
         XCTAssertEqual(h.writes, 0)
     }
 
+    func testWebHostAndEditorPreserveWhenAppliedGenerationLosesItsProjectionOrIsInstalling() throws {
+        let h = WebEditorHarness()
+        let active = h.session(.hardcore)
+        var state = try h.ledger().read().get()
+        var authority = FlintSessionAuthority(initializedAt: h.now)
+        authority.adopt(active)
+        state.sessionAuthority = authority; state.sessionAuthorityVersion = 1
+        let valid = FlintWebRestrictionEditor.Snapshot.observing(session: active, recordPresent: true,
+            rules: [], ledgerState: state, clock: h.clock)
+        XCTAssertEqual(valid?.session?.id, active.id)
+        for installing in [false, true] {
+            if installing { state.sessionAuthority?.latest?.phase = .installing }
+            let snapshot = FlintWebRestrictionEditor.Snapshot.observing(session: installing ? active : nil,
+                recordPresent: installing, rules: [], ledgerState: state, clock: h.clock)
+            XCTAssertNil(snapshot, "A lost projection or an installing generation is unknown, never idle")
+            let writer = RecordingWebWriter(); writer.web["flint"] = h.config
+            let health = FlintArmingHealth(domains: [
+                "session": .init(enabled: 1, attempted: 1, armed: 1, failures: []),
+                "schedules": .init(enabled: 0, attempted: 0, armed: 0, failures: [])
+            ])
+            let report = FlintWebRestrictionHostReconciler.reconcile(snapshot: snapshot, config: nil,
+                health: health, lifecycle: .init(writer: writer), now: h.now, clock: h.clock)
+            XCTAssertFalse(report.failures.isEmpty)
+            XCTAssertEqual(writer.web["flint"], h.config)
+            XCTAssertTrue(writer.cleared.isEmpty)
+            let editor = FlintWebRestrictionEditor(read: { .unavailable }, snapshot: { snapshot },
+                persist: { _ in XCTFail("Unknown owner cannot authorize repair"); return false },
+                ledger: { h.ledger() }, clock: h.clock)
+            XCTAssertEqual(editor.save(.default, requestID: "lost-projection"), .unavailable)
+        }
+        state.sessionAuthority = .init(initializedAt: h.now)
+        XCTAssertNotNil(FlintWebRestrictionEditor.Snapshot.observing(session: nil, recordPresent: false,
+            rules: [], ledgerState: state, clock: h.clock), "The explicit idle tombstone permits an owner snapshot")
+        XCTAssertNil(FlintWebRestrictionEditor.Snapshot.observing(session: nil, recordPresent: false,
+            rules: [], ledgerState: nil, clock: h.clock), "Ledger outage is not idle")
+    }
+
     func testUnavailableIntentHarderRepairWaitsAndFailedWriteRetrySpendsOnce() throws {
         let h = WebEditorHarness(); h.readOverride = .unavailable
         h.active = h.session(.harder); h.rules = [h.rule(.harder)]
