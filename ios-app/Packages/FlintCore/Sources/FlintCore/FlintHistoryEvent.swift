@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// The only mapping between lifecycle event kinds and the on-disk vocabulary.
 public enum FlintHistoryEventType: Equatable, Sendable, Codable {
@@ -112,21 +113,26 @@ public struct FlintHistoryEvent: Codable, Equatable, Sendable, Identifiable {
     public init(_ event: FlintSessionLifecycleEvent, timeZone: TimeZone = .current) {
         switch event {
         case let .started(s, source, _):
-            self.init(type: .started, session: s.id, at: s.startedAt, timeZone: timeZone,
+            self.init(type: .started, session: s.id, at: s.startedAt,
+                      id: Self.lifecycleID(.started, session: s.id), timeZone: timeZone,
                       plannedEnd: s.endsAt, tier: s.breakLevel.rawValue,
                       source: source.rawValue, name: s.name)
         case let .ended(s, route, at):
-            self.init(type: route == .completed ? .completed : .endedEarly, session: s.id,
-                      at: at, timeZone: timeZone,
+            let type: FlintHistoryEventType = route == .completed ? .completed : .endedEarly
+            self.init(type: type, session: s.id, at: at,
+                      id: Self.lifecycleID(type, session: s.id, discriminator: route.rawValue), timeZone: timeZone,
                       route: route == .completed ? nil : route.rawValue)
         case let .superseded(s, next, at):
-            self.init(type: .superseded, session: s.id, at: at, timeZone: timeZone, by: next.id)
+            self.init(type: .superseded, session: s.id, at: at,
+                      id: Self.lifecycleID(.superseded, session: s.id, discriminator: next.id),
+                      timeZone: timeZone, by: next.id)
         case let .passUsed(s, at):
             self.init(type: .passUsed, session: "pass-\(UUID().uuidString)", at: at, timeZone: timeZone, sessions: [s.id])
         case let .globalPassUsed(operationID, sessions, recoveryEnd, at):
             self.init(type: .passUsed, session: operationID, at: at, id: operationID,
                       timeZone: timeZone, sessions: sessions.map(\.id), recoveryEnd: recoveryEnd)
         case let .failedToArm(s, reason, at):
+            // Each arm attempt can fail independently; the session is not an operation ID.
             self.init(type: .failedToArm, session: s.id, at: at, timeZone: timeZone, reason: reason)
         case let .annotated(event, origin, reason, observedAt, timeConfidence):
             self.init(event, timeZone: timeZone)
@@ -134,5 +140,18 @@ public struct FlintHistoryEvent: Codable, Equatable, Sendable, Identifiable {
             self.observedAt = observedAt.map(Self.milliseconds)
             self.timeConfidence = timeConfidence ?? self.timeConfidence
         }
+    }
+
+    /// Only one-shot lifecycle transitions use this identity. Dates and annotations are
+    /// evidence, not identity; repeatable phases retain the generic initializer's IDs.
+    private static func lifecycleID(_ type: FlintHistoryEventType, session: String,
+                                    discriminator: String = "") -> String {
+        var identity = Data()
+        // UTF-8 byte lengths make arbitrary session/replacement IDs unambiguous.
+        for field in ["flint.history.lifecycle.v1", type.wireName, session, discriminator] {
+            identity.append(contentsOf: "\(field.utf8.count):".utf8)
+            identity.append(contentsOf: field.utf8)
+        }
+        return "lifecycle-v1-" + SHA256.hash(data: identity).map { String(format: "%02x", $0) }.joined()
     }
 }

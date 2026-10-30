@@ -28,7 +28,7 @@ One JSON object per event. Both platforms use the same field names.
 | Field | Type | Present on | Meaning |
 | --- | --- | --- | --- |
 | `v` | int | all | Record schema version. This contract is `1`. |
-| `id` | string | all | Unique event id (UUID). |
+| `id` | string | all | Unique event id (UUID or stable lifecycle/operation key). |
 | `type` | string | all | One of the event types below. |
 | `session` | string | all | Session id (iOS `FlintActiveSession.id`, Android `BlockRule.id`). |
 | `at` | int64 | all | Epoch milliseconds (UTC wall clock) the event takes effect. |
@@ -268,6 +268,27 @@ session), `stop(route:)`, `finishIfExpired`, `useEmergencyPass`, the monitor's s
 `intervalDidEnd` branch (before `clearActiveSession`), Shortcuts stop, Focus filter off,
 and the registration-failure path. History's host reconciliation drains committed extension
 events; it never manufactures an end from a missed callback or a missing active row.
+
+The iOS lifecycle mapper gives `started`, `completed`, `ended_early` and `superseded`
+stable event IDs so delivery retries can be deduplicated by the history store. The key is
+`lifecycle-v1-` plus the full lowercase SHA-256 digest of four UTF-8 fields, each prefixed
+with its decimal byte length and `:`: `flint.history.lifecycle.v1`, the history wire type,
+the session id, and a discriminator (empty for `started`, the lifecycle end route including
+`completed` for ends, or the replacement session id for `superseded`). The ID is 77 ASCII
+bytes regardless of input lengths. Dates, time zones, source/name/tier and annotations do
+not change identity; their original accepted payload remains evidence, and the store keeps
+the first retained delivery for an ID. Distinct end routes remain distinct records; the
+first-terminal outcome rule still applies.
+
+`failed_to_arm` can recur for independent arm attempts and keeps a fresh UUID per emission.
+The legacy single-session pass call also keeps fresh IDs; global passes retain their
+caller-supplied operation ID. The generic event initializer retains explicit IDs or fresh
+UUIDs even for lifecycle wire types, so repeatable breaks, access, reschedules and coverage
+observations are not collapsed by session/type. No schema change or rewrite is required:
+already persisted random-ID lifecycle rows remain readable, but **cannot retroactively
+deduplicate against the new IDs by event ID alone**. Existing session outcome aggregation
+still ignores later terminals. This is retained-event replay deduplication, not a claim
+of exactly-once delivery to every sink or across history clearing/retention.
 
 ### Android — observed transitions
 
