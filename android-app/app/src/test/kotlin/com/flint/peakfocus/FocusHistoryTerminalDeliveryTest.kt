@@ -167,6 +167,34 @@ class FocusHistoryTerminalDeliveryTest {
         }
     }
 
+    @Test fun suppressedOwnerCompletionCannotReviseTheWinningExplicitOutcomesPlan() = runTest {
+        for (type in listOf("ended_early", "completed", "superseded")) for (endMinutes in listOf(15, 75))
+            for (rollback in listOf(false, true)) {
+            val clock = MutableClock(start + 2 * hour)
+            val store = FocusHistoryStore(temporary.newFolder(), clock)
+            val explicit = HistoryEvent(type = type, session = terminal.sessionId,
+                at = start + if (type == "completed") hour else hour / 2, tz = "UTC",
+                route = if (type == "ended_early") "hold_to_end" else null,
+                by = if (type == "superseded") "session-next" else null, originRoute = "app_ui")
+            assertTrue(store.update { listOf(HistoryEvent(type = "started", session = terminal.sessionId,
+                at = start, plannedEnd = start + hour, tz = "UTC", name = "Focus", tier = "easy", source = "manual"),
+                explicit) })
+            val before = store.load().events
+            val rawBefore = File(store.directory, "events.v1.jsonl").readBytes()
+            val baseline = FocusHistoryAggregator.sessions(before, clock.millis(), emptySet()).single()
+            val owner = PendingOwner(terminal.copy(
+                logicalEnd = AccessClockStamp(start + endMinutes * 60_000L, endMinutes * 60_000L, "boot")))
+            if (rollback) clock.now = start + 45 * 60_000L
+            assertEquals(1, projectEditorHistoryTerminals(owner, store::update, ZoneOffset.UTC))
+            assertTrue(owner.pending.isEmpty())
+            assertEquals(before, store.load().events)
+            assertArrayEquals(rawBefore, File(store.directory, "events.v1.jsonl").readBytes())
+            val result = FocusHistoryAggregator.sessions(store.load().events, clock.millis(), emptySet()).single()
+            assertEquals(baseline.outcome, result.outcome)
+            assertEquals(baseline.focusedMs, result.focusedMs)
+        }
+    }
+
     @Test fun committedHistorySurvivesFailedAckAndLateReplayWithoutDoubleCounting() = runTest {
         val clock = Clock.fixed(Instant.ofEpochMilli(start + 2 * hour), ZoneOffset.UTC)
         val store = FocusHistoryStore(temporary.newFolder(), clock)

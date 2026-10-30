@@ -101,7 +101,7 @@ class FocusHistoryTerminalArbitrationTest {
         val store = FocusHistoryStore(temporary.newFolder(), clock)
         assertTrue(store.update { listOf(start(), unknown()) })
         val before = File(store.directory, "events.v1.jsonl").readBytes()
-        assertFalse(store.update { listOf(explicit("ended_early"), start().copy(id = "bad", name = "x".repeat(65))) })
+        assertFalse(store.update { listOf(explicit("ended_early"), start().copy(id = "bad", tier = "invalid")) })
         assertArrayEquals(before, File(store.directory, "events.v1.jsonl").readBytes())
         assertEquals("unknown", raw(store).single { it.knownType?.terminal == true }.route)
     }
