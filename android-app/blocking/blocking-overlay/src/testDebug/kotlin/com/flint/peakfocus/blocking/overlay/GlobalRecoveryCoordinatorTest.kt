@@ -94,11 +94,12 @@ class GlobalRecoveryCoordinatorTest {
 
     private fun TestScope.coordinator(disk: Disk, surface: BlockScreenCoordinator.SurfaceHost = host,
         context: Context = app, openFlow: Flow<StorageState<List<OpenLimit>>>? = null,
+        timeFlow: Flow<StorageState<List<TimeLimit>>>? = null,
         changed: () -> Unit = {}): BlockScreenCoordinator {
         val focus = object : FocusStateStore by InMemoryFocusStateStore() { override val state = disk.state.project { it.focus } }
         val rules = object : BlockRulesStore by InMemoryBlockRulesStore() { override val rulesState = disk.state.project { it.rules } }
         val limits = object : LimitsStore by InMemoryLimitsStore() {
-            override val timeLimitsState = disk.state.project { it.times }
+            override val timeLimitsState = timeFlow ?: disk.state.project { it.times }
             override val openLimitsState = openFlow ?: disk.state.project { it.opens }
         }
         val editor = object : EditorCommitmentStore {
@@ -120,6 +121,43 @@ class GlobalRecoveryCoordinatorTest {
     }
 
     private fun TestScope.clock() = base.copy(wallEpochMs = base.wallEpochMs + testScheduler.currentTime, elapsedRealtimeMs = base.elapsedRealtimeMs + testScheduler.currentTime)
+
+    @Test fun PC_28_PC_47_PC_60_timeAccountingFaultIsScopedWhileOpenOrdinaryAndEmergencyRecoveryRemainUsable() = runTest {
+        val s = initial(BreakLevel.EASY).copy(times = listOf(TimeLimit("b", 10, BreakLevel.EASY)),
+            opens = listOf(OpenLimit("c", 1, BreakLevel.EASY)), openCredits = OpenCreditLedgerPolicy.initial(base, "UTC"))
+        val disk = Disk(s) { clock() }
+        val fault = MutableStateFlow<StorageState<List<TimeLimit>>>(StorageState.Unavailable(StorageFailure.CORRUPT))
+        val c = coordinator(disk, timeFlow = fault); runCurrent()
+        assertEquals(10, c.timeLimitMinutes("b"))
+        assertEquals(BreakLevel.EASY, c.currentTimeLimitBreakLevel("b"))
+        val timeCause = timeLimitBlockCause(BreakLevel.EASY, clock().wallEpochMs, 0)
+        val before = disk.writes
+        assertEquals(com.flint.peakfocus.feature.blockscreen.GrantStatus.UNAVAILABLE,
+            c.screenState("b", null, timeCause, clock().wallEpochMs).grantStatus)
+        assertTrue(c.requestBreak("b", timeCause, GrantRequestId.issue(clock())) is GrantResult.Unavailable)
+        assertEquals(before, disk.writes)
+
+        val openCause = c.currentBlockCause("c")!!
+        val openScope = c.screenState("c", null, openCause, clock().wallEpochMs).openCreditRequestScope
+        assertNotNull(openScope)
+        assertEquals(GrantResult.OpenAllowed, c.requestBreak("c", openCause, GrantRequestId.issue(clock(), openScope)))
+        runCurrent()
+        assertNull(c.currentBlockCause("c"))
+        val ordinaryCause = ruleBlockCause(s.rules.single(), clock().wallEpochMs, 0)
+        assertTrue(c.requestBreak(pkg, ordinaryCause, GrantRequestId.issue(clock())) is GrantResult.Granted)
+        runCurrent()
+        assertTrue(c.isExempt(pkg, ordinaryCause))
+        val status = ProtectionStatusHub.status.value
+        assertEquals(ProtectionStatus.Readiness.READY, status.readiness)
+        assertTrue("time-limit-measurement-unavailable" in status.detectors.degradedReasons)
+        assertEquals(ProtectionStatus.PassStatus.Available, status.pass)
+        val preview = c.previewEmergencyPass()!!
+        assertTrue(c.confirmEmergencyPass(preview) is RecoveryResult.Accepted)
+        runCurrent()
+        assertTrue(BlockExemptions.hasGlobalRecovery())
+        assertTrue(disk.state.value is StorageState.Ready)
+        assertTrue(c.isExempt("b", timeCause))
+    }
 
     @Test fun PC_28_PC_47_openConfigurationLoadingOrUnavailableCannotReleaseAnActiveCredit() = runTest {
         val s = initial().copy(opens = listOf(OpenLimit("c", 1, BreakLevel.HARDCORE)),

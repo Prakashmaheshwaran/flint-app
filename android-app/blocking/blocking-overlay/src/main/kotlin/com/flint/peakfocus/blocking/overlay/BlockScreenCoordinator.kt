@@ -311,6 +311,11 @@ class BlockScreenCoordinator(
     /** Cheap invalidation on each collector; policy work runs once on statusDispatcher. */
     private fun invalidateProtectionStatus() { statusInvalidations.trySend(Unit) }
 
+    private fun timeMetadataState() = TimeLimitDomainReadiness.metadata(timeState.value, recoveries?.state?.value)
+    private fun configuredTimes(): List<TimeLimit> = (timeMetadataState() as? StorageState.Ready)?.value ?: timeLimits
+    private fun timePermitsNewAccess(packageName: String) = TimeLimitDomainReadiness.permitsNewAccess(
+        packageName, timeMetadataState(), timeState.value, observations[packageName]?.budget, observeProductionTimeMeasurements, statusClock())
+
     /** Real policy evaluation; display reads and detector-health callbacks never invoke this. */
     private fun publishProtectionStatus() {
         try {
@@ -320,17 +325,18 @@ class BlockScreenCoordinator(
             // from a display read or the Accessibility callback. Fixtures own their stores.
             val budgets = if (observeProductionTimeMeasurements) {
                 val legacy = com.flint.peakfocus.core.data.LimitStore(appContext).all().filterValues { it >= 0 }
-                val canonical = timeLimits.associate { it.packageName to it.dailyMinutes }
+                val canonical = configuredTimes().associate { it.packageName to it.dailyMinutes }
                 (legacy.keys + canonical.keys).associateWith { pkg -> listOfNotNull(legacy[pkg], canonical[pkg]).min() }
             } else emptyMap()
             val snapshot = ProtectionStatusProjection.evaluate(focusState.value, rulesState.value,
-                timeState.value, openState.value, editorState.value, ActiveRulesHolder.rulesOutside(ActiveRulesHolder.SOURCE_DATASTORE),
+                timeMetadataState(), openState.value, editorState.value, ActiveRulesHolder.rulesOutside(ActiveRulesHolder.SOURCE_DATASTORE),
                 safetyFloor.runtimeResolution.value, EnforcementSignals.detectors.pathAConnected, now,
                 timeLimitTier = { currentTimeLimitBreakLevel(it.packageName) },
                 usageAccessMissing = "usage-access-missing" in
                     ProtectionStatusHub.status.value.detectors.degradedReasons,
                 timeMeasurementUnavailable = TimeLimitMeasurementHealth.publisher.unavailable(budgets, now),
-                timeMeasurementStorageUnavailable = TimeLimitMeasurementHealth.publisher.storageUnavailable(budgets))
+                timeMeasurementStorageUnavailable = timeState.value is StorageState.Unavailable ||
+                    TimeLimitMeasurementHealth.publisher.storageUnavailable(budgets))
             synchronized(statusLock) {
                 val connected = EnforcementSignals.detectors.pathAConnected
                 val health = snapshot.detectors.copy(accessibilityConnected = connected,
@@ -394,8 +400,8 @@ class BlockScreenCoordinator(
      * supplies a proven Ready legacy SharedPreferences budget without a DataStore record.
      */
     fun currentTimeLimitBreakLevel(packageName: String): BreakLevel =
-        if (timeState.value !is StorageState.Ready) BreakLevel.HARDCORE
-        else timeLimits.firstOrNull { it.packageName == packageName }?.breakLevel ?: currentDefaultBreakLevel()
+        if (timeMetadataState() !is StorageState.Ready) BreakLevel.HARDCORE
+        else configuredTimes().firstOrNull { it.packageName == packageName }?.breakLevel ?: currentDefaultBreakLevel()
 
     /**
      * The Limit editor's daily Time Limit for [packageName] (minutes), or null. Synchronous
@@ -404,7 +410,7 @@ class BlockScreenCoordinator(
      * lookup existed, DataStore-authored Time Limits were persisted but never enforced.
      */
     fun timeLimitMinutes(packageName: String): Int? =
-        timeLimits.firstOrNull { it.packageName == packageName }?.dailyMinutes
+        configuredTimes().firstOrNull { it.packageName == packageName }?.dailyMinutes
 
     /** Snapshot of the HARDER break bookkeeping (BlockActivity rebuilds its state from this). */
     fun currentBreakSession(): BreakSessionState {
@@ -575,7 +581,7 @@ class BlockScreenCoordinator(
         owner.observeOrdinary(input)
         // A faster raw-source update cannot lend an old frozen grant to a new contributor.
         if ((rulesState.value as? StorageState.Ready)?.value != snapshot.rules ||
-            (timeState.value as? StorageState.Ready)?.value != snapshot.times ||
+            (timeMetadataState() as? StorageState.Ready)?.value != snapshot.times ||
             (openState.value as? StorageState.Ready)?.value != snapshot.opens) return false
         return owner.ordinaryCovers(input, statusClock())
     }
@@ -979,7 +985,8 @@ class BlockScreenCoordinator(
     private suspend fun requestContractBreak(packageName: String, displayed: BlockCause, id: GrantRequestId): GrantResult {
         val owner = recoveries ?: return GrantResult.Unavailable()
         if (safetyFloor.protectsFresh(packageName)) return GrantResult.Denied
-        if (owner.state.value !is StorageState.Ready || listOf(rulesState.value, timeState.value, openState.value, editorState.value).any { it !is StorageState.Ready })
+        if (owner.state.value !is StorageState.Ready || listOf(rulesState.value, timeMetadataState(), openState.value, editorState.value).any { it !is StorageState.Ready } ||
+            !timePermitsNewAccess(packageName))
             return GrantResult.Unavailable()
         if (openLimits.any { it.packageName == packageName } && owner.openOccurrenceActive(packageName, statusClock()) != true)
             return if (id.creditScope != null) GrantResult.Denied else GrantResult.Unavailable()
@@ -1039,7 +1046,7 @@ class BlockScreenCoordinator(
     }
 
     fun screenState(packageName: String, label: String?, cause: BlockCause, now: Long): BlockScreenState {
-        val inputs = if (recoveries != null) listOf(recoveries.state.value, focusState.value, rulesState.value, timeState.value, openState.value, editorState.value)
+        val inputs = if (recoveries != null) listOf(recoveries.state.value, focusState.value, rulesState.value, timeMetadataState(), openState.value, editorState.value)
             else grantInputs(cause, emergency = cause.breakLevel == BreakLevel.HARDCORE)
         val credit = recoveries?.creditView(ordinaryInput(packageName, cause), statusClock())
         val unavailableCredit = recoveries != null && openLimits.any { it.packageName == packageName } &&
@@ -1048,6 +1055,7 @@ class BlockScreenCoordinator(
         val status = when {
             inputs.any { it is StorageState.Loading } -> GrantStatus.LOADING
             inputs.any { it !is StorageState.Ready } -> GrantStatus.UNAVAILABLE
+            recoveries != null && !timePermitsNewAccess(packageName) -> GrantStatus.UNAVAILABLE
             cause.reason == BlockScreenReason.OPEN_LIMIT && recoveries != null &&
                 openLimits.any { it.packageName == packageName } &&
                 recoveries.openOccurrenceActive(packageName, statusClock()) == false -> GrantStatus.RESETTING
