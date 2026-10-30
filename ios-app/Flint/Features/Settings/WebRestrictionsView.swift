@@ -8,6 +8,7 @@ struct WebRestrictionsView: View {
     @State private var readState = FlintWebRestrictionRead.busy
     @State private var isReading = false
     @State private var isSaving = false
+    @State private var needsChildRecovery = false
     @State private var outcome: FlintWebRestrictionEditor.Outcome?
     @State private var requestID = UUID().uuidString
 
@@ -29,6 +30,10 @@ struct WebRestrictionsView: View {
                     Text("Saved website rules are unavailable. Existing restrictions are preserved. Rebuild a draft below; saving it must respect every running commitment.")
                     Button("Try again") { Task { await refresh(resetDraft: false) } }
                 }
+            } else if needsChildRecovery {
+                Section {
+                    Text("Some running website rules need recovery. Existing restrictions are preserved; restoring them must respect every running commitment.")
+                }
             }
             if savedConfig != nil || readState == .unavailable {
             Section {
@@ -43,7 +48,7 @@ struct WebRestrictionsView: View {
                     Private Browsing and locks Clear History and Website Data as a side effect.
                     """)
             }
-                if readState == .unavailable {
+                if readState == .unavailable || needsChildRecovery {
                     Section {
                         Button("Re-establish website rules") { attemptSave() }
                     } footer: {
@@ -149,6 +154,7 @@ struct WebRestrictionsView: View {
             if result == .saved {
                 savedConfig = candidate
                 readState = .available(candidate)
+                needsChildRecovery = false
                 await FlintProtectionReconciler.shared.reconcile(trigger: .configEdit)
             } else if result == .unavailable || result == .busy {
                 await refresh(resetDraft: false)
@@ -162,10 +168,11 @@ struct WebRestrictionsView: View {
         guard !isReading else { return }
         isReading = true
         let state = await Task.detached(priority: .userInitiated) {
-            FlintWebRestrictions.readForUI()
+            FlintWebRestrictions.readForSettingsUI()
         }.value
-        readState = state
-        switch state {
+        readState = state.preferences
+        if let recovery = state.needsChildRecovery { needsChildRecovery = recovery }
+        switch state.preferences {
         case let .available(config):
             savedConfig = config
             if resetDraft { restrictions = config; outcome = nil }

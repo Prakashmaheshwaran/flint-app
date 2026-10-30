@@ -195,6 +195,8 @@ struct FlintRuleReloadEnvironment {
         record(domain, current)
     }
     var installationEvidence: () -> Bool = FlintRuleInitialization.externalEvidence
+    /// nil selects the live native query; an indeterminate injected result retains stores.
+    var existingWebStores: (() -> Bool?)? = nil
 
     /// The caller holds the transition lock. Checkpoint before decisions, but do not freeze a
     /// successor here: queued changes must apply before the next occurrence can be accepted.
@@ -244,6 +246,7 @@ struct FlintRuleReloadEnvironment {
             }
         }
         guard changed.isEmpty || (acceptSave() && FlintDesiredRules.save(next, key: Rule.domain, to: defaults)) else { return nil }
+        _ = FlintWebRestrictionRuleAdapter.freeze(next, environment: self, existingWebStores: existingWebStores, completeRuleSnapshot: true)
         for rule in changed {
             if let limit = rule as? FlintLimitRule {
                 if resetShields { clearStore(limit.storeName) }

@@ -43,6 +43,8 @@ enum FlintWebRestrictionHostReconciler {
                           health: FlintArmingHealth, lifecycle: FlintWebRestrictionLifecycle,
                           now: Date = Date(), clock: FlintClock) -> FlintArmingHealth.DomainReport {
         guard let snapshot else { return unavailableReport(health: health, now: now) }
+        // Snapshot.observing already proved the generation/record relationship. The legacy
+        // typed entry point below still needs an explicit record-presence consistency flag.
         return reconcile(activeSession: snapshot.session, hasActiveSessionRecord: snapshot.session != nil,
             rules: snapshot.rules, config: config, health: health, lifecycle: lifecycle, now: now, clock: clock)
     }
@@ -71,18 +73,6 @@ enum FlintWebRestrictionHostReconciler {
               !rulesReport.failures.contains(where: { $0.activityName == "schedules" }) else {
             return unavailableReport(health: health, now: now)
         }
-        guard let config else {
-            lifecycle.clearEndedOwners(activeSession: activeSession, rules: rules, now: now, clock: clock)
-            return .init(enabled: health.domains["webRestrictions"]?.enabled ?? 0, attempted: 0, armed: 0,
-                         failures: [.init(activityName: "webRestrictions",
-                            reason: "Saved website rules are unavailable. Live owners were preserved; verified ended owners were released.")],
-                         updatedAt: now)
-        }
-        if let message = config.validationMessage {
-            return .init(enabled: 0, attempted: 0, armed: 0,
-                         failures: [.init(activityName: "webRestrictions", reason: message)], updatedAt: now)
-        }
-
         let failedRules = Set(rulesReport.failures.map(\.activityName))
         var preserving = Set(rules.filter { $0.enabled && failedRules.contains($0.monitorName) }.map(\.storeName))
         var failures = rules.filter { preserving.contains($0.storeName) }.map {
@@ -97,17 +87,35 @@ enum FlintWebRestrictionHostReconciler {
         }
         let eligibleSession = FlintWebReconcileEligibility.session(activeSession, report: sessionReport)
         let eligibleRules = FlintWebReconcileEligibility.rules(rules, report: rulesReport)
+        // Eligibility affects writes, never owner lifetime or child pruning. Keep the actual
+        // snapshots separate from the registration-masked nil/disabled projections.
+        if eligibleSession == nil, let activeSession, activeSession.isEnforcing(at: now, clock: clock) {
+            if preserving.insert(FlintWebRestrictionLifecycle.sessionStoreName).inserted {
+                failures.append(.init(activityName: activeSession.monitorName,
+                    reason: "Safari updates were deferred because this live session's registration is not verified."))
+            }
+        }
+        for rule in rules {
+            if !FlintWebRestrictionChildren.knows(rule) || (rule.enabled && rule.occurrence(at: now, clock: clock) != nil
+                && eligibleRules.first(where: { $0.id == rule.id })?.enabled != true) {
+                if preserving.insert(rule.storeName).inserted {
+                    failures.append(.init(activityName: rule.monitorName,
+                        reason: "Safari updates were deferred because this rule's occurrence or registration is not verified."))
+                }
+            }
+        }
+        if config == nil || config?.validationMessage != nil {
+            failures.append(.init(activityName: "webRestrictions", reason: config?.validationMessage
+                ?? "Saved website preferences are unavailable. Valid frozen policies continue; updates to unknown children remain deferred."))
+        }
         lifecycle.reconcile(
             activeSession: eligibleSession, rules: eligibleRules, config: config,
-            now: now, calendar: calendar, preservingStores: preserving, clock: clock
+            now: now, calendar: calendar, preservingStores: preserving, clock: clock,
+            actualOwners: .init(session: activeSession, rules: rules)
         )
-
-        let applied = (!preserving.contains(FlintWebRestrictionLifecycle.sessionStoreName)
-            && FlintWebRestrictionPolicy.shouldApply(to: .session(eligibleSession), config: config, now: now,
-                                                   clock: clock) ? 1 : 0)
-            + eligibleRules.filter { !preserving.contains($0.storeName) && FlintWebRestrictionPolicy.shouldApply(
-                to: $0, config: config, now: now, calendar: calendar, clock: clock
-            ) }.count
+        failures += lifecycle.unavailableStores.sorted().map { .init(activityName: $0,
+            reason: "This occurrence's frozen website policy is unavailable. Existing Safari keys were preserved.") }
+        let applied = lifecycle.appliedStores.count
         // This domain's funnel describes applied settings, not native activity registrations.
         // Settings renders it separately and activity-slot totals exclude the web domain.
         return .init(enabled: applied, attempted: applied, armed: applied, failures: failures, updatedAt: now)

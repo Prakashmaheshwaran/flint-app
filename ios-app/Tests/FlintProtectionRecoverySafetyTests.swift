@@ -15,7 +15,7 @@ final class FlintProtectionRecoverySafetyTests: XCTestCase {
                 var reports: [String: FlintArmingHealth.DomainReport] = [:]
                 let env = FlintRuleReloadEnvironment(defaults: defaults, center: center,
                     clearStore: { cleared.append($0) }, applyOpenShield: { _ in XCTFail("unreadable intent must not apply"); return false },
-                    record: { reports[$0] = $1 })
+                    record: { reports[$0] = $1 }, existingWebStores: { false })
                 _ = FlintSchedulesController(environment: env).reload()
                 FlintLimitsController(environment: env).reload()
                 FlintOpenLimitsController(environment: env).reload()
@@ -46,7 +46,7 @@ final class FlintProtectionRecoverySafetyTests: XCTestCase {
             for name in names { center.held[.init(name)] = activity(name) }
             var cleared: [String] = []
             let env = FlintRuleReloadEnvironment(defaults: defaults, center: center,
-                clearStore: { cleared.append($0) }, applyOpenShield: { _ in XCTFail(); return false }, record: { _, _ in })
+                clearStore: { cleared.append($0) }, applyOpenShield: { _ in XCTFail(); return false }, record: { _, _ in }, existingWebStores: { false })
             _ = FlintSchedulesController(environment: env).reload()
             FlintLimitsController(environment: env).reload()
             FlintOpenLimitsController(environment: env).reload()
@@ -177,7 +177,7 @@ final class FlintProtectionRecoverySafetyTests: XCTestCase {
             var report = FlintArmingHealth.DomainReport(enabled: 0, attempted: 0, armed: 0, failures: [])
             let env = FlintRuleReloadEnvironment(defaults: defaults, center: center,
                 clearStore: { _ in XCTFail("no removal or invalid selection") }, applyOpenShield: { _ in XCTFail(); return false },
-                record: { _, value in report = value })
+                record: { _, value in report = value }, existingWebStores: { false })
             let controller = FlintSchedulesController(environment: env)
             defaults.set(try JSONEncoder().encode([original]), forKey: FlintDesiredRules.Key.schedules.rawValue)
             XCTAssertTrue(controller.reload().isEmpty)
@@ -219,7 +219,7 @@ final class FlintProtectionRecoverySafetyTests: XCTestCase {
         var cleared = 0
         var report = FlintArmingHealth.DomainReport(enabled: 0, attempted: 0, armed: 0, failures: [])
         let env = FlintRuleReloadEnvironment(defaults: defaults, center: center,
-            clearStore: { _ in cleared += 1 }, applyOpenShield: { _ in applied += 1; return true }, record: { _, value in report = value })
+            clearStore: { _ in cleared += 1 }, applyOpenShield: { _ in applied += 1; return true }, record: { _, value in report = value }, existingWebStores: { false })
         let controller = FlintOpenLimitsController(environment: env, selectionIssue: { _ in nil })
         let layer = FlintOpenLimitProtectionLayer { reapply in
             controller.reload(reapplyShields: reapply)

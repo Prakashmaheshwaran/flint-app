@@ -261,11 +261,16 @@ enum FlintEmergencyPassRuleEffects {
         // The committed pass already released their native stores; only this child is unknown.
         let loadedWeb = FlintWebRestrictions.loadForEnforcement(from: env.defaults, existingWebStores: existingWebStores)
         let config = loadedWeb.flatMap { $0.validationMessage == nil ? $0 : nil }
+        web.resetObservations()
         var webApplied = 0
         defer {
+            var failures: [FlintArmingHealth.Failure] = []
+            if config == nil { failures.append(.init(activityName: "webRestrictions",
+                reason: "Saved website preferences are unavailable. Known frozen rules resumed; unknown website rules need repair.")) }
+            failures += web.unavailableStores.sorted().map { .init(activityName: $0,
+                reason: "This occurrence's website policy is unavailable. Other protection resumed; Safari settings need repair.") }
             env.record("webRestrictions", .init(enabled: webApplied, attempted: webApplied, armed: webApplied,
-                failures: config == nil ? [.init(activityName: "webRestrictions",
-                    reason: "Saved website rules are unavailable. Other protection resumed; Safari settings need repair.")] : [],
+                failures: failures,
                 updatedAt: env.clock.now()))
         }
         func observed(_ name: String, domain: String) -> Bool {
@@ -280,12 +285,8 @@ enum FlintEmergencyPassRuleEffects {
             }
             guard observed(rule.activityName, domain: "schedules") else { incomplete = true; continue }
             guard env.applyProtection(rule) else { incomplete = true; continue }
-            if let config {
-                web.reconcileRule(rule, config: config, now: env.clock.now(), calendar: rule.ruleCalendar, clock: env.clock)
-                if FlintWebRestrictionPolicy.shouldApply(to: rule, config: config, now: env.clock.now(), clock: env.clock) {
-                    webApplied += 1
-                }
-            }
+            web.reconcileRule(rule, config: config, now: env.clock.now(), clock: env.clock)
+            if web.appliedStores.contains(rule.storeName) { webApplied += 1 }
         }
         for rule in limits {
             let date = FlintRuleOccurrenceClock.date(for: rule, clock: env.clock)

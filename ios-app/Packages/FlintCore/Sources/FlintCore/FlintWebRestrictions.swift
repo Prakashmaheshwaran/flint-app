@@ -197,12 +197,19 @@ public enum FlintWebRestrictionRead: Equatable, Sendable {
     case busy
 }
 
+public struct FlintWebRestrictionSettingsRead: Equatable, Sendable {
+    public let preferences: FlintWebRestrictionRead
+    /// nil means the read was busy, so the UI retains its last known recovery state.
+    public let needsChildRecovery: Bool?
+}
+
 extension FlintWebRestrictions {
     /// Namespaced under "flint.*" to match `FlintGroupStore`'s key convention. Lives outside
     /// `FlintGroupStore` itself because that file is a shared/locked scaffold file — same suite,
     /// same JSON, no edits to the hot file (mirrors how the Wave-1 stubs persist).
-    private static let storageKey = "flint.webRestrictions"
+    static let storageKey = "flint.webRestrictions"
     static let initializedMarkerKey = storageKey + ".initialized.adr012"
+    static let childInitializedMarkerKey = storageKey + ".children.initialized.adr012"
 
     /// Production initialization shares the host/extension transition boundary with starts,
     /// edits and pass recovery. A concurrent first save cannot be overwritten by fresh defaults.
@@ -219,6 +226,22 @@ extension FlintWebRestrictions {
     /// A busy monitor transition is retryable, distinct from unreadable saved intent. The file
     /// lock attempt is immediate; callers still run off-main because the process lock can wait.
     public static func readForUI() -> FlintWebRestrictionRead { read(uiRead: true) }
+
+    public static func readForSettingsUI() -> FlintWebRestrictionSettingsRead {
+        #if canImport(FamilyControls) && canImport(DeviceActivity) && canImport(ManagedSettings)
+        var result = FlintWebRestrictionSettingsRead(preferences: .busy, needsChildRecovery: nil)
+        let preferences = read(uiRead: true, environment: .live, transition: { timeout, body in
+            FlintSessionController().withTransition(timeout: timeout) {
+                body()
+                result = .init(preferences: result.preferences, needsChildRecovery: FlintWebRestrictionChildren.live.needsRecovery)
+                return true
+            } ?? false
+        })
+        return .init(preferences: preferences, needsChildRecovery: preferences == .busy ? nil : result.needsChildRecovery)
+        #else
+        return .init(preferences: readForUI(), needsChildRecovery: false)
+        #endif
+    }
 
     private static func read(uiRead: Bool) -> FlintWebRestrictionRead {
         #if canImport(FamilyControls) && canImport(DeviceActivity) && canImport(ManagedSettings)
@@ -281,33 +304,92 @@ extension FlintWebRestrictions {
     }
 
     @discardableResult
-    public func save(to defaults: UserDefaults? = .flintGroup) -> Bool {
-        guard validationMessage == nil, let defaults, let data = try? JSONEncoder().encode(self) else { return false }
-        let previous = defaults.object(forKey: Self.storageKey)
-        let previousMarker = defaults.object(forKey: Self.initializedMarkerKey)
+    public func save() -> Bool {
+        #if canImport(FamilyControls) && canImport(DeviceActivity) && canImport(ManagedSettings)
+        guard validationMessage == nil,
+              FlintRuleStoreLock.initializationReadiness(environment: .live) == .ready else { return false }
+        return FlintSessionController().withTransition {
+            guard let group = FlintGroupStore(), let snapshot = FlintWebRestrictionEditor.Snapshot.observing(
+                session: group.loadActiveSession(), recordPresent: group.hasActiveSessionRecord(),
+                rules: FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: .flintGroup, migrating: false),
+                ledgerState: try? FlintProtectionLedger.appGroup()?.peek().get(), clock: .system),
+                snapshot.rules.allSatisfy(FlintWebRestrictionChildren.knows) else { return false }
+            let children = FlintWebRestrictionChildren.live
+            // Freeze old effective intent before replacing future preferences. Unavailable
+            // established children remain unavailable, with their bytes preserved by the write.
+            guard children.observe(snapshot, global: Self.loadForEnforcement(from: .flintGroup), clock: .system) else { return false }
+            return save(to: .flintGroup)
+        } ?? false
+        #else
+        return save(to: .flintGroup)
+        #endif
+    }
+
+    @discardableResult
+    func save(to defaults: UserDefaults?) -> Bool {
+        guard validationMessage == nil else { return false }
+        return Self.writeStorage(to: defaults, config: self)
+    }
+
+    /// Global edits merge into the freshly read root. In particular they never erase a child
+    /// captured after the caller loaded its preference draft. All production callers hold the
+    /// shared transition; child/global editor changes use this same atomic blob replacement.
+    static func writeStorage(to defaults: UserDefaults?, config: Self?, children: Data? = nil) -> Bool {
+        guard let defaults, config != nil || children != nil, config?.validationMessage == nil else { return false }
+        let childMarker = Self.childInitializedMarkerKey
+        let keys = [storageKey, initializedMarkerKey, childMarker]
+        var previous = keys.map { defaults.object(forKey: $0) }
         var committed = false
         defer {
             if !committed {
-                if let previous { defaults.set(previous, forKey: Self.storageKey) }
-                else { defaults.removeObject(forKey: Self.storageKey) }
-                if let previousMarker { defaults.set(previousMarker, forKey: Self.initializedMarkerKey) }
-                else { defaults.removeObject(forKey: Self.initializedMarkerKey) }
+                for (key, object) in zip(keys, previous) {
+                    if let object { defaults.set(object, forKey: key) }
+                    else { defaults.removeObject(forKey: key) }
+                }
                 let flushed = defaults.synchronize()
-                let restored = (defaults.object(forKey: Self.storageKey) as? NSObject) == (previous as? NSObject)
-                    && (defaults.object(forKey: Self.initializedMarkerKey) as? NSObject) == (previousMarker as? NSObject)
+                let restored = zip(keys, previous).allSatisfy {
+                    (defaults.object(forKey: $0.0) as? NSObject) == ($0.1 as? NSObject)
+                }
                 if !flushed || !restored {
                     // A failed rollback must not make this look like a fresh domain. Retain
                     // the restored cached bytes and latch loss detection until recovery.
                     if defaults.object(forKey: Self.initializedMarkerKey) == nil {
                         defaults.set(true, forKey: Self.initializedMarkerKey)
                     }
+                    if children != nil, defaults.object(forKey: childMarker) == nil {
+                        defaults.set(true, forKey: childMarker)
+                    }
                     defaults.synchronize()
                 }
             }
         }
+        guard defaults.synchronize() else { return false }
+        // Snapshot after synchronization, while the transition excludes other writers.
+        previous = keys.map { defaults.object(forKey: $0) }
+        let stored = defaults.object(forKey: storageKey)
+        var root = (stored as? Data).flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] } ?? [:]
+        if root.isEmpty, let stored {
+            let bytes = (stored as? Data) ?? (try? PropertyListSerialization.data(fromPropertyList: stored, format: .binary, options: 0))
+            guard let bytes else { return false }
+            root["_flintWebRetainedUnavailable"] = bytes.base64EncodedString()
+        }
+        if let config {
+            guard let encoded = try? JSONEncoder().encode(config),
+                  let fields = (try? JSONSerialization.jsonObject(with: encoded)) as? [String: Any] else { return false }
+            root.merge(fields) { _, new in new }
+        }
+        if let children {
+            root["_flintWebChildrenSchema"] = 1
+            root["_flintWebChildren"] = children.base64EncodedString()
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: root, options: [.sortedKeys]) else { return false }
         defaults.set(data, forKey: Self.storageKey)
         guard defaults.synchronize(), defaults.data(forKey: Self.storageKey) == data else { return false }
         guard Self.markInitialized(in: defaults) else { return false }
+        if children != nil, defaults.object(forKey: childMarker) == nil {
+            defaults.set(true, forKey: childMarker)
+            guard defaults.synchronize(), defaults.object(forKey: childMarker) != nil else { return false }
+        }
         committed = true
         return true
     }
@@ -323,10 +405,15 @@ extension FlintWebRestrictions {
     /// durable, content-addressed copy of unavailable intent before an explicit repair.
     func saveRecoveringUnavailableIntent(to defaults: UserDefaults? = .flintGroup,
                                         recoveryDirectory: URL? = FlintRuleRecovery.directory) -> Bool {
+        guard Self.retainUnavailableIntent(to: defaults, recoveryDirectory: recoveryDirectory) else { return false }
+        return save(to: defaults)
+    }
+
+    static func retainUnavailableIntent(to defaults: UserDefaults?, recoveryDirectory: URL?, force: Bool = false) -> Bool {
         guard let defaults, defaults.synchronize() else { return false }
         if let object = defaults.object(forKey: Self.storageKey) {
             let config = (object as? Data).flatMap { try? JSONDecoder().decode(Self.self, from: $0) }
-            if config == nil || config?.validationMessage != nil {
+            if force || config == nil || config?.validationMessage != nil {
                 let bytes: Data
                 if let data = object as? Data { bytes = data }
                 else {
@@ -339,7 +426,7 @@ extension FlintWebRestrictions {
                     defaults: defaults, directory: recoveryDirectory) else { return false }
             }
         }
-        return save(to: defaults)
+        return true
     }
     #endif
 

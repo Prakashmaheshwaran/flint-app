@@ -269,8 +269,8 @@ final class FlintWebRestrictionsTests: XCTestCase {
     }
 
     func testFailedFreshInitializationIsUnavailableAndCanRetryWhileStillFresh() throws {
-        // First flush is the validated read; fail either the config or marker commit next.
-        for successfulFlushes in [1, 2] {
+        // Fail the synchronized before-image, config commit or marker commit after the read.
+        for successfulFlushes in [1, 2, 3] {
             let suite = "test.flint.web.failed-init.\(UUID().uuidString)"
             let defaults = try XCTUnwrap(FailingWebDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
