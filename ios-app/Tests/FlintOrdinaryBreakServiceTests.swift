@@ -432,7 +432,7 @@ final class FlintOrdinaryBreakServiceTests: XCTestCase {
     }
 
     func testRestartNoticeExistsOnReadBeforeAndAfterReconciliationWithoutReplay() throws {
-        let pending = try request(); advance(60); _ = try accept(pending)
+        let pending = try request(); advance(60); var earlier = try accept(pending)
         boot = "new-boot"
         XCTAssertEqual(FlintOrdinaryBreakStatus.project(try ledger.peek().get().ordinaryGrants, at: now).notice, .reboot)
         XCTAssertTrue(service.reconcile())
@@ -441,6 +441,12 @@ final class FlintOrdinaryBreakServiceTests: XCTestCase {
         let duringNext = FlintOrdinaryBreakStatus.project(try ledger.peek().get().ordinaryGrants, at: now)
         XCTAssertEqual(duringNext.record?.grant.id, record.grant.id)
         XCTAssertEqual(duringNext.notice, .reboot)
+        var pendingRestore = try XCTUnwrap(ledger.peek().get().ordinaryGrants)
+        earlier.end(.reboot, at: now)
+        pendingRestore.records.insert(earlier, at: 0); pendingRestore.receipts = []
+        let mixed = FlintOrdinaryBreakStatus.project(pendingRestore, at: now)
+        XCTAssertEqual(mixed.noticeID, earlier.grant.id + ".reboot", "Find reboot even when a later record is active")
+        XCTAssertTrue(mixed.isRestoring)
         XCTAssertTrue(service.resumeNow(grantID: record.grant.id))
         XCTAssertEqual(FlintOrdinaryBreakStatus.project(try ledger.peek().get().ordinaryGrants, at: now).notice, .reboot)
     }

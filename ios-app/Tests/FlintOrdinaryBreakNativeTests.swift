@@ -169,6 +169,11 @@ final class FlintOrdinaryBreakNativeTests: XCTestCase {
         XCTAssertEqual(group.loadArmingHealth().domains["ordinaryBreaks"]?.failures, [unrelated])
         XCTAssertEqual(group.loadArmingHealth().domains["ordinaryBreaks"]?.enabled, 0)
         XCTAssertEqual(group.loadArmingHealth().domains["schedules"], old)
+        group.saveArmingHealth(failed.replacing("ordinaryBreaks", with: .init(enabled: 1, attempted: 1,
+            armed: 0, failures: [.init(activityName: carrier, reason: "carrier failed")])))
+        FlintOrdinaryBreaks.clearHealthFailures(in: group)
+        XCTAssertNil(group.loadArmingHealth().domains["ordinaryBreaks"], "No empty Protection row after recovery")
+        XCTAssertEqual(group.loadArmingHealth().domains["schedules"], old)
     }
 
     @MainActor
@@ -191,16 +196,23 @@ final class FlintOrdinaryBreakNativeTests: XCTestCase {
     }
 
     @MainActor
-    func testDeferredResumeShowsApplyingProtectionWithoutUnavailableError() throws {
+    func testDeferredResumeShowsApplyingProtectionAndRetriesWithoutOverridingFreshStatus() async throws {
         let token: ApplicationToken = try fictionalRuleToken("target")
         var selection = FamilyActivitySelection(); selection.applicationTokens = [token]
         let (record, _) = try fixture(selection, releasing: FlintOrdinaryBreaks.scope(selection))
-        var status = FlintOrdinaryBreakStatus(record: record)
-        let vm = SessionViewModel(observeLifecycle: false, breakStatus: { status }, breakPreview: { .unavailable },
-            resumeOrdinaryBreak: { _ in status = .init(isRestoring: true); return .applying })
-        vm.refreshBreakStatus(); vm.resumeBreakNow()
-        XCTAssertTrue(vm.resumingBreak); XCTAssertNil(vm.errorText); XCTAssertNil(vm.ordinaryBreak)
-        status = .init(); vm.refreshBreakStatus(); XCTAssertFalse(vm.resumingBreak)
+        for outcome in [FlintOrdinaryBreakResumeOutcome.applying, .ended] {
+            var status = FlintOrdinaryBreakStatus(record: record)
+            var retries = 0
+            let vm = SessionViewModel(observeLifecycle: false, breakStatus: { status }, breakPreview: { .unavailable },
+                resumeOrdinaryBreak: { _ in status = .init(isRestoring: true); return outcome },
+                reconcileOrdinaryBreak: { retries += 1; status = .init() })
+            vm.refreshBreakStatus(); vm.resumeBreakNow()
+            XCTAssertTrue(vm.resumingBreak); XCTAssertNil(vm.errorText); XCTAssertNil(vm.ordinaryBreak)
+            await vm.reconcileBreakIfNeeded()
+            XCTAssertEqual(retries, 1); XCTAssertFalse(vm.resumingBreak)
+            await vm.reconcileBreakIfNeeded()
+            XCTAssertEqual(retries, 1, "Stop retries after the durable restoration completes")
+        }
     }
 }
 

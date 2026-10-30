@@ -50,6 +50,7 @@ final class SessionViewModel: ObservableObject {
     private let readNoticeAcknowledgement: () -> String?
     private let saveNoticeAcknowledgement: (String) -> Void
     private let resumeOrdinaryBreak: (String) -> FlintOrdinaryBreakResumeOutcome
+    private let reconcileOrdinaryBreak: () async -> Void
     private var breakNoticeID: String?
     private var breakReconcilePending = false
     private let observesLifecycle: Bool
@@ -85,10 +86,14 @@ final class SessionViewModel: ObservableObject {
          breakPreview: @escaping () -> FlintOrdinaryBreakPreview = FlintOrdinaryBreaks.previewForCurrentSession,
          readNoticeAcknowledgement: @escaping () -> String? = { UserDefaults.standard.string(forKey: "flint.ordinaryBreak.acknowledgedNotice") },
          saveNoticeAcknowledgement: @escaping (String) -> Void = { UserDefaults.standard.set($0, forKey: "flint.ordinaryBreak.acknowledgedNotice") },
-         resumeOrdinaryBreak: @escaping (String) -> FlintOrdinaryBreakResumeOutcome = FlintOrdinaryBreaks.resumeNowOutcome) {
+         resumeOrdinaryBreak: @escaping (String) -> FlintOrdinaryBreakResumeOutcome = FlintOrdinaryBreaks.resumeNowOutcome,
+         reconcileOrdinaryBreak: @escaping () async -> Void = {
+             _ = await Task.detached(priority: .utility) { FlintOrdinaryBreaks.reconcile() }.value
+         }) {
         readBreakStatus = breakStatus; readBreakPreview = breakPreview; observesLifecycle = observeLifecycle
         self.readNoticeAcknowledgement = readNoticeAcknowledgement; self.saveNoticeAcknowledgement = saveNoticeAcknowledgement
         self.resumeOrdinaryBreak = resumeOrdinaryBreak
+        self.reconcileOrdinaryBreak = reconcileOrdinaryBreak
         if !observeLifecycle { active = initialSession; return }
         if let saved = FlintGroupStore()?.loadSelection() { selection = saved }
         savedGroups = FlintGroupStore()?.loadAppGroups() ?? []
@@ -284,7 +289,7 @@ final class SessionViewModel: ObservableObject {
         let outcome = resumeOrdinaryBreak(ordinaryBreak.grant.id)
         refreshBreakStatus()
         switch outcome {
-        case .ended: resumingBreak = false
+        case .ended: break
         case .applying: resumingBreak = true
         case .unavailable: errorText = "Access unavailable"
         }
@@ -393,11 +398,20 @@ final class SessionViewModel: ObservableObject {
     private func startTicking() {
         timer?.invalidate()
         guard observesLifecycle else { return }
-        guard let active, active.endsAt != nil else { remaining = 0; return }
+        guard active != nil else { remaining = 0; return }
         tick()
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
+    }
+
+    func reconcileBreakIfNeeded() async {
+        guard !breakReconcilePending,
+              resumingBreak || ordinaryBreak.map({ $0.remaining(at: .init(clock: .system)) <= 0 }) == true else { return }
+        breakReconcilePending = true
+        await reconcileOrdinaryBreak()
+        breakReconcilePending = false
+        refreshBreakStatus()
     }
 
     private func tick() {
@@ -405,16 +419,9 @@ final class SessionViewModel: ObservableObject {
         // Logical time, as enforcement uses it: a wall-clock change can't end the UI's block
         // while shields stay armed (ADR-012 §9).
         remaining = active.logicalRemaining(clock: .system) ?? 0
-        if let record = ordinaryBreak {
-            breakRemaining = record.remaining(at: .init(clock: .system))
-            if breakRemaining <= 0 && !breakReconcilePending {
-                breakReconcilePending = true
-                Task { [weak self] in
-                    _ = await Task.detached(priority: .utility) { FlintOrdinaryBreaks.reconcile() }.value
-                    self?.breakReconcilePending = false
-                    self?.refreshBreakStatus()
-                }
-            }
+        breakRemaining = ordinaryBreak?.remaining(at: .init(clock: .system)) ?? 0
+        if resumingBreak || (ordinaryBreak != nil && breakRemaining <= 0) {
+            Task { [weak self] in await self?.reconcileBreakIfNeeded() }
         }
         if active.isLogicallyExpired(clock: .system) {
             // On a real device the monitor clears the shield; mirror that here for the UI and as

@@ -27,11 +27,11 @@ public struct FlintOrdinaryBreakStatus {
         let active = grants.records.first(where: { $0.remaining(at: now) > 0 })
         // A read can precede reconciliation after restart; display the same conservative
         // expiry result without requiring an operation replay or mutating protection.
-        if let record = grants.records.last {
-            if record.endReason == .reboot || (record.endReason == nil &&
-                (record.grant.acceptedAt.bootID != now.bootID || now.monotonic < record.grant.acceptedAt.monotonic)) {
-                return .init(record: active, notice: .reboot, noticeID: record.grant.id + ".reboot", isRestoring: record.applicationPending)
-            }
+        if let record = grants.records.last(where: {
+            $0.endReason == .reboot || ($0.endReason == nil &&
+                ($0.grant.acceptedAt.bootID != now.bootID || now.monotonic < $0.grant.acceptedAt.monotonic))
+        }) {
+            return .init(record: active, notice: .reboot, noticeID: record.grant.id + ".reboot", isRestoring: restoring || record.applicationPending)
         }
         // Later normal endings and new grants do not dismiss an unacknowledged notice.
         // Carrier-failure copy claims restoration, so expose it only after native apply.
@@ -225,10 +225,18 @@ public enum FlintOrdinaryBreaks {
     }
 
     static func clearHealthFailures(activeActivities: [String] = [], in group: FlintGroupStore? = FlintGroupStore()) {
-        guard let group, let previous = group.loadArmingHealth().domains["ordinaryBreaks"],
-              previous.failures.contains(where: { isCarrier($0.activityName) }) else { return }
+        guard let group else { return }
+        var health = group.loadArmingHealth()
+        guard let previous = health.domains["ordinaryBreaks"] else { return }
+        let remainingFailures = previous.failures.filter { !isCarrier($0.activityName) }
+        if activeActivities.isEmpty && remainingFailures.isEmpty {
+            health.domains.removeValue(forKey: "ordinaryBreaks")
+            group.saveArmingHealth(health)
+            return
+        }
+        guard previous.failures.contains(where: { isCarrier($0.activityName) }) else { return }
         FlintArmingHealth.record(domain: "ordinaryBreaks", enabled: activeActivities.count, attempted: activeActivities.count,
-            armed: activeActivities.count, failures: previous.failures.filter { !isCarrier($0.activityName) },
+            armed: activeActivities.count, failures: remainingFailures,
             in: group, observedActivities: activeActivities)
     }
 
