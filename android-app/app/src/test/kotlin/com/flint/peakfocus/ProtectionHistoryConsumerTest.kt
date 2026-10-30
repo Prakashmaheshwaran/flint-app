@@ -14,6 +14,7 @@ import com.flint.peakfocus.core.history.FocusHistoryStore
 import com.flint.peakfocus.core.history.HistoryCodec
 import com.flint.peakfocus.core.history.HistoryEvent
 import com.flint.peakfocus.core.history.HistoryEventType
+import com.flint.peakfocus.core.history.HistoryEventTimeConfidence
 import com.flint.peakfocus.core.history.HistoryReconciler
 import com.flint.peakfocus.core.history.HistoryRulesSnapshot
 import com.flint.peakfocus.core.history.SessionOutcome
@@ -112,6 +113,7 @@ class ProtectionHistoryConsumerTest {
         for (privateValue in listOf("schedule-a", "limit-a", "private-boot-identity", "elapsedRealtime", "affectedRuleIds"))
             assertFalse(privateValue, wire.contains(privateValue))
         assertTrue(events.all { it.v == 1 })
+        assertTrue(events.all { it.timeConfidence == null })
     }
 
     @Test fun globalPassWithNoFocusSessionsStillRecordsExactlyOneOperation() = runBlocking {
@@ -650,6 +652,8 @@ class ProtectionHistoryConsumerTest {
         assertEquals(listOf("started", "break_started"), snapshot.events.map { it.type })
         assertEquals(end, snapshot.events.first().plannedEnd)
         assertEquals(timeUncertain, snapshot.events.last().inferred)
+        assertEquals(if (timeUncertain) HistoryEventTimeConfidence.Uncertain("owner_time_uncertain") else null,
+            snapshot.events.last().timeConfidence)
         assertEquals(0L, FocusHistoryAggregator.sessions(snapshot.events, now.wallEpochMs + 8 * minute, setOf(id)).single().focusedMs)
 
         val ended = RuleClockProjection.project(raw, now.copy(elapsedRealtimeMs = 11 * minute))
@@ -703,11 +707,22 @@ class ProtectionHistoryConsumerTest {
         assertEquals(10 * minute, session.focusedMs)
     }
 
-    @Test fun ownerClockUncertaintyStaysInferredWithoutCopyingPrivateClockIdentity() = runBlocking {
+    @Test fun ownerClockUncertaintyIsExplicitAndCannotExtendPriorTrustedPrefix() = runBlocking {
         val store = store()
+        assertTrue(store.update { listOf(start("session-a"), start("session-b"),
+            HistoryEvent(type = "open_intercepted", session = "session-a", at = begin + 2 * minute, tz = "UTC"),
+            HistoryEvent(type = "open_intercepted", session = "session-b", at = begin + 2 * minute, tz = "UTC")) })
         assertTrue(consumer(store).deliver(pass().copy(timeUncertain = true)))
         val events = store.load().events
-        assertTrue(events.all { it.inferred })
+        val projected = events.filter { it.knownType in setOf(HistoryEventType.PASS_USED, HistoryEventType.ENDED_EARLY) }
+        assertEquals(2, projected.size)
+        assertTrue(projected.all { it.inferred && it.timeConfidence == HistoryEventTimeConfidence.Uncertain("owner_time_uncertain") })
+        val summary = FocusHistoryAggregator.summarize(store.load(), begin + 20 * minute, ZoneOffset.UTC, setOf("session-a"))
+        assertTrue(summary.sessions.all { it.outcome == SessionOutcome.UNCONFIRMED && it.focusedMs == 2 * minute })
+        assertEquals(2 * minute, summary.days.last().focusedMs)
+        assertEquals(0, summary.days.last().completed)
+        assertEquals(0, summary.days.last().endedEarly)
+        assertEquals(2, summary.days.last().unconfirmed)
         assertFalse(events.joinToString("\n", transform = HistoryCodec::encode).contains("private-boot-identity"))
     }
 

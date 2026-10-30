@@ -32,7 +32,8 @@ class HistoryClearOwnerActivityTest {
         assertEquals(0L, before.focusedMs)
         assertTrue(store.clear { active })
         val snapshot = FocusHistoryStore(store.directory, clock).load()
-        assertEquals(listOf(live), snapshot.events)
+        // Disk reads retain the original wire line as well as its materialized fields.
+        assertEquals(listOf(HistoryCodec.encode(live)), snapshot.events.map(HistoryCodec::encode))
         val retained = FocusHistoryAggregator.sessions(snapshot.events, now, active).single()
         assertEquals(before, retained) // Clear does not change outcomes or invent historical coverage.
         assertEquals(now, snapshot.clearedAt)

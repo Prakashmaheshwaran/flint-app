@@ -349,7 +349,10 @@ require a coordinated persisted clear/delivery watermark; v1 has no such witness
   The owner supplies the exact frozen session scope on both events; replay may persist an
   end before its start without looking up current rules or fabricating a start.
 - The projection preserves the schema-1 wire vocabulary. Owner clock uncertainty is
-  marked `inferred`; boot identity, elapsed clock, targets and non-session rule ids are
+  explicitly `timeConfidence: uncertain(owner_time_uncertain)` as well as the existing
+  inferred provenance flag. A false owner uncertainty flag leaves confidence absent rather
+  than manufacturing certainty. Uncertain pass/terminal rows cannot extend a previously
+  trusted prefix or increment completed/early counts. Boot identity, elapsed clock, targets and non-session rule ids are
   excluded. No origin route is invented when the owner did not provide one.
 - `ACCESS_STARTED` / `ACCESS_ENDED` are acknowledged without touching history, including
   when the history store is unavailable. Open-credit access is not a focus session or an

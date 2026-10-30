@@ -8,6 +8,7 @@ import com.flint.peakfocus.core.history.FocusHistoryBridge
 import com.flint.peakfocus.core.history.FocusHistoryStore
 import com.flint.peakfocus.core.history.HistoryEvent
 import com.flint.peakfocus.core.history.HistoryEventType
+import com.flint.peakfocus.core.history.HistoryEventTimeConfidence
 import com.flint.peakfocus.core.history.HistorySnapshot
 import com.flint.peakfocus.core.model.ActiveRulesHolder
 import com.flint.peakfocus.core.model.BlockRule
@@ -112,6 +113,7 @@ internal class ProtectionHistoryConsumer(
         fun record(type: HistoryEventType, session: String) = HistoryEvent(
             id = projectionId(event.id, type, session), type = type.wireName, session = session,
             at = event.at.wallEpochMs, tz = timeZone, inferred = event.timeUncertain,
+            timeConfidence = if (event.timeUncertain) HistoryEventTimeConfidence.Uncertain("owner_time_uncertain") else null,
         )
         return when (event.kind) {
             ProtectionLifecycleKind.PASS_COMMITTED -> {
