@@ -97,14 +97,51 @@ object FocusHistoryAggregator {
             .groupBy({ it.first }, { it.second })
         return supported.groupBy { it.session }.mapNotNull { (id, group) ->
             val ordered = group.sortedBy { it.at } // stable: ties retain file order
-            val start = ordered.firstOrNull { it.knownType == HistoryEventType.STARTED } ?: return@mapNotNull null
+            val start = group.firstOrNull { it.knownType == HistoryEventType.STARTED } ?: return@mapNotNull null
             val terminal = ordered.firstOrNull { it.knownType?.terminal == true }
-            val plan = ordered.takeWhile { it !== terminal }.sortedBy { it.observedAt ?: it.at }.lastOrNull {
+            val plans = ordered.takeWhile { it !== terminal }.filter {
                 it.knownType in setOf(HistoryEventType.STARTED, HistoryEventType.RESCHEDULED)
-            } ?: start
+            }.ifEmpty { listOf(start) }
+            fun planAt(at: Long) = plans.filter { it.at <= at }.sortedBy { it.observedAt ?: it.at }.lastOrNull() ?: start
+            val plan = plans.sortedBy { it.observedAt ?: it.at }.lastOrNull() ?: start
             val plannedEnd = plan.plannedEnd
             val expired = plannedEnd?.let { it <= now } == true
-            val outcome = when (terminal?.knownType) {
+            fun validPlan(event: HistoryEvent) = !event.uncertainTime && event.at >= start.at &&
+                (event.plannedEnd == null || event.plannedEnd > start.at)
+            fun inPlan(event: HistoryEvent) = event.at >= start.at &&
+                planAt(event.at).let { validPlan(it) && (it.plannedEnd == null || event.at <= it.plannedEnd) }
+            val unknownEnd = terminal?.knownType == HistoryEventType.ENDED_EARLY && terminal.inferred && terminal.route == "unknown"
+            val validTerminal = terminal != null && !terminal.uncertainTime && !unknownEnd && validPlan(plan) &&
+                terminal.at > start.at && when (terminal.knownType) {
+                    HistoryEventType.COMPLETED -> plannedEnd != null &&
+                        if (terminal.timeConfidence == HistoryEventTimeConfidence.Certain) terminal.at >= plannedEnd
+                        else terminal.at == plannedEnd
+                    else -> plannedEnd == null || terminal.at <= plannedEnd
+                }
+            // A committed terminal's logical time remains valid if the reader's wall clock
+            // rolls back. Later cleanup cannot taint it; replayed phases use logical order.
+            val localEvidence = if (validTerminal) ordered.takeWhile { it !== terminal }
+                else if (terminal != null) group.takeWhile { it !== terminal }.sortedBy { it.at } else ordered
+            val beforeTerminal = (localEvidence + passesBySession[id].orEmpty().filter {
+                !validTerminal || it.at <= terminal!!.at
+            }).sortedBy { it.at }
+            var trusted = validPlan(start)
+            var coverageEnd = start.at
+            beforeTerminal.forEach { event ->
+                when {
+                    event.knownType in setOf(HistoryEventType.STARTED, HistoryEventType.RESCHEDULED) ->
+                        if (!validPlan(event)) trusted = false
+                    event.knownType in coverageTypes -> {
+                        // Reject an impossible witness rather than clipping it into evidence.
+                        val paired = event.knownType != HistoryEventType.BREAK_ENDED || event.grant == null ||
+                            ordered.any { it.knownType == HistoryEventType.BREAK_STARTED && it.grant == event.grant && it.at <= event.at }
+                        if (event.uncertainTime || !inPlan(event) || !paired || (!validTerminal && event.at > now)) trusted = false
+                        else if (trusted) coverageEnd = maxOf(coverageEnd, event.at)
+                    }
+                    event.knownType == HistoryEventType.PASS_USED && event.uncertainTime -> trusted = false
+                }
+            }
+            val outcome = if (!trusted || (terminal != null && !validTerminal)) SessionOutcome.UNCONFIRMED else when (terminal?.knownType) {
                 HistoryEventType.COMPLETED -> SessionOutcome.COMPLETED
                 HistoryEventType.ENDED_EARLY -> SessionOutcome.ENDED_EARLY
                 HistoryEventType.SUPERSEDED -> SessionOutcome.SUPERSEDED
@@ -115,28 +152,24 @@ object FocusHistoryAggregator {
                 }
             }
             val inferred = terminal?.inferred ?: (outcome != SessionOutcome.RUNNING)
-            val unknownEnd = outcome == SessionOutcome.ENDED_EARLY && inferred && (terminal == null || terminal.route == "unknown")
             val end = terminal?.at ?: if (expired) plannedEnd!! else now
             // STARTED + a deadline is a plan, not coverage. Credit only a later
             // lifecycle observation's prefix while waiting for the owner's terminal.
-            val coverageEnd = ordered.filter { it.at <= now && it.knownType in setOf(
-                HistoryEventType.BREAK_STARTED, HistoryEventType.BREAK_ENDED,
-                HistoryEventType.PROTECTION_DEGRADED, HistoryEventType.PROTECTION_RESTORED,
-                HistoryEventType.OPEN_INTERCEPTED,
-            ) }.maxOfOrNull { it.at } ?: start.at
-            val evidencedEnd = if (outcome == SessionOutcome.UNCONFIRMED) minOf(end, coverageEnd) else end
-            val clampedEnd = minOf(evidencedEnd, plannedEnd ?: evidencedEnd, now)
-            var intervals = if (unknownEnd || clampedEnd <= start.at) emptyList()
+            val evidencedEnd = if (outcome == SessionOutcome.UNCONFIRMED) coverageEnd else end
+            val clampedEnd = minOf(evidencedEnd, plannedEnd ?: evidencedEnd,
+                if (outcome == SessionOutcome.RUNNING || terminal == null) now else evidencedEnd)
+            var intervals = if (clampedEnd <= start.at) emptyList()
                 else listOf(FocusInterval(start.at, clampedEnd))
             val breaks = ordered.filter { it.knownType == HistoryEventType.BREAK_STARTED }
             breaks.forEach { b ->
                 val observed = ordered.firstOrNull { it.knownType == HistoryEventType.BREAK_ENDED && it.at >= b.at &&
-                    (b.grant == null || it.grant == b.grant) }?.at
+                    !it.uncertainTime && (b.grant == null || it.grant == b.grant) }?.at
                 val breakEnd = minOf(observed ?: b.breakEnd ?: clampedEnd, clampedEnd)
                 intervals = subtract(intervals, FocusInterval(b.at, breakEnd))
             }
             ordered.filter { it.knownType == HistoryEventType.PROTECTION_DEGRADED }.forEach { gap ->
-                val restored = ordered.firstOrNull { it.knownType == HistoryEventType.PROTECTION_RESTORED && it.at >= gap.at }?.at
+                val restored = ordered.firstOrNull { it.knownType == HistoryEventType.PROTECTION_RESTORED &&
+                    !it.uncertainTime && it.at >= gap.at }?.at
                 intervals = subtract(intervals, FocusInterval(gap.at, restored ?: clampedEnd))
             }
             passesBySession[id].orEmpty().forEach { pass ->
@@ -147,6 +180,12 @@ object FocusHistoryAggregator {
                 ordered.count { it.knownType == HistoryEventType.OPEN_INTERCEPTED }.takeIf { it > 0 }, terminal != null)
         }
     }
+
+    private val coverageTypes = setOf(HistoryEventType.BREAK_STARTED, HistoryEventType.BREAK_ENDED,
+        HistoryEventType.PROTECTION_DEGRADED, HistoryEventType.PROTECTION_RESTORED, HistoryEventType.OPEN_INTERCEPTED)
+
+    private val HistoryEvent.uncertainTime: Boolean get() =
+        timeConfidence is HistoryEventTimeConfidence.Uncertain || reason == "time_uncertain"
 
     internal fun union(intervals: List<FocusInterval>): List<FocusInterval> {
         val result = mutableListOf<FocusInterval>()

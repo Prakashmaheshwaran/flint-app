@@ -15,6 +15,12 @@ enum class HistoryEventType(val wireName: String, val terminal: Boolean = false)
     }
 }
 
+/** Confidence in effective logical time, independent of observation/delivery time. */
+sealed interface HistoryEventTimeConfidence {
+    data object Certain : HistoryEventTimeConfidence
+    data class Uncertain(val reason: String) : HistoryEventTimeConfidence
+}
+
 data class HistoryEvent(
     val id: String = UUID.randomUUID().toString(),
     val type: String,
@@ -41,6 +47,8 @@ data class HistoryEvent(
     val originalLine: String? = null,
     /** A resource-bounded envelope read preserves unsupported payloads without aggregating them. */
     val opaque: Boolean = false,
+    /** Absent in legacy records; inferred alone does not imply uncertain time. */
+    val timeConfidence: HistoryEventTimeConfidence? = null,
 ) {
     val knownType: HistoryEventType? get() = if (v == 1 && !opaque) HistoryEventType.fromWire(type) else null
 }
