@@ -105,6 +105,38 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
         }
     }
 
+    func testBusyUIReadDoesNotSkipNormalSessionEnforcementOfStrengthening() {
+        let writer = RecordingWebWriter()
+        var desired = FlintWebRestrictions(enabled: true)
+        var reads = 0
+        let load = { reads += 1; return desired as FlintWebRestrictions? }
+        let contended: (TimeInterval?, () -> Void) -> Bool = { timeout, body in
+            guard timeout != 0 else { return false }
+            body(); return true
+        }
+        let adapter = FlintSessionWebRestrictionAdapter(writer: writer, configuration: {
+            guard case let .available(config) = FlintWebRestrictions.read(
+                uiRead: false, load: load, transition: contended
+            ) else { return nil }
+            return config
+        })
+        let instant = now
+        let clock = FlintClock(now: { instant }, monotonic: { 0 }, bootSessionID: { nil },
+                               calendar: { self.calendar })
+        let active = session(endsAt: now.addingTimeInterval(3600))
+        adapter.reconcile(active, clock: clock)
+        desired.blockedDomains = ["example.com"]
+        desired.denyExplicitMedia = true
+
+        XCTAssertEqual(FlintWebRestrictions.read(uiRead: true, load: load, transition: contended), .busy)
+        XCTAssertEqual(reads, 1, "The opportunistic UI read neither initializes nor loads intent")
+        adapter.reconcile(active, clock: clock)
+        XCTAssertEqual(reads, 2, "Enforcement retains its normal acquisition and reads the strengthening")
+        XCTAssertEqual(writer.web["flint"], desired)
+        XCTAssertEqual(writer.applied, ["flint", "flint"])
+        XCTAssertTrue(writer.cleared.isEmpty)
+    }
+
     func testSessionExpiryBoundaryAndAbsentSessionClearOnlySessionWebKeys() {
         let writer = RecordingWebWriter()
         let lifecycle = FlintWebRestrictionLifecycle(writer: writer)
