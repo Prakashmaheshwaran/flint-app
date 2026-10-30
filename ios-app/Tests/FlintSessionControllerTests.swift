@@ -753,7 +753,7 @@ final class FlintSessionControllerTests: XCTestCase {
             XCTAssertEqual(ended.id, session.id)
             XCTAssertEqual(route, .completed)
             XCTAssertEqual(at, logicalEnd)
-            guard case let .annotated(_, _, _, observedAt) = end else { return XCTFail("missing observation") }
+            guard case let .annotated(_, _, _, observedAt, _) = end else { return XCTFail("missing observation") }
             XCTAssertEqual(observedAt, clock.now)
         }
     }
@@ -771,7 +771,7 @@ final class FlintSessionControllerTests: XCTestCase {
             let end = try XCTUnwrap(events.log.last { if case .ended = $0.unannotated { return true }; return false })
             guard case let .ended(_, _, at) = end.unannotated else { return XCTFail("missing end") }
             XCTAssertEqual(at, session.endsAt, "storage work cannot pull a completion two seconds earlier")
-            guard case let .annotated(_, _, _, observedAt) = end else { return XCTFail("missing observation") }
+            guard case let .annotated(_, _, _, observedAt, _) = end else { return XCTFail("missing observation") }
             XCTAssertEqual(observedAt, clock.now)
         }
     }
