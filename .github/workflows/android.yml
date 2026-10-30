@@ -4,9 +4,9 @@ name: Android
 on:
   push:
     branches: [main]
-    paths: ['android-app/**', 'Makefile', 'scripts/verify_local_first_apk.py', 'scripts/ci_test_report.py', '.github/workflows/android.yml']
+    paths: ['android-app/**', 'Makefile', 'scripts/android-e2e.sh', 'scripts/android-release-instrumentation.sh', 'scripts/android_boot_id.py', 'scripts/verify_local_first_apk.py', 'scripts/ci_test_report.py', '.github/workflows/android.yml']
   pull_request:
-    paths: ['android-app/**', 'Makefile', 'scripts/verify_local_first_apk.py', 'scripts/ci_test_report.py', '.github/workflows/android.yml']
+    paths: ['android-app/**', 'Makefile', 'scripts/android-e2e.sh', 'scripts/android-release-instrumentation.sh', 'scripts/android_boot_id.py', 'scripts/verify_local_first_apk.py', 'scripts/ci_test_report.py', '.github/workflows/android.yml']
   workflow_dispatch:
 
 permissions:

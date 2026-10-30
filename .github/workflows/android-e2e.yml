@@ -3,7 +3,7 @@ name: Android emulator E2E
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    paths: ['android-app/**', 'scripts/android-e2e.sh', 'scripts/ci_android_emulator.py', '.github/actions/android-emulator-cache/**', 'Makefile', '.github/workflows/android-e2e.yml']
+    paths: ['android-app/**', 'scripts/android-e2e.sh', 'scripts/android-release-instrumentation.sh', 'scripts/android_boot_id.py', 'scripts/ci_android_emulator.py', '.github/actions/android-emulator-cache/**', 'Makefile', '.github/workflows/android-e2e.yml']
   workflow_dispatch:
 
 permissions:

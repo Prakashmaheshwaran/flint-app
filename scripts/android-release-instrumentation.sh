@@ -9,12 +9,15 @@ run_token=${3:-}
 [[ ${FLINT_E2E_DISPOSABLE:-} == 1 && $serial =~ ^emulator-[0-9]+$ ]] || exit 2
 [[ $boot_id =~ ^[0-9a-f-]{36}$ && $run_token =~ ^[0-9a-f-]{36}$ ]] || exit 2
 [[ ${FLINT_E2E_OUTER_RUN_TOKEN:-} == "$run_token" ]] || { echo 'Invoke release smoke through android-e2e.sh for grant cleanup.' >&2; exit 2; }
+evidence="$ROOT/artifacts/android-e2e"
+mkdir -p "$evidence"
 assert_boot() {
+  python3 "$ROOT/scripts/android_boot_id.py" "$serial" --expected "$boot_id" \
+    --context "release-${1}" --log "$evidence/boot-incarnation.jsonl" > /dev/null
   [[ $(adb -s "$serial" shell getprop ro.kernel.qemu | tr -d '\r') == 1 ]]
   [[ $(adb -s "$serial" shell getprop sys.boot_completed | tr -d '\r') == 1 ]]
-  [[ $(adb -s "$serial" shell cat /proc/sys/kernel/random/boot_id | tr -d '\r') == "$boot_id" ]]
 }
-assert_boot
+assert_boot preflight
 enabled=$(adb -s "$serial" shell settings get secure enabled_accessibility_services | tr -d '\r')
 [[ -z $enabled || $enabled == null ]] || { echo 'Release smoke requires no existing accessibility services.' >&2; exit 2; }
 cd "$ROOT/android-app"
@@ -24,12 +27,11 @@ cd "$ROOT/android-app"
 apk="$ROOT/android-app/app/build/outputs/apk/release/app-release.apk"
 test_apk="$ROOT/android-app/e2e/build/outputs/apk/debug/e2e-debug.apk"
 python3 "$ROOT/scripts/verify_local_first_apk.py" "$apk"
-evidence="$ROOT/artifacts/android-e2e"
-mkdir -p "$evidence"
 git -C "$ROOT" rev-parse HEAD > "$evidence/source-commit.txt"
-assert_boot
+assert_boot install
 adb -s "$serial" install -r "$apk"
 adb -s "$serial" install -r "$test_apk"
+assert_boot provenance
 # Hash the installed package bytes, not just the intended input. A split or an
 # unexpected package path must fail rather than accidentally certify debug.
 for specification in "com.flint.peakfocus|$apk|release" "com.flint.peakfocus.test|$test_apk|test"; do
@@ -47,7 +49,7 @@ print(f"{sys.argv[3]} sha256={digest(installed)} bytes={installed.stat().st_size
 PY
 done
 adb -s "$serial" shell dumpsys package com.flint.peakfocus > "$evidence/release-package.txt"
-assert_boot
+assert_boot instrumentation
 # Author real state through the release UI and render the actual minified widget worker
 # through an isolated test-APK host. DEBUG-only fixtures are excluded from release.
 adb -s "$serial" shell am instrument -w -r \
