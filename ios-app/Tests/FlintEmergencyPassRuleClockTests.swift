@@ -65,30 +65,32 @@ final class FlintEmergencyPassRuleClockTests: XCTestCase {
         XCTAssertNotEqual(try scope(h).revision, first, "only known Set arrays are sorted")
     }
 
-    func testPassPreviewConfirmedAfterWallJumpBindsSameRuleOccurrencePC54() throws {
-        let h = try RuleHarness(); defer { h.clean() }
-        // This exercises review of an existing commitment, with an already durable ledger.
-        // Use its canonical encoder; fresh ledger initialization has separate coverage.
-        var state = FlintLedgerState(initializedAt: h.now)
-        state.importLegacyPass(.absent, at: .init(clock: h.clock))
-        let directory = h.directory.appendingPathComponent("ledger", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try FlintProtectionLedger.makeEncoder().encode(state).write(to: directory.appendingPathComponent(FlintProtectionLedger.fileName))
-        h.marker = h.now
-        let rule = h.install(h.schedule(tier: .hardcore))
-        let controller = FlintEmergencyPassController(environment: .init(ledger: { h.ledger }, clock: h.clock,
-            scope: { state, now in try FlintEmergencyPassScope.load(state: state, at: now,
-                defaults: h.defaults, calendar: h.clock.calendar(), hasThresholdShield: { _ in false }) },
-            registerCarrier: { _, _, _ in }, terminate: { _, _ in }, release: { _ in }, resume: { _, _ in },
-            disable: { _ in }, emit: { _ in }))
-        let preview = try controller.preview().get()
-        h.now.addTimeInterval(6 * 3600)
-        _ = h.environment.observedRules(FlintScheduleRule.self)
-        _ = try controller.use(previewRevision: preview.revision, operationID: "rule-clock-preview").get()
-        let recovery = try XCTUnwrap(h.ledger.peek().get().emergencyRecovery)
-        XCTAssertEqual(recovery.scope.rules.map(\.id), ["schedule:\(rule.id)"])
-        XCTAssertEqual(recovery.scope.rules.first?.naturalEnd, rule.protection?.occurrence?.end)
-        XCTAssertEqual(try h.ledger.peek().get().pass.usage, .used)
+    func testPassPreviewConfirmedAfterWallJumpBindsSameRuleOccurrencePC54() {
+        do {
+            let h = try RuleHarness(); defer { h.clean() }
+            // This exercises review of an existing commitment, with an already durable ledger.
+            // Use its canonical encoder; fresh ledger initialization has separate coverage.
+            var state = FlintLedgerState(initializedAt: h.now)
+            state.importLegacyPass(.absent, at: .init(clock: h.clock))
+            let directory = h.directory.appendingPathComponent("ledger", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try FlintProtectionLedger.makeEncoder().encode(state).write(to: directory.appendingPathComponent(FlintProtectionLedger.fileName))
+            h.marker = h.now
+            let rule = h.install(h.schedule(tier: .hardcore))
+            let controller = FlintEmergencyPassController(environment: .init(ledger: { h.ledger }, clock: h.clock,
+                scope: { state, now in try FlintEmergencyPassScope.load(state: state, at: now,
+                    defaults: h.defaults, calendar: h.clock.calendar(), hasThresholdShield: { _ in false }) },
+                registerCarrier: { _, _, _ in }, terminate: { _, _ in }, release: { _ in }, resume: { _, _ in },
+                disable: { _ in }, emit: { _ in }))
+            let preview = try controller.preview().get()
+            h.now.addTimeInterval(6 * 3600)
+            _ = h.environment.observedRules(FlintScheduleRule.self)
+            _ = try controller.use(previewRevision: preview.revision, operationID: "rule-clock-preview").get()
+            let recovery = try XCTUnwrap(h.ledger.peek().get().emergencyRecovery)
+            XCTAssertEqual(recovery.scope.rules.map(\.id), ["schedule:\(rule.id)"])
+            XCTAssertEqual(recovery.scope.rules.first?.naturalEnd, rule.protection?.occurrence?.end)
+            XCTAssertEqual(try h.ledger.peek().get().pass.usage, .used)
+        } catch { XCTFail("Existing-rule preview failed: \(error)") }
     }
 
     func testKnownSetOrderDoesNotChangeScopePolicyFingerprint() throws {

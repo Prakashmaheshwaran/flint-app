@@ -121,6 +121,10 @@ final class FlintProtectionStatusHooksTests: XCTestCase {
     }
 
     func testCommittedPassPublishesApplyingUntilReleaseAndResumeAcknowledgements() throws {
+        // The mocked pass scope references a schedule; it must have readable desired state.
+        XCTAssertTrue(FlintDesiredRules.save([FlintScheduleRule](), key: .schedules, to: defaults))
+        XCTAssertTrue(FlintDesiredRules.save([FlintLimitRule](), key: .limits, to: defaults))
+        XCTAssertTrue(FlintDesiredRules.save([FlintOpenLimitRule](), key: .openLimits, to: defaults))
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("status-pass-\(UUID())")
         defer { try? FileManager.default.removeItem(at: directory) }
         var wall = Date(timeIntervalSince1970: 1_793_206_800)
