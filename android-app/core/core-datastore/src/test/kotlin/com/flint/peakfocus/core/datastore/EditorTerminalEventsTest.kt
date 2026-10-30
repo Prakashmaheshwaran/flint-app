@@ -362,7 +362,7 @@ class EditorTerminalEventsTest {
         assertEquals(1L, (owner.terminalDeliveryHealth.first { it !is StorageState.Loading } as StorageState.Ready).value.captureFailures)
     }
 
-    @Test fun `PC-70 total cause bound refuses a new Timer with typed unavailable while existing deletion still works`() = runBlocking {
+    @Test fun `PC-70 total cause bound rejects a new Timer without writes while existing deletion still works`() = runBlocking {
         val rules = (0 until MAX_EDITOR_CAUSES).map { timer().copy(id = CONTRACT_TIMER_ID_PREFIX + "retained-$it") }
         val causes = rules.associate { ruleCauseKey(it.id) to EditorCause(it.id, AnchoredInterval(at(), 1, base + 1), "UTC",
             timerTerminal = EditorTimerTerminalState(recorded = true)) }
@@ -371,11 +371,10 @@ class EditorTerminalEventsTest {
             EDITOR_COMMITMENTS_KEY to EditorCommitmentCodec.encode(EditorCommitmentState(causes = causes, timeline = at())),
             HARDER_WAIT_KEY to HarderWaitCodec.encode(HarderWaitPolicy.Ledger())))
         val clock = Clock(at(300_000)); val owner = store(disk, clock)
+        owner.reconcile(clock.now) // Finish the supported v1 domain upgrade before measuring rejected-start writes.
         val before = disk.values.value.asMap().toMap()
-        try {
-            owner.startTimer(timer().copy(expiresAtEpochMs = clock.now.wallEpochMs + 300_000), clock.now, EditorSafety(true))
-            fail("capacity was exceeded")
-        } catch (_: StorageUnavailableException) { }
+        assertEquals(TimerStartResult.Rejected("Protection capacity is full. Finish an existing commitment and try again."),
+            owner.commitTimer(timer().copy(expiresAtEpochMs = clock.now.wallEpochMs + 300_000), clock.now, EditorSafety(true)))
         assertEquals(before, disk.values.value.asMap())
         val preview = owner.request(EditorChange("Delete ended", deleteIds = setOf(rules.first().id)), clock.now, EditorSafety(true)) as EditorCommitResult.Preview
         assertTrue(owner.confirm(preview.pending.id, clock.now, EditorSafety(true)) is EditorCommitResult.Applied)

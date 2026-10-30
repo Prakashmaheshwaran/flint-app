@@ -3,6 +3,7 @@ package com.flint.peakfocus.core.datastore
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
+import com.flint.peakfocus.blocking.engine.HarderWaitPolicy
 import com.flint.peakfocus.core.model.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.runBlocking
@@ -103,6 +104,61 @@ class TimerStartResultTest {
         catch (failure: StorageUnavailableException) { assertEquals(StorageFailure.CORRUPT, failure.reason) }
         try { store.reconcile(at()); fail("Editor-only reconciliation recreated initialized children") }
         catch (failure: StorageUnavailableException) { assertEquals(StorageFailure.CORRUPT, failure.reason) }
+        assertEquals(before, disk.values.value); assertEquals(writes, disk.writes)
+    }
+
+    @Test fun `PC-70 v1 and initialized v2 round trip Timer and editor writes without losing domain markers or rights`() = runBlocking {
+        for (version in listOf(1L, 2L)) {
+            val disk = Disk(); val owner = DataStoreEditorCommitmentStore(disk, defaultZone = { "UTC" })
+            val original = BlockRule("work", "Legacy", BlockTargets(apps = setOf(AppRef("work"))),
+                breakLevel = BreakLevel.HARDER, expiresAtEpochMs = base + 3_600_000)
+            DataStoreBlockRulesStore(disk).upsert(original)
+            owner.reconcile(at())
+            val currentVersion = checkNotNull(disk.values.value[EDITOR_VERSION_KEY])
+            val cause = readEditorState(disk.values.value).causes.getValue(ruleCauseKey(original.id))
+            assertTrue(cause.legacyRights)
+            val occurrence = editorOccurrence(ruleCauseKey(original.id), cause)
+            disk.values.value = disk.values.value.toMutablePreferences().apply {
+                this[EDITOR_VERSION_KEY] = version
+                putHarderWait(HarderWaitPolicy.Ledger(counts = mapOf(occurrence to 4)))
+            }
+            val rawArchive = disk.values.value[androidx.datastore.preferences.core.stringPreferencesKey("editor_migration_rules_v1")]
+            val next = timer("marker-$version")
+            assertEquals(TimerStartResult.Applying(next.id, at()), owner.commitTimer(next, at(), EditorSafety(true)))
+            assertEquals(currentVersion, disk.values.value[EDITOR_VERSION_KEY])
+            val domains = listOf(PrefsKeys.BLOCK_RULES, PrefsKeys.APP_GROUPS, PrefsKeys.TIME_LIMITS,
+                PrefsKeys.OPEN_LIMITS, PrefsKeys.DEFAULT_BREAK_LEVEL)
+            assertTrue(domains.all { it in disk.values.value })
+            val reopened = DataStoreEditorCommitmentStore(disk, defaultZone = { "UTC" })
+            val renamed = original.copy(name = "Renamed")
+            val preview = reopened.request(EditorChange("Rename", upserts = listOf(renamed)), at(1), EditorSafety(true)) as EditorCommitResult.Preview
+            assertEquals(EditorCommitResult.Applied(), reopened.confirm(preview.pending.id, at(1), EditorSafety(true)))
+            reopened.reconcile(at(2))
+            assertEquals(currentVersion, disk.values.value[EDITOR_VERSION_KEY])
+            assertTrue(domains.all { it in disk.values.value })
+            assertEquals(setOf(renamed, next), disk.values.value.editorRules().toSet())
+            val retained = readEditorState(disk.values.value).causes.getValue(ruleCauseKey(original.id))
+            assertEquals(cause.occurrenceId, retained.occurrenceId)
+            assertEquals(cause.legacyRights, retained.legacyRights)
+            assertEquals(cause.zoneId, retained.zoneId)
+            assertEquals(cause.interval!!.wallEndEpochMs, retained.interval!!.wallEndEpochMs)
+            assertEquals(cause.interval.remainingMs(at(2)), retained.interval.remainingMs(at(2)))
+            assertEquals(4, readHarderWait(disk.values.value).counts[occurrence])
+            assertEquals(rawArchive, disk.values.value[androidx.datastore.preferences.core.stringPreferencesKey("editor_migration_rules_v1")])
+        }
+    }
+
+    @Test fun `PC-71 future editor marker refuses Timer and editor writes without downgrading or changing bytes`() = runBlocking {
+        val disk = Disk(); val owner = DataStoreEditorCommitmentStore(disk, defaultZone = { "UTC" })
+        owner.reconcile(at())
+        val futureVersion = checkNotNull(disk.values.value[EDITOR_VERSION_KEY]) + 1
+        disk.values.value = disk.values.value.toMutablePreferences().apply { this[EDITOR_VERSION_KEY] = futureVersion }
+        val before = disk.values.value; val writes = disk.writes
+        assertEquals(StorageState.Unavailable(StorageFailure.UNSUPPORTED_VERSION), owner.state.first { it !is StorageState.Loading })
+        try { owner.commitTimer(timer("future"), at(), EditorSafety(true)); fail("Future marker accepted") }
+        catch (failure: StorageUnavailableException) { assertEquals(StorageFailure.UNSUPPORTED_VERSION, failure.reason) }
+        try { owner.request(EditorChange("Create", upserts = listOf(timer("future"))), at(), EditorSafety(true)); fail("Future editor write accepted") }
+        catch (failure: StorageUnavailableException) { assertEquals(StorageFailure.UNSUPPORTED_VERSION, failure.reason) }
         assertEquals(before, disk.values.value); assertEquals(writes, disk.writes)
     }
 }
