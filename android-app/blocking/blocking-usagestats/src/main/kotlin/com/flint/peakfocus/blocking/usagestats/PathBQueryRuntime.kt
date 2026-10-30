@@ -31,17 +31,16 @@ internal class PathBQueryRuntime(context: Context) {
     private var label: String? = null
     private var labelCheckedAt: Long? = null
 
-    fun observe(now: Long, reset: Boolean): PathBObservation {
+    fun foregroundPackage(now: Long, reset: Boolean): String? {
         if (reset) {
             poller.reset()
             timeLimitGate.invalidate()
             UsageQuery.invalidate()
         }
-        val pkg = timed("usage_events_query_ms") { poller.currentForegroundPackage(now) }
-            ?: return PathBObservation(null)
-        // The floor's cached visit mutation is synchronized; any cold PackageManager lookup
-        // also runs here, before the main-thread handoff and before budgets are queried.
-        if (coordinator.isSafetyFloor(pkg)) return PathBObservation(pkg)
+        return timed("usage_events_query_ms") { poller.currentForegroundPackage(now) }
+    }
+
+    fun observeTarget(pkg: String, now: Long): PathBObservation {
         val spent = timed("budget_query_ms") { timeLimitGate.isSpent(pkg, now) }
         val cal = Calendar.getInstance().apply { timeInMillis = now }
         val verdict = engine.decide(pkg, null, ActiveRulesHolder.rules, app.packageName,

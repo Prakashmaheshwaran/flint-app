@@ -20,6 +20,7 @@ import com.flint.peakfocus.core.model.DetectorCadence
 import com.flint.peakfocus.core.model.DetectorFailover
 import com.flint.peakfocus.core.model.EnforcementSignals
 import com.flint.peakfocus.core.model.FallbackMode
+import com.flint.peakfocus.core.model.Verdict
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -187,20 +188,31 @@ class UsageStatsForegroundService : Service() {
         val reset = resetObservation
         resetObservation = false
         val now = System.currentTimeMillis()
-        val observation = withContext(queryDispatcher) {
-            queryRuntime.observe(now, reset)
+        val pkg = withContext(queryDispatcher) {
+            queryRuntime.foregroundPackage(now, reset)
         }
-        if (!health.isOwner(this) || EnforcementSignals.detectors.pathAConnected || resetObservation) return false
-        val pkg = observation.packageName
+        if (observationInvalidated()) return false
         if (pkg == null) {
             queryRuntime.coordinator.hideIfShown()
             return true
         }
+        // Cached membership is nonblocking. Keep its visit-departure mutation on Main,
+        // after ownership revalidation, so an invalidated Path B sample cannot end A's visit.
+        if (queryRuntime.coordinator.isSafetyFloor(pkg)) {
+            PathBBlockHandoff.onForegroundPolled(this, pkg, Verdict.Allow)
+            logDuration("tick_to_handoff_ms", tickStarted)
+            return true
+        }
+        val observation = withContext(queryDispatcher) { queryRuntime.observeTarget(pkg, now) }
+        if (observationInvalidated()) return false
         PathBBlockHandoff.onForegroundPolled(this, pkg, observation.verdict, observation.timeLimitSpent, observation.appLabel)
         // This measures the handoff's return, not first window visibility or painted pixels.
         logDuration("tick_to_handoff_ms", tickStarted)
         return true
     }
+
+    private fun observationInvalidated() =
+        !health.isOwner(this) || EnforcementSignals.detectors.pathAConnected || resetObservation
 
     private inline fun <T> timedQuery(label: String, query: () -> T): T {
         val started = SystemClock.elapsedRealtime()
