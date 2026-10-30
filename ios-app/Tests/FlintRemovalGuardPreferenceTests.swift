@@ -38,6 +38,49 @@ final class FlintRemovalGuardPreferenceTests: XCTestCase {
         XCTAssertFalse(store.load().captureForNewCommitment)
     }
 
+    func testDisclosureVersionBumpRequiresReconsentAndAllowsFreshSave() throws {
+        var bytes: Data? = try enabled.encoded()
+        let original = bytes
+        let store = Preference.Store(currentDisclosureVersion: 2, read: { bytes }, write: { bytes = $0 })
+        XCTAssertEqual(store.load(), .value(enabled, currentDisclosureVersion: 2))
+        XCTAssertFalse(store.load().captureForNewCommitment)
+        XCTAssertEqual(bytes, original, "Reading stale consent preserves the original record")
+        XCTAssertEqual(try Preference.decode(XCTUnwrap(bytes), currentDisclosureVersion: 2), enabled)
+        XCTAssertThrowsError(try store.save(enabled), "Old consent cannot be saved as a fresh opt-in")
+        let acceptedAgain = Preference(enabled: true, disclosedAt: disclosed.addingTimeInterval(60), disclosureVersion: 2)
+        try store.save(acceptedAgain)
+        XCTAssertEqual(store.load(), .value(acceptedAgain, currentDisclosureVersion: 2))
+        XCTAssertTrue(store.load().captureForNewCommitment)
+        XCTAssertEqual(try Preference.decode(XCTUnwrap(bytes), currentDisclosureVersion: 2), acceptedAgain)
+        XCTAssertThrowsError(try Preference.decode(XCTUnwrap(bytes)), "An older reader preserves future consent semantics")
+        var older = try XCTUnwrap(JSONSerialization.jsonObject(with: enabled.encoded()) as? [String: Any])
+        older["disclosureVersion"] = 0
+        bytes = try JSONSerialization.data(withJSONObject: older)
+        XCTAssertNotEqual(store.load(), .unavailable, "Older disclosure remains readable stale consent")
+        XCTAssertFalse(store.load().captureForNewCommitment)
+        try store.save(acceptedAgain)
+        XCTAssertTrue(store.load().captureForNewCommitment)
+    }
+
+    func testNoncanonicalOffMetadataCanBeExplicitlyRepaired() throws {
+        let canonical = try Preference().encoded()
+        let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: canonical) as? [String: Any])
+        for (key, value) in [("disclosureVersion", 1 as Any), ("disclosedAt", disclosed.timeIntervalSince1970 as Any)] {
+            var incomplete = fields
+            incomplete[key] = value
+            var bytes: Data? = try JSONSerialization.data(withJSONObject: incomplete)
+            let original = bytes
+            let store = Preference.Store(read: { bytes }, write: { bytes = $0 })
+            XCTAssertEqual(store.load(), .value(Preference()))
+            XCTAssertFalse(store.load().captureForNewCommitment)
+            XCTAssertEqual(bytes, original, "No mutation merely from decoding")
+            try store.save(Preference())
+            XCTAssertEqual(bytes, canonical)
+            try store.save(enabled)
+            XCTAssertTrue(store.load().captureForNewCommitment)
+        }
+    }
+
     func testInvalidDisclosureRejectedBeforeWrite() {
         var writes = 0
         let store = Preference.Store(read: { nil }, write: { _ in writes += 1 })
@@ -57,7 +100,7 @@ final class FlintRemovalGuardPreferenceTests: XCTestCase {
         let original = try enabled.encoded()
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: original) as? [String: Any])
         var fixtures = [Data("bad JSON".utf8)]
-        for (key, value) in [("version", 2 as Any), ("disclosureVersion", 0 as Any),
+        for (key, value) in [("version", 2 as Any), ("disclosureVersion", 2 as Any),
                              ("enabled", "yes" as Any), ("disclosedAt", NSNull() as Any)] {
             var changed = json
             changed[key] = value

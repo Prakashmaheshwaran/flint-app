@@ -23,7 +23,8 @@ public struct FlintRemovalGuardOwner: Equatable, Sendable {
     /// A finite, same-boot deadline projected from reconciled logical remaining time.
     /// Wall is a display estimate only; never compare it with now to expire an owner.
     public let logicalEnd: FlintLedgerInstant?
-    /// false means known time uncertainty (§9): this owner cannot arm a guard.
+    /// false means time uncertainty (§9): keep the current guard, neither arm nor
+    /// release it. The adapter supplies the bounded fallback as known when provable.
     public let timeKnown: Bool
     /// true only after durable pass recovery covers this owner; nil means unavailable
     /// pass state. Include rule occurrences starting inside the recovery window (§6).

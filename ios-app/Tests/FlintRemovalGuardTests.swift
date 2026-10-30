@@ -10,15 +10,10 @@ final class FlintRemovalGuardTests: XCTestCase {
         .init(wall: wall.addingTimeInterval(mono - 1000 + shift), monotonic: mono, bootID: boot)
     }
 
-    private func clock(_ mono: Double = 1000, boot: String? = "boot-1", shift: Double = 0,
-                       zone: String = "UTC") -> FlintClock {
+    private func clock(_ mono: Double = 1000, boot: String? = "boot-1", shift: Double = 0) -> FlintClock {
         let now = instant(mono, boot: boot, shift: shift)
         return .init(now: { now.wall }, monotonic: { now.monotonic }, bootSessionID: { now.bootID },
-                     calendar: {
-            var calendar = Calendar(identifier: .gregorian)
-            calendar.timeZone = TimeZone(identifier: zone)!
-            return calendar
-        })
+                     calendar: { Calendar.current })
     }
 
     private func owner(_ id: String = "session", kind: FlintCauseState.Kind = .session,
@@ -136,13 +131,44 @@ final class FlintRemovalGuardTests: XCTestCase {
         }
     }
 
-    func testKnownTimeUncertaintyCannotArmAndCannotAuthorizeWeakening() {
-        XCTAssertEqual(Guard.decide(owners: [owner(timeKnown: false)], clock: clock()), .release)
-        XCTAssertEqual(Guard.decide(owners: [owner()], clock: clock(1000, boot: nil)), .release)
-        XCTAssertEqual(Guard.decide(owners: [owner()], clock: clock(1000, boot: "new-boot")), .release)
+    func testTimeUncertaintyKeepsWithoutArmingOrReleasingAcrossReboot() {
+        XCTAssertEqual(Guard.decide(owners: [owner(timeKnown: false)], clock: clock()), .keep)
+        XCTAssertEqual(Guard.decide(owners: [owner()], clock: clock(1000, boot: nil)), .keep)
+        XCTAssertEqual(Guard.decide(owners: [owner()], clock: clock(1000, boot: "new-boot")), .keep)
         XCTAssertEqual(Guard.decidePreferenceChange(to: false, owners: [owner(timeKnown: false)], clock: clock()), .deny(.stateUnavailable))
         XCTAssertEqual(Guard.decidePreferenceChange(to: false, owners: [owner()], clock: clock(1000, boot: "new-boot")), .deny(.stateUnavailable))
-        XCTAssertEqual(Guard.decide(owners: [owner(timeKnown: false), owner("known")], clock: clock()), .deny)
+        XCTAssertEqual(Guard.decide(owners: [owner(timeKnown: false), owner("known")], clock: clock()), .keep)
+        XCTAssertEqual(Guard.decide(owners: [owner("known"), owner(timeKnown: false)], clock: clock()), .keep)
+        // The phase-2 §9 bounded-fallback adapter can later prove expiry on the new boot.
+        let expired = Owner(cause: owner().cause, registration: .observed, removalGuard: true,
+                            logicalEnd: instant(1000, boot: "new-boot"), timeKnown: true, passRecovered: false)
+        XCTAssertEqual(Guard.decide(owners: [expired], clock: clock(1000, boot: "new-boot")), .release)
+    }
+
+    func testCapturedGuardOffCannotInheritLegacyRuleEditBypass() {
+        let legacy = owner(kind: .recurringSchedule, legacy: true)
+        XCTAssertEqual(FlintProtectionPolicy.decide(.toggleOff, for: legacy.cause!), .allow(confirm: true))
+        XCTAssertEqual(Guard.decidePreferenceChange(to: false, owners: [legacy], clock: clock()),
+                       .deferUntil(instant(1600).wall))
+    }
+
+    func testImplausiblyLongRemainingTimeKeepsAndCannotAuthorizeWeakening() {
+        let bound = FlintProtectionConstants.maximumOccurrenceDuration
+        XCTAssertEqual(Guard.decide(owners: [owner(end: 1000 + bound)], clock: clock()), .deny)
+        let contradictory = owner(end: 1000 + bound + 1)
+        XCTAssertEqual(Guard.decide(owners: [contradictory], clock: clock()), .keep)
+        XCTAssertEqual(Guard.decidePreferenceChange(to: false, owners: [contradictory], clock: clock()), .deny(.stateUnavailable))
+    }
+
+    func testPartialDomainReadAndFailedActivityInventoryKeep() {
+        let sessions = [owner()]
+        let unreadableRules: [Owner]? = nil
+        // Adapters must propagate a failed domain, never use unreadableRules ?? [].
+        let allOwners = unreadableRules.map { sessions + $0 }
+        XCTAssertEqual(Guard.decide(owners: allOwners, clock: clock()), .keep)
+        // A failed DeviceActivityCenter read is unavailable, not a positively absent registration.
+        XCTAssertEqual(Guard.decide(owners: [owner(registration: .unavailable)], clock: clock()), .keep)
+        XCTAssertEqual(Guard.decide(owners: [owner(registration: .notObserved)], clock: clock()), .release)
     }
 
     func testMalformedOwnerAndFalseKnownTimeClaimKeep() {
@@ -163,15 +189,14 @@ final class FlintRemovalGuardTests: XCTestCase {
         XCTAssertEqual(Guard.decide(owners: [badID], clock: clock()), .keep)
     }
 
-    func testWallChangesAndTimeZonesCannotMoveDeadline() {
-        for zone in ["UTC", "America/New_York", "Pacific/Kiritimati"] {
-            for shift in [-86_400.0, 0, 86_400] {
-                let now = clock(1500, shift: shift, zone: zone)
-                XCTAssertEqual(Guard.decide(owners: [owner()], clock: now), .deny)
-                XCTAssertEqual(Guard.decide(owners: [owner()], clock: clock(1600, shift: shift, zone: zone)), .release)
-                XCTAssertEqual(Guard.decidePreferenceChange(to: false, owners: [owner()], clock: now),
-                               .deferUntil(now.now().addingTimeInterval(100)))
-            }
+    func testWallChangesCannotMoveExactLogicalEndBoundary() {
+        // The suite also runs under both UTC and New York; decisions use no calendar.
+        for shift in [-86_400.0, 0, 86_400] {
+            let now = clock(1500, shift: shift)
+            XCTAssertEqual(Guard.decide(owners: [owner()], clock: now), .deny)
+            XCTAssertEqual(Guard.decide(owners: [owner()], clock: clock(1600, shift: shift)), .release)
+            XCTAssertEqual(Guard.decidePreferenceChange(to: false, owners: [owner()], clock: now),
+                           .deferUntil(now.now().addingTimeInterval(100)))
         }
     }
 }

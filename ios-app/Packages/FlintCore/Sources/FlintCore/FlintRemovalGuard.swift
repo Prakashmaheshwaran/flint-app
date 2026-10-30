@@ -17,7 +17,7 @@ public enum FlintRemovalGuard {
                   owner.registration == .observed, cause.end != nil else { continue }
             switch remaining(owner, at: now) {
             case .unavailable: return .keep
-            case .uncertain: continue
+            case .uncertain: return .keep
             case let .known(seconds): deny = deny || seconds > 0
             }
         }
@@ -45,6 +45,9 @@ public enum FlintRemovalGuard {
             // from the same logical deadline used by the guard decision.
             cause.end = now.wall.addingTimeInterval(seconds)
             guard cause.end?.timeIntervalSince1970.isFinite == true else { return .deny(.stateUnavailable) }
+            // Legacy template edit rights do not authorize weakening a captured guard.
+            // Migration still leaves captured opt-in nil, so this cannot tighten old causes.
+            cause.legacyRights = false
             affected.append(cause)
         }
         return affected.isEmpty ? .allow(confirm: true) : FlintProtectionPolicy.decide(.toggleOff, for: affected)
@@ -71,6 +74,8 @@ public enum FlintRemovalGuard {
         guard now.wall.timeIntervalSince1970.isFinite, now.monotonic.isFinite,
               now.monotonic >= 0 else { return .unavailable }
         guard let boot = now.bootID, !boot.isEmpty, boot == end.bootID else { return .uncertain }
-        return .known(max(0, end.monotonic - now.monotonic))
+        let seconds = max(0, end.monotonic - now.monotonic)
+        guard seconds <= FlintProtectionConstants.maximumOccurrenceDuration else { return .unavailable }
+        return .known(seconds)
     }
 }
