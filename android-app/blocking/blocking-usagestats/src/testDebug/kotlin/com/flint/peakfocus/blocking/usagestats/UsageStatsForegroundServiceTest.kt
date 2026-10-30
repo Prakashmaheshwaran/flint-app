@@ -273,14 +273,17 @@ class UsageStatsForegroundServiceTest {
         assertEquals(PathBState.OFF, health())
         val before = shadowOf(service).lastForegroundNotification
         val queries = CountingUsageStats.calls
+        assertTrue("usage-access-missing" in ProtectionStatusHub.status.value.detectors.degradedReasons)
         grantUsage(true)
         assertEquals(Service.START_STICKY, startLoop())
         assertNotSame("new foreground-service obligation must promote again", before,
             shadowOf(service).lastForegroundNotification)
         assertEquals(PathBState.UNKNOWN, health())
+        assertFalse("usage-access-missing" in ProtectionStatusHub.status.value.detectors.degradedReasons)
         assertEquals(queries, CountingUsageStats.calls)
         scheduler.runCurrent()
         assertEquals(PathBState.ENFORCING, health())
+        assertFalse("usage-access-missing" in ProtectionStatusHub.status.value.detectors.degradedReasons)
         assertTrue(CountingUsageStats.calls > queries)
     }
 

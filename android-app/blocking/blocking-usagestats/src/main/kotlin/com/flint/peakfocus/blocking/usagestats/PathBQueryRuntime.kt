@@ -47,7 +47,7 @@ internal class PathBQueryRuntime(context: Context) {
             cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE),
             IsoWeekday.fromCalendar(cal.get(Calendar.DAY_OF_WEEK)), now)
         val at = SystemClock.elapsedRealtime()
-        // Labels are presentation only: up to60s of staleness is intentional, and no
+        // Labels are presentation only: up to 60s of staleness is intentional, and no
         // enforcement identity, target or tier decision depends on the cached display name.
         if (pkg != labelPackage || labelCheckedAt?.let { at < it || at - it >= LABEL_REFRESH_MS } != false) {
             labelPackage = pkg

@@ -10,7 +10,8 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * Cached safety-floor answers for the detectors' hot paths (audit R2). The static floor is a set
  * lookup; the runtime half (default home app, default/system dialer) needs PackageManager/Telecom
- * binder calls, which must stay off the accessibility event (main) thread:
+ * binder calls. Ordinary polling refreshes run off the accessibility event (main) thread;
+ * the explicit new-mount check below retains its synchronous freshness guarantee:
  *
  *  - [protects] is a pure read of the cached set. When the cache is older than
  *    [refreshIntervalMs] it hands a refresh to [refreshInBackground] (one in flight at a time)
@@ -20,6 +21,8 @@ import kotlinx.coroutines.flow.asStateFlow
  *    performs the pre-existing synchronous check before a new mount, never on an existing
  *    shield's poll/re-render. Snapshot completion wakes both detectors, including a stationary
  *    target that was conservatively allowed during cold start.
+ *    That synchronous check can wait for an in-flight resolver's refreshLock; it is not a
+ *    nonblocking API. The lock never covers cached membership reads.
  *
  * The resolver reports each source separately (null = that lookup failed). A failed source keeps
  * its last known packages, so a transient binder failure can never shrink the floor — e.g. drop a
@@ -45,6 +48,7 @@ class SafetyFloorGate(
         val resolvedSources: Set<String> = emptySet(),
         val failedSources: Set<String> = emptySet(),
         val checkedAtElapsedMs: Long? = null,
+        /** Diagnostic/test scheduling flag only; checking alone never means degraded health. */
         val checking: Boolean = false,
     ) {
         /** Sticky provenance only; health consumers must also read degraded and checkedAtElapsedMs. */

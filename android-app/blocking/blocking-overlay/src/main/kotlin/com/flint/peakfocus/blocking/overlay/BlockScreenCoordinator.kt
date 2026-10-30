@@ -137,12 +137,12 @@ class BlockScreenCoordinator(
         selfPackage = appContext.packageName,
         resolveRuntime = { NeverBlockSurfaces.resolveBySource(appContext) },
         nowElapsedMs = SystemClock::elapsedRealtime,
-        // Binder lookups stay off the accessibility event (main) thread.
+        // Ordinary polling refreshes run off main; a new mount's zero-age check is synchronous.
         refreshInBackground = { refresh -> scope.launch(Dispatchers.Default) { refresh() } },
         requiredRuntimeSources = NeverBlockSurfaces.requiredSources(),
     )
 
-    /** Package whose newest mount already force-resolved the floor (cleared on hide). Main thread only. */
+    /** Package whose current mount attempt force-resolved the floor (cleared on hide). Main thread only. */
     private var mountCheckedPackage: String? = null
 
     /** Package whose current block was already reported as an intercepted open (cleared on hide). Main thread only. */
@@ -344,8 +344,10 @@ class BlockScreenCoordinator(
     private fun publishPathAHealth() = synchronized(statusLock) {
         val previous = lastPolicyStatus ?: return@synchronized
         val connected = EnforcementSignals.detectors.pathAConnected
-        val reasons = previous.detectors.degradedReasons - "path-a-disconnected" +
-            if (connected) emptySet() else setOf("path-a-disconnected")
+        val bindingReasons = previous.detectors.degradedReasons - "path-a-disconnected"
+        // Reconnect re-derives backup context on the next policy tick; raw missing access stays visible.
+        val reasons = if (connected) bindingReasons
+            else (bindingReasons - "path-b-backup-unavailable") + "path-a-disconnected"
         val next = previous.copy(detectors = previous.detectors.copy(accessibilityConnected = connected, degradedReasons = reasons))
         lastPolicyStatus = next
         ProtectionStatusHub.publish(next)
@@ -794,10 +796,14 @@ class BlockScreenCoordinator(
             safetyFloor.protectsFresh(packageName)
         }
         if (onFloor) {
+            if (mountCheckedPackage == packageName) mountCheckedPackage = null
             // Only drop this package's own shield; never reveal another app's block.
             if (visiblePackage == packageName) hideLocked()
             return
         }
+        // The accounting grace and its polls belong to this same mount attempt. Retain the
+        // fresh check before returning early; a later swap's hide still clears/reinstates it.
+        mountCheckedPackage = packageName
         val existing = shownView
         if (deferPendingOpen && existing == null && pendingOpenHold(packageName, cause)) {
             if (pendingSurfacePackage != packageName) {
@@ -812,6 +818,9 @@ class BlockScreenCoordinator(
                         val current = currentBlockCause(packageName, cause)
                         if (current != null && !isExempt(packageName, current)) {
                             showBlockedLocked(packageName, appLabel, current, deferPendingOpen = false)
+                        } else if (mountCheckedPackage == packageName) {
+                            // No shield mounted: a later attempt needs a new zero-age floor check.
+                            mountCheckedPackage = null
                         }
                     }
                 }
