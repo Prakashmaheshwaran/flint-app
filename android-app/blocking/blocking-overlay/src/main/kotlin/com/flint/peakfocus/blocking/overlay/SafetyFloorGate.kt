@@ -59,6 +59,7 @@ class SafetyFloorGate(
     private val refreshLock = Any()
     private val refreshing = AtomicBoolean(false)
     @Volatile private var bySource: Map<String, Set<String>> = emptyMap()
+    private var successfulAtBySource: Map<String, Long> = emptyMap()
     @Volatile private var runtime: Set<String> = emptySet()
     @Volatile private var resolvedAtMs: Long? = null
     private var homeCandidates: Set<String> = emptySet()
@@ -85,6 +86,30 @@ class SafetyFloorGate(
             scheduleRefresh()
         }
         return allowForSafety(packageName)
+    }
+
+    /**
+     * Display-only retained provenance for this target. Does not resolve, schedule a refresh,
+     * or change health timestamps; enforcement owns cache refresh through [protects].
+     * Reads only the short membership lock; binder resolution holds the separate refresh lock.
+     * Conservative candidate exemptions are not proof of a runtime safety identity.
+     */
+    fun readIdentity(packageName: String): FloorIdentity? {
+        if (packageName == selfPackage) return FloorIdentity(FloorIdentity.Kind.SELF)
+        if (SafetyFloor.isProtected(packageName, selfPackage)) return FloorIdentity(FloorIdentity.Kind.STATIC_SYSTEM)
+        return synchronized(lock) {
+            val source = listOf("home", "default-dialer", "system-dialer", "uninstaller")
+                .firstOrNull { packageName in bySource[it].orEmpty() } ?: return@synchronized null
+            val kind = when (source) {
+                "home" -> FloorIdentity.Kind.RUNTIME_HOME
+                "uninstaller" -> FloorIdentity.Kind.RUNTIME_UNINSTALLER
+                else -> FloorIdentity.Kind.RUNTIME_DIALER
+            }
+            val successfulAt = successfulAtBySource[source]
+            val now = nowElapsedMs()
+            FloorIdentity(kind, successfulAt, source in resolution.value.failedSources || successfulAt == null ||
+                now < successfulAt || now - successfulAt >= refreshIntervalMs)
+        }
     }
 
     /** Cached decision with background refresh; maxAgeMs=0 retains the one-per-new-mount check. */
@@ -193,10 +218,16 @@ class SafetyFloorGate(
                 // Per source: a successful lookup replaces that source; a failed (null) or missing
                 // one keeps its last known packages. Binder work never holds this membership lock.
                 val merged = HashMap(bySource)
+                val successTimes = HashMap(successfulAtBySource)
+                val checkedAt = nowElapsedMs()
                 for ((source, packages) in resolved) {
-                    if (source !in RuntimeSafetySurfaces.CANDIDATE_SOURCES && packages != null) merged[source] = packages
+                    if (source !in RuntimeSafetySurfaces.CANDIDATE_SOURCES && packages != null) {
+                        merged[source] = packages
+                        successTimes[source] = checkedAt
+                    }
                 }
                 bySource = merged
+                successfulAtBySource = successTimes
                 runtime = merged.values.flatMapTo(HashSet()) { it }
                 val home = resolved[RuntimeSafetySurfaces.SOURCE_CANDIDATE_HOME]
                 val calling = resolved[RuntimeSafetySurfaces.SOURCE_CANDIDATE_CALLING]
@@ -208,7 +239,7 @@ class SafetyFloorGate(
                 ordinaryLaunchers = resolved[RuntimeSafetySurfaces.SOURCE_ORDINARY_LAUNCHERS].orEmpty()
                 // Stamp even on failure so a broken resolver is retried at the interval, not on
                 // every event; the previous sets stay in force meanwhile.
-                resolvedAtMs = nowElapsedMs()
+                resolvedAtMs = checkedAt
                 resolution.value = resolution.value.copy(
                     resolvedSources = merged.keys.toSet(),
                     failedSources = resolution.value.requiredSources.filterTo(HashSet()) { resolved[it] == null },

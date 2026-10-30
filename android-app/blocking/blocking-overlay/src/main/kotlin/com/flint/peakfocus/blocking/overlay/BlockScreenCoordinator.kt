@@ -361,6 +361,9 @@ class BlockScreenCoordinator(
         return protected
     }
 
+    /** Retained proven floor identity only; display reads never resolve roles or refresh health. */
+    fun readTargetFloorIdentity(packageName: String): FloorIdentity? = safetyFloor.readIdentity(packageName)
+
     /** Loaded tier for Time Limit displays; unknown accounting has no grant affordance. */
     fun currentDefaultBreakLevel(): BreakLevel = focusLastGood?.defaultBreakLevel ?: BreakLevel.HARDCORE
 
