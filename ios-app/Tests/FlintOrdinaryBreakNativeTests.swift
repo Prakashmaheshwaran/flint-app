@@ -8,9 +8,9 @@ final class FlintOrdinaryBreakNativeTests: XCTestCase {
     private let now = FlintLedgerInstant(wall: Date(timeIntervalSince1970: 1_800_000_000), monotonic: 1000, bootID: "boot")
     private func fixture(_ selection: FamilyActivitySelection, releasing scope: FlintBreakScope,
                          allowList: Bool = false, tier: BreakLevel = .easy, ownerEnd: TimeInterval? = 3600,
-                         causeID: String = "session")
+                         causeID: String = "session", kind: FlintCauseState.Kind = .session, storeName: String = "owner")
         throws -> (FlintOrdinaryGrantState.Record, FlintBreakContext) {
-        let cause = FlintCauseState(causeID: causeID, kind: .session, tier: tier, isActive: true)
+        let cause = FlintCauseState(causeID: causeID, kind: kind, tier: tier, isActive: true)
         let frozen = try FlintOrdinaryBreaks.scope(selection)
         let contributor = FlintBreakContributor(cause: cause,
             selection: allowList ? .allowList(allowedApplications: frozen.targets) : .blockList(frozen),
@@ -18,8 +18,8 @@ final class FlintOrdinaryBreakNativeTests: XCTestCase {
         let duration = min(300, ownerEnd ?? 300)
         let grant = FlintBreakGrant(id: "grant", operationID: "operation", scope: scope, causes: [.init(cause)],
             acceptedAt: now, deadline: .init(wall: now.wall.addingTimeInterval(duration), monotonic: now.monotonic + duration, bootID: now.bootID))
-        return (.init(grant: grant, authorities: [try .init(contributor: contributor, storeName: "owner")]),
-                .init(owners: [.init(contributor, storeName: "owner")]))
+        return (.init(grant: grant, authorities: [try .init(contributor: contributor, storeName: storeName)]),
+                .init(owners: [.init(contributor, storeName: storeName)]))
     }
 
     func testNativeWriterKeepsBBlockedAndReshieldsAAtExactDeadline() throws {
@@ -142,13 +142,58 @@ final class FlintOrdinaryBreakNativeTests: XCTestCase {
                 register: { _, _ in XCTFail("Expired grant must not register") }, registered: { _ in true }, stop: { _ in },
                 apply: { records, context, now in
                     XCTAssertNil(context)
-                    try FlintOrdinaryBreaks.restoreUnavailableAuthorities(records, at: now, writer: { _ in writer })
+                    try FlintOrdinaryBreaks.restoreUnavailableAuthorities(records, at: now, writer: { _ in writer },
+                        currentSessionID: { legacySession.id })
                     throw FlintOrdinaryBreakError.unavailable // retain retry until the domain becomes readable
                 })
             XCTAssertFalse(service.reconcile())
             XCTAssertEqual(writer.currentApplications, ownerEnd == 100 ? nil : Set([token]))
             XCTAssertEqual(try ledger.peek().get().ordinaryGrants?.records.first?.endReason, .deadline)
         }
+    }
+
+    /// R2p2-N02: Easy X's break grant on A outlives X once a stronger Hardcore Y on A+B is
+    /// applied to the same `flint` store. With rule context unavailable, the fallback must not
+    /// write X's A-only policy over Y, nor recreate an ended or unreadable session's policy.
+    func testUnavailableContextNeverRestoresAStaleSessionOwnerOverItsSuccessor() throws {
+        let a: ApplicationToken = try fictionalRuleToken("target A")
+        var selection = FamilyActivitySelection(); selection.applicationTokens = [a]
+        let x = FlintActiveSession(name: "X", startedAt: now.wall, endsAt: now.wall.addingTimeInterval(3600),
+            breakLevel: .easy, monitorName: "x")
+        let (record, _) = try fixture(selection, releasing: FlintOrdinaryBreaks.scope(selection),
+            ownerEnd: 3600, causeID: x.id, storeName: "flint")
+        XCTAssertEqual(record.authorities.first?.focusSessionID, x.id)
+        // An owner saved without a session ID is never verifiable as the current session.
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(record)) as? [String: Any])
+        legacy["authorities"] = (legacy["authorities"] as? [[String: Any]])?.map { $0.filter { $0.key != "focusSessionID" } }
+        let unverifiable = try JSONDecoder().decode(FlintOrdinaryGrantState.Record.self,
+            from: JSONSerialization.data(withJSONObject: legacy))
+        XCTAssertNil(unverifiable.authorities.first?.focusSessionID)
+        // `nil` covers no session and an unreadable record alike: both keep the store as it is.
+        for (current, records) in [("successor-Y", [record]), (nil, [record]), (x.id, [unverifiable])] as [(String?, [FlintOrdinaryGrantState.Record])] {
+            let writer = OrdinaryWriter()
+            try FlintOrdinaryBreaks.restoreUnavailableAuthorities(records, at: now, writer: { _ in writer },
+                currentSessionID: { current })
+            XCTAssertTrue(writer.currentApplications == nil && writer.currentApplicationCategories == nil
+                && writer.currentWebDomains == nil && writer.currentWebDomainCategories == nil,
+                "a stale or unverifiable owner never writes the reused session store")
+        }
+        let writer = OrdinaryWriter()
+        try FlintOrdinaryBreaks.restoreUnavailableAuthorities([record], at: now, writer: { _ in writer },
+            currentSessionID: { x.id })
+        XCTAssertEqual(writer.currentApplications, Set([a]), "the still-current owner is restored")
+    }
+
+    func testUnavailableContextStillRestoresRuleOwnersWithoutACurrentSession() throws {
+        let a: ApplicationToken = try fictionalRuleToken("rule target A")
+        var selection = FamilyActivitySelection(); selection.applicationTokens = [a]
+        let (record, _) = try fixture(selection, releasing: FlintOrdinaryBreaks.scope(selection),
+            causeID: "rule", kind: .recurringSchedule, storeName: "flint.rule")
+        XCTAssertNil(record.authorities.first?.focusSessionID)
+        let writer = OrdinaryWriter()
+        try FlintOrdinaryBreaks.restoreUnavailableAuthorities([record], at: now, writer: { _ in writer },
+            currentSessionID: { nil })
+        XCTAssertEqual(writer.currentApplications, Set([a]), "a rule owner's own store is restored")
     }
 
     func testFailureHealthPreservesOtherFailuresUpdatesTimeAndClearsRecoveredCarrier() throws {

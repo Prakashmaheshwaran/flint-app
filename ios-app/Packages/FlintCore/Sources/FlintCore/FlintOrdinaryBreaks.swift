@@ -340,11 +340,25 @@ public enum FlintOrdinaryBreaks {
 
     /// Restore the owner's frozen policy, including an existing untimed Easy commitment.
     /// An expired finite owner is never recreated; reboot re-anchoring belongs to session reconcile.
+    /// Every session reuses the `flint` store, so a session owner is restored only while it is
+    /// verifiably the current session. With no verifiable current owner (a successor, no session,
+    /// an unreadable record, or an owner saved without a session ID) nothing is written: a stale
+    /// owner's narrower policy would release targets the current commitment blocks (R2p2-N02).
+    /// The current session's own reconcile repairs its store.
     static func restoreUnavailableAuthorities(_ records: [FlintOrdinaryGrantState.Record], at now: FlintLedgerInstant,
-                                             writer: ((String) -> FlintRuleShieldWriting)? = nil) throws {
+                                             writer: ((String) -> FlintRuleShieldWriting)? = nil,
+                                             currentSessionID: () -> String? = { FlintGroupStore()?.loadActiveSession()?.id }) throws {
+        var current: String?? // read at most once; `.some(nil)` caches "no verifiable session"
+        func isCurrent(_ sessionID: String) -> Bool {
+            if current == nil { current = .some(currentSessionID()) }
+            return current! == sessionID
+        }
         for record in records {
             for owner in record.authorities where owner.logicalEnd == nil ||
                 owner.logicalEnd.map({ $0.bootID == now.bootID && $0.monotonic > now.monotonic }) == true {
+                if let sessionID = owner.focusSessionID {
+                    if !isCurrent(sessionID) { continue }
+                } else if owner.storeName == "flint" { continue }
                 let selection: FlintBreakContributor.Selection = owner.allowList
                     ? .allowList(allowedApplications: owner.selection.targets) : .blockList(owner.selection)
                 try write(selection, storeName: owner.storeName, releasing: [], to: writer?(owner.storeName))
