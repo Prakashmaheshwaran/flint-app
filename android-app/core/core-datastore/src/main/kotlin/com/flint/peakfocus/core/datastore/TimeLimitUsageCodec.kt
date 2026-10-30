@@ -64,6 +64,29 @@ internal object TimeLimitUsageCodec {
         "A|1\nT|${limits?.let { "+${PrefsCodec.escape(it)}" } ?: "-"}\nD|${tier?.let { "+${PrefsCodec.escape(it)}" } ?: "-"}"
             .also(::readArchive)
 
+    /** Append-only identities independently attest to rows added after the legacy archive. */
+    fun targetRegistry(targets: Set<String>): String {
+        timeUsageRequire(targets.size <= MAX_TARGETS)
+        return (listOf("K|1", "N|${targets.size}") + targets.sorted().map {
+            timeUsageRequire(it.isNotBlank() && it.length <= OpenCreditLedgerPolicy.MAX_ATOM)
+            "P|${wireAtom(it)}"
+        }).joinToString("\n")
+    }
+
+    fun readTargetRegistry(raw: String): Set<String> {
+        val rows = wireRows(raw, "K")
+        val count = rows.singleOrNull { it[0] == "N" } ?: wireCorrupt()
+        timeUsageRequire(count.size == 2 && wireLong(count[1]) <= MAX_TARGETS)
+        val targets = linkedSetOf<String>()
+        rows.filter { it[0] != "N" }.forEach {
+            if (it[0] != "P") wireFuture()
+            timeUsageRequire(it.size == 2 && targets.add(readWireAtom(it[1])))
+        }
+        timeUsageRequire(targets.size.toLong() == wireLong(count[1]))
+        targetRegistry(targets) // Validate bounded, nonblank identities.
+        return targets
+    }
+
     fun readArchive(raw: String): Pair<String?, String?> {
         val rows = wireRows(raw, "A")
         timeUsageRequire(rows.size == 2)

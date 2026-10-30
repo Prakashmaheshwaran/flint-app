@@ -9,6 +9,7 @@ import java.util.TimeZone
 internal val TIME_USAGE_SCHEMA = longPreferencesKey("time_limit_usage_schema_v1")
 internal val TIME_USAGE_STATE = stringPreferencesKey("time_limit_usage_state_v1")
 internal val TIME_USAGE_ARCHIVE = stringPreferencesKey("time_limit_usage_archive_v1")
+internal val TIME_USAGE_TARGETS = stringPreferencesKey("time_limit_usage_targets_v1")
 
 data class TimeLimitUsageLedger(val migrationZoneId: String, val targets: Map<String, TimeLimitDayState>)
 
@@ -73,7 +74,8 @@ class DataStoreTimeLimitUsageStore(
 /** One-time saved-zone capture archives the untouched legacy limits/default-tier bytes in the same edit. */
 internal fun prepareTimeLimitUsage(prefs: MutablePreferences, now: AccessClockStamp, zone: String): TimeLimitUsageLedger {
     if (StrictPrefsCodec.long(prefs, TIME_USAGE_SCHEMA) != null) return readTimeLimitUsage(prefs)
-    timeUsageRequire(StrictPrefsCodec.string(prefs, TIME_USAGE_STATE) == null && StrictPrefsCodec.string(prefs, TIME_USAGE_ARCHIVE) == null)
+    timeUsageRequire(StrictPrefsCodec.string(prefs, TIME_USAGE_STATE) == null &&
+        StrictPrefsCodec.string(prefs, TIME_USAGE_ARCHIVE) == null && StrictPrefsCodec.string(prefs, TIME_USAGE_TARGETS) == null)
     val raw = StrictPrefsCodec.string(prefs, PrefsKeys.TIME_LIMITS)
     val tier = StrictPrefsCodec.string(prefs, PrefsKeys.DEFAULT_BREAK_LEVEL)
     val limits = StrictPrefsCodec.timeLimits(raw.orEmpty(), StrictPrefsCodec.level(tier))
@@ -83,6 +85,7 @@ internal fun prepareTimeLimitUsage(prefs: MutablePreferences, now: AccessClockSt
     val archive = TimeLimitUsageCodec.archive(raw, tier)
     val encoded = TimeLimitUsageCodec.encode(ledger)
     prefs[TIME_USAGE_ARCHIVE] = archive
+    prefs[TIME_USAGE_TARGETS] = TimeLimitUsageCodec.targetRegistry(ledger.targets.keys)
     prefs[TIME_USAGE_STATE] = encoded
     prefs[TIME_USAGE_SCHEMA] = 1L
     return ledger
@@ -95,6 +98,8 @@ internal fun readTimeLimitUsage(prefs: Preferences): TimeLimitUsageLedger {
     timeUsageRequire(version == 1L)
     val original = TimeLimitUsageCodec.readArchive(StrictPrefsCodec.string(prefs, TIME_USAGE_ARCHIVE) ?: wireCorrupt())
     val ledger = TimeLimitUsageCodec.decode(StrictPrefsCodec.string(prefs, TIME_USAGE_STATE) ?: wireCorrupt())
+    val registered = TimeLimitUsageCodec.readTargetRegistry(StrictPrefsCodec.string(prefs, TIME_USAGE_TARGETS) ?: wireCorrupt())
+    timeUsageRequire(ledger.targets.keys == registered)
     val imported = StrictPrefsCodec.timeLimits(original.first.orEmpty(), StrictPrefsCodec.level(original.second))
     timeUsageRequire(imported.all { it.packageName in ledger.targets })
     timeUsageRequire(prefs.editorTimes().all { it.zoneId != null })
@@ -102,8 +107,10 @@ internal fun readTimeLimitUsage(prefs: Preferences): TimeLimitUsageLedger {
 }
 
 internal fun MutablePreferences.putTimeLimitUsage(ledger: TimeLimitUsageLedger) {
-    readTimeLimitUsage(this) // Established missing/invalid keys never initialize themselves again.
+    val previous = readTimeLimitUsage(this) // Missing registered rows never initialize themselves again.
+    timeUsageRequire(ledger.targets.keys.containsAll(previous.targets.keys))
     this[TIME_USAGE_STATE] = TimeLimitUsageCodec.encode(ledger)
+    this[TIME_USAGE_TARGETS] = TimeLimitUsageCodec.targetRegistry(ledger.targets.keys)
 }
 
 internal fun timeUsageRequire(value: Boolean) { if (!value) wireCorrupt() }

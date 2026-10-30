@@ -127,7 +127,7 @@ class TimeLimitUsageStoreTest {
     }
 
     @Test fun PC_37_PC_70_missingEstablishedKeysOrPartialInitializationNeverMintFreshState() = runBlocking {
-        for (key in listOf(TIME_USAGE_SCHEMA, TIME_USAGE_STATE, TIME_USAGE_ARCHIVE, TIME_LIMIT_ZONE_SCHEMA)) {
+        for (key in listOf(TIME_USAGE_SCHEMA, TIME_USAGE_STATE, TIME_USAGE_ARCHIVE, TIME_USAGE_TARGETS, TIME_LIMIT_ZONE_SCHEMA)) {
             val valid = Disk(legacy()); spent(valid)
             val broken = valid.values.value.toMutablePreferences().also { it.remove(key) }
             val disk = Disk(broken)
@@ -216,6 +216,48 @@ class TimeLimitUsageStoreTest {
         assertFalse(result.sampleAccepted)
         assertEquals(60_000L, result.state.usedMs)
         assertEquals("UTC", result.state.zoneId)
+    }
+
+    @Test fun PC_37_PC_71_missingPostMigrationTargetCannotReinitializeEvenWithACanonicalLedger() = runBlocking {
+        val disk = Disk(legacy()); spent(disk)
+        val reader = store(disk)
+        val ticket = reader.measurementContext("new", at(), "UTC")
+        reader.record(ticket, 60_000, at())
+        val current = readTimeLimitUsage(disk.values.value)
+        // Coherent wire shape/count alone cannot attest that a previously registered row survived.
+        val broken = disk.values.value.toMutablePreferences().also {
+            it[TIME_USAGE_STATE] = TimeLimitUsageCodec.encode(current.copy(targets = current.targets - "new"))
+        }
+        disk.values.value = broken
+        try { store(disk).measurementContext("new", at(1_000)); fail("missing row minted a fresh pool") }
+        catch (_: StorageUnavailableException) { }
+        assertEquals(broken, disk.values.value)
+    }
+
+    @Test fun PC_36_PC_56_newTargetDeleteRecreateRetainsRegisteredUsageAndCurrentZone() = runBlocking {
+        val disk = Disk(legacy()); spent(disk)
+        val reader = store(disk)
+        DataStoreLimitsStore(disk).setTimeLimit(TimeLimit("new", 1, BreakLevel.HARDCORE, "UTC"))
+        val first = reader.measurementContext("new", at())
+        reader.record(first, 60_000, at())
+        DataStoreLimitsStore(disk).clearTimeLimit("new")
+        DataStoreLimitsStore(disk).setTimeLimit(TimeLimit("new", 1, BreakLevel.HARDCORE, "Asia/Tokyo"))
+        val recreated = reader.measurementContext("new", at(1_000))
+        assertEquals(first.periodId, recreated.periodId)
+        assertEquals("UTC", recreated.zoneId)
+        assertEquals(60_000L, reader.record(recreated, 0, at(1_000)).state.usedMs)
+        assertTrue("new" in TimeLimitUsageCodec.readTargetRegistry(disk.values.value[TIME_USAGE_TARGETS]!!))
+    }
+
+    @Test fun PC_71_registryFutureDuplicateAndMissingEntriesStayUnavailable() = runBlocking {
+        val valid = Disk(legacy()); spent(valid)
+        val registry = valid.values.value[TIME_USAGE_TARGETS]!!
+        for (bad in listOf(registry.replaceFirst("K|1", "K|2"), registry + "\nP|app", "K|1\nN|0")) {
+            val broken = valid.values.value.toMutablePreferences().also { it[TIME_USAGE_TARGETS] = bad }
+            val disk = Disk(broken)
+            expectUnavailable(disk)
+            assertEquals(broken, disk.values.value)
+        }
     }
 
     private suspend fun expectUnavailable(disk: Disk) {
