@@ -190,6 +190,12 @@ public struct FlintWebRestrictions: Codable, Equatable, Sendable {
 
 // MARK: - App Group persistence
 
+public enum FlintWebRestrictionRead: Equatable, Sendable {
+    case available(FlintWebRestrictions)
+    case unavailable
+    case busy
+}
+
 extension FlintWebRestrictions {
     /// Namespaced under "flint.*" to match `FlintGroupStore`'s key convention. Lives outside
     /// `FlintGroupStore` itself because that file is a shared/locked scaffold file — same suite,
@@ -206,27 +212,41 @@ extension FlintWebRestrictions {
     /// Production initialization shares the host/extension transition boundary with starts,
     /// edits and pass recovery. A concurrent first save cannot be overwritten by fresh defaults.
     public static func loadForEnforcement() -> FlintWebRestrictions? {
+        guard case let .available(config) = readForEnforcement() else { return nil }
+        return config
+    }
+
+    /// A busy monitor transition is retryable, distinct from unreadable saved intent. UI reads
+    /// never wait out the monitor's lock timeout on the calling thread.
+    public static func readForEnforcement() -> FlintWebRestrictionRead {
         #if canImport(FamilyControls) && canImport(DeviceActivity) && canImport(ManagedSettings)
-        return FlintSessionController().withTransition { loadForEnforcement(from: .flintGroup) } ?? nil
+        return readForEnforcement(load: { loadForEnforcement(from: .flintGroup) }, transition: { body in
+            FlintSessionController().withTransition(timeout: 0) { body(); return true } ?? false
+        })
         #else
-        return loadForEnforcement(from: .flintGroup)
+        return loadForEnforcement(from: .flintGroup).map(FlintWebRestrictionRead.available) ?? .unavailable
         #endif
     }
 
-    /// Only a genuinely fresh installation may interpret missing preferences as opt-out.
-    /// Established-but-missing or unreadable intent preserves the last-good finite keys.
+    static func readForEnforcement(load: () -> FlintWebRestrictions?,
+                                   transition: (() -> Void) -> Bool) -> FlintWebRestrictionRead {
+        var result: FlintWebRestrictions?
+        guard transition({ result = load() }) else { return .busy }
+        return result.map(FlintWebRestrictionRead.available) ?? .unavailable
+    }
+
+    /// Before this domain's marker, older builds persisted only explicit Safari saves. Other
+    /// domains do not prove a web key ever existed: without native web restrictions, migrate
+    /// that legacy opt-out once. After initialization, missing intent is unavailable.
     /// The optional native-store probe keeps isolated persistence tests independent of the OS.
     public static func loadForEnforcement(from defaults: UserDefaults?,
                                           existingWebStores: (() -> Bool)? = nil) -> FlintWebRestrictions? {
         guard let defaults, defaults.synchronize() else { return nil }
         guard let stored = defaults.object(forKey: storageKey) else {
-            let evidence = [initializedMarkerKey, "flint.activeSession", FlintProtectionLedger.initializedMarkerKey]
-                + FlintRuleStoreKey.allCases.flatMap { [$0.marker, $0.rawValue, $0.original,
-                    $0.rawValue + ".quarantine.adr012"] }
-            guard !evidence.contains(where: { defaults.object(forKey: $0) != nil }),
-                  !(existingWebStores?() ?? hasExistingWebStores()) else { return nil }
-            // Persist the positively fresh opt-out before another domain initializes its
-            // ledger/markers. Otherwise the second launch would strand this unsaved default.
+            guard defaults.object(forKey: initializedMarkerKey) == nil,
+                  !(existingWebStores?() ?? hasExistingWebStores(in: defaults)) else { return nil }
+            // A never-configured legacy install and pre-upgrade key loss without an applied
+            // store are indistinguishable. Import the effective opt-out, never a native release.
             return Self.default.save(to: defaults) ? .default : nil
         }
         // Even malformed legacy bytes prove this domain existed. Retain the original bytes
@@ -264,11 +284,17 @@ extension FlintWebRestrictions {
         return defaults.synchronize() && defaults.object(forKey: initializedMarkerKey) != nil
     }
 
-    private static func hasExistingWebStores() -> Bool {
+    private static func hasExistingWebStores(in defaults: UserDefaults) -> Bool {
         #if canImport(ManagedSettings)
         // Read the historical stores and stores identified by surviving native schedules.
         // Store enumeration is unavailable on the app's older supported iOS releases.
         var names: Set<String> = ["flint", "flint.web"]
+        if let data = defaults.data(forKey: FlintRuleStoreKey.schedules.rawValue),
+           let rules = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] {
+            for rule in rules {
+                if let id = rule["id"] as? String { names.insert("flint." + id) }
+            }
+        }
         #if canImport(FamilyControls) && canImport(DeviceActivity)
         for activity in DeviceActivityCenter().activities {
             if let id = FlintRuleActivity.ruleID(activity.rawValue, prefix: FlintRuleStoreKey.schedules.prefix) {

@@ -151,7 +151,7 @@ final class FlintWebRestrictionsTests: XCTestCase {
         }
     }
 
-    func testEstablishedEvidenceWithoutWebMarkerMakesMissingDomainUnavailable() throws {
+    func testUnconfiguredLegacyInstallMigratesOptOutDespiteOtherEstablishedDomains() throws {
         let evidence = ["flint.activeSession", FlintProtectionLedger.initializedMarkerKey]
             + FlintRuleStoreKey.allCases.map(\.marker)
         for key in evidence {
@@ -160,8 +160,10 @@ final class FlintWebRestrictionsTests: XCTestCase {
             defer { defaults.removePersistentDomain(forName: suite) }
             // Presence is evidence even if another domain's value itself is unreadable.
             defaults.set("established", forKey: key)
+            XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), .default, key)
+            XCTAssertNotNil(defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
+            defaults.removeObject(forKey: "flint.webRestrictions")
             XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), key)
-            XCTAssertNil(defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
         }
     }
 
@@ -170,6 +172,20 @@ final class FlintWebRestrictionsTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { true }))
+        XCTAssertNil(defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
+        XCTAssertNil(defaults.object(forKey: "flint.webRestrictions"))
+    }
+
+    func testBusyReadDoesNotLoadOrInitializeAndCanRetry() {
+        var reads = 0
+        let load = { reads += 1; return FlintWebRestrictions.default as FlintWebRestrictions? }
+        XCTAssertEqual(FlintWebRestrictions.readForEnforcement(load: load, transition: { _ in false }), .busy)
+        XCTAssertEqual(reads, 0)
+        XCTAssertEqual(FlintWebRestrictions.readForEnforcement(load: load, transition: { body in body(); return true }),
+                       .available(.default))
+        XCTAssertEqual(reads, 1)
+        XCTAssertEqual(FlintWebRestrictions.readForEnforcement(load: { nil }, transition: { body in body(); return true }),
+                       .unavailable)
     }
 
     func testInvalidSaveCannotInitializeOrReplaceTheDomain() throws {
