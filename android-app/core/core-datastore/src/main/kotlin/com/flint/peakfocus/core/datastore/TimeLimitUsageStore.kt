@@ -47,6 +47,7 @@ class DataStoreTimeLimitUsageStore(
     suspend fun observeForeground(observation: TimeLimitForegroundObservation, isCurrentOwner: () -> Boolean = { true }) {
         dataStore.edit { prefs ->
             if (!observation.closeOnly && !isCurrentOwner()) return@edit
+            dataStore.requireTimeBootstrap(prefs)
             val beforeEditor = if (prepareEditor != null) readTimeLimitEditorDays(prefs) else null
             prepareEditor?.invoke(prefs, clockAtCommit?.invoke() ?: observation.observedAt)
             var ledger = prepareTimeLimitSavedZones(prefs, observation.observedAt, deviceZone())
@@ -118,6 +119,7 @@ class DataStoreTimeLimitUsageStore(
         var result: TimeLimitMeasurementContext? = null
         dataStore.edit { prefs ->
             val stamp = clockAtCommit?.invoke() ?: now
+            dataStore.requireTimeBootstrap(prefs)
             prepareEditor?.invoke(prefs, stamp)
             var ledger = prepareTimeLimitSavedZones(prefs, stamp, deviceZone())
             timeUsageRequire(packageName.isNotBlank() && packageName.length <= OpenCreditLedgerPolicy.MAX_ATOM)
@@ -141,6 +143,7 @@ class DataStoreTimeLimitUsageStore(
         var result: TimeLimitUsageObservation? = null
         dataStore.edit { prefs ->
             val stamp = clockAtCommit?.invoke() ?: now
+            dataStore.requireTimeBootstrap(prefs)
             prepareEditor?.invoke(prefs, stamp)
             val ledger = readTimeLimitUsage(prefs)
             val current = ledger.targets[context.packageName] ?: wireCorrupt()

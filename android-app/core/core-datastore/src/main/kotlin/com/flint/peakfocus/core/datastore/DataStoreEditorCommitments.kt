@@ -284,7 +284,7 @@ class DataStoreEditorCommitmentStore(
         val originalTimeBytes = StrictPrefsCodec.string(prefs, PrefsKeys.TIME_LIMITS).orEmpty()
         val beforeTimes = prefs.editorTimes()
         val rebindTime = (StrictPrefsCodec.long(prefs, EDITOR_VERSION_KEY) ?: 0L) < EDITOR_DOMAIN_VERSION || beforeTimes.any { it.zoneId == null }
-        var timeDays = prepareTimeLimitEditorDays(prefs, previous, now, defaultZone())
+        val timeDays = if (dataStore.hasRequiredTimeBootstrap(prefs)) prepareTimeLimitEditorDays(prefs, previous, now, defaultZone()) else null
         val quota = if (prefs.editorTimes().isNotEmpty() || prefs.editorOpens().isNotEmpty() ||
             StrictPrefsCodec.long(prefs, OPEN_CREDIT_SCHEMA) != null) {
             val zone = previous?.causes?.entries?.firstOrNull { dailyKey(it.key) }?.value?.zoneId ?: defaultZone()

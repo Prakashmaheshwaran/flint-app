@@ -55,6 +55,35 @@ class TimeLimitBootstrapMigrationTest {
         assertFalse(migration.shouldMigrate(recovered))
     }
 
+    @Test fun productionWritersCannotInitializeTimeThroughTheFixtureSeamWhileCaptureIsRetryable() = runBlocking {
+        val values = MutableStateFlow<Preferences>(preferencesOf(PrefsKeys.TIME_LIMITS to "app~30"))
+        val disk = TimeBootstrapRequiredDataStore(object : DataStore<Preferences> {
+            override val data: Flow<Preferences> = values
+            override suspend fun updateData(transform: suspend (Preferences) -> Preferences) = transform(values.value).also { values.value = it }
+        })
+        val editor = DataStoreEditorCommitmentStore(disk, defaultZone = { "UTC" })
+        editor.reconcile(at)
+        assertNull(values.value[TIME_USAGE_SCHEMA])
+        assertNull(values.value[TIME_LIMIT_ZONE_SCHEMA])
+        assertTrue(editor.state.first { it !is com.flint.peakfocus.core.model.StorageState.Loading } is com.flint.peakfocus.core.model.StorageState.Ready)
+        val usage = DataStoreTimeLimitUsageStore(disk, deviceZone = { "UTC" })
+        val before = values.value
+        try { usage.measurementContext("app", at); fail("missing capture initialized Time") }
+        catch (failure: StorageUnavailableException) { assertEquals(StorageFailure.IO, failure.reason) }
+        assertEquals(before, values.value)
+        val shared = DataStoreProtectionTransactionStore(disk, { at }, { "UTC" })
+        assertTrue(shared.transact { ProtectionMutation(it.focus, true) } is ProtectionCommit.Committed)
+        assertNull(values.value[TIME_USAGE_SCHEMA])
+        val migration = TimeLimitBootstrapMigration({ at }, { "GMT+05:30" }, { setOf("legacy-only") })
+        values.value = migration.migrate(values.value)
+        editor.reconcile(at)
+        assertEquals(setOf("app", "legacy-only"), readTimeLimitUsage(values.value).targets.keys)
+        val recoveredDay = usage.measurementContext("app", at).committedDay!!
+        assertEquals("GMT+05:30", recoveredDay.zoneId)
+        assertEquals(66_600_000L, recoveredDay.reset.remainingToResetMs)
+        assertFalse(migration.shouldMigrate(values.value))
+    }
+
     @Test fun PC_56_PC_70_firstOpenCapturesInputsOnceWithoutRewritingEditorOrLegacyAuthority() = runBlocking {
         var zone = "UTC"
         var targets = setOf("legacy-only", "same-target")

@@ -24,6 +24,7 @@ internal class EditorMigratingLimitsStore(
         emitAll(dataStore.data)
     }
     override val timeLimitsState = initialized.storageStates {
+        dataStore.requireTimeBootstrap(it)
         readEditorState(it); readHarderWait(it); validateTimeLimitUsageForRead(it); it.editorTimes()
     }.flowOn(Dispatchers.IO)
     override val openLimitsState = initialized.storageStates { readEditorState(it); readHarderWait(it); it.editorOpens() }
@@ -36,6 +37,7 @@ internal class EditorMigratingLimitsStore(
         dataStore.edit { prefs ->
             val now = clock()
             editor.prepare(prefs, now)
+            dataStore.requireTimeBootstrap(prefs)
             val previous = prefs.editorTimes()
             val next = normalizeTimeLimitMutation(prefs, transform(previous), previous, now, java.util.TimeZone.getDefault().id)
             val raw = PrefsCodec.encodeTimeLimits(next); StrictPrefsCodec.timeLimits(raw)
@@ -48,6 +50,7 @@ internal class EditorMigratingLimitsStore(
         dataStore.edit { prefs ->
             val now = clock()
             editor.prepare(prefs, now)
+            if (time != prefs.editorTimes().singleOrNull { it.packageName == packageName }) dataStore.requireTimeBootstrap(prefs)
             val previous = prefs.editorTimes()
             val times = normalizeTimeLimitMutation(prefs, previous.filterNot { it.packageName == packageName } + listOfNotNull(time), previous, now, java.util.TimeZone.getDefault().id)
             val timeRaw = PrefsCodec.encodeTimeLimits(times)

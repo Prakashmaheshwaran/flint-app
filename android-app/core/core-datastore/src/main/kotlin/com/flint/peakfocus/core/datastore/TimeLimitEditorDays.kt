@@ -55,6 +55,8 @@ internal fun prepareTimeLimitEditorDays(prefs: MutablePreferences, previous: Edi
 private fun seedTimeLimitEditorAnchors(ledger: TimeLimitUsageLedger, previous: EditorCommitmentState?,
     oldQuota: OpenCreditLedger?, now: AccessClockStamp): TimeLimitUsageLedger = ledger.copy(targets = ledger.targets.mapValues { (pkg, row) ->
     val cause = previous?.causes?.get(timeCauseKey(pkg))
+    // Recovery-only placeholders never become reset authority after a retry succeeds.
+    if (cause?.occurrenceId == "time-unavailable") return@mapValues row
     val interval = cause?.interval
     // Reboot conservatively resumes the saved bound, never a changed wall estimate.
     val remaining = interval?.let {
