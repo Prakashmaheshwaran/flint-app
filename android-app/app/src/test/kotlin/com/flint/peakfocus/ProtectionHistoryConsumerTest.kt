@@ -1,6 +1,7 @@
 package com.flint.peakfocus
 
 import com.flint.peakfocus.blocking.engine.HarderWaitPolicy
+import com.flint.peakfocus.blocking.engine.RuleClockProjection
 import com.flint.peakfocus.blocking.overlay.ProtectionStatus
 import com.flint.peakfocus.core.datastore.EditorCommitmentState
 import com.flint.peakfocus.core.datastore.ProtectionCommit
@@ -13,13 +14,20 @@ import com.flint.peakfocus.core.history.FocusHistoryStore
 import com.flint.peakfocus.core.history.HistoryCodec
 import com.flint.peakfocus.core.history.HistoryEvent
 import com.flint.peakfocus.core.history.HistoryEventType
+import com.flint.peakfocus.core.history.HistoryReconciler
+import com.flint.peakfocus.core.history.HistoryRulesSnapshot
 import com.flint.peakfocus.core.history.SessionOutcome
+import com.flint.peakfocus.core.history.historyRulesSnapshot
 import com.flint.peakfocus.core.model.AccessClockStamp
+import com.flint.peakfocus.core.model.BlockRule
+import com.flint.peakfocus.core.model.BlockTargets
 import com.flint.peakfocus.core.model.FocusSnapshot
 import com.flint.peakfocus.core.model.ProtectionBreakEndReason
 import com.flint.peakfocus.core.model.ProtectionLedger
 import com.flint.peakfocus.core.model.ProtectionLifecycleEvent
 import com.flint.peakfocus.core.model.ProtectionLifecycleKind
+import com.flint.peakfocus.core.model.RuleEvaluation
+import com.flint.peakfocus.core.model.RuleRuntime
 import com.flint.peakfocus.core.model.StorageFailure
 import com.flint.peakfocus.core.model.StorageState
 import java.io.File
@@ -28,8 +36,10 @@ import java.time.Instant
 import java.time.ZoneOffset
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -42,7 +52,8 @@ class ProtectionHistoryConsumerTest {
     private fun stamp(at: Long) = AccessClockStamp(at, at - begin, "private-boot-identity")
     private fun store(directory: File = temporary.newFolder(), at: Long = clock.millis()) =
         FocusHistoryStore(directory, Clock.fixed(Instant.ofEpochMilli(at), ZoneOffset.UTC))
-    private fun consumer(store: FocusHistoryStore) = ProtectionHistoryConsumer(store) { ZoneOffset.UTC }
+    private fun consumer(store: FocusHistoryStore, live: () -> Set<String>? = { emptySet() }) =
+        ProtectionHistoryConsumer(store, liveSessionIds = live) { ZoneOffset.UTC }
     private fun start(id: String) = HistoryEvent(type = "started", session = id, at = begin, tz = "UTC",
         plannedEnd = begin + 60 * minute, tier = "harder", source = "manual", name = "Focus")
     private fun pass() = ProtectionLifecycleEvent(
@@ -62,6 +73,13 @@ class ProtectionHistoryConsumerTest {
         id = "break-ended:${start.grantId}", kind = ProtectionLifecycleKind.BREAK_ENDED,
         at = stamp(at), untilEpochMs = null, breakEndReason = reason,
     )
+    private fun accessKinds(): List<ProtectionLifecycleKind> {
+        val kinds = ProtectionLifecycleKind.entries.filter { it.name in setOf("ACCESS_STARTED", "ACCESS_ENDED") }
+        // This branch must compile against the actual merged C API, not a stacked fixture.
+        // Keep future owner enum execution explicitly pending until that additive API lands.
+        assumeTrue("C has not yet supplied ACCESS lifecycle kinds", kinds.size == 2)
+        return kinds
+    }
 
     @Test fun oneGlobalPassReferencesOnlyAffectedSessionsAndEndsOnlyExactTransientScope() = runBlocking {
         val store = store()
@@ -83,6 +101,13 @@ class ProtectionHistoryConsumerTest {
         assertEquals(10 * minute, sessions.getValue("session-b").focusedMs)
         assertEquals(SessionOutcome.ENDED_EARLY, sessions.getValue("session-b").outcome)
         assertEquals(20 * minute, sessions.getValue("session-unaffected").focusedMs)
+        val summary = FocusHistoryAggregator.summarize(store.load(), begin + 20 * minute,
+            ZoneOffset.UTC, setOf("session-a", "session-unaffected"))
+        // Overlapping focus sessions are unioned, while the pass's terminal counts once.
+        assertEquals(20 * minute, summary.days.last().focusedMs)
+        assertEquals(0, summary.days.last().completed)
+        assertEquals(1, summary.days.last().endedEarly)
+        assertTrue(summary.days.last().inProgress)
         val wire = events.joinToString("\n", transform = HistoryCodec::encode)
         for (privateValue in listOf("schedule-a", "limit-a", "private-boot-identity", "elapsedRealtime", "affectedRuleIds"))
             assertFalse(privateValue, wire.contains(privateValue))
@@ -96,6 +121,31 @@ class ProtectionHistoryConsumerTest {
         assertEquals(HistoryEventType.PASS_USED, only.knownType)
         assertEquals(emptyList<String>(), only.sessions)
         assertTrue(FocusHistoryAggregator.sessions(listOf(only), clock.millis(), emptySet()).isEmpty())
+    }
+
+    @Test fun newOrdinaryOnlyPassAfterClearIsAckedWithoutAnUnanchoredOperationRecord() = runBlocking {
+        val clearAt = begin + 20 * minute
+        val store = store(at = clearAt)
+        assertTrue(store.clear(emptySet()))
+        val event = pass().copy(id = "pass:new-ordinary-only", operationId = "new-ordinary-only",
+            affectedRuleIds = setOf("schedule-new"), endedTransientIds = emptySet(),
+            at = stamp(clearAt + minute), untilEpochMs = clearAt + 61 * minute)
+        assertTrue(event.at.wallEpochMs > store.load().clearedAt!!)
+        val owner = Owner(event)
+        // A live ordinary rule cannot establish that its pass operation postdates clear.
+        val adapter = consumer(store) { error("No focus identities require liveness lookup") }
+        owner.deliverLifecycleEvents(adapter::deliver)
+        assertTrue(owner.pending.isEmpty())
+        assertEquals(1, owner.acknowledgements)
+        val snapshot = store.load()
+        assertTrue(snapshot.events.isEmpty())
+        assertEquals("", File(store.directory, "events.v1.jsonl").readText())
+        assertFalse(File(store.directory, "metadata.v1.json").readText().contains(event.operationId))
+        val summary = FocusHistoryAggregator.summarize(snapshot, clearAt + 2 * minute, ZoneOffset.UTC, emptySet())
+        assertTrue(summary.sessions.isEmpty())
+        assertEquals(0L, summary.days.last().focusedMs)
+        assertEquals(0, summary.days.last().completed)
+        assertEquals(0, summary.days.last().endedEarly)
     }
 
     @Test fun breakEndsPairByGrantForEachSessionIncludingEndBeforeStartDelivery() = runBlocking {
@@ -128,6 +178,38 @@ class ProtectionHistoryConsumerTest {
         val events = store.load().events
         assertEquals(setOf("expired", "resumed", "superseded", "recovery"), events.map { it.reason }.toSet())
         assertTrue(events.all { it.session == "session-b" && it.knownType == HistoryEventType.BREAK_ENDED })
+    }
+
+    @Test fun openCreditAccessKindsAcknowledgeWithoutHistoryRecordsOrFocusedTimeChanges() = runBlocking {
+        val kinds = accessKinds()
+        val store = store()
+        assertTrue(store.update { listOf(start("session-a"), start("session-b")) })
+        val before = File(store.directory, "events.v1.jsonl").readBytes()
+        val beforeSummary = FocusHistoryAggregator.summarize(store.load(), begin + 20 * minute,
+            ZoneOffset.UTC, setOf("session-a", "session-b"))
+        for (kind in kinds) {
+            val owner = Owner(breakStart().copy(id = kind.name, kind = kind))
+            owner.deliverLifecycleEvents(consumer(store)::deliver)
+            assertTrue(owner.pending.isEmpty())
+            assertEquals(1, owner.acknowledgements)
+        }
+        assertArrayEquals(before, File(store.directory, "events.v1.jsonl").readBytes())
+        assertEquals(beforeSummary, FocusHistoryAggregator.summarize(store.load(), begin + 20 * minute,
+            ZoneOffset.UTC, setOf("session-a", "session-b")))
+    }
+
+    @Test fun openCreditAccessDoesNotReadHistoryOrZoneEvenWhenHistoryIsUnavailable() = runBlocking {
+        val kinds = accessKinds()
+        val unavailable = temporary.newFile()
+        val before = unavailable.readBytes()
+        for (kind in kinds) {
+            val owner = Owner(breakStart().copy(id = kind.name, kind = kind))
+            val consumer = ProtectionHistoryConsumer(store(unavailable)) { error("No focus projection expected") }
+            owner.deliverLifecycleEvents(consumer::deliver)
+            assertTrue(owner.pending.isEmpty())
+            assertEquals(1, owner.acknowledgements)
+        }
+        assertArrayEquals(before, unavailable.readBytes())
     }
 
     @Test fun replayAfterReopeningStoreAndChangingSetOrderDoesNotDuplicateRecords() = runBlocking {
@@ -279,6 +361,306 @@ class ProtectionHistoryConsumerTest {
         assertEquals(28 * minute, session.focusedMs)
         assertEquals(1, session.breaks)
         assertTrue(owner.pending.isEmpty())
+    }
+
+    @Test fun lateEventsBeyondClearCutoffCannotRestoreRemovedIdentities() = runBlocking {
+        val clearAt = begin + 20 * minute
+        val lateStart = breakStart(at = clearAt + minute)
+        val latePass = pass().copy(at = stamp(clearAt + minute), untilEpochMs = clearAt + 6 * minute)
+        for (event in listOf(latePass, lateStart, breakEnd(lateStart, clearAt + 2 * minute))) {
+            val store = store(at = clearAt)
+            assertTrue(store.update { listOf(start("session-a"), start("session-b")) })
+            assertTrue(store.clear(emptySet()))
+            val reopened = store(store.directory, clearAt)
+            assertTrue(event.at.wallEpochMs > reopened.load().clearedAt!!)
+            val owner = Owner(event)
+            owner.deliverLifecycleEvents(consumer(reopened)::deliver)
+            assertTrue(owner.pending.isEmpty())
+            assertEquals(1, owner.acknowledgements)
+            assertTrue(store(store.directory, clearAt).load().events.isEmpty())
+            assertEquals("", File(store.directory, "events.v1.jsonl").readText())
+        }
+    }
+
+    @Test fun latePassAndBreaksKeepRetainedRunningScopeAndTruthfulSummaryCounts() = runBlocking {
+        val clearAt = begin + 20 * minute
+        val store = store(at = clearAt)
+        assertTrue(store.update { listOf(start("session-a"), start("session-b")) })
+        assertTrue(store.clear(setOf("session-a")))
+        val reopened = store(store.directory, begin + 40 * minute)
+        val breakStart = breakStart(at = begin + 22 * minute)
+        val latePass = pass().copy(at = stamp(begin + 25 * minute), untilEpochMs = begin + 30 * minute)
+        for (event in listOf(breakEnd(breakStart, begin + 24 * minute), breakStart, latePass)) {
+            val owner = Owner(event).apply { failAck = true }
+            owner.deliverLifecycleEvents(consumer(reopened)::deliver)
+            owner.failAck = false
+            owner.deliverLifecycleEvents(consumer(store(store.directory, begin + 40 * minute))::deliver)
+            assertTrue(owner.pending.isEmpty())
+        }
+        val snapshot = reopened.load()
+        assertEquals(4, snapshot.events.size)
+        assertFalse(File(store.directory, "events.v1.jsonl").readText().contains("session-b"))
+        assertEquals(listOf("session-a"), snapshot.events.single { it.knownType == HistoryEventType.PASS_USED }.sessions)
+        val summary = FocusHistoryAggregator.summarize(snapshot, begin + 40 * minute, ZoneOffset.UTC, setOf("session-a"))
+        assertEquals(33 * minute, summary.sessions.single().focusedMs)
+        assertEquals(1, summary.sessions.single().breaks)
+        assertEquals(33 * minute, summary.days.last().focusedMs)
+        assertEquals(0, summary.days.last().completed)
+        assertEquals(0, summary.days.last().endedEarly)
+        assertTrue(summary.days.last().inProgress)
+    }
+
+    @Test fun newStartedIdentityAfterClearStillAdmitsItsPassAndEarlyTerminal() = runBlocking {
+        val clearAt = begin + 20 * minute
+        val store = store(at = clearAt)
+        assertTrue(store.clear(emptySet()))
+        val newId = "session-new"
+        assertTrue(store.append(start(newId).copy(at = clearAt + minute)))
+        val event = pass().copy(affectedRuleIds = setOf(newId, "session-removed"), endedTransientIds = setOf(newId),
+            at = stamp(clearAt + 10 * minute), untilEpochMs = clearAt + 15 * minute)
+        val owner = Owner(event)
+        owner.deliverLifecycleEvents(consumer(store)::deliver)
+        assertTrue(owner.pending.isEmpty())
+        val snapshot = store.load()
+        assertEquals(listOf(newId), snapshot.events.single { it.knownType == HistoryEventType.PASS_USED }.sessions)
+        val summary = FocusHistoryAggregator.summarize(snapshot, clearAt + 20 * minute, ZoneOffset.UTC, emptySet())
+        assertEquals(9 * minute, summary.days.last().focusedMs)
+        assertEquals(0, summary.days.last().completed)
+        assertEquals(1, summary.days.last().endedEarly)
+        assertEquals(SessionOutcome.ENDED_EARLY, summary.sessions.single().outcome)
+        assertFalse(File(store.directory, "events.v1.jsonl").readText().contains("session-removed"))
+    }
+
+    @Test fun rollbackClearKeepsCommittedHighWaterAndAcknowledgesLaterOrphanReplay() = runBlocking {
+        val store = store()
+        assertTrue(store.update { listOf(start("session-a"), start("session-b")) })
+        val owner = Owner(pass()).apply { failAck = true }
+        owner.deliverLifecycleEvents(consumer(store)::deliver)
+        val rolledBack = store(store.directory, begin + 5 * minute)
+        assertTrue(rolledBack.clear(emptySet()))
+        assertEquals(pass().at.wallEpochMs, rolledBack.load().clearedAt)
+        owner.failAck = false
+        owner.deliverLifecycleEvents(consumer(rolledBack)::deliver)
+        val late = Owner(breakEnd(breakStart(), begin + 30 * minute))
+        late.deliverLifecycleEvents(consumer(rolledBack)::deliver)
+        assertTrue(owner.pending.isEmpty() && late.pending.isEmpty())
+        assertTrue(store(store.directory, begin + 5 * minute).load().events.isEmpty())
+    }
+
+    @Test fun liveNewSessionBreakDefersBeforeStartedThenRetriesWithoutInventingOrDuplicatingTime() = runBlocking {
+        val clearAt = begin + 20 * minute
+        val store = store(at = clearAt)
+        assertTrue(store.clear(emptySet()))
+        val id = "session-new"
+        val event = breakStart(at = clearAt + 2 * minute).copy(affectedRuleIds = setOf(id))
+        val owner = Owner(event)
+        val adapter = consumer(store) { setOf(id) }
+        owner.deliverLifecycleEvents(adapter::deliver)
+        assertEquals(setOf(event.id), owner.pending.keys)
+        assertEquals(0, owner.acknowledgements)
+        assertTrue(store.load().events.isEmpty())
+        assertFalse(store.load().degraded)
+        assertTrue(store.append(start(id).copy(at = clearAt + minute)))
+        owner.deliverLifecycleEvents(adapter::deliver)
+        assertTrue(owner.pending.isEmpty())
+        assertEquals(1, owner.acknowledgements)
+        val beforeReplay = File(store.directory, "events.v1.jsonl").readBytes()
+        assertTrue(consumer(store(store.directory, clearAt)) { setOf(id) }.deliver(event))
+        assertArrayEquals(beforeReplay, File(store.directory, "events.v1.jsonl").readBytes())
+        val summary = FocusHistoryAggregator.summarize(store.load(), clearAt + 10 * minute, ZoneOffset.UTC, setOf(id))
+        assertEquals(2, store.load().events.size)
+        assertEquals(4 * minute, summary.days.last().focusedMs)
+        assertEquals(1, summary.sessions.single().breaks)
+        assertEquals(0, summary.days.last().completed)
+        assertEquals(0, summary.days.last().endedEarly)
+    }
+
+    @Test fun mixedGlobalPassCannotAckOrPartiallyWriteWhileAnyLiveStartIsUndelivered() = runBlocking {
+        val clearAt = begin + 20 * minute
+        val store = store(at = clearAt)
+        assertTrue(store.update { listOf(start("session-a"), start("session-removed")) })
+        assertTrue(store.clear(setOf("session-a")))
+        val event = pass().copy(affectedRuleIds = setOf("session-a", "session-new", "session-removed", "schedule-a"),
+            endedTransientIds = setOf("session-new"), at = stamp(clearAt + 5 * minute), untilEpochMs = clearAt + 10 * minute)
+        val owner = Owner(event)
+        val consumer = consumer(store) { setOf("session-new", "session-a") }
+        val before = File(store.directory, "events.v1.jsonl").readBytes()
+        owner.deliverLifecycleEvents(consumer::deliver)
+        assertEquals(setOf(event.id), owner.pending.keys)
+        assertEquals(0, owner.acknowledgements)
+        assertArrayEquals(before, File(store.directory, "events.v1.jsonl").readBytes())
+        assertTrue(store.append(start("session-new").copy(at = clearAt + minute)))
+        owner.failAck = true
+        owner.deliverLifecycleEvents(consumer::deliver)
+        val committed = File(store.directory, "events.v1.jsonl").readBytes()
+        assertEquals(4, store.load().events.size)
+        owner.failAck = false
+        owner.deliverLifecycleEvents(consumer::deliver)
+        assertTrue(owner.pending.isEmpty())
+        assertArrayEquals(committed, File(store.directory, "events.v1.jsonl").readBytes())
+        val snapshot = store.load()
+        assertEquals(listOf("session-a", "session-new"), snapshot.events.single { it.knownType == HistoryEventType.PASS_USED }.sessions)
+        assertEquals("session-new", snapshot.events.single { it.knownType == HistoryEventType.ENDED_EARLY }.session)
+        assertFalse(committed.toString(Charsets.UTF_8).contains("session-removed"))
+        val summary = FocusHistoryAggregator.summarize(snapshot, begin + 40 * minute, ZoneOffset.UTC, setOf("session-a"))
+        assertEquals(35 * minute, summary.days.last().focusedMs)
+        assertEquals(0, summary.days.last().completed)
+        assertEquals(1, summary.days.last().endedEarly)
+    }
+
+    @Test fun unknownOwnerStateRetainsOrphanUntilRemovalIsPositivelyKnown() = runBlocking {
+        val clearAt = begin + 20 * minute
+        val store = store(at = clearAt)
+        assertTrue(store.update { listOf(start("session-a"), start("session-b")) })
+        assertTrue(store.clear(emptySet()))
+        val event = breakStart(at = clearAt + minute)
+        val owner = Owner(event)
+        var state: StorageState<List<BlockRule>> = StorageState.Loading
+        val consumer = consumer(store) { liveProtectionHistorySessions(state, clearAt) }
+        owner.deliverLifecycleEvents(consumer::deliver)
+        state = StorageState.Unavailable(StorageFailure.IO)
+        owner.deliverLifecycleEvents(consumer::deliver)
+        assertEquals(setOf(event.id), owner.pending.keys)
+        assertEquals(0, owner.acknowledgements)
+        assertTrue(store.load().events.isEmpty())
+        assertFalse(store.load().degraded)
+        state = StorageState.Ready(emptyList())
+        owner.deliverLifecycleEvents(consumer::deliver)
+        assertTrue(owner.pending.isEmpty())
+        assertEquals(1, owner.acknowledgements)
+        assertTrue(store.load().events.isEmpty())
+    }
+
+    @Test fun retainedStartsDoNotRequireAnotherLiveOwnerRead() = runBlocking {
+        val store = store(at = begin + 20 * minute)
+        assertTrue(store.append(start("session-a")))
+        assertTrue(store.clear(setOf("session-a")))
+        val event = breakStart().copy(affectedRuleIds = setOf("session-a"))
+        val owner = Owner(event)
+        val adapter = consumer(store) { error("Retained start already proves admission") }
+        owner.deliverLifecycleEvents(adapter::deliver)
+        assertTrue(owner.pending.isEmpty())
+        assertEquals(2, store.load().events.size)
+    }
+
+    @Test fun failedLiveOwnerReadRetainsTheEventWithoutClaimingHistoryCorruption() = runBlocking {
+        val store = store(at = begin + 20 * minute)
+        assertTrue(store.clear(emptySet()))
+        val event = breakStart()
+        val owner = Owner(event)
+        val adapter = consumer(store) { throw java.io.IOException("Owner projection unavailable") }
+        owner.deliverLifecycleEvents(adapter::deliver)
+        assertEquals(setOf(event.id), owner.pending.keys)
+        assertEquals(0, owner.acknowledgements)
+        assertTrue(store.load().events.isEmpty())
+        assertFalse(store.load().degraded)
+    }
+
+    @Test fun cancellationDuringLiveAdmissionPropagatesWithoutAcknowledgement() = runBlocking {
+        val store = store(at = begin + 20 * minute)
+        assertTrue(store.clear(emptySet()))
+        val event = breakStart()
+        val owner = Owner(event)
+        val adapter = consumer(store) { throw CancellationException("Cancelled public owner read") }
+        try { owner.deliverLifecycleEvents(adapter::deliver); fail("Cancellation was swallowed") }
+        catch (_: CancellationException) { }
+        assertEquals(setOf(event.id), owner.pending.keys)
+        assertEquals(0, owner.acknowledgements)
+        assertTrue(store.load().events.isEmpty())
+        assertFalse(store.load().degraded)
+    }
+
+    @Test fun publicLiveProjectionKeepsUnknownDistinctFromRemovedAndExcludesExpiredRules() {
+        assertNull(liveProtectionHistorySessions(StorageState.Loading, begin))
+        assertNull(liveProtectionHistorySessions(StorageState.Unavailable(StorageFailure.IO), begin))
+        assertEquals(emptySet<String>(), liveProtectionHistorySessions(StorageState.Ready(emptyList()), begin))
+        val active = BlockRule("session-live", "Focus", BlockTargets(), expiresAtEpochMs = begin + minute)
+        val expired = active.copy(id = "session-expired", expiresAtEpochMs = begin)
+        val disabled = active.copy(id = "session-disabled", enabled = false)
+        val ordinary = active.copy(id = "schedule-a")
+        val runtime = RuleRuntime("occurrence-a", stamp(begin), minute, begin + minute, "UTC", stamp(begin),
+            evaluation = RuleEvaluation(true, begin + minute, begin + minute))
+        // Public runtime authority wins over the stale raw template in both directions.
+        val anchored = expired.copy(id = "session-anchored", runtime = runtime)
+        val inactive = active.copy(id = "session-inactive", runtime = runtime.copy(
+            evaluation = RuleEvaluation(false, null, null)))
+        assertEquals(setOf(active.id, anchored.id), liveProtectionHistorySessions(
+            StorageState.Ready(listOf(active, expired, disabled, ordinary, anchored, inactive)), begin))
+        val unprojected = active.copy(runtime = runtime.copy(evaluation = null))
+        assertNull(liveProtectionHistorySessions(StorageState.Ready(listOf(unprojected)), begin))
+        assertEquals(HistoryRulesSnapshot.Loading, historyRulesSnapshot(StorageState.Ready(listOf(unprojected))))
+        val history = historyRulesSnapshot(StorageState.Ready(listOf(active, expired, disabled, ordinary, anchored, inactive)))
+            as HistoryRulesSnapshot.Ready
+        assertEquals(setOf(anchored.id), history.rules.filter { it.ownerActive == true }.map { it.id }.toSet())
+        assertEquals(setOf(inactive.id), history.ownerInactiveIds)
+    }
+
+    @Test fun nativeForwardClockProjectionObserverAndClearRetainStartWithoutInventingCoverage() = runBlocking {
+        forwardClockObserverClearAndRetry(native = true)
+    }
+
+    @Test fun nativeForwardClockBreakWithoutOwnerUncertaintyFlagCannotInventCoverageEither() = runBlocking {
+        forwardClockObserverClearAndRetry(native = true, timeUncertain = false)
+    }
+
+    @Test fun legacyForwardClockProjectionObserverUsesObservationTimeBeforeClearAndRetry() = runBlocking {
+        forwardClockObserverClearAndRetry(native = false)
+    }
+
+    private suspend fun forwardClockObserverClearAndRetry(native: Boolean, timeUncertain: Boolean = true) {
+        val anchor = stamp(begin)
+        val now = AccessClockStamp(begin + 120 * minute, minute, anchor.bootSessionId)
+        val id = if (native) "session-timer-$begin-forward-clock" else "session-forward-clock"
+        val end = begin + 10 * minute
+        val raw = BlockRule(id, "Focus", BlockTargets(), expiresAtEpochMs = end,
+            runtime = RuleRuntime(id, anchor, 10 * minute, end, "UTC", anchor))
+        val projected = RuleClockProjection.project(raw, now)
+        assertTrue(projected.runtime!!.evaluation!!.active)
+        assertEquals(end, projected.runtime!!.wallEndEpochMs)
+        assertTrue(end < now.wallEpochMs)
+        assertTrue(projected.expiresAtEpochMs!! > now.wallEpochMs)
+        var state = StorageState.Ready(listOf(projected))
+        assertEquals(setOf(id), liveProtectionHistorySessions(state, now.wallEpochMs))
+        val store = store(at = now.wallEpochMs)
+        assertTrue(store.clear(emptySet()))
+        val eventAt = now.copy(wallEpochMs = now.wallEpochMs + minute, elapsedRealtimeMs = now.elapsedRealtimeMs + minute)
+        val event = breakStart(at = eventAt.wallEpochMs).copy(at = eventAt, affectedRuleIds = setOf(id), timeUncertain = timeUncertain)
+        val owner = Owner(event)
+        val adapter = consumer(store) { liveProtectionHistorySessions(state, now.wallEpochMs) }
+        owner.deliverLifecycleEvents(adapter::deliver)
+        assertEquals(setOf(event.id), owner.pending.keys)
+        assertEquals(0, owner.acknowledgements)
+        assertTrue(store.load().events.isEmpty())
+        // The actual observer supplies STARTED from public owner activity, preserving
+        // the committed logical endpoint and recording no unobserved historical prefix.
+        val observer = HistoryReconciler(store, Clock.fixed(Instant.ofEpochMilli(now.wallEpochMs), ZoneOffset.UTC),
+            { ZoneOffset.UTC }, authoritativeSnapshot = { historyRulesSnapshot(state) })
+        observer.collectSnapshots(flowOf(historyRulesSnapshot(state)))
+        assertEquals(setOf(id), observer.activeSessionIds.value)
+        val started = store.load().events.single()
+        assertEquals("started", started.type)
+        assertEquals(if (native) begin else now.wallEpochMs, started.at)
+        assertEquals(end, started.plannedEnd)
+        assertTrue(store.clear(observer.activeSessionIds.value))
+        assertEquals(listOf(started), store.load().events)
+        owner.deliverLifecycleEvents(adapter::deliver)
+        assertTrue(owner.pending.isEmpty())
+        assertEquals(1, owner.acknowledgements)
+        val snapshot = store.load()
+        assertEquals(listOf("started", "break_started"), snapshot.events.map { it.type })
+        assertEquals(end, snapshot.events.first().plannedEnd)
+        assertEquals(timeUncertain, snapshot.events.last().inferred)
+        assertEquals(0L, FocusHistoryAggregator.sessions(snapshot.events, now.wallEpochMs + 8 * minute, setOf(id)).single().focusedMs)
+
+        val ended = RuleClockProjection.project(raw, now.copy(elapsedRealtimeMs = 11 * minute))
+        assertFalse(ended.runtime!!.evaluation!!.active)
+        state = StorageState.Ready(listOf(ended))
+        observer.collectSnapshots(flowOf(historyRulesSnapshot(state)))
+        assertTrue(observer.activeSessionIds.value.isEmpty())
+        assertTrue(store.clear(observer.activeSessionIds.value))
+        assertTrue(store.load().events.isEmpty())
+        assertTrue(adapter.deliver(event))
+        assertTrue(store.load().events.isEmpty())
     }
 
     @Test fun cancellationDuringProjectionPropagatesAndDoesNotAcknowledge() = runBlocking {

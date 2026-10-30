@@ -36,9 +36,10 @@ class FocusHistoryGlanceReader internal constructor(
 }
 
 internal fun focusGlanceReading(summary: FocusSummary?, today: LocalDate, resources: Resources? = null): FocusTodayReading = FocusTodayReading(
-    text = FocusHistoryText.today(summary),
+    text = FocusHistoryText.today(summary, resources),
     // Keep F's availability wording; progress is qualified separately for cached surfaces.
-    note = FocusHistoryText.note(summary, days = summary?.days?.takeLast(1).orEmpty().map { it.copy(inProgress = false) }, resources = resources),
+    note = FocusHistoryText.note(summary,
+        days = summary?.days?.takeLast(1).orEmpty().map { it.copy(inProgress = false) }, resources = resources),
     day = summary?.days?.lastOrNull()?.date ?: today,
     inProgress = summary?.days?.lastOrNull()?.inProgress == true,
 )

@@ -41,7 +41,13 @@ object FocusHistoryBridge {
     suspend fun clear(context: Context): Boolean {
         val observer = reconciler ?: return false
         if (!observer.ready.value || observer.diagnostic.value != null) return false
-        return store(context).clear(observer.activeSessionIds.value)
+        return store(context).clear {
+            // Read fresh owner authority under clear's history lock. A lagging observer
+            // or a past logical plan must not discard an actually running STARTED.
+            val latest = historyRulesSnapshot(ActiveRulesHolder.dataStoreState)
+            if (latest !is HistoryRulesSnapshot.Ready) null else latest.rules
+                .filter { it.isActiveAt(System.currentTimeMillis()) }.mapTo(mutableSetOf()) { it.id }
+        }
     }
 
     suspend fun retry(context: Context): Boolean = withContext(Dispatchers.IO) {
