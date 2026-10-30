@@ -86,9 +86,10 @@ public enum FlintOpenCredit {
         let grants = fallbackGrants(peek: FlintProtectionLedger.appGroup().flatMap { try? $0.peek().get() })
         let now = FlintLedgerInstant(clock: .system)
         let center = DeviceActivityCenter()
-        let adding = shieldAdditions(for: rule, grants: grants, at: now, registered: {
+        var adding = shieldAdditions(for: rule, grants: grants, at: now, registered: {
             center.schedule(for: DeviceActivityName($0)) != nil
         })
+        adding.selection = FlintOrdinaryBreaks.filteredSelection(adding.selection, storeName: rule.storeName)
         return FlintRuleShield.add(adding)
     }
 
@@ -319,8 +320,9 @@ public enum FlintOpenCredit {
                   center.schedule(for: DeviceActivityName(grant.activityName)) != nil else { return false }
             return true
         }
-        let apps = rule.selection.applicationTokens.filter { !covered(FlintOpenLimit.key(for: $0)) }
-        let domains = rule.selection.webDomainTokens.filter { !covered(FlintOpenLimit.key(for: $0)) }
+        let selection = FlintOrdinaryBreaks.filteredSelection(rule.selection, storeName: rule.storeName)
+        let apps = selection.applicationTokens.filter { !covered(FlintOpenLimit.key(for: $0)) }
+        let domains = selection.webDomainTokens.filter { !covered(FlintOpenLimit.key(for: $0)) }
         store.shield.applications = apps.isEmpty ? nil : apps
         store.shield.webDomains = domains.isEmpty ? nil : domains
         // Unsupported legacy Open categories remain saved but unarmed; no category release.

@@ -65,8 +65,19 @@ struct SessionView: View {
                 BreakWaitView(wait: wait, onBack: vm.cancelStop, onStop: vm.confirmStop)
             }
         }
+        .fullScreenCover(isPresented: Binding(get: { vm.breakWait != nil }, set: { if !$0 { vm.cancelBreak() } })) {
+            if let wait = vm.breakWait {
+                BreakWaitView(wait: wait, onBack: vm.cancelBreak, onStop: vm.confirmBreak,
+                    finalAction: "Take a 5-minute break", heading: "Harder · Break requested",
+                    explanation: "After the wait, confirm up to 5 minutes of access. The session keeps running. Going back cancels the wait without spending it.")
+            }
+        }
+        .alert("Take a 5-minute break", isPresented: $vm.confirmingBreak) {
+            Button("Cancel", role: .cancel, action: vm.cancelBreak)
+            Button("Take a 5-minute break", action: vm.confirmBreak)
+        } message: { Text(vm.breakPreview) }
         .preferredColorScheme(.dark)
-        .onAppear(perform: refreshPassStatus)
+        .onAppear { refreshPassStatus(); vm.refreshBreakStatus() }
         .onChange(of: scenePhase) { phase in if phase == .active { refreshPassStatus() } }
         .onReceive(NotificationCenter.default.publisher(for: .flintProtectionReconciled)) { _ in refreshPassStatus() }
         .onReceive(Timer.publish(every: 15, on: .main, in: .common).autoconnect()) { _ in refreshPassStatus() }
@@ -81,13 +92,28 @@ struct SessionView: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(levelName(active.breakLevel)).font(FlintFont.text(14, weight: .medium)).foregroundStyle(FlintBrand.bone)
-                    Text(levelLine(active.breakLevel)).font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
+                    Text(vm.stopPreview).font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
                 }
                 Spacer(minLength: 0)
                 if active.breakLevel != .hardcore {
-                    Button("End session") { vm.stop() }.buttonStyle(GhostButtonStyle())
+                    Button("End early") { vm.stop() }.buttonStyle(GhostButtonStyle())
                 }
             }
+            if vm.ordinaryBreak != nil {
+                HStack {
+                    Text(vm.ordinaryBreak?.applicationPending == true ? "Applying break" : "Break · \(Self.clock(vm.breakRemaining)) left").flintSecondary(14)
+                    Spacer()
+                    Button("Resume now", action: vm.resumeBreakNow).buttonStyle(GhostButtonStyle())
+                }
+            } else {
+                Button(action: vm.requestBreak) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Take a 5-minute break").font(FlintFont.text(14, weight: .medium))
+                        Text(vm.breakPreview).font(FlintFont.text(12))
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }.buttonStyle(GhostButtonStyle())
+            }
+            if let error = vm.errorText { Text(error).flintSecondary(12).accessibilityIdentifier("session.action.error") }
             Button {
                 refreshPassStatus()
                 withAnimation(.easeOut(duration: 0.3)) { showPass = true }
@@ -219,6 +245,9 @@ struct BreakWaitView: View {
     let wait: SessionViewModel.HarderStop
     let onBack: () -> Void
     let onStop: () -> Void
+    var finalAction = "End early"
+    var heading = "Harder · End early requested"
+    var explanation = "After the wait, confirm End early. If the urge has passed, go back — that doesn't count against you."
 
     @State private var now = Date()
     @State private var breathe = false
@@ -237,12 +266,12 @@ struct BreakWaitView: View {
         ZStack {
             FlintBrand.night.ignoresSafeArea()
             VStack(spacing: 0) {
-                Text("Harder · Stop requested").flintEyebrow().padding(.top, 60)
+                Text(heading).flintEyebrow().padding(.top, 60)
                 Text("Breathe while you wait.")
                     .flintTitle(30)
                     .multilineTextAlignment(.center)
                     .padding(.top, 18)
-                Text("Ending early opens when the ring closes. If the urge has passed by then, go back — that doesn't count against you.")
+                Text(explanation)
                     .flintSecondary(15)
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)
@@ -269,12 +298,12 @@ struct BreakWaitView: View {
                 }
                 .frame(width: 280, height: 280)
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(left > 0 ? "\(Int(left.rounded())) seconds until you can end the session" : "You can end the session now")
+                .accessibilityLabel(left > 0 ? "\(Int(left.rounded())) seconds until \(finalAction)" : "\(finalAction) is ready to confirm")
                 Spacer()
 
                 VStack(spacing: 8) {
                     Button("I’m good, go back", action: onBack).buttonStyle(BoneButtonStyle())
-                    Button(left > 0 ? "End session · in \(SessionView.clock(left))" : "End session", action: onStop)
+                    Button(left > 0 ? "\(finalAction) · in \(SessionView.clock(left))" : finalAction, action: onStop)
                         .buttonStyle(QuietButtonStyle())
                         .overlay(Capsule().strokeBorder(FlintBrand.bone(0.12)))
                         .disabled(left > 0)

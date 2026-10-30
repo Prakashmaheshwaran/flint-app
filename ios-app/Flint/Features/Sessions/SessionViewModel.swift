@@ -37,6 +37,24 @@ final class SessionViewModel: ObservableObject {
     @Published private(set) var needsProtectionResume = false
     /// A Harder early stop in progress: the persisted wait (ADR-012 §4) and its end.
     @Published private(set) var harderStop: HarderStop?
+    @Published private(set) var breakWait: HarderStop?
+    @Published private(set) var ordinaryBreak: FlintOrdinaryGrantState.Record?
+    @Published private(set) var breakRemaining: TimeInterval = 0
+    @Published private(set) var breakPreview = "Access unavailable"
+    @Published var confirmingBreak = false
+    private var breakRequest: FlintBreakAuthorization.Request?
+
+    var stopPreview: String {
+        guard let active else { return "Not running" }
+        switch active.breakLevel {
+        case .easy: return "Tap End early to end this session now."
+        case .hardcore: return "No early end; wait until it ends or use an available Emergency Pass."
+        case .harder:
+            guard case let .success(state)? = FlintProtectionLedger.appGroup()?.peek() else { return "Protection state unavailable" }
+            let wait = FlintProtectionPolicy.harderWait(forCount: state.harder[active.id]?.committedCount ?? 0)
+            return "Wait \(Int(wait / 60)) minutes, then confirm End early."
+        }
+    }
 
     enum HarderStop: Equatable {
         /// The wait is running until `until`; `total` drives the ring.
@@ -218,7 +236,60 @@ final class SessionViewModel: ObservableObject {
     /// starts or resumes its persisted wait; Hardcore is refused.
     func stop() {
         guard let active else { return }
+        cancelBreak()
         apply(controller.requestStop(route: .manualStop, confirmed: active.breakLevel == .easy))
+    }
+
+    func requestBreak() {
+        if harderStop != nil { cancelStop() }
+        applyBreak(controller.requestBreak())
+    }
+
+    func confirmBreak() {
+        guard let breakRequest else { return }
+        applyBreak(controller.confirmBreak(breakRequest))
+    }
+
+    func cancelBreak() {
+        if let breakRequest { controller.cancelBreak(breakRequest) }
+        breakRequest = nil; breakWait = nil; confirmingBreak = false
+    }
+
+    func resumeBreakNow() {
+        guard let ordinaryBreak else { return }
+        if !controller.resumeBreakNow(grantID: ordinaryBreak.grant.id) { errorText = "Access unavailable" }
+        refreshBreakStatus()
+    }
+
+    func refreshBreakStatus() {
+        guard active?.monitorName != "preview" else { return }
+        ordinaryBreak = FlintOrdinaryBreaks.activeRecord()
+        breakRemaining = ordinaryBreak?.remaining(at: .init(clock: .system)) ?? 0
+        breakPreview = FlintOrdinaryBreaks.previewForCurrentSession()
+    }
+
+    private func applyBreak(_ outcome: FlintBreakOutcome) {
+        errorText = nil
+        switch outcome {
+        case let .waiting(request, remaining, total):
+            breakRequest = request; breakWait = .waiting(until: Date().addingTimeInterval(remaining), total: total)
+            confirmingBreak = false
+        case let .confirmation(request):
+            breakRequest = request
+            if let breakWait { self.breakWait = .ready(total: breakWait.total) }
+            else { confirmingBreak = true }
+        case let .active(record, remaining):
+            breakRequest = nil; breakWait = nil; confirmingBreak = false
+            ordinaryBreak = record; breakRemaining = remaining
+            NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
+        case let .ended(reason):
+            breakRequest = nil; breakWait = nil; confirmingBreak = false
+            errorText = reason == .reboot ? "Access ended after restart; no extra credit was spent." : "Access ended. No extra credit was spent."
+            refreshBreakStatus()
+        case let .refused(error):
+            errorText = error.localizedDescription
+            if error == .pendingMismatch || error == .expiredRequest { cancelBreak() }
+        }
     }
 
     /// The final confirmation once a Harder wait has passed.
@@ -293,6 +364,10 @@ final class SessionViewModel: ObservableObject {
         // Logical time, as enforcement uses it: a wall-clock change can't end the UI's block
         // while shields stay armed (ADR-012 §9).
         remaining = active.logicalRemaining(clock: .system) ?? 0
+        if let record = ordinaryBreak {
+            breakRemaining = record.remaining(at: .init(clock: .system))
+            if breakRemaining <= 0 { FlintOrdinaryBreaks.reconcile(); refreshBreakStatus() }
+        }
         if active.isLogicallyExpired(clock: .system) {
             // On a real device the monitor clears the shield; mirror that here for the UI and as
             // a fallback (the Simulator doesn't run the monitor extension).

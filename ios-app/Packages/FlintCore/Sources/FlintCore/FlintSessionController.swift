@@ -255,6 +255,7 @@ public struct FlintSessionEnvironment {
     /// Fault seam for interrupted acceptance; the committed installing generation survives.
     public var afterStartCommit: () throws -> Void
     public var afterStartApplied: () throws -> Void
+    public var reconcileOrdinaryBreaks: () -> Void
 
     public init(
         store: @escaping () -> FlintSessionStateStoring?,
@@ -274,7 +275,8 @@ public struct FlintSessionEnvironment {
         prepareNewSession: @escaping (String?) -> Result<Void, FlintEmergencyPassError> = { _ in .success(()) },
         recoveryGate: @escaping () -> FlintPassRecoveryGate = { .enforcing },
         afterStartCommit: @escaping () throws -> Void = {},
-        afterStartApplied: @escaping () throws -> Void = {}
+        afterStartApplied: @escaping () throws -> Void = {},
+        reconcileOrdinaryBreaks: @escaping () -> Void = {}
     ) {
         self.store = store
         self.shield = shield
@@ -294,6 +296,7 @@ public struct FlintSessionEnvironment {
         self.recoveryGate = recoveryGate
         self.afterStartCommit = afterStartCommit
         self.afterStartApplied = afterStartApplied
+        self.reconcileOrdinaryBreaks = reconcileOrdinaryBreaks
     }
 
     public static var live: FlintSessionEnvironment {
@@ -313,7 +316,8 @@ public struct FlintSessionEnvironment {
             transitionLock: { FlintSessionTransitionLock.appGroup() },
             reconcileEmergencyPass: { FlintEmergencyPassController.prepareForPolicyMutation() },
             prepareNewSession: { FlintEmergencyPassController().prepareForNewSession(focusOwnerID: $0) },
-            recoveryGate: { FlintPassRecoveryGate.read() }
+            recoveryGate: { FlintPassRecoveryGate.read() },
+            reconcileOrdinaryBreaks: { FlintOrdinaryBreaks.policyDidChange() }
         )
     }
 }
@@ -804,6 +808,7 @@ public final class FlintSessionController {
             env.registrar.stopMonitoring([previous.monitorName])
         }
         try env.afterStartApplied()
+        env.reconcileOrdinaryBreaks()
 
         FlintSessionHealth.update(in: env.healthDefaults()) {
             $0.lastArmFailure = nil
@@ -817,6 +822,11 @@ public final class FlintSessionController {
     }
 
     // MARK: Stop
+
+    public func requestBreak() -> FlintBreakOutcome { FlintOrdinaryBreaks.requestForCurrentSession() }
+    public func confirmBreak(_ request: FlintBreakAuthorization.Request) -> FlintBreakOutcome { FlintOrdinaryBreaks.confirm(request) }
+    public func cancelBreak(_ request: FlintBreakAuthorization.Request) { FlintOrdinaryBreaks.cancel(request) }
+    public func resumeBreakNow(grantID: String) -> Bool { FlintOrdinaryBreaks.resumeNow(grantID: grantID) }
 
     /// Whether an in-app stop is possible at all (immediately for Easy, after the persisted wait
     /// for Harder). Hardcore can't be stopped early — expiry or an Emergency Pass are its exits.
@@ -951,6 +961,7 @@ public final class FlintSessionController {
         store.clearActiveSession()
         store.clearSessionSelection()
         env.registrar.stopMonitoring([session.monitorName])
+        env.reconcileOrdinaryBreaks()
         // The session's Harder count ends with it (a new session starts from zero, §4); its
         // committed-operation records stay in the ledger's bounded memory.
         env.publishStatus()
@@ -1115,6 +1126,7 @@ public final class FlintSessionController {
             return busy
         }
         defer { endTransition(transition) }
+        defer { env.reconcileOrdinaryBreaks() }
         guard env.reconcileEmergencyPass() else {
             var applying = FlintSessionReconcileReport(outcome: finishNaturalEndWithoutOutcome() ? .finishedExpired : .running)
             applying.recoveryApplying = true
@@ -1342,6 +1354,7 @@ public final class FlintSessionController {
         // registration missing or drifted and repairs it; shields stay on meanwhile.
         guard let transition = beginTransition(timeout: env.monitorLockTimeout) else { return }
         defer { endTransition(transition) }
+        defer { env.reconcileOrdinaryBreaks() }
         // The monitor's callbacks are the app-closed path: always republish what they changed
         // (unchanged content skips the widget reload).
         defer { env.publishStatus() }

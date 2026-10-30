@@ -106,6 +106,8 @@ public struct FlintLedgerState: Codable, Equatable, Sendable {
     /// The accompanying schema marker distinguishes legacy absence from stripped authority.
     public var sessionAuthority: FlintSessionAuthority?
     public var sessionAuthorityVersion: Int?
+    /// Additive on v2/v3. Absence means this build has never accepted an ordinary grant.
+    public var ordinaryGrants: FlintOrdinaryGrantState?
 
     public init(initializedAt: Date) {
         version = Self.currentVersion
@@ -120,12 +122,14 @@ public struct FlintLedgerState: Codable, Equatable, Sendable {
         passSuppressedFocusOwners = nil
         sessionAuthority = FlintSessionAuthority(initializedAt: initializedAt)
         sessionAuthorityVersion = 1
+        ordinaryGrants = nil
     }
 
     private enum CodingKeys: String, CodingKey {
         case version, initializedAt, migrations, pass, harder, operations, openCredits
         case emergencyRecovery, passLimitThresholds, passSuppressedFocusOwners
         case sessionAuthority, sessionAuthorityVersion
+        case ordinaryGrants
     }
 
     public init(from decoder: Decoder) throws {
@@ -146,6 +150,7 @@ public struct FlintLedgerState: Codable, Equatable, Sendable {
         passLimitThresholds = try values.decodeIfPresent([String: FlintPassLimitThreshold].self, forKey: .passLimitThresholds)
         passSuppressedFocusOwners = try values.decodeIfPresent(Set<String>.self, forKey: .passSuppressedFocusOwners)
         sessionAuthority = try values.decodeIfPresent(FlintSessionAuthority.self, forKey: .sessionAuthority)
+        ordinaryGrants = try values.decodeIfPresent(FlintOrdinaryGrantState.self, forKey: .ordinaryGrants)
         sessionAuthorityVersion = values.contains(.sessionAuthorityVersion)
             ? try values.decode(Int.self, forKey: .sessionAuthorityVersion) : nil
         if oldVersion >= 3 || sessionAuthorityVersion != nil {
@@ -429,6 +434,10 @@ public final class FlintProtectionLedger {
             // re-encode it and discard fields it doesn't understand. Original bytes stay intact.
             if state.emergencyRecovery != nil && !state.hasValidPassRecovery {
                 return .failure(.unavailable("Emergency Pass recovery record is unavailable"))
+            }
+            if let grants = state.ordinaryGrants, !grants.isValid {
+                onCorrupt()
+                return .failure(.unavailable("Ordinary access state is unavailable"))
             }
             return .success(state)
         } catch {
