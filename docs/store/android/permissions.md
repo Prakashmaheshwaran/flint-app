@@ -27,6 +27,14 @@ That artifact also contains WorkManager components; “no additional Flint enfor
 foreground service” does not mean no library services. This is prior-artifact evidence,
 not a final signed-candidate manifest attestation.
 
+The [2026-10-30 #173 installed-artifact snapshot](bundles.md#read-back-artifact-snapshot-2026-10-30)
+was independently re-inspected with the SDK manifest reader. It retains those nine
+uses-permissions (the seven Flint special/runtime/background entries above, WAKE_LOCK
+and the internal signature permission), minSdk 23 / targetSdk 36, the specialUse detector,
+Glance/RemoteViews, WorkManager and Room library services. INTERNET, ACCESS_NETWORK_STATE,
+exact-alarm, full-screen-intent and QUERY_ALL_PACKAGES remain absent. This is a specific
+development-signed APK snapshot, not a final AAB/Play/signer attestation.
+
 ## Proposed specialUse FGS explanation
 
 Flint is a user-configured focus app. When the user enables Usage Access and the

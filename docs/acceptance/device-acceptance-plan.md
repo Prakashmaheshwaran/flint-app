@@ -2,13 +2,30 @@
 
 **No device results are recorded by this document.** Start every result as `NOT RUN`.
 This is the single runnable order for both platforms; it consolidates
-[lane B's iOS details (PR #114, pending merge)](https://github.com/Prakashmaheshwaran/flint-app/pull/114/files) and
+[lane B's merged iOS details](../verification/ios-device-acceptance.md) and
 [lane C's Android details](../verification/android-device-acceptance.md).
-At the initial checkpoint the iOS detail file is pending
-[PR #114](https://github.com/Prakashmaheshwaran/flint-app/pull/114); that PR is not a passing run.
+Both platform checklists are merged source requirements, not passing runs. This
+2026-10-30 refresh preserves every NOT RUN result; D13 supersedes older Android §7
+wall-clock-following expectations.
 Use [ADR-012](../architecture/protection-contract.md) for required semantics and the
 [ledger](v1-capability-ledger.md) for current implementation gaps. Mark an unavailable
 feature `BLOCKED`, with its issue/PR, rather than executing an obsolete substitute.
+
+## Hard pre-release decisions
+
+- **R-12:** iOS Open credits are enabled (#189), source-complete and runtime
+  DEVICE-PENDING. D08 must cover signed-device PC-28..38 with Flint killed through
+  300 s expiry, midnight, callback re-registration and lock contention. Failure requires
+  the one-line `FlintOpenCredit.shieldAcceptanceEnabled` revert plus fallback shield copy.
+- **R-26:** new empty Allow Lists are refused; legacy saved empty lists keep running with
+  attention (#218). D01 must explicitly check Phone, default calling app, in-call UI and
+  SOS under `.all(except:)` and all-category shields. Move to option B if shielding occurs.
+- **Android:** force-stop unbinds Accessibility. #173 refuses Timer arming without a live
+  detector; test setup re-grants do not prove automatic recovery. Include overlay mount
+  failure and truthful Degraded health in D10/D12; the R-30 remainder is still open.
+- Open source findings in the [wind-down ledger](v1-capability-ledger.md#open-at-v1-wind-down)
+  can block a case. Keep it BLOCKED until a fixing build is selected; no whole-case pass
+  follows from a PC-tagged fixture.
 
 ## Run once per exact build/device
 
@@ -57,7 +74,7 @@ owner before continuing. These rows take priority over presentation or store scr
 | D05 Pass global scope; PC-39–47, PC-69, PC-83 | Preview and explicitly confirm pass with transient session, recurring/Sleep and Time/Open rules active. Transients end early; all personal rules suspend 60 min, finite ends/counters remain, selected disable changes persist. Show actual next eligibility seven days after use, with no calendar-week bonus; reject duplicate redemption. | NOT RUN | | | |
 | D06 Pass crash/write failure; PC-43–45, PC-59–60, PC-65 | In an owner-approved fault build, fail transaction before release, then kill after durable commit/before apply. Failure never authorizes release; same-boot restart resumes only the original remainder with one spend. Reboot closes active recovery while retaining consumption/uncertain cooldown. No production data corruption required. | NOT RUN | | | |
 | D07 Ordinary break/overlap; PC-22–26 | Grant 300 s to A while A/B share a cause; B stays blocked. Add independent Hardcore to A; grant cannot bypass it. Keep A foreground with Flint closed through expiry: re-shield without app switch, record requested/observed boundary and latency on each Android path/iOS signed build. | NOT RUN | | | |
-| D08 Open credits; PC-28–38, PC-75–76 | Confirm explicit credits one at a time to cap; shield between intervals, honor final credit, no charge on overlap/unprovable iOS category or safety target. Reentry/repeated callback/concurrent last-credit request does not re-spend/extend. Host-dead five-minute expiry re-shields; failed registration denies without charge. | NOT RUN | | | |
+| D08 Open credits; PC-28–38, PC-75–76 | Confirm explicit credits one at a time to cap; shield between intervals, honor final credit, no charge on overlap/unprovable iOS category or safety target. Reentry/repeated callback/concurrent last-credit request does not re-spend/extend. Host-dead 300 s expiry re-shields; cross midnight, callback re-registration and lock contention, retaining exact grant/charge/deadline. Failed registration denies without charge. | NOT RUN | | | |
 | D09 Optional iOS removal restriction; PC-46–47, PC-78 | Verify explicit device-wide opt-in and finite eligible armed owners; do not infer from assignment. End first of two owners, last owner, pass, failed arm and inactive template. Correct requested/unavailable status; revocation/recovery remains reachable. Android: confirm no removal/disable guard at every tier. | NOT RUN | | | |
 
 ## P1 — OS timing, persistence and coverage
@@ -77,7 +94,7 @@ owner before continuing. These rows take priority over presentation or store scr
 
 | Case / PC IDs | Runnable action and required observation | Result | Observed / latency | Evidence | Failure / owner |
 | --- | --- | --- | --- | --- | --- |
-| D18 History/Insights; PC-63–66, PC-84 | Complete/early-end/replace with host killed, cross day boundary and restart. One outcome, union focus minus breaks/coverage, absent vs zero, truthful counters; clear while a session runs and verify intended retention. Real Screen Time report delivery stays distinct from local focus events. | NOT RUN | | | |
+| D18 History/Insights; PC-63–66, PC-84 | Complete/early-end/replace with host killed, cross day boundary and restart. One confirmed outcome; missing terminal stays Unconfirmed without completion/streak credit, uncertain break/pass/rest/coverage gaps reduce a conservative bound, absent vs zero and truthful counters; clear while a session runs and verify intended retention. Real Screen Time report delivery stays distinct from local focus events. | NOT RUN | | | |
 | D19 Notifications/glance; PC-61, PC-73, PC-84 | Deny/revoke/allow notifications and opt in/out Live Activity. Add each widget/lock-screen family, check current/stale/unavailable/idle, own cause end/next time, history clear and cold/host-dead updates. No authority-changing action. Android detector handoff has no duplicate optional status; mandatory FGS remains. Record lock-screen privacy and planned-time wording. | NOT RUN | | | |
 | D20 Accessibility/recovery; PC-17, PC-46, PC-50 | VoiceOver/TalkBack/Switch Access through onboarding, PIN/recovery, picker, editors, break/pass and completion; large text/display, compact screen, keyboard and reduced motion. Equivalent explicit confirmation works without a hold gesture; recovery is reachable without private content. | NOT RUN | | | |
 | D21 Legal/offline/update | Airplane mode: inspect available policy/licenses and real source inventory; missing iOS bundled screens remain BLOCKED. Install prior signed release then update intended final artifact without data loss. Verify artifact hash/signer/source, privacy manifests/notices and release fixture/network exclusions. | NOT RUN | | | |

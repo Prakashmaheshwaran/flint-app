@@ -1,7 +1,7 @@
 # Flint iOS App Store package — draft
 
-Prepared 2026-10-28 for lane D6; reconciled by lane J against merged
-`integration/v1` at `32a8d6b`. Original D6 source baseline was
+Prepared 2026-10-28 for lane D6; final documentation refresh 2026-10-30 against
+`integration/v1` at `ce441b60f5cfd5d6680f9c532e977757cd3d9cdb`. Original D6 source baseline was
 `fa190e9df96f61c13ea651ee39cae6f68057f0c6`.
 This is preparation for human review, not a submitted listing or proof of release
 readiness. No Apple account, signing, upload, TestFlight, or publication action was
@@ -33,12 +33,15 @@ registration/stop policy and bounded recovery. History is now durable through
 [#117](https://github.com/Prakashmaheshwaran/flint-app/pull/117); iOS presentation evidence
 uses labelled fixtures. These changes do not establish physical-device enforcement.
 
-**Current claim blockers:** the live session controller still requests deletion denial
-on Hardcore start rather than establishing the separate contract opt-in; its pass ends
-the current session rather than demonstrating global 60-minute recovery. Do not put
-either proposed contract behavior into public/reviewer copy until the corresponding
-live changes and signed-device acceptance land. Widget/Live Activity readers are merged,
-but authoritative protection publication/delivery needs its own evidence.
+**Current claim blockers:** global 60-minute recovery (#161), explicit timed credits
+(#155/#189), scoped ordinary breaks (#214/#221), frozen Safari policies (#220) and live
+status publishers (#163/#171) are merged, with bounded automated evidence. iOS Open
+acceptance is enabled but R-12 remains runtime DEVICE-PENDING: signed-device PC-28..38
+must prove killed-host 300 s expiry, midnight, re-registration and lock contention;
+use the one-line flag revert plus fallback copy on failure. R-26 calling/in-call/SOS
+under `.all(except:)` remains device-pending. Open red-team variants, separate deletion
+consent/derived-owner runtime, the SystemBootTime API-manifest gap and absent in-app policy
+route remain release gates. Source integration and fixture views do not prove delivery.
 
 ## Proposed en-US metadata
 
@@ -108,8 +111,9 @@ unbreakable or sole-exit claim is permitted. If Emergency Pass is later added
 to listing copy, use “seven days after you use it” and describe the confirmed
 60-minute global recovery scope, affected commitments and resumption. Do not
 promise a Monday refill, a bank of passes or release of only the shown session.
-These are contract requirements, pending lane B implementation and signed-device
-acceptance; the reconciliation is not evidence that the features shipped.
+Global recovery is merged; separate deletion-consent/owner runtime and all signed-device
+acceptance are tracked in the ledger. This draft does not establish distribution or
+hardware acceptance.
 
 ### Length validation
 
@@ -160,17 +164,23 @@ privacy-sensitive; a label does not mean the app has no local data.
   [shared keys and suite](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintGroupStore.swift)
   and [state persistence](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintGroupStore.swift)
   keep active-session times, pass-use timestamps, Open Limit counters, arming health,
-  anchored time state and the cross-process protection ledger locally in
+  anchored elapsed/boot checkpoints, generation/tombstone/start-operation receipts, frozen
+  active targets/revisions, queued edits, timed credit counters/grants and global recovery/
+  ordinary-break outboxes in the cross-process protection ledger locally in
   `group.com.flint.peakfocus`.
 - **Durable focus history:**
   [FlintHistoryStore](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintHistoryStore.swift)
   stores an App Group `FlintHistory` JSONL log, per-event extension inbox, metadata and
   bounded recovery/quarantine copies. Records contain session/operation IDs, user-entered
-  names, tier/origin/time/outcome and available event metrics; no app/package/token/domain
+  names, tier/origin/time/outcome, observed time, confidence/uncertainty and available event
+  metrics; no app/package/token/domain
   identifiers or Apple report values. Retention targets 400 days subject to local caps.
   You's clear-history control preserves the active session and does not promise immediate
   deletion of every recovery copy. No release export, cloud backup or restore feature is
-  supplied. See [history contract](../../architecture/focus-history.md).
+  supplied. Missing terminal evidence stays Unconfirmed without completion/streak credit;
+  uncertain non-focus gaps reduce a conservative bound. Stable replay IDs do not promise
+  retroactive exactly-once history or complete typed iOS ordinary-break projection.
+  See [history contract](../../architecture/focus-history.md).
 - **Reminders and OS displays:** optional planned-time-ended local notifications store
   session/end/request bookkeeping; widget/Live Activity public status includes chosen
   session names, tiers, end/next estimates, check time and local focused-today summaries.

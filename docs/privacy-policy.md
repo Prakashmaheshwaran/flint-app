@@ -1,6 +1,6 @@
 # Flint privacy policy
 
-Effective date: October 28, 2026
+Effective date: October 30, 2026
 
 This policy covers the local-only release versions of Flint for iOS and Android.
 Flint is a personal focus app maintained by the Flint project. Contact the
@@ -17,15 +17,20 @@ this policy and are not included in the release app.
 
 Flint saves the rules, app groups, website choices, schedules, limits, protection
 preferences and session information needed for your focus features on your
-device. Local state can include usage/open counters, break or pass use and focus
-history. This information is used to apply your choices and display local
+device. Local state can include usage/open counters, boot/elapsed-time checkpoints,
+saved reset zones, accepted-operation receipts, frozen commitment targets/revisions,
+queued changes, break or global recovery use and replayable lifecycle records, as well
+as focus history. This information is used to apply your choices and display local
 summaries. It is not sent to the developers.
 
 ## Local focus history and visible reminders
 
 Flint keeps a local focus-session event history for Today, completion and Insights.
 It can contain session/operation identifiers, names you enter, protection level, start
-and end times, outcome, origin, and available break/intercepted-open or coverage information.
+and end times, outcome, origin, observed time, time-confidence or uncertainty markers,
+and available break/pass/intercepted-open or coverage information. Missing terminal evidence
+is shown as unconfirmed rather than a completed session or streak; uncertain gaps reduce
+conservative focus totals.
 This focus log does not store selected app/package identifiers, Screen Time tokens,
 website domains, raw browsing URLs or Apple's usage-report values. Screen usage and
 focus-session totals are separate; missing information is not a measured zero.

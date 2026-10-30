@@ -1,6 +1,7 @@
 # Flint iOS review notes and device review script — draft
 
-Prepared 2026-10-28; lane J source refresh at `integration/v1` `32a8d6b`.
+Prepared 2026-10-28; lane J final source refresh 2026-10-30 at `integration/v1`
+`ce441b60f5cfd5d6680f9c532e977757cd3d9cdb`.
 Original D6 baseline was `fa190e9df96f61c13ea651ee39cae6f68057f0c6`. Companion:
 [store metadata, privacy justification, age-rating rationale, and shot-list](store-package.md).
 No Apple account was accessed, no entitlement request was submitted, and no
@@ -11,11 +12,13 @@ Use the [central owner checklist](../README.md) and
 [single risk-ordered physical-device plan](../../acceptance/device-acceptance-plan.md).
 The R-steps below are platform review detail, not a second set of completed results.
 
-**Not submission-ready:** automatic deletion denial on Hardcore start, session-only pass
-redemption and incomplete bounded Open-credit integration still differ from ADR-012 at
-this checkpoint. The script's contract expectations remain blocked until actual live
-implementation and signed-device acceptance are linked. The proposed field below omits
-those unverified promises; do not submit the app while the underlying blockers remain.
+**Not submission-ready:** global recovery, explicit timed credits, scoped breaks and live
+status publication are merged. R-12 Open acceptance is enabled but signed-device PC-28..38
+(killed-host 300 s expiry, midnight, re-registration, lock contention) is a hard pre-release
+gate, with a one-line flag revert plus fallback shield copy on failure. R-26 calling/
+in-call/SOS under `.all(except:)`, open wind-down red-team variants, separate deletion
+consent/derived-owner runtime, the SystemBootTime manifest gap and in-app policy route
+remain gates. All R-steps below remain unrun; source/fixture results do not complete them.
 
 ## Before these notes can be submitted
 
@@ -26,6 +29,9 @@ those unverified promises; do not submit the app while the underlying blockers r
   Android evidence is not a substitute for iOS physical tests.
 - [ ] Lane F's real local-event history/Insights evidence is linked; final UI and
   listing make only supported history/completion/report claims.
+- [ ] Resolve the [SystemBootTime lock-deadline API inventory](privacy-api-inventory.md)
+  against the actual final source/binaries and manifests; existing CI equality checks
+  do not prove category completeness.
 - [ ] The final Release archive is inspected for all six shipping bundles,
   required-reason privacy manifests, AppIcon/resources, correct version/build,
   absence of DEBUG preview fixtures, and distribution-signed entitlements.
@@ -170,7 +176,8 @@ use**, plus any clock uncertainty. There is no Monday refill or accumulated
 bank; do not reset defaults or change the clock to replenish it. Link lane B's
 automated transaction evidence for failed/ambiguous writes and crash/retry
 without double spending; those fault cases are not App Review device actions.
-These are pending lane B acceptance cases, not observations from this draft.
+Global pass source is merged; the retained-predecessor variant and all physical recovery
+observations remain pending in the ledger. These are requirements, not results.
 
 In a separate timed run, verify expiry releases the guard with the host closed.
 Home, emergency calling and OS permission controls must stay reachable without
@@ -179,8 +186,8 @@ OS applied or released deletion restriction.
 Confirm Settings withdrawal of authorization and subsequent honest UI state as
 an owner-approved recovery test. Never rely on an unverified PIN bypass or an
 unproven claim that withdrawal instantly clears every restriction.
-Source: [guard scope](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintUninstallGuard.swift),
-[pass implementation](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintSessionController.swift),
+Source: [derived guard policy](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintRemovalGuard.swift),
+[pass implementation](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintEmergencyPassController.swift),
 [app PIN](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintPIN.swift).
 
 ### R6 — Every additional enforcement claim
@@ -189,8 +196,12 @@ Lane B supplies the exact signed-device cases for recurring schedules (including
 overnight/overlap/DST), time-limit thresholds/reset, Safari domain/content/Private
 Browsing lifecycle, permission revocation, monitor registration failure, clock
 changes, and startup reconciliation. For each, record actual block and release,
-not just an enabled toggle. For Open Limits, observe a charged grant, bounded
-access expiry/re-shield, daily reset, and coexistence with a harder restriction.
+not just an enabled toggle. For enabled Open credits, signed-device PC-28..38 must observe a charged grant,
+300 s expiry/re-shield with Flint killed, midnight clipping, re-registration and lock
+contention, plus no charge through an independent restriction. If this gate fails,
+revert `FlintOpenCredit.shieldAcceptanceEnabled` and restore fallback copy before release.
+For new/legacy Allow Lists verify Phone/default calling/in-call/SOS under `.all(except:)`;
+R-26 moves to option B if those screens are shielded.
 Focus filter, Shortcuts, Sleep, Pomodoro rounds, and one-shot future scheduling
 must each have their own completed acceptance case before appearing in review
 notes/screenshots/copy. Website picker tokens and Safari content settings are

@@ -5,7 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
-### v1 — integration/v1 (2026-10-28)
+### v1 — integration/v1 (refreshed 2026-10-30)
 
 This is an integration summary, not a published v1 release or store/device acceptance.
 The [capability ledger](docs/acceptance/v1-capability-ledger.md) records the exact merged
@@ -17,13 +17,25 @@ defines requirements without turning them into passing results.
   acknowledged saves and durable commit-before-release grants. Pure ADR-012 policies and
   live callers have distinct acceptance boundaries. Android Settings/uninstall/disable
   interception is removed; OS recovery remains reachable.
+- **Final protection integration:** iOS generation/reboot/replay authority, trusted rule clocks,
+  frozen Safari policies, global recovery and scoped ordinary breaks; enabled timed Open
+  credits remain a hard signed-device pre-release gate. New empty Allow Lists are refused,
+  saved ones keep running with attention and calling/SOS hardware acceptance remains open.
+  Android adopts saved Time-Limit tiers, explicit credits/global recovery, strict initialized
+  accounting and exact-Timer live-detector arming; force-stop can unbind Accessibility.
+  The ledger's Open at v1 wind-down section records remaining red-team variants.
 - **Local outcomes:** durable session history and truthful Today/Complete/Insights totals,
   separate from screen usage; optional planned-focus-end reminders. iOS captures use
-  labelled fixtures; Android hosted E2E includes an actual five-minute Timer.
+  labelled fixtures; Android hosted E2E includes an actual five-minute Timer. Missing terminal
+  evidence stays Unconfirmed; confidence-aware totals conservatively subtract uncertain gaps.
+  Durable Android pass/break projection and stable iOS replay IDs are merged, with explicit
+  incomplete typed-break/operation-history/terminal-arbitration boundaries in the ledger.
 - **Glance and UX:** read-only widgets, opt-in iOS Live Activity, optional Android Path A
   ongoing status, Help/limitations, accessible onboarding/PIN/picker/Sleep and Android
   scrollable block-screen work. Live status producers and hardware rendering retain their
-  explicit boundaries in the ledger.
+  explicit boundaries in the ledger. Live commit/Hub/service publishers are wired; Android
+  installed minified widget smoke covers unavailable/Open Flint. iOS #223 passes ten UI
+  fixtures plus eleven Insights cases at its exact source, with no hardware promotion.
 - **Release preparation:** iOS AppIcon, six privacy manifests after widget integration,
   unsigned Release/fixture gates and private signing scaffold; Android target API 36,
   APK/AAB checks, owner-signing configuration with labelled preview fallback, shrinking

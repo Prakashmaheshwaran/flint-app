@@ -19,17 +19,19 @@ current evidence index for `integration/v1`. It separates merged implementation,
 unit tests, Android hosted emulator flows, iOS UI fixtures and physical-device
 acceptance. **No physical-device enforcement verification is claimed.**
 
-Merged v1 work includes session/recovery fixes, Android safety-floor and durable-grant
-work, local history for Today/Complete/Insights, optional planned-focus-end reminders,
-read-only widgets/glance surfaces, release-code artifact gates and store-package drafts.
-Some protection producers still need integration; a widget can correctly report
-unavailable. The ledger records exact scope and outstanding behavior.
+Merged v1 work includes shared session/rule authority, scoped ordinary breaks, global
+60-minute Emergency Pass recovery, explicit five-minute Open credits, Android live-detector
+Timer arming, local history confidence fixes, and live read-only glance publishers.
+These have bounded source/test/emulator evidence; the ledger records open red-team variants.
+iOS Open credits are enabled but remain a **hard pre-release signed-device gate**.
+Missing/stale widget authority still reports unavailable.
 
 Hardcore is a finite commitment with rules for early changes in Flint, expiry and an
 available Emergency Pass. OS emergency and permission-recovery controls remain reachable.
-Android does not intercept Settings, uninstall or Accessibility disable. iOS removal
-restriction requests are device-wide and authorization-dependent; code assigning a
-setting is not proof of its effect. [ADR-012](docs/architecture/protection-contract.md)
+Android does not intercept Settings, uninstall or Accessibility disable. Force-stop can
+unbind Accessibility; the Timer refuses to arm without a live detector. iOS removal
+restriction requests are device-wide and authorization-dependent; consent/runtime and
+signed-device acceptance are tracked separately in the ledger. [ADR-012](docs/architecture/protection-contract.md)
 defines the intended per-cause rights and seven-days-after-use pass policy; the ledger
 states which live paths have adopted them. Do not infer full contract compliance from
 a persisted tier label or a pure policy test.
@@ -42,10 +44,11 @@ listed in the ledger.
 
 ## Get Flint
 
-- **Android development preview:** artifacts are available from the
-  [release page](https://github.com/Prakashmaheshwaran/flint-app/releases/latest).
-  New `flint-*-android-development-preview.apk` files use release code with development
-  signing; older releases used `flint-*-android-debug.apk`. Different certificates
+- **Android development preview:** the current public
+  [v0.1.0 release](https://github.com/Prakashmaheshwaran/flint-app/releases/tag/v0.1.0)
+  contains `flint-v0.1.0-android-debug.apk` (read back 2026-10-30).
+  The workflow can produce `flint-*-android-development-preview.apk` release-code files
+  with development signing; this integration has not published them. Different certificates
   cannot update one another, and uninstalling can erase local rules/history.
   See [APK/AAB and signing](docs/store/android/bundles.md).
 - **Google Play and App Store:** submission and published availability are not established
@@ -65,8 +68,9 @@ Flint is two native apps:
   enforcement. Path B has app-only coverage. Stock/OEM background survival and the
   full supported-OS matrix remain device acceptance.
 
-Local session history drives focus totals; screen usage is reported separately and is
-never converted into fabricated focus or time saved. History, rules and other local data
+Local session history drives focus totals; a start/deadline alone is **Unconfirmed**, with
+no completion or streak credit. Uncertain gaps reduce a conservative focus bound. Screen
+usage stays separate and never becomes fabricated focus or time saved. History, rules and other local data
 are described in the [privacy policy draft](docs/privacy-policy.md). Notifications and
 widgets can expose chosen session names and local summaries on OS surfaces.
 

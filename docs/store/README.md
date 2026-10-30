@@ -31,9 +31,12 @@ separate authorization; completing the repository work does not perform these ac
 - [ ] Select exact integration commit, marketing version/build numbers and supported device/OS
   scope; record final CI/artifact hashes. Resolve or explicitly exclude all required failed,
   blocked and unrun acceptance cases. Do not label emulator/fixture data as hardware proof.
-  The current separate iOS deletion-consent/global-pass implementation, all-cause access
-  producers and K live-status publication gaps remain engineering acceptance items;
-  softer marketing does not close them.
+  Global recovery, explicit credits, scoped breaks and live glance publishers are merged;
+  their tested slices and open variants remain in the ledger. iOS Open credits are enabled
+  but signed-device PC-28..38 is a hard gate (killed-host 300 s expiry, midnight,
+  re-registration, lock contention; one-line flag revert plus fallback copy if it fails).
+  R-26 calling/in-call/SOS under `.all(except:)` is also device-pending. Resolve the open
+  wind-down findings and iOS SystemBootTime manifest gap before final artifact acceptance.
 - [ ] Complete [physical-device acceptance](../acceptance/device-acceptance-plan.md), beginning
   with emergency/recovery safety, Hardcore rights and global pass/bounded access. Record
   unsupported browsers/OEMs, clock uncertainty and observed OS delivery latency.
@@ -43,7 +46,10 @@ separate authorization; completing the repository work does not perform these ac
   until inspected; request only missing reviewed approvals.
 - [ ] **Apple artifact:** configure ignored private signing files, increment coordinated build,
   archive/export the signed Release build and inspect every embedded signature, entitlement,
-  six privacy manifests, icon/resource and DEBUG-fixture exclusion. Validate archive privacy
+  six privacy manifests, icon/resource and DEBUG-fixture exclusion. New lock deadline calls
+  to `ProcessInfo.systemUptime` require the SystemBootTime/reason inventory to be resolved
+  (see [API inventory](ios/privacy-api-inventory.md)); existing green equality checks alone
+  do not establish complete API declarations. Validate archive privacy
   requirements with current Apple tooling; unsigned simulator CI is insufficient.
 - [ ] **Google key/account:** create/custody/back up the intended upload key privately, verify
   public certificate, Play App Signing enrollment/ownership, developer account verification
@@ -81,7 +87,8 @@ separate authorization; completing the repository work does not perform these ac
 ## Reconciliation boundary
 
 Current integration has local history, optional focus-end reminders and read-only glance
-surfaces. Protection producers can be unavailable; a widget or Activity does not create
+surfaces. Host/monitor and Android Hub/service publishers are wired; unavailable/stale
+input still stays unavailable. A widget or Activity does not create
 enforcement authority. Android's mandatory `flint_enforcement` FGS, optional
 `flint_ongoing_session` Path A status and `focus_sessions` end-reminder channels are
 distinct. iOS ActivityKit is opt-in; WidgetKit adds a sixth privacy/provisioning bundle.

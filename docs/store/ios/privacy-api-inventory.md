@@ -1,6 +1,7 @@
 # iOS privacy manifest inventory
 
-Source inventory: 2026-10-28. Re-audit after adding storage, networking, SDKs or
+Source inventory refreshed 2026-10-30 at `ce441b60f5cfd5d6680f9c532e977757cd3d9cdb`.
+Re-audit after adding storage, networking, SDKs or
 required-reason APIs. These declarations describe Flint code; they do not certify
 Apple account disclosures or signed-device behavior.
 The final integration refresh includes B2 (`a0ecb02`), which added the clock
@@ -23,8 +24,10 @@ shield configuration reads remaining credits; shield action reads/writes credits
 The shared protection ledger persists `FlintLedger/ledger.json`, lock/recovery files
 and the `flint.ledger.initializedAt` marker. Retained-store receipt state uses
 `flint.protection.retainedStoreEnds.v1`. These are local enforcement/migration data,
-separate from focus-history clearing; a ledger schema does not establish global pass
-runtime integration. Private reminder preferences are distinct from OS notification
+separate from focus-history clearing; global recovery, explicit credits, scoped breaks, generation/tombstone/start replay,
+trusted rule/credit clocks and Safari authority snapshots are now wired in source. Their
+local archives/frozen selections/operation outboxes remain separate from focus-history
+clearing. No source integration establishes physical-device delivery. Private reminder preferences are distinct from OS notification
 authorization, and Live Activity defaults off. These purposes do not add a manifest
 category beyond the declarations above.
 The report's `ActivitySummary`, `TotalActivityReport` and `TotalActivityView`
@@ -42,7 +45,7 @@ collected data types. No third-party Swift SDK dependency is declared in
 Focus history (#90, lane F) added file-metadata reads inside the App Group
 container, declared above as FileTimestamp `C617.1` in all six manifests; values
 are used only to size, order and reclaim Flint's own history files and never
-leave the device. Apart from that, the 2026-10-28 production Swift-source search
+leave the device. Apart from that, the **historical** 2026-10-28 production Swift-source search
 (host, extensions and FlintCore, excluding Tests) found no other direct file
 timestamp API (`stat`/`fstat`/`lstat`, `getattrlist`, `creationDate`,
 `modificationDate`, related URL resource keys),
@@ -108,6 +111,23 @@ and its [official DocC data](https://developer.apple.com/tutorials/data/document
 (`primaryContentSections` → `possibleValues`). The Markdown rendering omits
 those value sections, so it is insufficient by itself for checking the list.
 Recheck the final signed archive and Apple's privacy report before upload.
+
+### New lock-deadline API gate (2026-10-30)
+
+The current production [rule lock](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintRuleStoreLock.swift)
+and [session transition lock](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintSessionTransitionLock.swift)
+call `ProcessInfo.processInfo.systemUptime` to bound local lock acquisition. This is a
+listed SystemBootTime API, unlike the separate B2 `clock_gettime_nsec_np`/`sysctlbyname`
+source-to-list inference above. The six source manifests currently contain UserDefaults
+and FileTimestamp only: the old inventory and current equality verifier do not establish
+complete declarations for these later calls.
+
+Apple's [official category/reason data](https://developer.apple.com/tutorials/data/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitype.json),
+re-read 2026-10-30, lists `systemUptime`; `35F9.1` covers local elapsed-event/timer uses.
+The lock-deadline use is a candidate match, requiring source/binary and declaration
+review in every retaining bundle before release. Do not claim this docs-only refresh
+added a manifest reason or inspected a final signed archive. The gap was routed to the
+coordinator; its final disposition belongs in the ledger.
 
 ## Collection and tracking
 
