@@ -124,7 +124,7 @@ fun blockScreenState(
         breakLevel = cause.breakLevel,
         remainingMillis = (if (cause.displayEnd != null) cause.displayEnd.endsAtEpochMs else cause.endsAtEpochMs)
             ?.let { (it - nowEpochMs).coerceAtLeast(0L) },
-        countdownReason = BlockScreenReason.MANUAL_SESSION.takeIf { cause.displayEnd != null },
+        combinedEnd = cause.displayEnd != null,
         breakWaitRemainingMillis = breakWait,
         breakWaitTotalMillis = breakWaitTotal,
         emergencyPassAvailable = emergencyPassAvailable,

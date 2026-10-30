@@ -66,7 +66,7 @@ data class BlockScreenState(
     /** Opaque reviewed-action token. The host revalidates it in the accepting transaction. */
     val openCreditRequestScope: String? = null,
     /** Combined protection may outlast the headline limit's own reset. */
-    val countdownReason: BlockScreenReason? = null,
+    val combinedEnd: Boolean = false,
 )
 
 /** How long the HARDER-level control must be held before `onBreakRequested` fires. */
@@ -130,7 +130,7 @@ internal fun blockScreenContent(state: BlockScreenState): BlockScreenContent {
             (if ((state.openCreditActiveRemainingMillis ?: 0) > 0) " Credit access ends in ${formatDuration(state.openCreditActiveRemainingMillis!!)}; ${state.openCreditsRemaining ?: 0} credits remain." else "") +
             if (state.openCreditBlockingContributors.isNotEmpty()) " Also blocked by ${state.openCreditBlockingContributors.joinToString(", ")}." else "",
         badge = badgeFor(state.reason, state.breakLevel),
-        countdownLabel = countdownLabelFor(state.countdownReason ?: state.reason, state.remainingMillis),
+        countdownLabel = countdownLabelFor(state.reason, state.remainingMillis, state.combinedEnd),
         encouragement = encouragementFor(state.packageName),
         breakAffordance = when (state.grantStatus) {
             GrantStatus.LOADING, GrantStatus.SAVING -> BreakAffordance.Saving
@@ -180,13 +180,13 @@ internal fun badgeFor(reason: BlockScreenReason, level: BreakLevel): BlockScreen
  * Frames daily budgets as resetting at midnight and timed blocks as unblocking when they end.
  * Open-ended blocks have no countdown label.
  */
-internal fun countdownLabelFor(reason: BlockScreenReason, remainingMillis: Long?): String? {
+internal fun countdownLabelFor(reason: BlockScreenReason, remainingMillis: Long?, combinedEnd: Boolean = false): String? {
     if (remainingMillis == null) return null
-    return "${countdownVerbFor(reason)} in ${formatDuration(remainingMillis)}"
+    return "${countdownVerbFor(reason, combinedEnd)} in ${formatDuration(remainingMillis)}"
 }
 
 /** One exhaustive reason classifier shared by visual and TalkBack countdown copy. */
-internal fun countdownVerbFor(reason: BlockScreenReason): String = when (reason) {
+internal fun countdownVerbFor(reason: BlockScreenReason, combinedEnd: Boolean = false): String = if (combinedEnd) "Unblocks" else when (reason) {
     BlockScreenReason.TIME_LIMIT, BlockScreenReason.OPEN_LIMIT -> "Resets"
     BlockScreenReason.MANUAL_SESSION,
     BlockScreenReason.SCHEDULE,
@@ -266,6 +266,6 @@ internal const val HOLD_BREAK_A11Y_DESCRIPTION =
 internal fun waitNoticeA11y(remainingMillis: Long): String =
     "Break available in ${formatDurationSpoken(remainingMillis)}"
 
-internal fun countdownA11y(reason: BlockScreenReason, remainingMillis: Long): String {
-    return "${countdownVerbFor(reason)} in ${formatDurationSpoken(remainingMillis)}"
+internal fun countdownA11y(reason: BlockScreenReason, remainingMillis: Long, combinedEnd: Boolean = false): String {
+    return "${countdownVerbFor(reason, combinedEnd)} in ${formatDurationSpoken(remainingMillis)}"
 }

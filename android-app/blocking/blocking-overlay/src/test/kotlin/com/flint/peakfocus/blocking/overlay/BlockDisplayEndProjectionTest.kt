@@ -62,6 +62,18 @@ class BlockDisplayEndProjectionTest {
         }
     }
 
+    @Test fun legacyQuickBlocklistOutlastsAFiniteScheduleAndSuppressesItsCountdown() {
+        val schedule = rule("schedule", BreakLevel.HARDCORE, 20)
+        val quickList = BlockRule("quick-blocklist", "Quick blocklist",
+            BlockTargets(apps = setOf(AppRef(pkg)))) // Legacy unscheduled selection stays on.
+        for (rules in listOf(listOf(quickList, schedule), listOf(schedule, quickList))) {
+            val cause = project(rules)
+            assertEquals(schedule.id, cause.ruleId)
+            assertEquals(now + 20 * minute, cause.endsAtEpochMs)
+            assertNull(remaining(cause))
+        }
+    }
+
     // R-18 / PC-54, PC-55: already anchored occurrences keep elapsed time through wall edits.
     @Test fun anchoredMixedTierEndsUseTheEnforcementProjectionAcrossForwardAndBackwardClockChanges() {
         val anchor = AccessClockStamp(now, 1_000, "boot")
