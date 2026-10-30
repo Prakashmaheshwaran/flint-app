@@ -32,7 +32,7 @@ public enum FlintWebRestrictionPolicy {
     public static func shouldApply(to rule: FlintScheduleRule, config: FlintWebRestrictions,
                                   now: Date, calendar: Calendar = .current, clock: FlintClock? = nil) -> Bool {
         guard config.applyDuringSchedules, rule.enabled else { return false }
-        guard rule.protection != nil else { return false }
+        guard FlintWebRestrictionChildren.knows(rule) else { return false }
         return rule.occurrence(at: now, clock: clock) != nil
     }
     #endif
@@ -58,6 +58,8 @@ public final class FlintWebRestrictionLifecycle {
     private let children: FlintWebRestrictionChildren
     private(set) var appliedStores: Set<String> = []
     private(set) var unavailableStores: Set<String> = []
+
+    func resetObservations() { appliedStores.removeAll(); unavailableStores.removeAll() }
 
     public convenience init(writer: any FlintWebRestrictionWriting,
                 recoveryGate: @escaping () -> FlintPassRecoveryGate = { .enforcing },
@@ -105,12 +107,14 @@ public final class FlintWebRestrictionLifecycle {
         if !(activeSession?.isEnforcing(at: now, clock: resolved) ?? false) {
             reconcileSession(activeSession, config: nil, now: now, clock: resolved)
         }
-        for rule in rules where !rule.enabled || (rule.protection != nil && rule.occurrence(at: now, clock: resolved) == nil) {
+        for rule in rules where FlintWebRestrictionChildren.knows(rule)
+            && (!rule.enabled || rule.occurrence(at: now, clock: resolved) == nil) {
             writer.clear(store: rule.storeName)
         }
         // The legacy shared store can only be released when every known owner has ended.
         if !(activeSession?.isEnforcing(at: now, clock: resolved) ?? false),
-           !rules.contains(where: { $0.enabled && ($0.protection == nil || $0.occurrence(at: now, clock: resolved) != nil) }) {
+           !rules.contains(where: { !FlintWebRestrictionChildren.knows($0)
+               || ($0.enabled && $0.occurrence(at: now, clock: resolved) != nil) }) {
             writer.clear(store: Self.legacyStoreName)
         }
     }
@@ -121,14 +125,13 @@ public final class FlintWebRestrictionLifecycle {
     ) {
         guard recoveryGate().permitsApplication else { return }
         let resolved = resolvedClock(now: now, clock: clock)
+        // Unmigrated/future metadata cannot prove either an occurrence or a natural end.
+        guard FlintWebRestrictionChildren.knows(rule) else { unavailableStores.insert(rule.storeName); return }
         if !rule.enabled {
             writer.clear(store: rule.storeName)
             _ = children.retire(scope: .rule, ownerID: rule.id)
             return
         }
-        // An unmigrated legacy rule has no saved zone. It cannot prove either a live
-        // occurrence or a natural end using the device calendar.
-        guard rule.protection != nil else { unavailableStores.insert(rule.storeName); return }
         guard let window = rule.occurrence(at: now, clock: resolved) else {
             writer.clear(store: rule.storeName)
             _ = children.retire(scope: .rule, ownerID: rule.id)
@@ -156,7 +159,7 @@ public final class FlintWebRestrictionLifecycle {
         now: Date = Date(), calendar: Calendar = .current, preservingStores: Set<String> = [],
         clock: FlintClock? = nil, actualOwners: FlintWebRestrictionEditor.Snapshot? = nil
     ) {
-        appliedStores.removeAll(); unavailableStores.removeAll()
+        resetObservations()
         guard recoveryGate().permitsApplication else { return }
         let resolved = resolvedClock(now: now, clock: clock)
         let owners = actualOwners ?? .init(session: activeSession, rules: rules)
@@ -168,7 +171,8 @@ public final class FlintWebRestrictionLifecycle {
             reconcileSession(activeSession, config: config, now: now, clock: clock)
         }
         for owner in owners.rules {
-            let ended = !owner.enabled || (owner.protection != nil && owner.occurrence(at: now, clock: resolved) == nil)
+            let ended = FlintWebRestrictionChildren.knows(owner)
+                && (!owner.enabled || owner.occurrence(at: now, clock: resolved) == nil)
             if ended {
                 reconcileRule(owner, config: config, now: now, clock: resolved)
             } else if !preservingStores.contains(owner.storeName), let eligible = rules.first(where: { $0.id == owner.id }) {
@@ -176,7 +180,8 @@ public final class FlintWebRestrictionLifecycle {
             }
         }
         let liveSession = owners.session?.isEnforcing(at: now, clock: resolved) ?? false
-        let liveRules = owners.rules.filter { $0.enabled && ($0.protection == nil || $0.occurrence(at: now, clock: resolved) != nil) }
+        let liveRules = owners.rules.filter { !FlintWebRestrictionChildren.knows($0)
+            || ($0.enabled && $0.occurrence(at: now, clock: resolved) != nil) }
         if (!liveSession && liveRules.isEmpty) || (unavailableStores.isEmpty && preservingStores.isEmpty) {
             writer.clear(store: Self.legacyStoreName)
         }

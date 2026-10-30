@@ -1164,6 +1164,26 @@ final class FlintWebRestrictionEditorTests: XCTestCase {
         XCTAssertEqual(h.writes, 0)
     }
 
+    func testEditorBoundaryFailureRechecksInitializationFailureInsteadOfReportingBusy() {
+        let h = WebEditorHarness()
+        var preparations = 0
+        let editor = FlintWebRestrictionEditor(read: { XCTFail("No read outside transition"); return .busy },
+            snapshot: { nil }, persist: { _ in false }, ledger: { nil }, clock: h.clock, prepare: {
+                preparations += 1
+                return preparations == 1 ? nil : .unavailable
+            }, withTransitionBoundary: { _ in false })
+        XCTAssertEqual(editor.save(.default, requestID: "failed-receipt"), .unavailable)
+        XCTAssertEqual(preparations, 2)
+    }
+
+    func testEditorCannotInferAffectedRulesFromDeviceCalendarWhenSavedZoneIsUnknown() {
+        let h = WebEditorHarness()
+        var unknown = h.rule(.hardcore); unknown.protection = nil
+        h.rules = [unknown]
+        XCTAssertEqual(h.editor().save(.default, requestID: "unknown-zone"), .unavailable)
+        XCTAssertEqual(h.writes, 0)
+    }
+
     func testDomainCapRefusesSaveAndReportsWithoutNativeWrites() throws {
         let h = WebEditorHarness()
         var draft = h.config

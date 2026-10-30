@@ -163,6 +163,7 @@ final class FlintEmergencyPassResumeTests: XCTestCase {
             XCTAssertTrue(writer.applied.isEmpty, bad)
             XCTAssertEqual(h.reports["webRestrictions"]?.armed, 0, bad)
             XCTAssertEqual(h.reports["webRestrictions"]?.failures.first?.activityName, "webRestrictions", bad)
+            XCTAssertTrue(h.reports["webRestrictions"]?.failures.contains { $0.activityName == schedule.storeName } == true, bad)
         }
     }
 }

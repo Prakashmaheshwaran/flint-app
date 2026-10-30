@@ -24,6 +24,28 @@ final class FlintWebRestrictionChildren {
         func applies(_ config: FlintWebRestrictions) -> Bool {
             scope == .session ? config.enabled : config.applyDuringSchedules
         }
+
+        var isValid: Bool {
+            guard !ownerID.isEmpty else { return false }
+            let prefix: String
+            switch scope {
+            case .session:
+                guard storeName == FlintWebRestrictionLifecycle.sessionStoreName else { return false }
+                prefix = "session:\(ownerID)@"
+            case .rule:
+                guard storeName == "flint.\(ownerID)" else { return false }
+                prefix = FlintRuleStoreKey.schedules.rawValue + ":\(ownerID):"
+            }
+            guard key.hasPrefix(prefix) else { return false }
+            let suffix = String(key.dropFirst(prefix.count))
+            let timestamp: String
+            if scope == .rule {
+                let parts = suffix.split(separator: "@", omittingEmptySubsequences: false)
+                guard parts.count == 2, UUID(uuidString: String(parts[0])) != nil else { return false }
+                timestamp = String(parts[1])
+            } else { timestamp = suffix }
+            return Double(timestamp)?.isFinite == true
+        }
     }
 
     struct Child: Codable, Equatable {
@@ -39,26 +61,39 @@ final class FlintWebRestrictionChildren {
         var isValid: Bool {
             version == 1 && Set(children.map { $0.cause.key }).count == children.count
                 && children.allSatisfy {
-                    !$0.cause.key.isEmpty && !$0.cause.ownerID.isEmpty
-                        && $0.cause.storeName.hasPrefix("flint") && $0.config?.validationMessage == nil
+                    $0.cause.isValid && $0.config?.validationMessage == nil
                 }
         }
     }
 
-    enum Read { case legacy, available(Envelope), unavailable }
+    enum Read: Equatable { case legacy, available(Envelope), unavailable }
     static let schemaKey = "_flintWebChildrenSchema"
     static let bytesKey = "_flintWebChildren"
     static let markerKey = "flint.webRestrictions.children.initialized.adr012"
     private let defaults: UserDefaults?
     private var memory: Read?
     private let acceptSave: () -> Bool
+    private let recoveryDirectory: URL?
 
-    init(defaults: UserDefaults?, acceptSave: @escaping () -> Bool = { true }) {
-        self.defaults = defaults; self.acceptSave = acceptSave
+    init(defaults: UserDefaults?, recoveryDirectory: URL? = FlintRuleRecovery.directory,
+         acceptSave: @escaping () -> Bool = { true }) {
+        self.defaults = defaults; self.recoveryDirectory = recoveryDirectory; self.acceptSave = acceptSave
     }
-    private init(memory: Read) { defaults = nil; self.memory = memory; acceptSave = { true } }
+    private init(memory: Read) { defaults = nil; recoveryDirectory = nil; self.memory = memory; acceptSave = { true } }
     static func isolated() -> FlintWebRestrictionChildren { .init(memory: .legacy) }
     static var live: FlintWebRestrictionChildren { .init(defaults: .flintGroup) }
+
+    static func knows(_ rule: FlintScheduleRule) -> Bool {
+        rule.protection != nil && rule.validationIssue == nil
+    }
+
+    var needsRecovery: Bool {
+        switch read() {
+        case .legacy: return false
+        case .unavailable: return true
+        case let .available(envelope): return envelope.children.contains { $0.config == nil }
+        }
+    }
 
     func read() -> Read {
         if let memory { return memory }
@@ -165,7 +200,7 @@ final class FlintWebRestrictionChildren {
         envelope.children.removeAll { child in
             if child.cause.scope == .session { return child.cause.key != sessionKey }
             guard let rule = snapshot.rules.first(where: { $0.id == child.cause.ownerID }) else { return true }
-            guard rule.protection != nil else { return false } // unknown legacy zone cannot prove an end
+            guard Self.knows(rule) else { return false } // unknown saved policy cannot prove an end
             guard let window = rule.occurrence(at: clock.now(), clock: clock) else { return true }
             return child.cause.key != Cause.rule(rule, window: window).key
         }
@@ -177,7 +212,7 @@ final class FlintWebRestrictionChildren {
         if let session = snapshot.session, session.isEnforcing(at: clock.now(), clock: clock) {
             causes.append(.session(session))
         }
-        for rule in snapshot.rules where rule.protection != nil {
+        for rule in snapshot.rules where Self.knows(rule) {
             if let window = rule.occurrence(at: clock.now(), clock: clock) { causes.append(.rule(rule, window: window)) }
         }
         return causes
@@ -188,7 +223,13 @@ final class FlintWebRestrictionChildren {
     func saveAuthorized(_ config: FlintWebRestrictions, snapshot: FlintWebRestrictionEditor.Snapshot,
                         clock: FlintClock) -> Bool {
         var envelope: Envelope
-        if case let .available(saved) = read() { envelope = saved } else { envelope = .init() }
+        let previous = read()
+        if case let .available(saved) = previous { envelope = saved } else { envelope = .init() }
+        if memory == nil {
+            let repair = previous == .unavailable || envelope.children.contains { $0.config == nil }
+            guard FlintWebRestrictions.retainUnavailableIntent(to: defaults, recoveryDirectory: recoveryDirectory,
+                                                              force: repair) else { return false }
+        }
         let causes = Self.causes(snapshot, clock: clock)
         for cause in causes {
             if let index = envelope.children.firstIndex(where: { $0.cause == cause }) {

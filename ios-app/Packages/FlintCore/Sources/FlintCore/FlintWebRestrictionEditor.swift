@@ -2,7 +2,7 @@ import Foundation
 import CryptoKit
 #if canImport(FamilyControls) && canImport(ManagedSettings) && canImport(DeviceActivity)
 
-/// The global preference is live, but weakening it must respect every affected commitment.
+/// Future preferences and live children are committed together only after every affected gate.
 /// A denied edit stays a UI draft; this type does not claim to queue future changes.
 public final class FlintWebRestrictionEditor {
     public enum Outcome: Equatable, Sendable {
@@ -49,6 +49,7 @@ public final class FlintWebRestrictionEditor {
     private let clock: FlintClock
     private let withTransitionBoundary: (() -> Void) -> Bool
     private let prepare: () -> Outcome?
+    private let children: FlintWebRestrictionChildren?
 
     public convenience init(load: @escaping () -> FlintWebRestrictions?, snapshot: @escaping () -> Snapshot?,
                 persist: @escaping (FlintWebRestrictions) -> Bool,
@@ -62,11 +63,13 @@ public final class FlintWebRestrictionEditor {
     init(read: @escaping () -> FlintWebRestrictionRead, snapshot: @escaping () -> Snapshot?,
          persist: @escaping (FlintWebRestrictions) -> Bool,
          ledger: @escaping () -> FlintProtectionLedger?, clock: FlintClock,
+         children: FlintWebRestrictionChildren? = nil,
          prepare: @escaping () -> Outcome? = { nil },
          withTransitionBoundary: @escaping (() -> Void) -> Bool = { body in body(); return true }) {
         self.read = read; self.snapshot = snapshot; self.persist = persist
         self.ledger = ledger; self.clock = clock; self.withTransitionBoundary = withTransitionBoundary
         self.prepare = prepare
+        self.children = children
     }
 
     public convenience init() {
@@ -77,6 +80,7 @@ public final class FlintWebRestrictionEditor {
             return Snapshot.observing(session: group.loadActiveSession(), recordPresent: group.hasActiveSessionRecord(),
                 rules: rules, ledgerState: try? FlintProtectionLedger.appGroup()?.peek().get(), clock: .system)
         }, persist: { $0.saveRecoveringUnavailableIntent() }, ledger: { FlintProtectionLedger.appGroup() }, clock: .system,
+           children: .live,
            prepare: {
                switch FlintRuleStoreLock.initializationReadiness(environment: .live) {
                case .ready: return nil
@@ -95,7 +99,7 @@ public final class FlintWebRestrictionEditor {
         if let outcome = prepare() { return outcome }
         var result = Outcome.unavailable
         guard withTransitionBoundary({ result = saveLocked(candidate, requestID: requestID, confirmed: confirmed) }) else {
-            return .busy
+            return prepare() == .unavailable ? .unavailable : .busy
         }
         return result
     }
@@ -110,9 +114,31 @@ public final class FlintWebRestrictionEditor {
         }
         guard let snapshot = snapshot() else { return .unavailable }
         if let message = candidate.validationMessage { return .invalid(message) }
+        // An unknown saved zone/occurrence cannot authorize weakening an existing native child.
+        guard snapshot.rules.allSatisfy(FlintWebRestrictionChildren.knows) else {
+            return .unavailable
+        }
         let now = clock.now()
-        let affected = Self.affectedCauses(previous: previous, candidate: candidate, snapshot: snapshot,
+        let live = FlintWebRestrictionChildren.causes(snapshot, clock: clock)
+        if let children, children.read() != .unavailable,
+           !children.capture(live, global: previous) { return .unavailable }
+        let childRead = children?.read()
+        var priorPolicies: [String] = []
+        let affected: [FlintCauseState]
+        if let children {
+            affected = live.flatMap { cause -> [FlintCauseState] in
+                let frozen = children.frozen(cause, fallback: previous)
+                priorPolicies.append(cause.key + ":" + (frozen.map(Self.fingerprint) ?? "unavailable"))
+                let owner = Snapshot(session: cause.scope == .session ? snapshot.session : nil,
+                                     rules: cause.scope == .rule ? snapshot.rules.filter { $0.id == cause.ownerID } : [])
+                return Self.affectedCauses(previous: frozen, candidate: candidate, snapshot: owner,
                                            now: now, calendar: clock.calendar(), clock: clock)
+            }
+        } else {
+            affected = Self.affectedCauses(previous: previous, candidate: candidate, snapshot: snapshot,
+                                          now: now, calendar: clock.calendar(), clock: clock)
+            priorPolicies = [previous.map(Self.fingerprint) ?? "unavailable"]
+        }
         let decisions = affected.map { cause -> FlintProtectionDecision in
             let off = cause.isRuleBacked ? !candidate.applyDuringSchedules : !candidate.enabled
             return FlintProtectionPolicy.decide(off ? .toggleOff : .editWeaken, for: cause)
@@ -139,7 +165,7 @@ public final class FlintWebRestrictionEditor {
                 return try rule.fingerprint(action: "web.current", includeName: false)
             }.sorted()
             guard let policy else { return .unavailable }
-            let scope = [previous.map(Self.fingerprint) ?? "unavailable", Self.fingerprint(candidate)] + policy
+            let scope = priorPolicies.sorted() + [Self.fingerprint(candidate)] + policy
             let revisions = harder.map { "\($0.occurrenceID):\($0.revision)" }.sorted()
             let identity = SHA256.hash(data: Data((scope + revisions).joined(separator: "|").utf8))
                 .map { String(format: "%02x", $0) }.joined()
@@ -174,8 +200,9 @@ public final class FlintWebRestrictionEditor {
             guard outcome == .saved else { return outcome }
         }
         guard read() == previousRead, self.snapshot().map({ Self.samePolicy($0, snapshot) }) == true,
+              children?.read() == childRead,
               affected.allSatisfy({ $0.end.map { self.clock.now() < $0 } ?? true }) else { return .unavailable }
-        if persist(candidate) { return .saved }
+        if children?.saveAuthorized(candidate, snapshot: snapshot, clock: clock) ?? persist(candidate) { return .saved }
         if !harder.isEmpty {
             let end = harder.compactMap(\.end).max().map { " Existing protection stays until \($0.formatted(date: .abbreviated, time: .shortened))." } ?? ""
             return .invalid("Change authorized but not saved — try again." + end)
@@ -206,7 +233,7 @@ public final class FlintWebRestrictionEditor {
                                 isActive: true, end: end, legacyRights: previous != nil && session.contractVersion == nil))
         }
         if previous?.applyDuringSchedules ?? true, !candidate.applyDuringSchedules || content {
-            for rule in snapshot.rules where rule.enabled {
+            for rule in snapshot.rules where rule.enabled && FlintWebRestrictionChildren.knows(rule) {
                 let resolved = clock ?? .system
                 guard let window = rule.occurrence(at: now, clock: resolved) else { continue }
                 let identity = FlintRuleArbiter.causeID(rule, window: window)

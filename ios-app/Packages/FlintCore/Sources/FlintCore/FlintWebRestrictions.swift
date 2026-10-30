@@ -197,6 +197,12 @@ public enum FlintWebRestrictionRead: Equatable, Sendable {
     case busy
 }
 
+public struct FlintWebRestrictionSettingsRead: Equatable, Sendable {
+    public let preferences: FlintWebRestrictionRead
+    /// nil means the read was busy, so the UI retains its last known recovery state.
+    public let needsChildRecovery: Bool?
+}
+
 extension FlintWebRestrictions {
     /// Namespaced under "flint.*" to match `FlintGroupStore`'s key convention. Lives outside
     /// `FlintGroupStore` itself because that file is a shared/locked scaffold file — same suite,
@@ -219,6 +225,22 @@ extension FlintWebRestrictions {
     /// A busy monitor transition is retryable, distinct from unreadable saved intent. The file
     /// lock attempt is immediate; callers still run off-main because the process lock can wait.
     public static func readForUI() -> FlintWebRestrictionRead { read(uiRead: true) }
+
+    public static func readForSettingsUI() -> FlintWebRestrictionSettingsRead {
+        #if canImport(FamilyControls) && canImport(DeviceActivity) && canImport(ManagedSettings)
+        var result = FlintWebRestrictionSettingsRead(preferences: .busy, needsChildRecovery: nil)
+        let preferences = read(uiRead: true, environment: .live, transition: { timeout, body in
+            FlintSessionController().withTransition(timeout: timeout) {
+                body()
+                result = .init(preferences: result.preferences, needsChildRecovery: FlintWebRestrictionChildren.live.needsRecovery)
+                return true
+            } ?? false
+        })
+        return .init(preferences: preferences, needsChildRecovery: preferences == .busy ? nil : result.needsChildRecovery)
+        #else
+        return .init(preferences: readForUI(), needsChildRecovery: false)
+        #endif
+    }
 
     private static func read(uiRead: Bool) -> FlintWebRestrictionRead {
         #if canImport(FamilyControls) && canImport(DeviceActivity) && canImport(ManagedSettings)
@@ -281,7 +303,31 @@ extension FlintWebRestrictions {
     }
 
     @discardableResult
-    public func save(to defaults: UserDefaults? = .flintGroup) -> Bool {
+    public func save() -> Bool {
+        #if canImport(FamilyControls) && canImport(DeviceActivity) && canImport(ManagedSettings)
+        guard validationMessage == nil,
+              FlintRuleStoreLock.initializationReadiness(environment: .live) == .ready else { return false }
+        return FlintSessionController().withTransition {
+            guard let group = FlintGroupStore(), let snapshot = FlintWebRestrictionEditor.Snapshot.observing(
+                session: group.loadActiveSession(), recordPresent: group.hasActiveSessionRecord(),
+                rules: FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: .flintGroup, migrating: false),
+                ledgerState: try? FlintProtectionLedger.appGroup()?.peek().get(), clock: .system),
+                snapshot.rules.allSatisfy(FlintWebRestrictionChildren.knows) else { return false }
+            let children = FlintWebRestrictionChildren.live
+            // Freeze old effective intent before replacing future preferences. Unavailable
+            // established children remain unavailable, with their bytes preserved by the write.
+            if children.read() != .unavailable,
+               !children.capture(FlintWebRestrictionChildren.causes(snapshot, clock: .system),
+                                 global: Self.loadForEnforcement(from: .flintGroup)) { return false }
+            return save(to: .flintGroup)
+        } ?? false
+        #else
+        return save(to: .flintGroup)
+        #endif
+    }
+
+    @discardableResult
+    func save(to defaults: UserDefaults?) -> Bool {
         guard validationMessage == nil else { return false }
         return Self.writeStorage(to: defaults, config: self)
     }
@@ -360,10 +406,15 @@ extension FlintWebRestrictions {
     /// durable, content-addressed copy of unavailable intent before an explicit repair.
     func saveRecoveringUnavailableIntent(to defaults: UserDefaults? = .flintGroup,
                                         recoveryDirectory: URL? = FlintRuleRecovery.directory) -> Bool {
+        guard Self.retainUnavailableIntent(to: defaults, recoveryDirectory: recoveryDirectory) else { return false }
+        return save(to: defaults)
+    }
+
+    static func retainUnavailableIntent(to defaults: UserDefaults?, recoveryDirectory: URL?, force: Bool = false) -> Bool {
         guard let defaults, defaults.synchronize() else { return false }
         if let object = defaults.object(forKey: Self.storageKey) {
             let config = (object as? Data).flatMap { try? JSONDecoder().decode(Self.self, from: $0) }
-            if config == nil || config?.validationMessage != nil {
+            if force || config == nil || config?.validationMessage != nil {
                 let bytes: Data
                 if let data = object as? Data { bytes = data }
                 else {
@@ -376,7 +427,7 @@ extension FlintWebRestrictions {
                     defaults: defaults, directory: recoveryDirectory) else { return false }
             }
         }
-        return save(to: defaults)
+        return true
     }
     #endif
 

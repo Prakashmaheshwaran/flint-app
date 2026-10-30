@@ -95,8 +95,8 @@ enum FlintWebRestrictionHostReconciler {
                     reason: "Safari updates were deferred because this live session's registration is not verified."))
             }
         }
-        for rule in rules where rule.enabled {
-            if rule.protection == nil || (rule.occurrence(at: now, clock: clock) != nil
+        for rule in rules {
+            if !FlintWebRestrictionChildren.knows(rule) || (rule.enabled && rule.occurrence(at: now, clock: clock) != nil
                 && eligibleRules.first(where: { $0.id == rule.id })?.enabled != true) {
                 if preserving.insert(rule.storeName).inserted {
                     failures.append(.init(activityName: rule.monitorName,
