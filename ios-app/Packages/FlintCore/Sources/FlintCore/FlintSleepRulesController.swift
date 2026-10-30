@@ -57,6 +57,13 @@ public final class FlintSleepRulesController {
             }
             add(Self.nightID, oldNight, draft.enabled && draft.sleepAssist != .off ? draft.schedule : nil, nightTier, "Sleep Mode")
             add(Self.morningID, oldMorning, Self.morningWindow(draft), morningTier, "Morning Assist")
+            // R-26: Sleep takes its allowed apps from a saved group, so its refusal says where to
+            // choose them. Any save that keeps a window needs them (the arbiter checks each enabled
+            // window too); turning Sleep off removes both windows and is never blocked by this.
+            if mutations.contains(where: { $0.proposed?.enabled == true }),
+               self.env.validateSelection(selection, .allowList) == .emptyAllowList {
+                return .invalid(Self.allowedAppsRequired)
+            }
             let context = [String(draft.revision ?? 0), draft.enabled.description, draft.sleepAssist.rawValue,
                 draft.morningAssist.rawValue, draft.allowGroupID ?? "none", String(draft.morningAssistMinutes),
                 nightTier.rawValue, morningTier.rawValue, draft.schedule.daysOfWeek.sorted().map(String.init).joined(separator: ",")]
@@ -85,6 +92,9 @@ public final class FlintSleepRulesController {
         _ = arbiter.cancel(FlintScheduleRule.self, id: Self.nightID, confirmation: confirmation)
         _ = arbiter.cancel(FlintScheduleRule.self, id: Self.morningID, confirmation: confirmation)
     }
+
+    public static let allowedAppsRequired = FlintSelectionIssue.emptyAllowList.message
+        + " Save an app group with them in Block Now, then choose it under Allowed apps."
 
     private static func morningWindow(_ config: FlintSleepConfig) -> FlintSchedule? {
         guard config.enabled, config.morningAssist == .fullAssist, config.schedule.hasValidEndpoints else { return nil }

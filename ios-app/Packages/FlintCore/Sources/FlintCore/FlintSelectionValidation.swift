@@ -9,6 +9,10 @@ public enum FlintSelectionContext: Equatable, Sendable {
 
 public enum FlintSelectionIssue: Error, LocalizedError, Equatable, Sendable {
     case emptySelection
+    /// An allow list with no allowed app would shield everything Screen Time can shield. Flint
+    /// can't prove which system apps stay reachable (tokens are opaque), so a new or edited
+    /// allow list must name the apps to keep (ADR-012 §7, PC-53).
+    case emptyAllowList
     case tooManyTokens(count: Int, cap: Int)
 
     /// Keep the same wording as the immediate-session editor.
@@ -16,6 +20,8 @@ public enum FlintSelectionIssue: Error, LocalizedError, Equatable, Sendable {
         switch self {
         case .emptySelection:
             return "Pick at least one app or website to block first."
+        case .emptyAllowList:
+            return "Choose the apps to keep available, for example Phone and Messages."
         case let .tooManyTokens(count, cap):
             return "Too many items selected (\(count)). The system limit is \(cap) — use a category instead."
         }
@@ -55,7 +61,23 @@ public enum FlintSelectionValidation {
         if context != .allowList && applications + webDomains + (context == .blockList ? categories : 0) == 0 {
             return .emptySelection
         }
+        if context == .allowList && applications == 0 { return .emptyAllowList }
         return nil
+    }
+
+    /// Arming an already saved rule. An empty allow list saved by an earlier build keeps running
+    /// as it was (§12 forbids silent weakening); it shows a needs-attention note instead, and its
+    /// next edit must choose the apps to keep (`issue`).
+    public static func armIssue(
+        applications: Int, webDomains: Int, categories: Int, context: FlintSelectionContext = .blockList
+    ) -> FlintSelectionIssue? {
+        let found = issue(applications: applications, webDomains: webDomains, categories: categories, context: context)
+        return found == .emptyAllowList ? nil : found
+    }
+
+    /// A saved allow list that names no app to keep: still armed, but the user should choose.
+    public static func needsAllowedApps(applications: Int, allowList: Bool) -> Bool {
+        allowList && applications == 0
     }
 
     #if canImport(FamilyControls)
@@ -67,6 +89,16 @@ public enum FlintSelectionValidation {
               webDomains: selection.webDomainTokens.count,
               categories: selection.categoryTokens.count,
               context: context)
+    }
+
+    public static func armIssue(
+        for selection: FamilyActivitySelection,
+        context: FlintSelectionContext = .blockList
+    ) -> FlintSelectionIssue? {
+        armIssue(applications: selection.applicationTokens.count,
+                 webDomains: selection.webDomainTokens.count,
+                 categories: selection.categoryTokens.count,
+                 context: context)
     }
     #endif
 }

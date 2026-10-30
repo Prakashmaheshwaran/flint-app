@@ -27,7 +27,7 @@ final class SchedulesViewModel: ObservableObject {
                       health.domains["schedules"]?.failures.contains(where: { $0.activityName == rule.monitorName }) == true
                 else { return nil }
                 return FlintScheduleArmFailure(ruleID: rule.id, ruleName: rule.name, issue: rule.schedule.issues.first,
-                    selectionIssue: FlintSelectionValidation.issue(for: rule.selection,
+                    selectionIssue: FlintSelectionValidation.armIssue(for: rule.selection,
                         context: rule.allowListMode ? .allowList : .blockList),
                     selectionContext: rule.allowListMode ? .allowList : .blockList,
                     registrationReason: health.domains["schedules"]?.failures.first(where: {
@@ -224,6 +224,14 @@ struct RulesView: View {
                     if rule.enabled {
                         Text(status.label).font(FlintFont.text(12))
                             .foregroundStyle(status == .needsAttention ? FlintBrand.danger : FlintBrand.stone)
+                    }
+                    // R-26: a saved allow list that keeps no app still runs as saved (§12).
+                    if rule.enabled, FlintSelectionValidation.needsAllowedApps(
+                        applications: rule.selection.applicationTokens.count, allowList: rule.allowListMode) {
+                        let note = "\(FlintSelectionIssue.emptyAllowList.message) It keeps running as saved until you change it."
+                        Label(status == .needsAttention ? note : "Needs attention — \(note)",
+                              systemImage: "exclamationmark.triangle")
+                            .font(FlintFont.text(12)).foregroundStyle(FlintBrand.danger)
                     }
                 }
                 .fixedSize(horizontal: false, vertical: true)
@@ -521,7 +529,9 @@ struct ScheduleEditor: View {
                         Toggle(isOn: $allowList) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Allow list").flintRowTitle()
-                                Text("Only the chosen apps stay open").flintSecondary()
+                                Text(allowList
+                                     ? "Only the chosen apps stay open. Flint can't confirm which system apps stay reachable, so include the ones you need, like Phone and Messages."
+                                     : "Only the chosen apps stay open").flintSecondary()
                             }
                         }
                         .toggleStyle(EmberToggleStyle())

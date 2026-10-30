@@ -83,6 +83,11 @@ struct SleepModeView: View {
             Button("Retry Sleep registration") { vm.retryRegistration() }
                 .frame(minHeight: 44)
                 .tint(FlintBrand.ember)
+        } else if let note = vm.allowListNote {
+            // Still armed as saved; only the allowed apps need choosing.
+            Label("Needs attention — \(note) Sleep keeps running as saved until you change it.",
+                  systemImage: "exclamationmark.triangle")
+                .font(.footnote).foregroundStyle(FlintBrand.danger)
         } else if vm.nightWindowActiveNow {
             Label("Bedtime window is scheduled now", systemImage: "moon.zzz.fill")
                 .font(.footnote)
@@ -241,19 +246,27 @@ struct SleepModeView: View {
     private var allowedAppsSection: some View {
         Section {
             Picker("Allowed during Sleep", selection: $vm.config.allowGroupID) {
-                Text("Nothing extra").tag(String?.none)
+                Text("None chosen").tag(String?.none)
                 ForEach(vm.savedGroups) { group in
-                    Text("\(group.name) · \(group.itemCount)").tag(String?.some(group.id))
+                    // Only individually picked apps stay reachable; categories and websites don't count.
+                    let apps = group.selection.applicationTokens.count
+                    Text("\(group.name) · \(apps) \(apps == 1 ? "app" : "apps")").tag(String?.some(group.id))
                 }
             }
             .tint(FlintBrand.ember)
         } header: {
             Text("Allowed apps")
         } footer: {
-            if vm.savedGroups.isEmpty {
-                Text("Save an app group in Block Now (alarm, podcasts, meditation…) to keep it reachable overnight. Until then the shield allows nothing extra. iOS's Always Allowed apps and emergency calling are expected to remain available; this hasn't been verified on a device yet.")
-            } else {
-                Text("Individually-picked apps in this preset stay reachable during Wind Down and Full Assist; whole-category picks don't carry over to a night shield. iOS's Always Allowed apps and emergency calling are expected to remain available; this hasn't been verified on a device yet.")
+            VStack(alignment: .leading, spacing: 6) {
+                if vm.savedGroups.isEmpty {
+                    Text("Sleep shields everything except the apps you choose. Save an app group in Block Now with the apps you need overnight, like Phone, Messages and your alarm, then choose it here.")
+                } else {
+                    Text("Only individually picked apps in this group stay reachable during Wind Down and Full Assist. Whole-category and website picks don't carry over, so a group needs at least one app. Include the ones you need, like Phone and Messages.")
+                }
+                Text("Flint can't confirm which system apps stay reachable during Sleep.")
+                if vm.allowedAppsMissing {
+                    Text(FlintSleepRulesController.allowedAppsRequired).foregroundStyle(FlintBrand.danger)
+                }
             }
         }
     }
@@ -326,13 +339,31 @@ final class SleepModeViewModel: ObservableObject {
     var nightArmed: Bool { effectiveRules.contains { $0.id == SleepModeController.nightRuleID && $0.enabled } }
     var morningArmed: Bool { effectiveRules.contains { $0.id == SleepModeController.morningRuleID && $0.enabled } }
 
+    /// The draft would save a Sleep or Morning window whose chosen group keeps no app (R-26);
+    /// the controller refuses that save, so say so before the user tries.
+    var allowedAppsMissing: Bool {
+        guard config.enabled, config.sleepAssist != .off
+                || (config.morningAssist == .fullAssist && config.schedule.hasValidEndpoints) else { return false }
+        let group = savedGroups.first { $0.id == config.allowGroupID }
+        return (group?.selection.applicationTokens.count ?? 0) == 0
+    }
+
+    /// A Sleep rule saved by an earlier build with no allowed app keeps running (§12), but the
+    /// user should choose the apps to keep; the next Sleep save that keeps a window requires it (ADR-012 §7).
+    var allowListNote: String? {
+        effectiveRules.contains {
+            $0.enabled && FlintSelectionValidation.needsAllowedApps(
+                applications: $0.selection.applicationTokens.count, allowList: $0.allowListMode)
+        } ? FlintSelectionIssue.emptyAllowList.message : nil
+    }
+
     var protectionIssue: String? {
         if let unavailable = armingReport?.failures.first(where: { $0.activityName == "schedules" }) { return unavailable.reason }
         let enabled = effectiveRules.filter(\.enabled)
         let names = enabled.map(\.monitorName)
         guard !names.isEmpty else { return nil }
         for rule in enabled {
-            if let issue = FlintSelectionValidation.issue(for: rule.selection, context: .allowList) {
+            if let issue = FlintSelectionValidation.armIssue(for: rule.selection, context: .allowList) {
                 return issue.message(for: .allowList)
             }
         }

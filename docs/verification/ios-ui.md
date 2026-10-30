@@ -45,7 +45,7 @@ For example, from the repository root:
 | Onboarding / Today | Welcome → fixture authorization failure → retry label and visible/enabled skip; separate explicit launch for access-needed Today |
 | Today / Start focus | Empty schedule copy, reachable Start, duration selection, disabled Begin without app selection, close |
 | App PIN | Create synthetic PIN, cold relaunch gate, hidden protected hierarchy, wrong PIN, correct PIN, authenticated removal |
-| Schedule validation | Empty block-list cannot save; allow-list draft; zero-length and 10-minute errors; exact 15-minute boundary; cancel without saving |
+| Schedule validation | Empty block-list cannot save; an allow list with no apps cannot save and asks for the apps to keep (R-26); zero-length and 10-minute errors; exact 15-minute boundary clears its error; cancel without saving |
 | Insights unavailable | Approved fixture explains simulator limitation; range changes; unapproved fixture explains access needed; unavailable never claims measured zero |
 | Insights empty / absent | Existing `FlintInsightsTests` renders the actual report content with no-data, zero-usage and activity inputs at Large/AX5; this is a unit render, not the OS report service |
 

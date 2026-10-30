@@ -173,3 +173,30 @@ Use an Easy Open Limit with a cap of 2 on one app, unless a row says otherwise.
 | CRED-08 | Use three apps, each covered by exactly one Open Limit: A Easy with cap 0, B Easy with cap 1, C Hardcore with cap 1. Spend B's and C's credit and let them expire. Then add a second, enabled and armed Easy limit covering C, reopen C, and then turn that Easy limit off or delete it. Precondition: an Emergency Pass is available; this row consumes it and disturbs other pass rows. Last, confirm the pass and reopen C. | A: "This Open Limit allows no credits". B (exhausted Easy): "No credits left today · resets about <time>" with no Emergency Pass mention. C (exhausted Hardcore, only Hardcore covering): the same text plus ". An available Emergency Pass can pause this for up to 60 minutes." If the reset time is uncertain, "the reset time is uncertain" replaces "resets about <time>". While the Easy limit also covers C, reopening C shows no pass sentence. No secondary button on any of them. After the pass, C opens during the 60-minute recovery, and its shield returns when recovery ends. The exhausted text reappears only if C is still exhausted then: a quota reset inside the recovery shows credits instead. Record both latencies, and any subtitle truncation per CRED-10. |
 | CRED-09 | Pick a category in an Open Limit, then open an app from it that another rule blocks through that category. | "Open credits work for individual apps — pick apps in Flint". No secondary button. |
 | CRED-10 | Turn on VoiceOver and the largest text size on every shield above. | All drawn buttons are reachable and their labels are complete. Record any truncation; Apple owns the layout. |
+
+## R-26 — allow lists and the system apps a person needs (PR #218)
+
+Flint refuses a new or edited allow list that keeps no apps available. iOS gives Flint no
+list of the system apps that stay reachable under `.all(except:)` or under an all-category
+shield, so R26-01 checks that on a device. **DEVICE-PENDING**: if any R26-01 item is
+shielded, R-26 moves to option (B), where Flint adds the needed apps itself.
+
+**Never place a real emergency call.** Cancel the Emergency SOS countdown before it dials.
+Use a test number you own for the calls. Restore the default calling app afterwards.
+
+For every R26-01 row, allow Messages and **not** Phone: in the schedule editor, open Apple's picker and select Messages only; for Sleep, save an app group in Block Now with Messages only and choose it under Allowed apps. Run
+these checks while the rule's window is active:
+(a) open Phone;
+(b) call the test number and, during the call, return to the in-call screen from the Home Screen;
+(c) start Emergency SOS with the side button and either volume button, held, or with five
+side-button presses if that setting is on, then cancel the countdown.
+Record the iOS version and every app, screen or control that was shielded.
+
+| ID | Steps | Expected |
+| --- | --- | --- |
+| R26-01a | Rules → New schedule → Allow list on → open the picker and select Messages only (not Phone). Let the window start. Run checks (a)–(c). | Phone, the in-call screen and the SOS countdown are never shielded. Messages opens; other apps are shielded. |
+| R26-01b | Sleep → Full Assist, with the Messages-only group under Allowed apps. Let the night window start. Run checks (a)–(c). | As R26-01a. |
+| R26-01c | Rules → New schedule → block list → select every app category and no individual app. Let the window start. Run checks (a)–(c). | As R26-01a. Record which other apps stay reachable. |
+| R26-01d | Requires iOS 18.2 or later; record "not applicable" on older iOS. Settings → Apps → Default Apps → Calling: choose a third-party calling app (one that offers it). Repeat checks (a) and (b) under R26-01a and R26-01c using that app as well as Phone. Then restore Phone as the default. | The default calling app and its in-call screen are never shielded. |
+| R26-02 | On a build without R-26 (main at b34422e, or integration/v1 at eddc7d9), save a Hardcore schedule with Allow list on and nothing chosen, and enable Sleep Wind Down with Allowed apps "Nothing extra". During the schedule's window, record which apps are shielded. Then install this build over it and cold-launch Flint. | The schedule still shields the same apps during its window and stays enabled; the Sleep windows stay saved. Rules shows, on the schedule row and on the "Sleep Mode" row (and "Morning Assist" if saved), "Needs attention — Choose the apps to keep available, for example Phone and Messages. It keeps running as saved until you change it." Sleep's status row shows its needs-attention note. |
+| R26-03 | Continue from R26-02. Open the schedule editor. Then turn the schedule off with its toggle. Delete it. In Sleep, change the bedtime and save; then turn Sleep off. | The editor's Save is disabled and shows "Choose the apps to keep available…". Turning off and deleting follow the ordinary Hardcore rules for an active window (saved for after it) or apply outside it, and never show the choose-apps message. The Sleep bedtime save is refused with "…Save an app group with them in Block Now, then choose it under Allowed apps." Turning Sleep off is not refused for the selection. Turning only one Sleep window off (for example Sleep Assist off while Morning Full Assist stays) still saves the other window, so it asks for allowed apps; record this as expected. |

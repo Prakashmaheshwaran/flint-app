@@ -100,13 +100,8 @@ final class FlintRuleMigrationTests: XCTestCase {
         XCTAssertNil(second.defaults.object(forKey: "fixture.isolated"))
     }
 
-    /// Fixtures omit only Apple's opaque `selection` representation. Insert the SDK's encoded
-    /// empty selection, keeping all legacy scalar/version/tier fields exactly as the fixture.
     private func fixture(_ name: String, change: (inout [String: Any]) -> Void = { _ in }) throws -> Data {
-        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-            .appendingPathComponent("Fixtures/Rules/\(name).json")
-        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
-        json["selection"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(FamilyActivitySelection()))
+        var json = try RuleFixture.object(name)
         change(&json)
         return try JSONSerialization.data(withJSONObject: [json], options: [.sortedKeys])
     }
@@ -334,5 +329,17 @@ final class FlintRuleMigrationTests: XCTestCase {
         XCTAssertNil(FlintDesiredRules.load(Rule.self, key: Rule.domain, from: h.defaults, recoveryDirectory: h.recoveryDirectory))
         XCTAssertEqual(h.defaults.data(forKey: Rule.domain.rawValue), bytes)
         XCTAssertFalse(FlintDesiredRules.save([rule, rule], key: Rule.domain, to: h.defaults))
+    }
+}
+
+enum RuleFixture {
+    /// Fixtures omit only Apple's opaque `selection` representation. Insert the SDK's encoded
+    /// empty selection, keeping all legacy scalar/version/tier fields exactly as the fixture.
+    static func object(_ name: String) throws -> [String: Any] {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/Rules/\(name).json")
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        json["selection"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(FamilyActivitySelection()))
+        return json
     }
 }
