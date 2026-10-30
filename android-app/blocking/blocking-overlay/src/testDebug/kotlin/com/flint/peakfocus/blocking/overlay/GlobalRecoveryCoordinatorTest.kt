@@ -245,6 +245,231 @@ class GlobalRecoveryCoordinatorTest {
         else callback.invoke(c, pkg, requests, true, null)
     }
 
+    private class FocusHost : BlockScreenCoordinator.SurfaceHost {
+        var mounted = false
+        var yielded = false
+        var attempts = 0
+        var homes = 0
+        var homeSawShield = false
+        var detachments = 0
+        var throwOnYield = false
+        var throwOnHome = false
+        var failRestore = false
+        var failEveryRestore = false
+        override fun attach(view: View): Boolean { mounted = true; return true }
+        override fun detach(view: View) { detachments++; mounted = false; yielded = false }
+        override fun setRecoveryHandoffFocus(enabled: Boolean): Boolean {
+            if (enabled) {
+                attempts++; yielded = true
+                if (throwOnYield) error("partial updateViewLayout failure")
+            } else {
+                if (failEveryRestore || (yielded && failRestore)) return false
+                yielded = false
+            }
+            return true
+        }
+        override fun goHome() {
+            homes++; homeSawShield = mounted
+            if (throwOnHome) error("background Activity launch rejected")
+        }
+    }
+
+    private fun drawnRecovery(c: BlockScreenCoordinator, top: Boolean = true, focused: Boolean = false): org.robolectric.android.controller.ActivityController<BlockActivity> {
+        c.showBlocked(pkg, null, c.currentBlockCause(pkg)!!); invokeRecoveryCallback(c)
+        val intent = shadowOf(app as android.app.Application).nextStartedActivity
+        PathBBlockHandoff::class.java.getDeclaredField("coordinator").apply { isAccessible = true }.set(null, c)
+        val activity = Robolectric.buildActivity(BlockActivity::class.java, intent).create().start().resume().visible()
+        if (top) activity.get().onTopResumedActivityChanged(true)
+        if (focused) activity.get().onWindowFocusChanged(true)
+        compose.waitForIdle(); activity.get().window.decorView.viewTreeObserver.dispatchOnDraw(); shadowOf(Looper.getMainLooper()).idle()
+        return activity
+    }
+
+    @Test fun PC_41_PC_76_focusTimeoutRetriesTheSameDrawnRecoveryWithoutAnotherLaunch() = runTest {
+        val host = FocusHost(); val c = coordinator(Disk(initial()) { clock() }, surface = host); runCurrent()
+        val activity = drawnRecovery(c)
+        try {
+            val id = activity.get().intent.getStringExtra(BlockActivity.EXTRA_RECOVERY_HANDOFF)!!
+            assertTrue(host.yielded); assertEquals(1, host.attempts)
+            advanceTimeBy(BlockScreenCoordinator.RECOVERY_SURFACE_TIMEOUT_MS); runCurrent()
+            assertTrue(host.mounted); assertFalse(host.yielded)
+            RecoverySurfaceHandoff.ready(id, true)
+            assertTrue(host.yielded); assertEquals(2, host.attempts)
+            activity.get().onWindowFocusChanged(true)
+            assertFalse(host.mounted)
+            assertFalse(BlockExemptions.hasGlobalRecovery())
+        } finally { activity.pause().stop().destroy(); c.hideIfShown() }
+    }
+
+    @Test fun PC_41_PC_76_repeatedFocusTimeoutsStopAtThePerLaunchRetryCap() = runTest {
+        val host = FocusHost(); val c = coordinator(Disk(initial()) { clock() }, surface = host); runCurrent()
+        val activity = drawnRecovery(c)
+        try {
+            val id = activity.get().intent.getStringExtra(BlockActivity.EXTRA_RECOVERY_HANDOFF)!!
+            repeat(BlockScreenCoordinator.MAX_RECOVERY_FOCUS_ATTEMPTS) {
+                advanceTimeBy(BlockScreenCoordinator.RECOVERY_SURFACE_TIMEOUT_MS); runCurrent()
+                assertFalse(host.yielded)
+                RecoverySurfaceHandoff.ready(id, true)
+            }
+            repeat(5) { RecoverySurfaceHandoff.ready(id, true) }
+            assertEquals(BlockScreenCoordinator.MAX_RECOVERY_FOCUS_ATTEMPTS, host.attempts)
+            assertFalse(host.yielded); assertTrue(host.mounted)
+            assertFalse(RecoverySurfaceHandoff.isShowing(pkg))
+        } finally { activity.pause().stop().destroy(); c.hideIfShown() }
+    }
+
+    @Test fun PC_41_PC_76_partialYieldFailureRestoresThenRetriesWithoutLatching() = runTest {
+        val host = FocusHost().apply { throwOnYield = true }
+        val c = coordinator(Disk(initial()) { clock() }, surface = host); runCurrent()
+        val activity = drawnRecovery(c)
+        try {
+            assertEquals(1, host.attempts); assertFalse(host.yielded); assertTrue(host.mounted)
+            host.throwOnYield = false
+            RecoverySurfaceHandoff.ready(activity.get().intent.getStringExtra(BlockActivity.EXTRA_RECOVERY_HANDOFF)!!, true)
+            assertEquals(2, host.attempts); assertTrue(host.yielded)
+            activity.get().onWindowFocusChanged(true)
+            assertFalse(host.mounted); assertFalse(BlockExemptions.hasGlobalRecovery())
+        } finally { activity.pause().stop().destroy(); c.hideIfShown() }
+    }
+
+    @Test fun PC_41_PC_51_PC_76_failedRestoreKeepsTouchShieldUntilObservedDepartureEvenWhenHomeFails() = runTest {
+        for (throwOnHome in listOf(false, true)) {
+            val host = FocusHost().apply { this.throwOnHome = throwOnHome }; var wakes = 0
+            val c = coordinator(Disk(initial()) { clock() }, surface = host) { wakes++ }; runCurrent()
+            val activity = drawnRecovery(c)
+            try {
+                assertTrue(host.yielded); assertTrue(host.mounted)
+                val id = activity.get().intent.getStringExtra(BlockActivity.EXTRA_RECOVERY_HANDOFF)!!
+                val before = wakes
+                host.failRestore = true
+                advanceTimeBy(BlockScreenCoordinator.RECOVERY_SURFACE_TIMEOUT_MS); runCurrent()
+                assertTrue(host.mounted); assertTrue(host.yielded); assertEquals(1, host.homes)
+                assertTrue(host.homeSawShield); assertEquals("No unshielded gap even if Home fails", 0, host.detachments)
+                assertTrue(wakes > before); assertFalse(BlockExemptions.hasGlobalRecovery())
+                assertFalse(c.canDismiss(pkg, c.currentBlockCause(pkg)!!))
+                RecoverySurfaceHandoff.ready(id, true)
+                assertEquals("Abandoned handoff cannot yield again", 1, host.attempts)
+                c.showBlocked(pkg, null, c.currentBlockCause(pkg)!!)
+                assertTrue("Reevaluation still on the target keeps its shield", host.mounted)
+                assertTrue("A repeated window fault keeps touch coverage and the restore pending", host.yielded)
+                host.failRestore = false
+                c.showBlocked(pkg, null, c.currentBlockCause(pkg)!!)
+                assertTrue(host.mounted); assertFalse("Next evaluation restores key blocking", host.yielded)
+                assertEquals("Restoration never opens a detach gap", 0, host.detachments)
+                // The detector owns removal after actually observing Home/a floor departure.
+                c.hideIfShown(); assertFalse(host.mounted)
+            } finally { activity.pause().stop().destroy(); c.hideIfShown() }
+        }
+    }
+
+    @Test fun PC_41_PC_76_prelaunchClearCannotRestoreOrAbandonADifferentTargetsMount() = runTest {
+        val host = FocusHost(); val c = coordinator(Disk(initial()) { clock() }, surface = host); runCurrent()
+        val activity = drawnRecovery(c)
+        try {
+            val stale = activity.get().intent.getStringExtra(BlockActivity.EXTRA_RECOVERY_HANDOFF)!!
+            c.hideIfShown(); c.showBlocked("com.example.different", null, c.currentBlockCause(pkg)!!)
+            host.failEveryRestore = true
+            val detachments = host.detachments
+            assertTrue("No old handoff may restore focus on this new mount", c.launchRecovery())
+            assertTrue(host.mounted); assertEquals(0, host.homes); assertEquals(detachments, host.detachments)
+            RecoverySurfaceHandoff.ready(stale, true); RecoverySurfaceHandoff.drawn(stale)
+            assertTrue(host.mounted); assertEquals(0, host.homes); assertEquals(detachments, host.detachments)
+        } finally { activity.pause().stop().destroy(); c.hideIfShown() }
+    }
+
+    @Test fun PC_41_PC_76_timedOutDifferentTargetFrameCannotHideTheNewShield() = runTest {
+        val host = FocusHost(); val c = coordinator(Disk(initial()) { clock() }, surface = host); runCurrent()
+        val cause = c.currentBlockCause(pkg)!!
+        c.showBlocked(pkg, null, cause); invokeRecoveryCallback(c)
+        val stale = shadowOf(app as android.app.Application).nextStartedActivity
+        advanceTimeBy(BlockScreenCoordinator.RECOVERY_SURFACE_TIMEOUT_MS); runCurrent()
+        c.hideIfShown(); c.showBlocked("com.example.different", null, cause)
+        PathBBlockHandoff::class.java.getDeclaredField("coordinator").apply { isAccessible = true }.set(null, c)
+        val activity = Robolectric.buildActivity(BlockActivity::class.java, stale).create().start().resume().visible()
+        try {
+            activity.get().onTopResumedActivityChanged(true); activity.get().onWindowFocusChanged(true)
+            compose.waitForIdle(); activity.get().window.decorView.viewTreeObserver.dispatchOnDraw(); shadowOf(Looper.getMainLooper()).idle()
+            assertTrue(RecoverySurfaceHandoff.isShowing(pkg))
+            assertFalse(RecoverySurfaceHandoff.isShowing("com.example.different"))
+            assertTrue(host.mounted); assertEquals(0, host.attempts)
+        } finally { activity.pause().stop().destroy(); c.hideIfShown() }
+    }
+
+    @Test fun PC_41_PC_76_missingTopCallbackYieldsBeforeFocusThenCompletesHandoff() = runTest {
+        val host = FocusHost(); val c = coordinator(Disk(initial()) { clock() }, surface = host); runCurrent()
+        val activity = drawnRecovery(c, top = false)
+        try {
+            // The still-focusable shield owns initial focus; an initial false is not a loss.
+            activity.get().onWindowFocusChanged(false)
+            shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(BlockActivity.RECOVERY_TOP_FALLBACK_MS - 1))
+            assertTrue(host.mounted); assertFalse(host.yielded); assertEquals(0, host.attempts)
+            shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(1))
+            assertTrue(host.mounted); assertTrue(host.yielded); assertEquals(1, host.attempts)
+            assertFalse("Yield alone cannot acquire a presentation lease", RecoverySurfaceHandoff.isShowing(pkg))
+            activity.get().onWindowFocusChanged(true) // Android grants focus only after the yield.
+            assertFalse(host.mounted); assertTrue(RecoverySurfaceHandoff.isShowing(pkg))
+            assertFalse(BlockExemptions.hasGlobalRecovery())
+        } finally { activity.pause().stop().destroy(); c.hideIfShown() }
+    }
+
+    @Test fun PC_41_PC_76_missingTopCallbackWithoutFocusRestoresAndKeepsShield() = runTest {
+        val host = FocusHost(); val c = coordinator(Disk(initial()) { clock() }, surface = host); runCurrent()
+        val activity = drawnRecovery(c, top = false)
+        try {
+            shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(BlockActivity.RECOVERY_TOP_FALLBACK_MS))
+            assertTrue(host.mounted); assertTrue(host.yielded); assertFalse(RecoverySurfaceHandoff.isShowing(pkg))
+            advanceTimeBy(BlockScreenCoordinator.RECOVERY_SURFACE_TIMEOUT_MS); runCurrent()
+            assertTrue(host.mounted); assertFalse(host.yielded); assertEquals(0, host.detachments)
+            assertFalse(RecoverySurfaceHandoff.isShowing(pkg)); assertFalse(BlockExemptions.hasGlobalRecovery())
+        } finally { activity.pause().stop().destroy(); c.hideIfShown() }
+    }
+
+    @Test fun PC_41_PC_76_reusedRecoveryRequiresFreshWindowFocusForTheNewHandoff() = runTest {
+        val host = FocusHost(); val c = coordinator(Disk(initial()) { clock() }, surface = host); runCurrent()
+        val activity = drawnRecovery(c, focused = true)
+        try {
+            assertFalse(host.mounted)
+            val other = "com.example.different"
+            c.showBlocked(other, null, c.currentBlockCause(pkg)!!)
+            assertTrue(c.launchRecovery())
+            activity.newIntent(shadowOf(app as android.app.Application).nextStartedActivity)
+            compose.waitForIdle(); activity.get().window.decorView.viewTreeObserver.dispatchOnDraw(); shadowOf(Looper.getMainLooper()).idle()
+            assertTrue("Old focus cannot detach the new target shield", host.mounted)
+            assertTrue(host.yielded); assertFalse(RecoverySurfaceHandoff.isShowing(other))
+            activity.get().onWindowFocusChanged(false)
+            assertTrue("Initial lack of new focus does not revoke the yield", host.yielded)
+            activity.get().onWindowFocusChanged(true)
+            assertFalse(host.mounted); assertTrue(RecoverySurfaceHandoff.isShowing(other))
+        } finally { activity.pause().stop().destroy(); c.hideIfShown() }
+    }
+
+    @Test fun PC_41_PC_51_PC_76_missingTopCallbackFallbackRevokesOnExplicitLoss() = runTest {
+        for (mode in listOf("covered", "focus", "top", "multi", "pause")) {
+            val host = FocusHost(); val c = coordinator(Disk(initial()) { clock() }, surface = host); runCurrent()
+            val activity = drawnRecovery(c, top = false, focused = true)
+            try {
+                assertTrue("A missing callback is not an immediate lease", host.mounted)
+                when (mode) {
+                    "focus" -> activity.get().onWindowFocusChanged(false)
+                    "top" -> activity.get().onTopResumedActivityChanged(false)
+                    "multi" -> activity.get().onMultiWindowModeChanged(true, android.content.res.Configuration())
+                    "pause" -> activity.pause()
+                }
+                shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(BlockActivity.RECOVERY_TOP_FALLBACK_MS))
+                assertEquals(mode != "covered", host.mounted)
+                assertEquals(mode == "covered", RecoverySurfaceHandoff.isShowing(pkg))
+                assertFalse(BlockExemptions.hasGlobalRecovery())
+            } finally { if (mode != "pause") activity.pause(); activity.stop().destroy(); c.hideIfShown() }
+        }
+    }
+
+    @Test @Config(sdk = [28]) fun PC_41_PC_76_pre29FocusedResumedRecoveryNeedsNoTopCallback() = runTest {
+        val host = FocusHost(); val c = coordinator(Disk(initial()) { clock() }, surface = host); runCurrent()
+        val activity = drawnRecovery(c, top = false, focused = true)
+        try { assertFalse(host.mounted); assertTrue(RecoverySurfaceHandoff.isShowing(pkg)) }
+        finally { activity.pause().stop().destroy(); c.hideIfShown() }
+    }
+
     @Test fun PC_41_PC_76_droppedRecoveryLaunchKeepsShieldAndLateFrameCannotRemoveNewMount() = runTest {
         var mounted = false
         var wakes = 0
@@ -278,9 +503,9 @@ class GlobalRecoveryCoordinatorTest {
         var recoveryFocus = false
         val surface = object : BlockScreenCoordinator.SurfaceHost {
             override fun attach(view: View): Boolean { mounted = true; return true }
-            override fun detach(view: View) { mounted = false }
+            override fun detach(view: View) { mounted = false; recoveryFocus = false }
             override fun goHome() = Unit
-            override fun setRecoveryHandoffFocus(enabled: Boolean) { recoveryFocus = enabled }
+            override fun setRecoveryHandoffFocus(enabled: Boolean): Boolean { recoveryFocus = enabled; return true }
         }
         val c = coordinator(Disk(initial()) { clock() }, surface = surface); runCurrent()
         c.showBlocked(pkg, null, c.currentBlockCause(pkg)!!); invokeRecoveryCallback(c)
@@ -342,14 +567,14 @@ class GlobalRecoveryCoordinatorTest {
     }
 
     @Test fun PC_41_PC_76_recoveryFocusRestoresOnTimeoutRevocationAndMultiWindow() = runTest {
-        for (mode in listOf("timeout", "revoked", "focus", "multi")) {
+        for (mode in listOf("timeout", "revoked", "no-focus", "multi")) {
             var mounted = false
             var recoveryFocus = false
             val surface = object : BlockScreenCoordinator.SurfaceHost {
                 override fun attach(view: View): Boolean { mounted = true; return true }
-                override fun detach(view: View) { mounted = false }
+                override fun detach(view: View) { mounted = false; recoveryFocus = false }
                 override fun goHome() = Unit
-                override fun setRecoveryHandoffFocus(enabled: Boolean) { recoveryFocus = enabled }
+                override fun setRecoveryHandoffFocus(enabled: Boolean): Boolean { recoveryFocus = enabled; return true }
             }
             val c = coordinator(Disk(initial()) { clock() }, surface = surface); runCurrent()
             c.showBlocked(pkg, null, c.currentBlockCause(pkg)!!); invokeRecoveryCallback(c)
@@ -364,7 +589,11 @@ class GlobalRecoveryCoordinatorTest {
                 when (mode) {
                     "timeout" -> { advanceTimeBy(BlockScreenCoordinator.RECOVERY_SURFACE_TIMEOUT_MS); runCurrent() }
                     "revoked" -> activity.get().onTopResumedActivityChanged(false)
-                    "focus" -> activity.get().onWindowFocusChanged(false)
+                    "no-focus" -> {
+                        activity.get().onWindowFocusChanged(false)
+                        assertTrue("Initial focus absence is not a focus-loss revocation", recoveryFocus)
+                        advanceTimeBy(BlockScreenCoordinator.RECOVERY_SURFACE_TIMEOUT_MS); runCurrent()
+                    }
                     else -> activity.get().onWindowFocusChanged(true)
                 }
                 assertFalse("$mode restores key focus to the opaque shield", recoveryFocus)
@@ -385,7 +614,7 @@ class GlobalRecoveryCoordinatorTest {
             override fun attach(view: View): Boolean { mounted = true; return true }
             override fun detach(view: View) { mounted = false }
             override fun goHome() = Unit
-            override fun setRecoveryHandoffFocus(enabled: Boolean) { focusChanges += enabled }
+            override fun setRecoveryHandoffFocus(enabled: Boolean): Boolean { focusChanges += enabled; return true }
         }
         val c = coordinator(Disk(initial()) { clock() }, surface = surface, context = context); runCurrent()
         c.showBlocked(pkg, null, c.currentBlockCause(pkg)!!)

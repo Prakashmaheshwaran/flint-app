@@ -343,6 +343,7 @@ class FlintAccessibilityService : AccessibilityService() {
 
     private inner class AccessibilityOverlayHost : BlockScreenCoordinator.SurfaceHost {
         private var mountedView: View? = null
+        private var recoveryFocusYielded: Boolean? = false
         override fun attach(view: View): Boolean {
             val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
             val params = WindowManager.LayoutParams(
@@ -352,7 +353,9 @@ class FlintAccessibilityService : AccessibilityService() {
                 0,
                 PixelFormat.OPAQUE,
             )
-            return runCatching { wm.addView(view, params) }.isSuccess.also { if (it) { overlayAttached = true; mountedView = view } }
+            return runCatching { wm.addView(view, params) }.isSuccess.also {
+                if (it) { overlayAttached = true; mountedView = view; recoveryFocusYielded = false }
+            }
         }
 
         override fun detach(view: View) {
@@ -361,18 +364,20 @@ class FlintAccessibilityService : AccessibilityService() {
             }
             overlayAttached = false
             overlayWindowId = null
-            if (mountedView === view) mountedView = null
+            if (mountedView === view) { mountedView = null; recoveryFocusYielded = false }
         }
 
-        override fun setRecoveryHandoffFocus(enabled: Boolean) {
-            val view = mountedView ?: return
-            val old = view.layoutParams as? WindowManager.LayoutParams ?: return
+        override fun setRecoveryHandoffFocus(enabled: Boolean): Boolean {
+            val view = mountedView ?: return !enabled
+            val old = view.layoutParams as? WindowManager.LayoutParams ?: return false
+            val locallyYielded = old.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE != 0
+            if (recoveryFocusYielded == enabled && locallyYielded == enabled) return true
             val flags = if (enabled) old.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                 else old.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
-            if (flags == old.flags) return
             val next = WindowManager.LayoutParams().apply { copyFrom(old); this.flags = flags }
-            runCatching { (getSystemService(Context.WINDOW_SERVICE) as WindowManager).updateViewLayout(view, next) }
-                .onFailure { if (!enabled) goHome() }
+            return runCatching { (getSystemService(Context.WINDOW_SERVICE) as WindowManager).updateViewLayout(view, next) }
+                .onSuccess { recoveryFocusYielded = enabled }
+                .onFailure { recoveryFocusYielded = null }.isSuccess
         }
 
         override fun goHome() {
