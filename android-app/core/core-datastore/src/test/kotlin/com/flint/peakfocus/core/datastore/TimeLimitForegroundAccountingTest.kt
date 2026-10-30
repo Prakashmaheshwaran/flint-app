@@ -145,4 +145,11 @@ class TimeLimitForegroundAccountingTest {
         store.observeForeground(observation(at(25_000), previous = null, visit = "after-floor"))
         assertEquals(25 * 60_000 + 15_000L, day(disk).usedMs)
     }
+
+    @Test fun PC_48_retiredOwnerCanClearItsOldSpanWithoutChargingTimeAfterItLostOwnership() = runBlocking {
+        val disk = Disk(); val store = seed(disk)
+        store.observeForeground(observation(at(15_000), visit = null, pkg = null, close = true)) { false }
+        assertEquals(25 * 60_000L, day(disk).usedMs)
+        assertNull(TimeLimitUsageCodec.decode(disk.values.value[TIME_USAGE_STATE]!!).foreground)
+    }
 }

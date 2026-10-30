@@ -75,4 +75,29 @@ class TimeLimitEditorDaysTest {
         assertEquals("Asia/Tokyo", committed.targets.getValue("new").zoneId)
         assertEquals(setOf("app", "new"), committed.targets.keys)
     }
+
+    @Test fun PC_37_PC_48_corruptTimeChildrenAreIsolatedAndCannotPublishAPartialZoneMigration() {
+        val invalidAnchor = EditorCommitmentState(causes = mapOf(timeCauseKey("app") to cause(30 * hour)))
+        val initial = prefs(); val before = initial.toPreferences()
+        assertNull(prepareTimeLimitEditorDays(initial, invalidAnchor, now, "Asia/Tokyo"))
+        assertEquals(before, initial)
+        for (kind in listOf("type", "future", "state")) {
+            val broken = prefs()
+            prepareTimeLimitEditorDays(broken, null, now, "UTC")
+            when (kind) {
+                "type" -> broken[stringPreferencesKey(TIME_USAGE_SCHEMA.name)] = "wrong type"
+                "future" -> broken[TIME_USAGE_SCHEMA] = 2L
+                else -> broken[TIME_USAGE_STATE] = "corrupt"
+            }
+            val original = broken.toPreferences()
+            assertNull(kind, prepareTimeLimitEditorDays(broken, null, now, "Asia/Tokyo"))
+            assertEquals(original, broken)
+        }
+    }
+
+    @Test fun PC_48_unavailableTimeDomainDoesNotChangeTheTimeHalfOfAnOpenOnlyPairedEdit() {
+        val old = TimeLimit("app", 30, BreakLevel.HARDER)
+        val openOnly = EditorChange("Open edit", limits = EditorLimitsChange("app", old, OpenLimit("app", 2)))
+        assertEquals(openOnly, normalizeTimeLimitEditorChange(openOnly, listOf(old), null, "Asia/Tokyo"))
+    }
 }

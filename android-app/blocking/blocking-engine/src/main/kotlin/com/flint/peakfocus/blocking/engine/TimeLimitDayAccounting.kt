@@ -58,7 +58,8 @@ object TimeLimitDayAccounting {
             // Missing history is a coverage warning. Clock/boot changes never disable a
             // known balance or stop subsequently observed foreground time from spending it.
             accountingUnknownUntilReset = !rolled && current.accountingUnknownUntilReset,
-            timeUncertain = current.timeUncertain || elapsed == null || clockDiscontinuity(current.observedAt, now),
+            timeUncertain = (!rolled && current.timeUncertain) || elapsed == null || clockDiscontinuity(current.observedAt, now) ||
+                kotlin.math.abs(logicalWall - now.wallEpochMs) > ProtectionContract.CLOCK_DISCONTINUITY_MS,
         )
         requireValid(next)
         return TimeLimitDayResult(next, rolled)

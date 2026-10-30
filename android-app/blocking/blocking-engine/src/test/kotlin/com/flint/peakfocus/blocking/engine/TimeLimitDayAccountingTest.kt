@@ -129,6 +129,22 @@ class TimeLimitDayAccountingTest {
         }
     }
 
+    @Test fun PC_54_PC_60_warningRecoversOnlyAtATrustedNewPeriodWithAnAlignedClock() {
+        val used = record(initial(), sample(25 * 60_000))
+        val shifted = TimeLimitDayAccounting.reconcile(used, at(1_000, 48 * hour)).state
+        assertTrue(shifted.timeUncertain)
+        assertEquals(5 * 60_000L, TimeLimitDayAccounting.remainingMs(shifted, 30))
+        val aligned = TimeLimitDayAccounting.reconcile(shifted, at(2_000)).state
+        assertTrue(aligned.timeUncertain)
+        assertEquals(used.periodId, aligned.periodId)
+        val reset = TimeLimitDayAccounting.reconcile(aligned, at(hour))
+        assertTrue(reset.rolled)
+        assertFalse(reset.state.timeUncertain)
+        val stillShifted = TimeLimitDayAccounting.reconcile(shifted, at(hour, 48 * hour + hour - 1_000))
+        assertTrue(stillShifted.rolled)
+        assertTrue(stillShifted.state.timeUncertain)
+    }
+
     @Test fun PC_56_templateZoneChangeWaitsForTheExistingTrustedBoundary() {
         val old = record(initial(), sample(60_000))
         val pending = TimeLimitDayAccounting.reconcile(old, at(1_000), "Asia/Tokyo")

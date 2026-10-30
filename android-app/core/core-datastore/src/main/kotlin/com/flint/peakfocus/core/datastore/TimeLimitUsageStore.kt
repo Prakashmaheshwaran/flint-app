@@ -51,7 +51,7 @@ class DataStoreTimeLimitUsageStore(
             val stamp = observation.observedAt
             if (previous?.ownerId == observation.ownerId && previous.checkpoint.bootSessionId == stamp.bootSessionId &&
                 trustedElapsedMs(previous.checkpoint, stamp) == null) return@edit
-            if (previous?.ownerId == observation.ownerId && previous.visitId == observation.previousVisitId) {
+            if (previous?.ownerId == observation.ownerId && previous.visitId == observation.previousVisitId && isCurrentOwner()) {
                 val elapsed = trustedElapsedMs(previous.checkpoint, stamp)?.takeIf { it <= MAX_FOREGROUND_GAP_MS }
                 val old = ledger.targets[previous.packageName] ?: wireCorrupt()
                 var row = old
@@ -68,7 +68,7 @@ class DataStoreTimeLimitUsageStore(
                 } else if (elapsed == null) row = row.copy(accountingUnknownUntilReset = true)
                 ledger = ledger.copy(targets = ledger.targets + (previous.packageName to row))
             }
-            val target = observation.packageName.takeUnless { observation.closeOnly }
+            val target = observation.packageName.takeUnless { observation.closeOnly || !isCurrentOwner() }
             val next = if (target == null) null else {
                 val visit = observation.visitId ?: wireCorrupt()
                 val templateZone = prefs.editorTimes().singleOrNull { it.packageName == target }?.zoneId

@@ -8,41 +8,44 @@ import com.flint.peakfocus.core.model.*
 internal fun prepareTimeLimitEditorDays(prefs: MutablePreferences, previous: EditorCommitmentState?,
     now: AccessClockStamp, deviceZone: String): TimeLimitUsageLedger? {
     if (readTimeLimitBootstrapCapture(prefs) is TimeLimitBootstrapCapture.Unavailable) return null
-    val initialized = StrictPrefsCodec.long(prefs, TIME_USAGE_SCHEMA) != null
     val oldQuota = if (StrictPrefsCodec.long(prefs, OPEN_CREDIT_SCHEMA) != null) readOpenCredits(prefs) else null
     // A Time-owned failure must not poison pass/Open/rule snapshots. Stage the one-time
     // rewrite so an unprovable old Time anchor cannot publish half a migration.
-    val working = if (initialized) prefs else prefs.toPreferences().toMutablePreferences()
     return try {
-    var ledger = prepareTimeLimitSavedZones(working, now, deviceZone)
-    if (!initialized) {
-        ledger = ledger.copy(targets = ledger.targets.mapValues { (pkg, row) ->
-            val cause = previous?.causes?.get(timeCauseKey(pkg))
-            val interval = cause?.interval
-            // Reboot conservatively resumes the saved bound, never a changed wall estimate.
-            val remaining = interval?.let {
-                trustedElapsedMs(it.anchor, now)?.let { elapsed -> (it.remainingAtAnchorMs - elapsed).coerceAtLeast(0L) }
-                    ?: it.remainingAtAnchorMs
-            } ?: oldQuota?.let { OpenCreditPolicy().remainingToResetMs(it.reset, now) }
-            if (remaining == null || remaining == 0L) row else {
-                val logical = previous?.timeline?.let { anchor -> trustedElapsedMs(anchor, now)?.let { anchor.wallEpochMs + it } }
-                    ?: oldQuota?.logicalCheckpoint?.let { anchor -> trustedElapsedMs(anchor, now)?.let { anchor.wallEpochMs + it } }
-                    ?: now.wallEpochMs
-                row.copy(zoneId = cause?.zoneId ?: oldQuota?.quotaZone ?: row.zoneId,
-                    reset = OpenCreditPolicy.ResetClock(now, remaining), logicalCheckpoint = now.copy(wallEpochMs = logical),
-                    observedAt = now, timeUncertain = row.timeUncertain ||
-                        (interval != null && trustedElapsedMs(interval.anchor, now) == null))
+        val initialized = StrictPrefsCodec.long(prefs, TIME_USAGE_SCHEMA) != null
+        val working = if (initialized) prefs else prefs.toPreferences().toMutablePreferences()
+        val captured = prepareTimeLimitSavedZones(working, now, deviceZone)
+        val ledger = if (initialized) captured else seedTimeLimitEditorAnchors(captured, previous, oldQuota, now)
+        if (!initialized) {
+            working.putTimeLimitUsage(ledger)
+            working.asMap().forEach { (key, value) ->
+                @Suppress("UNCHECKED_CAST")
+                prefs[key as Preferences.Key<Any>] = value
             }
-        })
-        working.putTimeLimitUsage(ledger)
-        working.asMap().forEach { (key, value) ->
-            @Suppress("UNCHECKED_CAST")
-            prefs[key as Preferences.Key<Any>] = value
         }
-    }
-    ledger
+        ledger
     } catch (_: StorageUnavailableException) { null }
 }
+
+private fun seedTimeLimitEditorAnchors(ledger: TimeLimitUsageLedger, previous: EditorCommitmentState?,
+    oldQuota: OpenCreditLedger?, now: AccessClockStamp): TimeLimitUsageLedger = ledger.copy(targets = ledger.targets.mapValues { (pkg, row) ->
+    val cause = previous?.causes?.get(timeCauseKey(pkg))
+    val interval = cause?.interval
+    // Reboot conservatively resumes the saved bound, never a changed wall estimate.
+    val remaining = interval?.let {
+        trustedElapsedMs(it.anchor, now)?.let { elapsed -> (it.remainingAtAnchorMs - elapsed).coerceAtLeast(0L) }
+            ?: it.remainingAtAnchorMs
+    } ?: oldQuota?.let { OpenCreditPolicy().remainingToResetMs(it.reset, now) }
+    if (remaining == null || remaining == 0L) row else {
+        val logical = previous?.timeline?.let { anchor -> trustedElapsedMs(anchor, now)?.let { anchor.wallEpochMs + it } }
+            ?: oldQuota?.logicalCheckpoint?.let { anchor -> trustedElapsedMs(anchor, now)?.let { anchor.wallEpochMs + it } }
+            ?: now.wallEpochMs
+        row.copy(zoneId = cause?.zoneId ?: oldQuota?.quotaZone ?: row.zoneId,
+            reset = OpenCreditPolicy.ResetClock(now, remaining), logicalCheckpoint = now.copy(wallEpochMs = logical),
+            observedAt = now, timeUncertain = row.timeUncertain ||
+                (interval != null && trustedElapsedMs(interval.anchor, now) == null))
+    }
+})
 
 /** Before applying due edits, expose the OLD Time period's proven end (including zero). */
 internal fun preserveTimeLimitEditorEnds(state: EditorCommitmentState, ledger: TimeLimitUsageLedger?,
@@ -93,6 +96,8 @@ internal fun normalizeTimeLimitEditorChange(change: EditorChange, current: List<
     val limits = change.limits ?: return change
     val time = limits.time ?: return change
     val previous = current.singleOrNull { it.packageName == limits.packageName }
+    // An Open-only paired edit must not silently capture/change an unavailable Time domain.
+    if (ledger == null && time == previous) return change
     return change.copy(limits = limits.copy(time = time.withSavedTimeLimitZone(previous,
         ledger?.targets?.get(limits.packageName)?.zoneId ?: zoneForNewTarget)))
 }

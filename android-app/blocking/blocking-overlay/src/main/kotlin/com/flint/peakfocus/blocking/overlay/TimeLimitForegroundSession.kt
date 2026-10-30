@@ -25,7 +25,7 @@ class TimeLimitForegroundSession internal constructor(
 ) {
     enum class Path { A, B }
     private data class Request(val previous: String?, val visit: String?, val pkg: String?,
-        val wall: Long, val elapsed: Long, val close: Boolean, val done: CompletableDeferred<Unit>)
+        val wall: Long, val elapsed: Long, val close: Boolean, val eligibleAtClose: Boolean, val done: CompletableDeferred<Unit>)
     private val owner = UUID.randomUUID().toString()
     private val requests = Channel<Request>(Channel.UNLIMITED)
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
@@ -40,7 +40,7 @@ class TimeLimitForegroundSession internal constructor(
                     try {
                         val stamp = stampFor(request.wall, request.elapsed)
                         write(TimeLimitForegroundObservation(owner, request.previous, request.visit, request.pkg, stamp, request.close)) {
-                            !retired && eligible()
+                            if (request.close) request.eligibleAtClose else !retired && eligible()
                         }
                         request.done.complete(Unit)
                     } catch (cancelled: CancellationException) {
@@ -76,7 +76,8 @@ class TimeLimitForegroundSession internal constructor(
 
     private fun enqueue(previous: String?, visit: String?, pkg: String?, close: Boolean): Deferred<Unit> {
         val done = CompletableDeferred<Unit>()
-        val request = Request(previous, visit, pkg, System.currentTimeMillis(), SystemClock.elapsedRealtime(), close, done)
+        val request = Request(previous, visit, pkg, System.currentTimeMillis(), SystemClock.elapsedRealtime(), close,
+            close && eligible(), done)
         if (!requests.trySend(request).isSuccess) done.completeExceptionally(IllegalStateException("retired Time observer"))
         return done
     }
