@@ -364,7 +364,7 @@ final class FlintHistoryTests: XCTestCase {
     }
     func testFirstHostReadIncludesEarlierExtensionInboxInHistoryStart() {
         let extensionStore = FlintHistoryStore(directory: directory, isHost: false)
-        XCTAssertTrue(extensionStore.append(event(.started, -86400)))
+        XCTAssertTrue(extensionStore.append(event(.started, -86400, end: -82800)))
         XCTAssertTrue(extensionStore.append(event(.completed, -82800)))
         let snapshot = store().read()
         XCTAssertEqual(snapshot.historyStart, t.addingTimeInterval(-86400))
@@ -584,7 +584,13 @@ final class FlintHistoryTests: XCTestCase {
         var b = event(.breakStarted, 900); b.breakEnd = event(.breakEnded, 1800).at
         XCTAssertEqual(summary([event(.started, 0), a, b, event(.completed, 3600)]).focusedSeconds, 2400)
         var clipped = event(.breakStarted, -300); clipped.breakEnd = event(.breakEnded, 600).at
-        XCTAssertEqual(summary([clipped, event(.started, 0), event(.breakStarted, 3000), event(.completed, 3600)]).focusedSeconds, 2400)
+        let contradictory = summary([clipped, event(.started, 0), event(.breakStarted, 3000), event(.completed, 3600)])
+        XCTAssertEqual(contradictory.sessions.first?.outcome, .unconfirmed)
+        XCTAssertEqual(contradictory.focusedSeconds, 0, "A break before the actual start cannot prove coverage")
+        XCTAssertEqual(contradictory.days.reduce(0) { $0 + $1.completed }, 0)
+        // A legitimate pending break can extend past the focus deadline; its cut is clipped.
+        var tail = event(.breakStarted, 3000); tail.breakEnd = event(.breakEnded, 4200).at
+        XCTAssertEqual(summary([event(.started, 0), a, tail, event(.completed, 3600)]).focusedSeconds, 2400)
     }
     func testFH09HistoricalBucketsMoveWhenZoneChanges() {
         let start = utc.date(from: DateComponents(year: 2026, month: 10, day: 28, hour: 1))!
