@@ -429,7 +429,7 @@ public final class FlintProtectionLedger {
             return .failure(.unavailable("ledger schema \(header.version) is newer than this build"))
         }
         do {
-            let state = try makeDecoder().decode(FlintLedgerState.self, from: data)
+            var state = try makeDecoder().decode(FlintLedgerState.self, from: data)
             // Reject unknown/invalid recovery intent before ANY ledger writer can decode then
             // re-encode it and discard fields it doesn't understand. Original bytes stay intact.
             if state.emergencyRecovery != nil && !state.hasValidPassRecovery {
@@ -439,6 +439,7 @@ public final class FlintProtectionLedger {
                 onCorrupt()
                 return .failure(.unavailable("Ordinary access state is unavailable"))
             }
+            state.ordinaryGrants?.trimAudit()
             return .success(state)
         } catch {
             onCorrupt()

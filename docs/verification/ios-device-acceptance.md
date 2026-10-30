@@ -36,7 +36,8 @@ and does not count a Void sink return as a durable append receipt.
 | BREAK-07 / PC-75 | Exhaust/refuse carrier registration, then request a break. Separately interrupt native application after durable acceptance. | Registration refusal says “Access unavailable” with no grant or charge. Application recovery uses the same accepted grant and remaining time, with no extra charge. | device-pending |
 | BREAK-08 / §6 | Use Emergency Pass during an ordinary break, then Resume protection. | The pass cancels the ordinary grant, stops its exact carrier, and preserves all charges; it never resurrects after recovery. | device-pending |
 | BREAK-09 / PC-72 | Application break overlaps a Safari owner; separately request a domain/category whose filter scope is unprovable. | Application-only scope leaves Safari policy intact; unprovable domain/category access is unavailable with no charge. | device-pending |
-| BREAK-10 / C09 | Inspect Easy, Harder and Hardcore session controls with VoiceOver and largest text. | Separate “Take a 5-minute break” and “End early” controls show the exact action/tier preview; active break exposes remaining time and Resume now. | device-pending |
+| BREAK-10 / C09 | Inspect Easy, Harder and Hardcore session controls with VoiceOver and largest text. | Separate “Take a 5-minute break” and “End early” controls show the exact action/tier preview; denied/unavailable breaks show an explanation without an action, and an active break exposes remaining time and Resume now. | device-pending |
+| BREAK-11 / §8 | During a live break, make carrier repair fail; reopen or foreground Flint without replaying the request. | Targets re-shield without a refund, the terminal reason is carrier_failed, health records the failure, and the screen says “Access couldn't be enforced; protection is back”. | device-pending |
 
 ## B2 — session registration and time integrity (PR #91)
 

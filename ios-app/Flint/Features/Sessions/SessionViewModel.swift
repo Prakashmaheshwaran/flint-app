@@ -40,9 +40,13 @@ final class SessionViewModel: ObservableObject {
     @Published private(set) var breakWait: HarderStop?
     @Published private(set) var ordinaryBreak: FlintOrdinaryGrantState.Record?
     @Published private(set) var breakRemaining: TimeInterval = 0
-    @Published private(set) var breakPreview = "Access unavailable"
+    @Published private(set) var breakPreview = FlintOrdinaryBreakPreview.unavailable
     @Published var confirmingBreak = false
     private var breakRequest: FlintBreakAuthorization.Request?
+    private let readBreakStatus: () -> FlintOrdinaryBreakStatus
+    private let readBreakPreview: () -> FlintOrdinaryBreakPreview
+    private var breakReconcilePending = false
+    private let observesLifecycle: Bool
 
     var stopPreview: String {
         guard let active else { return "Not running" }
@@ -70,7 +74,11 @@ final class SessionViewModel: ObservableObject {
     private var completionForeground: AnyCancellable?
     private var reconciled: AnyCancellable?
 
-    init() {
+    init(initialSession: FlintActiveSession? = nil, observeLifecycle: Bool = true,
+         breakStatus: @escaping () -> FlintOrdinaryBreakStatus = FlintOrdinaryBreaks.status,
+         breakPreview: @escaping () -> FlintOrdinaryBreakPreview = FlintOrdinaryBreaks.previewForCurrentSession) {
+        readBreakStatus = breakStatus; readBreakPreview = breakPreview; observesLifecycle = observeLifecycle
+        if !observeLifecycle { active = initialSession; return }
         if let saved = FlintGroupStore()?.loadSelection() { selection = saved }
         savedGroups = FlintGroupStore()?.loadAppGroups() ?? []
         active = controller.activeSession
@@ -92,7 +100,7 @@ final class SessionViewModel: ObservableObject {
         startTicking()
         refreshCompletion()
         completionForeground = NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
-            .sink { [weak self] _ in Task { @MainActor in self?.refreshCompletion() } }
+            .sink { [weak self] _ in Task { @MainActor in self?.syncActive(); self?.refreshCompletion() } }
         // A session ended elsewhere — the locked gate's Emergency Pass, a Shortcut, the monitor —
         // must not linger on screen as a phantom countdown.
         reconciled = NotificationCenter.default.publisher(for: .flintProtectionReconciled)
@@ -100,15 +108,20 @@ final class SessionViewModel: ObservableObject {
     }
 
     private func syncActive() {
+        updateActive(controller.activeSession)
+    }
+
+    /// Foreground/notification refresh must observe grant changes even for the same session.
+    func updateActive(_ current: FlintActiveSession?) {
         guard active?.monitorName != "preview" else { return }
-        let current = controller.activeSession
+        refreshBreakStatus()
         guard current != active else { return }
         active = current
         if current == nil {
             remaining = 0
             harderStop = nil
             timer?.invalidate()
-            refreshCompletion()
+            if observesLifecycle { refreshCompletion() }
         } else {
             startTicking()
         }
@@ -263,9 +276,11 @@ final class SessionViewModel: ObservableObject {
 
     func refreshBreakStatus() {
         guard active?.monitorName != "preview" else { return }
-        ordinaryBreak = FlintOrdinaryBreaks.activeRecord()
+        let status = readBreakStatus()
+        ordinaryBreak = status.record
         breakRemaining = ordinaryBreak?.remaining(at: .init(clock: .system)) ?? 0
-        breakPreview = FlintOrdinaryBreaks.previewForCurrentSession()
+        breakPreview = readBreakPreview()
+        if let notice = status.notice { errorText = notice.message }
     }
 
     private func applyBreak(_ outcome: FlintBreakOutcome) {
@@ -284,7 +299,7 @@ final class SessionViewModel: ObservableObject {
             NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
         case let .ended(reason):
             breakRequest = nil; breakWait = nil; confirmingBreak = false
-            errorText = reason == .reboot ? "Access ended after restart; no extra credit was spent." : "Access ended. No extra credit was spent."
+            errorText = reason.message
             refreshBreakStatus()
         case let .refused(error):
             errorText = error.localizedDescription
@@ -352,6 +367,7 @@ final class SessionViewModel: ObservableObject {
 
     private func startTicking() {
         timer?.invalidate()
+        guard observesLifecycle else { return }
         guard let active, active.endsAt != nil else { remaining = 0; return }
         tick()
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -366,7 +382,14 @@ final class SessionViewModel: ObservableObject {
         remaining = active.logicalRemaining(clock: .system) ?? 0
         if let record = ordinaryBreak {
             breakRemaining = record.remaining(at: .init(clock: .system))
-            if breakRemaining <= 0 { FlintOrdinaryBreaks.reconcile(); refreshBreakStatus() }
+            if breakRemaining <= 0 && !breakReconcilePending {
+                breakReconcilePending = true
+                Task { [weak self] in
+                    _ = await Task.detached(priority: .utility) { FlintOrdinaryBreaks.reconcile() }.value
+                    self?.breakReconcilePending = false
+                    self?.refreshBreakStatus()
+                }
+            }
         }
         if active.isLogicallyExpired(clock: .system) {
             // On a real device the monitor clears the shield; mirror that here for the UI and as

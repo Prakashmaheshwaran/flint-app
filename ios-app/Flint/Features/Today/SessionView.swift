@@ -69,16 +69,16 @@ struct SessionView: View {
             if let wait = vm.breakWait {
                 BreakWaitView(wait: wait, onBack: vm.cancelBreak, onStop: vm.confirmBreak,
                     finalAction: "Take a 5-minute break", heading: "Harder · Break requested",
-                    explanation: "After the wait, confirm up to 5 minutes of access. The session keeps running. Going back cancels the wait without spending it.")
+                    explanation: vm.breakPreview.message + " The session keeps running. Going back cancels the wait without spending it.")
             }
         }
         .alert("Take a 5-minute break", isPresented: $vm.confirmingBreak) {
             Button("Cancel", role: .cancel, action: vm.cancelBreak)
             Button("Take a 5-minute break", action: vm.confirmBreak)
-        } message: { Text(vm.breakPreview) }
+        } message: { Text(vm.breakPreview.message) }
         .preferredColorScheme(.dark)
         .onAppear { refreshPassStatus(); vm.refreshBreakStatus() }
-        .onChange(of: scenePhase) { phase in if phase == .active { refreshPassStatus() } }
+        .onChange(of: scenePhase) { phase in if phase == .active { refreshPassStatus(); vm.refreshBreakStatus() } }
         .onReceive(NotificationCenter.default.publisher(for: .flintProtectionReconciled)) { _ in refreshPassStatus() }
         .onReceive(Timer.publish(every: 15, on: .main, in: .common).autoconnect()) { _ in refreshPassStatus() }
     }
@@ -105,13 +105,15 @@ struct SessionView: View {
                     Spacer()
                     Button("Resume now", action: vm.resumeBreakNow).buttonStyle(GhostButtonStyle())
                 }
-            } else {
+            } else if vm.breakPreview.isActionable {
                 Button(action: vm.requestBreak) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Take a 5-minute break").font(FlintFont.text(14, weight: .medium))
-                        Text(vm.breakPreview).font(FlintFont.text(12))
+                        Text(vm.breakPreview.message).font(FlintFont.text(12))
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.buttonStyle(GhostButtonStyle())
+            } else {
+                Text(vm.breakPreview.message).flintSecondary(12).frame(maxWidth: .infinity, alignment: .leading)
             }
             if let error = vm.errorText { Text(error).flintSecondary(12).accessibilityIdentifier("session.action.error") }
             Button {

@@ -142,7 +142,7 @@ public enum FlintBreakAuthorization {
             parts.append(bytes.base64EncodedString())
             if let end = contributor.logicalEnd {
                 // Bind revision-zero session end changes without binding editable wall time.
-                parts += [end.bootID ?? "unknown", String((end.monotonic * 1000).rounded() / 1000)]
+                parts += [end.bootID ?? "unknown", String((end.monotonic * 100).rounded() / 100)]
             } else { parts.append("unbounded") }
             switch contributor.selection {
             case let .blockList(frozen): parts += ["block"] + frozen.targets.map(\.key).sorted()

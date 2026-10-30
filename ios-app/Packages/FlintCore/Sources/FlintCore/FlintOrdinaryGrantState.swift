@@ -5,6 +5,15 @@ public enum FlintBreakEndReason: String, Codable, Equatable, Sendable {
     case deadline, supersession, pass, reboot
     case resumeNow = "resume_now"
     case newCommitment = "new_commitment"
+    case carrierFailed = "carrier_failed"
+
+    public var message: String {
+        switch self {
+        case .reboot: return "Access ended after restart; no extra credit was spent."
+        case .carrierFailed: return "Access couldn't be enforced; protection is back"
+        default: return "Access ended. No extra credit was spent."
+        }
+    }
 }
 
 /// Accepted authority, including the end and selection that revision-zero sessions cannot
@@ -52,7 +61,7 @@ public struct FlintBreakAuthority: Codable, Equatable, Sendable {
 
 public enum FlintOrdinaryBreakError: Error, Equatable, LocalizedError {
     case unavailable, confirmationRequired, waitNotMatured, pendingMismatch, expiredRequest
-    case hardcore
+    case hardcore, capacity
     case activeGrant(TimeInterval)
     public var errorDescription: String? {
         switch self {
@@ -63,6 +72,7 @@ public enum FlintOrdinaryBreakError: Error, Equatable, LocalizedError {
         case .pendingMismatch: return "Your protection changed. Start a new wait."
         case .expiredRequest: return "This access request has ended. No extra credit was spent."
         case .unavailable: return "Access unavailable"
+        case .capacity: return "Access unavailable while previous protection changes are applying."
         }
     }
 }
@@ -74,7 +84,12 @@ public struct FlintOrdinaryGrantState: Codable, Equatable, Sendable {
     public static let maximumReceipts = 128
     public static let maximumOperations = 8192
     public static let maximumEvents = 256
-    public static let maximumBytes = 4 * 1024 * 1024
+    public static let maximumAuditBytes = 1024 * 1024
+    static let carrierPrefix = "flint.break."
+    static func isCarrier(_ name: String) -> Bool {
+        name.hasPrefix(carrierPrefix) && name.count == carrierPrefix.count + 16 &&
+            name.dropFirst(carrierPrefix.count).allSatisfy { "0123456789abcdef".contains($0) }
+    }
     public var version = 1
     public var generation = UUID().uuidString
     public var previousGeneration: String?
@@ -83,6 +98,8 @@ public struct FlintOrdinaryGrantState: Codable, Equatable, Sendable {
     public var records: [Record] = []
     public var receipts: [Data] = []
     public var eventOutbox: [Data] = []
+    /// Optional for compatibility with previously written v1 grant state.
+    public var evictedEventCount: Int?
     public var pending: FlintBreakAuthorization.Request?
     public init() {}
     static func validObservation(_ now: FlintLedgerInstant) -> Bool {
@@ -96,6 +113,7 @@ public struct FlintOrdinaryGrantState: Codable, Equatable, Sendable {
         public let kind: Kind
         public let grantID: String
         public let focusSessionIDs: Set<String>
+        /// Persisted with the ledger Date codec; the lane F adapter converts to epoch milliseconds.
         public let at: Date
         public let observedAt: Date
         public let breakEnd: Date?
@@ -127,7 +145,7 @@ public struct FlintOrdinaryGrantState: Codable, Equatable, Sendable {
         }
         public var activityName: String { Self.activityName(grant.id) }
         static func activityName(_ id: String) -> String {
-            "flint.break." + SHA256.hash(data: Data(id.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
+            FlintOrdinaryGrantState.carrierPrefix + SHA256.hash(data: Data(id.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
         }
         public func remaining(at now: FlintLedgerInstant) -> TimeInterval {
             endReason == nil ? grant.remaining(at: now) : 0
@@ -183,8 +201,7 @@ public struct FlintOrdinaryGrantState: Codable, Equatable, Sendable {
     var isValid: Bool {
         guard version == 1, UUID(uuidString: generation) != nil,
               previousGeneration.map({ UUID(uuidString: $0) != nil && $0 != generation }) ?? true,
-              records.count <= Self.maximumGrants, receipts.count <= Self.maximumReceipts,
-              eventOutbox.count + records.reduce(0, { $0 + ($1.endReason == nil ? 2 : $1.events.count) }) <= Self.maximumEvents,
+              records.count <= Self.maximumGrants,
               acceptedOperations.count <= Self.maximumOperations,
               previousAcceptedOperations.count <= Self.maximumOperations,
               acceptedOperations.allSatisfy({ validOperation($0, generation: generation) }),
@@ -192,9 +209,32 @@ public struct FlintOrdinaryGrantState: Codable, Equatable, Sendable {
               Set(records.map { $0.grant.id }).count == records.count,
               Set(records.map { $0.grant.operationID }).count == records.count,
               records.allSatisfy({ $0.isValid && contains($0.grant.operationID) }) else { return false }
-        // Receipt contents are audit only. Preserve invalid bytes; neither decode nor use
-        // them as active authorization. The aggregate cap also bounds retained corruption.
-        return (try? FlintProtectionLedger.makeEncoder().encode(self).count).map { $0 <= Self.maximumBytes } ?? false
+        // Audit payload size or corruption cannot make unrelated protection unavailable.
+        // Each audit collection is trimmed independently on reads/writes, never authorized.
+        return true
+    }
+
+    var hasCapacity: Bool { records.count < Self.maximumGrants && acceptedOperations.count < Self.maximumOperations }
+    var canRequest: Bool { hasCapacity || (records.isEmpty && pending == nil) }
+
+    mutating func trimAudit() {
+        func trimmed(_ values: [Data], count: Int) -> [Data] {
+            var bytes = 0
+            var kept: [Data] = []
+            for value in values.reversed().prefix(count) {
+                guard value.count <= Self.maximumAuditBytes - bytes else { break }
+                bytes += value.count; kept.append(value)
+            }
+            return kept.reversed()
+        }
+        receipts = trimmed(receipts, count: Self.maximumReceipts)
+        let kept = trimmed(eventOutbox, count: Self.maximumEvents)
+        let removed = eventOutbox.count - kept.count
+        if removed > 0 {
+            let old = max(0, evictedEventCount ?? 0)
+            evictedEventCount = old > Int.max - removed ? Int.max : old + removed
+        }
+        eventOutbox = kept
     }
 
     func contains(_ operationID: String) -> Bool {
@@ -223,7 +263,7 @@ public struct FlintOrdinaryGrantState: Codable, Equatable, Sendable {
             }
         }
         records.removeAll { $0.endReason != nil && !$0.applicationPending }
-        receipts = Array(receipts.suffix(Self.maximumReceipts))
+        trimAudit()
     }
 
     func receipt(for request: FlintBreakAuthorization.Request) -> Receipt? {

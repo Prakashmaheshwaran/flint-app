@@ -269,9 +269,12 @@ final class FlintOrdinaryBreakServiceTests: XCTestCase {
 
     func testApplicationFailureKeepsAcceptedGrantAndRetriesWithoutCharging() throws {
         let request = try request(); advance(60); applyFails = true
-        XCTAssertEqual(service.confirm(request), .refused(.unavailable))
+        guard case let .active(pending, _) = service.confirm(request) else { return XCTFail("Accepted state must remain visible") }
+        XCTAssertTrue(pending.applicationPending)
         let accepted = try ledger.peek().get().ordinaryGrants!.records[0]
         XCTAssertTrue(accepted.applicationPending)
+        guard case let .active(retry, _) = service.confirm(request) else { return XCTFail("Unapplied retry lost accepted state") }
+        XCTAssertEqual(retry.grant.id, accepted.grant.id)
         applyFails = false; advance(50)
         XCTAssertEqual(try accept(request).grant.id, accepted.grant.id)
         XCTAssertEqual(try ledger.peek().get().harder["session"]?.committedCount, 1)
@@ -302,6 +305,8 @@ final class FlintOrdinaryBreakServiceTests: XCTestCase {
         XCTAssertTrue(service.reconcile())
         XCTAssertTrue(applied.isEmpty)
         XCTAssertEqual(try ledger.peek().get().harder["session"]?.committedCount, 1)
+        XCTAssertEqual(try lastReceipt().reason, .carrierFailed)
+        XCTAssertNotNil(try ledger.peek().get().operation(record.grant.id + ".break.carrier_failed"))
     }
 
     func testEventIntentSurvivesCrashAndUsesFrozenSessionIDsUntilPositiveAck() throws {
@@ -356,14 +361,79 @@ final class FlintOrdinaryBreakServiceTests: XCTestCase {
         XCTAssertEqual(service.request(scope: scope, operationID: old), .refused(.expiredRequest))
     }
 
-    func testCapacityAndAggregateBounds() throws {
+    func testAuditByteCapsDoNotPoisonLedgerAvailability() throws {
         causes[0].tier = .easy
         let record = try accept(request())
         var grants = try ledger.peek().get().ordinaryGrants!
         grants.receipts = Array(repeating: Data(count: 40_000), count: FlintOrdinaryGrantState.maximumReceipts)
-        XCTAssertFalse(grants.isValid)
+        grants.eventOutbox = Array(repeating: Data(count: 40_000), count: FlintOrdinaryGrantState.maximumEvents)
+        XCTAssertTrue(grants.isValid)
+        try ledger.transaction { $0.ordinaryGrants = grants }.get()
+        let readable = try ledger.read().get().ordinaryGrants!
+        XCTAssertLessThanOrEqual(readable.receipts.reduce(0) { $0 + $1.count }, FlintOrdinaryGrantState.maximumAuditBytes)
+        XCTAssertLessThanOrEqual(readable.eventOutbox.reduce(0) { $0 + $1.count }, FlintOrdinaryGrantState.maximumAuditBytes)
+        XCTAssertGreaterThan(readable.evictedEventCount ?? 0, 0)
         grants = try ledger.peek().get().ordinaryGrants!
         grants.records = Array(repeating: record, count: FlintOrdinaryGrantState.maximumGrants + 1)
         XCTAssertFalse(grants.isValid)
+    }
+
+    func testFullOutboxStillAcceptsBreakAndEvictsOldestWithAuditCount() throws {
+        let request = try request(); advance(60)
+        let oldest = Data("oldest unacknowledged intent".utf8)
+        try ledger.transaction { state in
+            state.ordinaryGrants?.eventOutbox = Array(repeating: oldest, count: FlintOrdinaryGrantState.maximumEvents)
+        }.get()
+        let record = try accept(request)
+        XCTAssertTrue(service.resumeNow(grantID: record.grant.id))
+        let grants = try ledger.peek().get().ordinaryGrants!
+        XCTAssertEqual(grants.eventOutbox.count, FlintOrdinaryGrantState.maximumEvents)
+        XCTAssertEqual(grants.evictedEventCount, 2)
+        XCTAssertNotEqual(grants.eventOutbox.last, oldest)
+        XCTAssertEqual(try ledger.peek().get().harder["session"]?.committedCount, 1)
+    }
+
+    func testKnownCapacityFailureRefusesBeforeStartingAnotherWait() throws {
+        let pending = try request()
+        try ledger.transaction { state in
+            let generation = state.ordinaryGrants!.generation
+            state.ordinaryGrants?.acceptedOperations = Set((0..<FlintOrdinaryGrantState.maximumOperations).map { _ in generation + ":" + UUID().uuidString })
+        }.get()
+        XCTAssertEqual(service.request(scope: scope, operationID: pending.operationID), .refused(.capacity))
+        XCTAssertTrue(carriers.isEmpty)
+    }
+
+    func testPostAppendValidationAndLaterHarderCommitThrowRollBackTransaction() throws {
+        let request = try request(); advance(60)
+        let before = try ledger.peek().get()
+        let contributors = context(before)!.contributors
+        guard case let .commit(plan) = FlintBreakAuthorization.commitPlan(contributors: contributors, existingGrants: [],
+            request: request, clock: clock, grantID: UUID().uuidString, confirmed: true) else { return XCTFail("No plan") }
+        let authorities = try context(before)!.authorities(for: plan.grant)
+        // Both increments validate before mutation; the second commit unexpectedly reports
+        // alreadyCommitted after the first increment. The throwing transaction must roll back.
+        let duplicateIncrement = FlintBreakAuthorization.CommitPlan(grant: plan.grant, increments: plan.increments + plan.increments)
+        XCTAssertThrowsError(try ledger.transaction { state in
+            try state.commitOrdinaryBreak(duplicateIncrement, authorities: authorities, request: request,
+                contributors: contributors, at: now)
+        }.get())
+        XCTAssertEqual(try ledger.peek().get(), before)
+        // Exactly full replay memory is valid before append; appending this new operation
+        // fails the post-append isValid check, also without persisting any partial state.
+        XCTAssertThrowsError(try ledger.transaction { state in
+            let generation = state.ordinaryGrants!.generation
+            state.ordinaryGrants?.acceptedOperations = Set((0..<FlintOrdinaryGrantState.maximumOperations).map { _ in generation + ":" + UUID().uuidString })
+            try state.commitOrdinaryBreak(plan, authorities: authorities, request: request,
+                contributors: contributors, at: now)
+        }.get())
+        XCTAssertEqual(try ledger.peek().get(), before)
+    }
+
+    func testRestartNoticeExistsOnReadBeforeAndAfterReconciliationWithoutReplay() throws {
+        let pending = try request(); advance(60); _ = try accept(pending)
+        boot = "new-boot"
+        XCTAssertEqual(FlintOrdinaryBreakStatus.project(try ledger.peek().get().ordinaryGrants, at: now).notice, .reboot)
+        XCTAssertTrue(service.reconcile())
+        XCTAssertEqual(FlintOrdinaryBreakStatus.project(try ledger.peek().get().ordinaryGrants, at: now).notice, .reboot)
     }
 }

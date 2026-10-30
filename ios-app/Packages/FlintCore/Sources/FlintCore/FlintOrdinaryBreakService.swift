@@ -72,6 +72,7 @@ public final class FlintOrdinaryBreakService {
     private let stop: (String) -> Void
     private let apply: ([FlintOrdinaryGrantState.Record], FlintBreakContext?, FlintLedgerInstant) throws -> Void
     private let gate: () -> Bool
+    private let reportFailure: (String, String) -> Void
 
     public init(ledger: FlintProtectionLedger, clock: FlintClock,
                 transition: @escaping (() -> Void) -> Bool,
@@ -79,9 +80,11 @@ public final class FlintOrdinaryBreakService {
                 register: @escaping (FlintOrdinaryGrantState.Record, TimeInterval) throws -> Void,
                 registered: @escaping (String) -> Bool, stop: @escaping (String) -> Void,
                 apply: @escaping ([FlintOrdinaryGrantState.Record], FlintBreakContext?, FlintLedgerInstant) throws -> Void,
-                gate: @escaping () -> Bool = { true }) {
+                gate: @escaping () -> Bool = { true },
+                reportFailure: @escaping (String, String) -> Void = { _, _ in }) {
         self.ledger = ledger; self.clock = clock; self.transition = transition; self.context = context
         self.register = register; self.registered = registered; self.stop = stop; self.apply = apply; self.gate = gate
+        self.reportFailure = reportFailure
     }
 
     public func request(scope: FlintBreakScope, operationID: String? = nil) -> FlintBreakOutcome {
@@ -103,6 +106,7 @@ public final class FlintOrdinaryBreakService {
                 guard grants.validOperation(id, generation: grants.generation), !grants.contains(id) else {
                     return .refused(.expiredRequest)
                 }
+                guard grants.hasCapacity else { return .refused(.capacity) }
                 switch FlintBreakAuthorization.decide(contributors: context.contributors,
                     existingGrants: grants.records.filter { $0.endReason == nil }.map(\.grant), request: request, clock: now.clock) {
                 case let .deny(reason): return self.denied(reason, grants: grants, now: now)
@@ -134,7 +138,15 @@ public final class FlintOrdinaryBreakService {
     public func confirm(_ request: FlintBreakAuthorization.Request) -> FlintBreakOutcome {
         var answer: FlintBreakOutcome = .refused(.unavailable)
         guard transition({
-            guard self.gate(), self.reconcileLocked() else { return }
+            guard self.gate() else { return }
+            guard self.reconcileLocked() else {
+                if case let .success(state) = self.ledger.peek(),
+                   let record = state.ordinaryGrants?.records.first(where: {
+                       $0.grant.operationID == request.operationID && $0.grant.scope == request.scope &&
+                           $0.remaining(at: .init(clock: self.clock)) > 0
+                   }) { answer = .active(record, remaining: record.remaining(at: .init(clock: self.clock))) }
+                return
+            }
             var registration: String?
             var refusal: FlintOrdinaryBreakError?
             let committed = self.ledger.transaction { state -> String in
@@ -186,7 +198,10 @@ public final class FlintOrdinaryBreakService {
                 if let registration { self.stop(registration) }
                 answer = .refused(refusal ?? .unavailable); return
             }
-            guard self.reconcileLocked(), case let .success(state) = self.ledger.peek() else { return }
+            // Acceptance is durable even if native application needs retry. Surface that
+            // pending state, rather than suggesting the accepted/charged request failed.
+            _ = self.reconcileLocked()
+            guard case let .success(state) = self.ledger.peek() else { return }
             if let receipt = state.ordinaryGrants?.receipt(for: request) { answer = .ended(receipt.reason); return }
             guard let record = state.ordinaryGrants?.records.first(where: { $0.grant.id == id }) else { return }
             answer = record.endReason.map(FlintBreakOutcome.ended) ?? .active(record, remaining: record.remaining(at: .init(clock: self.clock)))
@@ -272,7 +287,11 @@ public final class FlintOrdinaryBreakService {
                         try self.register(grants.records[i], record.remaining(at: now))
                         guard self.registered(record.activityName) else { throw FlintOrdinaryBreakError.unavailable }
                         grants.records[i].carrierCheckpoint = now
-                    } catch { grants.records[i].end(.supersession, at: now) }
+                    } catch {
+                        grants.records[i].end(.carrierFailed, at: now)
+                        state.remember(.init(id: record.grant.id + ".break.carrier_failed", kind: "break.carrier_failed",
+                            result: "protection_restoration_pending", at: now.wall))
+                    }
                 }
             }
             state.ordinaryGrants = grants
@@ -287,7 +306,10 @@ public final class FlintOrdinaryBreakService {
         let now = FlintLedgerInstant(clock: clock)
         let current = context(state, now)
         do { if gate() { try apply(records, current, now) } } catch { return false }
-        for record in records where record.endReason != nil { stop(record.activityName) }
+        for record in records where record.endReason != nil {
+            stop(record.activityName)
+            if record.endReason == .carrierFailed { reportFailure(record.activityName, FlintBreakEndReason.carrierFailed.message) }
+        }
         return (try? ledger.transaction { state in
             guard var grants = state.ordinaryGrants else { return }
             for i in grants.records.indices { grants.records[i].applicationPending = false }
@@ -321,6 +343,7 @@ public final class FlintOrdinaryBreakService {
                     if !event.isAcknowledged { retained.append(try FlintProtectionLedger.makeEncoder().encode(event)) }
                 }
                 grants.eventOutbox = retained
+                grants.trimAudit()
                 try grants.archiveFinished(); state.ordinaryGrants = grants
             }.get()) != nil
         }) else { return false }

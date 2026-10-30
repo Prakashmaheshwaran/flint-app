@@ -231,9 +231,7 @@ public struct FlintPassRecovery: Codable, Equatable, Sendable {
     }
 
     private static func isOrdinaryCarrier(_ name: String) -> Bool {
-        let prefix = "flint.break."
-        return name.hasPrefix(prefix) && name.count == prefix.count + 16 &&
-            name.dropFirst(prefix.count).allSatisfy { "0123456789abcdef".contains($0) }
+        FlintOrdinaryGrantState.isCarrier(name)
     }
     private static func isOpenCreditCarrier(_ name: String) -> Bool {
         let prefix = "flint.open."

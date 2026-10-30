@@ -225,7 +225,8 @@ enum FlintRuleShield {
     }
 
     private static func applyLocked<Rule: FlintGatedRule>(_ rule: Rule, clock: FlintClock) {
-        apply(rule, to: FlintManagedRuleShieldWriter(store: ManagedSettingsStore(named: .init(rule.storeName))))
+        let selection = FlintOrdinaryBreaks.filteredSelection(rule.selection, storeName: rule.storeName, allowList: rule.allowList)
+        apply(rule, to: FlintManagedRuleShieldWriter(store: ManagedSettingsStore(named: .init(rule.storeName))), selection: selection)
         if let schedule = rule as? FlintScheduleRule {
             switch FlintWebRestrictions.readForEnforcement() {
             case let .available(config):
@@ -273,7 +274,8 @@ enum FlintRuleShield {
 
     private static func addLocked<Rule: FlintGatedRule>(_ rule: Rule, clock: FlintClock) {
         let store = ManagedSettingsStore(named: .init(rule.storeName))
-        add(rule, to: FlintManagedRuleShieldWriter(store: store))
+        let selection = FlintOrdinaryBreaks.filteredSelection(rule.selection, storeName: rule.storeName, allowList: rule.allowList)
+        add(rule, to: FlintManagedRuleShieldWriter(store: store), selection: selection)
         if let schedule = rule as? FlintScheduleRule, schedule.occurrence(at: clock.now(), clock: clock) != nil {
             let config: FlintWebRestrictions
             switch FlintWebRestrictions.readForEnforcement() {
@@ -293,19 +295,21 @@ enum FlintRuleShield {
         }
     }
 
-    static func add<Rule: FlintGatedRule>(_ rule: Rule, to writer: FlintRuleShieldReading) {
+    static func add<Rule: FlintGatedRule>(_ rule: Rule, to writer: FlintRuleShieldReading,
+                                        selection override: FamilyActivitySelection? = nil) {
+        let selection = override ?? rule.selection
         if rule.allowList {
-            writer.applicationCategories(union(.all(except: rule.selection.applicationTokens), writer.currentApplicationCategories))
+            writer.applicationCategories(union(.all(except: selection.applicationTokens), writer.currentApplicationCategories))
             writer.webDomainCategories(union(.all(), writer.currentWebDomainCategories))
         } else {
-            if !rule.selection.applicationTokens.isEmpty {
-                writer.applications((writer.currentApplications ?? []).union(rule.selection.applicationTokens))
+            if !selection.applicationTokens.isEmpty {
+                writer.applications((writer.currentApplications ?? []).union(selection.applicationTokens))
             }
-            if !rule.selection.categoryTokens.isEmpty {
-                writer.applicationCategories(union(.specific(rule.selection.categoryTokens), writer.currentApplicationCategories))
+            if !selection.categoryTokens.isEmpty {
+                writer.applicationCategories(union(.specific(selection.categoryTokens), writer.currentApplicationCategories))
             }
-            if !rule.selection.webDomainTokens.isEmpty {
-                writer.webDomains((writer.currentWebDomains ?? []).union(rule.selection.webDomainTokens))
+            if !selection.webDomainTokens.isEmpty {
+                writer.webDomains((writer.currentWebDomains ?? []).union(selection.webDomainTokens))
             }
         }
     }
@@ -325,12 +329,14 @@ enum FlintRuleShield {
         }
     }
 
-    static func apply<Rule: FlintGatedRule>(_ rule: Rule, to writer: FlintRuleShieldWriting) {
-        writer.applications(!rule.allowList && !rule.selection.applicationTokens.isEmpty ? rule.selection.applicationTokens : nil)
-        writer.applicationCategories(rule.allowList ? .all(except: rule.selection.applicationTokens)
-            : (rule.selection.categoryTokens.isEmpty ? nil : .specific(rule.selection.categoryTokens))
+    static func apply<Rule: FlintGatedRule>(_ rule: Rule, to writer: FlintRuleShieldWriting,
+                                          selection override: FamilyActivitySelection? = nil) {
+        let selection = override ?? rule.selection
+        writer.applications(!rule.allowList && !selection.applicationTokens.isEmpty ? selection.applicationTokens : nil)
+        writer.applicationCategories(rule.allowList ? .all(except: selection.applicationTokens)
+            : (selection.categoryTokens.isEmpty ? nil : .specific(selection.categoryTokens))
         )
-        writer.webDomains(!rule.allowList && !rule.selection.webDomainTokens.isEmpty ? rule.selection.webDomainTokens : nil)
+        writer.webDomains(!rule.allowList && !selection.webDomainTokens.isEmpty ? selection.webDomainTokens : nil)
         writer.webDomainCategories(rule.allowList ? .all() : nil)
     }
 }

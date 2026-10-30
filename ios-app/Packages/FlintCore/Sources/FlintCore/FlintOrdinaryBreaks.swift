@@ -4,13 +4,43 @@ import FamilyControls
 import ManagedSettings
 import DeviceActivity
 
+public struct FlintOrdinaryBreakPreview: Equatable {
+    public enum Kind { case confirm, wait, deniedHardcore, unavailable, activeGrant }
+    public let kind: Kind
+    public let message: String
+    public var isActionable: Bool { kind == .confirm || kind == .wait }
+    public static let unavailable = Self(kind: .unavailable, message: "Access unavailable")
+}
+
+public struct FlintOrdinaryBreakStatus {
+    public let record: FlintOrdinaryGrantState.Record?
+    public let notice: FlintBreakEndReason?
+    public init(record: FlintOrdinaryGrantState.Record? = nil, notice: FlintBreakEndReason? = nil) {
+        self.record = record; self.notice = notice
+    }
+    static func project(_ grants: FlintOrdinaryGrantState?, at now: FlintLedgerInstant) -> Self {
+        guard let grants else { return .init() }
+        if let record = grants.records.first(where: { $0.remaining(at: now) > 0 }) { return .init(record: record) }
+        // A read can precede reconciliation after restart; display the same conservative
+        // expiry result without requiring an operation replay or mutating protection.
+        if let record = grants.records.last {
+            if record.endReason == .reboot || (record.endReason == nil &&
+                (record.grant.acceptedAt.bootID != now.bootID || now.monotonic < record.grant.acceptedAt.monotonic)) {
+                return .init(notice: .reboot)
+            }
+        }
+        let receipt = grants.receipts.reversed().compactMap {
+            try? FlintProtectionLedger.makeDecoder().decode(FlintOrdinaryGrantState.Receipt.self, from: $0)
+        }.first
+        return .init(notice: receipt.flatMap { [.reboot, .carrierFailed].contains($0.reason) ? $0.reason : nil })
+    }
+}
+
 /// Native ordinary-grant adapter. Opaque tokens stay local, canonically encoded; Safari
 /// content filters are never cleared by a token grant whose domain coverage is unprovable.
 public enum FlintOrdinaryBreaks {
     public static func isCarrier(_ name: String) -> Bool {
-        let prefix = "flint.break."
-        return name.hasPrefix(prefix) && name.count == prefix.count + 16 &&
-            name.dropFirst(prefix.count).allSatisfy { "0123456789abcdef".contains($0) }
+        FlintOrdinaryGrantState.isCarrier(name)
     }
 
     static func scope(_ selection: FamilyActivitySelection) throws -> FlintBreakScope {
@@ -47,31 +77,51 @@ public enum FlintOrdinaryBreaks {
     }
 
     public static func activeRecord() -> FlintOrdinaryGrantState.Record? {
-        guard case let .success(state)? = FlintProtectionLedger.appGroup()?.peek() else { return nil }
-        return state.ordinaryGrants?.records.first { $0.remaining(at: .init(clock: .system)) > 0 }
+        status().record
     }
 
-    public static func previewForCurrentSession() -> String {
+    public static func status() -> FlintOrdinaryBreakStatus {
+        guard case let .success(state)? = FlintProtectionLedger.appGroup()?.peek() else { return .init() }
+        return .project(state.ordinaryGrants, at: .init(clock: .system))
+    }
+
+    public static func previewForCurrentSession() -> FlintOrdinaryBreakPreview {
         guard case let .success(state)? = FlintProtectionLedger.appGroup()?.peek(),
               let group = FlintGroupStore(), let session = group.loadActiveSession(),
               let selection = group.loadSessionSelection(sessionID: session.id), let scope = try? scope(selection),
               let context = context(state, at: .init(clock: .system)),
-              context.canRelease(scope) else { return "Access unavailable" }
+              context.canRelease(scope) else { return .unavailable }
+        return preview(scope: scope, context: context, grants: state.ordinaryGrants, clock: .system)
+    }
+
+    static func preview(scope: FlintBreakScope, context: FlintBreakContext?, grants: FlintOrdinaryGrantState?,
+                        clock: FlintClock) -> FlintOrdinaryBreakPreview {
+        guard let context, context.canRelease(scope) else { return .unavailable }
         let request = FlintBreakAuthorization.Request(operationID: "preview", scope: scope)
         let suffix = scope.wholeCategories.isEmpty ? "" : " Selected categories are released as whole categories."
         switch FlintBreakAuthorization.decide(contributors: context.contributors,
-            existingGrants: state.ordinaryGrants?.records.filter { $0.endReason == nil }.map(\.grant) ?? [],
-            request: request, clock: .system) {
-        case .confirmEasy: return "Confirm up to 5 minutes of access to this session’s targets." + suffix
-        case let .wait(seconds, _): return "Wait \(Int(seconds / 60)) minutes, then confirm up to 5 minutes of access." + suffix
-        case let .deny(reason): return reason == .unavailable ? "Access unavailable" : reason.message
-        case .replay, .replayExpired: return "Access unavailable"
+            existingGrants: grants?.records.filter { $0.endReason == nil }.map(\.grant) ?? [],
+            request: request, clock: clock) {
+        case .confirmEasy:
+            guard grants?.canRequest ?? true else { return .init(kind: .unavailable, message: FlintOrdinaryBreakError.capacity.localizedDescription) }
+            return .init(kind: .confirm, message: "Confirm up to 5 minutes of access to this session’s targets." + suffix)
+        case let .wait(seconds, _):
+            guard grants?.canRequest ?? true else { return .init(kind: .unavailable, message: FlintOrdinaryBreakError.capacity.localizedDescription) }
+            return .init(kind: .wait, message: "Wait \(Int(seconds / 60)) minutes, then confirm up to 5 minutes of access." + suffix)
+        case .deny(.hardcore): return .init(kind: .deniedHardcore, message: FlintOrdinaryBreakError.hardcore.localizedDescription)
+        case let .deny(.activeGrant(left)): return .init(kind: .activeGrant, message: "A break is already active (\(Int(left)) seconds left)")
+        case .deny(.unavailable), .replay, .replayExpired: return .unavailable
         }
     }
 
     /// Single narrow hook used by policy materialization. Re-entrant on the owning thread;
     /// calling from a shield writer itself would recurse, so writers use filteredSelection.
-    static func policyDidChange() { _ = reconcile() }
+    static func policyDidChange() {
+        if case let .success(state)? = FlintProtectionLedger.appGroup()?.peek(),
+           state.ordinaryGrants?.records.isEmpty ?? true,
+           state.ordinaryGrants?.pending == nil { return }
+        _ = reconcile()
+    }
 
     static func filteredSelection(_ selection: FamilyActivitySelection, storeName: String,
                                   allowList: Bool = false) -> FamilyActivitySelection {
@@ -80,15 +130,23 @@ public enum FlintOrdinaryBreaks {
         let now = FlintLedgerInstant(clock: .system)
         guard let context = context(state, at: now) else { return selection }
         let center = DeviceActivityCenter()
-        let allowed = grants.records.reduce(into: Set<FlintBreakScope.Target>()) { result, record in
+        return filteredSelection(selection, storeName: storeName, allowList: allowList,
+            records: grants.records, context: context, at: now,
+            registered: { center.schedule(for: .init($0)) != nil })
+    }
+
+    static func filteredSelection(_ selection: FamilyActivitySelection, storeName: String, allowList: Bool = false,
+                                  records: [FlintOrdinaryGrantState.Record], context: FlintBreakContext,
+                                  at now: FlintLedgerInstant, registered: (String) -> Bool) -> FamilyActivitySelection {
+        let allowed = records.reduce(into: Set<FlintBreakScope.Target>()) { result, record in
             guard record.authorities.contains(where: { $0.storeName == storeName }),
-                  center.schedule(for: .init(record.activityName)) != nil else { return }
+                  registered(record.activityName) else { return }
             result.formUnion(context.authorizedTargets(for: record, at: now))
         }
         return transform(selection, allowList: allowList, releasing: allowed)
     }
 
-    private static func transform(_ selection: FamilyActivitySelection, allowList: Bool,
+    static func transform(_ selection: FamilyActivitySelection, allowList: Bool,
                                   releasing targets: Set<FlintBreakScope.Target>) -> FamilyActivitySelection {
         var result = selection
         let decoder = JSONDecoder()
@@ -122,7 +180,12 @@ public enum FlintOrdinaryBreaks {
             }
         }, registered: { center.activities.contains(.init($0)) && center.schedule(for: .init($0)) != nil },
         stop: { FlintScheduling.stopMonitoring([$0]) }, apply: apply,
-        gate: { FlintPassRecoveryGate.read().permitsApplication })
+        gate: { FlintPassRecoveryGate.read().permitsApplication }, reportFailure: { name, reason in
+            guard let group = FlintGroupStore() else { return }
+            let health = group.loadArmingHealth()
+            group.saveArmingHealth(health.replacing("ordinaryBreaks", with: .init(enabled: 1, attempted: 1, armed: 0,
+                failures: [.init(activityName: name, reason: reason)])))
+        })
     }
 
     private static func context(_ state: FlintLedgerState, at now: FlintLedgerInstant) -> FlintBreakContext? {
@@ -231,8 +294,8 @@ public enum FlintOrdinaryBreaks {
         }
     }
 
-    private static func write(_ selection: FlintBreakContributor.Selection, storeName: String,
-                              releasing targets: Set<FlintBreakScope.Target>) throws {
+    static func write(_ selection: FlintBreakContributor.Selection, storeName: String,
+                      releasing targets: Set<FlintBreakScope.Target>, to writer: FlintRuleShieldWriting? = nil) throws {
         let decoder = JSONDecoder()
         let scope: FlintBreakScope; let allowList: Bool
         switch selection {
@@ -248,15 +311,24 @@ public enum FlintOrdinaryBreaks {
             }
         }
         native = transform(native, allowList: allowList, releasing: targets)
-        guard FlintShieldLimits.withinCap(native.applicationTokens.count), FlintShieldLimits.withinCap(native.webDomainTokens.count) else {
+        guard FlintShieldLimits.withinCap(native.applicationTokens.count), FlintShieldLimits.withinCap(native.webDomainTokens.count),
+              FlintShieldLimits.withinCap(native.categoryTokens.count) else {
             throw FlintOrdinaryBreakError.unavailable
         }
-        let store = ManagedSettingsStore(named: .init(storeName))
-        store.shield.applications = !allowList && !native.applicationTokens.isEmpty ? native.applicationTokens : nil
-        store.shield.applicationCategories = allowList ? .all(except: native.applicationTokens)
-            : (native.categoryTokens.isEmpty ? nil : .specific(native.categoryTokens))
-        store.shield.webDomains = !allowList && !native.webDomainTokens.isEmpty ? native.webDomainTokens : nil
-        store.shield.webDomainCategories = allowList ? .all() : nil
+        let destination = writer ?? OrdinaryShieldWriter(store: ManagedSettingsStore(named: .init(storeName)))
+        destination.applications(!allowList && !native.applicationTokens.isEmpty ? native.applicationTokens : nil)
+        destination.applicationCategories(allowList ? .all(except: native.applicationTokens)
+            : (native.categoryTokens.isEmpty ? nil : .specific(native.categoryTokens)))
+        destination.webDomains(!allowList && !native.webDomainTokens.isEmpty ? native.webDomainTokens : nil)
+        destination.webDomainCategories(allowList ? .all() : nil)
     }
+}
+
+private struct OrdinaryShieldWriter: FlintRuleShieldWriting {
+    let store: ManagedSettingsStore
+    func applications(_ tokens: Set<ApplicationToken>?) { store.shield.applications = tokens }
+    func applicationCategories(_ policy: ShieldSettings.ActivityCategoryPolicy<Application>?) { store.shield.applicationCategories = policy }
+    func webDomains(_ tokens: Set<WebDomainToken>?) { store.shield.webDomains = tokens }
+    func webDomainCategories(_ policy: ShieldSettings.ActivityCategoryPolicy<WebDomain>?) { store.shield.webDomainCategories = policy }
 }
 #endif
