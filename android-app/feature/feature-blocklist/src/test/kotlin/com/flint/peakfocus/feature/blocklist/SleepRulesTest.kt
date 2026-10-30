@@ -86,6 +86,7 @@ class SleepRulesTest {
         val before = config.copy(breakLevel = BreakLevel.EASY, morningBreakLevel = BreakLevel.HARDCORE)
         val reopened = sleepConfigFrom(before.toRules())!!
         assertEquals(before, reopened)
+        assertNull(reopened.assist)
         val changed = reopened.copy(bedMinute = reopened.bedMinute - 15).toRules()
         assertEquals(BreakLevel.EASY, changed.first { it.id == SLEEP_WINDOW_RULE_ID }.breakLevel)
         assertEquals(BreakLevel.HARDCORE, changed.first { it.id == SLEEP_MORNING_RULE_ID }.breakLevel)

@@ -54,6 +54,8 @@ class PCSleepTierScreenTest {
 
     @Test fun PC_82_strongerSavedMorningTierIsVisibleAndSurvivesAnUnrelatedSave() {
         render(SleepConfig(morningEnabled = true, breakLevel = BreakLevel.EASY, morningBreakLevel = BreakLevel.HARDCORE))
+        compose.onNodeWithText("Wind down").performScrollTo().assertIsNotSelected()
+        compose.onNodeWithText("Full assist").performScrollTo().assertIsNotSelected()
         compose.onNodeWithText("Tier: Easy").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Tier: Hardcore").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Save sleep mode").performScrollTo().performClick()

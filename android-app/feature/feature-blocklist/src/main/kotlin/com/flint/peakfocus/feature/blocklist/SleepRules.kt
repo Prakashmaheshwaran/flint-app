@@ -44,8 +44,10 @@ internal data class SleepConfig(
     /** Preserve a pre-existing morning rule's own tier on an unrelated Sleep edit. */
     val morningBreakLevel: BreakLevel = breakLevel,
 ) {
-    /** Hardcore has no matching preset. Reopening never relabels it as Wind Down. */
-    val assist: SleepAssist? get() = SleepAssist.entries.firstOrNull { it.breakLevel == breakLevel }
+    /** A preset applies to both rules; Hardcore or mixed saved tiers have no matching preset. */
+    val assist: SleepAssist? get() = SleepAssist.entries.firstOrNull {
+        it.breakLevel == breakLevel && (!morningEnabled || it.breakLevel == morningBreakLevel)
+    }
 
     companion object {
         val DEFAULT = SleepConfig()
