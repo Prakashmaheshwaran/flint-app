@@ -162,14 +162,17 @@ internal object TargetProtectionProjection {
         val recovery = TargetRecoveryProjection.read(stored, now, input, foreign, limitDispositionKnown)
         val reason = limits.unavailableReason ?: if (!environment.legacyTimeReadable) "legacy-limit-state-unavailable"
             else recovery.unavailableReason
+        val credit = if (floor != null || browserFloor) null else TargetCreditProjection.read(limits.openCredit, stored, input, foreign, now,
+            !healthUnknown, limitDispositionKnown, reason, all, recovery.endsAtWall)
         val readiness = reason?.let { Readiness.Unavailable(it) } ?: Readiness.Ready
         val released = if (recovery.endsAtWall != null || floor != null || browserFloor)
             all.map { it.copy(enforcingNow = false) } else all
         val base = finish(readiness, floor, released, now, recovery.endsAtWall,
-            limits.openCredit.takeIf { target is TargetRef.App && floor == null },
+            credit.takeIf { target is TargetRef.App && floor == null },
             limits.timeLimit.takeIf { target is TargetRef.App && floor == null }, web)
         val result = base.withWebsiteObservation(target, environment, now).copy(
                 nextChangeAtWall = listOfNotNull(base.nextChangeAtWall,
+                    credit?.activeCreditEndsAtWall,
                     environment.websiteCoverageValidUntilWall.takeIf { target is TargetRef.Site && domainFresh })
                     .filter { it > now.wallEpochMs }.minOrNull())
         // Without a browser context, browser-app contributors cannot be excluded for a Site.

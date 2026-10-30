@@ -34,6 +34,11 @@ internal fun targetDomainRulesActive(stored: ProtectionSnapshot?, foreign: List<
             WebsiteRulePolicy.hasActiveDomains(listOf(rule), now.wallEpochMs, ZoneId.systemDefault())) }
 }
 
+/** Reuses the existing enforcement gate without creating a coordinator or starting enforcement. */
+fun createTargetProtectionReader(context: Context, scope: CoroutineScope,
+    coordinator: BlockScreenCoordinator): TargetProtectionReader =
+    createTargetProtectionReader(context, scope, coordinator::readTargetFloorIdentity)
+
 /**
  * Production read-only assembly. Pass the existing enforcement coordinator's retained floor
  * reader; this factory never creates a coordinator, starts a bridge, or migrates policy.

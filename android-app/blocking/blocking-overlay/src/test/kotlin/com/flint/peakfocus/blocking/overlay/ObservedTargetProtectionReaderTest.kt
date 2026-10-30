@@ -110,7 +110,7 @@ class ObservedTargetProtectionReaderTest {
         assertEquals(now, stored.observedAt)
     }
 
-    @Test fun quotaProjectionThrowsBecomeUnavailableAndTheSameCollectionRecoversOnTheNextTick() = runTest {
+    @Test fun projectionThrowsBecomeUnavailableAndTheSameCollectionRecoversOnTheNextTick() = runTest {
         for (name in listOf("one.app", "flint")) {
             val stored = snapshot().copy(times = listOf(TimeLimit(name, 5)),
                 editor = EditorCommitmentState(causes = mapOf(timeCauseKey(name) to EditorCause("period",
@@ -120,6 +120,7 @@ class ObservedTargetProtectionReaderTest {
             val ticks = MutableStateFlow(sampled)
             val reader = ObservedTargetProtectionReader(snapshots(flowOf(StorageState.Ready(stored))), backgroundScope, "flint",
                 { _, _, _ -> TargetReadEnvironment() }, clock = { sampled }, ticks = ticks,
+                legacyZone = { check(sampled.elapsedRealtimeMs != Long.MAX_VALUE); java.time.ZoneId.of("UTC") },
                 worker = StandardTestDispatcher(testScheduler))
             val values = mutableListOf<TargetProtection>()
             val collecting = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { reader.observe(TargetRef.App(name)).collect(values::add) }
@@ -159,7 +160,8 @@ class ObservedTargetProtectionReaderTest {
             fresh.copy(websiteCoverageValidUntilWall = null), fresh.copy(websiteCoverageValidUntilWall = now.wallEpochMs))) {
             val sampled = now.copy(elapsedRealtimeMs = Long.MAX_VALUE)
             val reader = ObservedTargetProtectionReader(snapshots(flowOf(StorageState.Ready(stored))), backgroundScope, "flint",
-                { _, _, _ -> env }, clock = { sampled }, ticks = flowOf(sampled), worker = StandardTestDispatcher(testScheduler))
+                { _, _, _ -> env }, clock = { sampled }, ticks = flowOf(sampled),
+                legacyZone = { error("private-projection-failure") }, worker = StandardTestDispatcher(testScheduler))
             val values = mutableListOf<TargetProtection>()
             val collecting = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
                 reader.observe(TargetRef.Site("example.com")).collect(values::add)

@@ -45,15 +45,15 @@ class TargetLimitProjectionTest {
         assertEquals(true, TargetLimitProjection.app(zero, pkg, now, null).causes.single().enforcingNow)
     }
 
-    @Test fun readableOpenAccountingDoesNotAdvertiseAnUnavailableTimedCredit() {
+    @Test fun readableOpenAccountingAwaitsTheFullRuntimeAndOverlapProjection() {
         val result = TargetLimitProjection.app(snapshot(time = null), pkg, now, null)
         val view = result.openCredit!!
         assertEquals(2, view.used)
         assertEquals(4, view.cap)
         assertTrue(view.readable)
         assertFalse(view.available)
-        assertEquals(TargetLimitProjection.CREDIT_RUNTIME_UNAVAILABLE, view.unavailableReason)
-        assertNull(result.causes.single().enforcingNow)
+        assertEquals(TargetLimitProjection.CREDIT_RUNTIME_UNCONFIRMED, view.unavailableReason)
+        assertEquals(true, result.causes.single().enforcingNow)
         assertEquals(BreakLevel.HARDER, result.causes.single().tier)
     }
 
@@ -147,5 +147,17 @@ class TargetLimitProjectionTest {
         val result = TargetLimitProjection.app(snapshot(time = null, open = null), pkg, now, 0, legacyMinutes = -1)
         assertNull(result.timeLimit)
         assertTrue(result.causes.isEmpty())
+    }
+
+    @Test fun pendingMidnightKeepsSpentCountsUntilAnOwnerCommitsTheNewPeriod() {
+        now = AccessClockStamp(Instant.parse("2026-10-30T23:59:59Z").toEpochMilli(), 1_000, "boot")
+        val stored = snapshot(time = null)
+        val quota = stored.openCredits!!
+        now = now.copy(wallEpochMs = now.wallEpochMs + 1_000, elapsedRealtimeMs = now.elapsedRealtimeMs + 1_000)
+        val result = TargetLimitProjection.app(stored, pkg, now, null)
+        assertEquals(2, result.openCredit!!.used)
+        assertFalse(result.openCredit.available)
+        assertEquals("limit-occurrence-unavailable", result.unavailableReason)
+        assertEquals(quota, stored.openCredits)
     }
 }

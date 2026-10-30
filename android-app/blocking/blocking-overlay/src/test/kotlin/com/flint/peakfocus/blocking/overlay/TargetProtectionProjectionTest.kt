@@ -141,8 +141,125 @@ class TargetProtectionProjectionTest {
         assertEquals(3, view.openCredit.cap)
         assertTrue(view.openCredit.readable)
         assertFalse(view.openCredit.available)
-        assertEquals(TargetLimitProjection.CREDIT_RUNTIME_UNAVAILABLE, view.openCredit.unavailableReason)
+        assertEquals("open-credit-exhausted", view.openCredit.unavailableReason)
         assertNull(view.openCredit.activeCreditEndsAtWall)
+    }
+
+    // PC-28/PC-30/PC-32: pure #178 view, never acceptance or a debit from a detail read.
+    @Test fun unusedTimedCreditsAreAvailableWhileTheOpenCauseStillEnforcesBetweenCredits() {
+        val stored = snapshot(opens = listOf(OpenLimit(pkg, 3, BreakLevel.HARDCORE)))
+        val view = read(stored)
+        assertEquals(true, view.blockingNow)
+        assertTrue(view.openCredit!!.available)
+        assertNull(view.openCredit.unavailableReason)
+        assertEquals(0, view.openCredit.used)
+        assertEquals(3, view.openCredit.cap)
+        assertNull(view.openCredit.activeCreditEndsAtWall)
+        assertTrue(stored.openCredits!!.active.isEmpty())
+        assertTrue(stored.openCredits!!.counters.isEmpty())
+    }
+
+    // PC-30/PC-35/PC-54/PC-55: the last credit remains active, clipped at trusted reset.
+    @Test fun activeLastCreditUsesTheClippedResetEndAndBecomesTheNextChangeBoundary() {
+        now = AccessClockStamp(Instant.parse("2026-10-30T23:58:00Z").toEpochMilli(), 1_000, "boot")
+        val stored = snapshot(opens = listOf(OpenLimit(pkg, 1)))
+        val accepted = OpenCreditLedgerPolicy.acceptOpenCredit(stored.openCredits!!, pkg, "credit", listOf(1),
+            emptyList(), false, now).next
+        val withCredit = stored.copy(openCredits = accepted)
+        now = now.copy(wallEpochMs = now.wallEpochMs + 3_601_000, elapsedRealtimeMs = now.elapsedRealtimeMs + 1_000)
+        val view = read(withCredit)
+        assertEquals(false, view.blockingNow)
+        assertEquals(1, view.openCredit!!.used)
+        assertFalse(view.openCredit.available)
+        assertEquals("open-credit-active", view.openCredit.unavailableReason)
+        assertEquals(now.wallEpochMs + 119_000, view.openCredit.activeCreditEndsAtWall)
+        assertEquals(view.openCredit.activeCreditEndsAtWall, view.openCredit.periodEndsAtWall)
+        assertEquals(view.openCredit.activeCreditEndsAtWall, view.nextChangeAtWall)
+        assertEquals(accepted, withCredit.openCredits)
+    }
+
+    @Test fun independentRulesAndTimeLimitsDenyCreditsAndUnknownUsageNeverOffersOne() {
+        val open = OpenLimit(pkg, 3)
+        for (stored in listOf(snapshot(rule(), opens = listOf(open)),
+            snapshot(times = listOf(TimeLimit(pkg, 0)), opens = listOf(open)))) {
+            val view = read(stored)
+            assertEquals(true, view.blockingNow)
+            assertFalse(view.openCredit!!.available)
+            assertEquals("other-contributor-blocks", view.openCredit.unavailableReason)
+            assertEquals(0, view.openCredit.used)
+        }
+        val unknown = read(snapshot(times = listOf(TimeLimit(pkg, 5)), opens = listOf(open)))
+        assertFalse(unknown.openCredit!!.available)
+        assertEquals("target-limit-state-unavailable", unknown.openCredit.unavailableReason)
+    }
+
+    @Test fun anActiveCreditCannotReleaseANewIndependentHardcoreContributor() {
+        val stored = snapshot(rule(tier = BreakLevel.HARDCORE), opens = listOf(OpenLimit(pkg, 3)))
+        val quota = OpenCreditLedgerPolicy.acceptOpenCredit(stored.openCredits!!, pkg, "credit", listOf(3),
+            emptyList(), false, now).next
+        val view = read(stored.copy(openCredits = quota))
+        assertEquals(true, view.blockingNow)
+        assertEquals(CauseKind.TIMER, view.headline!!.kind)
+        assertFalse(view.coveringCauses.single { it.kind == CauseKind.OPEN_LIMIT }.enforcingNow!!)
+        assertFalse(view.openCredit!!.available)
+        assertEquals("other-contributor-blocks", view.openCredit.unavailableReason)
+        assertEquals(now.wallEpochMs + 300_000, view.openCredit.activeCreditEndsAtWall)
+    }
+
+    // PC-35/PC-37: pending or unmaterialized quota is unknown, never an inferred refill.
+    @Test fun expiredInactiveAndMissingQuotaOccurrencesNeverAdvertiseFreshCredits() {
+        now = AccessClockStamp(Instant.parse("2026-10-30T23:59:59Z").toEpochMilli(), 1_000, "boot")
+        val stored = snapshot(opens = listOf(OpenLimit(pkg, 3))).copy(
+            openCredits = OpenCreditLedgerPolicy.initial(now, "UTC", mapOf(pkg to 2)))
+        val key = openCauseKey(pkg)
+        val cause = stored.editor.causes.getValue(key)
+        val variants = listOf(stored.copy(editor = stored.editor.copy(causes = emptyMap())),
+            stored.copy(editor = stored.editor.copy(causes = mapOf(key to cause.copy(occurrenceId = "inactive")))),
+            stored.copy(editor = stored.editor.copy(causes = mapOf(key to cause.copy(interval = null)))))
+        for (saved in variants) {
+            val view = read(saved)
+            assertEquals(Readiness.Unavailable("limit-occurrence-unavailable"), view.readiness)
+            assertNull(view.blockingNow)
+            assertFalse(view.openCredit!!.available)
+            assertEquals(2, view.openCredit.used)
+        }
+        now = now.copy(wallEpochMs = now.wallEpochMs + 1_000, elapsedRealtimeMs = now.elapsedRealtimeMs + 1_000)
+        val pending = read(stored)
+        assertEquals(Readiness.Unavailable("limit-occurrence-unavailable"), pending.readiness)
+        assertNull(pending.blockingNow)
+        assertFalse(pending.openCredit!!.available)
+        assertEquals(2, pending.openCredit.used)
+        assertNull(pending.openCredit.activeCreditEndsAtWall)
+        assertEquals(2, stored.openCredits!!.counters.getValue(pkg).used)
+    }
+
+    @Test fun coldAndUnavailableStorageNeverOfferCreditsAndRetainAnIndependentFloor() {
+        val retained = FloorIdentity(FloorIdentity.Kind.RUNTIME_HOME, 123, true)
+        for (delay in listOf(0L, 2_001L)) {
+            val at = now.copy(wallEpochMs = now.wallEpochMs + delay, elapsedRealtimeMs = now.elapsedRealtimeMs + delay)
+            for (state in listOf(StorageState.Loading, StorageState.Unavailable(StorageFailure.IO))) {
+                val unknown = TargetProtectionProjection.read(TargetRef.App(pkg), state, environment(), at, "flint", ZoneId.of("UTC"))
+                assertNull(unknown.blockingNow)
+                assertNull(unknown.openCredit)
+                val floor = TargetProtectionProjection.read(TargetRef.App(pkg), state,
+                    environment().copy(floor = retained), at, "flint", ZoneId.of("UTC"))
+                assertEquals(retained, floor.floor)
+                assertEquals(false, floor.blockingNow)
+                assertNull(floor.openCredit)
+            }
+        }
+    }
+
+    @Test fun staleRuntimeAndAnUnattributedBrowserDomainNeverOfferCredits() {
+        val stored = snapshot(opens = listOf(OpenLimit(pkg, 3)))
+        val stale = read(stored, env = environment().let { it.copy(status = it.status.copy(validUntilElapsedRealtimeMs = now.elapsedRealtimeMs)) })
+        assertFalse(stale.openCredit!!.available)
+        assertEquals("target-runtime-unconfirmed", stale.openCredit.unavailableReason)
+        assertNull(stale.blockingNow)
+        val domain = rule("domain").copy(targets = BlockTargets(domains = setOf(DomainRef("example.com"))))
+        val browser = read(snapshot(domain, opens = listOf(OpenLimit(chrome, 3))), TargetRef.App(chrome))
+        assertFalse(browser.openCredit!!.available)
+        assertEquals("other-contributor-blocks", browser.openCredit.unavailableReason)
     }
 
     @Test fun siteCoverageReflectsEachBrowserHealthStateWithoutClaimingAllWebsites() {

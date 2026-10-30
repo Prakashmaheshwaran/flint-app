@@ -1,5 +1,9 @@
 package com.flint.peakfocus.blocking.overlay
 
+import com.flint.peakfocus.core.common.RuntimeSafetySurfaces
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -67,6 +71,7 @@ class TargetFloorIdentityTest {
 
     @Test fun staleBackgroundIdentityIsDegradedUntilItsQueuedRefreshCompletes() {
         val floor = gate(background = true)
+        pending.removeAt(0).invoke() // #188 eagerly schedules the initial background snapshot.
         floor.protects("custom.home")
         assertFalse(floor.readIdentity("custom.home")!!.degraded)
         now += 31_000
@@ -89,6 +94,7 @@ class TargetFloorIdentityTest {
 
     @Test fun repeatedDisplayReadsNeverRefreshOrChangeTheLastActualCheck() {
         val floor = gate(background = true)
+        pending.removeAt(0).invoke()
         floor.protects("custom.home")
         val checked = floor.runtimeResolution.value.checkedAtElapsedMs
         now += 31_000
@@ -96,5 +102,49 @@ class TargetFloorIdentityTest {
         assertEquals(1, calls)
         assertTrue(pending.isEmpty())
         assertEquals(checked, floor.runtimeResolution.value.checkedAtElapsedMs)
+    }
+
+    @Test fun conservativeCandidatesAndUnclassifiedPackagesNeverBecomeProvenFloorIdentities() {
+        sources = sources + mapOf("home" to null, "default-dialer" to null,
+            RuntimeSafetySurfaces.SOURCE_CANDIDATE_HOME to setOf("candidate.home"),
+            RuntimeSafetySurfaces.SOURCE_CANDIDATE_CALLING to setOf("candidate.phone"))
+        val floor = gate()
+        for (pkg in listOf("candidate.home", "candidate.phone")) {
+            assertTrue(floor.protects(pkg))
+            assertNull(floor.readIdentity(pkg))
+        }
+        sources = sources + (RuntimeSafetySurfaces.SOURCE_CANDIDATE_HOME to null)
+        now += 31_000
+        assertTrue(floor.protects("unclassified.app"))
+        assertNull(floor.readIdentity("unclassified.app"))
+        assertTrue(floor.runtimeResolution.value.degraded)
+    }
+
+    @Test fun retainedIdentityReadDoesNotWaitForBinderResolutionOrRefreshItsTimestamp() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val workers = Executors.newFixedThreadPool(2)
+        var blockResolver = false
+        val floor = SafetyFloorGate("flint", {
+            if (blockResolver) {
+                entered.countDown()
+                check(release.await(5, TimeUnit.SECONDS))
+            }
+            sources
+        }, { now }, requiredRuntimeSources = sources.keys)
+        try {
+            floor.protects("custom.home")
+            val retained = floor.readIdentity("custom.home")
+            blockResolver = true
+            val refreshing = workers.submit<Boolean> { floor.protectsFresh("custom.home", maxAgeMs = 0) }
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            val reading = workers.submit<FloorIdentity?> { floor.readIdentity("custom.home") }
+            assertEquals(retained, reading.get(2, TimeUnit.SECONDS))
+            release.countDown()
+            assertTrue(refreshing.get(5, TimeUnit.SECONDS))
+        } finally {
+            release.countDown()
+            workers.shutdownNow()
+        }
     }
 }

@@ -6,9 +6,14 @@ App/Site detail. This is a display API, never authority to grant access or chang
 protection. Lane H must copy its resolved summary rather than derive a blocking
 decision from attribution rows or the aggregate `ProtectionStatus` inventory.
 
-Production hosts call `createTargetProtectionReader(context, scope,
-readFloorIdentity)` from the app module, passing the existing enforcement
-coordinator's retained floor accessor. The factory creates no coordinator and
+Production hosts call `createTargetProtectionReader(context, scope, coordinator)`
+from the app module with the existing enforcement coordinator. The callback
+overload accepts `readFloorIdentity`; the coordinator exposes
+`readTargetFloorIdentity(packageName)` for the same retained provenance. The
+accessor never resolves roles or refreshes health, reports only proven membership,
+and never promotes conservative candidate exemptions into a safety identity.
+Binder resolution uses a separate lock from the retained membership read.
+The factory creates no coordinator and
 starts no reconciler. `ObservedTargetProtectionReader` is the injectable flow
 implementation for tests/other hosts. It shares the strict snapshot decoder
 once, projects cached records on a shared one-second clock, conflates results,
@@ -52,14 +57,22 @@ creates a zero-used pool. A read cannot initialize the new protection contract.
   enforcing tier, ties by latest end and stable identity. The total blocking end
   is the latest enforcing contributor, which can differ from the headline's end.
 - `openCredit`: readable used/cap accounting independently of availability,
-  active accepted-credit end and quota-period end. Until timed-credit enforcement
-  can honor the access, `available` is false and the reason is explicit.
-  `activeCreditEndsAtWall` remains null while that runtime path is unavailable;
-  readable ledger data must not be treated as access the shield will honor.
+  active accepted-credit end and quota-period end. The reader consumes #178's
+  pure `TimedOpenCreditPolicy.view` and `occurrenceActive` semantics. Between
+  explicitly accepted credits the Open cause enforces even with unused quota.
+  Availability requires a current runtime check, materialized quota occurrence,
+  readable limits/usage and no independent blocking or unknown contributor.
+  Active credit, exhaustion, recovery and unavailable/pending state each carry
+  an explicit reason instead of offering another credit. A committed active end
+  is clipped to its remaining elapsed duration (at most 300 seconds) and trusted
+  reset boundary; it does not release another rule or Time Limit. Reads retain
+  spent counts at midnight until the owner commits the new period; they never
+  project a fresh zero pool from an uncommitted rollover. Cold/failed storage
+  stays Loading/Unavailable, with no credit offer and any proven floor intact.
 - `timeLimit`: effective quota, stored tier and optional measured usage. A null
   measurement is unavailable usage, never a fresh zero; zero quota is exhausted
   even without Usage Access.
-- `nextChangeAtWall`: the earliest known future boundary, including a recovery
+- `nextChangeAtWall`: the earliest known future boundary, including a credit or recovery
   end. These wall values are display estimates, not new deadlines.
 - `websiteCoverage`: target-scoped supported-browser health. Accessibility and
   actual browser observations bound it; it is never an all-websites promise.

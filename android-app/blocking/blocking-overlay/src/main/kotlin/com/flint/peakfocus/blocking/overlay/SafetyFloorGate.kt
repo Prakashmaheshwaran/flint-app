@@ -91,7 +91,8 @@ class SafetyFloorGate(
     /**
      * Display-only retained provenance for this target. Does not resolve, schedule a refresh,
      * or change health timestamps; enforcement owns cache refresh through [protects].
-     * Call off main: this may await an in-flight enforcement resolver's lock.
+     * Reads only the short membership lock; binder resolution holds the separate refresh lock.
+     * Conservative candidate exemptions are not proof of a runtime safety identity.
      */
     fun readIdentity(packageName: String): FloorIdentity? {
         if (packageName == selfPackage) return FloorIdentity(FloorIdentity.Kind.SELF)
