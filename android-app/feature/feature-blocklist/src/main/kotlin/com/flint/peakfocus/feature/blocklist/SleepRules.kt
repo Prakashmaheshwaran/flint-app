@@ -107,7 +107,8 @@ internal fun SleepConfig.toRules(): List<BlockRule> {
 
 /**
  * Parse the config back from the materialized rules, or null when Sleep Mode has never been
- * set up (no window rule). Total inverse of [toRules]: `sleepConfigFrom(c.toRules()) == c`.
+ * set up (no window rule). Each saved rule retains its tier; the optional preset is
+ * derived from that explicit tier and never supplies persistence authority on read.
  *
  * A window rule that is not in allow-list mode is treated as *not a sleep config* (null):
  * only a corrupted store or a foreign writer can produce that shape, and parsing it anyway
