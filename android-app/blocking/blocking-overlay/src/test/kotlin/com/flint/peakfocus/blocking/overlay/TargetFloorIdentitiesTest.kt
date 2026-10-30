@@ -46,4 +46,16 @@ class TargetFloorIdentitiesTest {
         assertNull(TargetFloorIdentities.staticIdentity("com.example.home", self))
         assertNull(TargetFloorIdentities.staticIdentity("com.example.dialer", self))
     }
+
+    @Test fun `the newest gate wins and clearing it never falls back to an older gate`() {
+        val older = gate().also { it.protectsFresh("com.example.home", maxAgeMs = 0) }
+        val newer = SafetyFloorGate(self, { mapOf(RuntimeSafetySurfaces.SOURCE_HOME to setOf("com.example.other")) },
+            { 1_000L }, requiredRuntimeSources = setOf(RuntimeSafetySurfaces.SOURCE_HOME))
+        newer.protectsFresh("com.example.other", maxAgeMs = 0)
+        assertNull(TargetFloorIdentities.read("com.example.home"))
+        assertEquals(FloorIdentity.Kind.RUNTIME_HOME, TargetFloorIdentities.read("com.example.other")?.kind)
+        TargetFloorIdentities.register(WeakReference(newer).also { it.clear() })
+        assertNull(TargetFloorIdentities.read("com.example.home"))
+        assertEquals(FloorIdentity.Kind.RUNTIME_HOME, older.readIdentity("com.example.home")?.kind)
+    }
 }

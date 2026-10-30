@@ -69,6 +69,8 @@ internal data class AppDetailSnapshot(
     val safetyFloor: Boolean = false,
     val nextChangeAtWall: Long? = null,
     val websiteCoverage: AppDetailWebCoverage? = null,
+    /** When the browser check behind [websiteCoverage] happened; never the detail-read time. */
+    val websiteObservedAtWall: Long? = null,
     val timeLimit: AppDetailTimeLimit? = null,
 )
 
@@ -93,6 +95,7 @@ internal data class AppDetailPresentation(
     val websiteCoverage: AppDetailWebCoverage? = null,
     val timeLimit: AppDetailTimeLimit? = null,
     val activeCreditEndsAtWall: Long? = null,
+    val websiteObservedAtWall: Long? = null,
 )
 
 /** Orders attribution for display; it never computes the blocking decision from these rows. */
@@ -127,5 +130,5 @@ internal fun appDetailPresentation(input: AppDetailSnapshot): AppDetailPresentat
     }
     return AppDetailPresentation(AppDetailHeadline.Resolved(input.resolved), rows, credits, false,
         input.nextChangeAtWall, input.websiteCoverage, input.timeLimit,
-        input.credits?.takeIf { it.readable }?.activeCreditEndsAtWall)
+        input.credits?.takeIf { it.readable }?.activeCreditEndsAtWall, input.websiteObservedAtWall)
 }

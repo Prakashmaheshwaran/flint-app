@@ -62,4 +62,12 @@ class AppDetailCopyTest {
         assertEquals("1:30 PM", detailTimeText(now + 5_400_000, now, ZoneOffset.UTC, Locale.US))
         assertEquals("Fri 9:00 AM", detailTimeText(now + 75_600_000, now, ZoneOffset.UTC, Locale.US))
     }
+
+    @Test fun `website lines carry the original check time or say no check exists`() {
+        assertEquals(DetailLine(R.string.target_web_available, time = 42), websiteCoverageLine(AppDetailWebCoverage.AVAILABLE, 42))
+        assertEquals(DetailLine(R.string.target_web_unconfirmed, time = 42), websiteCoverageLine(AppDetailWebCoverage.UNCONFIRMED, 42))
+        assertEquals(DetailLine(R.string.target_web_no_check), websiteCoverageLine(AppDetailWebCoverage.DEGRADED, null))
+        assertEquals(DetailLine(R.string.target_web_awaiting), websiteCoverageLine(AppDetailWebCoverage.AWAITING_BROWSER, 42))
+        assertEquals(DetailLine(R.string.target_web_not_required), websiteCoverageLine(AppDetailWebCoverage.NOT_REQUIRED, null))
+    }
 }

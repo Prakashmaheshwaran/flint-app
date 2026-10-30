@@ -37,14 +37,16 @@ class AppDetailLargeTextTest {
         val snapshot = AppDetailSnapshot(
             AppDetailReadiness.READY,
             AppDetailResolvedState.Blocked("Deep work", BreakLevel.HARDCORE, 0, null, ongoing = true),
-            listOf(cause), credits = AppDetailCredits(true, 2, 3),
+            listOf(cause), credits = AppDetailCredits(true, 2, 3, activeCreditEndsAtWall = 0L),
         )
         narrow { AppDetailContent("Video app", appDetailPresentation(snapshot), nowMs = 0L, onBack = {}) }
         compose.onNodeWithText("Video app").assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
         compose.onNodeWithText("Blocked now by Deep work (Hardcore), with no set end.").assertExists()
         compose.onNodeWithText("Schedule · Hardcore", substring = true, useUnmergedTree = true).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Open credits used today: 2 of 3").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("To change what covers this, edit the rule in Rules.").performScrollTo().assertIsDisplayed()
+        // A credit interval beside "Blocked now" must not read as released access.
+        compose.onNodeWithText("Other rules may still block access.", substring = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Change saved rules and daily limits in Rules. Running sessions are managed on Today.").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Back").assertIsDisplayed()
     }
 
@@ -63,6 +65,6 @@ class AppDetailLargeTextTest {
         narrow { AppsAndSitesList(PickedTargetsState.Ready(listOf(target), hasAllowListRules = true), { opened = it }, {}) }
         compose.onNodeWithText("news.example").performScrollTo().performClick()
         compose.runOnIdle { check(opened == target) }
-        compose.onNodeWithText("Sleep and allow-list rules", substring = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Apps allowed by Sleep or allow-list rules aren't listed", substring = true).performScrollTo().assertIsDisplayed()
     }
 }

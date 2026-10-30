@@ -55,10 +55,11 @@ class AppDetailAdapterTest {
         val p = appDetailSnapshot(TargetProtection(Readiness.Ready, blockingNow = false,
             openCredit = OpenCreditView(2, 3, readable = true, available = true, unavailableReason = null, activeCreditEndsAtWall = 77, periodEndsAtWall = 99),
             timeLimit = TimeLimitView(quotaMs = 1_800_000, usedMs = 600_000, tier = BreakLevel.HARDER, measurable = false),
-            websiteCoverage = TargetWebsiteCoverage.AWAITING_BROWSER))
+            websiteCoverage = TargetWebsiteCoverage.AWAITING_BROWSER, websiteCoverageObservedAtWall = 55))
         assertEquals(AppDetailCredits(true, 2, 3, 77), p.credits)
         assertEquals(AppDetailTimeLimit(1_800_000, null, BreakLevel.HARDER), p.timeLimit)
         assertEquals(AppDetailWebCoverage.AWAITING_BROWSER, p.websiteCoverage)
         assertEquals(77L, appDetailPresentation(p).activeCreditEndsAtWall)
+        assertEquals("the check's own time, never the read time", 55L, appDetailPresentation(p).websiteObservedAtWall)
     }
 }

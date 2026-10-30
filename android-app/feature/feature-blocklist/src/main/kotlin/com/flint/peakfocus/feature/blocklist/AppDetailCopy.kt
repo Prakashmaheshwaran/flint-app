@@ -98,15 +98,21 @@ internal fun timeLimitLine(limit: AppDetailTimeLimit): DetailLine = when (val us
 
 private fun minutes(ms: Long): Int = (ms.coerceAtLeast(0) / 60_000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
 
-@StringRes
-internal fun websiteCoverageText(coverage: AppDetailWebCoverage): Int = when (coverage) {
-    AppDetailWebCoverage.AVAILABLE -> R.string.target_web_available
-    AppDetailWebCoverage.UNCONFIRMED -> R.string.target_web_unconfirmed
-    AppDetailWebCoverage.DEGRADED -> R.string.target_web_degraded
-    AppDetailWebCoverage.UNSUPPORTED -> R.string.target_web_unsupported
-    AppDetailWebCoverage.NEEDS_ACCESSIBILITY -> R.string.target_web_needs_accessibility
-    AppDetailWebCoverage.AWAITING_BROWSER -> R.string.target_web_awaiting
-    AppDetailWebCoverage.NOT_REQUIRED -> R.string.target_web_not_required
+/**
+ * Browser health for a site, stamped with the time of the check it comes from. A browser-specific
+ * state without a recorded check says no check is available rather than sounding current.
+ */
+internal fun websiteCoverageLine(coverage: AppDetailWebCoverage, observedAtWall: Long?): DetailLine {
+    val checked = when (coverage) {
+        AppDetailWebCoverage.AVAILABLE -> R.string.target_web_available
+        AppDetailWebCoverage.UNCONFIRMED -> R.string.target_web_unconfirmed
+        AppDetailWebCoverage.DEGRADED -> R.string.target_web_degraded
+        AppDetailWebCoverage.UNSUPPORTED -> R.string.target_web_unsupported
+        AppDetailWebCoverage.NEEDS_ACCESSIBILITY -> return DetailLine(R.string.target_web_needs_accessibility)
+        AppDetailWebCoverage.AWAITING_BROWSER -> return DetailLine(R.string.target_web_awaiting)
+        AppDetailWebCoverage.NOT_REQUIRED -> return DetailLine(R.string.target_web_not_required)
+    }
+    return if (observedAtWall == null) DetailLine(R.string.target_web_no_check) else DetailLine(checked, time = observedAtWall)
 }
 
 /** Today's times show as a clock time; other days add the weekday (mirrors iOS endText). */

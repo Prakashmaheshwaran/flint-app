@@ -58,7 +58,7 @@
     <string name="targets_intro">Everything you\'ve picked in a block rule, a running session or a daily limit. Open one to see what covers it now.</string>
     <string name="targets_empty">Apps and sites you add to block rules and daily limits appear here.</string>
     <string name="targets_unavailable">Flint can\'t read its saved rules right now.</string>
-    <string name="targets_allow_list_note">Sleep and allow-list rules block everything except the apps you allow, so they aren\'t listed here.</string>
+    <string name="targets_allow_list_note">Apps allowed by Sleep or allow-list rules aren\'t listed unless you also picked them in a block rule or daily limit.</string>
     <string name="targets_back">Back</string>
     <string name="target_loading">Checking what covers this.</string>
     <string name="target_unavailable">Protection state is unavailable right now, so Flint won\'t guess what covers this.</string>
@@ -84,13 +84,13 @@
     <string name="target_tier_harder">Harder</string>
     <string name="target_tier_hardcore">Hardcore</string>
     <string name="target_websites">Website check</string>
-    <string name="target_web_available">Last browser check: the address bar was readable.</string>
-    <string name="target_web_unconfirmed">Flint hasn\'t confirmed it can read the current browser\'s address bar.</string>
-    <string name="target_web_degraded">Last browser check: Flint couldn\'t read the address bar.</string>
-    <string name="target_web_unsupported">The last browser used isn\'t supported for website blocking.</string>
+    <string name="target_web_available">Last browser check at %1$s: the address bar was readable.</string>
+    <string name="target_web_unconfirmed">At the last browser check (%1$s), Flint couldn\'t confirm it can read the address bar.</string>
+    <string name="target_web_degraded">Last browser check at %1$s: Flint couldn\'t read the address bar.</string>
+    <string name="target_web_unsupported">At the last browser check (%1$s), the browser in use wasn\'t supported for website blocking.</string>
     <string name="target_web_needs_accessibility">Website blocking needs Accessibility.</string>
     <string name="target_next_change">Next change: %1$s</string>
-    <string name="target_edit_hint">To change what covers this, edit the rule in Rules.</string>
+    <string name="target_edit_hint">Change saved rules and daily limits in Rules. Running sessions are managed on Today.</string>
     <string name="target_blocked">Blocked now by %1$s (%2$s).</string>
     <string name="target_blocked_until">Blocked now by %1$s (%2$s), until %3$s.</string>
     <string name="target_blocked_ongoing">Blocked now by %1$s (%2$s), with no set end.</string>
@@ -112,10 +112,11 @@
     <string name="target_credits">Open credits</string>
     <string name="target_credits_used">Open credits used today: %1$d of %2$d</string>
     <string name="target_credits_unavailable">Today\'s credit count isn\'t available.</string>
-    <string name="target_credit_active_until">A credit\'s access is running until %1$s.</string>
+    <string name="target_credit_active_until">An Open credit is active until %1$s. Other rules may still block access.</string>
     <string name="target_time">Time limit</string>
     <string name="target_time_used">Used today: %1$s of %2$s</string>
     <string name="target_time_unmeasured">Daily limit: %1$s. Today\'s use can\'t be measured right now.</string>
     <string name="target_web_awaiting">Website coverage is awaiting confirmation from a supported browser.</string>
     <string name="target_web_not_required">No active website rule covers this site now.</string>
+    <string name="target_web_no_check">No browser check is available yet.</string>
 </resources>

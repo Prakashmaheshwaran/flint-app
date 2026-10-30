@@ -82,6 +82,7 @@ internal fun appDetailSnapshot(protection: TargetProtection): AppDetailSnapshot 
                 TargetWebsiteCoverage.NOT_REQUIRED -> AppDetailWebCoverage.NOT_REQUIRED
             }
         },
+        websiteObservedAtWall = protection.websiteCoverageObservedAtWall,
         timeLimit = protection.timeLimit?.let {
             AppDetailTimeLimit(it.quotaMs, if (it.measurable) it.usedMs else null, it.tier)
         },

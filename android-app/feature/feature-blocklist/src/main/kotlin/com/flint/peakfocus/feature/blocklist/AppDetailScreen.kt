@@ -200,7 +200,7 @@ internal fun AppDetailContent(
             Spacer(Modifier.height(FlintSpacing.lg))
             FlintSectionLabel(stringResource(R.string.target_websites), Modifier.semantics { heading() })
             Spacer(Modifier.height(FlintSpacing.sm))
-            Text(stringResource(websiteCoverageText(coverage)), style = MaterialTheme.typography.bodyMedium)
+            Text(detailText(websiteCoverageLine(coverage, presentation.websiteObservedAtWall), nowMs), style = MaterialTheme.typography.bodyMedium)
         }
         presentation.nextChangeAtWall?.let { next ->
             Spacer(Modifier.height(FlintSpacing.md))
