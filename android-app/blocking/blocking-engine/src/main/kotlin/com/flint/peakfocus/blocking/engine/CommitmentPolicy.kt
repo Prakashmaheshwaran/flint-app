@@ -161,6 +161,8 @@ class CommitmentPolicy {
         val endsAtEpochMs: Long? = null,
         /** Daily Time-Limit minutes or Open-Limit cap; higher = weaker. */
         val budget: Int? = null,
+        /** Saved daily Time-Limit zone; changing its reset boundary is weakening (§9). */
+        val dailyZoneId: String? = null,
     )
 
     /** A recurring window: minutes of day, ISO days (empty = every day) and saved IANA zone. */
@@ -172,6 +174,7 @@ class CommitmentPolicy {
         if (before.copy(name = after.name) == after) return EditKind.COSMETIC
         if (before.allowListMode != after.allowListMode) return EditKind.WEAKEN
         if (after.tier.ordinal < before.tier.ordinal) return EditKind.WEAKEN
+        if (after.dailyZoneId != before.dailyZoneId) return EditKind.WEAKEN
         val targetsOk = if (after.allowListMode) {
             // Allowed set may only shrink; allowed/ignored destinations may not change at all.
             after.apps.all { it in before.apps } && after.domains == before.domains
