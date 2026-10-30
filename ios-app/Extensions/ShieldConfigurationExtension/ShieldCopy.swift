@@ -122,9 +122,10 @@ struct ShieldCopy: Equatable {
                 exhausted = String(localized: "No credits left today", locale: locale)
             }
             // Conditional ("available"): the pass may be cooling down (§6, C01). Its recovery
-            // pauses the limit for 60 minutes; it does not end it or refill credits.
+            // pauses the limit for up to 60 minutes (a reset or "Resume now" can come first);
+            // it does not end the limit or refill credits.
             guard passOnly else { return (exhausted, nil) }
-            return (String(localized: "\(exhausted). An available Emergency Pass can pause this for 60 minutes.",
+            return (String(localized: "\(exhausted). An available Emergency Pass can pause this for up to 60 minutes.",
                            locale: locale), nil)
         case nil:
             // No pool, or no positive interval before the reset: accept would refuse.

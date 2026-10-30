@@ -793,7 +793,7 @@ final class FlintOpenCreditTests: XCTestCase {
             return rule
         }
         func passOnly(_ rules: [FlintOpenLimitRule]) -> Bool {
-            FlintOpenCreditExit.requiresPass(FlintOpenCredit.exitCauses(covering: rules, at: now))
+            FlintOpenCredit.exitCauses(covering: rules, at: now).map(FlintOpenCreditExit.requiresPass) ?? false
         }
         XCTAssertTrue(passOnly([rule("a", .hardcore)]))
         XCTAssertTrue(passOnly([rule("a", .hardcore), rule("b", .hardcore)]))
@@ -809,6 +809,17 @@ final class FlintOpenCreditTests: XCTestCase {
                                      legacyRightsUntil: now.addingTimeInterval(3600)))]))
         XCTAssertTrue(passOnly([rule("a", .hardcore, protection: .init(timeZoneID: "UTC",
                                     legacyRightsUntil: now.addingTimeInterval(-1)))]), "expired legacy right")
+        // A due queued change is applied at the next reconcile and may open an ordinary exit.
+        func queued(_ end: TimeInterval) -> FlintOpenLimitRule {
+            var hardcore = rule("q", .hardcore)
+            hardcore.protection?.queuedChange = .init(action: .turnOff, baseRevision: 1,
+                window: .init(start: now.addingTimeInterval(end - 86_400), end: now.addingTimeInterval(end)),
+                snapshot: nil, fingerprint: "f")
+            return hardcore
+        }
+        XCTAssertNil(FlintOpenCredit.exitCauses(covering: [queued(-1)], at: now), "due queue makes no claim")
+        XCTAssertFalse(passOnly([queued(0)]))
+        XCTAssertTrue(passOnly([queued(3600)]), "a future queue keeps the current commitment")
         // Read without migration: pre-contract rights apply, so no pass-only claim.
         XCTAssertFalse(passOnly([rule("a", .hardcore, protection: nil)]))
         // An inactive cause allows edits; the predicate itself never claims for one.

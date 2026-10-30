@@ -330,9 +330,14 @@ public enum FlintOpenCredit {
     }
 
     /// The read-only cause states the shield uses to decide whether to name the pass. A rule
-    /// read without migration (`protection == nil`) keeps its pre-contract rights.
-    public static func exitCauses(covering rules: [FlintOpenLimitRule], at now: Date) -> [FlintCauseState] {
-        rules.filter(\.enabled).map { rule in
+    /// read without migration (`protection == nil`) keeps its pre-contract rights. nil (no
+    /// claim) when a covering rule's queued change is already due: the next reconcile applies
+    /// it, possibly opening an ordinary exit, and boundary delivery is not guaranteed.
+    public static func exitCauses(covering rules: [FlintOpenLimitRule], at now: Date) -> [FlintCauseState]? {
+        let enabled = rules.filter(\.enabled)
+        guard !enabled.contains(where: { $0.protection?.queuedChange.map { $0.window.end <= now } == true })
+        else { return nil }
+        return enabled.map { rule in
             let occurrence = rule.occurrence(at: now)
             return FlintCauseState(causeID: rule.id, occurrenceID: occurrence?.identity, revision: rule.revision,
                 kind: .openLimit, tier: rule.breakLevel, isActive: occurrence != nil, end: occurrence?.end,
@@ -343,7 +348,8 @@ public enum FlintOpenCredit {
     /// Every non-Open store that can block an Open target, with its kind.
     static func contributorStores(schedules: [FlintScheduleRule], limits: [FlintLimitRule])
         -> [(kind: FlintOpenCreditContributorKind, storeName: String)] {
-        [(.session, "flint"), (.safariRestriction, FlintWebRestrictionLifecycle.legacyStoreName)] +
+        [(.session, FlintWebRestrictionLifecycle.sessionStoreName),
+         (.safariRestriction, FlintWebRestrictionLifecycle.legacyStoreName)] +
             schedules.map { (.schedule, $0.storeName) } + limits.map { (.timeLimit, $0.storeName) }
     }
 

@@ -45,8 +45,8 @@ final class FlintShieldConfiguration: ShieldConfigurationDataSource {
         }
         guard !covering.isEmpty else { return nil }
         guard FlintOpenCredit.shieldAcceptanceEnabled else { return .acceptanceDisabled }
-        return .target(preview(), passOnly: FlintOpenCreditExit.requiresPass(
-            FlintOpenCredit.exitCauses(covering: covering, at: Date())))
+        return .target(preview(), passOnly: FlintOpenCredit.exitCauses(covering: covering, at: Date())
+            .map(FlintOpenCreditExit.requiresPass) ?? false)
     }
 
     private func categoryOpenCredit(_ token: ActivityCategoryToken?) -> ShieldCopy.OpenCredit? {

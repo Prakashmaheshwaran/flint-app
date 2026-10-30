@@ -53,10 +53,10 @@ public struct FlintOpenCreditBlocking: Equatable {
     }
 }
 
-/// Whether an exhausted Open Limit's only exit is the Emergency Pass: every covering cause
-/// must deny or defer each ordinary weakening right now (§2). Any covering Easy or Harder
-/// rule, a live legacy right (§12) or an inactive occurrence allows an ordinary exit, so the
-/// shield then names no pass. An empty set makes no claim.
+/// Whether an exhausted Open Limit's only in-Flint exit is the Emergency Pass: every
+/// covering cause must deny or defer each ordinary weakening right now (§2). A covering Easy
+/// or Harder rule or a live legacy right (§12) allows an ordinary exit, so the shield then
+/// names no pass. An inactive cause doesn't block and makes no claim; nor does an empty set.
 public enum FlintOpenCreditExit {
     public static func requiresPass(_ covering: [FlintCauseState]) -> Bool {
         guard !covering.isEmpty else { return false }

@@ -231,7 +231,7 @@ final class ShieldCopyTests: XCTestCase {
     /// The global pass recovery suspends Open Limits (ADR-012 §6). When no covering limit
     /// allows an ordinary exit, the exhausted shield names the pass, conditionally (C01).
     func testPassOnlyExhaustedNamesAnAvailableEmergencyPass() {
-        let line = ". An available Emergency Pass can pause this for 60 minutes."
+        let line = ". An available Emergency Pass can pause this for up to 60 minutes."
         let cases: [(FlintOpenCreditPreview, String)] = [
             (preview(remaining: 0, blockedBy: .exhausted), "No credits left today · resets about 00:00"),
             (preview(remaining: 0, blockedBy: .exhausted, uncertain: true),
