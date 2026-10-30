@@ -176,6 +176,8 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
                               generationRevision: latest.revision, route: route, at: now)
         for index in acceptedStarts.indices where acceptedStarts[index].session.id == session.id {
             acceptedStarts[index].outcome = outcome
+            acceptedStarts[index].endedAt = now
+            acceptedStarts[index].endRoute = route
         }
         return true
     }
@@ -207,6 +209,8 @@ public struct FlintAcceptedStartResult: Codable, Equatable, Sendable {
     public var acceptedAt: FlintLedgerInstant
     public var fingerprint: String
     public var expectedRevision: UInt64?
+    public var endedAt: Date? = nil
+    public var endRoute: String? = nil
 
     public var sessionID: String { session.id }
 }
