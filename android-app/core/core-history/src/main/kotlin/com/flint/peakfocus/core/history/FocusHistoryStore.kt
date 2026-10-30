@@ -77,27 +77,41 @@ class FocusHistoryStore(
         compactIfNeeded(snapshot)
     }
 
-    suspend fun clear(activeSessionIds: Set<String>): Boolean = operation {
-        val snapshot = readLocked()
-        val running = FocusHistoryAggregator.sessions(snapshot.events, clock.millis(), activeSessionIds)
-            .filter { it.outcome == SessionOutcome.RUNNING }.mapTo(mutableSetOf()) { it.id }
-        val retained = retainForSessions(snapshot.events, running)
-        val old = readMetadata()
-        // A rollback cannot put already committed records after the clear boundary.
-        val recordedThrough = snapshot.events.filter { it.knownType != null }.maxOfOrNull {
-            maxOf(it.at, it.observedAt ?: it.at)
-        } ?: Long.MIN_VALUE
-        val at = maxOf(old.cleared ?: Long.MIN_VALUE, clock.millis(), recordedThrough)
-        clearPhase(HistoryClearPhase.BEFORE_INTENT)
-        val intent = old.copy(pendingClear = at, keepSessions = running)
-        writeMetadata(intent)
-        clearPhase(HistoryClearPhase.INTENT_COMMITTED)
-        rewriteLog(retained)
-        clearPhase(HistoryClearPhase.LOG_REPLACED)
-        degraded = false
-        writeMetadata(intent.copy(cleared = at, degraded = false, pendingClear = null, keepSessions = emptySet()))
-        clearPhase(HistoryClearPhase.METADATA_COMMITTED)
-        state.value = readLocked()
+    /** The caller supplies owner-active identities, independently of history's planned endpoints. */
+    suspend fun clear(activeSessionIds: Set<String>): Boolean = clear { activeSessionIds }
+
+    /** Re-read owner activity under the history lock; unknown activity never authorizes clear. */
+    suspend fun clear(activeSessionIds: () -> Set<String>?): Boolean {
+        var ownerReady = true
+        val committed = operation {
+            val active = try { activeSessionIds() }
+                catch (cancel: CancellationException) { throw cancel }
+                catch (_: Exception) { null }
+            if (active == null) { ownerReady = false; return@operation }
+            val snapshot = readLocked()
+            val running = snapshot.events.groupBy { it.session }.filter { (id, events) ->
+                id in active && events.any { it.knownType == HistoryEventType.STARTED } &&
+                    events.none { it.knownType?.terminal == true }
+            }.keys
+            val retained = retainForSessions(snapshot.events, running)
+            val old = readMetadata()
+            // A rollback cannot put already committed records after the clear boundary.
+            val recordedThrough = snapshot.events.filter { it.knownType != null }.maxOfOrNull {
+                maxOf(it.at, it.observedAt ?: it.at)
+            } ?: Long.MIN_VALUE
+            val at = maxOf(old.cleared ?: Long.MIN_VALUE, clock.millis(), recordedThrough)
+            clearPhase(HistoryClearPhase.BEFORE_INTENT)
+            val intent = old.copy(pendingClear = at, keepSessions = running)
+            writeMetadata(intent)
+            clearPhase(HistoryClearPhase.INTENT_COMMITTED)
+            rewriteLog(retained)
+            clearPhase(HistoryClearPhase.LOG_REPLACED)
+            degraded = false
+            writeMetadata(intent.copy(cleared = at, degraded = false, pendingClear = null, keepSessions = emptySet()))
+            clearPhase(HistoryClearPhase.METADATA_COMMITTED)
+            state.value = readLocked()
+        }
+        return committed && ownerReady
     }
 
     suspend fun compact(): Boolean = operation { compactLocked(readLocked()) }

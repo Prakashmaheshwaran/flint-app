@@ -13,7 +13,13 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /** Contains no target identifiers and never mutates the rules store. */
-data class HistoryRule(val id: String, val name: String, val tier: String, val plannedEnd: Long?)
+data class HistoryRule(
+    val id: String, val name: String, val tier: String, val plannedEnd: Long?,
+    /** Public owner activity is independent of the stable logical history endpoint. */
+    val ownerActive: Boolean? = null,
+) {
+    internal fun isActiveAt(now: Long): Boolean = ownerActive ?: (plannedEnd == null || plannedEnd > now)
+}
 
 sealed interface HistoryRulesSnapshot {
     data class Ready(val rules: List<HistoryRule>, val ownerInactiveIds: Set<String> = emptySet()) : HistoryRulesSnapshot
@@ -79,7 +85,7 @@ class HistoryReconciler(
             acceptedRules = true
             val now = clock.millis()
             val sessions = latest.rules.filter { it.id.startsWith("session-") }.associateBy { it.id }
-            val current = sessions.filterValues { it.plannedEnd == null || it.plannedEnd > now }.keys
+            val current = sessions.filterValues { it.isActiveAt(now) }.keys
             captureActive(latest, now)
             val events = mutableListOf<HistoryEvent>()
             val known = snapshot.events.filter { it.knownType != null }.groupBy { it.session }
@@ -138,7 +144,7 @@ class HistoryReconciler(
 
     private fun captureActive(snapshot: HistoryRulesSnapshot.Ready, now: Long) {
         val current = snapshot.rules.filter {
-            it.id.startsWith("session-") && (it.plannedEnd == null || it.plannedEnd > now)
+            it.id.startsWith("session-") && it.isActiveAt(now)
         }.mapTo(mutableSetOf()) { it.id }
         val previouslyActive = active.value
         active.value = current

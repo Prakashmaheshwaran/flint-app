@@ -293,6 +293,90 @@ Explicit
 route, break, pass and `open_intercepted` emission needs one call each in
 `BlockScreenCoordinator` / the rules store, added only with lane C's agreement.
 
+### Android — durable pass and break projection
+
+The app shell registers `ProtectionHistoryConsumer` with
+`BlockEventHooks.registerDurableConsumer`. C owns the serialized outbox drain and exact-id
+acknowledgement; F returns `true` only after `FocusHistoryStore.update` commits. A failed
+write returns `false`, and cancellation propagates. Multi-record projections commit in one
+atomic history rewrite; deterministic UUIDs derived from the owner event id, history type
+and session id make replay after a crash before acknowledgement idempotent.
+
+The projection also reads `HistorySnapshot.clearedAt` under that same update lock. After
+a clear, lifecycle records may reference only sessions with retained or newly recorded
+`started` records, even when a late event's wall time exceeds the clear cutoff. Cleared pass
+references and early terminals are omitted together; a pass with no admitted sessions is
+intentionally acknowledged without a new record. Break replay uses the same retained scope,
+so a running session keeps its break pairing while cleared sessions do not return after a
+failed acknowledgement or wall-clock rollback. This uses existing clear metadata, without
+a new history schema or tombstone ledger.
+
+A missing `started` may also be a new live session whose observer write has not committed.
+For missing identities the adapter reads the same public anchored owner projection as the
+rules observer, under the history update lock. Runtime `evaluation.active` decides liveness;
+the stable committed history endpoint must not be compared with current wall time for that
+decision. Raw expiry is used only for legacy rules without runtime metadata, and unprojected
+runtime is unknown. A still-live identity, loading/unavailable
+owner state or failed owner read defers the entire batch (`false`, no acknowledgement) until
+STARTED arrives or removal becomes known. It never reconstructs a start. A global pass with
+any undelivered live reference defers atomically, including references whose starts are
+already retained; stable record IDs still make retry after a failed owner ACK harmless.
+
+The rules observer carries public owner activity separately from the committed logical
+`plannedEnd`. An active runtime remains eligible for STARTED admission and clear retention
+after a forward wall-clock jump, while the logical endpoint and history outcome/coverage
+calculations stay unchanged. Unprojected runtime is unknown; legacy rules without runtime
+metadata retain their expiry-based fallback. Production clear reads fresh public owner
+activity under the history lock and refuses unknown or failed reads without changing files
+or marking history corrupt. It retains only active identities with STARTED and no terminal;
+an old active ID cannot preserve a terminalled session.
+
+The conservative admission rule also omits a genuinely new, ordinary-rule-only pass after
+clear. With no focus identity, existing clear metadata cannot distinguish it from an old
+unacknowledged operation; event wall time is not a safe freshness witness. This loses a
+non-focus operation row, not focused duration or session counts, and does not change the
+owner's committed pass decision. Complete post-clear zero-focus operation recording would
+require a coordinated persisted clear/delivery watermark; v1 has no such witness.
+
+- `PASS_COMMITTED` writes one `pass_used`, with the opaque operation id as `session` and
+  `grant`. Its `sessions` contains only `session-*` ids from `affectedRuleIds`, and
+  `recoveryEnd` is the owner's deadline. Only focus sessions in `endedTransientIds` receive
+  `ended_early(route: emergency_pass)` in the same batch. Ordinary rules never become focus
+  sessions. Before the first clear, a pass with no affected focus sessions still records
+  one operation; after a clear the STARTED admission rule above applies.
+- `BREAK_STARTED` / `BREAK_ENDED` write one record per affected focus session, carrying
+  the same grant id. End reasons preserve `expired`, `resumed`, `superseded`, or `recovery`.
+  The owner supplies the exact frozen session scope on both events; replay may persist an
+  end before its start without looking up current rules or fabricating a start.
+- The projection preserves the schema-1 wire vocabulary. Owner clock uncertainty is
+  explicitly `timeConfidence: uncertain(owner_time_uncertain)` as well as the existing
+  inferred provenance flag. A false owner uncertainty flag leaves confidence absent rather
+  than manufacturing certainty. Uncertain pass/terminal rows cannot extend a previously
+  trusted prefix or increment completed/early counts. Boot identity, elapsed clock, targets and non-session rule ids are
+  excluded. No origin route is invented when the owner did not provide one.
+- `ACCESS_STARTED` / `ACCESS_ENDED` are acknowledged without touching history, including
+  when the history store is unavailable. Open-credit access is not a focus session or an
+  ordinary break; it adds no records, counts or focused time.
+
+The compatibility `Unit` listener records only genuine `open_intercepted` measurements.
+It does not also record breaks or passes after durable registration. Natural Timer terminal
+delivery is a separate owner outbox and app adapter. This consumer does not prove that every
+production break boundary emits an event: start, deadline, resume, supersession and recovery
+producer coverage must be verified in C's implementation. C also owns bounded-outbox loss
+diagnostics. The app observes a positive `ProtectionStatus.lifecycleEventsDropped` or
+`detectors.degradedReasons` containing `lifecycle-events-dropped` and marks history summaries degraded with the note "Some focus
+events may be missing". That observation is sticky within the process; a later loading or
+stale status cannot erase known loss, and C persists its counter across process restarts.
+Existing totals stay unchanged; no events, loss start date or missing duration are invented.
+The app also observes the public `EditorCommitmentStore.terminalDeliveryHealth` stream and
+maps a ready `EditorTerminalDeliveryHealth.incompleteHistory` into that same missing-events
+note. The owner derives it from `overflowDropped` or `captureFailures`; `pendingCount` and
+retained `overflowCount` alone never imply loss. Loading/unavailable health cannot establish
+a loss count, and history does not inspect the editor's private ledger.
+The consumer never reads the private protection ledger or treats a missing event as evidence
+of uninterrupted focus. Exact production emission and status-publication coverage remain
+C-owned verification requirements.
+
 ## Notifications (local only)
 
 - Copy (ADR-012 §11): a pre-scheduled alert says only that the **planned focus time has

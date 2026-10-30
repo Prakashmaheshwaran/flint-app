@@ -42,6 +42,8 @@ data class FocusSummary(
     val sessions: List<FocusSession>,
     val days: List<FocusDay>,
     val streak: Int,
+    /** Owner outbox retention lost events; existing intervals/counts are never backfilled. */
+    val lifecycleEventsMissing: Boolean = false,
 )
 
 object FocusHistoryAggregator {

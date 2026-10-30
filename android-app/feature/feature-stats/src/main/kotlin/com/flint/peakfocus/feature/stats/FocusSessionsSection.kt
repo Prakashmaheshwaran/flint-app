@@ -66,7 +66,7 @@ internal fun FocusSessionsSection() {
         Text(FocusHistoryText.DEFINITION, style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
         if (summary == null || summary.availability == HistoryAvailability.UNAVAILABLE) {
-            Text(FocusHistoryText.today(summary), modifier = Modifier.padding(top = 12.dp))
+            Text(FocusHistoryText.today(summary, context.resources), modifier = Modifier.padding(top = 12.dp))
             if (summary?.availability == HistoryAvailability.UNAVAILABLE) Button(enabled = !retrying, onClick = {
                 retrying = true
                 scope.launch { FocusHistoryBridge.retry(context); retrying = false }

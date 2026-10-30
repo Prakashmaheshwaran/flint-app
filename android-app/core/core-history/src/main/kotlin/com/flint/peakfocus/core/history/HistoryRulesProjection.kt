@@ -12,13 +12,16 @@ fun historyRulesSnapshot(state: StorageState<List<BlockRule>>): HistoryRulesSnap
         val sessions = state.value.filter {
             it.id.startsWith("session-") && it.enabled && it.schedule == null
         }
-        val inactive = sessions.filter { it.runtime?.evaluation?.active == false }.mapTo(mutableSetOf()) { it.id }
-        HistoryRulesSnapshot.Ready(sessions.filterNot { it.id in inactive }.map {
-            // The display estimate combines a fresh wall/elapsed sample and can
-            // jitter by a millisecond. Persist the same committed logical endpoint
-            // the owner uses for its terminal, rather than rescheduling every tick.
-            HistoryRule(it.id, it.name, it.breakLevel.name.lowercase(Locale.ROOT),
-                it.runtime?.wallEndEpochMs ?: it.expiresAtEpochMs)
-        }, inactive)
+        if (sessions.any { rule -> rule.runtime?.let { it.evaluation == null } == true }) HistoryRulesSnapshot.Loading
+        else {
+            val inactive = sessions.filter { it.runtime?.evaluation?.active == false }.mapTo(mutableSetOf()) { it.id }
+            HistoryRulesSnapshot.Ready(sessions.filterNot { it.id in inactive }.map {
+                // The display estimate combines a fresh wall/elapsed sample and can
+                // jitter by a millisecond. Persist the same committed logical endpoint
+                // the owner uses for its terminal, rather than rescheduling every tick.
+                HistoryRule(it.id, it.name, it.breakLevel.name.lowercase(Locale.ROOT),
+                    it.runtime?.wallEndEpochMs ?: it.expiresAtEpochMs, it.runtime?.evaluation?.active)
+            }, inactive)
+        }
     }
 }
