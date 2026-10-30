@@ -52,4 +52,5 @@
     <string-array name="sleep_weekday_short">
         <item>Mon</item><item>Tue</item><item>Wed</item><item>Thu</item><item>Fri</item><item>Sat</item><item>Sun</item>
     </string-array>
+    <string name="rules_active_now">Active now</string>
 </resources>

@@ -85,6 +85,7 @@ import com.flint.peakfocus.core.common.ui.FlintScreenHeader
 import com.flint.peakfocus.core.common.ui.FlintSectionLabel
 import com.flint.peakfocus.core.common.ui.FlintSkeletonRow
 import com.flint.peakfocus.core.common.ui.FlintStatusDot
+import com.flint.peakfocus.core.common.ui.flintLoading
 import com.flint.peakfocus.core.common.ui.rememberFlintHaptics
 import com.flint.peakfocus.core.common.ui.rememberReducedMotion
 import com.flint.peakfocus.core.model.AppRef
@@ -600,7 +601,7 @@ private fun SectionLabelItem(text: String) {
 /** The one loading idiom app-wide: pulsing skeleton rows where the cards will land. */
 @Composable
 private fun LoadingRows(modifier: Modifier = Modifier) {
-    Column(modifier = modifier.fillMaxWidth()) {
+    Column(modifier = modifier.fillMaxWidth().flintLoading()) {
         FlintSkeletonRow()
         FlintSkeletonRow()
     }
@@ -740,7 +741,7 @@ private fun RuleCard(
                         FlintStatusDot(MaterialTheme.colorScheme.primary, pulsing = true)
                         Spacer(Modifier.width(FlintSpacing.xs))
                         Text(
-                            text = "Active now",
+                            text = stringResource(R.string.rules_active_now),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

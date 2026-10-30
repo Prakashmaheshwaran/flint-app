@@ -38,6 +38,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -59,6 +63,7 @@ import com.flint.peakfocus.core.common.ui.FlintCard
 import com.flint.peakfocus.core.common.ui.FlintScreenHeader
 import com.flint.peakfocus.core.common.ui.FlintSectionLabel
 import com.flint.peakfocus.core.common.ui.FlintStatusDot
+import com.flint.peakfocus.core.common.ui.rememberReducedMotion
 import com.flint.peakfocus.permissions.BatteryOptimization
 import com.flint.peakfocus.permissions.NotificationPermission
 import com.flint.peakfocus.permissions.OverlayPermission
@@ -241,9 +246,14 @@ private fun HealthBannerCard(banner: BannerUi) {
  * button (consent language before the hand-off — ADR-007); the redirect fires only on the tap.
  */
 @Composable
-private fun PermissionCard(row: PermissionRowUi, onFix: () -> Unit) {
+internal fun PermissionCard(row: PermissionRowUi, onFix: () -> Unit) {
+    val grantState = stringResource(if (row.granted) R.string.health_on else R.string.health_off)
     FlintCard {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // One TalkBack stop names the grant and its state; the fix button stays separate.
+        Row(
+            modifier = Modifier.semantics(mergeDescendants = true) { stateDescription = grantState },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             // Dot vocabulary: primary = granted, error = enforcement at risk, muted = the
             // merely-recommended grant missing (never dressed as mandatory).
             FlintStatusDot(
@@ -268,7 +278,8 @@ private fun PermissionCard(row: PermissionRowUi, onFix: () -> Unit) {
                 )
             }
             Spacer(Modifier.width(FlintSpacing.cardGap))
-            FlintBadge(text = if (row.granted) "On" else "Off")
+            // The row's state description already speaks On/Off; the uppercase pill is visual.
+            FlintBadge(text = grantState, modifier = Modifier.clearAndSetSemantics {})
         }
         if (!row.granted) {
             Spacer(Modifier.height(FlintSpacing.sm))
@@ -307,9 +318,11 @@ private fun collapseTransition(): ExitTransition =
 
 /** Static, local, per-manufacturer survival steps — expandable, no deep links, no network. */
 @Composable
-private fun OemGuidanceCard(guidance: OemGuidance) {
+internal fun OemGuidanceCard(guidance: OemGuidance) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    FlintCard(onClick = { expanded = !expanded }) {
+    val expansionState = stringResource(if (expanded) R.string.settings_expanded else R.string.settings_collapsed)
+    val reducedMotion = rememberReducedMotion()
+    FlintCard(onClick = { expanded = !expanded }, modifier = Modifier.semantics { stateDescription = expansionState }) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(
@@ -333,8 +346,8 @@ private fun OemGuidanceCard(guidance: OemGuidance) {
         }
         AnimatedVisibility(
             visible = expanded,
-            enter = expandTransition(),
-            exit = collapseTransition(),
+            enter = if (reducedMotion) EnterTransition.None else expandTransition(),
+            exit = if (reducedMotion) ExitTransition.None else collapseTransition(),
         ) {
             Column {
                 Spacer(Modifier.height(FlintSpacing.sm))
@@ -380,7 +393,9 @@ private fun ExitDiagnosticsCard(
     nowMillis: Long,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    FlintCard(onClick = { expanded = !expanded }) {
+    val expansionState = stringResource(if (expanded) R.string.settings_expanded else R.string.settings_collapsed)
+    val reducedMotion = rememberReducedMotion()
+    FlintCard(onClick = { expanded = !expanded }, modifier = Modifier.semantics { stateDescription = expansionState }) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(
@@ -404,8 +419,8 @@ private fun ExitDiagnosticsCard(
         }
         AnimatedVisibility(
             visible = expanded,
-            enter = expandTransition(),
-            exit = collapseTransition(),
+            enter = if (reducedMotion) EnterTransition.None else expandTransition(),
+            exit = if (reducedMotion) ExitTransition.None else collapseTransition(),
         ) {
             Column {
                 Spacer(Modifier.height(FlintSpacing.sm))

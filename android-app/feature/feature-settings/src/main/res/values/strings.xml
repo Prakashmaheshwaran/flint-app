@@ -28,4 +28,8 @@
     <string name="help_battery_title">Battery savers</string>
     <string name="help_battery_text">Some phones stop background apps to save battery. If blocking stops, the checks on You show what Flint needs.</string>
     <string name="help_privacy">No account. No analytics. Your lists, rules and history stay on this phone.</string>
+    <string name="health_on">On</string>
+    <string name="health_off">Off</string>
+    <string name="settings_expanded">Expanded</string>
+    <string name="settings_collapsed">Collapsed</string>
 </resources>
