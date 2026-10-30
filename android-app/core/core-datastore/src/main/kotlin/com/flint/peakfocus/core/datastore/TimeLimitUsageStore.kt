@@ -57,19 +57,22 @@ class DataStoreTimeLimitUsageStore(
                 var row = old
                 if (elapsed != null && previous.periodId == old.periodId) {
                     // Stop the old period at its trusted boundary before charging any suffix.
-                    val beforeReset = minOf(elapsed, OpenCreditPolicy().remainingToResetMs(old.reset, previous.checkpoint))
+                    val ahead = trustedElapsedMs(previous.checkpoint, old.reset.checkpoint)
+                    val remainingAtCheckpoint = if (ahead == null) OpenCreditPolicy().remainingToResetMs(old.reset, previous.checkpoint)
+                        else Math.addExact(old.reset.remainingToResetMs, ahead)
+                    val beforeReset = minOf(elapsed, remainingAtCheckpoint)
                     row = TimeLimitDayAccounting.observe(row, beforeReset)
                     val desiredZone = prefs.editorTimes().singleOrNull { it.packageName == previous.packageName }?.zoneId ?: row.zoneId
-                    val advanced = TimeLimitDayAccounting.reconcile(row, stamp, desiredZone)
+                    val advanced = reconcileForegroundRow(row, stamp, desiredZone)
                     row = if (advanced.rolled) TimeLimitDayAccounting.observe(advanced.state, elapsed - beforeReset) else advanced.state
-                }
+                } else if (elapsed == null) row = row.copy(accountingUnknownUntilReset = true)
                 ledger = ledger.copy(targets = ledger.targets + (previous.packageName to row))
             }
             val target = observation.packageName.takeUnless { observation.closeOnly }
             val next = if (target == null) null else {
                 val visit = observation.visitId ?: wireCorrupt()
                 val templateZone = prefs.editorTimes().singleOrNull { it.packageName == target }?.zoneId
-                var row = ledger.targets[target]?.let { TimeLimitDayAccounting.reconcile(it, stamp, templateZone ?: it.zoneId).state }
+                var row = ledger.targets[target]?.let { reconcileForegroundRow(it, stamp, templateZone ?: it.zoneId).state }
                     ?: TimeLimitDayAccounting.initial(stamp, templateZone ?: ledger.migrationZoneId)
                 val continuous = previous?.takeIf { it.ownerId == observation.ownerId && it.visitId == visit &&
                     it.packageName == target && it.periodId == row.periodId &&
@@ -134,6 +137,12 @@ class DataStoreTimeLimitUsageStore(
 
     companion object { const val MAX_FOREGROUND_GAP_MS = 30_000L }
 }
+
+/** A queued event may precede an OS query's newer commit; it must never rewind the reset. */
+private fun reconcileForegroundRow(row: TimeLimitDayState, stamp: AccessClockStamp, zone: String): TimeLimitDayResult =
+    if (row.observedAt.bootSessionId == stamp.bootSessionId && row.observedAt.elapsedRealtimeMs > stamp.elapsedRealtimeMs)
+        TimeLimitDayResult(row, false)
+    else TimeLimitDayAccounting.reconcile(row, stamp, zone)
 
 /** One-time saved-zone capture archives the untouched legacy limits/default-tier bytes in the same edit. */
 internal fun prepareTimeLimitUsage(prefs: MutablePreferences, now: AccessClockStamp, zone: String,

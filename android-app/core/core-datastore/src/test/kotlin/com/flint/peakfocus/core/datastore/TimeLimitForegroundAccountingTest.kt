@@ -131,4 +131,18 @@ class TimeLimitForegroundAccountingTest {
         store.observeForeground(observation(at(30_000)))
         assertEquals(25 * 60_000 + 30_000L, day(disk).usedMs)
     }
+
+    @Test fun PC_48_queuedFloorBeforeANewerOsCommitNeverRewindsTheResetOrChargesFloorTime() = runBlocking {
+        val disk = Disk(); val store = seed(disk)
+        store.observeForeground(observation(at(10_000)))
+        val ticket = store.measurementContext("app", at(10_000))
+        store.record(ticket, 25 * 60_000 + 10_000, at(20_000))
+        store.observeForeground(observation(at(15_000), visit = null, pkg = null))
+        assertEquals(25 * 60_000 + 15_000L, day(disk).usedMs)
+        assertEquals(3_580_000L, day(disk).reset.remainingToResetMs)
+        assertEquals(at(20_000), day(disk).reset.checkpoint)
+        assertFalse(day(disk).timeUncertain)
+        store.observeForeground(observation(at(25_000), previous = null, visit = "after-floor"))
+        assertEquals(25 * 60_000 + 15_000L, day(disk).usedMs)
+    }
 }

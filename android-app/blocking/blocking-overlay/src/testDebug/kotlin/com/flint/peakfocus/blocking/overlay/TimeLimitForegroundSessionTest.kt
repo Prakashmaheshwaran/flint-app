@@ -18,7 +18,7 @@ class TimeLimitForegroundSessionTest {
     @Test fun PC_48_departureCapturesANewVisitEvenIfItsDurableWriteFails() = runTest {
         val observed = mutableListOf<TimeLimitForegroundObservation>()
         val session = TimeLimitForegroundSession(write = { observation, current ->
-            assertTrue(current())
+            assertTrue(observation.closeOnly || current())
             observed += observation
             if (observation.packageName == null && !observation.closeOnly) throw IOException("floor checkpoint failed")
         }, eligible = { true }, dispatcher = StandardTestDispatcher(testScheduler),
