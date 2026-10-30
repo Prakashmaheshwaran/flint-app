@@ -35,10 +35,11 @@ class DataStoreTimeLimitUsageStore(
             var ledger = prepareTimeLimitSavedZones(prefs, stamp, deviceZone())
             timeUsageRequire(packageName.isNotBlank() && packageName.length <= OpenCreditLedgerPolicy.MAX_ATOM)
             val previous = ledger.targets[packageName]
+            val templateZone = prefs.editorTimes().singleOrNull { it.packageName == packageName }?.zoneId
             val row = timeUsageValid {
-                previous?.let { TimeLimitDayAccounting.reconcile(it, stamp).state }
+                previous?.let { TimeLimitDayAccounting.reconcile(it, stamp, templateZone ?: it.zoneId).state }
                     ?: TimeLimitDayAccounting.initial(stamp, savedZoneForNewTarget ?:
-                        prefs.editorTimes().singleOrNull { it.packageName == packageName }?.zoneId ?: ledger.migrationZoneId)
+                        templateZone ?: ledger.migrationZoneId)
             }
             ledger = ledger.copy(targets = ledger.targets + (packageName to row))
             prefs.putTimeLimitUsage(ledger)
@@ -55,11 +56,13 @@ class DataStoreTimeLimitUsageStore(
             val stamp = clockAtCommit?.invoke() ?: now
             val ledger = readTimeLimitUsage(prefs)
             val current = ledger.targets[context.packageName] ?: wireCorrupt()
-            timeUsageRequire(current.zoneId == context.zoneId)
-            val sample = totalMs?.takeUnless { it == Long.MAX_VALUE }?.let {
+            val desiredZone = prefs.editorTimes().singleOrNull { it.packageName == context.packageName }?.zoneId ?: current.zoneId
+            // A legitimate template-zone change can retire a sampling ticket. It is stale
+            // evidence, not corruption, and must neither charge nor disable the new period.
+            val sample = totalMs?.takeIf { current.zoneId == context.zoneId && it != Long.MAX_VALUE }?.let {
                 TimeLimitUsageSample(context.windowStartEpochMs, it, context.observedAt)
             }
-            val mutation = timeUsageValid { TimeLimitDayAccounting.record(current, context.periodId, sample, stamp) }
+            val mutation = timeUsageValid { TimeLimitDayAccounting.record(current, context.periodId, sample, stamp, desiredZone) }
             prefs.putTimeLimitUsage(ledger.copy(targets = ledger.targets + (context.packageName to mutation.state)))
             result = TimeLimitUsageObservation(mutation.state, mutation.sampleAccepted)
         }

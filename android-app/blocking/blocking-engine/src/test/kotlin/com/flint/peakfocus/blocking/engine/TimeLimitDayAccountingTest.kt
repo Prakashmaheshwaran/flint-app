@@ -109,4 +109,30 @@ class TimeLimitDayAccountingTest {
             assertEquals(hours * hour, day.reset.remainingToResetMs)
         }
     }
+
+    @Test fun PC_56_templateZoneChangeWaitsForTheExistingTrustedBoundary() {
+        val old = record(initial(), sample(60_000))
+        val pending = TimeLimitDayAccounting.reconcile(old, at(1_000), "Asia/Tokyo")
+        assertFalse(pending.rolled)
+        assertEquals("UTC", pending.state.zoneId)
+        assertEquals(60_000L, pending.state.usedMs)
+        assertEquals(hour - 1_000, pending.state.reset.remainingToResetMs)
+        val next = TimeLimitDayAccounting.reconcile(pending.state, at(hour), "Asia/Tokyo")
+        assertTrue(next.rolled)
+        assertEquals("Asia/Tokyo", next.state.zoneId)
+        assertEquals(old.periodId + 1, next.state.periodId)
+        assertEquals(15 * hour, next.state.reset.remainingToResetMs)
+        assertEquals(0L, next.state.usedMs)
+    }
+
+    @Test fun PC_70_importedLargePositiveBudgetsRemainMeasurableWithoutOverflow() {
+        assertEquals(Int.MAX_VALUE * 60_000L, TimeLimitDayAccounting.remainingMs(initial(), Int.MAX_VALUE))
+        val used = record(initial(), sample(60_000))
+        assertEquals(2_000 * 60_000L - 60_000, TimeLimitDayAccounting.remainingMs(used, 2_000))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun PC_71_futureMeasurementWindowIsInvalidEvidence() {
+        record(initial(), sample(1, window = base + 1))
+    }
 }

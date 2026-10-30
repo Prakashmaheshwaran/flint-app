@@ -191,6 +191,33 @@ class TimeLimitUsageStoreTest {
         assertEquals("Asia/Tokyo", reader.measurementContext("new", at()).zoneId)
     }
 
+    @Test fun PC_54_PC_56_templateZoneChangesAtTrustedRolloverAndOldTicketsStayStale() = runBlocking {
+        val disk = Disk(legacy()); val old = spent(disk)
+        DataStoreLimitsStore(disk).setTimeLimit(TimeLimit("app", 1, BreakLevel.HARDCORE, "Asia/Tokyo"))
+        val reader = store(disk)
+        val pending = reader.measurementContext("app", at(1_000))
+        assertEquals("UTC", pending.zoneId)
+        assertEquals(old.periodId, pending.periodId)
+        assertEquals(60_000L, readTimeLimitUsage(disk.values.value).targets.getValue("app").usedMs)
+        val next = reader.measurementContext("app", at(hour))
+        assertEquals("Asia/Tokyo", next.zoneId)
+        assertEquals(old.periodId + 1, next.periodId)
+        val stale = reader.record(pending, 120_000, at(hour))
+        assertFalse(stale.sampleAccepted)
+        assertEquals(0L, stale.state.usedMs)
+        assertEquals(15 * hour, stale.state.reset.remainingToResetMs)
+        assertEquals("Asia/Tokyo", store(disk) { "Pacific/Auckland" }.measurementContext("app", at(hour)).zoneId)
+        assertTrue(reader.record(next, 1_000, at(hour)).sampleAccepted)
+    }
+
+    @Test fun PC_56_samePeriodTicketWithADifferentZoneCannotChargeOrDisableCurrentState() = runBlocking {
+        val disk = Disk(legacy()); val context = spent(disk)
+        val result = store(disk).record(context.copy(zoneId = "Asia/Tokyo"), 120_000, at(1_000))
+        assertFalse(result.sampleAccepted)
+        assertEquals(60_000L, result.state.usedMs)
+        assertEquals("UTC", result.state.zoneId)
+    }
+
     private suspend fun expectUnavailable(disk: Disk) {
         try { store(disk).measurementContext("app", at()); fail("unavailable state accepted") }
         catch (_: StorageUnavailableException) { }

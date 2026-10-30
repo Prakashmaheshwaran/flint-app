@@ -33,17 +33,19 @@ object TimeLimitDayAccounting {
     }
 
     /** Same boot: elapsed proof only. Reboot: resume the entire saved reset remainder, never mint quota. */
-    fun reconcile(current: TimeLimitDayState, now: AccessClockStamp): TimeLimitDayResult {
+    fun reconcile(current: TimeLimitDayState, now: AccessClockStamp,
+        zoneForNextPeriod: String = current.zoneId): TimeLimitDayResult {
         requireValid(current); requireStamp(now)
+        val nextZone = OpenCreditLedgerPolicy.quotaZone(zoneForNextPeriod)
         val elapsed = trustedElapsedMs(current.observedAt, now)
         val logicalWall = if (elapsed == null) now.wallEpochMs else Math.addExact(current.logicalCheckpoint.wallEpochMs, elapsed)
         require(logicalWall <= OpenCreditLedgerPolicy.MAX_WALL_MS)
         val remaining = resetPolicy.remainingToResetMs(current.reset, now)
         val rolled = remaining == 0L
         val next = current.copy(
+            zoneId = if (rolled) zoneForNextPeriod else current.zoneId,
             periodId = if (rolled) Math.addExact(current.periodId, 1) else current.periodId,
-            reset = OpenCreditPolicy.ResetClock(now, if (rolled) nextMidnight(logicalWall,
-                OpenCreditLedgerPolicy.quotaZone(current.zoneId)) else remaining),
+            reset = OpenCreditPolicy.ResetClock(now, if (rolled) nextMidnight(logicalWall, nextZone) else remaining),
             logicalCheckpoint = now.copy(wallEpochMs = logicalWall), observedAt = now,
             usedMs = if (rolled) 0 else current.usedMs,
             timeUncertain = current.timeUncertain || elapsed == null || clockDiscontinuity(current.observedAt, now),
@@ -58,8 +60,8 @@ object TimeLimitDayAccounting {
      * A missing measurement is not zero and never poisons the persisted floor with MAX_VALUE.
      */
     fun record(current: TimeLimitDayState, requestedPeriodId: Long, sample: TimeLimitUsageSample?,
-        now: AccessClockStamp): TimeLimitDayResult {
-        val reconciled = reconcile(current, now)
+        now: AccessClockStamp, zoneForNextPeriod: String = current.zoneId): TimeLimitDayResult {
+        val reconciled = reconcile(current, now, zoneForNextPeriod)
         val next = reconciled.state
         if (sample == null || requestedPeriodId != next.periodId) return reconciled
         requireSample(sample)
@@ -81,7 +83,9 @@ object TimeLimitDayAccounting {
     }
 
     fun remainingMs(state: TimeLimitDayState, dailyMinutes: Int): Long {
-        require(dailyMinutes in 0..1440)
+        // Existing imported budgets accept every nonnegative Int; the editor separately
+        // bounds new drafts. Accounting must not make an old valid record unreadable.
+        require(dailyMinutes >= 0)
         return (dailyMinutes * 60_000L - state.usedMs).coerceAtLeast(0)
     }
 
@@ -106,6 +110,7 @@ object TimeLimitDayAccounting {
     private fun requireSample(sample: TimeLimitUsageSample) {
         require(sample.windowStartEpochMs in 0..OpenCreditLedgerPolicy.MAX_WALL_MS && sample.totalMs >= 0)
         requireStamp(sample.observedAt)
+        require(sample.windowStartEpochMs <= sample.observedAt.wallEpochMs)
     }
 
     private fun requireStamp(stamp: AccessClockStamp) {
