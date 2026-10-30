@@ -201,7 +201,7 @@ extension FlintWebRestrictions {
     /// Namespaced under "flint.*" to match `FlintGroupStore`'s key convention. Lives outside
     /// `FlintGroupStore` itself because that file is a shared/locked scaffold file — same suite,
     /// same JSON, no edits to the hot file (mirrors how the Wave-1 stubs persist).
-    private static let storageKey = "flint.webRestrictions"
+    static let storageKey = "flint.webRestrictions"
     static let initializedMarkerKey = storageKey + ".initialized.adr012"
 
     /// Production initialization shares the host/extension transition boundary with starts,
@@ -282,32 +282,69 @@ extension FlintWebRestrictions {
 
     @discardableResult
     public func save(to defaults: UserDefaults? = .flintGroup) -> Bool {
-        guard validationMessage == nil, let defaults, let data = try? JSONEncoder().encode(self) else { return false }
-        let previous = defaults.object(forKey: Self.storageKey)
-        let previousMarker = defaults.object(forKey: Self.initializedMarkerKey)
+        guard validationMessage == nil else { return false }
+        return Self.writeStorage(to: defaults, config: self)
+    }
+
+    /// Global edits merge into the freshly read root. In particular they never erase a child
+    /// captured after the caller loaded its preference draft. All production callers hold the
+    /// shared transition; child/global editor changes use this same atomic blob replacement.
+    static func writeStorage(to defaults: UserDefaults?, config: Self?, children: Data? = nil) -> Bool {
+        guard let defaults, config != nil || children != nil, config?.validationMessage == nil else { return false }
+        let childMarker = "flint.webRestrictions.children.initialized.adr012"
+        let keys = [storageKey, initializedMarkerKey, childMarker]
+        var previous = keys.map { defaults.object(forKey: $0) }
         var committed = false
         defer {
             if !committed {
-                if let previous { defaults.set(previous, forKey: Self.storageKey) }
-                else { defaults.removeObject(forKey: Self.storageKey) }
-                if let previousMarker { defaults.set(previousMarker, forKey: Self.initializedMarkerKey) }
-                else { defaults.removeObject(forKey: Self.initializedMarkerKey) }
+                for (key, object) in zip(keys, previous) {
+                    if let object { defaults.set(object, forKey: key) }
+                    else { defaults.removeObject(forKey: key) }
+                }
                 let flushed = defaults.synchronize()
-                let restored = (defaults.object(forKey: Self.storageKey) as? NSObject) == (previous as? NSObject)
-                    && (defaults.object(forKey: Self.initializedMarkerKey) as? NSObject) == (previousMarker as? NSObject)
+                let restored = zip(keys, previous).allSatisfy {
+                    (defaults.object(forKey: $0.0) as? NSObject) == ($0.1 as? NSObject)
+                }
                 if !flushed || !restored {
                     // A failed rollback must not make this look like a fresh domain. Retain
                     // the restored cached bytes and latch loss detection until recovery.
                     if defaults.object(forKey: Self.initializedMarkerKey) == nil {
                         defaults.set(true, forKey: Self.initializedMarkerKey)
                     }
+                    if children != nil, defaults.object(forKey: childMarker) == nil {
+                        defaults.set(true, forKey: childMarker)
+                    }
                     defaults.synchronize()
                 }
             }
         }
+        guard defaults.synchronize() else { return false }
+        // Snapshot after synchronization, while the transition excludes other writers.
+        previous = keys.map { defaults.object(forKey: $0) }
+        let stored = defaults.object(forKey: storageKey)
+        var root = (stored as? Data).flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] } ?? [:]
+        if root.isEmpty, let stored {
+            let bytes = (stored as? Data) ?? (try? PropertyListSerialization.data(fromPropertyList: stored, format: .binary, options: 0))
+            guard let bytes else { return false }
+            root["_flintWebRetainedUnavailable"] = bytes.base64EncodedString()
+        }
+        if let config {
+            guard let encoded = try? JSONEncoder().encode(config),
+                  let fields = (try? JSONSerialization.jsonObject(with: encoded)) as? [String: Any] else { return false }
+            root.merge(fields) { _, new in new }
+        }
+        if let children {
+            root["_flintWebChildrenSchema"] = 1
+            root["_flintWebChildren"] = children.base64EncodedString()
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: root, options: [.sortedKeys]) else { return false }
         defaults.set(data, forKey: Self.storageKey)
         guard defaults.synchronize(), defaults.data(forKey: Self.storageKey) == data else { return false }
         guard Self.markInitialized(in: defaults) else { return false }
+        if children != nil, defaults.object(forKey: childMarker) == nil {
+            defaults.set(true, forKey: childMarker)
+            guard defaults.synchronize(), defaults.object(forKey: childMarker) != nil else { return false }
+        }
         committed = true
         return true
     }
