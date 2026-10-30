@@ -1011,7 +1011,9 @@ class BlockScreenCoordinator(
         }
         // These neutral values feed display only. Every policy/credit decision above requires
         // Ready and reads real accounting again inside the transaction.
-        return blockScreenState(packageName, label, cause, currentBreakSession(), now, isEmergencyPassAvailable())
+        return blockScreenState(packageName, label, BlockDisplayEndProjection.forTarget(packageName,
+            observations[packageName]?.url, ActiveRulesHolder.rules, appContext.packageName, cause, now, utcOffsetMs(now)),
+            currentBreakSession(), now, isEmergencyPassAvailable())
             .copy(grantStatus = status, openCreditsRemaining = credit?.remainingCredits, openCreditDurationMillis = credit?.durationMs,
                 openCreditActiveRemainingMillis = credit?.activeRemainingMs,
                 openCreditBlockingContributors = credit?.blockingContributors.orEmpty(),

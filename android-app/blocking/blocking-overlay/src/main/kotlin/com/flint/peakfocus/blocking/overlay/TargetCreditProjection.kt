@@ -22,7 +22,6 @@ internal object TargetCreditProjection {
             recoveryEndsAtWall != null -> "target-recovery-active"
             credit == null -> "open-credit-scope-unavailable"
             credit.blockingContributors.isNotEmpty() || others.any { it.enforcingNow == true } -> "other-contributor-blocks"
-            others.any { it.enforcingNow == null } -> "target-contributor-unconfirmed"
             credit.activeRemainingMs > 0 -> "open-credit-active"
             credit.durationMs <= 0 -> "open-credit-period-pending"
             credit.remainingCredits <= 0 -> "open-credit-exhausted"

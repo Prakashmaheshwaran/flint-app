@@ -9,6 +9,22 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TargetProtectionProjectionTest {
+    @Test fun siteDoesNotProjectTheBrowsersActiveCreditIntoItsNextBoundary() {
+        val end = now.wallEpochMs + 600_000
+        val domain = rule("site").copy(targets = BlockTargets(domains = setOf(DomainRef("example.com"))))
+        val stored = snapshot(domain, opens = listOf(OpenLimit(chrome, 3)))
+        val accepted = OpenCreditLedgerPolicy.acceptOpenCredit(stored.openCredits!!, chrome, "credit", listOf(3),
+            emptyList(), false, now).next
+        val observed = environment().copy(browserPackageName = chrome, domainContextKnown = true,
+            websiteCoverage = TargetWebsiteCoverage.AVAILABLE, websiteCoverageObservedAtWall = now.wallEpochMs,
+            websiteCoverageValidUntilWall = now.wallEpochMs + 900_000, websiteCoverageIsCurrent = true)
+        val view = read(stored.copy(openCredits = accepted), TargetRef.Site("example.com"), observed)
+        assertEquals(Readiness.Ready, view.readiness)
+        assertNull(view.openCredit)
+        assertNull(view.timeLimit)
+        assertEquals(end, view.nextChangeAtWall)
+    }
+
     private var now = AccessClockStamp(1_800_000_000_000, 1_000, "boot")
     private val pkg = "selected.app"
     private val chrome = "com.android.chrome"

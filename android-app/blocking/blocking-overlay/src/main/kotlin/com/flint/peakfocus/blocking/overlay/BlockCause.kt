@@ -30,6 +30,8 @@ data class BlockCause(
      * daily Time Limit, Open Limit and uninstall-guard causes, and when the rule vanished.
      */
     val ruleId: String? = null,
+    /** Display-only combined end; never replaces this cause's own expiry or exit authority. */
+    val displayEnd: BlockDisplayEnd? = null,
 ) {
     /**
      * Historical v1 adapter classification. Production timed-credit exhaustion breaks
@@ -37,6 +39,9 @@ data class BlockCause(
      */
     val spendsOpenOnBreak: Boolean get() = reason == BlockScreenReason.OPEN_LIMIT
 }
+
+/** A present value with a null end means the combined unblock time is unknown/ongoing. */
+data class BlockDisplayEnd(val endsAtEpochMs: Long?)
 
 /**
  * Cause for a rule verdict ([com.flint.peakfocus.core.model.Verdict.Block]). [rule] is the
@@ -117,7 +122,9 @@ fun blockScreenState(
         appLabel = appLabel,
         reason = cause.reason,
         breakLevel = cause.breakLevel,
-        remainingMillis = cause.endsAtEpochMs?.let { (it - nowEpochMs).coerceAtLeast(0L) },
+        remainingMillis = (if (cause.displayEnd != null) cause.displayEnd.endsAtEpochMs else cause.endsAtEpochMs)
+            ?.let { (it - nowEpochMs).coerceAtLeast(0L) },
+        countdownReason = BlockScreenReason.MANUAL_SESSION.takeIf { cause.displayEnd != null },
         breakWaitRemainingMillis = breakWait,
         breakWaitTotalMillis = breakWaitTotal,
         emergencyPassAvailable = emergencyPassAvailable,

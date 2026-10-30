@@ -65,6 +65,8 @@ data class BlockScreenState(
     val openCreditBlockingContributors: List<String> = emptyList(),
     /** Opaque reviewed-action token. The host revalidates it in the accepting transaction. */
     val openCreditRequestScope: String? = null,
+    /** Combined protection may outlast the headline limit's own reset. */
+    val countdownReason: BlockScreenReason? = null,
 )
 
 /** How long the HARDER-level control must be held before `onBreakRequested` fires. */
@@ -128,7 +130,7 @@ internal fun blockScreenContent(state: BlockScreenState): BlockScreenContent {
             (if ((state.openCreditActiveRemainingMillis ?: 0) > 0) " Credit access ends in ${formatDuration(state.openCreditActiveRemainingMillis!!)}; ${state.openCreditsRemaining ?: 0} credits remain." else "") +
             if (state.openCreditBlockingContributors.isNotEmpty()) " Also blocked by ${state.openCreditBlockingContributors.joinToString(", ")}." else "",
         badge = badgeFor(state.reason, state.breakLevel),
-        countdownLabel = countdownLabelFor(state.reason, state.remainingMillis),
+        countdownLabel = countdownLabelFor(state.countdownReason ?: state.reason, state.remainingMillis),
         encouragement = encouragementFor(state.packageName),
         breakAffordance = when (state.grantStatus) {
             GrantStatus.LOADING, GrantStatus.SAVING -> BreakAffordance.Saving

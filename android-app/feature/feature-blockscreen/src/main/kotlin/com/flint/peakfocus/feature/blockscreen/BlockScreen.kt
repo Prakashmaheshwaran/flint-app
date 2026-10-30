@@ -445,8 +445,8 @@ private fun BlockWords(
                     // "0s" during the exit collapse is honest — the block just ended.
                     FlintInfoPill(
                         text = content.countdownLabel
-                            ?: requireNotNull(countdownLabelFor(state.reason, 0L)),
-                        spokenText = countdownA11y(state.reason, state.remainingMillis ?: 0L),
+                            ?: requireNotNull(countdownLabelFor(state.countdownReason ?: state.reason, 0L)),
+                        spokenText = countdownA11y(state.countdownReason ?: state.reason, state.remainingMillis ?: 0L),
                     )
                 }
             }
