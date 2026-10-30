@@ -15,6 +15,7 @@ import androidx.datastore.preferences.preferencesDataStore
 /** The single Preferences DataStore backing all Flint preference stores. */
 private val Context.flintPreferencesDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "flint_preferences",
+    produceMigrations = ::timeLimitBootstrapMigrations,
 )
 
 object FlintPreferences {

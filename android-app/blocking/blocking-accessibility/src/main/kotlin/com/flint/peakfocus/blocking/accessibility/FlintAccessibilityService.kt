@@ -256,7 +256,6 @@ class FlintAccessibilityService : AccessibilityService() {
         evaluationJob?.cancel()
         evaluationJob = serviceScope?.launch {
             boundaryTimer?.cancel() // each decision replaces the one pending deadline
-            val now = System.currentTimeMillis()
             // 1) Safety floor (allow-list windows included): blocking the launcher loops the Home
             //    button into the shield; the dialer and emergency surfaces are emergency calling;
             //    Settings/permission pages are how protection is recovered. The coordinator applies
@@ -281,6 +280,7 @@ class FlintAccessibilityService : AccessibilityService() {
                     TrustedTimeLimitBudget(pkg, 0, null, 0L, TrustedTimeLimitBudget.Measurement.NOT_NEEDED))
             }
             val budget = minutes?.let { withContext(Dispatchers.IO) { timeReader.read(pkg, it) } }
+            val now = System.currentTimeMillis()
             val remaining = budget?.remainingMs
             lastBudgetDeadlineMs = remaining?.let { now + it.coerceAtLeast(0L) }
 

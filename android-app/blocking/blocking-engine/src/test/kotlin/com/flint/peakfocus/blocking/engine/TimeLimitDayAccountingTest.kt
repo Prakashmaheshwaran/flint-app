@@ -14,6 +14,24 @@ class TimeLimitDayAccountingTest {
     private fun record(state: TimeLimitDayState, sample: TimeLimitUsageSample?, now: AccessClockStamp = at()) =
         TimeLimitDayAccounting.record(state, state.periodId, sample, now).state
 
+    @Test fun PC_54_PC_56_PC_60_newOrPreviouslyUnderBudgetTargetsCannotClaimUnusedQuotaAfterAClockJumpOrReboot() {
+        for (current in listOf(initial(), record(initial(), sample(30_000)))) {
+            for (boot in listOf("boot", "next-boot")) {
+                val changed = at(1_000, 48 * hour, boot)
+                val after = record(current, sample(0, changed, base + 47 * hour), changed)
+                assertTrue(after.accountingUnknownUntilReset)
+                assertEquals(current.periodId, after.periodId)
+                assertTrue(after.usedMs >= current.usedMs)
+                assertNull(TimeLimitDayAccounting.remainingMs(after, 1))
+                val end = changed.copy(wallEpochMs = changed.wallEpochMs + after.reset.remainingToResetMs,
+                    elapsedRealtimeMs = changed.elapsedRealtimeMs + after.reset.remainingToResetMs)
+                val reset = TimeLimitDayAccounting.reconcile(after, end)
+                assertTrue(reset.rolled)
+                assertFalse(reset.state.accountingUnknownUntilReset)
+            }
+        }
+    }
+
     @Test fun PC_54_forwardWallMidnightCannotRefillAnExhaustedPositiveBudget() {
         val spent = record(initial(), sample(60_000))
         val jumped = at(1_000, 48 * hour)

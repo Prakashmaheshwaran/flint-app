@@ -99,6 +99,7 @@ internal fun prepareTimeLimitUsage(prefs: MutablePreferences, now: AccessClockSt
 }
 
 internal fun readTimeLimitUsage(prefs: Preferences): TimeLimitUsageLedger {
+    readTimeLimitBootstrapContext(prefs) // Capture failures affect only Time readers.
     readTimeLimitZoneVersion(prefs)
     val version = StrictPrefsCodec.long(prefs, TIME_USAGE_SCHEMA) ?: wireCorrupt()
     if (version > 1) wireFuture()
@@ -121,6 +122,18 @@ internal fun MutablePreferences.putTimeLimitUsage(ledger: TimeLimitUsageLedger) 
 }
 
 internal fun timeUsageRequire(value: Boolean) { if (!value) wireCorrupt() }
+
+/** Only the Time read boundary owns these children; capture failure cannot break other stores. */
+internal fun validateTimeLimitUsageForRead(prefs: Preferences) {
+    readTimeLimitBootstrapContext(prefs)
+    val editorVersion = StrictPrefsCodec.long(prefs, EDITOR_VERSION_KEY)
+    if (editorVersion != null) readEditorState(prefs) // Includes future-version rejection.
+    val ownNames = setOf(TIME_USAGE_SCHEMA.name, TIME_USAGE_STATE.name, TIME_USAGE_ARCHIVE.name,
+        TIME_USAGE_TARGETS.name, TIME_LIMIT_ZONE_SCHEMA.name)
+    if (editorVersion?.let { it >= 3L } == true || prefs.asMap().keys.any { it.name in ownNames })
+        readTimeLimitUsage(prefs)
+}
+
 internal inline fun <T> timeUsageValid(action: () -> T): T = try { action() }
 catch (_: IllegalArgumentException) { wireCorrupt() }
 catch (_: ArithmeticException) { wireCorrupt() }

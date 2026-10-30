@@ -2,6 +2,8 @@ package com.flint.peakfocus.core.datastore
 
 import androidx.datastore.preferences.core.*
 import com.flint.peakfocus.blocking.engine.OpenCreditLedgerPolicy
+import com.flint.peakfocus.blocking.engine.clockDiscontinuity
+import com.flint.peakfocus.blocking.engine.trustedElapsedMs
 import com.flint.peakfocus.core.model.*
 
 internal val TIME_LIMIT_ZONE_SCHEMA = longPreferencesKey("time_limit_saved_zone_schema_v1")
@@ -9,6 +11,7 @@ internal val TIME_LIMIT_ZONE_SCHEMA = longPreferencesKey("time_limit_saved_zone_
 /** D5: validated migration preserves explicit zones/tiers and stamps legacy zones once at upgrade. */
 internal fun prepareTimeLimitSavedZones(prefs: MutablePreferences, now: AccessClockStamp, deviceZone: String,
     legacyTargets: Set<String> = emptySet()): TimeLimitUsageLedger {
+    val captured = readTimeLimitBootstrapContext(prefs)
     if (StrictPrefsCodec.long(prefs, TIME_LIMIT_ZONE_SCHEMA) != null) {
         readTimeLimitZoneVersion(prefs)
         return readTimeLimitUsage(prefs)
@@ -17,7 +20,15 @@ internal fun prepareTimeLimitSavedZones(prefs: MutablePreferences, now: AccessCl
     // is never a reason to perform a second migration or capture a different travel zone.
     timeUsageRequire(StrictPrefsCodec.long(prefs, TIME_USAGE_SCHEMA) == null)
     val limits = prefs.editorTimes()
-    val ledger = prepareTimeLimitUsage(prefs, now, deviceZone, legacyTargets)
+    var ledger = prepareTimeLimitUsage(prefs, captured?.capturedAt ?: now, captured?.zoneId ?: deviceZone,
+        legacyTargets + captured?.legacyTargets.orEmpty())
+    if (captured != null && (trustedElapsedMs(captured.capturedAt, now) == null || clockDiscontinuity(captured.capturedAt, now))) {
+        // The capture is an anchor, not proof of usage before a changed OS window/boot.
+        // Keep its original boundary and do not turn a new raw-day zero into unused quota.
+        ledger = ledger.copy(targets = ledger.targets.mapValues { (_, row) -> row.copy(accountingUnknownUntilReset = true) })
+        // Both schemas are still being initialized in this same edit, before any publication.
+        prefs[TIME_USAGE_STATE] = TimeLimitUsageCodec.encode(ledger)
+    }
     val migrated = limits.map { limit ->
         limit.withSavedTimeLimitZone(previous = null, zoneForNewTarget = ledger.targets.getValue(limit.packageName).zoneId)
     }

@@ -60,6 +60,22 @@ class TimeLimitUsageStoreTest {
         assertEquals(1L, disk.values.value[TIME_USAGE_SCHEMA])
     }
 
+    @Test fun PC_70_PC_71_publicTimeLimitsReadRejectsMissingOrCorruptInitializedUsageWithoutDisablingOtherStores() = runBlocking {
+        for (key in listOf(TIME_USAGE_SCHEMA, TIME_USAGE_STATE, TIME_USAGE_ARCHIVE, TIME_USAGE_TARGETS, TIME_LIMIT_ZONE_SCHEMA)) {
+            val disk = Disk(preferencesOf(PrefsKeys.TIME_LIMITS to "app~1~HARDCORE"))
+            store(disk).measurementContext("app", at())
+            disk.values.value = disk.values.value.toMutablePreferences().apply { remove(key) }.toPreferences()
+            val state = DataStoreLimitsStore(disk).timeLimitsState.first { it !is StorageState.Loading }
+            assertEquals("${key.name}", StorageState.Unavailable(StorageFailure.CORRUPT), state)
+            assertTrue(DataStoreBlockRulesStore(disk).rulesState.first { it !is StorageState.Loading } is StorageState.Ready)
+            assertTrue(DataStoreFocusStateStore(disk).state.first { it !is StorageState.Loading } is StorageState.Ready)
+            assertTrue(DataStoreLimitsStore(disk).openLimitsState.first { it !is StorageState.Loading } is StorageState.Ready)
+        }
+        val disk = Disk(preferencesOf(TIME_BOOTSTRAP_CONTEXT to "B|1\nU|CORRUPT"))
+        assertEquals(StorageState.Unavailable(StorageFailure.CORRUPT),
+            DataStoreLimitsStore(disk).timeLimitsState.first { it !is StorageState.Loading })
+    }
+
     @Test fun PC_56_PC_70_legacyOnlyTargetsShareTheAtomicMigrationWithoutBecomingEditorTemplates() = runBlocking {
         val original = "app~1~HARDCORE~America/New_York"
         val disk = Disk(preferencesOf(PrefsKeys.TIME_LIMITS to original))
@@ -104,7 +120,9 @@ class TimeLimitUsageStoreTest {
         assertEquals(60_000L, result.state.usedMs)
         assertEquals(0L, TimeLimitDayAccounting.remainingMs(result.state, 1))
         val again = store(disk).measurementContext("app", jumped)
-        assertEquals(context, again)
+        // Ticket identity is stable; its newly included acknowledged floor must reflect
+        // the intervening sample commit rather than the earlier sampling baseline.
+        assertEquals(context.copy(committedDay = result.state), again)
     }
 
     @Test fun PC_54_PC_60_unknownLegacyHistorySurvivesDiskAndStoreRecreationUntilTrustedReset() = runBlocking {

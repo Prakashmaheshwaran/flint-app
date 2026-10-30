@@ -50,7 +50,11 @@ object TimeLimitDayAccounting {
             reset = OpenCreditPolicy.ResetClock(now, if (rolled) nextMidnight(logicalWall, nextZone) else remaining),
             logicalCheckpoint = now.copy(wallEpochMs = logicalWall), observedAt = now,
             usedMs = if (rolled) 0 else current.usedMs,
-            accountingUnknownUntilReset = !rolled && current.accountingUnknownUntilReset,
+            // A changed OS clock/boot can hide usage between the last observation and the
+            // new measurement window. Keep evidenced exhaustion, but do not invent positive
+            // unused quota from that new window's zero until the trusted boundary.
+            accountingUnknownUntilReset = !rolled && (current.accountingUnknownUntilReset ||
+                elapsed == null || clockDiscontinuity(current.observedAt, now)),
             timeUncertain = current.timeUncertain || elapsed == null || clockDiscontinuity(current.observedAt, now),
         )
         requireValid(next)
