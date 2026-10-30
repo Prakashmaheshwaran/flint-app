@@ -12,12 +12,17 @@ enum FlintDesiredRules {
 
     static func load<Rule: FlintGatedRule>(_ type: Rule.Type, key: Key, from defaults: UserDefaults?,
                                          at now: Date = Date(), migrating: Bool = true,
-                                         recoveryDirectory: URL? = FlintRuleRecovery.directory) -> [Rule]? {
+                                         recoveryDirectory: URL? = FlintRuleRecovery.directory,
+                                         nativeActivities: Set<String>? = nil,
+                                         externalEvidence: (() -> Bool)? = nil) -> [Rule]? {
         guard let defaults, defaults.synchronize() else { return nil }
+        let initialization = FlintRuleInitialization.receipt(in: defaults)
+        guard initialization != .invalid, initialization != .preparing else { return nil }
         guard FlintRuleRecovery.available(key.original, defaults: defaults, directory: recoveryDirectory),
               FlintRuleRecovery.available(key.rawValue + ".quarantine.adr012", defaults: defaults,
                 directory: recoveryDirectory) else { return nil }
         let marker = defaults.object(forKey: key.marker)
+        guard initialization != .complete || marker != nil else { return nil }
         if let marker {
             guard let data = marker as? Data,
                   let fields = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
@@ -26,8 +31,15 @@ enum FlintDesiredRules {
         }
         guard let object = defaults.object(forKey: key.rawValue) else {
             // A deleted key on an established domain must never mean "remove all activities".
-            return marker == nil && defaults.object(forKey: key.original) == nil
-                && defaults.object(forKey: key.rawValue + ".quarantine.adr012") == nil ? [] : nil
+            guard marker == nil, defaults.object(forKey: key.original) == nil,
+                  defaults.object(forKey: key.rawValue + ".quarantine.adr012") == nil,
+                  !FlintRuleInitialization.hasProtectionEvidence(in: defaults, activities: [], external: false),
+                  !FlintRuleInitialization.hasProtectionEvidence(in: defaults,
+                    activities: nativeActivities ?? Set(DeviceActivityCenter().activities.map(\.rawValue)),
+                    external: (externalEvidence ?? FlintRuleInitialization.externalEvidence)()) else { return nil }
+            // A read-only peek may describe an actually empty installation. Serialized host
+            // startup/mutation writes the positive receipt and all three domains together.
+            return []
         }
         guard let data = object as? Data,
               let objects = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]],
@@ -180,12 +192,14 @@ struct FlintRuleReloadEnvironment {
         }
         record(domain, current)
     }
+    var installationEvidence: () -> Bool = FlintRuleInitialization.externalEvidence
 
     /// The caller holds the transition lock. Checkpoint before decisions, but do not freeze a
     /// successor here: queued changes must apply before the next occurrence can be accepted.
     func observedRules<Rule: FlintGatedRule>(_ type: Rule.Type) -> [Rule]? {
         guard var rules = FlintDesiredRules.load(type, key: Rule.domain, from: defaults, at: clock.now(),
-            recoveryDirectory: recoveryDirectory) else { return nil }
+            recoveryDirectory: recoveryDirectory, nativeActivities: Set(center.activities.map(\.rawValue)),
+            externalEvidence: installationEvidence) else { return nil }
         let before = rules
         var notes: [FlintArmingHealth.Failure] = []
         for index in rules.indices {
@@ -246,7 +260,8 @@ struct FlintRuleReloadEnvironment {
         // A busy transition is not evidence that the saved blob is corrupt. A display-only
         // peek may show its valid revision; commits still acquire the boundary and re-check it.
         return FlintDesiredRules.load(type, key: Rule.domain, from: defaults, at: clock.now(), migrating: false,
-            recoveryDirectory: recoveryDirectory)
+            recoveryDirectory: recoveryDirectory, nativeActivities: Set(center.activities.map(\.rawValue)),
+            externalEvidence: installationEvidence)
     }
 
     static var live: Self {

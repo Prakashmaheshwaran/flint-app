@@ -680,7 +680,8 @@ final class RuleHarness {
             acceptSave: { self.saveAllowed }, validateSelection: { _, _ in nil },
             applyRuleShield: { rule, _ in self.appliedSchedules.append(rule); return true },
             applyLimitShield: { rule, _ in self.appliedLimits.append(rule); return true },
-            timeLimitIsShielded: { _, _ in self.timeLimitExhausted }, recoveryDirectory: recoveryDirectory)
+            timeLimitIsShielded: { _, _ in self.timeLimitExhausted }, recoveryDirectory: recoveryDirectory,
+            installationEvidence: { false })
     }
     func advance(_ seconds: TimeInterval) { now.addTimeInterval(seconds); monotonic += seconds }
     func advance(to date: Date) { advance(date.timeIntervalSince(now)) }
@@ -689,6 +690,7 @@ final class RuleHarness {
             allowListMode: true, protection: .init(timeZoneID: "UTC"))
     }
     @discardableResult func install<Rule: FlintGatedRule>(_ initial: Rule) -> Rule {
+        XCTAssertTrue(FlintRuleStoreLock.prepareInitialization(environment: environment))
         var rule = initial
         let occurrence = rule.templateOccurrence(at: now)
         rule.protection?.occurrence = occurrence

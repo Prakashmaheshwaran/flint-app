@@ -178,7 +178,11 @@ final class FlintRuleReviewTests: XCTestCase {
         for (initialized, successfulFlushes) in [(false, 1), (false, 2), (true, 1), (true, 2)] {
             let h = try RuleHarness(); defer { h.clean() }
             let original = h.install(h.schedule(tier: .easy))
-            if !initialized { h.defaults.removeObject(forKey: FlintRuleStoreKey.schedules.marker) }
+            if !initialized {
+                // A pre-receipt installation may have a valid blob without its old marker.
+                h.defaults.removeObject(forKey: FlintRuleInitialization.receiptKey)
+                h.defaults.removeObject(forKey: FlintRuleStoreKey.schedules.marker)
+            }
             let writer = try XCTUnwrap(FailingRuleDefaults(suiteName: h.suite))
             let bytes = writer.data(forKey: FlintRuleStoreKey.schedules.rawValue)
             let marker = writer.data(forKey: FlintRuleStoreKey.schedules.marker)

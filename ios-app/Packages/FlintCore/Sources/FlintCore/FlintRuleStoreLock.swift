@@ -11,6 +11,7 @@ enum FlintRuleStoreLock {
         guard let directory = environment.lockDirectory else { return nil }
         let key = "FlintRuleStoreLock." + directory.path
         if Thread.current.threadDictionary[key] != nil { return body() }
+        guard prepareInitialization(environment: environment) else { return nil }
         let afterKey = key + ".afterUnlock"
         let after = AfterUnlock()
         Thread.current.threadDictionary[afterKey] = after
@@ -19,6 +20,27 @@ enum FlintRuleStoreLock {
         Thread.current.threadDictionary.removeObject(forKey: afterKey)
         after.actions.forEach { $0() }
         return acquired ? result : nil
+    }
+
+    @discardableResult
+    static func prepareInitialization(environment: FlintRuleReloadEnvironment) -> Bool {
+        guard let defaults = environment.defaults else { return false }
+        switch FlintRuleInitialization.receipt(in: defaults) {
+        case .complete: return true
+        case .invalid: return false
+        case .absent:
+            // Established domains never need a fresh-install write, even if a sibling is
+            // unavailable. The strict loader checks absence using installation evidence.
+            if FlintRuleStoreKey.allCases.contains(where: { defaults.object(forKey: $0.rawValue) != nil
+                || defaults.object(forKey: $0.marker) != nil }) { return true }
+        case .preparing: break
+        }
+        // Initialization takes only the domain lock, never a ledger/session lock. Taking it
+        // before withTransitionBoundary prevents first-launch ledger creation from becoming
+        // false legacy evidence; it cannot invert locks because it acquires no further lock.
+        return domainLock(directory: environment.lockDirectory) {
+            FlintRuleInitialization.prepare(environment: environment)
+        } ?? false
     }
 
     static func afterUnlock(environment: FlintRuleReloadEnvironment, _ action: @escaping () -> Void) {

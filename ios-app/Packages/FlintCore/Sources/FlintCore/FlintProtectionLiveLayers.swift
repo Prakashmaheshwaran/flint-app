@@ -59,7 +59,11 @@ extension FlintProtectionReconciler {
                 lifecycle: FlintWebRestrictionLifecycle(), clock: .system
             )
         }
-    ], publish: {
+    ], prepare: {
+        // Establish positive rule initialization before session/pass startup creates its own
+        // protection evidence. Existing installations and unavailable domains are untouched.
+        FlintRuleStoreLock.prepareInitialization(environment: .live)
+    }, publish: {
         // The host initializes the ledger (and runs its one-time legacy pass import) so
         // read-only peeks — extensions, the shield, App detail — find it (ADR-012 §8, §12).
         // Only before its durable initialization marker exists (first launch of this build): a

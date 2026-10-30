@@ -33,7 +33,8 @@ public final class FlintSleepRulesController {
                         || (config.contractVersion == 12 && (config.revision ?? 0) > 0) else { return .unavailable }
                 previous = config
             } else {
-                guard defaults.object(forKey: Self.key + ".initialized") == nil else { return .unavailable }
+                guard defaults.object(forKey: Self.key + ".initialized") == nil,
+                      !all.contains(where: { $0.id.hasPrefix("sleep.") }) else { return .unavailable }
                 previous = nil
             }
             guard draft.revision == previous?.revision || previous == nil else { return .staleRevision }
