@@ -5,28 +5,32 @@ import FlintCore
 struct WebRestrictionsView: View {
     @State private var restrictions: FlintWebRestrictions
     @State private var savedConfig: FlintWebRestrictions?
+    @State private var readState = FlintWebRestrictionRead.busy
+    @State private var isReading = false
+    @State private var isSaving = false
     @State private var outcome: FlintWebRestrictionEditor.Outcome?
     @State private var requestID = UUID().uuidString
-    private let editor = FlintWebRestrictionEditor()
 
     init() {
-        let loaded = FlintWebRestrictions.loadForEnforcement()
-        _restrictions = State(initialValue: loaded ?? .default)
-        _savedConfig = State(initialValue: loaded)
+        _restrictions = State(initialValue: .default)
+        _savedConfig = State(initialValue: nil)
     }
 
     var body: some View {
         Form {
-            if savedConfig == nil {
+            if readState == .busy {
+                Section {
+                    Text(isReading ? "Loading website rules…" : "Website rules are busy. Try again shortly.")
+                    Button("Try again") { Task { await refresh() } }
+                        .disabled(isReading)
+                }
+            } else if readState == .unavailable {
                 Section {
                     Text("Couldn't read website rules. Existing settings have been preserved; changes cannot be saved.")
-                    Button("Try again") {
-                        if let loaded = FlintWebRestrictions.loadForEnforcement() {
-                            savedConfig = loaded; restrictions = loaded; outcome = nil
-                        }
-                    }
+                    Button("Try again") { Task { await refresh() } }
                 }
-            } else {
+            }
+            if savedConfig != nil {
             Section {
                 Toggle("Focus sessions", isOn: $restrictions.enabled)
                     .tint(FlintBrand.spark)
@@ -107,6 +111,8 @@ struct WebRestrictionsView: View {
         .flintForm()
         .navigationTitle("Web & Safari")
         .navigationBarTitleDisplayMode(.inline)
+        .disabled(isSaving)
+        .task { await refresh() }
         .onChange(of: restrictions) { newValue in
             guard savedConfig != nil, newValue != savedConfig else { outcome = nil; return }
             requestID = UUID().uuidString
@@ -115,15 +121,43 @@ struct WebRestrictionsView: View {
     }
 
     private func attemptSave(confirmed: Bool = false) {
-        guard savedConfig != nil else { return }
-        let result = editor.save(restrictions, requestID: requestID, confirmed: confirmed)
-        outcome = result
-        if result == .saved {
-            savedConfig = restrictions
-            Task { await FlintProtectionReconciler.shared.reconcile(trigger: .configEdit) }
-        } else if result == .unavailable, FlintWebRestrictions.loadForEnforcement() == nil {
-            savedConfig = nil
+        guard savedConfig != nil, !isSaving else { return }
+        let candidate = restrictions
+        let identity = requestID
+        isSaving = true
+        Task { @MainActor in
+            // Both transition locks can contend with monitor work. Never wait on the UI thread.
+            let result = await Task.detached(priority: .userInitiated) {
+                FlintWebRestrictionEditor().save(candidate, requestID: identity, confirmed: confirmed)
+            }.value
+            isSaving = false
+            outcome = result
+            if result == .saved {
+                savedConfig = candidate
+                await FlintProtectionReconciler.shared.reconcile(trigger: .configEdit)
+            } else if result == .unavailable {
+                await refresh(resetDraft: false)
+                if readState == .busy { outcome = nil }
+            }
         }
+    }
+
+    @MainActor
+    private func refresh(resetDraft: Bool = true) async {
+        guard !isReading else { return }
+        isReading = true
+        let state = await Task.detached(priority: .userInitiated) {
+            FlintWebRestrictions.readForUI()
+        }.value
+        readState = state
+        switch state {
+        case let .available(config):
+            savedConfig = config
+            if resetDraft { restrictions = config; outcome = nil }
+        case .unavailable: savedConfig = nil
+        case .busy: break // A busy read never turns a known policy into unavailable intent.
+        }
+        isReading = false
     }
 
     private func message(for outcome: FlintWebRestrictionEditor.Outcome) -> String {
