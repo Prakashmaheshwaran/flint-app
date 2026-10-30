@@ -19,7 +19,7 @@ class SleepRulesTest {
         nights = setOf(1, 2, 3, 4, 5),
         bedMinute = 22 * 60 + 30,
         wakeMinute = 7 * 60,
-        assist = SleepAssist.FULL_ASSIST,
+        breakLevel = BreakLevel.HARDER,
         allowedApps = setOf(AppRef("com.android.deskclock", "Clock")),
         morningEnabled = true,
         morningEndMinute = 8 * 60,
@@ -30,7 +30,7 @@ class SleepRulesTest {
         assertEquals(config, sleepConfigFrom(config.toRules()))
         val windowOnly = config.copy(morningEnabled = false)
         assertEquals(windowOnly, sleepConfigFrom(windowOnly.toRules()))
-        val disabled = config.copy(enabled = false, assist = SleepAssist.WIND_DOWN, breakLevel = BreakLevel.EASY)
+        val disabled = config.withAssist(SleepAssist.WIND_DOWN).copy(enabled = false)
         assertEquals(disabled, sleepConfigFrom(disabled.toRules()))
     }
 
@@ -60,13 +60,37 @@ class SleepRulesTest {
 
     @Test
     fun `PC-82 assist defaults are Easy and Harder while saved Hardcore is preserved`() {
-        val windDown = SleepConfig(assist = SleepAssist.WIND_DOWN).toRules()
-        val fullAssist = SleepConfig(assist = SleepAssist.FULL_ASSIST).toRules()
+        val windDown = SleepConfig.DEFAULT.withAssist(SleepAssist.WIND_DOWN).toRules()
+        val fullAssist = SleepConfig.DEFAULT.withAssist(SleepAssist.FULL_ASSIST).toRules()
         assertTrue(windDown.all { it.breakLevel == BreakLevel.EASY })
         assertTrue(fullAssist.all { it.breakLevel == BreakLevel.HARDER })
-        val hardcore = config.copy(breakLevel = BreakLevel.HARDCORE)
+        val hardcore = config.withTier(BreakLevel.HARDCORE)
         assertTrue(hardcore.toRules().all { it.breakLevel == BreakLevel.HARDCORE })
         assertEquals(BreakLevel.HARDCORE, sleepConfigFrom(hardcore.toRules())?.breakLevel)
+    }
+
+    @Test fun PC_82_presetsReflectTheExplicitTierAndHardcoreHasNoMatchingPreset() {
+        assertEquals(SleepAssist.WIND_DOWN, SleepConfig.DEFAULT.assist)
+        assertEquals(SleepAssist.FULL_ASSIST, SleepConfig.DEFAULT.withAssist(SleepAssist.FULL_ASSIST).assist)
+        val hardcore = config.withTier(BreakLevel.HARDCORE)
+        assertNull(hardcore.assist)
+        assertNull(sleepConfigFrom(hardcore.toRules())!!.assist)
+        val changed = hardcore.withAssist(SleepAssist.WIND_DOWN)
+        assertEquals(BreakLevel.EASY, changed.breakLevel)
+        assertEquals(BreakLevel.EASY, changed.morningBreakLevel)
+        assertEquals(hardcore.allowedApps, changed.allowedApps)
+        assertEquals(hardcore.nights, changed.nights)
+    }
+
+    @Test fun PC_82_distinctSavedMorningTierSurvivesAnUnrelatedEditUntilAnExplicitTierChoice() {
+        val before = config.copy(breakLevel = BreakLevel.EASY, morningBreakLevel = BreakLevel.HARDCORE)
+        val reopened = sleepConfigFrom(before.toRules())!!
+        assertEquals(before, reopened)
+        assertNull(reopened.assist)
+        val changed = reopened.copy(bedMinute = reopened.bedMinute - 15).toRules()
+        assertEquals(BreakLevel.EASY, changed.first { it.id == SLEEP_WINDOW_RULE_ID }.breakLevel)
+        assertEquals(BreakLevel.HARDCORE, changed.first { it.id == SLEEP_MORNING_RULE_ID }.breakLevel)
+        assertTrue(reopened.withAssist(SleepAssist.FULL_ASSIST).toRules().all { it.breakLevel == BreakLevel.HARDER })
     }
 
     @Test

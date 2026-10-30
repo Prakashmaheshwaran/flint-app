@@ -25,8 +25,10 @@ internal const val SLEEP_RULE_PREFIX = "sleep-"
 internal const val SLEEP_WINDOW_RULE_ID = "sleep-window"
 internal const val SLEEP_MORNING_RULE_ID = "sleep-morning"
 
-/** How firmly the sleep window holds. On/off lives in [SleepConfig.enabled], not here. */
-internal enum class SleepAssist { WIND_DOWN, FULL_ASSIST }
+/** Draft tier presets, not separately persisted intervals or a second source of tier authority. */
+internal enum class SleepAssist(val breakLevel: BreakLevel) {
+    WIND_DOWN(BreakLevel.EASY), FULL_ASSIST(BreakLevel.HARDER),
+}
 
 internal data class SleepConfig(
     val enabled: Boolean = false,
@@ -34,22 +36,28 @@ internal data class SleepConfig(
     val nights: Set<Int> = IsoDays.WEEKDAYS,
     val bedMinute: Int = 22 * 60 + 30,
     val wakeMinute: Int = 7 * 60,
-    val assist: SleepAssist = SleepAssist.WIND_DOWN,
     /** Apps that stay reachable overnight (allow-list targets). Empty = everything blocks. */
     val allowedApps: Set<AppRef> = emptySet(),
     val morningEnabled: Boolean = false,
     val morningEndMinute: Int = 8 * 60,
-    val breakLevel: BreakLevel = if (assist == SleepAssist.WIND_DOWN) BreakLevel.EASY else BreakLevel.HARDER,
+    val breakLevel: BreakLevel = BreakLevel.EASY,
+    /** Preserve a pre-existing morning rule's own tier on an unrelated Sleep edit. */
+    val morningBreakLevel: BreakLevel = breakLevel,
 ) {
+    /** A preset applies to both rules; Hardcore or mixed saved tiers have no matching preset. */
+    val assist: SleepAssist? get() = SleepAssist.entries.firstOrNull {
+        it.breakLevel == breakLevel && (!morningEnabled || it.breakLevel == morningBreakLevel)
+    }
+
     companion object {
         val DEFAULT = SleepConfig()
     }
 }
 
-private fun SleepAssist.toBreakLevel(): BreakLevel = when (this) {
-    SleepAssist.WIND_DOWN -> BreakLevel.EASY
-    SleepAssist.FULL_ASSIST -> BreakLevel.HARDER
-}
+/** An explicit whole-Sleep tier choice; the normal editor commitment gate owns applying it. */
+internal fun SleepConfig.withTier(tier: BreakLevel) = copy(breakLevel = tier, morningBreakLevel = tier)
+
+internal fun SleepConfig.withAssist(preset: SleepAssist) = withTier(preset.breakLevel)
 
 /** The morning after each night: ISO day + 1, Sunday (7) wrapping to Monday (1). */
 internal fun morningsAfter(nights: Set<Int>): Set<Int> = nights.map { (it % 7) + 1 }.toSet()
@@ -61,6 +69,7 @@ internal fun nightsBefore(days: Set<Int>): Set<Int> = days.map { ((it + 5) % 7) 
  * Materialize onto the engine. Always returns the window rule (disabled config included —
  * the settings survive as a disabled rule, nothing is lost); the morning rule only while
  * Morning Assist is on, so [BlocklistViewModel.saveSleep] must delete it otherwise.
+ * A disabled morning draft's separate tier has no persisted rule and is not round-tripped.
  */
 internal fun SleepConfig.toRules(): List<BlockRule> {
     val targets = BlockTargets(apps = allowedApps, allowListMode = true)
@@ -93,7 +102,7 @@ internal fun SleepConfig.toRules(): List<BlockRule> {
             startMinuteOfDay = wakeMinute,
             endMinuteOfDay = morningEndMinute,
         ),
-        breakLevel = tier,
+        breakLevel = morningBreakLevel,
         enabled = enabled,
     )
     return listOf(window, morning)
@@ -101,7 +110,8 @@ internal fun SleepConfig.toRules(): List<BlockRule> {
 
 /**
  * Parse the config back from the materialized rules, or null when Sleep Mode has never been
- * set up (no window rule). Total inverse of [toRules]: `sleepConfigFrom(c.toRules()) == c`.
+ * set up (no window rule). Each saved rule retains its tier; the optional preset is
+ * derived from that explicit tier and never supplies persistence authority on read.
  *
  * A window rule that is not in allow-list mode is treated as *not a sleep config* (null):
  * only a corrupted store or a foreign writer can produce that shape, and parsing it anyway
@@ -124,16 +134,12 @@ internal fun sleepConfigFrom(rules: List<BlockRule>): SleepConfig? {
         },
         bedMinute = schedule.startMinuteOfDay,
         wakeMinute = schedule.endMinuteOfDay,
-        assist = if (window.breakLevel == BreakLevel.HARDER) {
-            SleepAssist.FULL_ASSIST
-        } else {
-            SleepAssist.WIND_DOWN
-        },
         allowedApps = window.targets.apps,
         morningEnabled = morning != null,
         morningEndMinute = morning?.schedule?.endMinuteOfDay
             ?: SleepConfig.DEFAULT.morningEndMinute,
         breakLevel = window.breakLevel,
+        morningBreakLevel = morning?.breakLevel ?: window.breakLevel,
     )
 }
 
