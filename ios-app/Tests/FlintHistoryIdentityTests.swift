@@ -78,11 +78,13 @@ final class FlintHistoryIdentityTests: XCTestCase {
         ]
         for (first, retry) in zip(initial, replay) {
             let annotated = FlintSessionLifecycleEvent.annotated(retry, origin: "startup_reconciliation",
-                reason: "recovered", observedAt: t.addingTimeInterval(8000))
+                reason: "recovered", observedAt: t.addingTimeInterval(8000),
+                timeConfidence: .uncertain(reason: "reboot"))
             let nested = FlintSessionLifecycleEvent.annotated(annotated, origin: "monitor",
                 reason: nil, observedAt: nil)
             XCTAssertEqual(FlintHistoryEvent(first, timeZone: utc.timeZone).id,
                 FlintHistoryEvent(nested, timeZone: TimeZone(secondsFromGMT: -28800)!).id)
+            XCTAssertEqual(FlintHistoryEvent(nested).timeConfidence, .uncertain(reason: "reboot"))
         }
     }
 
