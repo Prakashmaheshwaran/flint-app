@@ -37,22 +37,22 @@ final class FlintShieldConfiguration: ShieldConfigurationDataSource {
     }
 
     /// Covering rules come from the saved Open Limits; the preview never initializes or
-    /// mutates the ledger. With acceptance gated off, no credit copy or button is drawn.
+    /// mutates the ledger. With the acceptance gate off, no preview runs and no button is drawn.
     private func openCredit(targetKey: String, preview: () -> FlintOpenCreditPreview) -> ShieldCopy.OpenCredit? {
-        guard FlintOpenCredit.shieldAcceptanceEnabled else { return nil }
         let covering = FlintOpenLimitRule.loadAll().filter { rule in
             rule.enabled && (rule.selection.applicationTokens.contains { FlintOpenLimit.key(for: $0) == targetKey } ||
                 rule.selection.webDomainTokens.contains { FlintOpenLimit.key(for: $0) == targetKey })
         }
         guard !covering.isEmpty else { return nil }
-        return .target(preview(), hardcore: covering.contains { $0.breakLevel == .hardcore })
+        guard FlintOpenCredit.shieldAcceptanceEnabled else { return .acceptanceDisabled }
+        return .target(preview())
     }
 
     private func categoryOpenCredit(_ token: ActivityCategoryToken?) -> ShieldCopy.OpenCredit? {
-        guard FlintOpenCredit.shieldAcceptanceEnabled, let token,
+        guard let token,
               FlintOpenLimitRule.loadAll().contains(where: { $0.enabled && $0.selection.categoryTokens.contains(token) })
         else { return nil }
-        return .categoryTarget
+        return FlintOpenCredit.shieldAcceptanceEnabled ? .categoryTarget : .acceptanceDisabled
     }
 
     private func contributors(for targetKey: String, now: Date) -> FlintProtectionStatus.Contributors? {

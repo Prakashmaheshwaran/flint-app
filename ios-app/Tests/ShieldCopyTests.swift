@@ -57,8 +57,8 @@ final class ShieldCopyTests: XCTestCase {
               quotaZone: "UTC", timeUncertain: uncertain)
     }
 
-    private func credit(_ preview: FlintOpenCreditPreview, hardcore: Bool = false) -> ShieldCopy.OpenCredit {
-        .target(preview, hardcore: hardcore)
+    private func credit(_ preview: FlintOpenCreditPreview) -> ShieldCopy.OpenCredit {
+        .target(preview)
     }
 
     private var liveGrant: FlintOpenCreditGrant {
@@ -202,21 +202,30 @@ final class ShieldCopyTests: XCTestCase {
         XCTAssertEqual(exhausted.subtitle, "No credits left today · resets about 00:00")
         XCTAssertEqual(exhausted.primaryButtonLabel, "Go back")
         XCTAssertNil(exhausted.secondaryButtonLabel)
+        // The reset follows elapsed time; only its wall-clock estimate is uncertain.
         let uncertain = copy(credit: credit(preview(remaining: 0, blockedBy: .exhausted, uncertain: true)))
-        XCTAssertEqual(uncertain.subtitle, "No credits left today · resets after the clock is confirmed")
+        XCTAssertEqual(uncertain.subtitle, "No credits left today · the reset time is uncertain")
         XCTAssertNil(uncertain.secondaryButtonLabel)
+        let local = ShieldCopy(name: "Instagram", unit: .app, contributors: nil, now: now,
+                               openCredit: credit(preview(remaining: 0, blockedBy: .exhausted)),
+                               locale: english, timeZone: TimeZone(identifier: "America/New_York")!)
+        XCTAssertEqual(local.subtitle, "No credits left today · resets about 20:00", "device zone, not quota zone")
     }
 
-    func testHardcoreExhaustedNamesOnlyTheEmergencyPass() {
-        let result = copy(credit: credit(preview(remaining: 0, blockedBy: .exhausted), hardcore: true))
-        XCTAssertEqual(result.subtitle,
-                       "No credits left today · resets about 00:00. Only the Emergency Pass ends this early.")
-        XCTAssertNil(result.secondaryButtonLabel)
-        let uncertain = copy(credit: credit(preview(remaining: 0, blockedBy: .exhausted, uncertain: true), hardcore: true))
-        XCTAssertEqual(uncertain.subtitle,
-                       "No credits left today · resets after the clock is confirmed. Only the Emergency Pass ends this early.")
-        // Hardcore never changes an available credit: quota credits are part of the commitment.
-        XCTAssertEqual(copy(credit: credit(preview(), hardcore: true)).secondaryButtonLabel, "Use one credit · 5 minutes")
+    func testZeroAllowanceNeverPromisesARefill() {
+        for cap in [0, -1] {
+            let result = copy(credit: credit(preview(remaining: 0, cap: cap, blockedBy: .exhausted)))
+            XCTAssertEqual(result.subtitle, "This Open Limit allows no credits")
+            XCTAssertNil(result.secondaryButtonLabel)
+        }
+    }
+
+    /// iOS's Emergency Pass ends only an active Hardcore session, not an Open Limit, so no tier
+    /// promises an early exit after exhaustion (global pass recovery is not integrated).
+    func testExhaustedCopyPromisesNoEarlyExitForAnyTier() {
+        let result = copy(credit: credit(preview(remaining: 0, blockedBy: .exhausted)))
+        XCTAssertFalse(result.subtitle.contains("Emergency Pass"))
+        XCTAssertFalse(result.subtitle.contains("break"))
     }
 
     func testAnotherContributorNamesOnlyItsKind() {
@@ -236,6 +245,43 @@ final class ShieldCopyTests: XCTestCase {
             XCTAssertFalse(result.subtitle.contains("Deep work") || result.subtitle.contains("Social"), "kind only")
             XCTAssertNil(result.secondaryButtonLabel)
         }
+        // A newly added cause can block a committed credit; its clock keeps running.
+        let blockedGrant = copy(credit: credit(preview(remaining: 2, blockedBy: .otherContributor, grant: liveGrant,
+                                                       contributors: ["Schedule: Deep work"], duration: 200)))
+        XCTAssertEqual(blockedGrant.subtitle, "A schedule still blocks this app · credit active for 3 more min")
+        XCTAssertNil(blockedGrant.secondaryButtonLabel)
+    }
+
+    /// The kind mapping parses `FlintOpenCredit.otherStores()` display names (lane B will
+    /// replace them with a typed kind). Pin every name form so a rename or a new contributor
+    /// store fails here instead of silently degrading to the generic copy.
+    func testEveryOtherStoresDisplayNameMapsToItsKind() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../Packages/FlintCore/Sources/FlintCore/FlintOpenCredit.swift").standardized
+        let source = try String(contentsOf: url, encoding: .utf8)
+        let start = try XCTUnwrap(source.range(of: "private static func otherStores()"))
+        let end = try XCTUnwrap(source.range(of: "return names.map", range: start.upperBound..<source.endIndex))
+        let body = String(source[start.upperBound..<end.lowerBound])
+        let regex = try NSRegularExpression(pattern: #""([^"\\]*)""#)
+        let literals = regex.matches(in: body, range: NSRange(body.startIndex..., in: body)).map {
+            String(body[Range($0.range(at: 1), in: body)!])
+        }
+        XCTAssertEqual(literals, ["Current session", "flint", "Safari restriction", "Schedule: ", "Time Limit: "],
+                       "otherStores() names changed: update ShieldCopy's kind mapping and this test")
+
+        let kinds: [(String, ShieldCopy.Unit, String)] = [
+            ("Current session", .app, "A focus session still blocks this app · no credit used"),
+            ("Current session", .site, "A focus session still blocks this site · no credit used"),
+            ("Safari restriction", .site, "A Safari restriction still blocks this site · no credit used"),
+            ("Schedule: " + "Any name", .app, "A schedule still blocks this app · no credit used"),
+            ("Schedule: " + "Any name", .site, "A schedule still blocks this site · no credit used"),
+            ("Time Limit: " + "Any name", .app, "A Time Limit still blocks this app · no credit used"),
+            ("Time Limit: " + "Any name", .site, "A Time Limit still blocks this site · no credit used"),
+        ]
+        for (name, unit, expected) in kinds {
+            XCTAssertEqual(copy(unit: unit, credit: credit(preview(blockedBy: .otherContributor, contributors: [name]))).subtitle,
+                           expected, name)
+        }
     }
 
     func testCategoryOverlapUsesTheContractMessage() {
@@ -244,6 +290,17 @@ final class ShieldCopyTests: XCTestCase {
         XCTAssertNil(app.secondaryButtonLabel)
         XCTAssertEqual(copy(unit: .site, credit: credit(preview(blockedBy: .categoryOverlap))).subtitle,
                        "Another category rule may still block this site; no credit used")
+        XCTAssertEqual(copy(credit: credit(preview(blockedBy: .categoryOverlap, grant: liveGrant, duration: 30))).subtitle,
+                       "Another category rule may still block this app; credit active for under 1 more min")
+    }
+
+    func testAcceptanceGateOffSaysCreditsAreNotAvailableYet() {
+        for unit in [ShieldCopy.Unit.app, .site] {
+            let result = copy(unit: unit, credit: .acceptanceDisabled)
+            XCTAssertEqual(result.subtitle, "Open credits aren't available yet")
+            XCTAssertEqual(result.primaryButtonLabel, "Go back")
+            XCTAssertNil(result.secondaryButtonLabel)
+        }
     }
 
     func testCategoryTargetExplainsIndividualPicks() {
@@ -255,9 +312,10 @@ final class ShieldCopyTests: XCTestCase {
                        "Open credits work for individual sites — pick sites in Flint")
     }
 
-    func testUnconfirmedCreditStatesSayNoCreditUsed() {
-        let unavailable = "Flint can't confirm your credits right now · no credit used"
-        for block in [FlintOpenCreditBlock.unavailable, .registrationFailed, .staleOperation, .safetyFloor, .applying] {
+    /// Unreadable or unconfirmed state cannot prove nonconsumption, so it claims nothing more.
+    func testUnconfirmedCreditStatesClaimNothingAboutConsumption() {
+        let unavailable = "Flint can't confirm your credits right now"
+        for block in [FlintOpenCreditBlock.unavailable, .registrationFailed, .staleOperation, .safetyFloor] {
             let result = copy(credit: credit(preview(remaining: nil, blockedBy: block)))
             XCTAssertEqual(result.subtitle, unavailable, block.rawValue)
             XCTAssertNil(result.secondaryButtonLabel)
@@ -267,6 +325,10 @@ final class ShieldCopyTests: XCTestCase {
         XCTAssertEqual(copy(credit: credit(preview(duration: 0))).subtitle, unavailable)
         XCTAssertEqual(copy(credit: credit(preview(duration: nil))).subtitle, unavailable)
         XCTAssertNil(copy(credit: credit(preview(duration: 0))).secondaryButtonLabel)
+        // Committed before native release failed: the credit is spent.
+        let applying = copy(credit: credit(preview(blockedBy: .applying)))
+        XCTAssertEqual(applying.subtitle, "A credit was used, but access hasn't opened yet")
+        XCTAssertNil(applying.secondaryButtonLabel)
         let reselect = copy(credit: credit(preview(remaining: nil, blockedBy: .identityNeedsReselection)))
         XCTAssertEqual(reselect.subtitle, "Flint can't match this app to its credits yet · no credit used")
         XCTAssertNil(reselect.secondaryButtonLabel)
@@ -285,29 +347,32 @@ final class ShieldCopyTests: XCTestCase {
         XCTAssertEqual(copy(value).subtitle, "Focus, until 12:00. Notice the reach, then let it pass.")
     }
 
-    /// The primary button never spends, and a spending button exists exactly when accept
-    /// would charge: no block, no live grant, a positive pool and a positive interval.
-    func testEveryStateThatAcceptWouldRefuseHasOnlyGoBack() {
+    /// The primary button never spends, and the spending button is drawn exactly when the
+    /// preview offers a credit (no block, no live grant, a positive pool and interval). That is
+    /// necessary for accept to charge; `ShieldCreditPathTests` runs the real accept.
+    func testEveryStateWithoutAnOfferHasOnlyGoBack() {
         var offered = 0
         let blocks: [FlintOpenCreditBlock?] = [nil] + allBlocks.map { $0 }
         for block in blocks {
             for grant in [nil, liveGrant] {
                 for remaining in [nil, -1, 0, 1, 3] {
                     for duration in [nil, -1, 0, 59, 300] as [TimeInterval?] {
-                        for hardcore in [false, true] {
-                            let value = preview(remaining: remaining, blockedBy: block, grant: grant, duration: duration)
-                            for unit in [ShieldCopy.Unit.app, .site] {
-                                let result = copy(unit: unit, credit: credit(value, hardcore: hardcore))
-                                let charges = block == nil && grant == nil && (remaining ?? 0) > 0 && (duration ?? 0) > 0
-                                XCTAssertEqual(result.primaryButtonLabel, "Go back")
-                                XCTAssertEqual(result.secondaryButtonLabel != nil, charges, "\(value)")
-                                XCTAssertEqual(ShieldCopy.offersCredit(value), charges)
-                                if charges { offered += 1 }
-                                for text in [result.title, result.subtitle, result.primaryButtonLabel,
-                                             result.secondaryButtonLabel ?? ""] {
-                                    XCTAssertFalse(text.localizedCaseInsensitiveContains("opens"), text)
-                                    XCTAssertFalse(text.localizedCaseInsensitiveContains("open left"), text)
-                                }
+                        let value = preview(remaining: remaining, blockedBy: block, grant: grant, duration: duration)
+                        for unit in [ShieldCopy.Unit.app, .site] {
+                            let result = copy(unit: unit, credit: credit(value))
+                            let offers = block == nil && grant == nil && (remaining ?? 0) > 0 && (duration ?? 0) > 0
+                            XCTAssertEqual(result.primaryButtonLabel, "Go back")
+                            XCTAssertEqual(result.secondaryButtonLabel != nil, offers, "\(value)")
+                            XCTAssertEqual(ShieldCopy.offersCredit(value), offers)
+                            if offers { offered += 1 }
+                            if grant != nil {
+                                XCTAssertFalse(result.subtitle.contains("no credit used"), "a live grant spent one: \(result.subtitle)")
+                            }
+                            for text in [result.title, result.subtitle, result.primaryButtonLabel,
+                                         result.secondaryButtonLabel ?? ""] {
+                                XCTAssertFalse(text.localizedCaseInsensitiveContains("opens"), text)
+                                XCTAssertFalse(text.localizedCaseInsensitiveContains("open left"), text)
+                                XCTAssertFalse(text.contains("Emergency Pass"), text)
                             }
                         }
                     }
@@ -315,7 +380,7 @@ final class ShieldCopyTests: XCTestCase {
             }
         }
         XCTAssertGreaterThan(offered, 0)
-        for input in [nil, ShieldCopy.OpenCredit.categoryTarget] {
+        for input in [nil, ShieldCopy.OpenCredit.categoryTarget, .acceptanceDisabled] {
             XCTAssertEqual(copy(credit: input).primaryButtonLabel, "Go back")
             XCTAssertNil(copy(credit: input).secondaryButtonLabel)
         }

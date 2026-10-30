@@ -14,10 +14,12 @@ struct ShieldCopy: Equatable {
     /// What the configuration extension knows about Open credits for this shield.
     enum OpenCredit: Equatable {
         /// An enabled Open Limit covers this exact app/site token.
-        case target(FlintOpenCreditPreview, hardcore: Bool)
+        case target(FlintOpenCreditPreview)
         /// The shield comes from a category that an enabled Open Limit selected. Opaque
         /// category tokens are never credit targets.
         case categoryTarget
+        /// An Open Limit covers this shield, but this build's shield acceptance gate is off.
+        case acceptanceDisabled
     }
 
     let title: String
@@ -48,8 +50,9 @@ struct ShieldCopy: Equatable {
         secondaryButtonLabel = credit?.offer
     }
 
-    /// Whether `FlintOpenCredit.accept` would charge for this preview right now: no blocking
-    /// cause, no live grant, a positive pool and a positive (possibly clipped) interval.
+    /// Whether the preview offers a credit: no blocking cause, no live grant, a positive pool
+    /// and a positive (possibly clipped) interval. This is necessary for `accept` to charge, not
+    /// sufficient: accept still re-checks capacity, restoration and registration at press time.
     static func offersCredit(_ preview: FlintOpenCreditPreview) -> Bool {
         guard preview.blockedBy == nil, preview.grant == nil,
               let remaining = preview.remaining, remaining > 0,
@@ -60,8 +63,9 @@ struct ShieldCopy: Equatable {
     private static func creditCopy(_ credit: OpenCredit, unit: Unit, locale: Locale,
                                    timeZone: TimeZone) -> (subtitle: String, offer: String?)? {
         let preview: FlintOpenCreditPreview
-        let hardcore: Bool
         switch credit {
+        case .acceptanceDisabled:
+            return (String(localized: "Open credits aren't available yet", locale: locale), nil)
         case .categoryTarget:
             switch unit {
             case .app:
@@ -69,9 +73,8 @@ struct ShieldCopy: Equatable {
             case .site:
                 return (String(localized: "Open credits work for individual sites — pick sites in Flint", locale: locale), nil)
             }
-        case let .target(value, isHardcore):
+        case let .target(value):
             preview = value
-            hardcore = isHardcore
         }
 
         if offersCredit(preview), let remaining = preview.remaining, let duration = preview.duration {
@@ -84,6 +87,11 @@ struct ShieldCopy: Equatable {
             }
             return (subtitle, offerLabel(duration: duration, locale: locale))
         }
+
+        // A committed credit keeps its clock even when another cause now blocks the target,
+        // so "no credit used" is only claimed when no grant is live.
+        let tail = preview.grant.map { _ in activeCredit(preview.duration, locale: locale) }
+            ?? String(localized: "no credit used", locale: locale)
 
         if preview.grant != nil, preview.blockedBy == nil {
             // The shield is visible, so the target may not be open right now. Describe the
@@ -98,42 +106,51 @@ struct ShieldCopy: Equatable {
 
         switch preview.blockedBy {
         case nil where preview.remaining == 0, .exhausted?:
-            let reset: String
-            if preview.timeUncertain {
-                reset = String(localized: "No credits left today · resets after the clock is confirmed", locale: locale)
-            } else if let resetAt = preview.resetAtEstimate {
-                let time = shortTime(resetAt, locale: locale, timeZone: timeZone)
-                reset = String(localized: "No credits left today · resets about \(time)", locale: locale)
-            } else {
-                reset = String(localized: "No credits left today", locale: locale)
+            if (preview.cap ?? 1) <= 0 {
+                // A zero allowance never refills at the reset.
+                return (String(localized: "This Open Limit allows no credits", locale: locale), nil)
             }
-            guard hardcore else { return (reset, nil) }
-            return (String(localized: "\(reset). Only the Emergency Pass ends this early.", locale: locale), nil)
+            if preview.timeUncertain {
+                // The reset follows elapsed time; only its wall-clock estimate is uncertain.
+                return (String(localized: "No credits left today · the reset time is uncertain", locale: locale), nil)
+            }
+            guard let resetAt = preview.resetAtEstimate else {
+                return (String(localized: "No credits left today", locale: locale), nil)
+            }
+            let time = shortTime(resetAt, locale: locale, timeZone: timeZone)
+            return (String(localized: "No credits left today · resets about \(time)", locale: locale), nil)
         case nil:
             // No pool, or no positive interval before the reset: accept would refuse.
             return (unavailable(locale), nil)
         case .otherContributor?:
-            return (otherContributor(preview.blockingContributors, unit: unit, locale: locale), nil)
+            let lead = otherContributor(preview.blockingContributors, unit: unit, locale: locale)
+            return (String(localized: "\(lead) · \(tail)", locale: locale), nil)
         case .categoryOverlap?:
-            switch unit {
-            case .app:
-                return (String(localized: "Another category rule may still block this app; no credit used", locale: locale), nil)
-            case .site:
-                return (String(localized: "Another category rule may still block this site; no credit used", locale: locale), nil)
-            }
+            let lead = unit == .app
+                ? String(localized: "Another category rule may still block this app", locale: locale)
+                : String(localized: "Another category rule may still block this site", locale: locale)
+            return (String(localized: "\(lead); \(tail)", locale: locale), nil)
         case .identityNeedsReselection?:
-            switch unit {
-            case .app:
-                return (String(localized: "Flint can't match this app to its credits yet · no credit used", locale: locale), nil)
-            case .site:
-                return (String(localized: "Flint can't match this site to its credits yet · no credit used", locale: locale), nil)
-            }
+            let lead = unit == .app
+                ? String(localized: "Flint can't match this app to its credits yet", locale: locale)
+                : String(localized: "Flint can't match this site to its credits yet", locale: locale)
+            return (String(localized: "\(lead) · \(tail)", locale: locale), nil)
         case .notOpenLimited?:
             // The service found no covering Open Limit: present the shield's ordinary cause.
             return nil
-        case .unavailable?, .registrationFailed?, .staleOperation?, .safetyFloor?, .applying?:
+        case .applying?:
+            // Committed before native release failed: the credit is spent.
+            return (String(localized: "A credit was used, but access hasn't opened yet", locale: locale), nil)
+        case .unavailable?, .registrationFailed?, .staleOperation?, .safetyFloor?:
             return (unavailable(locale), nil)
         }
+    }
+
+    private static func activeCredit(_ duration: TimeInterval?, locale: Locale) -> String {
+        let minutes = Int(max(0, duration ?? 0) / 60)
+        return minutes >= 1
+            ? String(localized: "credit active for \(minutes) more min", locale: locale)
+            : String(localized: "credit active for under 1 more min", locale: locale)
     }
 
     /// Whole minutes, rounded down, so a midnight-clipped credit never reads longer than it is.
@@ -147,27 +164,29 @@ struct ShieldCopy: Equatable {
         }
     }
 
-    /// Kinds only: saved rule names never appear on the shield for another cause.
+    /// Kinds only: saved rule names never appear on the shield for another cause. The names
+    /// are `FlintOpenCredit.otherStores()` display names, pinned by `ShieldCopyTests`.
     private static func otherContributor(_ names: [String], unit: Unit, locale: Locale) -> String {
         let session = names.contains("Current session")
         let schedule = names.contains { $0.hasPrefix("Schedule: ") }
         let timeLimit = names.contains { $0.hasPrefix("Time Limit: ") }
         let safari = names.contains("Safari restriction")
         switch (unit, session, schedule, timeLimit, safari) {
-        case (.app, true, _, _, _): return String(localized: "A focus session still blocks this app · no credit used", locale: locale)
-        case (.site, true, _, _, _): return String(localized: "A focus session still blocks this site · no credit used", locale: locale)
-        case (.app, _, true, _, _): return String(localized: "A schedule still blocks this app · no credit used", locale: locale)
-        case (.site, _, true, _, _): return String(localized: "A schedule still blocks this site · no credit used", locale: locale)
-        case (.app, _, _, true, _): return String(localized: "A Time Limit still blocks this app · no credit used", locale: locale)
-        case (.site, _, _, true, _): return String(localized: "A Time Limit still blocks this site · no credit used", locale: locale)
-        case (.site, _, _, _, true): return String(localized: "A Safari restriction still blocks this site · no credit used", locale: locale)
-        case (.app, _, _, _, _): return String(localized: "Another protection still blocks this app · no credit used", locale: locale)
-        case (.site, _, _, _, _): return String(localized: "Another protection still blocks this site · no credit used", locale: locale)
+        case (.app, true, _, _, _): return String(localized: "A focus session still blocks this app", locale: locale)
+        case (.site, true, _, _, _): return String(localized: "A focus session still blocks this site", locale: locale)
+        case (.app, _, true, _, _): return String(localized: "A schedule still blocks this app", locale: locale)
+        case (.site, _, true, _, _): return String(localized: "A schedule still blocks this site", locale: locale)
+        case (.app, _, _, true, _): return String(localized: "A Time Limit still blocks this app", locale: locale)
+        case (.site, _, _, true, _): return String(localized: "A Time Limit still blocks this site", locale: locale)
+        case (.site, _, _, _, true): return String(localized: "A Safari restriction still blocks this site", locale: locale)
+        case (.app, _, _, _, _): return String(localized: "Another protection still blocks this app", locale: locale)
+        case (.site, _, _, _, _): return String(localized: "Another protection still blocks this site", locale: locale)
         }
     }
 
+    /// Unreadable state cannot prove that no credit was committed, so it claims nothing more.
     private static func unavailable(_ locale: Locale) -> String {
-        String(localized: "Flint can't confirm your credits right now · no credit used", locale: locale)
+        String(localized: "Flint can't confirm your credits right now", locale: locale)
     }
 
     private static func shortTime(_ date: Date, locale: Locale, timeZone: TimeZone) -> String {

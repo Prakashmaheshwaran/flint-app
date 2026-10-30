@@ -10,8 +10,9 @@ final class FlintShieldAction: ShieldActionDelegate {
         action: ShieldAction, for application: ApplicationToken,
         completionHandler: @escaping (ShieldActionResponse) -> Void
     ) {
-        completionHandler(ShieldCreditAction.response(to: action) {
-            FlintOpenCredit.shieldAcceptanceEnabled && (try? FlintOpenCredit.accept(for: application).get()) != nil
+        completionHandler(ShieldCreditAction.response(to: action,
+                                                      acceptanceEnabled: FlintOpenCredit.shieldAcceptanceEnabled) {
+            (try? FlintOpenCredit.accept(for: application).get()) != nil
         })
     }
 
@@ -19,8 +20,9 @@ final class FlintShieldAction: ShieldActionDelegate {
         action: ShieldAction, for webDomain: WebDomainToken,
         completionHandler: @escaping (ShieldActionResponse) -> Void
     ) {
-        completionHandler(ShieldCreditAction.response(to: action) {
-            FlintOpenCredit.shieldAcceptanceEnabled && (try? FlintOpenCredit.accept(for: webDomain).get()) != nil
+        completionHandler(ShieldCreditAction.response(to: action,
+                                                      acceptanceEnabled: FlintOpenCredit.shieldAcceptanceEnabled) {
+            (try? FlintOpenCredit.accept(for: webDomain).get()) != nil
         })
     }
 

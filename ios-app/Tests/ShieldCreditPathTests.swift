@@ -17,6 +17,8 @@ final class ShieldCreditPathTests: XCTestCase {
     private var cap = 3
     private var contributors: [FlintOpenCreditContributor] = []
     private var unavailableContext = false
+    private var registrationFails = false
+    private var releaseFails = false
     private var registrations: [String: TimeInterval] = [:]
     private var registerCalls = 0
     private var released: [String] = []
@@ -38,6 +40,7 @@ final class ShieldCreditPathTests: XCTestCase {
         marker = nil
         now = ISO8601DateFormatter().date(from: "2026-10-28T12:00:00Z")!
         monotonic = 10_000; cap = 3; contributors = []; unavailableContext = false
+        registrationFails = false; releaseFails = false
         registrations = [:]; registerCalls = 0; released = []; shielded = []
     }
 
@@ -68,8 +71,10 @@ final class ShieldCreditPathTests: XCTestCase {
                          scopes: ["open-a": "scope"], activities: ["open-a": "flint.openLimit.open-a.r1"])
         }, register: { grant, remaining in
             self.registerCalls += 1
+            if self.registrationFails { throw FlintOpenCreditRefusal.denied(.registrationFailed) }
             self.registrations[grant.activityName] = remaining
         }, registered: { self.registrations[$0] != nil }, release: { grant in
+            if self.releaseFails { throw FlintOpenCreditRefusal.denied(.applying) }
             self.released.append(grant.targetKey)
         }, reshield: { grant in self.shielded.append(grant.targetKey) },
         stop: { self.registrations[$0] = nil }, authorized: { grant in
@@ -82,18 +87,18 @@ final class ShieldCreditPathTests: XCTestCase {
     private var used: Int { (try? ledger.read().get().openCredits.counters[shieldKey]?.used) ?? -1 }
 
     /// What the configuration extension draws right now for this target.
-    private func drawn(hardcore: Bool = false) -> ShieldCopy {
+    private func drawn() -> ShieldCopy {
         ShieldCopy(name: "Instagram", unit: .app, contributors: nil, now: now,
-                   openCredit: .target(service.preview(target: shieldKey), hardcore: hardcore),
+                   openCredit: .target(service.preview(target: shieldKey)),
                    locale: english, timeZone: utc)
     }
     /// Exactly the production action wiring, with the injected service standing in for the
     /// App Group adapter behind `FlintOpenCredit.accept(for:)`.
     @discardableResult
-    private func press(_ action: ShieldAction) -> ShieldActionResponse {
-        ShieldCreditAction.response(to: action) {
-            FlintOpenCredit.shieldAcceptanceEnabled &&
-                (try? service.accept(target: shieldKey, operationID: UUID().uuidString).get()) != nil
+    private func press(_ action: ShieldAction,
+                       acceptanceEnabled: Bool = FlintOpenCredit.shieldAcceptanceEnabled) -> ShieldActionResponse {
+        ShieldCreditAction.response(to: action, acceptanceEnabled: acceptanceEnabled) {
+            (try? service.accept(target: shieldKey, operationID: UUID().uuidString).get()) != nil
         }
     }
     private func assertNothingSpent(_ expectedUsed: Int, file: StaticString = #filePath, line: UInt = #line) {
@@ -102,6 +107,30 @@ final class ShieldCreditPathTests: XCTestCase {
 
     func testShieldAcceptanceReleaseGateIsEnabled() {
         XCTAssertTrue(FlintOpenCredit.shieldAcceptanceEnabled)
+    }
+
+    /// Turning the release gate back off is one line: the shield then draws only "Go back"
+    /// with "not available yet" copy, and no action can reach accept.
+    func testAcceptanceGateOffDrawsOnlyGoBackAndNeverCharges() throws {
+        try initialize()
+        XCTAssertTrue(ShieldCopy.offersCredit(service.preview(target: shieldKey)), "a credit is available")
+        for unit in [ShieldCopy.Unit.app, .site] {
+            let off = ShieldCopy(name: nil, unit: unit, contributors: nil, now: now,
+                                 openCredit: .acceptanceDisabled, locale: english, timeZone: utc)
+            XCTAssertEqual(off.subtitle, "Open credits aren't available yet")
+            XCTAssertEqual(off.primaryButtonLabel, "Go back")
+            XCTAssertNil(off.secondaryButtonLabel)
+        }
+        XCTAssertEqual(press(.secondaryButtonPressed, acceptanceEnabled: false), .defer)
+        XCTAssertEqual(press(.primaryButtonPressed, acceptanceEnabled: false), .close)
+        for raw in 0..<16 {
+            guard let action = ShieldAction(rawValue: raw) else { continue }
+            _ = ShieldCreditAction.response(to: action, acceptanceEnabled: false) {
+                XCTFail("gate off: action \(raw) must not accept"); return true
+            }
+        }
+        assertNothingSpent(0)
+        XCTAssertEqual(registerCalls, 0); XCTAssertTrue(released.isEmpty)
     }
 
     func testOnlyTheDrawnSecondaryButtonSpendsAnAvailableCredit() throws {
@@ -147,7 +176,7 @@ final class ShieldCreditPathTests: XCTestCase {
         var checked = 0
         for raw in 0..<16 {
             guard let action = ShieldAction(rawValue: raw), action != .secondaryButtonPressed else { continue }
-            XCTAssertEqual(ShieldCreditAction.response(to: action) {
+            XCTAssertEqual(ShieldCreditAction.response(to: action, acceptanceEnabled: true) {
                 XCTFail("action \(raw) must not accept"); return true
             }, .close)
             XCTAssertEqual(press(action), .close)
@@ -158,10 +187,15 @@ final class ShieldCreditPathTests: XCTestCase {
         XCTAssertEqual(registerCalls, 0); XCTAssertTrue(released.isEmpty)
     }
 
-    /// Every drawn state lacks a spending button exactly when the real accept would refuse or
-    /// replay; when a button is drawn, the real accept charges exactly one credit.
-    func testNoCreditButtonExactlyWhenAcceptWouldNotCharge() throws {
-        struct Scenario { let name: String; let arrange: (ShieldCreditPathTests) throws -> Void }
+    /// In each real state: no drawn credit button means the real accept would not charge (it
+    /// refuses or replays). A drawn button charges exactly one credit, except an offer that
+    /// accept refuses before commitment (registration failure), which charges nothing.
+    func testCreditButtonMatchesTheRealAcceptInEachState() throws {
+        struct Scenario {
+            let name: String
+            var refusesAfterOffer = false
+            let arrange: (ShieldCreditPathTests) throws -> Void
+        }
         let scenarios: [Scenario] = [
             .init(name: "available") { _ in },
             .init(name: "last") { test in test.cap = 1 },
@@ -179,8 +213,9 @@ final class ShieldCreditPathTests: XCTestCase {
                 test.contributors = [.init(name: "Schedule: Deep work", applicationCategoryExceptions: [])]
             },
             .init(name: "unavailable") { test in test.unavailableContext = true },
-            .init(name: "nonpositive cap") { test in test.cap = 0 },
+            .init(name: "zero cap") { test in test.cap = 0 },
             .init(name: "midnight clipped") { test in test.advance(11 * 3600 + 57 * 60 + 30) },
+            .init(name: "registration fails", refusesAfterOffer: true) { test in test.registrationFails = true },
         ]
         for scenario in scenarios {
             reset()
@@ -191,15 +226,104 @@ final class ShieldCreditPathTests: XCTestCase {
             XCTAssertEqual(shield.primaryButtonLabel, "Go back", scenario.name)
             let result = service.accept(target: shieldKey, operationID: "probe-\(scenario.name)")
             let charged = used - before
-            switch result {
-            case let .success(receipt) where !receipt.replayed:
-                XCTAssertNotNil(shield.secondaryButtonLabel, "\(scenario.name): accept charges, so a button is drawn")
+            if shield.secondaryButtonLabel == nil {
+                if case let .success(receipt) = result { XCTAssertTrue(receipt.replayed, scenario.name) }
+                XCTAssertEqual(charged, 0, "\(scenario.name): no button, no charge")
+            } else if scenario.refusesAfterOffer {
+                XCTAssertEqual(result, .failure(.denied(.registrationFailed)), scenario.name)
+                XCTAssertEqual(charged, 0, "\(scenario.name): precommit refusal spends nothing")
+            } else {
+                XCTAssertEqual((try? result.get())?.replayed, false, scenario.name)
                 XCTAssertEqual(charged, 1, scenario.name)
-            default:
-                XCTAssertNil(shield.secondaryButtonLabel, "\(scenario.name): accept refuses or replays, so no button")
-                XCTAssertEqual(charged, 0, scenario.name)
             }
         }
+    }
+
+    func testRegistrationFailureAfterAnOfferSpendsNothing() throws {
+        try initialize()
+        XCTAssertNotNil(drawn().secondaryButtonLabel)
+        registrationFails = true
+        XCTAssertEqual(press(.secondaryButtonPressed), .defer)
+        assertNothingSpent(0)
+        XCTAssertTrue(released.isEmpty)
+        XCTAssertEqual(drawn().secondaryButtonLabel, "Use one credit · 5 minutes", "a legitimate offer stays drawn")
+    }
+
+    /// A post-commit failure is not a free refusal: the credit stays spent and the redraw shows
+    /// it as active. Later stray secondary events replay that grant without a second charge.
+    func testPostCommitReleaseFailureKeepsTheSpentCreditAndNeverChargesTwice() throws {
+        try initialize()
+        releaseFails = true
+        XCTAssertEqual(press(.secondaryButtonPressed), .defer)
+        XCTAssertEqual(used, 1, "consumption is durable before native release")
+        XCTAssertTrue(released.isEmpty)
+        let redrawn = drawn()
+        XCTAssertEqual(redrawn.subtitle, "Credit active for 5 more min · no extra credit used")
+        XCTAssertNil(redrawn.secondaryButtonLabel, "no replay button")
+        advance(30)
+        XCTAssertEqual(press(.secondaryButtonPressed), .defer)
+        XCTAssertEqual(used, 1)
+        releaseFails = false
+        XCTAssertEqual(press(.secondaryButtonPressed), .close, "a replay releases the same grant")
+        XCTAssertEqual(used, 1)
+        XCTAssertEqual(released, [shieldKey])
+        XCTAssertEqual(registerCalls, 1)
+    }
+
+    /// Known limit: the action cannot see the drawn offer. An old "Use one credit" label still
+    /// offered exactly one credit, so a delayed press after another surface's grant expired
+    /// spends exactly one more while credits remain, never more.
+    func testDelayedCreditButtonWithCreditsRemainingSpendsExactlyOneOfferedCredit() throws {
+        cap = 2
+        try initialize()
+        XCTAssertEqual(drawn().subtitle, "2 of 2 credits left today")
+        _ = try service.accept(target: shieldKey, operationID: "other-surface").get()
+        advance(300); _ = service.reconcile()
+        XCTAssertEqual(press(.secondaryButtonPressed), .close)
+        XCTAssertEqual(used, 2)
+        advance(300); _ = service.reconcile()
+        XCTAssertEqual(press(.secondaryButtonPressed), .defer, "the pool is now empty")
+        XCTAssertEqual(used, 2)
+    }
+
+    /// Known limit: a "5 minutes" label drawn earlier can be pressed inside the reset clip;
+    /// the grant is clipped at press time (ADR-012 §5) and a fresh draw shows the shorter time.
+    func testDelayedFiveMinuteOfferIsClippedAtPressTime() throws {
+        now = ISO8601DateFormatter().date(from: "2026-10-28T23:54:00Z")!
+        try initialize()
+        XCTAssertEqual(drawn().secondaryButtonLabel, "Use one credit · 5 minutes")
+        advance(270)
+        XCTAssertEqual(drawn().secondaryButtonLabel, "Use one credit · 1 minute", "a fresh draw discloses the clip")
+        XCTAssertEqual(press(.secondaryButtonPressed), .close)
+        let grant = try XCTUnwrap(ledger.read().get().openCredits.grants[shieldKey])
+        XCTAssertEqual(grant.duration, 90)
+        XCTAssertEqual(used, 1)
+    }
+
+    func testZeroCapNeverPromisesARefillAcrossTheReset() throws {
+        cap = 0
+        try initialize()
+        XCTAssertEqual(drawn().subtitle, "This Open Limit allows no credits")
+        advance(13 * 3600)
+        XCTAssertEqual(drawn().subtitle, "This Open Limit allows no credits")
+        XCTAssertEqual(press(.secondaryButtonPressed), .defer)
+        assertNothingSpent(0)
+    }
+
+    /// A wall-clock jump makes only the reset estimate uncertain; the reset itself still
+    /// follows elapsed time.
+    func testWallClockJumpLeavesTheResetOnElapsedTime() throws {
+        cap = 1
+        try initialize()
+        _ = try service.accept(target: shieldKey, operationID: "noon").get()
+        advance(300); _ = service.reconcile()
+        now = now.addingTimeInterval(2 * 3600) // wall only
+        XCTAssertTrue(service.preview(target: shieldKey).timeUncertain)
+        XCTAssertEqual(drawn().subtitle, "No credits left today · the reset time is uncertain")
+        XCTAssertNil(drawn().secondaryButtonLabel)
+        advance(12 * 3600)
+        XCTAssertEqual(drawn().subtitle, "Last credit today")
+        XCTAssertEqual(drawn().secondaryButtonLabel, "Use one credit · 5 minutes")
     }
 
     func testStaleCreditButtonAfterThePoolRanOutChargesNothingAndRedraws() throws {
@@ -225,9 +349,8 @@ final class ShieldCreditPathTests: XCTestCase {
         try initialize()
         _ = try service.accept(target: shieldKey, operationID: "evening").get()
         advance(300); _ = service.reconcile()
-        let exhausted = drawn(hardcore: true)
-        XCTAssertEqual(exhausted.subtitle,
-                       "No credits left today · resets about 00:00. Only the Emergency Pass ends this early.")
+        let exhausted = drawn()
+        XCTAssertEqual(exhausted.subtitle, "No credits left today · resets about 00:00")
         XCTAssertNil(exhausted.secondaryButtonLabel)
 
         advance(15 * 60) // the drawn shield is still on screen after the trusted reset
@@ -257,7 +380,7 @@ final class ShieldCreditPathTests: XCTestCase {
         unavailableContext = true
         XCTAssertEqual(press(.secondaryButtonPressed), .defer)
         assertNothingSpent(0)
-        XCTAssertEqual(drawn().subtitle, "Flint can't confirm your credits right now · no credit used")
+        XCTAssertEqual(drawn().subtitle, "Flint can't confirm your credits right now")
     }
 
     func testStaleSecondaryDuringALiveGrantReplaysWithoutASecondCharge() throws {
@@ -272,7 +395,7 @@ final class ShieldCreditPathTests: XCTestCase {
         XCTAssertEqual(registerCalls, 1)
     }
 
-    func testMidnightClippedOfferNeverOverstatesTheGrant() throws {
+    func testFreshClippedOfferRoundsDownToTheGrantPressedAtOnce() throws {
         now = ISO8601DateFormatter().date(from: "2026-10-28T23:57:30Z")!
         try initialize()
         let shield = drawn()
@@ -280,6 +403,6 @@ final class ShieldCreditPathTests: XCTestCase {
         XCTAssertEqual(press(.secondaryButtonPressed), .close)
         let grant = try XCTUnwrap(ledger.read().get().openCredits.grants[shieldKey])
         XCTAssertEqual(grant.duration, 150)
-        XCTAssertGreaterThanOrEqual(grant.duration, 2 * 60, "the drawn minutes never exceed the grant")
+        XCTAssertGreaterThanOrEqual(grant.duration, 2 * 60, "an immediate press gets at least the drawn minutes")
     }
 }
