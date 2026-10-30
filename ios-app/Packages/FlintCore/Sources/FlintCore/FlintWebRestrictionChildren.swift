@@ -222,7 +222,16 @@ final class FlintWebRestrictionChildren {
             return frozen
         }
         guard captureNew else { return nil }
-        let unavailable = envelope.hasUnavailableEntry(for: cause)
+        // A session shares one native store across replacements. If its only predecessor
+        // record lost its identity, a current global cannot prove the live child's strength.
+        // Keep this conservative fallback session-scoped; rule captures match exact keys.
+        let unknownPredecessor = cause.scope == .session && envelope.children.allSatisfy({ $0.cause.scope != .session })
+            && envelope.retainedUnavailable.contains { bytes in
+                let root = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any]
+                let scope = (root?["cause"] as? [String: Any])?["scope"] as? String
+                return scope == nil || scope == Cause.Scope.session.rawValue
+            }
+        let unavailable = envelope.hasUnavailableEntry(for: cause) || unknownPredecessor
         var config = unavailable ? nil : global.flatMap { $0.validationMessage == nil ? $0 : nil }
         // A replacement whose optional child write failed can recover from the surviving
         // predecessor even after process death. Never recapture a weaker global over it.

@@ -192,22 +192,33 @@ final class FlintWebRestrictionChildrenTests: XCTestCase {
         }
     }
 
-    func testUnparseableEntryRetainsItsBytesWithoutPoisoningUnrelatedFutureCaptures() throws {
+    func testUnparseableSessionChildPreservesLiveKeysWithoutPoisoningRuleCaptures() throws {
         let h = try RuleHarness(); defer { h.clean() }
         let rule = h.install(h.schedule(tier: .hardcore))
         let cause = FlintWebRestrictionChildren.Cause.rule(rule,
             window: try XCTUnwrap(rule.occurrence(at: h.now, clock: h.clock)))
         let config = FlintWebRestrictions(enabled: true, applyDuringSchedules: true)
         let damaged = Data("{\"cause\":{\"scope\":\"session\"},\"config\":false}".utf8)
-        XCTAssertTrue(FlintWebRestrictions.writeStorage(to: h.defaults, config: config,
+        XCTAssertTrue(FlintWebRestrictions.writeStorage(to: h.defaults, config: .default,
             children: try JSONSerialization.data(withJSONObject: ["version": 1,
                 "children": [JSONSerialization.jsonObject(with: damaged)]])))
         let children = FlintWebRestrictionChildren(defaults: h.defaults, recoveryDirectory: h.recoveryDirectory)
         guard case let .available(before) = children.read() else { return XCTFail() }
         XCTAssertEqual(before.retainedUnavailable.count, 1)
-        XCTAssertTrue(children.capture([cause], global: config))
-        XCTAssertEqual(children.frozen(cause, fallback: nil), config)
-        XCTAssertEqual(children.resolve(.session(session(h)), global: config), config)
+        XCTAssertTrue(children.capture([cause], global: .default))
+        XCTAssertEqual(children.frozen(cause, fallback: nil), .default, "The unparseable session record does not poison rule capture")
+        let active = session(h)
+        let writer = SessionChildWriter(); writer.stores[FlintWebRestrictionLifecycle.sessionStoreName] = config
+        let lifecycle = FlintWebRestrictionLifecycle(writer: writer, clock: h.clock, children: children)
+        let health = FlintArmingHealth(domains: [
+            "session": .init(enabled: 1, attempted: 1, armed: 1, failures: [], observedActivities: [active.monitorName]),
+            "schedules": .init(enabled: 1, attempted: 1, armed: 1, failures: [], observedActivities: [rule.activityName])])
+        let report = FlintWebRestrictionHostReconciler.reconcile(snapshot: .init(session: active, rules: [rule]),
+            config: .default, health: health, lifecycle: lifecycle, now: h.now, clock: h.clock)
+        XCTAssertNil(children.frozen(.session(active), fallback: .default))
+        XCTAssertEqual(writer.stores[FlintWebRestrictionLifecycle.sessionStoreName], config, "A weakened global cannot replace the damaged live session policy")
+        XCTAssertTrue(lifecycle.unavailableStores.contains(FlintWebRestrictionLifecycle.sessionStoreName))
+        XCTAssertFalse(report.failures.isEmpty)
         guard case let .available(saved) = children.read() else { return XCTFail() }
         XCTAssertEqual(saved.retainedUnavailable, before.retainedUnavailable)
         XCTAssertTrue(children.needsRecovery, "The unrelated damaged record is retained for gated repair")
