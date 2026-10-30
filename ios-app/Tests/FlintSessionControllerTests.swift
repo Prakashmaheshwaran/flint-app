@@ -1,6 +1,6 @@
 import XCTest
 import FamilyControls
-import FlintCore
+@testable import FlintCore
 
 /// Session start/stop/expiry/reconcile paths against fake OS seams: no Screen Time needed, and
 /// the order of every registration, shield write and persisted record is observable.
@@ -47,7 +47,10 @@ final class FlintSessionControllerTests: XCTestCase {
 
     private func controller(
         strategy: FlintSessionAutoClearPlan.ShortSessionStrategy = .endWarning,
-        storeAvailable: Bool = true
+        storeAvailable: Bool = true,
+        reconcilePass: @escaping () -> Bool = { true },
+        prepareStart: @escaping (String?) -> Result<Void, FlintEmergencyPassError> = { _ in .success(()) },
+        recoveryGate: @escaping () -> FlintPassRecoveryGate = { .enforcing }
     ) -> FlintSessionController {
         let store = self.store!
         let defaults = self.defaults
@@ -70,7 +73,8 @@ final class FlintSessionControllerTests: XCTestCase {
             publishStatus: { [unowned self] in self.publications += 1 },
             transitionLock: { FlintSessionTransitionLock(directory: directory, timeout: 0.2) },
             monitorLockTimeout: 1,
-            wait: { [unowned self] in self.waited.append($0); self.clock.advance($0 - self.waitShortfall) }
+            wait: { [unowned self] in self.waited.append($0); self.clock.advance($0 - self.waitShortfall) },
+            reconcileEmergencyPass: reconcilePass, prepareNewSession: prepareStart, recoveryGate: recoveryGate
         ))
     }
 
@@ -918,13 +922,24 @@ final class FlintSessionControllerTests: XCTestCase {
         let c = controller()
         let session = try start(c, minutes: 60, level: .hardcore)
         XCTAssertFalse(c.canStop(session))
-        XCTAssertTrue(c.useEmergencyPass())
+        let ledger = FlintProtectionLedger(directory: ledgerDirectory, clock: clock.flintClock,
+            initializedMarker: { nil }, setInitializedMarker: { _ in },
+            migrate: { $0.importLegacyPass(.absent, at: $1) })
+        let pass = FlintEmergencyPassController(environment: .init(ledger: { ledger }, clock: clock.flintClock,
+            scope: { _, _ in .init(revision: "scope", sessions: self.store.active.map { [$0] } ?? [], rules: [], stores: ["flint"]) },
+            registerCarrier: { _, _, _ in }, terminate: { sessions, at in
+                for ended in sessions { XCTAssertTrue(c.endCommittedEmergencyPass(ended, at: at)) }
+            }, release: { _ in }, resume: { _, _ in }, emit: { recovery in
+                FlintSessionLifecycle.didUsePass(operationID: recovery.operationID, sessions: recovery.scope.sessions,
+                    recoveryEnd: recovery.recoveryEnd, at: recovery.acceptedAt.wall)
+            }))
+        let preview = try pass.preview().get()
+        XCTAssertTrue(try pass.use(previewRevision: preview.revision, operationID: "test-pass").get().pass.isRecovering)
         XCTAssertNil(store.active)
-        XCTAssertEqual(store.passUsed, clock.now)
-        XCTAssertEqual(events.kinds.suffix(2), ["passUsed", "ended"])
-        XCTAssertEqual(events.log.last, .ended(session, route: .emergencyPass, at: clock.now))
-        _ = try start(c, minutes: 60, level: .hardcore)
-        XCTAssertFalse(c.useEmergencyPass(), "one per rolling week")
+        XCTAssertNil(store.passUsed, "the legacy UserDefaults path must never be written")
+        XCTAssertEqual(events.kinds.suffix(2), ["ended", "globalPassUsed"])
+        XCTAssertTrue(events.log.contains(.ended(session, route: .emergencyPass, at: clock.now)))
+        XCTAssertEqual(pass.use(previewRevision: preview.revision, operationID: "second-pass"), .failure(.resumeProtectionFirst))
     }
 
     // MARK: Reconcile
@@ -1112,6 +1127,130 @@ final class FlintSessionControllerTests: XCTestCase {
     }
 
     // MARK: Pure plan math
+
+    func testEveryStartOriginAndTierRefusesRecoveryBeforeIdempotentReturnPC46() throws {
+        var gate = FlintPassRecoveryGate.enforcing
+        let c = controller(recoveryGate: { gate })
+        let original = try c.startBlockNow(selection: selectionA, duration: 1800, breakLevel: .easy,
+            origin: .appUI, requestID: "same-request", confirmed: true)
+        let registrationCount = registrar.started.count
+        let shieldCount = shield.applyCount
+        gate = .suspended(until: clock.now.addingTimeInterval(3600))
+        for origin in [FlintSessionOrigin.appUI, .shortcut, .focusFilter, .automation] {
+            for tier in BreakLevel.allCases {
+                XCTAssertThrowsError(try c.startBlockNow(selection: selectionA, duration: 1800, breakLevel: tier,
+                    origin: origin, requestID: "same-request", confirmed: true)) {
+                    XCTAssertEqual($0 as? FlintSessionError, .resumeProtectionFirst)
+                }
+            }
+        }
+        XCTAssertEqual(store.active?.id, original.id)
+        XCTAssertEqual(registrar.started.count, registrationCount)
+        XCTAssertEqual(shield.applyCount, shieldCount)
+    }
+
+    func testFocusSuppressionAndUnavailablePassPreparationRefuseWithoutArming() {
+        let focus = controller(prepareStart: { owner in
+            XCTAssertEqual(owner, FlintSessionController.focusFilterOwnerID)
+            return .failure(.focusCycleRequired)
+        })
+        XCTAssertThrowsError(try start(focus, minutes: 30, origin: .focusFilter)) {
+            XCTAssertEqual($0 as? FlintSessionError, .focusCycleRequired)
+        }
+        let unavailable = controller(prepareStart: { _ in .failure(.unavailable) })
+        XCTAssertThrowsError(try start(unavailable, minutes: 30)) {
+            XCTAssertEqual($0 as? FlintSessionError, .protectionStateUnavailable)
+        }
+        XCTAssertTrue(registrar.started.isEmpty)
+        XCTAssertEqual(shield.applyCount, 0)
+        XCTAssertNil(store.active)
+    }
+
+    func testSessionReconcileAndMonitorCannotApplyUnderRecoveryPC41() throws {
+        let original = try start(controller(), minutes: 30, level: .hardcore)
+        let before = shield.applyCount
+        let c = controller(recoveryGate: { .suspended(until: self.clock.now.addingTimeInterval(3600)) })
+        let report = c.reconcile()
+        XCTAssertNotNil(report.suspendedUntil)
+        c.handleMonitorEvent(.intervalDidStart, activity: original.monitorName)
+        XCTAssertEqual(shield.applyCount, before)
+        XCTAssertEqual(store.active?.id, original.id, "fake gate cannot authorize a termination")
+        XCTAssertEqual(shield.clearCount, 0)
+    }
+
+    func testAcceptedPassReplaysBeforeNaturalExpiryAndKeepsItsOriginalEarlyEndPC44() throws {
+        let ending = controller()
+        let original = try start(ending, minutes: 30, level: .hardcore)
+        let acceptedAt = clock.now
+        let ledger = FlintProtectionLedger(directory: ledgerDirectory, clock: clock.flintClock,
+            initializedMarker: { nil }, setInitializedMarker: { _ in },
+            migrate: { state, at in state.importLegacyPass(.absent, at: at) })
+        let scope = FlintPassScope(revision: "accepted-session", sessions: [original], rules: [], stores: ["flint"])
+        let pass = FlintEmergencyPassController(environment: .init(ledger: { ledger }, clock: clock.flintClock,
+            scope: { _, _ in scope }, registerCarrier: { _, _, _ in }, terminate: { sessions, at in
+                for session in sessions {
+                    guard ending.endCommittedEmergencyPass(session, at: at) else { throw FlintEmergencyPassError.applying }
+                }
+            }, release: { _ in }, resume: { _, _ in }, emit: { _ in },
+            afterCommit: { throw FlintEmergencyPassError.applying }))
+        let preview = try pass.preview().get()
+        XCTAssertEqual(pass.use(previewRevision: preview.revision, operationID: "accepted-pass"), .failure(.applying))
+        XCTAssertNotNil(store.active, "crash left the termination pending")
+        XCTAssertEqual(shield.clearCount, 0)
+        clock.advance(4000)
+        let recovered = controller(reconcilePass: {
+            if case .success = pass.reconcile() { return true }; return false
+        })
+        recovered.finishIfExpired()
+        XCTAssertNil(store.active)
+        let ends = events.log.compactMap { event -> (FlintSessionEndRoute, Date)? in
+            if case let .ended(_, route, at) = event.unannotated { return (route, at) }; return nil
+        }
+        XCTAssertEqual(ends.count, 1)
+        XCTAssertEqual(ends.first?.0, .emergencyPass)
+        XCTAssertEqual(ends.first?.1, acceptedAt)
+        XCTAssertEqual(try ledger.peek().get().pass.lastOperationID, "accepted-pass")
+        XCTAssertFalse(try XCTUnwrap(ledger.peek().get().emergencyRecovery).releasePending)
+    }
+
+    func testCommittedTerminationNeedsPositiveOutboxAndNeverClearsSuccessor() throws {
+        let c = controller()
+        let original = try start(c, minutes: 30)
+        XCTAssertFalse(c.endCommittedEmergencyPass(original, at: clock.now))
+        XCTAssertEqual(shield.clearCount, 0)
+        let ledger = FlintProtectionLedger(directory: ledgerDirectory, clock: clock.flintClock,
+            initializedMarker: { nil }, setInitializedMarker: { _ in },
+            migrate: { state, at in state.importLegacyPass(.absent, at: at) })
+        let at = FlintLedgerInstant(clock: clock.flintClock)
+        let scope = FlintPassScope(revision: "original", sessions: [original], rules: [], stores: ["flint"])
+        try ledger.transaction { state in
+            _ = try state.consumePass(operationID: "positive-pass", hasActiveCommitment: true, at: at).get()
+            state.emergencyRecovery = .init(operationID: "positive-pass", at: at, scope: scope, carrierName: "flint.recovery.test")
+            state.passLimitThresholds = [:]; state.passSuppressedFocusOwners = []
+        }.get()
+        let successor = FlintActiveSession(name: "Successor", startedAt: clock.now, endsAt: clock.now.addingTimeInterval(3600),
+            breakLevel: .easy, monitorName: "flint.session.successor")
+        store.active = successor
+        XCTAssertFalse(c.endCommittedEmergencyPass(original, at: at.wall))
+        XCTAssertEqual(store.active?.id, successor.id)
+        XCTAssertEqual(shield.clearCount, 0)
+        store.active = nil; store.corruptRecord = true
+        XCTAssertFalse(c.endCommittedEmergencyPass(original, at: at.wall))
+        XCTAssertEqual(shield.clearCount, 0)
+    }
+
+    func testUnavailablePassStateCannotExtendAKnownFiniteSessionOrInventCompletion() throws {
+        let original = try start(controller(), minutes: 1, level: .hardcore)
+        let blocked = controller(reconcilePass: { false })
+        blocked.handleMonitorEvent(.intervalDidEnd, activity: original.monitorName)
+        XCTAssertNotNil(store.active, "an early callback cannot release")
+        XCTAssertEqual(shield.clearCount, 0)
+        clock.advance(60)
+        blocked.handleMonitorEvent(.intervalDidEnd, activity: original.monitorName)
+        XCTAssertNil(store.active)
+        XCTAssertEqual(shield.clearCount, 1)
+        XCTAssertFalse(events.log.contains { if case .ended = $0.unannotated { return true }; return false })
+    }
 
     func testPlanCrossesMidnightAndKeepsWholeSecondComponents() {
         var calendar = Calendar(identifier: .gregorian)

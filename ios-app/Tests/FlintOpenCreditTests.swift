@@ -69,7 +69,8 @@ final class FlintOpenCreditTests: XCTestCase {
                                               at: at, calendar: self.calendar)
             })
     }
-    private func service(_ ledger: FlintProtectionLedger? = nil) -> FlintOpenCreditService {
+    private func service(_ ledger: FlintProtectionLedger? = nil,
+                         recoveryGate: @escaping () -> FlintPassRecoveryGate = { .enforcing }) -> FlintOpenCreditService {
         FlintOpenCreditService(ledger: ledger ?? self.ledger(), clock: clock, context: {
             let blocking = FlintOpenCreditBlocking.query(target: openAppKey, kind: .application, stores: self.contributors)
             return self.unavailableContext ? nil : .init(coveringCaps: self.caps, targetKeys: self.targets,
@@ -100,10 +101,29 @@ final class FlintOpenCreditTests: XCTestCase {
         }, authorized: { grant in
             self.unavailableContext ? nil : grant.authorizes(caps: self.caps, fingerprints: self.fingerprints,
                              scopes: self.scopes, activities: self.activities)
-        })
+        }, recoveryGate: recoveryGate)
     }
     private func accepted(_ op: String = UUID().uuidString, using service: FlintOpenCreditService? = nil) throws -> FlintOpenCreditReceipt {
         try (service ?? self.service()).accept(target: openAppKey, operationID: op).get()
+    }
+
+    func testRecoveryRefusesNewCreditAndExpiryReshieldWithoutRefundPC41() throws {
+        let grant = try accepted("before-pass").grant
+        let before = try state().openCredits
+        try ledger().transaction { state in _ = state.cancelAccessGrantsForPass() }.get()
+        let suspended = service(recoveryGate: { .suspended(until: self.now.addingTimeInterval(3600)) })
+        let registrationsBefore = registrations
+        let releasesBefore = released
+        XCTAssertEqual(suspended.preview(target: openAppKey).blockedBy, .unavailable)
+        XCTAssertEqual(suspended.accept(target: openAppKey, operationID: "during-pass"), .failure(.denied(.unavailable)))
+        advance(600)
+        XCTAssertTrue(suspended.reconcile(activity: grant.activityName, callback: .end))
+        let after = try state().openCredits
+        XCTAssertEqual(after.counters, before.counters)
+        XCTAssertTrue(after.grants.isEmpty)
+        XCTAssertEqual(registrations, registrationsBefore)
+        XCTAssertEqual(released, releasesBefore)
+        XCTAssertTrue(shielded.isEmpty)
     }
     private func state() throws -> FlintLedgerState { try ledger().read().get() }
     private func denied(_ expected: FlintOpenCreditBlock, op: String = UUID().uuidString, using service: FlintOpenCreditService? = nil) {

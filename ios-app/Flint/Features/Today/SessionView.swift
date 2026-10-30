@@ -6,6 +6,9 @@ import FlintCore
 struct SessionView: View {
     @ObservedObject var vm: SessionViewModel
     @State private var showPass = false
+    @State private var passStatus: FlintEmergencyPassStatus?
+    @State private var passRefreshID = UUID()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ZStack {
@@ -48,11 +51,9 @@ struct SessionView: View {
 
             if showPass {
                 EmergencyPassSheet(
-                    sessionName: vm.active?.name ?? "this session",
-                    available: vm.emergencyPassAvailable,
                     onKeep: { withAnimation(.easeOut(duration: 0.3)) { showPass = false } },
-                    onUse: {
-                        vm.useEmergencyPass()
+                    onApplied: {
+                        vm.emergencyPassDidApply()
                         showPass = false
                     }
                 )
@@ -65,32 +66,43 @@ struct SessionView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .onAppear(perform: refreshPassStatus)
+        .onChange(of: scenePhase) { phase in if phase == .active { refreshPassStatus() } }
+        .onReceive(NotificationCenter.default.publisher(for: .flintProtectionReconciled)) { _ in refreshPassStatus() }
+        .onReceive(Timer.publish(every: 15, on: .main, in: .common).autoconnect()) { _ in refreshPassStatus() }
     }
 
     private func controlBar(_ active: FlintActiveSession) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: active.breakLevel == .easy ? "lock.open" : "lock")
-                .font(.system(size: 17))
-                .foregroundStyle(FlintBrand.mist)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(levelName(active.breakLevel)).font(FlintFont.text(14, weight: .medium)).foregroundStyle(FlintBrand.bone)
-                Text(levelLine(active.breakLevel)).font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
-            }
-            Spacer(minLength: 0)
-            switch active.breakLevel {
-            case .easy:
-                Button("End session") { vm.stop() }.buttonStyle(GhostButtonStyle())
-            case .harder:
-                Button("End session") { vm.stop() }.buttonStyle(GhostButtonStyle())
-            case .hardcore:
-                Button(vm.emergencyPassAvailable ? "Emergency Pass" : "Pass not available yet") {
-                    withAnimation(.easeOut(duration: 0.3)) { showPass = true }
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: active.breakLevel == .easy ? "lock.open" : "lock")
+                    .font(.system(size: 17))
+                    .foregroundStyle(FlintBrand.mist)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(levelName(active.breakLevel)).font(FlintFont.text(14, weight: .medium)).foregroundStyle(FlintBrand.bone)
+                    Text(levelLine(active.breakLevel)).font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
                 }
-                .buttonStyle(GhostButtonStyle())
-                .disabled(!vm.emergencyPassAvailable)
-                .opacity(vm.emergencyPassAvailable ? 1 : 0.5)
+                Spacer(minLength: 0)
+                if active.breakLevel != .hardcore {
+                    Button("End session") { vm.stop() }.buttonStyle(GhostButtonStyle())
+                }
             }
+            Button {
+                refreshPassStatus()
+                withAnimation(.easeOut(duration: 0.3)) { showPass = true }
+            } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Emergency Pass").font(FlintFont.text(14, weight: .medium)).foregroundStyle(FlintBrand.bone)
+                    Text(passStatus?.label ?? "Protection state unavailable")
+                        .font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
+                    Text("One pass per rolling 7 days after use · global recovery up to 60 minutes")
+                        .font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .buttonStyle(GhostButtonStyle())
         }
         .padding(EdgeInsets(top: 12, leading: 18, bottom: 12, trailing: 12))
         .background(
@@ -98,6 +110,15 @@ struct SessionView: View {
                 .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(Color(red: 24 / 255, green: 22 / 255, blue: 24 / 255).opacity(0.68)))
         )
         .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).strokeBorder(FlintBrand.bone(0.10)))
+    }
+
+    private func refreshPassStatus() {
+        let request = UUID(); passRefreshID = request
+        Task {
+            let result = await FlintEmergencyPassController.displayStatus()
+            guard passRefreshID == request else { return }
+            passStatus = try? result.get()
+        }
     }
 
     private func levelName(_ level: BreakLevel) -> String {
@@ -268,99 +289,6 @@ struct BreakWaitView: View {
             withAnimation(.easeInOut(duration: 4).repeatForever(autoreverses: true)) { breathe = true }
         }
         .preferredColorScheme(.dark)
-    }
-}
-
-/// The way out of Hardcore — one pass, renewed seven days after use — behind a two-second
-/// press-and-hold so it is never an accident.
-struct EmergencyPassSheet: View {
-    let sessionName: String
-    let available: Bool
-    let onKeep: () -> Void
-    let onUse: () -> Void
-
-    @State private var holding = false
-    @State private var fill: CGFloat = 0
-    private let holdSeconds = 2.0 // ADR-012 §6: a two-second hold
-
-    var body: some View {
-        ZStack(alignment: .bottom) {
-            Color(hex: 0x05060A).opacity(0.6).ignoresSafeArea().onTapGesture(perform: onKeep)
-            VStack(spacing: 0) {
-                FlintSheetGrabber()
-                ZStack {
-                    Circle().fill(FlintBrand.ember.opacity(0.1))
-                    Circle().strokeBorder(FlintBrand.ember.opacity(0.6))
-                    Image(systemName: "key").font(.system(size: 24)).foregroundStyle(FlintBrand.ember)
-                }
-                .frame(width: 64, height: 64)
-                .padding(.top, 26)
-                .accessibilityHidden(true)
-
-                Text("Use your Emergency Pass?")
-                    .flintTitle(26)
-                    .multilineTextAlignment(.center)
-                    .padding(.top, 18)
-                Text("This ends \(sessionName) now, even in Hardcore. After you use it, the next pass is available seven days later.")
-                    .flintSecondary(15)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(3)
-                    .frame(maxWidth: 300)
-                    .padding(.top, 10)
-                Text(available ? "Pass available" : "Not available yet")
-                    .font(FlintFont.text(12, weight: .medium))
-                    .foregroundStyle(Color(hex: 0xF4C27E))
-                    .padding(.horizontal, 12)
-                    .frame(height: 28)
-                    .background(Capsule().fill(FlintBrand.ember.opacity(0.14)))
-                    .padding(.top, 18)
-
-                VStack(spacing: 8) {
-                    Button("Keep focusing", action: onKeep).buttonStyle(BoneButtonStyle())
-                    holdButton
-                }
-                .padding(.top, 26)
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 24)
-            .frame(maxWidth: .infinity)
-            .background(
-                UnevenTop(radius: 32).fill(FlintBrand.sheet).ignoresSafeArea(edges: .bottom)
-                    .overlay(UnevenTop(radius: 32).stroke(FlintBrand.bone(0.10)).ignoresSafeArea(edges: .bottom))
-            )
-        }
-        .accessibilityAddTraits(.isModal)
-    }
-
-    private var holdButton: some View {
-        ZStack(alignment: .leading) {
-            GeometryReader { geo in
-                Rectangle().fill(FlintBrand.ember.opacity(0.16)).frame(width: geo.size.width * fill)
-            }
-            Text("Hold to use pass")
-                .font(FlintFont.text(15, weight: .medium))
-                .foregroundStyle(Color(hex: 0xF4C27E))
-                .frame(maxWidth: .infinity)
-        }
-        .frame(height: 52)
-        .clipShape(Capsule())
-        .overlay(Capsule().strokeBorder(FlintBrand.ember.opacity(0.5)))
-        .contentShape(Capsule())
-        .opacity(available ? 1 : 0.4)
-        .onLongPressGesture(minimumDuration: holdSeconds, pressing: { pressing in
-            guard available else { return }
-            withAnimation(pressing ? .linear(duration: holdSeconds) : .easeOut(duration: 0.2)) {
-                fill = pressing ? 1 : 0
-            }
-        }, perform: {
-            guard available else { return }
-            onUse()
-        })
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Use Emergency Pass")
-        .accessibilityHint("Press and hold to end the session")
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction { if available { onUse() } }
     }
 }
 

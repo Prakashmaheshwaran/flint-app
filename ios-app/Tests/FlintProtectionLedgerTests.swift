@@ -315,12 +315,12 @@ final class FlintProtectionLedgerTests: XCTestCase {
         XCTAssertNil(start.elapsedForRelease(until: instant))
     }
 
-    func testABackwardClockJumpEndsRecoveryWithoutABootID() throws {
+    func testRecoveryEndsConservativelyWithoutABootID() throws {
         boot = nil
         var s = try state()
         _ = s.consumePass(operationID: "a", hasActiveCommitment: true, at: instant)
         advance(600)
-        XCTAssertEqual(s.pass.status(at: instant, hasActiveCommitment: true).recoveryRemaining, 3000)
+        XCTAssertEqual(s.pass.status(at: instant, hasActiveCommitment: true).recoveryRemaining, 0)
         s.pass.checkpoint(at: instant)
         now = now.addingTimeInterval(-3600)
         advance(600)

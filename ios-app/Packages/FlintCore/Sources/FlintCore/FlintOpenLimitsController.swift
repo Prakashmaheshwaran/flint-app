@@ -58,7 +58,7 @@ public final class FlintOpenLimitsController {
 
     public func rules() -> [FlintOpenLimitRule] {
         guard let rules = environment.rulesForDisplay(FlintOpenLimitRule.self) else {
-            environment.record("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
+            environment.recordState("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
             return []
         }
         return rules
@@ -104,7 +104,7 @@ public final class FlintOpenLimitsController {
     /// activity. Idempotent; call on launch and after edits.
     public func reload(reapplyShields: Bool = true) {
         if case .none = FlintRuleStoreLock.withLock(environment: environment, { reloadLocked(reapplyShields: reapplyShields) }) {
-            environment.record("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
+            environment.recordState("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
         }
     }
 
@@ -113,12 +113,12 @@ public final class FlintOpenLimitsController {
         // Applying shields later preserves only verifiable live grants.
         environment.reconcileOpenCredits()
         guard FlintRuleArbiter(environment: environment).applyQueued(FlintOpenLimitRule.self) else {
-            environment.record("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
+            environment.recordState("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
             return
         }
         guard let all = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: environment.defaults,
             recoveryDirectory: environment.recoveryDirectory) else {
-            environment.record("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
+            environment.recordState("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
             return
         }
         let plan = Self.armPlan(for: all, selectionIssue: selectionIssue)
@@ -133,9 +133,9 @@ public final class FlintOpenLimitsController {
         // is observed. applyOpenShield now preserves bounded live grants under the ledger lock;
         // the launch-only flag remains a source-compatible parameter for existing clients.
         for rule in plan.arm where report.observedActivities?.contains(rule.activityName) == true {
-            environment.applyOpenShield(rule)
+            environment.applyProtection(rule)
         }
-        environment.record("openLimits", report)
+        environment.recordState("openLimits", report)
     }
 }
 #endif

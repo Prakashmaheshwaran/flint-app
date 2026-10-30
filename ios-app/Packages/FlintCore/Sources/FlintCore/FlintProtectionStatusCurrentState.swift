@@ -32,18 +32,21 @@ extension FlintProtectionStatus {
         public var loadActiveSession: () -> FlintActiveSession?
         public var hasActiveSessionRecord: () -> Bool
         public var loadArmingHealth: () -> FlintArmingHealth
+        public var loadLedgerState: () -> FlintLedgerState?
 
         public init(authorized: @escaping () -> Bool?, registeredActivities: @escaping () -> Set<String>,
                     clock: FlintClock,
                     loadActiveSession: @escaping () -> FlintActiveSession? = { FlintGroupStore()?.loadActiveSession() },
                     hasActiveSessionRecord: @escaping () -> Bool = { FlintGroupStore()?.hasActiveSessionRecord() ?? false },
-                    loadArmingHealth: @escaping () -> FlintArmingHealth = { FlintGroupStore()?.loadArmingHealth() ?? .init() }) {
+                    loadArmingHealth: @escaping () -> FlintArmingHealth = { FlintGroupStore()?.loadArmingHealth() ?? .init() },
+                    loadLedgerState: @escaping () -> FlintLedgerState? = { try? FlintProtectionLedger.appGroup()?.peek().get() }) {
             self.authorized = authorized
             self.registeredActivities = registeredActivities
             self.clock = clock
             self.loadActiveSession = loadActiveSession
             self.hasActiveSessionRecord = hasActiveSessionRecord
             self.loadArmingHealth = loadArmingHealth
+            self.loadLedgerState = loadLedgerState
         }
 
         public static var system: Self {
@@ -79,13 +82,15 @@ extension FlintProtectionStatus {
         timeIntegrity: FlintTimeIntegrity.Verdict? = nil, quotaCalendar: Calendar = .current,
         writer: Writer = .host,
         environment: ObservationEnvironment = .system,
-        effects: PublicationEffects = .system
+        effects: PublicationEffects = .system,
+        recoveryApplying: Bool? = nil
     ) -> FlintProtectionStatusSnapshot {
         let inputs = currentInputs(now: now, defaults: defaults, pass: pass, ledgerPass: ledgerPass,
             ruleObservations: ruleObservations, thresholdReached: thresholdReached,
             openEnforcing: openEnforcing, sessionArmed: sessionArmed,
             sessionKind: sessionKind, sessionOrigin: sessionOrigin,
-            timeIntegrity: timeIntegrity, quotaCalendar: quotaCalendar, environment: environment)
+            timeIntegrity: timeIntegrity, quotaCalendar: quotaCalendar, environment: environment,
+            recoveryApplying: recoveryApplying)
         let snapshot = FlintProtectionStatusBuilder.make(inputs).withWriter(writer.rawValue)
         publish(snapshot, to: defaults, writer: writer, effects: effects)
         return snapshot
@@ -104,7 +109,8 @@ extension FlintProtectionStatus {
         sessionArmed: Bool? = nil, sessionKind: FlintProtectionStatusSnapshot.Session.Kind = .session,
         sessionOrigin: FlintProtectionStatusSnapshot.Session.Origin? = nil,
         timeIntegrity: FlintTimeIntegrity.Verdict? = nil, quotaCalendar: Calendar = .current,
-        environment: ObservationEnvironment = .system
+        environment: ObservationEnvironment = .system,
+        recoveryApplying: Bool? = nil
     ) -> FlintProtectionStatusBuilder.Inputs {
         guard defaults != nil else {
             return .init(now: now, quotaCalendar: quotaCalendar, authorized: nil, pass: pass,
@@ -182,16 +188,25 @@ extension FlintProtectionStatus {
         let timeIntegrityApplies = timeIntegrity != nil || liveActive != nil || anomaly != nil
         let hasActiveCommitment = (session.map { ($0.logicalEnd.map { now < $0 } ?? true) && $0.session.startedAt <= now }
             ?? false) || rules.contains { $0.isActive(at: now) }
-        let projectedPass = ledgerPass.map {
+        // Every caller, including App detail and the shield, observes pending work from the
+        // same read-only authority. A caller cannot turn a durable pending flag off.
+        let state = environment.loadLedgerState()
+        let instant = FlintLedgerInstant(wall: now, monotonic: clock.monotonic(), bootID: clock.bootSessionID())
+        let recovering = state?.pass.status(at: instant, hasActiveCommitment: true).isRecovering ?? false
+        let pending = state?.hasValidPassRecovery == true
+            && state?.emergencyRecovery?.needsApplication(isRecovering: recovering) == true
+        let applying = recoveryApplying == true || pending
+        let projectedPass = state.map {
+            FlintProtectionStatusSnapshot.Pass($0, at: instant, hasActiveCommitment: hasActiveCommitment)
+        } ?? ledgerPass.map {
             FlintProtectionStatusSnapshot.Pass($0,
-                at: FlintLedgerInstant(wall: now, monotonic: clock.monotonic(), bootID: clock.bootSessionID()),
-                hasActiveCommitment: hasActiveCommitment)
+                at: instant, hasActiveCommitment: hasActiveCommitment)
         } ?? pass
         return .init(now: now, quotaCalendar: quotaCalendar, activeSession: session,
             recordUnreadable: unreadable, rules: rules,
             authorized: environment.authorized(),
             pass: projectedPass, timeIntegrity: verdict, available: defaults != nil,
-            timeIntegrityApplies: timeIntegrityApplies)
+            timeIntegrityApplies: timeIntegrityApplies, recoveryApplying: applying)
     }
 }
 #endif
@@ -200,13 +215,20 @@ extension FlintProtectionStatusSnapshot.Pass {
     /// Projects a read-only ledger observation without migrating or checkpointing its state.
     public init(_ state: FlintLedgerState, at instant: FlintLedgerInstant,
                 hasActiveCommitment: Bool) {
+        guard state.hasValidPassRecovery else { self.init(eligibility: .unavailable); return }
         self.init(state.pass, at: instant, hasActiveCommitment: hasActiveCommitment)
     }
 
     /// Uses the ledger's elapsed-time status; never projects its raw stored remainders.
     public init(_ pass: FlintLedgerState.Pass, at instant: FlintLedgerInstant,
                 hasActiveCommitment: Bool) {
+        guard instant.wall.timeIntervalSinceReferenceDate.isFinite, instant.monotonic.isFinite, instant.monotonic >= 0 else {
+            self.init(eligibility: .unavailable); return
+        }
         let status = pass.status(at: instant, hasActiveCommitment: hasActiveCommitment)
+        guard instant.bootID != nil || (status.eligibility != .available && status.eligibility != .nothingToRecover) else {
+            self.init(eligibility: .unavailable); return
+        }
         let eligibility: Eligibility
         let next: Date?
         switch status.eligibility {

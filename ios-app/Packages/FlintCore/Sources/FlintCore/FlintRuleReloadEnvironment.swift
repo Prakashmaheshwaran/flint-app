@@ -110,7 +110,7 @@ struct FlintRuleReloadEnvironment {
     var defaults: UserDefaults?
     var center: any FlintActivityRegistering
     var clearStore: (String) -> Void
-    var applyOpenShield: (FlintOpenLimitRule) -> Void
+    var applyOpenShield: (FlintOpenLimitRule) -> Bool
     var record: (String, FlintArmingHealth.DomainReport) -> Void
     var loadHealth: () -> FlintArmingHealth = { .init() }
     var reconcileOpenCredits: () -> Void = {}
@@ -122,8 +122,8 @@ struct FlintRuleReloadEnvironment {
     var validateSelection: (FamilyActivitySelection, FlintSelectionContext) -> FlintSelectionIssue? = {
         FlintSelectionValidation.issue(for: $0, context: $1)
     }
-    var applyRuleShield: (FlintScheduleRule) -> Void = { FlintRuleShield.apply($0) }
-    var applyLimitShield: (FlintLimitRule) -> Void = { FlintRuleShield.apply($0) }
+    var applyRuleShield: (FlintScheduleRule) -> Bool = { FlintRuleShield.apply($0) }
+    var applyLimitShield: (FlintLimitRule) -> Bool = { FlintRuleShield.apply($0) }
     var timeLimitIsShielded: (FlintLimitRule, Date) -> Bool = { limit, _ in
         let store = ManagedSettingsStore(named: .init(limit.storeName))
         return store.shield.applications != nil || store.shield.applicationCategories != nil
@@ -135,10 +135,51 @@ struct FlintRuleReloadEnvironment {
     var clearLimitThreshold: (String) -> Void = { _ in }
     var publishStatus: () -> Void = {}
     /// Positive-only restoration when a callback cannot commit a rule transition.
-    var addRuleShield: ((FlintScheduleRule) -> Void)? = nil
-    var addLimitShield: ((FlintLimitRule) -> Void)? = nil
-    var addOpenShield: ((FlintOpenLimitRule) -> Void)? = nil
+    var addRuleShield: ((FlintScheduleRule) -> Bool)? = nil
+    var addLimitShield: ((FlintLimitRule) -> Bool)? = nil
+    var addOpenShield: ((FlintOpenLimitRule) -> Bool)? = nil
     var recoveryDirectory: URL? = FlintRuleRecovery.directory
+    var recoveryGate: () -> FlintPassRecoveryGate = { .enforcing }
+    /// Positive threshold evidence precedes lock acquisition and any outbox recovery.
+    var observeLimitThreshold: (String, String) -> Void = { _, _ in }
+
+    @discardableResult
+    func applyProtection<Rule: FlintGatedRule>(_ rule: Rule, addingOnly: Bool = false) -> Bool {
+        guard recoveryGate().permitsApplication else {
+            recordState(Rule.domain.domain, .init(enabled: loadHealth().domains[Rule.domain.domain]?.enabled ?? 1,
+                attempted: 0, armed: 0, failures: [], updatedAt: clock.now()))
+            return false
+        }
+        let applied: Bool
+        if let schedule = rule as? FlintScheduleRule {
+            applied = (addingOnly ? addRuleShield ?? applyRuleShield : applyRuleShield)(schedule)
+        } else if let limit = rule as? FlintLimitRule {
+            applied = (addingOnly ? addLimitShield ?? applyLimitShield : applyLimitShield)(limit)
+        } else if let open = rule as? FlintOpenLimitRule {
+            applied = (addingOnly ? addOpenShield ?? applyOpenShield : applyOpenShield)(open)
+        } else {
+            applied = false
+        }
+        if !applied {
+            recordState(Rule.domain.domain, .init(enabled: loadHealth().domains[Rule.domain.domain]?.enabled ?? 1,
+                attempted: 1, armed: 0, failures: [.init(activityName: rule.activityName,
+                    reason: "Protection could not be applied yet. Flint will retry saved protection.")], updatedAt: clock.now()))
+        }
+        return applied
+    }
+
+    func recordState(_ domain: String, _ report: FlintArmingHealth.DomainReport) {
+        var current = report
+        switch recoveryGate() {
+        case .enforcing: current.suspendedUntil = nil
+        case let .suspended(until): current.suspendedUntil = until; current.armed = 0
+        case .unavailable:
+            current.armed = 0
+            current.failures.append(.init(activityName: domain,
+                reason: "Protection state unavailable. Saved commitments and finite protection were retained."))
+        }
+        record(domain, current)
+    }
 
     func rulesForDisplay<Rule: FlintGatedRule>(_ type: Rule.Type) -> [Rule]? {
         if let read = FlintRuleStoreLock.withLock(environment: self, {
@@ -165,17 +206,25 @@ struct FlintRuleReloadEnvironment {
             timeLimitIsShielded: { limit, now in
                 let store = ManagedSettingsStore(named: .init(limit.storeName))
                 return FlintLimitThresholds.hasReached(limit, at: now, in: .flintGroup)
+                    || FlintEmergencyPassRuleEffects.timeLimitReached(limit, at: now, ledger: .appGroup())
                     || store.shield.applications != nil || store.shield.applicationCategories != nil
                     || store.shield.webDomains != nil || store.shield.webDomainCategories != nil
             }, withTransitionBoundary: { body in
                 // One cross-process order: session transition → rule domain → ledger.
-                FlintSessionController().withTransition { body(); return true } ?? false
+                FlintSessionController().withTransition {
+                    guard FlintEmergencyPassController.prepareForPolicyMutation() else { return false }
+                    body(); return true
+                } ?? false
             }, markLimitThreshold: { FlintLimitThresholds.markReached($0, at: $1) },
             clearLimitThreshold: { FlintLimitThresholds.clear($0) },
             publishStatus: { FlintProtectionStatus.publishAfterCommit() },
             addRuleShield: { FlintRuleShield.add($0) },
             addLimitShield: { FlintRuleShield.add($0) },
-            addOpenShield: { FlintOpenCredit.addShieldFromSnapshot(for: $0) })
+            addOpenShield: { FlintOpenCredit.addShieldFromSnapshot(for: $0) },
+            recoveryGate: { FlintPassRecoveryGate.read() },
+            observeLimitThreshold: { activity, event in
+                _ = FlintEmergencyPassController().noteTimeLimitThreshold(activity: activity, event: event)
+            })
     }
 }
 #endif

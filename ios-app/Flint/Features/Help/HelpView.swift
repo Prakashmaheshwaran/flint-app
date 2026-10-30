@@ -6,7 +6,7 @@ import FlintCore
 /// (docs/architecture/protection-contract.md); when session, pass, Focus or removal behavior
 /// changes, update the matching section here in the same PR.
 struct HelpView: View {
-    @State private var pass = HelpPassStatus.current()
+    @State private var pass = HelpPassStatus.unknown
 
     var body: some View {
         ScrollView {
@@ -28,7 +28,7 @@ struct HelpView: View {
                 }
 
                 HelpSection(title: "Emergency Pass") {
-                    HelpParagraph("An Emergency Pass ends a running Hardcore focus session early. It doesn’t end schedules, Sleep or limits. It’s free. After you use one, the next becomes available seven days later.")
+                    HelpParagraph("A free Emergency Pass ends active focus sessions of any strictness and pauses personal rules, Sleep and limits for 60 minutes. Counters stay spent. Only rules still naturally active resume. You can resume protection sooner; new sessions require you to resume first. The next pass becomes eligible after seven days of observed elapsed time. A restart ends recovery and can delay that estimate.")
                     HelpStatusLine(pass: pass)
                 }
 
@@ -65,26 +65,34 @@ struct HelpView: View {
         }
         .background(FlintGroundBackground())
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { pass = HelpPassStatus.current() }
+        .task { pass = await HelpPassStatus.current() }
     }
 }
 
-/// Whether an Emergency Pass can be used now, or when the next one arrives. Rolling seven days
-/// after the last use (`FlintEmergencyPass.period`); unreadable storage is reported, not
-/// guessed.
-enum HelpPassStatus: Equatable {
+/// Projection of the shared ledger authority; this screen never interprets legacy timestamps.
+enum HelpPassStatus: Equatable, Sendable {
     case available
     case next(Date)
+    case adjustedNext(Date)
+    case recovery(Date)
     case unknown
 
-    static func current(now: Date = Date()) -> HelpPassStatus {
-        guard let store = FlintGroupStore() else { return .unknown }
-        return status(lastUsed: store.emergencyPassLastUsed(), now: now)
+    static func current() async -> HelpPassStatus {
+        guard let status = try? await FlintEmergencyPassController.displayStatus().get() else { return .unknown }
+        if let until = status.recoveryUntil { return .recovery(until) }
+        if let next = status.nextAvailableAt { return status.timeUncertain ? .adjustedNext(next) : .next(next) }
+        return status.pass.eligibility == .unavailable ? .unknown : .available
     }
 
-    static func status(lastUsed: Date?, now: Date) -> HelpPassStatus {
-        guard let lastUsed, !FlintEmergencyPass.isAvailable(lastUsed: lastUsed, now: now) else { return .available }
-        return .next(lastUsed.addingTimeInterval(FlintEmergencyPass.period))
+    static func status(pass: FlintLedgerState.Pass?, at now: FlintLedgerInstant) -> HelpPassStatus {
+        guard let pass else { return .unknown }
+        let status = pass.status(at: now, hasActiveCommitment: true)
+        if status.isRecovering { return .recovery(now.wall.addingTimeInterval(status.recoveryRemaining)) }
+        switch status.eligibility {
+        case .available, .nothingToRecover: return .available
+        case let .coolingDown(remaining): return .next(now.wall.addingTimeInterval(remaining))
+        case .unavailable: return .unknown
+        }
     }
 }
 
@@ -116,6 +124,10 @@ private struct HelpStatusLine: View {
             Text("Emergency Pass available now")
         case .next(let date):
             Text("Next Emergency Pass: \(date, format: Self.nextPassFormat)")
+        case .adjustedNext(let date):
+            Text("Next Emergency Pass estimate: \(date, format: Self.nextPassFormat) · adjusted after restart or clock change")
+        case .recovery(let date):
+            Text("Recovery until \(date, format: Self.nextPassFormat)")
         case .unknown:
             Text("Emergency Pass status is unavailable right now.")
         }

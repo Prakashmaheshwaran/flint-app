@@ -16,6 +16,7 @@ import FlintCore
 ///  - `flint.openLimit.<id>.i<incarnation>.r<revision>` — a daily Open Limit.
 ///    The rule authority also recognizes names retained by one-time legacy migration.
 ///  - `flint.open.<token>` — B5's finite Open credit restoration carrier.
+///  - `flint.recovery.<token>` — global recovery's finite resume carrier.
 ///
 /// Anything else is a stale registration (e.g. a rule deleted while the App Group was
 /// unreadable): it is deregistered and otherwise ignored — never treated as the session.
@@ -23,6 +24,7 @@ final class FlintMonitor: DeviceActivityMonitor {
 
     override func intervalDidStart(for activity: DeviceActivityName) {
         super.intervalDidStart(for: activity)
+        guard FlintEmergencyPassController.prepareForMonitorCallback(activity: activity.rawValue) else { return }
         if FlintOpenCredit.isCarrier(activity.rawValue) {
             FlintOpenCredit.reconcile(activity: activity.rawValue, callback: .start)
             return
@@ -42,6 +44,12 @@ final class FlintMonitor: DeviceActivityMonitor {
 
     override func intervalDidEnd(for activity: DeviceActivityName) {
         super.intervalDidEnd(for: activity)
+        guard FlintEmergencyPassController.prepareForMonitorCallback(activity: activity.rawValue) else {
+            if FlintSessionController.isSessionActivity(activity.rawValue) {
+                FlintSessionController().handleMonitorEvent(.intervalDidEnd, activity: activity.rawValue)
+            }
+            return
+        }
         if FlintOpenCredit.isCarrier(activity.rawValue) {
             FlintOpenCredit.reconcile(activity: activity.rawValue, callback: .end)
             return
@@ -65,6 +73,12 @@ final class FlintMonitor: DeviceActivityMonitor {
     /// end inside the padded interval DeviceActivity requires.
     override func intervalWillEndWarning(for activity: DeviceActivityName) {
         super.intervalWillEndWarning(for: activity)
+        guard FlintEmergencyPassController.prepareForMonitorCallback(activity: activity.rawValue) else {
+            if FlintSessionController.isSessionActivity(activity.rawValue) {
+                FlintSessionController().handleMonitorEvent(.intervalWillEndWarning, activity: activity.rawValue)
+            }
+            return
+        }
         if FlintOpenCredit.isCarrier(activity.rawValue) {
             FlintOpenCredit.reconcile(activity: activity.rawValue, callback: .warning)
             return
@@ -78,6 +92,9 @@ final class FlintMonitor: DeviceActivityMonitor {
         activity: DeviceActivityName
     ) {
         super.eventDidReachThreshold(event, activity: activity)
+        // Preserve exact positive usage evidence before any transition-lock/replay early return.
+        _ = FlintEmergencyPassController().noteTimeLimitThreshold(activity: activity.rawValue, event: event.rawValue)
+        guard FlintEmergencyPassController.prepareForMonitorCallback(activity: activity.rawValue) else { return }
         // Both supplied identities must match the effective persisted revision. Looking up
         // the event alone could let a delayed old activity shield a replacement (R-21).
         guard FlintRuleMonitor().handle(.threshold(event.rawValue), activity: activity.rawValue) else { return }

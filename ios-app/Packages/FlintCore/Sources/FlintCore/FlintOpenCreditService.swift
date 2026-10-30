@@ -40,6 +40,7 @@ public final class FlintOpenCreditService {
     private let transition: (() -> Void) -> Bool
     private let authorized: (FlintOpenCreditGrant) -> Bool?
     private let unavailable: () -> Void
+    private let recoveryGate: () -> FlintPassRecoveryGate
 
     public init(ledger: FlintProtectionLedger, clock: FlintClock,
                 context: @escaping () -> FlintOpenCreditContext?,
@@ -48,14 +49,17 @@ public final class FlintOpenCreditService {
                 reshield: @escaping (FlintOpenCreditGrant) -> Void, stop: @escaping (String) -> Void,
                 transition: @escaping (() -> Void) -> Bool = { body in body(); return true },
                 authorized: @escaping (FlintOpenCreditGrant) -> Bool? = { _ in true },
-                unavailable: @escaping () -> Void = {}) {
+                unavailable: @escaping () -> Void = {},
+                recoveryGate: @escaping () -> FlintPassRecoveryGate = { .enforcing }) {
         self.ledger = ledger; self.clock = clock; self.context = context; self.register = register
         self.registered = registered; self.release = release; self.reshield = reshield; self.stop = stop
         self.transition = transition; self.authorized = authorized; self.unavailable = unavailable
+        self.recoveryGate = recoveryGate
     }
 
     /// Does not consume, register, or release. Advancing a snapshot never replaces the ledger.
     public func preview(target: String) -> FlintOpenCreditPreview {
+        guard recoveryGate().permitsApplication else { return .init(remaining: nil, cap: nil, blockedBy: .unavailable) }
         guard case var .success(state) = ledger.peek(), let context = context() else {
             return .init(remaining: nil, cap: nil, blockedBy: .unavailable)
         }
@@ -77,6 +81,7 @@ public final class FlintOpenCreditService {
     }
 
     private func acceptLocked(target: String, operationID: String) -> Result<FlintOpenCreditReceipt, FlintOpenCreditRefusal> {
+        guard recoveryGate().permitsApplication else { return .failure(.denied(.unavailable)) }
         var newRegistration: String?
         let committed = ledger.transaction { state -> Result<FlintOpenCreditReceipt, FlintOpenCreditRefusal> in
             guard let context = self.context(), let restoration = context.restoration else { return .failure(.denied(.unavailable)) }
@@ -112,6 +117,7 @@ public final class FlintOpenCreditService {
 
     private func applyCommitted(_ receipt: FlintOpenCreditReceipt) -> Result<FlintOpenCreditReceipt, FlintOpenCreditRefusal> {
         let applied = ledger.transaction { state -> Result<FlintOpenCreditReceipt, FlintOpenCreditRefusal> in
+            guard self.recoveryGate().permitsApplication else { return .failure(.denied(.applying)) }
             guard let context = self.context(), state.reconcileOpenCredits(
                 at: FlintLedgerInstant(clock: self.clock), targetKeys: context.targetKeys, reshield: self.reshieldAndStop),
                 let grant = state.openCredits.grants[receipt.grant.targetKey],
@@ -156,6 +162,8 @@ public final class FlintOpenCreditService {
     }
 
     private func reconcileLocked(activity: String?, callback: Callback?) -> Bool {
+        let gate = recoveryGate()
+        guard gate.permitsApplication else { return gate.isRecovering }
         let result = ledger.transaction { state -> Bool in
             // Expiry remains possible using the frozen target when saved rules are corrupt.
             // New acceptance still requires a readable live context above.
@@ -203,7 +211,7 @@ public final class FlintOpenCreditService {
     }
 
     private func reshieldAndStop(_ grant: FlintOpenCreditGrant) {
-        reshield(grant)
+        if recoveryGate().permitsApplication { reshield(grant) }
         stop(grant.activityName)
     }
 

@@ -51,6 +51,18 @@ public enum FlintProtectionStatus {
               snapshot.observedAt <= now,
               let validUntil = snapshot.validUntil,
               now <= validUntil, snapshot.observedAt <= validUntil else { return nil }
+        if snapshot.degradedReasons.contains("recovery_applying")
+            || !Set(snapshot.degradedReasons).isSubset(of: FlintProtectionStatusSnapshot.knownDegradedReasons) {
+            // A future reason cannot inherit an older reader's success/suspension claim.
+            let causes = snapshot.causes.map {
+                FlintProtectionStatusSnapshot.Cause(id: $0.id, kind: $0.kind, displayName: $0.displayName,
+                    tier: $0.tier, end: $0.end, enforcing: false)
+            }
+            return .init(version: snapshot.version, observedAt: snapshot.observedAt, validUntil: snapshot.validUntil,
+                state: .degraded, session: nil, headline: nil, causes: causes,
+                nextOccurrence: snapshot.nextOccurrence, pass: snapshot.pass,
+                degradedReasons: snapshot.degradedReasons, writer: snapshot.writer)
+        }
         return snapshot
     }
 

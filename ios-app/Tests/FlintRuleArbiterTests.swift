@@ -674,11 +674,12 @@ final class RuleHarness {
     }
     var environment: FlintRuleReloadEnvironment {
         .init(defaults: defaults, center: center, clearStore: { self.cleared.append($0) },
-            applyOpenShield: { self.appliedOpens.append($0) }, record: { self.reports[$0] = $1 },
+            applyOpenShield: { self.appliedOpens.append($0); return true }, record: { self.reports[$0] = $1 },
             loadHealth: { .init(domains: self.reports) }, clock: clock,
             ledger: { self.ledgerAvailable ? self.ledger : nil }, lockDirectory: directory.appendingPathComponent("rules"),
             acceptSave: { self.saveAllowed }, validateSelection: { _, _ in nil },
-            applyRuleShield: { self.appliedSchedules.append($0) }, applyLimitShield: { self.appliedLimits.append($0) },
+            applyRuleShield: { self.appliedSchedules.append($0); return true },
+            applyLimitShield: { self.appliedLimits.append($0); return true },
             timeLimitIsShielded: { _, _ in self.timeLimitExhausted }, recoveryDirectory: recoveryDirectory)
     }
     func advance(_ seconds: TimeInterval) { now.addTimeInterval(seconds); monotonic += seconds }

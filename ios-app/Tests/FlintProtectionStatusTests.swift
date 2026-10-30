@@ -79,6 +79,27 @@ final class FlintProtectionStatusTests: XCTestCase {
         }
     }
 
+    func testPendingPassOutboxNeverClaimsSuspensionOrProtection() {
+        var value = inputs(rules: [rule()])
+        value.activeSession = session()
+        value.pass = .init(eligibility: .coolingDown, recoveryUntil: now.addingTimeInterval(3600))
+        value.recoveryApplying = true
+        let applying = Builder.make(value)
+        XCTAssertEqual(applying.state, .degraded)
+        XCTAssertTrue(applying.degradedReasons.contains("recovery_applying"))
+        XCTAssertNil(applying.session)
+        XCTAssertNil(applying.headline)
+        XCTAssertTrue(applying.causes.allSatisfy { !$0.enforcing })
+        XCTAssertEqual(applying.validUntil, now.addingTimeInterval(60))
+        value.recoveryApplying = false
+        XCTAssertEqual(Builder.make(value).state, .suspended, "release acknowledged during recovery")
+        value.pass = .init(eligibility: .coolingDown)
+        value.recoveryApplying = true
+        XCTAssertEqual(Builder.make(value).state, .degraded, "restoration still pending after recovery")
+        value.recoveryApplying = false
+        XCTAssertEqual(Builder.make(value).state, .protected)
+    }
+
     func testUnresolvedRuleDegradesWithoutSuppressingUnrelatedEnforcingCause() {
         let unresolved = Builder.RuleInput.schedule(id: "unresolved", displayName: "Unresolved",
             tier: .hardcore, schedule: FlintSchedule(startHour: 25, endHour: 1),

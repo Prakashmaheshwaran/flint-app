@@ -14,6 +14,7 @@ public final class FlintRuleMonitor {
     public func handle(_ callback: Callback, activity: String) -> Bool {
         let domain = FlintRuleStoreKey.allCases.first { activity.hasPrefix($0.prefix) }
         guard let domain else { return false }
+        if case let .threshold(event) = callback { env.observeLimitThreshold(activity, event) }
         let acquired: Void? = FlintRuleStoreLock.withLock(environment: env) {
             switch domain {
             case .schedules: process(FlintScheduleRule.self, callback: callback, activity: activity)
@@ -27,7 +28,7 @@ public final class FlintRuleMonitor {
             case .limits: restorePositiveSnapshot(FlintLimitRule.self, callback: callback, activity: activity)
             case .openLimits: restorePositiveSnapshot(FlintOpenLimitRule.self, callback: callback, activity: activity)
             }
-            env.record(domain.domain, .init(enabled: env.loadHealth().domains[domain.domain]?.enabled ?? 0,
+            env.recordState(domain.domain, .init(enabled: env.loadHealth().domains[domain.domain]?.enabled ?? 0,
                 attempted: 0, armed: 0, failures: [.init(activityName: activity,
                     reason: "Rule transition is busy. Readable current start/threshold protection was retained; retry reconciliation.")]))
         }
@@ -40,7 +41,7 @@ public final class FlintRuleMonitor {
               var all = FlintDesiredRules.load(type, key: Rule.domain, from: env.defaults, at: env.clock.now(),
                 recoveryDirectory: env.recoveryDirectory) else {
             restorePositiveSnapshot(type, callback: callback, activity: activity, markThreshold: true)
-            env.record(Rule.domain.domain, FlintDesiredRules.unavailable(Rule.domain.domain, previous: env.loadHealth()))
+            env.recordState(Rule.domain.domain, FlintDesiredRules.unavailable(Rule.domain.domain, previous: env.loadHealth()))
             return
         }
         guard let index = all.firstIndex(where: { $0.activityName == activity && $0.enabled }) else {
@@ -58,15 +59,15 @@ public final class FlintRuleMonitor {
                 all[index] = rule
                 guard env.acceptSave(), FlintDesiredRules.save(all, key: Rule.domain, to: env.defaults) else {
                     applyPositive(rule, callback: callback)
-                    env.record(Rule.domain.domain, FlintDesiredRules.saveFailure(Rule.domain.domain, previous: env.loadHealth()))
+                    env.recordState(Rule.domain.domain, FlintDesiredRules.saveFailure(Rule.domain.domain, previous: env.loadHealth()))
                     return
                 }
             }
-            if let schedule = rule as? FlintScheduleRule { env.applyRuleShield(schedule) }
+            if let schedule = rule as? FlintScheduleRule { env.applyProtection(schedule) }
             else if let limit = rule as? FlintLimitRule {
                 if isNewOccurrence { env.clearStore(limit.storeName); env.clearLimitThreshold(limit.id) }
-                if limit.thresholdMinutes == 0 { env.applyLimitShield(limit); env.markLimitThreshold(limit, now) }
-            } else if let open = rule as? FlintOpenLimitRule { env.applyOpenShield(open) }
+                if limit.thresholdMinutes == 0 { env.applyProtection(limit); env.markLimitThreshold(limit, now) }
+            } else if let open = rule as? FlintOpenLimitRule { env.applyProtection(open) }
         case .end:
             // A delayed old end, including a callback delivered after the next start, cannot
             // end the new window. A carrier's wall end alone is never release authority.
@@ -88,11 +89,11 @@ public final class FlintRuleMonitor {
                 all[index].protection?.occurrence = window
                 guard env.acceptSave(), FlintDesiredRules.save(all, key: Rule.domain, to: env.defaults) else {
                     applyPositive(limit, callback: callback)
-                    env.record(Rule.domain.domain, FlintDesiredRules.saveFailure(Rule.domain.domain, previous: env.loadHealth()))
+                    env.recordState(Rule.domain.domain, FlintDesiredRules.saveFailure(Rule.domain.domain, previous: env.loadHealth()))
                     return
                 }
             }
-            env.applyLimitShield(limit)
+            env.applyProtection(limit)
             env.markLimitThreshold(limit, now)
         }
     }
@@ -115,12 +116,12 @@ public final class FlintRuleMonitor {
 
     private func applyPositive<Rule: FlintGatedRule>(_ rule: Rule, callback: Callback) {
         if let schedule = rule as? FlintScheduleRule {
-            (env.addRuleShield ?? env.applyRuleShield)(schedule)
+            env.applyProtection(schedule, addingOnly: true)
         } else if let limit = rule as? FlintLimitRule {
             if case .start = callback, limit.thresholdMinutes > 0 { return }
-            (env.addLimitShield ?? env.applyLimitShield)(limit)
+            env.applyProtection(limit, addingOnly: true)
         } else if let open = rule as? FlintOpenLimitRule {
-            (env.addOpenShield ?? env.applyOpenShield)(open)
+            env.applyProtection(open, addingOnly: true)
         }
     }
 }

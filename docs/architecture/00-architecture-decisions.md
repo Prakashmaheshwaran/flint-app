@@ -224,7 +224,7 @@ Flint-imposed count cap or 24h-advance cap; iOS's finite, undocumented `DeviceAc
 registration pool is shared by Flint's monitors and still applies), **Block List + Allow List**,
 **all three break-difficulty levels including
 Hardcore/Deep Focus for free**, **Time Limits + Open Limits**, the **anti-bypass suite**, and a
-**free weekly Emergency Pass** — every one of these is something Opal paywalls or omits. Defer
+**free Emergency Pass every rolling 7 days after use** — every one of these is something Opal paywalls or omits. Defer
 gamification, bundled audio content, desktop/cross-device, and full Android parity to later
 milestones. Full list: [`01-opal-feature-inventory.md`](../research/01-opal-feature-inventory.md).
 

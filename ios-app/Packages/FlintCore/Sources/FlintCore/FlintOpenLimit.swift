@@ -252,7 +252,8 @@ public enum FlintOpenLimitEnforcer {
         guard FlintOpenCredit.shieldAcceptanceEnabled else { return nil }
         return remaining(FlintOpenCredit.preview(for: token))
     }
-    public static func applyShield(for rule: FlintOpenLimitRule) {
+    @discardableResult
+    public static func applyShield(for rule: FlintOpenLimitRule) -> Bool {
         FlintOpenCredit.applyShield(for: rule)
     }
     public static func clearShield(for rule: FlintOpenLimitRule) {
