@@ -28,12 +28,11 @@ internal class PathBQueryRuntime(context: Context) {
     private val poller = UsagePoller(app)
     private val timeReader = TrustedTimeLimitReader.create(app)
     private val timeForeground = TimeLimitForegroundSession.create(app, TimeLimitForegroundSession.Path.B)
-    private var checkpointForRead: Deferred<Unit>? = null
     private val legacyLimits = LimitStore(app).also { it.all() } // Warm the initial XML read off main.
     private val engine = BlockDecisionEngine()
     private val timeLimitGate = PathBTimeLimitGate(
         limitMinutesFor = { pkg -> listOfNotNull(legacyLimits.limitMinutes(pkg), coordinator.timeLimitMinutes(pkg)).minOrNull() },
-        readBudget = { pkg, minutes -> timeReader.read(pkg, minutes) { checkpointForRead?.await() } },
+        readBudget = timeReader::read,
     )
     private var labelPackage: String? = null
     private var label: String? = null
@@ -55,11 +54,12 @@ internal class PathBQueryRuntime(context: Context) {
     fun closeForeground() { timeForeground.close() }
 
     suspend fun observeTarget(pkg: String, now: Long, rules: List<BlockRule>, checkpoint: Deferred<Unit>? = null): PathBObservation {
-        checkpointForRead = checkpoint
         try { checkpoint?.await() }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { timeLimitGate.invalidate() } // Reader reports the checkpoint failure.
-        val budget = timed("budget_query_ms") { timeLimitGate.budget(pkg, ProtectionClock.now()) }
+        val budget = timed("budget_query_ms") { timeLimitGate.budget(pkg, ProtectionClock.now()) { name, minutes ->
+            timeReader.read(name, minutes) { checkpoint?.await() }
+        } }
         val cal = Calendar.getInstance().apply { timeInMillis = now }
         val verdict = engine.decide(pkg, null, rules, app.packageName,
             cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE),

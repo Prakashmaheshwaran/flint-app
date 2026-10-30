@@ -20,13 +20,14 @@ internal class PathBTimeLimitGate(
 
     init { require(requeryIntervalMs > 0) }
 
-    suspend fun budget(packageName: String, now: AccessClockStamp): TrustedTimeLimitBudget? {
+    suspend fun budget(packageName: String, now: AccessClockStamp,
+        read: suspend (String, Int) -> TrustedTimeLimitBudget = readBudget): TrustedTimeLimitBudget? {
         val minutes = limitMinutesFor(packageName)
         val age = cachedAt?.let { trustedElapsedMs(it, now) }
         val stale = packageName != cachedPackage || minutes != cachedLimitMinutes || age == null ||
             age >= validForMs || lastObserved?.let { clockDiscontinuity(it, now) } == true
         if (stale) {
-            cachedBudget = minutes?.let { readBudget(packageName, it) }
+            cachedBudget = minutes?.let { read(packageName, it) }
             // An Allow cannot outlive either measured foreground quota or the trusted reset.
             // Unknown/failed measurements retry at the normal bounded query cadence.
             validForMs = listOfNotNull(requeryIntervalMs,

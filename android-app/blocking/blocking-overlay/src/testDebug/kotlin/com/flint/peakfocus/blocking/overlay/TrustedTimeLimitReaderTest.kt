@@ -121,7 +121,7 @@ class TrustedTimeLimitReaderTest {
         assertEquals(TrustedTimeLimitBudget.Measurement.NOT_NEEDED, result.measurement)
     }
 
-    @Test fun PC_60_unknownEarlierHistoryStaysUnmeasuredEvenAfterAnAcceptedZero() = runBlocking {
+    @Test fun PC_60_acceptedSampleHasMeasurementEvidenceWhileEarlierHistoryMetadataRemainsUncertain() = runBlocking {
         var day = TimeLimitDayAccounting.initial(now, "UTC").copy(accountingUnknownUntilReset = true)
         var total = 0L
         val read = TrustedTimeLimitReader(
@@ -134,7 +134,8 @@ class TrustedTimeLimitReaderTest {
             }, { _, _, _ -> total }, { now })
         val unknown = read.read("app", 1)
         assertEquals(60_000L, unknown.remainingMs)
-        assertEquals(TrustedTimeLimitBudget.Measurement.HISTORY_UNKNOWN, unknown.measurement)
+        assertEquals(TrustedTimeLimitBudget.Measurement.OBSERVED, unknown.measurement)
+        assertTrue(unknown.day!!.accountingUnknownUntilReset)
         total = 60_000
         assertTrue(read.read("app", 1).spent)
     }

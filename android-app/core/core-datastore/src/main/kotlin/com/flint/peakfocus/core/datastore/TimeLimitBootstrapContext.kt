@@ -8,6 +8,7 @@ import com.flint.peakfocus.core.model.AccessClockStamp
 import com.flint.peakfocus.core.model.StorageFailure
 import java.io.IOException
 import java.util.TimeZone
+import java.time.ZoneId
 
 internal val TIME_BOOTSTRAP_CONTEXT = stringPreferencesKey("time_limit_bootstrap_context_v1")
 
@@ -49,10 +50,24 @@ internal class TimeLimitBootstrapMigration(
 
     override suspend fun migrate(currentData: Preferences): Preferences {
         if (!shouldMigrate(currentData)) return currentData
+        // Device/clock discovery is transient. Never make a failed first read a permanent
+        // Time-only latch; a later DataStore open may capture valid inputs.
+        val inputs = try {
+            val rawZone = deviceZone()
+            val parsed = ZoneId.of(rawZone)
+            val zone = if (rawZone in ZoneId.getAvailableZoneIds()) rawZone else {
+                val offset = parsed.normalized()
+                require(offset.rules.isFixedOffset)
+                if (offset.id == "Z") "GMT" else "GMT${offset.id}"
+            }
+            val stamp = clock()
+            TimeLimitDayAccounting.initial(stamp, zone)
+            zone to stamp
+        } catch (_: Exception) { return currentData }
         val payload = try {
             timeUsageRequire(currentData.asMap().keys.none { it.name in
                 setOf(TIME_USAGE_SCHEMA.name, TIME_LIMIT_ZONE_SCHEMA.name) })
-            encodeTimeLimitBootstrapContext(TimeLimitBootstrapContext(deviceZone(), clock(), legacyTargets().toSet()))
+            encodeTimeLimitBootstrapContext(TimeLimitBootstrapContext(inputs.first, inputs.second, legacyTargets().toSet()))
         } catch (failure: Exception) {
             val reason = when (failure) {
                 is StorageUnavailableException -> failure.reason

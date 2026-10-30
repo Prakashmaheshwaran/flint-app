@@ -36,6 +36,7 @@ class DataStoreTimeLimitUsageStore(
     private val deviceZone: () -> String = { TimeZone.getDefault().id },
     private val prepareEditor: ((MutablePreferences, AccessClockStamp) -> Unit)? = null,
 ) {
+    /** Read after preparation; absent usage keys here are uninitialized, not authoritative zero. */
     val state = dataStore.data.storageStates(::readTimeLimitUsage)
 
     /**
@@ -129,7 +130,7 @@ class DataStoreTimeLimitUsageStore(
             }
             ledger = ledger.copy(targets = ledger.targets + (packageName to row))
             prefs.putTimeLimitUsage(ledger)
-            val start = DailyUsageTimeline.startOfDay(stamp.wallEpochMs, OpenCreditLedgerPolicy.quotaZone(row.zoneId))
+            val start = DailyUsageTimeline.startOfDay(row.logicalCheckpoint.wallEpochMs, OpenCreditLedgerPolicy.quotaZone(row.zoneId))
             result = TimeLimitMeasurementContext(packageName, row.periodId, row.zoneId, start, stamp, row)
         }
         return checkNotNull(result)

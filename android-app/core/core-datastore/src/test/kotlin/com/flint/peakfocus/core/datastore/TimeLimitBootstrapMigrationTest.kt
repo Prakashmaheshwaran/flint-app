@@ -15,6 +15,46 @@ import org.junit.Test
 class TimeLimitBootstrapMigrationTest {
     private val at = AccessClockStamp(1_704_067_200_000, 10_000, "boot")
 
+    @Test fun fixedOffsetFirstOpenRoundTripsAndAccountingWorksAfterLaterNamedZoneOpen() = runBlocking {
+        var zone = "GMT+05:30"
+        val migration = TimeLimitBootstrapMigration({ at }, { zone }, { emptySet() })
+        val captured = migration.migrate(preferencesOf(PrefsKeys.TIME_LIMITS to "app~30"))
+        assertEquals("GMT+05:30", readTimeLimitBootstrapContext(captured)!!.zoneId)
+        zone = "UTC"
+        assertFalse(migration.shouldMigrate(captured))
+        assertEquals(captured, migration.migrate(captured))
+        val values = MutableStateFlow(captured)
+        val disk = object : DataStore<Preferences> {
+            override val data: Flow<Preferences> = values
+            override suspend fun updateData(transform: suspend (Preferences) -> Preferences) = transform(values.value).also { values.value = it }
+        }
+        val editor = DataStoreEditorCommitmentStore(disk, defaultZone = { "GMT+05:30" })
+        val store = DataStoreTimeLimitUsageStore(disk, { at }, { "GMT+05:30" },
+            prepareEditor = { prefs, stamp -> editor.prepare(prefs, stamp, checkpointQuota = false) })
+        val ticket = store.measurementContext("app", at)
+        assertEquals("GMT+05:30", ticket.zoneId)
+        val sampled = store.record(ticket, 0, at)
+        assertTrue(sampled.sampleAccepted)
+        assertEquals(1_800_000L, com.flint.peakfocus.blocking.engine.TimeLimitDayAccounting.remainingMs(sampled.state, 30))
+        assertEquals("GMT+05:30", values.value.editorTimes().single().zoneId)
+        assertEquals(sampled.state, readTimeLimitUsage(values.value).targets.getValue("app"))
+    }
+
+    @Test fun invalidDeviceZoneOrClockReadWritesNoLatchAndRetriesOnNextOpen() = runBlocking {
+        var zone = "not/a-zone"
+        var failClock = false
+        val migration = TimeLimitBootstrapMigration({ if (failClock) throw java.io.IOException("clock unavailable") else at }, { zone }, { emptySet() })
+        val original = preferencesOf(PrefsKeys.TIME_LIMITS to "app~30")
+        assertEquals(original, migration.migrate(original))
+        assertTrue(migration.shouldMigrate(original))
+        zone = "UTC"; failClock = true
+        assertEquals(original, migration.migrate(original))
+        failClock = false
+        val recovered = migration.migrate(original)
+        assertEquals("UTC", readTimeLimitBootstrapContext(recovered)!!.zoneId)
+        assertFalse(migration.shouldMigrate(recovered))
+    }
+
     @Test fun PC_56_PC_70_firstOpenCapturesInputsOnceWithoutRewritingEditorOrLegacyAuthority() = runBlocking {
         var zone = "UTC"
         var targets = setOf("legacy-only", "same-target")

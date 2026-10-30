@@ -3,8 +3,6 @@ package com.flint.peakfocus.blocking.overlay
 import android.content.Context
 import android.content.Intent
 import android.view.View
-import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
-import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.core.model.ActiveRulesHolder
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.EnforcementSignals
@@ -12,13 +10,11 @@ import com.flint.peakfocus.core.model.Verdict
 import com.flint.peakfocus.core.datastore.FocusStateStore
 import com.flint.peakfocus.core.datastore.LimitsStore
 import com.flint.peakfocus.core.datastore.BlockRulesStore
-import java.util.Calendar
 import java.util.TimeZone
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 
 /**
@@ -47,7 +43,6 @@ object PathBBlockHandoff {
 
     @Volatile private var coordinator: BlockScreenCoordinator? = null
     @Volatile private var lastForegroundPackage: String? = null
-    private val timeQueries = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
      * The process-wide Path B coordinator (lazily created). [BlockActivity] also uses this
@@ -58,30 +53,6 @@ object PathBBlockHandoff {
         synchronized(this) {
             coordinator?.let { return it }
             return create(context.applicationContext).also { coordinator = it }
-        }
-    }
-
-    /**
-     * Compatibility notification of a possible Time hit. Verify it against the same durable
-     * reader before enforcing, and include current rules in the overlap decision.
-     */
-    fun onTimeLimitExceeded(context: Context, packageName: String) {
-        val appContext = context.applicationContext
-        timeQueries.launch {
-            val c = coordinator(appContext)
-            if (withContext(Dispatchers.Main.immediate) { c.isSafetyFloor(packageName) }) return@launch
-            val minutes = listOfNotNull(com.flint.peakfocus.core.data.LimitStore(appContext).limitMinutes(packageName),
-                c.timeLimitMinutes(packageName)).minOrNull()
-            val budget = minutes?.let { TrustedTimeLimitReader.create(appContext).read(packageName, it) }
-            val now = System.currentTimeMillis()
-            val rules = ActiveRulesHolder.rules
-            val cal = Calendar.getInstance().apply { timeInMillis = now }
-            val verdict = BlockDecisionEngine().decide(
-                packageName, null, rules, appContext.packageName,
-                cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE),
-                IsoWeekday.fromCalendar(cal.get(Calendar.DAY_OF_WEEK)), now,
-            )
-            onForegroundPolled(appContext, packageName, verdict, rules = rules, timeBudget = budget)
         }
     }
 

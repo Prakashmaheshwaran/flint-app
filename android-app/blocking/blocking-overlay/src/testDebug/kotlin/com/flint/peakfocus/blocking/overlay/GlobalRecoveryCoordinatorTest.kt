@@ -122,6 +122,59 @@ class GlobalRecoveryCoordinatorTest {
 
     private fun TestScope.clock() = base.copy(wallEpochMs = base.wallEpochMs + testScheduler.currentTime, elapsedRealtimeMs = base.elapsedRealtimeMs + testScheduler.currentTime)
 
+    @Test fun PC_28_PC_54_PC_60_successfulPostRebootOrWallCorrectionSampleAllowsOrdinaryAndOpenOnTimeTargets() = runTest {
+        for (reboot in listOf(true, false)) {
+            BlockExemptions.clearAll()
+            var stamp = base
+            val days = mutableMapOf<String, TimeLimitDayState>()
+            val health = TimeLimitMeasurementPublisher()
+            val reader = TrustedTimeLimitReader(
+                { target, at ->
+                    val row = days[target]?.let { TimeLimitDayAccounting.reconcile(it, at).state } ?: TimeLimitDayAccounting.initial(at, "UTC")
+                    days[target] = row
+                    TimeLimitMeasurementContext(target, row.periodId, row.zoneId, base.wallEpochMs - 23 * 3_600_000, at, row)
+                },
+                { ticket, total, at ->
+                    val result = TimeLimitDayAccounting.record(days.getValue(ticket.packageName), ticket.periodId,
+                        total?.let { TimeLimitUsageSample(ticket.windowStartEpochMs, it, ticket.observedAt) }, at)
+                    days[ticket.packageName] = result.state
+                    TimeLimitUsageObservation(result.state, result.sampleAccepted)
+                }, { target, _, _ -> if (target == pkg) 30 * 60_000L else 25 * 60_000L }, { stamp }, health::record)
+            reader.read(pkg, 30); reader.read("c", 30)
+            stamp = if (reboot) base.copy(wallEpochMs = base.wallEpochMs + 60_000, elapsedRealtimeMs = 5, bootSessionId = "boot-2")
+                else base.copy(wallEpochMs = base.wallEpochMs + 6_000)
+            val spent = reader.read(pkg, 30)
+            val positive = reader.read("c", 30)
+            assertEquals(TrustedTimeLimitBudget.Measurement.OBSERVED, spent.measurement)
+            assertEquals(TrustedTimeLimitBudget.Measurement.OBSERVED, positive.measurement)
+            assertTrue(spent.day!!.timeUncertain)
+            assertTrue(spent.spent)
+            assertEquals(300_000L, positive.remainingMs)
+            assertFalse(health.unavailable(mapOf(pkg to 30, "c" to 30), stamp))
+
+            val interval = AnchoredInterval(stamp, 7_200_000, stamp.wallEpochMs + 7_200_000)
+            val initial = initial(BreakLevel.EASY)
+            val disk = Disk(initial.copy(times = listOf(TimeLimit(pkg, 30, BreakLevel.EASY), TimeLimit("c", 30, BreakLevel.EASY)),
+                opens = listOf(OpenLimit("c", 1, BreakLevel.EASY)), openCredits = OpenCreditLedgerPolicy.initial(stamp, "UTC"),
+                editor = initial.editor.copy(causes = initial.editor.causes + mapOf("time:$pkg" to EditorCause("time-day", interval, "UTC"),
+                    "time:c" to EditorCause("time-day", interval, "UTC"))))) { stamp }
+            val c = coordinator(disk); runCurrent()
+            val timeCause = c.evaluateBlockCause(null, pkg, ruleBlockCause(initial.rules.single(), stamp.wallEpochMs, 0), false, timeBudget = spent)!!
+            assertTrue(c.requestBreak(pkg, timeCause, GrantRequestId.issue(stamp)) is GrantResult.Granted)
+            runCurrent()
+            assertTrue(c.isExempt(pkg, timeCause))
+            val openCause = c.evaluateBlockCause(pkg, "c", null, false, timeBudget = positive)!!
+            val scope = c.screenState("c", null, openCause, stamp.wallEpochMs).openCreditRequestScope
+            assertNotNull(scope)
+            assertEquals(GrantResult.OpenAllowed, c.requestBreak("c", openCause, GrantRequestId.issue(stamp, scope)))
+            runCurrent()
+            assertTrue(c.resumeOrdinaryBreaks()); runCurrent()
+            assertNotNull(c.currentBlockCause(pkg, timeCause))
+            assertTrue(spent.spent)
+            c.hideIfShown()
+        }
+    }
+
     @Test fun PC_28_PC_47_PC_60_timeAccountingFaultIsScopedWhileOpenOrdinaryAndEmergencyRecoveryRemainUsable() = runTest {
         val s = initial(BreakLevel.EASY).copy(times = listOf(TimeLimit("b", 10, BreakLevel.EASY)),
             opens = listOf(OpenLimit("c", 1, BreakLevel.EASY)), openCredits = OpenCreditLedgerPolicy.initial(base, "UTC"))

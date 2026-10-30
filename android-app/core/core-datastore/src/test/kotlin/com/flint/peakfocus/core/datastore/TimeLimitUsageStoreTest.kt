@@ -14,6 +14,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TimeLimitUsageStoreTest {
+    @Test fun readIoFailurePublishesUnavailableWithoutWritingAnyDefault() = runBlocking {
+        var writes = 0
+        val disk = object : DataStore<Preferences> {
+            override val data: Flow<Preferences> = flow { throw IOException("synthetic read fault") }
+            override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences { writes++; error("no default write") }
+        }
+        assertEquals(StorageState.Unavailable(StorageFailure.IO), DataStoreTimeLimitUsageStore(disk).state.first { it !is StorageState.Loading })
+        assertEquals(0, writes)
+    }
     private class Disk(initial: Preferences = emptyPreferences()) : DataStore<Preferences> {
         val values = MutableStateFlow(initial)
         var fail = false
@@ -31,6 +40,16 @@ class TimeLimitUsageStoreTest {
     private val hour = 3_600_000L
     private val base = Instant.parse("2026-10-28T23:00:00Z").toEpochMilli()
     private fun at(ms: Long = 0, wall: Long = ms, boot: String = "boot") = AccessClockStamp(base + wall, 10_000 + ms, boot)
+    @Test fun clockRollbackAcrossTrustedResetQueriesTheLogicalDayInsteadOfImportingThePriorRawDay() = runBlocking {
+        val disk = Disk(); val store = DataStoreTimeLimitUsageStore(disk, deviceZone = { "UTC" })
+        val initial = store.measurementContext("app", at())
+        store.record(initial, 25 * 60_000, at())
+        val rolled = store.measurementContext("app", at(hour, -22 * hour))
+        assertEquals(initial.periodId + 1, rolled.periodId)
+        assertEquals(base + hour, rolled.windowStartEpochMs)
+        assertTrue(rolled.windowStartEpochMs > rolled.observedAt.wallEpochMs)
+        assertFalse(store.record(rolled, Long.MAX_VALUE, at(hour, -22 * hour)).sampleAccepted)
+    }
     private fun legacy() = preferencesOf(PrefsKeys.TIME_LIMITS to "app~1~HARDCORE\nother~30~HARDER",
         PrefsKeys.DEFAULT_BREAK_LEVEL to "HARDCORE", PrefsKeys.APP_GROUPS to "unchanged groups")
     private fun store(disk: Disk, zone: () -> String = { "UTC" }) = DataStoreTimeLimitUsageStore(disk, deviceZone = zone)

@@ -108,7 +108,7 @@ internal object StrictPrefsCodec {
             if (fields.size >= 3) level(fields[2])
             if (fields.size == 4) {
                 atom(fields[3], true)
-                check(PrefsCodec.unescape(fields[3]) in ZoneId.getAvailableZoneIds())
+                check(runCatching { com.flint.peakfocus.blocking.engine.OpenCreditLedgerPolicy.quotaZone(PrefsCodec.unescape(fields[3])) }.isSuccess)
             }
         }
         return PrefsCodec.decodeTimeLimits(encoded, legacyTier).also {

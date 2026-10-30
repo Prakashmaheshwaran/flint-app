@@ -62,7 +62,8 @@ class TrustedTimeLimitReader internal constructor(
                 dailyMinutes == 0 -> TrustedTimeLimitBudget.Measurement.NOT_NEEDED
                 total == null -> TrustedTimeLimitBudget.Measurement.ACCESS_MISSING
                 total == Long.MAX_VALUE || !committed.sampleAccepted -> TrustedTimeLimitBudget.Measurement.QUERY_FAILED
-                committed.state.accountingUnknownUntilReset || committed.state.timeUncertain -> TrustedTimeLimitBudget.Measurement.HISTORY_UNKNOWN
+                // An accepted current-boot sample is measurement evidence. Clock/earlier
+                // history uncertainty remains in the day metadata, not a failed read.
                 else -> TrustedTimeLimitBudget.Measurement.OBSERVED
             }
             return result(packageName, dailyMinutes, committed.state, quality)
