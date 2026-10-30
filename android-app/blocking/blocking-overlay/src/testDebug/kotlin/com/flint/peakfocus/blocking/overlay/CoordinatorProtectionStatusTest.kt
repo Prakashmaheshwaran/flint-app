@@ -189,6 +189,19 @@ class CoordinatorProtectionStatusTest {
         assertTrue("path-b-backup-unavailable" in reasons)
         assertTrue("time-limits-need-usage-access" in reasons)
 
+        val observed = ProtectionStatusHub.status.value.observedAt
+        EnforcementSignals.detectors.disconnected(owner)
+        val disconnected = ProtectionStatusHub.status.value
+        assertFalse(disconnected.detectors.accessibilityConnected)
+        assertFalse("path-b-backup-unavailable" in disconnected.detectors.degradedReasons)
+        assertTrue("usage-access-missing" in disconnected.detectors.degradedReasons)
+        assertTrue("time-limits-need-usage-access" in disconnected.detectors.degradedReasons)
+        assertEquals(observed, disconnected.observedAt) // A binding signal is not a fresh policy check.
+        EnforcementSignals.detectors.connected(owner)
+        advanceTimeBy(ProtectionStatusProjection.TICK_MS + BlockScreenCoordinator.STATUS_COALESCE_MS + 1)
+        runCurrent()
+        assertTrue("path-b-backup-unavailable" in ProtectionStatusHub.status.value.detectors.degradedReasons)
+
         // Only the service replaces its underlying observation. An owned policy tick must
         // recompute contextual reasons; policy must never feed the raw cause back into health.
         ProtectionStatusHub.publishPathBHealth(ProtectionStatus.PathBState.STANDBY, emptySet())

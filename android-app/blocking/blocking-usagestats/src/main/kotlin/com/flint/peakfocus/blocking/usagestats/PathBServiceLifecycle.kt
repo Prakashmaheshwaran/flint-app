@@ -81,6 +81,8 @@ internal class PathBServiceLifecycle(
         foregroundStarted = false
         // Stopping the service does not restore a revoked permission. Keep that observed
         // condition until a new permission check/start replaces it; clean stops stay clean.
+        // An off service does not poll permissions: a regrant without a gate sync/start
+        // retains conservative health until that next observation, rather than inventing it.
         reasons = reasons.intersect(setOf("usage-access-missing"))
         unleased(PathBState.OFF)
     }
