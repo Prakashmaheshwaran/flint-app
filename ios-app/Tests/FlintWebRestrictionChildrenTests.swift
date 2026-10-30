@@ -173,6 +173,46 @@ final class FlintWebRestrictionChildrenTests: XCTestCase {
         XCTAssertTrue(store.needsRecovery)
     }
 
+    func testBlockedRecoveryDoesNotCreateAPhantomReplacementChild() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let active = session(h), config = FlintWebRestrictions(enabled: true)
+        let replacement = FlintActiveSession(id: "blocked", name: "New", startedAt: h.now,
+            endsAt: h.now.addingTimeInterval(600), breakLevel: .hardcore, monitorName: "flint.session.blocked")
+        let children = FlintWebRestrictionChildren(defaults: h.defaults)
+        XCTAssertEqual(children.resolve(.session(active), global: config), config)
+        let before = children.read()
+        let writer = SessionChildWriter()
+        for gate: FlintPassRecoveryGate in [.unavailable, .suspended(until: h.now.addingTimeInterval(600))] {
+            let lifecycle = FlintWebRestrictionLifecycle(writer: writer, recoveryGate: { gate }, children: children)
+            XCTAssertTrue(lifecycle.prepareReplacement(replacement, replacing: active, config: nil, clock: h.clock))
+            XCTAssertTrue(lifecycle.prepareReplacement(replacement, replacing: nil, config: nil, clock: h.clock))
+            XCTAssertEqual(children.read(), before)
+            XCTAssertFalse(children.needsRecovery)
+            XCTAssertEqual(writer.writes, 0)
+        }
+    }
+
+    func testUnparseableEntryRetainsItsBytesWithoutPoisoningUnrelatedFutureCaptures() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let rule = h.install(h.schedule(tier: .hardcore))
+        let cause = FlintWebRestrictionChildren.Cause.rule(rule,
+            window: try XCTUnwrap(rule.occurrence(at: h.now, clock: h.clock)))
+        let config = FlintWebRestrictions(enabled: true, applyDuringSchedules: true)
+        let damaged = Data("{\"cause\":{\"scope\":\"session\"},\"config\":false}".utf8)
+        XCTAssertTrue(FlintWebRestrictions.writeStorage(to: h.defaults, config: config,
+            children: try JSONSerialization.data(withJSONObject: ["version": 1,
+                "children": [JSONSerialization.jsonObject(with: damaged)]])))
+        let children = FlintWebRestrictionChildren(defaults: h.defaults, recoveryDirectory: h.recoveryDirectory)
+        guard case let .available(before) = children.read() else { return XCTFail() }
+        XCTAssertEqual(before.retainedUnavailable.count, 1)
+        XCTAssertTrue(children.capture([cause], global: config))
+        XCTAssertEqual(children.frozen(cause, fallback: nil), config)
+        XCTAssertEqual(children.resolve(.session(session(h)), global: config), config)
+        guard case let .available(saved) = children.read() else { return XCTFail() }
+        XCTAssertEqual(saved.retainedUnavailable, before.retainedUnavailable)
+        XCTAssertTrue(children.needsRecovery, "The unrelated damaged record is retained for gated repair")
+    }
+
     func testEditorGatesFrozenHardcoreChildAfterFuturePreferencesWereWeakenedR29() throws {
         let h = try RuleHarness(); defer { h.clean() }
         let config = FlintWebRestrictions(enabled: true, denyExplicitMedia: true)

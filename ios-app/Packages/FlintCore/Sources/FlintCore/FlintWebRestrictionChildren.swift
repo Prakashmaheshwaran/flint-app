@@ -74,7 +74,7 @@ final class FlintWebRestrictionChildren {
             retainedUnavailable.contains { bytes in
                 let root = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any]
                 let key = (root?["cause"] as? [String: Any])?["key"] as? String
-                return key == nil || key == cause.key
+                return key == cause.key
             }
         }
 
@@ -95,10 +95,22 @@ final class FlintWebRestrictionChildren {
                 guard let bytes = try? JSONSerialization.data(withJSONObject: record, options: [.fragmentsAllowed]) else { continue }
                 let fields = record as? [String: Any]
                 let rawKey = (fields?["cause"] as? [String: Any])?["key"] as? String
-                guard let causeBytes = (fields?["cause"]).flatMap({ try? JSONSerialization.data(withJSONObject: $0, options: [.fragmentsAllowed]) }),
-                      let cause = try? JSONDecoder().decode(Cause.self, from: causeBytes), cause.isValid else {
+                let causeBytes = (fields?["cause"]).flatMap { try? JSONSerialization.data(withJSONObject: $0, options: [.fragmentsAllowed]) }
+                let decodedCause = causeBytes.flatMap { try? JSONDecoder().decode(Cause.self, from: $0) }
+                guard let cause = decodedCause, cause.isValid else {
                     result.retainedUnavailable.append(bytes)
                     if let rawKey { invalidKeys.insert(rawKey) }
+                    // A valid owner/key still identifies exactly one cause if only its store
+                    // binding is damaged. Keep that cause explicitly unknown, never guess
+                    // an owner for an unparseable record or poison unrelated future causes.
+                    if let cause = decodedCause {
+                        let canonical = Cause(key: cause.key, ownerID: cause.ownerID,
+                            storeName: cause.scope == .session ? FlintWebRestrictionLifecycle.sessionStoreName : "flint.\(cause.ownerID)",
+                            scope: cause.scope)
+                        if canonical.isValid, !result.children.contains(where: { $0.cause.key == canonical.key }) {
+                            result.children.append(.init(cause: canonical, config: nil))
+                        }
+                    }
                     continue
                 }
                 if let index = result.children.firstIndex(where: { $0.cause.key == cause.key }) {
@@ -210,13 +222,7 @@ final class FlintWebRestrictionChildren {
             return frozen
         }
         guard captureNew else { return nil }
-        let unknownPredecessor = cause.scope == .session && envelope.children.allSatisfy({ $0.cause.scope != .session })
-            && envelope.retainedUnavailable.contains { bytes in
-                let root = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any]
-                let scope = (root?["cause"] as? [String: Any])?["scope"] as? String
-                return scope == nil || scope == Cause.Scope.session.rawValue
-            }
-        let unavailable = envelope.hasUnavailableEntry(for: cause) || unknownPredecessor
+        let unavailable = envelope.hasUnavailableEntry(for: cause)
         var config = unavailable ? nil : global.flatMap { $0.validationMessage == nil ? $0 : nil }
         // A replacement whose optional child write failed can recover from the surviving
         // predecessor even after process death. Never recapture a weaker global over it.

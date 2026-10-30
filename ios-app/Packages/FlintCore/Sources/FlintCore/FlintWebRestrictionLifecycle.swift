@@ -76,13 +76,14 @@ public final class FlintWebRestrictionLifecycle {
     /// into the new occurrence; only a provably stronger future preference may replace it.
     func prepareReplacement(_ replacement: FlintActiveSession, replacing previous: FlintActiveSession?,
                             config: FlintWebRestrictions?, clock: FlintClock) -> Bool {
+        guard recoveryGate().permitsApplication else { return true }
         guard let previous, previous.isEnforcing(at: clock.now(), clock: clock) else {
             _ = children.retire(scope: .session)
             return true
         }
         let old = FlintWebRestrictionChildren.Cause.session(previous)
         let global = config.flatMap { $0.validationMessage == nil ? $0 : nil }
-        guard recoveryGate().permitsApplication, let frozen = children.resolve(old, global: global) else {
+        guard let frozen = children.resolve(old, global: global) else {
             _ = children.capture([.session(replacement)], global: nil)
             unavailableStores.insert(Self.sessionStoreName)
             return true
