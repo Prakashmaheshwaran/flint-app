@@ -53,6 +53,63 @@ class HistoryTimeConfidenceTest {
         }
     }
 
+    private fun assertBackdatedBarrier(barrier: HistoryEvent) {
+        val witness = event("open_intercepted", begin + minute)
+        val later = event("open_intercepted", begin + 3 * minute)
+        val terminal = event("completed", deadline)
+        val rows = listOf(start(), witness, barrier, later, terminal)
+        assertUnconfirmed(rows, credit = minute, now = begin + 20 * minute)
+        assertUnconfirmed(listOf(start(), barrier, later, terminal))
+        assertUnconfirmed(listOf(start(), barrier, witness, later, terminal))
+        val snapshot = HistorySnapshot(rows, begin, true)
+        assertEquals(FocusCompletionDelivery.SUPPRESS, FocusCompletionPolicy.decision(snapshot, "session-a", deadline))
+        assertTrue(FocusCompletionPolicy.alarms(snapshot, emptySet(), deadline).isEmpty())
+    }
+
+    @Test fun rejectedBackdatedPlansCannotReorderOrReplanEarlierRecordedWitness() {
+        for (confidence in listOf(uncertain, null)) {
+            assertBackdatedBarrier(event("rescheduled", begin + 30_000, confidence)
+                .copy(plannedEnd = begin + 20_000, observedAt = begin + 2 * minute))
+        }
+    }
+
+    @Test fun rejectedBackdatedRestorationsRetainRecordedPrefixWithoutLaterExtension() {
+        assertBackdatedBarrier(event("protection_restored", begin + 30_000, uncertain).copy(observedAt = begin + 2 * minute))
+        assertBackdatedBarrier(event("protection_restored", begin - minute).copy(observedAt = begin + 2 * minute))
+    }
+
+    @Test fun rejectedBackdatedBreakGapAndGlobalPassCutsCannotEraseRecordedPrefix() {
+        val cuts = listOf(
+            event("break_started", begin + 30_000, uncertain).copy(grant = "g", breakEnd = begin + 90_000),
+            event("break_started", begin + 30_000).copy(grant = "g", breakEnd = begin + 20_000),
+            event("break_started", begin - minute).copy(grant = "g", breakEnd = begin + 2 * minute),
+            event("protection_degraded", begin + 30_000, uncertain),
+            event("protection_degraded", begin - minute),
+            event("pass_used", begin + 30_000, uncertain).copy(recoveryEnd = begin + 90_000),
+            event("pass_used", begin + 30_000).copy(recoveryEnd = begin + 20_000),
+            event("pass_used", begin - minute).copy(recoveryEnd = begin + 2 * minute),
+        )
+        for (cut in cuts) assertBackdatedBarrier(if (cut.knownType == HistoryEventType.PASS_USED)
+            cut.copy(session = "operation", sessions = listOf("session-a"), observedAt = begin + 2 * minute)
+            else cut.copy(observedAt = begin + 2 * minute))
+    }
+
+    @Test fun acceptedLogicalCutsStillSubtractFromPrefixBeforeRejectedPlan() {
+        val pass = event("pass_used", begin + 40_000).copy(session = "operation", sessions = listOf("session-a"),
+            recoveryEnd = begin + 50_000)
+        val rows = listOf(start(),
+            event("break_ended", begin + 20_000).copy(grant = "g"),
+            event("break_started", begin + 10_000).copy(grant = "g", breakEnd = begin + 25_000),
+            event("protection_degraded", begin + 25_000), event("protection_restored", begin + 35_000), pass,
+            event("open_intercepted", begin + minute))
+        val plan = event("rescheduled", begin + 30_000).copy(plannedEnd = begin + 20_000, observedAt = begin + 2 * minute)
+        assertUnconfirmed(rows + listOf(plan, event("open_intercepted", begin + 3 * minute), event("completed", deadline)),
+            credit = 30_000)
+        val completed = summary(rows + event("completed", deadline)).sessions.single()
+        assertEquals(SessionOutcome.COMPLETED, completed.outcome)
+        assertEquals(570_000L, completed.focusedMs)
+    }
+
     @Test fun revisionAfterPriorExpiryCannotReviveOccurrenceOrCompletionDelivery() {
         for (confidence in listOf(null, certain)) {
             val revision = event("rescheduled", begin + 121 * minute, confidence)

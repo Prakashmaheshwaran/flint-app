@@ -98,6 +98,7 @@ public enum FlintHistoryAggregator {
     public static func sessionSummaries(_ records: [FlintHistoryEvent], activeSessionID: String?,
                                        now: Date) -> [FlintHistorySessionSummary] {
         let supported = records.enumerated().filter { $0.element.isSupported }
+        let appendOrder = Dictionary(supported.map { ($0.element.id, $0.offset) }, uniquingKeysWith: min)
         let passes = supported.map(\.element).filter { $0.type == .passUsed && $0.sessions != nil }
         let grouped = Dictionary(grouping: supported, by: { $0.element.session })
         return grouped.compactMap { id, indexed -> FlintHistorySessionSummary? in
@@ -121,7 +122,6 @@ public enum FlintHistoryAggregator {
                     return a == b ? $0.offset < $1.offset : a < b
                 }?.element ?? start
             }
-            func planAt(_ at: Int64) -> FlintHistoryEvent { latestPlan(plans.filter { $0.at <= at }) }
             func plausiblePlan(_ event: FlintHistoryEvent) -> Bool {
                 !event.uncertainTime && event.at >= start.at &&
                     (event.plannedEnd.map { $0 > start.at && $0 >= event.at } ?? true)
@@ -149,6 +149,7 @@ public enum FlintHistoryAggregator {
                 }
             }
             func validPlan(_ event: FlintHistoryEvent) -> Bool { validPlanIDs.contains(event.id) }
+            func planAt(_ at: Int64) -> FlintHistoryEvent { latestPlan(plans.filter { validPlan($0) && $0.at <= at }) }
             let authoritativePlan = revisions.last { validPlan($0) && ownerFinalPlan($0) }
             let plan = authoritativePlan ?? latestPlan(plans)
             let plannedEnd = plan.plannedEnd.map(FlintHistoryEvent.date)
@@ -172,23 +173,43 @@ public enum FlintHistoryAggregator {
             else if let terminal { localEvidence = original.prefix { $0.id != terminal.id }.sorted { $0.at < $1.at } }
             else { localEvidence = events }
             let relatedPasses = passes.filter { $0.sessions?.contains(id) == true && (!validTerminal || $0.at <= terminal!.at) }
-            let evidence = (localEvidence + relatedPasses).sorted { $0.at < $1.at }
+            func rejectedTime(_ event: FlintHistoryEvent) -> Bool {
+                if event.type == .started || event.type == .rescheduled {
+                    let superseded = authoritativePlan != nil && event.type == .rescheduled && !event.uncertainTime
+                    return !validPlan(event) && !superseded
+                }
+                if Self.coverageTypes.contains(event.type) {
+                    let invertedBreak = event.type == .breakStarted && event.breakEnd.map { $0 < event.at } == true
+                    return event.uncertainTime || !inPlan(event) || invertedBreak || (!validTerminal && event.date > now)
+                }
+                if event.type == .passUsed {
+                    return event.uncertainTime || !inPlan(event) || event.recoveryEnd.map { $0 < event.at } == true
+                }
+                return false
+            }
+            let rejectedTimeIDs = Set((events + relatedPasses).filter(rejectedTime).map(\.id))
+            // A rejected timestamp cannot precede an already recorded trusted witness.
+            // Replay barriers once in append order; valid phase/grant pairing below still
+            // uses logical time, including an end delivered before its matching start.
+            let evidence = (localEvidence + relatedPasses).sorted { appendOrder[$0.id, default: 0] < appendOrder[$1.id, default: 0] }
             var trusted = validPlan(start)
+            var canExtend = trusted
+            var grantBarrier: Int64?
             var coverageEnd = start.date
             for event in evidence {
-                if event.type == .started || event.type == .rescheduled {
-                    let supersededOrdinaryPlan = authoritativePlan != nil && event.type == .rescheduled && !event.uncertainTime
-                    if !validPlan(event) && !supersededOrdinaryPlan { trusted = false }
+                if rejectedTimeIDs.contains(event.id) {
+                    trusted = false
+                    canExtend = false
                 } else if Self.coverageTypes.contains(event.type) {
                     let paired = event.type != .breakEnded || event.grant == nil || events.contains {
-                        $0.type == .breakStarted && $0.grant == event.grant && $0.at <= event.at
+                        $0.type == .breakStarted && $0.grant == event.grant && $0.at <= event.at && !rejectedTimeIDs.contains($0.id)
                     }
-                    let invertedBreak = event.type == .breakStarted && event.breakEnd.map { $0 < event.at } == true
-                    if event.uncertainTime || !inPlan(event) || !paired || invertedBreak || (!validTerminal && event.date > now) {
+                    if !paired {
                         trusted = false
-                    } else if trusted { coverageEnd = max(coverageEnd, event.date) }
-                } else if event.type == .passUsed && (event.uncertainTime || event.recoveryEnd.map { $0 < event.at } == true) {
-                    trusted = false
+                        grantBarrier = min(grantBarrier ?? event.at, event.at)
+                    } else if canExtend && (grantBarrier.map { event.at < $0 } ?? true) {
+                        coverageEnd = max(coverageEnd, event.date)
+                    }
                 }
             }
             let outcome: FlintHistoryOutcome
@@ -222,8 +243,11 @@ public enum FlintHistoryAggregator {
             if clippedEnd > start.date {
                 let whole = DateInterval(start: start.date, end: clippedEnd)
                 var breaks: [DateInterval] = []
-                for (index, event) in events.enumerated() where event.type == .breakStarted {
-                    let nextBoundary = events.dropFirst(index + 1).first {
+                // Share time admission with coverage so rejected backdated cuts cannot
+                // erase the preserved prefix during subtraction.
+                let phases = events.filter { !rejectedTimeIDs.contains($0.id) }
+                for (index, event) in phases.enumerated() where event.type == .breakStarted {
+                    let nextBoundary = phases.dropFirst(index + 1).first {
                         if let grant = event.grant { return $0.type == .breakEnded && $0.grant == grant && !$0.uncertainTime }
                         return $0.type == .breakStarted || ($0.type == .breakEnded && !$0.uncertainTime)
                     }
@@ -234,7 +258,7 @@ public enum FlintHistoryAggregator {
                 }
                 // Repeated degraded observations do not close an existing coverage gap.
                 var gapStart: Date?
-                for event in events {
+                for event in phases {
                     if event.type == .protectionDegraded { gapStart = gapStart ?? event.date }
                     if event.type == .protectionRestored, !event.uncertainTime, let gap = gapStart {
                         let a = max(gap, whole.start), b = min(event.date, whole.end)
@@ -245,7 +269,7 @@ public enum FlintHistoryAggregator {
                 if let gap = gapStart, max(gap, whole.start) < whole.end {
                     breaks.append(DateInterval(start: max(gap, whole.start), end: whole.end))
                 }
-                for pass in passes where pass.sessions?.contains(id) == true {
+                for pass in relatedPasses where !rejectedTimeIDs.contains(pass.id) {
                     guard let recoveryEnd = pass.recoveryEnd else { continue }
                     let a = max(pass.date, whole.start), b = min(FlintHistoryEvent.date(recoveryEnd), whole.end)
                     if b > a { breaks.append(DateInterval(start: a, end: b)) }
