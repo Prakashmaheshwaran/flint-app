@@ -70,7 +70,7 @@ final class FlintSleepRuleArbiterTests: XCTestCase {
         let stored = FlintSleepConfig.load(from: h.defaults)
         XCTAssertEqual(stored.nightBreakLevel, .easy)
 
-        var draft = FlintSleepRulesController.adoptingTiersInForce(stored, rules: h.load(FlintScheduleRule.self))
+        var draft = FlintSleepRulesController.adoptingTiersInForce(stored, rules: h.load(FlintScheduleRule.self)).config
         XCTAssertEqual(draft.nightBreakLevel, .harder, "the draft shows the tier in force")
         draft.schedule = .init(startHour: 23, endHour: 7)
         var saved = controller.save(draft)
@@ -94,8 +94,42 @@ final class FlintSleepRuleArbiterTests: XCTestCase {
         XCTAssertEqual(controller.save(draft, confirmation: ticket, origin: .interactive), .queued(until: end))
         let rules = h.load(FlintScheduleRule.self)
         XCTAssertNotNil(rules.first?.protection?.queuedChange)
-        let reopened = FlintSleepRulesController.adoptingTiersInForce(FlintSleepConfig.load(from: h.defaults), rules: rules)
+        let reopened = FlintSleepRulesController.adoptingTiersInForce(FlintSleepConfig.load(from: h.defaults), rules: rules).config
         XCTAssertEqual(reopened.nightBreakLevel, .easy, "the queued weakening is not undone by reopening Sleep")
+    }
+
+    /// The draft decision Sleep makes on open, refresh and save: adopt on open, keep a tier the
+    /// user picked across later refreshes (even after another Rules change), adopt again after a
+    /// save, and never adopt from a disabled window.
+    func testDraftAdoptionKeepsInVisitPicksAndSkipsDisabledWindowsR27() {
+        func rule(_ id: String, _ tier: BreakLevel, enabled: Bool = true) -> FlintScheduleRule {
+            var r = FlintScheduleRule(id: id, name: id, schedule: .init(startHour: 22, endHour: 7), breakLevel: tier,
+                allowListMode: true, protection: .init(timeZoneID: "UTC"))
+            r.enabled = enabled
+            return r
+        }
+        let stored = FlintSleepConfig(enabled: true, schedule: .init(startHour: 22, endHour: 7), sleepAssist: .windDown,
+            morningAssist: .fullAssist, nightBreakLevel: .easy, morningBreakLevel: .harder)
+        let night = FlintSleepRulesController.nightID, morning = FlintSleepRulesController.morningID
+
+        var open = FlintSleepRulesController.adoptingTiersInForce(stored, rules: [rule(night, .harder), rule(morning, .hardcore)])
+        XCTAssertEqual(open.config.nightBreakLevel, .harder, "opening Sleep shows the tier in force")
+        XCTAssertEqual(open.config.morningBreakLevel, .hardcore)
+
+        open.config.nightBreakLevel = .easy // picked during this visit
+        let refreshed = FlintSleepRulesController.adoptingTiersInForce(open.config,
+            rules: [rule(night, .hardcore), rule(morning, .easy)], keepingPicksSince: open.adopted)
+        XCTAssertEqual(refreshed.config.nightBreakLevel, .easy, "a pick survives a refresh after another Rules change")
+        XCTAssertEqual(refreshed.config.morningBreakLevel, .easy, "an untouched window follows the tier in force")
+        let again = FlintSleepRulesController.adoptingTiersInForce(refreshed.config,
+            rules: [rule(night, .harder), rule(morning, .easy)], keepingPicksSince: refreshed.adopted)
+        XCTAssertEqual(again.config.nightBreakLevel, .easy, "the pick is still kept on the next refresh")
+
+        let afterSave = FlintSleepRulesController.adoptingTiersInForce(stored, rules: [rule(night, .harder)])
+        XCTAssertEqual(afterSave.config.nightBreakLevel, .harder, "a save re-adopts unconditionally")
+
+        let disabled = FlintSleepRulesController.adoptingTiersInForce(stored, rules: [rule(night, .hardcore, enabled: false)])
+        XCTAssertEqual(disabled.config.nightBreakLevel, .easy, "a disabled window has no tier in force")
     }
 }
 

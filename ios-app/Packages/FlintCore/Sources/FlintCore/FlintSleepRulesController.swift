@@ -93,18 +93,35 @@ public final class FlintSleepRulesController {
         _ = arbiter.cancel(FlintScheduleRule.self, id: Self.morningID, confirmation: confirmation)
     }
 
+    /// The Sleep tiers last taken from the saved rules into a draft.
+    public struct TierAdoption: Equatable, Sendable {
+        public var night: BreakLevel?
+        public var morning: BreakLevel?
+        public init(night: BreakLevel?, morning: BreakLevel?) { self.night = night; self.morning = morning }
+    }
+
     /// R-27: a Sleep window's tier can be changed in Rules, which doesn't update the saved
-    /// Sleep config. A draft starts from the tier in force, so a later Sleep save never
-    /// reverts it. A window with a queued change keeps the draft's tier (its queued intent).
-    public static func adoptingTiersInForce(_ config: FlintSleepConfig,
-                                            rules: [FlintScheduleRule]) -> FlintSleepConfig {
-        var adopted = config
+    /// Sleep config. A draft takes the tier in force from each enabled window, so a later Sleep
+    /// save never reverts it. A window with a queued change has no tier to adopt yet; the draft
+    /// keeps its own. With `previous` set (a refresh), a tier the user picked since the last
+    /// adoption is kept; nil (opening Sleep or finishing a save) adopts unconditionally.
+    public static func adoptingTiersInForce(_ config: FlintSleepConfig, rules: [FlintScheduleRule],
+                                            keepingPicksSince previous: TierAdoption? = nil)
+        -> (config: FlintSleepConfig, adopted: TierAdoption) {
         func inForce(_ id: String) -> BreakLevel? {
-            rules.first { $0.id == id && $0.protection?.queuedChange == nil }?.breakLevel
+            rules.first { $0.id == id && $0.enabled && $0.protection?.queuedChange == nil }?.breakLevel
         }
-        if let night = inForce(nightID) { adopted.nightBreakLevel = night }
-        if let morning = inForce(morningID) { adopted.morningBreakLevel = morning }
-        return adopted
+        var draft = config
+        var adopted = previous ?? .init(night: nil, morning: nil)
+        if previous == nil || draft.nightBreakLevel == previous?.night {
+            draft.nightBreakLevel = inForce(nightID) ?? draft.nightBreakLevel
+            adopted.night = draft.nightBreakLevel
+        }
+        if previous == nil || draft.morningBreakLevel == previous?.morning {
+            draft.morningBreakLevel = inForce(morningID) ?? draft.morningBreakLevel
+            adopted.morning = draft.morningBreakLevel
+        }
+        return (draft, adopted)
     }
 
     public static let allowedAppsRequired = FlintSelectionIssue.emptyAllowList.message
