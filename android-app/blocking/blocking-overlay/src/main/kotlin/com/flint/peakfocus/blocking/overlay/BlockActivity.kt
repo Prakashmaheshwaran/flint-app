@@ -76,6 +76,10 @@ class BlockActivity : ComponentActivity() {
     private var recoveryHandoffId by mutableStateOf<String?>(null)
     private var recoveryTarget: String? = null
     private var recoveryFrameDrawn = false
+    private var recoveryWindowFocused = false
+    private var recoveryTopResumed = android.os.Build.VERSION.SDK_INT < 29
+    private var recoveryMultiWindow = false
+    private var recoveryFocusRevoked = false
     /** Recovery is a Flint settings surface, not a fallback shield owned by Path B. */
     internal val isRecoverySurface: Boolean get() = recoveryMode
 
@@ -83,6 +87,7 @@ class BlockActivity : ComponentActivity() {
     private var nudge by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        recoveryMultiWindow = android.os.Build.VERSION.SDK_INT >= 24 && isInMultiWindowMode
         super.onCreate(savedInstanceState)
         // Before setContent, so the glow draws behind the system bars on Android 14-and-below
         // too (the shared screen already safeDrawingPadding()s its content).
@@ -216,6 +221,7 @@ class BlockActivity : ComponentActivity() {
         recoveryHandoffId = intent.getStringExtra(EXTRA_RECOVERY_HANDOFF)
         recoveryTarget = intent.getStringExtra(EXTRA_RECOVERY_TARGET)
         recoveryFrameDrawn = false
+        recoveryFocusRevoked = false
         if (recoveryMode && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED))
             refreshRecoverySurface()
         else RecoverySurfaceHandoff.hidden(this)
@@ -237,9 +243,51 @@ class BlockActivity : ComponentActivity() {
 
     private fun refreshRecoverySurface() {
         val targetPackage = recoveryTarget
-        if (recoveryMode && targetPackage != null && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED))
-            RecoverySurfaceHandoff.showing(this, targetPackage)
-        else RecoverySurfaceHandoff.hidden(this)
+        // Resumed is not exclusive on Android 10+. Never suppress a target shield for
+        // split-screen/freeform recovery: leave that mode to review in fullscreen.
+        val coversTarget = recoveryMode && recoveryFrameDrawn && targetPackage != null &&
+            recoveryTopResumed && !recoveryMultiWindow && !recoveryFocusRevoked &&
+            lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+        // The still-mounted shield initially owns window focus. Only a drawn, topmost
+        // fullscreen recovery may ask that exact shield to yield focus, without yielding touch.
+        recoveryHandoffId?.let { RecoverySurfaceHandoff.ready(it, coversTarget) }
+        if (coversTarget && recoveryWindowFocused) {
+            RecoverySurfaceHandoff.showing(this, checkNotNull(targetPackage))
+            recoveryHandoffId?.let(RecoverySurfaceHandoff::drawn)
+        } else clearRecoverySurface()
+    }
+
+    private fun clearRecoverySurface() {
+        if (RecoverySurfaceHandoff.hidden(this))
+            com.flint.peakfocus.core.model.EnforcementSignals.detectors.requestEvaluation()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        recoveryWindowFocused = hasFocus
+        if (hasFocus) recoveryFocusRevoked = false
+        else if (recoveryFrameDrawn) recoveryFocusRevoked = true
+        refreshRecoverySurface()
+    }
+
+    override fun onTopResumedActivityChanged(isTopResumedActivity: Boolean) {
+        super.onTopResumedActivityChanged(isTopResumedActivity)
+        if (isTopResumedActivity && !recoveryTopResumed) recoveryFocusRevoked = false
+        recoveryTopResumed = isTopResumedActivity
+        refreshRecoverySurface()
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean) {
+        super.onMultiWindowModeChanged(isInMultiWindowMode)
+        recoveryMultiWindow = isInMultiWindowMode
+        refreshRecoverySurface()
+    }
+
+    override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, newConfig: android.content.res.Configuration) {
+        super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)
+        recoveryMultiWindow = isInMultiWindowMode
+        refreshRecoverySurface()
     }
 
     override fun onResume() {
@@ -248,13 +296,16 @@ class BlockActivity : ComponentActivity() {
     }
 
     override fun onPause() {
-        RecoverySurfaceHandoff.hidden(this)
+        recoveryHandoffId?.let { RecoverySurfaceHandoff.ready(it, false) }
+        clearRecoverySurface()
+        recoveryWindowFocused = false
+        if (android.os.Build.VERSION.SDK_INT >= 29) recoveryTopResumed = false
         super.onPause()
-        com.flint.peakfocus.core.model.EnforcementSignals.detectors.requestEvaluation()
     }
 
     override fun onDestroy() {
-        RecoverySurfaceHandoff.hidden(this)
+        recoveryHandoffId?.let { RecoverySurfaceHandoff.ready(it, false) }
+        clearRecoverySurface()
         super.onDestroy()
     }
 
@@ -301,7 +352,6 @@ class BlockActivity : ComponentActivity() {
                         if (active && recoveryMode && recoveryHandoffId == handoffId && !isFinishing && !isDestroyed) {
                             recoveryFrameDrawn = true
                             refreshRecoverySurface()
-                            handoffId?.let(RecoverySurfaceHandoff::drawn)
                         }
                     }
                 }
@@ -320,8 +370,7 @@ class BlockActivity : ComponentActivity() {
         var error by remember { mutableStateOf<String?>(null) }
         LaunchedEffect(Unit) { while (isActive) {
             delay(1_000); tick++
-            // Only a drawn, resumed recovery screen renews this target-specific lease.
-            // Pause/destroy clears it immediately; a launch that never draws expires.
+            // Only drawn, focused, top-resumed fullscreen recovery renews this lease.
             if (recoveryFrameDrawn) refreshRecoverySurface()
         } }
         // The native clock is already initialized on the controller's worker before Ready.

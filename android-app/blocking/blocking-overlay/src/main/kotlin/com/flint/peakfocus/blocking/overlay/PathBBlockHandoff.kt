@@ -127,6 +127,7 @@ object PathBBlockHandoff {
             }
 
             override fun detach(view: View) = overlay.hide()
+            override fun setRecoveryHandoffFocus(enabled: Boolean) = overlay.setRecoveryHandoffFocus(enabled)
 
             override fun goHome() {
                 // "Go back" without an AccessibilityService: launch the home screen. With the
