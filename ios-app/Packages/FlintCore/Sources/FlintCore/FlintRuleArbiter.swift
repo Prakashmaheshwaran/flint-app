@@ -302,6 +302,10 @@ final class FlintRuleArbiter {
                         if rule.enabled && !endedOneShot {
                             let observed = self.env.center.activities.contains(.init(rule.activityName))
                                 && self.env.center.schedule(for: .init(rule.activityName)) != nil
+                            if observed {
+                                _ = FlintWebRestrictionRuleAdapter.freeze([rule], environment: self.env,
+                                    existingWebStores: self.env.existingWebStores)
+                            }
                             let armed = observed || self.prepare(rule, replacing: nil)
                             if armed && rule.occurrence(at: now, clock: self.env.clock) != nil {
                                 self.finish([rule], replacing: [rule], resetTimeBudget: false)

@@ -64,8 +64,8 @@ final class FlintWebRestrictionCreationTests: XCTestCase {
             let result: FlintRuleMutationResult
             if path == "sleep.batch" {
                 var other = f.h.schedule(tier: .easy); other.id = "batch.sibling"
-                let mutations = [draft, other].map {
-                    FlintRuleArbiter.Mutation(id: $0.id, proposed: $0, action: .edit, expectedRevision: $0.revision, creating: true)
+                let mutations: [FlintRuleArbiter.Mutation<FlintScheduleRule>] = [draft, other].map { (rule: FlintScheduleRule) in
+                    .init(id: rule.id, proposed: rule, action: .edit, expectedRevision: rule.revision, creating: true)
                 }
                 guard case let .confirmationRequired(ticket, _) = arbiter.mutate(mutations, confirmation: nil) else {
                     return XCTFail("Expected Sleep batch confirmation")
@@ -164,5 +164,38 @@ final class FlintWebRestrictionCreationTests: XCTestCase {
                 XCTAssertEqual(f.children.read(), .unavailable, "Ending a cause is not a repair of corrupt child intent")
             }
         }
+    }
+
+    func testObservedQueueFailureFreezesRecoveryOccurrenceWithoutReregistering() throws {
+        let f = try WebCreationFixture(); defer { f.h.clean() }
+        XCTAssertEqual(f.create(f.h.schedule(tier: .hardcore)), .applied)
+        let old = try XCTUnwrap(f.h.load(FlintScheduleRule.self).first)
+        let arbiter = FlintRuleArbiter(environment: f.environment)
+        var later = old; later.schedule.startHour = 10
+        guard case let .deferRequired(ticket, end) = arbiter.upsert(later) else { return XCTFail() }
+        XCTAssertEqual(arbiter.upsert(later, confirmation: ticket), .queued(until: end))
+        let queued = try XCTUnwrap(f.h.load(FlintScheduleRule.self).first?.protection?.queuedChange)
+        let future = try JSONDecoder().decode(FlintScheduleRule.self, from: XCTUnwrap(queued.snapshot))
+        f.h.center.refused.insert(future.activityName)
+        let futureConfig = FlintWebRestrictions(applyDuringSchedules: true, blockedDomains: ["future.example"])
+        XCTAssertTrue(futureConfig.save(to: f.h.defaults))
+        f.h.advance(21.5 * 3600) // next day 09:30: original active, queued 10:00 not yet active
+        let starts = f.h.center.starts.count
+        var firstApplyHadChild = false
+        var environment = f.environment
+        let apply = environment.applyRuleShield
+        environment.applyRuleShield = { rule, clock in
+            let window = rule.occurrence(at: clock.now(), clock: clock)!
+            firstApplyHadChild = f.children.frozen(.rule(rule, window: window), fallback: nil) == futureConfig
+            return apply(rule, clock)
+        }
+        XCTAssertFalse(FlintRuleArbiter(environment: environment).applyQueued(FlintScheduleRule.self))
+        XCTAssertTrue(firstApplyHadChild, "Observed recovery must freeze before the native writer")
+        XCTAssertEqual(f.writer.stores[old.storeName], futureConfig)
+        XCTAssertEqual(f.h.center.starts.count, starts + 1, "Only the refused successor arm is attempted; the observed recovery is not re-registered")
+        XCTAssertTrue(FlintWebRestrictions.default.save(to: f.h.defaults))
+        let recovery = try XCTUnwrap(f.h.load(FlintScheduleRule.self).first)
+        XCTAssertTrue(environment.applyProtection(recovery))
+        XCTAssertEqual(f.writer.stores[old.storeName], futureConfig, "Recovery child survives a later raw edit")
     }
 }
