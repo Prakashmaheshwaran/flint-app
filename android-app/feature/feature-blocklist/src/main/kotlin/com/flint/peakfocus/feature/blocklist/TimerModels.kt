@@ -55,6 +55,8 @@ internal data class TimerUiState(
     val message: String? = null,
     val exit: TimerExitConfirmation? = null,
     val arming: TimerArmingState = TimerArmingState.Idle,
+    /** A start check is not an Armed claim; the transaction and detector still decide that. */
+    val startPrerequisite: String? = "Checking protection…",
 ) {
     val canEdit: Boolean get() = rulesLoaded && rulesError == null && !busy && sessions.isEmpty() && exit == null
     val canStart: Boolean get() = canEdit && validTimerDraft(draft)

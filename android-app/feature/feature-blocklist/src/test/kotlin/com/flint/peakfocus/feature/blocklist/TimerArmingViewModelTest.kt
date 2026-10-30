@@ -78,6 +78,44 @@ class TimerArmingViewModelTest {
         assertTrue(vm.uiState.value.error!!.contains("service is not connected"))
     }
 
+    @Test fun `PC-61 idle prerequisite check and retry never save or automatically repeat a refused start`() = runTest(dispatcher) {
+        permissions = TimerPermissions(); liveA = false
+        val vm = model()
+        assertEquals("Checking protection…", vm.uiState.value.startPrerequisite)
+        runCurrent(); vm.selectApps(listOf(app)); vm.selectDuration(5)
+        val draft = vm.uiState.value.draft
+        assertEquals("Turn on Accessibility or grant Usage Access.", vm.uiState.value.startPrerequisite)
+        vm.start(); runCurrent()
+        val reads = permissionReads
+        vm.retryStartProtection(); runCurrent()
+        assertEquals(reads + 1, permissionReads)
+        assertEquals("Turn on Accessibility or grant Usage Access.", vm.uiState.value.startPrerequisite)
+        assertEquals(0, disk.writes); assertEquals(0, ids)
+        permissions = TimerPermissions(accessibilityEnabled = true); liveA = true
+        health.value = readyTimerStatus(clock())
+        vm.retryStartProtection(); runCurrent()
+        assertNull(vm.uiState.value.startPrerequisite); assertNull(vm.uiState.value.error)
+        assertEquals(draft, vm.uiState.value.draft)
+        assertEquals(0, disk.writes); assertEquals(0, ids); assertTrue(rules.rules.first().isEmpty())
+        vm.start(); runCurrent()
+        assertEquals(1, ids); assertEquals(1, rules.rules.first().size)
+    }
+
+    @Test fun `PC-77 resume exposes lost detector before Begin without hiding the selection`() = runTest(dispatcher) {
+        val vm = model(); runCurrent(); vm.selectApps(listOf(app)); vm.selectDuration(5)
+        val draft = vm.uiState.value.draft
+        assertNull(vm.uiState.value.startPrerequisite)
+        advanceTimeBy(1_000); health.value = readyTimerStatus(clock()); runCurrent()
+        vm.refreshHealth(force = false)
+        assertNull("Periodic permission IO must not flash Checking over a current ready check", vm.uiState.value.startPrerequisite)
+        runCurrent()
+        liveA = false
+        vm.refreshHealth(); runCurrent()
+        assertEquals("Protection service is not connected. Retry or check setup.", vm.uiState.value.startPrerequisite)
+        assertEquals(draft, vm.uiState.value.draft)
+        assertEquals(0, disk.writes); assertEquals(0, ids)
+    }
+
     @Test fun `PC-44 recovery committed after the screen check keeps the draft without a Timer write`() = runTest(dispatcher) {
         val start = clock()
         val committed = DataStoreProtectionTransactionStore(disk, ::clock) { "UTC" }.transact { snapshot ->

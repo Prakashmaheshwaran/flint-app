@@ -1,6 +1,8 @@
 package com.flint.peakfocus.feature.blocklist
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -56,6 +58,7 @@ internal class TimerViewModel(
     private val loadPermissions: () -> TimerPermissions = { TimerPermissions() },
     private val livePathA: () -> Boolean = { false },
     private val requestEvaluation: () -> Unit = {},
+    private val diagnostic: (String) -> Unit = {},
 ) : ViewModel() {
     private val state = MutableStateFlow(TimerUiState(nowEpochMs = now()))
     val uiState: StateFlow<TimerUiState> = state.asStateFlow()
@@ -72,6 +75,8 @@ internal class TimerViewModel(
     private var armAttempt: TimerArmAttempt? = null
     private var clockReady = false
     private var permissionsCheckedAt: AccessClockStamp? = null
+    private var checkingHealth = true
+    private var lastDiagnostic: String? = null
 
     init {
         viewModelScope.launch {
@@ -107,11 +112,16 @@ internal class TimerViewModel(
             val age = permissionsCheckedAt?.let { trustedElapsedMs(it, protectionClock()) }
             if (age != null && age < interval) return
         }
+        if (force || permissionsCheckedAt == null) {
+            checkingHealth = true
+            refreshClock()
+        }
         permissionsJob = viewModelScope.launch {
             permissions = try { withContext(ioDispatcher) { loadPermissions() } }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { TimerPermissions() }
             permissionsCheckedAt = protectionClock()
+            checkingHealth = false
             refreshClock()
         }
     }
@@ -187,6 +197,17 @@ internal class TimerViewModel(
             editorUnavailable -> TimerArmingState.Degraded(attempt.ruleId, "Timer state is unavailable. Retry or check setup.", committed = true)
             else -> timerArmingState(attempt, protectionStatus.value, permissions, livePathA(), stamp)
         }
+        val prerequisite = if (checkingHealth) "Checking protection…"
+            else timerPrerequisiteFailure(protectionStatus.value, permissions, livePathA(), stamp)
+        val status = protectionStatus.value
+        val statusDiagnostic = "readiness=${status.readiness} pathA=${livePathA()} " +
+            "accessibility=${permissions.accessibilityEnabled} usageAccess=${permissions.usageAccess} " +
+            "pathB=${status.detectors.pathB} startReady=${prerequisite == null} " +
+            "reason=${prerequisite ?: "none"} arming=${arming.javaClass.simpleName}"
+        if (statusDiagnostic != lastDiagnostic) {
+            lastDiagnostic = statusDiagnostic
+            diagnostic(statusDiagnostic)
+        }
         if (arming is TimerArmingState.Armed) armAttempt = attempt?.copy(hadArmed = true, applyFailure = null)
         state.update { current ->
             val expired = current.sessions.any { old -> sessions.none { it.id == old.id } && latestRules.any { it.id == old.id && it.enabled } }
@@ -201,6 +222,7 @@ internal class TimerViewModel(
                 sessions = sessions,
                 exit = exit,
                 arming = arming,
+                startPrerequisite = prerequisite,
                 message = if (expired && sessions.isEmpty()) {
                     "Timer finished. Other rules may still apply."
                 } else {
@@ -256,6 +278,7 @@ internal class TimerViewModel(
                 val unavailable = timerPrerequisiteFailure(protectionStatus.value, permissions, livePathA(), stamp)
                     ?: if (!freshSafety.resolved) "Calling or Home safety could not be checked. Retry before starting protection." else null
                 if (unavailable != null) {
+                    diagnostic("start refused: $unavailable")
                     state.update { it.copy(arming = TimerArmingState.Degraded(null, unavailable, committed = false), error = "Not armed. $unavailable") }
                     return@launch
                 }
@@ -269,6 +292,7 @@ internal class TimerViewModel(
                     wakeProtection()
                     refreshClock()
                 } else {
+                    diagnostic("start refused by editor")
                     latestRules = rulesStore.rulesOrError.first()
                     refreshClock()
                     val reason = (result as TimerStartResult.Rejected).reason
@@ -284,6 +308,14 @@ internal class TimerViewModel(
                 state.update { it.copy(busy = false) }
             }
         }
+    }
+
+    /** Re-check prerequisites only. The user must explicitly press Begin after recovery. */
+    fun retryStartProtection() {
+        if (state.value.busy || state.value.sessions.isNotEmpty()) return
+        state.update { it.copy(error = null, arming = TimerArmingState.Idle) }
+        wakeProtection()
+        refreshHealth()
     }
 
     /** Re-check the same desired Timer. No save, new ID or new duration is created here. */
@@ -460,6 +492,10 @@ internal class TimerViewModel(
                     },
                     livePathA = { EnforcementSignals.detectors.pathAConnected },
                     requestEvaluation = { EnforcementSignals.detectors.requestEvaluation() },
+                    diagnostic = { message ->
+                        if (appContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0)
+                            Log.d("FlintTimer", message)
+                    },
                 ) as T
             }
         }

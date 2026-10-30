@@ -207,6 +207,8 @@ fun TimerScreen(
             onBreakLevel = viewModel::selectBreakLevel,
             onRetryApps = viewModel::retryApps,
             onStart = viewModel::start,
+            onRetryProtection = viewModel::retryStartProtection,
+            onSetup = onSetup,
         )
     }
 
@@ -383,7 +385,7 @@ private fun TodayScene(
 /** E04 — the Start focus sheet: how long, what rests, how hard it is to leave. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun StartFocusSheet(
+internal fun StartFocusSheet(
     state: TimerUiState,
     onDismiss: () -> Unit,
     onPickApps: () -> Unit,
@@ -392,6 +394,8 @@ private fun StartFocusSheet(
     onBreakLevel: (BreakLevel) -> Unit,
     onRetryApps: () -> Unit,
     onStart: () -> Unit,
+    onRetryProtection: () -> Unit,
+    onSetup: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
@@ -420,9 +424,9 @@ private fun StartFocusSheet(
         Column(
             Modifier
                 .fillMaxWidth()
+                .weight(1f, fill = false)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = FlintSpacing.gutter)
-                .navigationBarsPadding()
                 .padding(bottom = 16.dp),
         ) {
             Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -535,12 +539,32 @@ private fun StartFocusSheet(
             }
 
             Spacer(Modifier.height(24.dp))
+        }
+        // Keep refusal/recovery together with Begin, outside the scrolling editor.
+        // A newly inserted error must never fall below the visible viewport.
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = FlintSpacing.gutter)
+                .navigationBarsPadding().padding(top = 8.dp, bottom = 16.dp),
+        ) {
+            val reason = state.error?.removePrefix("Not armed. ") ?: state.startPrerequisite
+            if (reason != null) {
+                Column(Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }) {
+                    if (reason != "Checking protection…") {
+                        Text("Not armed.", style = MaterialTheme.typography.titleSmall, color = FlintPalette.Danger)
+                    }
+                    Text(reason, style = MaterialTheme.typography.bodySmall, color = FlintPalette.Mist)
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    TextButton(onClick = onRetryProtection, enabled = !state.busy) { Text("Retry") }
+                    TextButton(onClick = onSetup, enabled = !state.busy) { Text("Check setup") }
+                }
+            }
             EmberButton(
                 if (state.busy) "Starting…" else "Begin ${timerDurationLabel(minutes)}",
                 onStart,
-                enabled = state.canStart,
+                enabled = state.canStart && state.startPrerequisite == null,
             )
-            val hint = state.error ?: if (state.draft.apps.isEmpty()) "Choose what rests first." else null
+            val hint = if (state.draft.apps.isEmpty()) "Choose what rests first." else null
             if (hint != null) {
                 Text(hint, style = MaterialTheme.typography.bodySmall,
                     color = if (state.error != null) FlintPalette.Danger else FlintPalette.Mist,
