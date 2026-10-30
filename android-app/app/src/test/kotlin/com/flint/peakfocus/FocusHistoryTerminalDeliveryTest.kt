@@ -8,6 +8,7 @@ import com.flint.peakfocus.core.datastore.*
 import com.flint.peakfocus.core.history.FocusHistoryAggregator
 import com.flint.peakfocus.core.history.FocusHistoryStore
 import com.flint.peakfocus.core.history.HistoryEvent
+import com.flint.peakfocus.core.history.HistoryCodec
 import com.flint.peakfocus.core.history.HistoryClearPhase
 import com.flint.peakfocus.core.history.HistoryReconciler
 import com.flint.peakfocus.core.history.HistoryRule
@@ -15,6 +16,7 @@ import com.flint.peakfocus.core.history.historyRulesSnapshot
 import com.flint.peakfocus.core.history.SessionOutcome
 import com.flint.peakfocus.core.model.*
 import java.io.IOException
+import java.io.File
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -131,6 +133,66 @@ class FocusHistoryTerminalDeliveryTest {
         assertEquals(1, projectEditorHistoryTerminals(owner, { true }, ZoneOffset.UTC))
         assertTrue(owner.pending.isEmpty())
         assertEquals(1, owner.acknowledgements)
+    }
+
+    @Test fun ownerCompletionAndDisappearanceLeaveOneRawTerminalInBothInterleavings() = runTest {
+        for (unknownFirst in listOf(true, false)) {
+            val clock = MutableClock(start)
+            val store = FocusHistoryStore(temporary.newFolder(), clock)
+            val observer = HistoryReconciler(store, clock, { ZoneOffset.UTC })
+            // The observer missed an accepted shortening; the owner delivers the
+            // final logical deadline with completion. Disappearance is provisional.
+            observer.observe(listOf(HistoryRule(terminal.sessionId, "Focus", "easy", start + 3 * hour)))
+            suspend fun disappear() {
+                clock.now = start + hour / 2
+                observer.observe(emptyList())
+            }
+            if (unknownFirst) disappear()
+            clock.now = start + 2 * hour
+            val owner = PendingOwner(terminal)
+            assertEquals(1, projectEditorHistoryTerminals(owner, store::update, ZoneOffset.UTC))
+            assertTrue(owner.pending.isEmpty())
+            if (!unknownFirst) disappear()
+            clock.now = start + 2 * hour
+            val reopened = FocusHistoryStore(store.directory, clock)
+            assertEquals(1, projectEditorHistoryTerminals(PendingOwner(terminal), reopened::update, ZoneOffset.UTC))
+            val events = reopened.load().events
+            val raw = File(store.directory, "events.v1.jsonl").readLines().map { HistoryCodec.decode(it) }
+            assertEquals(terminal.id, raw.single { it.knownType?.terminal == true }.id)
+            assertEquals("editor_terminal", raw.single { it.knownType?.terminal == true }.originRoute)
+            assertEquals(3, raw.size)
+            val result = FocusHistoryAggregator.sessions(events, clock.millis(), emptySet()).single()
+            assertEquals(SessionOutcome.COMPLETED, result.outcome)
+            assertEquals(hour, result.focusedMs)
+        }
+    }
+
+    @Test fun suppressedOwnerCompletionCannotReviseTheWinningExplicitOutcomesPlan() = runTest {
+        for (type in listOf("ended_early", "completed", "superseded")) for (endMinutes in listOf(15, 75))
+            for (rollback in listOf(false, true)) {
+            val clock = MutableClock(start + 2 * hour)
+            val store = FocusHistoryStore(temporary.newFolder(), clock)
+            val explicit = HistoryEvent(type = type, session = terminal.sessionId,
+                at = start + if (type == "completed") hour else hour / 2, tz = "UTC",
+                route = if (type == "ended_early") "hold_to_end" else null,
+                by = if (type == "superseded") "session-next" else null, originRoute = "app_ui")
+            assertTrue(store.update { listOf(HistoryEvent(type = "started", session = terminal.sessionId,
+                at = start, plannedEnd = start + hour, tz = "UTC", name = "Focus", tier = "easy", source = "manual"),
+                explicit) })
+            val before = store.load().events
+            val rawBefore = File(store.directory, "events.v1.jsonl").readBytes()
+            val baseline = FocusHistoryAggregator.sessions(before, clock.millis(), emptySet()).single()
+            val owner = PendingOwner(terminal.copy(
+                logicalEnd = AccessClockStamp(start + endMinutes * 60_000L, endMinutes * 60_000L, "boot")))
+            if (rollback) clock.now = start + 45 * 60_000L
+            assertEquals(1, projectEditorHistoryTerminals(owner, store::update, ZoneOffset.UTC))
+            assertTrue(owner.pending.isEmpty())
+            assertEquals(before, store.load().events)
+            assertArrayEquals(rawBefore, File(store.directory, "events.v1.jsonl").readBytes())
+            val result = FocusHistoryAggregator.sessions(store.load().events, clock.millis(), emptySet()).single()
+            assertEquals(baseline.outcome, result.outcome)
+            assertEquals(baseline.focusedMs, result.focusedMs)
+        }
     }
 
     @Test fun committedHistorySurvivesFailedAckAndLateReplayWithoutDoubleCounting() = runTest {

@@ -7,7 +7,7 @@ Each platform keeps the wire names in **one** enum, and readers accept old and n
 
 ## Purpose and boundaries
 
-Flint records a small, local, append-only log of **focus-session lifecycle events** so
+Flint records a small, local log of **focus-session lifecycle events** so
 Today, Complete and Insights can show truthful focused totals. The log:
 
 - stays on the device. No network, no export, no analytics, no account.
@@ -77,8 +77,12 @@ that precedes the terminal event; every rule below uses it.
 
 1. Outcome = the **first terminal event** among `completed`, `ended_early`, `superseded`.
    Later terminal events are duplicates and are ignored (e.g. the monitor wrote `completed`
-   and a host reconcile later wrote another). Writers may emit duplicates; readers must be
-   idempotent.
+   and a host reconcile later wrote another). Readers tolerate legacy duplicates.
+   New Android writes arbitrate terminal outcomes per session under the shared history
+   lock: the first explicit terminal wins, while a provisional `ended_early(route: unknown)`
+   is suppressed or atomically replaced by an explicit owner/app terminal in either delivery
+   order. Replacement preserves the accepted event's route/time and every retained raw
+   envelope; it does not rewrite old wire values or migrate untouched legacy duplicates.
 2. No terminal event and the session is the platform's current active session with
    `now < plannedEnd` (or open-ended) → **running**.
 3. No terminal event, `plannedEnd != null`, `plannedEnd <= now` → **unconfirmed**
@@ -351,6 +355,12 @@ records a terminal; gone earlier during live observation →
 `ended_early(route: unknown)` at observation time — observed in-process, so this one
 credits time to the observation instant. An owner-inactive occurrence instead awaits its
 durable terminal; a stale future-looking raw expiry cannot recreate its STARTED after clear.
+The unknown-route observation is provisional: the history store atomically replaces it
+when a measured app end or durable owner terminal arrives, even if its logical timestamp
+is later than the observation. If explicit evidence arrived first, a subsequent unknown
+terminal is suppressed. A successful write exposes at most one new terminal per session
+to both raw JSONL readers and snapshot consumers. App end admission ignores provisional
+unknown terminals while retaining the existing start, deadline and known-terminal guards.
 Unavailable owner reads preserve the last good active set and expose a diagnostic.
 A cold-start missing row emits no terminal. The app consumes the editor owner's natural
 Timer outbox on an independent IO loop, appending the authoritative final deadline and

@@ -51,6 +51,7 @@ class HistoryObservedEventsTest {
             tz = "UTC", route = "unknown"))
         HistoryObservedWriter(store).record(HistoryObservedEvent.End("session-a", begin + 30 * minute, "hold_to_end"))
         val events = store.load().events
+        assertEquals(1, events.count { it.knownType?.terminal == true })
         assertEquals("hold_to_end", events.sortedBy { it.at }.first { it.knownType?.terminal == true }.route)
         assertEquals(30 * minute, FocusHistoryAggregator.sessions(events, begin + 60 * minute, emptySet()).single().focusedMs)
     }

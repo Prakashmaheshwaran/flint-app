@@ -42,10 +42,14 @@ class HistoryObservedWriter(private val store: FocusHistoryStore, private val zo
     suspend fun record(observed: HistoryObservedEvent): Boolean {
         val id = observed.session?.takeIf { it.startsWith("session-") } ?: return true
         return store.update { snapshot ->
-            val events = snapshot.events.filter { it.session == id && it.knownType != null }.sortedBy { it.at }
+            val events = snapshot.events.filter {
+                it.session == id && it.knownType != null &&
+                    !(observed is HistoryObservedEvent.End && it.observationTerminal)
+            }.sortedBy { it.at }
             val start = events.firstOrNull { it.knownType == HistoryEventType.STARTED } ?: return@update emptyList()
             if (observed.at < start.at) return@update emptyList()
             val terminal = events.firstOrNull { it.knownType?.terminal == true }
+            if (observed is HistoryObservedEvent.End && terminal != null) return@update emptyList()
             val plan = events.takeWhile { it !== terminal }.filter { it.at <= observed.at }.lastOrNull {
                 it.knownType in setOf(HistoryEventType.STARTED, HistoryEventType.RESCHEDULED)
             } ?: start

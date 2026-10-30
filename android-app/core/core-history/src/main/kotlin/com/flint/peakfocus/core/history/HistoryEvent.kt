@@ -51,6 +51,10 @@ data class HistoryEvent(
     val timeConfidence: HistoryEventTimeConfidence? = null,
 ) {
     val knownType: HistoryEventType? get() = if (v == 1 && !opaque) HistoryEventType.fromWire(type) else null
+
+    /** A disappearing rule is provisional evidence, below an explicit owner/app end. */
+    internal val observationTerminal: Boolean
+        get() = knownType == HistoryEventType.ENDED_EARLY && route == "unknown"
 }
 
 data class HistorySnapshot(

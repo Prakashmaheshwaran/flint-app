@@ -47,6 +47,11 @@ internal suspend fun projectEditorHistoryTerminals(
     // The rules observer may have missed an edit, or run after this delivery.
     // The authoritative endpoint must replace that stale plan in the same write.
     update { snapshot ->
+        // If an explicit outcome already won arbitration, its effective plan must
+        // survive too. Dropping only this terminal could leave a backdated final
+        // plan that invalidates the retained app/owner outcome. ACK the whole replay.
+        if (snapshot.events.any { it.session == event.sessionId && it.knownType?.terminal == true &&
+                !(it.knownType == HistoryEventType.ENDED_EARLY && it.route == "unknown") }) return@update emptyList()
         val cleared = snapshot.clearedAt != null
         val retained = snapshot.events.any {
             it.session == event.sessionId && it.knownType == HistoryEventType.STARTED
