@@ -152,6 +152,7 @@ class BlockScreenCoordinator(
     private var pendingSurface: Job? = null
     private var cancelRecoveryHandoff: (() -> Unit)? = null
     private var recoveryHandoffTarget: String? = null
+    private var recoveryHandoffRequests: SurfaceRequests? = null
     private var recoveryFocusRequested = false
     private var recoveryFocusAttempts = 0
     private var recoveryHandoffTimeout: Job? = null
@@ -423,20 +424,22 @@ class BlockScreenCoordinator(
     internal fun launchRecovery(fallbackTarget: String? = null): Boolean {
         val expectedPackage = visiblePackage ?: return BlockActivity.launchRecovery(appContext, targetPackage = fallbackTarget)
         val expectedRequests = surfaceRequests ?: return false
-        if (!clearRecoveryHandoff()) { abandonRecoveryHandoff(); return false }
+        if (!clearRecoveryHandoff()) { abandonRecoveryHandoff(expectedPackage, expectedRequests); return false }
         val (id, cancel) = RecoverySurfaceHandoff.register(onReady = { ready ->
             runOnMain {
                 if (visiblePackage == expectedPackage && surfaceRequests === expectedRequests && !expectedRequests.retired) {
                     if (ready && !recoveryFocusRequested && recoveryFocusAttempts < MAX_RECOVERY_FOCUS_ATTEMPTS) {
+                        // Bound all focus-acquisition cycles, including confirmed yields that
+                        // time out without focus. Exhaustion keeps the shield until a new launch.
                         recoveryFocusAttempts++
                         recoveryFocusRequested = runCatching { surfaceHost.setRecoveryHandoffFocus(true) }.getOrDefault(false)
                         // A failed window update may have partially changed local/server state.
                         // Restore before a later ready pulse retries; never latch an unconfirmed yield.
-                        if (!recoveryFocusRequested) restoreRecoveryFocusOrLeave()
-                        if (visiblePackage == expectedPackage && surfaceRequests === expectedRequests)
+                        if (!recoveryFocusRequested) restoreRecoveryFocusOrLeave(expectedPackage, expectedRequests)
+                        if (recoveryHandoffTarget == expectedPackage && recoveryHandoffRequests === expectedRequests)
                             armRecoveryHandoffTimeout(expectedPackage, expectedRequests)
                     } else if (!ready && recoveryFocusRequested) {
-                        restoreRecoveryFocusOrLeave()
+                        restoreRecoveryFocusOrLeave(expectedPackage, expectedRequests)
                     }
                 }
             }
@@ -450,8 +453,9 @@ class BlockScreenCoordinator(
         }
         cancelRecoveryHandoff = cancel
         recoveryHandoffTarget = expectedPackage
+        recoveryHandoffRequests = expectedRequests
         if (!BlockActivity.launchRecovery(appContext, id, expectedPackage)) {
-            if (!clearRecoveryHandoff()) abandonRecoveryHandoff()
+            if (!clearRecoveryHandoff()) abandonRecoveryHandoff(expectedPackage, expectedRequests)
             return false
         }
         armRecoveryHandoffTimeout(expectedPackage, expectedRequests)
@@ -469,33 +473,38 @@ class BlockScreenCoordinator(
                 // can still hand off once focused fullscreen recovery actually covers it.
                 if (visiblePackage == expectedPackage && surfaceRequests === expectedRequests) {
                     // Reset the latch so a later ready pulse can retry, bounded per launch.
-                    restoreRecoveryFocusOrLeave()
+                    restoreRecoveryFocusOrLeave(expectedPackage, expectedRequests)
                 }
             }
         }
     }
 
     private fun clearRecoveryHandoff(restoreFocus: Boolean = true): Boolean {
+        val ownsSurface = recoveryHandoffTarget != null && recoveryHandoffTarget == visiblePackage &&
+            recoveryHandoffRequests === surfaceRequests
         cancelRecoveryHandoff?.invoke(); cancelRecoveryHandoff = null
         recoveryHandoffTimeout?.cancel(); recoveryHandoffTimeout = null
         recoveryHandoffTarget = null
+        recoveryHandoffRequests = null
         recoveryFocusRequested = false
         recoveryFocusAttempts = 0
-        return !restoreFocus || runCatching { surfaceHost.setRecoveryHandoffFocus(false) }.getOrDefault(false)
+        return !restoreFocus || !ownsSurface || runCatching { surfaceHost.setRecoveryHandoffFocus(false) }.getOrDefault(false)
     }
 
-    private fun restoreRecoveryFocusOrLeave() {
+    private fun restoreRecoveryFocusOrLeave(expectedPackage: String, expectedRequests: SurfaceRequests) {
+        if (visiblePackage != expectedPackage || surfaceRequests !== expectedRequests) return
         recoveryFocusRequested = false
         if (!runCatching { surfaceHost.setRecoveryHandoffFocus(false) }.getOrDefault(false)) {
-            abandonRecoveryHandoff()
+            abandonRecoveryHandoff(expectedPackage, expectedRequests)
         } else wakeAfterRecoveryHandoff()
     }
 
-    private fun abandonRecoveryHandoff() {
+    private fun abandonRecoveryHandoff(expectedPackage: String, expectedRequests: SurfaceRequests) {
+        if (visiblePackage != expectedPackage || surfaceRequests !== expectedRequests) return
         clearRecoveryHandoff(restoreFocus = false)
-        // A window whose focusability cannot be restored must not cover Home/settings.
-        // Retire/remove that mount before navigation; detectors rebuild from current policy.
-        hideLocked()
+        // Home can be rejected without throwing (or by background-launch restrictions).
+        // Keep the opaque touch shield until the detector actually observes departure;
+        // an attempted navigation cannot authorize a gap over the still-blocked target.
         runCatching { surfaceHost.goHome() }
         wakeAfterRecoveryHandoff()
     }

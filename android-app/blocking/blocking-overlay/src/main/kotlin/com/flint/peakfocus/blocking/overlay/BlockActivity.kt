@@ -250,13 +250,14 @@ class BlockActivity : ComponentActivity() {
         val targetPackage = recoveryTarget
         // Resumed is not exclusive on Android 10+. Never suppress a target shield for
         // split-screen/freeform recovery: leave that mode to review in fullscreen.
-        val coversTarget = recoveryMode && recoveryFrameDrawn && targetPackage != null &&
+        val mayYieldFocus = recoveryMode && recoveryFrameDrawn && targetPackage != null &&
             (recoveryTopResumed || recoveryTopFallbackGranted) && !recoveryMultiWindow && !recoveryFocusRevoked &&
             lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
-        // The still-mounted shield initially owns window focus. Only a drawn, topmost
-        // fullscreen recovery may ask that exact shield to yield focus, without yielding touch.
-        recoveryHandoffId?.let { RecoverySurfaceHandoff.ready(it, coversTarget) }
-        if (coversTarget && recoveryWindowFocused) {
+        // Yielding key focus keeps the opaque touch shield mounted. Requiring focus here
+        // would deadlock a recovery whose initial focus is still owned by that shield.
+        recoveryHandoffId?.let { RecoverySurfaceHandoff.ready(it, mayYieldFocus) }
+        // Detachment and the presentation lease additionally require actual window focus.
+        if (mayYieldFocus && recoveryWindowFocused) {
             RecoverySurfaceHandoff.showing(this, checkNotNull(targetPackage))
             recoveryHandoffId?.let(RecoverySurfaceHandoff::drawn)
         } else clearRecoverySurface()
@@ -264,14 +265,15 @@ class BlockActivity : ComponentActivity() {
 
     private fun topFallbackEligible(): Boolean = android.os.Build.VERSION.SDK_INT >= 29 &&
         !recoveryTopCallbackSeen && !recoveryTopResumed && recoveryMode && recoveryFrameDrawn &&
-        recoveryWindowFocused && !recoveryMultiWindow && !recoveryFocusRevoked &&
+        !recoveryMultiWindow && !recoveryFocusRevoked &&
         lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
 
     private fun updateRecoveryTopFallback() {
         if (!topFallbackEligible()) { cancelRecoveryTopFallback(); return }
         if (recoveryTopFallbackGranted || recoveryTopFallback != null) return
         // Android may omit the top-resumed callback on a short resume. A continuously
-        // focused, drawn fullscreen Activity can cover its target after this bounded delay.
+        // drawn, resumed fullscreen Activity may request focus after this bounded delay.
+        // It cannot detach the shield or acquire a lease until window focus then arrives.
         // An explicit false callback is authoritative and never enters this fallback.
         recoveryTopFallback = Runnable {
             recoveryTopFallback = null
@@ -292,9 +294,10 @@ class BlockActivity : ComponentActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        val lostFocus = recoveryWindowFocused && !hasFocus
         recoveryWindowFocused = hasFocus
         if (hasFocus) recoveryFocusRevoked = false
-        else if (recoveryFrameDrawn) recoveryFocusRevoked = true
+        else if (lostFocus && recoveryFrameDrawn) recoveryFocusRevoked = true
         refreshRecoverySurface()
     }
 

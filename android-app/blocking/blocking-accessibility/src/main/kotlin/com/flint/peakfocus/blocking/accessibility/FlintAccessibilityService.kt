@@ -370,7 +370,8 @@ class FlintAccessibilityService : AccessibilityService() {
         override fun setRecoveryHandoffFocus(enabled: Boolean): Boolean {
             val view = mountedView ?: return !enabled
             val old = view.layoutParams as? WindowManager.LayoutParams ?: return false
-            if (recoveryFocusYielded == enabled) return true
+            val locallyYielded = old.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE != 0
+            if (recoveryFocusYielded == enabled && locallyYielded == enabled) return true
             val flags = if (enabled) old.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                 else old.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
             val next = WindowManager.LayoutParams().apply { copyFrom(old); this.flags = flags }

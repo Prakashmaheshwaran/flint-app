@@ -78,6 +78,15 @@ class RecoveryOverlayFocusTest {
                 assertFalse(setFocus(false)); assertEquals(3, updates)
                 assertTrue(setFocus(false)); assertEquals(4, updates)
                 assertEquals(initial, (view.layoutParams as WindowManager.LayoutParams).flags)
+                assertTrue(setFocus(false)); assertEquals("Confirmed matching flags need no update", 4, updates)
+                // A later OEM relayout can change flags behind the last acknowledged state.
+                (view.layoutParams as WindowManager.LayoutParams).flags = initial or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                assertTrue(setFocus(false)); assertEquals(5, updates)
+                assertEquals(initial, (view.layoutParams as WindowManager.LayoutParams).flags)
+                assertTrue(setFocus(true)); assertEquals(6, updates)
+                (view.layoutParams as WindowManager.LayoutParams).flags = initial
+                assertTrue(setFocus(true)); assertEquals(7, updates)
+                assertEquals(initial or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, (view.layoutParams as WindowManager.LayoutParams).flags)
             } finally { detach(); ShadowSettings.setCanDrawOverlays(false) }
         }
     }
