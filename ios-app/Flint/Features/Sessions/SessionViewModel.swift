@@ -84,7 +84,7 @@ final class SessionViewModel: ObservableObject {
     private func syncActive() {
         guard active?.monitorName != "preview" else { return }
         let current = controller.activeSession
-        guard current?.id != active?.id else { return }
+        guard current != active else { return }
         active = current
         if current == nil {
             remaining = 0
@@ -146,7 +146,7 @@ final class SessionViewModel: ObservableObject {
     /// 0…1 through the active session; drives the ember along its arc.
     var progress: Double {
         guard let active, let endsAt = active.endsAt else { return 0 }
-        let total = endsAt.timeIntervalSince(active.startedAt)
+        let total = active.plannedDuration ?? endsAt.timeIntervalSince(active.startedAt)
         guard total > 0 else { return 1 }
         return min(1, max(0, 1 - remaining / total))
     }
@@ -162,26 +162,50 @@ final class SessionViewModel: ObservableObject {
     /// One id per start attempt, so a double tap or the confirm-then-start path returns the
     /// session it already started instead of minting another deadline (PC-03).
     private var startRequestID = UUID().uuidString
+    private struct StartAttempt {
+        let selection: FamilyActivitySelection
+        let duration: TimeInterval
+        let level: BreakLevel
+        let source: FlintSessionSource
+        let token: FlintSessionStartToken
+    }
+    private var startAttempt: StartAttempt?
 
     func start(confirmed: Bool = false) {
         defer { NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil) }
         errorText = nil
         needsProtectionResume = false
         do {
+            if startAttempt == nil || !confirmed {
+                let source: FlintSessionSource = appliedGroupSelection == selection ? .preset : .manual
+                let duration = TimeInterval(durationMinutes * 60)
+                let token = try controller.prepareStartToken(selection: selection, duration: duration,
+                    breakLevel: breakLevel, source: source, origin: .appUI,
+                    route: "app-ui.session", operationID: startRequestID)
+                startAttempt = StartAttempt(selection: selection, duration: duration, level: breakLevel,
+                    source: source, token: token)
+            }
+            guard let attempt = startAttempt else { return }
             active = try controller.startBlockNow(
-                selection: selection,
-                duration: TimeInterval(durationMinutes * 60),
-                breakLevel: breakLevel,
+                selection: attempt.selection,
+                duration: attempt.duration,
+                breakLevel: attempt.level,
                 name: "Focus",
-                source: appliedGroupSelection == selection ? .preset : .manual,
+                source: attempt.source,
                 origin: .appUI,
-                requestID: startRequestID,
+                requestID: attempt.token.operationID,
+                expectedRevision: attempt.token.expectedRevision,
                 confirmed: confirmed
             )
             startRequestID = UUID().uuidString
+            startAttempt = nil
             startTicking()
         } catch FlintSessionError.needsConfirmation {
             confirmingHardcore = true
+        } catch let error as FlintSessionError where error == .staleStartRevision || error == .conflictingStartRequest {
+            startAttempt = nil
+            startRequestID = UUID().uuidString
+            errorText = error.localizedDescription
         } catch FlintSessionError.resumeProtectionFirst {
             needsProtectionResume = true
             errorText = "Resume protection first"

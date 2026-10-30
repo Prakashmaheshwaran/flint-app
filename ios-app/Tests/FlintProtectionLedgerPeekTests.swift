@@ -90,6 +90,32 @@ final class FlintProtectionLedgerPeekTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), [FlintProtectionLedger.fileName])
     }
 
+    func testV3FileWithStrippedAuthorityStaysUnavailableWithoutResetPC02PC66() throws {
+        let root = directory!
+        defer { directory = root }
+        for stripMarker in [false, true] {
+            directory = root.appendingPathComponent(stripMarker ? "schema-only" : "marked")
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .secondsSince1970
+            var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoder.encode(
+                FlintLedgerState(initializedAt: now))) as? [String: Any])
+            object.removeValue(forKey: "sessionAuthority")
+            if stripMarker { object.removeValue(forKey: "sessionAuthorityVersion") }
+            let bytes = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+            try write(bytes)
+            let reader = ledger(migrate: { _, _ in XCTFail("corrupt v3 must not migrate or initialize") })
+            XCTAssertEqual(reader.peek(), .failure(.unavailable("ledger is corrupt")))
+            XCTAssertEqual(try Data(contentsOf: file), bytes)
+            XCTAssertEqual(reader.read(), .failure(.unavailable("ledger is corrupt")))
+            XCTAssertEqual(try Data(contentsOf: file), bytes, "transactional read must preserve the source file")
+            let quarantine = directory.appendingPathComponent("quarantine")
+            let retained = try FileManager.default.contentsOfDirectory(at: quarantine,
+                includingPropertiesForKeys: nil)
+            XCTAssertTrue(try retained.contains { try Data(contentsOf: $0) == bytes },
+                "quarantine retains the exact corrupt document for recovery")
+        }
+    }
+
     func testUnimportedAndUnknownPassRemainUnavailableWhenProjected() throws {
         for usage in [FlintLedgerState.Pass.Usage.pendingImport, .unknown] {
             var state = FlintLedgerState(initializedAt: now)

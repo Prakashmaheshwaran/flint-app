@@ -50,6 +50,11 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
     /// The start request that created this session, so a retried request returns it instead of
     /// minting a new id and deadline (PC-03/PC-10).
     public let startRequestID: String?
+    /// Last durable remaining-time observation. Optional for pre-checkpoint records (R-05).
+    public let remainingCheckpoint: FlintSessionRemainingCheckpoint?
+    /// A bounded natural end observed while the policy ledger was unavailable. Keep the exact
+    /// record until a generation tombstone can commit; it never authorizes a second release.
+    public let naturalEndObservedAt: Date?
 
     public static let currentContractVersion = 1
 
@@ -72,7 +77,9 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         ownerID: String? = nil,
         plannedDuration: TimeInterval? = nil,
         startRequestID: String? = nil,
-        clockRearmCount: Int? = nil
+        clockRearmCount: Int? = nil,
+        remainingCheckpoint: FlintSessionRemainingCheckpoint? = nil,
+        naturalEndObservedAt: Date? = nil
     ) {
         self.id = id
         self.name = name
@@ -93,16 +100,23 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         self.plannedDuration = plannedDuration
         self.startRequestID = startRequestID
         self.clockRearmCount = clockRearmCount
+        self.remainingCheckpoint = remainingCheckpoint
+        self.naturalEndObservedAt = naturalEndObservedAt
     }
 
     /// Time left on the commitment, by the clock ADR-012 §9 trusts: within the boot that started
-    /// the session, monotonic elapsed time governs — a wall-clock change can neither shorten nor
-    /// extend it. Across a reboot (or without anchors) no elapsed time can be trusted, so the
-    /// bounded fallback `min(planned, max(0, wallEnd − now))` applies. nil for an open-ended
-    /// session.
+    /// the latest checkpoint, monotonic elapsed time governs. At the first observation after a
+    /// reboot use min(saved remaining, wall remaining), then `checkpointed` anchors that bounded
+    /// duration to the new boot. Legacy records use their start anchor or planned/wall fallback.
     public func logicalRemaining(clock: FlintClock) -> TimeInterval? {
         guard let endsAt else { return nil }
-        let planned = plannedDuration ?? endsAt.timeIntervalSince(startedAt)
+        let planned = max(0, plannedDuration ?? endsAt.timeIntervalSince(startedAt))
+        if let checkpoint = remainingCheckpoint {
+            if let elapsed = checkpoint.elapsed(clock: clock) {
+                return max(0, min(planned, checkpoint.remaining - checkpoint.overrun - elapsed))
+            }
+            return min(planned, checkpoint.remaining, max(0, endsAt.timeIntervalSince(clock.now())))
+        }
         if let start = monotonicStart, let boot = bootSessionID, boot == clock.bootSessionID() {
             let elapsed = clock.monotonic() - start
             if elapsed >= 0 { return max(0, planned - elapsed) }
@@ -115,12 +129,50 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
     /// isn't capped at the planned length; callers gate on `isLogicallyExpired`. nil if open-ended.
     public func logicalOverrun(clock: FlintClock) -> TimeInterval? {
         guard let endsAt else { return nil }
-        let planned = plannedDuration ?? endsAt.timeIntervalSince(startedAt)
+        let planned = max(0, plannedDuration ?? endsAt.timeIntervalSince(startedAt))
+        if let checkpoint = remainingCheckpoint {
+            if let elapsed = checkpoint.elapsed(clock: clock) {
+                return elapsed - checkpoint.remaining + checkpoint.overrun
+            }
+            if let remaining = logicalRemaining(clock: clock), remaining > 0 { return -remaining }
+            return max(checkpoint.overrun, clock.now().timeIntervalSince(endsAt))
+        }
         if let start = monotonicStart, let boot = bootSessionID, boot == clock.bootSessionID() {
             let elapsed = clock.monotonic() - start
             if elapsed >= 0 { return elapsed - planned }
         }
         return clock.now().timeIntervalSince(endsAt)
+    }
+
+    /// Observe and preserve remaining time before a reconcile, registration repair or callback.
+    /// Persist this value under the session transition lock. A later boot can never recover more
+    /// than this checkpoint, even when wall time rolls back near expiry (PC-55/58).
+    public func checkpointed(clock: FlintClock, naturalEndObservedAt: Date? = nil) -> FlintActiveSession {
+        // Derive the value and its anchor from one observation. Re-reading the real monotonic
+        // clock between those operations would move the deadline later by the read latency.
+        let observation = FlintLedgerInstant(clock: clock)
+        let clock = FlintClock(now: { observation.wall }, monotonic: { observation.monotonic },
+                               bootSessionID: { observation.bootID }, calendar: clock.calendar)
+        guard let remaining = logicalRemaining(clock: clock) else { return self }
+        let sameBoot: Bool
+        if let checkpoint = remainingCheckpoint { sameBoot = checkpoint.elapsed(clock: clock) != nil }
+        else {
+            sameBoot = bootSessionID != nil && bootSessionID == clock.bootSessionID()
+                && monotonicStart.map { clock.monotonic() >= $0 } == true
+        }
+        let checkpoint = FlintSessionRemainingCheckpoint(
+            remaining: remaining, wall: clock.now(), monotonic: clock.monotonic(),
+            bootID: clock.bootSessionID(), overrun: max(0, logicalOverrun(clock: clock) ?? 0),
+            timeUncertain: remainingCheckpoint?.timeUncertain == true || !sameBoot)
+        return FlintActiveSession(
+            id: id, name: name, startedAt: startedAt, endsAt: endsAt, breakLevel: breakLevel,
+            monitorName: monitorName, monotonicStart: monotonicStart, bootSessionID: bootSessionID,
+            autoClearTimeZoneID: autoClearTimeZoneID, autoClearUTCOffset: autoClearUTCOffset,
+            usesEndWarning: usesEndWarning, rearmCount: rearmCount, lastRearmAt: lastRearmAt,
+            contractVersion: contractVersion, origin: origin, ownerID: ownerID,
+            plannedDuration: plannedDuration, startRequestID: startRequestID,
+            clockRearmCount: clockRearmCount, remainingCheckpoint: checkpoint,
+            naturalEndObservedAt: naturalEndObservedAt ?? self.naturalEndObservedAt)
     }
 
     /// Whether the commitment is over by `logicalRemaining` (allowing `slack` for the whole-second
@@ -192,7 +244,9 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
             ownerID: ownerID,
             plannedDuration: plannedDuration ?? endsAt.map { $0.timeIntervalSince(startedAt) },
             startRequestID: startRequestID,
-            clockRearmCount: countsTowardClockLimit ? (clockRearmCount ?? 0) + 1 : clockRearmCount
+            clockRearmCount: countsTowardClockLimit ? (clockRearmCount ?? 0) + 1 : clockRearmCount,
+            remainingCheckpoint: remainingCheckpoint,
+            naturalEndObservedAt: naturalEndObservedAt
         )
     }
 }

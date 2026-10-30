@@ -110,6 +110,8 @@ extension FlintEmergencyPassEnvironment {
                         work(); return true
                     } ?? false
                 } ?? false
+            }, prepareAcceptedSession: {
+                session.prepareAcceptedInstallationForScope()
             }, prepareScope: {
                 guard let ledger = FlintProtectionLedger.appGroup(), case .success = ledger.read() else {
                     throw FlintEmergencyPassError.unavailable

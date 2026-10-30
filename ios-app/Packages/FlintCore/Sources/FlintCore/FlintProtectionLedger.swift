@@ -79,7 +79,7 @@ public struct FlintLedgerInstant: Codable, Equatable, Sendable {
 // MARK: - State
 
 public struct FlintLedgerState: Codable, Equatable, Sendable {
-    public static let currentVersion = 2
+    public static let currentVersion = 3
     /// Bounded idempotency memory (§8 "query by operation ID").
     public static let operationMemory = 200
 
@@ -102,6 +102,10 @@ public struct FlintLedgerState: Codable, Equatable, Sendable {
     public var passLimitThresholds: [String: FlintPassLimitThreshold]?
     /// A pass-ended Focus cannot recreate its occurrence until an observed off→on cycle.
     public var passSuppressedFocusOwners: Set<String>?
+    /// Exact session generation, terminal proof and accepted-start replay (R-20/R-25).
+    /// The accompanying schema marker distinguishes legacy absence from stripped authority.
+    public var sessionAuthority: FlintSessionAuthority?
+    public var sessionAuthorityVersion: Int?
 
     public init(initializedAt: Date) {
         version = Self.currentVersion
@@ -114,11 +118,14 @@ public struct FlintLedgerState: Codable, Equatable, Sendable {
         emergencyRecovery = nil
         passLimitThresholds = nil
         passSuppressedFocusOwners = nil
+        sessionAuthority = FlintSessionAuthority(initializedAt: initializedAt)
+        sessionAuthorityVersion = 1
     }
 
     private enum CodingKeys: String, CodingKey {
         case version, initializedAt, migrations, pass, harder, operations, openCredits
         case emergencyRecovery, passLimitThresholds, passSuppressedFocusOwners
+        case sessionAuthority, sessionAuthorityVersion
     }
 
     public init(from decoder: Decoder) throws {
@@ -138,6 +145,15 @@ public struct FlintLedgerState: Codable, Equatable, Sendable {
         emergencyRecovery = try values.decodeIfPresent(FlintPassRecovery.self, forKey: .emergencyRecovery)
         passLimitThresholds = try values.decodeIfPresent([String: FlintPassLimitThreshold].self, forKey: .passLimitThresholds)
         passSuppressedFocusOwners = try values.decodeIfPresent(Set<String>.self, forKey: .passSuppressedFocusOwners)
+        sessionAuthority = try values.decodeIfPresent(FlintSessionAuthority.self, forKey: .sessionAuthority)
+        sessionAuthorityVersion = values.contains(.sessionAuthorityVersion)
+            ? try values.decode(Int.self, forKey: .sessionAuthorityVersion) : nil
+        if oldVersion >= 3 || sessionAuthorityVersion != nil {
+            guard (sessionAuthorityVersion == nil || sessionAuthorityVersion == 1), sessionAuthority?.isValid == true else {
+                throw DecodingError.dataCorruptedError(forKey: .sessionAuthority, in: values,
+                    debugDescription: "Session authority is missing or unsupported after migration")
+            }
+        }
     }
 
     // MARK: Emergency Pass (§6)
@@ -358,7 +374,9 @@ public final class FlintProtectionLedger {
         case let .failure(error): return .failure(error)
         }
         let before = state
-        state.version = FlintLedgerState.currentVersion
+        // Stay on the known v2 path until a session transition installs authority. That same
+        // atomic write promotes to v3, which older readers must refuse.
+        state.version = max(state.version, 2)
         migrate(&state, FlintLedgerInstant(clock: clock))
         let result: T
         do {
@@ -366,7 +384,13 @@ public final class FlintProtectionLedger {
         } catch {
             return .failure(.unavailable("transaction aborted: \(error)"))
         }
-        if state != before || !existed || before.version != FlintLedgerState.currentVersion {
+        if state.sessionAuthority != nil {
+            state.version = FlintLedgerState.currentVersion
+            state.sessionAuthorityVersion = 1
+        } else if state.version >= 3 || state.sessionAuthorityVersion != nil {
+            return .failure(.unavailable("session authority missing after migration"))
+        }
+        if state != before || !existed {
             if let failure = write(state) { return .failure(failure) }
         }
         if initializedMarker() == nil { setInitializedMarker(state.initializedAt) }

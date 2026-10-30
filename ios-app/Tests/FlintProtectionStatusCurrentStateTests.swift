@@ -28,7 +28,14 @@ final class FlintProtectionStatusCurrentStateTests: XCTestCase {
                            calendar: { self.calendar }),
               loadActiveSession: { store?.loadActiveSession() },
               hasActiveSessionRecord: { store?.loadActiveSession() != nil },
-              loadArmingHealth: { store?.loadArmingHealth() ?? .init() })
+              loadArmingHealth: { store?.loadArmingHealth() ?? .init() },
+              loadLedgerState: {
+                  // These fixtures model positively decoded pre-generation records.
+                  var state = FlintLedgerState(initializedAt: self.now)
+                  state.version = 2; state.sessionAuthority = nil; state.sessionAuthorityVersion = nil
+                  state.pass = self.pass
+                  return state
+              })
     }
 
     private var observations: [String: FlintProtectionStatus.RuleObservation] {

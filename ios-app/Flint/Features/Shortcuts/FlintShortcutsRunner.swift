@@ -18,7 +18,8 @@ extension AppIntent {
     /// Start `request`, asking for confirmation first for Hardcore and again if the start would
     /// replace the running session.
     func startConfirmingIfNeeded(_ start: (_ confirmed: Bool) throws -> FlintActiveSession,
-                                 hardcore: Bool, minutes: Int) async throws -> FlintActiveSession {
+                                 hardcore: Bool, minutes: Int, replaying: Bool = false) async throws -> FlintActiveSession {
+        if replaying { return try start(true) }
         if hardcore {
             try await confirmFlintStart("Start a Hardcore block for \(minutes) minutes? You can't end it early — it ends on its own, or with your Emergency Pass in Flint.")
         }
@@ -72,6 +73,14 @@ enum FlintShortcutsError: Error, LocalizedError {
 /// group's selection; nil falls back to the user's current/last selection in the App Group.
 enum FlintShortcutsRunner {
 
+    struct PreparedStart {
+        let request: FlintSessionRequest
+        let selection: FamilyActivitySelection
+        let source: FlintSessionSource
+        let token: FlintSessionStartToken
+        let replaying: Bool
+    }
+
     /// The selection a request refers to, or nil if there's nothing saved to block.
     static func resolveSelection(for request: FlintSessionRequest) -> FamilyActivitySelection? {
         let store = FlintGroupStore()
@@ -83,53 +92,72 @@ enum FlintShortcutsRunner {
 
     /// Start a block from a portable `FlintSessionRequest`. Throws `.noSelectionAvailable` when the
     /// request resolves to nothing, so the user gets a useful prompt instead of a generic failure.
-    @discardableResult
-    /// `confirmed` is the user's explicit confirmation of a Hardcore start, which the intent asks
-    /// for before calling (ADR-012 §2: raising rights needs it, including via automation).
-    static func start(_ request: FlintSessionRequest, source: FlintSessionSource = .shortcut,
-                      confirmed: Bool = false) throws -> FlintActiveSession {
-        guard let selection = resolveSelection(for: request) else {
+    static func prepare(_ request: FlintSessionRequest, source: FlintSessionSource = .shortcut,
+                        requestID: String? = nil, controller: FlintSessionController = FlintSessionController(),
+                        selectionResolver: ((FlintSessionRequest) -> FamilyActivitySelection?)? = nil) throws -> PreparedStart {
+        guard let selection = (selectionResolver ?? resolveSelection)(request) else {
             throw FlintShortcutsError.noSelectionAvailable
         }
-        return try FlintSessionController().startBlockNow(
-            selection: selection,
-            duration: request.duration,
-            breakLevel: request.breakLevel,
-            name: request.name,
-            source: source,
-            origin: .shortcut,
-            confirmed: confirmed
-        )
+        let token = try controller.prepareStartToken(selection: selection, duration: request.duration,
+            breakLevel: request.breakLevel, name: request.name, source: source, origin: .shortcut,
+            route: source == .pomodoro ? "shortcut.pomodoro" : "shortcut.session", operationID: requestID)
+        return PreparedStart(request: request, selection: selection, source: source, token: token,
+            replaying: controller.acceptedStartResult(token.operationID) != nil)
     }
 
-    /// Start a Pomodoro by kicking off its **first focus round** as a timed block and persisting the
-    /// chosen cadence so the app reflects "a Pomodoro is running." The OS schedule clears the shield
-    /// when the focus round ends. Honest scope note: chaining the remaining rounds (break → next
-    /// focus, automatically) is on-device app/monitor work and is intentionally *not* driven from
-    /// this background intent in v1 — see `Shortcuts/README.md`.
+    @discardableResult
+    static func start(_ prepared: PreparedStart, confirmed: Bool = false,
+                      controller: FlintSessionController = FlintSessionController()) throws -> FlintActiveSession {
+        try controller.startBlockNow(selection: prepared.selection, duration: prepared.request.duration,
+            breakLevel: prepared.request.breakLevel, name: prepared.request.name, source: prepared.source,
+            origin: .shortcut, requestID: prepared.token.operationID,
+            expectedRevision: prepared.token.expectedRevision, confirmed: confirmed)
+    }
+
+    @discardableResult
+    static func start(_ request: FlintSessionRequest, source: FlintSessionSource = .shortcut,
+                      confirmed: Bool = false, requestID: String? = nil,
+                      controller: FlintSessionController = FlintSessionController(),
+                      selectionResolver: ((FlintSessionRequest) -> FamilyActivitySelection?)? = nil) throws -> FlintActiveSession {
+        let prepared = try prepare(request, source: source, requestID: requestID,
+            controller: controller, selectionResolver: selectionResolver)
+        return try start(prepared, confirmed: confirmed, controller: controller)
+    }
+
+    /// Start one timed Pomodoro focus round. Legacy cadence values do not schedule more rounds
+    /// or overwrite the app's saved Pomodoro configuration (R-24 interim scope).
     @discardableResult
     static func startPomodoro(
         _ config: FlintPomodoroConfig,
         appGroupID: String?,
         breakLevel: BreakLevel,
-        confirmed: Bool = false
+        confirmed: Bool = false,
+        requestID: String? = nil,
+        controller: FlintSessionController = FlintSessionController(),
+        selectionResolver: ((FlintSessionRequest) -> FamilyActivitySelection?)? = nil
     ) throws -> FlintActiveSession {
-        config.save()
-        let request = FlintSessionRequest(
+        let request = pomodoroRoundRequest(config, appGroupID: appGroupID, breakLevel: breakLevel)
+        return try start(request, source: .pomodoro, confirmed: confirmed, requestID: requestID,
+            controller: controller, selectionResolver: selectionResolver)
+    }
+
+    /// Legacy requests carrying break/round values still execute one focus round. They no
+    /// longer overwrite the in-app cadence or expose controls the intent does not execute.
+    static func pomodoroRoundRequest(_ config: FlintPomodoroConfig, appGroupID: String?,
+                                    breakLevel: BreakLevel) -> FlintSessionRequest {
+        FlintSessionRequest(
             appGroupID: appGroupID,
             durationMinutes: max(1, config.focusMinutes),
             breakLevel: breakLevel,
             name: "Pomodoro"
         )
-        return try start(request, source: .pomodoro, confirmed: confirmed)
     }
 
     /// Stop the running session through the same tier rules as the app (ADR-012 §2, PC-07):
     /// Easy stops (running the shortcut is the explicit request); Harder starts or resumes its
     /// persisted wait and never completes from here — the final confirmation is in Flint;
     /// Hardcore is refused.
-    static func stopActiveSession() throws {
-        let controller = FlintSessionController()
+    static func stopActiveSession(controller: FlintSessionController = FlintSessionController()) throws {
         switch controller.requestStop(route: .shortcutStop, confirmed: true) {
         case .stopped: return
         case let .waiting(remaining): throw FlintShortcutsError.waitRunning(remaining: remaining)

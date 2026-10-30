@@ -558,7 +558,7 @@ final class FlintSessionWebRestrictionTests: XCTestCase {
     }
 
     func testPC72EverySessionEndClearsItsWholeStoreAndLeavesTwoRuleOwners() throws {
-        for end in ["manual", "shortcut", "focusOff", "expiry", "monitor", "warning", "carrier", "noSession"] {
+        for end in ["manual", "shortcut", "focusOff", "expiry", "monitor", "warning", "carrier"] {
             let h = WebSessionHarness()
             let controller = h.controller()
             let session = try h.start(controller, duration: end == "warning" || end == "carrier" ? 300 : 1800,
@@ -581,14 +581,28 @@ final class FlintSessionWebRestrictionTests: XCTestCase {
                 h.now = session.endsAt!
                 controller.handleMonitorEvent(.intervalWillEndWarning, activity: session.monitorName)
             default:
-                h.store.active = nil
-                controller.reconcile()
+                XCTFail("unknown end fixture")
             }
             XCTAssertEqual(Set(h.writer.web.keys), ["flint.rule-a", "flint.rule-b"], end)
             XCTAssertEqual(h.writer.wholeStoresCleared, ["flint"], end)
             XCTAssertEqual(h.writer.cleared.count, surgicalClears, "end uses only the cause's clearAllSettings: \(end)")
             XCTAssertNil(h.store.active, end)
         }
+    }
+
+    func testMissingActiveKeyDoesNotReleaseSessionSafariOrOtherRuleOwnersR20PC64PC66() throws {
+        let h = WebSessionHarness()
+        let controller = h.controller()
+        let session = try h.start(controller)
+        h.writer.web["flint.rule-a"] = h.config
+        h.writer.web["flint.rule-b"] = h.config
+        h.store.active = nil
+        XCTAssertTrue(controller.reconcile().recordUnreadable)
+        controller.handleMonitorEvent(.intervalDidEnd, activity: session.monitorName)
+        XCTAssertEqual(controller.requestStop(route: .shortcutStop, confirmed: true), .unavailable)
+        XCTAssertEqual(Set(h.writer.web.keys), ["flint", "flint.rule-a", "flint.rule-b"])
+        XCTAssertTrue(h.writer.wholeStoresCleared.isEmpty)
+        XCTAssertTrue(h.registrar.registered.contains(session.monitorName))
     }
 
     func testPC41PC72PassReleasesSessionAndAllSafariRuleOwnersAfterCommit() throws {
@@ -624,6 +638,9 @@ final class FlintSessionWebRestrictionTests: XCTestCase {
 }
 
 private final class WebSessionHarness {
+    private let ledgerDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("flint-web-session-\(UUID().uuidString)")
+    deinit { try? FileManager.default.removeItem(at: ledgerDirectory) }
     var config = FlintWebRestrictions(enabled: true, applyDuringSchedules: true)
     var now = ISO8601DateFormatter().date(from: "2026-10-26T23:00:00-04:00")!
     /// Moving `now` models real time passing: monotonic elapsed time moves with it (a session's
@@ -635,18 +652,19 @@ private final class WebSessionHarness {
     lazy var registrar = WebSessionRegistrar(writer: writer)
 
     func controller(ledger: FlintProtectionLedger? = nil) -> FlintSessionController {
-        FlintSessionController(environment: FlintSessionEnvironment(
+        let clock = FlintClock(now: { [self] in now }, monotonic: { [self] in 50_000 + now.timeIntervalSince(origin) },
+            bootSessionID: { "test-boot" }, calendar: {
+                var calendar = Calendar(identifier: .gregorian)
+                calendar.timeZone = TimeZone(identifier: "America/New_York")!
+                return calendar
+            })
+        let sessionLedger = ledger ?? FlintProtectionLedger(directory: ledgerDirectory, clock: clock,
+            initializedMarker: { nil }, setInitializedMarker: { _ in })
+        return FlintSessionController(environment: FlintSessionEnvironment(
             store: { [self] in store }, shield: shield,
             webRestrictions: FlintSessionWebRestrictionAdapter(writer: writer, configuration: { [self] in config }),
             registrar: registrar, isAuthorized: { true },
-            clock: FlintClock(now: { [self] in now }, monotonic: { [self] in 50_000 + now.timeIntervalSince(origin) },
-                              bootSessionID: { "test-boot" },
-                              calendar: {
-                                  var calendar = Calendar(identifier: .gregorian)
-                                  calendar.timeZone = TimeZone(identifier: "America/New_York")!
-                                  return calendar
-                              }),
-            healthDefaults: { nil }, ledger: { ledger }
+            clock: clock, healthDefaults: { nil }, ledger: { sessionLedger }
         ))
     }
 

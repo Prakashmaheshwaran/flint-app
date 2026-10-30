@@ -16,10 +16,28 @@ struct FocusFilterController {
     static let sessionName = FlintSessionController.legacyFocusFilterName
     /// The Focus filter's owner id on the sessions it starts (ADR-012 §3 ownership).
     static let ownerID = FlintSessionController.focusFilterOwnerID
+    static let startRoute = "focus-filter.activation"
 
-    private let controller = FlintSessionController()
+    private let controller: FlintSessionController
+    private let selectionResolver: ((String?) -> FamilyActivitySelection?)?
+    private let selectionCount: (FamilyActivitySelection) -> Int
+    private let prepareRecovery: (String) -> Result<Void, FlintEmergencyPassError>
+    private let acknowledgeOff: (String) -> Result<Void, FlintEmergencyPassError>
 
-    init() {}
+    init(controller: FlintSessionController = FlintSessionController(),
+         selectionResolver: ((String?) -> FamilyActivitySelection?)? = nil,
+         selectionCount: @escaping (FamilyActivitySelection) -> Int = {
+             $0.applicationTokens.count + $0.categoryTokens.count + $0.webDomainTokens.count
+         },
+         prepareRecovery: @escaping (String) -> Result<Void, FlintEmergencyPassError> = {
+             FlintEmergencyPassController().prepareForNewSession(focusOwnerID: $0)
+         }, acknowledgeOff: @escaping (String) -> Result<Void, FlintEmergencyPassError> = {
+             FlintEmergencyPassController().acknowledgeFocusOff(ownerID: $0)
+         }) {
+        self.controller = controller; self.selectionResolver = selectionResolver
+        self.selectionCount = selectionCount
+        self.prepareRecovery = prepareRecovery; self.acknowledgeOff = acknowledgeOff
+    }
 
     /// Start the block described by `request` beside — never over — a running session: iOS Flint
     /// runs one session at a time, so a Focus turning on while another session runs starts
@@ -33,19 +51,20 @@ struct FocusFilterController {
     private func activateLocked(_ request: FlintSessionRequest) -> Bool {
         // Check before the idempotent-owned-session return: a committed pass may still need
         // to project its termination, and a still-on filter must not resurrect that block.
-        if case let .failure(error) = FlintEmergencyPassController().prepareForNewSession(focusOwnerID: Self.ownerID) {
+        if case let .failure(error) = prepareRecovery(Self.ownerID) {
             FlintSessionHealth.recordRefusal(action: .start, name: Self.sessionName, reason: error.localizedDescription)
             return false
         }
-        if let active = controller.activeSession, controller.isOwnedByFocusFilter(active) { return true }
-
-        guard let selection = resolveSelection(for: request.appGroupID),
-              selectionCount(selection) > 0 else {
+        guard let selection = resolveSelection(for: request.appGroupID), selectionCount(selection) > 0 else {
             FlintSessionHealth.recordRefusal(action: .start, name: Self.sessionName, reason: "Nothing is selected to block.")
             return false
         }
 
         do {
+            let token = try controller.prepareStartToken(selection: selection, duration: request.duration,
+                breakLevel: request.breakLevel, name: Self.sessionName, source: .focusFilter,
+                origin: .focusFilter, ownerID: Self.ownerID, replacing: false,
+                route: Self.startRoute, untilDeactivation: true)
             _ = try controller.startBlockNow(
                 selection: selection,
                 duration: request.duration,   // 0 = while the Focus is on (Easy only)
@@ -54,6 +73,8 @@ struct FocusFilterController {
                 source: .focusFilter,
                 origin: .focusFilter,
                 ownerID: Self.ownerID,
+                requestID: token.operationID,
+                expectedRevision: token.expectedRevision,
                 replacing: false,
                 // The tier was chosen — with its disclosure — in the Focus filter's settings;
                 // that choice is the confirmation of its rights (ADR-012 §2).
@@ -76,11 +97,12 @@ struct FocusFilterController {
     /// running until its end. Blocks from an older build keep their old Focus-off exit (§12).
     func deactivate() {
         _ = controller.withTransition {
-            guard case .success = FlintEmergencyPassController().acknowledgeFocusOff(ownerID: Self.ownerID) else {
+            guard case .success = acknowledgeOff(Self.ownerID) else {
                 FlintSessionHealth.recordRefusal(action: .stop, name: Self.sessionName,
                     reason: "Focus turned off, but Flint couldn't save its recovery state. Open Flint to check.")
                 return
             }
+            controller.deactivateStartRoute(Self.startRoute)
             deactivateLocked()
         }
     }
@@ -112,6 +134,7 @@ struct FocusFilterController {
 
     /// Saved preset by id → its selection; otherwise the user's last Block-Now selection.
     private func resolveSelection(for appGroupID: String?) -> FamilyActivitySelection? {
+        if let selectionResolver { return selectionResolver(appGroupID) }
         guard let store = FlintGroupStore() else { return nil }
         if let id = appGroupID, let group = store.loadAppGroups().first(where: { $0.id == id }) {
             return group.selection
@@ -119,8 +142,5 @@ struct FocusFilterController {
         return store.loadSelection()
     }
 
-    private func selectionCount(_ s: FamilyActivitySelection) -> Int {
-        s.applicationTokens.count + s.categoryTokens.count + s.webDomainTokens.count
-    }
 }
 #endif
