@@ -1,0 +1,6 @@
+<resources>
+    <plurals name="focus_history_unconfirmed">
+        <item quantity="one">%d session couldn\'t be confirmed</item>
+        <item quantity="other">%d sessions couldn\'t be confirmed</item>
+    </plurals>
+</resources>

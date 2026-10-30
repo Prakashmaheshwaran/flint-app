@@ -4,6 +4,12 @@ import java.io.File
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.flow.flow
@@ -12,6 +18,9 @@ import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BlockTargets
 import com.flint.peakfocus.core.model.StorageFailure
 import com.flint.peakfocus.core.model.StorageState
+import com.flint.peakfocus.core.model.AccessClockStamp
+import com.flint.peakfocus.core.model.RuleRuntime
+import com.flint.peakfocus.core.model.RuleEvaluation
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -26,6 +35,93 @@ class FocusHistoryIntegrityTest {
         at = begin, tz = "UTC", plannedEnd = end, tier = "easy", source = "manual", name = "Focus")
     private fun focus(snapshot: HistorySnapshot, now: Long) =
         FocusHistoryAggregator.sessions(snapshot.events, now, setOf("session-a")).single().focusedMs
+
+    @Test fun projectedClockSamplingJitterNeverChangesTheCommittedLogicalPlan() = runTest {
+        val store = FocusHistoryStore(temporary.newFolder(), clock(begin))
+        val id = "session-timer-v2-$begin-jitter"
+        val end = begin + 5 * minute
+        val stamp = AccessClockStamp(begin, 10_000, "boot")
+        var rule = BlockRule(id, "Focus timer", BlockTargets(), expiresAtEpochMs = end - 1,
+            runtime = RuleRuntime(id, stamp, 5 * minute, end, "UTC", stamp,
+                evaluation = RuleEvaluation(true, end - 1, end - 1)))
+        val observer = HistoryReconciler(store, clock(begin), authoritativeSnapshot = {
+            historyRulesSnapshot(StorageState.Ready(listOf(rule)))
+        })
+        observer.observe(emptyList())
+        val started = store.load().events.single()
+        assertEquals(begin, started.at)
+        assertEquals(5 * minute, started.plannedEnd!! - started.at)
+        rule = rule.copy(expiresAtEpochMs = end + 1,
+            runtime = rule.runtime!!.copy(evaluation = RuleEvaluation(true, end + 1, end + 1)))
+        observer.observe(emptyList())
+        assertEquals(listOf(started), store.load().events)
+        // An actual owner checkpoint/edit still changes the logical plan.
+        rule = rule.copy(expiresAtEpochMs = end + minute + 1,
+            runtime = rule.runtime!!.copy(wallEndEpochMs = end + minute))
+        observer.observe(emptyList())
+        assertEquals(end + minute, store.load().events.last().plannedEnd)
+        assertEquals(listOf("started", "rescheduled"), store.load().events.map { it.type })
+    }
+
+    @Test fun ownerEndWhileObservationWaitsForClearLockCannotReimportRemovedStart() = runTest {
+        val dir = temporary.newFolder()
+        val store = FocusHistoryStore(dir, clock(begin))
+        assertTrue(store.append(start()))
+        val entered = CompletableDeferred<Unit>()
+        val release = CountDownLatch(1)
+        val clearingStore = FocusHistoryStore(dir, clock(begin), clearPhase = {
+            if (it == HistoryClearPhase.BEFORE_INTENT) {
+                entered.complete(Unit)
+                check(release.await(10, TimeUnit.SECONDS))
+            }
+        })
+        val clearing = async(Dispatchers.IO) { clearingStore.clear(emptySet()) }
+        try {
+            entered.await()
+            val rule = HistoryRule("session-a", "Focus", "easy", begin + 60 * minute)
+            val current = AtomicReference(HistoryRulesSnapshot.Ready(listOf(rule)))
+            val firstRead = CompletableDeferred<Unit>()
+            val observer = HistoryReconciler(store, clock(begin), authoritativeSnapshot = {
+                current.get().also { firstRead.complete(Unit) }
+            })
+            val observing = async { observer.observe(listOf(rule)) }
+            firstRead.await() // observation captured a live rule, then waits for clear's lock
+            current.set(HistoryRulesSnapshot.Ready(emptyList(), setOf(rule.id)))
+            release.countDown()
+            assertTrue(clearing.await())
+            observing.await()
+            assertTrue(observer.activeSessionIds.value.isEmpty())
+            assertTrue(store.load().events.isEmpty())
+        } finally { release.countDown() }
+    }
+
+    @Test fun authoritativeOwnerEndRejectsQueuedStartAndDoesNotGuessEarlyExit() = runTest {
+        val store = FocusHistoryStore(temporary.newFolder(), clock(begin))
+        val rule = HistoryRule("session-a", "Focus", "easy", begin + 60 * minute)
+        var current = HistoryRulesSnapshot.Ready(listOf(rule))
+        val observer = HistoryReconciler(store, clock(begin), authoritativeSnapshot = { current })
+        observer.observe(listOf(rule))
+        current = HistoryRulesSnapshot.Ready(emptyList(), setOf(rule.id))
+        observer.observe(listOf(rule)) // queued before the owner's anchored end
+        assertTrue(observer.activeSessionIds.value.isEmpty())
+        assertEquals(listOf("started"), store.load().events.map { it.type })
+        assertTrue(store.clear(emptySet()))
+        observer.observe(listOf(rule))
+        assertTrue(store.load().events.isEmpty())
+    }
+
+    @Test fun unavailableAuthoritativeReadRetainsLastActiveSetWithoutImportOrEarlyExit() = runTest {
+        val store = FocusHistoryStore(temporary.newFolder(), clock(begin))
+        val rule = HistoryRule("session-a", "Focus", "easy", begin + 60 * minute)
+        var current: HistoryRulesSnapshot = HistoryRulesSnapshot.Ready(listOf(rule))
+        val observer = HistoryReconciler(store, clock(begin), authoritativeSnapshot = { current })
+        observer.observe(listOf(rule))
+        current = HistoryRulesSnapshot.Unavailable("CORRUPT")
+        observer.observe(emptyList())
+        assertEquals(setOf(rule.id), observer.activeSessionIds.value)
+        assertEquals(listOf("started"), store.load().events.map { it.type })
+        assertTrue(observer.diagnostic.value!!.contains("CORRUPT"))
+    }
 
     @Test fun S1_strictRulesReadyCorruptReadyRetainsLastGoodWithoutTerminal() = runTest {
         val store = FocusHistoryStore(temporary.newFolder(), clock(begin))
@@ -73,6 +169,27 @@ class FocusHistoryIntegrityTest {
             assertEquals(20 * minute, focus(FocusHistoryStore(dir, clock(now)).load(), now))
         }
     }
+    @Test fun clearAndInterruptedRecoveryRemoveClearedIdsFromSharedPassReferences() = runTest {
+        for (phase in listOf<HistoryClearPhase?>(null, HistoryClearPhase.INTENT_COMMITTED, HistoryClearPhase.LOG_REPLACED)) {
+            val dir = temporary.newFolder(); val now = begin + 30 * minute
+            val store = FocusHistoryStore(dir, clock(now))
+            assertTrue(store.append(start()))
+            assertTrue(store.append(start(begin + 10 * minute).copy(id = "start-b", session = "session-b")))
+            assertTrue(store.append(HistoryEvent(type = "completed", session = "session-b", at = begin + 10 * minute, tz = "UTC")))
+            val pass = HistoryEvent(type = "pass_used", session = "global-pass", at = begin + 5 * minute,
+                tz = "UTC", sessions = listOf("session-a", "session-b"), recoveryEnd = begin + 6 * minute)
+            val raw = HistoryCodec.encode(pass).dropLast(1) + ",\"future\":{\"fraction\":1.20}}"
+            assertTrue(store.append(HistoryCodec.decode(raw)))
+            assertNull(store.load().clearedAt)
+            FocusHistoryStore(dir, clock(now), clearPhase = { if (it == phase) error("interrupted") }).clear(setOf("session-a"))
+            val snapshot = FocusHistoryStore(dir, clock(now)).load()
+            assertEquals(now, snapshot.clearedAt)
+            assertEquals(listOf("session-a"), snapshot.events.single { it.type == "pass_used" }.sessions)
+            val log = File(dir, "events.v1.jsonl").readText()
+            assertFalse(log.contains("session-b"))
+            assertTrue(log.contains("\"fraction\":1.20"))
+        }
+    }
     @Test fun FH21_N2_hardCapTrimsOldOwnerWithoutDroppingSharedPassOfRetainedOwner() = runTest {
         val dir = temporary.newFolder(); val now = begin + 30 * minute
         val store = FocusHistoryStore(dir, clock(now))
@@ -92,14 +209,14 @@ class FocusHistoryIntegrityTest {
             val store = FocusHistoryStore(dir, clock(observed))
             HistoryReconciler(store, clock(observed)).observe(listOf(HistoryRule("session-a", "Focus", "easy", deadline)))
             val records = store.load().events
-            assertEquals(listOf("started", "rescheduled", "completed"), records.map { it.type })
+            assertEquals(listOf("started", "rescheduled"), records.map { it.type })
             assertEquals(deadline, records[1].at); assertEquals(observed, records[1].observedAt)
-            assertTrue(records[1].inferred); assertEquals(observed, records[2].observedAt)
+            assertTrue(records[1].inferred)
             val reopened = FocusHistoryStore(dir, clock(observed))
             HistoryReconciler(reopened, clock(observed)).observe(emptyList())
             val session = FocusHistoryAggregator.sessions(reopened.load().events, observed, emptySet()).single()
-            assertEquals(deadline, session.plannedEnd); assertEquals(newDuration * minute, session.focusedMs)
-            assertEquals(SessionOutcome.COMPLETED, session.outcome); assertEquals(3, reopened.load().events.size)
+            assertEquals(deadline, session.plannedEnd); assertEquals(0L, session.focusedMs)
+            assertEquals(SessionOutcome.UNCONFIRMED, session.outcome); assertEquals(2, reopened.load().events.size)
         }
     }
     @Test fun FH20_N4_completionUsesEffectiveDeadlineUnderLockAndRemainsIdempotent() = runTest {

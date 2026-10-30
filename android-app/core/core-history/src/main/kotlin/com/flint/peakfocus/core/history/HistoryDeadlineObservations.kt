@@ -30,7 +30,8 @@ internal fun Flow<HistoryRulesSnapshot>.withDeadlineObservations(
                 // A due wake is not an acknowledgement: a rollback or failed write can
                 // leave the session open. Retry until its terminal record actually exists.
                 delay(if (remaining > 0) minOf(retryEveryMs, remaining) else retryEveryMs)
-                if (pending.any { !hasTerminal(it.id) && it.plannedEnd!! <= clock.millis() }) emit(snapshot)
+                if (pending.any { !hasTerminal(it.id) &&
+                        (it.plannedEnd!! <= clock.millis() || !hasStarted(it.id)) }) emit(snapshot)
             }
         }
     }.buffer(0)

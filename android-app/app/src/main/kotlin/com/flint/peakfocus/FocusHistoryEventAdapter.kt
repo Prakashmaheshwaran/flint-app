@@ -12,6 +12,7 @@ internal object FocusHistoryEventAdapter {
         FocusHistoryBridge.start(context, scope)
         if (listener != null) return
         listener = FocusHistoryHookListener().also(BlockEventHooks::register)
+        FocusHistoryTerminalAdapter.start(context, scope)
     }
 }
 

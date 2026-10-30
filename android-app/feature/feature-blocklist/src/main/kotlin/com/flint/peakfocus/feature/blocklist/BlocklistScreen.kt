@@ -2,11 +2,14 @@ package com.flint.peakfocus.feature.blocklist
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -57,6 +60,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -82,6 +86,7 @@ import com.flint.peakfocus.core.common.ui.FlintSectionLabel
 import com.flint.peakfocus.core.common.ui.FlintSkeletonRow
 import com.flint.peakfocus.core.common.ui.FlintStatusDot
 import com.flint.peakfocus.core.common.ui.rememberFlintHaptics
+import com.flint.peakfocus.core.common.ui.rememberReducedMotion
 import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BlockTargets
@@ -189,13 +194,16 @@ fun BlocklistScreen(
     }
 
     val slideDistance = with(LocalDensity.current) { EditorSlideDistance.roundToPx() }
+    val reducedMotion = rememberReducedMotion()
 
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         AnimatedContent(
             targetState = destination,
             modifier = Modifier.fillMaxSize(),
             transitionSpec = {
-                if (initialState is BlocklistDestination.Overview) {
+                if (reducedMotion && (initialState is BlocklistDestination.EditSleep || targetState is BlocklistDestination.EditSleep)) {
+                    EnterTransition.None togetherWith ExitTransition.None
+                } else if (initialState is BlocklistDestination.Overview) {
                     // Push: editor slides in from the end while the overview fades away.
                     (
                         slideInHorizontally(
@@ -510,7 +518,7 @@ private fun BlocklistOverview(
             Crossfade(
                 targetState = rulesState !is RulesUiState.Ready,
                 modifier = Modifier.padding(horizontal = FlintSpacing.gutter),
-                animationSpec = tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard),
+                animationSpec = if (rememberReducedMotion()) snap() else tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard),
                 label = "sleepSection",
             ) { loading ->
                 if (loading) {
@@ -765,13 +773,14 @@ private fun RuleCard(
 @Composable
 private fun SleepCard(config: SleepConfig?, onClick: () -> Unit, onToggle: (Boolean) -> Unit) {
     val enabled = config?.enabled == true
+    val reducedMotion = rememberReducedMotion()
     val containerColor by animateColorAsState(
         targetValue = if (enabled) {
             MaterialTheme.colorScheme.surfaceContainerLow
         } else {
             MaterialTheme.colorScheme.surfaceContainerLowest
         },
-        animationSpec = tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard),
+        animationSpec = if (reducedMotion) snap() else tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard),
         label = "sleepCardContainer",
     )
     val titleColor by animateColorAsState(
@@ -780,36 +789,34 @@ private fun SleepCard(config: SleepConfig?, onClick: () -> Unit, onToggle: (Bool
         } else {
             MaterialTheme.colorScheme.onSurfaceVariant
         },
-        animationSpec = tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard),
+        animationSpec = if (reducedMotion) snap() else tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard),
         label = "sleepCardTitle",
     )
     FlintCard(onClick = onClick, containerColor = containerColor) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = "Sleep mode",
+                    text = stringResource(R.string.sleep_title),
                     style = MaterialTheme.typography.titleMedium,
                     color = titleColor,
                 )
                 Spacer(Modifier.height(FlintSpacing.xs))
                 if (config == null) {
                     Text(
-                        text = "Not set up — bedtime blocking with an optional morning window.",
+                        text = stringResource(R.string.sleep_not_set_up),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
                     Text(
-                        text = sleepSummary(config),
+                        text = sleepSummaryText(config),
                         style = MaterialTheme.typography.bodySmall.merge(FlintNumerals),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(FlintSpacing.sm))
                     FlintBadge(
-                        text = when (config.assist) {
-                            SleepAssist.WIND_DOWN -> "Wind down"
-                            SleepAssist.FULL_ASSIST -> "Full assist"
-                        },
+                        text = stringResource(R.string.sleep_tier_value, stringResource(sleepPresentation(config).tier)),
+                        emphasized = config.breakLevel == BreakLevel.HARDCORE,
                     )
                 }
             }
@@ -821,11 +828,12 @@ private fun SleepCard(config: SleepConfig?, onClick: () -> Unit, onToggle: (Bool
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
+                val ruleDescription = stringResource(R.string.sleep_rule_description)
                 Switch(
                     colors = flintSwitchColors(),
                     checked = config.enabled,
                     onCheckedChange = onToggle,
-                    modifier = Modifier.semantics { contentDescription = "Sleep mode rule" },
+                    modifier = Modifier.semantics { contentDescription = ruleDescription },
                 )
             }
         }

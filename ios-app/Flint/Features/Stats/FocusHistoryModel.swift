@@ -17,15 +17,18 @@ final class FocusHistoryModel: ObservableObject {
     let acknowledgementKey: String
     private let sink: FlintHistorySink
     private let clock: () -> Date
+    private let sessionClock: FlintClock
     private let calendar: Calendar
     private let activeSession: () -> FlintActiveSession?
 
     init(sink: FlintHistorySink = .shared, clock: @escaping () -> Date = Date.init,
+         sessionClock: FlintClock = .system,
          calendar: Calendar = .current,
          activeSession: @escaping () -> FlintActiveSession? = { FlintGroupStore()?.loadActiveSession() },
          isPreview: Bool = false, presentsCompletions: Bool = true,
          acknowledgementKey: String = "flint.history.lastAcknowledgedCompletion") {
         self.sink = sink; self.clock = clock; self.calendar = calendar; self.activeSession = activeSession
+        self.sessionClock = sessionClock
         self.isPreview = isPreview; self.presentsCompletions = presentsCompletions
         self.acknowledgementKey = acknowledgementKey
     }
@@ -44,8 +47,8 @@ final class FocusHistoryModel: ObservableObject {
     }
 
     func clear(completion: @escaping (Bool, Bool) -> Void) {
-        let now = clock(), active = activeSession()
-        let keep = active.flatMap { session in session.endsAt.map { $0 <= now } == true ? nil : session.id }
+        let active = activeSession()
+        let keep = active.flatMap { $0.isLogicallyExpired(clock: sessionClock) ? nil : $0.id }
         sink.perform { [weak self] store in
             let success = store.clear(keepingRunningSession: keep)
             DispatchQueue.main.async { self?.refresh(); completion(success, success && keep != nil) }
@@ -76,6 +79,14 @@ final class FocusHistoryModel: ObservableObject {
 enum FocusHistoryText {
     static let definition = "Counts focus sessions you start. Schedules and limits aren’t counted."
     static let degraded = "Some history couldn’t be read."
+
+    static func unconfirmed(_ days: [FlintHistoryDay]) -> String? {
+        let count = days.reduce(0) { $0 + $1.unconfirmed }
+        guard count > 0 else { return nil }
+        if count == 1 { return NSLocalizedString("1 session couldn’t be confirmed.", comment: "Unconfirmed focus history") }
+        return String.localizedStringWithFormat(NSLocalizedString("%ld sessions couldn’t be confirmed.",
+            comment: "Unconfirmed focus history count"), count)
+    }
 
     static func duration(_ seconds: TimeInterval?) -> String {
         guard let seconds, seconds.isFinite else { return "No data" }
@@ -145,7 +156,9 @@ private enum FocusHistoryPreview {
             }
         }
         let store = FlintHistoryStore(directory: mode == "unavailable" ? nil : directory, clock: { now }, calendar: calendar)
-        return FocusHistoryModel(sink: FlintHistorySink(store: store), clock: { now }, calendar: calendar,
+        return FocusHistoryModel(sink: FlintHistorySink(store: store), clock: { now },
+            sessionClock: .init(now: { now }, monotonic: { 0 }, bootSessionID: { nil }, calendar: { calendar }),
+            calendar: calendar,
             activeSession: { active }, isPreview: true, presentsCompletions: mode == "complete",
             acknowledgementKey: "flint.history.previewAcknowledged.\(UUID().uuidString)")
     }

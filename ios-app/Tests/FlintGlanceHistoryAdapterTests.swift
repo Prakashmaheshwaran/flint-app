@@ -51,4 +51,12 @@ final class FlintGlanceHistoryAdapterTests: XCTestCase {
     func testDayBeforeHistoryStartIsNoDataNotZero() {
         XCTAssertNil(project(.value, historyStart: now.addingTimeInterval(86400)).seconds)
     }
+    func testR17WidgetAndLiveActivityAggregateNeverInflatesExpiredStart() {
+        let start = FlintHistoryEvent(type: .started, session: "killed", at: now.addingTimeInterval(-3600),
+            plannedEnd: now.addingTimeInterval(-60), tier: "easy", source: "manual", name: "Focus")
+        let reading = project(.value, events: [start], activeID: "killed")
+        XCTAssertEqual(reading.seconds, 0)
+        XCTAssertFalse(reading.inProgress)
+        XCTAssertEqual(project(.value, events: [start, .init(type: .completed, session: "killed", at: now.addingTimeInterval(-60))]).seconds, 3540)
+    }
 }

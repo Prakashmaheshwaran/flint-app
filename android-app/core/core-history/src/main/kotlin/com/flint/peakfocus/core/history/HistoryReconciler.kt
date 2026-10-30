@@ -16,7 +16,7 @@ import kotlinx.coroutines.sync.withLock
 data class HistoryRule(val id: String, val name: String, val tier: String, val plannedEnd: Long?)
 
 sealed interface HistoryRulesSnapshot {
-    data class Ready(val rules: List<HistoryRule>) : HistoryRulesSnapshot
+    data class Ready(val rules: List<HistoryRule>, val ownerInactiveIds: Set<String> = emptySet()) : HistoryRulesSnapshot
     data class Unavailable(val reason: String) : HistoryRulesSnapshot
     data object Loading : HistoryRulesSnapshot
 }
@@ -25,9 +25,15 @@ class HistoryReconciler(
     private val store: FocusHistoryStore,
     private val clock: Clock = Clock.systemUTC(),
     private val zone: () -> ZoneId = { ZoneId.systemDefault() },
+    // Read again under the history transaction lock: a queued observation may be
+    // stale after clear, a clock edit, or the owner's natural terminal transition.
+    private val authoritativeSnapshot: (() -> HistoryRulesSnapshot)? = null,
 ) {
     private var firstSuccessfulSnapshot = true
     private val observationMutex = Mutex()
+    // Public active IDs update immediately; an observed end keeps its original time
+    // until history accepts it, even if a later retry is after the planned deadline.
+    private val pendingEarlyEnds = mutableMapOf<String, Long>()
     private val active = MutableStateFlow<Set<String>>(emptySet())
     val activeSessionIds: StateFlow<Set<String>> = active.asStateFlow()
     private val readiness = MutableStateFlow(false)
@@ -43,7 +49,7 @@ class HistoryReconciler(
             try {
                 rules.collect { snapshot ->
                     when (snapshot) {
-                        is HistoryRulesSnapshot.Ready -> observe(snapshot.rules)
+                        is HistoryRulesSnapshot.Ready -> observeSnapshot(snapshot)
                         is HistoryRulesSnapshot.Unavailable -> diagnostics.value = "Rules unavailable: ${snapshot.reason}"
                         HistoryRulesSnapshot.Loading -> diagnostics.value = "Rules loading"
                     }
@@ -56,17 +62,32 @@ class HistoryReconciler(
         }
     }
 
-    suspend fun observe(rules: List<HistoryRule>) = observationMutex.withLock {
-        val now = clock.millis()
-        val sessions = rules.filter { it.id.startsWith("session-") }.associateBy { it.id }
-        val current = sessions.filterValues { it.plannedEnd == null || it.plannedEnd > now }.keys
-        active.value = current
-        val coldStart = firstSuccessfulSnapshot
+    suspend fun observe(rules: List<HistoryRule>) = observeSnapshot(HistoryRulesSnapshot.Ready(rules))
+
+    private suspend fun observeSnapshot(observation: HistoryRulesSnapshot.Ready) = observationMutex.withLock {
+        val initial = authoritativeSnapshot?.invoke() ?: observation
+        if (initial is HistoryRulesSnapshot.Ready) captureActive(initial, clock.millis())
+        var acceptedRules = false
+        var rulesDiagnostic: String? = null
         val success = store.update { snapshot ->
+            val latest = authoritativeSnapshot?.invoke() ?: observation
+            if (latest !is HistoryRulesSnapshot.Ready) {
+                rulesDiagnostic = if (latest is HistoryRulesSnapshot.Unavailable)
+                    "Rules unavailable: ${latest.reason}" else "Rules loading"
+                return@update emptyList()
+            }
+            acceptedRules = true
+            val now = clock.millis()
+            val sessions = latest.rules.filter { it.id.startsWith("session-") }.associateBy { it.id }
+            val current = sessions.filterValues { it.plannedEnd == null || it.plannedEnd > now }.keys
+            captureActive(latest, now)
             val events = mutableListOf<HistoryEvent>()
             val known = snapshot.events.filter { it.knownType != null }.groupBy { it.session }
             sessions.values.filter { it.id in current }.forEach { rule ->
                 if (known[rule.id].orEmpty().none { it.knownType == HistoryEventType.STARTED }) {
+                    // An unacked raw Timer can look future-dated after wall rollback.
+                    // Wait for the persisted clear boundary before importing new IDs.
+                    if (snapshot.clearedAt?.let { now < it } == true) return@forEach
                     val native = rule.id.startsWith("session-timer-")
                     val timestamp = if (native) rule.id.removePrefix("session-timer-v2-").removePrefix("session-timer-").substringBefore('-').toLongOrNull() else null
                     val start = timestamp?.takeIf { it > 1_500_000_000_000L && (rule.plannedEnd == null || it < rule.plannedEnd) } ?: now
@@ -84,7 +105,7 @@ class HistoryReconciler(
             sessions.values.forEach { rule ->
                 val group = known[rule.id].orEmpty()
                 if (group.any { it.knownType?.terminal == true }) return@forEach
-                val plan = group.sortedBy { it.at }.lastOrNull {
+                val plan = group.sortedBy { it.observedAt ?: it.at }.lastOrNull {
                     it.knownType in setOf(HistoryEventType.STARTED, HistoryEventType.RESCHEDULED)
                 } ?: return@forEach
                 if (plan.plannedEnd != rule.plannedEnd) {
@@ -95,25 +116,38 @@ class HistoryReconciler(
             (snapshot.events + events).filter { it.knownType != null }.groupBy { it.session }.forEach { (id, group) ->
                 if (group.none { it.knownType == HistoryEventType.STARTED }) return@forEach
                 if (group.any { it.knownType?.terminal == true }) return@forEach
-                val plan = group.sortedBy { it.at }.last { it.knownType in setOf(HistoryEventType.STARTED, HistoryEventType.RESCHEDULED) }
+                val plan = group.sortedBy { it.observedAt ?: it.at }.last { it.knownType in setOf(HistoryEventType.STARTED, HistoryEventType.RESCHEDULED) }
                 val rule = sessions[id]
                 val deadline = if (rule != null) rule.plannedEnd else plan.plannedEnd
-                if (deadline != null && now >= deadline) {
-                    // Expiry is provable even if ActiveRulesBridge has not swept the row yet.
-                    events += event(HistoryEventType.COMPLETED, id, deadline).copy(
-                        inferred = coldStart || id in sessions || now > deadline,
-                        observedAt = now.takeIf { it > deadline })
-                } else if (id !in current) {
-                    events += event(HistoryEventType.ENDED_EARLY, id, now).copy(route = "unknown", inferred = coldStart)
+                // An expired/missing rule is not proof of natural completion. Leave
+                // the occurrence open for the coordinator's durable terminal/outbox.
+                val observedEnd = pendingEarlyEnds[id]
+                if (observedEnd != null && (deadline == null || observedEnd < deadline)) {
+                    events += event(HistoryEventType.ENDED_EARLY, id, observedEnd).copy(route = "unknown")
                 }
             }
             events
         }
-        if (success) {
+        if (success && acceptedRules) {
+            pendingEarlyEnds.clear()
             firstSuccessfulSnapshot = false
             readiness.value = true
             diagnostics.value = null
-        } else diagnostics.value = "History write unavailable"
+        } else diagnostics.value = rulesDiagnostic ?: "History write unavailable"
+    }
+
+    private fun captureActive(snapshot: HistoryRulesSnapshot.Ready, now: Long) {
+        val current = snapshot.rules.filter {
+            it.id.startsWith("session-") && (it.plannedEnd == null || it.plannedEnd > now)
+        }.mapTo(mutableSetOf()) { it.id }
+        val previouslyActive = active.value
+        active.value = current
+        // Public IDs and the first live observation survive even a history-lock
+        // failure; owner-ended causes instead await their durable terminal.
+        snapshot.ownerInactiveIds.forEach(pendingEarlyEnds::remove)
+        if (!firstSuccessfulSnapshot) previouslyActive.filterNot {
+            it in current || it in snapshot.ownerInactiveIds
+        }.forEach { id -> pendingEarlyEnds.putIfAbsent(id, now) }
     }
 
     private fun event(type: HistoryEventType, id: String, at: Long) =

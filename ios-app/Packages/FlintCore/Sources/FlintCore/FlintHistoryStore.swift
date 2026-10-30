@@ -706,19 +706,18 @@ public final class FlintHistorySink: FlintSessionEventSink, @unchecked Sendable 
     public static let shared = FlintHistorySink(store: .shared)
     public let store: FlintHistoryStore
     private let isExtension: Bool
-    private let clock: () -> Date
     private let activity: ((@escaping (Bool) -> Void) -> Void)?
     private let queue = DispatchQueue(label: "app.flint.history", qos: .utility)
     public init(store: FlintHistoryStore, isExtension: Bool = Bundle.main.bundlePath.hasSuffix(".appex"),
-                clock: @escaping () -> Date = Date.init,
+                clock _: @escaping () -> Date = Date.init,
                 activity: ((@escaping (Bool) -> Void) -> Void)? = nil) {
-        self.store = store; self.isExtension = isExtension; self.clock = clock
+        self.store = store; self.isExtension = isExtension
         self.activity = activity
     }
     public func handle(_ event: FlintSessionLifecycleEvent) {
-        if case let .ended(session, route, _) = event.unannotated, route == .completed {
-            guard let deadline = session.endsAt, deadline <= clock() else { return }
-        }
+        // The lifecycle owner gates completion at its logical deadline. Rechecking the
+        // original wall end (or this reader's clock) can discard an accepted transition
+        // after a clock rollback, including one committed by another process.
         let record = FlintHistoryEvent(event)
         // Durable ingress precedes return in every process. Expiration can skip later
         // maintenance, but cannot discard this accepted lifecycle transition.
