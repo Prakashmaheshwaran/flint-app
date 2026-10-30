@@ -46,8 +46,34 @@ jobs:
           assert target == root.get('package') == 'com.flint.peakfocus.test', (target, root.get('package'))
           PY
       - uses: ./.github/actions/android-emulator-cache
+      - name: Release build memory and monitor emulator host
+        run: |
+          free -m > artifacts/android-e2e/host-before-daemon-stop.txt
+          android-app/gradlew -p android-app --stop
+          # Retain samples even if qemu disappears before device-side collection.
+          # This read-only monitor is bounded by the job deadline and stopped below.
+          nohup bash > artifacts/android-e2e/host-resources.txt 2>&1 <<'MONITOR' &
+            for ((sample=0; sample<150; sample++)); do
+              [[ ! -e artifacts/android-e2e/host-monitor.stop ]] || break
+              date -u +%FT%TZ
+              cat /proc/uptime
+              free -m
+              df -m . /tmp
+              cat /proc/pressure/memory
+              for metric in memory.current memory.peak memory.max memory.events; do
+                echo "cgroup $metric"
+                cat "/sys/fs/cgroup/$metric" 2>/dev/null || true
+              done
+              ps -eo pid,ppid,etimes,rss,comm --sort=-rss | head -21
+              sleep 10
+            done
+          MONITOR
       - name: Real accessibility smoke (disposable emulator)
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          # APKs are already built: do not retain the 2.5 GB build daemon or
+          # parallel build workers alongside the 3 GB guest and SwiftShader.
+          GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx1024m -Dorg.gradle.workers.max=2 -Dorg.gradle.parallel=false -Dorg.gradle.daemon=false
         with:
           api-level: 36
           target: google_apis
@@ -61,7 +87,22 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-snapshot-save -noaudio -no-boot-anim -camera-back none -camera-front none
           emulator-boot-timeout: 300
           disable-animations: true
+          pre-emulator-launch-script: '"$ANDROID_HOME/emulator/emulator" -accel-check > artifacts/android-e2e/kvm-check.txt 2>&1'
           script: FLINT_E2E_DISPOSABLE=1 AVD=emulator-5554 bash scripts/android-e2e.sh
+      - name: Retain host OOM and emulator crash evidence
+        if: always()
+        run: |
+          mkdir -p artifacts/android-e2e
+          touch artifacts/android-e2e/host-monitor.stop
+          free -m > artifacts/android-e2e/host-after-suite.txt
+          df -m . /tmp >> artifacts/android-e2e/host-after-suite.txt
+          sudo dmesg --ctime 2>&1 | tee artifacts/android-e2e/host-kernel.txt > /dev/null || true
+          # Emulator stdout/stderr remains in the action log. Inventory Crashpad
+          # reports without publishing raw process memory/environment from dumps.
+          if [[ -d /tmp/android-runner ]]; then
+            find /tmp/android-runner -path '*/emu-crash-*' -type f -printf '%P %s bytes\n' \
+              > artifacts/android-e2e/emulator-crash-inventory.txt
+          fi
       - name: Upload screenshots, hierarchy, logcat and JUnit
         if: always()
         uses: actions/upload-artifact@v7
