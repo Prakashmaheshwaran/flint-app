@@ -333,15 +333,20 @@ public enum FlintOpenCredit {
     /// read without migration (`protection == nil`) keeps its pre-contract rights. nil (no
     /// claim) when a covering rule's queued change is already due: the next reconcile applies
     /// it, possibly opening an ordinary exit, and boundary delivery is not guaranteed.
-    public static func exitCauses(covering rules: [FlintOpenLimitRule], at now: Date) -> [FlintCauseState]? {
+    /// Occurrence, due-ness and legacy rights all use the rule's trusted time, as the arbiter
+    /// does, so a wall jump can't make the shield claim more than the arbiter enforces.
+    public static func exitCauses(covering rules: [FlintOpenLimitRule], clock: FlintClock = .system)
+        -> [FlintCauseState]? {
         let enabled = rules.filter(\.enabled)
-        guard !enabled.contains(where: { $0.protection?.queuedChange.map { $0.window.end <= now } == true })
-        else { return nil }
+        guard !enabled.contains(where: { rule in
+            rule.protection?.queuedChange.map { FlintRuleOccurrenceClock.isOver($0.window, for: rule, clock: clock) } == true
+        }) else { return nil }
         return enabled.map { rule in
-            let occurrence = rule.occurrence(at: now)
+            let trusted = FlintRuleOccurrenceClock.date(for: rule, clock: clock)
+            let occurrence = FlintRuleOccurrenceClock.current(for: rule, clock: clock)
             return FlintCauseState(causeID: rule.id, occurrenceID: occurrence?.identity, revision: rule.revision,
                 kind: .openLimit, tier: rule.breakLevel, isActive: occurrence != nil, end: occurrence?.end,
-                legacyRights: rule.protection.map { $0.legacyRightsUntil.map { now < $0 } ?? false } ?? true)
+                legacyRights: rule.protection.map { $0.legacyRightsUntil.map { trusted < $0 } ?? false } ?? true)
         }
     }
 

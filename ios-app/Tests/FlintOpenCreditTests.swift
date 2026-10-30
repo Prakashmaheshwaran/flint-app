@@ -792,8 +792,9 @@ final class FlintOpenCreditTests: XCTestCase {
             rule.protection = protection
             return rule
         }
+        let fixed = FlintClock(now: { now }, monotonic: { 500 }, bootSessionID: { "boot" }, calendar: { .current })
         func passOnly(_ rules: [FlintOpenLimitRule]) -> Bool {
-            FlintOpenCredit.exitCauses(covering: rules, at: now).map(FlintOpenCreditExit.requiresPass) ?? false
+            FlintOpenCredit.exitCauses(covering: rules, clock: fixed).map(FlintOpenCreditExit.requiresPass) ?? false
         }
         XCTAssertTrue(passOnly([rule("a", .hardcore)]))
         XCTAssertTrue(passOnly([rule("a", .hardcore), rule("b", .hardcore)]))
@@ -817,7 +818,7 @@ final class FlintOpenCreditTests: XCTestCase {
                 snapshot: nil, fingerprint: "f")
             return hardcore
         }
-        XCTAssertNil(FlintOpenCredit.exitCauses(covering: [queued(-1)], at: now), "due queue makes no claim")
+        XCTAssertNil(FlintOpenCredit.exitCauses(covering: [queued(-1)], clock: fixed), "due queue makes no claim")
         XCTAssertFalse(passOnly([queued(0)]))
         XCTAssertTrue(passOnly([queued(3600)]), "a future queue keeps the current commitment")
         // Read without migration: pre-contract rights apply, so no pass-only claim.
@@ -825,6 +826,44 @@ final class FlintOpenCreditTests: XCTestCase {
         // An inactive cause allows edits; the predicate itself never claims for one.
         XCTAssertFalse(FlintOpenCreditExit.requiresPass([.init(causeID: "x", kind: .openLimit, tier: .hardcore,
                                                               isActive: false)]))
+    }
+
+    /// The shield resolves time like the arbiter (#185): same-boot elapsed time on the
+    /// rule's anchor, not the wall clock, in both directions.
+    func testPassOnlyUsesTrustedRuleTimeAcrossWallJumps() {
+        let anchorTime = Date(timeIntervalSince1970: 1_800_000_000)
+        let anchor = FlintRuleTimeAnchor(timeline: anchorTime, wall: anchorTime, monotonic: 1_000,
+                                         bootID: "boot", deviceZoneID: "UTC")
+        // 60 s of real elapsed time on the same boot, whatever the wall clock says.
+        func clock(wallShift: TimeInterval) -> FlintClock {
+            FlintClock(now: { anchorTime.addingTimeInterval(60 + wallShift) }, monotonic: { 1_060 },
+                       bootSessionID: { "boot" }, calendar: { .current })
+        }
+        func rule(legacyUntil: Date? = nil, queueEnd: Date? = nil) -> FlintOpenLimitRule {
+            var rule = FlintOpenLimitRule(id: "a", name: "a", opensAllowed: 1, breakLevel: .hardcore)
+            var protection = FlintRuleProtection(timeZoneID: "UTC", legacyRightsUntil: legacyUntil)
+            protection.timeAnchor = anchor
+            if let queueEnd {
+                protection.queuedChange = .init(action: .turnOff, baseRevision: 1,
+                    window: .init(start: queueEnd.addingTimeInterval(-86_400), end: queueEnd), snapshot: nil, fingerprint: "f")
+            }
+            rule.protection = protection
+            return rule
+        }
+        func passOnly(_ rule: FlintOpenLimitRule, _ clock: FlintClock) -> Bool {
+            FlintOpenCredit.exitCauses(covering: [rule], clock: clock).map(FlintOpenCreditExit.requiresPass) ?? false
+        }
+        // Wall 6 h ahead, past legacyRightsUntil by wall; trusted time is still inside it,
+        // so the arbiter still allows the legacy toggle-off: no pass-only claim.
+        let legacy = rule(legacyUntil: anchorTime.addingTimeInterval(3_600))
+        XCTAssertFalse(passOnly(legacy, clock(wallShift: 6 * 3_600)))
+        XCTAssertFalse(passOnly(legacy, clock(wallShift: 0)))
+        // Wall 6 h behind; the queue is due on the trusted timeline: no claim.
+        let due = rule(queueEnd: anchorTime.addingTimeInterval(30))
+        XCTAssertNil(FlintOpenCredit.exitCauses(covering: [due], clock: clock(wallShift: -6 * 3_600)))
+        // Neither jump changes a plain Hardcore claim.
+        XCTAssertTrue(passOnly(rule(), clock(wallShift: 6 * 3_600)))
+        XCTAssertTrue(passOnly(rule(), clock(wallShift: -6 * 3_600)))
     }
 
     /// The session and Safari stores must not be swapped: the shield names the kind.
