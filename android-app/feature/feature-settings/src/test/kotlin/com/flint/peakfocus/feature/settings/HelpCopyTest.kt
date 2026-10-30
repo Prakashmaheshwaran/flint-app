@@ -56,8 +56,14 @@ class HelpCopyTest {
     @Test
     fun `every help string referenced by the screen exists`() {
         val referenced = HelpContent.sections.size
-        assertEquals(3, referenced)
+        assertEquals(5, referenced)
         listOf(
+            "help_section_strictness", "help_strict_easy_title", "help_strict_easy_text",
+            "help_strict_harder_title", "help_strict_harder_text", "help_strict_hardcore_title",
+            "help_strict_hardcore_text", "help_strict_timers_title", "help_strict_timers_text",
+            "help_strict_legacy_title", "help_strict_legacy_text",
+            "help_section_pass", "help_pass_title", "help_pass_text", "help_pass_recovery_title",
+            "help_pass_recovery_text", "help_pass_where_title", "help_pass_where_text",
             "help_section_limits", "help_access_title", "help_access_text", "help_safety_title",
             "help_safety_text", "help_uninstall_title", "help_uninstall_text", "help_clock_title", "help_clock_text", "help_section_websites",
             "help_websites_title", "help_websites_text", "help_section_running", "help_battery_title",
@@ -89,17 +95,64 @@ class HelpCopyTest {
     }
 
     @Test
-    fun `clock copy does not claim schedules or limits are protected from clock changes`() {
+    fun `clock copy separates elapsed-time protection from phone-day boundaries`() {
         val clock = strings.getValue("help_clock_text")
-        assertTrue(clock.contains("schedules and daily time limits follow the phone's clock"))
+        assertTrue(clock.contains("During the same phone boot, Flint times started sessions and scheduled blocks"))
+        assertTrue(clock.contains("Saved schedules keep their time zone and stay on Flint's saved timeline."))
+        assertTrue(clock.contains("Daily time limits use the phone's day, so a clock change can move when they reset"))
+        assertTrue(clock.contains("by elapsed time, and clock changes don't reset spent opens or pending waits."))
+        assertTrue(clock.contains("website checks for scheduled rules follow the phone's clock."))
+        assertTrue(clock.contains("After a phone restart, some access can end, and pass renewal or a daily reset can take longer"))
+        assertTrue(clock.contains("can't always tell how much time really passed"))
+        assertFalse("future schedules follow the saved timeline, not the phone clock",
+            clock.contains("Future schedule start times"))
     }
 
     @Test
-    fun `no tier or pass promises until lane C's ADR-012 behavior lands`() {
-        (helpCopy.values + websiteCoverageCopy).forEach { text ->
-            tierAndPassTerms.forEach { term ->
-                assertFalse("help copy names $term before its behavior is settled", text.contains(term))
-            }
+    fun `pass copy uses lane C's rolling and recovery wording`() {
+        val pass = strings.getValue("help_pass_text")
+        assertTrue(pass.contains("One Emergency Pass becomes available seven days after you use it. " +
+            "It starts 60 minutes of recovery across all personal protection."))
+        val recovery = strings.getValue("help_pass_recovery_text")
+        assertTrue(recovery.contains("New schedule occurrences are also suspended during recovery. " +
+            "Counters are kept; the pass is not refunded."))
+        // Complete, case-sensitive sentences reused from lane C's RecoveryScreen.
+        assertTrue(recovery.contains("Only commitments still naturally active will resume."))
+        assertTrue(recovery.contains("While the recovery screen is open, choose Resume protection now to end recovery early."))
+        assertTrue(strings.getValue("help_pass_where_text").contains("Review Emergency Pass"))
+    }
+
+    @Test
+    fun `strictness copy states the enforced waits, break limits and Hardcore exits`() {
+        val harder = strings.getValue("help_strict_harder_text")
+        assertTrue(harder.contains("waits 1 minute for the first confirmed change in a block, then 5, then 15"))
+        assertTrue(harder.contains("For a daily limit, the wait count lasts until Flint's saved daily reset; " +
+            "changing the phone's day does not restart the count."))
+        assertTrue(harder.contains("A granted break lasts up to five minutes and ends sooner if the block ends."))
+        val easy = strings.getValue("help_strict_easy_text")
+        assertTrue(easy.contains("up to five minutes when no other restriction prevents it"))
+        val hardcore = strings.getValue("help_strict_hardcore_text")
+        assertTrue(hardcore.contains("No breaks and no ending early"))
+        assertTrue(hardcore.contains("saved for after that block ends"))
+        assertTrue(strings.getValue("help_strict_timers_text").contains("2-second hold"))
+        val legacy = strings.getValue("help_strict_legacy_text")
+        assertTrue(legacy.contains("These rules apply to new commitments."))
+        assertTrue(legacy.contains("Protection already running when Flint was updated can keep its earlier editing rights " +
+            "until that occurrence ends; older protection without an end time keeps those rights until you choose a finite duration."))
+        assertTrue(legacy.contains("A Timer marked Legacy can still be ended with a hold."))
+        val legacyFact = HelpContent.sections.flatMap { it.facts }.single { it.title == R.string.help_strict_legacy_title }
+        assertEquals(R.string.help_strict_legacy_text, legacyFact.text)
+    }
+
+    @Test
+    fun `Help leaves Open credits to the shield and limit editor`() {
+        helpCopy.forEach { (key, text) -> assertFalse("$key mentions credits", text.lowercase().contains("credit")) }
+    }
+
+    @Test
+    fun `tier and pass terms stay out of the website projection`() {
+        websiteCoverageCopy.forEach { text ->
+            tierAndPassTerms.forEach { term -> assertFalse("website copy names $term", text.contains(term)) }
         }
     }
 

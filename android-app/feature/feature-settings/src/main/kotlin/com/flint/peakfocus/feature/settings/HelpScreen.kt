@@ -31,10 +31,10 @@ import com.flint.peakfocus.core.common.ui.FlintCard
 import com.flint.peakfocus.core.common.ui.FlintSectionLabel
 
 /**
- * "How Flint works": what Flint cannot prevent on Android and its platform limits. Every
- * sentence must stay true of the shipped code and ADR-012 (docs/architecture/protection-contract.md).
- * Strictness and Emergency Pass sections are added with lane C's ADR-012 behavior; until then
- * this screen makes no tier or pass claims. Authored copy lives in res/values/strings.xml
+ * "How Flint works": strictness tiers, the Emergency Pass, what Flint cannot prevent on Android
+ * and its platform limits. Every sentence must stay true of the shipped code and ADR-012
+ * (docs/architecture/protection-contract.md); tier and pass copy follows lane C's merged
+ * enforcement and recovery wording. Authored copy lives in res/values/strings.xml
  * (`help_*`). The Websites fact also renders lane C's shared website-coverage projection
  * (BlockingHealthUi.websiteCoverage), the same text You shows. HelpCopyTest guards both.
  */
@@ -49,6 +49,24 @@ internal data class HelpSection(@StringRes val title: Int, val facts: List<HelpF
 
 internal object HelpContent {
     val sections: List<HelpSection> = listOf(
+        HelpSection(
+            R.string.help_section_strictness,
+            listOf(
+                HelpFact(R.string.help_strict_easy_title, R.string.help_strict_easy_text),
+                HelpFact(R.string.help_strict_harder_title, R.string.help_strict_harder_text),
+                HelpFact(R.string.help_strict_hardcore_title, R.string.help_strict_hardcore_text),
+                HelpFact(R.string.help_strict_timers_title, R.string.help_strict_timers_text),
+                HelpFact(R.string.help_strict_legacy_title, R.string.help_strict_legacy_text),
+            ),
+        ),
+        HelpSection(
+            R.string.help_section_pass,
+            listOf(
+                HelpFact(R.string.help_pass_title, R.string.help_pass_text),
+                HelpFact(R.string.help_pass_recovery_title, R.string.help_pass_recovery_text),
+                HelpFact(R.string.help_pass_where_title, R.string.help_pass_where_text),
+            ),
+        ),
         HelpSection(
             R.string.help_section_limits,
             listOf(
