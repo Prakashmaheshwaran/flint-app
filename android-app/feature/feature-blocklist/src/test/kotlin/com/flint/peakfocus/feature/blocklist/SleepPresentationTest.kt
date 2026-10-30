@@ -6,10 +6,11 @@ import org.junit.Test
 
 class SleepPresentationTest {
     @Test fun `saved tier takes precedence over assist label`() {
-        val config = SleepConfig(assist = SleepAssist.WIND_DOWN, breakLevel = BreakLevel.HARDCORE)
+        val config = SleepConfig(breakLevel = BreakLevel.HARDCORE)
         assertEquals(R.string.sleep_tier_hardcore, sleepPresentation(config).tier)
         assertEquals(R.string.sleep_off_hardcore, sleepPresentation(config).offExplanation)
         assertEquals(config, sleepConfigFrom(config.toRules()))
+        assertNull(config.assist)
     }
 
     @Test fun `each tier explains its own off gate`() {
@@ -33,5 +34,11 @@ class SleepPresentationTest {
         assertTrue(sleepTimeFieldsStack(320f, 1f))
         assertTrue(sleepTimeFieldsStack(420f, 2f))
         assertFalse(sleepTimeFieldsStack(420f, 1f))
+    }
+
+    @Test fun PC_82_strongerSavedMorningTierDoesNotAdvertiseEasyOffRights() {
+        val config = SleepConfig(morningEnabled = true, breakLevel = BreakLevel.EASY, morningBreakLevel = BreakLevel.HARDCORE)
+        assertEquals(R.string.sleep_tier_easy, sleepPresentation(config).tier)
+        assertEquals(R.string.sleep_off_hardcore, sleepPresentation(config).offExplanation)
     }
 }

@@ -16,7 +16,7 @@ internal fun sleepPresentation(config: SleepConfig): SleepPresentation = SleepPr
         BreakLevel.HARDER -> R.string.sleep_tier_harder
         BreakLevel.HARDCORE -> R.string.sleep_tier_hardcore
     },
-    offExplanation = when (config.breakLevel) {
+    offExplanation = when (if (config.morningEnabled) maxOf(config.breakLevel, config.morningBreakLevel) else config.breakLevel) {
         BreakLevel.EASY -> R.string.sleep_off_easy
         BreakLevel.HARDER -> R.string.sleep_off_harder
         BreakLevel.HARDCORE -> R.string.sleep_off_hardcore

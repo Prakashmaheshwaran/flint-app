@@ -269,7 +269,7 @@ internal fun SleepEditorScreen(
                 FlintCard {
                     AssistSelector(
                         selected = config.assist,
-                        onSelect = { config = config.copy(assist = it, breakLevel = if (it == SleepAssist.WIND_DOWN) com.flint.peakfocus.core.model.BreakLevel.EASY else com.flint.peakfocus.core.model.BreakLevel.HARDER) },
+                        onSelect = { config = config.withAssist(it) },
                     )
                     Spacer(Modifier.height(FlintSpacing.sm))
                     Text(
@@ -282,7 +282,14 @@ internal fun SleepEditorScreen(
 
                 SleepSectionLabel(R.string.sleep_tier)
                 Text(stringResource(R.string.sleep_tier_value, stringResource(presentation.tier)))
-                SleepTierSelector(selected = config.breakLevel, onSelect = { config = config.copy(breakLevel = it) })
+                SleepTierSelector(selected = config.breakLevel, onSelect = { config = config.withTier(it) })
+                AnimatedVisibility(visible = config.breakLevel == BreakLevel.HARDCORE ||
+                    (config.morningEnabled && config.morningBreakLevel == BreakLevel.HARDCORE)) {
+                    Column {
+                        Spacer(Modifier.height(FlintSpacing.sm))
+                        HardcoreCommitmentDisclosure()
+                    }
+                }
                 Text(
                     stringResource(presentation.offExplanation),
                     style = MaterialTheme.typography.bodySmall,
@@ -341,6 +348,10 @@ internal fun SleepEditorScreen(
                         checked = config.morningEnabled,
                         onCheckedChange = { config = config.copy(morningEnabled = it) },
                     )
+                    if (config.morningEnabled && config.morningBreakLevel != config.breakLevel) {
+                        Text(stringResource(R.string.sleep_tier_value,
+                            stringResource(sleepPresentation(SleepConfig(breakLevel = config.morningBreakLevel)).tier)))
+                    }
                     AnimatedVisibility(
                         visible = config.morningEnabled,
                         enter = if (reducedMotion) EnterTransition.None else expandVertically(editorRevealSpec()) + fadeIn(editorRevealSpec()),
@@ -391,7 +402,7 @@ internal fun SleepEditorScreen(
 /** The two assist levels as radio rows — same idiom as [BreakLevelSelector]. */
 @Composable
 private fun AssistSelector(
-    selected: SleepAssist,
+    selected: SleepAssist?,
     onSelect: (SleepAssist) -> Unit,
     modifier: Modifier = Modifier,
 ) {

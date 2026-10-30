@@ -520,12 +520,7 @@ internal fun RuleEditorScreen(
                     ) {
                         Column {
                             Spacer(Modifier.height(FlintSpacing.sm))
-                            Text(
-                                text = "An active Hardcore occurrence cannot be weakened in Flint before it ends, " +
-                                    "except with an available Emergency Pass. Changes can be saved for after it ends.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
+                            HardcoreCommitmentDisclosure()
                         }
                     }
                 }
