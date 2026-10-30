@@ -48,7 +48,7 @@ enum FlintRuleInitialization {
            ["FlintLedger", "FlintRules/Recovery"].contains(where: {
                FileManager.default.fileExists(atPath: container.appendingPathComponent($0).path)
            }) { return true }
-        return ["flint", "flint.web"].contains { name in
+        return ["flint", "flint.web", "flint.guard"].contains { name in
             let store = ManagedSettingsStore(named: .init(name))
             return store.shield.applications != nil || store.shield.applicationCategories != nil
                 || store.shield.webDomains != nil || store.shield.webDomainCategories != nil

@@ -1787,7 +1787,7 @@ final class FlintSessionControllerTests: XCTestCase {
         shield.denyAppRemoval = true
         XCTAssertEqual(controller().reconcile().outcome, .noSession)
         XCTAssertEqual(shield.clearCount, 1)
-        XCTAssertNil(shield.denyAppRemoval)
+        XCTAssertEqual(shield.denyAppRemoval, true, "Only derived migration may clear the old removal setting")
     }
 
     func testMissingAppGroupFailsLoudly() {
@@ -2016,7 +2016,7 @@ private final class FakeShield: FlintSessionShielding {
     func clear() {
         onClear?()
         clearCount += 1
-        denyAppRemoval = nil
+        // Production clears only session-owned targets; derived migration owns removal.
         log.entries.append("clear")
     }
 }

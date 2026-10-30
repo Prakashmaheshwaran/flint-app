@@ -332,10 +332,14 @@ final class FlintRuleArbiter {
                       (try? next.fingerprint(action: queue.action.rawValue)) == queue.fingerprint else { return failed() }
                 next.protection?.timeAnchor = old.protection?.timeAnchor
                 let nextOccurrence = next.templateOccurrence(at: FlintRuleOccurrenceClock.date(for: old, clock: self.env.clock))
-                let capture = nextOccurrence.map { _ in
-                    next.breakLevel == .hardcore && self.env.captureRemovalGuard(self.env.defaults)
+                if nextOccurrence?.identity != old.protection?.occurrence?.identity {
+                    let capture = nextOccurrence.map { _ in
+                        next.breakLevel == .hardcore && self.env.captureRemovalGuard(self.env.defaults)
+                    }
+                    next.protection?.removalGuard = capture
+                } else {
+                    next.protection?.removalGuard = old.protection?.removalGuard
                 }
-                next.protection?.removalGuard = capture
                 next.protection?.occurrence = nextOccurrence
                 guard self.prepare(next, replacing: old) else { return failed() }
                 prepared.append(next)

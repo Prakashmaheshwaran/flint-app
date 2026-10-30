@@ -20,6 +20,7 @@ public struct FlintRemovalGuardReconciler {
     struct Environment {
         var clock: FlintClock
         var withAuthority: (() -> Void) -> Bool
+        var recoveryGate: (FlintClock) -> FlintPassRecoveryGate
         var inventory: (FlintClock) -> [FlintRemovalGuardOwner]?
         var isAuthorized: () -> Bool
         var write: (_ store: String, _ deny: Bool?) throws -> Void
@@ -41,7 +42,15 @@ public struct FlintRemovalGuardReconciler {
         let env = environment
         _ = env.withAuthority {
             let clock = FlintLedgerInstant(clock: env.clock).clock
-            let owners = env.inventory(clock)
+            let owners: [FlintRemovalGuardOwner]?
+            switch env.recoveryGate(clock) {
+            case .suspended:
+                // A positively committed pass covers every owner, including unreadable
+                // domains and new occurrences. Its release cannot depend on their reads.
+                owners = []
+            case .enforcing: owners = env.inventory(clock)
+            case .unavailable: owners = nil
+            }
             report.decision = FlintRemovalGuard.decide(owners: owners, clock: clock)
             guard report.decision != .keep else { return }
             // Permission loss never authorizes arming. Clearing remains available, especially
@@ -72,6 +81,12 @@ public struct FlintRemovalGuardReconciler {
         }
         return report
     }
+
+    static func migrationComplete(defaults: UserDefaults?) throws -> Bool {
+        guard let defaults, defaults.synchronize() else { throw FlintRemovalGuardPreference.Error.unavailable }
+        // Missing, stale or malformed markers all require the same idempotent migration.
+        return defaults.object(forKey: migrationKey) as? String == "complete-v1"
+    }
 }
 
 extension FlintRemovalGuardReconciler.Environment {
@@ -87,6 +102,8 @@ extension FlintRemovalGuardReconciler.Environment {
         return .init(clock: .system,
             withAuthority: { work in
                 FlintRuleStoreLock.withLock(environment: rules) { work(); return true } ?? false
+            }, recoveryGate: { clock in
+                .read(at: .init(clock: clock))
             }, inventory: { clock in
                 FlintRemovalGuardInventory.load(environment: rules, store: FlintGroupStore(), clock: clock)
             }, isAuthorized: { AuthorizationCenter.shared.authorizationStatus == .approved },
@@ -95,10 +112,7 @@ extension FlintRemovalGuardReconciler.Environment {
                 store.application.denyAppRemoval = value
                 guard store.application.denyAppRemoval == value else { throw FlintRemovalGuardPreference.Error.readBackFailed }
             }, migrationComplete: {
-                guard let defaults, defaults.synchronize() else { throw FlintRemovalGuardPreference.Error.unavailable }
-                guard let marker = defaults.object(forKey: FlintRemovalGuardReconciler.migrationKey) else { return false }
-                guard marker as? String == "complete-v1" else { throw FlintRemovalGuardPreference.Error.unavailable }
-                return true
+                try FlintRemovalGuardReconciler.migrationComplete(defaults: defaults)
             }, clearLegacy: {
                 let legacy = ManagedSettingsStore(named: .init("flint"))
                 legacy.application.denyAppRemoval = nil

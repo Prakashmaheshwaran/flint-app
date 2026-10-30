@@ -4,6 +4,32 @@ import DeviceActivity
 @testable import FlintCore
 
 final class FlintRemovalGuardIntegrationTests: XCTestCase {
+    @MainActor
+    func testKeepIsObservationOnlyButFailedGuardApplicationReportsFailure() {
+        let keep = FlintProtectionReconciler.removalGuardReport(.init())
+        XCTAssertEqual(keep.attempted, 0)
+        XCTAssertTrue(keep.failures.isEmpty)
+        for decision in [FlintRemovalGuard.Decision.deny, .release] {
+            let failed = FlintProtectionReconciler.removalGuardReport(.init(decision: decision))
+            XCTAssertEqual(failed.attempted, 1)
+            XCTAssertEqual(failed.failures.count, 1)
+            let applied = FlintProtectionReconciler.removalGuardReport(.init(decision: decision, applied: true, migrated: true))
+            XCTAssertTrue(applied.failures.isEmpty)
+        }
+    }
+
+    func testDerivedSettingsNeverConsumeActivityCapacity() {
+        let health = FlintArmingHealth(domains: [
+            "schedules": .init(enabled: 16, attempted: 16, armed: 16, failures: []),
+            "webRestrictions": .init(enabled: 1, attempted: 1, armed: 1, failures: []),
+            "removalGuard": .init(enabled: 1, attempted: 1, armed: 1, failures: [])
+        ])
+        XCTAssertEqual(health.enabledTotal, 16)
+        XCTAssertEqual(health.attemptedTotal, 16)
+        XCTAssertEqual(health.armedTotal, 16)
+        XCTAssertFalse(health.isNearCap)
+    }
+
     func testPC78SessionAndScheduleEndIndependently() throws {
         let h = try RemovalGuardHarness(); defer { h.clean() }
         try h.optIn()
@@ -161,6 +187,34 @@ final class FlintRemovalGuardIntegrationTests: XCTestCase {
         XCTAssertTrue(h.events.isEmpty, "Live collector propagates a failed sibling domain")
     }
 
+    func testCommittedPassReleasesAndMigratesDespiteUnreadableRuleDomain() throws {
+        let h = try RemovalGuardHarness(); defer { h.clean() }
+        try h.optIn(); _ = try h.createSchedule()
+        XCTAssertEqual(h.guardValue, true)
+        let pass = h.passController(beforeRelease: {
+            h.rules.defaults.set(Data("corrupt".utf8), forKey: FlintRuleStoreKey.limits.rawValue)
+        })
+        let preview = try pass.preview().get()
+        h.migrated = false; h.legacyValue = true; h.events = []
+        _ = try pass.use(previewRevision: preview.revision, operationID: "unreadable-after-commit").get()
+        XCTAssertNil(h.guardValue); XCTAssertNil(h.legacyValue)
+        XCTAssertEqual(h.events.prefix(3), ["write:flint.guard:nil", "legacy", "marker"])
+        XCTAssertEqual(try h.rules.ledger.peek().get().emergencyRecovery?.releasePending, false)
+        XCTAssertNil(FlintRemovalGuardInventory.load(environment: h.rules.environment, store: h.store, clock: h.rules.clock))
+        XCTAssertEqual(h.derive().decision, .release, "Recovery stays released even while inventory remains unreadable")
+    }
+
+    func testUnknownPassStateKeepsEvenWithPositivelyEmptyOwnerInventory() throws {
+        let h = try RemovalGuardHarness(); defer { h.clean() }
+        h.guardValue = true; h.legacyValue = true
+        var environment = h.environment
+        environment.recoveryGate = { _ in .unavailable }
+        environment.inventory = { _ in XCTFail("Unknown recovery cannot authorize an inventory decision"); return [] }
+        XCTAssertEqual(FlintRemovalGuardReconciler(environment: environment).reconcile().decision, .keep)
+        XCTAssertTrue(h.events.isEmpty)
+        XCTAssertEqual(h.guardValue, true); XCTAssertEqual(h.legacyValue, true)
+    }
+
     func testPositivelyAbsentRegistrationReleasesButUnavailableDoesNot() throws {
         let h = try RemovalGuardHarness(); defer { h.clean() }
         try h.optIn(); _ = try h.createSchedule()
@@ -186,6 +240,26 @@ final class FlintRemovalGuardIntegrationTests: XCTestCase {
             XCTAssertNil(h.guardValue); XCTAssertNil(h.legacyValue)
             if failure == "none" { XCTAssertEqual(h.events, ["write:flint.guard:nil"]) }
             else { XCTAssertEqual(h.events, ["write:flint.guard:nil", "legacy", "marker"]) }
+        }
+    }
+
+    func testUnrecognizedMigrationMarkerRetriesClearAndReplacesMarker() throws {
+        for marker in ["older-version", true, Data("malformed".utf8)] as [Any] {
+            let h = try RemovalGuardHarness(); defer { h.clean() }
+            h.rules.defaults.set(marker, forKey: FlintRemovalGuardReconciler.migrationKey)
+            h.legacyValue = true
+            var environment = h.environment
+            environment.migrationComplete = { try FlintRemovalGuardReconciler.migrationComplete(defaults: h.rules.defaults) }
+            environment.markMigration = {
+                h.events.append("marker")
+                h.rules.defaults.set("complete-v1", forKey: FlintRemovalGuardReconciler.migrationKey)
+            }
+            XCTAssertTrue(FlintRemovalGuardReconciler(environment: environment).reconcile().migrated)
+            XCTAssertNil(h.legacyValue)
+            XCTAssertEqual(h.events, ["write:flint.guard:nil", "legacy", "marker"])
+            h.events = []
+            XCTAssertTrue(FlintRemovalGuardReconciler(environment: environment).reconcile().migrated)
+            XCTAssertEqual(h.events, ["write:flint.guard:nil"])
         }
     }
 
@@ -322,6 +396,25 @@ final class FlintRemovalGuardIntegrationTests: XCTestCase {
         }
     }
 
+    func testQueuedChangeWithinSameOccurrencePreservesCapture() throws {
+        for captured in [nil, true] as [Bool?] {
+            let h = try RemovalGuardHarness(); defer { h.clean() }
+            var initial = h.rules.schedule(tier: .hardcore)
+            initial.protection?.removalGuard = captured
+            let old = h.rules.install(initial)
+            var change = old; change.breakLevel = .easy; change.schedule.endHour = 18
+            let arbiter = FlintRuleArbiter(environment: h.ruleEnvironment)
+            guard case let .deferRequired(ticket, end) = arbiter.upsert(change) else { return XCTFail() }
+            XCTAssertEqual(arbiter.upsert(change, confirmation: ticket), .queued(until: end))
+            try h.optIn()
+            h.rules.advance(to: end)
+            XCTAssertTrue(arbiter.applyQueued(FlintScheduleRule.self))
+            let next = try XCTUnwrap(h.rules.load(FlintScheduleRule.self).first)
+            XCTAssertEqual(next.protection?.occurrence?.identity, old.protection?.occurrence?.identity)
+            XCTAssertEqual(next.protection?.removalGuard, captured)
+        }
+    }
+
     func testClockDiscontinuityAndRebootWaitForOwnerCheckpointThenExpireBoundedly() throws {
         let h = try RemovalGuardHarness(); defer { h.clean() }
         try h.optIn(); let session = try h.start(duration: 600)
@@ -376,6 +469,8 @@ private final class RemovalGuardHarness {
     var environment: FlintRemovalGuardReconciler.Environment {
         .init(clock: rules.clock, withAuthority: { body in
             FlintRuleStoreLock.withLock(environment: self.rules.environment) { body(); return true } ?? false
+        }, recoveryGate: { clock in
+            .read(ledger: self.rules.ledger, at: .init(clock: clock))
         }, inventory: { clock in
             FlintRemovalGuardInventory.load(environment: self.rules.environment, store: self.store, clock: clock)
         }, isAuthorized: { self.authorized }, write: { name, value in
@@ -434,7 +529,7 @@ private final class RemovalGuardHarness {
         try controller(afterCommit: afterCommit).startBlockNow(selection: .init(), duration: duration,
             breakLevel: .hardcore, origin: .appUI, confirmed: true)
     }
-    func passController() -> FlintEmergencyPassController {
+    func passController(beforeRelease: @escaping () -> Void = {}) -> FlintEmergencyPassController {
         FlintEmergencyPassController(environment: .init(ledger: { self.rules.ledger }, clock: rules.clock,
             scope: { state, now in
                 try FlintEmergencyPassScope.load(state: state, at: now, defaults: self.rules.defaults,
@@ -446,6 +541,7 @@ private final class RemovalGuardHarness {
             },
             release: { _ in
                 XCTAssertTrue(FlintPassRecoveryGate.read(ledger: self.rules.ledger, at: .init(clock: self.rules.clock)).isRecovering)
+                beforeRelease()
                 let report = self.derive()
                 guard report.applied && report.migrated else { throw Failure.injected }
             }, resume: { _, _ in _ = self.derive() }, emit: { _ in }))

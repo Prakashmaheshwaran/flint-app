@@ -66,11 +66,7 @@ extension FlintProtectionReconciler {
         },
         FlintWebProtectionLayer(),
         FlintLiveProtectionLayer(domain: "removalGuard") { _ in
-            let report = FlintRemovalGuardReconciler.reconcile()
-            return .init(enabled: report.decision == .deny ? 1 : 0, attempted: report.decision == .keep ? 0 : 1,
-                armed: report.applied && report.decision == .deny ? 1 : 0,
-                failures: report.applied && report.migrated ? [] : [.init(activityName: "removalGuard",
-                    reason: "Removal guard state could not be applied. The previous setting was retained.")])
+            removalGuardReport(FlintRemovalGuardReconciler.reconcile())
         }
     ], prepare: {
         // Establish positive rule initialization before session/pass startup creates its own
@@ -92,6 +88,14 @@ extension FlintProtectionReconciler {
         }
         FlintProtectionStatus.publishAfterCommit(writer: .host)
     })
+
+    static func removalGuardReport(_ report: FlintRemovalGuardReconciler.Report) -> FlintArmingHealth.DomainReport {
+        .init(enabled: report.decision == .deny ? 1 : 0, attempted: report.decision == .keep ? 0 : 1,
+            armed: report.applied && report.decision == .deny ? 1 : 0,
+            failures: report.decision != .keep && !(report.applied && report.migrated)
+                ? [.init(activityName: "removalGuard",
+                    reason: "Removal guard state could not be applied. The previous setting was retained.")] : [])
+    }
 
     private static func missingReport(_ domain: String) -> FlintArmingHealth.DomainReport {
         .init(enabled: 0, attempted: 0, armed: 0,
