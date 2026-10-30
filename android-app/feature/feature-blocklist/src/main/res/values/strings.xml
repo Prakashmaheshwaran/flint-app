@@ -57,7 +57,7 @@
     <string name="targets_entry_description">See what covers each app or site you\'ve picked.</string>
     <string name="targets_intro">Everything you\'ve picked in a block rule, a running session or a daily limit. Open one to see what covers it now.</string>
     <string name="targets_empty">Apps and sites you add to block rules and daily limits appear here.</string>
-    <string name="targets_unavailable">Flint can\'t read its saved rules right now.</string>
+    <string name="targets_unavailable">Flint can\'t read its saved rules or daily limits right now.</string>
     <string name="targets_allow_list_note">Apps allowed by Sleep or allow-list rules aren\'t listed unless you also picked them in a block rule or daily limit.</string>
     <string name="targets_back">Back</string>
     <string name="target_loading">Checking what covers this.</string>

@@ -8,7 +8,8 @@ import java.lang.ref.WeakReference
  * weak reference to the most recently constructed [SafetyFloorGate]: it never creates a gate,
  * refreshes roles or keeps a stopped detector alive. With both detectors running the newer gate
  * wins; both resolve the same OS roles and each identity carries its own resolution time.
- * Call [read] off Main so the shield and UI paths never wait on the gate's membership lock.
+ * Call [read] off Main. It takes only the short membership lock; binder resolution uses a
+ * separate refresh lock.
  */
 object TargetFloorIdentities {
     @Volatile private var live: WeakReference<SafetyFloorGate>? = null
