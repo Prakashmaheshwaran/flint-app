@@ -75,6 +75,20 @@ public final class FlintWebRestrictionLifecycle {
         self.children = children
     }
 
+    /// Called before a replacement can arm or commit. Carry the old live child's strength
+    /// into the new occurrence; only a provably stronger future preference may replace it.
+    func prepareReplacement(_ replacement: FlintActiveSession, replacing previous: FlintActiveSession?,
+                            config: FlintWebRestrictions?, clock: FlintClock) -> Bool {
+        guard recoveryGate().permitsApplication else { return false }
+        guard let previous, previous.isEnforcing(at: clock.now(), clock: clock) else { return true }
+        let old = FlintWebRestrictionChildren.Cause.session(previous)
+        let global = config.flatMap { $0.validationMessage == nil ? $0 : nil }
+        guard let frozen = children.resolve(old, global: global) else { return false }
+        let policy = global.flatMap { FlintWebRestrictionChildren.strengthens($0, over: frozen, cause: old) ? $0 : nil } ?? frozen
+        guard let prepared = children.resolve(.session(replacement), global: policy) else { return false }
+        return FlintWebRestrictionChildren.strengthens(prepared, over: frozen, cause: old)
+    }
+
     public func reconcileSession(
         _ session: FlintActiveSession?, config: FlintWebRestrictions?, now: Date = Date(),
         clock: FlintClock? = nil
@@ -212,6 +226,12 @@ public final class FlintWebRestrictionLifecycle {
 public protocol FlintSessionWebRestricting {
     /// Apply or release the session's Safari keys by its logical time on `clock`.
     func reconcile(_ session: FlintActiveSession, clock: FlintClock)
+    func prepareReplacement(_ replacement: FlintActiveSession, replacing previous: FlintActiveSession?, clock: FlintClock) -> Bool
+}
+
+public extension FlintSessionWebRestricting {
+    /// Non-web adapters have no child restriction to carry. The live web adapter overrides it.
+    func prepareReplacement(_ replacement: FlintActiveSession, replacing previous: FlintActiveSession?, clock: FlintClock) -> Bool { true }
 }
 
 /// First reconcile freezes the session's child under the same transition as its owner.
@@ -243,6 +263,14 @@ public struct FlintSessionWebRestrictionAdapter: FlintSessionWebRestricting {
         _ = transition {
             lifecycle.reconcileSession(session, config: configuration(), now: clock.now(), clock: clock)
         }
+    }
+
+    public func prepareReplacement(_ replacement: FlintActiveSession, replacing previous: FlintActiveSession?, clock: FlintClock) -> Bool {
+        var prepared = false
+        guard transition({
+            prepared = lifecycle.prepareReplacement(replacement, replacing: previous, config: configuration(), clock: clock)
+        }) else { return false }
+        return prepared
     }
 }
 #endif

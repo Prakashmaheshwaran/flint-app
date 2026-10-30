@@ -13,11 +13,63 @@ private final class FailingChildDefaults: UserDefaults {
 }
 
 final class FlintWebRestrictionChildrenTests: XCTestCase {
+    private final class SessionChildWriter: FlintWebRestrictionWriting {
+        var config: FlintWebRestrictions?
+        var writes = 0
+        func apply(_ config: FlintWebRestrictions, toStore storeName: String) { self.config = config; writes += 1 }
+        func clear(store storeName: String) { config = nil; writes += 1 }
+    }
     private func session(_ h: RuleHarness, tier: BreakLevel = .hardcore, duration: TimeInterval = 60,
                          contractVersion: Int? = FlintActiveSession.currentContractVersion) -> FlintActiveSession {
         .init(id: "child-session", name: "Focus", startedAt: h.now, endsAt: h.now.addingTimeInterval(duration),
               breakLevel: tier, monitorName: "flint.session.child", monotonicStart: h.monotonic,
               bootSessionID: h.boot, contractVersion: contractVersion, plannedDuration: duration)
+    }
+
+    func testPreparedReplacementCarriesOldFrozenStrengthOrAdoptsProvenStrengtheningR29() throws {
+        for strengthening in [false, true] {
+            let h = try RuleHarness(); defer { h.clean() }
+            let old = session(h)
+            let replacement = FlintActiveSession(id: "replacement", name: "Longer", startedAt: h.now,
+                endsAt: h.now.addingTimeInterval(600), breakLevel: .hardcore, monitorName: "flint.session.replacement",
+                monotonicStart: h.monotonic, bootSessionID: h.boot,
+                contractVersion: FlintActiveSession.currentContractVersion, plannedDuration: 600)
+            let config = FlintWebRestrictions(enabled: true, blockedDomains: ["blocked.example"], denyExplicitMedia: true)
+            let children = FlintWebRestrictionChildren(defaults: h.defaults)
+            let writer = SessionChildWriter()
+            var future = config
+            let adapter = FlintSessionWebRestrictionAdapter(writer: writer, configuration: { future },
+                clock: h.clock, children: children)
+            adapter.reconcile(old, clock: h.clock)
+            XCTAssertEqual(writer.config, config)
+            if strengthening { future.blockedDomains.append("extra.example") }
+            else { future = .default }
+            let writes = writer.writes
+            XCTAssertTrue(adapter.prepareReplacement(replacement, replacing: old, clock: h.clock))
+            XCTAssertEqual(writer.writes, writes, "Preparation commits child metadata without touching native keys")
+            adapter.reconcile(replacement, clock: h.clock)
+            XCTAssertEqual(writer.config, strengthening ? future : config)
+            XCTAssertEqual(children.frozen(.session(replacement), fallback: nil), strengthening ? future : config)
+        }
+    }
+
+    func testRejectedReplacementPreparationLeavesOldChildAndNativeKeysIntact() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let old = session(h)
+        let replacement = FlintActiveSession(id: "replacement", name: "Longer", startedAt: h.now,
+            endsAt: h.now.addingTimeInterval(600), breakLevel: .hardcore, monitorName: "flint.session.replacement")
+        let config = FlintWebRestrictions(enabled: true)
+        var accepts = true
+        let children = FlintWebRestrictionChildren(defaults: h.defaults, acceptSave: { accepts })
+        let writer = SessionChildWriter()
+        let adapter = FlintSessionWebRestrictionAdapter(writer: writer, configuration: { config }, children: children)
+        adapter.reconcile(old, clock: h.clock)
+        let before = children.read(), writes = writer.writes
+        accepts = false
+        XCTAssertFalse(adapter.prepareReplacement(replacement, replacing: old, clock: h.clock))
+        XCTAssertEqual(children.read(), before)
+        XCTAssertEqual(writer.config, config)
+        XCTAssertEqual(writer.writes, writes)
     }
 
     func testEditorGatesFrozenHardcoreChildAfterFuturePreferencesWereWeakenedR29() throws {
