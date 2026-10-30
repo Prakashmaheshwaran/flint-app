@@ -21,7 +21,7 @@ class SessionStatusNotifier(
     private val app = context.applicationContext
     private val manager = app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     private data class Posted(val session: GlanceOngoingSession, val title: String, val text: String,
-                              val deadline: Long)
+                              val healthNotes: List<String>, val deadline: Long)
     private var posted: Posted? = null
     private var needsInitialCleanup = true
 
@@ -51,6 +51,7 @@ class SessionStatusNotifier(
         val until = minOf(freshUntil!!, session!!.logicalEndElapsedMs ?: freshUntil)
         val previous = posted
         if (previous?.session == session && previous.title == display.status && previous.text == display.detail &&
+            previous.healthNotes == display.healthNotes &&
             previous.deadline <= until && previous.deadline > now + 15_000) return
         val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(app, CHANNEL_ID)
             else @Suppress("DEPRECATION") Notification.Builder(app)
@@ -65,7 +66,7 @@ class SessionStatusNotifier(
         if (Build.VERSION.SDK_INT >= 26) builder.setTimeoutAfter(until - now)
         try {
             manager.notify(TAG, NOTIFICATION_ID, builder.build())
-            posted = Posted(session, display.status, display.detail, until)
+            posted = Posted(session, display.status, display.detail, display.healthNotes, until)
             needsInitialCleanup = false
         } catch (_: SecurityException) {
             // Revocation can race the permission check; enforcement never waits on this.

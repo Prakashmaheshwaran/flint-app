@@ -23,7 +23,8 @@ data class OngoingNotificationPlan(
             if (display.countdownEndElapsedMs != null && end == null) return OngoingNotificationPlan(
                 "Flint · Planned end reached", "Open Flint to check protection", null,
             )
-            return OngoingNotificationPlan("Flint · ${display.status}", display.detail, end)
+            return OngoingNotificationPlan("Flint · ${display.status}",
+                (listOf(display.detail) + display.healthNotes).joinToString(" · "), end)
         }
     }
 }
@@ -47,6 +48,7 @@ object OngoingSessionNotification {
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         builder.setContentTitle(plan.title).setContentText(plan.text)
+            .setStyle(Notification.BigTextStyle().bigText(plan.text))
             .setContentIntent(open).setOnlyAlertOnce(true).setShowWhen(false)
             .setUsesChronometer(false).setVisibility(Notification.VISIBILITY_PRIVATE)
             .setSubText(if (plan.countdownEndElapsedMs != null) "Planned end · Open Flint to check" else "Open Flint to check")
