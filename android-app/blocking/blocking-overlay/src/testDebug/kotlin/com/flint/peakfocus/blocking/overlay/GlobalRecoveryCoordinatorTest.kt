@@ -606,6 +606,40 @@ class GlobalRecoveryCoordinatorTest {
         assertEquals(afterInitialization, wakes)
     }
 
+    @Test fun PC_37_PC_65_failedEditorKeyOnlyReconcileRetriesWithoutAnotherPublicationOrBusyLoop() = runTest {
+        val s = initial().copy(rules = emptyList(), times = emptyList(), opens = emptyList(),
+            editor = EditorCommitmentState(timeline = base), openCredits = OpenCreditLedgerPolicy.initial(base, "UTC"))
+        val disk = Disk(s) { clock() }
+        var reject = false
+        var attempts = 0
+        val store = object : ProtectionTransactionStore {
+            override val state = disk.state
+            override suspend fun <R> transact(transform: (ProtectionSnapshot) -> ProtectionMutation<R>): ProtectionCommit<R> {
+                attempts++
+                return if (reject) ProtectionCommit.Unavailable(StorageFailure.IO) else disk.transact(transform)
+            }
+        }
+        GlobalRecoveryController(store, backgroundScope, disk.clock, { emptyList() }, {}, StandardTestDispatcher(testScheduler))
+        runCurrent()
+        val before = attempts
+        val writes = disk.writes
+        reject = true
+        disk.latest = disk.latest.copy(editor = disk.latest.editor.copy(causes = mapOf(
+            "rule:new" to EditorCause("new-occurrence", AnchoredInterval(clock(), 3_600_000, clock().wallEpochMs + 3_600_000), "UTC"))))
+        disk.values.value = StorageState.Ready(disk.latest)
+        runCurrent()
+        assertEquals(before + 1, attempts)
+        assertEquals(writes, disk.writes)
+        reject = false // Storage recovers without a fresh state emission or user action.
+        advanceTimeBy(GlobalRecoveryController.CHECKPOINT_MS - 1); runCurrent()
+        assertEquals(before + 1, attempts)
+        advanceTimeBy(1); runCurrent()
+        assertEquals(before + 2, attempts)
+        assertEquals(writes + 1, disk.writes)
+        advanceTimeBy(2 * GlobalRecoveryController.CHECKPOINT_MS); runCurrent()
+        assertEquals("Successful retry consumes the pending request", before + 2, attempts)
+    }
+
     @Test fun PC_22_PC_37_PC_65_failedCheckpointsStayQuietButCreditExpiryStillWakesWithUnavailableStorage() = runTest {
         val disk = Disk(initial().copy(openCredits = OpenCreditLedgerPolicy.initial(base, "UTC"))) { clock() }
         var wakes = 0

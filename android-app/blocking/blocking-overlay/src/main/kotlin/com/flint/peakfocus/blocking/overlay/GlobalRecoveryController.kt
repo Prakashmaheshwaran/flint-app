@@ -40,7 +40,12 @@ internal class GlobalRecoveryController(
             var initial = true
             while (isActive) {
                 val requested = reconcileRequested.getAndSet(false)
-                if (initial || requested || needsCheckpoint(lastGood)) reconcile()
+                if (initial || requested || needsCheckpoint(lastGood)) {
+                    // A failed configuration-only reconcile has no active access to keep
+                    // needsCheckpoint true. Retain the request for the next bounded tick;
+                    // do not enqueue another signal and spin on unavailable storage.
+                    if (!reconcile() && (initial || requested)) reconcileRequested.set(true)
+                }
                 initial = false
                 val now = clock()
                 val remaining = GlobalRecoveryPolicy.remaining(lastGood?.focus?.protection?.recovery, now)

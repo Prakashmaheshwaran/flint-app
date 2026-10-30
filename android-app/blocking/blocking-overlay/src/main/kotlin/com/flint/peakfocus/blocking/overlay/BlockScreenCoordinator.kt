@@ -594,6 +594,8 @@ class BlockScreenCoordinator(
         is OpenLimitDecision.Blocked -> currentOpenLimitCause(decision.limit, now, offset)
         // Unknown configuration cannot prove free entry. No invented quota is persisted or
         // offered to the user: the readiness surface has no ordinary/credit action.
+        // During the bounded cold-start guard this HARDCORE nominee covers all unknown
+        // packages, temporarily withholding even an otherwise known EASY rule's exits.
         OpenLimitDecision.Unavailable -> BlockCause(BlockScreenReason.OPEN_LIMIT, BreakLevel.HARDCORE, null)
     }
 
