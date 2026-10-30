@@ -29,8 +29,10 @@ class SafetyFloorAsyncReevaluationTest {
 
     @Test fun PC_49_PC_53_pathAColdStationaryTargetBlocksAfterResolutionWithoutAnotherWindowEvent() = coldTarget(pathB = false)
     @Test fun PC_49_PC_53_pathBColdStationaryTargetBlocksAfterResolutionWithoutAnotherWindowEvent() = coldTarget(pathB = true)
+    @Test fun PC_49_PC_53_pathAMountedShieldStaysAcrossDegradedDeferrals() = coldTarget(pathB = false, degraded = true)
+    @Test fun PC_49_PC_53_pathBMountedShieldStaysAcrossDegradedDeferrals() = coldTarget(pathB = true, degraded = true)
 
-    private fun coldTarget(pathB: Boolean) = runTest {
+    private fun coldTarget(pathB: Boolean, degraded: Boolean = false) = runTest {
         val app: Context = ApplicationProvider.getApplicationContext()
         val target = "com.stationary.target"
         val rule = BlockRule("cold-hardcore", "Existing protection", BlockTargets(allowListMode = true),
@@ -39,16 +41,23 @@ class SafetyFloorAsyncReevaluationTest {
         val cause = ruleBlockCause(rule, now, 0)
         ActiveRulesHolder.publish(SOURCE, listOf(rule))
         var resolves = 0
+        var pause = false
+        val deferred = mutableListOf<() -> Unit>()
         val gate = SafetyFloorGate(app.packageName, {
             resolves++
-            mapOf("home" to setOf("com.home"), "default-dialer" to setOf("com.dialer"))
-        }, { testScheduler.currentTime }, refreshInBackground = { work -> backgroundScope.launch { work() }; Unit },
+            mapOf("home" to setOf("com.home"), "default-dialer" to if (degraded) null else setOf("com.dialer"),
+                "candidate-home" to emptySet(), "candidate-calling" to setOf("com.dialer"))
+        }, { testScheduler.currentTime }, refreshInBackground = { work ->
+            if (pause) deferred += work else backgroundScope.launch { work() }
+            Unit
+        },
             requiredRuntimeSources = setOf("home", "default-dialer"))
         assertEquals("construction queues the first check without binder work", 0, resolves)
         val attached = mutableListOf<View>()
+        var detaches = 0
         val host = object : BlockScreenCoordinator.SurfaceHost {
             override fun attach(view: View) = attached.add(view)
-            override fun detach(view: View) { attached.remove(view) }
+            override fun detach(view: View) { detaches++; attached.remove(view) }
             override fun goHome() = Unit
         }
         val focus = InMemoryFocusStateStore()
@@ -73,9 +82,30 @@ class SafetyFloorAsyncReevaluationTest {
             runCurrent()
             shadowOf(Looper.getMainLooper()).idle()
             assertTrue(reevaluations > 0)
-            assertTrue("initial plus forced-mount refresh", resolves >= 2)
-            assertEquals("stationary target mounts after fresh receipt", 1, attached.size)
+            assertEquals("initial plus one new-mount refresh", 2, resolves)
+            assertEquals("stationary target mounts after fresh check", 1, attached.size)
             assertFalse(gate.runtimeResolution.value.checking)
+            if (degraded) {
+                pause = true
+                repeat(3) {
+                    advanceTimeBy(SafetyFloorGate.UNRESOLVED_RETRY_MS)
+                    runCurrent()
+                    repeat(2) {
+                        assertNotNull(coordinator.evaluateBlockCause(null, target, cause, false))
+                        coordinator.showBlocked(target, null, cause)
+                        shadowOf(Looper.getMainLooper()).idle()
+                        assertEquals(1, attached.size)
+                        assertEquals(0, detaches)
+                    }
+                }
+                assertEquals("single flight across all polls", 1, deferred.size)
+                assertEquals("no per-poll binder work", 2, resolves)
+                deferred.removeAt(0).invoke()
+                shadowOf(Looper.getMainLooper()).idle()
+                assertEquals(3, resolves)
+                assertEquals(1, attached.size)
+                assertEquals(0, detaches)
+            }
         } finally {
             stop()
             coordinator.hideIfShown()

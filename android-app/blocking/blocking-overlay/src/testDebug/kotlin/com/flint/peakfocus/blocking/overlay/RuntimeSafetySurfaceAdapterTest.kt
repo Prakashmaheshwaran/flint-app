@@ -66,12 +66,14 @@ class RuntimeSafetySurfaceAdapterTest {
 
     @Test fun PC_49_tabletWithoutTelephonyHasResolvedAbsentCallingRoles() {
         shadowOf(pm).setSystemFeature(PackageManager.FEATURE_TELEPHONY, false)
+        assertFalse(pm.hasSystemFeature(PackageManager.FEATURE_TELEPHONY))
         val snapshot = RuntimeSafetySurfaces.resolveBySource(app)
         assertEquals(emptySet<String>(), snapshot[RuntimeSafetySurfaces.SOURCE_DEFAULT_DIALER])
         assertEquals(emptySet<String>(), snapshot[RuntimeSafetySurfaces.SOURCE_SYSTEM_DIALER])
     }
 
     @Test fun PC_49_dataOnlyTelephonyDeviceWithNoCallingHandlerResolvesAbsentRatherThanFailed() {
+        assertTrue(pm.hasSystemFeature(PackageManager.FEATURE_TELEPHONY))
         val snapshot = RuntimeSafetySurfaces.resolveBySource(app)
         assertEquals(emptySet<String>(), snapshot[RuntimeSafetySurfaces.SOURCE_DEFAULT_DIALER])
         assertEquals(emptySet<String>(), snapshot[RuntimeSafetySurfaces.SOURCE_SYSTEM_DIALER])

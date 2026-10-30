@@ -265,7 +265,7 @@ class SafetyFloorGateTest {
         assertEquals(calls + 1, resolveCalls)
     }
 
-    @Test fun PC_53_cachedMembershipDoesNotWaitForAnInFlightBinderResolution() {
+    @Test fun PC_53_cachedProtectsReadDoesNotWaitForAnInFlightBinderResolution() {
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
         val pool = Executors.newFixedThreadPool(2)
@@ -320,22 +320,43 @@ class SafetyFloorGateTest {
         assertTrue(g.runtimeResolution.value.degraded)
     }
 
-    @Test fun PC_53_degradedFreshChecksAndForcedMountsNeverResolveOnTheCallingThread() {
+    @Test fun PC_53_degradedFreshChecksStayBackgroundAndOnlyNewMountForcesOneRead() {
         sources = mapOf(HOME to null, DIALER to null)
         val g = gate(background = true)
         queued.removeAt(0).invoke()
         val initialCalls = resolveCalls
         now += SafetyFloorGate.UNRESOLVED_RETRY_MS
-        assertTrue("stale block deferred", g.protectsFresh("ordinary.control"))
+        assertFalse("cached block remains during async refresh", g.protectsFresh("ordinary.control"))
         assertEquals(initialCalls, resolveCalls)
         queued.removeAt(0).invoke()
         assertFalse(g.protectsFresh("ordinary.control"))
-        assertTrue("new mount waits for its own receipt", g.protectsFresh("ordinary.control", 0))
-        assertEquals(initialCalls + 1, resolveCalls)
-        queued.removeAt(0).invoke()
-        assertFalse("completed snapshot permits one mount", g.protectsFresh("ordinary.control", 0))
+        assertFalse("new mount performs its existing fresh check", g.protectsFresh("ordinary.control", 0))
         assertEquals(initialCalls + 2, resolveCalls)
         assertTrue(queued.isEmpty())
+    }
+
+    @Test fun PC_49_newMountResolvesARoleChangeInsideTheFreshWindow() {
+        val g = gate(background = true)
+        queued.removeAt(0).invoke()
+        assertFalse(g.protectsFresh("new.dialer"))
+        sources = sources + (DIALER to setOf("new.dialer"))
+        now += 1
+        assertFalse("cached check still sees the old role", g.protectsFresh("new.dialer"))
+        assertTrue("NEW mount sees the new dialer", g.protectsFresh("new.dialer", 0))
+        assertEquals(2, resolveCalls)
+    }
+
+    @Test fun PC_73_routinePendingRefreshDoesNotInventUnresolvedRoleHealth() {
+        val g = gate(background = true)
+        queued.removeAt(0).invoke()
+        assertFalse(g.runtimeResolution.value.degraded)
+        now += 31_000
+        assertFalse(g.protects("ordinary.control"))
+        assertTrue(g.runtimeResolution.value.checking)
+        assertFalse(g.runtimeResolution.value.degraded)
+        queued.removeAt(0).invoke()
+        assertFalse(g.runtimeResolution.value.checking)
+        assertFalse(g.runtimeResolution.value.degraded)
     }
 
     @Test fun PC_53_anExecutorThatNeverRunsCannotWedgeFutureResolution() {
