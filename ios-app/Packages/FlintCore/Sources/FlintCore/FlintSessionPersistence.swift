@@ -80,7 +80,9 @@ final class FlintSessionPersistence {
             guard raw == nil || generation.matches(raw!)
                 || (raw?.id == generation.previousSession?.id && raw?.monitorName == generation.previousMonitorName),
                   finishInstallation(generation, in: store) else { return unavailable() }
-            return resolve(in: store)
+            var resolved = resolve(in: store)
+            if resolved.available && resolved.session == nil { resolved.releaseAlreadyObserved = true }
+            return resolved
         }
         if authority.provesIdle {
             if let session = authority.latest?.session, !emitStartIfPending(session) { return unavailable() }
@@ -128,19 +130,42 @@ final class FlintSessionPersistence {
         let selection = generation.selection.flatMap { try? JSONDecoder().decode(FamilyActivitySelection.self, from: $0) }
         if generation.selection != nil && selection == nil { return false }
         if session.isLogicallyExpired(clock: env.clock) {
+            if generation.restoresAppliedSession == true {
+                // This interval actually applied before the interrupted replacement. Its own
+                // deadline, rather than the unapplied replacement, authorizes completion.
+                let instant = FlintLedgerInstant(clock: env.clock)
+                let observed = session.checkpointed(clock: instant.clock)
+                store.saveActiveSession(observed)
+                guard store.loadActiveSession() == observed, markApplied(observed),
+                      emitStartIfPending(observed),
+                      terminate(observed, outcome: .completed, route: "completed", at: instant.wall) != nil else { return false }
+                cleanupTerminated(observed, previousMonitor: generation.previousMonitorName, in: store)
+                FlintSessionLifecycle.didEnd(observed, route: .completed, at: instant.wall,
+                    logicalEnd: instant.wall.addingTimeInterval(-max(0, observed.logicalOverrun(clock: instant.clock) ?? 0)))
+                clearArmFailure()
+                return true
+            }
+            if let previous = generation.previousSession {
+                let observed = previous.checkpointed(clock: env.clock)
+                let previousSelection = generation.previousApplication?.selection
+                    ?? store.loadSessionSelection(sessionID: previous.id).flatMap { try? JSONEncoder().encode($0) }
+                guard observed.isLogicallyExpired(clock: env.clock) || previousSelection != nil,
+                      let ledger = env.ledger(), case .success = ledger.transaction({ state in
+                        guard var authority = state.sessionAuthority,
+                              authority.latest?.matches(session) == true else { throw FlintSessionAuthorityError.generationMismatch }
+                        try authority.restorePrevious(observed, selection: previousSelection, at: env.clock.now())
+                        state.sessionAuthority = authority
+                      }), case let .success(state) = ledger.peek(),
+                      let restored = state.sessionAuthority?.latest else { return false }
+                return finishInstallation(restored, in: store)
+            }
             // Acceptance alone is not evidence that protection applied for the interval.
-            // Retire this exact desired generation as unconfirmed, never a fabricated start
-            // or completion. Its projection lets ordinary tombstone recovery release once.
+            // Commit the terminal result before releasing its exact projection/resources.
             store.saveActiveSession(session)
             guard store.loadActiveSession() == session,
                   terminate(session, outcome: .unconfirmed, route: "start_expired_unapplied", at: env.clock.now()) != nil else { return false }
-            if let previous = generation.previousMonitorName, previous != session.monitorName {
-                env.registrar.stopMonitoring([previous])
-            }
-            FlintSessionHealth.update(in: env.healthDefaults()) {
-                $0.lastArmFailure = .init(sessionName: session.name,
-                    reason: "the accepted start expired before protection was applied", at: env.clock.now())
-            }
+            cleanupTerminated(session, previousMonitor: generation.previousMonitorName, in: store)
+            clearArmFailure()
             return true
         }
         if !session.isLogicallyExpired(clock: env.clock), let end = session.logicalEnd(clock: env.clock),
@@ -161,7 +186,22 @@ final class FlintSessionPersistence {
         if let previous = generation.previousMonitorName, previous != session.monitorName {
             env.registrar.stopMonitoring([previous])
         }
-        return emitStartIfPending(session)
+        guard emitStartIfPending(session) else { return false }
+        clearArmFailure()
+        return true
+    }
+
+    private func cleanupTerminated(_ session: FlintActiveSession, previousMonitor: String?,
+                                   in store: FlintSessionStateStoring) {
+        if session.naturalEndObservedAt == nil { env.shield.clear() }
+        store.clearActiveSession(); store.clearSessionSelection()
+        var monitors = [session.monitorName]
+        if let previousMonitor, previousMonitor != session.monitorName { monitors.append(previousMonitor) }
+        env.registrar.stopMonitoring(monitors)
+    }
+
+    private func clearArmFailure() {
+        FlintSessionHealth.update(in: env.healthDefaults()) { $0.lastArmFailure = nil }
     }
 
     /// Keep the start pending until synchronous lifecycle delivery returns. The flag repairs a

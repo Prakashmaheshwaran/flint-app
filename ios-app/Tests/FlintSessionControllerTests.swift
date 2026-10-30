@@ -52,6 +52,7 @@ final class FlintSessionControllerTests: XCTestCase {
         reconcilePass: @escaping () -> Bool = { true },
         prepareStart: @escaping (String?) -> Result<Void, FlintEmergencyPassError> = { _ in .success(()) },
         recoveryGate: @escaping () -> FlintPassRecoveryGate = { .enforcing },
+        transitionLockAvailable: Bool = true,
         afterStartCommit: @escaping () throws -> Void = {},
         afterStartApplied: @escaping () throws -> Void = {}
     ) -> FlintSessionController {
@@ -74,7 +75,7 @@ final class FlintSessionControllerTests: XCTestCase {
                                              initializedMarker: { nil }, setInitializedMarker: { _ in })
             },
             publishStatus: { [unowned self] in self.publications += 1 },
-            transitionLock: { FlintSessionTransitionLock(directory: directory, timeout: 0.2) },
+            transitionLock: { transitionLockAvailable ? FlintSessionTransitionLock(directory: directory, timeout: 0.2) : nil },
             monitorLockTimeout: 1,
             wait: { [unowned self] in self.waited.append($0); self.clock.advance($0 - self.waitShortfall) },
             reconcileEmergencyPass: reconcilePass, prepareNewSession: prepareStart, recoveryGate: recoveryGate,
@@ -458,7 +459,9 @@ final class FlintSessionControllerTests: XCTestCase {
             }, registerCarrier: { _, _, _ in }, terminate: { _, _ in }, release: { _ in }, resume: { _, _ in }, emit: { _ in }))
     }
 
-    func testAcceptedInstallationDrainsBeforeTheRealPassPreparationReadsItsScope() throws {
+    // The live pass-side entry is added with the #185 hookup; this isolates the start-side
+    // drain before validateStartGate calls the real pass controller's scope reader.
+    func testStartPreparationDrainsBeforeTheRealPassPreparationReadsItsScope() throws {
         enum Crash: Error { case afterAcceptance }
         try ledger().transaction { $0.importLegacyPass(.absent, at: .init(clock: clock.flintClock)) }.get()
         let pass = strictPassController()
@@ -471,6 +474,8 @@ final class FlintSessionControllerTests: XCTestCase {
         XCTAssertNil(store.active)
         guard case .failure(.scopeUnavailable) = pass.prepareForNewSession() else { return XCTFail("unrepaired scope should be unavailable") }
         let recovered = controller(reconcilePass: reconcile, prepareStart: prepare, recoveryGate: gate)
+        _ = try recovered.prepareStartToken(selection: selectionA, duration: 1800, breakLevel: .easy,
+            origin: .appUI, route: "recovered-start")
         XCTAssertEqual(recovered.reconcile().outcome, .running)
         XCTAssertNotNil(store.active)
         let applies = shield.applyCount
@@ -495,12 +500,12 @@ final class FlintSessionControllerTests: XCTestCase {
         let c = controller(reconcilePass: { false }, recoveryGate: {
             FlintPassRecoveryGate.read(ledger: self.ledger(), at: .init(clock: self.clock.flintClock))
         })
-        _ = c.withTransition {}
+        c.prepareAcceptedInstallationForScope()
         XCTAssertNil(store.active)
         XCTAssertEqual(shield.applyCount, 0)
         XCTAssertNotNil(health.lastArmFailure)
         clock.advance(3601) // recovery expired, but its release/resume outbox is still pending
-        _ = c.withTransition {}
+        c.prepareAcceptedInstallationForScope()
         XCTAssertNil(store.active)
         XCTAssertEqual(shield.applyCount, 0)
         XCTAssertEqual(try ledger().peek().get().sessionAuthority?.latest?.phase, .installing)
@@ -510,12 +515,119 @@ final class FlintSessionControllerTests: XCTestCase {
         enum Crash: Error { case afterAcceptance }
         XCTAssertThrowsError(try start(controller(afterStartCommit: { throw Crash.afterAcceptance }), minutes: 30))
         try ledger().transaction { $0.pass.usage = .unknown }.get()
-        let c = controller(recoveryGate: { .unavailable })
-        _ = c.withTransition {}
+        let c = controller(recoveryGate: { .enforcing })
+        c.prepareAcceptedInstallationForScope()
         XCTAssertNil(store.active)
         XCTAssertEqual(shield.applyCount, 0)
         XCTAssertNotNil(health.lastArmFailure)
         XCTAssertEqual(try ledger().peek().get().sessionAuthority?.latest?.phase, .installing)
+    }
+
+    func testUnrelatedTransitionAndMissingTransitionLockNeverDrainAcceptedInstallation() throws {
+        enum Crash: Error { case afterAcceptance }
+        try ledger().transaction { $0.importLegacyPass(.absent, at: .init(clock: clock.flintClock)) }.get()
+        XCTAssertThrowsError(try start(controller(afterStartCommit: { throw Crash.afterAcceptance }), minutes: 30))
+        _ = controller().withTransition {}
+        controller(transitionLockAvailable: false).prepareAcceptedInstallationForScope()
+        XCTAssertNil(store.active)
+        XCTAssertEqual(shield.applyCount, 0)
+        XCTAssertTrue(events.log.isEmpty)
+        XCTAssertEqual(try ledger().peek().get().sessionAuthority?.latest?.phase, .installing)
+    }
+
+    func testSuccessfulTargetedInstallationClearsPriorArmFailure() throws {
+        enum Crash: Error { case afterAcceptance }
+        try ledger().transaction { $0.importLegacyPass(.absent, at: .init(clock: clock.flintClock)) }.get()
+        XCTAssertThrowsError(try start(controller(afterStartCommit: { throw Crash.afterAcceptance }), minutes: 30))
+        controller(recoveryGate: { .unavailable }).prepareAcceptedInstallationForScope()
+        XCTAssertNotNil(health.lastArmFailure)
+        controller().prepareAcceptedInstallationForScope()
+        XCTAssertNotNil(store.active)
+        XCTAssertNil(health.lastArmFailure)
+        XCTAssertEqual(shield.applyCount, 1)
+    }
+
+    func testExpiredUnappliedInstallationCleansResourcesDuringTargetedPreparation() throws {
+        enum Crash: Error { case afterAcceptance }
+        try ledger().transaction { $0.importLegacyPass(.absent, at: .init(clock: clock.flintClock)) }.get()
+        XCTAssertThrowsError(try start(controller(afterStartCommit: { throw Crash.afterAcceptance }), minutes: 1))
+        clock.advance(75)
+        controller().prepareAcceptedInstallationForScope()
+        XCTAssertNil(store.active)
+        XCTAssertTrue(registrar.registered.isEmpty)
+        XCTAssertTrue(store.sessionSelections.isEmpty)
+        XCTAssertEqual(shield.clearCount, 1)
+        XCTAssertTrue(events.log.isEmpty)
+        XCTAssertTrue(try XCTUnwrap(ledger().peek().get().sessionAuthority).provesIdle)
+    }
+
+    func testExpiredUnappliedReplacementRestoresLivePreviousCommitment() throws {
+        enum Crash: Error { case afterAcceptance }
+        try ledger().transaction { $0.importLegacyPass(.absent, at: .init(clock: clock.flintClock)) }.get()
+        let previous = try controller().startBlockNow(selection: selectionA, duration: 1800, breakLevel: .easy,
+            origin: .appUI, requestID: "previous-live", confirmed: true)
+        XCTAssertThrowsError(try controller(afterStartCommit: { throw Crash.afterAcceptance })
+            .startBlockNow(selection: selectionB, duration: 60, breakLevel: .easy,
+                origin: .appUI, requestID: "expired-replacement", confirmed: true))
+        let failed = try XCTUnwrap(ledger().peek().get().sessionAuthority?.latest?.session)
+        // The live store only retains one target snapshot; the ledger must keep the old one.
+        store.sessionSelections.removeAll()
+        store.active = failed
+        clock.advance(75)
+        controller().prepareAcceptedInstallationForScope()
+        XCTAssertEqual(store.active?.id, previous.id)
+        XCTAssertEqual(store.active?.logicalRemaining(clock: clock.flintClock), 1725)
+        XCTAssertEqual(store.sessionSelections[previous.id]?.includeEntireCategory, false)
+        XCTAssertTrue(registrar.registered.contains(previous.monitorName))
+        XCTAssertFalse(registrar.registered.contains(failed.monitorName))
+        XCTAssertEqual(shield.clearCount, 0)
+        XCTAssertEqual(events.kinds, ["started"])
+        XCTAssertEqual(controller().acceptedStartResult("previous-live")?.outcome, .running)
+        XCTAssertEqual(controller().acceptedStartResult("expired-replacement")?.outcome, .unconfirmed)
+    }
+
+    func testExpiredUnappliedReplacementCompletesOnlyExpiredPreviousCommitment() throws {
+        enum Crash: Error { case afterAcceptance }
+        try ledger().transaction { $0.importLegacyPass(.absent, at: .init(clock: clock.flintClock)) }.get()
+        let previous = try controller().startBlockNow(selection: selectionA, duration: 120, breakLevel: .easy,
+            origin: .appUI, requestID: "previous-ended", confirmed: true)
+        XCTAssertThrowsError(try controller(afterStartCommit: { throw Crash.afterAcceptance })
+            .startBlockNow(selection: selectionB, duration: 60, breakLevel: .easy,
+                origin: .appUI, requestID: "expired-replacement", confirmed: true))
+        clock.advance(135)
+        controller().prepareAcceptedInstallationForScope()
+        XCTAssertNil(store.active)
+        XCTAssertTrue(registrar.registered.isEmpty)
+        XCTAssertEqual(shield.clearCount, 1)
+        XCTAssertEqual(events.kinds, ["started", "ended"])
+        let event = try XCTUnwrap(events.log.last)
+        guard case let .ended(session, route, at) = event.unannotated else { return XCTFail("missing prior completion") }
+        XCTAssertEqual(session.id, previous.id)
+        XCTAssertEqual(route, .completed)
+        XCTAssertEqual(at, previous.endsAt)
+        XCTAssertEqual(controller().acceptedStartResult("previous-ended")?.outcome, .completed)
+        XCTAssertEqual(controller().acceptedStartResult("expired-replacement")?.outcome, .unconfirmed)
+    }
+
+    func testPreviousRestorationRecoversCrashBetweenLedgerAndProjectionSavePC05() throws {
+        enum Crash: Error { case afterAcceptance }
+        try ledger().transaction { $0.importLegacyPass(.absent, at: .init(clock: clock.flintClock)) }.get()
+        let previous = try start(controller(), minutes: 30)
+        XCTAssertThrowsError(try controller(afterStartCommit: { throw Crash.afterAcceptance })
+            .startBlockNow(selection: selectionB, duration: 60, breakLevel: .easy,
+                origin: .appUI, requestID: "expired-replacement", confirmed: true))
+        store.active = try ledger().peek().get().sessionAuthority?.latest?.session
+        clock.advance(75)
+        try ledger().transaction { state in
+            let targets = state.sessionAuthority?.latest?.previousApplication?.selection
+            try state.sessionAuthority?.restorePrevious(previous.checkpointed(clock: clock.flintClock),
+                selection: targets, at: clock.now)
+        }.get() // process dies before saving the restored projection
+        controller().prepareAcceptedInstallationForScope()
+        XCTAssertEqual(store.active?.id, previous.id)
+        XCTAssertEqual(try ledger().peek().get().sessionAuthority?.latest?.phase, .applied)
+        XCTAssertEqual(shield.clearCount, 0)
+        XCTAssertEqual(events.kinds, ["started"])
     }
 
     func testLegacyPomodoroCadenceExecutesOnlyOneFocusRoundR24PC01PC27() throws {

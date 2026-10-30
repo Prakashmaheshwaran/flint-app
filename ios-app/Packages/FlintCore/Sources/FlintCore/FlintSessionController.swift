@@ -389,12 +389,10 @@ public final class FlintSessionController {
         if Self.transitionDepth > 0 { Self.transitionDepth += 1; return .nested }
         guard let lock = env.transitionLock() else {
             Self.transitionDepth += 1
-            persistence.drainAcceptedInstallation()
             return .nested
         }
         guard let hold = lock.acquire(timeout: timeout) else { return nil }
         Self.transitionDepth += 1
-        persistence.drainAcceptedInstallation()
         return hold
     }
 
@@ -413,6 +411,13 @@ public final class FlintSessionController {
         guard let transition = beginTransition(timeout: timeout) else { return nil }
         defer { endTransition(transition) }
         return try body()
+    }
+
+    /// Called only before start or mutable pass-scope preparation. Unrelated policy
+    /// transitions must not install a session as a side effect of taking the shared lock.
+    public func prepareAcceptedInstallationForScope() {
+        guard env.transitionLock() != nil else { return }
+        _ = withTransition { persistence.drainAcceptedInstallation() }
     }
 
     /// Whether the session's commitment is over by its logical (monotonic-governed) time.
@@ -449,6 +454,7 @@ public final class FlintSessionController {
         origin: FlintSessionOrigin, ownerID: String? = nil, replacing: Bool = true,
         route: String, operationID: String? = nil, untilDeactivation: Bool = false) throws -> FlintSessionStartToken {
         guard let token = try withTransition({ () throws -> FlintSessionStartToken in
+            prepareAcceptedInstallationForScope()
             try validateStartGate(origin: origin, ownerID: ownerID)
             guard let store = env.store() else { throw FlintSessionError.appGroupUnavailable }
             let resolved = persistence.resolve(in: store)
@@ -553,6 +559,7 @@ public final class FlintSessionController {
         guard let transition = beginTransition() else { throw FlintSessionError.protectionStateUnavailable }
         defer { endTransition(transition) }
 
+        prepareAcceptedInstallationForScope()
         // This precedes even the idempotent request return: a pass-ended request must not
         // appear protected or recreate its occurrence under the global exception.
         try validateStartGate(origin: origin, ownerID: ownerID)
@@ -712,7 +719,8 @@ public final class FlintSessionController {
                 do {
                     try authority.install(session, selection: JSONEncoder().encode(selection), source: source,
                         operationID: operationID, fingerprint: fingerprint, expectedRevision: expectedRevision,
-                        at: FlintLedgerInstant(clock: env.clock))
+                        at: FlintLedgerInstant(clock: env.clock),
+                        previousSelection: try previousSelection.map { try JSONEncoder().encode($0) })
                 } catch let error as FlintSessionAuthorityError {
                     commitFailure = error
                     throw error

@@ -37,11 +37,22 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
         public var emitsStart: Bool? = nil
         public var startEventEmitted: Bool? = nil
         public var previousSession: FlintActiveSession? = nil
+        public var previousApplication: PreviousApplication? = nil
+        /// Restoring a previously applied commitment is different from inventing application
+        /// of a newly accepted start whose installation never finished.
+        public var restoresAppliedSession: Bool? = nil
 
         public func matches(_ session: FlintActiveSession) -> Bool {
             self.session.id == session.id && self.session.monitorName == session.monitorName
                 && self.session.startedAt == session.startedAt
         }
+    }
+
+    public struct PreviousApplication: Codable, Equatable, Sendable {
+        public var selection: Data?
+        public var source: FlintSessionSource
+        public var emitsStart: Bool?
+        public var startEventEmitted: Bool?
     }
 
     public struct Tombstone: Codable, Equatable, Sendable {
@@ -212,12 +223,16 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
 
     public mutating func install(_ session: FlintActiveSession, selection: Data, source: FlintSessionSource,
                                  operationID: String, fingerprint: String, expectedRevision: UInt64?,
-                                 at now: FlintLedgerInstant) throws {
+                                 at now: FlintLedgerInstant, previousSelection: Data? = nil) throws {
         if let expectedRevision, expectedRevision != revision { throw FlintSessionAuthorityError.staleRevision }
         if let old = acceptedStart(operationID) {
             throw old.fingerprint == fingerprint ? FlintSessionAuthorityError.alreadyAccepted : .conflictingReuse
         }
         let previousSession = latest.flatMap { provesIdle ? nil : $0.session }
+        let previousApplication = previousSession.flatMap { _ in latest.map {
+            PreviousApplication(selection: previousSelection, source: $0.source,
+                emitsStart: $0.emitsStart, startEventEmitted: $0.startEventEmitted)
+        } }
         let previous = previousSession?.monitorName
         revision += 1
         latest = Generation(revision: revision, session: session, acceptedEnd: session.endsAt,
@@ -226,10 +241,40 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
         latest?.emitsStart = true
         latest?.startEventEmitted = false
         latest?.previousSession = previousSession
+        latest?.previousApplication = previousApplication
         tombstone = nil
         acceptedStarts.append(FlintAcceptedStartResult(operationID: operationID, session: session,
             outcome: .running, acceptedAt: now, fingerprint: fingerprint, expectedRevision: expectedRevision))
         prune()
+    }
+
+    /// Retire an unapplied replacement without dropping the previously applied commitment.
+    /// The restored generation remains installing until its projection/resources read back.
+    public mutating func restorePrevious(_ previous: FlintActiveSession, selection: Data?, at now: Date) throws {
+        guard let interrupted = latest, interrupted.phase == .installing,
+              let old = interrupted.previousSession,
+              old.id == previous.id, old.monitorName == previous.monitorName,
+              old.startedAt == previous.startedAt,
+              Self.commitmentData(old) == Self.commitmentData(previous),
+              previous.remainingCheckpoint?.isValid != false,
+              revision < UInt64.max - 2, !provesIdle else {
+            throw FlintSessionAuthorityError.generationMismatch
+        }
+        try terminate(interrupted.session, outcome: .unconfirmed, route: "start_expired_unapplied", at: now)
+        revision += 1
+        latest = Generation(revision: revision, session: previous, acceptedEnd: previous.endsAt,
+            phase: .installing, selection: selection, source: interrupted.previousApplication?.source ?? .legacy,
+            previousMonitorName: interrupted.session.monitorName)
+        latest?.emitsStart = interrupted.previousApplication?.emitsStart ?? false
+        latest?.startEventEmitted = interrupted.previousApplication?.startEventEmitted ?? true
+        latest?.restoresAppliedSession = true
+        latest?.previousSession = interrupted.session // permitted pre-restoration projection after a crash
+        tombstone = nil
+        for index in acceptedStarts.indices where acceptedStarts[index].sessionID == previous.id {
+            acceptedStarts[index].outcome = .running
+            acceptedStarts[index].endedAt = nil
+            acceptedStarts[index].endRoute = nil
+        }
     }
 
     /// Import only a positively decoded legacy record. Absence never enters this migration.
@@ -259,6 +304,8 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
     public mutating func rearm(_ session: FlintActiveSession, selection: Data? = nil) throws {
         guard latest?.session.id == session.id, !provesIdle else { throw FlintSessionAuthorityError.generationMismatch }
         let oldSession = latest?.session
+        let oldApplication = latest.map { PreviousApplication(selection: selection, source: $0.source,
+            emitsStart: $0.emitsStart, startEventEmitted: $0.startEventEmitted) }
         let oldMonitor = oldSession?.monitorName
         revision += 1
         latest?.revision = revision
@@ -269,6 +316,7 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
         latest?.previousMonitorName = oldMonitor
         latest?.emitsStart = false
         latest?.previousSession = oldSession
+        latest?.previousApplication = oldApplication
     }
 
     /// Commit the terminal decision before any release. Replaying this exact tombstone is a
