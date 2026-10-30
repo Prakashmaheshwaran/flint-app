@@ -69,7 +69,8 @@ struct SessionView: View {
             if let wait = vm.breakWait {
                 BreakWaitView(wait: wait, onBack: vm.cancelBreak, onStop: vm.confirmBreak,
                     finalAction: "Take a 5-minute break", heading: "Harder · Break requested",
-                    explanation: vm.breakPreview.message + " The session keeps running. Going back cancels the wait without spending it.")
+                    explanation: vm.breakPreview.message + " The session keeps running. Going back cancels the wait without spending it.",
+                    readyExplanation: "Your wait is complete. Confirm up to 5 minutes of access. The session keeps running.")
             }
         }
         .alert("Take a 5-minute break", isPresented: $vm.confirmingBreak) {
@@ -99,7 +100,9 @@ struct SessionView: View {
                     Button("End early") { vm.stop() }.buttonStyle(GhostButtonStyle())
                 }
             }
-            if vm.ordinaryBreak != nil {
+            if vm.resumingBreak {
+                Text("Applying protection").flintSecondary(14).frame(maxWidth: .infinity, alignment: .leading)
+            } else if vm.ordinaryBreak != nil {
                 HStack {
                     Text(vm.ordinaryBreak?.applicationPending == true ? "Applying break" : "Break · \(Self.clock(vm.breakRemaining)) left").flintSecondary(14)
                     Spacer()
@@ -116,6 +119,12 @@ struct SessionView: View {
                 Text(vm.breakPreview.message).flintSecondary(12).frame(maxWidth: .infinity, alignment: .leading)
             }
             if let error = vm.errorText { Text(error).flintSecondary(12).accessibilityIdentifier("session.action.error") }
+            if let notice = vm.breakNotice {
+                HStack {
+                    Text(notice).flintSecondary(12)
+                    Button("Dismiss", action: vm.acknowledgeBreakNotice).buttonStyle(GhostButtonStyle())
+                }
+            }
             Button {
                 refreshPassStatus()
                 withAnimation(.easeOut(duration: 0.3)) { showPass = true }
@@ -250,6 +259,7 @@ struct BreakWaitView: View {
     var finalAction = "End early"
     var heading = "Harder · End early requested"
     var explanation = "After the wait, confirm End early. If the urge has passed, go back — that doesn't count against you."
+    var readyExplanation: String?
 
     @State private var now = Date()
     @State private var breathe = false
@@ -273,7 +283,7 @@ struct BreakWaitView: View {
                     .flintTitle(30)
                     .multilineTextAlignment(.center)
                     .padding(.top, 18)
-                Text(explanation)
+                Text(left == 0 ? (readyExplanation ?? explanation) : explanation)
                     .flintSecondary(15)
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)

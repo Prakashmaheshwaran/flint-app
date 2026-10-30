@@ -28,6 +28,7 @@ final class FlintOrdinaryBreakServiceTests: XCTestCase {
     private var order: [String] = []
     private var applied: Set<Target> = []
     private var afterRegistration: (() throws -> Void)?
+    private var recoveryReports = 0
 
     override func setUp() {
         super.setUp()
@@ -36,6 +37,7 @@ final class FlintOrdinaryBreakServiceTests: XCTestCase {
         causes = [.init(id: "session", targets: [a, b])]
         carriers = []; stopped = []; order = []; applied = []
         registrationFails = false; applyFails = false; unavailable = false; transitionHeld = false; afterRegistration = nil
+        recoveryReports = 0
     }
     override func tearDown() { try? FileManager.default.removeItem(at: directory); super.tearDown() }
     private var clock: FlintClock { .init(now: { self.wall }, monotonic: { self.mono }, bootSessionID: { self.boot }, calendar: { Calendar.current }) }
@@ -73,7 +75,7 @@ final class FlintOrdinaryBreakServiceTests: XCTestCase {
             self.applied = records.reduce(into: []) { $0.formUnion(context?.authorizedTargets(for: $1, at: now) ?? []) }
             let durable = try self.ledger.peek().get()
             XCTAssertEqual(durable.ordinaryGrants?.records.map { $0.grant.id }, records.map { $0.grant.id })
-        })
+        }, reportRecovery: { _ in self.recoveryReports += 1 })
     }
     private func advance(_ seconds: Double, wallDelta: Double? = nil) {
         mono += seconds; wall.addTimeInterval(wallDelta ?? seconds)
@@ -430,10 +432,65 @@ final class FlintOrdinaryBreakServiceTests: XCTestCase {
     }
 
     func testRestartNoticeExistsOnReadBeforeAndAfterReconciliationWithoutReplay() throws {
-        let pending = try request(); advance(60); _ = try accept(pending)
+        let pending = try request(); advance(60); var earlier = try accept(pending)
         boot = "new-boot"
         XCTAssertEqual(FlintOrdinaryBreakStatus.project(try ledger.peek().get().ordinaryGrants, at: now).notice, .reboot)
         XCTAssertTrue(service.reconcile())
         XCTAssertEqual(FlintOrdinaryBreakStatus.project(try ledger.peek().get().ordinaryGrants, at: now).notice, .reboot)
+        let next = try request(); advance(300); let record = try accept(next)
+        let duringNext = FlintOrdinaryBreakStatus.project(try ledger.peek().get().ordinaryGrants, at: now)
+        XCTAssertEqual(duringNext.record?.grant.id, record.grant.id)
+        XCTAssertEqual(duringNext.notice, .reboot)
+        var pendingRestore = try XCTUnwrap(ledger.peek().get().ordinaryGrants)
+        earlier.end(.reboot, at: now)
+        pendingRestore.records.insert(earlier, at: 0); pendingRestore.receipts = []
+        let mixed = FlintOrdinaryBreakStatus.project(pendingRestore, at: now)
+        XCTAssertEqual(mixed.noticeID, earlier.grant.id + ".reboot", "Find reboot even when a later record is active")
+        XCTAssertTrue(mixed.isRestoring)
+        XCTAssertTrue(service.resumeNow(grantID: record.grant.id))
+        XCTAssertEqual(FlintOrdinaryBreakStatus.project(try ledger.peek().get().ordinaryGrants, at: now).notice, .reboot)
+    }
+
+    func testDeferredResumeKeepsDurableEndAndReportsApplyingUntilRestored() throws {
+        let pending = try request(); advance(60); let record = try accept(pending)
+        applyFails = true
+        XCTAssertEqual(service.resumeNowOutcome(grantID: record.grant.id), .applying)
+        let state = try ledger.peek().get()
+        XCTAssertEqual(state.ordinaryGrants?.records.first?.endReason, .resumeNow)
+        XCTAssertEqual(state.harder["session"]?.committedCount, 1)
+        XCTAssertTrue(FlintOrdinaryBreakStatus.project(state.ordinaryGrants, at: now).isRestoring)
+        applyFails = false
+        XCTAssertTrue(service.reconcile()); XCTAssertTrue(applied.isEmpty)
+        XCTAssertEqual(try lastReceipt().reason, .resumeNow)
+    }
+
+    func testCarrierFailureHealthClearsOnlyOnLaterCleanReconcile() throws {
+        let pending = try request(); advance(60); _ = try accept(pending)
+        carriers = []; registrationFails = true
+        let previous = recoveryReports
+        XCTAssertTrue(service.reconcile())
+        XCTAssertEqual(recoveryReports, previous, "The reconcile that records a failure must not erase it")
+        XCTAssertTrue(service.reconcile())
+        XCTAssertEqual(recoveryReports, previous + 1)
+    }
+
+    func testWaitPreviewUsesRemainingPersistedWaitAndMatureConfirmation() throws {
+        let pending = try request()
+        func preview() throws -> FlintOrdinaryBreakPreview {
+            let state = try ledger.peek().get()
+            return FlintOrdinaryBreaks.preview(scope: scope, context: context(state), grants: state.ordinaryGrants, clock: clock)
+        }
+        XCTAssertTrue(try preview().message.hasPrefix("Wait 1 minute,"))
+        advance(25, wallDelta: 86_400)
+        XCTAssertTrue(try preview().message.hasPrefix("Wait 35 seconds,"))
+        advance(35)
+        XCTAssertEqual(try preview().kind, .confirm)
+        XCTAssertFalse(try preview().message.contains("Wait"))
+        let record = try accept(pending); XCTAssertTrue(service.resumeNow(grantID: record.grant.id))
+        _ = try request(); advance(240)
+        XCTAssertTrue(try preview().message.hasPrefix("Wait 1 minute,"))
+        advance(60)
+        XCTAssertEqual(try preview().kind, .confirm)
+        XCTAssertFalse(try preview().message.contains("5 minutes, then"))
     }
 }
