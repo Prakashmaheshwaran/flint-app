@@ -10,14 +10,26 @@ enum FlintWebRestrictionHostReconciler {
         lifecycle: FlintWebRestrictionLifecycle, now: Date = Date(), calendar: Calendar = .autoupdatingCurrent,
         clock: FlintClock? = nil
     ) -> FlintArmingHealth.DomainReport {
-        guard let rules, let config, let sessionReport = health.domains["session"],
+        guard let rules, let sessionReport = health.domains["session"],
               let rulesReport = health.domains["schedules"],
               !(activeSession == nil && hasActiveSessionRecord), sessionReport.recordUnreadable != true,
+              activeSession.map({ session in
+                  (session.contractVersion == nil || session.contractVersion == FlintActiveSession.currentContractVersion)
+                  && session.startedAt.timeIntervalSinceReferenceDate.isFinite
+                  && (session.endsAt.map { $0.timeIntervalSinceReferenceDate.isFinite && $0 > session.startedAt } ?? true)
+              }) ?? true,
               !sessionReport.failures.contains(where: { $0.activityName == "session" }),
               !rulesReport.failures.contains(where: { $0.activityName == "schedules" }) else {
             return .init(enabled: health.domains["webRestrictions"]?.enabled ?? 0, attempted: 0, armed: 0,
                          failures: [.init(activityName: "webRestrictions",
                             reason: "Saved protection state is unavailable. Existing Safari settings were preserved.")],
+                         updatedAt: now)
+        }
+        guard let config else {
+            lifecycle.clearEndedOwners(activeSession: activeSession, rules: rules, now: now, clock: clock)
+            return .init(enabled: health.domains["webRestrictions"]?.enabled ?? 0, attempted: 0, armed: 0,
+                         failures: [.init(activityName: "webRestrictions",
+                            reason: "Saved website rules are unavailable. Live owners were preserved; verified ended owners were released.")],
                          updatedAt: now)
         }
         if let message = config.validationMessage {

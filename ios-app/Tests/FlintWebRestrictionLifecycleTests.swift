@@ -356,6 +356,69 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
         XCTAssertTrue(writer.cleared.contains("flint"), "released once its committed time has elapsed")
     }
 
+    func testUnavailableIntentClearsOnlyTrustedEndedOwnersDespiteFailedEligibility() {
+        let writer = RecordingWebWriter()
+        let config = FlintWebRestrictions(enabled: true, applyDuringSchedules: true)
+        var wall = now
+        var monotonic: TimeInterval = 1000
+        let clock = FlintClock(now: { wall }, monotonic: { monotonic }, bootSessionID: { "end-boot" },
+                               calendar: { self.calendar })
+        let active = FlintActiveSession(name: "Hardcore", startedAt: now, endsAt: now.addingTimeInterval(1800),
+            breakLevel: .hardcore, monitorName: "flint.session", monotonicStart: monotonic,
+            bootSessionID: "end-boot", contractVersion: FlintActiveSession.currentContractVersion, plannedDuration: 1800)
+        var frozen = rule("frozen")
+        frozen.protection?.occurrence = .init(start: now, end: now.addingTimeInterval(1800))
+        FlintRuleOccurrenceClock.observe(&frozen, clock: clock)
+        var health = hostHealth([frozen]); health.domains["session"]?.rearmFailed = true
+        health.domains["schedules"]?.observedActivities = []
+        health.domains["schedules"]?.failures = [.init(activityName: frozen.monitorName, reason: "repair failed")]
+        writer.web = ["flint": config, frozen.storeName: config, "flint.web": config]
+        wall.addTimeInterval(86400); monotonic += 60
+        _ = FlintWebRestrictionHostReconciler.reconcile(activeSession: active, hasActiveSessionRecord: true,
+            rules: [frozen], config: nil, health: health, lifecycle: .init(writer: writer), now: wall, clock: clock)
+        XCTAssertEqual(writer.web.count, 3, "Unarmed masks and a wall jump cannot prove the actual owners ended")
+        monotonic += 1740
+        var ended = frozen; ended.enabled = false
+        _ = FlintWebRestrictionHostReconciler.reconcile(activeSession: active, hasActiveSessionRecord: true,
+            rules: [ended], config: nil, health: health, lifecycle: .init(writer: writer), now: wall, clock: clock)
+        XCTAssertTrue(writer.web.isEmpty, "The last logical end releases the primary and legacy web keys")
+    }
+
+    func testUnavailableIntentReleasesTrustedOneShotEndButNotUnknownSnapshotOrPassGate() {
+        let writer = RecordingWebWriter()
+        let config = FlintWebRestrictions(applyDuringSchedules: true)
+        var ended = rule("ended")
+        ended.oneShot = .init(start: now.addingTimeInterval(-120), end: now)
+        writer.web = [ended.storeName: config, "flint.web": config]
+        _ = FlintWebRestrictionHostReconciler.reconcile(activeSession: nil, hasActiveSessionRecord: true,
+            rules: [ended], config: nil, health: hostHealth([ended]), lifecycle: .init(writer: writer), now: now)
+        XCTAssertEqual(writer.web.count, 2, "A missing session record is unknown, not an ended owner")
+        let blocked = FlintWebRestrictionLifecycle(writer: writer, recoveryGate: { .unavailable })
+        blocked.clearEndedOwners(activeSession: nil, rules: [ended], now: now)
+        XCTAssertEqual(writer.web.count, 2)
+        _ = FlintWebRestrictionHostReconciler.reconcile(activeSession: nil, hasActiveSessionRecord: false,
+            rules: [ended], config: nil, health: hostHealth([ended]), lifecycle: .init(writer: writer), now: now)
+        XCTAssertTrue(writer.web.isEmpty)
+    }
+
+    func testSessionAdapterUnavailableIntentUsesLogicalExpiryForCleanup() {
+        let writer = RecordingWebWriter()
+        let config = FlintWebRestrictions(enabled: true)
+        var monotonic: TimeInterval = 1000
+        let wall = now.addingTimeInterval(86400)
+        let clock = FlintClock(now: { wall }, monotonic: { monotonic }, bootSessionID: { "adapter-end" },
+                               calendar: { self.calendar })
+        let active = FlintActiveSession(name: "Focus", startedAt: now, endsAt: now.addingTimeInterval(60),
+            breakLevel: .hardcore, monitorName: "flint.session", monotonicStart: 1000,
+            bootSessionID: "adapter-end", plannedDuration: 60)
+        writer.web["flint"] = config
+        let adapter = FlintSessionWebRestrictionAdapter(writer: writer, configuration: { nil })
+        adapter.reconcile(active, clock: clock)
+        XCTAssertEqual(writer.web["flint"], config)
+        monotonic += 60; adapter.reconcile(active, clock: clock)
+        XCTAssertNil(writer.web["flint"])
+    }
+
     private func hostHealth(_ rules: [FlintScheduleRule], failures: [FlintArmingHealth.Failure] = [],
                             observed: [String]? = nil) -> FlintArmingHealth {
         .init(domains: [
