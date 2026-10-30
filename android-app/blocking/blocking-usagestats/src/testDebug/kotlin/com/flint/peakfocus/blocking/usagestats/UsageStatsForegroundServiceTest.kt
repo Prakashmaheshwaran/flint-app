@@ -255,13 +255,13 @@ class UsageStatsForegroundServiceTest {
         assertEquals(PathBState.UNKNOWN, health())
     }
 
-    @Test fun `permission loss removes foreground and clean stop clears service reasons`() {
+    @Test fun `permission loss removes foreground and retains the observed permission reason`() {
         controller.create(); startLoop(); scheduler.runCurrent()
         assertEquals(PathBState.ENFORCING, health())
         grantUsage(false)
         startLoop(); scheduler.runCurrent()
         assertEquals(PathBState.OFF, health())
-        assertFalse("usage-access-missing" in ProtectionStatusHub.status.value.detectors.degradedReasons)
+        assertTrue("usage-access-missing" in ProtectionStatusHub.status.value.detectors.degradedReasons)
         assertTrue(shadowOf(service).isForegroundStopped)
         assertTrue(shadowOf(service).isStoppedBySelf)
     }

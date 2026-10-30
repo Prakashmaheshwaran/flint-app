@@ -79,7 +79,9 @@ internal class PathBServiceLifecycle(
         generation++
         owner = null
         foregroundStarted = false
-        reasons = emptySet()
+        // Stopping the service does not restore a revoked permission. Keep that observed
+        // condition until a new permission check/start replaces it; clean stops stay clean.
+        reasons = reasons.intersect(setOf("usage-access-missing"))
         unleased(PathBState.OFF)
     }
 

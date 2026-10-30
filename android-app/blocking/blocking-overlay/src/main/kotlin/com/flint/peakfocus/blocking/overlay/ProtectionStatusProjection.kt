@@ -30,6 +30,7 @@ internal object ProtectionStatusProjection {
         now: AccessClockStamp,
         legacyZone: String = TimeZone.getDefault().id,
         timeLimitTier: (TimeLimit) -> BreakLevel = { it.breakLevel },
+        usageAccessMissing: Boolean = false,
     ): ProtectionStatus {
         val inputs = listOf(focus, rulesReadiness, times, opens, editor)
         val readiness = when {
@@ -39,6 +40,15 @@ internal object ProtectionStatusProjection {
         }
         val reasons = linkedSetOf<String>()
         if (!pathAConnected) reasons += "path-a-disconnected"
+        // Derived context only: the service owns the raw permission observation. Copying
+        // its missing-access reason here would feed stale policy state back after recovery.
+        if (usageAccessMissing) {
+            if (pathAConnected) reasons += "path-b-backup-unavailable"
+            // A zero-minute limit is already exhausted and needs no usage measurement.
+            if ((times as? StorageState.Ready)?.value?.any { it.dailyMinutes > 0 } == true) {
+                reasons += "time-limits-need-usage-access"
+            }
+        }
         if (readiness != ProtectionStatus.Readiness.READY) reasons += "policy-storage-${readiness.name.lowercase()}"
         val checked = floor.checkedAtElapsedMs
         val floorStale = checked == null || now.elapsedRealtimeMs < checked || now.elapsedRealtimeMs - checked >= SafetyFloorGate.DEFAULT_REFRESH_INTERVAL_MS

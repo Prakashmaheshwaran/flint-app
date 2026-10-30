@@ -20,9 +20,71 @@ class ProtectionStatusProjectionTest {
     private val resolved = SafetyFloorGate.RuntimeResolution(setOf("home", "dialer"), setOf("home", "dialer"), checkedAtElapsedMs = now.elapsedRealtimeMs)
     private fun project(stamp: AccessClockStamp = now, focus: StorageState<FocusSnapshot> = StorageState.Ready(FocusSnapshot()),
         editor: StorageState<EditorCommitmentState> = StorageState.Ready(sidecar), rules: List<BlockRule> = listOf(rule),
-        floor: SafetyFloorGate.RuntimeResolution = resolved, times: List<TimeLimit> = emptyList(), opens: List<OpenLimit> = emptyList()) =
+        floor: SafetyFloorGate.RuntimeResolution = resolved, times: List<TimeLimit> = emptyList(), opens: List<OpenLimit> = emptyList(),
+        usageAccessMissing: Boolean = false, pathAConnected: Boolean = true) =
         ProtectionStatusProjection.evaluate(focus, StorageState.Ready(rules), StorageState.Ready(times), StorageState.Ready(opens),
-            editor, rules, floor, true, stamp)
+            editor, rules, floor, pathAConnected, stamp, usageAccessMissing = usageAccessMissing)
+
+    @Test fun pathAOnlyWithoutTimeLimitsReportsMissingBackupWithoutInventingTimeLimitFailure() {
+        val s = project(usageAccessMissing = true)
+        assertTrue(s.detectors.accessibilityConnected)
+        assertTrue("path-b-backup-unavailable" in s.detectors.degradedReasons)
+        assertFalse("time-limits-need-usage-access" in s.detectors.degradedReasons)
+        assertEquals(ProtectionStatus.Readiness.READY, s.readiness)
+        assertEquals(rule.id, s.activeCauses.single().ruleId)
+        assertEquals(now, s.observedAt)
+    }
+
+    @Test fun pathAOnlyWithConfiguredTimeLimitsReportsTheirUsageAccessDependencyUntilRecovery() {
+        val limit = TimeLimit("a", 30, BreakLevel.HARDCORE)
+        val period = EditorCause("day", AnchoredInterval(now, 600_000, at + 600_000), "UTC")
+        val editor = StorageState.Ready(sidecar.copy(causes = sidecar.causes + ("time:a" to period)))
+        val missing = project(editor = editor, times = listOf(limit), usageAccessMissing = true)
+        assertTrue("path-b-backup-unavailable" in missing.detectors.degradedReasons)
+        assertTrue("time-limits-need-usage-access" in missing.detectors.degradedReasons)
+        assertEquals(ProtectionStatus.Readiness.READY, missing.readiness)
+        val recovered = project(editor = editor, times = listOf(limit), usageAccessMissing = false)
+        assertFalse("path-b-backup-unavailable" in recovered.detectors.degradedReasons)
+        assertFalse("time-limits-need-usage-access" in recovered.detectors.degradedReasons)
+        assertEquals(missing.activeCauses, recovered.activeCauses)
+        val disconnected = project(editor = editor, times = listOf(limit), usageAccessMissing = true, pathAConnected = false)
+        assertFalse("path-b-backup-unavailable" in disconnected.detectors.degradedReasons)
+        assertTrue("path-a-disconnected" in disconnected.detectors.degradedReasons)
+        assertTrue("time-limits-need-usage-access" in disconnected.detectors.degradedReasons)
+    }
+
+    @Test fun zeroMinuteBlocksRemainActiveWithoutAUsageMeasurementWarning() {
+        val period = EditorCause("day", AnchoredInterval(now, 600_000, at + 600_000), "UTC")
+        val editor = StorageState.Ready(sidecar.copy(causes = sidecar.causes +
+            mapOf("time:a" to period, "time:b" to period)))
+        for (tier in BreakLevel.entries) {
+            val zero = TimeLimit("a", 0, tier)
+            val status = project(editor = editor, times = listOf(zero), usageAccessMissing = true)
+            assertTrue("path-b-backup-unavailable" in status.detectors.degradedReasons)
+            assertFalse("time-limits-need-usage-access" in status.detectors.degradedReasons)
+            assertEquals(ProtectionStatus.Readiness.READY, status.readiness)
+            assertEquals(tier, status.activeCauses.single { it.kind == ProtectionStatus.CauseKind.TIME_LIMIT }.tier)
+            val mixed = project(editor = editor, times = listOf(zero, TimeLimit("b", 1, tier)), usageAccessMissing = true)
+            assertTrue("time-limits-need-usage-access" in mixed.detectors.degradedReasons)
+        }
+    }
+
+    @Test fun contextualPolicyReasonsRetainTheServiceCauseWithoutFeedingItBackAfterRecovery() {
+        try {
+            ProtectionStatusHub.publishPathBHealth(ProtectionStatus.PathBState.OFF, setOf("usage-access-missing"))
+            fun refresh() = ProtectionStatusHub.publish(project(usageAccessMissing =
+                "usage-access-missing" in ProtectionStatusHub.status.value.detectors.degradedReasons))
+            refresh()
+            assertTrue("usage-access-missing" in ProtectionStatusHub.status.value.detectors.degradedReasons)
+            assertTrue("path-b-backup-unavailable" in ProtectionStatusHub.status.value.detectors.degradedReasons)
+            ProtectionStatusHub.publishPathBHealth(ProtectionStatus.PathBState.STANDBY)
+            refresh()
+            assertFalse("usage-access-missing" in ProtectionStatusHub.status.value.detectors.degradedReasons)
+            assertFalse("path-b-backup-unavailable" in ProtectionStatusHub.status.value.detectors.degradedReasons)
+            assertTrue(ProtectionStatusHub.status.value.detectors.accessibilityConnected)
+            assertEquals(now, ProtectionStatusHub.status.value.observedAt)
+        } finally { ProtectionStatusHub.resetForTests() }
+    }
 
     @Test fun PC_73_liveCauseHasTheStoredTierAndElapsedEndAndNeverInventsGlobalPassAvailability() {
         val s = project()

@@ -312,7 +312,9 @@ class BlockScreenCoordinator(
             val snapshot = ProtectionStatusProjection.evaluate(focusState.value, rulesState.value,
                 timeState.value, openState.value, editorState.value, ActiveRulesHolder.rulesOutside(ActiveRulesHolder.SOURCE_DATASTORE),
                 safetyFloor.runtimeResolution.value, EnforcementSignals.detectors.pathAConnected, now,
-                timeLimitTier = { currentTimeLimitBreakLevel(it.packageName) })
+                timeLimitTier = { currentTimeLimitBreakLevel(it.packageName) },
+                usageAccessMissing = "usage-access-missing" in
+                    ProtectionStatusHub.status.value.detectors.degradedReasons)
             synchronized(statusLock) {
                 val connected = EnforcementSignals.detectors.pathAConnected
                 val health = snapshot.detectors.copy(accessibilityConnected = connected,

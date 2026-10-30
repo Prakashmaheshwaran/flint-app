@@ -157,6 +157,49 @@ class CoordinatorProtectionStatusTest {
         assertEquals("Updated", ProtectionStatusHub.status.value.activeCauses.single().displayName)
     }
 
+    @Test fun PC_61_PC_73_PC_77_ownedProjectionUsesServiceObservedUsageAccessAndClearsContextOnRecovery() = runTest {
+        val app: Context = ApplicationProvider.getApplicationContext()
+        val limitedPackage = "com.example.positive-budget"
+        val limits = InMemoryLimitsStore().also {
+            it.setTimeLimit(TimeLimit(limitedPackage, 10, BreakLevel.HARDCORE))
+        }
+        val initialEditor = (editor.state.value as StorageState.Ready).value
+        editor.state.value = StorageState.Ready(initialEditor.copy(causes = initialEditor.causes +
+            (timeCauseKey(limitedPackage) to EditorCause("time-period", AnchoredInterval(initial,
+                3_600_000, initial.wallEpochMs + 3_600_000), "UTC"))))
+        fun clock() = initial.copy(wallEpochMs = initial.wallEpochMs + testScheduler.currentTime,
+            elapsedRealtimeMs = initial.elapsedRealtimeMs + testScheduler.currentTime)
+        ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, listOf(rule))
+        EnforcementSignals.detectors.connected(owner)
+        ProtectionStatusHub.publishPathBHealth(ProtectionStatus.PathBState.OFF, setOf("usage-access-missing"))
+        BlockScreenCoordinator(app, backgroundScope, host, focusStateStore = InMemoryFocusStateStore(),
+            configuredLimitsStore = limits, blockRulesStore = InMemoryBlockRulesStore(listOf(rule)),
+            editorCommitmentStore = editor, statusClock = ::clock,
+            statusDispatcher = StandardTestDispatcher(testScheduler),
+            safetyFloorGate = SafetyFloorGate(app.packageName, { mapOf("home" to emptySet()) },
+                { clock().elapsedRealtimeMs }, requiredRuntimeSources = setOf("home")))
+        runCurrent()
+        advanceTimeBy(BlockScreenCoordinator.STATUS_COALESCE_MS + 1); runCurrent()
+        val reasons = ProtectionStatusHub.status.value.detectors.degradedReasons
+        assertTrue("usage-access-missing" in reasons)
+        assertTrue("path-b-backup-unavailable" in reasons)
+        assertTrue("time-limits-need-usage-access" in reasons)
+
+        // Only the service replaces its underlying observation. An owned policy tick must
+        // recompute contextual reasons; policy must never feed the raw cause back into health.
+        ProtectionStatusHub.publishPathBHealth(ProtectionStatus.PathBState.STANDBY, emptySet())
+        repeat(2) {
+            advanceTimeBy(ProtectionStatusProjection.TICK_MS + BlockScreenCoordinator.STATUS_COALESCE_MS + 1)
+            runCurrent()
+            val recovered = ProtectionStatusHub.status.value.detectors
+            assertEquals(ProtectionStatus.PathBState.STANDBY, recovered.pathB)
+            assertTrue(recovered.accessibilityConnected)
+            assertFalse("usage-access-missing" in recovered.degradedReasons)
+            assertFalse("path-b-backup-unavailable" in recovered.degradedReasons)
+            assertFalse("time-limits-need-usage-access" in recovered.degradedReasons)
+        }
+    }
+
     private class PublishedEditor(initial: EditorCommitmentState) : EditorCommitmentStore {
         override val state = MutableStateFlow<StorageState<EditorCommitmentState>>(StorageState.Ready(initial))
         override suspend fun request(change: EditorChange, now: AccessClockStamp, safety: EditorSafety): EditorCommitResult = error("read-only test")
