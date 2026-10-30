@@ -56,8 +56,13 @@ class HelpCopyTest {
     @Test
     fun `every help string referenced by the screen exists`() {
         val referenced = HelpContent.sections.size
-        assertEquals(3, referenced)
+        assertEquals(5, referenced)
         listOf(
+            "help_section_strictness", "help_strict_easy_title", "help_strict_easy_text",
+            "help_strict_harder_title", "help_strict_harder_text", "help_strict_hardcore_title",
+            "help_strict_hardcore_text", "help_strict_timers_title", "help_strict_timers_text",
+            "help_section_pass", "help_pass_title", "help_pass_text", "help_pass_recovery_title",
+            "help_pass_recovery_text", "help_pass_where_title", "help_pass_where_text",
             "help_section_limits", "help_access_title", "help_access_text", "help_safety_title",
             "help_safety_text", "help_uninstall_title", "help_uninstall_text", "help_clock_title", "help_clock_text", "help_section_websites",
             "help_websites_title", "help_websites_text", "help_section_running", "help_battery_title",
@@ -89,17 +94,44 @@ class HelpCopyTest {
     }
 
     @Test
-    fun `clock copy does not claim schedules or limits are protected from clock changes`() {
+    fun `clock copy keeps started blocks anchored but future boundaries on the phone clock`() {
         val clock = strings.getValue("help_clock_text")
-        assertTrue(clock.contains("schedules and daily time limits follow the phone's clock"))
+        assertTrue(clock.contains("a clock change doesn't shorten a block that has already started"))
+        assertTrue(clock.contains("Future schedule start times and daily time-limit resets still follow the phone's clock."))
+        assertTrue(clock.contains("can't always tell how much time really passed"))
     }
 
     @Test
-    fun `no tier or pass promises until lane C's ADR-012 behavior lands`() {
-        (helpCopy.values + websiteCoverageCopy).forEach { text ->
-            tierAndPassTerms.forEach { term ->
-                assertFalse("help copy names $term before its behavior is settled", text.contains(term))
-            }
+    fun `pass copy uses lane C's rolling and recovery wording`() {
+        val pass = strings.getValue("help_pass_text")
+        assertTrue(pass.contains("One Emergency Pass becomes available seven days after you use it. " +
+            "It starts 60 minutes of recovery across all personal protection."))
+        val recovery = strings.getValue("help_pass_recovery_text")
+        assertTrue(recovery.contains("New schedule occurrences are also suspended during recovery. " +
+            "Counters are kept; the pass is not refunded."))
+        assertTrue(recovery.contains("only commitments still naturally active will resume"))
+        assertTrue(strings.getValue("help_pass_where_text").contains("Review Emergency Pass"))
+    }
+
+    @Test
+    fun `strictness copy states the enforced waits and Hardcore exits`() {
+        assertTrue(strings.getValue("help_strict_harder_text").contains("1 minute the first time in a block, then 5, then 15"))
+        assertTrue(strings.getValue("help_strict_easy_text").contains("five-minute break"))
+        val hardcore = strings.getValue("help_strict_hardcore_text")
+        assertTrue(hardcore.contains("No breaks and no ending early"))
+        assertTrue(hardcore.contains("saved for after that block ends"))
+        assertTrue(strings.getValue("help_strict_timers_text").contains("2-second hold"))
+    }
+
+    @Test
+    fun `timed Open credits are not described until they are available on Android`() {
+        helpCopy.forEach { (key, text) -> assertFalse("$key mentions credits", text.lowercase().contains("credit")) }
+    }
+
+    @Test
+    fun `tier and pass terms stay out of the website projection`() {
+        websiteCoverageCopy.forEach { text ->
+            tierAndPassTerms.forEach { term -> assertFalse("website copy names $term", text.contains(term)) }
         }
     }
 
