@@ -1,6 +1,7 @@
 package com.flint.peakfocus.blocking.overlay
 
 import com.flint.peakfocus.core.model.SafetyFloor
+import com.flint.peakfocus.core.model.EnforcementSignals
 import com.flint.peakfocus.core.common.RuntimeSafetySurfaces
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,9 +16,10 @@ import kotlinx.coroutines.flow.asStateFlow
  *    [refreshIntervalMs] it hands a refresh to [refreshInBackground] (one in flight at a time)
  *    and answers from the last known set meanwhile. An unresolved cold start allows
  *    unclassifiable packages until the background snapshot arrives.
- *  - [protectsFresh] is for a decision that is about to *block* (rare): it resolves inline when
- *    the cache is older than [maxAgeMs], so a dialer or launcher the user just made default is
- *    not shielded from stale data. Pass 0 to force a resolve (a new shield mount).
+ *  - [protectsFresh] defers a stale decision until a background snapshot arrives. A forced
+ *    new mount (maxAgeMs=0) consumes one completed refresh receipt for that package; it never
+ *    runs binder work on the caller. Snapshot completion wakes both detectors, including a
+ *    stationary target that was conservatively allowed during cold start.
  *
  * The resolver reports each source separately (null = that lookup failed). A failed source keeps
  * its last known packages, so a transient binder failure can never shrink the floor — e.g. drop a
@@ -43,10 +45,11 @@ class SafetyFloorGate(
         val resolvedSources: Set<String> = emptySet(),
         val failedSources: Set<String> = emptySet(),
         val checkedAtElapsedMs: Long? = null,
+        val checking: Boolean = false,
     ) {
         /** Sticky provenance only; health consumers must also read degraded and checkedAtElapsedMs. */
         val hasResolvedEverySource: Boolean get() = resolvedSources.containsAll(requiredSources)
-        val degraded: Boolean get() = !hasResolvedEverySource || failedSources.any { it in requiredSources }
+        val degraded: Boolean get() = checking || !hasResolvedEverySource || failedSources.any { it in requiredSources }
     }
 
     private val resolution = MutableStateFlow(RuntimeResolution(requiredRuntimeSources.toSet()))
@@ -63,6 +66,15 @@ class SafetyFloorGate(
     private var homeCandidatesUnavailable = true
     private var callingCandidatesUnavailable = true
     private var ordinaryLaunchers: Set<String> = emptySet()
+    private var refreshRequestId = 0L
+    private var submittedAtMs: Long? = null
+    private var taskStarted = false
+    private val pendingMounts = mutableSetOf<String>()
+    private val completedMounts = mutableSetOf<String>()
+
+    init {
+        if (refreshInBackground != null) scheduleRefresh()
+    }
 
     /** Floor check against the cached runtime set; schedules a background refresh when stale. */
     fun protects(packageName: String): Boolean {
@@ -80,7 +92,23 @@ class SafetyFloorGate(
     /** Floor check for a decision about to block: resolves inline when older than [maxAgeMs]. */
     fun protectsFresh(packageName: String, maxAgeMs: Long = freshIntervalMs): Boolean {
         if (SafetyFloor.isProtected(packageName, selfPackage)) return true
-        refreshIfOlderThan(if (runtimeResolution.value.degraded) minOf(maxAgeMs, UNRESOLVED_RETRY_MS) else maxAgeMs)
+        // The explicit null executor is a synchronous fake/simple-host seam. Production
+        // supplies a background executor; neither fresh checks nor forced mounts bypass it.
+        if (refreshInBackground == null) {
+            refreshIfOlderThan(if (runtimeResolution.value.degraded) minOf(maxAgeMs, UNRESOLVED_RETRY_MS) else maxAgeMs)
+            return allowForSafety(packageName)
+        }
+        val age = if (runtimeResolution.value.degraded) minOf(maxAgeMs, UNRESOLVED_RETRY_MS) else maxAgeMs
+        if (maxAgeMs == 0L) {
+            val completed = synchronized(lock) {
+                if (completedMounts.remove(packageName) && !isOlderThan(freshIntervalMs)) true
+                else { pendingMounts += packageName; false }
+            }
+            if (!completed) { scheduleRefresh(); return true }
+        } else if (isOlderThan(age)) {
+            scheduleRefresh()
+            return true // No stale mounted/future surface may cover a newly selected role.
+        }
         return allowForSafety(packageName)
     }
 
@@ -114,17 +142,54 @@ class SafetyFloorGate(
             refreshIfOlderThan(0L)
             return
         }
-        if (!refreshing.compareAndSet(false, true)) return
+        val request = synchronized(lock) {
+            val at = submittedAtMs
+            val now = nowElapsedMs()
+            // A cancelled/rejected executor may never enter the callback. Expire only an
+            // unstarted submission; a slow running binder never spawns competing refreshes.
+            if (refreshing.get() && !taskStarted && at != null && (now < at || now - at >= SUBMISSION_TIMEOUT_MS)) {
+                refreshing.set(false)
+            }
+            if (!refreshing.compareAndSet(false, true)) return
+            refreshRequestId++
+            submittedAtMs = now
+            taskStarted = false
+            resolution.value = resolution.value.copy(checking = true)
+            refreshRequestId
+        }
         val submitted = runCatching {
             executor {
+                val current = synchronized(lock) {
+                    (request == refreshRequestId).also { if (it) taskStarted = true }
+                }
+                if (!current) return@executor
                 try {
                     refreshIfOlderThan(0L)
+                    EnforcementSignals.detectors.requestEvaluation()
                 } finally {
-                    refreshing.set(false)
+                    var retryMount = false
+                    synchronized(lock) {
+                        if (request == refreshRequestId) {
+                            refreshing.set(false)
+                            submittedAtMs = null
+                            taskStarted = false
+                            resolution.value = resolution.value.copy(checking = false)
+                            retryMount = pendingMounts.isNotEmpty()
+                        }
+                    }
+                    // Re-evaluation may have requested a mount during completion delivery,
+                    // while single-flight was still held. Do not leave that receipt stranded.
+                    if (retryMount) scheduleRefresh()
                 }
             }
         }
-        if (submitted.isFailure) refreshing.set(false)
+        if (submitted.isFailure) synchronized(lock) {
+            if (request == refreshRequestId) {
+                refreshing.set(false)
+                submittedAtMs = null
+                resolution.value = resolution.value.copy(checking = false)
+            }
+        }
     }
 
     private fun refreshIfOlderThan(maxAgeMs: Long) {
@@ -156,7 +221,11 @@ class SafetyFloorGate(
                     resolvedSources = merged.keys.toSet(),
                     failedSources = resolution.value.requiredSources.filterTo(HashSet()) { resolved[it] == null },
                     checkedAtElapsedMs = resolvedAtMs,
+                    checking = false,
                 )
+                completedMounts.clear()
+                completedMounts.addAll(pendingMounts)
+                pendingMounts.clear()
             }
         }
     }
@@ -167,5 +236,6 @@ class SafetyFloorGate(
         const val DEFAULT_FRESH_INTERVAL_MS: Long = 5_000L
         /** Unresolved coverage is retried on the next evaluation after this bounded backoff. */
         const val UNRESOLVED_RETRY_MS: Long = 1_000L
+        const val SUBMISSION_TIMEOUT_MS: Long = 5_000L
     }
 }

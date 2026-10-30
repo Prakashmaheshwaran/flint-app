@@ -47,11 +47,14 @@ class RuntimeSafetySurfacesTest {
 
     @Test fun PC_49_unsetDefaultUsesTheEffectiveDialerButLookupFailuresRemainUnresolved() {
         assertEquals(setOf("effective.dialer"), RuntimeSafetySurfaces.resolvedCallingIdentity(true,
-            role = { null }, effective = { "effective.dialer" }))
+            role = { null }, effective = { setOf("effective.dialer") }))
         assertEquals(setOf("chosen.dialer"), RuntimeSafetySurfaces.resolvedCallingIdentity(true,
             role = { "chosen.dialer" }, effective = { error("explicit role wins") }))
         assertNull(RuntimeSafetySurfaces.resolvedCallingIdentity(true, role = { null }, effective = { null }))
         assertNull(RuntimeSafetySurfaces.resolvedCallingIdentity(null, role = { "untrusted" }, effective = { null }))
-        assertNull(RuntimeSafetySurfaces.resolvedCallingIdentity(true, role = { error("binder died") }, effective = { null }))
+        assertEquals(setOf("fallback"), RuntimeSafetySurfaces.resolvedCallingIdentity(true,
+            role = { error("binder died") }, effective = { setOf("fallback") }))
+        assertEquals(emptySet<String>(), RuntimeSafetySurfaces.resolvedCallingIdentity(true,
+            role = { null }, effective = { emptySet() }))
     }
 }

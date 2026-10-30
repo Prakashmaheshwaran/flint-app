@@ -41,10 +41,11 @@ object RuntimeSafetySurfaces {
         packageName?.takeIf { it.isNotBlank() }?.let(::setOf)
 
     /** No telephony is a proven absence; a failed lookup is not. Null defaults use the effective dialer. */
-    internal fun resolvedCallingIdentity(hasTelephony: Boolean?, role: () -> String?, effective: () -> String?): Set<String>? {
+    internal fun resolvedCallingIdentity(hasTelephony: Boolean?, role: () -> String?, effective: () -> Set<String>?): Set<String>? {
         if (hasTelephony == false) return emptySet()
         if (hasTelephony == null) return null
-        return runCatching { resolvedIdentity(role()) ?: resolvedIdentity(effective()) }.getOrNull()
+        val selected = runCatching { resolvedIdentity(role()) }.getOrNull()
+        return selected ?: runCatching(effective).getOrNull()
     }
 
     /** Source → resolved packages, or null when the role identity could not be established. */
@@ -54,7 +55,7 @@ object RuntimeSafetySurfaces {
             context.getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
         }
         val hasTelephony = runCatching { pm.hasSystemFeature(PackageManager.FEATURE_TELEPHONY) }.getOrNull()
-        val effectiveDialer by lazy { effectiveRole(pm, Intent(Intent.ACTION_DIAL, Uri.parse("tel:"))) }
+        val effectiveDialer by lazy { effectiveCallingIdentity(pm) }
         return buildMap {
             put(
                 SOURCE_HOME,
@@ -87,10 +88,7 @@ object RuntimeSafetySurfaces {
             // discovery does not prove that a candidate currently owns a default role.
             if (this[SOURCE_HOME] == null || this[SOURCE_DEFAULT_DIALER] == null) {
                 val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-                val calling = listOf(Intent(Intent.ACTION_DIAL),
-                    Intent(Intent.ACTION_DIAL, Uri.parse("tel:")),
-                    Intent(Intent.ACTION_CALL, Uri.parse("tel:")),
-                    Intent(Intent.ACTION_VIEW, Uri.parse("tel:")))
+                val calling = callingIntents()
                 fun callingPackages(packageName: String? = null): Set<String>? {
                     val answers = calling.map { queryPackages(pm, Intent(it).setPackage(packageName)) }
                     return if (answers.any { it == null }) null else answers.flatMapTo(HashSet()) { it.orEmpty() }
@@ -123,6 +121,17 @@ object RuntimeSafetySurfaces {
         val pkg = pm.resolveActivity(matched, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName ?: return null
         // A system chooser is not proof of a default role. It must be a real matching handler.
         return pkg.takeIf { it in queryPackages(pm, matched).orEmpty() }
+    }
+
+    private fun callingIntents() = listOf(Intent(Intent.ACTION_DIAL),
+        Intent(Intent.ACTION_DIAL, Uri.parse("tel:")), Intent(Intent.ACTION_CALL, Uri.parse("tel:")),
+        Intent(Intent.ACTION_VIEW, Uri.parse("tel:")))
+
+    private fun effectiveCallingIdentity(pm: PackageManager): Set<String>? {
+        val handlers = callingIntents().map { queryPackages(pm, it) }
+        if (handlers.any { it == null }) return null
+        if (handlers.all { it!!.isEmpty() }) return emptySet() // Successful absence, including data-only devices.
+        return resolvedIdentity(effectiveRole(pm, Intent(Intent.ACTION_DIAL, Uri.parse("tel:"))))
     }
 
     /** Empty successful discovery permits ordinary blocking with degraded role health;

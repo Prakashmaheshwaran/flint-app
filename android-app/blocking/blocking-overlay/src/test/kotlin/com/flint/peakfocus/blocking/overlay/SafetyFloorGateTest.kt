@@ -255,7 +255,7 @@ class SafetyFloorGateTest {
     @Test fun PC_53_degradedCachedReadsOnlyQueueASingleBackgroundRetry() {
         sources = mapOf(HOME to null, DIALER to null)
         val g = gate(background = true)
-        g.protectsFresh("ordinary.control", 0)
+        queued.removeAt(0).invoke()
         val calls = resolveCalls
         now += SafetyFloorGate.UNRESOLVED_RETRY_MS
         repeat(5) { assertFalse(g.protects("ordinary.control")) }
@@ -273,10 +273,10 @@ class SafetyFloorGateTest {
         val g = SafetyFloorGate(self, {
             if (block) { entered.countDown(); check(release.await(5, TimeUnit.SECONDS)) }
             mapOf(HOME to setOf("home"), DIALER to setOf("dialer"))
-        }, { now }, refreshInBackground = { work -> pool.submit { work() }; Unit },
+        }, { now }, refreshInBackground = { work -> if (block) { pool.submit { work() }; Unit } else work() },
             requiredRuntimeSources = setOf(HOME, DIALER))
         try {
-            assertFalse(g.protectsFresh("ordinary.control", 0))
+            assertFalse(g.protects("ordinary.control"))
             block = true
             now += 31_000
             assertFalse(g.protects("ordinary.control"))
@@ -318,6 +318,52 @@ class SafetyFloorGateTest {
             (RuntimeSafetySurfaces.SOURCE_CANDIDATE_CALLING to null)
         assertFalse(g.protectsFresh("com.new.home", 0))
         assertTrue(g.runtimeResolution.value.degraded)
+    }
+
+    @Test fun PC_53_degradedFreshChecksAndForcedMountsNeverResolveOnTheCallingThread() {
+        sources = mapOf(HOME to null, DIALER to null)
+        val g = gate(background = true)
+        queued.removeAt(0).invoke()
+        val initialCalls = resolveCalls
+        now += SafetyFloorGate.UNRESOLVED_RETRY_MS
+        assertTrue("stale block deferred", g.protectsFresh("ordinary.control"))
+        assertEquals(initialCalls, resolveCalls)
+        queued.removeAt(0).invoke()
+        assertFalse(g.protectsFresh("ordinary.control"))
+        assertTrue("new mount waits for its own receipt", g.protectsFresh("ordinary.control", 0))
+        assertEquals(initialCalls + 1, resolveCalls)
+        queued.removeAt(0).invoke()
+        assertFalse("completed snapshot permits one mount", g.protectsFresh("ordinary.control", 0))
+        assertEquals(initialCalls + 2, resolveCalls)
+        assertTrue(queued.isEmpty())
+    }
+
+    @Test fun PC_53_anExecutorThatNeverRunsCannotWedgeFutureResolution() {
+        val g = gate(background = true)
+        assertEquals(1, queued.size)
+        now += SafetyFloorGate.SUBMISSION_TIMEOUT_MS
+        g.protects("ordinary.control")
+        assertEquals(2, queued.size)
+        queued.removeAt(0).invoke() // Expired submission cannot overwrite a newer snapshot.
+        assertEquals(0, resolveCalls)
+        queued.removeAt(0).invoke()
+        assertEquals(1, resolveCalls)
+        assertFalse(g.protects("ordinary.control"))
+        assertFalse(g.runtimeResolution.value.checking)
+    }
+
+    @Test fun PC_53_executorRejectionClearsSingleFlightAndAllowsARetry() {
+        var reject = true
+        val work = mutableListOf<() -> Unit>()
+        val g = SafetyFloorGate(self, { sources }, { now }, refreshInBackground = {
+            if (reject) error("executor rejected") else work += it
+        }, requiredRuntimeSources = setOf(HOME, DIALER))
+        assertFalse(g.runtimeResolution.value.checking)
+        reject = false
+        g.protects("ordinary.control")
+        work.removeAt(0).invoke()
+        assertFalse(g.protects("ordinary.control"))
+        assertFalse(g.runtimeResolution.value.checking)
     }
 
     private companion object {
