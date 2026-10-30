@@ -17,6 +17,9 @@ final class FlintEmergencyPassScopeTests: XCTestCase {
         suite = "FlintPassScopeTests.\(UUID())"
         defaults = UserDefaults(suiteName: suite)!
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        // A healthy scope has all three domains. Keep them pre-marker for the read-only
+        // legacy test; absence alongside saved protection now intentionally means unavailable.
+        for key in FlintRuleStoreKey.allCases { defaults.set(Data("[]".utf8), forKey: key.rawValue) }
     }
     override func tearDown() {
         defaults.removePersistentDomain(forName: suite)

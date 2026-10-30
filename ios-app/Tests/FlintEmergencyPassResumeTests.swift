@@ -53,6 +53,7 @@ final class FlintEmergencyPassResumeTests: XCTestCase {
 
     func testRecoveryEndResumesOnlyNaturallyActiveRulesIncludingStartsInsidePC42() throws {
         let h = try RuleHarness(); defer { h.clean() }
+        XCTAssertTrue(FlintRuleStoreLock.prepareInitialization(environment: h.environment))
         func rule(_ id: String, start: TimeInterval, end: TimeInterval) -> FlintScheduleRule {
             .init(id: id, name: id, schedule: .init(startHour: 9, endHour: 17), allowListMode: true,
                 protection: .init(timeZoneID: "UTC"),
@@ -89,13 +90,14 @@ final class FlintEmergencyPassResumeTests: XCTestCase {
         XCTAssertTrue(h.reports["schedules"]?.failures.contains { $0.activityName == rule.activityName } == true)
     }
 
-    func testReachedTimeBudgetResumesFromDurableProofWithClearedNativeStore() throws {
+    func testReachedTimeBudgetResumesFromDurableProofWithClearedNativeStoreAfterWallJump() throws {
         let h = try RuleHarness(); defer { h.clean() }
         var rule = FlintLimitRule(id: "time", name: "Time", thresholdMinutes: 30, protection: .init(timeZoneID: "UTC"))
         rule.selection.applicationTokens = [try fictionalRuleToken("pass-time")]
         let saved = h.install(rule)
         XCTAssertFalse(h.timeLimitExhausted, "native store is cleared by recovery")
         XCTAssertTrue(FlintEmergencyPassRuleEffects.noteThreshold(rule: saved, at: .init(clock: h.clock), ledger: h.ledger))
+        h.now.addTimeInterval(86400) // wall-only jump cannot discard the exhausted occurrence on resume
         try FlintEmergencyPassRuleEffects.resume(state: h.ledger.peek().get(), at: .init(clock: h.clock),
             environment: h.environment, web: .init(writer: PassResumeWebWriter(), clock: h.clock))
         XCTAssertEqual(h.appliedLimits.map(\.id), [saved.id])

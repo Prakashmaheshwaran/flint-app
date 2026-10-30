@@ -132,7 +132,8 @@ final class FlintEmergencyPassSuspensionTests: XCTestCase {
                 pass.handleRecoveryBoundary(activity: try XCTUnwrap(carriers.last))
             }
             XCTAssertEqual(resumes, 1)
-            XCTAssertEqual(h.appliedSchedules.map(\.id), [work.id])
+            // Reload and the final resume derivation may idempotently write the same store.
+            XCTAssertEqual(Set(h.appliedSchedules.map(\.id)), [work.id])
             let state = try h.ledger.peek().get()
             XCTAssertEqual(state.pass.lastOperationID, "global-recovery")
             XCTAssertEqual(state.pass.usage, .used)

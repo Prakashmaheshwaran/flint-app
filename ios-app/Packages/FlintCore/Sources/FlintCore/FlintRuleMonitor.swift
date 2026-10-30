@@ -167,10 +167,10 @@ public final class FlintRuleMonitor {
 
     private func applyPositive<Rule: FlintGatedRule>(_ rule: Rule, callback: Callback) {
         if let schedule = rule as? FlintScheduleRule {
-            (env.addRuleShield ?? env.applyRuleShield)(schedule, env.clock)
+            env.applyProtection(schedule, addingOnly: true)
         } else if let limit = rule as? FlintLimitRule {
             if case .start = callback, limit.thresholdMinutes > 0 { return }
-            (env.addLimitShield ?? env.applyLimitShield)(limit, env.clock)
+            env.applyProtection(limit, addingOnly: true)
         } else if let open = rule as? FlintOpenLimitRule {
             env.applyProtection(open, addingOnly: true)
         }
