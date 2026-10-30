@@ -45,7 +45,7 @@ final class FlintShieldConfiguration: ShieldConfigurationDataSource {
         }
         guard !covering.isEmpty else { return nil }
         guard FlintOpenCredit.shieldAcceptanceEnabled else { return .acceptanceDisabled }
-        return .target(preview())
+        return .target(preview(), hardcore: covering.contains { $0.breakLevel == .hardcore })
     }
 
     private func categoryOpenCredit(_ token: ActivityCategoryToken?) -> ShieldCopy.OpenCredit? {

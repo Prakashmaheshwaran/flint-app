@@ -13,8 +13,10 @@ struct ShieldCopy: Equatable {
 
     /// What the configuration extension knows about Open credits for this shield.
     enum OpenCredit: Equatable {
-        /// An enabled Open Limit covers this exact app/site token.
-        case target(FlintOpenCreditPreview)
+        /// An enabled Open Limit covers this exact app/site token. `hardcore` is true when a
+        /// covering Open Limit is Hardcore: after exhaustion only the Emergency Pass's global
+        /// recovery (ADR-012 §6, which suspends Open Limits) lifts it before the reset.
+        case target(FlintOpenCreditPreview, hardcore: Bool = false)
         /// The shield comes from a category that an enabled Open Limit selected. Opaque
         /// category tokens are never credit targets.
         case categoryTarget
@@ -63,6 +65,7 @@ struct ShieldCopy: Equatable {
     private static func creditCopy(_ credit: OpenCredit, unit: Unit, locale: Locale,
                                    timeZone: TimeZone) -> (subtitle: String, offer: String?)? {
         let preview: FlintOpenCreditPreview
+        let hardcore: Bool
         switch credit {
         case .acceptanceDisabled:
             return (String(localized: "Open credits aren't available yet", locale: locale), nil)
@@ -73,8 +76,9 @@ struct ShieldCopy: Equatable {
             case .site:
                 return (String(localized: "Open credits work for individual sites — pick sites in Flint", locale: locale), nil)
             }
-        case let .target(value):
+        case let .target(value, isHardcore):
             preview = value
+            hardcore = isHardcore
         }
 
         if offersCredit(preview), let remaining = preview.remaining, let duration = preview.duration {
@@ -103,19 +107,23 @@ struct ShieldCopy: Equatable {
 
         switch preview.blockedBy {
         case nil where preview.remaining == 0, .exhausted?:
+            let exhausted: String
             if (preview.cap ?? 1) <= 0 {
                 // A zero allowance never refills at the reset.
-                return (String(localized: "This Open Limit allows no credits", locale: locale), nil)
-            }
-            if preview.timeUncertain {
+                exhausted = String(localized: "This Open Limit allows no credits", locale: locale)
+            } else if preview.timeUncertain {
                 // The reset follows elapsed time; only its wall-clock estimate is uncertain.
-                return (String(localized: "No credits left today · the reset time is uncertain", locale: locale), nil)
+                exhausted = String(localized: "No credits left today · the reset time is uncertain", locale: locale)
+            } else if let resetAt = preview.resetAtEstimate {
+                let time = shortTime(resetAt, locale: locale, timeZone: timeZone)
+                exhausted = String(localized: "No credits left today · resets about \(time)", locale: locale)
+            } else {
+                exhausted = String(localized: "No credits left today", locale: locale)
             }
-            guard let resetAt = preview.resetAtEstimate else {
-                return (String(localized: "No credits left today", locale: locale), nil)
-            }
-            let time = shortTime(resetAt, locale: locale, timeZone: timeZone)
-            return (String(localized: "No credits left today · resets about \(time)", locale: locale), nil)
+            // A policy statement, not an availability claim: the pass may be cooling down, and
+            // its recovery pauses the limit for 60 minutes rather than ending it.
+            guard hardcore else { return (exhausted, nil) }
+            return (String(localized: "\(exhausted). Only the Emergency Pass can pause this early.", locale: locale), nil)
         case nil:
             // No pool, or no positive interval before the reset: accept would refuse.
             return (unavailable(locale), nil)
@@ -170,13 +178,13 @@ struct ShieldCopy: Equatable {
         }
     }
 
-    /// Kinds only: saved rule names never appear on the shield for another cause. The names
-    /// are `FlintOpenCredit.otherStores()` display names, pinned by `ShieldCopyTests`.
-    private static func otherContributor(_ names: [String], unit: Unit, locale: Locale) -> String {
-        let session = names.contains("Current session")
-        let schedule = names.contains { $0.hasPrefix("Schedule: ") }
-        let timeLimit = names.contains { $0.hasPrefix("Time Limit: ") }
-        let safari = names.contains("Safari restriction")
+    /// Kinds only: saved rule names never reach the shield for another cause.
+    private static func otherContributor(_ kinds: [FlintOpenCreditContributorKind], unit: Unit,
+                                         locale: Locale) -> String {
+        let session = kinds.contains(.session)
+        let schedule = kinds.contains(.schedule)
+        let timeLimit = kinds.contains(.timeLimit)
+        let safari = kinds.contains(.safariRestriction)
         switch (unit, session, schedule, timeLimit, safari) {
         case (.app, true, _, _, _): return String(localized: "A focus session still blocks this app", locale: locale)
         case (.site, true, _, _, _): return String(localized: "A focus session still blocks this site", locale: locale)

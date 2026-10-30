@@ -154,9 +154,9 @@ final class ShieldCreditPathTests: XCTestCase {
         XCTAssertEqual(press(.secondaryButtonPressed), .close)
         XCTAssertEqual(press(.primaryButtonPressed), .close) // live grant
         assertNothingSpent(1)
-        contributors = [.init(name: "Current session", applications: [shieldKey])]
+        contributors = [.init(kind: .session, applications: [shieldKey])]
         XCTAssertEqual(press(.primaryButtonPressed), .close) // blocked
-        contributors = [.init(name: "Schedule: Deep work", applicationCategoryExceptions: [])]
+        contributors = [.init(kind: .schedule, applicationCategoryExceptions: [])]
         XCTAssertEqual(press(.primaryButtonPressed), .close) // category overlap
         unavailableContext = true
         XCTAssertEqual(press(.primaryButtonPressed), .close) // unavailable
@@ -202,11 +202,11 @@ final class ShieldCreditPathTests: XCTestCase {
                 _ = test.service.reconcile()
             },
             .init(name: "live grant") { test in _ = try test.service.accept(target: shieldKey, operationID: "live").get() },
-            .init(name: "session") { test in test.contributors = [.init(name: "Current session", applications: [shieldKey])] },
-            .init(name: "schedule") { test in test.contributors = [.init(name: "Schedule: Deep work", applications: [shieldKey])] },
-            .init(name: "time limit") { test in test.contributors = [.init(name: "Time Limit: Social", applications: [shieldKey])] },
+            .init(name: "session") { test in test.contributors = [.init(kind: .session, applications: [shieldKey])] },
+            .init(name: "schedule") { test in test.contributors = [.init(kind: .schedule, applications: [shieldKey])] },
+            .init(name: "time limit") { test in test.contributors = [.init(kind: .timeLimit, applications: [shieldKey])] },
             .init(name: "category overlap") { test in
-                test.contributors = [.init(name: "Schedule: Deep work", applicationCategoryExceptions: [])]
+                test.contributors = [.init(kind: .schedule, applicationCategoryExceptions: [])]
             },
             .init(name: "unavailable") { test in test.unavailableContext = true },
             .init(name: "zero cap") { test in test.cap = 0 },
@@ -334,7 +334,7 @@ final class ShieldCreditPathTests: XCTestCase {
         releaseFails = true
         XCTAssertEqual(press(.secondaryButtonPressed), .defer)
         XCTAssertEqual(used, 1)
-        contributors = [.init(name: "Current session", applications: [shieldKey])]
+        contributors = [.init(kind: .session, applications: [shieldKey])]
         registrationFails = true
         _ = service.reconcile() // carrier repair fails: the grant closes, consumption stays
         XCTAssertEqual(used, 1)
@@ -382,7 +382,7 @@ final class ShieldCreditPathTests: XCTestCase {
     func testRefusedSecondaryWhileAnotherCauseBlocksChargesNothing() throws {
         try initialize()
         XCTAssertNotNil(drawn().secondaryButtonLabel)
-        contributors = [.init(name: "Current session", applications: [shieldKey])]
+        contributors = [.init(kind: .session, applications: [shieldKey])]
         XCTAssertEqual(press(.secondaryButtonPressed), .defer)
         assertNothingSpent(0)
         XCTAssertEqual(registerCalls, 0); XCTAssertTrue(released.isEmpty)
@@ -390,7 +390,7 @@ final class ShieldCreditPathTests: XCTestCase {
         XCTAssertEqual(redrawn.subtitle, "A focus session still blocks this app · no credit used")
         XCTAssertNil(redrawn.secondaryButtonLabel)
 
-        contributors = [.init(name: "Schedule: Deep work", applicationCategoryExceptions: [])]
+        contributors = [.init(kind: .schedule, applicationCategoryExceptions: [])]
         XCTAssertEqual(press(.secondaryButtonPressed), .defer)
         assertNothingSpent(0)
         XCTAssertEqual(drawn().subtitle, "Another category rule may still block this app; no credit used")

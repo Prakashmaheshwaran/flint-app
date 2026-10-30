@@ -50,15 +50,15 @@ final class ShieldCopyTests: XCTestCase {
     private var midnight: Date { now.addingTimeInterval(13 * 3600) }
 
     private func preview(remaining: Int? = 3, cap: Int? = 3, blockedBy: FlintOpenCreditBlock? = nil,
-                         grant: FlintOpenCreditGrant? = nil, contributors: [String] = [],
+                         grant: FlintOpenCreditGrant? = nil, contributors: [FlintOpenCreditContributorKind] = [],
                          duration: TimeInterval? = 300, uncertain: Bool = false) -> FlintOpenCreditPreview {
         .init(remaining: remaining, cap: cap, blockedBy: blockedBy, grant: grant,
               blockingContributors: contributors, duration: duration, resetAtEstimate: midnight,
               quotaZone: "UTC", timeUncertain: uncertain)
     }
 
-    private func credit(_ preview: FlintOpenCreditPreview) -> ShieldCopy.OpenCredit {
-        .target(preview)
+    private func credit(_ preview: FlintOpenCreditPreview, hardcore: Bool = false) -> ShieldCopy.OpenCredit {
+        .target(preview, hardcore: hardcore)
     }
 
     private var liveGrant: FlintOpenCreditGrant {
@@ -220,82 +220,97 @@ final class ShieldCopyTests: XCTestCase {
         }
     }
 
-    /// iOS's Emergency Pass ends only an active Hardcore session, not an Open Limit, so no tier
-    /// promises an early exit after exhaustion (global pass recovery is not integrated).
-    func testExhaustedCopyPromisesNoEarlyExitForAnyTier() {
+    /// Easy and Harder never mention the pass: editing the limit is their ordinary path.
+    func testExhaustedCopyPromisesNoEarlyExitBelowHardcore() {
         let result = copy(credit: credit(preview(remaining: 0, blockedBy: .exhausted)))
+        XCTAssertEqual(result.subtitle, "No credits left today · resets about 13:00")
         XCTAssertFalse(result.subtitle.contains("Emergency Pass"))
         XCTAssertFalse(result.subtitle.contains("break"))
     }
 
-    func testAnotherContributorNamesOnlyItsKind() {
-        let cases: [([String], ShieldCopy.Unit, String)] = [
-            (["Current session"], .app, "A focus session still blocks this app · no credit used"),
-            (["Schedule: Deep work"], .app, "A schedule still blocks this app · no credit used"),
-            (["Time Limit: Social"], .app, "A Time Limit still blocks this app · no credit used"),
-            (["Schedule: Deep work"], .site, "A schedule still blocks this site · no credit used"),
-            (["Safari restriction"], .site, "A Safari restriction still blocks this site · no credit used"),
-            (["Schedule: Deep work", "Current session"], .app, "A focus session still blocks this app · no credit used"),
-            ([], .app, "Another protection still blocks this app · no credit used"),
-            (["Unrecognized store"], .site, "Another protection still blocks this site · no credit used"),
+    /// The global pass recovery suspends Open Limits (ADR-012 §6), so an exhausted Hardcore
+    /// limit names it. It is a policy statement, not a claim that a pass is available now.
+    func testHardcoreExhaustedNamesOnlyTheEmergencyPass() {
+        let line = ". Only the Emergency Pass can pause this early."
+        let cases: [(FlintOpenCreditPreview, String)] = [
+            (preview(remaining: 0, blockedBy: .exhausted), "No credits left today · resets about 13:00"),
+            (preview(remaining: 0, blockedBy: .exhausted, uncertain: true),
+             "No credits left today · the reset time is uncertain"),
+            (preview(remaining: 0, cap: 0, blockedBy: .exhausted), "This Open Limit allows no credits"),
+            (.init(remaining: 0, cap: 3, blockedBy: .exhausted, duration: 300, timeUncertain: false),
+             "No credits left today"),
         ]
-        for (names, unit, expected) in cases {
-            let result = copy(unit: unit, credit: credit(preview(blockedBy: .otherContributor, contributors: names)))
+        for (value, lead) in cases {
+            let result = copy(credit: credit(value, hardcore: true))
+            XCTAssertEqual(result.subtitle, lead + line)
+            XCTAssertNil(result.secondaryButtonLabel)
+        }
+        // Hardcore never changes an available credit or another cause's copy.
+        XCTAssertEqual(copy(credit: credit(preview(), hardcore: true)).secondaryButtonLabel, "Use one credit · 5 minutes")
+        XCTAssertFalse(copy(credit: credit(preview(blockedBy: .otherContributor, contributors: [.session]),
+                                           hardcore: true)).subtitle.contains("Emergency Pass"))
+        XCTAssertFalse(copy(credit: credit(preview(blockedBy: .unavailable), hardcore: true)).subtitle
+            .contains("Emergency Pass"))
+    }
+
+    func testAnotherContributorNamesOnlyItsKind() {
+        let cases: [([FlintOpenCreditContributorKind], ShieldCopy.Unit, String)] = [
+            ([.session], .app, "A focus session still blocks this app · no credit used"),
+            ([.schedule], .app, "A schedule still blocks this app · no credit used"),
+            ([.timeLimit], .app, "A Time Limit still blocks this app · no credit used"),
+            ([.schedule], .site, "A schedule still blocks this site · no credit used"),
+            ([.safariRestriction], .site, "A Safari restriction still blocks this site · no credit used"),
+            ([.session, .schedule], .app, "A focus session still blocks this app · no credit used"),
+            ([], .app, "Another protection still blocks this app · no credit used"),
+            ([], .site, "Another protection still blocks this site · no credit used"),
+        ]
+        for (kinds, unit, expected) in cases {
+            let result = copy(unit: unit, credit: credit(preview(blockedBy: .otherContributor, contributors: kinds)))
             XCTAssertEqual(result.subtitle, expected)
-            XCTAssertFalse(result.subtitle.contains("Deep work") || result.subtitle.contains("Social"), "kind only")
             XCTAssertNil(result.secondaryButtonLabel)
         }
         // "no credit used" needs an untouched pool; a missing grant is not a refund receipt.
         XCTAssertEqual(copy(credit: credit(preview(remaining: 1, blockedBy: .otherContributor,
-                                                   contributors: ["Schedule: Deep work"]))).subtitle,
+                                                   contributors: [.schedule]))).subtitle,
                        "A schedule still blocks this app · 1 of 3 credits left today")
         XCTAssertEqual(copy(credit: credit(preview(remaining: 0, blockedBy: .otherContributor,
-                                                   contributors: ["Current session"]))).subtitle,
+                                                   contributors: [.session]))).subtitle,
                        "A focus session still blocks this app · no credits left today")
         XCTAssertEqual(copy(credit: credit(preview(remaining: nil, cap: nil, blockedBy: .otherContributor,
-                                                   contributors: ["Current session"]))).subtitle,
+                                                   contributors: [.session]))).subtitle,
                        "A focus session still blocks this app")
         // A newly added cause can block a committed credit; its clock keeps running.
         let blockedGrant = copy(credit: credit(preview(remaining: 2, blockedBy: .otherContributor, grant: liveGrant,
-                                                       contributors: ["Schedule: Deep work"], duration: 200)))
+                                                       contributors: [.schedule], duration: 200)))
         XCTAssertEqual(blockedGrant.subtitle, "A schedule still blocks this app · credit active for 3 more min")
         XCTAssertNil(blockedGrant.secondaryButtonLabel)
     }
 
-    /// The kind mapping parses `FlintOpenCredit.otherStores()` display names (lane B will
-    /// replace them with a typed kind). Pin every name form so a rename or a new contributor
-    /// store fails here instead of silently degrading to the generic copy.
-    func testEveryOtherStoresDisplayNameMapsToItsKind() throws {
-        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-            .appendingPathComponent("../Packages/FlintCore/Sources/FlintCore/FlintOpenCredit.swift").standardized
-        let source = try String(contentsOf: url, encoding: .utf8)
-        let start = try XCTUnwrap(source.range(of: "private static func otherStores()"))
-        let end = try XCTUnwrap(source.range(of: "return names.map", range: start.upperBound..<source.endIndex))
-        let body = String(source[start.upperBound..<end.lowerBound])
-        let regex = try NSRegularExpression(pattern: #""([^"\\]*)""#)
-        let literals = regex.matches(in: body, range: NSRange(body.startIndex..., in: body)).map {
-            String(body[Range($0.range(at: 1), in: body)!])
-        }
-        XCTAssertEqual(literals, ["Current session", "flint", "Safari restriction", "Schedule: ", "Time Limit: "],
-                       "otherStores() names changed: update ShieldCopy's kind mapping and this test")
-
-        let kinds: [(String, ShieldCopy.Unit, String)] = [
-            ("Current session", .app, "A focus session still blocks this app · no credit used"),
-            ("Current session", .site, "A focus session still blocks this site · no credit used"),
-            ("Safari restriction", .site, "A Safari restriction still blocks this site · no credit used"),
-            ("Schedule: " + "Any name", .app, "A schedule still blocks this app · no credit used"),
-            ("Schedule: " + "Any name", .site, "A schedule still blocks this site · no credit used"),
-            ("Time Limit: " + "Any name", .app, "A Time Limit still blocks this app · no credit used"),
-            ("Time Limit: " + "Any name", .site, "A Time Limit still blocks this site · no credit used"),
+    /// Every contributor kind draws its own copy for both units; a new kind fails here
+    /// instead of silently degrading to the generic line.
+    func testEveryContributorKindMapsToItsCopy() {
+        let expected: [FlintOpenCreditContributorKind: (app: String, site: String)] = [
+            .session: ("A focus session still blocks this app", "A focus session still blocks this site"),
+            .schedule: ("A schedule still blocks this app", "A schedule still blocks this site"),
+            .timeLimit: ("A Time Limit still blocks this app", "A Time Limit still blocks this site"),
+            // Safari restrictions apply to sites only; an app shield never comes from them.
+            .safariRestriction: ("Another protection still blocks this app", "A Safari restriction still blocks this site"),
         ]
-        for (name, unit, expected) in kinds {
-            XCTAssertEqual(copy(unit: unit, credit: credit(preview(blockedBy: .otherContributor, contributors: [name]))).subtitle,
-                           expected, name)
+        XCTAssertEqual(Set(expected.keys), Set(FlintOpenCreditContributorKind.allCases))
+        for (kind, lines) in expected {
+            for (unit, line) in [(ShieldCopy.Unit.app, lines.app), (.site, lines.site)] {
+                XCTAssertEqual(copy(unit: unit, credit: credit(preview(blockedBy: .otherContributor, contributors: [kind]))).subtitle,
+                               line + " · no credit used", "\(kind)")
+            }
         }
+        XCTAssertEqual(FlintOpenCreditBlocking.query(target: "t", kind: .application, stores: [
+            .init(kind: .schedule, applications: ["t"]), .init(kind: .session, applications: ["t"]),
+            .init(kind: .schedule, applications: ["t"]),
+        ]).contributors, [.session, .schedule], "distinct kinds, in kind order")
     }
 
     func testCategoryOverlapUsesTheContractMessage() {
-        let app = copy(credit: credit(preview(blockedBy: .categoryOverlap, contributors: ["Schedule: Deep work"])))
+        let app = copy(credit: credit(preview(blockedBy: .categoryOverlap, contributors: [.schedule])))
         XCTAssertEqual(app.subtitle, "Another category rule may still block this app; no credit used")
         XCTAssertNil(app.secondaryButtonLabel)
         XCTAssertEqual(copy(unit: .site, credit: credit(preview(blockedBy: .categoryOverlap))).subtitle,

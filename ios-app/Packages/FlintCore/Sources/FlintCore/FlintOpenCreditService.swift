@@ -5,13 +5,13 @@ public struct FlintOpenCreditContext {
     public var coveringCaps: [String: Int]
     public var targetKeys: Set<String>
     public var blockedBy: FlintOpenCreditBlock?
-    public var blockingContributors: [String]
+    public var blockingContributors: [FlintOpenCreditContributorKind]
     public var restoration: FlintOpenCreditRestoration?
     public var fingerprints: [String: String]
     public var scopes: [String: String]
     public var activities: [String: String]
     public init(coveringCaps: [String: Int], targetKeys: Set<String>, blockedBy: FlintOpenCreditBlock? = nil,
-                blockingContributors: [String] = [], restoration: FlintOpenCreditRestoration? = nil,
+                blockingContributors: [FlintOpenCreditContributorKind] = [], restoration: FlintOpenCreditRestoration? = nil,
                 fingerprints: [String: String] = [:], scopes: [String: String]? = nil,
                 activities: [String: String]? = nil) {
         self.coveringCaps = coveringCaps; self.targetKeys = targetKeys; self.blockedBy = blockedBy

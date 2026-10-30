@@ -243,17 +243,17 @@ final class FlintOpenCreditTests: XCTestCase {
     }
 
     func testPC32SessionScheduleAndExhaustedTimeLimitDenyWithoutCharge() throws {
-        for name in ["session", "schedule", "exhausted-time-limit"] {
-            contributors = [.init(name: name, applications: [openAppKey])]
+        for kind: FlintOpenCreditContributorKind in [.session, .schedule, .timeLimit] {
+            contributors = [.init(kind: kind, applications: [openAppKey])]
             denied(.otherContributor)
-            XCTAssertEqual(service().preview(target: openAppKey).blockingContributors, [name])
+            XCTAssertEqual(service().preview(target: openAppKey).blockingContributors, [kind])
         }
         XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 0)
         XCTAssertTrue(registrations.isEmpty); XCTAssertTrue(released.isEmpty)
     }
 
     func testPC33UnprovenCategoryOverlapDeniesWithoutCharge() throws {
-        contributors = [.init(name: "opaque-category", applicationCategoryExceptions: [])]
+        contributors = [.init(kind: .schedule, applicationCategoryExceptions: [])]
         denied(.categoryOverlap)
         XCTAssertEqual(service().preview(target: openAppKey).blockedBy, .categoryOverlap)
         XCTAssertEqual(FlintOpenCreditBlock.categoryOverlap.message,
@@ -263,18 +263,18 @@ final class FlintOpenCreditTests: XCTestCase {
     }
 
     func testContributorQueryDistinguishesUnspentLimitExplicitDomainsAndProvenExceptions() {
-        let unspent = FlintOpenCreditContributor(name: "unspent-time-limit")
+        let unspent = FlintOpenCreditContributor(kind: .timeLimit)
         XCTAssertNil(FlintOpenCreditBlocking.query(target: openAppKey, kind: .application, stores: [unspent]).reason)
-        let site = FlintOpenCreditContributor(name: "site-schedule", webDomains: ["site"])
+        let site = FlintOpenCreditContributor(kind: .schedule, webDomains: ["site"])
         XCTAssertEqual(FlintOpenCreditBlocking.query(target: "site", kind: .webDomain, stores: [site]).reason, .otherContributor)
-        let category = FlintOpenCreditContributor(name: "category", applicationCategoryExceptions: [openAppKey], webCategoryExceptions: [])
+        let category = FlintOpenCreditContributor(kind: .schedule, applicationCategoryExceptions: [openAppKey], webCategoryExceptions: [])
         XCTAssertNil(FlintOpenCreditBlocking.query(target: openAppKey, kind: .application, stores: [category]).reason)
         XCTAssertEqual(FlintOpenCreditBlocking.query(target: "site", kind: .webDomain, stores: [category]).reason, .categoryOverlap)
         XCTAssertEqual(FlintOpenCreditBlocking.query(target: openAppKey, kind: .application, stores: nil).reason, .unavailable)
     }
 
     func testPC32SafariFilterDeniesDomainCreditWithoutChargeButDoesNotBlockAppCredit() throws {
-        let filter = FlintOpenCreditContributor(name: "Schedule Safari filter", webContentMayBlock: true)
+        let filter = FlintOpenCreditContributor(kind: .schedule, webContentMayBlock: true)
         XCTAssertEqual(FlintOpenCreditBlocking.query(target: "opaque-domain", kind: .webDomain, stores: [filter]).reason,
                        .otherContributor)
         XCTAssertNil(FlintOpenCreditBlocking.query(target: openAppKey, kind: .application, stores: [filter]).reason)

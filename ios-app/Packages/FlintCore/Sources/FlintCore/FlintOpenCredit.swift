@@ -332,12 +332,12 @@ public enum FlintOpenCredit {
     private static func otherStores() -> [FlintOpenCreditContributor]? {
         guard let schedules = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: .flintGroup, migrating: false),
               let limits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: .flintGroup, migrating: false) else { return nil }
-        let names = [("Current session", "flint"), ("Safari restriction", FlintWebRestrictionLifecycle.legacyStoreName)] +
-            schedules.map { ("Schedule: " + $0.name, $0.storeName) } +
-            limits.map { ("Time Limit: " + $0.name, $0.storeName) }
-        return names.map { name, storeName in
+        let stores: [(FlintOpenCreditContributorKind, String)] =
+            [(.session, "flint"), (.safariRestriction, FlintWebRestrictionLifecycle.legacyStoreName)] +
+            schedules.map { (.schedule, $0.storeName) } + limits.map { (.timeLimit, $0.storeName) }
+        return stores.map { kind, storeName in
             let store = ManagedSettingsStore(named: .init(storeName))
-            return .init(name: name,
+            return .init(kind: kind,
                 applications: Set((store.shield.applications ?? []).map { FlintOpenLimit.key(for: $0) }),
                 webDomains: Set((store.shield.webDomains ?? []).map { FlintOpenLimit.key(for: $0) }),
                 applicationCategoryExceptions: categoryExceptions(store.shield.applicationCategories, key: { FlintOpenLimit.key(for: $0) }),
