@@ -65,7 +65,7 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
         let clock = FlintClock(now: { fixedNow }, monotonic: { 0 }, bootSessionID: { nil }, calendar: { .current })
         let active = FlintActiveSession(name: "Hardcore", startedAt: now.addingTimeInterval(-60),
             endsAt: now.addingTimeInterval(3600), breakLevel: .hardcore, monitorName: "flint.session",
-            contractVersion: 12)
+            contractVersion: FlintActiveSession.currentContractVersion)
         defaults.set(try JSONEncoder().encode(active), forKey: "flint.activeSession")
         adapter.reconcile(active, clock: clock)
         for malformed in [Data("{".utf8), Data("{\"enabled\":true}".utf8)] {
