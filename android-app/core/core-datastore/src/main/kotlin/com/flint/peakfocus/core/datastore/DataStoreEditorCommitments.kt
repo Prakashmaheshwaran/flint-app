@@ -31,6 +31,7 @@ class DataStoreEditorCommitmentStore(
 ) : EditorCommitmentStore {
     override val changes: Flow<Unit> = dataStore.data.map { Unit }
     override val state: Flow<StorageState<EditorCommitmentState>> = dataStore.data.storageStates {
+        validateInitializedProtectionChildren(it)
         readEditorState(it).also { _ -> if (StrictPrefsCodec.string(it, EDITOR_COMMITMENTS_KEY) != null) readHarderWait(it) }
     }
     override val terminalEvents = dataStore.data.storageStates(::readTerminalEvents)
@@ -120,7 +121,7 @@ class DataStoreEditorCommitmentStore(
     private fun request(prefs: MutablePreferences, now: AccessClockStamp, safety: EditorSafety, changeAtCommit: () -> EditorChange?): EditorCommitResult {
         var state = prepare(prefs, now)
         val change = changeAtCommit() ?: return EditorCommitResult.Rejected("This rule changed. Refresh and try again.")
-        validation(prefs, change, now, safety)?.let { return EditorCommitResult.Rejected(it) }
+        validation(prefs, state, change, now, safety)?.let { return EditorCommitResult.Rejected(it) }
         val expected = expected(prefs, state, change, now)
         val decision = decision(prefs, state, change, now)
         if (decision.first == CommitmentPolicy.Outcome.DENY) return EditorCommitResult.Rejected(denial(prefs, state, change, now))
@@ -160,7 +161,7 @@ class DataStoreEditorCommitmentStore(
             prefs.putEditorState(state.copy(pending = null))
             return@transact EditorCommitResult.Rejected("Protection changed or reached a boundary. Review it before confirming.")
         }
-        validation(prefs, change, now, safety)?.let { return@transact EditorCommitResult.Rejected(it) }
+        validation(prefs, state, change, now, safety)?.let { return@transact EditorCommitResult.Rejected(it) }
         val decision = decision(prefs, state, change, now)
         if (decision.first != pending.outcome || decision.second != pending.wait) {
             return@transact EditorCommitResult.Rejected("Protection changed. Review the current action before confirming.")
@@ -244,20 +245,27 @@ class DataStoreEditorCommitmentStore(
         dataStore.edit { prefs -> prefs.putEditorState(readEditorState(prefs).copy(migrationNotice = false)) }
     }
 
-    override suspend fun startTimer(rule: BlockRule, now: AccessClockStamp, safety: EditorSafety): Boolean = transact(now) { prefs, now ->
+    override suspend fun startTimer(rule: BlockRule, now: AccessClockStamp, safety: EditorSafety): Boolean =
+        commitTimer(rule, now, safety) is TimerStartResult.Applying
+
+    override suspend fun commitTimer(rule: BlockRule, now: AccessClockStamp, safety: EditorSafety): TimerStartResult = transact(now) { prefs, now ->
+        if (hasActiveProtectionRecovery(prefs, now)) return@transact TimerStartResult.Rejected("Resume protection first.")
         var state = prepare(prefs, now)
         require(rule.id.startsWith(CONTRACT_TIMER_ID_PREFIX) && rule.schedule == null && rule.enabled)
         require(!rule.targets.allowListMode && rule.targets.apps.isNotEmpty() && rule.targets.apps.none { it.packageName.isBlank() || it.packageName in floor(safety) })
         require(isValidNewSessionDuration((rule.expiresAtEpochMs ?: 0) - now.wallEpochMs))
         val current = prefs.editorRules()
-        wireRequire(state.causes.size < MAX_EDITOR_CAUSES)
-        if (!current.canStartSession(rule.id, now.wallEpochMs)) return@transact false
+        if (state.causes.size >= MAX_EDITOR_CAUSES) return@transact TimerStartResult.Rejected("Protection capacity is full. Finish an existing commitment and try again.")
+        val occupied = current.any { existing ->
+            existing.id == rule.id || isActiveEditorSession(existing, state.causes[ruleCauseKey(existing.id)], now)
+        }
+        if (occupied) return@transact TimerStartResult.Rejected("A Timer is already active. Finish it before starting another.")
         val startDecision = policy.decide(CommitmentPolicy.Action.START_ADDITIONAL, rule.breakLevel, CommitmentPolicy.CauseActivity.Inactive)
         check(startDecision in setOf(CommitmentPolicy.Outcome.ALLOW, CommitmentPolicy.Outcome.ALLOW_AFTER_DISCLOSURE))
         prefs.putEditorRules(current + rule)
         state = materialize(prefs, state, now)
         prefs.putEditorState(state)
-        true
+        TimerStartResult.Applying(rule.id, now)
     }
 
     private suspend fun <R> transact(requestedAt: AccessClockStamp, action: (MutablePreferences, AccessClockStamp) -> R): R {
@@ -268,6 +276,7 @@ class DataStoreEditorCommitmentStore(
 
     /** Call inside one DataStore edit: migrate, apply queued changes, then materialize new occurrences. */
     internal fun prepare(prefs: MutablePreferences, now: AccessClockStamp, checkpointQuota: Boolean = true): EditorCommitmentState {
+        validateInitializedProtectionChildren(prefs)
         // Validate established domains before quota preparation or any migration write.
         val decoded = readEditorState(prefs)
         val previous = if (StrictPrefsCodec.string(prefs, EDITOR_COMMITMENTS_KEY) != null) decoded else null
@@ -499,10 +508,10 @@ class DataStoreEditorCommitmentStore(
         return outcome to operation
     }
 
-    private fun validation(prefs: Preferences, change: EditorChange, now: AccessClockStamp, safety: EditorSafety): String? {
+    private fun validation(prefs: Preferences, state: EditorCommitmentState, change: EditorChange, now: AccessClockStamp, safety: EditorSafety): String? {
         val added = change.upserts.map { ruleCauseKey(it.id) }.toSet() +
             change.limits?.let { listOfNotNull(it.time?.let { timeCauseKey(it.packageName) }, it.open?.let { openCauseKey(it.packageName) }) }.orEmpty()
-        if ((readEditorState(prefs).causes.keys + added).size > MAX_EDITOR_CAUSES) return "Protection capacity is full. Finish an existing commitment and try again."
+        if ((state.causes.keys + added).size > MAX_EDITOR_CAUSES) return "Protection capacity is full. Finish an existing commitment and try again."
         require(change.upserts.map { it.id }.distinct().size == change.upserts.size && change.upserts.none { it.id in change.deleteIds })
         val current = prefs.editorRules()
         change.upserts.forEach { rule ->
@@ -519,7 +528,8 @@ class DataStoreEditorCommitmentStore(
             if ((l.time != null || l.open != null) && l.packageName in floor(safety)) return "Safety and recovery apps stay available and cannot have limits."
         }
         if (change.timerExit && (change.deleteIds.size != 1 || current.singleOrNull { it.id in change.deleteIds }?.let {
-            it.id.startsWith(NATIVE_TIMER_ID_PREFIX) && it.enabled && it.schedule == null && !it.isExpired(now.wallEpochMs)
+            it.id.startsWith(NATIVE_TIMER_ID_PREFIX) && it.enabled && it.schedule == null &&
+                isActiveEditorSession(it, state.causes[ruleCauseKey(it.id)], now)
         } != true)) return "This Timer changed or finished. Review its current state."
         return null
     }

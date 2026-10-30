@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
@@ -49,7 +50,10 @@ class TimerViewModelTest {
     private fun model(store: BlockRulesStore, apps: () -> List<InstalledApp> = { listOf(app, otherApp) }): TimerViewModel {
         val vm = TimerViewModel(store, apps, EditorTestStore(store, now = { clock }), TestHarderWaitStore(),
             now = { clock }, newId = { "test-id" }, ioDispatcher = dispatcher,
-            protectionClock = { com.flint.peakfocus.core.model.AccessClockStamp(clock, dispatcher.scheduler.currentTime, "boot") })
+            protectionClock = { com.flint.peakfocus.core.model.AccessClockStamp(clock, dispatcher.scheduler.currentTime, "boot") },
+            safety = { com.flint.peakfocus.core.datastore.EditorSafety(true) },
+            protectionStatus = MutableStateFlow(readyTimerStatus(com.flint.peakfocus.core.model.AccessClockStamp(clock, dispatcher.scheduler.currentTime, "boot"))),
+            loadPermissions = { TimerPermissions(accessibilityEnabled = true) }, livePathA = { true })
         ViewModelStore().also { it.put("timer", vm); owners += it }
         return vm
     }

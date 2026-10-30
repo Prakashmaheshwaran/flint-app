@@ -77,8 +77,8 @@ class FlintSmokeTest : FlintE2EFixture() {
     }
 
     @Test fun hardcoreShieldEmergencyPassWorks() {
+        enableService() // Fixture-owned disposable Accessibility grant; R-30 requires a live detector before arming.
         createRule("E2E pass rule", hardcore = true)
-        enableService()
         launchTarget()
         shield()
         assertFalse(device.hasObject(By.text("Take a break")))

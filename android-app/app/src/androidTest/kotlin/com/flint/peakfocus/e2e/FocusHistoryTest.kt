@@ -20,6 +20,7 @@ class FocusHistoryTest : FlintE2EFixture() {
         evidence("empty-insights")
         clickTab("Today")
 
+        enableService() // Fixture-owned disposable Accessibility grant; real history assertions stay unchanged.
         val began = startFiveMinuteTimer()
         val initial = awaitHistory { events -> events.count { it.getString("type") == "started" } == 1 }
         val first = initial.single { it.getString("type") == "started" }
@@ -48,6 +49,19 @@ class FocusHistoryTest : FlintE2EFixture() {
         visible(By.text("FOCUSED TODAY")) // persisted Done must not reopen Complete
         assertFalse(device.hasObject(By.text("The ember has set.")))
 
+        // The normal sheet must explain a refused start before fixture setup repairs it.
+        scrollTo("Start focus").click()
+        visible(By.text("Not armed."))
+        visible(By.text("Turn on Accessibility or grant Usage Access."))
+        visible(By.text("Retry").enabled(true))
+        visible(By.text("Check setup").enabled(true))
+        screenshot("restart-not-armed")
+        visible(By.desc("Close").enabled(true)).click()
+
+        // Force-stop removes Android's Accessibility grant. Restore only the fixture's
+        // disposable grant, as in authoredRuleSurvivesProcessRestartAndShieldBreakWorks.
+        // enableService waits for a real bound service, not an arbitrary delay.
+        enableService()
         startFiveMinuteTimer()
         val secondEvents = awaitHistory { events -> events.count { it.getString("type") == "started" } == 2 }
         val second = secondEvents.single { it.getString("type") == "started" && it.getString("session") != firstId }
@@ -114,6 +128,8 @@ class FocusHistoryTest : FlintE2EFixture() {
     }
 
     private fun restartFlint() {
+        // Release the owned grant and await removal before force-stop can mark it crashed.
+        disableService()
         shell("am force-stop $app")
         assertTrue("App process stopped", shell("pidof $app").trim().isEmpty())
         launchFlint()
