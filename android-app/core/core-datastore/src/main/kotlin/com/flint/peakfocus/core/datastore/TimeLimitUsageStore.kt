@@ -1,0 +1,105 @@
+package com.flint.peakfocus.core.datastore
+
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.*
+import com.flint.peakfocus.blocking.engine.*
+import com.flint.peakfocus.core.model.*
+import java.util.TimeZone
+
+internal val TIME_USAGE_SCHEMA = longPreferencesKey("time_limit_usage_schema_v1")
+internal val TIME_USAGE_STATE = stringPreferencesKey("time_limit_usage_state_v1")
+internal val TIME_USAGE_ARCHIVE = stringPreferencesKey("time_limit_usage_archive_v1")
+
+data class TimeLimitUsageLedger(val migrationZoneId: String, val targets: Map<String, TimeLimitDayState>)
+
+/** Immutable sampling ticket; OS queries run outside the serialized preference edit. */
+data class TimeLimitMeasurementContext(val packageName: String, val periodId: Long, val zoneId: String,
+    val windowStartEpochMs: Long, val observedAt: AccessClockStamp)
+
+data class TimeLimitUsageObservation(val state: TimeLimitDayState, val sampleAccepted: Boolean)
+
+/** Shared durable accounting for both detectors. It does not authorize a rule or an early edit. */
+class DataStoreTimeLimitUsageStore(
+    private val dataStore: DataStore<Preferences>,
+    private val clockAtCommit: (() -> AccessClockStamp)? = null,
+    private val deviceZone: () -> String = { TimeZone.getDefault().id },
+) {
+    val state = dataStore.data.storageStates(::readTimeLimitUsage)
+
+    /** Existing rows never adopt a new device zone or forget usage after off/delete/recreate. */
+    suspend fun measurementContext(packageName: String, now: AccessClockStamp,
+        savedZoneForNewTarget: String? = null): TimeLimitMeasurementContext {
+        var result: TimeLimitMeasurementContext? = null
+        dataStore.edit { prefs ->
+            val stamp = clockAtCommit?.invoke() ?: now
+            var ledger = prepareTimeLimitUsage(prefs, stamp, deviceZone())
+            timeUsageRequire(packageName.isNotBlank() && packageName.length <= OpenCreditLedgerPolicy.MAX_ATOM)
+            val previous = ledger.targets[packageName]
+            val row = timeUsageValid {
+                previous?.let { TimeLimitDayAccounting.reconcile(it, stamp).state }
+                    ?: TimeLimitDayAccounting.initial(stamp, savedZoneForNewTarget ?: ledger.migrationZoneId)
+            }
+            ledger = ledger.copy(targets = ledger.targets + (packageName to row))
+            prefs.putTimeLimitUsage(ledger)
+            val start = DailyUsageTimeline.startOfDay(stamp.wallEpochMs, OpenCreditLedgerPolicy.quotaZone(row.zoneId))
+            result = TimeLimitMeasurementContext(packageName, row.periodId, row.zoneId, start, stamp)
+        }
+        return checkNotNull(result)
+    }
+
+    /** Delayed reports cannot charge another period; unavailable measurements never become zero. */
+    suspend fun record(context: TimeLimitMeasurementContext, totalMs: Long?, now: AccessClockStamp): TimeLimitUsageObservation {
+        var result: TimeLimitUsageObservation? = null
+        dataStore.edit { prefs ->
+            val stamp = clockAtCommit?.invoke() ?: now
+            val ledger = readTimeLimitUsage(prefs)
+            val current = ledger.targets[context.packageName] ?: wireCorrupt()
+            timeUsageRequire(current.zoneId == context.zoneId)
+            val sample = totalMs?.takeUnless { it == Long.MAX_VALUE }?.let {
+                TimeLimitUsageSample(context.windowStartEpochMs, it, context.observedAt)
+            }
+            val mutation = timeUsageValid { TimeLimitDayAccounting.record(current, context.periodId, sample, stamp) }
+            prefs.putTimeLimitUsage(ledger.copy(targets = ledger.targets + (context.packageName to mutation.state)))
+            result = TimeLimitUsageObservation(mutation.state, mutation.sampleAccepted)
+        }
+        return checkNotNull(result)
+    }
+}
+
+/** One-time saved-zone capture archives the untouched legacy limits/default-tier bytes in the same edit. */
+internal fun prepareTimeLimitUsage(prefs: MutablePreferences, now: AccessClockStamp, zone: String): TimeLimitUsageLedger {
+    if (StrictPrefsCodec.long(prefs, TIME_USAGE_SCHEMA) != null) return readTimeLimitUsage(prefs)
+    timeUsageRequire(StrictPrefsCodec.string(prefs, TIME_USAGE_STATE) == null && StrictPrefsCodec.string(prefs, TIME_USAGE_ARCHIVE) == null)
+    val raw = StrictPrefsCodec.string(prefs, PrefsKeys.TIME_LIMITS)
+    val tier = StrictPrefsCodec.string(prefs, PrefsKeys.DEFAULT_BREAK_LEVEL)
+    val limits = StrictPrefsCodec.timeLimits(raw.orEmpty(), StrictPrefsCodec.level(tier))
+    val ledger = timeUsageValid { TimeLimitUsageLedger(zone, limits.associate { it.packageName to TimeLimitDayAccounting.initial(now, zone) }) }
+    val archive = TimeLimitUsageCodec.archive(raw, tier)
+    val encoded = TimeLimitUsageCodec.encode(ledger)
+    prefs[TIME_USAGE_ARCHIVE] = archive
+    prefs[TIME_USAGE_STATE] = encoded
+    prefs[TIME_USAGE_SCHEMA] = 1L
+    return ledger
+}
+
+internal fun readTimeLimitUsage(prefs: Preferences): TimeLimitUsageLedger {
+    val version = StrictPrefsCodec.long(prefs, TIME_USAGE_SCHEMA) ?: wireCorrupt()
+    if (version > 1) wireFuture()
+    timeUsageRequire(version == 1L)
+    val original = TimeLimitUsageCodec.readArchive(StrictPrefsCodec.string(prefs, TIME_USAGE_ARCHIVE) ?: wireCorrupt())
+    val ledger = TimeLimitUsageCodec.decode(StrictPrefsCodec.string(prefs, TIME_USAGE_STATE) ?: wireCorrupt())
+    val imported = StrictPrefsCodec.timeLimits(original.first.orEmpty(), StrictPrefsCodec.level(original.second))
+    timeUsageRequire(imported.all { it.packageName in ledger.targets })
+    return ledger
+}
+
+internal fun MutablePreferences.putTimeLimitUsage(ledger: TimeLimitUsageLedger) {
+    readTimeLimitUsage(this) // Established missing/invalid keys never initialize themselves again.
+    this[TIME_USAGE_STATE] = TimeLimitUsageCodec.encode(ledger)
+}
+
+internal fun timeUsageRequire(value: Boolean) { if (!value) wireCorrupt() }
+internal inline fun <T> timeUsageValid(action: () -> T): T = try { action() }
+catch (_: IllegalArgumentException) { wireCorrupt() }
+catch (_: ArithmeticException) { wireCorrupt() }
+catch (_: java.time.DateTimeException) { wireCorrupt() }
