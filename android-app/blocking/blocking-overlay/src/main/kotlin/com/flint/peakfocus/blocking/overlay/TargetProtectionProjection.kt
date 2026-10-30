@@ -18,6 +18,8 @@ data class TargetReadEnvironment(
     val legacyTimeMinutes: Int? = null,
     val legacyTimeReadable: Boolean = true,
     val unavailableReason: String? = null,
+    /** Current enforcement publication, distinct from a successfully saved template. */
+    val publishedRules: StorageState<List<BlockRule>>? = null,
 )
 
 /** One pure projection, using enforcement's clock, membership, end and recovery policies. */
@@ -60,8 +62,15 @@ internal object TargetProtectionProjection {
         }
         val local = Instant.ofEpochMilli(now.wallEpochMs).atZone(legacyZone)
         val minute = local.hour * 60 + local.minute
+        fun definition(rule: BlockRule) = rule.copy(
+            expiresAtEpochMs = if (rule.runtime != null) null else rule.expiresAtEpochMs,
+            runtime = rule.runtime?.copy(evaluation = null))
+        val published = (environment.publishedRules as? StorageState.Ready)?.value
+        val publicationUnknown = published == null || authored.map(::definition).sortedBy { it.id } !=
+            published.map(::definition).sortedBy { it.id }
         val healthUnknown = TargetRuntimeHealth.unavailableReason(environment.status, now) != null ||
-            !environment.status.safetyFloorResolved
+            !environment.status.safetyFloorResolved || publicationUnknown ||
+            environment.status.observedAt?.let { trustedElapsedMs(stored.observedAt, it) } == null
         val browserFloor = target is TargetRef.Site && environment.floor != null
         val rows = projected.mapNotNull { rule ->
             val appMatch = pkg != null && RuleTargetMatcher.matchesApp(rule, pkg)
@@ -113,8 +122,9 @@ internal object TargetProtectionProjection {
             limits.openCredit.takeIf { target is TargetRef.App && floor == null },
             limits.timeLimit.takeIf { target is TargetRef.App && floor == null }, web)
         // Without a browser context, browser-app contributors cannot be excluded for a Site.
-        return if (target is TargetRef.Site && pkg == null && result.recoveryEndsAtWall == null &&
-            result.blockingNow != true && readiness == Readiness.Ready) result.copy(blockingNow = null) else result
+        return if ((healthUnknown || target is TargetRef.Site && pkg == null) && floor == null && !browserFloor &&
+            result.recoveryEndsAtWall == null && result.blockingNow != true && readiness == Readiness.Ready)
+            result.copy(blockingNow = null) else result
     }
 
     private fun kind(rule: BlockRule): CauseKind = when {

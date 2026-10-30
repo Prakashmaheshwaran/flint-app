@@ -73,6 +73,7 @@ fun createTargetProtectionReader(context: Context, scope: CoroutineScope,
                 }
             }
             TargetReadEnvironment(status, ActiveRulesHolder.rulesOutside(ActiveRulesHolder.SOURCE_DATASTORE),
-                pkg?.let(readFloorIdentity), browser, coverage, measured, legacyMinutes, legacyReadable)
+                pkg?.let(readFloorIdentity), browser, coverage, measured, legacyMinutes, legacyReadable,
+                publishedRules = ActiveRulesHolder.dataStoreState)
         } })
 }

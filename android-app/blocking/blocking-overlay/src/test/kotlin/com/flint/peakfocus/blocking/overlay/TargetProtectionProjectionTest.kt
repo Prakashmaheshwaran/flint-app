@@ -32,7 +32,9 @@ class TargetProtectionProjectionTest {
         safetyFloorResolved = true, detectors = ProtectionStatus.DetectorHealth(true, ProtectionStatus.PathBState.STANDBY, emptySet())))
     private fun read(stored: ProtectionSnapshot, target: TargetRef = TargetRef.App(pkg),
         env: TargetReadEnvironment = environment()) =
-        TargetProtectionProjection.read(target, StorageState.Ready(stored), env, now, "flint", ZoneId.of("UTC"))
+        TargetProtectionProjection.read(target, StorageState.Ready(stored), env.copy(publishedRules = env.publishedRules ?:
+            runCatching { StorageState.Ready(stored.projectedRulesForRead(now)) }.getOrDefault(StorageState.Loading)),
+            now, "flint", ZoneId.of("UTC"))
 
     // PC-48/PC-52/PC-73: floor identity and actual lookup provenance survive policy failure.
     @Test fun staticSelfAndRetainedRuntimeFloorRemainIndependentOfStorageReadiness() {
@@ -217,5 +219,25 @@ class TargetProtectionProjectionTest {
         val failed = read(stored, env = environment().copy(unavailableReason = "runtime-observation-unavailable"))
         assertEquals(Readiness.Unavailable("runtime-observation-unavailable"), failed.readiness)
         assertNull(failed.blockingNow)
+    }
+
+    @Test fun savedAndRetiredRulesRemainUnknownUntilEnforcementPublicationAgrees() {
+        val stored = snapshot(rule())
+        assertNull(read(stored, env = environment().copy(publishedRules = StorageState.Ready(emptyList()))).blockingNow)
+        assertNull(read(stored, env = environment().copy(publishedRules = StorageState.Loading)).blockingNow)
+        assertNull(read(stored, env = environment().copy(publishedRules = StorageState.Unavailable(StorageFailure.IO))).blockingNow)
+        val retired = read(snapshot(), env = environment().copy(publishedRules = StorageState.Ready(stored.projectedRulesForRead(now))))
+        assertTrue(retired.coveringCauses.isEmpty())
+        assertNull(retired.blockingNow)
+        assertEquals(true, read(stored).blockingNow)
+    }
+
+    @Test fun unknownRuntimeOrAPolicyCheckOlderThanTheReadCannotTurnEmptyStoresIntoUnprotected() {
+        val stored = snapshot()
+        assertNull(read(stored, env = TargetReadEnvironment()).blockingNow)
+        val older = environment().copy(status = environment().status.copy(observedAt = now.copy(
+            wallEpochMs = now.wallEpochMs - 1, elapsedRealtimeMs = now.elapsedRealtimeMs - 1)))
+        assertNull(read(stored, env = older).blockingNow)
+        assertEquals(false, read(stored).blockingNow)
     }
 }

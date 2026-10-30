@@ -18,6 +18,11 @@ for the requested app/current browser with a positive budget, at most once per
 Projection takes a fresh clock sample after gathering observations: a health or
 store publication newer than the invalidating tick is never mistaken for a
 clock regression.
+Saved rules are compared with the enforcement bridge's published definitions
+and occurrence anchors. Loading, failed or lagging publication is unknown,
+including the gap after a rule was deleted from storage. A policy health check
+older than the decoded snapshot also cannot establish target enforcement or an
+empty/unprotected decision. These checks never publish or reconcile rules.
 
 The reader has no edit, reconcile, migrate, checkpoint, grant, debit or event
 delivery entry point. `ProtectionSnapshotReader` reuses the protection transaction
