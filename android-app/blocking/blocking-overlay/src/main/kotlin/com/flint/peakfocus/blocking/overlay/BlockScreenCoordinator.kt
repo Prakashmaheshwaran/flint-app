@@ -258,8 +258,8 @@ class BlockScreenCoordinator(
             invalidateProtectionStatus()
         } }
         scope.launch(statusDispatcher) {
-            // Start after every source collector, including the focus projection. A Ready
-            // synchronous source must reach the first publication without a coalescing delay.
+            // Schedule after the focus collector rather than ahead of it. Asynchronously
+            // loaded sources still publish Loading until their first snapshot arrives.
             // ProtectionClock's lazy OS boot lookup still stays on this worker dispatcher.
             var first = true
             while (isActive) {
@@ -479,6 +479,9 @@ class BlockScreenCoordinator(
 
     private fun ordinaryExempt(packageName: String, cause: BlockCause? = null): Boolean {
         val owner = recoveries ?: return BlockExemptions.hasOrdinaryExemption(packageName, nowEpochMs())
+        // A configured Open limit with an elapsed/unmaterialized quota occurrence is
+        // pending, not absent. An unrelated ordinary grant cannot lend it free access.
+        if (openLimits.any { it.packageName == packageName } && owner.openOccurrenceActive(packageName, statusClock()) != true) return false
         val snapshot = owner.lastGood ?: return false
         val input = ordinaryInput(packageName, cause)
         owner.observeOrdinary(input)
@@ -577,7 +580,9 @@ class BlockScreenCoordinator(
         val fallback = openLimitBlockCause(limit, now, offset)
         val owner = recoveries ?: return fallback
         val remaining = owner.lastGood?.openCredits?.let { com.flint.peakfocus.blocking.engine.OpenCreditPolicy().remainingToResetMs(it.reset, statusClock()) }
-        return fallback.copy(endsAtEpochMs = remaining?.takeIf { now <= Long.MAX_VALUE - it }?.let { now + it })
+        // An elapsed quota is pending materialization, not an expired restriction.
+        // Giving that cause a deadline of now would make showBlocked discard its shield.
+        return fallback.copy(endsAtEpochMs = remaining?.takeIf { it > 0 && now <= Long.MAX_VALUE - it }?.let { now + it })
     }
 
     /** HARDER cooldown remaining at [atEpochMs], or null when none is pending. */
@@ -636,7 +641,10 @@ class BlockScreenCoordinator(
         val first = covering.firstOrNull() ?: return OpenLimitDecision.Allowed(null)
         val limit = if (recoveries == null) first else first.copy(dailyOpens = covering.minOf { it.dailyOpens }, breakLevel = covering.maxBy { it.breakLevel.ordinal }.breakLevel)
         recoveries?.let { owner ->
-            if (owner.openOccurrenceActive(packageName, statusClock()) == false) return OpenLimitDecision.Allowed(null)
+            // The surface may omit inactive credit controls, but enforcement remains
+            // blocked until a new quota occurrence is materialized and explicitly spent.
+            if (owner.openOccurrenceActive(packageName, statusClock()) != true)
+                return OpenLimitDecision.Blocked(limit, "quota occurrence pending")
             if (owner.creditRemaining(packageName, statusClock()) > 0) return OpenLimitDecision.Allowed(
                 owner.lastGood?.openCredits?.let { OpenCreditLedgerPolicy.remainingCredits(it, packageName,
                     openLimits.filter { row -> row.packageName == packageName }.map { row -> row.dailyOpens }) })
@@ -845,6 +853,8 @@ class BlockScreenCoordinator(
         if (safetyFloor.protectsFresh(packageName)) return GrantResult.Denied
         if (owner.state.value !is StorageState.Ready || listOf(rulesState.value, timeState.value, openState.value, editorState.value).any { it !is StorageState.Ready })
             return GrantResult.Unavailable()
+        if (openLimits.any { it.packageName == packageName } && owner.openOccurrenceActive(packageName, statusClock()) != true)
+            return GrantResult.Unavailable()
         if (!busy.add(packageName)) return GrantResult.Unavailable()
         failures.remove(packageName); rerenderNow()
         return try {
@@ -858,7 +868,7 @@ class BlockScreenCoordinator(
             }
             val cause = current ?: return GrantResult.Denied
             val limit = openLimits.firstOrNull { it.packageName == packageName }
-            if (limit != null && owner.openOccurrenceActive(packageName, statusClock()) != false) {
+            if (limit != null) {
                 val credits = owner.lastGood?.openCredits ?: return GrantResult.Unavailable()
                 // A stale ordinary action never silently becomes a credit purchase.
                 if (owner.creditRemaining(packageName, statusClock()) == 0L &&

@@ -91,4 +91,19 @@ class RecoveryActivityTest {
             activity.destroy()
         }
     }
+
+    @Test fun PC_76_pathAHandoffStillFinishesAnOrdinaryFallbackActivity() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val handoff = PathBFallbackActivityHandoff(app)
+        val owner = Any()
+        val activity = Robolectric.buildActivity(BlockActivity::class.java).get()
+        try {
+            EnforcementSignals.detectors.connected(owner)
+            handoff.onActivityStarted(activity)
+            assertTrue(activity.isFinishing)
+        } finally {
+            EnforcementSignals.detectors.disconnected(owner)
+            app.unregisterActivityLifecycleCallbacks(handoff)
+        }
+    }
 }

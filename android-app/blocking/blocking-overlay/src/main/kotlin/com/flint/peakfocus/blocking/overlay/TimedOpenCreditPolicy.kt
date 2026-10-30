@@ -13,7 +13,8 @@ internal data class TimedCreditView(val remainingCredits: Int, val durationMs: L
 internal object TimedOpenCreditPolicy {
     private val policy = OpenCreditPolicy()
 
-    /** False is a known absent/inactive occurrence; null is unreadable occurrence state. */
+    /** Display readiness: false is no current occurrence, null is unreadable state.
+     * Neither result authorizes release through a configured Open limit. */
     fun occurrenceActive(snapshot: ProtectionSnapshot, packageName: String, now: AccessClockStamp): Boolean? {
         if (snapshot.opens.none { it.packageName == packageName }) return false
         val cause = snapshot.editor.causes[openCauseKey(packageName)] ?: return null

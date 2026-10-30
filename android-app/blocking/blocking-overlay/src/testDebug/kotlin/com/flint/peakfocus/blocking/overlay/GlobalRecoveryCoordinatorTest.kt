@@ -492,7 +492,7 @@ class GlobalRecoveryCoordinatorTest {
         assertTrue(BlockExemptions.hasGlobalRecovery())
     }
 
-    @Test fun PC_28_inactiveOpenOccurrencePreservesEasyAndHarderBreaksButUnreadableStateDoesNot() = runTest {
+    @Test fun PC_28_inactiveOpenSurfaceKeepsTierAffordancesWhilePendingEnforcementStaysBlocked() = runTest {
         for (tier in listOf(BreakLevel.EASY, BreakLevel.HARDER)) {
             for (expired in listOf(false, true)) {
                 val initial = initial(tier)
@@ -502,13 +502,16 @@ class GlobalRecoveryCoordinatorTest {
                     editor = initial.editor.copy(causes = initial.editor.causes + (openCauseKey(pkg) to inactive)))
                 val disk = Disk(s) { clock() }; val c = coordinator(disk); runCurrent()
                 val cause = c.currentBlockCause(pkg)!!
-                assertEquals(tier, cause.breakLevel)
-                assertTrue(c.onForegroundChanged(null, pkg) is OpenLimitDecision.Allowed)
-                val ui = c.screenState(pkg, null, cause, clock().wallEpochMs)
+                assertTrue(c.onForegroundChanged(null, pkg) is OpenLimitDecision.Blocked)
+                val ui = c.screenState(pkg, null, ruleBlockCause(initial.rules.single(), clock().wallEpochMs, 0), clock().wallEpochMs)
                 assertEquals(com.flint.peakfocus.feature.blockscreen.GrantStatus.READY, ui.grantStatus)
                 assertNull(ui.openCreditsRemaining); assertNull(ui.openCreditRequestScope)
+                // Display keeps the unrelated tier ladder, but no release can cross a
+                // configured Open limit before its next quota occurrence is known.
                 val result = c.requestBreak(pkg, cause, GrantRequestId.issue(clock()))
-                if (tier == BreakLevel.EASY) assertTrue(result is GrantResult.Granted) else assertTrue(result is GrantResult.Pending)
+                assertTrue(result is GrantResult.Unavailable)
+                assertFalse(c.isExempt(pkg, cause))
+                assertFalse(c.canDismiss(pkg, cause))
                 assertEquals(s.openCredits!!.counters, disk.latest.openCredits!!.counters)
                 disk.latest = disk.latest.copy(editor = disk.latest.editor.copy(causes = disk.latest.editor.causes - openCauseKey(pkg)))
                 disk.values.value = StorageState.Ready(disk.latest); runCurrent()

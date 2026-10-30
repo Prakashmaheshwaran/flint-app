@@ -100,6 +100,7 @@ internal class GlobalRecoveryController(
                 changed = next.value.focus.protection?.recovery != lastGood?.focus?.protection?.recovery ||
                     next.value.focus.protection?.ordinaryGrants != lastGood?.focus?.protection?.ordinaryGrants ||
                     next.value.openCredits?.active != lastGood?.openCredits?.active ||
+                    next.value.editor.causes.mapValues { it.value.occurrenceId } != lastGood?.editor?.causes?.mapValues { it.value.occurrenceId } ||
                     lastGood == null
                 if (lastGood?.rules != next.value.rules || lastGood?.times != next.value.times || lastGood?.opens != next.value.opens)
                     ordinarySignals.trySend(Unit)

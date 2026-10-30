@@ -559,7 +559,7 @@ private fun BreakActions(
             if (affordance.durationMillis < 300_000) Text("Access ends at the quota reset.", style = MaterialTheme.typography.bodySmall)
         }
         is BreakAffordance.CreditBlocked -> Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Still blocked by ${affordance.contributors.joinToString(", ")}. No credit used.",
+            Text("No credit used.",
                 style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
             QuietButton("Review protection state", onEmergencyPassRequested)
         }
