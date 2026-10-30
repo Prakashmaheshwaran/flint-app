@@ -44,7 +44,7 @@ class ProtectionTransactionStoreTest {
         val raw = "P|1\nM|0%7C0%7Cboot|0%7C0%7Cboot|0|false|0|0||0\nC\nR"
         val expected = ProtectionLedger(AccessClockStamp(0, 0, "boot"), AccessClockStamp(0, 0, "boot"))
         assertEquals(expected, ProtectionLedgerCodec.decode(raw))
-        assertEquals(raw, ProtectionLedgerCodec.encode(expected))
+        assertEquals("P|2\nM|0%7C0%7Cboot|0%7C0%7Cboot|0|false|0|0||0|0\nC\nR", ProtectionLedgerCodec.encode(expected))
         for (row in listOf("M|", "C", "R")) {
             try { ProtectionLedgerCodec.decode(raw.lines().filterNot { it.startsWith(row) }.joinToString("\n")); fail("Missing row accepted") }
             catch (e: StorageUnavailableException) { assertEquals(StorageFailure.CORRUPT, e.reason) }
@@ -68,6 +68,59 @@ class ProtectionTransactionStoreTest {
         val bytes = disk.values.value
         initialize(disk)
         assertEquals(bytes, disk.values.value)
+    }
+
+    @Test fun PC_69_PC_70_failedFirstMigrationPreservesExactArchiveInputsAndRetryArchivesThemOnce() = runBlocking {
+        val original = mutablePreferencesOf(PrefsKeys.FOCUS_LEDGER to "H|2|7|0", PrefsKeys.BREAK_SESSION to PrefsCodec.encodeBreakSession(BreakSessionState(breaksTaken = 3)),
+            PrefsKeys.EMERGENCY_PASS_USED_AT to stamp.wallEpochMs - 1_000)
+        val raw = original.asMap().mapKeys { it.key.name }.mapValues { it.value.toString() }
+        val disk = Disk(original); disk.fail = true
+        assertEquals(ProtectionCommit.Unavailable(StorageFailure.IO), initialize(disk))
+        assertEquals(original, disk.values.value)
+        disk.fail = false
+        assertTrue(initialize(disk) is ProtectionCommit.Committed)
+        val archive = disk.values.value[PrefsKeys.PROTECTION_ARCHIVE]!!
+        val archived = archive.lines().drop(1).associate { line ->
+            val fields = line.split('|')
+            PrefsCodec.unescape(fields[0]) to if (fields[1] == "true") PrefsCodec.unescape(fields[2]) else null
+        }.filterValues { it != null }
+        assertEquals(raw, archived)
+        initialize(disk)
+        assertEquals(archive, disk.values.value[PrefsKeys.PROTECTION_ARCHIVE])
+    }
+
+    @Test fun PC_63_PC_65_creditPendingEndReceiptsAndAccessEventsRoundTripWithoutBeingGrantAuthority() {
+        val receipt = ProtectionCreditEventReceipt("p1-credit", "com.example.a", AccessDuration(stamp, 120_000))
+        val event = ProtectionLifecycleEvent("access-started:p1-credit", "p1-credit", ProtectionLifecycleKind.ACCESS_STARTED,
+            emptySet(), stamp, grantId = "p1-credit", untilEpochMs = stamp.wallEpochMs + 120_000)
+        val value = ProtectionLedger(stamp, stamp, pendingCreditEnds = mapOf(receipt.operationId to receipt), outbox = mapOf(event.id to event))
+        assertEquals(value, ProtectionLedgerCodec.decode(ProtectionLedgerCodec.encode(value)))
+        val encoded = ProtectionLedgerCodec.encode(value)
+        try { ProtectionLedgerCodec.decode(encoded.lines().filterNot { it.startsWith("L|") }.joinToString("\n")); fail("Missing pending end accepted") }
+        catch (e: StorageUnavailableException) { assertEquals(StorageFailure.CORRUPT, e.reason) }
+    }
+
+    @Test fun PC_29_PC_37_PC_65_creditCounterIntervalAndEventIntentCommitTogetherAndLostAckKeepsOneSpend() = runBlocking {
+        val disk = Disk(); initialize(disk)
+        val before = disk.values.value
+        suspend fun accept() = store(disk).transact { snapshot ->
+            val next = com.flint.peakfocus.blocking.engine.OpenCreditLedgerPolicy.acceptOpenCredit(snapshot.openCredits!!,
+                "com.example.a", "p1-credit", listOf(1), emptyList(), false, stamp).next
+            val event = ProtectionLifecycleEvent("access-started:p1-credit", "p1-credit", ProtectionLifecycleKind.ACCESS_STARTED,
+                emptySet(), stamp, grantId = "p1-credit", untilEpochMs = stamp.wallEpochMs + 300_000)
+            val receipt = ProtectionCreditEventReceipt("p1-credit", "com.example.a", AccessDuration(stamp, 300_000))
+            val ledger = snapshot.focus.protection!!.copy(outbox = mapOf(event.id to event), pendingCreditEnds = mapOf(receipt.operationId to receipt))
+            ProtectionMutation(snapshot.focus.copy(protection = ledger), Unit, openCredits = next)
+        }
+        disk.fail = true
+        assertEquals(ProtectionCommit.Unavailable(StorageFailure.IO), accept()); assertEquals(before, disk.values.value)
+        disk.fail = false; disk.loseAck = true
+        try { accept(); fail("lost acknowledgement returned") } catch (_: CancellationException) { }
+        disk.loseAck = false
+        val restarted = store(disk).state.first { it !is StorageState.Loading } as StorageState.Ready
+        assertEquals(1, restarted.value.openCredits!!.counters.getValue("com.example.a").used)
+        assertEquals(1, restarted.value.focus.protection!!.pendingCreditEnds.size)
+        assertEquals(1, restarted.value.focus.protection!!.outbox.size)
     }
 
     @Test fun PC_47_PC_69_futureUsageOrContradictoryUnusedLegacyStateCannotInitialize() = runBlocking {
@@ -104,7 +157,7 @@ class ProtectionTransactionStoreTest {
     @Test fun PC_70_futureOrPartialNewSchemaPreservesAllRawBytes() = runBlocking {
         for (initial in listOf(
             mutablePreferencesOf(PrefsKeys.PROTECTION_SCHEMA to 2L),
-            mutablePreferencesOf(PrefsKeys.PROTECTION_LEDGER to "P|2"),
+            mutablePreferencesOf(PrefsKeys.PROTECTION_LEDGER to "P|3"),
             mutablePreferencesOf(PrefsKeys.PROTECTION_SCHEMA to 1L),
         )) {
             val disk = Disk(initial)
@@ -112,6 +165,46 @@ class ProtectionTransactionStoreTest {
             assertTrue(result is ProtectionCommit.Unavailable)
             assertEquals(initial, disk.values.value)
         }
+    }
+
+    @Test fun PC_37_PC_47_PC_69_PC_70_removingOnlyUsedPassKeyAfterConsumptionCannotGrantFreshRights() =
+        assertRemovedConsumedKey(PrefsKeys.EMERGENCY_PASS_USED_AT)
+
+    @Test fun PC_37_PC_47_PC_69_PC_70_removingOnlyOpenCountsWithDayRetainedCannotResetQuota() =
+        assertRemovedConsumedKey(PrefsKeys.OPEN_COUNTS)
+
+    @Test fun PC_37_PC_47_PC_69_PC_70_removingOnlyFocusLedgerAfterConsumptionCannotGrantFreshRights() =
+        assertRemovedConsumedKey(PrefsKeys.FOCUS_LEDGER)
+
+    private fun assertRemovedConsumedKey(key: Preferences.Key<*>) = runBlocking {
+        val disk = Disk()
+        val focus = DataStoreFocusStateStore(disk)
+        focus.setOpenCounts(OpenCountState(20_000, mapOf("app" to 1)))
+        initialize(disk)
+        store(disk).transact { snapshot ->
+            val spent = com.flint.peakfocus.blocking.engine.OpenCreditLedgerPolicy.acceptOpenCredit(snapshot.openCredits!!,
+                "app", "credit-one", listOf(2), emptyList(), false, stamp).next
+            ProtectionMutation(consumed(snapshot.focus), Unit, openCredits = spent)
+        }
+        val before = disk.values.value
+        assertNotNull(before[key])
+        val corrupted = before.toMutablePreferences().apply { remove(key) }
+        disk.values.value = corrupted
+        val reloaded = store(disk)
+        assertEquals(StorageState.Unavailable(StorageFailure.CORRUPT), reloaded.state.first { it !is StorageState.Loading })
+        assertEquals(StorageState.Unavailable(StorageFailure.CORRUPT), DataStoreFocusStateStore(disk).state.first { it !is StorageState.Loading })
+        var grants = 0
+        assertEquals(ProtectionCommit.Unavailable(StorageFailure.CORRUPT), reloaded.transact {
+            grants++; ProtectionMutation(consumed(it.focus), Unit)
+        })
+        assertEquals(FocusCommit.Unavailable(StorageFailure.CORRUPT), DataStoreFocusStateStore(disk).transact {
+            grants++; FocusMutation(it.copy(openCounts = OpenCountState()), Unit)
+        })
+        assertEquals(0, grants)
+        assertEquals(corrupted, disk.values.value)
+        assertEquals(before[PrefsKeys.OPEN_COUNTS_DAY], disk.values.value[PrefsKeys.OPEN_COUNTS_DAY])
+        assertEquals(before[OPEN_CREDIT_COUNTS], disk.values.value[OPEN_CREDIT_COUNTS])
+        assertEquals(before[PrefsKeys.PROTECTION_LEDGER], disk.values.value[PrefsKeys.PROTECTION_LEDGER])
     }
 
     @Test fun PC_44_PC_65_passReceiptOutboxAndRuleRetirementCommitTogetherOrNonePublish() = runBlocking {

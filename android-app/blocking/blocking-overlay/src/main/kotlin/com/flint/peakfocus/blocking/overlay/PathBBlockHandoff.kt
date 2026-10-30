@@ -34,8 +34,8 @@ import kotlinx.coroutines.yield
  * ```
  *
  * and add `implementation(project(":blocking:blocking-overlay"))` to that module. Passing
- * *every* tick (Allow included) matters: it's how Open Limits count opens, how the overlay
- * comes down when the user leaves the app, and how break exemptions stand enforcement down.
+ * *every* tick (Allow included) matters: it rechecks timed Open-credit access, removes the
+ * overlay when the user leaves the app, and applies committed break exemptions. Polls never debit credits.
  *
  * Enforcement surface: the `TYPE_APPLICATION_OVERLAY` window ([OverlayController]) when the
  * SYSTEM_ALERT_WINDOW grant is present; otherwise the full-screen [BlockActivity] fallback

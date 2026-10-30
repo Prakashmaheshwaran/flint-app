@@ -105,15 +105,55 @@ class GlobalRecoveryPolicyTest {
     @Test fun PC_83_exactChosenTemplatesDisableOrDeleteAndUnchosenCausesAndAllCountersSurviveResume() {
         for (delete in listOf(false, true)) {
             val s = consumed()
-            val preview = GlobalRecoveryPolicy.previewEnd(s, setOf("rule:work", "open:c"), delete)!!
+            val selected = if (delete) setOf("rule:work", "open:c") else setOf("rule:work")
+            val preview = GlobalRecoveryPolicy.previewEnd(s, selected, delete)!!
             val next = GlobalRecoveryPolicy.endAndResume(s, preview)
             assertTrue(next.result)
             assertNull(next.focus.protection!!.recovery)
             assertEquals(s.focus.protection!!.cooldown, next.focus.protection!!.cooldown)
             assertEquals(s.focus.openCounts, next.focus.openCounts)
             assertEquals(s.times, next.times)
-            assertTrue(next.opens!!.isEmpty())
+            if (delete) assertTrue(next.opens!!.isEmpty()) else assertEquals(s.opens, next.opens)
             if (delete) assertTrue(next.rules!!.isEmpty()) else assertFalse(next.rules!!.single().enabled)
+        }
+    }
+
+    @Test fun PC_83_selectedTimerWithPendingNaturalCompletionKeepsItsEvidenceAfterDisableOrDelete() {
+        val evidence = EditorTerminalEvidence(now, now, false)
+        val tombstone = EditorCause(session.id, AnchoredInterval(now, 0, now.wallEpochMs), "UTC",
+            timerTerminal = EditorTimerTerminalState(pending = evidence))
+        val accepted = consumed()
+        val s = accepted.copy(rules = accepted.rules + session.copy(expiresAtEpochMs = now.wallEpochMs),
+            editor = accepted.editor.copy(causes = accepted.editor.causes + (ruleCauseKey(session.id) to tombstone)))
+        for (delete in listOf(false, true)) {
+            val preview = GlobalRecoveryPolicy.previewEnd(s, setOf(ruleCauseKey(session.id)), delete)!!
+            val next = GlobalRecoveryPolicy.endAndResume(s, preview)
+            assertTrue(next.result)
+            assertEquals(tombstone, next.editor!!.causes[ruleCauseKey(session.id)])
+            assertEquals(evidence, next.editor!!.causes[ruleCauseKey(session.id)]!!.timerTerminal!!.pending)
+        }
+    }
+
+    @Test fun PC_83_timeAndOpenLimitsRequireExplicitDeleteAndCannotBeDisabled() {
+        val s = consumed()
+        assertEquals(setOf("rule:work"), GlobalRecoveryPolicy.recoveryChoices(s, deleteTemplates = false).keys)
+        for (key in listOf("time:b", "open:c")) {
+            assertNull(GlobalRecoveryPolicy.previewEnd(s, setOf(key), delete = false))
+            val deletion = GlobalRecoveryPolicy.previewEnd(s, setOf(key), delete = true)!!
+            assertFalse(GlobalRecoveryPolicy.endAndResume(s, deletion.copy(deleteTemplates = false)).result)
+            assertTrue(GlobalRecoveryPolicy.endAndResume(s, deletion).result)
+        }
+    }
+
+    @Test fun PC_83_recoverySelectionCannotTouchCommitmentsOutsideTheConfirmedPassScope() {
+        val accepted = consumed()
+        val s = accepted.copy(rules = accepted.rules + schedule.copy(id = "added-later"),
+            times = accepted.times + TimeLimit("later-time", 10), opens = accepted.opens + OpenLimit("later-open", 1))
+        assertEquals(setOf("rule:work", "time:b", "open:c"), GlobalRecoveryPolicy.recoveryChoices(s).keys)
+        for (key in listOf("rule:added-later", "time:later-time", "open:later-open")) {
+            assertNull(GlobalRecoveryPolicy.previewEnd(s, setOf(key), delete = true))
+            val valid = GlobalRecoveryPolicy.previewEnd(s, setOf("rule:work"), delete = true)!!
+            assertFalse(GlobalRecoveryPolicy.endAndResume(s, valid.copy(selectedCauseKeys = setOf(key))).result)
         }
     }
 

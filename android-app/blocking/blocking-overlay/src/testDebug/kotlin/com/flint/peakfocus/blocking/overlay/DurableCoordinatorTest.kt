@@ -400,6 +400,24 @@ class DurableCoordinatorTest {
         assertEquals(uncertain, requests.id(false, now + 3))
     }
 
+    @Test fun PC_31_uncertainOrdinaryRequestCannotReuseItsIdentityForAnExplicitCreditOrNewScope() {
+        for (failure in listOf(GrantResult.Unconfirmed, GrantResult.Unavailable(StorageFailure.IO))) {
+            val requests = BlockScreenCoordinator.SurfaceRequests()
+            val clock = AccessClockStamp(now, 1_000, "boot")
+            val ordinary = requests.id(false, now, clock)
+            requests.recordResult(false, failure)
+            assertSame(ordinary, requests.id(false, now, clock))
+            val credit = requests.id(false, now, clock, "period:open-occurrence")
+            assertNotEquals(ordinary.nonce, credit.nonce)
+            assertEquals("period:open-occurrence", credit.creditScope)
+            requests.recordResult(false, failure)
+            assertSame(credit, requests.id(false, now, clock, "period:open-occurrence"))
+            assertNotEquals(credit.nonce, requests.id(true, now, clock, "period:open-occurrence").nonce)
+            assertNotEquals(credit.nonce, requests.id(false, now, clock, "next-period:open-occurrence").nonce)
+            assertNull(requests.id(false, now, clock).creditScope)
+        }
+    }
+
     @Test fun aConfirmedGrantKeptBehindAStrongerCauseCannotWedgeTheNextExplicitBreak() = runBlocking {
         val focus = PausedFocus()
         val coordinator = coordinator(focus, mount = true)
@@ -410,9 +428,9 @@ class DurableCoordinatorTest {
             .apply { isAccessible = true }.get(coordinator)
         val requests = field("surfaceRequests") as BlockScreenCoordinator.SurfaceRequests
         val callback = BlockScreenCoordinator::class.java.getDeclaredMethod("handleGrantRequested",
-            String::class.java, BlockScreenCoordinator.SurfaceRequests::class.java, java.lang.Boolean.TYPE)
+            String::class.java, BlockScreenCoordinator.SurfaceRequests::class.java, java.lang.Boolean.TYPE, String::class.java)
             .apply { isAccessible = true }
-        callback.invoke(coordinator, pkg, requests, false)
+        callback.invoke(coordinator, pkg, requests, false, null)
         focus.started.await()
         val acceptedId = requests.breakId!!
         ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, listOf(rule(BreakLevel.HARDCORE)))
@@ -425,7 +443,7 @@ class DurableCoordinatorTest {
         now += BlockScreenCoordinator.DEFAULT_BREAK_DURATION_MS + 1
         ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, listOf(easy))
         assertNotEquals(acceptedId, requests.id(false, now))
-        callback.invoke(coordinator, pkg, requests, false)
+        callback.invoke(coordinator, pkg, requests, false, null)
         yield()
         assertEquals(2, focus.backing.breakSession.first().breaksTaken)
         assertNull(field("visiblePackage"))

@@ -10,7 +10,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.Role
 
-data class RecoveryChoice(val key: String, val name: String)
+data class RecoveryChoice(val key: String, val name: String, val canDisable: Boolean = true)
+internal fun canDisableRecoverySelection(choices: List<RecoveryChoice>, selected: Set<String>): Boolean =
+    selected.isNotEmpty() && selected.all { key -> choices.any { it.key == key && it.canDisable } }
 data class RecoveryConfirmation(val names: List<String>, val resumeAt: String, val nextPassAt: String)
 data class RecoveryScreenState(
     val loading: Boolean,
@@ -24,9 +26,11 @@ data class RecoveryScreenState(
     val choices: List<RecoveryChoice> = emptyList(),
     val confirmation: RecoveryConfirmation? = null,
     val endConfirmation: List<String>? = null,
+    val endConfirmationDeletes: Boolean = false,
     val error: String? = null,
     val saving: Boolean = false,
     val activeOrdinaryBreaks: Int = 0,
+    val activeOpenCredits: Int = 0,
 )
 
 /** Independent in-Flint recovery. Navigation and preview never consume a pass. */
@@ -42,6 +46,7 @@ fun RecoveryScreen(
     onConfirmEnd: () -> Unit,
     onRetry: () -> Unit,
     onResumeBreaks: () -> Unit,
+    onResumeCredits: () -> Unit,
 ) {
     var selected by remember { mutableStateOf(emptySet<String>()) }
     val allowed = state.choices.map { it.key }.toSet()
@@ -62,24 +67,28 @@ fun RecoveryScreen(
                 Text("Active ordinary breaks: ${state.activeOrdinaryBreaks}. A new request cannot extend them.")
                 OutlinedButton(onClick = onResumeBreaks, enabled = !state.saving) { Text("Resume protection for ordinary breaks") }
             }
+            if (state.activeOpenCredits > 0) {
+                Text("Active credit intervals: ${state.activeOpenCredits}. Ending access does not refund credits.")
+                OutlinedButton(onClick = onResumeCredits, enabled = !state.saving) { Text("End credit access now") }
+            }
             if (state.remainingRecoveryMillis > 0) {
                 Text("Recovery ends in ${formatDuration(state.remainingRecoveryMillis)}", style = MaterialTheme.typography.titleLarge)
                 state.resumeAt?.let { Text("Protection resumes: $it") }
                 Text("Only commitments still naturally active will resume. Counters and the next pass time stay unchanged.")
                 Button(onClick = onResume, enabled = !state.saving) { Text("Resume protection now") }
                 if (state.choices.isNotEmpty()) {
-                    Text("Choose commitments to end or disable before resuming:")
+                    Text("Choose commitments to change before resuming. Time and Open limits can only be deleted.")
                     state.choices.forEach { choice ->
                         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = choice.key in selected,
                             enabled = !state.saving, role = Role.Checkbox,
                             onValueChange = { checked -> selected = if (checked) selected + choice.key else selected - choice.key })) {
                             Checkbox(checked = choice.key in selected, enabled = !state.saving, onCheckedChange = null)
-                            Text(choice.name, Modifier.padding(top = 12.dp))
+                            Text(choice.name + if (choice.canDisable) "" else " · delete only", Modifier.padding(top = 12.dp))
                         }
                     }
                     val selection = selected.intersect(allowed)
-                    OutlinedButton(onClick = { onPreviewEnd(selection, false) }, enabled = selection.isNotEmpty() && !state.saving) {
-                        Text("End or disable selected and resume")
+                    OutlinedButton(onClick = { onPreviewEnd(selection, false) }, enabled = canDisableRecoverySelection(state.choices, selection) && !state.saving) {
+                        Text("Disable selected rules and resume")
                     }
                     TextButton(onClick = { onPreviewEnd(selection, true) }, enabled = selection.isNotEmpty() && !state.saving) {
                         Text("Delete selected templates and resume")
@@ -109,12 +118,12 @@ fun RecoveryScreen(
             dismissButton = { TextButton(onClick = onCancelConfirmation, enabled = !state.saving) { Text("Cancel") } })
     }
     state.endConfirmation?.let { names ->
-        AlertDialog(onDismissRequest = { if (!state.saving) onCancelConfirmation() }, title = { Text("Confirm these commitments") },
+        AlertDialog(onDismissRequest = { if (!state.saving) onCancelConfirmation() }, title = { Text(if (state.endConfirmationDeletes) "Delete selected templates?" else "Disable selected rules?") },
             text = { Column(Modifier.verticalScroll(rememberScrollState())) {
                 names.forEach { Text("• $it") }
                 Text("Only this selection changes. Counters and history are kept. Other active commitments resume now.")
             } },
-            confirmButton = { TextButton(onClick = onConfirmEnd, enabled = !state.saving) { Text("Confirm selection and resume") } },
+            confirmButton = { TextButton(onClick = onConfirmEnd, enabled = !state.saving) { Text(if (state.endConfirmationDeletes) "Delete and resume" else "Disable and resume") } },
             dismissButton = { TextButton(onClick = onCancelConfirmation, enabled = !state.saving) { Text("Cancel") } })
     }
 }

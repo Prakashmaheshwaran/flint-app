@@ -44,6 +44,8 @@ object BlockExemptions {
     }
 
     fun hasGlobalRecovery(): Boolean {
+        // Restored only after the transaction store's first Ready snapshot. During a
+        // process restart detectors briefly fail closed until that durable read completes.
         val projection = recoveryProjection ?: return false
         return GlobalRecoveryPolicy.remaining(projection.recovery, projection.clock()) > 0
     }

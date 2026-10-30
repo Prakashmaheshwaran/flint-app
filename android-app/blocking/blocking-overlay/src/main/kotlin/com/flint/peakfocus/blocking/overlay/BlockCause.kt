@@ -32,8 +32,8 @@ data class BlockCause(
     val ruleId: String? = null,
 ) {
     /**
-     * Open Limits count a granted break as spending one more open (see `OpenLimitPolicy`'s
-     * "use anyway" note) — time/rule blocks don't touch the open counter.
+     * Historical v1 adapter classification. Production timed-credit exhaustion breaks
+     * never spend another credit; only an explicit credit confirmation charges quota.
      */
     val spendsOpenOnBreak: Boolean get() = reason == BlockScreenReason.OPEN_LIMIT
 }
@@ -63,7 +63,7 @@ fun ruleBlockCause(rule: BlockRule?, nowEpochMs: Long, utcOffsetMs: Long): Block
     return BlockCause(reason = reason, breakLevel = level, endsAtEpochMs = endsAt, ruleId = rule?.id)
 }
 
-/** Cause for an exhausted Open Limit: blocks until the next local midnight, tier from the limit. */
+/** Legacy display factory. Production replaces its estimate with the saved quota reset. */
 fun openLimitBlockCause(limit: OpenLimit, nowEpochMs: Long, utcOffsetMs: Long): BlockCause =
     BlockCause(
         reason = BlockScreenReason.OPEN_LIMIT,

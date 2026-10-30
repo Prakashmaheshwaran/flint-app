@@ -9,9 +9,9 @@ internal object ProtectionLedgerCodec {
     private const val MAX_BYTES = 4_194_304
 
     fun encode(s: ProtectionLedger): String = buildList {
-        add("P|1")
+        add("P|2")
         add(row("M", clock(s.initializedAt), clock(s.checkpoint), s.droppedEvents, s.previousAccessEnded, s.operations.size, s.outbox.size,
-            s.lastUsedAtEpochMs?.toString().orEmpty(), s.ordinaryGrants.size))
+            s.lastUsedAtEpochMs?.toString().orEmpty(), s.ordinaryGrants.size, s.pendingCreditEnds.size))
         add(s.cooldown?.let { row("C", atom(it.operationId), it.usedAtWallEpochMs, clock(it.checkpoint), it.remainingAtCheckpointMs, it.wallUncertain) } ?: "C")
         add(s.recovery?.let { row("R", atom(it.operationId), clock(it.startedAt), strings(it.affectedCauseKeys),
             strings(it.affectedRuleIds), strings(it.endedTransientIds), it.durationMs) } ?: "R")
@@ -32,6 +32,10 @@ internal object ProtectionLedgerCodec {
             val one = TemporaryAccess(1, grant.target, grant.scopes, PersonalGrantKind.ORDINARY_BREAK, grant.lifetime)
             add(row("G", atom(id), AccessLedgerCodec.encode(AccessLedgerV2(nextSequence = 2, grants = mapOf(1L to one))), strings(grant.affectedRuleIds)))
         }
+        s.pendingCreditEnds.toSortedMap().forEach { (id, receipt) ->
+            checkWire(id == receipt.operationId)
+            add(row("L", atom(id), atom(receipt.target), clock(receipt.lifetime.startedAt), receipt.lifetime.durationMs))
+        }
     }.joinToString("\n").also { checkWire(it.length <= MAX_BYTES); decode(it) }
 
     fun decode(raw: String): ProtectionLedger {
@@ -40,7 +44,8 @@ internal object ProtectionLedgerCodec {
         checkWire(lines.size <= MAX_ROWS)
         val header = fields(lines.first(), 2)
         checkWire(header[0] == "P" && header[1].toIntOrNull() != null)
-        if (header[1] != "1") wireFuture()
+        val version = header[1].toInt()
+        if (version !in 1..2) wireFuture()
         var meta: List<String>? = null
         var cooldown: ProtectionCooldown? = null
         var recovery: ProtectionRecovery? = null
@@ -49,9 +54,10 @@ internal object ProtectionLedgerCodec {
         val operations = linkedMapOf<String, ProtectionPassReceipt>()
         val events = linkedMapOf<String, ProtectionLifecycleEvent>()
         val grants = linkedMapOf<String, ProtectionOrdinaryGrant>()
+        val creditEnds = linkedMapOf<String, ProtectionCreditEventReceipt>()
         for (line in lines.drop(1)) {
             when (line.substringBefore('|')) {
-                "M" -> { checkWire(meta == null); meta = fields(line, 9) }
+                "M" -> { checkWire(meta == null); meta = fields(line, if (version == 1) 9 else 10) }
                 "C" -> {
                     checkWire(!hadCooldown); hadCooldown = true
                     if (line != "C") {
@@ -82,8 +88,8 @@ internal object ProtectionLedgerCodec {
                     val until = event.untilEpochMs
                     checkWire(when (event.kind) {
                         ProtectionLifecycleKind.PASS_COMMITTED -> event.grantId == null && event.breakEndReason == null && until != null && until >= event.at.wallEpochMs
-                        ProtectionLifecycleKind.BREAK_STARTED -> event.grantId != null && event.breakEndReason == null && until != null && until > event.at.wallEpochMs
-                        ProtectionLifecycleKind.BREAK_ENDED -> event.grantId != null && event.breakEndReason != null && until == null
+                        ProtectionLifecycleKind.BREAK_STARTED, ProtectionLifecycleKind.ACCESS_STARTED -> event.grantId != null && event.breakEndReason == null && until != null && until > event.at.wallEpochMs
+                        ProtectionLifecycleKind.BREAK_ENDED, ProtectionLifecycleKind.ACCESS_ENDED -> event.grantId != null && event.breakEndReason != null && until == null
                     })
                     checkWire(events.put(id, event) == null)
                 }
@@ -98,6 +104,14 @@ internal object ProtectionLedgerCodec {
                     val rules = readStrings(f[3])
                     checkWire(rules == grant.scopes.filter { it.counter.rule.source == "rule" || it.counter.rule.source == "foreign" }.map { it.counter.rule.ruleId }.toSet())
                     checkWire(grants.put(id, ProtectionOrdinaryGrant(id, grant.target, grant.lifetime, grant.scopes, rules)) == null)
+                }
+                "L" -> {
+                    checkWire(version == 2)
+                    val f = fields(line, 5); val id = atom(f[1])
+                    val duration = number(f[4]).also { checkWire(it in 1..300_000) }
+                    val start = readClock(f[3])
+                    checkWire(start.wallEpochMs <= Long.MAX_VALUE - duration && start.elapsedRealtimeMs <= Long.MAX_VALUE - duration)
+                    checkWire(creditEnds.put(id, ProtectionCreditEventReceipt(id, atom(f[2]), AccessDuration(start, duration))) == null)
                 }
                 else -> wireFuture()
             }
@@ -114,7 +128,9 @@ internal object ProtectionLedgerCodec {
         }
         checkWire(grants.values.map { it.target }.distinct().size == grants.size)
         checkWire(grants.values.all { operations[it.operationId]?.acceptedAt == it.lifetime.startedAt })
-        return ProtectionLedger(readClock(m[1]), readClock(m[2]), cooldown, recovery, operations.toMap(), events.toMap(), number(m[3]), bool(m[4]), lastUsed, grants.toMap())
+        checkWire(creditEnds.size == (if (version == 1) 0 else integer(m[9])) && creditEnds.size <= 128)
+        checkWire(creditEnds.values.map { it.target }.distinct().size == creditEnds.size)
+        return ProtectionLedger(readClock(m[1]), readClock(m[2]), cooldown, recovery, operations.toMap(), events.toMap(), number(m[3]), bool(m[4]), lastUsed, grants.toMap(), creditEnds.toMap())
     }
 
     private fun clock(c: AccessClockStamp) = row(c.wallEpochMs, c.elapsedRealtimeMs, atom(c.bootSessionId))

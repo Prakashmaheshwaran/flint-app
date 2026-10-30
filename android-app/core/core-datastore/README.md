@@ -9,6 +9,40 @@ publishes those defaults. Compatible value flows emit only successful reads;
 The rule bridge retains its last good rules on unavailable reads and never
 sweeps an unreadable snapshot.
 
+## ADR-012 initialized pass and lifecycle authority
+
+`FocusSnapshot.protection` is the acknowledged desired state for rolling pass cooldown,
+global recovery, frozen ordinary grants and their lifecycle intents. The required
+`protection_schema_v1=1`, `protection_pass_outbox_v1` and
+`protection_legacy_archive_v1` keys commit together with the focus ledger at `H|3`.
+The bounded pass/outbox codec reads `P|1` and writes `P|2`; the additive version
+stores event-only pending credit ends. These receipts contain no counters and never
+authorize access: the shared Open ledger below is its sole authority. Mandatory
+metadata and exact child counts prevent deleted initialized children from becoming
+fresh unused state. Unknown versions and malformed records remain untouched.
+
+One validated import archives the exact original legacy accounting/configuration
+bytes and presence flags. It preserves spent pass time across Monday and closes
+unprovable old package releases; the archive is preservation evidence, never a live
+fallback or automatic refund. Pre-ADR-012 builds read `H|3` as
+`UNSUPPORTED_VERSION` and preserve bytes. Recover with a compatible newer build;
+there is no destructive downgrade rewrite, automatic reset or in-app repair yet.
+
+The atomic transaction prepares the trusted quota period, then editor occurrences,
+then current policy. Consume/recovery/transient retirement and event intent commit
+before either detector publishes release. The outbox retains stable events until an
+idempotent durable consumer acknowledges them. Ordinary breaks and Open access have
+distinct start/end kinds; consumers deliberately acknowledge unhandled additive kinds
+as a no-op. A bounded 256-event / estimated 512 KiB / seven trusted-day retention
+window can discard history, never enforcement. Persistent `lifecycleEventsDropped`
+and `lifecycle-events-dropped` expose this loss as degraded status. No target/package
+identifiers are included in events delivered to history.
+
+An idle controller with no cooldown, recovery, grants, outbox or configured/retained
+quota state skips periodic transactions. Active finite authority checkpoints and
+wakes at its actual elapsed deadline; a same-boot restart restores its remaining
+interval, while reboot conservatively closes access and retains spend.
+
 ## ADR-012 timed Open-credit authority (R-11/R-19)
 
 `OpenCreditStore.kt` supplies synchronous `prepareOpenCredits`,
@@ -17,8 +51,8 @@ helpers. They run inside the existing `flint_preferences` edit; none opens a
 nested transaction. Runtime wiring must prepare the quota period first, run editor
 preparation for due daily changes, evaluate current caps/overlapping causes, then
 commit the pure `OpenCreditLedgerPolicy` result and its receipt together. Only the
-outer edit's acknowledgement permits access. This seam does not itself remove the
-older foreground-debit coordinator path described below; C4b owns that integration.
+outer edit's acknowledgement permits access. Production coordinator reads/writes this authority through explicit credit confirmations;
+foreground transitions never spend. Historical adapters below remain fixture-only.
 
 `open_credit_schema_v1=1` requires all of `open_credit_state_v1` (`S|1`),
 `open_credit_counts_v1` (`O|1`), `open_credit_legacy_archive_v1` (`A|1`) and
@@ -116,6 +150,12 @@ Pre-tier builds with the strict two-field reader likewise report a three-field
 row as `UNSUPPORTED_VERSION`; use a compatible newer build to recover. Historical
 lenient readers are not safe downgrade targets: there is no automatic downgrade
 rewrite that discards a selected tier, and the archive is not a live fallback.
+
+## Historical R5 adapter and preserved v1 records
+
+The remainder documents preserved v1 receipts and constructor-injected compatibility
+fixtures. Production uses the ADR-012 authority above, not these old package-pass or
+foreground-visit policies.
 
 `FocusStateStore.transact` atomically reads current v1 accounting, applies a pure
 reducer, and commits both accounting and additive `focus_exemptions_v1` receipts
