@@ -10,7 +10,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -21,6 +24,18 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.lifecycleScope
 import com.flint.peakfocus.core.common.theme.FlintTheme
 import com.flint.peakfocus.core.model.BreakLevel
+import com.flint.peakfocus.core.model.AccessClockStamp
+import com.flint.peakfocus.core.model.StorageState
+import com.flint.peakfocus.blocking.engine.RollingEmergencyPassPolicy
+import com.flint.peakfocus.blocking.engine.ProtectionContract
+import com.flint.peakfocus.feature.blockscreen.RecoveryScreen
+import com.flint.peakfocus.feature.blockscreen.RecoveryScreenState
+import com.flint.peakfocus.feature.blockscreen.RecoveryChoice
+import com.flint.peakfocus.feature.blockscreen.RecoveryConfirmation
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import com.flint.peakfocus.feature.blockscreen.BlockScreen
 import com.flint.peakfocus.feature.blockscreen.BlockScreenReason
 import kotlinx.coroutines.delay
@@ -57,24 +72,38 @@ class BlockActivity : ComponentActivity() {
     /** The blocked target as Compose-observable state: [onNewIntent] swaps it in place of
      *  recreate(), so the glow and breathing mark run continuously across re-used instances. */
     private var target by mutableStateOf<BlockedTarget?>(null)
+    private var recoveryMode by mutableStateOf(false)
+    private var recoveryHandoffId by mutableStateOf<String?>(null)
+    private var recoveryTarget: String? = null
+    private var recoveryFrameDrawn = false
+    private var recoveryWindowFocused = false
+    private var recoveryTopResumed = android.os.Build.VERSION.SDK_INT < 29
+    private var recoveryMultiWindow = false
+    private var recoveryFocusRevoked = false
+    /** Recovery is a Flint settings surface, not a fallback shield owned by Path B. */
+    internal val isRecoverySurface: Boolean get() = recoveryMode
 
     /** Refusal counter fed to `BlockScreen`'s nudge parameter — increments animate. */
     private var nudge by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        recoveryMultiWindow = android.os.Build.VERSION.SDK_INT >= 24 && isInMultiWindowMode
         super.onCreate(savedInstanceState)
         // Before setContent, so the glow draws behind the system bars on Android 14-and-below
         // too (the shared screen already safeDrawingPadding()s its content).
         enableEdgeToEdge()
+        recoveryMode = intent.getBooleanExtra(EXTRA_RECOVERY, false)
+        recoveryHandoffId = intent.getStringExtra(EXTRA_RECOVERY_HANDOFF)
+        recoveryTarget = intent.getStringExtra(EXTRA_RECOVERY_TARGET)
         val initial = intent.toBlockedTarget()
-        if (initial == null) {
+        if (initial == null && !recoveryMode) {
             // Legacy/malformed launch (no package to account against): nothing to enforce.
             finish()
             return
         }
         // Revalidate before the first frame: a stale or safety-floor launch (dialer, home app,
         // Settings…) never shows even for the first tick.
-        if (PathBBlockHandoff.coordinator(applicationContext).currentBlockCause(initial.packageName, initial.cause) == null) {
+        if (!recoveryMode && initial != null && PathBBlockHandoff.coordinator(applicationContext).currentBlockCause(initial.packageName, initial.cause) == null) {
             finish()
             return
         }
@@ -87,7 +116,7 @@ class BlockActivity : ComponentActivity() {
             this,
             object : OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
-                    nudge++
+                    if (recoveryMode) { openFlint(); finish() } else nudge++
                 }
             },
         )
@@ -105,6 +134,10 @@ class BlockActivity : ComponentActivity() {
                     window.setBackgroundDrawable(ColorDrawable(background.toArgb()))
                 }
 
+                if (recoveryMode) {
+                    RecoveryContent(coordinator)
+                    return@FlintTheme
+                }
                 val current = target ?: return@FlintTheme
                 var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
                 var refresh by remember { mutableIntStateOf(0) }
@@ -154,7 +187,7 @@ class BlockActivity : ComponentActivity() {
                     },
                     onBreakRequested = {
                         if (!requests.retired) {
-                            val id = requests.id(emergency = false, now = System.currentTimeMillis())
+                            val id = requests.id(emergency = false, now = System.currentTimeMillis(), clock = coordinator.requestClock())
                             lifecycleScope.launch {
                                 val result = coordinator.requestBreak(current.packageName, current.cause, id)
                                 requests.recordResult(emergency = false, result)
@@ -170,21 +203,7 @@ class BlockActivity : ComponentActivity() {
                         }
                     },
                     onEmergencyPassRequested = {
-                        if (!requests.retired) {
-                            val id = requests.id(emergency = true, now = System.currentTimeMillis())
-                            lifecycleScope.launch {
-                                val result = coordinator.requestEmergencyPass(current.packageName, current.cause, id)
-                                requests.recordResult(emergency = true, result)
-                                if (result is GrantResult.Granted && target == current &&
-                                    coordinator.canDismiss(current.packageName, current.cause)
-                                ) {
-                                    requests.retired = true
-                                    finish()
-                                } else if (result == GrantResult.Denied) nudge++
-                                refresh++
-                            }
-                            refresh++
-                        }
+                        handleRecoveryRequested(coordinator, requests)
                     },
                     nudge = nudge,
                 )
@@ -198,6 +217,15 @@ class BlockActivity : ComponentActivity() {
         // observable target crossfades the words in place — no recreate(), so the glow and
         // the breathing mark never restart. A malformed re-launch keeps the current block.
         setIntent(intent)
+        recoveryMode = intent.getBooleanExtra(EXTRA_RECOVERY, false)
+        recoveryHandoffId = intent.getStringExtra(EXTRA_RECOVERY_HANDOFF)
+        recoveryTarget = intent.getStringExtra(EXTRA_RECOVERY_TARGET)
+        recoveryFrameDrawn = false
+        recoveryFocusRevoked = false
+        if (recoveryMode && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED))
+            refreshRecoverySurface()
+        else RecoverySurfaceHandoff.hidden(this)
+        if (recoveryMode) return
         val next = intent.toBlockedTarget() ?: return
         // A re-launch for a floor surface or an already-ended cause means the user is not on a
         // blocked app now: leave rather than cover what is in front (the detector re-launches
@@ -207,6 +235,78 @@ class BlockActivity : ComponentActivity() {
             return
         }
         target = next
+    }
+
+    internal fun handleRecoveryRequested(coordinator: BlockScreenCoordinator, requests: BlockScreenCoordinator.SurfaceRequests) {
+        if (!requests.retired && coordinator.launchRecovery(target?.packageName)) requests.retired = true
+    }
+
+    private fun refreshRecoverySurface() {
+        val targetPackage = recoveryTarget
+        // Resumed is not exclusive on Android 10+. Never suppress a target shield for
+        // split-screen/freeform recovery: leave that mode to review in fullscreen.
+        val coversTarget = recoveryMode && recoveryFrameDrawn && targetPackage != null &&
+            recoveryTopResumed && !recoveryMultiWindow && !recoveryFocusRevoked &&
+            lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+        // The still-mounted shield initially owns window focus. Only a drawn, topmost
+        // fullscreen recovery may ask that exact shield to yield focus, without yielding touch.
+        recoveryHandoffId?.let { RecoverySurfaceHandoff.ready(it, coversTarget) }
+        if (coversTarget && recoveryWindowFocused) {
+            RecoverySurfaceHandoff.showing(this, checkNotNull(targetPackage))
+            recoveryHandoffId?.let(RecoverySurfaceHandoff::drawn)
+        } else clearRecoverySurface()
+    }
+
+    private fun clearRecoverySurface() {
+        if (RecoverySurfaceHandoff.hidden(this))
+            com.flint.peakfocus.core.model.EnforcementSignals.detectors.requestEvaluation()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        recoveryWindowFocused = hasFocus
+        if (hasFocus) recoveryFocusRevoked = false
+        else if (recoveryFrameDrawn) recoveryFocusRevoked = true
+        refreshRecoverySurface()
+    }
+
+    override fun onTopResumedActivityChanged(isTopResumedActivity: Boolean) {
+        super.onTopResumedActivityChanged(isTopResumedActivity)
+        if (isTopResumedActivity && !recoveryTopResumed) recoveryFocusRevoked = false
+        recoveryTopResumed = isTopResumedActivity
+        refreshRecoverySurface()
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean) {
+        super.onMultiWindowModeChanged(isInMultiWindowMode)
+        recoveryMultiWindow = isInMultiWindowMode
+        refreshRecoverySurface()
+    }
+
+    override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, newConfig: android.content.res.Configuration) {
+        super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)
+        recoveryMultiWindow = isInMultiWindowMode
+        refreshRecoverySurface()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (recoveryMode) refreshRecoverySurface()
+    }
+
+    override fun onPause() {
+        recoveryHandoffId?.let { RecoverySurfaceHandoff.ready(it, false) }
+        clearRecoverySurface()
+        recoveryWindowFocused = false
+        if (android.os.Build.VERSION.SDK_INT >= 29) recoveryTopResumed = false
+        super.onPause()
+    }
+
+    override fun onDestroy() {
+        recoveryHandoffId?.let { RecoverySurfaceHandoff.ready(it, false) }
+        clearRecoverySurface()
+        super.onDestroy()
     }
 
     /** Parses a launch/re-launch intent; null when there's no package to account against. */
@@ -237,6 +337,103 @@ class BlockActivity : ComponentActivity() {
         packageManager.getLaunchIntentForPackage(packageName)?.let { startActivity(it) }
     }
 
+    @Composable
+    private fun RecoveryContent(coordinator: BlockScreenCoordinator) {
+        val handoffId = recoveryHandoffId
+        DisposableEffect(handoffId) {
+            val view = window.decorView
+            var active = true
+            var posted = false
+            val listener = android.view.ViewTreeObserver.OnDrawListener {
+                if (!posted) {
+                    posted = true
+                    // Run after this traversal has drawn the composed recovery content.
+                    view.post {
+                        if (active && recoveryMode && recoveryHandoffId == handoffId && !isFinishing && !isDestroyed) {
+                            recoveryFrameDrawn = true
+                            refreshRecoverySurface()
+                        }
+                    }
+                }
+            }
+            view.viewTreeObserver.addOnDrawListener(listener)
+            onDispose {
+                active = false
+                if (view.viewTreeObserver.isAlive) view.viewTreeObserver.removeOnDrawListener(listener)
+            }
+        }
+        val storage = coordinator.recoveryState?.collectAsState()?.value
+        var tick by remember { mutableIntStateOf(0) }
+        var preview by remember { mutableStateOf<RecoveryPreview?>(null) }
+        var endPreview by remember { mutableStateOf<RecoveryEndPreview?>(null) }
+        var saving by remember { mutableStateOf(false) }
+        var error by remember { mutableStateOf<String?>(null) }
+        LaunchedEffect(Unit) { while (isActive) {
+            delay(1_000); tick++
+            // Only drawn, focused, top-resumed fullscreen recovery renews this lease.
+            if (recoveryFrameDrawn) refreshRecoverySurface()
+        } }
+        // The native clock is already initialized on the controller's worker before Ready.
+        val snapshot = (storage as? StorageState.Ready)?.value
+        val now = remember(tick, snapshot) { snapshot?.let { AccessClockStamp(System.currentTimeMillis(),
+            android.os.SystemClock.elapsedRealtime(), it.observedAt.bootSessionId) } }
+        val ledger = snapshot?.focus?.protection
+        val remaining = if (now != null) GlobalRecoveryPolicy.remaining(ledger?.recovery, now) else 0
+        val eligibility = if (ledger != null && now != null) RollingEmergencyPassPolicy().eligibility(GlobalRecoveryPolicy.passState(ledger), now)
+            else RollingEmergencyPassPolicy.Eligibility.Unavailable
+        fun date(at: Long) = SimpleDateFormat("EEE, MMM d, yyyy h:mm a z", Locale.getDefault()).format(Date(at))
+        fun launch(action: suspend () -> Unit) {
+            if (saving) return
+            saving = true; error = null
+            lifecycleScope.launch {
+                try { action() }
+                catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+                catch (_: Exception) { error = "Protection state unavailable. Try again." }
+                finally { saving = false }
+            }
+        }
+        val confirmation = preview?.let { p -> RecoveryConfirmation(p.affected.map {
+            "${it.displayName} · ${if (it.transient) "ends now" else "suspended"}"
+        }, date((now?.wallEpochMs ?: p.issuedAt.wallEpochMs) + ProtectionContract.PASS_RECOVERY_MS),
+            date((now?.wallEpochMs ?: p.issuedAt.wallEpochMs) + ProtectionContract.PASS_COOLDOWN_MS)) }
+        RecoveryScreen(
+            RecoveryScreenState(loading = storage == null || storage is StorageState.Loading,
+                unavailable = storage is StorageState.Unavailable || (storage is StorageState.Ready && eligibility == RollingEmergencyPassPolicy.Eligibility.Unavailable),
+                available = eligibility == RollingEmergencyPassPolicy.Eligibility.Available, remainingRecoveryMillis = remaining,
+                resumeAt = now?.let { if (remaining > 0) date(it.wallEpochMs + remaining) else null },
+                nextPassAt = (eligibility as? RollingEmergencyPassPolicy.Eligibility.CoolingDown)?.let { date(it.nextEligibleEstimateEpochMs) },
+                timeUncertain = (eligibility as? RollingEmergencyPassPolicy.Eligibility.CoolingDown)?.clockUncertain == true,
+                previousAccessEnded = ledger?.previousAccessEnded == true,
+                choices = snapshot?.let { GlobalRecoveryPolicy.recoveryChoices(it).map { (key, name) -> RecoveryChoice(key, name) } }.orEmpty(),
+                confirmation = confirmation, endConfirmation = endPreview?.displayNames, error = error, saving = saving,
+                activeOrdinaryBreaks = ledger?.ordinaryGrants?.values?.count { now != null && it.lifetime.remainingMs(now)?.let { ms -> ms > 0 } == true } ?: 0),
+            onBack = { openFlint(); finish() },
+            onPreview = { launch {
+                preview = coordinator.previewEmergencyPass()
+                if (preview == null) error = "The pass or complete recovery scope is unavailable. Try again."
+            } },
+            onConfirm = { val p = preview; if (p != null) launch {
+                when (coordinator.confirmEmergencyPass(p)) {
+                    is RecoveryResult.Accepted -> { preview = null; endPreview = null }
+                    RecoveryResult.StalePreview -> { preview = null; error = "Commitments changed. Review the updated list before confirming." }
+                    else -> error = "Recovery was not acknowledged. Try again with this confirmation."
+                }
+            } },
+            onCancelConfirmation = { preview = null; endPreview = null },
+            onResume = { launch { if (!coordinator.resumeProtectionNow()) error = "Protection state unavailable. Try again." } },
+            onPreviewEnd = { selected, delete -> launch {
+                endPreview = coordinator.previewEndCommitments(selected, delete)
+                if (endPreview == null) error = "Commitments changed. Review the updated list."
+            } },
+            onConfirmEnd = { val p = endPreview; if (p != null) launch {
+                if (coordinator.endCommitmentsAndResume(p)) endPreview = null
+                else { endPreview = null; error = "The selection was not changed. Review and try again." }
+            } },
+            onRetry = { launch { if (!coordinator.retryProtectionState()) error = "Protection state unavailable. Try again." } },
+            onResumeBreaks = { launch { if (!coordinator.resumeOrdinaryBreaks()) error = "Protection state unavailable. Try again." } },
+        )
+    }
+
     private inline fun <reified T : Enum<T>> Intent.enumExtra(key: String, fallback: T): T =
         runCatching { enumValueOf<T>(getStringExtra(key).orEmpty()) }.getOrDefault(fallback)
 
@@ -247,7 +444,18 @@ class BlockActivity : ComponentActivity() {
         const val EXTRA_BREAK_LEVEL = "flint.break_level"
         const val EXTRA_ENDS_AT_EPOCH_MS = "flint.ends_at_epoch_ms"
         const val EXTRA_RULE_ID = "flint.rule_id"
+        const val EXTRA_RECOVERY = "flint.protection_recovery"
         private const val NO_END = -1L
+
+        /** App-shell entry independent of a blocked target. Opening it never spends a pass. */
+        internal const val EXTRA_RECOVERY_HANDOFF = "flint.recovery_handoff"
+        internal const val EXTRA_RECOVERY_TARGET = "flint.recovery_target"
+
+        fun launchRecovery(context: Context, handoffId: String? = null, targetPackage: String? = null): Boolean = runCatching {
+            context.startActivity(Intent(context, BlockActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(EXTRA_RECOVERY, true).putExtra(EXTRA_RECOVERY_HANDOFF, handoffId)
+                .putExtra(EXTRA_RECOVERY_TARGET, targetPackage))
+        }.isSuccess
 
         /** Launch the fallback block screen for [packageName] with a resolved [cause]. */
         fun launch(context: Context, packageName: String, label: String?, cause: BlockCause) {

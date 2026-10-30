@@ -30,12 +30,41 @@ internal object PrefsKeys {
     val OPEN_COUNTS_DAY = longPreferencesKey("open_counts_day_v1")
     val OPEN_COUNTS = stringPreferencesKey("open_counts_v1")
     val FOCUS_LEDGER = stringPreferencesKey("focus_exemptions_v1")
+    val PROTECTION_SCHEMA = longPreferencesKey("protection_schema_v1")
+    val PROTECTION_LEDGER = stringPreferencesKey("protection_pass_outbox_v1")
+    val PROTECTION_ARCHIVE = stringPreferencesKey("protection_legacy_archive_v1")
 }
 
-private fun Preferences.rules() = StrictPrefsCodec.rules(StrictPrefsCodec.string(this, PrefsKeys.BLOCK_RULES).orEmpty())
+private fun Preferences.rules(): List<BlockRule> {
+    validateInitializedProtectionChildren(this)
+    return StrictPrefsCodec.rules(StrictPrefsCodec.string(this, PrefsKeys.BLOCK_RULES).orEmpty())
+}
 private fun Preferences.groups() = StrictPrefsCodec.groups(StrictPrefsCodec.string(this, PrefsKeys.APP_GROUPS).orEmpty())
-private fun Preferences.timeLimits() = StrictPrefsCodec.timeLimits(StrictPrefsCodec.string(this, PrefsKeys.TIME_LIMITS).orEmpty())
-private fun Preferences.openLimits() = StrictPrefsCodec.openLimits(StrictPrefsCodec.string(this, PrefsKeys.OPEN_LIMITS).orEmpty())
+private fun Preferences.timeLimits(): List<TimeLimit> {
+    validateInitializedProtectionChildren(this)
+    return StrictPrefsCodec.timeLimits(StrictPrefsCodec.string(this, PrefsKeys.TIME_LIMITS).orEmpty(),
+        StrictPrefsCodec.level(StrictPrefsCodec.string(this, PrefsKeys.DEFAULT_BREAK_LEVEL)))
+}
+private fun Preferences.openLimits(): List<OpenLimit> {
+    validateInitializedProtectionChildren(this)
+    return StrictPrefsCodec.openLimits(StrictPrefsCodec.string(this, PrefsKeys.OPEN_LIMITS).orEmpty())
+}
+
+/** After the pass marker, optional legacy absence is never a fresh configuration or wait. */
+internal fun validateInitializedProtectionChildren(prefs: Preferences) {
+    val schema = StrictPrefsCodec.long(prefs, PrefsKeys.PROTECTION_SCHEMA)
+    if (schema == null) {
+        if (StrictPrefsCodec.string(prefs, PrefsKeys.PROTECTION_LEDGER) != null ||
+            StrictPrefsCodec.string(prefs, PrefsKeys.PROTECTION_ARCHIVE) != null ||
+            FocusLedgerCodec.decode(StrictPrefsCodec.string(prefs, PrefsKeys.FOCUS_LEDGER)).protectionInitialized) wireCorrupt()
+        return
+    }
+    if (schema != 1L) wireFuture()
+    for (key in listOf(PrefsKeys.BLOCK_RULES, PrefsKeys.TIME_LIMITS, PrefsKeys.OPEN_LIMITS, PrefsKeys.DEFAULT_BREAK_LEVEL,
+        EDITOR_COMMITMENTS_KEY, HARDER_WAIT_KEY)) if (StrictPrefsCodec.string(prefs, key) == null) wireCorrupt()
+    if (StrictPrefsCodec.long(prefs, EDITOR_VERSION_KEY) == null || StrictPrefsCodec.long(prefs, OPEN_CREDIT_SCHEMA) == null) wireCorrupt()
+    readEditorState(prefs); readHarderWait(prefs); readOpenCredits(prefs)
+}
 private fun MutablePreferences.putRules(rules: List<BlockRule>) {
     val encoded = PrefsCodec.encodeRules(rules)
     StrictPrefsCodec.rules(encoded)
@@ -204,34 +233,7 @@ class DataStoreFocusStateStore(
             dataStore.edit { prefs ->
                 val current = readFocus(prefs)
                 val mutation = transform(current)
-                require(mutation.next.revision == current.revision) { "Focus revision is store-owned" }
-                require(mutation.next.minimumRequestEpochMs >= current.minimumRequestEpochMs) { "Request retention cannot rewind" }
-                val next = if (mutation.next == current) current else {
-                    require(current.revision < Long.MAX_VALUE) { "Focus revision exhausted" }
-                    mutation.next.copy(revision = current.revision + 1)
-                }
-                // Validate ALL output before touching preferences, and freeze caller-owned maps.
-                val ledger = FocusLedgerCodec.encode(FocusLedgerCodec.Ledger(next.exemptions, next.breaksByCause, next.revision, next.minimumRequestEpochMs))
-                val session = PrefsCodec.encodeBreakSession(next.breakSession)
-                val counts = PrefsCodec.encodeOpenCounts(next.openCounts.opensByPackage)
-                StrictPrefsCodec.session(session); StrictPrefsCodec.counts(counts)
-                require(next.emergencyPass.usedAtEpochMs?.let { it >= 0 } != false)
-                if (next.defaultBreakLevel != current.defaultBreakLevel) prefs[PrefsKeys.DEFAULT_BREAK_LEVEL] = next.defaultBreakLevel.name
-                if (next.breakSession != current.breakSession) prefs[PrefsKeys.BREAK_SESSION] = session
-                if (next.emergencyPass != current.emergencyPass) {
-                    prefs[PrefsKeys.EMERGENCY_PASS_WEEK_START] = next.emergencyPass.weekStartEpochDay
-                    val usedAt = next.emergencyPass.usedAtEpochMs
-                    if (usedAt == null) prefs.remove(PrefsKeys.EMERGENCY_PASS_USED_AT)
-                    else prefs[PrefsKeys.EMERGENCY_PASS_USED_AT] = usedAt
-                }
-                if (next.openCounts != current.openCounts) {
-                    prefs[PrefsKeys.OPEN_COUNTS_DAY] = next.openCounts.epochDay
-                    prefs[PrefsKeys.OPEN_COUNTS] = counts
-                }
-                if (next.revision != current.revision) {
-                    prefs[PrefsKeys.FOCUS_LEDGER] = ledger
-                }
-                committed = FocusCommit.Committed(readFocus(prefs), mutation.result)
+                committed = FocusCommit.Committed(writeFocus(prefs, current, mutation.next), mutation.result)
             }
             checkNotNull(committed) // edit returned: the acknowledgement now represents durable data.
         } catch (cause: Exception) {
@@ -252,10 +254,60 @@ class DataStoreFocusStateStore(
     override suspend fun setOpenCounts(state: OpenCountState) = update { it.copy(openCounts = state) }
 }
 
-private fun readFocus(prefs: Preferences): FocusSnapshot {
+/** The caller owns the surrounding edit; this helper never commits or publishes early. */
+internal fun writeFocus(prefs: MutablePreferences, current: FocusSnapshot, proposed: FocusSnapshot, forceRevision: Boolean = false): FocusSnapshot {
+    require(proposed.revision == current.revision) { "Focus revision is store-owned" }
+    require(proposed.minimumRequestEpochMs >= current.minimumRequestEpochMs) { "Request retention cannot rewind" }
+    require(current.protection == null || proposed.protection != null) { "Initialized protection cannot become a legacy default" }
+    val next = if (proposed == current && !forceRevision) current else {
+        require(current.revision < Long.MAX_VALUE) { "Focus revision exhausted" }
+        proposed.copy(revision = current.revision + 1)
+    }
+    // Validate ALL output before assigning preferences, and decode the result to freeze it.
+    val ledger = FocusLedgerCodec.encode(FocusLedgerCodec.Ledger(next.exemptions, next.breaksByCause, next.revision, next.minimumRequestEpochMs,
+        protectionInitialized = next.protection != null))
+    val protection = next.protection?.let(ProtectionLedgerCodec::encode)
+    val session = PrefsCodec.encodeBreakSession(next.breakSession)
+    val counts = PrefsCodec.encodeOpenCounts(next.openCounts.opensByPackage)
+    StrictPrefsCodec.session(session); StrictPrefsCodec.counts(counts)
+    require(next.emergencyPass.usedAtEpochMs?.let { it >= 0 } != false)
+    val contract = next.protection
+    require(contract == null || contract.lastUsedAtEpochMs == next.emergencyPass.usedAtEpochMs)
+    if (next.defaultBreakLevel != current.defaultBreakLevel) prefs[PrefsKeys.DEFAULT_BREAK_LEVEL] = next.defaultBreakLevel.name
+    if (next.breakSession != current.breakSession) prefs[PrefsKeys.BREAK_SESSION] = session
+    if (next.emergencyPass != current.emergencyPass) {
+        prefs[PrefsKeys.EMERGENCY_PASS_WEEK_START] = next.emergencyPass.weekStartEpochDay
+        val usedAt = next.emergencyPass.usedAtEpochMs
+        if (usedAt == null) prefs.remove(PrefsKeys.EMERGENCY_PASS_USED_AT) else prefs[PrefsKeys.EMERGENCY_PASS_USED_AT] = usedAt
+    }
+    if (next.openCounts != current.openCounts) {
+        prefs[PrefsKeys.OPEN_COUNTS_DAY] = next.openCounts.epochDay
+        prefs[PrefsKeys.OPEN_COUNTS] = counts
+    }
+    if (next.revision != current.revision) prefs[PrefsKeys.FOCUS_LEDGER] = ledger
+    if (protection != null && next.protection != current.protection) {
+        prefs[PrefsKeys.PROTECTION_LEDGER] = protection
+        prefs[PrefsKeys.PROTECTION_SCHEMA] = 1L
+    }
+    return readFocus(prefs)
+}
+
+internal fun readFocus(prefs: Preferences): FocusSnapshot {
+    validateInitializedProtectionChildren(prefs)
     val ledger = FocusLedgerCodec.decode(StrictPrefsCodec.string(prefs, PrefsKeys.FOCUS_LEDGER))
     val usedAt = StrictPrefsCodec.long(prefs, PrefsKeys.EMERGENCY_PASS_USED_AT)
     if (usedAt != null && usedAt < 0) throw StorageUnavailableException(StorageFailure.CORRUPT)
+    val schema = StrictPrefsCodec.long(prefs, PrefsKeys.PROTECTION_SCHEMA)
+    val passRaw = StrictPrefsCodec.string(prefs, PrefsKeys.PROTECTION_LEDGER)
+    val archive = StrictPrefsCodec.string(prefs, PrefsKeys.PROTECTION_ARCHIVE)
+    if (schema != null && schema != 1L) wireFuture()
+    if (schema == null && (passRaw != null || archive != null)) wireCorrupt()
+    if (ledger.protectionInitialized != (schema != null)) wireCorrupt()
+    val protection = if (schema == null) null else {
+        if (passRaw == null || archive == null || StrictPrefsCodec.string(prefs, PrefsKeys.FOCUS_LEDGER) == null) wireCorrupt()
+        if (!archive.startsWith("A|1\n")) wireCorrupt()
+        ProtectionLedgerCodec.decode(passRaw).also { if (it.lastUsedAtEpochMs != usedAt) wireCorrupt() }
+    }
     return FocusSnapshot(
         defaultBreakLevel = StrictPrefsCodec.level(StrictPrefsCodec.string(prefs, PrefsKeys.DEFAULT_BREAK_LEVEL)),
         emergencyPass = EmergencyPassState(
@@ -271,5 +323,6 @@ private fun readFocus(prefs: Preferences): FocusSnapshot {
         breaksByCause = ledger.breaksByCause,
         revision = ledger.revision,
         minimumRequestEpochMs = ledger.minimumRequestEpochMs,
+        protection = protection,
     )
 }

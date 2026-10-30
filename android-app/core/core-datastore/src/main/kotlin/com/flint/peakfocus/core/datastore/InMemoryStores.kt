@@ -159,11 +159,13 @@ class InMemoryFocusStateStore : FocusStateStore {
             require(current.revision < Long.MAX_VALUE) { "Focus revision exhausted" }
             mutation.next.copy(revision = current.revision + 1)
         }
-        val ledger = FocusLedgerCodec.decode(FocusLedgerCodec.encode(FocusLedgerCodec.Ledger(next.exemptions, next.breaksByCause, next.revision, next.minimumRequestEpochMs)))
+        val ledger = FocusLedgerCodec.decode(FocusLedgerCodec.encode(FocusLedgerCodec.Ledger(next.exemptions, next.breaksByCause, next.revision,
+            next.minimumRequestEpochMs, protectionInitialized = next.protection != null)))
         StrictPrefsCodec.session(PrefsCodec.encodeBreakSession(next.breakSession))
         StrictPrefsCodec.counts(PrefsCodec.encodeOpenCounts(next.openCounts.opensByPackage))
         val frozen = next.copy(exemptions = ledger.exemptions, breaksByCause = ledger.breaksByCause,
-            openCounts = next.openCounts.copy(opensByPackage = next.openCounts.opensByPackage.toMap()))
+            openCounts = next.openCounts.copy(opensByPackage = next.openCounts.opensByPackage.toMap()),
+            protection = next.protection?.let { ProtectionLedgerCodec.decode(ProtectionLedgerCodec.encode(it)) })
         snapshot.value = frozen
         FocusCommit.Committed(frozen, mutation.result)
     }

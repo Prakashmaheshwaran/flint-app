@@ -15,10 +15,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** A surface keeps this identity through retries, including a lost acknowledgement. */
-data class GrantRequestId internal constructor(val issuedAtEpochMs: Long, val nonce: String) {
+data class GrantRequestId internal constructor(val issuedAtEpochMs: Long, val nonce: String, val issuedAtClock: AccessClockStamp? = null) {
     internal val prefix: String get() = "f1:$issuedAtEpochMs:$nonce:"
     companion object {
         fun issue(nowEpochMs: Long): GrantRequestId = GrantRequestId(nowEpochMs, UUID.randomUUID().toString())
+        fun issue(now: AccessClockStamp): GrantRequestId = GrantRequestId(now.wallEpochMs, UUID.randomUUID().toString(), now)
     }
 }
 

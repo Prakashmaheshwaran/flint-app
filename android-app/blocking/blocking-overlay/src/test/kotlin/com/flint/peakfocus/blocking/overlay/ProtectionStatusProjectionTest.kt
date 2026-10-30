@@ -66,6 +66,22 @@ class ProtectionStatusProjectionTest {
         assertTrue("occurrence-state-unavailable" in incomplete.detectors.degradedReasons)
     }
 
+    @Test fun PC_44_PC_63_PC_73_initializedRecoveryUsesElapsedBoundaryAndPublishesBoundedHistoryLoss() {
+        val id = "p1-one"
+        val recovery = ProtectionRecovery(id, now, setOf("rule:${rule.id}"), setOf(rule.id), emptySet(), 1_000)
+        val ledger = ProtectionLedger(now, now, cooldown = ProtectionCooldown(id, at, now, 604_800_000),
+            recovery = recovery, droppedEvents = 7)
+        val s = project(focus = StorageState.Ready(FocusSnapshot(protection = ledger)))
+        assertEquals(ProtectionStatus.PassStatus.RecoveryActive(1_000, 11_000), s.pass)
+        assertEquals(11_000L, s.validUntilElapsedRealtimeMs)
+        assertEquals(7L, s.lifecycleEventsDropped)
+        assertTrue("lifecycle-events-dropped" in s.detectors.degradedReasons)
+        assertFalse("pass-contract-unavailable" in s.detectors.degradedReasons)
+        val jumped = project(now.copy(wallEpochMs = at + 86_400_000, elapsedRealtimeMs = 10_500),
+            focus = StorageState.Ready(FocusSnapshot(protection = ledger)))
+        assertEquals(ProtectionStatus.PassStatus.RecoveryActive(500, 11_000), jumped.pass)
+    }
+
     @Test fun PC_52_stickySafetyResolutionRetainsProvenanceButLatestFailureAndStaleCheckStayDegraded() {
         val failed = resolved.copy(failedSources = setOf("dialer"))
         val s = project(floor = failed)

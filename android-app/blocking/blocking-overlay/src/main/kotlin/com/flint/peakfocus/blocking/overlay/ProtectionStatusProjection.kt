@@ -3,6 +3,7 @@ package com.flint.peakfocus.blocking.overlay
 import com.flint.peakfocus.blocking.engine.clockDiscontinuity
 import com.flint.peakfocus.blocking.engine.trustedElapsedMs
 import com.flint.peakfocus.blocking.engine.ScheduleOccurrences
+import com.flint.peakfocus.blocking.engine.RollingEmergencyPassPolicy
 import com.flint.peakfocus.core.datastore.EditorCommitmentState
 import com.flint.peakfocus.core.datastore.ruleCauseKey
 import com.flint.peakfocus.core.datastore.timeCauseKey
@@ -46,7 +47,10 @@ internal object ProtectionStatusProjection {
         if (floorStale) reasons += "safety-floor-check-stale"
         // Until the rolling/global pass transaction is activated, the weekly v1 state is
         // not evidence for ADR-012 availability or global recovery. Never advertise it as such.
-        reasons += "pass-contract-unavailable"
+        val ledger = (focus as? StorageState.Ready)?.value?.protection
+        if (ledger == null) reasons += "pass-contract-unavailable"
+        if ((ledger?.droppedEvents ?: 0) > 0) reasons += "lifecycle-events-dropped"
+        if (ledger?.previousAccessEnded == true) reasons += "access-ended-after-restart"
         val causes = mutableListOf<ProtectionStatus.ActiveCause>()
         val sidecar = (editor as? StorageState.Ready)?.value
         val configured = (rulesReadiness as? StorageState.Ready)?.value.orEmpty()
@@ -95,17 +99,29 @@ internal object ProtectionStatusProjection {
             ProtectionStatus.Readiness.UNAVAILABLE else readiness
         val next = if (derivedReadiness == ProtectionStatus.Readiness.READY && sidecar != null)
             nextOccurrence(currentRules, configuredIds, sidecar, now, legacyZone) else null
+        val recoveryRemaining = GlobalRecoveryPolicy.remaining(ledger?.recovery, now)
+        val eligibility = ledger?.let { RollingEmergencyPassPolicy().eligibility(GlobalRecoveryPolicy.passState(it), now) }
+        val passBoundary = if (recoveryRemaining > 0) recoveryRemaining else
+            (eligibility as? RollingEmergencyPassPolicy.Eligibility.CoolingDown)?.remainingMs
         val deadline = (causes.mapNotNull { it.logicalEndElapsedRealtimeMs } + listOfNotNull(
             next?.let { addBounded(now.elapsedRealtimeMs, (it.startWallEstimateEpochMs - now.wallEpochMs).coerceAtLeast(0)) },
             addBounded(now.elapsedRealtimeMs, FRESHNESS_MS),
+            passBoundary?.let { addBounded(now.elapsedRealtimeMs, it) },
         )).minOrNull()
         return ProtectionStatus(derivedReadiness, causes.sortedWith(compareByDescending<ProtectionStatus.ActiveCause> { it.tier.ordinal }
             .thenByDescending { it.remainingMs ?: Long.MAX_VALUE }.thenBy { it.ruleId.orEmpty() }), next,
-            ProtectionStatus.PassStatus.Unavailable,
+            if (derivedReadiness == ProtectionStatus.Readiness.READY && ledger != null) {
+                if (recoveryRemaining > 0) ProtectionStatus.PassStatus.RecoveryActive(recoveryRemaining, addBounded(now.elapsedRealtimeMs, recoveryRemaining))
+                else when (eligibility) {
+                    RollingEmergencyPassPolicy.Eligibility.Available -> ProtectionStatus.PassStatus.Available
+                    is RollingEmergencyPassPolicy.Eligibility.CoolingDown -> ProtectionStatus.PassStatus.CoolingDown(eligibility.nextEligibleEstimateEpochMs, eligibility.clockUncertain)
+                    RollingEmergencyPassPolicy.Eligibility.Unavailable, null -> ProtectionStatus.PassStatus.Unavailable
+                }
+            } else ProtectionStatus.PassStatus.Unavailable,
             ProtectionStatus.DetectorHealth(pathAConnected, ProtectionStatus.PathBState.UNKNOWN, reasons.toSet()),
             floor.hasResolvedEverySource && checked != null, now, deadline,
             ProtectionStatus.SafetyFloorStatus(floor.requiredSources.toSet(), floor.resolvedSources.toSet(), floor.failedSources.toSet(), checked,
-                floor.degraded || floorStale))
+                floor.degraded || floorStale), ledger?.droppedEvents ?: 0)
     }
 
     private data class ForeignActivity(val end: Long?)

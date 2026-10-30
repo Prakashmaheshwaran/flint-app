@@ -6,6 +6,9 @@ import android.view.View
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.flint.peakfocus.core.datastore.FlintPreferences
+import com.flint.peakfocus.core.datastore.InMemoryFocusStateStore
+import com.flint.peakfocus.core.datastore.InMemoryLimitsStore
+import com.flint.peakfocus.core.datastore.InMemoryBlockRulesStore
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BlockTargets
 import com.flint.peakfocus.core.model.ActiveRulesHolder
@@ -57,11 +60,14 @@ class CoordinatorHooksTest {
     private lateinit var coordinator: BlockScreenCoordinator
 
     private val rule = BlockRule(id = "session-timer-7", name = "t", targets = BlockTargets(), breakLevel = BreakLevel.EASY)
+    private val focus = InMemoryFocusStateStore()
+    private val limits = InMemoryLimitsStore()
+    private val rules = InMemoryBlockRulesStore(listOf(rule))
 
     @Before fun setUp() {
         BlockExemptions.clearAll()
         OpenVisits.process.leave()
-        ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, emptyList())
+        ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, listOf(rule))
         BlockEventHooks.register(listener)
         coordinator = newCoordinator(withFallback = true)
         // Process-wide rules from other suites must not block the hook test packages.
@@ -80,18 +86,13 @@ class CoordinatorHooksTest {
         onBlockSurfaceUnavailable = if (withFallback) { _, _, _, _ -> fallbackLaunches++ } else null,
         onEnforcementChanged = { enforcementChanges.incrementAndGet() },
         safetyFloorGate = SafetyFloorGate(app.packageName, { emptyMap() }, { 0L }, requiredRuntimeSources = emptySet()),
+        focusStateStore = focus, configuredLimitsStore = limits, blockRulesStore = rules,
     )
 
     @After fun tearDown() {
         BlockEventHooks.unregister(listener)
-        runBlocking {
-            FlintPreferences.limits(app).clearTimeLimit(APP_A)
-            FlintPreferences.focusState(app).transact {
-                FocusMutation(it.copy(emergencyPass = EmergencyPassState(), breakSession = BreakSessionState(),
-                    openCounts = OpenCountState(), exemptions = emptyMap(), breaksByCause = emptyMap()), Unit)
-            }
-        }
         scope.cancel()
+        ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, emptyList())
         BlockExemptions.clearAll()
         OpenVisits.process.leave()
     }
@@ -127,22 +128,23 @@ class CoordinatorHooksTest {
         assertEquals(emptyList<String>(), events)
     }
 
-    @Test fun `accepted break and pass grants are reported with the rule id`() {
+    @Test fun `legacy break observer carries its rule id and a package callback cannot spend a global pass`() {
         val cause = ruleBlockCause(rule, System.currentTimeMillis(), 0L)
         awaitReady(cause)
         runBlocking {
             assertTrue(coordinator.requestBreak(APP_A, cause, GrantRequestId.issue(System.currentTimeMillis())) is GrantResult.Granted)
-            assertTrue(coordinator.requestEmergencyPass(APP_B, cause, GrantRequestId.issue(System.currentTimeMillis())) is GrantResult.Granted)
+            assertTrue(coordinator.requestEmergencyPass(APP_B, cause, GrantRequestId.issue(System.currentTimeMillis())) is GrantResult.Unavailable)
         }
         assertEquals(
-            listOf("break:session-timer-7:${BlockScreenCoordinator.DEFAULT_BREAK_DURATION_MS}", "pass:session-timer-7"),
+            listOf("break:session-timer-7:${BlockScreenCoordinator.DEFAULT_BREAK_DURATION_MS}"),
             events,
         )
     }
 
     @Test fun `a denied Hardcore break reports nothing`() {
         val hardcore = ruleBlockCause(rule.copy(breakLevel = BreakLevel.HARDCORE), System.currentTimeMillis(), 0L)
-        awaitReady(hardcore)
+        // This fixture injects the legacy ordinary backend, with no global pass authority.
+        awaitReady(hardcore.copy(breakLevel = BreakLevel.EASY))
         runBlocking { assertEquals(GrantResult.Denied, coordinator.requestBreak(APP_A, hardcore, GrantRequestId.issue(System.currentTimeMillis()))) }
         assertEquals(emptyList<String>(), events)
     }
@@ -150,7 +152,7 @@ class CoordinatorHooksTest {
     @Test fun `limit snapshot loads and changes notify the detector`() {
         awaitTrue("initial snapshots") { enforcementChanges.get() >= 1 }
         val before = enforcementChanges.get()
-        runBlocking { FlintPreferences.limits(app).setTimeLimit(TimeLimit(APP_A, dailyMinutes = 1)) }
+        runBlocking { limits.setTimeLimit(TimeLimit(APP_A, dailyMinutes = 1)) }
         awaitTrue("time limit change") { enforcementChanges.get() > before && coordinator.timeLimitMinutes(APP_A) == 1 }
     }
 
@@ -158,7 +160,6 @@ class CoordinatorHooksTest {
         awaitReady(ruleBlockCause(rule, System.currentTimeMillis(), 0L))
         Thread.sleep(200L); idle()
         val settled = enforcementChanges.get()
-        val focus = FlintPreferences.focusState(app)
         runBlocking {
             focus.setOpenCounts(OpenCountState(epochDay = 20_000L, opensByPackage = mapOf(APP_A to 3)))
             focus.setBreakSession(BreakSessionState(breaksTaken = 2))
@@ -179,10 +180,11 @@ class CoordinatorHooksTest {
             },
             onEnforcementChanged = { error("detector bug") },
             safetyFloorGate = SafetyFloorGate(app.packageName, { emptyMap() }, { 0L }, requiredRuntimeSources = emptySet()),
+            focusStateStore = focus, configuredLimitsStore = limits, blockRulesStore = rules,
         )
-        runBlocking { FlintPreferences.limits(app).setTimeLimit(TimeLimit(APP_A, dailyMinutes = 7)) }
+        runBlocking { limits.setTimeLimit(TimeLimit(APP_A, dailyMinutes = 7)) }
         awaitTrue("first value") { throwing.timeLimitMinutes(APP_A) == 7 }
-        runBlocking { FlintPreferences.limits(app).setTimeLimit(TimeLimit(APP_A, dailyMinutes = 9)) }
+        runBlocking { limits.setTimeLimit(TimeLimit(APP_A, dailyMinutes = 9)) }
         awaitTrue("still collecting after the callback threw") { throwing.timeLimitMinutes(APP_A) == 9 }
     }
 

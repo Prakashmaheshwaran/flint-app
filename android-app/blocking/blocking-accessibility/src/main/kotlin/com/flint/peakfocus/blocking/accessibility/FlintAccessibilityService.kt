@@ -342,6 +342,7 @@ class FlintAccessibilityService : AccessibilityService() {
     // MARK: Enforcement surface (accessibility overlay window)
 
     private inner class AccessibilityOverlayHost : BlockScreenCoordinator.SurfaceHost {
+        private var mountedView: View? = null
         override fun attach(view: View): Boolean {
             val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
             val params = WindowManager.LayoutParams(
@@ -351,7 +352,7 @@ class FlintAccessibilityService : AccessibilityService() {
                 0,
                 PixelFormat.OPAQUE,
             )
-            return runCatching { wm.addView(view, params) }.isSuccess.also { if (it) overlayAttached = true }
+            return runCatching { wm.addView(view, params) }.isSuccess.also { if (it) { overlayAttached = true; mountedView = view } }
         }
 
         override fun detach(view: View) {
@@ -360,6 +361,18 @@ class FlintAccessibilityService : AccessibilityService() {
             }
             overlayAttached = false
             overlayWindowId = null
+            if (mountedView === view) mountedView = null
+        }
+
+        override fun setRecoveryHandoffFocus(enabled: Boolean) {
+            val view = mountedView ?: return
+            val old = view.layoutParams as? WindowManager.LayoutParams ?: return
+            val flags = if (enabled) old.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                else old.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+            if (flags == old.flags) return
+            val next = WindowManager.LayoutParams().apply { copyFrom(old); this.flags = flags }
+            runCatching { (getSystemService(Context.WINDOW_SERVICE) as WindowManager).updateViewLayout(view, next) }
+                .onFailure { if (!enabled) goHome() }
         }
 
         override fun goHome() {

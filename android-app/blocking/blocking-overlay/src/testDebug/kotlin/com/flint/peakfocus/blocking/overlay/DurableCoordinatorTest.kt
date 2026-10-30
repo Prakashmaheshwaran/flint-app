@@ -182,7 +182,7 @@ class DurableCoordinatorTest {
         } finally { BlockEventHooks.unregister(observer) }
     }
 
-    @Test fun PC_43_PC_45_committedPassEventCarriesItsReceiptScopeAndEndOnlyAfterAcknowledgement() = runBlocking {
+    @Test fun PC_43_PC_45_legacyPackageCallbackWithoutAFullPreviewCannotSpendOrEmitAcceptedHistory() = runBlocking {
         val committed = mutableListOf<List<Any?>>()
         var oldCalls = 0
         val observer = object : BlockEventHooks.Listener {
@@ -197,30 +197,24 @@ class DurableCoordinatorTest {
             val c = coordinator(focus, rules = listOf(rule(BreakLevel.HARDCORE)))
             val cause = ruleBlockCause(rule(BreakLevel.HARDCORE), now, 0)
             val id = GrantRequestId.issue(now)
-            val pending = async { c.requestEmergencyPass(pkg, cause, id) }
-            focus.started.await()
+            assertTrue(c.requestEmergencyPass(pkg, cause, id) is GrantResult.Unavailable)
             assertTrue(committed.isEmpty())
             assertTrue(events.isEmpty())
-            focus.release.complete(Unit)
-            assertTrue(pending.await() is GrantResult.Granted)
-            val receipt = focus.backing.state.snapshotOrNull()!!.exemptions.values.single()
-            assertEquals(listOf(listOf(receipt.requestId, setOf("rule"), receipt.untilEpochMs, now)), committed)
-            assertEquals(listOf("pass"), events)
+            assertFalse(focus.started.isCompleted)
+            assertTrue(focus.backing.state.snapshotOrNull()!!.exemptions.isEmpty())
             c.requestEmergencyPass(pkg, cause, id)
-            assertEquals(1, committed.size)
+            assertEquals(0, committed.size)
             assertEquals(0, oldCalls)
         } finally { BlockEventHooks.unregister(observer) }
     }
 
-    @Test fun aFailedPassKeepsTheShieldAndShowsFailureWithoutCallingHistory() = runBlocking {
+    @Test fun PC_47_aPassWithoutTheAtomicScopeBackendKeepsTheShieldAndOffersUnavailableState() = runBlocking {
         val focus = PausedFocus().apply { fail = true }
         val coordinator = coordinator(focus, rules = listOf(rule(BreakLevel.HARDCORE)))
         val cause = ruleBlockCause(rule(BreakLevel.HARDCORE), now, 0)
-        val pending = async { coordinator.requestEmergencyPass(pkg, cause, GrantRequestId.issue(now)) }
-        focus.started.await()
-        focus.release.complete(Unit)
-        assertTrue(pending.await() is GrantResult.Unavailable)
-        assertEquals(GrantStatus.FAILED, coordinator.screenState(pkg, null, cause, now).grantStatus)
+        assertTrue(coordinator.requestEmergencyPass(pkg, cause, GrantRequestId.issue(now)) is GrantResult.Unavailable)
+        assertFalse(focus.started.isCompleted)
+        assertEquals(GrantStatus.UNAVAILABLE, coordinator.screenState(pkg, null, cause, now).grantStatus)
         assertFalse(coordinator.canDismiss(pkg, cause))
         assertTrue(events.isEmpty())
     }
@@ -289,7 +283,7 @@ class DurableCoordinatorTest {
         assertEquals(2, focus.state.snapshotOrNull()!!.openCounts.opensFor(pkg))
     }
 
-    @Test fun aReadyPassLedgerRemainsUsableWhenConfigurationDomainsAreUnavailable() = runBlocking {
+    @Test fun PC_47_aReadyLegacyPassLedgerCannotStandInForAnUnreadableFullRecoveryScope() = runBlocking {
         val focus = InMemoryFocusStateStore()
         val rules = object : BlockRulesStore by InMemoryBlockRulesStore() {
             override val rulesState = flowOf<StorageState<List<BlockRule>>>(StorageState.Unavailable(StorageFailure.CORRUPT))
@@ -301,10 +295,10 @@ class DurableCoordinatorTest {
         val c = coordinator(focus, rules = listOf(rule(BreakLevel.HARDCORE)), limits = limits, configuredRules = rules)
         ActiveRulesHolder.publishState(ActiveRulesHolder.SOURCE_DATASTORE, StorageState.Unavailable(StorageFailure.CORRUPT))
         val cause = ruleBlockCause(rule(BreakLevel.HARDCORE), now, 0)
-        assertEquals(GrantStatus.READY, c.screenState(pkg, null, cause, now).grantStatus)
-        assertTrue(c.requestEmergencyPass(pkg, cause, GrantRequestId.issue(now)) is GrantResult.Granted)
-        assertTrue(c.canDismiss(pkg, cause))
-        assertEquals(now, focus.state.snapshotOrNull()!!.emergencyPass.usedAtEpochMs)
+        assertEquals(GrantStatus.UNAVAILABLE, c.screenState(pkg, null, cause, now).grantStatus)
+        assertTrue(c.requestEmergencyPass(pkg, cause, GrantRequestId.issue(now)) is GrantResult.Unavailable)
+        assertFalse(c.canDismiss(pkg, cause))
+        assertNull(focus.state.snapshotOrNull()!!.emergencyPass.usedAtEpochMs)
     }
 
     @Test fun aFailedSaveDoesNotLabelANewlyMountedSurfaceAsFailed() = runBlocking {
