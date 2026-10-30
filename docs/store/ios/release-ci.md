@@ -38,6 +38,16 @@ Debug build must fail. The injected authorization status/request closures used
 by the real provider are production implementation and are intentionally
 retained; the `AuthorizationPreview` class and preview launch arguments are not.
 
+Latest read-back example: [#219 head 6f5ffe8, run 41003684744](https://github.com/Prakashmaheshwaran/flint-app/actions/runs/41003684744)
+passed 1,223 native tests, Debug/unsigned Release, six-bundle manifest and fixture checks.
+[#223 head 91fcbd2](https://github.com/Prakashmaheshwaran/flint-app/actions/runs/41005111970)
+separately passed its standard gate; its [manual UI run](https://github.com/Prakashmaheshwaran/flint-app/actions/runs/41005146280)
+passed ten fixtures and eleven Insights cases. These are exact PR-source runs, not a
+signed-device or every-later-integration result. See the [API inventory](privacy-api-inventory.md)
+for #230's later `systemUptime` category closure. Its [head d45bf44 CI](https://github.com/Prakashmaheshwaran/flint-app/actions/runs/41010976702)
+passed with all six SystemBootTime 35F9.1 declarations and the extended verifier.
+Final signed-binary/API re-inventory remains required.
+
 This is a regression check for known fixture names and preview generators,
 not proof of all possible debug code or signed-device functionality. Add new
 fixture names to the scanner when introducing them. Human archive validation

@@ -29,45 +29,58 @@ and `group.com.flint.peakfocus`; the widget uses its declared App Group and does
 acquire enforcement authority. Shared logic lives in the local
 [FlintCore package](Packages/FlintCore).
 
-Local focus-session events drive Today, durable Complete and focus Insights. Screen Time
+Local focus-session events drive Today, durable Complete and focus Insights. A start or
+planned deadline alone is Unconfirmed, never a completed session/streak. Confidence-aware
+consumers discount uncertain gaps; durable typed ordinary-break history remains incomplete.
+Screen Time
 report data remains in the report extension and is not repurposed as a focus-history export.
 The [history contract](../docs/architecture/focus-history.md) defines totals, gaps,
 retention and unavailable-versus-zero behavior. Optional local reminders say the **planned**
 focus time ended; delivery does not prove completion or uninterrupted protection.
 
 Read-only widgets show observed status/next occurrence and local focus summaries only when
-their public producers provide valid data. Live Activity is opt-in and requires a finite,
+their merged host/monitor commit publishers provide valid data. Live Activity is opt-in and requires a finite,
 armed session. Missing/stale input is unavailable; tests and compiled widgets do not prove
 WidgetKit/ActivityKit delivery, Dynamic Island behavior or lock-screen privacy on hardware.
 
 ## Protection implementation and limits
 
 Merged session work adds registration-before-shield, logical timing for short sessions,
-monotonic same-boot timing, owned replacement/stop arbitration and persisted Harder waits.
+elapsed same-boot expiry, bounded reboot checkpoints, durable generation/start replay,
+owned replacement/stop arbitration and persisted Harder waits.
 Startup recovery and health distinguish saved, attempted, armed and observed state, using
 the actual observation time. Their [source/tests and PRs](../docs/acceptance/v1-capability-ledger.md#evidence-index)
 bound these claims.
 
 [ADR-012](../docs/architecture/protection-contract.md) defines Easy/Harder/Hardcore,
 ordinary breaks, timed Open credits and a rolling seven-day/global recovery pass.
-Adoption is tracked per cause/route in the ledger. A shared ledger or pure policy is not
-proof that every schedule, limit, shield or automation route has integrated it.
+Live mutation, global pass, scoped break and credit adapters are merged and tested;
+remaining pre-migration/no-anchor/first-use variants are listed in the ledger's
+[Open at v1 wind-down](../docs/acceptance/v1-capability-ledger.md#open-at-v1-wind-down).
+No source closure establishes signed-device enforcement.
 
-Current scope includes recurring weekday schedules, daily Time Limits, legacy Open Limits,
+Current scope includes recurring weekday schedules, daily Time Limits, explicit timed Open credits,
 saved groups/presets, schedule/Sleep Allow Lists, app-open PIN, Focus Filter and three
 Shortcut intents. Known boundaries at this checkpoint:
 
 - Future date-specific one-shot scheduling is absent; recurring later-week windows are
   distinct from arbitrary future dates. The Social detox preset has a 23:59–00:00 gap.
-- The Pomodoro intent starts its first focus round and saves cadence; full focus/rest
-  chaining is absent. Immediate Allow List sessions are not implemented.
-- Open Limits require bounded-credit/re-shield, overlap and corrupt-state acceptance.
-  Do not describe them as native DeviceActivity launch-count events.
+- The Pomodoro intent exposes one focus round; legacy cadence arguments neither chain
+  rounds nor overwrite the saved in-app cadence. Full focus/rest chaining and immediate
+  Allow List sessions are absent.
+- Open credits are enabled by [#189](https://github.com/Prakashmaheshwaran/flint-app/pull/189).
+  R-12 is source-complete, runtime **DEVICE-PENDING**, with a hard pre-release signed-device
+  PC-28..38 gate: killed-host 300 s expiry, midnight, re-registration and lock contention.
+  If it fails, revert `FlintOpenCredit.shieldAcceptanceEnabled` in one line and restore
+  fallback copy. These are explicit accepted grants, not DeviceActivity launch counts.
+  The separate R2p2-N03 first-use import defect remains open; the bounded-grant source
+  decision does not close that availability regression.
 - Settings → **Web & Safari** applies the Safari web-content filter during focus sessions
   (Block Now, Shortcuts/Pomodoro and Focus filters), and independently during schedules/Sleep
   when **Schedules and Sleep** is on. Choose adult-content filtering with extra block/allow
   domains or an allowed-sites-only list, plus an optional explicit-media restriction. Each
-  cause owns its store, so its end clears only its own settings; Time/Open Limits are excluded.
+  cause owns its store and frozen child policy, so its end clears only its own settings;
+  Time/Open Limits are excluded.
   Private Browsing and Clear History and Website Data lock as an iOS side effect while the
   filter is active. Other browsers are not filtered. Real Safari filtering, those side effects,
   cross-store composition and permission revocation remain device-unverified; the Simulator
@@ -77,11 +90,22 @@ Shortcut intents. Known boundaries at this checkpoint:
   Hardcore edits stay unsaved drafts until the commitment ends (no automatic edit is queued).
 - Focus/Shortcut starts share session checks. Easy Focus-off can end its owned session;
   strict finite commitments keep their stop rights and may require confirmation in Flint.
-- PIN is a UI privacy barrier, separate from Screen Time authority. Hardware recovery and
-  full VoiceOver traversal remain unverified.
-- iOS app-deletion restrictions are device-wide, require authorization, and must follow
-  the contract's explicit opt-in/finite-owner rules before being advertised. OS permission
-  revocation stays reachable; no device-lock guarantee follows from a setting assignment.
+- New/edited empty Allow Lists, including Sleep Full Assist without an allow group, are
+  refused. Legacy empty lists keep running with a needs-attention note. Phone, default
+  calling app, in-call UI and SOS under `.all(except:)` require signed-device acceptance;
+  the R-26 decision moves to option B if those screens are shielded.
+- PIN is a UI privacy barrier with minimal recovery reachable while locked. #223's exact
+  hosted fixtures pass at default/AX5; physical recovery and full VoiceOver remain unverified.
+- #226 wires default-off disclosed app-deletion consent, captured on eligible finite armed
+  Hardcore owners and applied by one derived writer. Pending off, overlapping owners,
+  positive global-pass release and legacy-store migration are tested. Legacy finite sessions
+  lose the old guard at the first successful upgrade reconcile; opt-in is not retroactive.
+  Corrupt owner data or an installing session may retain the guard beyond its end until
+  committed pass recovery (R08-08). Actual device-wide denial/release and OS revocation
+  remain signed-device gates.
+- #228 prevents unavailable-context break restoration from overwriting a stronger successor.
+  Simultaneously unreadable rule/session context can still defer repair; no physical
+  re-shield timing guarantee follows from the source fix.
 
 Opaque tokens, Always Allowed, Safari versus other browsers, finite registration capacity,
 late callbacks and unknown cross-reboot elapsed time are platform limits. Flint does not

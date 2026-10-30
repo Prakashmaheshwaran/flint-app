@@ -31,6 +31,11 @@ were checked 2026-10-28; the latter explicitly retains legacy DSL support in AGP
 - Glance/WorkManager constructs Room's `androidx.work.impl.WorkDatabase_Impl`
   reflectively. The exact generated class and public no-argument constructor are kept
   by `app/proguard-rules.pro`; do not replace this targeted rule with a broad keep.
+  #169 also keeps only `androidx.work.OverwritingInputMerger` and its public no-argument
+  constructor: actual installed R8 widget jobs failed when the older WorkManager consumer
+  rules retained the class without its reflected constructor. The repaired installed
+  release worker renders unavailable and opens Flint; this is separate from fixture
+  protected/history pixels and from physical launcher delivery.
   K126's earlier release startup failure and repaired
   [API 36 release smoke](https://github.com/Prakashmaheshwaran/flint-app/actions/runs/40778992967)
   are artifact-specific evidence, not proof of a later candidate or hardware delivery.
@@ -58,7 +63,8 @@ isolated self-instrumenting test APK before emulator boot. Its release mode
 (`FLINT_E2E_DISPOSABLE=1 FLINT_E2E_VARIANT=release AVD=emulator-N bash scripts/android-e2e.sh`)
 retains lane I's exact-boot, disposable-device and run-token grant cleanup guards.
 It installs the release app directly, hashes both installed APKs against their
-build inputs, then selects only the UI-authored rule/persistence/shield/break test.
+build inputs, then selects the UI-authored rule/persistence/shield/break test and the installed
+widget-worker unavailable/Open Flint test.
 It never invokes `connectedDebugAndroidTest`, which would install the debug app,
 and excludes the budget test's debug-only receiver. The selected case grants
 Accessibility through owned instrumentation setup; manual disclosure/system-grant
@@ -66,7 +72,7 @@ flow and OEM testing remain separate acceptance.
 
 The runner retains source SHA, installed APKs/hashes, package metadata, raw
 instrumentation output, screenshots, hierarchy, logcat and mapping artifacts.
-Strict result parsing requires the exact single test to start and pass, a
+Strict result parsing requires both exact selected tests to start and pass, a
 successful runner summary and terminal code; adb shell exit zero alone cannot
 certify runtime. Missing, failed, ignored, skipped or crashed tests fail the gate.
 No assertion retries are performed. Mapping/runtime evidence retention is 90 days;

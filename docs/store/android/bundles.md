@@ -41,3 +41,26 @@ existing `scripts/check-release-version.sh` policy: versionName equals tag witho
 `v`, versionCode strictly increases over the previous reachable release, iOS
 marketing version matches the numeric core, and CHANGELOG includes that version.
 No new release/tag/version is chosen by this packaging change.
+
+## Read-back artifact snapshot (2026-10-30)
+
+J2 inspected the actual installed minified APK from
+[#173 release smoke 41007079662](https://github.com/Prakashmaheshwaran/flint-app/actions/runs/41007079662),
+artifact `12956496804`, tested merge `81757ab0a6f097f475760e835fbf1d7d1e3df9ea`
+(parents `e4c5fd5` and reviewed head `065dc9d`). The APK is 3,290,609 bytes,
+SHA-256 `bff13c87417ea222c2aefe52fe1df33f57aeece1b7502b7690c06f45a37a7c26`.
+SDK manifest inspection confirms minSdk 23 / targetSdk 36; the local-first archive
+scan passes. `apksigner verify` succeeds with an Android Debug certificate, so this is
+development signing, not owner/Play distribution proof.
+
+Its generated inventory contains **82 dependency components and two fonts**; those are
+counts for this artifact only. Its embedded policy matches its own inventory hash
+`8d28cd1f4730e14b01ed914eccb9a954753fd7df6b71a3125a9c4f8c101eb4d9`.
+This refresh changes the canonical policy, so that APK is not the final policy/package
+attestation. Regenerate and inspect legal assets, APK/AAB, signer, mapping and hashes
+from the exact selected distribution source; never copy these prior hashes as final.
+
+The existing two selected smoke cases cover authored rule/restart/shield/break and the
+real widget worker's unavailable/Open Flint behavior. The retained unavailable screenshot
+agrees with its hierarchy; protected/history display fixtures are a separate evidence
+slice. No new emulator/device run, Play split/update or publication was performed by J2.

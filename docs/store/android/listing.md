@@ -36,12 +36,15 @@ reboot/OEM survival, durable temporary access or full browser coverage claims
 until the corresponding exact-candidate evidence exists. Local focus history,
 streaks and Insights use merged F event sources, with a bounded hosted Timer E2E;
 final public screenshots/claims still need genuine release-device acceptance and
-must not imply complete pass/coverage/interception producers. Do not claim an uninstall lock,
+must not imply complete coverage/interception/operation history. Global pass and explicit
+credits are now wired (#175/#178); source and bounded shield smoke do not prove full
+60-minute/300-second hardware expiry, midnight or all overlap variants. Do not claim an uninstall lock,
 parental-control/enterprise status, disability-assistance tool status, Google
 approval, universal browser support or data recovery/cloud backup.
 
-Widget and ongoing-session code merged in PR126; public delivery claims remain pending
-evidence. Describe observation times and planned-end estimates accurately; do not
+Widget and ongoing-session code now consumes live publishers (#169/#206). Installed
+minified smoke proves unavailable/Open Flint; protected/history/notification images are
+labelled fixtures, with real launcher/OEM/permission-transition delivery still pending. Describe observation times and planned-end estimates accurately; do not
 imply that a cached widget proves current protection or completed focus time.
 The local F history schema, 400-day retention target and clear-history limits are now
 documented in [Data safety](data-safety.md). Hosted Timer E2E proves a bounded actual
@@ -50,6 +53,14 @@ completion/early-end flow; full hardware/history/outbox claims remain separate.
 Lane C's Settings/uninstall/disable interception removal landed in PR105. Verify
 that source and E4's matching disclosure are present in the exact submission
 build; demonstrate normal recovery controls before using this copy.
+
+#225's saved-zone trusted Time days/retained usage are merged and tested, with real-device
+UsageStats precision and OEM lifecycle still unverified. The new measurement-unavailable
+reason uses generic degraded UI/glance fallback; no dedicated copy implementation is claimed.
+
+Force-stop can unbind Accessibility; #173/#229 refuse to arm a protected Timer without a live
+detector. Keep this limitation and the ledger's open wind-down findings in review/demo
+explanations. Neither force-stop survival nor universal background protection is promised.
 
 ## Owner asset and form checklist
 

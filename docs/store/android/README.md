@@ -35,7 +35,8 @@ covers account/signing, final artifact/data inventory, hardware acceptance, publ
 assets/declarations, upload/review and publication. The platform files above provide the
 technical inputs; none of their unchecked tasks is a completion claim.
 
-Merged F history, K glance/notification code and C139 editor state are inventoried in
+Merged global recovery/timed-credit ledgers, strict editor state, F confidence/history
+outboxes and live glance/service publication are inventoried in
 [data-safety.md](data-safety.md). Use the [capability ledger](../../acceptance/v1-capability-ledger.md)
 for current live integration boundaries and the [shared device plan](../../acceptance/device-acceptance-plan.md)
 for actual results. This package remains blocked on final artifact and physical/OEM proof,

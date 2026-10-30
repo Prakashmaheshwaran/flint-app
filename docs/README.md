@@ -8,7 +8,8 @@ that a capability works on hardware.
 ## Acceptance and release
 
 - [Capability ledger](acceptance/v1-capability-ledger.md): every original inventory capability
-  per platform, source/PR/run links, tested scope, gaps and PC-case mappings.
+  per platform, final source/PR/run links, all eight status counts, PC assertion levels,
+  [open wind-down findings](acceptance/v1-capability-ledger.md#open-at-v1-wind-down) and hardware/store gates.
 - [Physical-device acceptance](acceptance/device-acceptance-plan.md): one risk-ordered runnable
   checklist, shared result fields and links to platform details. No device pass is claimed.
 - [Store package index](store/README.md): iOS/Android drafts and the single list of human-owned
@@ -17,6 +18,9 @@ that a capability works on hardware.
   document is not a deployed public URL or completed store declaration.
 - [v1 build plan](roadmap/v1-build-plan.md): integration lanes and product boundaries.
 - [UX audit](ux/v1-screen-audit.md): dated E01–E16 findings and ownership, preserved as history.
+- [Red-team verification](verification/adr-012-redteam-verification-2026-10-29.md): frozen
+  R2 pass-1 source verdicts; [pass 2](verification/adr-012-redteam-verification-pass2-2026-10-30.md)
+  records the later frozen audit. The ledger reconciles subsequent wind-down fixes.
 - [Verification](verification/): dated artifacts with exact source/platform boundaries.
   [Android hosted E2E](verification/android-e2e.md) and
   [real Timer history](verification/f-android-history-2026-10-28/README.md) have different scopes.
