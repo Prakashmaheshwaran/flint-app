@@ -287,6 +287,8 @@ final class FlintRuleArbiter {
                         // The original recurring template already reached its next natural
                         // occurrence. Keep that finite snapshot and retry only at its own end,
                         // never weaken a newly active Hardcore occurrence on a later foreground.
+                        let capture = retained.breakLevel == .hardcore && self.env.captureRemovalGuard(self.env.defaults)
+                        retained.protection?.removalGuard = capture
                         retained.protection?.occurrence = next
                         var retry = FlintQueuedRuleChange(action: queue.action, baseRevision: queue.baseRevision,
                             window: next, snapshot: queue.snapshot, fingerprint: queue.fingerprint, batchID: queue.batchID)
@@ -330,6 +332,10 @@ final class FlintRuleArbiter {
                       (try? next.fingerprint(action: queue.action.rawValue)) == queue.fingerprint else { return failed() }
                 next.protection?.timeAnchor = old.protection?.timeAnchor
                 let nextOccurrence = next.templateOccurrence(at: FlintRuleOccurrenceClock.date(for: old, clock: self.env.clock))
+                let capture = nextOccurrence.map { _ in
+                    next.breakLevel == .hardcore && self.env.captureRemovalGuard(self.env.defaults)
+                }
+                next.protection?.removalGuard = capture
                 next.protection?.occurrence = nextOccurrence
                 guard self.prepare(next, replacing: old) else { return failed() }
                 prepared.append(next)
@@ -516,6 +522,11 @@ final class FlintRuleArbiter {
                 end: max(queued.window.end, metadata.occurrence?.end ?? queued.window.end)) else { return nil }
             metadata.queuedChange = preserved
         }
+        if metadata.occurrence?.identity != old?.protection?.occurrence?.identity {
+            metadata.removalGuard = metadata.occurrence.map { _ in
+                next.breakLevel == .hardcore && env.captureRemovalGuard(env.defaults)
+            }
+        }
         next.protection = metadata
         FlintRuleOccurrenceClock.observe(&next, clock: env.clock)
         return next.validationIssue == nil ? next : nil
@@ -616,6 +627,7 @@ final class FlintRuleArbiter {
     }
     private func notify() {
         env.ordinaryPolicyDidChange()
+        env.reconcileRemovalGuard()
         FlintRuleStoreLock.afterUnlock(environment: env) {
             self.env.publishStatus()
             NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)

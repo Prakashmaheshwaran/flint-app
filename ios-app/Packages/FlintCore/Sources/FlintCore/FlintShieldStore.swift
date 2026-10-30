@@ -82,21 +82,16 @@ public final class FlintShieldStore {
         }
     }
 
-    /// The Hardcore **uninstall guard**: while set, iOS blocks deleting apps (device-wide —
-    /// Apple's setting isn't per-app), including Flint itself, which is otherwise the one-tap
-    /// escape from a Hardcore block. `false` writes nil (this store's "don't assert"
-    /// convention), so a non-Hardcore start can never leave a stale guard behind. Lives on
-    /// this store so `clear()` / `clearAllSettings()` drops it together with the shield on
-    /// every end path. See `FlintUninstallGuard` for the when.
-    public func setDenyAppRemoval(_ deny: Bool) {
-        _ = FlintSessionController().withTransition {
-            guard FlintPassRecoveryGate.read().permitsApplication else { return }
-            store.application.denyAppRemoval = deny ? true : nil
-        }
-    }
-
+    /// Clear all session-owned keys, including historical allow-list and Safari settings.
+    /// The old denyAppRemoval value is retired ONLY by the validated derived migration;
+    /// a whole-store clear here would release it even when another owner's read failed.
     public func clear() {
-        store.clearAllSettings()
+        store.shield.applications = nil
+        store.shield.applicationCategories = nil
+        store.shield.webDomains = nil
+        store.shield.webDomainCategories = nil
+        store.webContent.blockedByFilter = nil
+        store.media.denyExplicitContent = nil
     }
 }
 #endif

@@ -122,6 +122,7 @@ final class FlintRemovalGuardTests: XCTestCase {
                             logicalEnd: nil, timeKnown: false, passRecovered: false)
         let unreadable = [unknown, owner(registration: .unavailable), owner(recovered: nil)]
         XCTAssertEqual(Guard.decide(owners: nil, clock: clock()), .keep)
+        XCTAssertEqual(Guard.decide(owners: [], clock: clock()), .release, "Only a complete positive empty inventory releases")
         XCTAssertEqual(Guard.decidePreferenceChange(to: false, owners: nil, clock: clock()), .deny(.stateUnavailable))
         for item in unreadable {
             for owners in [[item], [owner(), item], [item, owner()]] {

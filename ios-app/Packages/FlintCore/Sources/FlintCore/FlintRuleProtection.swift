@@ -36,6 +36,8 @@ public struct FlintRuleProtection: Codable, Equatable, Sendable {
     public var usesLegacyActivityName: Bool
     public var requiresTierReview: Bool
     public var occurrence: FlintRuleWindow?
+    /// Captured for this occurrence only. Legacy absence is never filled from a later opt-in.
+    public var removalGuard: Bool?
     /// Optional for pre-clock records. The first serialized observation establishes it.
     public var timeAnchor: FlintRuleTimeAnchor?
     public var carrierRepair: FlintRuleCarrierRepair?
@@ -56,7 +58,7 @@ public struct FlintRuleProtection: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case incarnation, revision, contractVersion, activityRevision, timeZoneID, legacyRightsUntil
-        case usesLegacyActivityName, requiresTierReview, occurrence, timeAnchor, carrierRepair, queuedChange
+        case usesLegacyActivityName, requiresTierReview, occurrence, removalGuard, timeAnchor, carrierRepair, queuedChange
     }
 
     public init(from decoder: Decoder) throws {
@@ -70,6 +72,7 @@ public struct FlintRuleProtection: Codable, Equatable, Sendable {
         usesLegacyActivityName = try values.decode(Bool.self, forKey: .usesLegacyActivityName)
         requiresTierReview = try values.decode(Bool.self, forKey: .requiresTierReview)
         occurrence = try values.decodeIfPresent(FlintRuleWindow.self, forKey: .occurrence)
+        removalGuard = try values.decodeIfPresent(Bool.self, forKey: .removalGuard)
         queuedChange = try values.decodeIfPresent(FlintQueuedRuleChange.self, forKey: .queuedChange)
         // Policy decoding stays strict. Bookkeeping cannot disable the recovery surface;
         // retain an unavailable sentinel so absence is still distinguishable from legacy.

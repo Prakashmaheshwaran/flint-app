@@ -64,7 +64,14 @@ extension FlintProtectionReconciler {
             FlintOpenLimitsController().reload(reapplyShields: reapplyShields)
             return group.loadArmingHealth().domains["openLimits"] ?? missingReport("openLimits")
         },
-        FlintWebProtectionLayer()
+        FlintWebProtectionLayer(),
+        FlintLiveProtectionLayer(domain: "removalGuard") { _ in
+            let report = FlintRemovalGuardReconciler.reconcile()
+            return .init(enabled: report.decision == .deny ? 1 : 0, attempted: report.decision == .keep ? 0 : 1,
+                armed: report.applied && report.decision == .deny ? 1 : 0,
+                failures: report.applied && report.migrated ? [] : [.init(activityName: "removalGuard",
+                    reason: "Removal guard state could not be applied. The previous setting was retained.")])
+        }
     ], prepare: {
         // Establish positive rule initialization before session/pass startup creates its own
         // protection evidence. Existing installations and unavailable domains are untouched.

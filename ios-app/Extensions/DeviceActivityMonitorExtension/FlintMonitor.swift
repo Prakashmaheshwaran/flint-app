@@ -24,6 +24,7 @@ final class FlintMonitor: DeviceActivityMonitor {
 
     override func intervalDidStart(for activity: DeviceActivityName) {
         super.intervalDidStart(for: activity)
+        defer { FlintRemovalGuardReconciler.reconcile() }
         guard FlintEmergencyPassController.prepareForMonitorCallback(activity: activity.rawValue) else { return }
         if FlintOrdinaryBreaks.isCarrier(activity.rawValue) {
             FlintOrdinaryBreaks.reconcile(activity: activity.rawValue, callback: .start)
@@ -48,6 +49,7 @@ final class FlintMonitor: DeviceActivityMonitor {
 
     override func intervalDidEnd(for activity: DeviceActivityName) {
         super.intervalDidEnd(for: activity)
+        defer { FlintRemovalGuardReconciler.reconcile() }
         guard FlintEmergencyPassController.prepareForMonitorCallback(activity: activity.rawValue) else {
             if FlintSessionController.isSessionActivity(activity.rawValue) {
                 FlintSessionController().handleMonitorEvent(.intervalDidEnd, activity: activity.rawValue)
@@ -67,8 +69,7 @@ final class FlintMonitor: DeviceActivityMonitor {
             return
         }
         if FlintSessionController.isSessionActivity(activity.rawValue) {
-            // Natural expiry with the app closed/killed: ending the session clears its store,
-            // which drops the shield AND the Hardcore uninstall guard living on it.
+            // Session expiry clears its own shield; the derived guard rechecks every owner.
             FlintSessionController().handleMonitorEvent(.intervalDidEnd, activity: activity.rawValue)
             return // the session controller publishes its own changes
         } else {
@@ -81,6 +82,7 @@ final class FlintMonitor: DeviceActivityMonitor {
     /// end inside the padded interval DeviceActivity requires.
     override func intervalWillEndWarning(for activity: DeviceActivityName) {
         super.intervalWillEndWarning(for: activity)
+        defer { FlintRemovalGuardReconciler.reconcile() }
         guard FlintEmergencyPassController.prepareForMonitorCallback(activity: activity.rawValue) else {
             if FlintSessionController.isSessionActivity(activity.rawValue) {
                 FlintSessionController().handleMonitorEvent(.intervalWillEndWarning, activity: activity.rawValue)
@@ -104,6 +106,7 @@ final class FlintMonitor: DeviceActivityMonitor {
         activity: DeviceActivityName
     ) {
         super.eventDidReachThreshold(event, activity: activity)
+        defer { FlintRemovalGuardReconciler.reconcile() }
         // Preserve exact positive usage evidence before any transition-lock/replay early return.
         _ = FlintEmergencyPassController().noteTimeLimitThreshold(activity: activity.rawValue, event: event.rawValue)
         guard FlintEmergencyPassController.prepareForMonitorCallback(activity: activity.rawValue) else { return }

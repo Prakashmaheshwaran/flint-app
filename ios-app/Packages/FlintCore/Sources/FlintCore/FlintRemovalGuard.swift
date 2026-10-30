@@ -1,7 +1,7 @@
 import Foundation
 
-/// R-08 phase 1: pure decisions only. No ManagedSettings writes, controller hooks, or UI.
-/// The phase-2 adapter must supply the complete owner inventory, not only a callback's
+/// Pure ownership decisions; the reconciler alone owns ManagedSettings writes.
+/// The adapter must supply the complete owner inventory, not only a callback's
 /// owner. nil inventory and any unreadable owner return keep, even beside an eligible
 /// owner: incomplete state authorizes neither a new denial nor a release (ADR-012 §8).
 public enum FlintRemovalGuard {

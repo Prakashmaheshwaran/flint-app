@@ -84,7 +84,12 @@ extension FlintEmergencyPassEnvironment {
                 }
                 for name in names {
                     guard FlintPassRecoveryGate.read().isRecovering else { throw FlintEmergencyPassError.applying }
-                    ManagedSettingsStore(named: .init(name)).clearAllSettings()
+                    if name == "flint" { FlintShieldStore().clear() }
+                    else { ManagedSettingsStore(named: .init(name)).clearAllSettings() }
+                }
+                let guardReport = FlintRemovalGuardReconciler.reconcile()
+                guard guardReport.decision == .release, guardReport.applied, guardReport.migrated else {
+                    throw FlintEmergencyPassError.applying
                 }
                 if case let .suspended(until) = FlintPassRecoveryGate.read(), let group = FlintGroupStore() {
                     var health = group.loadArmingHealth()
@@ -97,6 +102,7 @@ extension FlintEmergencyPassEnvironment {
                 }
             }, resume: { state, now in
                 try FlintEmergencyPassRuleEffects.resume(state: state, at: now)
+                _ = FlintRemovalGuardReconciler.reconcile()
             }, disable: { try FlintEmergencyPassRuleEffects.disable($0) },
             emit: { recovery in
                 FlintSessionLifecycle.didUsePass(operationID: recovery.operationID,

@@ -1,6 +1,6 @@
 import Foundation
 
-/// R-08 phase 1: preference storage only, not wired into Settings or enforcement.
+/// Disclosed intent for future commitments, shared by Settings and capture boundaries.
 /// The off fallback is ONLY for new captures. Existing owners use their frozen optional
 /// removalGuard field, never a fresh preference read (ADR-012 §10/12, PC-79).
 public struct FlintRemovalGuardPreference: Codable, Equatable, Sendable {
@@ -12,16 +12,22 @@ public struct FlintRemovalGuardPreference: Codable, Equatable, Sendable {
     public let enabled: Bool
     public let disclosedAt: Date?
     public let disclosureVersion: Int?
+    /// A display estimate, never expiry authority. Existing captures retain their rights;
+    /// new commitments capture off immediately so they cannot extend a pending off request.
+    /// Reconciliation finishes the off only when the complete owner inventory permits it.
+    public let deferredOffUntil: Date?
 
-    public init(enabled: Bool = false, disclosedAt: Date? = nil, disclosureVersion: Int? = nil) {
+    public init(enabled: Bool = false, disclosedAt: Date? = nil, disclosureVersion: Int? = nil,
+                deferredOffUntil: Date? = nil) {
         version = Self.currentVersion
         self.enabled = enabled
         self.disclosedAt = disclosedAt
         self.disclosureVersion = disclosureVersion
+        self.deferredOffUntil = deferredOffUntil
     }
 
     public enum Error: Swift.Error, Equatable { case invalid, unavailable, readBackFailed }
-    private enum CodingKeys: String, CodingKey { case version, enabled, disclosedAt, disclosureVersion }
+    private enum CodingKeys: String, CodingKey { case version, enabled, disclosedAt, disclosureVersion, deferredOffUntil }
     private static let disclosureContext = CodingUserInfoKey(rawValue: "FlintRemovalGuardPreference.disclosureVersion")!
 
     public init(from decoder: Decoder) throws {
@@ -34,14 +40,19 @@ public struct FlintRemovalGuardPreference: Codable, Equatable, Sendable {
         // Future disclosure semantics are unknown even on an off record; preserve them.
         if let disclosure, disclosure < 0 || disclosure > current { throw Error.invalid }
         // Old off records with incomplete metadata are readable off, not a permanent
-        // storage error. Preserve bytes on load; an explicit save writes canonical JSON.
+        // storage error. These decoded values are canonicalized; original bytes survive only
+        // while no explicit save is made. The next explicit save writes canonical JSON.
         disclosedAt = !enabled && (date == nil || disclosure == nil) ? nil : date
         disclosureVersion = !enabled && (date == nil || disclosure == nil) ? nil : disclosure
+        deferredOffUntil = try values.decodeIfPresent(Date.self, forKey: .deferredOffUntil)
         guard isValid(currentDisclosureVersion: current) else { throw Error.invalid }
     }
 
     private func isValid(currentDisclosureVersion: Int) -> Bool {
         guard version == Self.currentVersion, currentDisclosureVersion > 0 else { return false }
+        if let deferredOffUntil {
+            guard enabled, deferredOffUntil.timeIntervalSince1970.isFinite else { return false }
+        }
         if let disclosedAt {
             guard let disclosureVersion else { return false }
             return disclosedAt.timeIntervalSince1970.isFinite && disclosureVersion >= 0 &&
@@ -70,13 +81,14 @@ public struct FlintRemovalGuardPreference: Codable, Equatable, Sendable {
     public enum ReadResult: Equatable, Sendable {
         /// Older disclosure is readable stale consent, off for new captures until accepted
         /// again. The context is injectable so a version bump is covered before shipping.
-        case value(FlintRemovalGuardPreference, currentDisclosureVersion: Int = FlintRemovalGuardPreference.currentDisclosureVersion)
+        case value(FlintRemovalGuardPreference, currentDisclosureVersion: Int)
         case absent
         case unavailable
 
         public var captureForNewCommitment: Bool {
             guard case let .value(value, current) = self else { return false }
-            return value.isValid(currentDisclosureVersion: current) && value.enabled && value.disclosureVersion == current
+            return value.isValid(currentDisclosureVersion: current) && value.enabled
+                && value.deferredOffUntil == nil && value.disclosureVersion == current
         }
     }
 
@@ -98,6 +110,10 @@ public struct FlintRemovalGuardPreference: Codable, Equatable, Sendable {
 
         public init?(suiteName: String = FlintGroupStore.appGroupID) {
             guard let defaults = UserDefaults(suiteName: suiteName) else { return nil }
+            self.init(defaults: defaults)
+        }
+
+        public init(defaults: UserDefaults) {
             self.init(read: {
                 guard defaults.synchronize() else { throw Error.unavailable }
                 guard let object = defaults.object(forKey: FlintRemovalGuardPreference.key) else { return nil }
