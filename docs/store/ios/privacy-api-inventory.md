@@ -1,6 +1,6 @@
 # iOS privacy manifest inventory
 
-Source inventory refreshed 2026-10-30 at `ce441b60f5cfd5d6680f9c532e977757cd3d9cdb`.
+Source inventory refreshed 2026-10-30 at `6f1170ba9442cfc04c766892bd8e83ae775d2616`.
 Re-audit after adding storage, networking, SDKs or
 required-reason APIs. These declarations describe Flint code; they do not certify
 Apple account disclosures or signed-device behavior.
@@ -27,7 +27,11 @@ and the `flint.ledger.initializedAt` marker. Retained-store receipt state uses
 separate from focus-history clearing; global recovery, explicit credits, scoped breaks, generation/tombstone/start replay,
 trusted rule/credit clocks and Safari authority snapshots are now wired in source. Their
 local archives/frozen selections/operation outboxes remain separate from focus-history
-clearing. No source integration establishes physical-device delivery. Private reminder preferences are distinct from OS notification
+clearing. #226 additionally stores captured removal consent/pending off under
+`flint.removalGuard.preference` and the legacy migration marker
+`flint.removalGuard.sessionStoreMigration.v1` in shared defaults; these are local
+protection bookkeeping, not history deletion. No source integration establishes
+physical-device delivery. Private reminder preferences are distinct from OS notification
 authorization, and Live Activity defaults off. These purposes do not add a manifest
 category beyond the declarations above.
 The report's `ActivitySummary`, `TotalActivityReport` and `TotalActivityView`
@@ -112,22 +116,22 @@ and its [official DocC data](https://developer.apple.com/tutorials/data/document
 those value sections, so it is insufficient by itself for checking the list.
 Recheck the final signed archive and Apple's privacy report before upload.
 
-### New lock-deadline API gate (2026-10-30)
+### Lock-deadline declaration source closure (2026-10-30)
 
-The current production [rule lock](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintRuleStoreLock.swift)
-and [session transition lock](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintSessionTransitionLock.swift)
-call `ProcessInfo.processInfo.systemUptime` to bound local lock acquisition. This is a
-listed SystemBootTime API, unlike the separate B2 `clock_gettime_nsec_np`/`sysctlbyname`
-source-to-list inference above. The six source manifests currently contain UserDefaults
-and FileTimestamp only: the old inventory and current equality verifier do not establish
-complete declarations for these later calls.
+J2's final inventory found listed `ProcessInfo.processInfo.systemUptime` calls in the
+[rule lock](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintRuleStoreLock.swift)
+and [session transition lock](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintSessionTransitionLock.swift).
+The coordinator's merged [#230](https://github.com/Prakashmaheshwaran/flint-app/pull/230)
+adds SystemBootTime `35F9.1` to all six manifests and extends the built-bundle verifier;
+[exact head d45bf44 CI](https://github.com/Prakashmaheshwaran/flint-app/actions/runs/41010976702)
+passed Debug/tests and unsigned Release/privacy/fixture gates. Final source plist reads
+confirm the declarations in all six bundles. This closes the source gap discovered in
+the bulk refresh; J2 changed no manifests or verifier code.
 
-Apple's [official category/reason data](https://developer.apple.com/tutorials/data/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitype.json),
-re-read 2026-10-30, lists `systemUptime`; `35F9.1` covers local elapsed-event/timer uses.
-The lock-deadline use is a candidate match, requiring source/binary and declaration
-review in every retaining bundle before release. Do not claim this docs-only refresh
-added a manifest reason or inspected a final signed archive. The gap was routed to the
-coordinator; its final disposition belongs in the ledger.
+Apple's [official category/reason data](https://developer.apple.com/tutorials/data/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitype.json)
+was re-read 2026-10-30: the API is listed and the local elapsed-wait purpose is covered
+by the declared reason. The separate B2 clock/sysctl analysis is unchanged. These
+source/unsigned checks do not replace a final signed-archive API/binary re-inventory.
 
 ## Collection and tracking
 

@@ -1,7 +1,7 @@
 # Flint iOS review notes and device review script — draft
 
 Prepared 2026-10-28; lane J final source refresh 2026-10-30 at `integration/v1`
-`ce441b60f5cfd5d6680f9c532e977757cd3d9cdb`.
+`6f1170ba9442cfc04c766892bd8e83ae775d2616`.
 Original D6 baseline was `fa190e9df96f61c13ea651ee39cae6f68057f0c6`. Companion:
 [store metadata, privacy justification, age-rating rationale, and shot-list](store-package.md).
 No Apple account was accessed, no entitlement request was submitted, and no
@@ -16,9 +16,9 @@ The R-steps below are platform review detail, not a second set of completed resu
 status publication are merged. R-12 Open acceptance is enabled but signed-device PC-28..38
 (killed-host 300 s expiry, midnight, re-registration, lock contention) is a hard pre-release
 gate, with a one-line flag revert plus fallback shield copy on failure. R-26 calling/
-in-call/SOS under `.all(except:)`, open wind-down red-team variants, separate deletion
-consent/derived-owner runtime, the SystemBootTime manifest gap and in-app policy route
-remain gates. All R-steps below remain unrun; source/fixture results do not complete them.
+in-call/SOS under `.all(except:)`, open wind-down red-team variants, corrupt/installing-owner
+guard retention R08-08 and the in-app policy route remain gates. #226 removal-consent runtime
+and #230 all-six SystemBootTime declarations/verifier are merged; signed validation remains. All R-steps below remain unrun; source/fixture results do not complete them.
 
 ## Before these notes can be submitted
 
@@ -29,9 +29,9 @@ remain gates. All R-steps below remain unrun; source/fixture results do not comp
   Android evidence is not a substitute for iOS physical tests.
 - [ ] Lane F's real local-event history/Insights evidence is linked; final UI and
   listing make only supported history/completion/report claims.
-- [ ] Resolve the [SystemBootTime lock-deadline API inventory](privacy-api-inventory.md)
-  against the actual final source/binaries and manifests; existing CI equality checks
-  do not prove category completeness.
+- [ ] Re-inventory [required-reason APIs](privacy-api-inventory.md) in the final signed
+  archive, including #230's SystemBootTime 35F9.1 declarations in all six bundles;
+  unsigned CI is source/package evidence only.
 - [ ] The final Release archive is inspected for all six shipping bundles,
   required-reason privacy manifests, AppIcon/resources, correct version/build,
   absence of DEBUG preview fixtures, and distribution-signed entitlements.
@@ -189,6 +189,10 @@ unproven claim that withdrawal instantly clears every restriction.
 Source: [derived guard policy](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintRemovalGuard.swift),
 [pass implementation](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintEmergencyPassController.swift),
 [app PIN](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintPIN.swift).
+#226 source includes default-off captured consent, pending-off/overlap/migration behavior;
+legacy finite sessions lose the old guard on successful upgrade reconcile, with no retroactive
+capture. R08-08 must observe corrupt/installing-owner retention beyond the finite end and
+positively committed pass release; no physical `denyAppRemoval` behavior has been proved.
 
 ### R6 — Every additional enforcement claim
 

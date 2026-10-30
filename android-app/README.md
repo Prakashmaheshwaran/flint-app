@@ -51,8 +51,10 @@ those green runs nor these historical observations establish low-end/OEM resilie
 
 Same-boot measured clock discrepancies cannot be treated as a clock-edit veto. Durable
 grant receipts bind access to the boot and preserve consumption; process restart and reboot
-are distinct. Persisted quota-zone/reset and the full ADR-012 migration/runtime policy must
-be checked in the ledger. Unmeasured clock changes across reboot remain uncertain.
+are distinct. #225 adds saved-zone Time days, trusted reset and durable max(OS, observed elapsed)
+usage floors on both paths; clock/boot/query loss cannot refill the recorded balance.
+New process/visit gaps are not charged as invented downtime. Wider migration/lifecycle
+work is parked in #180/#186/#222. The ledger records exact evidence and accepted limits. Unmeasured clock changes across reboot remain uncertain.
 
 ## Sessions, rules and local outcomes
 
@@ -67,8 +69,10 @@ per-Time-Limit tiers and new-versus-legacy Timer exit rights. Its source/tests d
 prove every platform outcome. #156 consumes saved Time-Limit tiers; #175/#205 wire
 rolling-seven-day/global 60-minute recovery; #160/#178 wire explicit five-minute credits
 and durable per-target quota/import on both detectors, without charging foreground entry.
-R-16 legacy Harder friction, R2p2-N01 Time-Limit/credit freshness and the remaining daily
-reset/migration gates are listed in the ledger.
+R-16 imported Harder friction and R2p2-N01 Time-Limit/credit freshness remain open;
+#225's trusted reset does not close the latter stale-input race. The new
+`time-limit-measurement-unavailable` reason currently shows generic degraded UI/glance
+fallback; dedicated copy was not dispatched.
 Legacy Timer hold-to-end evidence remains dated; the ledger keeps the two contracts distinct.
 Arbitrary future date-specific schedules, repeated Pomodoro chains, Timer Allow List/sites,
 Android automation, browser private-mode/history lockdown and app-open PIN are absent at
@@ -81,8 +85,9 @@ non-focus gaps; usage rankings stay separate. A
 [hosted real five-minute Timer run](../docs/verification/f-android-history-2026-10-28/README.md)
 proves completion/early-end persistence and presentation with blocking off. It does not prove
 all measured intercepted-open/coverage producers or history-clear UI. #165/#167 add
-durable Timer/pass/break outbox projection and #217 adds owner time confidence. Duplicate
-terminal arbitration and complete operation history retain their ledger boundaries.
+durable Timer/pass/break outbox projection and #217 adds owner time confidence. #227 now arbitrates new raw terminals under the history lock, preferring explicit owner/
+app outcomes and their plan; nine hosted captures have at most one terminal per session.
+Old duplicate files remain readable; complete operation history is still not claimed.
 
 Optional planned-focus-end reminders use an inexact alarm and the `focus_sessions`
 **Focus end reminders** channel. Read-only Glance widgets and optional Path A ongoing status

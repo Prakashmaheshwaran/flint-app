@@ -36,7 +36,8 @@ separate authorization; completing the repository work does not perform these ac
   but signed-device PC-28..38 is a hard gate (killed-host 300 s expiry, midnight,
   re-registration, lock contention; one-line flag revert plus fallback copy if it fails).
   R-26 calling/in-call/SOS under `.all(except:)` is also device-pending. Resolve the open
-  wind-down findings and iOS SystemBootTime manifest gap before final artifact acceptance.
+  wind-down findings before final artifact acceptance. #230 closes the SystemBootTime
+  declaration/verifier source gap; final signed-archive API review stays open.
 - [ ] Complete [physical-device acceptance](../acceptance/device-acceptance-plan.md), beginning
   with emergency/recovery safety, Hardcore rights and global pass/bounded access. Record
   unsupported browsers/OEMs, clock uncertainty and observed OS delivery latency.
@@ -47,9 +48,9 @@ separate authorization; completing the repository work does not perform these ac
 - [ ] **Apple artifact:** configure ignored private signing files, increment coordinated build,
   archive/export the signed Release build and inspect every embedded signature, entitlement,
   six privacy manifests, icon/resource and DEBUG-fixture exclusion. New lock deadline calls
-  to `ProcessInfo.systemUptime` require the SystemBootTime/reason inventory to be resolved
-  (see [API inventory](ios/privacy-api-inventory.md)); existing green equality checks alone
-  do not establish complete API declarations. Validate archive privacy
+  to `ProcessInfo.systemUptime` are covered by all-six-bundle SystemBootTime 35F9.1 declarations
+  and verifier changes in #230 (see [API inventory](ios/privacy-api-inventory.md)); rerun the
+  inventory against the final signed archive. Validate archive privacy
   requirements with current Apple tooling; unsigned simulator CI is insufficient.
 - [ ] **Google key/account:** create/custody/back up the intended upload key privately, verify
   public certificate, Play App Signing enrollment/ownership, developer account verification

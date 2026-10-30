@@ -54,7 +54,11 @@ Lane C's Settings/uninstall/disable interception removal landed in PR105. Verify
 that source and E4's matching disclosure are present in the exact submission
 build; demonstrate normal recovery controls before using this copy.
 
-Force-stop can unbind Accessibility; #173 refuses to arm a protected Timer without a live
+#225's saved-zone trusted Time days/retained usage are merged and tested, with real-device
+UsageStats precision and OEM lifecycle still unverified. The new measurement-unavailable
+reason uses generic degraded UI/glance fallback; no dedicated copy implementation is claimed.
+
+Force-stop can unbind Accessibility; #173/#229 refuse to arm a protected Timer without a live
 detector. Keep this limitation and the ledger's open wind-down findings in review/demo
 explanations. Neither force-stop survival nor universal background protection is promised.
 

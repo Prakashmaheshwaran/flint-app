@@ -44,8 +44,9 @@ passed 1,223 native tests, Debug/unsigned Release, six-bundle manifest and fixtu
 separately passed its standard gate; its [manual UI run](https://github.com/Prakashmaheshwaran/flint-app/actions/runs/41005146280)
 passed ten fixtures and eleven Insights cases. These are exact PR-source runs, not a
 signed-device or every-later-integration result. See the [API inventory](privacy-api-inventory.md)
-for a later `systemUptime` category gap: equality with source manifests is insufficient
-for complete required-reason API coverage.
+for #230's later `systemUptime` category closure. Its [head d45bf44 CI](https://github.com/Prakashmaheshwaran/flint-app/actions/runs/41010976702)
+passed with all six SystemBootTime 35F9.1 declarations and the extended verifier.
+Final signed-binary/API re-inventory remains required.
 
 This is a regression check for known fixture names and preview generators,
 not proof of all possible debug code or signed-device functionality. Add new

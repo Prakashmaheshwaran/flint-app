@@ -23,13 +23,17 @@ defines requirements without turning them into passing results.
   saved ones keep running with attention and calling/SOS hardware acceptance remains open.
   Android adopts saved Time-Limit tiers, explicit credits/global recovery, strict initialized
   accounting and exact-Timer live-detector arming; force-stop can unbind Accessibility.
-  The ledger's Open at v1 wind-down section records remaining red-team variants.
+  Final wind-down merges add #225 trusted Android Time-Limit days/retained usage, #226
+  default-off captured removal consent/derived guard, #228 stale-session break fallback,
+  #229 refusal feedback and #230 all-six SystemBootTime privacy declarations. The ledger's
+  Open at v1 wind-down section records remaining red-team variants and hardware gates.
 - **Local outcomes:** durable session history and truthful Today/Complete/Insights totals,
   separate from screen usage; optional planned-focus-end reminders. iOS captures use
   labelled fixtures; Android hosted E2E includes an actual five-minute Timer. Missing terminal
   evidence stays Unconfirmed; confidence-aware totals conservatively subtract uncertain gaps.
   Durable Android pass/break projection and stable iOS replay IDs are merged, with explicit
-  incomplete typed-break/operation-history/terminal-arbitration boundaries in the ledger.
+  incomplete typed-iOS-break/operation-history boundaries in the ledger. #227 arbitrates
+  new Android terminal writes; old duplicates remain readable.
 - **Glance and UX:** read-only widgets, opt-in iOS Live Activity, optional Android Path A
   ongoing status, Help/limitations, accessible onboarding/PIN/picker/Sleep and Android
   scrollable block-screen work. Live status producers and hardware rendering retain their

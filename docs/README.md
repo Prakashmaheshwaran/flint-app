@@ -19,7 +19,8 @@ that a capability works on hardware.
 - [v1 build plan](roadmap/v1-build-plan.md): integration lanes and product boundaries.
 - [UX audit](ux/v1-screen-audit.md): dated E01–E16 findings and ownership, preserved as history.
 - [Red-team verification](verification/adr-012-redteam-verification-2026-10-29.md): frozen
-  R2 pass-1 source verdicts; the current ledger records later fixes and pass-2 residuals.
+  R2 pass-1 source verdicts; [pass 2](verification/adr-012-redteam-verification-pass2-2026-10-30.md)
+  records the later frozen audit. The ledger reconciles subsequent wind-down fixes.
 - [Verification](verification/): dated artifacts with exact source/platform boundaries.
   [Android hosted E2E](verification/android-e2e.md) and
   [real Timer history](verification/f-android-history-2026-10-28/README.md) have different scopes.

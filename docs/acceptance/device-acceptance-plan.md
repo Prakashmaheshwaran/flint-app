@@ -20,9 +20,15 @@ feature `BLOCKED`, with its issue/PR, rather than executing an obsolete substitu
 - **R-26:** new empty Allow Lists are refused; legacy saved empty lists keep running with
   attention (#218). D01 must explicitly check Phone, default calling app, in-call UI and
   SOS under `.all(except:)` and all-category shields. Move to option B if shielding occurs.
-- **Android:** force-stop unbinds Accessibility. #173 refuses Timer arming without a live
+- **R-08:** #226 default-off captured removal consent/derived runtime is merged. Observe
+  pending off, two-owner overlap, upgrade release and R08-08 corrupt/installing-owner
+  retention past end with positive committed-pass release; no OS effect is proven by assignment.
+- **Android:** force-stop unbinds Accessibility. #173/#229 refuse Timer arming without a live
   detector; test setup re-grants do not prove automatic recovery. Include overlay mount
   failure and truthful Degraded health in D10/D12; the R-30 remainder is still open.
+- **Time/reset:** #225 trusted Android saved-zone days and retained usage are source-closed;
+  D13/D14 still require exact-device clock/reboot/measurement/migration evidence. Dedicated
+  `time-limit-measurement-unavailable` UI/glance copy is absent; generic degraded is current.
 - Open source findings in the [wind-down ledger](v1-capability-ledger.md#open-at-v1-wind-down)
   can block a case. Keep it BLOCKED until a fixing build is selected; no whole-case pass
   follows from a PC-tagged fixture.

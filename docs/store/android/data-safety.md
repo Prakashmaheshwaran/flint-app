@@ -3,7 +3,7 @@
 Scope: Android local-only release, package `com.flint.peakfocus`, with lane C's
 Settings/uninstall-guard and Settings-text-read removal in PR105 (`a34cbba`).
 Settings screen content is not read for guarding. Lane J reconciled this inventory on
-2026-10-30 against merged `integration/v1` `ce441b60f5cfd5d6680f9c532e977757cd3d9cdb`,
+2026-10-30 against merged `integration/v1` `6f1170ba9442cfc04c766892bd8e83ae775d2616`,
 including global recovery/explicit credits, strict editor completeness, history confidence
 and wired status/service publishers.
 Recheck the exact submission commit/AAB before signing the form. Debug-only
@@ -15,9 +15,10 @@ Firebase/connected sandbox data is outside this release and must remain excluded
 | Foreground package/class and transition timing | Accessibility service or `UsagePoller`; app blocking and open counts | Current detector/coordinator state in memory; derived counters/discipline state in preferences | None |
 | Browser address-bar URL; normalized domain | `FlintAccessibilityService.readBrowserWindow` and versioned `BrowserAddressBars` matrix; website rules. Supported-browser window-content changes trigger a throttled address-bar re-read after same-tab navigation, only while website rules are active | Read in memory for a decision; no raw URL/history persistence in these callers. User-entered domains persist in rules/groups | None |
 | Website coverage observation (known browser, unconfirmed/unreadable address bar, unsupported web handler and OS app label) | `WebCoverageTracker`, `WebsiteCoverageHealth`, `PermissionHealthChecker`; honest local health status. Package-scoped http(s) VIEW and browser-category queries identify unsupported handlers; no broad package inventory query | Process-local state only; current miss count resets on a window/session change. The last browser observation remains visible in health until replaced or process reset, labeled as a last check. No URL stored in the health model | None |
-| Android app-usage events and daily duration | `UsageStatsSource`, `UsageQuery`, `DailyLimitTracker`; local reports/budgets | Original usage history owned/retained by Android; queried results and aggregates in memory. Clearing Flint does not erase Android's history | None |
+| Android app-usage events and daily duration | `UsageStatsSource`, `UsageQuery`, `DailyLimitTracker`; local reports/budgets | Original usage history owned/retained by Android; queries in memory. #225 also persists per-target saved-zone days, trusted period/reset, separate OS/elapsed high-waters, boot/clock confidence, capture/target registry and ownership-fenced foreground checkpoints in the private DataStore. Clearing Flint does not erase Android history | None |
 | Named rules/groups, selected apps/domains, schedules, limits and protection level | `FlintPreferences`, `DataStoreStores`, `PrefsCodec` | Private `datastore/flint_preferences.preferences_pb`: `block_rules_v1`, `app_groups_v1`, `time_limits_v1`, `open_limits_v1`, `default_break_level_v1`; until edited/deleted or app storage cleared | None |
 | Break/cooldown, pass-spend and open-count state; temporary access ledger | `DataStoreStores`, `AccessDataStores`, `AccessLedgerCodec`, C136 durable grants | Same DataStore: legacy state and `temporary_access_v2`; `protection_schema_v1`, `protection_pass_outbox_v1`, `protection_legacy_archive_v1`; `open_credit_schema_v1`, `open_credit_state_v1`, `open_credit_counts_v1`, `open_credit_legacy_archive_v1`, `quota_zone_v1`. Consumed rolling-pass state, global recovery, scoped grants, elapsed/boot checkpoints, immutable scope/operation receipts and lifecycle outbox persist before release; initialized missing fields are unavailable. Runtime integration #175/#178 is merged, with residuals in the ledger | None |
+| Trusted Time-Limit accounting (#225) | `TimeLimitUsageStore`, `TimeLimitBootstrapContext`, `TimeLimitSavedZones`, both detector readers | Same private DataStore: `time_limit_usage_schema_v1`, `time_limit_usage_state_v1`, `time_limit_usage_archive_v1`, `time_limit_usage_targets_v1`, `time_limit_saved_zone_schema_v1`, `time_limit_bootstrap_context_v1`; target package keys, saved zones, period/reset/measurement and fenced foreground spans persist. Used floors survive off/delete/recreate; 2,000-target registry is bounded, never silently pruned. Independent of focus-history clearing | None |
 | Editor commitment snapshots, deferred changes, Harder waits/time anchors and migration archives | C139 `DataStoreEditorCommitments`, `HarderWaitStore`, `ProtectionClock` | Same private DataStore: `editor_commitments_v1`, `editor_commitments_version`, `editor_migration_rules_v1`, `editor_migration_time_limits_v1`, `harder_wait_ledger_v1`; raw legacy archives are local recovery material, not cleared by history deletion | None |
 | Legacy selected apps/schedule and daily limits | `core-data/BlocklistStore`, `LimitStore` | Private SharedPreferences `flint_blocklist` (`blocked_packages`, `schedule_on`, `schedule_start`, `schedule_end`) and `flint_limits` (package-keyed minutes); until changed/cleared | None |
 | Setup completion and notification-prompt preferences | `MainActivity` | `flint_onboarding` and `flint_permissions` SharedPreferences; until storage cleared | None |
@@ -60,7 +61,11 @@ IDs. Clear preserves running sessions, quota/pass spend and bounded recovery mat
 A genuinely new pass with no admitted sessions after clear can omit its operation row;
 this prevents old replay resurrection and is not complete operation-history evidence.
 The 5 MiB cap bounds the main log, not the entire history directory, migration archives,
-notification state or OS copies. Duplicate terminal arbitration is tracked separately.
+notification state or OS copies. #227 atomically arbitrates new terminal writes, preferring the first explicit owner/app
+outcome over a provisional unknown end and preserving its plan. Legacy duplicate files
+remain readable; this is not a whole-log migration or universal exactly-once claim.
+#225 publishes `time-limit-measurement-unavailable`; dedicated UI/glance mapping was
+not dispatched, so the tested generic degraded fallback remains current.
 
 ## Candidate Console answers
 

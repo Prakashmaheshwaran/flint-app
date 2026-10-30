@@ -55,7 +55,7 @@ bound these claims.
 [ADR-012](../docs/architecture/protection-contract.md) defines Easy/Harder/Hardcore,
 ordinary breaks, timed Open credits and a rolling seven-day/global recovery pass.
 Live mutation, global pass, scoped break and credit adapters are merged and tested;
-remaining pre-migration/no-anchor/successor variants are listed in the ledger's
+remaining pre-migration/no-anchor/first-use variants are listed in the ledger's
 [Open at v1 wind-down](../docs/acceptance/v1-capability-ledger.md#open-at-v1-wind-down).
 No source closure establishes signed-device enforcement.
 
@@ -96,9 +96,16 @@ Shortcut intents. Known boundaries at this checkpoint:
   the R-26 decision moves to option B if those screens are shielded.
 - PIN is a UI privacy barrier with minimal recovery reachable while locked. #223's exact
   hosted fixtures pass at default/AX5; physical recovery and full VoiceOver remain unverified.
-- iOS app-deletion restrictions are device-wide, require authorization, and must follow
-  the contract's explicit opt-in/finite-owner rules before being advertised. OS permission
-  revocation stays reachable; no device-lock guarantee follows from a setting assignment.
+- #226 wires default-off disclosed app-deletion consent, captured on eligible finite armed
+  Hardcore owners and applied by one derived writer. Pending off, overlapping owners,
+  positive global-pass release and legacy-store migration are tested. Legacy finite sessions
+  lose the old guard at the first successful upgrade reconcile; opt-in is not retroactive.
+  Corrupt owner data or an installing session may retain the guard beyond its end until
+  committed pass recovery (R08-08). Actual device-wide denial/release and OS revocation
+  remain signed-device gates.
+- #228 prevents unavailable-context break restoration from overwriting a stronger successor.
+  Simultaneously unreadable rule/session context can still defer repair; no physical
+  re-shield timing guarantee follows from the source fix.
 
 Opaque tokens, Always Allowed, Safari versus other browsers, finite registration capacity,
 late callbacks and unknown cross-reboot elapsed time are platform limits. Flint does not

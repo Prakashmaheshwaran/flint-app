@@ -1,7 +1,7 @@
 # Flint iOS App Store package — draft
 
 Prepared 2026-10-28 for lane D6; final documentation refresh 2026-10-30 against
-`integration/v1` at `ce441b60f5cfd5d6680f9c532e977757cd3d9cdb`. Original D6 source baseline was
+`integration/v1` at `6f1170ba9442cfc04c766892bd8e83ae775d2616`. Original D6 source baseline was
 `fa190e9df96f61c13ea651ee39cae6f68057f0c6`.
 This is preparation for human review, not a submitted listing or proof of release
 readiness. No Apple account, signing, upload, TestFlight, or publication action was
@@ -39,9 +39,10 @@ status publishers (#163/#171) are merged, with bounded automated evidence. iOS O
 acceptance is enabled but R-12 remains runtime DEVICE-PENDING: signed-device PC-28..38
 must prove killed-host 300 s expiry, midnight, re-registration and lock contention;
 use the one-line flag revert plus fallback copy on failure. R-26 calling/in-call/SOS
-under `.all(except:)` remains device-pending. Open red-team variants, separate deletion
-consent/derived-owner runtime, the SystemBootTime API-manifest gap and absent in-app policy
-route remain release gates. Source integration and fixture views do not prove delivery.
+under `.all(except:)` remains device-pending. #226 adds separate default-off captured deletion
+consent/derived-owner runtime; #230 closes the SystemBootTime declaration/verifier source gap.
+Open red-team variants, guard R08-08, signed-archive/device validation and the absent in-app
+policy route remain gates. Source integration and fixture views do not prove delivery.
 
 ## Proposed en-US metadata
 
@@ -96,7 +97,7 @@ Source for the proposed workflows:
 [recurring schedules](../../../ios-app/Flint/Features/Schedules/SchedulesView.swift),
 [limits persistence](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintGroupStore.swift),
 [individual authorization](../../../ios-app/Flint/Features/Authorization/AuthorizationModel.swift),
-and [device-wide removal restriction](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintUninstallGuard.swift).
+and [derived device-wide removal restriction](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintRemovalGuardReconciler.swift).
 Source shows intended behavior; lane B and physical verification must establish
 that the final copy describes the shipped behavior. Website selection is distinct
 from Safari content/Private Browsing settings; neither implies universal browser
@@ -111,8 +112,8 @@ unbreakable or sole-exit claim is permitted. If Emergency Pass is later added
 to listing copy, use “seven days after you use it” and describe the confirmed
 60-minute global recovery scope, affected commitments and resumption. Do not
 promise a Monday refill, a bank of passes or release of only the shown session.
-Global recovery is merged; separate deletion-consent/owner runtime and all signed-device
-acceptance are tracked in the ledger. This draft does not establish distribution or
+Global recovery and separate default-off captured deletion-consent/owner runtime are merged;
+all signed-device acceptance and the corrupt/installing-owner guard residual are in the ledger. This draft does not establish distribution or
 hardware acceptance.
 
 ### Length validation
@@ -167,7 +168,9 @@ privacy-sensitive; a label does not mean the app has no local data.
   anchored elapsed/boot checkpoints, generation/tombstone/start-operation receipts, frozen
   active targets/revisions, queued edits, timed credit counters/grants and global recovery/
   ordinary-break outboxes in the cross-process protection ledger locally in
-  `group.com.flint.peakfocus`.
+  `group.com.flint.peakfocus`. Captured removal consent and pending off use
+  `flint.removalGuard.preference`; legacy guard migration uses
+  `flint.removalGuard.sessionStoreMigration.v1`. Clearing focus history does not reset them.
 - **Durable focus history:**
   [FlintHistoryStore](../../../ios-app/Packages/FlintCore/Sources/FlintCore/FlintHistoryStore.swift)
   stores an App Group `FlintHistory` JSONL log, per-event extension inbox, metadata and
