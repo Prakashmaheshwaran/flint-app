@@ -49,7 +49,9 @@ class TimeLimitUsageStoreTest {
         val context = first.measurementContext("app", at())
         assertEquals("Asia/Tokyo", context.zoneId)
         assertEquals(setOf("Asia/Tokyo"), readTimeLimitUsage(disk.values.value).targets.values.map { it.zoneId }.toSet())
-        assertEquals(original, disk.values.value.asMap().filterKeys { it in original })
+        assertEquals(original.filterKeys { it != PrefsKeys.TIME_LIMITS },
+            disk.values.value.asMap().filterKeys { it in original && it != PrefsKeys.TIME_LIMITS })
+        assertEquals(setOf("Asia/Tokyo"), StrictPrefsCodec.timeLimits(disk.values.value[PrefsKeys.TIME_LIMITS]!!).map { it.zoneId }.toSet())
         assertEquals("app~1~HARDCORE\nother~30~HARDER" to "HARDCORE",
             TimeLimitUsageCodec.readArchive(disk.values.value[TIME_USAGE_ARCHIVE]!!))
         zone = "Pacific/Auckland"
@@ -95,7 +97,7 @@ class TimeLimitUsageStoreTest {
     @Test fun PC_36_PC_56_offDeleteRecreateRetainsTargetUsageAndOriginalSavedZone() = runBlocking {
         val disk = Disk(legacy()); spent(disk)
         DataStoreLimitsStore(disk).clearTimeLimit("app")
-        DataStoreLimitsStore(disk).setTimeLimit(TimeLimit("app", 1, BreakLevel.HARDCORE))
+        DataStoreLimitsStore(disk).setTimeLimit(TimeLimit("app", 1, BreakLevel.HARDCORE, "UTC"))
         val reader = store(disk) { "Pacific/Auckland" }
         val context = reader.measurementContext("app", at(1_000), savedZoneForNewTarget = "Pacific/Auckland")
         assertEquals("UTC", context.zoneId)
@@ -125,7 +127,7 @@ class TimeLimitUsageStoreTest {
     }
 
     @Test fun PC_37_PC_70_missingEstablishedKeysOrPartialInitializationNeverMintFreshState() = runBlocking {
-        for (key in listOf(TIME_USAGE_SCHEMA, TIME_USAGE_STATE, TIME_USAGE_ARCHIVE)) {
+        for (key in listOf(TIME_USAGE_SCHEMA, TIME_USAGE_STATE, TIME_USAGE_ARCHIVE, TIME_LIMIT_ZONE_SCHEMA)) {
             val valid = Disk(legacy()); spent(valid)
             val broken = valid.values.value.toMutablePreferences().also { it.remove(key) }
             val disk = Disk(broken)
@@ -157,7 +159,7 @@ class TimeLimitUsageStoreTest {
         disk.fail = false
         val reader = store(disk) { "America/New_York" }
         assertEquals("America/New_York", reader.measurementContext("app", at()).zoneId)
-        assertEquals(original[PrefsKeys.TIME_LIMITS], disk.values.value[PrefsKeys.TIME_LIMITS])
+        assertEquals(original[PrefsKeys.TIME_LIMITS], TimeLimitUsageCodec.readArchive(disk.values.value[TIME_USAGE_ARCHIVE]!!).first)
     }
 
     @Test fun PC_70_lostAcknowledgementRetainsCommittedUsageAndRetryCannotSpendTwice() = runBlocking {
@@ -168,6 +170,25 @@ class TimeLimitUsageStoreTest {
         disk.lostAcknowledgement = false
         val retried = store(disk).record(context, 60_000, at())
         assertEquals(60_000L, retried.state.usedMs)
+    }
+
+    @Test fun PC_56_PC_71_deletingAnEstablishedSavedZoneCannotRecaptureTheTravelZone() = runBlocking {
+        val disk = Disk(legacy()); spent(disk)
+        val broken = disk.values.value.toMutablePreferences().also {
+            it[PrefsKeys.TIME_LIMITS] = "app~1~HARDCORE\nother~30~HARDER"
+        }
+        disk.values.value = broken
+        try { store(disk) { "Pacific/Auckland" }.measurementContext("app", at()); fail("missing zone recaptured") }
+        catch (_: StorageUnavailableException) { }
+        assertEquals(broken, disk.values.value)
+    }
+
+    @Test fun PC_56_D5_explicitImportedAndNewTemplateZonesArePreserved() = runBlocking {
+        val disk = Disk(preferencesOf(PrefsKeys.TIME_LIMITS to "app~1~HARDCORE~America/New_York"))
+        val reader = store(disk)
+        assertEquals("America/New_York", reader.measurementContext("app", at()).zoneId)
+        DataStoreLimitsStore(disk).setTimeLimit(TimeLimit("new", 1, BreakLevel.HARDER, "Asia/Tokyo"))
+        assertEquals("Asia/Tokyo", reader.measurementContext("new", at()).zoneId)
     }
 
     private suspend fun expectUnavailable(disk: Disk) {

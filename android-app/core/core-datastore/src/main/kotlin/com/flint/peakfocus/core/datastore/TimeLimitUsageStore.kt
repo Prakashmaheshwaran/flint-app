@@ -32,12 +32,13 @@ class DataStoreTimeLimitUsageStore(
         var result: TimeLimitMeasurementContext? = null
         dataStore.edit { prefs ->
             val stamp = clockAtCommit?.invoke() ?: now
-            var ledger = prepareTimeLimitUsage(prefs, stamp, deviceZone())
+            var ledger = prepareTimeLimitSavedZones(prefs, stamp, deviceZone())
             timeUsageRequire(packageName.isNotBlank() && packageName.length <= OpenCreditLedgerPolicy.MAX_ATOM)
             val previous = ledger.targets[packageName]
             val row = timeUsageValid {
                 previous?.let { TimeLimitDayAccounting.reconcile(it, stamp).state }
-                    ?: TimeLimitDayAccounting.initial(stamp, savedZoneForNewTarget ?: ledger.migrationZoneId)
+                    ?: TimeLimitDayAccounting.initial(stamp, savedZoneForNewTarget ?:
+                        prefs.editorTimes().singleOrNull { it.packageName == packageName }?.zoneId ?: ledger.migrationZoneId)
             }
             ledger = ledger.copy(targets = ledger.targets + (packageName to row))
             prefs.putTimeLimitUsage(ledger)
@@ -73,7 +74,9 @@ internal fun prepareTimeLimitUsage(prefs: MutablePreferences, now: AccessClockSt
     val raw = StrictPrefsCodec.string(prefs, PrefsKeys.TIME_LIMITS)
     val tier = StrictPrefsCodec.string(prefs, PrefsKeys.DEFAULT_BREAK_LEVEL)
     val limits = StrictPrefsCodec.timeLimits(raw.orEmpty(), StrictPrefsCodec.level(tier))
-    val ledger = timeUsageValid { TimeLimitUsageLedger(zone, limits.associate { it.packageName to TimeLimitDayAccounting.initial(now, zone) }) }
+    val ledger = timeUsageValid { TimeLimitUsageLedger(zone, limits.associate {
+        it.packageName to TimeLimitDayAccounting.initial(now, it.zoneId ?: zone)
+    }) }
     val archive = TimeLimitUsageCodec.archive(raw, tier)
     val encoded = TimeLimitUsageCodec.encode(ledger)
     prefs[TIME_USAGE_ARCHIVE] = archive
@@ -83,6 +86,7 @@ internal fun prepareTimeLimitUsage(prefs: MutablePreferences, now: AccessClockSt
 }
 
 internal fun readTimeLimitUsage(prefs: Preferences): TimeLimitUsageLedger {
+    readTimeLimitZoneVersion(prefs)
     val version = StrictPrefsCodec.long(prefs, TIME_USAGE_SCHEMA) ?: wireCorrupt()
     if (version > 1) wireFuture()
     timeUsageRequire(version == 1L)
@@ -90,6 +94,7 @@ internal fun readTimeLimitUsage(prefs: Preferences): TimeLimitUsageLedger {
     val ledger = TimeLimitUsageCodec.decode(StrictPrefsCodec.string(prefs, TIME_USAGE_STATE) ?: wireCorrupt())
     val imported = StrictPrefsCodec.timeLimits(original.first.orEmpty(), StrictPrefsCodec.level(original.second))
     timeUsageRequire(imported.all { it.packageName in ledger.targets })
+    timeUsageRequire(prefs.editorTimes().all { it.zoneId != null })
     return ledger
 }
 
