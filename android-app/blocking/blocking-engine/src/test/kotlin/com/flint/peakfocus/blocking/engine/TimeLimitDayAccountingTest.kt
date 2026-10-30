@@ -126,9 +126,42 @@ class TimeLimitDayAccountingTest {
     }
 
     @Test fun PC_70_importedLargePositiveBudgetsRemainMeasurableWithoutOverflow() {
-        assertEquals(Int.MAX_VALUE * 60_000L, TimeLimitDayAccounting.remainingMs(initial(), Int.MAX_VALUE))
+        assertEquals(Int.MAX_VALUE * 60_000L, TimeLimitDayAccounting.remainingMs(record(initial(), sample(0)), Int.MAX_VALUE))
         val used = record(initial(), sample(60_000))
         assertEquals(2_000 * 60_000L - 60_000, TimeLimitDayAccounting.remainingMs(used, 2_000))
+    }
+
+    @Test fun PC_54_PC_60_unknownLegacyHistoryCannotBecomeUnusedFromANewRawDayZero() {
+        assertNull(TimeLimitDayAccounting.remainingMs(initial(), 1))
+        assertEquals(0L, TimeLimitDayAccounting.remainingMs(initial(), 0))
+        val old = initial().copy(accountingUnknownUntilReset = true)
+        val jumped = at(1_000, 48 * hour)
+        val observedZero = record(old, sample(0, jumped, base + 47 * hour), jumped)
+        assertEquals(0L, observedZero.usedMs)
+        assertNull(TimeLimitDayAccounting.remainingMs(observedZero, 1))
+        assertTrue(observedZero.accountingUnknownUntilReset)
+        val end = at(hour, 48 * hour + hour - 1_000)
+        val reset = TimeLimitDayAccounting.reconcile(observedZero, end)
+        assertTrue(reset.rolled)
+        assertFalse(reset.state.accountingUnknownUntilReset)
+        assertEquals(60_000L, TimeLimitDayAccounting.remainingMs(reset.state, 1))
+        assertEquals(observedZero.periodId + 1, reset.state.periodId)
+    }
+
+    @Test fun PC_60_unknownHistorySurvivesRebootButNewExhaustionRemainsEnforceable() {
+        val old = record(initial().copy(accountingUnknownUntilReset = true), sample(30_000))
+        val reboot = at(5, 7 * 24 * hour, "new-boot")
+        val zero = record(old, sample(0, reboot, base + 7 * 24 * hour), reboot)
+        assertTrue(zero.accountingUnknownUntilReset)
+        assertEquals(hour, zero.reset.remainingToResetMs)
+        assertEquals(30_000L, zero.usedMs)
+        assertNull(TimeLimitDayAccounting.remainingMs(zero, 1))
+        val later = at(1_005, 7 * 24 * hour + 1_000, "new-boot")
+        val spent = record(zero, sample(30_000, later, base + 7 * 24 * hour), later)
+        assertEquals(60_000L, spent.usedMs)
+        assertEquals(0L, TimeLimitDayAccounting.remainingMs(spent, 1))
+        assertTrue(spent.accountingUnknownUntilReset)
+        assertFalse(TimeLimitDayAccounting.reconcile(spent, at(5 + hour - 1, 7 * 24 * hour + hour - 6, "new-boot")).rolled)
     }
 
     @Test(expected = IllegalArgumentException::class)

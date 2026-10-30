@@ -17,6 +17,8 @@ data class TimeLimitDayState(
     val usedMs: Long = 0,
     val lastSample: TimeLimitUsageSample? = null,
     val timeUncertain: Boolean = false,
+    /** Upgrade found an anchored old period whose earlier OS usage cannot be reconstructed. */
+    val accountingUnknownUntilReset: Boolean = false,
 )
 
 data class TimeLimitDayResult(val state: TimeLimitDayState, val rolled: Boolean, val sampleAccepted: Boolean = false)
@@ -48,6 +50,7 @@ object TimeLimitDayAccounting {
             reset = OpenCreditPolicy.ResetClock(now, if (rolled) nextMidnight(logicalWall, nextZone) else remaining),
             logicalCheckpoint = now.copy(wallEpochMs = logicalWall), observedAt = now,
             usedMs = if (rolled) 0 else current.usedMs,
+            accountingUnknownUntilReset = !rolled && current.accountingUnknownUntilReset,
             timeUncertain = current.timeUncertain || elapsed == null || clockDiscontinuity(current.observedAt, now),
         )
         requireValid(next)
@@ -82,11 +85,17 @@ object TimeLimitDayAccounting {
         return TimeLimitDayResult(committed, reconciled.rolled, true)
     }
 
-    fun remainingMs(state: TimeLimitDayState, dailyMinutes: Int): Long {
+    /** Null is unmeasured positive budget, not known unused quota. Evidenced exhaustion stays zero. */
+    fun remainingMs(state: TimeLimitDayState, dailyMinutes: Int): Long? {
         // Existing imported budgets accept every nonnegative Int; the editor separately
         // bounds new drafts. Accounting must not make an old valid record unreadable.
         require(dailyMinutes >= 0)
-        return (dailyMinutes * 60_000L - state.usedMs).coerceAtLeast(0)
+        val remaining = (dailyMinutes * 60_000L - state.usedMs).coerceAtLeast(0)
+        return when {
+            remaining == 0L -> 0L
+            state.accountingUnknownUntilReset || state.lastSample == null -> null
+            else -> remaining
+        }
     }
 
     fun requireValid(state: TimeLimitDayState) {

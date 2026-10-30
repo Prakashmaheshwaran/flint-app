@@ -19,7 +19,7 @@ internal object TimeLimitUsageCodec {
                 timeUsageRequire(row.usedMs == 0L || row.lastSample != null)
                 val at = row.observedAt
                 add("R|${wireAtom(target)}|${wireAtom(row.zoneId)}|${row.periodId}|${row.usedMs}|${row.reset.remainingToResetMs}|" +
-                    "${at.wallEpochMs}|${at.elapsedRealtimeMs}|${wireAtom(at.bootSessionId)}|${row.logicalCheckpoint.wallEpochMs}|${row.timeUncertain}")
+                    "${at.wallEpochMs}|${at.elapsedRealtimeMs}|${wireAtom(at.bootSessionId)}|${row.logicalCheckpoint.wallEpochMs}|${row.timeUncertain}|${row.accountingUnknownUntilReset}")
                 row.lastSample?.let { sample ->
                     val stamp = sample.observedAt
                     add("S|${wireAtom(target)}|${sample.windowStartEpochMs}|${sample.totalMs}|${stamp.wallEpochMs}|" +
@@ -39,12 +39,14 @@ internal object TimeLimitUsageCodec {
         val samples = linkedMapOf<String, TimeLimitUsageSample>()
         rows.filter { it[0] != "M" }.forEach { f -> when (f[0]) {
             "R" -> {
-                timeUsageRequire(f.size == 11)
+                timeUsageRequire(f.size == 12)
                 val target = readWireAtom(f[1])
                 val stamp = AccessClockStamp(wireLong(f[6]), wireLong(f[7]), readWireAtom(f[8]))
                 val uncertain = f[10].toBooleanStrictOrNull() ?: wireCorrupt()
+                val unknown = f[11].toBooleanStrictOrNull() ?: wireCorrupt()
                 val row = TimeLimitDayState(readWireAtom(f[2]), wireLong(f[3]), OpenCreditPolicy.ResetClock(stamp, wireLong(f[5])),
-                    stamp.copy(wallEpochMs = wireLong(f[9])), stamp, wireLong(f[4]), timeUncertain = uncertain)
+                    stamp.copy(wallEpochMs = wireLong(f[9])), stamp, wireLong(f[4]), timeUncertain = uncertain,
+                    accountingUnknownUntilReset = unknown)
                 timeUsageRequire(targets.put(target, row) == null)
             }
             "S" -> {

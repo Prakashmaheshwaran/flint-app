@@ -73,6 +73,31 @@ class TimeLimitUsageStoreTest {
         assertEquals(context, again)
     }
 
+    @Test fun PC_54_PC_60_unknownLegacyHistorySurvivesDiskAndStoreRecreationUntilTrustedReset() = runBlocking {
+        val disk = Disk(legacy())
+        store(disk).measurementContext("app", at())
+        disk.edit { prefs ->
+            val ledger = readTimeLimitUsage(prefs)
+            prefs.putTimeLimitUsage(ledger.copy(targets = ledger.targets +
+                ("app" to ledger.targets.getValue("app").copy(accountingUnknownUntilReset = true))))
+        }
+        val jumped = at(1_000, 48 * hour)
+        val recreated = store(Disk(disk.values.value))
+        val context = recreated.measurementContext("app", jumped)
+        val zero = recreated.record(context, 0, jumped)
+        assertTrue(zero.sampleAccepted)
+        assertEquals(0L, zero.state.usedMs)
+        assertNull(TimeLimitDayAccounting.remainingMs(zero.state, 1))
+        val loaded = recreated.state.first { it !is StorageState.Loading }
+        assertTrue(loaded is StorageState.Ready && loaded.value.targets.getValue("app").accountingUnknownUntilReset)
+        val end = at(hour, 48 * hour + hour - 1_000)
+        val next = recreated.measurementContext("app", end)
+        val observed = recreated.record(next, 0, end)
+        assertEquals(context.periodId + 1, next.periodId)
+        assertFalse(observed.state.accountingUnknownUntilReset)
+        assertEquals(60_000L, TimeLimitDayAccounting.remainingMs(observed.state, 1))
+    }
+
     @Test fun PC_54_PC_55_lowerUnavailableAndDuplicateReportsCannotRefundOrInventQuota() = runBlocking {
         val disk = Disk(legacy()); val context = spent(disk)
         val reader = store(disk)
@@ -146,6 +171,22 @@ class TimeLimitUsageStoreTest {
             encoded.lines().filterNot { it == row }.joinToString("\n"), "T|1\nM|UTC|0\nR|bad")) {
             val raw = valid.values.value.toMutablePreferences().also { it[TIME_USAGE_STATE] = broken }
             val disk = Disk(raw)
+            expectUnavailable(disk)
+            assertEquals(raw, disk.values.value)
+        }
+    }
+
+    @Test fun PC_71_unknownHistoryMarkerCannotBeDroppedOrDefaulted() = runBlocking {
+        val valid = Disk(legacy()); spent(valid)
+        val encoded = valid.values.value[TIME_USAGE_STATE]!!
+        for (replacement in listOf<String?>(null, "unknown")) {
+            val broken = encoded.lines().joinToString("\n") { row ->
+                if (!row.startsWith("R|")) row else row.substringBeforeLast('|') +
+                    (replacement?.let { "|$it" } ?: "")
+            }
+            val raw = valid.values.value.toMutablePreferences().also { it[TIME_USAGE_STATE] = broken }
+            val disk = Disk(raw)
+            assertTrue(store(disk).state.first { it !is StorageState.Loading } is StorageState.Unavailable)
             expectUnavailable(disk)
             assertEquals(raw, disk.values.value)
         }
