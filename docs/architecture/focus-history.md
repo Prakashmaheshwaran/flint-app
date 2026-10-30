@@ -44,6 +44,7 @@ One JSON object per event. Both platforms use the same field names.
 | `reason` | string | `failed_to_arm`, `ended_early`, `break_ended`, `protection_degraded`, optional elsewhere | Short machine reason (ADR-012 §11), e.g. `monitor_registration_failed`, `stop`, `toggle_off`, `deadline`. |
 | `originRoute` | string | optional, additive | ADR-012 origin: `app_ui`, `shortcut`, `siri`, `focus_filter`, `automation`, `notification`, `shield_action`, `monitor`, `service`, `startup_reconciliation`, `migration`. |
 | `observedAt` | int64 | optional, additive | Wall time the transition was observed (ADR-012 `sourceObservedAt`) when it differs from the logical `at`. |
+| `timeConfidence` | object | optional, additive | `{"kind":"certain"}` or `{"kind":"uncertain","reason":"clock_discontinuity"}`. Confidence in effective time, independent of delayed observation or `inferred`. Reasons are non-identifying machine codes. |
 | `kind` | string | `break_started` | `ordinary` or `planned` (precommitted Pomodoro rest). |
 | `grant` | string | optional | Break/access grant or pass operation id. |
 | `sessions` | [string] | `pass_used` | Session ids the pass affected (zero or more). |
@@ -100,8 +101,52 @@ For one session:
   through their effective timestamp, clipped to the deadline and now. Subtract breaks and
   coverage gaps as below; never credit the unobserved tail. A reschedule only changes the
   plan and is not coverage evidence. Legacy inferred unknown early ends still credit zero.
+- **Clock evidence is bounded before it is credited.** An explicitly uncertain start,
+  plan, phase or terminal cannot supply elapsed duration. No trusted elapsed-duration field
+  is currently carried, so retain only independently valid earlier coverage and leave the
+  affected outcome unconfirmed. An observation at +121 minutes against a ten-minute plan
+  cannot become ten minutes of evidence by clipping, even if its producer omitted confidence.
+  Raw early terminals after the plan and terminals at/before the start are also unconfirmed.
+  `observedAt` is never an elapsed-duration bound.
+- Missing/null confidence preserves plausible legacy history: effective timestamps must
+  agree with the actual start, effective plan and logical phase order. Legacy completion
+  time equals its effective deadline; explicit certain completion can be later and is still
+  bounded by the plan. Early exact-deadline ties remain readable. Explicit certainty does
+  not admit impossible early timing. Outbox append order is not logical phase order: a break
+  end delivered before its start is paired using its effective time and exact grant.
+  Plan revisions use `(observedAt ?? at, append ordinal)`, so equal observation milliseconds
+  preserve the last recorded revision rather than the largest effective timestamp.
+  An inverted break/pass window is contradictory evidence even when its start is in-plan.
+  Each ordinary revision must occur at/before the preceding accepted deadline and at/before
+  its own new endpoint; exact-boundary changes and delayed observations remain valid.
+  An invalid/uncertain later plan freezes extension and cannot erase a prefix already
+  confirmed under an earlier trusted plan.
+  Rejected time barriers take effect in original append order: an uncertain or invalid
+  backdated timestamp cannot establish that it preceded an already recorded trusted
+  witness, select that witness's plan, or subtract an earlier break/pass/gap from it.
+  Accepted grant pairs and coverage cuts still use their logical effective order.
+  Uncertain or contradictory evidence freezes later prefix extension; later cleanup after
+  an accepted terminal does not invalidate that terminal. Accepted logical terminal duration
+  is not truncated merely because a reader's wall clock subsequently moves backward.
+- The durable policy owner may assert a final plan when history missed an edit. That is
+  distinct from an ordinary revision: the final plan carries `originRoute: editor_terminal`,
+  `reason: owner_final_plan` and certain time confidence, with its endpoint/effective time
+  equal to a matching certain completed terminal from the same owner origin. Only that
+  explicit pair may repair a stale earlier deadline. The public EditorTerminalEvent adapter
+  supplies the assertion from the owner's logical endpoint when `timeUncertain` is false;
+  uncertain owner finals remain unconfirmed and cannot extend the prior evidenced prefix.
+  A matching certain owner pair supersedes rejected ordinary plan-only observations in
+  either delivery order, without inventing an edit time. It does not override explicitly
+  uncertain starts, plan times or coverage phases.
+  Observation time is never substituted as proof of an edit or elapsed focus duration.
+- Confidence is additive in schema v1. Old readers ignore the optional object; new readers
+  treat unknown/malformed confidence as `uncertain(unsupported_time_confidence)`, retaining
+  the original raw line through maintenance. `inferred` alone remains provenance rather
+  than time uncertainty, so a valid recovered logical completion with a later observation
+  still counts. Existing `reason: time_uncertain` is also conservatively recognized.
 - Unconfirmed sessions never count as completed, ended early, or toward a completion
-  streak. Count them separately on the planned-end day (or observation day when not expired)
+  streak. Count them separately on a valid expired planned-end day (otherwise the reader's
+  observation day); a rejected raw terminal cannot move the warning onto another day.
   and show a localized “1 session couldn't be confirmed” note in the selected UI range.
 - Subtract break intervals `[break_started.at, break_ended.at ?? breakEnd ?? end)`, pass
   windows `[pass_used.at, recoveryEnd)` for sessions listed in `sessions`, and coverage gaps
@@ -114,6 +159,12 @@ For one session:
 
 Across sessions, focused intervals are **unioned** before summing so malformed overlapping
 data can never double count.
+
+Android accepts aggregate timing only within the same supported civil range as iOS
+(years 1–9999). Persisted out-of-range Long values cannot prove a duration or completion.
+Day splitting first intersects intervals with the requested display window, and duration
+addition/subtraction is overflow-safe; a long accepted interval after reader rollback does
+not require traversing all historical or future dates to render one week.
 
 ### Day attribution
 
@@ -204,6 +255,13 @@ deadline (ADR-012 §4/§11; lane B owns timing — no early-callback allowance).
 mapping and durable sink preserve the accepted event time rather than substituting the
 original wall plan or discarding an outcome when a reader's wall clock has moved back.
 Clear keeps the running session by logical expiry, including through a same-boot wall jump.
+All lifecycle hook families have additive `timeConfidence:` overloads, and the annotated
+variants default it to nil. The public Swift shape is
+`FlintEventTimeConfidence.certain` / `.uncertain(reason: String)`; `.annotated` carries it
+separately from `observedAt`. Android history uses optional `HistoryEvent.timeConfidence`
+with `HistoryEventTimeConfidence.Certain` / `Uncertain(reason)`, using the same wire object.
+Emitters own truthful confidence and effective logical time; these consumer bounds do not
+replace the lane B/C clock checks or invent a confidence level for plausible legacy data.
 Proposed hook sites, for
 lane B to accept or adapt: `FlintSessionController.startBlockNow` (after saving the active
 session), `stop(route:)`, `finishIfExpired`, `useEmergencyPass`, the monitor's session
@@ -279,3 +337,7 @@ route, break, pass and `open_intercepted` emission needs one call each in
   terminal; late monitor/service outbox completion resolves once at its logical deadline.
   Positive coverage credits only its prefix minus breaks/gaps; expired starts remain zero
   across DST and local midnight, and widgets/Live Activity use the same public aggregate.
+- **R-time-confidence** forward-jump witnesses and raw early terminals cannot inflate a
+  finite plan; explicit uncertainty retains only prior trusted coverage, malformed/future
+  confidence fails closed, legacy plausible rows remain readable, delayed logical completion
+  and reader rollback remain valid, and grant replay uses logical order rather than delivery.

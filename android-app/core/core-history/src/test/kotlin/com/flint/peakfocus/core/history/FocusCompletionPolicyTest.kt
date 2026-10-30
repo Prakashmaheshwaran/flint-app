@@ -57,8 +57,10 @@ class FocusCompletionPolicyTest {
     }
     @Test fun FH20_recoveredSameTimestampPlanPrecedesCompletionAndLaterEditsCannotReviveTerminal() {
         val deadline = end + 300_000
-        val plan = HistoryEvent(type = "rescheduled", session = "session-a", at = deadline, tz = "UTC", plannedEnd = deadline, inferred = true)
-        val natural = terminal(HistoryEventType.COMPLETED, deadline)
+        val plan = HistoryEvent(type = "rescheduled", session = "session-a", at = deadline, tz = "UTC", plannedEnd = deadline,
+            inferred = true, originRoute = "editor_terminal", reason = "owner_final_plan", timeConfidence = HistoryEventTimeConfidence.Certain)
+        val natural = terminal(HistoryEventType.COMPLETED, deadline).copy(originRoute = "editor_terminal",
+            timeConfidence = HistoryEventTimeConfidence.Certain)
         assertEquals(FocusCompletionDelivery.POST, FocusCompletionPolicy.decision(snapshot(started(), plan, natural), "session-a", deadline))
         val stopped = terminal(HistoryEventType.ENDED_EARLY, start + 60_000)
         assertTrue(FocusCompletionPolicy.alarms(snapshot(started(), stopped, plan), emptySet(), deadline).isEmpty())
@@ -109,6 +111,49 @@ class FocusCompletionPolicyTest {
         assertTrue(FocusNotificationState(file).scheduled().isEmpty())
         file.writeText("corrupt")
         assertThrows(Exception::class.java) { kotlinx.coroutines.runBlocking { FocusNotificationState(file).wasDelivered("session-a") } }
+    }
+    @Test fun uncertainOrImplausibleCompletedRowsCannotScheduleOrDeliver() = runTest {
+        var posts = 0
+        for (completion in listOf(
+            terminal(HistoryEventType.COMPLETED).copy(timeConfidence = HistoryEventTimeConfidence.Uncertain("reboot")),
+            terminal(HistoryEventType.COMPLETED).copy(reason = "time_uncertain", inferred = true),
+            terminal(HistoryEventType.COMPLETED, start),
+            terminal(HistoryEventType.COMPLETED, start - 1),
+            terminal(HistoryEventType.COMPLETED, end - 1),
+            terminal(HistoryEventType.COMPLETED, end + 1),
+        )) {
+            val log = snapshot(started(), completion)
+            val state = FakeState()
+            assertEquals(FocusCompletionDelivery.SUPPRESS, FocusCompletionPolicy.decision(log, "session-a", end))
+            assertTrue(FocusCompletionPolicy.alarms(log, emptySet(), end).isEmpty())
+            val service = FocusCompletionDeliveryService(state, { log }, { true }) { posts++ }
+            assertEquals(FocusCompletionDelivery.SUPPRESS, service.deliver("session-a", end))
+            assertFalse(state.wasDelivered("session-a"))
+        }
+        assertEquals(0, posts)
+    }
+    @Test fun uncertainStartPhaseAndReferencedPassSuppressCompletedDelivery() {
+        val uncertainty = HistoryEventTimeConfidence.Uncertain("clock")
+        val gap = HistoryEvent(type = "protection_degraded", session = "session-a", at = start + 1,
+            tz = "UTC", timeConfidence = uncertainty)
+        val pass = gap.copy(type = "pass_used", session = "operation", sessions = listOf("session-a"), recoveryEnd = end)
+        for (log in listOf(snapshot(started().copy(timeConfidence = uncertainty), terminal(HistoryEventType.COMPLETED)),
+            snapshot(started(), gap, terminal(HistoryEventType.COMPLETED)),
+            snapshot(started(), pass, terminal(HistoryEventType.COMPLETED)))) {
+            assertEquals(FocusCompletionDelivery.SUPPRESS, FocusCompletionPolicy.decision(log, "session-a", end))
+            assertTrue(FocusCompletionPolicy.alarms(log, emptySet(), end).isEmpty())
+        }
+    }
+    @Test fun inferredOnlyAndCertainLogicalCompletionsRemainDeliverable() {
+        for (confidence in listOf(null, HistoryEventTimeConfidence.Certain)) {
+            val completed = terminal(HistoryEventType.COMPLETED).copy(inferred = true, observedAt = end + 60_000,
+                timeConfidence = confidence)
+            val log = snapshot(started(), completed)
+            assertEquals(FocusCompletionDelivery.POST, FocusCompletionPolicy.decision(log, "session-a", end + 60_000))
+            assertEquals(FocusCompletionDelivery.WAIT, FocusCompletionPolicy.decision(log, "session-a", start + 1))
+        }
+        val certainLate = terminal(HistoryEventType.COMPLETED, end + 1).copy(timeConfidence = HistoryEventTimeConfidence.Certain)
+        assertEquals(FocusCompletionDelivery.POST, FocusCompletionPolicy.decision(snapshot(started(), certainLate), "session-a", end + 1))
     }
     private class FakeState(private val fail: Boolean = false) : FocusCompletionDeliveryState {
         val delivered = mutableSetOf<String>()

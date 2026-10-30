@@ -8,6 +8,7 @@ import com.flint.peakfocus.core.datastore.FlintPreferences
 import com.flint.peakfocus.core.datastore.deliverTerminalEvents
 import com.flint.peakfocus.core.history.FocusHistoryBridge
 import com.flint.peakfocus.core.history.HistoryEvent
+import com.flint.peakfocus.core.history.HistoryEventTimeConfidence
 import com.flint.peakfocus.core.history.HistoryEventType
 import com.flint.peakfocus.core.history.HistorySnapshot
 import java.time.ZoneId
@@ -57,6 +58,7 @@ internal suspend fun projectEditorHistoryTerminals(
             id = "${event.id}:deadline", type = "rescheduled", session = event.sessionId,
             at = terminal.at, plannedEnd = terminal.at, observedAt = terminal.observedAt,
             inferred = true, tz = zone.id,
+            originRoute = "editor_terminal", reason = "owner_final_plan", timeConfidence = terminal.timeConfidence,
         ), terminal)
     }
 }
@@ -67,5 +69,8 @@ internal fun EditorTerminalEvent.toHistoryEvent(zone: ZoneId): HistoryEvent = wh
         observedAt = observedAt.wallEpochMs, tz = zone.id,
         inferred = observedAt != logicalEnd,
         reason = if (timeUncertain) "time_uncertain" else "deadline",
+        originRoute = "editor_terminal",
+        timeConfidence = if (timeUncertain) HistoryEventTimeConfidence.Uncertain("owner_time_uncertain")
+            else HistoryEventTimeConfidence.Certain,
     )
 }

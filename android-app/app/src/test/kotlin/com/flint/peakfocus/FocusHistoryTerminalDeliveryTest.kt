@@ -178,6 +178,45 @@ class FocusHistoryTerminalDeliveryTest {
         }
     }
 
+    @Test fun uncertainOwnerFinalCannotExtendEarlierTrustedCoverage() = runTest {
+        val clock = Clock.fixed(Instant.ofEpochMilli(start + 3 * hour), ZoneOffset.UTC)
+        val store = FocusHistoryStore(temporary.newFolder(), clock)
+        assertTrue(store.update { listOf(
+            HistoryEvent(type = "started", session = terminal.sessionId, at = start, plannedEnd = start + hour,
+                tz = "UTC", name = "Focus", tier = "easy", source = "manual"),
+            HistoryEvent(type = "open_intercepted", session = terminal.sessionId, at = start + hour / 6, tz = "UTC")) })
+        val final = terminal.copy(logicalEnd = AccessClockStamp(start + 2 * hour, 2 * hour, "boot"),
+            observedAt = AccessClockStamp(clock.millis(), 3 * hour, "boot"), timeUncertain = true)
+        val owner = PendingOwner(final)
+        projectEditorHistoryTerminals(owner, store::update, ZoneOffset.UTC)
+        assertTrue(owner.pending.isEmpty())
+        val result = FocusHistoryAggregator.sessions(store.load().events, clock.millis(), emptySet()).single()
+        assertEquals(SessionOutcome.UNCONFIRMED, result.outcome)
+        assertEquals(hour / 6, result.focusedMs)
+    }
+
+    @Test fun certainOwnerFinalSupersedesRejectedObserverPlanInBothDeliveryOrdersIdempotently() = runTest {
+        val clock = Clock.fixed(Instant.ofEpochMilli(start + 3 * hour), ZoneOffset.UTC)
+        for (observerFirst in listOf(true, false)) {
+            val store = FocusHistoryStore(temporary.newFolder(), clock)
+            assertTrue(store.append(HistoryEvent(type = "started", session = terminal.sessionId, at = start,
+                plannedEnd = start + hour, tz = "UTC", name = "Focus", tier = "easy", source = "manual")))
+            val rejected = HistoryEvent(type = "rescheduled", session = terminal.sessionId, at = start + hour + 1,
+                plannedEnd = start + 2 * hour, observedAt = clock.millis() + 1, tz = "UTC", inferred = true)
+            if (observerFirst) assertTrue(store.append(rejected))
+            val final = terminal.copy(logicalEnd = AccessClockStamp(start + 2 * hour, 2 * hour, "boot"),
+                observedAt = AccessClockStamp(clock.millis(), 3 * hour, "boot"))
+            projectEditorHistoryTerminals(PendingOwner(final), store::update, ZoneOffset.UTC)
+            if (!observerFirst) assertTrue(store.append(rejected))
+            val beforeReplay = store.load().events
+            projectEditorHistoryTerminals(PendingOwner(final), store::update, ZoneOffset.UTC)
+            assertEquals(beforeReplay, store.load().events)
+            val result = FocusHistoryAggregator.sessions(store.load().events, clock.millis(), emptySet()).single()
+            assertEquals(SessionOutcome.COMPLETED, result.outcome)
+            assertEquals(2 * hour, result.focusedMs)
+        }
+    }
+
     @Test fun failedAckThenClearSuppressesOldTerminalReplayAfterStoreRestart() = runTest {
         val clock = Clock.fixed(Instant.ofEpochMilli(start + 2 * hour), ZoneOffset.UTC)
         val store = FocusHistoryStore(temporary.newFolder(), clock)

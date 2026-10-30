@@ -155,7 +155,8 @@ final class FlintHistoryTests: XCTestCase {
     }
     func testFH11BreaksSubtractClippedUnionIncludingPlannedEnd() {
         var pause = event(.breakStarted, 600); pause.breakEnd = event(.breakEnded, 1200).at
-        let events = [event(.started, 0), pause, event(.breakStarted, 1800), event(.breakEnded, 2400), event(.completed, 4000)]
+        var trustedLateEnd = event(.completed, 4000); trustedLateEnd.timeConfidence = .certain
+        let events = [event(.started, 0), pause, event(.breakStarted, 1800), event(.breakEnded, 2400), trustedLateEnd]
         // The second break's observed end must not extend the first break.
         XCTAssertEqual(summary(events).focusedSeconds, 2400)
         XCTAssertEqual(summary([event(.started, 0), pause, event(.completed, 3600)]).focusedSeconds, 3000)
@@ -255,7 +256,8 @@ final class FlintHistoryTests: XCTestCase {
         XCTAssertEqual(completed.sessions[0].outcome, .completed)
         XCTAssertEqual(completed.focusedSeconds, 7200)
         var shortened = event(.rescheduled, 600); shortened.plannedEnd = event(.completed, 1200).at
-        XCTAssertEqual(summary([event(.started, 0), shortened, event(.completed, 3600)]).focusedSeconds, 1200)
+        var trustedLateEnd = event(.completed, 3600); trustedLateEnd.timeConfidence = .certain
+        XCTAssertEqual(summary([event(.started, 0), shortened, trustedLateEnd]).focusedSeconds, 1200)
         var afterTerminal = event(.rescheduled, 4000); afterTerminal.plannedEnd = event(.completed, 5000).at
         XCTAssertEqual(summary([event(.started, 0), event(.completed, 3600), afterTerminal]).focusedSeconds, 3600)
         let openEnded = event(.rescheduled, 1800)
@@ -362,7 +364,7 @@ final class FlintHistoryTests: XCTestCase {
     }
     func testFirstHostReadIncludesEarlierExtensionInboxInHistoryStart() {
         let extensionStore = FlintHistoryStore(directory: directory, isHost: false)
-        XCTAssertTrue(extensionStore.append(event(.started, -86400)))
+        XCTAssertTrue(extensionStore.append(event(.started, -86400, end: -82800)))
         XCTAssertTrue(extensionStore.append(event(.completed, -82800)))
         let snapshot = store().read()
         XCTAssertEqual(snapshot.historyStart, t.addingTimeInterval(-86400))
@@ -582,7 +584,13 @@ final class FlintHistoryTests: XCTestCase {
         var b = event(.breakStarted, 900); b.breakEnd = event(.breakEnded, 1800).at
         XCTAssertEqual(summary([event(.started, 0), a, b, event(.completed, 3600)]).focusedSeconds, 2400)
         var clipped = event(.breakStarted, -300); clipped.breakEnd = event(.breakEnded, 600).at
-        XCTAssertEqual(summary([clipped, event(.started, 0), event(.breakStarted, 3000), event(.completed, 3600)]).focusedSeconds, 2400)
+        let contradictory = summary([clipped, event(.started, 0), event(.breakStarted, 3000), event(.completed, 3600)])
+        XCTAssertEqual(contradictory.sessions.first?.outcome, .unconfirmed)
+        XCTAssertEqual(contradictory.focusedSeconds, 0, "A break before the actual start cannot prove coverage")
+        XCTAssertEqual(contradictory.days.reduce(0) { $0 + $1.completed }, 0)
+        // A legitimate pending break can extend past the focus deadline; its cut is clipped.
+        var tail = event(.breakStarted, 3000); tail.breakEnd = event(.breakEnded, 4200).at
+        XCTAssertEqual(summary([event(.started, 0), a, tail, event(.completed, 3600)]).focusedSeconds, 2400)
     }
     func testFH09HistoricalBucketsMoveWhenZoneChanges() {
         let start = utc.date(from: DateComponents(year: 2026, month: 10, day: 28, hour: 1))!

@@ -18,6 +18,10 @@ object HistoryCodec {
         event.reason?.let { put("reason", it) }
         event.originRoute?.let { put("originRoute", it) }
         event.observedAt?.let { put("observedAt", it) }
+        event.timeConfidence?.let { confidence -> put("timeConfidence", when (confidence) {
+            HistoryEventTimeConfidence.Certain -> mapOf("kind" to "certain")
+            is HistoryEventTimeConfidence.Uncertain -> mapOf("kind" to "uncertain", "reason" to confidence.reason)
+        }) }
         event.kind?.let { put("kind", it) }
         event.grant?.let { put("grant", it) }
         event.sessions?.let { put("sessions", it) }
@@ -32,6 +36,16 @@ object HistoryCodec {
             ?: error("Missing string: $key")
         fun optionalString(key: String): String? = fields[key]?.let { it as? String ?: error(key) }
         fun optionalLong(key: String): Long? = fields[key]?.let { it as? Long ?: error(key) }
+        // Preserve the raw field, but never interpret unsupported confidence as legacy nil.
+        val timeConfidence = fields["timeConfidence"]?.let { value ->
+            val confidence = value as? Map<*, *>
+            when {
+                confidence?.get("kind") == "certain" -> HistoryEventTimeConfidence.Certain
+                confidence?.get("kind") == "uncertain" && confidence["reason"] is String ->
+                    HistoryEventTimeConfidence.Uncertain(confidence["reason"] as String)
+                else -> HistoryEventTimeConfidence.Uncertain("unsupported_time_confidence")
+            }
+        }
         val version = (fields["v"] as? Long)?.takeIf { it in 1..Int.MAX_VALUE }?.toInt() ?: error("v")
         val type = string("type")
         if (version > 1 || HistoryEventType.fromWire(type) == null) {
@@ -47,6 +61,7 @@ object HistoryCodec {
             route = optionalString("route"), by = optionalString("by"),
             breakEnd = optionalLong("breakEnd"), reason = optionalString("reason"), originalLine = line,
             originRoute = optionalString("originRoute"), observedAt = optionalLong("observedAt"),
+            timeConfidence = timeConfidence,
             kind = optionalString("kind"), grant = optionalString("grant"), recoveryEnd = optionalLong("recoveryEnd"),
             sessions = fields["sessions"]?.let { list ->
                 (list as? List<*>)?.map { it as? String ?: error("Invalid session reference") } ?: error("sessions")
