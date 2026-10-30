@@ -16,6 +16,24 @@ internal class PathBForegroundNotification(
     private var started = false
     private var lastContent: Content? = null
 
+    /** Startup obligation: no customizer, PendingIntent, preference, color or package lookup. */
+    fun startMinimal() {
+        if (started) return
+        val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(context, CHANNEL_ID)
+        else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(context)
+        }
+        builder.setContentTitle("Flint focus protection").setContentText("Checking protection availability.")
+            .setSmallIcon(R.drawable.ic_stat_flint).setWhen(0).setShowWhen(false)
+            .setUsesChronometer(false).setOngoing(true).setAutoCancel(false).setOnlyAlertOnce(true)
+        if (Build.VERSION.SDK_INT >= 26) builder.setTimeoutAfter(0)
+        val notification = builder.build()
+        startForeground(notification)
+        started = true
+        lastContent = Content.from(notification)
+    }
+
     fun refresh(mode: FallbackMode?, force: Boolean = false) {
         val title = "Flint focus protection"
         val text = when (mode) {

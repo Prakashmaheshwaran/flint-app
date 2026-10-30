@@ -87,6 +87,8 @@ object PathBBlockHandoff {
         packageName: String,
         verdict: Verdict,
         timeLimitSpent: Boolean = false,
+        /** Resolved by the detector on IO; missing labels use the existing UI fallback. */
+        appLabel: String? = null,
     ) {
         val appContext = context.applicationContext
         val c = coordinator(appContext)
@@ -101,7 +103,7 @@ object PathBBlockHandoff {
         }
         val cause = c.evaluateBlockCause(previous, packageName, ruleCause, timeLimitSpent)
         if (cause != null) {
-            c.showBlocked(packageName, labelFor(appContext, packageName), cause)
+            c.showBlocked(packageName, appLabel, cause)
         } else {
             c.hideIfShown()
         }
@@ -163,8 +165,4 @@ object PathBBlockHandoff {
         )
     }
 
-    private fun labelFor(context: Context, packageName: String): String? = runCatching {
-        val pm = context.packageManager
-        pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
-    }.getOrNull()
 }

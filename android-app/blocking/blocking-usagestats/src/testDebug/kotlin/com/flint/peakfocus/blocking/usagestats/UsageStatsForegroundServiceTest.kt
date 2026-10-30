@@ -19,6 +19,7 @@ import com.flint.peakfocus.blocking.overlay.ProtectionStatusHub
 import com.flint.peakfocus.core.model.EnforcementSignals
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.resetMain
@@ -38,6 +39,10 @@ import org.robolectric.shadows.ShadowSystemClock
 import org.robolectric.shadows.ShadowLog
 import org.robolectric.shadows.ShadowUsageStatsManager
 import java.time.Duration
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(AndroidJUnit4::class)
@@ -60,6 +65,7 @@ class UsageStatsForegroundServiceTest {
         controller = Robolectric.buildService(UsageStatsForegroundService::class.java)
         service = controller.get()
         service.queryDispatcher = dispatcher
+        service.notificationDispatcher = dispatcher
         grantUsage(true)
     }
 
@@ -74,31 +80,37 @@ class UsageStatsForegroundServiceTest {
     }
 
     @Test fun `foreground starts before permission and usage observation and keeps the mandatory identity`() {
-        customize { it.setContentTitle("Customized focus").setOngoing(false).setTimeoutAfter(1) }
+        var customizations = 0
+        customize { customizations++; it.setContentTitle("Customized focus").setOngoing(false).setTimeoutAfter(1) }
         controller.create()
+        assertEquals(0, CountingUsageStats.calls)
+        assertEquals(0, customizations)
+        startLoop()
         val foreground = shadowOf(service)
         assertEquals(1001, foreground.lastForegroundNotificationId)
         val n = foreground.lastForegroundNotification
-        assertEquals("Customized focus", n.extras.getCharSequence(Notification.EXTRA_TITLE))
+        assertEquals("Flint focus protection", n.extras.getCharSequence(Notification.EXTRA_TITLE))
         assertEquals("flint_enforcement", n.channelId)
         assertEquals(0L, n.timeoutAfter)
         assertTrue(n.flags and Notification.FLAG_ONGOING_EVENT != 0)
         assertEquals(ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE, service.foregroundServiceType)
         assertEquals(PathBState.UNKNOWN, health())
         assertEquals(0, CountingUsageStats.calls)
-        startLoop()
+        assertEquals(0, customizations)
         assertEquals(PathBState.UNKNOWN, health())
         scheduler.runCurrent()
         assertEquals(PathBState.ENFORCING, health())
         assertTrue(CountingUsageStats.calls > 0)
+        assertTrue(customizations > 0)
+        assertEquals("Customized focus", activeNotification().extras.getCharSequence(Notification.EXTRA_TITLE))
     }
 
     @Test fun `failed foreground start cannot advertise live enforcement`() {
         shadowOf(service).setThrowInStartForeground(SecurityException("denied"))
         controller.create()
         assertEquals(PathBState.UNKNOWN, health())
-        assertTrue("foreground-start-failed" in ProtectionStatusHub.status.value.detectors.degradedReasons)
         assertEquals(Service.START_NOT_STICKY, startLoop())
+        assertTrue("foreground-start-failed" in ProtectionStatusHub.status.value.detectors.degradedReasons)
         scheduler.runCurrent()
         assertEquals(0, CountingUsageStats.calls)
         assertTrue(shadowOf(service).isStoppedBySelf)
@@ -121,6 +133,93 @@ class UsageStatsForegroundServiceTest {
         val calls = CountingUsageStats.calls
         PathBNotification.requestRefresh(); scheduler.runCurrent()
         assertEquals(calls, CountingUsageStats.calls)
+    }
+
+    @Test fun `blocked cold initialization stays off main coalesces starts and cannot activate after destroy`() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val finished = CountDownLatch(1)
+        val invocations = AtomicInteger()
+        val main = Thread.currentThread()
+        val worker = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+        service.queryDispatcher = worker
+        service.beforeRuntimeInitialization = {
+            try {
+                assertNotSame(main, Thread.currentThread())
+                invocations.incrementAndGet()
+                entered.countDown()
+                assertTrue(release.await(5, TimeUnit.SECONDS))
+            } finally { finished.countDown() }
+        }
+        try {
+            controller.create()
+            assertEquals(Service.START_STICKY, startLoop())
+            assertEquals(1001, shadowOf(service).lastForegroundNotificationId)
+            scheduler.runCurrent()
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            // Main can process a second service command while the cold provider is stuck.
+            assertEquals(Service.START_STICKY, startLoop())
+            scheduler.runCurrent()
+            assertEquals(1, invocations.get())
+            assertEquals(0, CountingUsageStats.calls)
+            assertEquals(PathBState.UNKNOWN, health())
+            controller.destroy(); destroyed = true
+            release.countDown()
+            assertTrue(finished.await(5, TimeUnit.SECONDS))
+            scheduler.runCurrent()
+            assertEquals(PathBState.OFF, health())
+            assertEquals(0, CountingUsageStats.calls)
+            assertTrue(shadowOf(service).isForegroundStopped)
+        } finally { release.countDown(); worker.close() }
+    }
+
+    @Test fun `failed initialization stops foreground without advertising healthy observation`() {
+        service.beforeRuntimeInitialization = { throw java.io.IOException("cold store unavailable") }
+        controller.create(); startLoop(); scheduler.runCurrent()
+        assertEquals(PathBState.UNKNOWN, health())
+        assertTrue("service-initialization-failed" in ProtectionStatusHub.status.value.detectors.degradedReasons)
+        assertEquals(0, CountingUsageStats.calls)
+        assertTrue(shadowOf(service).isForegroundStopped)
+        assertTrue(shadowOf(service).isStoppedBySelf)
+        assertEquals(Service.START_NOT_STICKY, startLoop())
+    }
+
+    @Test fun `blocked rich customizer does not delay foreground or observation and cannot repost after stop`() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val finished = CountDownLatch(1)
+        val main = Thread.currentThread()
+        val executor = Executors.newSingleThreadExecutor()
+        val worker = executor.asCoroutineDispatcher()
+        service.notificationDispatcher = worker
+        customize {
+            try {
+                assertNotSame(main, Thread.currentThread())
+                entered.countDown()
+                assertTrue(release.await(5, TimeUnit.SECONDS))
+                it.setContentTitle("Late customized content")
+            } finally { finished.countDown() }
+        }
+        try {
+            controller.create(); startLoop()
+            assertEquals(1L, entered.count)
+            assertEquals(1001, shadowOf(service).lastForegroundNotificationId)
+            scheduler.runCurrent()
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            assertEquals(PathBState.ENFORCING, health())
+            val before = CountingUsageStats.calls
+            startLoop(); scheduler.advanceTimeBy(1_000); scheduler.runCurrent()
+            assertTrue(CountingUsageStats.calls > before)
+            controller.destroy(); destroyed = true
+            release.countDown()
+            assertTrue(finished.await(5, TimeUnit.SECONDS))
+            // Await completion of the same serialized display executor, including notify.
+            executor.submit {}.get(5, TimeUnit.SECONDS)
+            scheduler.runCurrent()
+            val manager = service.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            assertTrue(manager.activeNotifications.none { it.id == 1001 })
+            assertEquals(PathBState.OFF, health())
+        } finally { release.countDown(); worker.close() }
     }
 
     @Test fun `end and stale display refreshes remove the chronometer without polling or renewing health`() {
@@ -207,6 +306,8 @@ class UsageStatsForegroundServiceTest {
 
     private fun startLoop(): Int = service.onStartCommand(Intent(service, UsageStatsForegroundService::class.java), 0, 1)
     private fun health() = ProtectionStatusHub.status.value.detectors.pathB
+    private fun activeNotification() = (service.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+        .activeNotifications.single { it.id == 1001 }.notification
     private fun grantUsage(allowed: Boolean) {
         val ops = service.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
         shadowOf(ops).setMode(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), service.packageName,
