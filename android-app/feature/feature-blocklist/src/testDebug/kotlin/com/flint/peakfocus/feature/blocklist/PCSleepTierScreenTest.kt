@@ -2,7 +2,6 @@ package com.flint.peakfocus.feature.blocklist
 
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.flint.peakfocus.core.common.theme.FlintTheme
 import com.flint.peakfocus.core.model.BreakLevel
@@ -62,9 +61,10 @@ class PCSleepTierScreenTest {
             .performScrollTo().performClick().assertIsSelected()
         compose.onNodeWithText(HARDCORE_COMMITMENT_DISCLOSURE).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Tier: Hardcore").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Keep blocking after waking").assert(
-            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Tier: Hardcore"),
-        )
+        compose.onNodeWithText("Keep blocking after waking").assertIsOn()
+            .assert(hasText("Tier: Hardcore", substring = true))
+        compose.onNodeWithText("Keep blocking after waking").performScrollTo().performClick().assertIsOff()
+            .performClick().assertIsOn().assert(hasText("Tier: Hardcore", substring = true))
         compose.onNodeWithText("Save sleep mode").performScrollTo().performClick()
         compose.runOnIdle {
             assertEquals(BreakLevel.EASY, saved!!.breakLevel)
@@ -88,6 +88,21 @@ class PCSleepTierScreenTest {
         compose.runOnIdle {
             assertEquals(BreakLevel.HARDER, saved!!.breakLevel)
             assertEquals(BreakLevel.EASY, saved!!.morningBreakLevel)
+        }
+    }
+
+    @Test fun PC_82_newMorningInheritsTheChosenWindowTierAndKeepsNormalSwitchState() {
+        render(SleepConfig.DEFAULT)
+        compose.onNode(hasText("Hardcore") and hasAnyAncestor(hasTestTag("sleep-window-tier")))
+            .performScrollTo().performClick()
+        compose.onNodeWithText("Keep blocking after waking").performScrollTo().assertIsOff().performClick().assertIsOn()
+            .assert(hasText("Tier: Hardcore", substring = true))
+        compose.onNode(hasText("Hardcore") and hasAnyAncestor(hasTestTag("sleep-morning-tier")))
+            .performScrollTo().assertIsSelected()
+        compose.onNodeWithText("Save sleep mode").performScrollTo().performClick()
+        compose.runOnIdle {
+            assertEquals(BreakLevel.HARDCORE, saved!!.breakLevel)
+            assertEquals(BreakLevel.HARDCORE, saved!!.morningBreakLevel)
         }
     }
 }

@@ -772,7 +772,7 @@ private fun RuleCard(
 }
 
 @Composable
-private fun SleepCard(config: SleepConfig?, onClick: () -> Unit, onToggle: (Boolean) -> Unit) {
+internal fun SleepCard(config: SleepConfig?, onClick: () -> Unit, onToggle: (Boolean) -> Unit) {
     val enabled = config?.enabled == true
     val reducedMotion = rememberReducedMotion()
     val containerColor by animateColorAsState(

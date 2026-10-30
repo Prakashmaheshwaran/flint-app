@@ -52,5 +52,9 @@ class SleepPresentationTest {
         assertEquals(R.string.sleep_tier_harder, sleepPresentation(strongerWindow).tier)
         assertEquals(R.string.sleep_off_harder, sleepPresentation(strongerWindow).offExplanation)
         assertFalse(sleepPresentation(strongerWindow).emphasizeTier)
+        val strongerMorning = disabledMorning.copy(morningEnabled = true)
+        assertEquals(R.string.sleep_tier_hardcore, sleepPresentation(strongerMorning).tier)
+        assertEquals(R.string.sleep_off_hardcore, sleepPresentation(strongerMorning).offExplanation)
+        assertTrue(sleepPresentation(strongerMorning).emphasizeTier)
     }
 }
