@@ -4,6 +4,34 @@ import Foundation
 /// The host's read/eligibility boundary, shared with tests. Unknown desired intent never
 /// authorizes cleanup; failed repairs leave their last-good cause store to its bounded end.
 enum FlintWebRestrictionHostReconciler {
+    static func busyReport(now: Date = Date()) -> FlintArmingHealth.DomainReport {
+        .init(enabled: 0, attempted: 0, armed: 0, failures: [.init(activityName: "webRestrictions",
+            reason: "Website rules are busy. Existing settings were preserved; try reconciliation again shortly.")], updatedAt: now)
+    }
+
+    static func withRead(_ read: () -> FlintWebRestrictionRead,
+                         reconcile: (FlintWebRestrictions?) -> FlintArmingHealth.DomainReport) -> FlintArmingHealth.DomainReport {
+        switch read() {
+        case .busy: return busyReport()
+        case .unavailable: return reconcile(nil)
+        case let .available(config): return reconcile(config)
+        }
+    }
+
+    static func reconcileLive() -> FlintArmingHealth.DomainReport {
+        // Read owners, intent and eligibility and perform native writes in one transition.
+        // A strengthening cannot commit between our config read and an older native write.
+        guard FlintRuleStoreLock.prepareInitialization(environment: .live) else { return busyReport() }
+        return FlintSessionController().withTransition {
+            withRead(FlintWebRestrictions.readForEnforcement) { config in
+                guard let group = FlintGroupStore() else { return busyReport() }
+                return reconcile(activeSession: group.loadActiveSession(), hasActiveSessionRecord: group.hasActiveSessionRecord(),
+                    rules: FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: .flintGroup, migrating: false),
+                    config: config, health: group.loadArmingHealth(), lifecycle: .init(), clock: .system)
+            }
+        } ?? busyReport()
+    }
+
     static func reconcile(
         activeSession: FlintActiveSession?, hasActiveSessionRecord: Bool,
         rules: [FlintScheduleRule]?, config: FlintWebRestrictions?, health: FlintArmingHealth,

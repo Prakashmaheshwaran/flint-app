@@ -384,6 +384,32 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
         XCTAssertTrue(writer.web.isEmpty, "The last logical end releases the primary and legacy web keys")
     }
 
+    @MainActor
+    func testWebLiveLayerRunsNormalAcquisitionOffMainAndRetriesBusyWithoutCorruption() async throws {
+        let writer = RecordingWebWriter()
+        let config = FlintWebRestrictions(enabled: true, blockedDomains: ["strengthened.example"])
+        let active = session()
+        let health = hostHealth([])
+        let instant = now
+        var acquired = false
+        let layer = FlintWebProtectionLayer {
+            XCTAssertFalse(Thread.isMainThread)
+            return FlintWebRestrictionHostReconciler.withRead({ acquired ? .available(config) : .busy }) { read in
+                FlintWebRestrictionHostReconciler.reconcile(activeSession: active, hasActiveSessionRecord: true,
+                    rules: [], config: read, health: health, lifecycle: .init(writer: writer), now: instant)
+            }
+        }
+        let busy = try await layer.reconcile(trigger: .foreground)
+        XCTAssertTrue(writer.applied.isEmpty); XCTAssertTrue(writer.cleared.isEmpty)
+        XCTAssertTrue(busy.failures.first?.reason.contains("busy") == true)
+        XCTAssertFalse(busy.failures.first?.reason.contains("unavailable") == true)
+        acquired = true
+        let applied = try await layer.reconcile(trigger: .foreground)
+        XCTAssertEqual(applied.armed, 1)
+        XCTAssertEqual(writer.web["flint"], config)
+        XCTAssertTrue(applied.failures.isEmpty)
+    }
+
     func testUnavailableIntentReleasesTrustedOneShotEndButNotUnknownSnapshotOrPassGate() {
         let writer = RecordingWebWriter()
         let config = FlintWebRestrictions(applyDuringSchedules: true)

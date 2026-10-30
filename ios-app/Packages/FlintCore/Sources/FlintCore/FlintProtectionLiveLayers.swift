@@ -13,6 +13,21 @@ private struct FlintLiveProtectionLayer: FlintProtectionLayer {
     }
 }
 
+@MainActor
+struct FlintWebProtectionLayer: FlintProtectionLayer {
+    let domain = "webRestrictions"
+    let run: () -> FlintArmingHealth.DomainReport
+
+    init(run: @escaping () -> FlintArmingHealth.DomainReport = FlintWebRestrictionHostReconciler.reconcileLive) {
+        self.run = run
+    }
+
+    func reconcile(trigger: FlintProtectionTrigger) async throws -> FlintArmingHealth.DomainReport {
+        let work = run
+        return await Task.detached(priority: .userInitiated) { work() }.value
+    }
+}
+
 extension FlintProtectionReconciler {
     /// Shared across scenes as well as tabs. No view model owns protection startup.
     public static let shared = FlintProtectionReconciler(layers: [
@@ -49,16 +64,7 @@ extension FlintProtectionReconciler {
             FlintOpenLimitsController().reload(reapplyShields: reapplyShields)
             return group.loadArmingHealth().domains["openLimits"] ?? missingReport("openLimits")
         },
-        FlintLiveProtectionLayer(domain: "webRestrictions") { _ in
-            guard let group = FlintGroupStore() else { throw FlintSessionError.appGroupUnavailable }
-            let active = group.loadActiveSession()
-            return FlintWebRestrictionHostReconciler.reconcile(
-                activeSession: active, hasActiveSessionRecord: group.hasActiveSessionRecord(),
-                rules: FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: .flintGroup, migrating: false),
-                config: FlintWebRestrictions.loadForEnforcement(), health: group.loadArmingHealth(),
-                lifecycle: FlintWebRestrictionLifecycle(), clock: .system
-            )
-        }
+        FlintWebProtectionLayer()
     ], prepare: {
         // Establish positive rule initialization before session/pass startup creates its own
         // protection evidence. Existing installations and unavailable domains are untouched.
