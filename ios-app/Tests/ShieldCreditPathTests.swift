@@ -93,20 +93,16 @@ final class ShieldCreditPathTests: XCTestCase {
                    locale: english, timeZone: utc)
     }
     /// Exactly the production action wiring, with the injected service standing in for the
-    /// App Group adapter behind `FlintOpenCredit.accept(for:)`.
+    /// App Group adapter behind `FlintOpenCredit.accept(for:)`. The gate is injected so these
+    /// behavior tests stay green when the release flag is turned off again.
     @discardableResult
-    private func press(_ action: ShieldAction,
-                       acceptanceEnabled: Bool = FlintOpenCredit.shieldAcceptanceEnabled) -> ShieldActionResponse {
+    private func press(_ action: ShieldAction, acceptanceEnabled: Bool = true) -> ShieldActionResponse {
         ShieldCreditAction.response(to: action, acceptanceEnabled: acceptanceEnabled) {
             (try? service.accept(target: shieldKey, operationID: UUID().uuidString).get()) != nil
         }
     }
     private func assertNothingSpent(_ expectedUsed: Int, file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertEqual(used, expectedUsed, "no credit spent", file: file, line: line)
-    }
-
-    func testShieldAcceptanceReleaseGateIsEnabled() {
-        XCTAssertTrue(FlintOpenCredit.shieldAcceptanceEnabled)
     }
 
     /// Turning the release gate back off is one line: the shield then draws only "Go back"
@@ -310,20 +306,43 @@ final class ShieldCreditPathTests: XCTestCase {
         assertNothingSpent(0)
     }
 
-    /// A wall-clock jump makes only the reset estimate uncertain; the reset itself still
-    /// follows elapsed time.
+    /// A wall-clock jump past midnight makes only the reset estimate uncertain: nothing
+    /// refills at the edited wall midnight, only at the trusted elapsed boundary.
     func testWallClockJumpLeavesTheResetOnElapsedTime() throws {
         cap = 1
         try initialize()
         _ = try service.accept(target: shieldKey, operationID: "noon").get()
-        advance(300); _ = service.reconcile()
-        now = now.addingTimeInterval(2 * 3600) // wall only
+        advance(300); _ = service.reconcile() // 12:05 trusted; 42,900 s to the reset
+        now = now.addingTimeInterval(12 * 3600) // wall only: 00:05 on the next date
+        _ = service.reconcile()
         XCTAssertTrue(service.preview(target: shieldKey).timeUncertain)
+        XCTAssertEqual(service.preview(target: shieldKey).remaining, 0, "no refill at the edited wall midnight")
         XCTAssertEqual(drawn().subtitle, "No credits left today · the reset time is uncertain")
         XCTAssertNil(drawn().secondaryButtonLabel)
-        advance(12 * 3600)
+        advance(42_800); _ = service.reconcile() // trusted 23:58:20
+        XCTAssertEqual(service.preview(target: shieldKey).remaining, 0, "still before the trusted reset")
+        advance(200)                              // trusted 00:01:40
+        XCTAssertEqual(service.preview(target: shieldKey).remaining, 1)
         XCTAssertEqual(drawn().subtitle, "Last credit today")
         XCTAssertEqual(drawn().secondaryButtonLabel, "Use one credit · 5 minutes")
+    }
+
+    /// Recovery can close a committed grant without refunding it. A later blocked shield must
+    /// then report the counter, never "no credit used".
+    func testGrantRemovedWithoutRefundIsNeverReportedAsUnspent() throws {
+        try initialize()
+        releaseFails = true
+        XCTAssertEqual(press(.secondaryButtonPressed), .defer)
+        XCTAssertEqual(used, 1)
+        contributors = [.init(name: "Current session", applications: [shieldKey])]
+        registrationFails = true
+        _ = service.reconcile() // carrier repair fails: the grant closes, consumption stays
+        XCTAssertEqual(used, 1)
+        XCTAssertNil(try ledger.read().get().openCredits.grants[shieldKey])
+        let redrawn = drawn()
+        XCTAssertEqual(redrawn.subtitle, "A focus session still blocks this app · 2 of 3 credits left today")
+        XCTAssertFalse(redrawn.subtitle.contains("no credit used"))
+        XCTAssertNil(redrawn.secondaryButtonLabel)
     }
 
     func testStaleCreditButtonAfterThePoolRanOutChargesNothingAndRedraws() throws {

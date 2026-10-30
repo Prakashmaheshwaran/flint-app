@@ -245,6 +245,16 @@ final class ShieldCopyTests: XCTestCase {
             XCTAssertFalse(result.subtitle.contains("Deep work") || result.subtitle.contains("Social"), "kind only")
             XCTAssertNil(result.secondaryButtonLabel)
         }
+        // "no credit used" needs an untouched pool; a missing grant is not a refund receipt.
+        XCTAssertEqual(copy(credit: credit(preview(remaining: 1, blockedBy: .otherContributor,
+                                                   contributors: ["Schedule: Deep work"]))).subtitle,
+                       "A schedule still blocks this app · 1 of 3 credits left today")
+        XCTAssertEqual(copy(credit: credit(preview(remaining: 0, blockedBy: .otherContributor,
+                                                   contributors: ["Current session"]))).subtitle,
+                       "A focus session still blocks this app · no credits left today")
+        XCTAssertEqual(copy(credit: credit(preview(remaining: nil, cap: nil, blockedBy: .otherContributor,
+                                                   contributors: ["Current session"]))).subtitle,
+                       "A focus session still blocks this app")
         // A newly added cause can block a committed credit; its clock keeps running.
         let blockedGrant = copy(credit: credit(preview(remaining: 2, blockedBy: .otherContributor, grant: liveGrant,
                                                        contributors: ["Schedule: Deep work"], duration: 200)))
@@ -330,7 +340,7 @@ final class ShieldCopyTests: XCTestCase {
         XCTAssertEqual(applying.subtitle, "A credit was used, but access hasn't opened yet")
         XCTAssertNil(applying.secondaryButtonLabel)
         let reselect = copy(credit: credit(preview(remaining: nil, blockedBy: .identityNeedsReselection)))
-        XCTAssertEqual(reselect.subtitle, "Flint can't match this app to its credits yet · no credit used")
+        XCTAssertEqual(reselect.subtitle, "Flint can't match this app to its credits yet")
         XCTAssertNil(reselect.secondaryButtonLabel)
     }
 
@@ -365,8 +375,9 @@ final class ShieldCopyTests: XCTestCase {
                             XCTAssertEqual(result.secondaryButtonLabel != nil, offers, "\(value)")
                             XCTAssertEqual(ShieldCopy.offersCredit(value), offers)
                             if offers { offered += 1 }
-                            if grant != nil {
-                                XCTAssertFalse(result.subtitle.contains("no credit used"), "a live grant spent one: \(result.subtitle)")
+                            if result.subtitle.contains("no credit used") {
+                                // Only the period counter proves nonconsumption (fixture cap is 3).
+                                XCTAssertTrue(grant == nil && remaining == 3, "unproven: \(result.subtitle)")
                             }
                             for text in [result.title, result.subtitle, result.primaryButtonLabel,
                                          result.secondaryButtonLabel ?? ""] {

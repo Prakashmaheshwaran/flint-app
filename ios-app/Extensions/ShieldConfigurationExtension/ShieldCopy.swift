@@ -88,10 +88,7 @@ struct ShieldCopy: Equatable {
             return (subtitle, offerLabel(duration: duration, locale: locale))
         }
 
-        // A committed credit keeps its clock even when another cause now blocks the target,
-        // so "no credit used" is only claimed when no grant is live.
-        let tail = preview.grant.map { _ in activeCredit(preview.duration, locale: locale) }
-            ?? String(localized: "no credit used", locale: locale)
+        let tail = consumptionTail(preview, locale: locale)
 
         if preview.grant != nil, preview.blockedBy == nil {
             // The shield is visible, so the target may not be open right now. Describe the
@@ -124,17 +121,17 @@ struct ShieldCopy: Equatable {
             return (unavailable(locale), nil)
         case .otherContributor?:
             let lead = otherContributor(preview.blockingContributors, unit: unit, locale: locale)
-            return (String(localized: "\(lead) · \(tail)", locale: locale), nil)
+            return (tail.map { String(localized: "\(lead) · \($0)", locale: locale) } ?? lead, nil)
         case .categoryOverlap?:
             let lead = unit == .app
                 ? String(localized: "Another category rule may still block this app", locale: locale)
                 : String(localized: "Another category rule may still block this site", locale: locale)
-            return (String(localized: "\(lead); \(tail)", locale: locale), nil)
+            return (tail.map { String(localized: "\(lead); \($0)", locale: locale) } ?? lead, nil)
         case .identityNeedsReselection?:
-            let lead = unit == .app
+            // No counter matches this identity, so the preview cannot report its credits.
+            return (unit == .app
                 ? String(localized: "Flint can't match this app to its credits yet", locale: locale)
-                : String(localized: "Flint can't match this site to its credits yet", locale: locale)
-            return (String(localized: "\(lead) · \(tail)", locale: locale), nil)
+                : String(localized: "Flint can't match this site to its credits yet", locale: locale), nil)
         case .notOpenLimited?:
             // The service found no covering Open Limit: present the shield's ordinary cause.
             return nil
@@ -146,11 +143,20 @@ struct ShieldCopy: Equatable {
         }
     }
 
-    private static func activeCredit(_ duration: TimeInterval?, locale: Locale) -> String {
-        let minutes = Int(max(0, duration ?? 0) / 60)
-        return minutes >= 1
-            ? String(localized: "credit active for \(minutes) more min", locale: locale)
-            : String(localized: "credit active for under 1 more min", locale: locale)
+    /// What a blocked shield can truthfully say about consumption. A missing grant is not a
+    /// receipt: recovery can close a grant without refunding it. Only the period counter
+    /// proves nothing was spent, so "no credit used" requires an untouched pool.
+    private static func consumptionTail(_ preview: FlintOpenCreditPreview, locale: Locale) -> String? {
+        if preview.grant != nil {
+            let minutes = Int(max(0, preview.duration ?? 0) / 60)
+            return minutes >= 1
+                ? String(localized: "credit active for \(minutes) more min", locale: locale)
+                : String(localized: "credit active for under 1 more min", locale: locale)
+        }
+        guard let remaining = preview.remaining, let cap = preview.cap, cap > 0 else { return nil }
+        if remaining >= cap { return String(localized: "no credit used", locale: locale) }
+        if remaining <= 0 { return String(localized: "no credits left today", locale: locale) }
+        return String(localized: "\(remaining) of \(cap) credits left today", locale: locale)
     }
 
     /// Whole minutes, rounded down, so a midnight-clipped credit never reads longer than it is.

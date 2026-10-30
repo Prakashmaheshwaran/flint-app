@@ -6,8 +6,9 @@ import ManagedSettings
 /// and a drawn configuration can be cached or stale. `ShieldCopy` therefore draws the
 /// secondary "Use one credit" button only for an available credit, and only that button calls
 /// `accept`, which re-checks the pool, blocking causes and registration at press time. "Go back"
-/// and any unknown action always close without charging. A refused press charges nothing and
-/// defers, asking iOS to redraw the shield from current state.
+/// and any unknown action always close without charging. A press refused before commitment
+/// charges nothing; a failure after commitment keeps the spent credit. Either way the response
+/// is `.defer`, which asks iOS to redraw the shield from current state.
 enum ShieldCreditAction {
     /// `accept` returns true only for a committed, released (or replayed live) grant. With the
     /// release gate off it is never called; a stray secondary press only redraws the shield.
