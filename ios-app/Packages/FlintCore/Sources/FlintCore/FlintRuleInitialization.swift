@@ -15,6 +15,7 @@ enum FlintRuleInitialization {
     private static let complete = Data("{\"schema\":1,\"phase\":\"complete\"}".utf8)
     private static let empty = Data("[]".utf8)
     private static let marker = Data("{\"schema\":1}".utf8)
+    private static let ownership = Data("{\"schema\":1,\"owned\":true}".utf8)
 
     static func receipt(in defaults: UserDefaults) -> Receipt {
         guard let object = defaults.object(forKey: receiptKey) else { return .absent }
@@ -59,7 +60,7 @@ enum FlintRuleInitialization {
     /// web, bare quota/ledger and sibling-domain state do not prove that this key was lost.
     static func hasDomainEvidence(_ key: FlintRuleStoreKey, in defaults: UserDefaults,
                                   activities: Set<String>, ledger: FlintLedgerState?, directory: URL?) -> Bool {
-        if [key.original, key.rawValue + ".quarantine.adr012"].contains(where: {
+        if [key.ownership, key.original, key.rawValue + ".quarantine.adr012"].contains(where: {
             defaults.object(forKey: $0) != nil
         }) || activities.contains(where: { $0.hasPrefix(key.prefix) }) { return true }
         if case let .available(retained) = FlintRetainedProtection.load(from: defaults),
@@ -88,7 +89,6 @@ enum FlintRuleInitialization {
         if ledger.harder.contains(where: { cause, entry in
             cause.hasPrefix(causePrefix) || entry.pending?.scope.contains(where: { $0.hasPrefix(causePrefix) }) == true
         }) { return true }
-        if ledger.operations.contains(where: { $0.id.contains("#" + causePrefix) }) { return true }
         if key == .limits, ledger.passLimitThresholds?.isEmpty == false { return true }
         if ledger.openCredits.grants.values.contains(where: { grant in
             grant.coveredActivities.values.contains(where: { $0.hasPrefix(key.prefix) })
@@ -109,7 +109,17 @@ enum FlintRuleInitialization {
         // peek is read-only and acquires no ledger lock: initialization retains lock order.
         let ledger = env.ledger().flatMap { try? $0.peek().get() }
         for key in FlintRuleStoreKey.allCases {
-            guard defaults.object(forKey: key.rawValue) == nil, defaults.object(forKey: key.marker) == nil else { continue }
+            guard defaults.object(forKey: key.marker) == nil else { continue }
+            if defaults.object(forKey: key.rawValue) != nil {
+                // Prove ownership without changing source bytes or the migration marker.
+                // Open-credit recovery must still precede the ordinary migrating load.
+                if defaults.object(forKey: key.ownership) == nil {
+                    guard env.acceptSave() else { return false }
+                    defaults.set(ownership, forKey: key.ownership)
+                    guard defaults.synchronize(), defaults.data(forKey: key.ownership) == ownership else { return false }
+                }
+                continue
+            }
             guard env.acceptSave() else { return false }
             if hasDomainEvidence(key, in: defaults, activities: activities, ledger: ledger, directory: env.recoveryDirectory) {
                 // Remember established ownership even if the OS later drops this registration
@@ -139,7 +149,6 @@ enum FlintRuleInitialization {
         case .invalid: return false
         case .absent, .preparing: break
         }
-        let owned = Set(FlintRuleStoreKey.allCases.flatMap { [$0.rawValue, $0.marker] } + [receiptKey])
         if state == .absent {
             let activities = Set(env.center.activities.map(\.rawValue))
             let ledger = env.ledger().flatMap { try? $0.peek().get() }
@@ -158,9 +167,6 @@ enum FlintRuleInitialization {
             guard env.acceptSave() else { return false }
             defaults.set(preparing, forKey: receiptKey)
             guard defaults.synchronize(), defaults.data(forKey: receiptKey) == preparing else { return false }
-        } else {
-            guard !hasProtectionEvidence(in: defaults, activities: Set(env.center.activities.map(\.rawValue)),
-                external: env.installationEvidence(), ignoring: owned) else { return false }
         }
         for key in FlintRuleStoreKey.allCases {
             // Only this receipt's known empty partial after-image can be resumed.

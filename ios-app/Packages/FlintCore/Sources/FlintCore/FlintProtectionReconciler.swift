@@ -30,13 +30,13 @@ public final class FlintProtectionReconciler {
     private let persist: (FlintProtectionObservation) -> Void
     private let publish: () -> Void
     private let now: () -> Date
-    private let prepare: () -> Void
+    private let prepare: () async -> Void
     private var tail: Task<FlintProtectionObservation, Never>?
 
     /// `publish` re-publishes the shared status projection once every layer has reconciled.
     public init(layers: [any FlintProtectionLayer], now: @escaping () -> Date = Date.init,
                 persist: @escaping (FlintProtectionObservation) -> Void = { $0.save() },
-                prepare: @escaping () -> Void = {},
+                prepare: @escaping () async -> Void = {},
                 publish: @escaping () -> Void = {}) {
         self.layers = layers
         self.now = now
@@ -50,7 +50,7 @@ public final class FlintProtectionReconciler {
         let previous = tail
         let next = Task { @MainActor in
             _ = await previous?.value
-            prepare()
+            await prepare()
             var domains: [String: FlintArmingHealth.DomainReport] = [:]
             for layer in layers {
                 do {

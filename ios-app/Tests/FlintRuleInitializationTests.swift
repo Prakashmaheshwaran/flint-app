@@ -1,9 +1,110 @@
 import XCTest
 import FamilyControls
 import DeviceActivity
+import Darwin
 @testable import FlintCore
 
 final class FlintRuleInitializationTests: XCTestCase {
+    func testR22PreparationLatchesEveryPresentLegacyDomainBeforeItsKeyAndActivityDisappear() throws {
+        for lost in FlintRuleStoreKey.allCases {
+            let h = try RuleHarness(); defer { h.clean() }
+            var schedule = h.schedule(tier: .hardcore); schedule.protection = nil
+            let limit = FlintLimitRule(id: "legacy", name: "Legacy", thresholdMinutes: 30)
+            let open = FlintOpenLimitRule(id: "legacy", name: "Legacy", opensAllowed: 3)
+            let sources: [FlintRuleStoreKey: Data] = [.schedules: try JSONEncoder().encode([schedule]),
+                .limits: try JSONEncoder().encode([limit]), .openLimits: try JSONEncoder().encode([open])]
+            for (key, data) in sources { h.defaults.set(data, forKey: key.rawValue) }
+            h.center.held[.init(lost.prefix + "legacy")] = schedule.registration()
+            XCTAssertTrue(FlintRuleStoreLock.prepareInitialization(environment: h.environment))
+            let receipts = FlintRuleStoreKey.allCases.map { h.defaults.data(forKey: $0.ownership) }
+            for key in FlintRuleStoreKey.allCases {
+                XCTAssertNil(h.defaults.object(forKey: key.marker), "preparation cannot migrate policy ahead of credit recovery")
+                XCTAssertNotNil(h.defaults.object(forKey: key.ownership))
+                XCTAssertEqual(h.defaults.data(forKey: key.rawValue), sources[key])
+            }
+            XCTAssertTrue(FlintRuleStoreLock.prepareInitialization(environment: h.environment))
+            XCTAssertEqual(FlintRuleStoreKey.allCases.map { h.defaults.data(forKey: $0.ownership) }, receipts,
+                "ownership receipts are write-once")
+            h.defaults.removeObject(forKey: lost.rawValue)
+            h.center.held.removeAll()
+            XCTAssertTrue(FlintRuleStoreLock.prepareInitialization(environment: h.environment))
+            switch lost {
+            case .schedules: XCTAssertNil(h.environment.observedRules(FlintScheduleRule.self))
+            case .limits: XCTAssertNil(h.environment.observedRules(FlintLimitRule.self))
+            case .openLimits: XCTAssertNil(h.environment.observedRules(FlintOpenLimitRule.self))
+            }
+            XCTAssertNil(h.defaults.object(forKey: lost.rawValue), "lost established state cannot become []")
+            XCTAssertTrue(h.cleared.isEmpty); XCTAssertTrue(h.center.stops.isEmpty)
+        }
+    }
+
+    func testR22PreparationRecordsUnreadableDomainOwnershipWithoutTouchingItsSource() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let source = Data("future unreadable rules".utf8)
+        h.defaults.set(source, forKey: FlintRuleStoreKey.schedules.rawValue)
+        XCTAssertTrue(FlintRuleStoreLock.prepareInitialization(environment: h.environment))
+        XCTAssertNil(h.defaults.object(forKey: FlintRuleStoreKey.schedules.marker))
+        XCTAssertNotNil(h.defaults.object(forKey: FlintRuleStoreKey.schedules.ownership))
+        XCTAssertEqual(h.defaults.data(forKey: FlintRuleStoreKey.schedules.rawValue), source)
+        XCTAssertNil(h.defaults.object(forKey: FlintRuleStoreKey.schedules.rawValue + ".quarantine.adr012"))
+        h.defaults.removeObject(forKey: FlintRuleStoreKey.schedules.rawValue)
+        XCTAssertTrue(FlintRuleStoreLock.prepareInitialization(environment: h.environment))
+        XCTAssertNil(h.environment.observedRules(FlintScheduleRule.self))
+        XCTAssertNil(h.defaults.object(forKey: FlintRuleStoreKey.schedules.rawValue))
+    }
+
+    func testR22PreparingReceiptCompletesKnownEmptyAfterLaterLedgerSessionAndNativeEvidence() throws {
+        for partial in [false, true] {
+            let h = try RuleHarness(); defer { h.clean() }
+            h.defaults.set(Data("{\"schema\":1,\"phase\":\"preparing\"}".utf8), forKey: FlintRuleInitialization.receiptKey)
+            if partial {
+                for key in FlintRuleStoreKey.allCases {
+                    h.defaults.set(Data("[]".utf8), forKey: key.rawValue)
+                    h.defaults.set(Data("{\"schema\":1}".utf8), forKey: key.marker)
+                }
+            }
+            h.defaults.set(h.now, forKey: FlintProtectionLedger.initializedMarkerKey)
+            h.defaults.set(Data("later session evidence".utf8), forKey: "flint.activeSession")
+            h.center.held[.init("flint.session.later")] = h.schedule(tier: .easy).registration()
+            var env = h.environment; env.installationEvidence = { true }
+            XCTAssertTrue(FlintRuleStoreLock.prepareInitialization(environment: env))
+            XCTAssertEqual(FlintRuleInitialization.receipt(in: h.defaults), .complete)
+            for key in FlintRuleStoreKey.allCases {
+                XCTAssertEqual(h.defaults.data(forKey: key.rawValue), Data("[]".utf8))
+                XCTAssertNotNil(h.defaults.object(forKey: key.marker))
+            }
+            XCTAssertNotNil(h.defaults.object(forKey: "flint.activeSession"))
+            XCTAssertNotNil(h.center.held[.init("flint.session.later")])
+        }
+    }
+
+    func testArbitraryOperationIDTextCannotEstablishRuleDomainOwnership() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        _ = try h.ledger.transaction {
+            $0.remember(.init(id: "arbitrary#" + FlintRuleStoreKey.schedules.rawValue + ":looks-like-policy",
+                kind: "test", result: "ok", at: h.now))
+        }.get()
+        XCTAssertTrue(FlintRuleStoreLock.prepareInitialization(environment: h.environment))
+        XCTAssertEqual(h.environment.observedRules(FlintScheduleRule.self), [])
+    }
+
+    @MainActor
+    func testBusyColdLaunchInitializationDefersWithoutWritingThenRetriesAfterUnlock() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let directory = try XCTUnwrap(h.environment.lockDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fd = open(directory.appendingPathComponent("mutation.lock").path, O_CREAT | O_RDWR, 0o600)
+        XCTAssertGreaterThanOrEqual(fd, 0)
+        guard fd >= 0 else { return }
+        defer { flock(fd, LOCK_UN); close(fd) }
+        XCTAssertEqual(flock(fd, LOCK_EX | LOCK_NB), 0)
+        XCTAssertFalse(FlintRuleStoreLock.prepareInitialization(environment: h.environment))
+        XCTAssertEqual(FlintRuleInitialization.receipt(in: h.defaults), .absent)
+        XCTAssertEqual(flock(fd, LOCK_UN), 0)
+        XCTAssertTrue(FlintRuleStoreLock.prepareInitialization(environment: h.environment))
+        XCTAssertEqual(FlintRuleInitialization.receipt(in: h.defaults), .complete)
+    }
+
     func testR22LegacyRegistrationMissingPreMarkerDomainNeverClearsOrRetires() throws {
         for (key, savedEvidence) in FlintRuleStoreKey.allCases.flatMap({ key in [false, true].map { (key, $0) } }) {
             let h = try RuleHarness(); defer { h.clean() }
@@ -35,6 +136,7 @@ final class FlintRuleInitializationTests: XCTestCase {
         for key in FlintRuleStoreKey.allCases {
             XCTAssertEqual(h.defaults.data(forKey: key.rawValue), Data("[]".utf8))
             XCTAssertNotNil(h.defaults.data(forKey: key.marker))
+            XCTAssertNil(h.defaults.object(forKey: key.ownership), "fresh setup must not manufacture legacy ownership")
         }
         XCTAssertEqual(FlintRuleArbiter(environment: h.environment).upsert(h.schedule(tier: .easy), creating: true), .applied)
         XCTAssertEqual(h.load(FlintScheduleRule.self).count, 1)

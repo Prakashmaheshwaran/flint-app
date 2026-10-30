@@ -14,4 +14,6 @@ enum FlintRuleStoreKey: String, CaseIterable {
     }
     var marker: String { rawValue + ".initialized.adr012" }
     var original: String { rawValue + ".original.adr012" }
+    /// Write-once evidence that a pre-marker domain existed, without migrating its policy.
+    var ownership: String { rawValue + ".owned.adr012" }
 }

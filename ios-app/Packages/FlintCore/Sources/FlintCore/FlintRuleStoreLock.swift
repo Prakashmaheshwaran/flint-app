@@ -23,7 +23,8 @@ enum FlintRuleStoreLock {
     }
 
     @discardableResult
-    static func prepareInitialization(environment: FlintRuleReloadEnvironment) -> Bool {
+    static func prepareInitialization(environment: FlintRuleReloadEnvironment,
+                                      timeout: TimeInterval = Thread.isMainThread ? 0 : 2) -> Bool {
         guard let defaults = environment.defaults else { return false }
         switch FlintRuleInitialization.receipt(in: defaults) {
         case .complete: return true
@@ -31,14 +32,14 @@ enum FlintRuleStoreLock {
         case .absent:
             // Each domain has its own evidence. A sibling's presence cannot skip another
             // domain's one-time upgrade initialization.
-            if FlintRuleStoreKey.allCases.allSatisfy({ defaults.object(forKey: $0.rawValue) != nil
-                || defaults.object(forKey: $0.marker) != nil }) { return true }
+            if FlintRuleStoreKey.allCases.allSatisfy({ defaults.object(forKey: $0.marker) != nil
+                || (defaults.object(forKey: $0.rawValue) != nil && defaults.object(forKey: $0.ownership) != nil) }) { return true }
         case .preparing: break
         }
         // Initialization takes only the domain lock, never a ledger/session lock. Taking it
         // before withTransitionBoundary prevents first-launch ledger creation from becoming
         // false legacy evidence. Upgrade evidence uses only read-only ledger peek, no lock.
-        return domainLock(directory: environment.lockDirectory) {
+        return domainLock(directory: environment.lockDirectory, timeout: timeout) {
             FlintRuleInitialization.prepare(environment: environment)
         } ?? false
     }
@@ -49,9 +50,14 @@ enum FlintRuleStoreLock {
         else { action() }
     }
 
-    private static func domainLock<T>(directory: URL?, _ body: () -> T) -> T? {
+    private static func domainLock<T>(directory: URL?, timeout: TimeInterval = 2, _ body: () -> T) -> T? {
         guard let directory else { return nil }
-        local.lock(); defer { local.unlock() }
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
+        while !local.try() {
+            guard ProcessInfo.processInfo.systemUptime < deadline else { return nil }
+            usleep(10_000)
+        }
+        defer { local.unlock() }
         let key = "FlintRuleStoreLock." + directory.path
         if Thread.current.threadDictionary[key] != nil { return body() }
         do { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
@@ -59,7 +65,6 @@ enum FlintRuleStoreLock {
         let fd = open(directory.appendingPathComponent("mutation.lock").path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0o600)
         guard fd >= 0 else { return nil }
         defer { close(fd) }
-        let deadline = ProcessInfo.processInfo.systemUptime + 2
         while flock(fd, LOCK_EX | LOCK_NB) != 0 {
             guard errno == EWOULDBLOCK || errno == EAGAIN,
                   ProcessInfo.processInfo.systemUptime < deadline else { return nil }
