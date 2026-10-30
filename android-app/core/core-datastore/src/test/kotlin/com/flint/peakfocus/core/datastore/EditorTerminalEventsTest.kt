@@ -211,6 +211,7 @@ class EditorTerminalEventsTest {
     @Test fun `PC-70 bounded pending overflow survives rule removal and drains with original first observation`() = runBlocking {
         val seed = (0 until MAX_PENDING_TERMINALS).map(::event).associateBy { it.id }
         val disk = Disk(preferencesOf(EDITOR_TERMINAL_SCHEMA to 2L,
+            PrefsKeys.BLOCK_RULES to "", // Removed Timer rows leave an explicitly empty domain.
             EDITOR_TERMINALS to EditorTerminalCodec.encode(EditorTerminalLedger(MAX_PENDING_TERMINALS.toLong(), seed))))
         val clock = Clock(at()); val owner = started(disk, clock)
         clock.now = at(300_000); owner.reconcile(clock.now)
@@ -293,7 +294,7 @@ class EditorTerminalEventsTest {
 
     @Test fun `PC-70 one failing sink cannot starve later events and successful IDs ack in one edit`() = runBlocking {
         val events = (0..2).map(::event)
-        val disk = Disk(preferencesOf(EDITOR_TERMINAL_SCHEMA to 2L, EDITOR_TERMINALS to
+        val disk = Disk(preferencesOf(EDITOR_TERMINAL_SCHEMA to 2L, PrefsKeys.BLOCK_RULES to "", EDITOR_TERMINALS to
             EditorTerminalCodec.encode(EditorTerminalLedger(3, events.associateBy { it.id }))))
         val owner = store(disk, Clock(at()))
         val before = disk.changedWrites

@@ -176,6 +176,10 @@ class EditorDomainUpgradeTest {
                 if (kind == "native-end") remove(PrefsKeys.BLOCK_RULES)
             }
             unavailable(disk)
+            disk.values.value = disk.values.value.toMutablePreferences().apply {
+                remove(EDITOR_COMMITMENTS_KEY); remove(EDITOR_VERSION_KEY)
+            }
+            unavailable(disk)
         }
     }
 
@@ -251,7 +255,7 @@ class EditorDomainUpgradeTest {
     }
 
     @Test fun `R2-N03 PC-71 malformed incomplete duplicate or future C3 archive never proves unused domains`() = runBlocking {
-        for (kind in listOf("duplicate", "missing", "presence", "future")) {
+        for (kind in listOf("duplicate", "missing", "presence", "unknown-key", "future")) {
             val disk = c3V1()
             disk.values.value = disk.values.value.toMutablePreferences().apply {
                 val original = this[PrefsKeys.PROTECTION_ARCHIVE]!!
@@ -259,10 +263,46 @@ class EditorDomainUpgradeTest {
                     "duplicate" -> original + "\n" + original.lines()[1]
                     "missing" -> original.lines().dropLast(1).joinToString("\n")
                     "presence" -> original.replaceFirst("|false|", "|unknown|")
+                    "unknown-key" -> original.replace(PrefsKeys.BLOCK_RULES.name, "stray_corrupt_key")
                     else -> original.replaceFirst("A|1", "A|2")
                 }
             }
             unavailable(disk, if (kind == "future") StorageFailure.UNSUPPORTED_VERSION else StorageFailure.CORRUPT)
+        }
+    }
+
+    @Test fun `R2-N03 PC-37 PC-71 markerless surviving domain owners cannot become fresh empty policy`() = runBlocking {
+        for (key in listOf("rule:old", "time:com.target", "open:com.target", "group:saved")) {
+            val occurrence = HarderWaitPolicy.Occurrence(key, "old")
+            val wait = HarderWaitPolicy.PendingWait(HarderWaitPolicy.Operation(HarderWaitPolicy.OperationKind.DELETE,
+                mapOf(occurrence to "revision")), now, 60_000)
+            for (ledger in listOf(HarderWaitPolicy.Ledger(counts = mapOf(occurrence to 2)),
+                HarderWaitPolicy.Ledger(pending = wait))) {
+                unavailable(Disk(preferencesOf(HARDER_WAIT_KEY to HarderWaitCodec.encode(ledger))))
+            }
+            unavailable(Disk(preferencesOf(PrefsKeys.FOCUS_LEDGER to FocusLedgerCodec.encode(
+                FocusLedgerCodec.Ledger(breaksByCause = mapOf(key to BreakSessionState(breaksTaken = 1)))))))
+        }
+        val receipt = PersistedExemption("old", "com.target", "legacy-open", ExemptionKind.OPEN_LIMIT,
+            now.wallEpochMs + 60_000, "boot")
+        unavailable(Disk(preferencesOf(PrefsKeys.FOCUS_LEDGER to FocusLedgerCodec.encode(
+            FocusLedgerCodec.Ledger(exemptions = mapOf("old" to receipt))))))
+        unavailable(Disk(preferencesOf(PrefsKeys.OPEN_COUNTS to "com.target~2")))
+        val credits = Disk(preferencesOf(PrefsKeys.OPEN_COUNTS to "com.target~2",
+            PrefsKeys.OPEN_COUNTS_DAY to OpenCreditLedgerPolicy.epochDay(now.wallEpochMs, "UTC")))
+        credits.edit { prepareOpenCredits(it, now, "UTC") }
+        credits.values.value = credits.values.value.toMutablePreferences().apply {
+            remove(PrefsKeys.OPEN_COUNTS); remove(PrefsKeys.OPEN_COUNTS_DAY)
+        }
+        unavailable(credits)
+        for (key in listOf(PrefsKeys.OPEN_LIMITS, PrefsKeys.DEFAULT_BREAK_LEVEL)) {
+            val initial = if (key == PrefsKeys.OPEN_LIMITS) preferencesOf(key to "com.target~3~EASY")
+                else preferencesOf(key to "HARDCORE")
+            val disk = c3V1(initial)
+            disk.values.value = disk.values.value.toMutablePreferences().apply {
+                remove(EDITOR_COMMITMENTS_KEY); remove(EDITOR_VERSION_KEY); remove(key)
+            }
+            unavailable(disk)
         }
     }
 

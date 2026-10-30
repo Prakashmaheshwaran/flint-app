@@ -582,8 +582,10 @@ internal fun readEditorState(prefs: Preferences): EditorCommitmentState {
 
 /**
  * Never turn missing established policy into authoritative empty protection. No writes.
- * Read boundaries revalidate their exact snapshot, including callers outside prepare. Ownership
- * is bounded by MAX_EDITOR_CAUSES; legacy configuration decoding is linear in saved records.
+ * Read boundaries revalidate their exact snapshot, including callers outside prepare. Editor
+ * materialization caps causes at MAX_EDITOR_CAUSES; modern ledger codecs also bound bytes/rows.
+ * Legacy configuration decoding remains linear in saved records. Missing v1/markerless domains
+ * deliberately rescan surviving ownership on every read until the validated upgrade commits.
  */
 private fun validateEditorDomains(prefs: Preferences, state: EditorCommitmentState, version: Long?) {
     if (version != null && version !in 1L..EDITOR_DOMAIN_VERSION) wireFuture()
@@ -595,11 +597,14 @@ private fun validateEditorDomains(prefs: Preferences, state: EditorCommitmentSta
     StrictPrefsCodec.openLimits(StrictPrefsCodec.string(prefs, PrefsKeys.OPEN_LIMITS).orEmpty())
     if (version == EDITOR_DOMAIN_VERSION) {
         for (key in EDITOR_DOMAINS) wireRequire(StrictPrefsCodec.string(prefs, key) != null)
-    } else if (version != null) {
+    } else {
         // v1 always wrote Time Limits, including the empty list. Its absence is never unused.
-        wireRequire(rawTimes != null)
+        if (version == 1L) wireRequire(rawTimes != null)
+        // Markerless main may lack unused domains, but surviving domain-specific owners
+        // still prevent a partial loss of editor metadata from becoming a fresh policy.
         val missing = listOf("rule:" to PrefsKeys.BLOCK_RULES, "group:" to PrefsKeys.APP_GROUPS,
-            "open:" to PrefsKeys.OPEN_LIMITS, "default:" to PrefsKeys.DEFAULT_BREAK_LEVEL)
+            "time:" to PrefsKeys.TIME_LIMITS, "open:" to PrefsKeys.OPEN_LIMITS,
+            "default:" to PrefsKeys.DEFAULT_BREAK_LEVEL)
             .filter { StrictPrefsCodec.string(prefs, it.second) == null }
         if (missing.isNotEmpty()) {
             val references = editorDomainReferences(prefs, state)
@@ -699,7 +704,7 @@ private fun readProtectionArchiveDomains(raw: String): Map<String, String?> {
     for (row in wireRows(raw, "A")) {
         wireRequire(row.size == 3)
         val key = readWireAtom(row[0])
-        if (key !in names) wireFuture()
+        wireRequire(key in names)
         wireRequire(!values.containsKey(key))
         val value = PrefsCodec.unescape(row[2]).also { wireRequire(PrefsCodec.escape(it) == row[2]) }
         values[key] = when (row[1]) {

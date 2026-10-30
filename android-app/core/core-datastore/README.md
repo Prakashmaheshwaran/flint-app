@@ -73,8 +73,10 @@ a lost acknowledgement reopens the same version 2 without a second import.
 
 Shipped main could save only a Timer rule without ever writing unused groups,
 Time Limits, Open Limits or a default tier. Markerless main input may initialize
-those absent domains once; the initialized version-1 Time Limit requirement does
-not apply to that input. C3's initialized-child check keeps its own mandatory
+those absent domains once only when no surviving domain-specific owner refers to
+them. Losing both editor metadata keys cannot erase surviving focus, Harder,
+Open-credit or protection/archive ownership. The initialized version-1 Time Limit
+requirement does not apply to markerless input. C3's initialized-child check keeps its own mandatory
 children and delegates the editor's domain/version rules to this validator.
 
 Unavailable records are retained. There is no automatic reset or in-app storage
