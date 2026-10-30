@@ -16,6 +16,23 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], application = Application::class)
 class GlanceSurfaceDeliveryTest {
+    @Test fun healthNotesAndTheirRecoveryInvalidateTheWidgetWithoutWaitingForAHeartbeatDeadline() = runTest {
+        var renders = 0
+        val delivery = GlanceSurfaceDelivery({}, {}, { renders++ }, { 100_000L })
+        val display = GlanceDisplay("Protection active at last check", "Study · Hardcore",
+            "No upcoming session", "0m", null, "Checked 19:55", refreshAtElapsedMs = 130_000)
+        delivery.publish(display)
+        val backup = display.copy(healthNotes = listOf("Backup blocking off: Usage access is missing"))
+        delivery.publish(backup)
+        delivery.publish(backup)
+        assertEquals(2, renders)
+        delivery.publish(backup.copy(healthNotes = backup.healthNotes +
+            "Time limits can't measure app use without Usage access"))
+        assertEquals(3, renders)
+        delivery.publish(display)
+        assertEquals(4, renders)
+    }
+
     @Test fun liveHeartbeatsCoalesceWritesAndVisibleSafetyChangesRefreshImmediately() = runTest {
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)

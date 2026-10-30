@@ -51,6 +51,13 @@ data class BannerUi(
 
 object BlockingHealthUi {
 
+    /** Short glance notes for detector degraded reasons; null when no short note applies. */
+    fun shortReasonNote(reason: String): String? = when (reason) {
+        "path-b-backup-unavailable" -> "Backup blocking off: Usage access is missing"
+        "time-limits-need-usage-access" -> "Time limits can't measure app use without Usage access"
+        else -> null
+    }
+
     /**
      * Stable order: detection paths first (primary, then fallback pieces), then survival,
      * then visibility (the 13+-only notifications row appends last — it is the only row whose

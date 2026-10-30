@@ -51,6 +51,9 @@ class FlintGlanceWidget : GlanceAppWidget() {
                     item { Text(display.status, GlanceModifier.clickable(open),
                         style = primary.copy(fontWeight = FontWeight.Bold)) }
                     item { Text(display.detail, GlanceModifier.clickable(open), style = primary) }
+                    display.healthNotes.forEach { note ->
+                        item { Text(note, GlanceModifier.clickable(open), style = secondary) }
+                    }
                     item { Spacer(GlanceModifier.height(8.dp)) }
                     item { Text(display.next, GlanceModifier.clickable(open), style = primary) }
                     item { Text(display.pass, GlanceModifier.clickable(open), style = secondary) }

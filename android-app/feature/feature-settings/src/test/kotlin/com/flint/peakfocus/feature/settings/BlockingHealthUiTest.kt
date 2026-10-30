@@ -6,6 +6,7 @@ import com.flint.peakfocus.blocking.engine.BrowserAddressBars
 import com.flint.peakfocus.blocking.engine.WebCoverage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -252,6 +253,15 @@ class BlockingHealthUiTest {
         assertFalse(
             BlockingHealthUi.banner(pathA).body.contains("notification", ignoreCase = true),
         )
+    }
+
+    @Test fun shortReasonNotesNameOnlyTheObservedUsageAccessDependencies() {
+        assertEquals("Backup blocking off: Usage access is missing",
+            BlockingHealthUi.shortReasonNote("path-b-backup-unavailable"))
+        assertEquals("Time limits can't measure app use without Usage access",
+            BlockingHealthUi.shortReasonNote("time-limits-need-usage-access"))
+        assertNull(BlockingHealthUi.shortReasonNote("unknown-reason"))
+        assertNull(BlockingHealthUi.shortReasonNote("usage-access-missing"))
     }
 
     /** All 16 grant combinations × 3 notification variants (pre-13, 13+ granted, 13+ denied). */

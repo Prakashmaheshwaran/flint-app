@@ -45,6 +45,7 @@ data class ProtectionReading(
     val detector: GlanceDetector = GlanceDetector.UNKNOWN,
     val checkedEpochMs: Long? = null,
     val pass: GlancePass = GlancePass.Unavailable,
+    val healthNotes: List<String> = emptyList(),
 )
 
 data class ActiveGlanceCause(
@@ -78,6 +79,7 @@ data class GlanceDisplay(
     val detector: GlanceDetector = GlanceDetector.UNKNOWN,
     val session: GlanceOngoingSession? = null,
     val pass: String = "Emergency Pass unavailable",
+    val healthNotes: List<String> = emptyList(),
 )
 
 data class GlanceOngoingSession(val occurrenceId: String, val logicalEndElapsedMs: Long?)
@@ -117,8 +119,11 @@ object GlanceDisplayMapper {
             focusedToday = if (historyCurrent) focus.text else "Focus history unavailable",
             historyNote = if (focus.day != null && !historyCurrent) "Open Flint to refresh" else focus.note,
             checked = stamp,
-            refreshAtElapsedMs = historyBoundary,
             focusedTodayLabel = "Focused today · ${today.format(DateTimeFormatter.ofPattern("MMM d", locale))}",
+            // Context never proves protection. Only a current authority check supports notes.
+            healthNotes = if (fresh) reading.healthNotes else emptyList(),
+            refreshAtElapsedMs = if (fresh && reading.healthNotes.isNotEmpty())
+                listOfNotNull(historyBoundary, checked!! + MAX_AGE_MS, validUntil).min() else historyBoundary,
         )
         if (reading.status == ProtectionStatus.UNAVAILABLE) return base
         if (!fresh) return base.copy(status = "Protection check needed", detail = "Last check is out of date")

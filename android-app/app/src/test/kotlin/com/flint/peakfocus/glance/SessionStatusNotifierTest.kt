@@ -68,6 +68,26 @@ class SessionStatusNotifierTest {
         assertEquals(60_000L, manager.activeNotifications.single().notification.timeoutAfter)
     }
 
+    @Test fun healthNoteChangesRepostImmediatelyAndRecoveryClearsCollapsedAndExpandedCopy() {
+        notifier.update(active)
+        val before = manager.activeNotifications.single().notification
+        val notes = listOf("Backup blocking off: Usage access is missing",
+            "Time limits can't measure app use without Usage access")
+        notifier.update(active.copy(healthNotes = notes))
+        val degraded = manager.activeNotifications.single().notification
+        assertNotSame(before, degraded)
+        val text = (listOf(active.detail) + notes).joinToString(" · ")
+        assertEquals(text, degraded.extras.getString(Notification.EXTRA_TEXT))
+        assertEquals(text, degraded.extras.getString(Notification.EXTRA_BIG_TEXT))
+        assertEquals("Flint · Protection active at last check", degraded.extras.getString(Notification.EXTRA_TITLE))
+        assertTrue(degraded.extras.getBoolean(Notification.EXTRA_CHRONOMETER_COUNT_DOWN))
+        notifier.update(active)
+        val recovered = manager.activeNotifications.single().notification
+        assertNotSame(degraded, recovered)
+        assertEquals(active.detail, recovered.extras.getString(Notification.EXTRA_TEXT))
+        assertEquals(active.detail, recovered.extras.getString(Notification.EXTRA_BIG_TEXT))
+    }
+
     @Test fun pathBAndUnknownSuppressPathAWhilePreservingFgsAndFCompletion() {
         val other = Notification.Builder(context, "other").setContentTitle("Fixture").build()
         manager.notify("completed-session", 1, other)
