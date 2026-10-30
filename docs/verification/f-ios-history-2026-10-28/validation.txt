@@ -1,0 +1,51 @@
+Capture/test head: 6ecf0c4c672c77fec530f25b6ac0ac928af1e6a4
+Device: iPhone 17 1BD4732B-EC1A-4074-8C70-6AC369607185
+Command: flint-heavy device -- (flint-heavy ios -- make ios-run IOS_SIM=<exact UDID>; flint-heavy ios -- xcodebuild test -project ios-app/Flint.xcodeproj -scheme Flint -derivedDataPath ios-app/DerivedData -sdk iphonesimulator -destination platform=iOS Simulator,id=<exact UDID> CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO -parallel-testing-enabled NO)
+
+Test Suite 'All tests' started at 2026-10-28 16:26:33.994.
+	 Executed 15 tests, with 0 failures (0 unexpected) in 0.136 (0.145) seconds
+Test Suite 'CompletionNotificationPresentationTests' started at 2026-10-28 16:26:34.144.
+Test Suite 'CompletionNotificationPresentationTests' passed at 2026-10-28 16:26:34.147.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.002 (0.003) seconds
+	 Executed 18 tests, with 0 failures (0 unexpected) in 0.088 (0.092) seconds
+	 Executed 8 tests, with 0 failures (0 unexpected) in 0.010 (0.012) seconds
+Test Suite 'FlintCompletionControllerIntegrationTests' started at 2026-10-28 16:26:34.251.
+Test Suite 'FlintCompletionControllerIntegrationTests' passed at 2026-10-28 16:26:34.285.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.032 (0.033) seconds
+Test Suite 'FlintCompletionNotificationTests' started at 2026-10-28 16:26:34.285.
+Test Suite 'FlintCompletionNotificationTests' passed at 2026-10-28 16:26:34.415.
+	 Executed 14 tests, with 0 failures (0 unexpected) in 0.126 (0.130) seconds
+	 Executed 12 tests, with 0 failures (0 unexpected) in 0.012 (0.014) seconds
+Test Suite 'FlintHistoryTests' started at 2026-10-28 16:26:34.431.
+Test Suite 'FlintHistoryTests' passed at 2026-10-28 16:26:39.178.
+	 Executed 48 tests, with 0 failures (0 unexpected) in 4.737 (4.747) seconds
+	 Executed 11 tests, with 0 failures (0 unexpected) in 1.388 (1.392) seconds
+	 Executed 6 tests, with 0 failures (0 unexpected) in 0.011 (0.012) seconds
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.024 (0.026) seconds
+	 Executed 8 tests, with 0 failures (0 unexpected) in 0.007 (0.008) seconds
+	 Executed 17 tests, with 0 failures (0 unexpected) in 0.013 (0.016) seconds
+	 Executed 11 tests, with 0 failures (0 unexpected) in 0.004 (0.008) seconds
+	 Executed 41 tests, with 0 failures (0 unexpected) in 0.129 (0.140) seconds
+Test Suite 'FlintSessionLifecycleTests' started at 2026-10-28 16:26:40.796.
+Test Suite 'FlintSessionLifecycleTests' passed at 2026-10-28 16:26:40.809.
+	 Executed 12 tests, with 0 failures (0 unexpected) in 0.005 (0.013) seconds
+	 Executed 2 tests, with 0 failures (0 unexpected) in 0.001 (0.001) seconds
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.012 (0.014) seconds
+Test Suite 'FocusHistoryPresentationTests' started at 2026-10-28 16:26:40.825.
+Test Suite 'FocusHistoryPresentationTests' passed at 2026-10-28 16:26:40.839.
+	 Executed 8 tests, with 0 failures (0 unexpected) in 0.008 (0.014) seconds
+	 Executed 255 tests, with 0 failures (0 unexpected) in 6.745 (6.844) seconds
+Test Suite 'All tests' passed at 2026-10-28 16:26:40.839.
+	 Executed 255 tests, with 0 failures (0 unexpected) in 6.745 (6.845) seconds
+** TEST SUCCEEDED **
+
+Cleanup:
+2026-10-28T20:31:15.365579+00:00 RUN /Applications/Orca.app/Contents/Resources/bin/orca emulator kill --worktree path:/Users/prakash/orca/workspaces/flint/v1-f-ios --device 1BD4732B-EC1A-4074-8C70-6AC369607185 --json
+Device semaphore released after stopping verified own sleep holder PID 31191.
+
+Final combined native retry at 7d4aa45: 267 tests, zero failures; Xcode TEST SUCCEEDED.
+Source: /tmp/flint-f-final-device.log, 2026-10-28 17:01:07 local.
+Compact Today build at 9a43e54 source: BUILD SUCCEEDED; /tmp/flint-f-small-contrast-build.log.
+Today regular four states and iPhone17 AX5 top/card/lower visually + AX verified; small Large verified.
+Small AX5 scroll returned ok without pixel or AX movement; full small AX5 remains unverified.
+Cleanup: owned small helper released and created simulator deleted; unproven shared iPhone17 preserved; device slot released.

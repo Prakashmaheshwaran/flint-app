@@ -36,11 +36,17 @@ Start with `make help` and the project `flint-dev` skill (`.agents/skills/flint-
 | `make env` | Inspect the resolved local build environment. |
 | `make gates DRY_RUN=1` / `make gates` | Plan/run the gates for changed paths vs the local `origin/main` merge-base, including uncommitted work. |
 | `make ios-run IOS_SIM="<name or UDID>"` | Build, attach, install and launch Flint on the selected simulator. |
+| `make ios-ui FLINT_UI_DISPOSABLE=1 IOS_SIM="<name or UDID>"` | Run DEBUG UI fixtures on an empty dedicated simulator at Large/AX5; fixture-only evidence. |
 | `make android-run AVD="<name or serial>"` | Attach the selected Android emulator, build debug, install and launch Flint. |
+| `FLINT_E2E_DISPOSABLE=1 make android-e2e AVD=emulator-N` | Run real accessibility UI smoke on an already booted disposable emulator; clears Flint data. Hold device + Android semaphores locally; see `docs/verification/android-e2e.md`. |
 | `make logs-ios` / `make logs-android` | Inspect Flint logs using the same `IOS_SIM` / `AVD` selector as the run command. |
 | `make pr-status` | Read the current branch's PR, checks and recent CI runs. |
 | `make ancestry` | Fetch main and inspect ahead/behind counts and ancestry without remote writes. |
 | `make clean-devices` | Release worktree-owned device resources before finishing. |
+
+For UI coverage and xcresult provenance, see `docs/verification/ios-ui.md`. During
+the supervised v1 build, local UI runs require both `flint-heavy device` and
+`flint-heavy ios` slots; prefer the hosted `iOS UI fixtures` workflow.
 
 ## GitHub
 - PR creation, review submission, merge, close, admin bypass, branch deletion, and release publication are external actions requiring explicit authorization.

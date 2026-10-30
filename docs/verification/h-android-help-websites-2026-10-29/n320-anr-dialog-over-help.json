@@ -1,0 +1,200 @@
+{
+  "id": "17d1554f-1734-4d2d-bd39-d3efec53bab1",
+  "ok": true,
+  "result": {
+    "children": [
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "children": [
+                          {
+                            "children": [
+                              {
+                                "children": [],
+                                "className": "android.widget.TextView",
+                                "text": "Flint isn't responding",
+                                "resourceId": "android:id/alertTitle",
+                                "packageName": "android",
+                                "clickable": false,
+                                "enabled": true,
+                                "focused": false,
+                                "bounds": {
+                                  "left": 135,
+                                  "top": 930,
+                                  "right": 945,
+                                  "bottom": 1184
+                                }
+                              }
+                            ],
+                            "className": "android.widget.LinearLayout",
+                            "resourceId": "android:id/title_template",
+                            "packageName": "android",
+                            "clickable": false,
+                            "enabled": true,
+                            "focused": false,
+                            "bounds": {
+                              "left": 54,
+                              "top": 869,
+                              "right": 1026,
+                              "bottom": 1184
+                            }
+                          }
+                        ],
+                        "className": "android.widget.LinearLayout",
+                        "resourceId": "android:id/topPanel",
+                        "packageName": "android",
+                        "clickable": false,
+                        "enabled": true,
+                        "focused": false,
+                        "bounds": {
+                          "left": 54,
+                          "top": 869,
+                          "right": 1026,
+                          "bottom": 1184
+                        }
+                      },
+                      {
+                        "children": [
+                          {
+                            "children": [
+                              {
+                                "children": [
+                                  {
+                                    "children": [],
+                                    "className": "android.widget.Button",
+                                    "text": "Close app",
+                                    "resourceId": "android:id/aerr_close",
+                                    "packageName": "android",
+                                    "clickable": true,
+                                    "enabled": true,
+                                    "focused": false,
+                                    "bounds": {
+                                      "left": 54,
+                                      "top": 1235,
+                                      "right": 1026,
+                                      "bottom": 1397
+                                    }
+                                  },
+                                  {
+                                    "children": [],
+                                    "className": "android.widget.Button",
+                                    "text": "Wait",
+                                    "resourceId": "android:id/aerr_wait",
+                                    "packageName": "android",
+                                    "clickable": true,
+                                    "enabled": true,
+                                    "focused": false,
+                                    "bounds": {
+                                      "left": 54,
+                                      "top": 1397,
+                                      "right": 1026,
+                                      "bottom": 1559
+                                    }
+                                  }
+                                ],
+                                "className": "android.widget.LinearLayout",
+                                "packageName": "android",
+                                "clickable": false,
+                                "enabled": true,
+                                "focused": false,
+                                "bounds": {
+                                  "left": 54,
+                                  "top": 1184,
+                                  "right": 1026,
+                                  "bottom": 1586
+                                }
+                              }
+                            ],
+                            "className": "android.widget.FrameLayout",
+                            "resourceId": "android:id/custom",
+                            "packageName": "android",
+                            "clickable": false,
+                            "enabled": true,
+                            "focused": false,
+                            "bounds": {
+                              "left": 54,
+                              "top": 1184,
+                              "right": 1026,
+                              "bottom": 1586
+                            }
+                          }
+                        ],
+                        "className": "android.widget.FrameLayout",
+                        "resourceId": "android:id/customPanel",
+                        "packageName": "android",
+                        "clickable": false,
+                        "enabled": true,
+                        "focused": false,
+                        "bounds": {
+                          "left": 54,
+                          "top": 1184,
+                          "right": 1026,
+                          "bottom": 1586
+                        }
+                      }
+                    ],
+                    "className": "android.widget.LinearLayout",
+                    "resourceId": "android:id/parentPanel",
+                    "packageName": "android",
+                    "clickable": false,
+                    "enabled": true,
+                    "focused": false,
+                    "bounds": {
+                      "left": 54,
+                      "top": 869,
+                      "right": 1026,
+                      "bottom": 1586
+                    }
+                  }
+                ],
+                "className": "android.widget.FrameLayout",
+                "resourceId": "android:id/content",
+                "packageName": "android",
+                "clickable": false,
+                "enabled": true,
+                "focused": false,
+                "bounds": {
+                  "left": 54,
+                  "top": 869,
+                  "right": 1026,
+                  "bottom": 1586
+                }
+              }
+            ],
+            "className": "android.widget.FrameLayout",
+            "packageName": "android",
+            "clickable": false,
+            "enabled": true,
+            "focused": false,
+            "bounds": {
+              "left": 54,
+              "top": 869,
+              "right": 1026,
+              "bottom": 1586
+            }
+          }
+        ],
+        "className": "android.widget.FrameLayout",
+        "packageName": "android",
+        "clickable": false,
+        "enabled": true,
+        "focused": false,
+        "bounds": {
+          "left": 0,
+          "top": 815,
+          "right": 1080,
+          "bottom": 1640
+        }
+      }
+    ]
+  },
+  "_meta": {
+    "runtimeId": "9270491a-cd3f-496f-a138-a775a6d60a33"
+  }
+}

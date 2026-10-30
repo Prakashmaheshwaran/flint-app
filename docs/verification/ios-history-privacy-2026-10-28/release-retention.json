@@ -1,0 +1,57 @@
+{
+  "capturedAt": "2026-10-28T21:18:08.032125+00:00",
+  "boundary": "Unsigned optimized iOS simulator Release binary retention; no signed-device or store evidence",
+  "configuration": "Release",
+  "sdk": "iphonesimulator27.1 (24A94232)",
+  "sourceBranch": "v1/k/ios-glance-api-check",
+  "sourceHEADAtCapture": "619595c9fbafdf151bb15c1406b80d9a26912236",
+  "workingDiffSHA256AtCapture": "8ba55bcce300860903fe1507b0c7492c17c0ba7b3b20c249b13a78885f3c7be8",
+  "historyStoreSHA256AtCapture": "e1c386c7262b7d4d42749b51e8f7521d94843e2c84288d661734accabd2bf33e",
+  "provenanceNote": "The build included uncommitted K presentation/reader wiring edits, and no pre-build dirty-diff hash was captured. HEAD and the unchanged F132 HistoryStore source identify the metadata code; executable hashes identify the exact binaries independently inspected. The post-build working-diff hash is not an exact source-build attestation.",
+  "bundles": [
+    {
+      "bundleID": "com.flint.peakfocus",
+      "executableSHA256": "bb9de82f928a31c9e0d27fc06851f9af99c15cff8280da8686aa2c1f56daa089",
+      "fstatImportRetained": true,
+      "fileMetadataSelectorRetained": true,
+      "readOnlySnapshotRetained": true
+    },
+    {
+      "bundleID": "com.flint.peakfocus.monitor",
+      "executableSHA256": "e2df2eade7427d832d89fc2671ed81cb599ea734e0d76bca53428c6f2bca46b9",
+      "fstatImportRetained": true,
+      "fileMetadataSelectorRetained": true,
+      "readOnlySnapshotRetained": true
+    },
+    {
+      "bundleID": "com.flint.peakfocus.report",
+      "executableSHA256": "c7c144ec677007f48a4b0871cd19909924bd9ed3405ef93d6a8773239a7efe81",
+      "fstatImportRetained": true,
+      "fileMetadataSelectorRetained": true,
+      "readOnlySnapshotRetained": true
+    },
+    {
+      "bundleID": "com.flint.peakfocus.widgets",
+      "executableSHA256": "29b0ccdd8c681f91cd9b4c84149030d443f6e73daa4c955aa1aefa8e89b7b517",
+      "fstatImportRetained": true,
+      "fileMetadataSelectorRetained": true,
+      "readOnlySnapshotRetained": true
+    },
+    {
+      "bundleID": "com.flint.peakfocus.shield-action",
+      "executableSHA256": "f77ffc72d91a48463d567fc14d9ca1f9489e46c59b9cefe23cb81dda60812ea7",
+      "fstatImportRetained": true,
+      "fileMetadataSelectorRetained": true,
+      "readOnlySnapshotRetained": true
+    },
+    {
+      "bundleID": "com.flint.peakfocus.shield-config",
+      "executableSHA256": "fec48eaf6f771a51d1c30bf95ee03464a2898e7cf94e88da9abb67bd5160f502",
+      "fstatImportRetained": true,
+      "fileMetadataSelectorRetained": true,
+      "readOnlySnapshotRetained": true
+    }
+  ],
+  "temporaryHistoryDependency": "f5ca1086497a547b118398acd9ba02a8e3b7bde5",
+  "xcodeBuild": "27A9275"
+}

@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 import zipfile
+import warnings
 from pathlib import Path
 
 from verify_local_first_apk import violations
@@ -48,4 +49,68 @@ class LocalFirstApkTest(unittest.TestCase):
             path = Path(folder) / "release.apk"
             self.assertTrue(violations(path))
             path.write_bytes(b"not an APK")
+            self.assertTrue(violations(path))
+
+    def check_bundle(self, manifest=b"protobuf local manifest", dex=b"local classes", extra=None):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "release.aab"
+            with zipfile.ZipFile(path, "w") as bundle:
+                bundle.writestr("BundleConfig.pb", b"bundle config")
+                if manifest is not None:
+                    bundle.writestr("base/manifest/AndroidManifest.xml", manifest)
+                if dex is not None:
+                    bundle.writestr("base/dex/classes.dex", dex)
+                for name, content in (extra or {}).items():
+                    bundle.writestr(name, content)
+            return violations(path)
+
+    def test_local_bundle_passes(self):
+        self.assertEqual([], self.check_bundle())
+
+    def test_bundle_base_network_permissions_rejected(self):
+        for permission in (b"android.permission.INTERNET", b"android.permission.ACCESS_NETWORK_STATE"):
+            with self.subTest(permission=permission):
+                self.assertTrue(self.check_bundle(manifest=b"\x0a\x1a" + permission))
+
+    def test_bundle_feature_manifest_network_permission_rejected(self):
+        self.assertTrue(self.check_bundle(extra={
+            "future/manifest/AndroidManifest.xml": b"android.permission.INTERNET",
+        }))
+
+    def test_bundle_account_code_in_base_secondary_or_feature_dex_rejected(self):
+        for name in ("base/dex/classes2.dex", "future/dex/classes.dex"):
+            for prefix in (b"Lcom/google/firebase/auth/Auth;", b"Lcom/flint/peakfocus/feature/connected/Account;"):
+                with self.subTest(name=name, prefix=prefix):
+                    self.assertTrue(self.check_bundle(extra={name: prefix}))
+
+    def test_bundle_requires_base_manifest_and_primary_dex(self):
+        self.assertTrue(self.check_bundle(manifest=None))
+        self.assertTrue(self.check_bundle(dex=None, extra={"future/dex/classes.dex": b"classes"}))
+
+    def test_bundle_requires_bundle_config(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "release.aab"
+            with zipfile.ZipFile(path, "w") as bundle:
+                bundle.writestr("base/manifest/AndroidManifest.xml", b"manifest")
+                bundle.writestr("base/dex/classes.dex", b"classes")
+            self.assertTrue(violations(path))
+
+    def test_empty_manifest_or_dex_rejected(self):
+        self.assertTrue(self.check_bundle(manifest=b""))
+        self.assertTrue(self.check_bundle(dex=b""))
+        self.assertTrue(self.check_apk(manifest=b""))
+        self.assertTrue(self.check_apk(dex=b""))
+
+    def test_combined_apk_and_bundle_layout_rejected(self):
+        self.assertTrue(self.check_bundle(extra={"AndroidManifest.xml": b"local"}))
+
+    def test_duplicate_archive_entries_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "release.apk"
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", UserWarning)
+                with zipfile.ZipFile(path, "w") as apk:
+                    apk.writestr("AndroidManifest.xml", b"safe")
+                    apk.writestr("AndroidManifest.xml", b"android.permission.INTERNET")
+                    apk.writestr("classes.dex", b"classes")
             self.assertTrue(violations(path))

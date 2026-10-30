@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.flint.peakfocus.feature.blocklist.SleepPresentationTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-10-29T01:28:44.739Z" hostname="Mac.lan" time="0.001">
+  <properties/>
+  <testcase name="each tier explains its own off gate" classname="com.flint.peakfocus.feature.blocklist.SleepPresentationTest" time="0.001"/>
+  <testcase name="saved tier takes precedence over assist label" classname="com.flint.peakfocus.feature.blocklist.SleepPresentationTest" time="0.0"/>
+  <testcase name="empty nights means every night and custom nights retain individual labels" classname="com.flint.peakfocus.feature.blocklist.SleepPresentationTest" time="0.0"/>
+  <testcase name="narrow or large text stacks time fields" classname="com.flint.peakfocus.feature.blocklist.SleepPresentationTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

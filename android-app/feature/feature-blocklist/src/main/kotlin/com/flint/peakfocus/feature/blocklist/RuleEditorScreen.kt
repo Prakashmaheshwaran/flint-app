@@ -95,8 +95,9 @@ internal fun RuleEditorScreen(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
     groups: List<AppGroup> = emptyList(),
-    onSaveGroup: ((name: String, apps: Set<AppRef>, domains: List<String>) -> Unit)? = null,
-    onDeleteGroup: ((groupId: String) -> Unit)? = null,
+    onSaveGroup: ((name: String, apps: Set<AppRef>, domains: List<String>, onSaved: () -> Unit) -> Unit)? = null,
+    onDeleteGroup: ((groupId: String, onSaved: () -> Unit) -> Unit)? = null,
+    saveState: EditorSaveState = EditorSaveState(),
 ) {
     var draft by remember(initialDraft.id) { mutableStateOf(initialDraft) }
     var startText by remember(initialDraft.id) {
@@ -519,21 +520,17 @@ internal fun RuleEditorScreen(
                     ) {
                         Column {
                             Spacer(Modifier.height(FlintSpacing.sm))
-                            Text(
-                                text = "Hardcore means it: no breaks, no early stop. Your " +
-                                    "weekly Emergency Pass is the only exit.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
+                            HardcoreCommitmentDisclosure()
                         }
                     }
                 }
                 Spacer(Modifier.height(FlintSpacing.lg))
 
-                ErrorMessages(errors.map { it.message })
+                ErrorMessages(errors.map { it.message } + if (namingGroup || deletingGroup != null) emptyList() else listOfNotNull(saveState.error))
                 if (errors.isNotEmpty()) Spacer(Modifier.height(FlintSpacing.cardGap))
 
                 Button(
+                    enabled = !saveState.busy,
                     onClick = {
                         attemptedSave = true
                         val problems = validate(candidate)
@@ -563,6 +560,7 @@ internal fun RuleEditorScreen(
                     Spacer(Modifier.height(FlintSpacing.sm))
                     TextButton(
                         onClick = { confirmingDelete = true },
+                        enabled = !saveState.busy,
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.textButtonColors(
                             contentColor = MaterialTheme.colorScheme.error,
@@ -609,16 +607,19 @@ internal fun RuleEditorScreen(
                 onDismissRequest = { deletingGroup = null },
                 title = { Text("Delete “${group.name}”?") },
                 text = {
-                    Text(
-                        "Rules that already used this group keep their targets — only the " +
-                            "reusable group goes away.",
-                    )
+                    Column {
+                        ErrorMessages(listOfNotNull(saveState.error))
+                        Text(
+                            "Rules that already used this group keep their targets — only the " +
+                                "reusable group goes away.",
+                        )
+                    }
                 },
                 confirmButton = {
                     TextButton(
+                        enabled = !saveState.busy,
                         onClick = {
-                            onDeleteGroup(group.id)
-                            deletingGroup = null
+                            onDeleteGroup(group.id) { deletingGroup = null }
                         },
                     ) {
                         Text("Delete", color = MaterialTheme.colorScheme.error)
@@ -636,22 +637,27 @@ internal fun RuleEditorScreen(
             onDismissRequest = { namingGroup = false },
             title = { Text("Name this group") },
             text = {
-                OutlinedTextField(
-                    value = groupName,
-                    onValueChange = { groupName = it },
-                    label = { Text("Group name") },
-                    placeholder = { Text("Social media") },
-                    singleLine = true,
-                )
+                Column {
+                    ErrorMessages(listOfNotNull(saveState.error))
+                    OutlinedTextField(
+                        value = groupName,
+                        onValueChange = { groupName = it },
+                        enabled = !saveState.busy,
+                        label = { Text("Group name") },
+                        placeholder = { Text("Social media") },
+                        singleLine = true,
+                    )
+                }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        onSaveGroup(groupName, draft.apps, draft.domains)
-                        namingGroup = false
-                        groupName = ""
+                        onSaveGroup(groupName, draft.apps, draft.domains) {
+                            namingGroup = false
+                            groupName = ""
+                        }
                     },
-                    enabled = groupName.isNotBlank(),
+                    enabled = groupName.isNotBlank() && !saveState.busy,
                 ) {
                     Text("Save group")
                 }

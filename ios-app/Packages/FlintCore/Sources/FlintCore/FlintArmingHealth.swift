@@ -11,9 +11,8 @@ import Foundation
 /// Every controller `reload()` now records the full enabled → attempted → armed funnel and what
 /// failed (keyed by domain, each controller owning its own slice), Settings shows the result, and
 /// a near-cap warning fires *before* rules start silently dying. Pure Foundation — all
-/// DeviceActivity calls stay in the controllers. The active session's auto-clear holds a slot
-/// outside these domains; `capHeadroom` also keeps a small safety margin because Apple does not
-/// publish or promise a stable registration limit.
+/// DeviceActivity calls stay in the controllers. Session recovery contributes its own domain;
+/// `capHeadroom` keeps a safety margin because Apple does not publish or promise a stable limit.
 public struct FlintArmingHealth: Codable, Equatable {
 
     /// One enabled activity that failed validation or registration, and the reason.
@@ -30,26 +29,47 @@ public struct FlintArmingHealth: Codable, Equatable {
     /// What one controller's `reload()` found, attempted, and successfully armed.
     ///
     /// `enabled` includes locally invalid rules that never reach `startMonitoring`; `attempted`
-    /// counts calls made to the framework; `armed` counts calls that returned successfully.
+    /// counts calls made to the framework; `armed` counts accepted requests plus unchanged
+    /// definitions already observed in iOS. `observedActivities` is the separate post-write read.
     public struct DomainReport: Codable, Equatable {
         public var enabled: Int
         public var attempted: Int
         public var armed: Int
         public var failures: [Failure]
         public var updatedAt: Date
+        /// A read of DeviceActivityCenter, not an inference from a successful start call.
+        /// nil means this report predates observations or the layer has no activity to observe.
+        public var observedActivities: [String]?
+        public var observed: Int? { observedActivities?.count }
+        /// Session recovery outcomes. nil identifies older reports or other domains.
+        public var notAuthorized: Bool?
+        public var rearmFailed: Bool?
+        public var recordUnreadable: Bool?
+        /// Intentional Emergency Pass suspension, distinct from a failed registration.
+        public var suspendedUntil: Date?
 
         public init(
             enabled: Int,
             attempted: Int,
             armed: Int,
             failures: [Failure],
-            updatedAt: Date = Date()
+            updatedAt: Date = Date(),
+            observedActivities: [String]? = nil,
+            notAuthorized: Bool? = nil,
+            rearmFailed: Bool? = nil,
+            recordUnreadable: Bool? = nil,
+            suspendedUntil: Date? = nil
         ) {
             self.enabled = enabled
             self.attempted = attempted
             self.armed = armed
             self.failures = failures
             self.updatedAt = updatedAt
+            self.observedActivities = observedActivities
+            self.notAuthorized = notAuthorized
+            self.rearmFailed = rearmFailed
+            self.recordUnreadable = recordUnreadable
+            self.suspendedUntil = suspendedUntil
         }
 
         /// Source-compatible initializer for callers that only know the pre-funnel model. Old
@@ -66,7 +86,7 @@ public struct FlintArmingHealth: Codable, Equatable {
         }
 
         private enum CodingKeys: String, CodingKey {
-            case enabled, attempted, armed, failures, updatedAt
+            case enabled, attempted, armed, failures, updatedAt, observedActivities, notAuthorized, rearmFailed, recordUnreadable, suspendedUntil
         }
 
         /// Existing installs persisted only `attempted`, `failures`, and `updatedAt`. Decode that
@@ -80,6 +100,11 @@ public struct FlintArmingHealth: Codable, Equatable {
             enabled = try values.decodeIfPresent(Int.self, forKey: .enabled) ?? attempted
             armed = try values.decodeIfPresent(Int.self, forKey: .armed)
                 ?? max(0, attempted - failures.count)
+            observedActivities = try values.decodeIfPresent([String].self, forKey: .observedActivities)
+            notAuthorized = try values.decodeIfPresent(Bool.self, forKey: .notAuthorized)
+            rearmFailed = try values.decodeIfPresent(Bool.self, forKey: .rearmFailed)
+            recordUnreadable = try values.decodeIfPresent(Bool.self, forKey: .recordUnreadable)
+            suspendedUntil = try values.decodeIfPresent(Date.self, forKey: .suspendedUntil)
         }
     }
 
@@ -88,12 +113,11 @@ public struct FlintArmingHealth: Codable, Equatable {
     /// stay under the threshold; actual refusals are recorded separately.
     public static let observedActivityThreshold = 20
 
-    /// Slots kept free before `isNearCap` warns: one for the active session's untracked one-shot
-    /// auto-clear, plus two as safety margin around an empirical and potentially variable limit.
-    /// Sleep Mode is already represented by ordinary schedule rules and is counted above.
+    /// Safety margin before `isNearCap` warns around an empirical, potentially variable limit.
+    /// Session auto-clear and Sleep's ordinary schedule rules are already represented in health.
     public static let capHeadroom = 3
 
-    /// Reports keyed by domain ("schedules", "limits", "openLimits").
+    /// Reports keyed by domain (session, schedules, limits, openLimits, webRestrictions, removalGuard).
     public var domains: [String: DomainReport]
 
     public init(domains: [String: DomainReport] = [:]) {
@@ -102,19 +126,23 @@ public struct FlintArmingHealth: Codable, Equatable {
 
     // MARK: Derived
 
-    /// Total enabled rules across all recorded domains at their last reload.
+    /// Total enabled activity owners; web and removal settings reuse those owners.
     public var enabledTotal: Int {
-        domains.values.reduce(0) { $0 + $1.enabled }
+        activityDomains.values.reduce(0) { $0 + $1.enabled }
     }
 
     /// Total registrations attempted across all recorded domains at their last reload.
     public var attemptedTotal: Int {
-        domains.values.reduce(0) { $0 + $1.attempted }
+        activityDomains.values.reduce(0) { $0 + $1.attempted }
     }
 
-    /// Total registrations successfully armed across all recorded domains at their last reload.
+    /// Total registrations successfully armed; web and removal settings register no activities.
     public var armedTotal: Int {
-        domains.values.reduce(0) { $0 + $1.armed }
+        activityDomains.values.reduce(0) { $0 + $1.armed }
+    }
+
+    private var activityDomains: [String: DomainReport] {
+        domains.filter { $0.key != "webRestrictions" && $0.key != "removalGuard" }
     }
 
     /// Every recorded failure, ordered by domain name for stable display.
@@ -147,7 +175,8 @@ public struct FlintArmingHealth: Codable, Equatable {
         attempted: Int,
         armed: Int,
         failures: [Failure],
-        in store: FlintGroupStore? = FlintGroupStore()
+        in store: FlintGroupStore? = FlintGroupStore(),
+        observedActivities: [String]? = nil
     ) {
         guard let store else { return }
         let merged = store.loadArmingHealth()
@@ -155,7 +184,8 @@ public struct FlintArmingHealth: Codable, Equatable {
                 enabled: enabled,
                 attempted: attempted,
                 armed: armed,
-                failures: failures
+                failures: failures,
+                observedActivities: observedActivities
             ))
         store.saveArmingHealth(merged)
     }

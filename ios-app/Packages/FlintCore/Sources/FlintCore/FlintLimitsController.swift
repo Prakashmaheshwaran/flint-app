@@ -9,91 +9,110 @@ import DeviceActivity
 /// limit's apps when the event fires and clears them at the daily boundary (the reset).
 public final class FlintLimitsController {
 
-    public init() {}
+    private let environment: FlintRuleReloadEnvironment
+    public init() { environment = .live }
+    init(environment: FlintRuleReloadEnvironment) { self.environment = environment }
+
+    public static func armPlan(
+        for rules: [FlintLimitRule]
+    ) -> FlintRuleArmPlan<FlintLimitRule, FlintArmingHealth.Failure> {
+        armPlan(for: rules, selectionIssue: { FlintSelectionValidation.issue(for: $0.selection) })
+    }
+
+    static func armPlan(
+        for rules: [FlintLimitRule],
+        selectionIssue: (FlintLimitRule) -> FlintSelectionIssue?
+    ) -> FlintRuleArmPlan<FlintLimitRule, FlintArmingHealth.Failure> {
+        var arm: [FlintLimitRule] = []
+        var failures: [FlintArmingHealth.Failure] = []
+        for rule in rules where rule.enabled {
+            if let issue = selectionIssue(rule) {
+                failures.append(.init(activityName: rule.activityName, reason: issue.message))
+            } else {
+                arm.append(rule)
+            }
+        }
+        let failedNames = Set(failures.map(\.activityName))
+        return .init(arm: arm, failures: failures,
+                     storesToClear: rules.filter { failedNames.contains($0.activityName) }.map(\.storeName))
+    }
 
     public func limits() -> [FlintLimitRule] {
-        FlintGroupStore()?.loadLimits() ?? []
-    }
-
-    public func upsert(_ limit: FlintLimitRule) {
-        guard let group = FlintGroupStore() else { return }
-        var all = group.loadLimits()
-        if let index = all.firstIndex(where: { $0.id == limit.id }) {
-            all[index] = limit
-        } else {
-            all.append(limit)
+        guard let rules = environment.rulesForDisplay(FlintLimitRule.self) else {
+            environment.recordState("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
+            return []
         }
-        group.saveLimits(all)
-        reload()
+        return rules
     }
 
-    public func delete(_ limitID: String) {
-        guard let group = FlintGroupStore() else { return }
-        var all = group.loadLimits()
-        all.removeAll { $0.id == limitID }
-        group.saveLimits(all)
-        ManagedSettingsStore(named: ManagedSettingsStore.Name("flintL.\(limitID)")).clearAllSettings()
-        FlintScheduling.stopMonitoring(["flint.limit.\(limitID)"])
-        reload()
+    @discardableResult
+    public func upsert(_ limit: FlintLimitRule, confirmation: FlintRuleConfirmation? = nil,
+                       creating: Bool = false, origin: FlintRuleMutationOrigin = .background) -> FlintRuleMutationResult {
+        FlintRuleArbiter(environment: environment).upsert(limit, confirmation: confirmation, creating: creating, origin: origin)
     }
 
-    public func setEnabled(_ limitID: String, _ enabled: Bool) {
-        guard let group = FlintGroupStore() else { return }
-        var all = group.loadLimits()
-        guard let index = all.firstIndex(where: { $0.id == limitID }) else { return }
-        all[index].enabled = enabled
-        group.saveLimits(all)
-        if !enabled {
-            ManagedSettingsStore(named: ManagedSettingsStore.Name("flintL.\(limitID)")).clearAllSettings()
-        }
-        reload()
+    @discardableResult
+    public func delete(_ limitID: String, revision: Int,
+                       confirmation: FlintRuleConfirmation? = nil, origin: FlintRuleMutationOrigin = .background) -> FlintRuleMutationResult {
+        FlintRuleArbiter(environment: environment).delete(FlintLimitRule.self, id: limitID,
+            revision: revision, confirmation: confirmation, origin: origin)
+    }
+
+    @discardableResult
+    public func setEnabled(_ limitID: String, _ enabled: Bool, revision: Int,
+                           confirmation: FlintRuleConfirmation? = nil, origin: FlintRuleMutationOrigin = .background) -> FlintRuleMutationResult {
+        FlintRuleArbiter(environment: environment).setEnabled(FlintLimitRule.self, id: limitID,
+            enabled: enabled, revision: revision, confirmation: confirmation, origin: origin)
+    }
+
+    public func cancelPendingChange(_ id: String, confirmation: FlintRuleConfirmation? = nil) {
+        guard let confirmation else { return }
+        _ = FlintRuleArbiter(environment: environment).cancel(FlintLimitRule.self, id: id, confirmation: confirmation)
+    }
+
+    public func cancelQueuedChange(_ id: String, expected: FlintRuleProtection) -> FlintRuleMutationResult {
+        FlintRuleArbiter(environment: environment).cancelQueued(FlintLimitRule.self, id: id, expected: expected)
     }
 
     /// Re-register all enabled limits. Idempotent; call on launch and after edits. Outcomes
     /// are recorded in `FlintArmingHealth` — each limit holds an OS activity slot, and a
     /// rejected registration is a budget that never trips.
     public func reload() {
-        guard let group = FlintGroupStore() else { return }
-        let all = group.loadLimits()
-        FlintScheduling.stopMonitoring(all.map { $0.activityName })
-
-        let center = DeviceActivityCenter()
-        var attempted = 0
-        var armed = 0
-        var failures: [FlintArmingHealth.Failure] = []
-        for limit in all where limit.enabled {
-            let schedule = DeviceActivitySchedule(
-                intervalStart: DateComponents(hour: 0, minute: 0),
-                intervalEnd: DateComponents(hour: 23, minute: 59),
-                repeats: true
-            )
-            let event = DeviceActivityEvent(
-                applications: limit.selection.applicationTokens,
-                categories: limit.selection.categoryTokens,
-                webDomains: limit.selection.webDomainTokens,
-                threshold: DateComponents(minute: limit.thresholdMinutes)
-            )
-            attempted += 1
-            do {
-                try center.startMonitoring(
-                    DeviceActivityName(limit.activityName),
-                    during: schedule,
-                    events: [DeviceActivityEvent.Name(limit.eventName): event]
-                )
-                armed += 1
-            } catch {
-                failures.append(FlintArmingHealth.Failure(
-                    activityName: limit.activityName, reason: String(describing: error)))
-            }
+        if case .none = FlintRuleStoreLock.withLock(environment: environment, { reloadLocked() }) {
+            environment.recordState("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
         }
-        FlintArmingHealth.record(
-            domain: "limits",
-            enabled: all.lazy.filter(\.enabled).count,
-            attempted: attempted,
-            armed: armed,
-            failures: failures,
-            in: group
-        )
+    }
+
+    private func reloadLocked() {
+        guard FlintRuleArbiter(environment: environment).applyQueued(FlintLimitRule.self) else {
+            environment.recordState("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
+            return
+        }
+        guard let observed = environment.observedRules(FlintLimitRule.self),
+              let all = environment.freezeOccurrences(observed) else {
+            environment.recordState("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
+            return
+        }
+        let plan = Self.armPlan(for: all)
+        let requests = plan.arm.map { limit in
+            var request = limit.registration(clock: environment.clock)
+            request.retainedUntil = limit.occurrence(at: environment.clock.now(), clock: environment.clock).map {
+                FlintRuleOccurrenceClock.display($0, for: limit, clock: environment.clock).end
+            }
+            return request
+        }
+        let report = FlintActivityRegistration.reconcile(
+            requests, prefix: "flint.limit.", enabled: plan.enabled,
+            validationFailures: plan.failures, center: environment.center, defaults: environment.defaults,
+            now: environment.clock.now(), onRemove: { name in
+                FlintRuleCleanup.clearRemoved(name, rules: all, environment: environment)
+            })
+        for limit in plan.arm where (limit.thresholdMinutes == 0 || environment.timeLimitIsShielded(limit, environment.clock.now()))
+            && report.observedActivities?.contains(limit.activityName) == true {
+            environment.applyProtection(limit)
+            environment.markLimitThreshold(limit, environment.clock.now())
+        }
+        environment.recordState("limits", report)
     }
 }
 #endif

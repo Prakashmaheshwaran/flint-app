@@ -76,7 +76,8 @@ class FlintStoresTest {
                 throw IOException("storage unavailable")
         }
         val store = DataStoreBlockRulesStore(failed)
-        assertEquals(emptyList<BlockRule>(), store.rules.first()) // legacy contract remains unchanged
+        assertEquals(com.flint.peakfocus.core.model.StorageState.Unavailable(com.flint.peakfocus.core.model.StorageFailure.IO),
+            store.rulesState.first { it is com.flint.peakfocus.core.model.StorageState.Unavailable })
         try {
             store.rulesOrError.first()
             throw AssertionError("Read failure was hidden")
@@ -213,8 +214,10 @@ class FlintStoresTest {
             assertFalse(store.cancelEasySession(ruleA.id, 10_000L))
             store.upsert(session)
             assertFalse(store.cancelEasySession(session.id, 20_000L))
-            store.replaceAll(listOf(session, session.copy(breakLevel = BreakLevel.HARDCORE)))
-            assertFalse(store.cancelEasySession(session.id, 10_000L))
+            try {
+                store.replaceAll(listOf(session, session.copy(breakLevel = BreakLevel.HARDCORE)))
+                throw AssertionError("Ambiguous identity was written")
+            } catch (_: StorageUnavailableException) { }
             assertEquals(2, store.rules.first().size)
         }
     }
@@ -289,8 +292,10 @@ class FlintStoresTest {
                 assertFalse(store.endTimerSession(timer, 10_000))
                 assertEquals(listOf(ruleA, changed), store.rules.first())
             }
-            store.replaceAll(listOf(timer, timer))
-            assertFalse(store.endTimerSession(timer, 10_000))
+            try {
+                store.replaceAll(listOf(timer, timer))
+                throw AssertionError("Ambiguous identity was written")
+            } catch (_: StorageUnavailableException) { }
             assertEquals(2, store.rules.first().size)
         }
     }

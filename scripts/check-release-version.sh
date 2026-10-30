@@ -4,7 +4,7 @@
 #     scripts/check-release-version.sh v0.2.0        # or: make release-check TAG=v0.2.0
 #
 # Why this exists: .github/workflows/release.yml names the artifact after the git tag
-# (flint-<tag>-android-debug.apk), while Gradle stamps the APK itself from versionName and
+# (flint-<tag>-android-development-preview.apk/.aab), while Gradle stamps each from versionName and
 # versionCode in android-app/app/build.gradle.kts. Nothing tied those two together. Tag
 # v0.2.0 without bumping build.gradle.kts and you publish a file called v0.2.0 that installs
 # as 0.1.0 — and, because versionCode never moved, Android refuses it as an upgrade over the

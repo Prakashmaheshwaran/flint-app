@@ -1,5 +1,14 @@
 # Open-Source Landscape: Screen-Time / Focus / App-Blocker Apps (iOS & Android, 2023–2026)
 
+> **Historical research — original scope and status claims retained (2026-10-28).**
+> Use the [v1 capability acceptance ledger](../acceptance/v1-capability-ledger.md) for
+> current Flint implementation/evidence and [ADR-012](../architecture/protection-contract.md)
+> for personal protection requirements. Old future-date, launch-count, pass, anti-removal,
+> competitor and expanded connected-scope claims below are historical planning inputs,
+> not current release promises. The Android connected backend remains debug-only;
+> release is local-first, no-account and without analytics. No physical-device result
+> follows from an old status column.
+
 ## Summary of findings
 
 The OSS landscape splits cleanly by platform because the **blocking mechanism is dictated by the OS**, not by app design:

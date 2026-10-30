@@ -1,0 +1,115 @@
+name: Android emulator E2E
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths: ['android-app/**', 'scripts/android-e2e.sh', 'scripts/android-release-instrumentation.sh', 'scripts/android_boot_id.py', 'scripts/ci_android_emulator.py', '.github/actions/android-emulator-cache/**', 'Makefile', '.github/workflows/android-e2e.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.head_ref != 'integration/v1' }}
+
+jobs:
+  smoke:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false || github.head_ref == 'integration/v1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Record source provenance
+        run: |
+          mkdir -p artifacts/android-e2e
+          git rev-parse HEAD > artifacts/android-e2e/source-commit.txt
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Build app and instrumentation APKs before starting emulator
+        working-directory: android-app
+        run: |
+          ./gradlew -PflintE2E=true :app:assembleDebug :e2e:assembleDebug 2>&1 | tee ../artifacts/android-e2e/build.log
+          "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest print e2e/build/outputs/apk/debug/e2e-debug.apk > ../artifacts/android-e2e/test-manifest.xml
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse('../artifacts/android-e2e/test-manifest.xml').getroot()
+          target = root.find('instrumentation').get('{http://schemas.android.com/apk/res/android}targetPackage')
+          assert target == root.get('package') == 'com.flint.peakfocus.test', (target, root.get('package'))
+          PY
+      - uses: ./.github/actions/android-emulator-cache
+      - name: Release build memory and monitor emulator host
+        run: |
+          free -m > artifacts/android-e2e/host-before-daemon-stop.txt
+          android-app/gradlew -p android-app --stop
+          # Retain samples even if qemu disappears before device-side collection.
+          # This read-only monitor is bounded by the job deadline and stopped below.
+          nohup bash > artifacts/android-e2e/host-resources.txt 2>&1 <<'MONITOR' &
+            for ((sample=0; sample<150; sample++)); do
+              [[ ! -e artifacts/android-e2e/host-monitor.stop ]] || break
+              date -u +%FT%TZ
+              cat /proc/uptime
+              free -m
+              df -m . /tmp
+              cat /proc/pressure/memory
+              for metric in memory.current memory.peak memory.max memory.events; do
+                echo "cgroup $metric"
+                cat "/sys/fs/cgroup/$metric" 2>/dev/null || true
+              done
+              ps -eo pid,ppid,etimes,rss,comm --sort=-rss | head -21
+              sleep 10
+            done
+          MONITOR
+      - name: Real accessibility smoke (disposable emulator)
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          # APKs are already built: do not retain the 2.5 GB build daemon or
+          # parallel build workers alongside the 3 GB guest and SwiftShader.
+          GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx1024m -Dorg.gradle.workers.max=2 -Dorg.gradle.parallel=false -Dorg.gradle.daemon=false
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          avd-name: flint-ci-api36
+          force-avd-creation: false
+          cores: 2
+          ram-size: 3072M
+          heap-size: 512M
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-snapshot-save -noaudio -no-boot-anim -camera-back none -camera-front none
+          emulator-boot-timeout: 300
+          disable-animations: true
+          pre-emulator-launch-script: '"$ANDROID_HOME/emulator/emulator" -accel-check > artifacts/android-e2e/kvm-check.txt 2>&1'
+          script: FLINT_E2E_DISPOSABLE=1 AVD=emulator-5554 bash scripts/android-e2e.sh
+      - name: Retain host OOM and emulator crash evidence
+        if: always()
+        run: |
+          mkdir -p artifacts/android-e2e
+          touch artifacts/android-e2e/host-monitor.stop
+          free -m > artifacts/android-e2e/host-after-suite.txt
+          df -m . /tmp >> artifacts/android-e2e/host-after-suite.txt
+          sudo dmesg --ctime 2>&1 | tee artifacts/android-e2e/host-kernel.txt > /dev/null || true
+          # Emulator stdout/stderr remains in the action log. Inventory Crashpad
+          # reports without publishing raw process memory/environment from dumps.
+          if [[ -d /tmp/android-runner ]]; then
+            find /tmp/android-runner -path '*/emu-crash-*' -type f -printf '%P %s bytes\n' \
+              > artifacts/android-e2e/emulator-crash-inventory.txt
+          fi
+      - name: Upload screenshots, hierarchy, logcat and JUnit
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-e2e-api36
+          retention-days: 14
+          path: |
+            artifacts/android-e2e/
+            android-app/e2e/build/reports/androidTests/
+            android-app/e2e/build/outputs/androidTest-results/

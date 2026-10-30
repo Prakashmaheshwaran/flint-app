@@ -121,21 +121,22 @@ final class FlintScheduleValidationTests: XCTestCase {
     // MARK: Arm plan — what reload() hands DeviceActivity
 
     func testArmPlanArmsOnlyEnabledRulesWithRegistrableWindows() {
-        let good = FlintScheduleRule(id: "ok", name: "Work", schedule: FlintSchedule(startHour: 9, endHour: 17))
+        let good = FlintScheduleRule(id: "ok", name: "Work", schedule: FlintSchedule(startHour: 9, endHour: 17), allowListMode: true)
         let bad = FlintScheduleRule(id: "bad", name: "Broken", schedule: FlintSchedule(startHour: 9, endHour: 9))
 
         let plan = FlintSchedulesController.armPlan(for: [good, bad])
         XCTAssertEqual(plan.arm.map(\.id), ["ok"])
         XCTAssertEqual(plan.failures, [
-            FlintScheduleArmFailure(ruleID: "bad", ruleName: "Broken", issue: .zeroLengthWindow),
+            FlintScheduleArmFailure(ruleID: "bad", ruleName: "Broken", issue: .zeroLengthWindow,
+                activityName: bad.monitorName),
         ])
     }
 
     func testValidationAndRegistrationFailuresStayVisibleInGlobalHealth() {
         let first = FlintScheduleRule(
-            id: "first", name: "First", schedule: FlintSchedule(startHour: 9, endHour: 17))
+            id: "first", name: "First", schedule: FlintSchedule(startHour: 9, endHour: 17), allowListMode: true)
         let second = FlintScheduleRule(
-            id: "second", name: "Second", schedule: FlintSchedule(startHour: 10, endHour: 18))
+            id: "second", name: "Second", schedule: FlintSchedule(startHour: 10, endHour: 18), allowListMode: true)
         let invalid = FlintScheduleRule(
             id: "invalid", name: "Invalid", schedule: FlintSchedule(startHour: 9, endHour: 9))
         let plan = FlintSchedulesController.armPlan(for: [first, second, invalid])

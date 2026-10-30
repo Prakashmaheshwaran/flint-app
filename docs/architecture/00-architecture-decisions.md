@@ -1,5 +1,13 @@
 # Flint — Architecture Decision Record
 
+> **Current v1 interpretation (2026-10-28):** the entries below retain their historical
+> scope. [ADR-012](protection-contract.md) supersedes conflicting personal tier, pass,
+> clock and anti-removal promises; the [capability ledger](../acceptance/v1-capability-ledger.md)
+> records implementation/evidence. ADR-002's original no-backend-directory description
+> predates ADR-010/011: a local debug connected sandbox now exists, while release builds
+> remain local-first, no-account and without analytics. No production managed authority
+> is activated. Historical competitor/paywall claims are not refreshed here.
+
 > **Flint — Peak Focus.** A 100% free, open-source alternative to Opal. Everything Opal
 > paywalls is free in Flint. Built in the open, local-first, no dark patterns, no telemetry.
 >
@@ -216,7 +224,7 @@ Flint-imposed count cap or 24h-advance cap; iOS's finite, undocumented `DeviceAc
 registration pool is shared by Flint's monitors and still applies), **Block List + Allow List**,
 **all three break-difficulty levels including
 Hardcore/Deep Focus for free**, **Time Limits + Open Limits**, the **anti-bypass suite**, and a
-**free weekly Emergency Pass** — every one of these is something Opal paywalls or omits. Defer
+**free Emergency Pass every rolling 7 days after use** — every one of these is something Opal paywalls or omits. Defer
 gamification, bundled audio content, desktop/cross-device, and full Android parity to later
 milestones. Full list: [`01-opal-feature-inventory.md`](../research/01-opal-feature-inventory.md).
 
@@ -294,3 +302,22 @@ An API 35 emulator run is not evidence of execution on API 23.
 
 *Decisions are revisited as the platforms change (notably iOS Screen Time and Android
 Advanced Protection / Play policy). Amend this file — don't let it drift from the code.*
+
+---
+
+## ADR-012 — Protection and commitment contract
+
+**Decision (2026-10-28; authoritative when merged).** Adopt the
+[personal protection contract](protection-contract.md) for both platforms: one tier/action
+matrix across every entry point, strongest-cause arbitration, scoped five-minute access,
+rolling-seven-day Emergency Pass with global 60-minute recovery, an unconditional safety
+floor, truthful arming/recovery, versioned migration and local lifecycle events. Active
+Hardcore weakening is deferred to occurrence end; inactive templates remain editable.
+The contract includes the platform-specific removal/permission boundary and acceptance
+cases PC-01–PC-84; it is a specification, not evidence that implementation/device gates pass.
+
+**Supersession.** This replaces ADR-011's personal Standard/Increasing difficulty split,
+unspecified live all-cause arbitration and period adapters, and undefined shipping
+break/pass semantics. ADR-011's versioned atomic storage foundation, unavailable-state
+handling, cause/revision identities and monotonic durations remain. Its separate, dormant
+managed-authority boundary remains unchanged; no production managed enforcement is authorized.

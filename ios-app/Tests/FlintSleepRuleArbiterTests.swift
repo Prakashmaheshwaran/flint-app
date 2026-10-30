@@ -1,0 +1,135 @@
+import XCTest
+@testable import FlintCore
+
+final class FlintSleepRuleArbiterTests: XCTestCase {
+    func testNewWindDownEasyAndFullAssistHarderDefaultsPC82() throws {
+        for (assist, expected) in [(FlintSleepAssistLevel.windDown, BreakLevel.easy), (.fullAssist, .harder)] {
+            let h = try RuleHarness(); defer { h.clean() }
+            let config = FlintSleepConfig(enabled: true, schedule: .init(startHour: 22, endHour: 7), sleepAssist: assist)
+            XCTAssertEqual(FlintSleepRulesController(environment: h.environment).save(config), .applied)
+            XCTAssertEqual(h.load(FlintScheduleRule.self).first?.breakLevel, expected)
+        }
+    }
+
+    func testSleepSaveIsAtomicBatchAndCannotBypassActiveHardcorePC11PC14() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        var night = h.schedule(tier: .hardcore); night.id = FlintSleepRulesController.nightID
+        let active = h.install(night)
+        let config = FlintSleepConfig(enabled: true, schedule: night.schedule, sleepAssist: .fullAssist,
+            nightBreakLevel: .hardcore)
+        h.defaults.set(try JSONEncoder().encode(config), forKey: FlintSleepRulesController.key)
+        var draft = config; draft.enabled = false
+        let controller = FlintSleepRulesController(environment: h.environment)
+        guard case let .deferRequired(ticket, end) = controller.save(draft) else { return XCTFail() }
+        XCTAssertEqual(FlintSleepConfig.load(from: h.defaults), config, "unconfirmed draft cannot persist")
+        XCTAssertEqual(controller.save(draft, confirmation: ticket, origin: .interactive), .queued(until: end))
+        XCTAssertEqual(h.load(FlintScheduleRule.self).first?.enabled, true)
+        XCTAssertEqual(h.load(FlintScheduleRule.self).first?.activityName, active.activityName)
+        h.advance(to: end)
+        _ = FlintRuleMonitor(environment: h.environment).handle(.end, activity: active.activityName)
+        XCTAssertTrue(h.load(FlintScheduleRule.self).isEmpty)
+    }
+
+    func testSleepTierIncreaseNeedsConfirmationAndStaleConfigIsRefused() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        var config = FlintSleepConfig(enabled: true, schedule: .init(startHour: 22, endHour: 7), sleepAssist: .windDown,
+            nightBreakLevel: .hardcore)
+        let controller = FlintSleepRulesController(environment: h.environment)
+        guard case let .confirmationRequired(ticket, raisesTier: true) = controller.save(config) else { return XCTFail() }
+        XCTAssertEqual(controller.save(config, confirmation: ticket, origin: .interactive), .applied)
+        config.nightBreakLevel = .easy
+        config.revision = 99
+        XCTAssertEqual(controller.save(config), .staleRevision)
+    }
+
+    func testMalformedSleepConfigIsUnavailableAndCannotDeleteRunningWindows() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        var night = h.schedule(tier: .hardcore); night.id = FlintSleepRulesController.nightID
+        _ = h.install(night)
+        h.defaults.set(Data("{partial".utf8), forKey: FlintSleepRulesController.key)
+        XCTAssertEqual(FlintSleepRulesController(environment: h.environment).save(.default), .unavailable)
+        XCTAssertTrue(h.cleared.isEmpty); XCTAssertTrue(h.center.stops.isEmpty)
+    }
+
+    /// R-27: a tier raised in Rules is the tier in force. A Sleep draft adopts it, so the next
+    /// Sleep save (here a bedtime change) keeps it instead of reverting to the stored tier.
+    func testTierChangedInRulesSurvivesTheNextSleepSaveR27() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let controller = FlintSleepRulesController(environment: h.environment)
+        let config = FlintSleepConfig(enabled: true, schedule: .init(startHour: 22, endHour: 7), sleepAssist: .windDown)
+        XCTAssertEqual(controller.save(config), .applied)
+        var night = try XCTUnwrap(h.load(FlintScheduleRule.self).first { $0.id == FlintSleepRulesController.nightID })
+        XCTAssertEqual(night.breakLevel, .easy)
+
+        // Raise it in Rules; the saved Sleep config still says Easy.
+        night.breakLevel = .harder
+        let arbiter = FlintRuleArbiter(environment: h.environment)
+        var result = arbiter.upsert(night)
+        if case let .confirmationRequired(ticket, _) = result { result = arbiter.upsert(night, confirmation: ticket) }
+        XCTAssertEqual(result, .applied)
+        let stored = FlintSleepConfig.load(from: h.defaults)
+        XCTAssertEqual(stored.nightBreakLevel, .easy)
+
+        var draft = FlintSleepRulesController.adoptingTiersInForce(stored, rules: h.load(FlintScheduleRule.self)).config
+        XCTAssertEqual(draft.nightBreakLevel, .harder, "the draft shows the tier in force")
+        draft.schedule = .init(startHour: 23, endHour: 7)
+        var saved = controller.save(draft)
+        if case let .confirmationRequired(ticket, _) = saved { saved = controller.save(draft, confirmation: ticket, origin: .interactive) }
+        XCTAssertEqual(saved, .applied)
+        XCTAssertEqual(h.load(FlintScheduleRule.self).first { $0.id == FlintSleepRulesController.nightID }?.breakLevel, .harder,
+                       "a Sleep save never reverts a tier changed in Rules")
+    }
+
+    /// A window with a queued change keeps the draft's tier: that is the queued intent.
+    func testQueuedSleepChangeKeepsTheDraftTierR27() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        var night = h.schedule(tier: .hardcore); night.id = FlintSleepRulesController.nightID
+        _ = h.install(night)
+        let config = FlintSleepConfig(enabled: true, schedule: night.schedule, sleepAssist: .fullAssist,
+            nightBreakLevel: .hardcore)
+        h.defaults.set(try JSONEncoder().encode(config), forKey: FlintSleepRulesController.key)
+        var draft = config; draft.nightBreakLevel = .easy
+        let controller = FlintSleepRulesController(environment: h.environment)
+        guard case let .deferRequired(ticket, end) = controller.save(draft) else { return XCTFail() }
+        XCTAssertEqual(controller.save(draft, confirmation: ticket, origin: .interactive), .queued(until: end))
+        let rules = h.load(FlintScheduleRule.self)
+        XCTAssertNotNil(rules.first?.protection?.queuedChange)
+        let reopened = FlintSleepRulesController.adoptingTiersInForce(FlintSleepConfig.load(from: h.defaults), rules: rules).config
+        XCTAssertEqual(reopened.nightBreakLevel, .easy, "the queued weakening is not undone by reopening Sleep")
+    }
+
+    /// The draft decision Sleep makes on open, refresh and save: adopt on open, keep a tier the
+    /// user picked across later refreshes (even after another Rules change), adopt again after a
+    /// save, and never adopt from a disabled window.
+    func testDraftAdoptionKeepsInVisitPicksAndSkipsDisabledWindowsR27() {
+        func rule(_ id: String, _ tier: BreakLevel, enabled: Bool = true) -> FlintScheduleRule {
+            var r = FlintScheduleRule(id: id, name: id, schedule: .init(startHour: 22, endHour: 7), breakLevel: tier,
+                allowListMode: true, protection: .init(timeZoneID: "UTC"))
+            r.enabled = enabled
+            return r
+        }
+        let stored = FlintSleepConfig(enabled: true, schedule: .init(startHour: 22, endHour: 7), sleepAssist: .windDown,
+            morningAssist: .fullAssist, nightBreakLevel: .easy, morningBreakLevel: .harder)
+        let night = FlintSleepRulesController.nightID, morning = FlintSleepRulesController.morningID
+
+        var open = FlintSleepRulesController.adoptingTiersInForce(stored, rules: [rule(night, .harder), rule(morning, .hardcore)])
+        XCTAssertEqual(open.config.nightBreakLevel, .harder, "opening Sleep shows the tier in force")
+        XCTAssertEqual(open.config.morningBreakLevel, .hardcore)
+
+        open.config.nightBreakLevel = .easy // picked during this visit
+        let refreshed = FlintSleepRulesController.adoptingTiersInForce(open.config,
+            rules: [rule(night, .hardcore), rule(morning, .easy)], keepingPicksSince: open.adopted)
+        XCTAssertEqual(refreshed.config.nightBreakLevel, .easy, "a pick survives a refresh after another Rules change")
+        XCTAssertEqual(refreshed.config.morningBreakLevel, .easy, "an untouched window follows the tier in force")
+        let again = FlintSleepRulesController.adoptingTiersInForce(refreshed.config,
+            rules: [rule(night, .harder), rule(morning, .easy)], keepingPicksSince: refreshed.adopted)
+        XCTAssertEqual(again.config.nightBreakLevel, .easy, "the pick is still kept on the next refresh")
+
+        let afterSave = FlintSleepRulesController.adoptingTiersInForce(stored, rules: [rule(night, .harder)])
+        XCTAssertEqual(afterSave.config.nightBreakLevel, .harder, "a save re-adopts unconditionally")
+
+        let disabled = FlintSleepRulesController.adoptingTiersInForce(stored, rules: [rule(night, .hardcore, enabled: false)])
+        XCTAssertEqual(disabled.config.nightBreakLevel, .easy, "a disabled window has no tier in force")
+    }
+}
+

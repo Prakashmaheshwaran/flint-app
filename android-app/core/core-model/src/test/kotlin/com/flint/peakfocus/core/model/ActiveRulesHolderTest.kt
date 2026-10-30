@@ -68,4 +68,84 @@ class ActiveRulesHolderTest {
         ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, listOf(rule("ds")))
         assertEquals(listOf("ds", "future"), ActiveRulesHolder.rules.map { it.id })
     }
+
+    @Test fun unavailableAndLoadingNeverEraseLastKnownGoodRules() {
+        val source = ActiveRulesHolder.SOURCE_DATASTORE
+        ActiveRulesHolder.publish(source, listOf(rule("ds")))
+        ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_LEGACY, listOf(rule("legacy")))
+        ActiveRulesHolder.publishState(source, StorageState.Unavailable(StorageFailure.IO))
+        assertEquals(StorageState.Unavailable(StorageFailure.IO), ActiveRulesHolder.dataStoreState)
+        assertEquals(listOf("legacy", "ds"), ActiveRulesHolder.rules.map { it.id })
+        ActiveRulesHolder.publishState(source, StorageState.Loading)
+        assertEquals(StorageState.Loading, ActiveRulesHolder.dataStoreState)
+        assertEquals(listOf("legacy", "ds"), ActiveRulesHolder.rules.map { it.id })
+    }
+
+    @Test fun onlyReadyEmptyMayClearPreviouslyLoadedRules() {
+        val source = ActiveRulesHolder.SOURCE_DATASTORE
+        ActiveRulesHolder.publish(source, listOf(rule("ds")))
+        ActiveRulesHolder.publishState(source, StorageState.Unavailable(StorageFailure.CORRUPT))
+        ActiveRulesHolder.publishState(source, StorageState.Ready(emptyList()))
+        assertTrue(ActiveRulesHolder.rules.isEmpty())
+        assertEquals(StorageState.Ready(emptyList<BlockRule>()), ActiveRulesHolder.dataStoreState)
+    }
+
+    @Test fun publishingCallerOwnedListTakesASnapshot() {
+        val rules = mutableListOf(rule("ds"))
+        ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, rules)
+        rules.clear()
+        assertEquals(listOf("ds"), ActiveRulesHolder.rules.map { it.id })
+    }
+
+    @Test fun PC_73_sourceExclusionCannotReintroduceADeletedDatastoreRuleAsAnotherOwner() {
+        ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_LEGACY, listOf(rule("legacy")))
+        ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, listOf(rule("old-ds")))
+        ActiveRulesHolder.publish("future-source", listOf(rule("future")))
+        val outside = ActiveRulesHolder.rulesOutside(ActiveRulesHolder.SOURCE_DATASTORE)
+        assertEquals(listOf("legacy", "future"), outside.map { it.id })
+        ActiveRulesHolder.publishState(ActiveRulesHolder.SOURCE_DATASTORE, StorageState.Unavailable(StorageFailure.IO))
+        assertEquals(outside, ActiveRulesHolder.rulesOutside(ActiveRulesHolder.SOURCE_DATASTORE))
+        ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_LEGACY, emptyList())
+        assertEquals(listOf("legacy", "future"), outside.map { it.id })
+    }
+
+    @Test fun readinessChangesWakeObserversWithoutLosingLastGoodRules() {
+        val source = ActiveRulesHolder.SOURCE_DATASTORE
+        val expected = listOf(rule("ds"))
+        ActiveRulesHolder.publish(source, expected)
+        val states = mutableListOf<StorageState<List<BlockRule>>>()
+        val snapshots = mutableListOf<List<BlockRule>>()
+        val cancel = ActiveRulesHolder.subscribe {
+            states += ActiveRulesHolder.dataStoreState
+            snapshots += ActiveRulesHolder.rules
+        }
+        try {
+            val unavailable = StorageState.Unavailable(StorageFailure.IO)
+            ActiveRulesHolder.publishState(source, unavailable)
+            ActiveRulesHolder.publishState(source, unavailable)
+            ActiveRulesHolder.publishState(source, StorageState.Loading)
+            ActiveRulesHolder.publish(source, expected)
+            assertEquals(listOf(unavailable, StorageState.Loading, StorageState.Ready(expected)), states)
+            assertEquals(listOf(expected, expected, expected), snapshots)
+        } finally {
+            cancel()
+        }
+    }
+
+    @Test fun observerFailureDoesNotPreventOtherObserversOrPublication() {
+        val source = ActiveRulesHolder.SOURCE_DATASTORE
+        val expected = listOf(rule("ds"))
+        ActiveRulesHolder.publish(source, emptyList())
+        val fail = ActiveRulesHolder.subscribe { error("stale observer") }
+        var observed: List<BlockRule>? = null
+        val cancel = ActiveRulesHolder.subscribe { observed = ActiveRulesHolder.rules }
+        try {
+            ActiveRulesHolder.publish(source, expected)
+            assertEquals(expected, ActiveRulesHolder.rules)
+            assertEquals(expected, observed)
+        } finally {
+            fail()
+            cancel()
+        }
+    }
 }

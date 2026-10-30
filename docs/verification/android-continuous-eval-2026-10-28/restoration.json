@@ -1,0 +1,33 @@
+{
+  "restored": {
+    "blocked_packages": [],
+    "schedule_enabled": false,
+    "schedule_start": 0,
+    "schedule_end": 1439,
+    "clock_limit_minutes": -1,
+    "accessibility_services": null,
+    "accessibility_enabled": 0,
+    "notifications_granted": false,
+    "usage_access": "allow",
+    "overlay_access": "allow",
+    "screen_timeout_ms": 2147483647,
+    "timezone": "America/New_York"
+  },
+  "legacy_preference_files": "Absent initially; test-created files retained with effective disabled/default values. No app data reset.",
+  "proof_boot_cleanup": "make clean-devices verified the incarnation and shut down the owned boot.",
+  "restoration_boot_cleanup": {
+    "reason_for_manual_review": "Orca attach launched without -port; strict ledger parser declined shutdown ownership.",
+    "authorization": "Lane C lead explicitly authorized shutdown only after matching PID, start, command, serial/AVD mapping and uninterrupted device semaphore.",
+    "pid": 70339,
+    "start_local": "2026-10-28 18:42:03 EDT",
+    "avd": "flint-test",
+    "serial": "emulator-5554",
+    "console_port": 5554,
+    "adb_port": 5555,
+    "device_hold_pid": 90175,
+    "device_hold_started_local": "2026-10-28 18:05:37 EDT",
+    "guest_boot_id": "e35e645c-5015-43f9-b5f6-a1389d338cba",
+    "decision": "All conditions matched; exact-device Orca shutdown returned ok.",
+    "final_verification": "PID absent; adb device list empty; claim ledger empty; make clean-devices rerun; device semaphore released."
+  }
+}

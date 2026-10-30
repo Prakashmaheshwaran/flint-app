@@ -71,8 +71,14 @@ internal fun LimitEditorFlow(
     onClearLimits: (String) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    saveState: EditorSaveState = EditorSaveState(),
 ) {
     var chosenPackage by remember(packageName) { mutableStateOf(packageName) }
+    val initialLimits = rememberEditorSnapshot(packageName, limitsState as? LimitsUiState.Ready)
+    if (initialLimits == null) {
+        StorageEditorUnavailable(onClose, loading = limitsState is LimitsUiState.Loading)
+        return
+    }
 
     AnimatedContent(
         targetState = chosenPackage,
@@ -95,8 +101,7 @@ internal fun LimitEditorFlow(
                 onCancel = onClose,
             )
         } else {
-            val row = (limitsState as? LimitsUiState.Ready)
-                ?.rows?.firstOrNull { it.packageName == pkg }
+            val row = initialLimits.rows.firstOrNull { it.packageName == pkg }
             val app = (appsState as? InstalledAppsUiState.Ready)
                 ?.apps?.firstOrNull { it.packageName == pkg }
 
@@ -114,6 +119,7 @@ internal fun LimitEditorFlow(
                     null
                 },
                 onClose = onClose,
+                saveState = saveState,
             )
         }
     }
@@ -131,6 +137,7 @@ private fun LimitEditorContent(
     onRemove: (() -> Unit)?,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    saveState: EditorSaveState = EditorSaveState(),
 ) {
     var draft by remember(packageName) {
         mutableStateOf(limitDraftOf(packageName, existingTime, existingOpen, defaultBreakLevel))
@@ -267,12 +274,17 @@ private fun LimitEditorContent(
         }
         Spacer(Modifier.height(FlintSpacing.lg))
 
+        if (draft.timeEnabled) {
+            SectionLabel("Time-limit difficulty")
+            BreakLevelSelector(selected = draft.timeBreakLevel, onSelect = { draft = draft.copy(timeBreakLevel = it) })
+            Spacer(Modifier.height(FlintSpacing.lg))
+        }
         SectionLabel("Open limit")
         Spacer(Modifier.height(FlintSpacing.sm))
         FlintCard {
             LabeledSwitchRow(
                 title = "Daily open limit",
-                description = "Block it after opening it this many times in a day.",
+                description = "Choose how many 5-minute access credits you can use each day.",
                 checked = draft.openEnabled,
                 onCheckedChange = { draft = draft.copy(openEnabled = it) },
             )
@@ -287,7 +299,7 @@ private fun LimitEditorContent(
                         value = draft.opensText,
                         onValueChange = { draft = draft.copy(opensText = it) },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Opens per day") },
+                        label = { Text("5-minute credits per day") },
                         placeholder = { Text("5") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -305,10 +317,11 @@ private fun LimitEditorContent(
         }
         Spacer(Modifier.height(FlintSpacing.lg))
 
-        ErrorMessages(errors.map { it.message })
+        ErrorMessages(errors.map { it.message } + listOfNotNull(saveState.error))
         if (errors.isNotEmpty()) Spacer(Modifier.height(FlintSpacing.cardGap))
 
         Button(
+            enabled = !saveState.busy,
             onClick = {
                 attemptedSave = true
                 val result = draft.resolve()
@@ -327,6 +340,7 @@ private fun LimitEditorContent(
             Spacer(Modifier.height(FlintSpacing.sm))
             TextButton(
                 onClick = onRemove,
+                enabled = !saveState.busy,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.textButtonColors(
                     contentColor = MaterialTheme.colorScheme.error,

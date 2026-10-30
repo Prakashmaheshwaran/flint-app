@@ -11,6 +11,11 @@ for current targets and override options rather than duplicating their mechanics
 1. Inspect the branch and preserve unrelated work. Build the affected platform with
    `make ios-build` or `make android`. Generate iOS projects through `make ios-gen`;
    never hand-edit `ios-app/Flint.xcodeproj`.
+   `make ios-ui FLINT_UI_DISPOSABLE=1 IOS_SIM="<name or UDID>"` runs the maintained DEBUG UI fixtures
+   at Large/AX5 on an empty dedicated simulator; it cannot prove Screen Time.
+   See `docs/verification/ios-ui.md` for coverage, isolation and xcresult artifacts.
+   During the supervised v1 build, hold both `flint-heavy device` and
+   `flint-heavy ios` slots for local UI runs; prefer hosted CI.
 2. When device use is authorized and available, run `make ios-run IOS_SIM="<name or UDID>"`
    or `make android-run AVD="<name or serial>"`. These attach the selected device to
    this worktree and install/launch Flint. Names resolve exactly; direct iOS
@@ -93,6 +98,13 @@ Keep Flint local-first, account-free, and analytics-free. Treat Screen Time,
 accessibility, device-owner, and anti-removal behavior as security-sensitive;
 do not grant sensitive permissions or claim enforcement from build/tests alone.
 Simulator evidence does not prove physical-device Screen Time behavior.
+
+Android instrumented smoke: `FLINT_E2E_DISPOSABLE=1 make android-e2e AVD=emulator-N`
+requires an exact, already booted disposable emulator and clears Flint app data.
+Hold the shared device semaphore for the session and Android build semaphore
+for the command; never run this on a shared/user-configured emulator. CI runs
+the same script without assertion retries. See `docs/verification/android-e2e.md`
+for artifacts, fixture boundaries, and shared-host semaphore examples.
 
 Do not send external messages, push, create/review/merge/close PRs, publish
 releases, or change account/security state without explicit authorization.

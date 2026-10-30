@@ -38,6 +38,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -59,7 +63,7 @@ import com.flint.peakfocus.core.common.ui.FlintCard
 import com.flint.peakfocus.core.common.ui.FlintScreenHeader
 import com.flint.peakfocus.core.common.ui.FlintSectionLabel
 import com.flint.peakfocus.core.common.ui.FlintStatusDot
-import com.flint.peakfocus.permissions.AccessibilityPermission
+import com.flint.peakfocus.core.common.ui.rememberReducedMotion
 import com.flint.peakfocus.permissions.BatteryOptimization
 import com.flint.peakfocus.permissions.NotificationPermission
 import com.flint.peakfocus.permissions.OverlayPermission
@@ -72,12 +76,15 @@ import com.flint.peakfocus.permissions.UsageAccess
  * this module does not touch the nav graph.
  *
  * ADR-007 in practice: nothing here auto-redirects — every Settings hand-off happens only from
- * an explicit button tap, and each hand-off button sits below disclosure copy consistent with
- * the onboarding consent screen. The prominent-disclosure consent gate itself (before the very
- * first accessibility enable) lives in feature-onboarding.
+ * an explicit button tap. Every Accessibility fix calls the app's shared prominent-disclosure
+ * gate, including repeat enables; this module never opens Accessibility Settings directly.
  */
 @Composable
-fun SettingsScreen(modifier: Modifier = Modifier, onAccount: (() -> Unit)? = null) {
+fun SettingsScreen(
+    modifier: Modifier = Modifier,
+    onEnableAccessibility: () -> Unit,
+    onAccount: (() -> Unit)? = null,
+) {
     val context = LocalContext.current
     var health by remember { mutableStateOf(PermissionHealthChecker.check(context)) }
     var exits by remember { mutableStateOf(ExitReasonReporter.lastExits(context)) }
@@ -96,26 +103,40 @@ fun SettingsScreen(modifier: Modifier = Modifier, onAccount: (() -> Unit)? = nul
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    SettingsContent(
-        health = health,
-        exits = exits,
-        oemGuidance = OemGuidanceCatalog.forOem(OemUtil.current),
-        exitsSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R,
-        nowMillis = System.currentTimeMillis(),
-        onAccount = onAccount,
-        onFix = { kind ->
-            // User-initiated only (ADR-007): reached exclusively via the row's fix button.
-            val intent = when (kind) {
-                PermissionKind.ACCESSIBILITY -> AccessibilityPermission.settingsIntent()
-                PermissionKind.USAGE_ACCESS -> UsageAccess.settingsIntent()
-                PermissionKind.OVERLAY -> OverlayPermission.settingsIntent(context)
-                PermissionKind.BATTERY_EXEMPTION -> BatteryOptimization.requestIntent(context)
-                PermissionKind.NOTIFICATIONS -> NotificationPermission.settingsIntent(context)
-            }
-            context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        },
+    SettingsHelpNavigation(
+        websiteCoverageText = BlockingHealthUi.websiteCoverage(health),
         modifier = modifier,
-    )
+    ) { openHelp ->
+        SettingsLegalNavigation(modifier = modifier) { openLegal ->
+            SettingsContent(
+                health = health,
+                exits = exits,
+                oemGuidance = OemGuidanceCatalog.forOem(OemUtil.current),
+                exitsSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R,
+                nowMillis = System.currentTimeMillis(),
+                onAccount = onAccount,
+                onOpenLegal = openLegal,
+                onOpenHelp = {
+                    // Help states website coverage "now": take a fresh snapshot as it opens.
+                    health = PermissionHealthChecker.check(context)
+                    openHelp()
+                },
+                onFix = { kind ->
+                    routePermissionFix(kind, discloseAccessibility = onEnableAccessibility) { otherKind ->
+                        val intent = when (otherKind) {
+                            PermissionKind.ACCESSIBILITY -> error("Accessibility requires disclosure")
+                            PermissionKind.USAGE_ACCESS -> UsageAccess.settingsIntent()
+                            PermissionKind.OVERLAY -> OverlayPermission.settingsIntent(context)
+                            PermissionKind.BATTERY_EXEMPTION -> BatteryOptimization.requestIntent(context)
+                            PermissionKind.NOTIFICATIONS -> NotificationPermission.settingsIntent(context)
+                        }
+                        context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    }
+                },
+                modifier = modifier,
+            )
+        }
+    }
 }
 
 /** Stateless body — previewable without touching system services. */
@@ -129,6 +150,8 @@ internal fun SettingsContent(
     onFix: (PermissionKind) -> Unit,
     modifier: Modifier = Modifier,
     onAccount: (() -> Unit)? = null,
+    onOpenLegal: (LegalDocument) -> Unit = {},
+    onOpenHelp: () -> Unit = {},
 ) {
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
@@ -147,6 +170,8 @@ internal fun SettingsContent(
             }
             HealthBannerCard(BlockingHealthUi.banner(health))
             Spacer(Modifier.height(FlintSpacing.md))
+            ClearFocusHistoryRow()
+            Spacer(Modifier.height(FlintSpacing.md))
             BlockingHealthUi.rows(health).forEach { row ->
                 PermissionCard(row = row, onFix = { onFix(row.kind) })
                 Spacer(Modifier.height(FlintSpacing.cardGap))
@@ -161,6 +186,10 @@ internal fun SettingsContent(
                 supported = exitsSupported,
                 nowMillis = nowMillis,
             )
+            Spacer(Modifier.height(FlintSpacing.lg))
+            HelpSettingsLink(onOpen = onOpenHelp)
+            Spacer(Modifier.height(FlintSpacing.lg))
+            LegalSettingsLinks(onOpen = onOpenLegal)
             Spacer(Modifier.height(FlintSpacing.lg))
         }
     }
@@ -217,9 +246,14 @@ private fun HealthBannerCard(banner: BannerUi) {
  * button (consent language before the hand-off — ADR-007); the redirect fires only on the tap.
  */
 @Composable
-private fun PermissionCard(row: PermissionRowUi, onFix: () -> Unit) {
+internal fun PermissionCard(row: PermissionRowUi, onFix: () -> Unit) {
+    val grantState = stringResource(if (row.granted) R.string.health_on else R.string.health_off)
     FlintCard {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // One TalkBack stop names the grant and its state; the fix button stays separate.
+        Row(
+            modifier = Modifier.semantics(mergeDescendants = true) { stateDescription = grantState },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             // Dot vocabulary: primary = granted, error = enforcement at risk, muted = the
             // merely-recommended grant missing (never dressed as mandatory).
             FlintStatusDot(
@@ -244,7 +278,8 @@ private fun PermissionCard(row: PermissionRowUi, onFix: () -> Unit) {
                 )
             }
             Spacer(Modifier.width(FlintSpacing.cardGap))
-            FlintBadge(text = if (row.granted) "On" else "Off")
+            // The row's state description already speaks On/Off; the uppercase pill is visual.
+            FlintBadge(text = grantState, modifier = Modifier.clearAndSetSemantics {})
         }
         if (!row.granted) {
             Spacer(Modifier.height(FlintSpacing.sm))
@@ -283,9 +318,11 @@ private fun collapseTransition(): ExitTransition =
 
 /** Static, local, per-manufacturer survival steps — expandable, no deep links, no network. */
 @Composable
-private fun OemGuidanceCard(guidance: OemGuidance) {
+internal fun OemGuidanceCard(guidance: OemGuidance) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    FlintCard(onClick = { expanded = !expanded }) {
+    val expansionState = stringResource(if (expanded) R.string.settings_expanded else R.string.settings_collapsed)
+    val reducedMotion = rememberReducedMotion()
+    FlintCard(onClick = { expanded = !expanded }, modifier = Modifier.semantics { stateDescription = expansionState }) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(
@@ -309,8 +346,8 @@ private fun OemGuidanceCard(guidance: OemGuidance) {
         }
         AnimatedVisibility(
             visible = expanded,
-            enter = expandTransition(),
-            exit = collapseTransition(),
+            enter = if (reducedMotion) EnterTransition.None else expandTransition(),
+            exit = if (reducedMotion) ExitTransition.None else collapseTransition(),
         ) {
             Column {
                 Spacer(Modifier.height(FlintSpacing.sm))
@@ -356,7 +393,9 @@ private fun ExitDiagnosticsCard(
     nowMillis: Long,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    FlintCard(onClick = { expanded = !expanded }) {
+    val expansionState = stringResource(if (expanded) R.string.settings_expanded else R.string.settings_collapsed)
+    val reducedMotion = rememberReducedMotion()
+    FlintCard(onClick = { expanded = !expanded }, modifier = Modifier.semantics { stateDescription = expansionState }) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(
@@ -380,8 +419,8 @@ private fun ExitDiagnosticsCard(
         }
         AnimatedVisibility(
             visible = expanded,
-            enter = expandTransition(),
-            exit = collapseTransition(),
+            enter = if (reducedMotion) EnterTransition.None else expandTransition(),
+            exit = if (reducedMotion) ExitTransition.None else collapseTransition(),
         ) {
             Column {
                 Spacer(Modifier.height(FlintSpacing.sm))

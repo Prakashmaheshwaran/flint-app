@@ -38,6 +38,8 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.sp
+import com.flint.peakfocus.blocking.overlay.TargetFloorIdentities
+import com.flint.peakfocus.core.common.RuntimeSafetySurfaces
 import com.flint.peakfocus.core.common.theme.FlintPalette
 import com.flint.peakfocus.core.common.ui.EmberButton
 import com.flint.peakfocus.core.common.ui.EmberLandscape
@@ -48,18 +50,23 @@ import com.flint.peakfocus.core.common.ui.FlintTabGlyph
 import com.flint.peakfocus.core.common.ui.flintSwitchColors
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Home
@@ -89,6 +96,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
@@ -103,6 +111,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
@@ -128,6 +138,7 @@ import com.flint.peakfocus.core.common.ui.rememberFlintHaptics
 import com.flint.peakfocus.core.data.BlocklistStore
 import com.flint.peakfocus.core.datastore.FlintPreferences
 import com.flint.peakfocus.core.model.BlockRule
+import com.flint.peakfocus.core.model.SafetyFloor
 import com.flint.peakfocus.feature.blocklist.BlocklistScreen
 import com.flint.peakfocus.feature.blocklist.TimerScreen
 import com.flint.peakfocus.feature.onboarding.AccessibilityConsentScreen
@@ -175,11 +186,22 @@ private fun FlintApp() {
     val haptics = rememberFlintHaptics()
     val prefs = remember { context.getSharedPreferences("flint_onboarding", Context.MODE_PRIVATE) }
     var welcomed by rememberSaveable { mutableStateOf(prefs.getBoolean(KEY_WELCOMED, false)) }
-    var showConsent by rememberSaveable { mutableStateOf(false) }
+    val consentNavigation = rememberSaveable(saver = AccessibilityDisclosureNavigation.StateSaver) {
+        AccessibilityDisclosureNavigation()
+    }
+    val showConsent = consentNavigation.showDisclosure
     var detail by rememberSaveable { mutableStateOf<Detail?>(null) }
     var health by remember { mutableStateOf(PermissionHealthChecker.check(context)) }
     val store = remember { BlocklistStore(context) }
     var blockedCount by remember { mutableStateOf(store.blockedPackages.size) }
+    // One read-only per-target reader for App/Site detail (lane C, #177). Floor identities come
+    // from a live detector's gate; without one, only Flint itself and the static floor are known.
+    val readerScope = rememberCoroutineScope()
+    val targetProtection = remember {
+        createTargetProtectionReader(context, readerScope) { pkg ->
+            TargetFloorIdentities.read(pkg) ?: TargetFloorIdentities.staticIdentity(pkg, context.packageName)
+        }
+    }
 
     // Result is deliberately unused: the FGS runs with or without the grant — the permission
     // only controls whether its ongoing notification is visible on Android 13+.
@@ -225,11 +247,10 @@ private fun FlintApp() {
     }
 
     val onSetupStep: (SetupStep) -> Unit = { step ->
-        val handOff = settingsHandOff(context, step)
-        if (handOff == null) {
-            showConsent = true
-        } else {
-            context.startActivity(handOff.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        consentNavigation.setup(step) { otherStep ->
+            settingsHandOff(context, otherStep)?.let { handOff ->
+                context.startActivity(handOff.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
         }
     }
 
@@ -259,12 +280,13 @@ private fun FlintApp() {
             // the ONLY route to the accessibility-settings hand-off — no tab bar, no shortcut.
             Stage.Consent -> AccessibilityConsentScreen(
                 onAccept = {
-                    showConsent = false
-                    context.startActivity(
-                        AccessibilityPermission.settingsIntent().addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                    )
+                    consentNavigation.accept {
+                        context.startActivity(
+                            AccessibilityPermission.settingsIntent().addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }
                 },
-                onDecline = { showConsent = false },
+                onDecline = consentNavigation::decline,
             )
             Stage.Tabs -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                 val systemBars = WindowInsets.systemBars.asPaddingValues()
@@ -300,8 +322,8 @@ private fun FlintApp() {
                             when (tab) {
                                 FlintTabGlyph.Today -> TimerScreen(
                                     headline = plan.headline,
-                                    // Today keeps one sentence; Settings carries the full explanation.
-                                    subline = plan.body.substringBefore(". ").removeSuffix(".") + ".",
+                                    // Preserve the setup caveats; Today supports wrapping this text.
+                                    subline = plan.body,
                                     setupLabel = plan.nextStep?.ctaLabel,
                                     onSetup = { plan.nextStep?.let(onSetupStep) },
                                 )
@@ -309,10 +331,12 @@ private fun FlintApp() {
                                     quickBlockSummary = if (blockedCount == 0) "Apps blocked whenever Flint is on"
                                     else "$blockedCount ${if (blockedCount == 1) "app" else "apps"} always blocked",
                                     onQuickBlock = { detail = Detail.QuickBlock },
+                                    targetProtection = targetProtection,
                                 )
                                 FlintTabGlyph.Insights -> StatsScreen(Modifier.fillMaxSize())
                                 FlintTabGlyph.You -> SettingsScreen(
                                     Modifier.fillMaxSize(),
+                                    onEnableAccessibility = consentNavigation::request,
                                     onAccount = if (BuildConfig.DEBUG) {
                                         { detail = Detail.Account }
                                     } else null,
@@ -359,37 +383,45 @@ private const val KEY_WELCOMED = "welcomed"
 private fun WelcomeScreen(onBegin: () -> Unit) {
     Box(Modifier.fillMaxSize()) {
         EmberLandscape(horizonOffset = 20f, orbCenter = Offset(195f, 480f), orbRadius = 64f)
-        Column(
+        BoxWithConstraints(
             Modifier
                 .fillMaxSize()
                 .padding(WindowInsets.systemBars.asPaddingValues())
                 .padding(horizontal = FlintSpacing.gutter),
-            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Spacer(Modifier.height(110.dp))
-            FlintMark(Modifier.size(40.dp))
-            Spacer(Modifier.height(14.dp))
-            Text("Flint", style = MaterialTheme.typography.displaySmall.copy(fontSize = 48.sp, letterSpacing = (-0.8).sp))
-            Spacer(Modifier.height(14.dp))
-            Text(
-                "Make time for what matters.",
-                style = MaterialTheme.typography.titleLarge.copy(fontSize = 18.sp, lineHeight = 27.sp),
-                color = FlintPalette.SoftBone,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                "No account  ·  No analytics  ·  Every feature free",
-                style = MaterialTheme.typography.bodySmall,
-                color = FlintPalette.Mist,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(18.dp))
-            EmberButton("Begin", onBegin)
-            Spacer(Modifier.height(18.dp))
-            Text("Open source · built in the open", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                color = FlintPalette.Stone)
-            Spacer(Modifier.height(12.dp))
+            Column(
+                Modifier.fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .heightIn(min = maxHeight)
+                    .height(IntrinsicSize.Min),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Spacer(Modifier.height(110.dp))
+                FlintMark(Modifier.size(40.dp))
+                Spacer(Modifier.height(14.dp))
+                Text("Flint", style = MaterialTheme.typography.displaySmall.copy(fontSize = 48.sp, letterSpacing = (-0.8).sp),
+                    modifier = Modifier.semantics { heading() })
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    "Make time for what matters.",
+                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 18.sp, lineHeight = 27.sp),
+                    color = FlintPalette.SoftBone,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.weight(1f).heightIn(min = FlintSpacing.lg))
+                Text(
+                    "No account  ·  No analytics  ·  Every feature free",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = FlintPalette.Mist,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(18.dp))
+                EmberButton("Begin", onBegin)
+                Spacer(Modifier.height(18.dp))
+                Text("Open source · built in the open", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = FlintPalette.Stone, textAlign = TextAlign.Center)
+                Spacer(Modifier.height(12.dp))
+            }
         }
     }
 }
@@ -679,11 +711,14 @@ private const val KEY_NOTIF_ASKED = "post_notifications_asked"
 private fun loadLaunchableApps(context: Context): List<AppEntry> {
     val pm = context.packageManager
     val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+    // Safety-floor apps (Flint, dialer/emergency, home apps, Settings/permission recovery) are
+    // never shielded, so they are never offered for blocking either.
+    val runtimeFloor = RuntimeSafetySurfaces.resolve(context)
     @Suppress("DEPRECATION")
     return pm.queryIntentActivities(intent, 0)
         .mapNotNull { resolveInfo ->
             val pkg = resolveInfo.activityInfo?.packageName ?: return@mapNotNull null
-            if (pkg == context.packageName) {
+            if (SafetyFloor.isProtected(pkg, context.packageName, runtimeFloor)) {
                 null
             } else {
                 // Decoded once, small (40dp rows): ~200 apps ≈ a few MB, never full launcher art.

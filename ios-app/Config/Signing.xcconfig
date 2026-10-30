@@ -1,0 +1,3 @@
+// Optional owner-controlled signing settings. This file contains no team or identity.
+// The project keeps version numbers in project.yml, not in a machine override.
+#include? "Signing.local.xcconfig"

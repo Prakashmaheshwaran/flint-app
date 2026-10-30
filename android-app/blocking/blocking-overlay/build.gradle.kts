@@ -14,6 +14,7 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
+    testOptions { unitTests { isIncludeAndroidResources = true } }
 }
 
 dependencies {
@@ -22,6 +23,7 @@ dependencies {
     api(project(":feature:feature-blockscreen"))
     api(project(":core:core-model"))
     implementation(project(":core:core-common"))
+    implementation(project(":core:core-data")) // explicit saved-window OS usage observations
     implementation(project(":core:core-datastore"))   // FocusStateStore/LimitsStore snapshots
     implementation(project(":blocking:blocking-engine")) // Break/EmergencyPass/OpenLimit policies
     implementation(libs.androidx.core.ktx)
@@ -35,7 +37,14 @@ dependencies {
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)           // Color.toArgb for the window background
     implementation(libs.androidx.material3)
+    debugImplementation(libs.androidx.ui.test.manifest)
 
     // JVM tests for the pure glue (decision→BlockScreenState mapping, exemption ledger).
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    // Robolectric coordinator tests (safety-floor matrix) run in the debug unit-test variant only.
+    testDebugImplementation(libs.androidx.junit)
+    testDebugImplementation(libs.robolectric)
+    testDebugImplementation(libs.androidx.ui.test.junit4)
+    testDebugImplementation(libs.androidx.datastore.preferences) // real atomic-store coordinator regressions
 }

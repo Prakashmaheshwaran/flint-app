@@ -2,45 +2,47 @@
 import AppIntents
 import FlintCore
 
-/// "Start a Flint pomodoro" — begins the first focus round of a Pomodoro cycle (default 25 / 5 × 4)
-/// as a timed block, and saves the cadence so the app knows a Pomodoro is in progress.
-///
-/// Honest scope note: this fires the first focus round; the OS schedule clears the shield when it
-/// ends. Automatic round chaining (break → next focus) is on-device app/monitor work and is *not*
-/// part of this background intent in v1 — see `Shortcuts/README.md`. Same device-only enforcement
-/// caveat as `StartSessionIntent`.
+/// One timed focus round. Break lengths and round counts are not exposed until the durable
+/// multi-round state machine ships; legacy runner requests also execute only one round.
 struct StartPomodoroIntent: AppIntent {
-    static var title: LocalizedStringResource = "Start Pomodoro"
-    static var description = IntentDescription("Begin a focus / break Pomodoro cycle over your blocked apps.")
+    static var title: LocalizedStringResource = "Start Pomodoro Focus Round"
+    static var description = IntentDescription("Start one focus round over your blocked apps. Run it again when you're ready for another round.")
     static var openAppWhenRun = false
 
     @Parameter(title: "Focus minutes", default: 25)
     var focusMinutes: Int
 
-    @Parameter(title: "Break minutes", default: 5)
-    var breakMinutes: Int
-
-    @Parameter(title: "Rounds", default: 4)
-    var rounds: Int
-
     @Parameter(title: "App Group", description: "A saved group to block. Leave empty to reuse your last selection.")
     var appGroup: FlintAppGroupEntity?
 
+    @Parameter(title: "Retry key", description: "Reuse this value when retrying the same start. Leave empty for automatic retry handling.")
+    var requestID: String?
+
     static var parameterSummary: some ParameterSummary {
-        Summary("Pomodoro: \(\.$focusMinutes) min focus, \(\.$breakMinutes) min break, \(\.$rounds) rounds") {
+        Summary("Pomodoro focus for \(\.$focusMinutes) minutes") {
             \.$appGroup
+            \.$requestID
         }
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let config = FlintPomodoroConfig(
             focusMinutes: max(1, focusMinutes),
-            breakMinutes: max(0, breakMinutes),
-            rounds: max(1, rounds)
+            breakMinutes: 0,
+            rounds: 1
         )
-        _ = try FlintShortcutsRunner.startPomodoro(config, appGroupID: appGroup?.id, breakLevel: .easy)
+        let request = FlintShortcutsRunner.pomodoroRoundRequest(config, appGroupID: appGroup?.id, breakLevel: .easy)
+        let prepared = try FlintShortcutsRunner.prepare(request, source: .pomodoro, requestID: requestID)
+        do {
+            _ = try await startConfirmingIfNeeded(
+                { try FlintShortcutsRunner.start(prepared, confirmed: $0) },
+                hardcore: false, minutes: config.focusMinutes, replaying: prepared.replaying)
+        } catch FlintSessionError.startAlreadyEnded(_, _) {
+            return .result(dialog: "This request's focus round already ended. It wasn't started again.")
+        }
+        if prepared.replaying { return .result(dialog: "This request's focus round is already running.") }
         return .result(
-            dialog: "Pomodoro started — \(config.focusMinutes) minutes of focus, then a \(config.breakMinutes)-minute break."
+            dialog: "Focus round started. Blocking for \(config.focusMinutes) minutes."
         )
     }
 }

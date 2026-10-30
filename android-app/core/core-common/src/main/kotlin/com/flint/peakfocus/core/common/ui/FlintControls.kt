@@ -1,5 +1,8 @@
 package com.flint.peakfocus.core.common.ui
 
+import android.database.ContentObserver
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -28,13 +31,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SwitchColors
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,13 +69,25 @@ import com.flint.peakfocus.core.common.theme.FlintPalette
 @Composable
 fun rememberReducedMotion(): Boolean {
     val context = LocalContext.current
-    return remember(context) {
-        Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+    val resolver = context.contentResolver
+    fun readSetting() = Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+    var reduced by remember(resolver) { mutableStateOf(readSetting()) }
+    DisposableEffect(resolver) {
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) { reduced = readSetting() }
+        }
+        resolver.registerContentObserver(
+            Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE), false, observer,
+        )
+        reduced = readSetting()
+        onDispose { resolver.unregisterContentObserver(observer) }
     }
+    return reduced
 }
 
 @Composable
 private fun pressScale(source: MutableInteractionSource): Float {
+    if (rememberReducedMotion()) return 1f
     val pressed by source.collectIsPressedAsState()
     val scale by animateFloatAsState(
         targetValue = if (pressed) FlintMotion.PressedScale else 1f,
@@ -97,15 +116,17 @@ fun EmberButton(
         interactionSource = source,
         modifier = modifier
             .fillMaxWidth()
-            .height(56.dp)
+            .heightIn(min = 56.dp)
             .graphicsLayer { scaleX = scale; scaleY = scale; alpha = if (enabled) 1f else 0.45f }
             .shadow(if (enabled) 18.dp else 0.dp, CircleShape, ambientColor = FlintPalette.Ember, spotColor = FlintPalette.Ember),
     ) {
         Box(
-            Modifier.background(Brush.verticalGradient(listOf(FlintPalette.EmberTop, FlintPalette.Ember))),
+            Modifier.background(Brush.verticalGradient(listOf(FlintPalette.EmberTop, FlintPalette.Ember)))
+                .padding(horizontal = 24.dp, vertical = 8.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+            Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 2,
+                overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
         }
     }
 }
@@ -128,15 +149,18 @@ fun BoneButton(
         color = FlintPalette.Bone,
         contentColor = FlintPalette.OnBone,
         interactionSource = source,
-        modifier = (if (compact) modifier.height(36.dp) else modifier.fillMaxWidth().height(56.dp))
+        modifier = (if (compact) modifier.minimumInteractiveComponentSize().heightIn(min = 36.dp)
+            else modifier.fillMaxWidth().heightIn(min = 56.dp))
             .graphicsLayer { scaleX = scale; scaleY = scale; alpha = if (enabled) 1f else 0.45f },
     ) {
-        Box(Modifier.padding(horizontal = if (compact) 16.dp else 0.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.padding(horizontal = if (compact) 16.dp else 24.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
             Text(
                 text,
                 style = if (compact) MaterialTheme.typography.labelLarge.copy(fontSize = MaterialTheme.typography.titleSmall.fontSize)
                 else MaterialTheme.typography.labelLarge,
-                maxLines = 1,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
             )
         }
     }
@@ -159,10 +183,11 @@ fun QuietButton(
         color = Color.Transparent,
         contentColor = if (enabled) color else FlintPalette.Faint,
         border = if (outlined) BorderStroke(1.dp, FlintPalette.Divider) else null,
-        modifier = modifier.fillMaxWidth().height(if (outlined) 52.dp else 48.dp),
+        modifier = modifier.fillMaxWidth().heightIn(min = if (outlined) 52.dp else 48.dp),
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(text, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+        Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
+            Text(text, style = MaterialTheme.typography.titleSmall, maxLines = 2,
+                overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
         }
     }
 }
@@ -186,11 +211,13 @@ fun GhostButton(
         border = BorderStroke(1.dp, FlintPalette.Border),
         interactionSource = source,
         modifier = modifier
+            .minimumInteractiveComponentSize()
             .heightIn(min = 44.dp)
             .graphicsLayer { scaleX = scale; scaleY = scale; alpha = if (enabled) 1f else 0.5f },
     ) {
-        Box(Modifier.padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
-            Text(text, style = MaterialTheme.typography.bodySmall.copy(fontWeight = MaterialTheme.typography.titleSmall.fontWeight), maxLines = 1)
+        Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
+            Text(text, style = MaterialTheme.typography.bodySmall.copy(fontWeight = MaterialTheme.typography.titleSmall.fontWeight),
+                maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
         }
     }
 }
@@ -213,18 +240,18 @@ fun FlintCircleButton(
         color = if (filled) FlintPalette.BoneFill else Color.Transparent,
         contentColor = FlintPalette.Bone,
         border = if (filled) null else BorderStroke(1.dp, FlintPalette.Border),
-        modifier = modifier.size(size).semanticsLabel(contentDescription),
+        modifier = modifier.minimumInteractiveComponentSize().size(size).semanticsLabel(contentDescription),
     ) {
         Box(contentAlignment = Alignment.Center) { content() }
     }
 }
 
-/** Preset / choice chip. Selected = bone fill with dark text. */
+/** Preset action / choice chip. Null [selected] is an action; a Boolean is a radio choice. */
 @Composable
 fun FlintChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    selected: Boolean = false,
+    selected: Boolean? = null,
     enabled: Boolean = true,
     height: Dp = 40.dp,
     content: @Composable RowScope.() -> Unit,
@@ -233,13 +260,13 @@ fun FlintChip(
         onClick = onClick,
         enabled = enabled,
         shape = CircleShape,
-        color = if (selected) FlintPalette.Bone else FlintPalette.BoneFill,
-        contentColor = if (selected) FlintPalette.OnBone else FlintPalette.Bone,
-        border = BorderStroke(1.dp, if (selected) FlintPalette.Bone else FlintPalette.Border),
-        modifier = modifier.heightIn(min = height).selectableRole(selected),
+        color = if (selected == true) FlintPalette.Bone else FlintPalette.BoneFill,
+        contentColor = if (selected == true) FlintPalette.OnBone else FlintPalette.Bone,
+        border = BorderStroke(1.dp, if (selected == true) FlintPalette.Bone else FlintPalette.Border),
+        modifier = modifier.minimumInteractiveComponentSize().heightIn(min = height).selectableRole(selected),
     ) {
         Row(
-            Modifier.padding(horizontal = 12.dp),
+            Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
             content = content,
@@ -254,7 +281,9 @@ fun FlintChipText(text: String, color: Color = Color.Unspecified) {
         text,
         style = MaterialTheme.typography.bodySmall.merge(FlintNumerals).copy(fontWeight = MaterialTheme.typography.titleSmall.fontWeight),
         color = color,
-        maxLines = 1,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        textAlign = TextAlign.Center,
     )
 }
 
@@ -268,6 +297,7 @@ fun <T> FlintSegmented(
     compact: Boolean = false,
     enabled: Boolean = true,
 ) {
+    val reducedMotion = rememberReducedMotion()
     Row(
         modifier
             .clip(RoundedCornerShape(if (compact) 16.dp else 18.dp))
@@ -280,16 +310,17 @@ fun <T> FlintSegmented(
             val isSelected = value == selected
             val fill by animateColorAsState(
                 if (isSelected) FlintPalette.Segment else Color.Transparent,
-                tween(FlintMotion.DurationShort),
+                tween(if (reducedMotion) 0 else FlintMotion.DurationShort),
                 label = "segmentFill",
             )
             Box(
                 (if (compact) Modifier else Modifier.weight(1f))
+                    .minimumInteractiveComponentSize()
                     .clip(RoundedCornerShape(if (compact) 13.dp else 14.dp))
                     .background(fill)
                     .selectable(isSelected, enabled = enabled, role = Role.Tab) { onSelect(value) }
                     .heightIn(min = if (compact) 36.dp else 40.dp)
-                    .padding(horizontal = if (compact) 12.dp else 4.dp),
+                    .padding(horizontal = if (compact) 12.dp else 4.dp, vertical = 6.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -299,7 +330,9 @@ fun <T> FlintSegmented(
                         fontWeight = MaterialTheme.typography.titleSmall.fontWeight,
                     ),
                     color = if (isSelected) FlintPalette.Bone else FlintPalette.Mist,
-                    maxLines = 1,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
                 )
             }
         }

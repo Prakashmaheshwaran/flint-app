@@ -73,12 +73,12 @@ class BlockDecisionEngineTest {
     }
 
     @Test
-    fun equalTierTieBreaksTowardTheTimedSession() {
-        // So the block screen counts down to the session's real end, not an open-ended rule.
+    fun equalTierKeepsTheOpenEndedProtectionVisible() {
+        // A finite countdown would promise access while the open-ended rule still applies.
         val openEnded = rule(apps = setOf("com.x")).copy(id = "permanent")
         val timed = rule(apps = setOf("com.x")).copy(id = "session-1", expiresAtEpochMs = 10_000L)
         val v = engine.decide("com.x", null, listOf(openEnded, timed), self, nowEpochMs = 1_000L)
-        assertEquals("session-1", (v as Verdict.Block).ruleId)
+        assertEquals("permanent", (v as Verdict.Block).ruleId)
     }
 
     // MARK: telephony safety floor — emergency calling is never blockable
@@ -197,5 +197,84 @@ class BlockDecisionEngineTest {
         )
         assertTrue(engine.decide("com.x", null, listOf(rule), self, 600, 3) is Verdict.Block) // inside
         assertEquals(Verdict.Allow, engine.decide("com.x", null, listOf(rule), self, 1100, 3)) // outside
+    }
+}
+
+/**
+ * Audit R2 regression matrix for the engine half of the safety floor: no block-list, allow-list,
+ * Sleep-style overnight allow-list, schedule or Hardcore rule shields a static floor surface,
+ * while an ordinary app with the identical rule IS blocked (proving each rule is live).
+ */
+class SafetyFloorEngineMatrixTest {
+
+    private val engine = BlockDecisionEngine()
+    private val self = "com.flint.peakfocus"
+    private val control = "com.instagram.android"
+    // Every static floor package (ADR-012 §7) plus Flint itself — never a hand-kept subset.
+    private val floor = com.flint.peakfocus.core.model.SafetyFloor.STATIC_PACKAGES.toList() + self
+
+    private fun rule(id: String, apps: Set<String>, allowList: Boolean, schedule: Schedule? = null, level: BreakLevel = BreakLevel.EASY) =
+        BlockRule(
+            id = id,
+            name = id,
+            targets = BlockTargets(apps = apps.map { AppRef(it) }.toSet(), allowListMode = allowList),
+            schedule = schedule,
+            breakLevel = level,
+        )
+
+    private val cases: List<Pair<String, BlockRule>> by lazy {
+        listOf(
+            "block list" to rule("block", (floor + control).toSet(), allowList = false),
+            "allow list (brick phone)" to rule("allow", emptySet(), allowList = true),
+            "Sleep overnight allow list" to rule("sleep", setOf("com.spotify.music"), allowList = true, schedule = Schedule(startMinuteOfDay = 22 * 60, endMinuteOfDay = 7 * 60)),
+            "weekday schedule" to rule("sched", (floor + control).toSet(), allowList = false, schedule = Schedule(setOf(3), 9 * 60, 17 * 60)),
+            "hardcore session" to rule("hard", (floor + control).toSet(), allowList = false, level = BreakLevel.HARDCORE),
+        )
+    }
+
+    @Test fun `no rule kind shields a floor surface while the same rule blocks an ordinary app`() {
+        val wednesdayNoon = 12 * 60
+        val wednesdayLate = 23 * 60
+        for ((name, r) in cases) {
+            val minute = if (r.id == "sleep") wednesdayLate else wednesdayNoon
+            assertTrue("$name must be live", engine.decide(control, null, listOf(r), self, minute, 3) is Verdict.Block)
+            for (pkg in floor) {
+                assertEquals("$name on $pkg", Verdict.Allow, engine.decide(pkg, null, listOf(r), self, minute, 3))
+            }
+        }
+    }
+
+    @Test fun `a floor surface stays allowed even when it is the only allowed app`() {
+        val onlyDialer = rule("allow", setOf("com.android.dialer"), allowList = true)
+        assertEquals(Verdict.Allow, engine.decide("com.android.settings", null, listOf(onlyDialer), self))
+        assertTrue(engine.decide(control, null, listOf(onlyDialer), self) is Verdict.Block)
+    }
+}
+
+/** The Open-Limit "dip" set stays narrower than the safety floor (no free re-entry bounces). */
+class OpenLimitDipSurfacesTest {
+
+    private val policy = OpenLimitPolicy()
+    private val self = "com.flint.peakfocus"
+
+    @Test fun `every dip surface is on the safety floor`() {
+        assertTrue(SYSTEM_SURFACE_PACKAGES.all { com.flint.peakfocus.core.model.SafetyFloor.isProtected(it, self) })
+    }
+
+    @Test fun `returning from a launchable floor app counts as a new open`() {
+        for (via in listOf(
+            "com.google.android.apps.safetyhub",
+            "com.miui.securitycenter",
+            "com.samsung.android.lool",
+            "com.google.android.cellbroadcastreceiver",
+        )) {
+            assertTrue(via, policy.countsAsOpen(via, "com.instagram.android", self))
+        }
+    }
+
+    @Test fun `system dips such as Settings and the shade are still not re-opens`() {
+        for (via in listOf("com.android.settings", "com.android.systemui", "com.google.android.permissioncontroller")) {
+            assertFalse(via, policy.countsAsOpen(via, "com.instagram.android", self))
+        }
     }
 }

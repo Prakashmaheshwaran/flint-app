@@ -1,6 +1,7 @@
 import Foundation
 #if canImport(ManagedSettings)
 import ManagedSettings
+import FamilyControls
 #endif
 
 /// The ~50-token shield cap is real and **fails silently**: assigning more than this to a
@@ -12,8 +13,20 @@ public enum FlintShieldLimits {
     public static func withinCap(_ count: Int) -> Bool { count <= tokenCap }
 }
 
-public enum FlintShieldError: Error, Equatable {
+public enum FlintShieldError: Error, Equatable, LocalizedError {
     case tooManyTokens(count: Int, cap: Int)
+    case recoverySuspended
+    case protectionStateUnavailable
+    case transitionBusy
+
+    public var errorDescription: String? {
+        switch self {
+        case let .tooManyTokens(count, cap): return "Too many targets (\(count)); the system limit is \(cap)."
+        case .recoverySuspended: return "Resume protection first"
+        case .protectionStateUnavailable: return "Protection state unavailable. No new shield was applied."
+        case .transitionBusy: return "Protection is busy. Try again."
+        }
+    }
 }
 
 #if canImport(ManagedSettings)
@@ -22,9 +35,11 @@ public enum FlintShieldError: Error, Equatable {
 /// is shared so the app, monitor, and shield-action extensions speak the same store.
 public final class FlintShieldStore {
     private let store: ManagedSettingsStore
+    private let name: String
 
     public init(named name: String = "flint") {
         self.store = ManagedSettingsStore(named: ManagedSettingsStore.Name(name))
+        self.name = name
     }
 
     /// Apply a block-list shield. Throws if a token set exceeds the silent cap.
@@ -39,31 +54,44 @@ public final class FlintShieldStore {
         guard FlintShieldLimits.withinCap(webDomains.count) else {
             throw FlintShieldError.tooManyTokens(count: webDomains.count, cap: FlintShieldLimits.tokenCap)
         }
-        store.shield.applications = applications.isEmpty ? nil : applications
-        store.shield.applicationCategories = categories.isEmpty ? nil : .specific(categories)
-        store.shield.webDomains = webDomains.isEmpty ? nil : webDomains
+        guard let _ = try FlintSessionController().withTransition({
+            switch FlintPassRecoveryGate.read() {
+            case .enforcing: break
+            case .suspended: throw FlintShieldError.recoverySuspended
+            case .unavailable: throw FlintShieldError.protectionStateUnavailable
+            }
+            var selection = FamilyActivitySelection()
+            selection.applicationTokens = applications; selection.categoryTokens = categories; selection.webDomainTokens = webDomains
+            let effective = FlintOrdinaryBreaks.filteredSelection(selection, storeName: name)
+            store.shield.applications = effective.applicationTokens.isEmpty ? nil : effective.applicationTokens
+            store.shield.applicationCategories = effective.categoryTokens.isEmpty ? nil : .specific(effective.categoryTokens)
+            store.shield.webDomains = effective.webDomainTokens.isEmpty ? nil : effective.webDomainTokens
+        }) else { throw FlintShieldError.transitionBusy }
     }
 
     /// Allow-list ("brick phone"): shield ALL apps except the allowed applications.
     /// For `applicationCategories`, `.all(except:)` excludes specific `ApplicationToken`s
     /// (the apps to leave usable) — not category tokens.
     public func applyAllowList(allowedApplications: Set<ApplicationToken> = []) {
-        store.shield.applicationCategories = .all(except: allowedApplications)
-        store.shield.webDomainCategories = .all()
+        _ = FlintSessionController().withTransition {
+            guard FlintPassRecoveryGate.read().permitsApplication else { return }
+            var selection = FamilyActivitySelection(); selection.applicationTokens = allowedApplications
+            let effective = FlintOrdinaryBreaks.filteredSelection(selection, storeName: name, allowList: true)
+            store.shield.applicationCategories = .all(except: effective.applicationTokens)
+            store.shield.webDomainCategories = .all()
+        }
     }
 
-    /// The Hardcore **uninstall guard**: while set, iOS blocks deleting apps (device-wide —
-    /// Apple's setting isn't per-app), including Flint itself, which is otherwise the one-tap
-    /// escape from a Hardcore block. `false` writes nil (this store's "don't assert"
-    /// convention), so a non-Hardcore start can never leave a stale guard behind. Lives on
-    /// this store so `clear()` / `clearAllSettings()` drops it together with the shield on
-    /// every end path. See `FlintUninstallGuard` for the when.
-    public func setDenyAppRemoval(_ deny: Bool) {
-        store.application.denyAppRemoval = deny ? true : nil
-    }
-
+    /// Clear all session-owned keys, including historical allow-list and Safari settings.
+    /// The old denyAppRemoval value is retired ONLY by the validated derived migration;
+    /// a whole-store clear here would release it even when another owner's read failed.
     public func clear() {
-        store.clearAllSettings()
+        store.shield.applications = nil
+        store.shield.applicationCategories = nil
+        store.shield.webDomains = nil
+        store.shield.webDomainCategories = nil
+        store.webContent.blockedByFilter = nil
+        store.media.denyExplicitContent = nil
     }
 }
 #endif

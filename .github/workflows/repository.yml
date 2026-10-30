@@ -3,17 +3,22 @@ name: Repository checks
 on:
   push:
     branches: [main]
-    paths: ['scripts/**', 'Makefile', '.github/workflows/**']
+    paths: ['scripts/**', 'Makefile', '.github/workflows/**', '.github/actions/**']
   pull_request:
-    paths: ['scripts/**', 'Makefile', '.github/workflows/**']
+    paths: ['scripts/**', 'Makefile', '.github/workflows/**', '.github/actions/**']
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.head_ref != 'integration/v1' }}
+
 jobs:
   script-selftests:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - name: Install zsh for shell regression tests

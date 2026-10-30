@@ -2,6 +2,7 @@ package com.flint.peakfocus.core.datastore
 
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BreakLevel
+import com.flint.peakfocus.core.model.StorageState
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -16,6 +17,8 @@ import kotlinx.coroutines.flow.Flow
  */
 interface BlockRulesStore {
 
+    val rulesState: Flow<StorageState<List<BlockRule>>> get() = rules.withReadiness()
+
     /** All configured rules, re-emitted on every change. */
     val rules: Flow<List<BlockRule>>
 
@@ -24,6 +27,16 @@ interface BlockRulesStore {
 
     /** Insert [rule], or replace the existing rule with the same id. */
     suspend fun upsert(rule: BlockRule)
+
+    /** One durable transaction, including paired Sleep upserts and removal of a stale half. */
+    suspend fun updateRules(upserts: List<BlockRule>, deleteIds: Set<String> = emptySet()) {
+        error("Atomic rule updates are not supported by this store")
+    }
+
+    /** Recheck expiry in the same transaction as the sweep; never delete a renewed rule. */
+    suspend fun pruneExpired(nowEpochMs: Long) {
+        error("Atomic expiry pruning is not supported by this store")
+    }
 
     /**
      * Atomically insert a finite session only if no enabled, unexpired session exists.
@@ -71,7 +84,7 @@ internal fun List<BlockRule>.canStartSession(id: String, nowEpochMs: Long): Bool
 
 internal fun List<BlockRule>.canCancelEasySession(id: String, nowEpochMs: Long): Boolean =
     singleOrNull { it.id == id }?.let {
-    it.id.startsWith(BlockRule.SESSION_ID_PREFIX) && it.enabled &&
+    it.id.startsWith(BlockRule.SESSION_ID_PREFIX) && !it.id.startsWith(NATIVE_TIMER_ID_PREFIX) && it.enabled &&
         !it.isExpired(nowEpochMs) && it.breakLevel == BreakLevel.EASY
 } == true
 
@@ -79,7 +92,7 @@ internal fun List<BlockRule>.canCancelEasySession(id: String, nowEpochMs: Long):
 const val NATIVE_TIMER_ID_PREFIX = "session-timer-"
 
 internal fun List<BlockRule>.canEndTimerSession(expected: BlockRule, nowEpochMs: Long): Boolean =
-    nowEpochMs >= 0 && expected.id.startsWith(NATIVE_TIMER_ID_PREFIX) &&
+    nowEpochMs >= 0 && expected.id.startsWith(NATIVE_TIMER_ID_PREFIX) && !expected.id.startsWith(CONTRACT_TIMER_ID_PREFIX) &&
         expected.id.length > NATIVE_TIMER_ID_PREFIX.length &&
         expected.enabled && expected.schedule == null && !expected.isExpired(nowEpochMs) &&
         singleOrNull { it.id == expected.id } == expected

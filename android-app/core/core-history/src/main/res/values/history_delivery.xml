@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="focus_history_missing_events">Some focus events may be missing</string>
+    <string name="focus_history_no_recorded_sessions">No recorded focus sessions</string>
+</resources>

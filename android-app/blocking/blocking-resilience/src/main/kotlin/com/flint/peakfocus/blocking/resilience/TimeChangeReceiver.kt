@@ -3,18 +3,68 @@ package com.flint.peakfocus.blocking.resilience
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.SystemClock
 import com.flint.peakfocus.blocking.engine.ClockChangeGuard
 import com.flint.peakfocus.blocking.engine.ClockShift
 import com.flint.peakfocus.core.data.BlocklistStore
 import com.flint.peakfocus.core.datastore.FlintPreferences
+import com.flint.peakfocus.core.datastore.ProtectionClock
+import com.flint.peakfocus.core.datastore.FocusStateStore
+import com.flint.peakfocus.core.datastore.FocusCommit
+import com.flint.peakfocus.core.model.EmergencyPassState
+import com.flint.peakfocus.core.model.FocusMutation
 import java.util.TimeZone
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
+
+internal const val CLOCK_GUARD_TIMEOUT_MS = 2_000L
+
+/** Transform current accounting together: an older warm-up read must never refund a grant. */
+internal suspend fun guardCurrentFocus(store: FocusStateStore, shift: ClockShift): FocusCommit<Unit> =
+    store.transact { current ->
+        val guard = ClockChangeGuard()
+        FocusMutation(current.copy(
+            openCounts = guard.guardedOpenCounts(current.openCounts, shift),
+            emergencyPass = guardedLegacyPassForMigration(current.emergencyPass, shift),
+            breakSession = guard.guardedBreakSession(current.breakSession, shift),
+            // Only shorten access on a measured rollback. In particular, never move an
+            // inactive normal-open receipt (until=0) into an active release interval.
+            exemptions = current.exemptions.mapValues { (_, receipt) ->
+                if (receipt.untilEpochMs == 0L || shift.wallDeltaMs >= 0) receipt
+                else receipt.copy(untilEpochMs = (receipt.untilEpochMs + shift.wallDeltaMs).coerceAtLeast(0))
+            },
+        ), Unit)
+    }
+
+/**
+ * Legacy weekly migration mirror only. When FocusSnapshot gains its rolling protection ledger,
+ * the caller must bypass this hook for initialized ledger state and keep the original mirror.
+ */
+private fun guardedLegacyPassForMigration(pass: EmergencyPassState, shift: ClockShift): EmergencyPassState =
+    ClockChangeGuard().guardedEmergencyPass(pass, shift)
+
+/** Independent bounded domains: unreadable focus state must not skip valid session guards. */
+internal suspend fun applyClockGuards(
+    focus: FocusStateStore, shift: ClockShift,
+    perGuardTimeoutMs: Long = CLOCK_GUARD_TIMEOUT_MS,
+    guardRules: suspend () -> Unit,
+) = coroutineScope {
+    launch { isolateClockGuard(perGuardTimeoutMs) { guardCurrentFocus(focus, shift) } }
+    launch { isolateClockGuard(perGuardTimeoutMs, guardRules) }
+    Unit
+}
+
+private suspend fun isolateClockGuard(timeoutMs: Long, block: suspend () -> Unit) {
+    try { withTimeoutOrNull(timeoutMs) { block() } }
+    catch (cancel: CancellationException) { throw cancel }
+    catch (_: Exception) { }
+}
 
 /**
  * Time-change re-arm (anti-bypass, spec 2.4/2.5): users can dodge schedules and daily limits
@@ -26,8 +76,9 @@ import kotlinx.coroutines.launch
  * What it does, in order (mirrors [BootReceiver]):
  *  1. **Measure + re-baseline** — compares the new wall clock against the persisted anchor
  *     (last wall time + monotonic elapsedRealtime, which never follows the wall clock), then
- *     stores a fresh anchor. `FlintApplication.onCreate` baselines it at process start via
- *     [baselineAnchor], so a reboot (elapsedRealtime restarts) never fakes a jump.
+ *     stores a fresh anchor. [baselineAnchor] initializes only an absent record; a cold
+ *     process keeps the prior evidence until this measurement. Boot identity rejects
+ *     untrusted cross-boot elapsed time, including a reboot with a higher current uptime.
  *  2. **Cache warm-up** — [BlocklistStore.load], exactly like boot: this broadcast may have
  *     started a dead process, and re-evaluation needs live rules in `ActiveRulesHolder`.
  *  3. **Fail-closed re-keying** — applies [ClockChangeGuard] to the persisted focus state
@@ -47,7 +98,6 @@ import kotlinx.coroutines.launch
 class TimeChangeReceiver : BroadcastReceiver() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val guard = ClockChangeGuard()
 
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action
@@ -67,18 +117,15 @@ class TimeChangeReceiver : BroadcastReceiver() {
             applyGuards(appContext, shift, goAsync())
         }
 
-        // 4. App-registered re-arm hooks. Failures are isolated so one bad hook cannot
-        //    break the rest of re-arm.
-        for (rearm in rearmActions) {
-            runCatching { rearm(appContext) }
-        }
+        // 4. Immediate re-arm keeps detection responsive even if either write stalls. The
+        //    second wake in applyGuards is distinct: it observes the acknowledged transaction.
+        //    Failures are isolated so one bad hook cannot break the rest of re-arm.
+        rearmDetectors(rearmActions.map { rearm -> { rearm(appContext) } })
     }
 
     /** Read the previous anchor, derive the [ClockShift] it implies, persist a fresh anchor. */
     private fun measureAndRebaseline(appContext: Context, intent: Intent): ClockShift {
-        val prefs = appContext.getSharedPreferences(ANCHOR_PREFS, Context.MODE_PRIVATE)
-        val nowWall = System.currentTimeMillis()
-        val nowElapsed = SystemClock.elapsedRealtime()
+        val now = ProtectionClock.now()
         // TIMEZONE_CHANGED carries the new zone ID ("time-zone" extra, aka Intent.EXTRA_TIMEZONE
         // on API 30+); prefer it over TimeZone.getDefault(), whose cached value can lag the
         // broadcast. TIME_SET / DATE_CHANGED carry no extra — the zone did not move.
@@ -86,18 +133,8 @@ class TimeChangeReceiver : BroadcastReceiver() {
             ?.takeIf { it.isNotBlank() }
             ?.let(TimeZone::getTimeZone)
             ?: TimeZone.getDefault()
-        val newOffset = newZone.getOffset(nowWall).toLong()
-
-        val anchorWall = prefs.getLong(KEY_ANCHOR_WALL, Long.MIN_VALUE)
-        val anchorElapsed = prefs.getLong(KEY_ANCHOR_ELAPSED, Long.MIN_VALUE)
-        val anchorOffset = prefs.getLong(KEY_ANCHOR_OFFSET, newOffset)
-        val shift = if (anchorWall == Long.MIN_VALUE || anchorElapsed == Long.MIN_VALUE) {
-            ClockShift.unmeasured(nowWall, anchorOffset, newOffset)
-        } else {
-            ClockShift.fromAnchor(anchorWall, anchorElapsed, nowWall, nowElapsed, anchorOffset, newOffset)
-        }
-        writeAnchor(prefs, nowWall, nowElapsed, newOffset)
-        return shift
+        return ClockAnchorStore(appContext.getSharedPreferences(ClockAnchorStore.PREFS, Context.MODE_PRIVATE))
+            .measureAndRebaseline(now, newZone.getOffset(now.wallEpochMs).toLong())
     }
 
     /**
@@ -108,30 +145,20 @@ class TimeChangeReceiver : BroadcastReceiver() {
     private fun applyGuards(appContext: Context, shift: ClockShift, pending: PendingResult) {
         scope.launch {
             try {
-                val store = FlintPreferences.focusState(appContext)
-                val counts = store.openCounts.first()
-                guard.guardedOpenCounts(counts, shift)
-                    .takeIf { it != counts }
-                    ?.let { store.setOpenCounts(it) }
-                val pass = store.emergencyPass.first()
-                guard.guardedEmergencyPass(pass, shift)
-                    .takeIf { it != pass }
-                    ?.let { store.setEmergencyPass(it) }
-                val session = store.breakSession.first()
-                guard.guardedBreakSession(session, shift)
-                    .takeIf { it != session }
-                    ?.let { store.setBreakSession(it) }
-                // One-shot Block Now sessions measure DURATION, not a wall deadline: shift
-                // their expiry with the injected jump so a set-forward clock can't end a
-                // Hardcore session early (nor a set-back stretch one). Upserting also
-                // restores a session the lazy expiry sweep raced to delete after the jump.
-                val rulesStore = FlintPreferences.blockRules(appContext)
-                guard.guardedSessionRules(rulesStore.rules.first(), shift)
-                    .forEach { rulesStore.upsert(it) }
+                withTimeout(5_000) {
+                    val store = FlintPreferences.focusState(appContext)
+                    val editor = FlintPreferences.editorCommitments(appContext)
+                    // The transaction reads the latest records and anchored duration. A
+                    // delayed callback cannot overwrite a stronger edit or revive a deletion.
+                    applyClockGuards(store, shift) { editor.guardSessionClock(ProtectionClock.now(), shift) }
+                }
             } catch (_: Exception) {
                 // Swallowed on purpose (see KDoc above): fail toward existing state, no crash
                 // loop from a broadcast. No telemetry — nothing leaves the device (ADR-002).
             } finally {
+                // A stationary target must see the committed guards too, even if the first
+                // wake raced their asynchronous writes or one independent guard failed.
+                rearmDetectors(rearmActions.map { rearm -> { rearm(appContext) } })
                 pending.finish()
             }
         }
@@ -151,11 +178,6 @@ class TimeChangeReceiver : BroadcastReceiver() {
 
         /** ACTION_TIMEZONE_CHANGED's documented extra: the new zone's ID. */
         private const val EXTRA_TIME_ZONE_ID = "time-zone"
-
-        private const val ANCHOR_PREFS = "flint_clock_anchor"
-        private const val KEY_ANCHOR_WALL = "wall_epoch_ms"
-        private const val KEY_ANCHOR_ELAPSED = "elapsed_realtime_ms"
-        private const val KEY_ANCHOR_OFFSET = "utc_offset_ms"
 
         private val rearmActions = CopyOnWriteArrayList<(Context) -> Unit>()
 
@@ -183,34 +205,14 @@ class TimeChangeReceiver : BroadcastReceiver() {
         }
 
         /**
-         * Persist a fresh clock anchor (wall time + elapsedRealtime + UTC offset). Call from
-         * `Application.onCreate`: a manifest receiver always runs after it in the app
-         * process, so the anchor is at worst process-start fresh — and re-baselining on
-         * every process start is what keeps a reboot's elapsedRealtime reset from ever
-         * looking like a clock jump.
+         * Initialize clock evidence if absent. Application starts before a cold manifest
+         * receiver; overwriting an existing anchor here would erase the jump it must measure.
          */
         fun baselineAnchor(context: Context) {
             val appContext = context.applicationContext
-            val now = System.currentTimeMillis()
-            writeAnchor(
-                appContext.getSharedPreferences(ANCHOR_PREFS, Context.MODE_PRIVATE),
-                now,
-                SystemClock.elapsedRealtime(),
-                TimeZone.getDefault().getOffset(now).toLong(),
-            )
-        }
-
-        private fun writeAnchor(
-            prefs: android.content.SharedPreferences,
-            wallEpochMs: Long,
-            elapsedRealtimeMs: Long,
-            utcOffsetMs: Long,
-        ) {
-            prefs.edit()
-                .putLong(KEY_ANCHOR_WALL, wallEpochMs)
-                .putLong(KEY_ANCHOR_ELAPSED, elapsedRealtimeMs)
-                .putLong(KEY_ANCHOR_OFFSET, utcOffsetMs)
-                .apply()
+            val now = ProtectionClock.now()
+            ClockAnchorStore(appContext.getSharedPreferences(ClockAnchorStore.PREFS, Context.MODE_PRIVATE))
+                .initialize(now, TimeZone.getDefault().getOffset(now.wallEpochMs).toLong())
         }
     }
 }

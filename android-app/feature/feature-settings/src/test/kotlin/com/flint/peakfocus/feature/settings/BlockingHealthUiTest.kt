@@ -2,12 +2,60 @@ package com.flint.peakfocus.feature.settings
 
 import com.flint.peakfocus.blocking.resilience.HealthLevel
 import com.flint.peakfocus.blocking.resilience.HealthStatus
+import com.flint.peakfocus.blocking.engine.BrowserAddressBars
+import com.flint.peakfocus.blocking.engine.WebCoverage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BlockingHealthUiTest {
+    @Test fun websiteCoverageNamesTheObservedGapAndSupportedAdapters() {
+        val chrome = BrowserAddressBars.find("com.android.chrome")!!
+        val states = mapOf(
+            WebCoverage.Paused to "Website blocks paused",
+            WebCoverage.Degraded(chrome, 100) to "can't read Chrome's address bar",
+            WebCoverage.Unsupported("test.browser", "Local link app") to "Local link app",
+            WebCoverage.Unconfirmed(chrome) to "hasn't been able to confirm",
+        )
+        states.forEach { (coverage, expected) ->
+            val health = status().copy(websiteCoverage = coverage)
+            assertTrue(BlockingHealthUi.banner(health).body.contains(expected))
+            val text = BlockingHealthUi.websiteCoverage(health)
+            assertTrue(text.contains("Chrome"))
+            assertTrue(text.contains("Firefox"))
+            assertTrue(text.contains("not verified on this device"))
+            assertTrue(text.contains("Allow-list mode uses the app list"))
+            assertFalse(text.contains("test.browser"))
+            assertTrue(text.contains("Known browsers (not verified on this device)"))
+        }
+    }
+
+    @Test fun websiteCoverageObservationsAreExactForStatelessBranches() {
+        val expected = mapOf(
+            WebCoverage.NotRequired to "No website block is active now.",
+            // AwaitingBrowser also covers failed reads below the threshold and a new window after a
+            // success, so the copy must not say no check happened.
+            WebCoverage.AwaitingBrowser to "Website coverage is awaiting confirmation from a supported browser.",
+            WebCoverage.Paused to "Website blocks paused: website rules need Accessibility.",
+        )
+        expected.forEach { (coverage, observation) ->
+            val text = BlockingHealthUi.websiteCoverage(status().copy(websiteCoverage = coverage))
+            assertEquals(observation, text.substringBefore("\n"))
+            assertFalse(text.contains("has not been checked"))
+        }
+    }
+
+    @Test fun pageChangeSummaryExplainsTheGlobalSignalFilterInPlainLanguage() {
+        val text = BlockingHealthUi.rows(status()).first { it.kind == PermissionKind.ACCESSIBILITY }.disclosure
+        assertTrue(text.contains("when a page changes"))
+        assertTrue(text.contains("signals from other apps"))
+        assertTrue(text.contains("without reading their content"))
+        assertTrue(text.contains("Address-bar URLs stay in memory; reading stops if Accessibility is off"))
+        assertFalse(text.contains("window-content"))
+        assertFalse(text.contains("same-tab"))
+    }
 
     private fun status(
         accessibility: Boolean = true,
@@ -90,6 +138,10 @@ class BlockingHealthUiTest {
         // what is read, what it's used for, and that nothing leaves the device.
         assertTrue(row.disclosure.contains("which app is in the foreground"))
         assertTrue(row.disclosure.contains("web address"))
+        assertTrue(row.disclosure.contains("known browser address bars"))
+        assertFalse(row.disclosure.contains("Settings text"))
+        assertFalse(row.disclosure.contains("uninstall and disable restrictions"))
+        assertEquals("Review Accessibility access", row.fixLabel)
         assertTrue(row.disclosure.contains("only to enforce the blocks you set up"))
         assertTrue(row.disclosure.contains("stays on your device", ignoreCase = true))
         assertTrue(row.disclosure.contains("never", ignoreCase = true))
@@ -134,6 +186,7 @@ class BlockingHealthUiTest {
         val s = status()
         assertEquals(HealthLevel.HEALTHY, s.level)
         assertTrue(BlockingHealthUi.banner(s).headline.contains("healthy", ignoreCase = true))
+        assertEquals("App blocking is healthy", BlockingHealthUi.banner(s).headline)
     }
 
     @Test
@@ -200,6 +253,15 @@ class BlockingHealthUiTest {
         assertFalse(
             BlockingHealthUi.banner(pathA).body.contains("notification", ignoreCase = true),
         )
+    }
+
+    @Test fun shortReasonNotesNameOnlyTheObservedUsageAccessDependencies() {
+        assertEquals("Backup blocking off: Usage access is missing",
+            BlockingHealthUi.shortReasonNote("path-b-backup-unavailable"))
+        assertEquals("Time limits can't measure app use without Usage access",
+            BlockingHealthUi.shortReasonNote("time-limits-need-usage-access"))
+        assertNull(BlockingHealthUi.shortReasonNote("unknown-reason"))
+        assertNull(BlockingHealthUi.shortReasonNote("usage-access-missing"))
     }
 
     /** All 16 grant combinations × 3 notification variants (pre-13, 13+ granted, 13+ denied). */

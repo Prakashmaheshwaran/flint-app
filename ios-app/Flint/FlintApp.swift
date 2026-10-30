@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import FlintCore
 
 @main
@@ -44,6 +45,25 @@ struct RootView: View {
         .background(AppLockWindow(lock: appLock))
         .onAppear { updateScenePhase(scenePhase) }
         .onChange(of: scenePhase, perform: updateScenePhase)
+        .modifier(FlintGlanceObservation())
+        .onChange(of: auth.status) { _ in reconcile(.configEdit) }
+        .task { await FlintProtectionReconciler.shared.reconcile(trigger: .launch) }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
+            reconcile(.significantTimeChange)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name.NSSystemTimeZoneDidChange)) { _ in
+            reconcile(.timeZoneChange)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name.NSSystemClockDidChange)) { _ in
+            reconcile(.significantTimeChange)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .flintProtectionConfigurationChanged)) { _ in
+            reconcile(.configEdit)
+        }
+    }
+
+    private func reconcile(_ trigger: FlintProtectionTrigger) {
+        Task { await FlintProtectionReconciler.shared.reconcile(trigger: trigger) }
     }
 
     private func updateScenePhase(_ phase: ScenePhase) {
@@ -53,6 +73,7 @@ struct RootView: View {
         case .active:
             appLock.transition(to: .active)
             auth.refresh()
+            reconcile(.foreground)
         case .inactive: appLock.transition(to: .inactive)
         case .background:
             // SwiftUI can deliver this late, after the scene has reactivated. The live
@@ -103,17 +124,6 @@ struct RootView: View {
                 showStart = true
             })
         }
-        .task {
-            // Re-arm Open-Limit shields (+ their day-boundary activities) on every launch —
-            // that's what puts tokens released by yesterday's grants back behind the shield.
-            // Schedules/Time Limits re-arm in their tab view models; Open Limits' screen sits
-            // a level deeper, so its view model may never init in a given run.
-            FlintOpenLimitsController().reload()
-            // Reconcile the Hardcore uninstall guard with reality on every launch:
-            // re-assert it while a Hardcore session is still running, drop it if the
-            // session ended while Flint was dead (e.g. the monitor never got to fire).
-            FlintSessionController().reconcileUninstallGuard()
-        }
     }
 }
 
@@ -126,36 +136,69 @@ struct PINGateView: View {
     @ObservedObject var lock: FlintAppLock
     @State private var pin = ""
     @State private var showError = false
+    /// The PIN never blocks the pass or recovery route (ADR-012 §7, PC-50).
+    @State private var showRecovery = false
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         ZStack {
             EmberLandscape(horizonOffset: 20, orbCenter: CGPoint(x: 195, y: 480), orbRadius: 64)
-            VStack(spacing: 14) {
-                FlintMark(size: 40)
-                Text("Flint").font(FlintFont.display(48)).tracking(-0.8).foregroundStyle(FlintBrand.bone)
-                Text("Enter PIN").flintSecondary(15)
-                SecureField("PIN", text: $pin)
-                    .keyboardType(.numberPad)
-                    .font(FlintFont.display(28))
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(FlintBrand.bone)
-                    .frame(width: 180, height: 52)
-                    .overlay(alignment: .bottom) { FlintHairline(opacity: 0.16) }
-                if showError {
-                    Text("Incorrect PIN").font(FlintFont.text(13)).foregroundStyle(FlintBrand.danger)
-                }
-                Spacer()
-                Button("Unlock") {
-                    if !lock.unlock(with: pin) {
-                        showError = true
-                        pin = ""
+            // Scrolls at accessibility sizes so the PIN field and Unlock stay reachable.
+            GeometryReader { geometry in
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 14) {
+                        FlintMark(size: 40)
+                        Text("Flint").font(FlintFont.display(48)).tracking(-0.8).foregroundStyle(FlintBrand.bone)
+                            .accessibilityAddTraits(.isHeader)
+                        Text("Enter PIN").flintSecondary(15)
+                        SecureField("PIN", text: $pin)
+                            .keyboardType(.numberPad)
+                            .font(FlintFont.display(28))
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(FlintBrand.bone)
+                            .frame(minWidth: 180, maxWidth: typeSize.isAccessibilitySize ? 280 : 180, minHeight: 52)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .overlay(alignment: .bottom) { FlintHairline(opacity: 0.16) }
+                        if showError {
+                            Text("Incorrect PIN").font(FlintFont.text(13)).foregroundStyle(FlintBrand.danger)
+                        }
+                        Spacer(minLength: 24)
+                        Button("Unlock") {
+                            if !lock.unlock(with: pin) {
+                                showError = true
+                                pin = ""
+                                // The error appears without moving focus; say it after the field's
+                                // own value-change announcement so it isn't clipped.
+                                DispatchQueue.main.async {
+                                    UIAccessibility.post(notification: .announcement,
+                                                         argument: String(localized: "Incorrect PIN"))
+                                }
+                            }
+                        }
+                        .buttonStyle(EmberButtonStyle())
+                        Button("Emergency Pass & recovery") {
+                            // Drop the PIN keypad so it can't cover the pass controls.
+                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                                            to: nil, from: nil, for: nil)
+                            showRecovery = true
+                        }
+                            .buttonStyle(QuietButtonStyle(color: FlintBrand.mist))
+                            .accessibilityHint("Use the Emergency Pass or see how to lift blocks without the PIN")
                     }
+                    .padding(.top, typeSize.isAccessibilitySize ? 40 : 110)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 12)
+                    .frame(minHeight: geometry.size.height)
                 }
-                .buttonStyle(EmberButtonStyle())
             }
-            .padding(.top, 110)
-            .padding(.horizontal, 24)
-            .padding(.bottom, 12)
+        }
+        // In place, not a presented cover: the gate's privacy curtain must stay above it, and a
+        // re-lock that swaps the gate out discards it.
+        .accessibilityHidden(showRecovery)
+        .overlay {
+            if showRecovery {
+                LockedRecoveryView { showRecovery = false }
+            }
         }
     }
 }

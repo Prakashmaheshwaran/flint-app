@@ -8,10 +8,16 @@ import com.flint.peakfocus.core.model.EmergencyPassState
 import com.flint.peakfocus.core.model.OpenCountState
 import com.flint.peakfocus.core.model.OpenLimit
 import com.flint.peakfocus.core.model.TimeLimit
+import com.flint.peakfocus.core.model.FocusSnapshot
+import com.flint.peakfocus.core.model.FocusMutation
+import com.flint.peakfocus.core.model.StorageState
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * In-memory implementations of the store interfaces — test doubles and Compose-preview
@@ -27,6 +33,15 @@ class InMemoryBlockRulesStore(initial: List<BlockRule> = emptyList()) : BlockRul
 
     override suspend fun upsert(rule: BlockRule) {
         state.update { current -> current.filterNot { it.id == rule.id } + rule }
+    }
+
+    override suspend fun updateRules(upserts: List<BlockRule>, deleteIds: Set<String>) {
+        require(upserts.map { it.id }.distinct().size == upserts.size)
+        state.update { current -> current.filterNot { it.id in deleteIds || it.id in upserts.map(BlockRule::id) } + upserts }
+    }
+
+    override suspend fun pruneExpired(nowEpochMs: Long) {
+        state.update { current -> current.filterNot { it.isExpired(nowEpochMs) } }
     }
 
     override suspend fun startSessionIfIdle(rule: BlockRule, nowEpochMs: Long): Boolean {
@@ -67,6 +82,7 @@ class InMemoryBlockRulesStore(initial: List<BlockRule> = emptyList()) : BlockRul
     }
 
     override suspend fun replaceAll(rules: List<BlockRule>) {
+        StrictPrefsCodec.rules(PrefsCodec.encodeRules(rules))
         state.value = rules
     }
 }
@@ -91,58 +107,82 @@ class InMemoryLimitsStore(
     initialOpenLimits: List<OpenLimit> = emptyList(),
 ) : LimitsStore {
 
-    private val time = MutableStateFlow(initialTimeLimits)
-    private val open = MutableStateFlow(initialOpenLimits)
+    private val limits = MutableStateFlow(initialTimeLimits to initialOpenLimits)
 
-    override val timeLimits: Flow<List<TimeLimit>> = time.asStateFlow()
+    override val timeLimits: Flow<List<TimeLimit>> = limits.map { it.first }
 
-    override val openLimits: Flow<List<OpenLimit>> = open.asStateFlow()
+    override val openLimits: Flow<List<OpenLimit>> = limits.map { it.second }
+
+    override suspend fun setLimits(packageName: String, time: TimeLimit?, open: OpenLimit?) {
+        require(time == null || time.packageName == packageName)
+        require(open == null || open.packageName == packageName)
+        limits.update { (times, opens) ->
+            (times.filterNot { it.packageName == packageName } + listOfNotNull(time)) to
+                (opens.filterNot { it.packageName == packageName } + listOfNotNull(open))
+        }
+    }
 
     override suspend fun setTimeLimit(limit: TimeLimit) {
-        time.update { current -> current.filterNot { it.packageName == limit.packageName } + limit }
+        limits.update { (time, open) -> (time.filterNot { it.packageName == limit.packageName } + limit) to open }
     }
 
     override suspend fun clearTimeLimit(packageName: String) {
-        time.update { current -> current.filterNot { it.packageName == packageName } }
+        limits.update { (time, open) -> time.filterNot { it.packageName == packageName } to open }
     }
 
     override suspend fun setOpenLimit(limit: OpenLimit) {
-        open.update { current -> current.filterNot { it.packageName == limit.packageName } + limit }
+        limits.update { (time, open) -> time to (open.filterNot { it.packageName == limit.packageName } + limit) }
     }
 
     override suspend fun clearOpenLimit(packageName: String) {
-        open.update { current -> current.filterNot { it.packageName == packageName } }
+        limits.update { (time, open) -> time to open.filterNot { it.packageName == packageName } }
     }
 }
 
 class InMemoryFocusStateStore : FocusStateStore {
 
-    private val level = MutableStateFlow(BreakLevel.EASY)
-    private val pass = MutableStateFlow(EmergencyPassState())
-    private val session = MutableStateFlow(BreakSessionState())
-    private val counts = MutableStateFlow(OpenCountState())
+    private val snapshot = MutableStateFlow(FocusSnapshot())
+    private val mutex = Mutex()
 
-    override val defaultBreakLevel: Flow<BreakLevel> = level.asStateFlow()
+    override val state: Flow<StorageState<FocusSnapshot>> = snapshot.withReadiness()
+    override val defaultBreakLevel: Flow<BreakLevel> = snapshot.map { it.defaultBreakLevel }
+    override val emergencyPass: Flow<EmergencyPassState> = snapshot.map { it.emergencyPass }
+    override val breakSession: Flow<BreakSessionState> = snapshot.map { it.breakSession }
+    override val openCounts: Flow<OpenCountState> = snapshot.map { it.openCounts }
 
-    override val emergencyPass: Flow<EmergencyPassState> = pass.asStateFlow()
-
-    override val breakSession: Flow<BreakSessionState> = session.asStateFlow()
-
-    override val openCounts: Flow<OpenCountState> = counts.asStateFlow()
+    override suspend fun <R> transact(transform: (FocusSnapshot) -> FocusMutation<R>): FocusCommit<R> = mutex.withLock {
+        val current = snapshot.value
+        val mutation = transform(current)
+        require(mutation.next.revision == current.revision) { "Focus revision is store-owned" }
+        require(mutation.next.minimumRequestEpochMs >= current.minimumRequestEpochMs) { "Request retention cannot rewind" }
+        val next = if (mutation.next == current) current else {
+            require(current.revision < Long.MAX_VALUE) { "Focus revision exhausted" }
+            mutation.next.copy(revision = current.revision + 1)
+        }
+        val ledger = FocusLedgerCodec.decode(FocusLedgerCodec.encode(FocusLedgerCodec.Ledger(next.exemptions, next.breaksByCause, next.revision,
+            next.minimumRequestEpochMs, protectionInitialized = next.protection != null)))
+        StrictPrefsCodec.session(PrefsCodec.encodeBreakSession(next.breakSession))
+        StrictPrefsCodec.counts(PrefsCodec.encodeOpenCounts(next.openCounts.opensByPackage))
+        val frozen = next.copy(exemptions = ledger.exemptions, breaksByCause = ledger.breaksByCause,
+            openCounts = next.openCounts.copy(opensByPackage = next.openCounts.opensByPackage.toMap()),
+            protection = next.protection?.let { ProtectionLedgerCodec.decode(ProtectionLedgerCodec.encode(it)) })
+        snapshot.value = frozen
+        FocusCommit.Committed(frozen, mutation.result)
+    }
 
     override suspend fun setDefaultBreakLevel(level: BreakLevel) {
-        this.level.value = level
+        transact { FocusMutation(it.copy(defaultBreakLevel = level), Unit) }
     }
 
     override suspend fun setEmergencyPass(state: EmergencyPassState) {
-        pass.value = state
+        transact { FocusMutation(it.copy(emergencyPass = state), Unit) }
     }
 
     override suspend fun setBreakSession(state: BreakSessionState) {
-        session.value = state
+        transact { FocusMutation(it.copy(breakSession = state), Unit) }
     }
 
     override suspend fun setOpenCounts(state: OpenCountState) {
-        counts.value = state
+        transact { FocusMutation(it.copy(openCounts = state), Unit) }
     }
 }
