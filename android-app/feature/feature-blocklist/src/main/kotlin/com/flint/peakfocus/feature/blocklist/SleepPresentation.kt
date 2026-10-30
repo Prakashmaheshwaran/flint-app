@@ -8,26 +8,34 @@ internal data class SleepPresentation(
     @StringRes val tier: Int,
     @StringRes val offExplanation: Int,
     @StringRes val nights: Int?,
+    val emphasizeTier: Boolean,
 )
 
-internal fun sleepPresentation(config: SleepConfig): SleepPresentation = SleepPresentation(
-    tier = when (config.breakLevel) {
-        BreakLevel.EASY -> R.string.sleep_tier_easy
-        BreakLevel.HARDER -> R.string.sleep_tier_harder
-        BreakLevel.HARDCORE -> R.string.sleep_tier_hardcore
-    },
-    offExplanation = when (if (config.morningEnabled) maxOf(config.breakLevel, config.morningBreakLevel) else config.breakLevel) {
-        BreakLevel.EASY -> R.string.sleep_off_easy
-        BreakLevel.HARDER -> R.string.sleep_off_harder
-        BreakLevel.HARDCORE -> R.string.sleep_off_hardcore
-    },
-    nights = when {
-        config.nights.isEmpty() || config.nights.size == 7 -> R.string.sleep_every_night
-        config.nights == IsoDays.WEEKDAYS -> R.string.sleep_weeknights
-        config.nights == IsoDays.WEEKEND -> R.string.sleep_weekend_nights
-        else -> null
-    },
-)
+@StringRes
+internal fun sleepTierText(tier: BreakLevel): Int = when (tier) {
+    BreakLevel.EASY -> R.string.sleep_tier_easy
+    BreakLevel.HARDER -> R.string.sleep_tier_harder
+    BreakLevel.HARDCORE -> R.string.sleep_tier_hardcore
+}
+
+internal fun sleepPresentation(config: SleepConfig): SleepPresentation {
+    val strongestTier = if (config.morningEnabled) maxOf(config.breakLevel, config.morningBreakLevel) else config.breakLevel
+    return SleepPresentation(
+        tier = sleepTierText(strongestTier),
+        offExplanation = when (strongestTier) {
+            BreakLevel.EASY -> R.string.sleep_off_easy
+            BreakLevel.HARDER -> R.string.sleep_off_harder
+            BreakLevel.HARDCORE -> R.string.sleep_off_hardcore
+        },
+        nights = when {
+            config.nights.isEmpty() || config.nights.size == 7 -> R.string.sleep_every_night
+            config.nights == IsoDays.WEEKDAYS -> R.string.sleep_weeknights
+            config.nights == IsoDays.WEEKEND -> R.string.sleep_weekend_nights
+            else -> null
+        },
+        emphasizeTier = strongestTier == BreakLevel.HARDCORE,
+    )
+}
 
 internal fun sleepTimeFieldsStack(widthDp: Float, fontScale: Float): Boolean =
     widthDp < 360f || fontScale >= 1.5f

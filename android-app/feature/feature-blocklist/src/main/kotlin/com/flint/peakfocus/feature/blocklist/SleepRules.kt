@@ -69,6 +69,7 @@ internal fun nightsBefore(days: Set<Int>): Set<Int> = days.map { ((it + 5) % 7) 
  * Materialize onto the engine. Always returns the window rule (disabled config included —
  * the settings survive as a disabled rule, nothing is lost); the morning rule only while
  * Morning Assist is on, so [BlocklistViewModel.saveSleep] must delete it otherwise.
+ * A disabled morning draft's separate tier has no persisted rule and is not round-tripped.
  */
 internal fun SleepConfig.toRules(): List<BlockRule> {
     val targets = BlockTargets(apps = allowedApps, allowListMode = true)

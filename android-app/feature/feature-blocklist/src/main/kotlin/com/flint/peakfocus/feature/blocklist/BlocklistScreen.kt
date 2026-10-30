@@ -817,7 +817,7 @@ private fun SleepCard(config: SleepConfig?, onClick: () -> Unit, onToggle: (Bool
                     Spacer(Modifier.height(FlintSpacing.sm))
                     FlintBadge(
                         text = stringResource(R.string.sleep_tier_value, stringResource(sleepPresentation(config).tier)),
-                        emphasized = config.breakLevel == BreakLevel.HARDCORE,
+                        emphasized = sleepPresentation(config).emphasizeTier,
                     )
                 }
             }

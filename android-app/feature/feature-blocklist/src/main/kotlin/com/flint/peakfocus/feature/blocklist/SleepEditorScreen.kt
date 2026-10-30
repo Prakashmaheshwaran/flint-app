@@ -51,11 +51,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
@@ -281,8 +283,12 @@ internal fun SleepEditorScreen(
                 Spacer(Modifier.height(FlintSpacing.lg))
 
                 SleepSectionLabel(R.string.sleep_tier)
-                Text(stringResource(R.string.sleep_tier_value, stringResource(presentation.tier)))
-                SleepTierSelector(selected = config.breakLevel, onSelect = { config = config.withTier(it) })
+                Text(stringResource(R.string.sleep_tier_value, stringResource(sleepTierText(config.breakLevel))))
+                SleepTierSelector(
+                    selected = config.breakLevel,
+                    onSelect = { config = config.copy(breakLevel = it) },
+                    modifier = Modifier.testTag("sleep-window-tier"),
+                )
                 AnimatedVisibility(visible = config.breakLevel == BreakLevel.HARDCORE ||
                     (config.morningEnabled && config.morningBreakLevel == BreakLevel.HARDCORE)) {
                     Column {
@@ -342,16 +348,16 @@ internal fun SleepEditorScreen(
                 SleepSectionLabel(R.string.sleep_morning)
                 Spacer(Modifier.height(FlintSpacing.sm))
                 FlintCard {
+                    val morningTier = stringResource(R.string.sleep_tier_value, stringResource(sleepTierText(config.morningBreakLevel)))
                     LabeledSwitchRow(
                         title = stringResource(R.string.sleep_morning_toggle),
                         description = stringResource(R.string.sleep_morning_note),
                         checked = config.morningEnabled,
                         onCheckedChange = { config = config.copy(morningEnabled = it) },
+                        modifier = Modifier.semantics {
+                            if (config.morningEnabled) stateDescription = morningTier
+                        },
                     )
-                    if (config.morningEnabled && config.morningBreakLevel != config.breakLevel) {
-                        Text(stringResource(R.string.sleep_tier_value,
-                            stringResource(sleepPresentation(SleepConfig(breakLevel = config.morningBreakLevel)).tier)))
-                    }
                     AnimatedVisibility(
                         visible = config.morningEnabled,
                         enter = if (reducedMotion) EnterTransition.None else expandVertically(editorRevealSpec()) + fadeIn(editorRevealSpec()),
@@ -359,6 +365,12 @@ internal fun SleepEditorScreen(
                     ) {
                         Column {
                             Spacer(Modifier.height(FlintSpacing.sm))
+                            Text(morningTier)
+                            SleepTierSelector(
+                                selected = config.morningBreakLevel,
+                                onSelect = { config = config.copy(morningBreakLevel = it) },
+                                modifier = Modifier.testTag("sleep-morning-tier"),
+                            )
                             FlintTimeField(
                                 label = stringResource(R.string.sleep_until),
                                 valueText = morningText,
@@ -470,8 +482,8 @@ private fun SleepSectionLabel(@androidx.annotation.StringRes text: Int) {
 
 /** Tier choice only; no promise about an unmerged pass or a re-derived active occurrence. */
 @Composable
-private fun SleepTierSelector(selected: BreakLevel, onSelect: (BreakLevel) -> Unit) {
-    Column(Modifier.fillMaxWidth().selectableGroup()) {
+private fun SleepTierSelector(selected: BreakLevel, onSelect: (BreakLevel) -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth().selectableGroup()) {
         BreakLevel.entries.forEach { tier ->
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 48.dp)
@@ -481,7 +493,7 @@ private fun SleepTierSelector(selected: BreakLevel, onSelect: (BreakLevel) -> Un
             ) {
                 RadioButton(selected = tier == selected, onClick = null)
                 Spacer(Modifier.width(FlintSpacing.sm))
-                Text(stringResource(sleepPresentation(SleepConfig(breakLevel = tier)).tier))
+                Text(stringResource(sleepTierText(tier)))
             }
         }
     }

@@ -38,7 +38,19 @@ class SleepPresentationTest {
 
     @Test fun PC_82_strongerSavedMorningTierDoesNotAdvertiseEasyOffRights() {
         val config = SleepConfig(morningEnabled = true, breakLevel = BreakLevel.EASY, morningBreakLevel = BreakLevel.HARDCORE)
-        assertEquals(R.string.sleep_tier_easy, sleepPresentation(config).tier)
+        assertEquals(R.string.sleep_tier_hardcore, sleepPresentation(config).tier)
         assertEquals(R.string.sleep_off_hardcore, sleepPresentation(config).offExplanation)
+        assertTrue(sleepPresentation(config).emphasizeTier)
+    }
+
+    @Test fun PC_82_overviewBadgeAndOffGateUseOnlyMaterializedTiers() {
+        val disabledMorning = SleepConfig(breakLevel = BreakLevel.EASY, morningBreakLevel = BreakLevel.HARDCORE)
+        assertEquals(R.string.sleep_tier_easy, sleepPresentation(disabledMorning).tier)
+        assertEquals(R.string.sleep_off_easy, sleepPresentation(disabledMorning).offExplanation)
+        assertFalse(sleepPresentation(disabledMorning).emphasizeTier)
+        val strongerWindow = disabledMorning.copy(morningEnabled = true, breakLevel = BreakLevel.HARDER, morningBreakLevel = BreakLevel.EASY)
+        assertEquals(R.string.sleep_tier_harder, sleepPresentation(strongerWindow).tier)
+        assertEquals(R.string.sleep_off_harder, sleepPresentation(strongerWindow).offExplanation)
+        assertFalse(sleepPresentation(strongerWindow).emphasizeTier)
     }
 }
