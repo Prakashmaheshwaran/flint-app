@@ -158,7 +158,7 @@ object BlockingHealthUi {
     fun websiteCoverage(status: HealthStatus): String {
         val observation = when (val coverage = status.websiteCoverage) {
             WebCoverage.NotRequired -> "No website block is active now."
-            WebCoverage.AwaitingBrowser -> "Website coverage has not been checked in a supported browser yet."
+            WebCoverage.AwaitingBrowser -> "Website coverage is awaiting confirmation from a supported browser."
             WebCoverage.Paused -> "Website blocks paused: website rules need Accessibility."
             is WebCoverage.Available -> "Last browser check: address bar readable in ${coverage.browser.displayName}."
             is WebCoverage.Degraded -> "Last browser check: website blocking can't read ${coverage.browser.displayName}'s address bar."

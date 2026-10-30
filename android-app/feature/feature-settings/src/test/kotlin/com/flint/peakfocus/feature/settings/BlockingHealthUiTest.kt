@@ -31,6 +31,21 @@ class BlockingHealthUiTest {
         }
     }
 
+    @Test fun websiteCoverageObservationsAreExactForStatelessBranches() {
+        val expected = mapOf(
+            WebCoverage.NotRequired to "No website block is active now.",
+            // AwaitingBrowser also covers failed reads below the threshold and a new window after a
+            // success, so the copy must not say no check happened.
+            WebCoverage.AwaitingBrowser to "Website coverage is awaiting confirmation from a supported browser.",
+            WebCoverage.Paused to "Website blocks paused: website rules need Accessibility.",
+        )
+        expected.forEach { (coverage, observation) ->
+            val text = BlockingHealthUi.websiteCoverage(status().copy(websiteCoverage = coverage))
+            assertEquals(observation, text.substringBefore("\n"))
+            assertFalse(text.contains("has not been checked"))
+        }
+    }
+
     @Test fun pageChangeSummaryExplainsTheGlobalSignalFilterInPlainLanguage() {
         val text = BlockingHealthUi.rows(status()).first { it.kind == PermissionKind.ACCESSIBILITY }.disclosure
         assertTrue(text.contains("when a page changes"))

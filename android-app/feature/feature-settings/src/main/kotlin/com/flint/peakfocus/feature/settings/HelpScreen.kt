@@ -34,10 +34,16 @@ import com.flint.peakfocus.core.common.ui.FlintSectionLabel
  * "How Flint works": what Flint cannot prevent on Android and its platform limits. Every
  * sentence must stay true of the shipped code and ADR-012 (docs/architecture/protection-contract.md).
  * Strictness and Emergency Pass sections are added with lane C's ADR-012 behavior; until then
- * this screen makes no tier or pass claims. Copy lives in res/values/strings.xml
- * (`help_*`) and is guarded by HelpCopyTest.
+ * this screen makes no tier or pass claims. Authored copy lives in res/values/strings.xml
+ * (`help_*`). The Websites fact also renders lane C's shared website-coverage projection
+ * (BlockingHealthUi.websiteCoverage), the same text You shows. HelpCopyTest guards both.
  */
-internal data class HelpFact(@StringRes val title: Int, @StringRes val text: Int)
+internal data class HelpFact(
+    @StringRes val title: Int,
+    @StringRes val text: Int,
+    /** Appends the supplied website-coverage projection; Help never derives coverage itself. */
+    val showsWebsiteCoverage: Boolean = false,
+)
 
 internal data class HelpSection(@StringRes val title: Int, val facts: List<HelpFact>)
 
@@ -54,7 +60,7 @@ internal object HelpContent {
         ),
         HelpSection(
             R.string.help_section_websites,
-            listOf(HelpFact(R.string.help_websites_title, R.string.help_websites_text)),
+            listOf(HelpFact(R.string.help_websites_title, R.string.help_websites_text, showsWebsiteCoverage = true)),
         ),
         HelpSection(
             R.string.help_section_running,
@@ -66,6 +72,7 @@ internal object HelpContent {
 /** Module-local route, like the legal documents: survives recreation, Back returns to You. */
 @Composable
 internal fun SettingsHelpNavigation(
+    websiteCoverageText: String,
     modifier: Modifier = Modifier,
     settings: @Composable (onOpenHelp: () -> Unit) -> Unit,
 ) {
@@ -73,7 +80,9 @@ internal fun SettingsHelpNavigation(
     val stateHolder = rememberSaveableStateHolder()
     BackHandler(enabled = open) { open = false }
     if (open) {
-        stateHolder.SaveableStateProvider("help") { HelpScreen(onBack = { open = false }, modifier = modifier) }
+        stateHolder.SaveableStateProvider("help") {
+            HelpScreen(onBack = { open = false }, websiteCoverageText = websiteCoverageText, modifier = modifier)
+        }
     } else {
         stateHolder.SaveableStateProvider("settings") { settings { open = true } }
     }
@@ -90,7 +99,7 @@ internal fun HelpSettingsLink(onOpen: () -> Unit) {
 }
 
 @Composable
-internal fun HelpScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
+internal fun HelpScreen(onBack: () -> Unit, websiteCoverageText: String, modifier: Modifier = Modifier) {
     Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().padding(horizontal = FlintSpacing.gutter).testTag("help-screen")) {
             // Kept outside the scrolling content so the way back never scrolls away.
@@ -136,6 +145,16 @@ internal fun HelpScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            if (fact.showsWebsiteCoverage) {
+                                // Lane C owns the observation wording and browser matrix; this is
+                                // the same read-only projection rendered on You.
+                                Spacer(Modifier.height(FlintSpacing.sm))
+                                Text(
+                                    websiteCoverageText,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 }

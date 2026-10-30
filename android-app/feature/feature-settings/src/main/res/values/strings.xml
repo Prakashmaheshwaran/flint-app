@@ -22,8 +22,8 @@
     <string name="help_clock_title">Changing the clock</string>
     <string name="help_clock_text">Flint can\'t stop the date or time being changed. While it\'s running, it keeps spent opens and pending waits from resetting when the clock changes, but schedules and daily time limits follow the phone\'s clock. After a restart it can\'t always tell how much time really passed.</string>
     <string name="help_section_websites">Websites</string>
-    <string name="help_websites_title">Known browsers</string>
-    <string name="help_websites_text">Website rules need Accessibility and a browser whose address bar Flint can read. Browser updates can reduce coverage. Without Accessibility, Flint can still block apps if Usage access and display over other apps are allowed, but it can\'t block websites.</string>
+    <string name="help_websites_title">Website coverage</string>
+    <string name="help_websites_text">Website rules need Accessibility and a browser whose address bar Flint can read.</string>
     <string name="help_section_running">Keeping Flint running</string>
     <string name="help_battery_title">Battery savers</string>
     <string name="help_battery_text">Some phones stop background apps to save battery. If blocking stops, the checks on You show what Flint needs.</string>
