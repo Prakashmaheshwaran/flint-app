@@ -28,6 +28,12 @@ def verify(app: Path) -> None:
             # inside the App Group container; every bundle links FlintCore.
             "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
             "NSPrivacyAccessedAPITypeReasons": ["C617.1"],
+        }, {
+            # FlintCore's cross-process lock deadlines (FlintRuleStoreLock,
+            # FlintSessionTransitionLock) read ProcessInfo.systemUptime to measure
+            # elapsed wait time on device; every bundle links FlintCore.
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategorySystemBootTime",
+            "NSPrivacyAccessedAPITypeReasons": ["35F9.1"],
         }]
         assert actual["NSPrivacyAccessedAPITypes"] == reasons, bundle
         print(f"Verified privacy manifest: {bundle_id}")

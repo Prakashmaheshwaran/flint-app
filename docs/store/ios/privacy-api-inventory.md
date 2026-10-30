@@ -13,6 +13,7 @@ calls discussed below.
 | `com.flint.peakfocus` | Private onboarding, focus-completion acknowledgement, reminder preference, Live Activity preference/dismissal/request bookkeeping in `FlintApp.swift`, `FocusHistoryModel.swift`, `FlintCompletionNotifications.swift` and glance observation/settings | UserDefaults, `CA92.1` |
 | Host, `.monitor`, `.shield-config`, `.shield-action` | `FlintGroupStore` and `UserDefaults.flintGroup` in `Packages/FlintCore/Sources/FlintCore/{FlintGroupStore,FlintModel}.swift`; selections, rules, session, PIN, pass and counters shared only inside `group.com.flint.peakfocus` | UserDefaults, `1C8F.1` |
 | All six bundles | Focus history (`Packages/FlintCore/Sources/FlintCore/FlintHistoryStore.swift`) reads file size (`attributesOfItem`), `contentModificationDateKey` and `creationDateKey` for its own files under `group.com.flint.peakfocus/FlintHistory` (bounded reads, temp-file reclaim, quarantine pruning). FlintCore is linked into every bundle; the monitor publishes history there | FileTimestamp, `C617.1` |
+| All six bundles | Cross-process lock deadlines in `Packages/FlintCore/Sources/FlintCore/FlintRuleStoreLock.swift` and `FlintSessionTransitionLock.swift` read `ProcessInfo.systemUptime` only to measure elapsed wait time against a local timeout. The value and anything derived from it never leave the device. FlintCore is linked into every bundle | SystemBootTime, `35F9.1` |
 | `.report` | FlintCore is linked for brand/UI types. Its shared-suite defaults implementation remains in the optimized Release report binary, although report source makes no defaults call | UserDefaults, `1C8F.1` |
 | `.widgets` | Display-only protection and focus-history reads inside the shared App Group; no protection mutations or report export | UserDefaults, `1C8F.1` |
 
@@ -93,6 +94,13 @@ not add a declared category or change the bundle manifests. This is an inference
 from the published list, not a promise about future policy or archive validation.
 If an implementation switches to a listed API, elapsed session timing must be
 reviewed against Apple's `35F9.1` reason before shipping.
+
+**2026-10-30 refresh.** Later lock work (`FlintRuleStoreLock`, `FlintSessionTransitionLock`)
+calls the listed `ProcessInfo.systemUptime` for elapsed lock-wait deadlines. All six
+manifests now declare SystemBootTime `35F9.1`, which covers measuring elapsed time between
+in-app events and timer calculations, with no boot-time value sent off-device. The
+`clock_gettime_nsec_np`/`sysctlbyname` analysis above is unchanged. Re-run this inventory
+and `verify-privacy-bundles.py` against the final signed archive.
 
 This list was re-read on **2026-10-28** in Apple's
 [API type documentation](https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitype)
