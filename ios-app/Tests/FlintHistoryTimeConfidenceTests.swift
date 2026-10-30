@@ -242,13 +242,13 @@ final class FlintHistoryTimeConfidenceTests: XCTestCase {
         }
     }
 
-    private func assertBackdatedBarrier(_ barrier: FlintHistoryEvent,
+    private func assertBackdatedBarrier(_ barrier: FlintHistoryEvent, focused: TimeInterval = 60,
                                         file: StaticString = #filePath, line: UInt = #line) {
         let witness = event(.openIntercepted, 60), later = event(.openIntercepted, 180)
         let terminal = event(.completed, 600)
         let rows = [started(), witness, barrier, later, terminal]
-        assertUnconfirmed(rows, focused: 60, file: file, line: line)
-        XCTAssertEqual(summary(rows, now: 1200).focusedSeconds, 60, file: file, line: line)
+        assertUnconfirmed(rows, focused: focused, file: file, line: line)
+        XCTAssertEqual(summary(rows, now: 1200).focusedSeconds, focused, file: file, line: line)
         assertUnconfirmed([started(), barrier, later, terminal], file: file, line: line)
         assertUnconfirmed([started(), barrier, witness, later, terminal], file: file, line: line)
     }
@@ -270,7 +270,7 @@ final class FlintHistoryTimeConfidenceTests: XCTestCase {
         assertBackdatedBarrier(backwardPhase)
     }
 
-    func testRejectedBackdatedBreakGapAndGlobalPassCutsCannotEraseRecordedPrefix() {
+    func testUncertainBackdatedCutsDiscountPrefixWhileInvalidLegacyCutsRemainBarriers() {
         var cuts: [FlintHistoryEvent] = []
         let windows: [(TimeInterval, TimeInterval, FlintEventTimeConfidence?)] = [(30, 90, uncertain), (30, 20, nil), (-60, 120, nil)]
         for (seconds, end, confidence) in windows {
@@ -284,7 +284,7 @@ final class FlintHistoryTimeConfidenceTests: XCTestCase {
         cuts += [event(.protectionDegraded, 30, confidence: uncertain), event(.protectionDegraded, -60)]
         for var cut in cuts {
             cut.observedAt = event(.openIntercepted, 120).at
-            assertBackdatedBarrier(cut)
+            assertBackdatedBarrier(cut, focused: cut.timeConfidence == uncertain ? 0 : 60)
         }
     }
 

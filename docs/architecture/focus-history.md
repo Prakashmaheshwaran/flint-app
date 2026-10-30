@@ -123,8 +123,10 @@ For one session:
   confirmed under an earlier trusted plan.
   Rejected time barriers take effect in original append order: an uncertain or invalid
   backdated timestamp cannot establish that it preceded an already recorded trusted
-  witness, select that witness's plan, or subtract an earlier break/pass/gap from it.
-  Accepted grant pairs and coverage cuts still use their logical effective order.
+  witness or select that witness's plan. Invalid legacy cuts remain barriers rather than
+  trustworthy intervals. Explicitly uncertain non-focus cuts additionally discount that
+  prefix using the placement bounds below. Accepted grant pairs and certain coverage cuts
+  still use their logical effective order.
   Uncertain or contradictory evidence freezes later prefix extension; later cleanup after
   an accepted terminal does not invalidate that terminal. Accepted logical terminal duration
   is not truncated merely because a reader's wall clock subsequently moves backward.
@@ -153,6 +155,36 @@ For one session:
   `[protection_degraded.at, protection_restored.at ?? end)`, each clipped to the session
   interval. An observed `break_ended` takes precedence over the planned
   `breakEnd`, whether it is earlier or later.
+- **Uncertain non-focus time still reduces focus (F3 / PC-84).** Never discard an
+  uncertain ordinary/planned break, pass or coverage-loss interval merely because it
+  cannot prove elapsed focus. Retain the unconfirmed outcome/count and its original
+  confidence. Use trusted logical anchors surrounding its endpoint neighborhood to bound
+  possible placement, clipped to the evidenced session window and its accepted plan.
+  A certain paired break end/restoration or opening can bound its own phase exactly.
+  `observedAt` and history append order are not owner commit order or trusted placement.
+  A raw stamp outside the plan, a missing end or an otherwise unplaceable phase cannot
+  exclude the affected evidenced window from consideration.
+- Discount the **maximum possible overlap** of each uncertain gap with credited coverage.
+  A known ordinary break has a 300-second policy maximum; pass recovery has a 60-minute
+  maximum. Never derive a duration limit by subtracting uncertain wall stamps. The current
+  schema carries no independent planned-rest/grant elapsed length, so planned/legacy
+  breaks and coverage loss without a known bound conservatively discount the entire
+  affected anchor window. A future explicit trusted length can narrow that loss without
+  relabeling the timestamp. Uncertain break ends cannot upgrade a planned return into a
+  certain return. Open-credit access records remain ignored; a genuine `open_intercepted`
+  block-surface observation is coverage evidence, distinct from an access grant.
+- The summary model retains possible coverage intervals plus uncertain placement/loss
+  budgets; public `focusedMs`/`focusedSeconds` and day totals apply the discount. Do not sum
+  those possible intervals directly when uncertainty is present. Overlapping loss windows
+  are union-capped and independently certain coverage from another session can fill a gap.
+  No synthetic event or precise gap location is persisted. An unbounded affected segment
+  contributes zero evidenced focus.
+- A 20-minute trusted prefix followed by a late uncertain ordinary break at 10–15 minutes
+  retains at most 15 minutes and stays unconfirmed. For midnight/day attribution, discount
+  the worst possible placement **independently in each day**. Thus a 23:50–00:10 session
+  with a five-minute break that could lie on either day has a 15-minute session lower bound
+  and five minutes on each day; the day sum can be smaller than the session lower bound.
+  This avoids fabricating which day contained the missing focus.
 - If `end < started.at` (wall clock moved backwards) the session contributes zero.
 - Ended-early and superseded sessions **do** contribute the time actually spent before the
   end. Completed vs ended early is reported separately as a count.
@@ -446,3 +478,8 @@ C-owned verification requirements.
   finite plan; explicit uncertainty retains only prior trusted coverage, malformed/future
   confidence fails closed, legacy plausible rows remain readable, delayed logical completion
   and reader rollback remain valid, and grant replay uses logical order rather than delivery.
+- **F3 uncertain gaps** late uncertain ordinary/planned breaks, unbounded coverage loss,
+  uncertain passes and uncertain break ends reduce the earlier prefix; mixed certain cuts,
+  overlapping windows, independent-session union and midnight lower bounds remain honest.
+  The F3 correction supersedes #202's uncertain-backdated-cut-only preservation assertions;
+  its malformed legacy/plan, restoration, terminal and certain-path controls remain.

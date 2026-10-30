@@ -13,13 +13,16 @@ public struct FlintHistorySessionSummary: Identifiable, Equatable, Sendable {
     public let inferred: Bool
     public let route: String?
     public let intervals: [DateInterval]
-    public var focusedSeconds: TimeInterval { intervals.reduce(0) { $0 + $1.duration } }
+    /// intervals retain possible coverage; focusedSeconds also discounts these placement budgets.
+    public let uncertainGaps: [FlintUncertainFocusGap]
+    public var focusedSeconds: TimeInterval { FlintHistoryBounds.lowerBound([self]) }
     public var isInProgress: Bool { outcome == .running }
 
     public init(id: String, name: String, startedAt: Date, endedAt: Date, outcome: FlintHistoryOutcome,
-                inferred: Bool, route: String?, intervals: [DateInterval]) {
+                inferred: Bool, route: String?, intervals: [DateInterval], uncertainGaps: [FlintUncertainFocusGap] = []) {
         self.id = id; self.name = name; self.startedAt = startedAt; self.endedAt = endedAt
         self.outcome = outcome; self.inferred = inferred; self.route = route; self.intervals = intervals
+        self.uncertainGaps = uncertainGaps
     }
 }
 
@@ -71,7 +74,8 @@ public enum FlintHistoryAggregator {
             guard days[index].focusedSeconds != nil,
                   let next = calendar.date(byAdding: .day, value: 1, to: days[index].start) else { continue }
             let day = DateInterval(start: days[index].start, end: next)
-            days[index].focusedSeconds = intervals.reduce(0) { $0 + overlap($1, day) }
+            days[index].focusedSeconds = sessions.contains { !$0.uncertainGaps.isEmpty } ?
+                FlintHistoryBounds.lowerBound(sessions, window: day) : intervals.reduce(0) { $0 + overlap($1, day) }
             for session in sessions {
                 if session.isInProgress, session.intervals.contains(where: { overlap($0, day) > 0 }) {
                     days[index].inProgress = true
@@ -168,11 +172,16 @@ public enum FlintHistoryAggregator {
             } ?? false
             // Delayed outbox delivery is ordered by logical event time, not append order.
             // Once a terminal is accepted, later cleanup cannot invalidate that decision.
-            let localEvidence: [FlintHistoryEvent]
+            var localEvidence: [FlintHistoryEvent]
             if validTerminal { localEvidence = Array(events.prefix(terminalIndex!)) }
             else if let terminal { localEvidence = original.prefix { $0.id != terminal.id }.sorted { $0.at < $1.at } }
             else { localEvidence = events }
-            let relatedPasses = passes.filter { $0.sessions?.contains(id) == true && (!validTerminal || $0.at <= terminal!.at) }
+            for event in original where event.uncertainTime && (event.type == .breakStarted || event.type == .protectionDegraded) {
+                if !localEvidence.contains(where: { $0.id == event.id }) { localEvidence.append(event) }
+            }
+            let relatedPasses = passes.filter {
+                $0.sessions?.contains(id) == true && ($0.uncertainTime || !validTerminal || $0.at <= terminal!.at)
+            }
             func rejectedTime(_ event: FlintHistoryEvent) -> Bool {
                 if event.type == .started || event.type == .rescheduled {
                     let superseded = authoritativePlan != nil && event.type == .rescheduled && !event.uncertainTime
@@ -281,8 +290,47 @@ public enum FlintHistoryAggregator {
                 }
                 if cursor < whole.end { intervals.append(DateInterval(start: cursor, end: whole.end)) }
             }
+            let anchors = (localEvidence + (validTerminal ? [terminal!] : [])).filter {
+                !$0.uncertainTime && !rejectedTimeIDs.contains($0.id) &&
+                    ($0.id == start.id || $0.id == terminal?.id || $0.type == .openIntercepted || $0.type == .protectionRestored)
+            }.map(\.at)
+            func uncertainGap(_ event: FlintHistoryEvent, knownStart: Int64? = nil, knownEnd: Int64? = nil,
+                              endHint: Int64? = nil, maximum: TimeInterval = .greatestFiniteMagnitude) -> FlintUncertainFocusGap {
+                let limit = FlintHistoryEvent.milliseconds(clippedEnd)
+                let ceiling = validTerminal ? min(plan.plannedEnd ?? terminal!.at, terminal!.at) :
+                    revisions.last(where: validPlan)?.plannedEnd ?? FlintHistoryEvent.milliseconds(max(now, clippedEnd))
+                let placeable = event.at >= start.at && event.at <= ceiling && (endHint.map { $0 >= event.at } ?? true)
+                let a = knownStart ?? (placeable ? anchors.filter { $0 <= event.at }.max() ?? start.at : start.at)
+                let b = knownEnd ?? (placeable && endHint != nil ? anchors.filter { $0 >= endHint! }.min() ?? limit : limit)
+                let lower = max(start.date, FlintHistoryEvent.date(a)), upper = min(clippedEnd, FlintHistoryEvent.date(b))
+                return .init(window: DateInterval(start: lower, end: max(lower, upper)), maximumSeconds: maximum)
+            }
+            var uncertainGaps: [FlintUncertainFocusGap] = []
+            for event in localEvidence where event.uncertainTime {
+                switch event.type {
+                case .breakStarted:
+                    let close = localEvidence.first { $0.type == .breakEnded && $0.grant == event.grant &&
+                        $0.at >= event.at && !rejectedTimeIDs.contains($0.id) }
+                    uncertainGaps.append(uncertainGap(event, knownEnd: close?.at, endHint: close?.at ?? event.breakEnd,
+                        maximum: event.kind == "ordinary" ? 300 : .greatestFiniteMagnitude))
+                case .breakEnded:
+                    if let opening = localEvidence.first(where: { $0.type == .breakStarted && $0.grant == event.grant &&
+                        $0.at <= event.at && !$0.uncertainTime && !rejectedTimeIDs.contains($0.id) }) {
+                        uncertainGaps.append(uncertainGap(event, knownStart: opening.at, endHint: event.at,
+                            maximum: opening.kind == "ordinary" ? 300 : .greatestFiniteMagnitude))
+                    }
+                case .protectionDegraded:
+                    let restored = localEvidence.first { $0.type == .protectionRestored && $0.at >= event.at &&
+                        !rejectedTimeIDs.contains($0.id) }
+                    uncertainGaps.append(uncertainGap(event, knownEnd: restored?.at))
+                default: break
+                }
+            }
+            for pass in relatedPasses where pass.uncertainTime {
+                uncertainGaps.append(uncertainGap(pass, endHint: pass.recoveryEnd, maximum: 3600))
+            }
             return .init(id: id, name: start.name ?? "Focus", startedAt: start.date, endedAt: end,
-                         outcome: outcome, inferred: inferred, route: route, intervals: intervals)
+                         outcome: outcome, inferred: inferred, route: route, intervals: intervals, uncertainGaps: uncertainGaps)
         }.sorted { $0.startedAt == $1.startedAt ? $0.id < $1.id : $0.startedAt < $1.startedAt }
     }
 
@@ -293,7 +341,7 @@ public enum FlintHistoryAggregator {
     private static func overlap(_ a: DateInterval, _ b: DateInterval) -> TimeInterval {
         max(0, min(a.end, b.end).timeIntervalSince(max(a.start, b.start)))
     }
-    private static func union(_ intervals: [DateInterval]) -> [DateInterval] {
+    static func union(_ intervals: [DateInterval]) -> [DateInterval] {
         var result: [DateInterval] = []
         for interval in intervals.sorted(by: { $0.start < $1.start }) {
             if let previous = result.last, interval.start <= previous.end {

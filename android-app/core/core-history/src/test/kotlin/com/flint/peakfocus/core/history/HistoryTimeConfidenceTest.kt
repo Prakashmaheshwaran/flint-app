@@ -53,12 +53,12 @@ class HistoryTimeConfidenceTest {
         }
     }
 
-    private fun assertBackdatedBarrier(barrier: HistoryEvent) {
+    private fun assertBackdatedBarrier(barrier: HistoryEvent, credit: Long = minute) {
         val witness = event("open_intercepted", begin + minute)
         val later = event("open_intercepted", begin + 3 * minute)
         val terminal = event("completed", deadline)
         val rows = listOf(start(), witness, barrier, later, terminal)
-        assertUnconfirmed(rows, credit = minute, now = begin + 20 * minute)
+        assertUnconfirmed(rows, credit = credit, now = begin + 20 * minute)
         assertUnconfirmed(listOf(start(), barrier, later, terminal))
         assertUnconfirmed(listOf(start(), barrier, witness, later, terminal))
         val snapshot = HistorySnapshot(rows, begin, true)
@@ -78,7 +78,7 @@ class HistoryTimeConfidenceTest {
         assertBackdatedBarrier(event("protection_restored", begin - minute).copy(observedAt = begin + 2 * minute))
     }
 
-    @Test fun rejectedBackdatedBreakGapAndGlobalPassCutsCannotEraseRecordedPrefix() {
+    @Test fun uncertainBackdatedCutsDiscountPrefixWhileInvalidLegacyCutsRemainBarriers() {
         val cuts = listOf(
             event("break_started", begin + 30_000, uncertain).copy(grant = "g", breakEnd = begin + 90_000),
             event("break_started", begin + 30_000).copy(grant = "g", breakEnd = begin + 20_000),
@@ -91,7 +91,7 @@ class HistoryTimeConfidenceTest {
         )
         for (cut in cuts) assertBackdatedBarrier(if (cut.knownType == HistoryEventType.PASS_USED)
             cut.copy(session = "operation", sessions = listOf("session-a"), observedAt = begin + 2 * minute)
-            else cut.copy(observedAt = begin + 2 * minute))
+            else cut.copy(observedAt = begin + 2 * minute), credit = if (cut.timeConfidence == uncertain) 0 else minute)
     }
 
     @Test fun acceptedLogicalCutsStillSubtractFromPrefixBeforeRejectedPlan() {
