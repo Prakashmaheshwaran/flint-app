@@ -44,8 +44,9 @@ creates a zero-used pool. A read cannot initialize the new protection contract.
   source's last successful elapsed resolution time and source-specific degradation. Static and
   self identities do not depend on policy storage. Reading retained provenance
   does not refresh the floor or relabel an old lookup as a new check.
-  Retained floor reads must run off main because an in-flight resolver may hold
-  its lock; the production factory does this on IO.
+  Retained reads use only the short membership lock; Binder resolution holds a
+  separate refresh lock and cannot block that read. The production factory still
+  collects off main on IO.
 - `coveringCauses`: target attribution, including inactive templates. Each
   `CoveringCause` has a stable `causeKey`, optional `occurrenceId`, stored tier,
   activity, nullable enforcement, finite end estimate and next boundary.
@@ -56,6 +57,9 @@ creates a zero-used pool. A read cannot initialize the new protection contract.
   `recoveryEndsAtWall`: the resolved decision. The headline is the strongest
   enforcing tier, ties by latest end and stable identity. The total blocking end
   is the latest enforcing contributor, which can differ from the headline's end.
+  Block-screen hosts reuse this reducer for their display-only combined end;
+  their selected cause retains its own expiry and exit authority. An unknown or
+  ongoing contributor suppresses the exact countdown on overlays and fallback.
 - `openCredit`: readable used/cap accounting independently of availability,
   active accepted-credit end and quota-period end. The reader consumes #178's
   pure `TimedOpenCreditPolicy.view` and `occurrenceActive` semantics. Between

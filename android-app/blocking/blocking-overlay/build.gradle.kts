@@ -36,6 +36,7 @@ dependencies {
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)           // Color.toArgb for the window background
     implementation(libs.androidx.material3)
+    debugImplementation(libs.androidx.ui.test.manifest)
 
     // JVM tests for the pure glue (decision→BlockScreenState mapping, exemption ledger).
     testImplementation(libs.junit)

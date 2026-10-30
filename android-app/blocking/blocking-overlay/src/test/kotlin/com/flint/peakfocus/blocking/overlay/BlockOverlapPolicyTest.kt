@@ -73,7 +73,9 @@ class BlockOverlapPolicyTest {
 
     @Test fun `stronger time budget wins over easy rule and equal tiers show ongoing protection`() {
         val harderTime = timeLimitBlockCause(BreakLevel.HARDER, now, 0)
-        assertEquals(harderTime, effective(harderTime, ruleCause(strictRule.copy(breakLevel = BreakLevel.EASY))))
+        val mixed = effective(harderTime, ruleCause(strictRule.copy(breakLevel = BreakLevel.EASY)))!!
+        assertEquals(harderTime, mixed.copy(displayEnd = null))
+        assertNull(blockScreenState(pkg, null, mixed, BreakSessionState(), now).remainingMillis)
         val ongoing = ruleCause(strictRule.copy(breakLevel = BreakLevel.HARDER))
         assertEquals(ongoing, effective(harderTime, ongoing))
     }

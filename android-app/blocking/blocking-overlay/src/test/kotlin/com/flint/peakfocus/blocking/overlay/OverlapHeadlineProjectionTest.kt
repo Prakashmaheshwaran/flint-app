@@ -62,7 +62,9 @@ class OverlapHeadlineProjectionTest {
             assertNull(BlockOverlapPolicy.afterExemptions(result, true, true))
         }
         for (order in permutations(listOf(ongoing.copy(breakLevel = BreakLevel.EASY), finite))) {
-            assertEquals(finite, BlockOverlapPolicy.strongest(*order.toTypedArray()))
+            val result = BlockOverlapPolicy.strongest(*order.toTypedArray())!!
+            assertEquals(finite, result.copy(displayEnd = null))
+            assertNull(screen(result).remainingMillis)
         }
     }
 

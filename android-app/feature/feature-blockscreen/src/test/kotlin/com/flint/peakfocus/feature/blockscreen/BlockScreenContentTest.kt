@@ -12,6 +12,17 @@ import org.junit.Test
  */
 class BlockScreenContentTest {
 
+    @Test fun combinedProtectionCountdownUsesUnblocksWithoutChangingTheLimitReasonOrHardcoreExit() {
+        val state = BlockScreenState("target", reason = BlockScreenReason.OPEN_LIMIT,
+            breakLevel = BreakLevel.HARDCORE, remainingMillis = 1_200_000,
+            combinedEnd = true)
+        val content = blockScreenContent(state)
+        assertEquals("Unblocks in 20m 0s", content.countdownLabel)
+        assertEquals("Unblocks in 20 minutes 0 seconds", countdownA11y(state.reason, state.remainingMillis!!, state.combinedEnd))
+        assertEquals("Open limit", content.badge.text)
+        assertTrue(content.breakAffordance is BreakAffordance.EmergencyPassOnly)
+    }
+
     private fun state(
         breakLevel: BreakLevel = BreakLevel.EASY,
         reason: BlockScreenReason = BlockScreenReason.SCHEDULE,

@@ -6,8 +6,9 @@ import com.flint.peakfocus.feature.blockscreen.BlockScreenReason
 /** Shared reduction for rule, daily-time and open-limit causes on both detection paths. */
 internal object BlockOverlapPolicy {
     /** Tier, latest/unknown end, then stable cause priority and rule identity. */
-    fun strongest(vararg causes: BlockCause?): BlockCause? =
-        causes.filterNotNull().maxWithOrNull(
+    fun strongest(vararg causes: BlockCause?): BlockCause? {
+        val contributors = causes.filterNotNull()
+        val strongest = contributors.maxWithOrNull(
             compareBy<BlockCause> { it.breakLevel.ordinal }
                 .thenBy { it.endsAtEpochMs == null }
                 .thenBy { it.endsAtEpochMs }
@@ -22,7 +23,11 @@ internal object BlockOverlapPolicy {
                 }
                 .thenByDescending { it.ruleId.orEmpty() }
                 .thenByDescending { it.reason.name },
-        )
+        ) ?: return null
+        // Recompute from current causes' own ends: a retained surface must not perpetuate a
+        // discarded contributor's old display projection. Rule rows are added at render time.
+        return BlockDisplayEndProjection.combine(strongest, contributors.map { it.copy(displayEnd = null) }, Long.MIN_VALUE)
+    }
 
     /** An ordinary break never stands down a currently applicable Hardcore restriction. */
     fun afterExemptions(

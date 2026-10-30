@@ -351,6 +351,8 @@ class BlockActivity : ComponentActivity() {
                 breakLevel = enumExtra(EXTRA_BREAK_LEVEL, BreakLevel.EASY),
                 endsAtEpochMs = getLongExtra(EXTRA_ENDS_AT_EPOCH_MS, NO_END).takeIf { it > 0L },
                 ruleId = getStringExtra(EXTRA_RULE_ID),
+                displayEnd = if (getBooleanExtra(EXTRA_HAS_DISPLAY_END, false))
+                    BlockDisplayEnd(getLongExtra(EXTRA_DISPLAY_END, NO_END).takeIf { it > 0L }) else null,
             ),
         )
     }
@@ -481,6 +483,8 @@ class BlockActivity : ComponentActivity() {
         const val EXTRA_BREAK_LEVEL = "flint.break_level"
         const val EXTRA_ENDS_AT_EPOCH_MS = "flint.ends_at_epoch_ms"
         const val EXTRA_RULE_ID = "flint.rule_id"
+        internal const val EXTRA_HAS_DISPLAY_END = "flint.has_display_end"
+        internal const val EXTRA_DISPLAY_END = "flint.display_end"
         const val EXTRA_RECOVERY = "flint.protection_recovery"
         private const val NO_END = -1L
 
@@ -507,6 +511,8 @@ class BlockActivity : ComponentActivity() {
                         .putExtra(EXTRA_REASON, cause.reason.name)
                         .putExtra(EXTRA_BREAK_LEVEL, cause.breakLevel.name)
                         .putExtra(EXTRA_ENDS_AT_EPOCH_MS, cause.endsAtEpochMs ?: NO_END)
+                        .putExtra(EXTRA_HAS_DISPLAY_END, cause.displayEnd != null)
+                        .putExtra(EXTRA_DISPLAY_END, cause.displayEnd?.endsAtEpochMs ?: NO_END)
                         .putExtra(EXTRA_RULE_ID, cause.ruleId),
                 )
             }

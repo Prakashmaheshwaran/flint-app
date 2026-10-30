@@ -440,14 +440,16 @@ private fun BlockWords(
                     animationSpec = tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized),
                 ),
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Spacer(Modifier.height(FlintSpacing.lg))
-                    // "0s" during the exit collapse is honest — the block just ended.
-                    FlintInfoPill(
-                        text = content.countdownLabel
-                            ?: requireNotNull(countdownLabelFor(state.reason, 0L)),
-                        spokenText = countdownA11y(state.reason, state.remainingMillis ?: 0L),
-                    )
+                // An end becoming unknown is not an unblock. Remove its text immediately
+                // even while AnimatedVisibility finishes collapsing the old pill.
+                if (content.countdownLabel != null && state.remainingMillis != null) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Spacer(Modifier.height(FlintSpacing.lg))
+                        FlintInfoPill(
+                            text = content.countdownLabel,
+                            spokenText = countdownA11y(state.reason, state.remainingMillis, state.combinedEnd),
+                        )
+                    }
                 }
             }
         }
