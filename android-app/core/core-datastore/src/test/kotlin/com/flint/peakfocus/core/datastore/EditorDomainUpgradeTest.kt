@@ -50,6 +50,43 @@ class EditorDomainUpgradeTest {
         assertEquals(before, disk.values.value.asMap()); assertEquals(writes, disk.changedWrites)
     }
 
+    @Test fun `R2-N03 PC-67 PC-70 main rules-only active Timer upgrades unused domains and remains editable`() = runBlocking {
+        // Literal 11-field bytes emitted by shipped main b34422e: its session writer
+        // touches only block_rules_v1, never empty groups, limits, defaults or sidecars.
+        val originalStart = now.wallEpochMs - 120_000
+        val id = "session-timer-$originalStart"
+        val end = originalStart + 300_000
+        val raw = "$id|Main Timer|true|HARDCORE|false|com.target~|||-1|-1|$end"
+        val disk = Disk(preferencesOf(PrefsKeys.BLOCK_RULES to raw))
+        assertEquals(setOf(PrefsKeys.BLOCK_RULES), disk.values.value.asMap().keys)
+        val store = editor(disk)
+        repeat(2) { store.reconcile(now) }
+        val ready = store.state.first { it !is StorageState.Loading } as StorageState.Ready
+        val cause = ready.value.causes.getValue(ruleCauseKey(id))
+        assertTrue(cause.legacyRights)
+        assertEquals(id, cause.occurrenceId)
+        assertEquals(180_000L, cause.interval!!.remainingMs(now))
+        assertEquals(end, cause.interval.wallEndEpochMs)
+        assertEquals(2L, disk.values.value[EDITOR_VERSION_KEY])
+        assertEquals(raw, disk.values.value[stringPreferencesKey("editor_migration_rules_v1")])
+        for (key in listOf(PrefsKeys.APP_GROUPS, PrefsKeys.TIME_LIMITS, PrefsKeys.OPEN_LIMITS))
+            assertEquals("", disk.values.value[key])
+        assertEquals("EASY", disk.values.value[PrefsKeys.DEFAULT_BREAK_LEVEL])
+        val rule = DataStoreBlockRulesStore(disk).rules.first().single()
+        assertEquals(id, rule.id); assertEquals(end, rule.expiresAtEpochMs)
+        assertEquals(BreakLevel.HARDCORE, rule.breakLevel)
+        val preview = store.request(EditorChange("Rename", upserts = listOf(rule.copy(name = "Saved Timer"))),
+            now, EditorSafety(true)) as EditorCommitResult.Preview
+        assertEquals(EditorCommitResult.Applied(), store.confirm(preview.pending.id, now, EditorSafety(true)))
+        repeat(2) { editor(disk).reconcile(now) }
+        assertEquals(rule.copy(name = "Saved Timer"), DataStoreBlockRulesStore(disk).rules.first().single())
+        assertEquals(cause, (store.state.first { it !is StorageState.Loading } as StorageState.Ready)
+            .value.causes.getValue(ruleCauseKey(id)))
+        assertEquals(2L, disk.values.value[EDITOR_VERSION_KEY])
+        assertTrue(readHarderWait(disk.values.value).counts.isEmpty())
+        assertTrue(store.readTerminalEvents().isEmpty())
+    }
+
     @Test fun `R2-N03 PC-70 literal unreferenced v1 absences normalize once without changing prior bytes or rights`() = runBlocking {
         val disk = Disk(literalV1()); val before = disk.values.value.asMap().toMap()
         val store = editor(disk)
