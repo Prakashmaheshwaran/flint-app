@@ -447,7 +447,7 @@ final class FlintSessionControllerTests: XCTestCase {
         XCTAssertEqual(registrar.started.count, 1)
     }
 
-    private func strictPassController() -> FlintEmergencyPassController {
+    private func strictPassController(session: FlintSessionController? = nil) -> FlintEmergencyPassController {
         FlintEmergencyPassController(environment: .init(ledger: { self.ledger() }, clock: clock.flintClock,
             scope: { state, _ in
                 guard !FlintSessionAuthority.recordIsUnavailable(self.store.active,
@@ -456,11 +456,36 @@ final class FlintSessionControllerTests: XCTestCase {
                     throw FlintEmergencyPassError.scopeUnavailable
                 }
                 return .init(revision: "strict", sessions: self.store.active.map { [$0] } ?? [], rules: [], stores: ["flint"])
-            }, registerCarrier: { _, _, _ in }, terminate: { _, _ in }, release: { _ in }, resume: { _, _ in }, emit: { _ in }))
+            }, registerCarrier: { _, _, _ in }, terminate: { _, _ in }, release: { _ in }, resume: { _, _ in }, emit: { _ in },
+            transition: { work in
+                if let session { return session.withTransition { work(); return true } ?? false }
+                work(); return true
+            }, prepareAcceptedSession: { session?.prepareAcceptedInstallationForScope() }))
     }
 
-    // The live pass-side entry is added with the #185 hookup; this isolates the start-side
-    // drain before validateStartGate calls the real pass controller's scope reader.
+    func testPassPreviewDrainsPendingInstallationOnceButReadOnlyStatusAndScopeNeverDo() throws {
+        enum Crash: Error { case afterAcceptance }
+        try ledger().transaction { $0.importLegacyPass(.absent, at: .init(clock: clock.flintClock)) }.get()
+        XCTAssertThrowsError(try start(controller(afterStartCommit: { throw Crash.afterAcceptance }), minutes: 30))
+        let pass = strictPassController(session: controller())
+        guard case .failure(.scopeUnavailable) = pass.status() else { return XCTFail("pending projection is unknown") }
+        _ = pass.currentScope(); _ = pass.resumingScope()
+        XCTAssertNil(store.active)
+        XCTAssertEqual(shield.applyCount, 0)
+        XCTAssertTrue(events.log.isEmpty)
+        let first = try pass.preview().get()
+        XCTAssertEqual(first.scope.sessions.count, 1)
+        XCTAssertNotNil(store.active)
+        XCTAssertEqual(shield.applyCount, 1)
+        XCTAssertEqual(events.kinds, ["started"])
+        _ = try pass.preview().get()
+        _ = pass.status(); _ = pass.currentScope(); _ = pass.resumingScope()
+        XCTAssertEqual(shield.applyCount, 1)
+        XCTAssertEqual(events.kinds, ["started"])
+        XCTAssertEqual(registrar.started.count, 1)
+    }
+
+    // Isolates the start-side drain before validateStartGate calls the pass scope reader.
     func testStartPreparationDrainsBeforeTheRealPassPreparationReadsItsScope() throws {
         enum Crash: Error { case afterAcceptance }
         try ledger().transaction { $0.importLegacyPass(.absent, at: .init(clock: clock.flintClock)) }.get()
@@ -628,6 +653,77 @@ final class FlintSessionControllerTests: XCTestCase {
         XCTAssertEqual(try ledger().peek().get().sessionAuthority?.latest?.phase, .applied)
         XCTAssertEqual(shield.clearCount, 0)
         XCTAssertEqual(events.kinds, ["started"])
+    }
+
+    func testExpiredUnappliedReplacementAdoptsReadableTargetlessPredecessorWithoutReleasing() throws {
+        enum Crash: Error { case afterAcceptance }
+        try ledger().transaction { $0.importLegacyPass(.absent, at: .init(clock: clock.flintClock)) }.get()
+        let previous = FlintActiveSession(id: "legacy", name: "Legacy", startedAt: clock.now,
+            endsAt: clock.now.addingTimeInterval(1800), breakLevel: .easy, monitorName: "flint.session.legacy")
+        store.active = previous
+        registrar.registered.insert(previous.monitorName)
+        XCTAssertThrowsError(try controller(afterStartCommit: { throw Crash.afterAcceptance })
+            .startBlockNow(selection: selectionA, duration: 60, breakLevel: .easy,
+                origin: .appUI, requestID: "targetless-replacement", confirmed: true))
+        let failed = try XCTUnwrap(ledger().peek().get().sessionAuthority?.latest?.session)
+        clock.advance(75)
+        controller().prepareAcceptedInstallationForScope()
+        XCTAssertEqual(store.active?.id, previous.id)
+        XCTAssertEqual(shield.applyCount, 0)
+        XCTAssertEqual(shield.clearCount, 0)
+        XCTAssertTrue(registrar.registered.contains(previous.monitorName))
+        XCTAssertFalse(registrar.stopped.contains(previous.monitorName))
+        XCTAssertFalse(registrar.registered.contains(failed.monitorName))
+        XCTAssertTrue(events.log.isEmpty)
+        XCTAssertNotNil(health.lastArmFailure)
+        XCTAssertEqual(controller().acceptedStartResult("targetless-replacement")?.outcome, .unconfirmed)
+    }
+
+    func testUnreadableTargetlessPredecessorKeepsNativeStateUntilItsOwnDeadline() throws {
+        enum Crash: Error { case afterAcceptance }
+        try ledger().transaction { $0.importLegacyPass(.absent, at: .init(clock: clock.flintClock)) }.get()
+        let previous = FlintActiveSession(id: "legacy", name: "Legacy", startedAt: clock.now,
+            endsAt: clock.now.addingTimeInterval(1800), breakLevel: .easy, monitorName: "flint.session.legacy")
+        store.active = previous
+        registrar.registered.insert(previous.monitorName)
+        XCTAssertThrowsError(try controller(afterStartCommit: { throw Crash.afterAcceptance })
+            .startBlockNow(selection: selectionA, duration: 60, breakLevel: .easy,
+                origin: .appUI, requestID: "targetless-replacement", confirmed: true))
+        let failed = try XCTUnwrap(ledger().peek().get().sessionAuthority?.latest?.session)
+        store.active = failed // no positive predecessor record or frozen targets remain
+        clock.advance(75)
+        controller().handleMonitorEvent(.intervalDidEnd, activity: failed.monitorName)
+        XCTAssertEqual(shield.clearCount, 0, "the installing replacement never owned the last-good shield")
+        XCTAssertTrue(registrar.registered.contains(previous.monitorName))
+        XCTAssertTrue(events.log.isEmpty)
+        XCTAssertNotNil(health.lastArmFailure)
+        clock.advance(1726)
+        controller().handleMonitorEvent(.intervalDidEnd, activity: previous.monitorName)
+        XCTAssertEqual(shield.clearCount, 1, "only the predecessor's logical end permits release")
+        XCTAssertNil(store.active)
+        XCTAssertEqual(events.kinds, ["ended"])
+    }
+
+    func testInterruptedRearmRecoveredAfterDeadlineCompletesTheActuallyAppliedSession() throws {
+        try ledger().transaction { $0.importLegacyPass(.absent, at: .init(clock: clock.flintClock)) }.get()
+        let original = try start(controller(), minutes: 1)
+        clock.advance(10)
+        let plan = FlintSessionAutoClearPlan.make(start: clock.now, end: original.endsAt!,
+            calendar: clock.flintClock.calendar(), strategy: .endWarning)
+        let rearmed = original.rearmed(monitorName: "flint.session.rearmed", plan: plan,
+            at: clock.now, countsTowardLimit: true).checkpointed(clock: clock.flintClock)
+        try ledger().transaction { state in
+            try state.sessionAuthority?.rearm(rearmed, selection: JSONEncoder().encode(selectionA))
+        }.get() // crash before projection save and stopping the old monitor
+        clock.advance(65)
+        controller().prepareAcceptedInstallationForScope()
+        XCTAssertNil(store.active)
+        XCTAssertEqual(shield.clearCount, 1)
+        XCTAssertEqual(events.kinds, ["started", "ended"])
+        guard case let .ended(session, route, at) = events.log.last?.unannotated else { return XCTFail("missing completion") }
+        XCTAssertEqual(session.id, original.id)
+        XCTAssertEqual(route, .completed)
+        XCTAssertEqual(at, original.endsAt)
     }
 
     func testLegacyPomodoroCadenceExecutesOnlyOneFocusRoundR24PC01PC27() throws {
@@ -1277,13 +1373,13 @@ final class FlintSessionControllerTests: XCTestCase {
 
     // MARK: Replacement and stale callbacks
 
-    func testStartOrderIsRegisterPersistStopPreviousThenShield() throws {
+    func testStartKeepsThePreviousDependableEndUntilTheReplacementApplies() throws {
         let c = controller()
         let first = try start(c, minutes: 60)
         log.entries.removeAll()
         let second = try start(c, minutes: 30, level: .hardcore)
         XCTAssertEqual(log.entries, [
-            "register:\(second.monitorName)", "persist", "stop:\(first.monitorName)", "shield", "deny:true",
+            "register:\(second.monitorName)", "persist", "shield", "deny:true", "stop:\(first.monitorName)",
         ])
     }
 

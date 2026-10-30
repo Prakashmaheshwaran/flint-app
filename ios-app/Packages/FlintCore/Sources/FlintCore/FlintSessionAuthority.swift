@@ -96,7 +96,7 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
         return provesIdle
     }
 
-    /// Read-only status projection. Legacy absence predates generations and migrates on the
+    /// Used by CurrentState and pass scope. Legacy absence predates generations and migrates on the
     /// next transition; an existing generation without a terminal record is always unknown.
     public static func recordIsUnavailable(_ session: FlintActiveSession?, recordPresent: Bool,
                                            authority: Self?, authorityVersion: Int? = nil, clock: FlintClock) -> Bool {
@@ -110,6 +110,7 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
         return authority.observedSession(matching: session, clock: clock) == nil
     }
 
+    /// Shared read-only projection for CurrentState and pass scope; it never repairs storage.
     public static func observedProjection(_ session: FlintActiveSession?, authority: Self?, clock: FlintClock) -> FlintActiveSession? {
         guard let session else { return nil }
         guard let authority, authority.latest != nil else { return session }
@@ -127,6 +128,7 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
     /// observation when the ledger becomes readable again.
     public func observedSession(matching stored: FlintActiveSession, clock: FlintClock) -> FlintActiveSession? {
         guard let latest, latest.matches(stored), !provesIdle,
+              latest.session.remainingCheckpoint?.isValid != false,
               stored.remainingCheckpoint?.isValid != false,
               let committed = Self.commitmentData(latest.session),
               committed == Self.commitmentData(stored) else { return nil }
@@ -144,6 +146,12 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
                     guard abs(oldDeadline - newDeadline) < 0.000_001 else { return nil }
                     selected = stored
                 }
+            } else if let saved, let currentBoot = clock.bootSessionID(),
+                      saved.bootID == currentBoot, let observedBoot = observed.bootID,
+                      observedBoot != currentBoot {
+                // The durable observation is in this boot; the projection predates it. Wall
+                // timestamps cannot order boots after a rollback. Never restore its duration.
+                guard saved.monotonic <= clock.monotonic() else { return nil }
             } else {
                 guard ceiling.map({ observed.remaining <= $0 + 0.000_001 }) != false else { return nil }
                 if saved == nil, let boot = observed.bootID, canonical.bootSessionID == boot,
@@ -160,7 +168,7 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
         }
         if let observedEnd = stored.naturalEndObservedAt {
             guard stored.remainingCheckpoint?.remaining == 0,
-                  stored.isLogicallyExpired(clock: clock) else { return nil }
+                  stored.isLogicallyExpired(clock: clock), selected.isLogicallyExpired(clock: clock) else { return nil }
             selected = selected.checkpointed(clock: clock, naturalEndObservedAt: observedEnd)
         }
         return selected
@@ -174,8 +182,13 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
         return try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     }
 
+    static func sameCommitment(_ left: FlintActiveSession, _ right: FlintActiveSession) -> Bool {
+        guard let committed = commitmentData(left) else { return false }
+        return committed == commitmentData(right)
+    }
+
     /// A display-time observation must not invalidate an Emergency Pass confirmation hold.
-    /// Exclude only this known observational field; new commitment keys remain bound by default.
+    /// Exclude only these known observations; new commitment keys remain bound by default.
     static func scopePolicy(_ data: Data) throws -> Data {
         guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw FlintSessionAuthorityError.generationMismatch
@@ -250,12 +263,13 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
 
     /// Retire an unapplied replacement without dropping the previously applied commitment.
     /// The restored generation remains installing until its projection/resources read back.
-    public mutating func restorePrevious(_ previous: FlintActiveSession, selection: Data?, at now: Date) throws {
+    public mutating func restorePrevious(_ previous: FlintActiveSession, selection: Data?,
+                                        retainingAppliedResources: Bool = false, at now: Date) throws {
         guard let interrupted = latest, interrupted.phase == .installing,
               let old = interrupted.previousSession,
               old.id == previous.id, old.monitorName == previous.monitorName,
               old.startedAt == previous.startedAt,
-              Self.commitmentData(old) == Self.commitmentData(previous),
+              Self.sameCommitment(old, previous),
               previous.remainingCheckpoint?.isValid != false,
               revision < UInt64.max - 2, !provesIdle else {
             throw FlintSessionAuthorityError.generationMismatch
@@ -263,7 +277,8 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
         try terminate(interrupted.session, outcome: .unconfirmed, route: "start_expired_unapplied", at: now)
         revision += 1
         latest = Generation(revision: revision, session: previous, acceptedEnd: previous.endsAt,
-            phase: .installing, selection: selection, source: interrupted.previousApplication?.source ?? .legacy,
+            phase: retainingAppliedResources ? .applied : .installing, selection: selection,
+            source: interrupted.previousApplication?.source ?? .legacy,
             previousMonitorName: interrupted.session.monitorName)
         latest?.emitsStart = interrupted.previousApplication?.emitsStart ?? false
         latest?.startEventEmitted = interrupted.previousApplication?.startEventEmitted ?? true

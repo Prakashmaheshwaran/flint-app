@@ -47,6 +47,22 @@ final class FlintSessionAuthorityTests: XCTestCase {
         XCTAssertTrue(FlintSessionAuthority.recordIsUnavailable(nil, recordPresent: true, authority: authority, clock: clock))
     }
 
+    func testRestorationRejectsTamperedPreviousCommitmentPC05() throws {
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        try install("X", in: &authority)
+        try authority.install(session("Y"), selection: Data(), source: .manual,
+            operationID: "request.Y", fingerprint: "parameters", expectedRevision: authority.revision, at: instant)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(session("X"))) as? [String: Any])
+        object["breakLevel"] = "easy"
+        let tampered = try JSONDecoder().decode(FlintActiveSession.self,
+            from: JSONSerialization.data(withJSONObject: object))
+        let before = authority
+        XCTAssertThrowsError(try authority.restorePrevious(tampered, selection: nil, at: wall)) {
+            XCTAssertEqual($0 as? FlintSessionAuthorityError, .generationMismatch)
+        }
+        XCTAssertEqual(authority, before)
+    }
+
     func testLegacyLedgerFixtureDecodesWithoutInventingAGeneration() throws {
         var fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(
             FlintLedgerState(initializedAt: wall))) as? [String: Any])
@@ -192,6 +208,27 @@ final class FlintSessionAuthorityTests: XCTestCase {
                                 bootSessionID: { "new-boot" }, calendar: { .current })
         let recovered = try XCTUnwrap(authority.observedSession(matching: observed, clock: jumped))
         XCTAssertEqual(recovered.logicalRemaining(clock: jumped), 1730)
+    }
+
+    func testCurrentBootLedgerCheckpointWinsPreviousBootProjectionIncludingRollbackR05PC55() throws {
+        for rebootWall in [wall.addingTimeInterval(1790), wall.addingTimeInterval(-3600)] {
+            let initialClock = FlintClock(now: { self.wall }, monotonic: { 50_000 },
+                bootSessionID: { "boot" }, calendar: { .current })
+            let original = session("X").checkpointed(clock: initialClock)
+            var authority = FlintSessionAuthority(initializedAt: wall)
+            authority.adopt(original)
+            let nearExpiry = original.checkpointed(clock: .init(now: { self.wall.addingTimeInterval(1790) },
+                monotonic: { 51_790 }, bootSessionID: { "boot" }, calendar: { .current }))
+            try authority.checkpoint(nearExpiry)
+            let rebooted = nearExpiry.checkpointed(clock: .init(now: { rebootWall }, monotonic: { 10 },
+                bootSessionID: { "new-boot" }, calendar: { .current }))
+            try authority.checkpoint(rebooted) // crash before overwriting the older projection
+            let now = FlintClock(now: { rebootWall.addingTimeInterval(3600) }, monotonic: { 11 },
+                bootSessionID: { "new-boot" }, calendar: { .current })
+            let known = try XCTUnwrap(authority.observedSession(matching: original, clock: now))
+            XCTAssertEqual(known.remainingCheckpoint, rebooted.remainingCheckpoint)
+            XCTAssertEqual(known.logicalRemaining(clock: now), 9)
+        }
     }
 
     func testProjectionCannotChangeAnAcceptedCommitment() throws {

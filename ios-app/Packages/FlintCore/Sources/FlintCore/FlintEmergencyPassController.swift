@@ -333,6 +333,9 @@ struct FlintEmergencyPassEnvironment {
     /// Reconcile already-authorized natural ends/queued edits before taking a spend preview.
     /// Runs under the transition lock and outside the ledger transaction.
     var prepareScope: () throws -> Void
+    /// Completes an already-accepted session installation before mutable scope preparation.
+    /// Called under the session transition and outside every ledger transaction.
+    var prepareAcceptedSession: () -> Void
     /// Display-only scope must never migrate or acquire a policy transition.
     var readScope: (FlintLedgerState, FlintLedgerInstant) throws -> FlintPassScope
 
@@ -349,6 +352,7 @@ struct FlintEmergencyPassEnvironment {
                 transition: @escaping (() -> Void) -> Bool = { body in body(); return true },
                 afterCommit: @escaping () throws -> Void = {},
                 cancelGrants: @escaping (inout FlintLedgerState) -> [String] = { $0.cancelAccessGrantsForPass() },
+                prepareAcceptedSession: @escaping () -> Void = {},
                 prepareScope: @escaping () throws -> Void = {},
                 readScope: ((FlintLedgerState, FlintLedgerInstant) throws -> FlintPassScope)? = nil) {
         self.ledger = ledger; self.clock = clock; self.scope = scope
@@ -357,6 +361,7 @@ struct FlintEmergencyPassEnvironment {
         self.emit = emit; self.publish = publish; self.transition = transition
         self.afterCommit = afterCommit
         self.cancelGrants = cancelGrants
+        self.prepareAcceptedSession = prepareAcceptedSession
         self.prepareScope = prepareScope
         self.readScope = readScope ?? scope
     }
@@ -479,6 +484,7 @@ public final class FlintEmergencyPassController {
             return .failure(.applying)
         }
         if let refusal = Self.refusal(initialStatus) { return .failure(refusal) }
+        env.prepareAcceptedSession()
         do { try env.prepareScope() } catch { return .failure(.scopeUnavailable) }
         let result = ledger.transaction { state -> Result<FlintPassPreview, FlintEmergencyPassError> in
             let now = FlintLedgerInstant(clock: env.clock)
@@ -527,6 +533,7 @@ public final class FlintEmergencyPassController {
         let beforePreparation = FlintLedgerInstant(clock: env.clock)
         guard beforePreparation.bootID != nil, beforePreparation.wall.timeIntervalSinceReferenceDate.isFinite,
               beforePreparation.monotonic.isFinite, beforePreparation.monotonic >= 0 else { return .failure(.unavailable) }
+        env.prepareAcceptedSession()
         do { try env.prepareScope() } catch { return .failure(.scopeUnavailable) }
         let instant = FlintLedgerInstant(clock: env.clock)
         guard instant.bootID != nil, instant.monotonic.isFinite, instant.monotonic >= 0,
@@ -693,6 +700,7 @@ public final class FlintEmergencyPassController {
 
     private func drain(_ ledger: FlintProtectionLedger, expectedOperation: String? = nil,
                        observationRetries: Int = 2) -> Result<FlintEmergencyPassStatus, FlintEmergencyPassError> {
+        env.prepareAcceptedSession()
         // A durable read-back precedes all effects even immediately after a reported commit.
         guard case let .success(snapshot) = ledger.transaction({ state -> FlintLedgerState in
             guard Self.hasValidRecovery(state) else { throw FlintEmergencyPassError.unavailable }

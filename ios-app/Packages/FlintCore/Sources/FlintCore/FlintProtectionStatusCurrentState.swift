@@ -127,15 +127,24 @@ extension FlintProtectionStatus {
             return .init(now: now, quotaCalendar: quotaCalendar, authorized: nil, pass: pass,
                          timeIntegrity: nil, available: false, timeIntegrityApplies: false)
         }
-        let active = environment.loadActiveSession()
+        let state = environment.loadLedgerState()
+        var clock = environment.clock
+        clock.now = { now }
+        let rawSession = environment.loadActiveSession()
+        let active = FlintSessionAuthority.observedProjection(rawSession,
+            authority: state?.sessionAuthority, clock: clock)
         let activities = environment.registeredActivities()
         let loadedSchedules = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: defaults,
-            at: now, migrating: false, nativeActivities: activities, ledgerState: environment.loadLedgerState)
+            at: now, migrating: false, nativeActivities: activities, ledgerState: { state })
         let loadedLimits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: defaults,
-            at: now, migrating: false, nativeActivities: activities, ledgerState: environment.loadLedgerState)
+            at: now, migrating: false, nativeActivities: activities, ledgerState: { state })
         let loadedOpens = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: defaults,
-            at: now, migrating: false, nativeActivities: activities, ledgerState: environment.loadLedgerState)
-        let unreadable = (active == nil && environment.hasActiveSessionRecord())
+            at: now, migrating: false, nativeActivities: activities, ledgerState: { state })
+        let authorityUnavailable = state.map { $0.version >= 3 && $0.sessionAuthority == nil } ?? true
+        let unreadable = authorityUnavailable
+            || FlintSessionAuthority.recordIsUnavailable(rawSession,
+                recordPresent: environment.hasActiveSessionRecord(), authority: state?.sessionAuthority,
+                authorityVersion: state?.sessionAuthorityVersion, clock: clock)
             || loadedSchedules == nil || loadedLimits == nil || loadedOpens == nil
         let schedules = loadedSchedules ?? []
         let limits = loadedLimits ?? []
@@ -177,7 +186,6 @@ extension FlintProtectionStatus {
                 active: current != nil, enforcing: openEnforcing[rule.id] == true,
                 opensAllowed: rule.opensAllowed)
         }
-        let clock = environment.clock
         // Legacy sessions predate origin tracking; absent origins retain the app UI default.
         // The end shown and published is the logical one: a same-boot wall jump moves it (§9).
         let session = active.map {
@@ -201,16 +209,13 @@ extension FlintProtectionStatus {
             }
         }
         let verdict = timeIntegrity ?? liveActive.map {
-            FlintTimeIntegrity.verdict(wallStart: $0.startedAt, monotonicStart: $0.monotonicStart,
-                bootSessionID: $0.bootSessionID, now: now, monotonicNow: clock.monotonic(),
-                currentBootSessionID: clock.bootSessionID())
+            FlintTimeIntegrity.verdict(for: $0, clock: clock)
         } ?? anomaly
         let timeIntegrityApplies = timeIntegrity != nil || liveActive != nil || anomaly != nil
         let hasActiveCommitment = (session.map { ($0.logicalEnd.map { now < $0 } ?? true) && $0.session.startedAt <= now }
             ?? false) || rules.contains { $0.isActive(at: now) }
         // Every caller, including App detail and the shield, observes pending work from the
         // same read-only authority. A caller cannot turn a durable pending flag off.
-        let state = environment.loadLedgerState()
         let instant = FlintLedgerInstant(wall: now, monotonic: clock.monotonic(), bootID: clock.bootSessionID())
         let recovering = state?.pass.status(at: instant, hasActiveCommitment: true).isRecovering ?? false
         let pending = state?.hasValidPassRecovery == true

@@ -130,6 +130,59 @@ final class FlintEmergencyPassScopeTests: XCTestCase {
         XCTAssertThrowsError(try load())
     }
 
+    private func assertUnreadableWebStillAllowsPreviewAndSpend(_ arrange: (UserDefaults) -> Void) throws {
+        arrange(defaults)
+        let original = defaults.object(forKey: "flint.webRestrictions") as? NSObject
+        let rule = schedule("web-recovery", from: now.addingTimeInterval(-300), until: now.addingTimeInterval(7200))
+        XCTAssertTrue(FlintDesiredRules.save([rule], key: .schedules, to: defaults))
+        var released: [String] = []
+        let pass = FlintEmergencyPassController(environment: .init(ledger: { self.ledger() }, clock: clock,
+            scope: { state, at in try FlintEmergencyPassScope.load(state: state, at: at,
+                defaults: self.defaults, calendar: self.calendar, hasThresholdShield: { _ in false }) },
+            registerCarrier: { _, _, _ in }, terminate: { _, _ in },
+            release: { released = $0.stores }, resume: { _, _ in }, emit: { _ in }))
+        let preview = try pass.preview().get()
+        _ = try pass.use(previewRevision: preview.revision, operationID: "broken-web-pass").get()
+        XCTAssertEqual(try ledger().peek().get().pass.usage, .used)
+        XCTAssertTrue(released.contains("flint.web-recovery"))
+        XCTAssertTrue(released.contains(FlintWebRestrictionLifecycle.legacyStoreName))
+        if let original {
+            XCTAssertTrue(original.isEqual(defaults.object(forKey: "flint.webRestrictions")))
+        } else { XCTAssertNil(defaults.object(forKey: "flint.webRestrictions")) }
+    }
+
+    func testMissingEstablishedWebIntentStillAllowsGlobalPassPreviewAndSpend() throws {
+        try assertUnreadableWebStillAllowsPreviewAndSpend {
+            // Shared marker introduced by Safari #197; absence must not prevent recovery.
+            $0.set(1, forKey: "flint.webRestrictions.initialized.adr012")
+        }
+    }
+
+    func testMalformedWebIntentStillAllowsGlobalPassPreviewAndSpend() throws {
+        try assertUnreadableWebStillAllowsPreviewAndSpend {
+            $0.set(Data("broken web intent".utf8), forKey: "flint.webRestrictions")
+        }
+    }
+
+    func testWrongTypeWebIntentStillAllowsGlobalPassPreviewAndSpend() throws {
+        try assertUnreadableWebStillAllowsPreviewAndSpend {
+            $0.set("wrong type", forKey: "flint.webRestrictions")
+        }
+    }
+
+    func testCorruptNonWebIntentStillRefusesGlobalPassPreview() throws {
+        for key in [FlintRuleStoreKey.schedules.rawValue, "flint.sleepConfig"] {
+            defaults.set(Data("corrupt non-web intent".utf8), forKey: key)
+            let pass = FlintEmergencyPassController(environment: .init(ledger: { self.ledger() }, clock: clock,
+                scope: { state, at in try FlintEmergencyPassScope.load(state: state, at: at,
+                    defaults: self.defaults, calendar: self.calendar, hasThresholdShield: { _ in false }) },
+                registerCarrier: { _, _, _ in }, terminate: { _, _ in }, release: { _ in }, resume: { _, _ in }, emit: { _ in }))
+            XCTAssertEqual(pass.preview(), .failure(.scopeUnavailable))
+            XCTAssertEqual(try ledger().peek().get().pass.usage, .neverUsed)
+            defaults.removeObject(forKey: key)
+        }
+    }
+
     func testScopeUsesMonotonicSessionExpiryAfterWallJumpPC54PC55() throws {
         let session = FlintActiveSession(id: "session", name: "Timer", startedAt: now.addingTimeInterval(-60),
             endsAt: now.addingTimeInterval(1800), breakLevel: .harder, monitorName: "session",

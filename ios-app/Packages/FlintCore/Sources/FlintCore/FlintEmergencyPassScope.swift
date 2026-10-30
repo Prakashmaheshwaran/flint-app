@@ -18,23 +18,35 @@ enum FlintEmergencyPassScope {
                      defaults: UserDefaults?, calendar: Calendar, migrating: Bool = true,
                      hasThresholdShield: (String) -> Bool = nativeThresholdShield) throws -> FlintPassScope {
         guard let defaults,
-              let schedules = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: defaults, at: now.wall, migrating: migrating),
-              let limits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: defaults, at: now.wall, migrating: migrating),
-              let opens = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: defaults, at: now.wall, migrating: migrating),
+              let schedules = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: defaults,
+                at: now.wall, migrating: migrating, ledgerState: { state }),
+              let limits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: defaults,
+                at: now.wall, migrating: migrating, ledgerState: { state }),
+              let opens = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: defaults,
+                at: now.wall, migrating: migrating, ledgerState: { state }),
               unique(schedules.map(\.id)), unique(limits.map(\.id)), unique(opens.map(\.id)) else {
             throw FlintEmergencyPassError.scopeUnavailable
         }
         _ = try FlintEmergencyPassRuleEffects.sleepConfiguration(from: defaults)
-        let active: FlintActiveSession?
+        let sessionClock = FlintClock(now: { now.wall }, monotonic: { now.monotonic },
+            bootSessionID: { now.bootID }, calendar: { calendar })
+        let storedSession: FlintActiveSession?
         if let raw = defaults.object(forKey: "flint.activeSession") {
             guard let data = raw as? Data, let session = try? JSONDecoder().decode(FlintActiveSession.self, from: data),
                   session.contractVersion == nil || session.contractVersion == FlintActiveSession.currentContractVersion else {
                 throw FlintEmergencyPassError.scopeUnavailable
             }
-            let clock = FlintClock(now: { now.wall }, monotonic: { now.monotonic },
-                bootSessionID: { now.bootID }, calendar: { calendar })
-            active = session.isLogicallyExpired(clock: clock) ? nil : session
-        } else { active = nil }
+            storedSession = session
+        } else { storedSession = nil }
+        guard (state.version < 3 || state.sessionAuthority != nil),
+              !FlintSessionAuthority.recordIsUnavailable(storedSession,
+                recordPresent: defaults.object(forKey: "flint.activeSession") != nil,
+                authority: state.sessionAuthority, authorityVersion: state.sessionAuthorityVersion,
+                clock: sessionClock) else { throw FlintEmergencyPassError.scopeUnavailable }
+        let active = FlintSessionAuthority.observedProjection(storedSession,
+            authority: state.sessionAuthority, clock: sessionClock).flatMap {
+                $0.isLogicallyExpired(clock: sessionClock) ? nil : $0
+            }
         if let active {
             if let object = defaults.object(forKey: "flint.activeSession.selection") {
                 guard let data = object as? Data,
@@ -113,9 +125,14 @@ enum FlintEmergencyPassScope {
         for key in FlintRuleStoreKey.allCases.map(\.rawValue) + ["flint.activeSession", "flint.activeSession.selection", "flint.selection",
             "flint.sleepConfig", "flint.focusFilterConfig", "flint.pomodoroConfig", "flint.webRestrictions", FlintRetainedProtection.key] {
             guard let object = defaults.object(forKey: key) else { parts.append("\(key)=absent"); continue }
-            guard let data = object as? Data else { throw FlintEmergencyPassError.scopeUnavailable }
-            // Non-rule configuration still belongs to the scope: malformed enabled Sleep or
-            // Safari state cannot be silently treated as disabled while spending a global pass.
+            guard let data = object as? Data else {
+                // Global recovery releases Safari's native stores independently of readable
+                // desired web intent. Preserve the bad value; the web adapter reports health.
+                if key == "flint.webRestrictions" { parts.append("\(key)=unavailable"); continue }
+                throw FlintEmergencyPassError.scopeUnavailable
+            }
+            // Non-web configuration remains strict; an unknown Sleep/Focus commitment must
+            // not silently disappear from the reviewed global scope.
             if key == "flint.sleepConfig", (try? JSONDecoder().decode(FlintSleepConfig.self, from: data)) == nil {
                 throw FlintEmergencyPassError.scopeUnavailable
             }
@@ -125,12 +142,12 @@ enum FlintEmergencyPassScope {
             if key == "flint.pomodoroConfig", (try? JSONDecoder().decode(FlintPomodoroConfig.self, from: data)) == nil {
                 throw FlintEmergencyPassError.scopeUnavailable
             }
-            if key == "flint.webRestrictions" {
-                guard let config = try? JSONDecoder().decode(FlintWebRestrictions.self, from: data),
-                      config.validationMessage == nil else { throw FlintEmergencyPassError.scopeUnavailable }
-            }
-            let policy = FlintRuleStoreKey.allCases.contains(where: { $0.rawValue == key })
-                ? try canonicalRulePolicy(data) : data
+            let policy: Data
+            if FlintRuleStoreKey.allCases.contains(where: { $0.rawValue == key }) {
+                policy = try canonicalRulePolicy(data)
+            } else if key == "flint.activeSession" {
+                policy = try FlintSessionAuthority.scopePolicy(data)
+            } else { policy = data }
             parts.append("\(key)=\(policy.base64EncodedString())")
         }
         parts += commitments.map { "\($0.id):\($0.naturalStart.timeIntervalSince1970):\($0.naturalEnd.timeIntervalSince1970)" }

@@ -415,6 +415,7 @@ public final class FlintSessionController {
 
     /// Called only before start or mutable pass-scope preparation. Unrelated policy
     /// transitions must not install a session as a side effect of taking the shared lock.
+    /// A start preview may therefore finish applying an already-accepted pending session.
     public func prepareAcceptedInstallationForScope() {
         guard env.transitionLock() != nil else { return }
         _ = withTransition { persistence.drainAcceptedInstallation() }
@@ -755,12 +756,8 @@ public final class FlintSessionController {
         store.saveSelection(selection)
         guard store.loadActiveSession() == session else { throw FlintSessionError.protectionStateUnavailable }
 
-        // 3. The previous session's end can no longer fire against this one.
-        if let previous, previous.monitorName != monitorName {
-            env.registrar.stopMonitoring([previous.monitorName])
-        }
-
-        // 4. Shield immediately so the block takes effect now, not at the monitor's callback.
+        // 3. Apply before retiring the previous dependable end. If the host dies here, the
+        // installing generation can recover while the last-good predecessor remains finite.
         do {
             try env.shield.applyBlockList(selection)
         } catch {
@@ -803,6 +800,9 @@ public final class FlintSessionController {
         // Hardcore session can't leave the guard dangling.
         env.shield.setDenyAppRemoval(breakLevel == .hardcore)
         guard persistence.markApplied(session) else { throw FlintSessionError.protectionStateUnavailable }
+        if let previous, previous.monitorName != monitorName {
+            env.registrar.stopMonitoring([previous.monitorName])
+        }
         try env.afterStartApplied()
 
         FlintSessionHealth.update(in: env.healthDefaults()) {
@@ -967,7 +967,8 @@ public final class FlintSessionController {
         var known = raw
         if let ledger = env.ledger(), case let .success(state) = ledger.peek() {
             if let authority = state.sessionAuthority {
-                guard let observed = authority.observedSession(matching: raw, clock: env.clock) else { return false }
+                guard authority.latest?.phase == .applied,
+                      let observed = authority.observedSession(matching: raw, clock: env.clock) else { return false }
                 known = observed
             } else if state.sessionAuthorityVersion != nil { return false }
         }

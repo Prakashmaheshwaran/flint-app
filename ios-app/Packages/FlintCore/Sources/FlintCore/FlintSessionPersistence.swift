@@ -149,6 +149,29 @@ final class FlintSessionPersistence {
                 let observed = previous.checkpointed(clock: env.clock)
                 let previousSelection = generation.previousApplication?.selection
                     ?? store.loadSessionSelection(sessionID: previous.id).flatMap { try? JSONEncoder().encode($0) }
+                if !observed.isLogicallyExpired(clock: env.clock), previousSelection == nil {
+                    // A legacy predecessor can still own the last-good native shield without
+                    // a frozen target snapshot. Adopt its positively read current record;
+                    // never clear/reapply unknown targets or stop its dependable end.
+                    var adopted = FlintSessionAuthority(initializedAt: previous.startedAt)
+                    adopted.adopt(previous)
+                    guard store.isProtectionStateReadable(), let raw = store.loadActiveSession(),
+                          let known = adopted.observedSession(matching: raw, clock: env.clock),
+                          !known.isLogicallyExpired(clock: env.clock) else { return false }
+                    let restored = known.checkpointed(clock: env.clock)
+                    store.saveActiveSession(restored)
+                    guard store.loadActiveSession() == restored,
+                          let ledger = env.ledger(), case .success = ledger.transaction({ state in
+                            guard var authority = state.sessionAuthority,
+                                  authority.latest?.matches(session) == true else { throw FlintSessionAuthorityError.generationMismatch }
+                            try authority.restorePrevious(restored, selection: nil,
+                                retainingAppliedResources: true, at: env.clock.now())
+                            state.sessionAuthority = authority
+                          }) else { return false }
+                    if session.monitorName != restored.monitorName { env.registrar.stopMonitoring([session.monitorName]) }
+                    _ = unavailable() // known record, unknown target repair; keep health visible
+                    return true
+                }
                 guard observed.isLogicallyExpired(clock: env.clock) || previousSelection != nil,
                       let ledger = env.ledger(), case .success = ledger.transaction({ state in
                         guard var authority = state.sessionAuthority,
