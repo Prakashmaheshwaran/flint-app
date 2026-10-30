@@ -53,6 +53,74 @@ class ProtectionTransactionStoreTest {
         assertTrue(FocusLedgerCodec.decode("H|3|7|0").protectionInitialized)
     }
 
+    @Test fun PC_37_PC_69_PC_70_mainCountsWithoutOpenLimitsUpgradeToday() = assertMainCountsUpgrade(0)
+    @Test fun PC_37_PC_69_PC_70_mainCountsWithoutOpenLimitsUpgradeOlderDay() = assertMainCountsUpgrade(-10)
+
+    private fun assertMainCountsUpgrade(dayOffset: Long) = runBlocking {
+        val target = "com.instagram.android"
+        val day = stamp.wallEpochMs / 86_400_000L + dayOffset
+        // Literal b34422e preferences: recordOpen wrote both count keys even when the
+        // user had never configured an Open Limit or used an Emergency Pass.
+        val raw = preferencesOf(
+            stringPreferencesKey("block_rules_v1") to
+                "session-timer-old|Focus|true|HARDCORE|false|com.example.focus~Focus|||-1|-1|1800003600000\n" +
+                "work|Work|true|HARDER|false|com.example.work~Work||1,2,3,4,5,6,7|0|1439|-1",
+            stringPreferencesKey("time_limits_v1") to "com.example.time~30",
+            stringPreferencesKey("default_break_level_v1") to "HARDER",
+            stringPreferencesKey("open_counts_v1") to "$target~3",
+            longPreferencesKey("open_counts_day_v1") to day,
+        )
+        for (editorFirst in listOf(false, true)) {
+            val disk = Disk(raw)
+            assertTrue("Legacy focus reader", DataStoreFocusStateStore(disk).state.first { it !is StorageState.Loading } is StorageState.Ready)
+            val editor = DataStoreEditorCommitmentStore(disk) { "UTC" }
+            if (editorFirst) editor.reconcile(stamp)
+            val initialized = initialize(disk)
+            assertTrue("Protection initialization, editorFirst=$editorFirst day=$day: $initialized", initialized is ProtectionCommit.Committed)
+            val first = (initialized as ProtectionCommit.Committed).snapshot
+            assertTrue(store(disk).state.first { it !is StorageState.Loading } is StorageState.Ready)
+            assertTrue(editor.state.first { it !is StorageState.Loading } is StorageState.Ready)
+            assertEquals(setOf("session-timer-old", "work"), first.rules.map { it.id }.toSet())
+            assertEquals(1_800_003_600_000L, first.rules.single { it.id == "session-timer-old" }.expiresAtEpochMs)
+            assertTrue(first.editor.causes.getValue(ruleCauseKey("session-timer-old")).legacyRights)
+            assertEquals(listOf(TimeLimit("com.example.time", 30, BreakLevel.HARDER)), first.times)
+            assertTrue(first.opens.isEmpty())
+            assertEquals(3, first.openCredits!!.counters.getValue(target).used)
+            assertEquals(day, first.openCredits.periodId)
+            assertEquals(dayOffset != 0L, first.openCredits.timeUncertain)
+            assertTrue(first.openCredits.active.isEmpty())
+            assertEquals("$target~3" to day, OpenCreditCodec.readArchive(disk.values.value[OPEN_CREDIT_ARCHIVE]!!))
+            val importedPass = checkNotNull(first.focus.protection)
+            assertNull(importedPass.cooldown)
+            assertNull(importedPass.recovery)
+            assertNull(importedPass.lastUsedAtEpochMs)
+            val before = disk.values.value
+            initialize(disk)
+            assertEquals("Migration is idempotent", before, disk.values.value)
+
+            // A later explicit limit setup must use the imported spend, not mint five credits.
+            val change = EditorChange("Configure Open credits", limits = EditorLimitsChange(target, null, OpenLimit(target, 5, BreakLevel.EASY)))
+            val preview = editor.request(change, stamp, EditorSafety(true)) as EditorCommitResult.Preview
+            assertEquals(EditorCommitResult.Applied(), editor.confirm(preview.pending.id, stamp, EditorSafety(true)))
+            val configured = (initialize(disk) as ProtectionCommit.Committed).snapshot
+            assertEquals(2, com.flint.peakfocus.blocking.engine.OpenCreditLedgerPolicy.remainingCredits(configured.openCredits!!, target, listOf(5)))
+            val paid = store(disk).transact { current ->
+                val accepted = com.flint.peakfocus.blocking.engine.OpenCreditLedgerPolicy.acceptOpenCredit(current.openCredits!!,
+                    target, "p1-upgraded-credit", listOf(5), emptyList(), false, stamp)
+                ProtectionMutation(current.focus, accepted.acceptance, openCredits = accepted.next)
+            }
+            assertTrue(paid is ProtectionCommit.Committed)
+            val paidSnapshot = (paid as ProtectionCommit.Committed).snapshot
+            assertEquals(4, paidSnapshot.openCredits!!.counters.getValue(target).used)
+            assertEquals("p1-upgraded-credit", paidSnapshot.openCredits.active.getValue(target).grant.operationId)
+            // Existing pass transaction persistence remains usable after this common import.
+            assertTrue(store(disk).transact { ProtectionMutation(consumed(it.focus), Unit) } is ProtectionCommit.Committed)
+            val reopened = store(disk).state.first { it !is StorageState.Loading } as StorageState.Ready
+            assertEquals("p1-id", reopened.value.focus.protection!!.cooldown!!.operationId)
+            assertEquals(4, reopened.value.openCredits!!.counters.getValue(target).used)
+        }
+    }
+
     @Test fun PC_69_PC_70_validatedMigrationArchivesTheLiteralLegacyUseWithoutAMondayRefillAndRunsOnce() = runBlocking {
         val used = stamp.wallEpochMs - 86_400_000
         val original = mutablePreferencesOf(PrefsKeys.FOCUS_LEDGER to "H|2|7|0", PrefsKeys.EMERGENCY_PASS_USED_AT to used,
