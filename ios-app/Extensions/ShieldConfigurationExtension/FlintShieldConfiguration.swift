@@ -45,7 +45,7 @@ final class FlintShieldConfiguration: ShieldConfigurationDataSource {
         }
         guard !covering.isEmpty else { return nil }
         guard FlintOpenCredit.shieldAcceptanceEnabled else { return .acceptanceDisabled }
-        return .target(preview(), passOnly: FlintOpenCredit.exitCauses(covering: covering, at: Date())
+        return .target(preview(), passOnly: FlintOpenCredit.exitCauses(covering: covering)
             .map(FlintOpenCreditExit.requiresPass) ?? false)
     }
 
