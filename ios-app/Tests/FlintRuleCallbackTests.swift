@@ -121,8 +121,12 @@ final class FlintRuleCallbackTests: XCTestCase {
             if mode == "zone" { rule.protection?.timeZoneID = "America/Los_Angeles" }
             if mode == "frozen" { rule.protection?.occurrence = window }
             if mode == "oneShot" { rule.oneShot = window }
+            FlintRuleOccurrenceClock.observe(&rule, clock: h.clock)
+            let children = FlintWebRestrictionChildren.isolated()
+            XCTAssertTrue(children.capture([.rule(rule, window: try XCTUnwrap(rule.occurrence(at: h.now, clock: h.clock)))], global: config))
             let writer = RuleWebWriter()
-            FlintRuleShield.reconcileWeb(rule, config: config, at: h.now, writer: writer)
+            FlintRuleShield.reconcileWeb(rule, read: .available(config), writer: writer, clock: h.clock,
+                owners: { [rule] }, children: children)
             XCTAssertEqual(writer.applied, [rule.storeName], mode)
             XCTAssertTrue(writer.cleared.isEmpty)
         }

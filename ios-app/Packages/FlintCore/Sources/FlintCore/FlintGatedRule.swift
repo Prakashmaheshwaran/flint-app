@@ -224,41 +224,39 @@ enum FlintRuleShield {
         } ?? false
     }
 
-    private static func applyLocked<Rule: FlintGatedRule>(_ rule: Rule, clock: FlintClock) {
-        let selection = FlintOrdinaryBreaks.filteredSelection(rule.selection, storeName: rule.storeName, allowList: rule.allowList)
-        apply(rule, to: FlintManagedRuleShieldWriter(store: ManagedSettingsStore(named: .init(rule.storeName))), selection: selection)
+    static func applyLocked<Rule: FlintGatedRule>(_ rule: Rule, clock: FlintClock,
+        applyShield: (() -> Void)? = nil, readWeb: () -> FlintWebRestrictionRead = FlintWebRestrictions.readForEnforcement,
+        webOwners: () -> [FlintScheduleRule]? = liveWebOwners,
+        webChildren: FlintWebRestrictionChildren = .live,
+        webWriter: any FlintWebRestrictionWriting = FlintManagedWebRestrictionWriter(), recordWeb: ((String) -> Void)? = nil) {
+        if let applyShield { applyShield() } else {
+            let selection = FlintOrdinaryBreaks.filteredSelection(rule.selection, storeName: rule.storeName, allowList: rule.allowList)
+            apply(rule, to: FlintManagedRuleShieldWriter(store: ManagedSettingsStore(named: .init(rule.storeName))), selection: selection)
+        }
         if let schedule = rule as? FlintScheduleRule {
-            switch FlintWebRestrictions.readForEnforcement() {
-            case let .available(config):
-                reconcileWeb(schedule, config: config, at: clock.now(), writer: FlintManagedWebRestrictionWriter(), clock: clock)
-            case .busy:
-                recordWebNote(schedule, note: "Safari reconciliation deferred because website rules are busy. Existing keys were preserved; retry on the next rule or host reconciliation.")
-            case .unavailable:
-                recordWebNote(schedule, note: "Saved website rules are unavailable. Existing Safari settings were preserved pending repair.")
-            }
+            reconcileWeb(schedule, read: readWeb(), writer: webWriter, clock: clock,
+                         owners: webOwners, children: webChildren, record: recordWeb)
         }
     }
 
-    static func reconcileWeb(_ rule: FlintScheduleRule, config: FlintWebRestrictions?, at now: Date,
-                              writer: FlintWebRestrictionWriting, clock: FlintClock? = nil,
-                              record: ((String) -> Void)? = nil) {
-        guard let config, config.validationMessage == nil else { return }
-        guard config.applyDuringSchedules else { writer.clear(store: rule.storeName); return }
-        guard rule.occurrence(at: now, clock: clock) != nil else {
-            let note = "Existing Safari settings retained because no trusted current occurrence was resolved; rule reconciliation owns natural-end cleanup."
-            if let record { record(note) } else { recordWebNote(rule, note: note) }
-            return
-        }
-        writer.apply(config, toStore: rule.storeName)
+    static func reconcileWeb(_ rule: FlintScheduleRule, read: FlintWebRestrictionRead,
+                             writer: any FlintWebRestrictionWriting, clock: FlintClock,
+                             owners: () -> [FlintScheduleRule]? = liveWebOwners,
+                             children: FlintWebRestrictionChildren = .live, addingOnly: Bool = false,
+                             record: ((String) -> Void)? = nil) {
+        let snapshot: [FlintScheduleRule]?
+        if case .available = read { snapshot = owners() } else { snapshot = nil }
+        FlintWebRestrictionRuleAdapter.reconcile(rule, read: read, owners: snapshot, children: children,
+            writer: writer, clock: clock, addingOnly: addingOnly,
+            record: { note in if let record { record(note) } else { recordWebNote(rule, note: note) } })
+    }
+
+    private static func liveWebOwners() -> [FlintScheduleRule]? {
+        FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: .flintGroup, migrating: false)
     }
 
     private static func recordWebNote(_ rule: FlintScheduleRule, note: String) {
-        guard let group = FlintGroupStore() else { return }
-        let health = group.loadArmingHealth()
-        let domain = "ruleTime.schedules"
-        var report = health.domains[domain] ?? .init(enabled: 0, attempted: 0, armed: 0, failures: [])
-        report.failures = Array((report.failures + [.init(activityName: rule.activityName, reason: note)]).suffix(64))
-        group.saveArmingHealth(health.replacing(domain, with: report))
+        FlintWebRestrictionRuleAdapter.record(rule, note: note)
     }
 
     /// Without mutation authority, union restrictions; never clear a field or widen an
@@ -272,26 +270,19 @@ enum FlintRuleShield {
         } ?? false
     }
 
-    private static func addLocked<Rule: FlintGatedRule>(_ rule: Rule, clock: FlintClock) {
-        let store = ManagedSettingsStore(named: .init(rule.storeName))
-        let selection = FlintOrdinaryBreaks.filteredSelection(rule.selection, storeName: rule.storeName, allowList: rule.allowList)
-        add(rule, to: FlintManagedRuleShieldWriter(store: store), selection: selection)
-        if let schedule = rule as? FlintScheduleRule, schedule.occurrence(at: clock.now(), clock: clock) != nil {
-            let config: FlintWebRestrictions
-            switch FlintWebRestrictions.readForEnforcement() {
-            case let .available(available): config = available
-            case .busy:
-                recordWebNote(schedule, note: "Safari reconciliation deferred because website rules are busy. Existing keys were preserved; retry on the next rule or host reconciliation.")
-                return
-            case .unavailable:
-                recordWebNote(schedule, note: "Saved website rules are unavailable. Existing Safari settings were preserved pending repair.")
-                return
-            }
-            guard config.applyDuringSchedules, config.validationMessage == nil else { return }
-            if store.webContent.blockedByFilter == nil {
-                store.webContent.blockedByFilter = FlintWebRestrictionStore.filterPolicy(for: config)
-            }
-            if config.denyExplicitMedia { store.media.denyExplicitContent = true }
+    static func addLocked<Rule: FlintGatedRule>(_ rule: Rule, clock: FlintClock,
+        addShield: (() -> Void)? = nil, readWeb: () -> FlintWebRestrictionRead = FlintWebRestrictions.readForEnforcement,
+        webOwners: () -> [FlintScheduleRule]? = liveWebOwners,
+        webChildren: FlintWebRestrictionChildren = .live,
+        webWriter: any FlintWebRestrictionWriting = FlintManagedPositiveWebRestrictionWriter(), recordWeb: ((String) -> Void)? = nil) {
+        if let addShield { addShield() } else {
+            let store = ManagedSettingsStore(named: .init(rule.storeName))
+            let selection = FlintOrdinaryBreaks.filteredSelection(rule.selection, storeName: rule.storeName, allowList: rule.allowList)
+            add(rule, to: FlintManagedRuleShieldWriter(store: store), selection: selection)
+        }
+        if let schedule = rule as? FlintScheduleRule {
+            reconcileWeb(schedule, read: readWeb(), writer: webWriter, clock: clock,
+                         owners: webOwners, children: webChildren, addingOnly: true, record: recordWeb)
         }
     }
 

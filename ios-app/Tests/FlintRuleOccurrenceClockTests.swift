@@ -188,23 +188,28 @@ final class FlintRuleOccurrenceClockTests: XCTestCase {
     func testNativeWebAndHostHealthUseTheSameInjectedRuleClockAfterJump() throws {
         let h = try RuleHarness(); defer { h.clean() }
         let rule = h.install(h.schedule(tier: .hardcore))
+        let config = FlintWebRestrictions(enabled: false, applyDuringSchedules: true)
+        XCTAssertTrue(config.save(to: h.defaults))
+        XCTAssertNotNil(h.environment.freezeOccurrences([rule]))
+        let children = FlintWebRestrictionChildren(defaults: h.defaults)
         h.now.addTimeInterval(6 * 3600)
         let writer = TrustedRuleWebWriter()
-        let config = FlintWebRestrictions(enabled: false, applyDuringSchedules: true)
-        FlintRuleShield.reconcileWeb(rule, config: config, at: h.now, writer: writer, clock: h.clock)
+        FlintRuleShield.reconcileWeb(rule, read: .available(config), writer: writer, clock: h.clock,
+            owners: { h.load(FlintScheduleRule.self) }, children: children)
         XCTAssertEqual(writer.applied, [rule.storeName]); XCTAssertTrue(writer.cleared.isEmpty)
         let health = FlintArmingHealth(domains: [
             "session": .init(enabled: 0, attempted: 0, armed: 0, failures: []),
             "schedules": .init(enabled: 1, attempted: 1, armed: 1, failures: [], observedActivities: [rule.activityName])
         ])
         let report = FlintWebRestrictionHostReconciler.reconcile(activeSession: nil, hasActiveSessionRecord: false,
-            rules: [rule], config: config, health: health, lifecycle: .init(writer: writer),
+            rules: [rule], config: config, health: health, lifecycle: .init(writer: writer, children: children),
             now: h.now, calendar: h.clock.calendar(), clock: h.clock)
         XCTAssertEqual(report.armed, 1)
         h.advance(5 * 3600)
         var notes: [String] = []
         let cleared = writer.cleared.count
-        FlintRuleShield.reconcileWeb(rule, config: config, at: h.now, writer: writer, clock: h.clock, record: { notes.append($0) })
+        FlintRuleShield.reconcileWeb(rule, read: .available(config), writer: writer, clock: h.clock,
+            owners: { h.load(FlintScheduleRule.self) }, children: children, record: { notes.append($0) })
         XCTAssertEqual(writer.cleared.count, cleared, "a nil projection is not standalone release authority")
         XCTAssertEqual(notes.count, 1)
     }

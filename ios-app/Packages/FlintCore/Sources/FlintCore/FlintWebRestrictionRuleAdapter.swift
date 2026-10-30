@@ -67,12 +67,13 @@ enum FlintWebRestrictionRuleAdapter {
         else if !addingOnly { writer.clear(store: owner.storeName) }
     }
 
-    static func record(_ rule: FlintScheduleRule, note: String) {
-        guard let group = FlintGroupStore() else { return }
+    static func record(_ rule: FlintScheduleRule, note: String, in group: FlintGroupStore? = FlintGroupStore()) {
+        guard let group else { return }
         var health = group.loadArmingHealth()
         for domain in ["webRestrictions", "ruleTime.schedules"] {
             var report = health.domains[domain] ?? .init(enabled: 0, attempted: 0, armed: 0, failures: [])
             report.failures = Array((report.failures + [.init(activityName: rule.activityName, reason: note)]).suffix(64))
+            report.updatedAt = Date()
             health = health.replacing(domain, with: report)
         }
         group.saveArmingHealth(health)

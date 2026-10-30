@@ -28,8 +28,16 @@ final class FlintWebRestrictionOccurrenceTests: XCTestCase {
         XCTAssertTrue(config.save(to: h.defaults))
         let children = FlintWebRestrictionChildren(defaults: h.defaults)
         let writer = FrozenWebWriter()
-        let callback = FlintWebRestrictionLifecycle(writer: writer, clock: h.clock, children: children)
-        callback.reconcileRule(rule, config: config, now: h.now, clock: h.clock)
+        var environment = h.environment
+        environment.applyRuleShield = { incoming, clock in
+            FlintRuleShield.applyLocked(incoming, clock: clock, applyShield: {}, readWeb: {
+                FlintWebRestrictions.read(uiRead: false, environment: h.environment, existingWebStores: { false },
+                    transition: { _, body in body(); return true })
+            }, webOwners: { h.load(FlintScheduleRule.self) }, webChildren: children, webWriter: writer,
+            recordWeb: { XCTFail($0) })
+            return true
+        }
+        XCTAssertTrue(FlintRuleMonitor(environment: environment).handle(.start, activity: rule.activityName))
         XCTAssertEqual(writer.stores[rule.storeName], config)
         XCTAssertTrue(FlintWebRestrictions.default.save(to: h.defaults))
         let host = FlintWebRestrictionLifecycle(writer: writer, clock: h.clock,

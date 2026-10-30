@@ -97,7 +97,7 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
                 XCTAssertEqual(FlintWebRestrictionPolicy.shouldApply(to: .session(session()),
                     config: config, now: now), sessions)
                 XCTAssertEqual(FlintWebRestrictionPolicy.shouldApply(
-                    to: .schedule(rule("r").schedule, enabled: true), config: config,
+                    to: rule("r"), config: config,
                     now: now, calendar: calendar), schedules)
                 XCTAssertFalse(FlintWebRestrictionPolicy.shouldApply(to: .timeLimit, config: config))
                 XCTAssertFalse(FlintWebRestrictionPolicy.shouldApply(to: .openLimit, config: config))
@@ -607,6 +607,22 @@ private final class RecordingWebWriter: FlintWebRestrictionWriting {
 /// PC-72: exercise the shipped session controller with the production Safari adapter and fake
 /// OS/store seams. Store composition here proves ownership, not iOS's cross-store filter union.
 final class FlintSessionWebRestrictionTests: XCTestCase {
+    func testDominatingHardcoreReplacementKeepsFrozenSafariAfterRawWeakeningOrAdoptsStrongerPolicyR29() throws {
+        for strengthening in [false, true] {
+            let h = WebSessionHarness()
+            let controller = h.controller()
+            let old = try h.start(controller)
+            let frozen = h.config
+            if strengthening { h.config.blockedDomains.append("more.example") }
+            else { h.config = .default }
+            let replacement = try h.start(controller, duration: 3600)
+            XCTAssertNotEqual(replacement.id, old.id)
+            XCTAssertEqual(h.store.active?.id, replacement.id)
+            XCTAssertEqual(h.writer.web["flint"], strengthening ? h.config : frozen)
+            XCTAssertEqual(h.children.frozen(.session(replacement), fallback: nil), strengthening ? h.config : frozen)
+        }
+    }
+
     func testEveryFocusEntryPointAppliesOnlyAfterRegistrationAndShield() throws {
         for source in [FlintSessionSource.manual, .shortcut, .pomodoro, .focusFilter] {
             let h = WebSessionHarness()

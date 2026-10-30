@@ -72,6 +72,54 @@ final class FlintWebRestrictionChildrenTests: XCTestCase {
         XCTAssertEqual(writer.writes, writes)
     }
 
+    func testSessionEnforcementDistinguishesBusyFromUnavailableAndKeepsKnownFrozenChild() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let active = session(h)
+        let config = FlintWebRestrictions(enabled: true, denyExplicitMedia: true)
+        let children = FlintWebRestrictionChildren(defaults: h.defaults)
+        let writer = SessionChildWriter()
+        var state = FlintWebRestrictionRead.available(config)
+        var reports: [FlintArmingHealth.DomainReport] = []
+        let adapter = FlintSessionWebRestrictionAdapter(writer: writer, read: { state }, children: children,
+            recordHealth: { reports.append($0) })
+        adapter.reconcile(active, clock: h.clock)
+        let frozen = children.read(), writes = writer.writes
+        state = .busy
+        adapter.reconcile(active, clock: h.clock)
+        XCTAssertEqual(writer.writes, writes)
+        XCTAssertEqual(children.read(), frozen)
+        XCTAssertTrue(reports.last?.failures.first?.reason.contains("busy") == true)
+        let replacement = FlintActiveSession(id: "replacement", name: "New", startedAt: h.now,
+            endsAt: h.now.addingTimeInterval(600), breakLevel: .hardcore, monitorName: "flint.session.new")
+        XCTAssertFalse(adapter.prepareReplacement(replacement, replacing: active, clock: h.clock))
+        XCTAssertEqual(children.read(), frozen)
+        state = .unavailable
+        adapter.reconcile(active, clock: h.clock)
+        XCTAssertEqual(writer.config, config)
+        XCTAssertEqual(writer.writes, writes + 1, "Known child survives unavailable future preferences")
+        XCTAssertEqual(reports.last?.armed, 1)
+        XCTAssertTrue(reports.last?.failures.first?.reason.contains("unavailable") == true)
+        XCTAssertTrue(adapter.prepareReplacement(replacement, replacing: active, clock: h.clock))
+        XCTAssertEqual(children.frozen(.session(replacement), fallback: nil), config)
+    }
+
+    func testFirstUnavailableSessionReconcileFreezesUnknownUntilGatedRepair() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let active = session(h)
+        let config = FlintWebRestrictions(enabled: true)
+        let children = FlintWebRestrictionChildren(defaults: h.defaults)
+        let writer = SessionChildWriter()
+        var state = FlintWebRestrictionRead.unavailable
+        let adapter = FlintSessionWebRestrictionAdapter(writer: writer, read: { state }, children: children)
+        adapter.reconcile(active, clock: h.clock)
+        XCTAssertNil(writer.config)
+        XCTAssertTrue(children.needsRecovery)
+        state = .available(config)
+        adapter.reconcile(active, clock: h.clock)
+        XCTAssertEqual(writer.writes, 0, "A later preference cannot silently replace unavailable freeze-time intent")
+        XCTAssertNil(children.frozen(.session(active), fallback: config))
+    }
+
     func testEditorGatesFrozenHardcoreChildAfterFuturePreferencesWereWeakenedR29() throws {
         let h = try RuleHarness(); defer { h.clean() }
         let config = FlintWebRestrictions(enabled: true, denyExplicitMedia: true)

@@ -4,7 +4,6 @@ import Foundation
 public enum FlintWebRestrictionPolicy {
     public enum Cause {
         case session(FlintActiveSession?)
-        case schedule(FlintSchedule, enabled: Bool)
         case timeLimit
         case openLimit
     }
@@ -21,8 +20,6 @@ public enum FlintWebRestrictionPolicy {
             guard config.enabled, let session else { return false }
             // With a clock, logical time decides: a same-boot wall jump can't release it (§9).
             return session.isEnforcing(at: now, clock: clock)
-        case let .schedule(schedule, enabled):
-            return config.applyDuringSchedules && enabled && schedule.isWindowActive(at: now, calendar: calendar)
         case .timeLimit, .openLimit:
             return false
         }
