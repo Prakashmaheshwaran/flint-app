@@ -91,6 +91,7 @@ class SafetyFloorGate(
     /**
      * Display-only retained provenance for this target. Does not resolve, schedule a refresh,
      * or change health timestamps; enforcement owns cache refresh through [protects].
+     * Call off main: this may await an in-flight enforcement resolver's lock.
      */
     fun readIdentity(packageName: String): FloorIdentity? {
         if (packageName == selfPackage) return FloorIdentity(FloorIdentity.Kind.SELF)
@@ -103,8 +104,10 @@ class SafetyFloorGate(
                 "uninstaller" -> FloorIdentity.Kind.RUNTIME_UNINSTALLER
                 else -> FloorIdentity.Kind.RUNTIME_DIALER
             }
-            FloorIdentity(kind, successfulAtBySource[source],
-                resolution.value.degraded || isOlderThan(refreshIntervalMs))
+            val successfulAt = successfulAtBySource[source]
+            val now = nowElapsedMs()
+            FloorIdentity(kind, successfulAt, source in resolution.value.failedSources || successfulAt == null ||
+                now < successfulAt || now - successfulAt >= refreshIntervalMs)
         }
     }
 

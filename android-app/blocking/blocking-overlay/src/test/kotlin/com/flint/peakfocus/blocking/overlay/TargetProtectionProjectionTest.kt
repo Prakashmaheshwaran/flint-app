@@ -240,4 +240,45 @@ class TargetProtectionProjectionTest {
         assertNull(read(stored, env = older).blockingNow)
         assertEquals(false, read(stored).blockingNow)
     }
+
+    @Test fun alwaysOnPublicationIgnoresSyntheticReadAnchorsAndRetainsItsKnownOccurrence() {
+        val rule = rule("always-on").copy(expiresAtEpochMs = null)
+        val stored = snapshot(rule)
+        val published = stored.projectedRulesForRead(now)
+        now = now.copy(wallEpochMs = now.wallEpochMs + 10_000, elapsedRealtimeMs = now.elapsedRealtimeMs + 10_000)
+        val view = read(stored, env = environment().copy(publishedRules = StorageState.Ready(published)))
+        assertEquals(true, view.blockingNow)
+        assertTrue(view.blockingOngoing)
+        assertNull(view.blockingUntilWall)
+        assertEquals(rule.id, view.headline!!.occurrenceId)
+    }
+
+    @Test fun freshRetainedBrowserContextResolvesOnlyDomainCausesWhileFlintIsForeground() {
+        val domain = rule("domain").copy(targets = BlockTargets(domains = setOf(DomainRef("example.com"))))
+        val browserApp = rule("browser-app", BreakLevel.HARDCORE).copy(targets = BlockTargets(apps = setOf(AppRef(chrome))))
+        val stored = snapshot(domain, browserApp)
+        val observed = now.wallEpochMs - 1_000
+        val expires = now.wallEpochMs + 119_000
+        val env = environment().copy(websiteCoverage = TargetWebsiteCoverage.AVAILABLE, domainContextKnown = true,
+            websiteCoverageObservedAtWall = observed, websiteCoverageValidUntilWall = expires)
+        val view = read(stored, TargetRef.Site("example.com"), env)
+        assertEquals(true, view.blockingNow)
+        assertEquals(domain.id, view.headline!!.ruleId)
+        assertEquals(listOf(domain.id), view.coveringCauses.map { it.ruleId })
+        assertNull(view.blockingUntilWall) // An unidentified current browser's app scope is unknown.
+        assertFalse(view.websiteCoverageIsCurrent)
+        assertEquals(observed, view.websiteCoverageObservedAtWall)
+        assertEquals(expires, view.nextChangeAtWall)
+        now = now.copy(wallEpochMs = expires, elapsedRealtimeMs = now.elapsedRealtimeMs + 119_000)
+        val expired = read(stored, TargetRef.Site("example.com"), env.copy(status = environment().status))
+        assertNull(expired.blockingNow)
+        assertEquals(TargetWebsiteCoverage.AWAITING_BROWSER, expired.websiteCoverage)
+    }
+
+    @Test fun noActiveWebsiteRuleIsDistinctFromWaitingForBrowserCoverage() {
+        val view = read(snapshot(), TargetRef.Site("example.com"), environment().copy(websiteCoverage = TargetWebsiteCoverage.NOT_REQUIRED))
+        assertEquals(TargetWebsiteCoverage.NOT_REQUIRED, view.websiteCoverage)
+        assertNull(view.blockingNow) // Browser-app scope still cannot be guessed.
+        assertTrue(view.coveringCauses.isEmpty())
+    }
 }

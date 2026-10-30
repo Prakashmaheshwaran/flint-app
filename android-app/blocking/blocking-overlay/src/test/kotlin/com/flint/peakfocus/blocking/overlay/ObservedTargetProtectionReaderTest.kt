@@ -1,6 +1,8 @@
 package com.flint.peakfocus.blocking.overlay
 
 import com.flint.peakfocus.blocking.engine.HarderWaitPolicy
+import com.flint.peakfocus.blocking.engine.AnchoredInterval
+import com.flint.peakfocus.blocking.engine.OpenCreditLedgerPolicy
 import com.flint.peakfocus.core.datastore.*
 import com.flint.peakfocus.core.model.*
 import java.io.IOException
@@ -106,5 +108,40 @@ class ObservedTargetProtectionReaderTest {
         assertEquals(sampled.wallEpochMs + 299_500, values.last().recoveryEndsAtWall)
         assertEquals(false, values.last().blockingNow)
         assertEquals(now, stored.observedAt)
+    }
+
+    @Test fun quotaProjectionThrowsBecomeUnavailableAndTheSameCollectionRecoversOnTheNextTick() = runTest {
+        for (name in listOf("one.app", "flint")) {
+            val stored = snapshot().copy(times = listOf(TimeLimit(name, 5)),
+                editor = EditorCommitmentState(causes = mapOf(timeCauseKey(name) to EditorCause("period",
+                    AnchoredInterval(now, 60_000, now.wallEpochMs + 60_000), "UTC")), timeline = now),
+                openCredits = OpenCreditLedgerPolicy.initial(now, "UTC"))
+            var sampled = now.copy(elapsedRealtimeMs = Long.MAX_VALUE)
+            val ticks = MutableStateFlow(sampled)
+            val reader = ObservedTargetProtectionReader(snapshots(flowOf(StorageState.Ready(stored))), backgroundScope, "flint",
+                { _, _, _ -> TargetReadEnvironment() }, clock = { sampled }, ticks = ticks,
+                worker = StandardTestDispatcher(testScheduler))
+            val values = mutableListOf<TargetProtection>()
+            val collecting = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { reader.observe(TargetRef.App(name)).collect(values::add) }
+            runCurrent()
+            assertEquals(Readiness.Unavailable("target-projection-unavailable"), values.last().readiness)
+            if (name == "flint") assertEquals(false, values.last().blockingNow) else assertNull(values.last().blockingNow)
+            assertTrue(collecting.isActive)
+            sampled = now; ticks.value = now; runCurrent()
+            assertEquals(Readiness.Ready, values.last().readiness)
+            assertTrue(stored.focus.protection!!.outbox.isEmpty())
+            collecting.cancel(); runCurrent()
+        }
+    }
+
+    @Test fun cancellationIsNeverConvertedIntoAnUnavailableEmission() = runTest {
+        val reader = ObservedTargetProtectionReader(snapshots(flowOf(StorageState.Ready(snapshot()))), backgroundScope, "flint",
+            { _, _, _ -> TargetReadEnvironment() }, clock = { throw CancellationException("cancelled") }, ticks = flowOf(now),
+            worker = StandardTestDispatcher(testScheduler))
+        val values = mutableListOf<TargetProtection>()
+        val collecting = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { reader.observe(TargetRef.App("one.app")).collect(values::add) }
+        runCurrent()
+        assertTrue(collecting.isCancelled)
+        assertTrue(values.none { it.readiness is Readiness.Unavailable })
     }
 }

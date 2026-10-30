@@ -51,6 +51,7 @@ class TargetFloorIdentityTest {
         assertTrue(failed.degraded)
         assertTrue(floor.protects("custom.dialer"))
         assertEquals(now, floor.readIdentity("custom.home")!!.resolvedAtElapsedMs)
+        assertFalse(floor.readIdentity("custom.home")!!.degraded)
     }
 
     @Test fun successfullyChangedRoleReplacesItsOldIdentity() {

@@ -20,12 +20,37 @@ data class TargetReadEnvironment(
     val unavailableReason: String? = null,
     /** Current enforcement publication, distinct from a successfully saved template. */
     val publishedRules: StorageState<List<BlockRule>>? = null,
+    /** Fresh retained supported-browser context may establish domain attribution, never app scope. */
+    val domainContextKnown: Boolean = false,
+    val websiteCoverageObservedAtWall: Long? = null,
+    val websiteCoverageValidUntilWall: Long? = null,
+    val websiteCoverageIsCurrent: Boolean = false,
 )
 
 /** One pure projection, using enforcement's clock, membership, end and recovery policies. */
 internal object TargetProtectionProjection {
     private const val ACTIVITY_PROBE = "flint.target.activity.probe"
     private val engine = BlockDecisionEngine()
+    private data class RuntimeIdentity(val occurrence: String, val remaining: Long?, val wallEnd: Long?,
+        val zone: String, val stopAtEnd: Boolean, val anchor: AccessClockStamp?, val timeline: AccessClockStamp?)
+    private fun definition(rule: BlockRule) = rule.copy(
+        expiresAtEpochMs = if (rule.runtime != null) null else rule.expiresAtEpochMs, runtime = null) to
+        rule.runtime?.let { RuntimeIdentity(it.occurrenceId, it.remainingAtAnchorMs, it.wallEndEpochMs,
+            it.zoneId, it.stopAtOccurrenceEnd, it.anchor.takeIf { _ -> it.remainingAtAnchorMs != null },
+            it.timeline.takeIf { _ -> it.remainingAtAnchorMs != null && rule.schedule != null }) }
+
+    private fun floor(target: TargetRef, environment: TargetReadEnvironment, selfPackage: String): FloorIdentity? =
+        if (target is TargetRef.App) when {
+            target.packageName == selfPackage -> FloorIdentity(FloorIdentity.Kind.SELF)
+            SafetyFloor.isProtected(target.packageName, selfPackage) -> FloorIdentity(FloorIdentity.Kind.STATIC_SYSTEM)
+            else -> environment.floor
+        } else null
+
+    fun unavailable(target: TargetRef, environment: TargetReadEnvironment, selfPackage: String, reason: String): TargetProtection {
+        val known = floor(target, environment, selfPackage)
+        return TargetProtection(Readiness.Unavailable(reason), floor = known, blockingNow = known?.let { false },
+            websiteCoverage = environment.websiteCoverage.takeIf { target is TargetRef.Site })
+    }
 
     fun read(target: TargetRef, state: StorageState<ProtectionSnapshot>, environment: TargetReadEnvironment,
         now: AccessClockStamp, selfPackage: String, legacyZone: ZoneId): TargetProtection {
@@ -33,12 +58,12 @@ internal object TargetProtectionProjection {
             is TargetRef.App -> target.packageName
             is TargetRef.Site -> environment.browserPackageName
         }
-        val floor = if (target is TargetRef.App) when {
-            target.packageName == selfPackage -> FloorIdentity(FloorIdentity.Kind.SELF)
-            SafetyFloor.isProtected(target.packageName, selfPackage) -> FloorIdentity(FloorIdentity.Kind.STATIC_SYSTEM)
-            else -> environment.floor
-        } else null
-        val web = environment.websiteCoverage.takeIf { target is TargetRef.Site }
+        val floor = floor(target, environment, selfPackage)
+        val domainFresh = environment.domainContextKnown &&
+            environment.websiteCoverageObservedAtWall?.let { now.wallEpochMs >= it } != false &&
+            environment.websiteCoverageValidUntilWall?.let { now.wallEpochMs < it } != false
+        val web = (if (environment.domainContextKnown && !domainFresh) TargetWebsiteCoverage.AWAITING_BROWSER
+            else environment.websiteCoverage).takeIf { target is TargetRef.Site }
         fun unavailable(reason: String) = finish(Readiness.Unavailable(reason), floor, emptyList(), now, web = web)
         val site = (target as? TargetRef.Site)?.let { RuleTargetMatcher.canonicalSite(it.domain)
             ?: return unavailable("invalid-site-target") }
@@ -62,12 +87,11 @@ internal object TargetProtectionProjection {
         }
         val local = Instant.ofEpochMilli(now.wallEpochMs).atZone(legacyZone)
         val minute = local.hour * 60 + local.minute
-        fun definition(rule: BlockRule) = rule.copy(
-            expiresAtEpochMs = if (rule.runtime != null) null else rule.expiresAtEpochMs,
-            runtime = rule.runtime?.copy(evaluation = null))
         val published = (environment.publishedRules as? StorageState.Ready)?.value
-        val publicationUnknown = published == null || authored.map(::definition).sortedBy { it.id } !=
-            published.map(::definition).sortedBy { it.id }
+        // An unanchored always-on occurrence gets a synthetic caller-now anchor. Compare
+        // durable identity, not that per-read value or a projected evaluation timestamp.
+        val publicationUnknown = published == null || authored.map(::definition).sortedBy { it.first.id } !=
+            published.map(::definition).sortedBy { it.first.id }
         val healthUnknown = TargetRuntimeHealth.unavailableReason(environment.status, now) != null ||
             !environment.status.safetyFloorResolved || publicationUnknown ||
             environment.status.observedAt?.let { trustedElapsedMs(stored.observedAt, it) } == null
@@ -84,17 +108,24 @@ internal object TargetProtectionProjection {
             val end = if (active) ruleWindowEnd(rule, now.wallEpochMs, minute) else null
             val next = runtime?.evaluation?.nextBoundaryEpochMs ?: if (!rule.enabled) null else
                 if (active) end else rule.schedule?.let { ScheduleOccurrences.nextStart(it, legacyZone, now.wallEpochMs) }
-            val occurrence = runtime?.occurrenceId?.takeUnless { it == "inactive" }?.takeUnless {
-                runtime.remainingAtAnchorMs?.let { remaining ->
-                    runtime.wallEndEpochMs?.let { end -> AnchoredInterval(runtime.anchor, remaining, end).remainingMs(now) == 0L } != false
-                } == true
+            val occurrence = runtime?.let {
+                val remaining = it.remainingAtAnchorMs
+                val wallEnd = it.wallEndEpochMs
+                when {
+                    it.occurrenceId == "inactive" -> null
+                    remaining == null -> it.occurrenceId
+                    wallEnd == null -> null
+                    AnchoredInterval(it.anchor, remaining, wallEnd).remainingMs(now) == 0L -> null
+                    else -> it.occurrenceId
+                }
             }
             CoveringCause(rule.id, ProtectionStatus.sanitizeDisplayName(rule.name), kind(rule), rule.breakLevel,
                 active, end, runtime?.let { clockDiscontinuity(it.anchor, now) } ?: true, next,
                 when {
                     !active || floor != null || browserFloor -> false
                     healthUnknown -> null
-                    target is TargetRef.Site && (!appMatch && web != TargetWebsiteCoverage.AVAILABLE || pkg == null) -> null
+                    target is TargetRef.Site && !appMatch &&
+                        (web != TargetWebsiteCoverage.AVAILABLE || pkg == null && !domainFresh) -> null
                     else -> true
                 }, if (rule.id in ownIds) ruleCauseKey(rule.id) else "foreign-rule:${rule.id}", occurrence)
         }
@@ -118,13 +149,21 @@ internal object TargetProtectionProjection {
         val readiness = reason?.let { Readiness.Unavailable(it) } ?: Readiness.Ready
         val released = if (recovery.endsAtWall != null || floor != null || browserFloor)
             all.map { it.copy(enforcingNow = false) } else all
-        val result = finish(readiness, floor, released, now, recovery.endsAtWall,
+        val base = finish(readiness, floor, released, now, recovery.endsAtWall,
             limits.openCredit.takeIf { target is TargetRef.App && floor == null },
             limits.timeLimit.takeIf { target is TargetRef.App && floor == null }, web)
+        val result = base.copy(
+                websiteCoverageObservedAtWall = environment.websiteCoverageObservedAtWall.takeIf { target is TargetRef.Site },
+                websiteCoverageValidUntilWall = environment.websiteCoverageValidUntilWall.takeIf { target is TargetRef.Site },
+                websiteCoverageIsCurrent = target is TargetRef.Site && environment.websiteCoverageIsCurrent && domainFresh,
+                nextChangeAtWall = listOfNotNull(base.nextChangeAtWall,
+                    environment.websiteCoverageValidUntilWall.takeIf { target is TargetRef.Site && domainFresh })
+                    .filter { it > now.wallEpochMs }.minOrNull())
         // Without a browser context, browser-app contributors cannot be excluded for a Site.
         return if ((healthUnknown || target is TargetRef.Site && pkg == null) && floor == null && !browserFloor &&
             result.recoveryEndsAtWall == null && result.blockingNow != true && readiness == Readiness.Ready)
-            result.copy(blockingNow = null) else result
+            result.copy(blockingNow = null) else if (target is TargetRef.Site && pkg == null && result.blockingNow == true)
+            result.copy(blockingUntilWall = null) else result // Browser-app contributors remain unproven.
     }
 
     private fun kind(rule: BlockRule): CauseKind = when {

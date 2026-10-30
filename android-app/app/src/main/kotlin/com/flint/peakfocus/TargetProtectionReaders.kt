@@ -2,12 +2,15 @@ package com.flint.peakfocus
 
 import android.content.Context
 import com.flint.peakfocus.blocking.engine.WebCoverage
+import com.flint.peakfocus.blocking.engine.RuleTargetMatcher
+import com.flint.peakfocus.blocking.engine.WebsiteRulePolicy
 import com.flint.peakfocus.blocking.overlay.*
 import com.flint.peakfocus.blocking.resilience.WebsiteCoverageHealth
 import com.flint.peakfocus.core.data.LimitStore
 import com.flint.peakfocus.core.data.UsageQuery
 import com.flint.peakfocus.core.datastore.FlintPreferences
 import com.flint.peakfocus.core.datastore.protectionSnapshots
+import com.flint.peakfocus.core.datastore.projectedRulesForRead
 import com.flint.peakfocus.core.model.ActiveRulesHolder
 import com.flint.peakfocus.core.model.AccessClockStamp
 import com.flint.peakfocus.core.model.StorageState
@@ -17,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.time.ZoneId
 
 /**
  * Production read-only assembly. Pass the existing enforcement coordinator's retained floor
@@ -33,7 +37,14 @@ fun createTargetProtectionReader(context: Context, scope: CoroutineScope,
     return ObservedTargetProtectionReader(FlintPreferences.protectionSnapshots(app), scope, app.packageName,
         environment = { target, state, now -> withContext(Dispatchers.IO) {
             val status = ProtectionStatusHub.status.value
-            val observation = WebsiteCoverageHealth.read(true, status.detectors.accessibilityConnected)
+            val stored = (state as? StorageState.Ready)?.value
+            val foreign = ActiveRulesHolder.rulesOutside(ActiveRulesHolder.SOURCE_DATASTORE)
+            val rules = stored?.projectedRulesForRead(now)?.plus(foreign)
+            val domainRules = rules?.filter { rule -> !rule.targets.allowListMode && rule.targets.domains.isNotEmpty() &&
+                (target !is TargetRef.Site || RuleTargetMatcher.matchesSite(rule, target.domain)) }
+            val domainsActive = domainRules?.any { rule -> rule.runtime?.evaluation?.active ?:
+                WebsiteRulePolicy.hasActiveDomains(listOf(rule), now.wallEpochMs, ZoneId.systemDefault()) } ?: true
+            val observation = WebsiteCoverageHealth.read(domainsActive, status.detectors.accessibilityConnected, now.wallEpochMs)
             val web = observation.coverage
             val currentBrowser = observation.currentBrowser
             val browser = if (!currentBrowser) null else when (web) {
@@ -43,17 +54,17 @@ fun createTargetProtectionReader(context: Context, scope: CoroutineScope,
                 is WebCoverage.Unsupported -> web.packageName
                 else -> null
             }
+            val domainCoverage = observation.domainContext
             val coverage = when {
+                web == WebCoverage.NotRequired -> TargetWebsiteCoverage.NOT_REQUIRED
                 web == WebCoverage.Paused -> TargetWebsiteCoverage.NEEDS_ACCESSIBILITY
-                !currentBrowser -> TargetWebsiteCoverage.AWAITING_BROWSER
-                web is WebCoverage.Available -> TargetWebsiteCoverage.AVAILABLE
-                web is WebCoverage.Degraded -> TargetWebsiteCoverage.DEGRADED
-                web is WebCoverage.Unconfirmed -> TargetWebsiteCoverage.UNCONFIRMED
+                domainCoverage is WebCoverage.Available -> TargetWebsiteCoverage.AVAILABLE
+                domainCoverage is WebCoverage.Degraded -> TargetWebsiteCoverage.DEGRADED
+                domainCoverage is WebCoverage.Unconfirmed -> TargetWebsiteCoverage.UNCONFIRMED
                 web is WebCoverage.Unsupported -> TargetWebsiteCoverage.UNSUPPORTED
                 else -> TargetWebsiteCoverage.AWAITING_BROWSER
             }
             val pkg = (target as? TargetRef.App)?.packageName ?: browser
-            val stored = (state as? StorageState.Ready)?.value
             var legacyReadable = true
             val legacyMinutes = pkg?.let { runCatching { legacy.limitMinutes(it) }.getOrElse { legacyReadable = false; null } }
             val needsUsage = pkg != null && (stored?.times?.any { it.packageName == pkg && it.dailyMinutes > 0 } == true ||
@@ -72,8 +83,11 @@ fun createTargetProtectionReader(context: Context, scope: CoroutineScope,
                     used
                 }
             }
-            TargetReadEnvironment(status, ActiveRulesHolder.rulesOutside(ActiveRulesHolder.SOURCE_DATASTORE),
+            TargetReadEnvironment(status, foreign,
                 pkg?.let(readFloorIdentity), browser, coverage, measured, legacyMinutes, legacyReadable,
-                publishedRules = ActiveRulesHolder.dataStoreState)
+                publishedRules = ActiveRulesHolder.dataStoreState, domainContextKnown = domainCoverage != null,
+                websiteCoverageObservedAtWall = observation.observedAtWall,
+                websiteCoverageValidUntilWall = observation.validUntilWall,
+                websiteCoverageIsCurrent = currentBrowser && domainCoverage != null)
         } })
 }

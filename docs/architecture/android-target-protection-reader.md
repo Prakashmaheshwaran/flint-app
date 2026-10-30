@@ -34,9 +34,11 @@ creates a zero-used pool. A read cannot initialize the new protection contract.
 
 - `readiness`: `Readiness.Loading`, `Ready` or `Unavailable(reason)`.
 - `floor`: independently known `FloorIdentity`, including the retained runtime
-  source's last successful elapsed resolution time and degradation. Static and
+  source's last successful elapsed resolution time and source-specific degradation. Static and
   self identities do not depend on policy storage. Reading retained provenance
   does not refresh the floor or relabel an old lookup as a new check.
+  Retained floor reads must run off main because an in-flight resolver may hold
+  its lock; the production factory does this on IO.
 - `coveringCauses`: target attribution, including inactive templates. Each
   `CoveringCause` has a stable `causeKey`, optional `occurrenceId`, stored tier,
   activity, nullable enforcement, finite end estimate and next boundary.
@@ -59,10 +61,21 @@ creates a zero-used pool. A read cannot initialize the new protection contract.
   end. These wall values are display estimates, not new deadlines.
 - `websiteCoverage`: target-scoped supported-browser health. Accessibility and
   actual browser observations bound it; it is never an all-websites promise.
-  A retained observation from a browser that is no longer foreground is shown
-  as `AWAITING_BROWSER`. Site counts are not browser-app counts: `openCredit`
+  `NOT_REQUIRED` distinguishes no active matching domain rule. While Flint is
+  foreground, a retained supported-browser observation can establish domain
+  attribution for at most 120 seconds under both wall and monotonic freshness
+  checks. `websiteCoverageObservedAtWall`, `websiteCoverageValidUntilWall` and
+  `websiteCoverageIsCurrent` retain the source check's provenance. A detail read
+  never refreshes it; stale/missing context is `AWAITING_BROWSER`. Retained
+  context never establishes browser-app membership, ordinary App-scoped break
+  coverage or an exact combined unblock end. Site counts are not browser-app counts: `openCredit`
   and `timeLimit` are null for Sites, while an identified current browser's
   app/limit causes still contribute to attribution and the blocking summary.
+
+Every projection is fenced: arithmetic, quota or scope-policy read exceptions
+emit `Unavailable("target-projection-unavailable")` without terminating the
+collection or hiding an independently known floor. A subsequent good input can
+recover on the same flow; coroutine cancellation remains cancellation.
 
 `active` describes a commitment, while `enforcingNow` describes its current
 target denial. A break, global pass recovery or unspent Time Limit can leave a

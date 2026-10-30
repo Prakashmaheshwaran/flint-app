@@ -73,14 +73,43 @@ class WebsiteCoverageHealthTest {
         val window = BrowserWindow("com.android.chrome", 1)
         WebsiteCoverageHealth.foreground(window, true, true)
         WebsiteCoverageHealth.addressBarRead(window, true, true, 100)
-        val first = WebsiteCoverageHealth.read(true, true)
+        val first = WebsiteCoverageHealth.read(true, true, nowWallMs = 100)
         assertTrue(first.currentBrowser)
         assertTrue(first.coverage is WebCoverage.Available)
-        repeat(20) { assertEquals(first, WebsiteCoverageHealth.read(true, true)) }
+        assertTrue(first.domainContext is WebCoverage.Available)
+        repeat(20) { assertEquals(first, WebsiteCoverageHealth.read(true, true, nowWallMs = 100)) }
         WebsiteCoverageHealth.foreground(null, true, false)
-        val retained = WebsiteCoverageHealth.read(true, true)
+        val retained = WebsiteCoverageHealth.read(true, true, nowWallMs = 100)
         assertEquals(first.coverage, retained.coverage)
         assertFalse(retained.currentBrowser)
         assertEquals(WebCoverage.Paused, WebsiteCoverageHealth.read(true, false).coverage)
+    }
+
+    @Test fun `last supported browser context survives Flint only inside the original freshness bound`() {
+        val window = BrowserWindow("com.android.chrome", 1)
+        WebsiteCoverageHealth.foreground(window, true, true)
+        WebsiteCoverageHealth.addressBarRead(window, true, true, 10_000, observedAtElapsedMs = 1_000)
+        WebsiteCoverageHealth.foreground(null, true, false)
+        val fresh = WebsiteCoverageHealth.read(true, true, 129_999, 120_999)
+        assertFalse(fresh.currentBrowser)
+        assertTrue(fresh.domainContext is WebCoverage.Available)
+        assertEquals(10_000L, fresh.observedAtWall)
+        assertEquals(130_000L, fresh.validUntilWall)
+        assertNull(WebsiteCoverageHealth.read(true, true, 130_000, 121_000).domainContext)
+        assertNull(WebsiteCoverageHealth.read(true, true, 9_999, 2_000).domainContext)
+        assertNull(WebsiteCoverageHealth.read(true, true, 20_000, 999).domainContext)
+        assertEquals(10_000L, WebsiteCoverageHealth.read(true, true, 130_000, 121_000).observedAtWall)
+    }
+
+    @Test fun `misses unsupported browsers and permission loss never renew a successful domain context`() {
+        val window = BrowserWindow("com.android.chrome", 1)
+        WebsiteCoverageHealth.foreground(window, true, true)
+        WebsiteCoverageHealth.addressBarRead(window, true, true, 10_000, observedAtElapsedMs = 1_000)
+        WebsiteCoverageHealth.addressBarRead(window, false, true, 20_000, observedAtElapsedMs = 11_000)
+        assertEquals(10_000L, WebsiteCoverageHealth.read(true, true, 20_000, 11_000).observedAtWall)
+        assertNull(WebsiteCoverageHealth.read(true, false, 20_000, 11_000).domainContext)
+        WebsiteCoverageHealth.foreground(BrowserWindow("unknown.browser", 2), true, true, isBrowserHandler = true)
+        assertNull(WebsiteCoverageHealth.read(true, true, 20_000, 11_000).domainContext)
+        assertEquals(WebCoverage.NotRequired, WebsiteCoverageHealth.read(false, true).coverage)
     }
 }

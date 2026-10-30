@@ -31,11 +31,14 @@ class ObservedTargetProtectionReader(
 
     override fun observe(target: TargetRef): Flow<TargetProtection> = combine(decoded, invalidations) { state, _ -> state }
         .map { state ->
-            val observed = try { environment(target, state, clock()) }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { TargetReadEnvironment(unavailableReason = "runtime-observation-unavailable") }
-            // A store/health publication can occur after the invalidating tick. Sample after
-            // observations so a newly checked status is never compared with an older tick.
-            TargetProtectionProjection.read(target, state, observed, clock(), selfPackage, legacyZone())
+            var observed = TargetReadEnvironment()
+            try {
+                observed = try { environment(target, state, clock()) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { TargetReadEnvironment(unavailableReason = "runtime-observation-unavailable") }
+                // Sample after observations, including a newer store/health publication.
+                TargetProtectionProjection.read(target, state, observed, clock(), selfPackage, legacyZone())
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { TargetProtectionProjection.unavailable(target, observed, selfPackage, "target-projection-unavailable") }
         }.distinctUntilChanged().conflate().flowOn(worker)
 }

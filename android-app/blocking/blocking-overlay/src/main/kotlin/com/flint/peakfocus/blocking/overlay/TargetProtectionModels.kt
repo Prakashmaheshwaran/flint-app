@@ -29,11 +29,15 @@ data class TargetProtection(
     val recoveryEndsAtWall: Long? = null,
     val headline: CoveringCause? = null,
     val websiteCoverage: TargetWebsiteCoverage? = null,
+    /** Actual retained browser observation, not the time this detail query ran. */
+    val websiteCoverageObservedAtWall: Long? = null,
+    val websiteCoverageValidUntilWall: Long? = null,
+    val websiteCoverageIsCurrent: Boolean = false,
 )
 
 /** Target-scoped interpretation of the actual supported-browser health observation. */
 enum class TargetWebsiteCoverage {
-    AVAILABLE, UNCONFIRMED, DEGRADED, UNSUPPORTED, NEEDS_ACCESSIBILITY, AWAITING_BROWSER,
+    AVAILABLE, UNCONFIRMED, DEGRADED, UNSUPPORTED, NEEDS_ACCESSIBILITY, AWAITING_BROWSER, NOT_REQUIRED,
 }
 
 /** An explicit read request; a target observation never includes another target's inventory. */
