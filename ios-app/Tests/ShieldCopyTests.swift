@@ -223,7 +223,7 @@ final class ShieldCopyTests: XCTestCase {
     /// Easy and Harder never mention the pass: editing the limit is their ordinary path.
     func testExhaustedCopyPromisesNoEarlyExitBelowHardcore() {
         let result = copy(credit: credit(preview(remaining: 0, blockedBy: .exhausted)))
-        XCTAssertEqual(result.subtitle, "No credits left today · resets about 13:00")
+        XCTAssertEqual(result.subtitle, "No credits left today · resets about 00:00")
         XCTAssertFalse(result.subtitle.contains("Emergency Pass"))
         XCTAssertFalse(result.subtitle.contains("break"))
     }
@@ -233,7 +233,7 @@ final class ShieldCopyTests: XCTestCase {
     func testHardcoreExhaustedNamesOnlyTheEmergencyPass() {
         let line = ". Only the Emergency Pass can pause this early."
         let cases: [(FlintOpenCreditPreview, String)] = [
-            (preview(remaining: 0, blockedBy: .exhausted), "No credits left today · resets about 13:00"),
+            (preview(remaining: 0, blockedBy: .exhausted), "No credits left today · resets about 00:00"),
             (preview(remaining: 0, blockedBy: .exhausted, uncertain: true),
              "No credits left today · the reset time is uncertain"),
             (preview(remaining: 0, cap: 0, blockedBy: .exhausted), "This Open Limit allows no credits"),
