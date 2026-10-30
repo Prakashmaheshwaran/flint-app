@@ -197,14 +197,26 @@ extension FlintWebRestrictions {
     private static let storageKey = "flint.webRestrictions"
     static let initializedMarkerKey = storageKey + ".initialized.adr012"
 
-    public static func load(from defaults: UserDefaults? = .flintGroup) -> FlintWebRestrictions {
+    public static func load() -> FlintWebRestrictions { loadForEnforcement() ?? .default }
+
+    public static func load(from defaults: UserDefaults?) -> FlintWebRestrictions {
         loadForEnforcement(from: defaults) ?? .default
+    }
+
+    /// Production initialization shares the host/extension transition boundary with starts,
+    /// edits and pass recovery. A concurrent first save cannot be overwritten by fresh defaults.
+    public static func loadForEnforcement() -> FlintWebRestrictions? {
+        #if canImport(FamilyControls) && canImport(DeviceActivity) && canImport(ManagedSettings)
+        return FlintSessionController().withTransition { loadForEnforcement(from: .flintGroup) } ?? nil
+        #else
+        return loadForEnforcement(from: .flintGroup)
+        #endif
     }
 
     /// Only a genuinely fresh installation may interpret missing preferences as opt-out.
     /// Established-but-missing or unreadable intent preserves the last-good finite keys.
     /// The optional native-store probe keeps isolated persistence tests independent of the OS.
-    public static func loadForEnforcement(from defaults: UserDefaults? = .flintGroup,
+    public static func loadForEnforcement(from defaults: UserDefaults?,
                                           existingWebStores: (() -> Bool)? = nil) -> FlintWebRestrictions? {
         guard let defaults, defaults.synchronize() else { return nil }
         guard let stored = defaults.object(forKey: storageKey) else {
@@ -213,7 +225,9 @@ extension FlintWebRestrictions {
                     $0.rawValue + ".quarantine.adr012"] }
             guard !evidence.contains(where: { defaults.object(forKey: $0) != nil }),
                   !(existingWebStores?() ?? hasExistingWebStores()) else { return nil }
-            return .default
+            // Persist the positively fresh opt-out before another domain initializes its
+            // ledger/markers. Otherwise the second launch would strand this unsaved default.
+            return Self.default.save(to: defaults) ? .default : nil
         }
         // Even malformed legacy bytes prove this domain existed. Retain the original bytes
         // and back-fill the marker before decoding; losing the key later cannot reset intent.

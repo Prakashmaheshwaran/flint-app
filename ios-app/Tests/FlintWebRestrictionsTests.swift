@@ -106,12 +106,15 @@ final class FlintWebRestrictionsTests: XCTestCase {
         XCTAssertEqual(FlintWebRestrictions.load(from: defaults), config)
     }
 
-    func testFreshMissingDomainIsOptOutWithoutCreatingAMarker() throws {
+    func testFreshDefaultStaysReadableAfterLedgerInitialization() throws {
         let suite = "test.flint.web.fresh.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), .default)
-        XCTAssertNil(defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
+        XCTAssertNotNil(defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
+        defaults.set(Date(), forKey: FlintProtectionLedger.initializedMarkerKey)
+        let reopened = try XCTUnwrap(UserDefaults(suiteName: suite))
+        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: reopened, existingWebStores: { false }), .default)
     }
 
     func testSuccessfulSaveMarksDomainAndMissingKeyStaysUnavailableAcrossReloads() throws {
@@ -190,5 +193,17 @@ final class FlintWebRestrictionsTests: XCTestCase {
         XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }))
         defaults.failFlush = false
         XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults), previous)
+    }
+
+    func testFailedFreshInitializationIsUnavailableAndCanRetryWhileStillFresh() throws {
+        let suite = "test.flint.web.failed-init.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(FailingWebDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.failFlush = true
+        XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }))
+        XCTAssertNil(defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
+        XCTAssertNil(defaults.object(forKey: "flint.webRestrictions"))
+        defaults.failFlush = false
+        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), .default)
     }
 }
