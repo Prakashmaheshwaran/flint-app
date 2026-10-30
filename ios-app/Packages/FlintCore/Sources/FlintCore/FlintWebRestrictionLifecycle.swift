@@ -238,39 +238,83 @@ public extension FlintSessionWebRestricting {
 /// Later raw global preference changes cannot weaken that occurrence's captured policy.
 public struct FlintSessionWebRestrictionAdapter: FlintSessionWebRestricting {
     private let lifecycle: FlintWebRestrictionLifecycle
-    private let configuration: () -> FlintWebRestrictions?
+    private let read: () -> FlintWebRestrictionRead
     private let transition: (() -> Void) -> Bool
+    private let recordHealth: (FlintArmingHealth.DomainReport) -> Void
 
     public init(writer: any FlintWebRestrictionWriting,
                 configuration: @escaping () -> FlintWebRestrictions?,
                 recoveryGate: @escaping () -> FlintPassRecoveryGate = { .enforcing },
                 clock: FlintClock? = nil) {
-        self.init(writer: writer, configuration: configuration, recoveryGate: recoveryGate, clock: clock,
+        self.init(writer: writer, read: { configuration().map(FlintWebRestrictionRead.available) ?? .unavailable },
+                  recoveryGate: recoveryGate, clock: clock)
+    }
+
+    public init(writer: any FlintWebRestrictionWriting, read: @escaping () -> FlintWebRestrictionRead,
+                recoveryGate: @escaping () -> FlintPassRecoveryGate = { .enforcing }, clock: FlintClock? = nil) {
+        self.init(writer: writer, read: read, recoveryGate: recoveryGate, clock: clock,
             children: .live, transition: { body in
                 FlintSessionController().withTransition { body(); return true } ?? false
-            })
+            }, recordHealth: Self.recordLiveHealth)
     }
 
     init(writer: any FlintWebRestrictionWriting, configuration: @escaping () -> FlintWebRestrictions?,
          recoveryGate: @escaping () -> FlintPassRecoveryGate = { .enforcing }, clock: FlintClock? = nil,
          children: FlintWebRestrictionChildren, transition: @escaping (() -> Void) -> Bool = { body in body(); return true }) {
+        self.init(writer: writer, read: { configuration().map(FlintWebRestrictionRead.available) ?? .unavailable },
+            recoveryGate: recoveryGate, clock: clock, children: children, transition: transition)
+    }
+
+    init(writer: any FlintWebRestrictionWriting, read: @escaping () -> FlintWebRestrictionRead,
+         recoveryGate: @escaping () -> FlintPassRecoveryGate = { .enforcing }, clock: FlintClock? = nil,
+         children: FlintWebRestrictionChildren, transition: @escaping (() -> Void) -> Bool = { body in body(); return true },
+         recordHealth: @escaping (FlintArmingHealth.DomainReport) -> Void = { _ in }) {
         self.lifecycle = FlintWebRestrictionLifecycle(writer: writer, recoveryGate: recoveryGate, clock: clock, children: children)
-        self.configuration = configuration
+        self.read = read
         self.transition = transition
+        self.recordHealth = recordHealth
     }
 
     public func reconcile(_ session: FlintActiveSession, clock: FlintClock) {
         _ = transition {
-            lifecycle.reconcileSession(session, config: configuration(), now: clock.now(), clock: clock)
+            lifecycle.resetObservations()
+            let state = read()
+            if state == .busy { recordHealth(FlintWebRestrictionHostReconciler.busyReport(now: clock.now())); return }
+            let config: FlintWebRestrictions?
+            if case let .available(value) = state { config = value } else { config = nil }
+            lifecycle.reconcileSession(session, config: config, now: clock.now(), clock: clock)
+            var failures: [FlintArmingHealth.Failure] = []
+            if config == nil || config?.validationMessage != nil {
+                failures.append(.init(activityName: "webRestrictions", reason: "Saved website preferences are unavailable. Existing frozen policy was retained; website rules need repair."))
+            }
+            if !lifecycle.unavailableStores.isEmpty {
+                failures.append(.init(activityName: session.monitorName, reason: "This session's frozen website policy is unavailable. Existing Safari keys were preserved."))
+            }
+            let applied = lifecycle.appliedStores.count
+            recordHealth(.init(enabled: applied, attempted: applied, armed: applied, failures: failures, updatedAt: clock.now()))
         }
     }
 
     public func prepareReplacement(_ replacement: FlintActiveSession, replacing previous: FlintActiveSession?, clock: FlintClock) -> Bool {
         var prepared = false
         guard transition({
-            prepared = lifecycle.prepareReplacement(replacement, replacing: previous, config: configuration(), clock: clock)
+            guard previous?.isEnforcing(at: clock.now(), clock: clock) == true else { prepared = true; return }
+            let state = read()
+            if state == .busy { recordHealth(FlintWebRestrictionHostReconciler.busyReport(now: clock.now())); return }
+            let config: FlintWebRestrictions?
+            if case let .available(value) = state { config = value } else { config = nil }
+            prepared = lifecycle.prepareReplacement(replacement, replacing: previous, config: config, clock: clock)
+            if !prepared {
+                recordHealth(.init(enabled: 0, attempted: 0, armed: 0, failures: [.init(activityName: "webRestrictions",
+                    reason: "The replacement's website policy could not be prepared. Existing protection was preserved.")], updatedAt: clock.now()))
+            }
         }) else { return false }
         return prepared
+    }
+
+    private static func recordLiveHealth(_ report: FlintArmingHealth.DomainReport) {
+        guard let group = FlintGroupStore() else { return }
+        group.saveArmingHealth(group.loadArmingHealth().replacing("webRestrictions", with: report))
     }
 }
 #endif

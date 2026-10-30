@@ -304,7 +304,7 @@ public struct FlintSessionEnvironment {
             store: { FlintGroupStore() },
             shield: LiveSessionShield(),
             webRestrictions: FlintSessionWebRestrictionAdapter(
-                writer: FlintManagedWebRestrictionWriter(), configuration: { .loadForEnforcement() },
+                writer: FlintManagedWebRestrictionWriter(), read: FlintWebRestrictions.readForEnforcement,
                 recoveryGate: { FlintPassRecoveryGate.read() }, clock: .system
             ),
             registrar: LiveSessionRegistrar(),
