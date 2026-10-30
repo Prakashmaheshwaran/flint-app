@@ -68,7 +68,8 @@ class TimerArmingViewModelTest {
         assertEquals(0, disk.writes); assertTrue(rules.rules.first().isEmpty())
         assertEquals(draft, vm.uiState.value.draft)
         assertFalse((vm.uiState.value.arming as TimerArmingState.Degraded).committed)
-        assertTrue(vm.uiState.value.error!!.startsWith("Not armed.")); assertEquals(0, requests)
+        assertEquals("Turn on Accessibility or grant Usage Access.", vm.uiState.value.error)
+        assertTrue(vm.uiState.value.startErrorIsPrerequisite); assertEquals(0, requests)
     }
 
     @Test fun `PC-61 granted permission without a live service cannot save a Timer`() = runTest(dispatcher) {
@@ -133,8 +134,45 @@ class TimerArmingViewModelTest {
         vm.start(); runCurrent()
         assertEquals(writes, disk.writes); assertTrue(rules.rules.first().isEmpty())
         assertEquals(draft, vm.uiState.value.draft); assertEquals(0, requests)
-        assertTrue(vm.uiState.value.error!!.contains("Resume protection first."))
+        assertEquals("Protection recovery is active. Try again after recovery ends.", vm.uiState.value.error)
         assertFalse((vm.uiState.value.arming as TimerArmingState.Degraded).committed)
+        val attemptedIds = ids
+        vm.refreshHealth(); runCurrent()
+        assertNotNull("The older public status cannot erase a serialized recovery refusal", vm.uiState.value.startPrerequisite)
+        advanceTimeBy(3_600_001); health.value = readyTimerStatus(clock())
+        vm.refreshHealth(); runCurrent()
+        assertNull(vm.uiState.value.startPrerequisite); assertNull(vm.uiState.value.error)
+        assertEquals(writes, disk.writes); assertEquals(draft, vm.uiState.value.draft)
+        assertEquals(attemptedIds, ids); assertTrue(rules.rules.first().isEmpty())
+    }
+
+    @Test fun `PC-77 returning from permission settings clears the old refusal without Retry or auto-start`() = runTest(dispatcher) {
+        permissions = TimerPermissions(); liveA = false
+        val vm = model(); runCurrent(); vm.selectApps(listOf(app)); vm.selectDuration(5)
+        val draft = vm.uiState.value.draft
+        vm.start(); runCurrent()
+        assertNotNull(vm.uiState.value.error); assertTrue(vm.uiState.value.startErrorIsPrerequisite)
+        vm.refreshHealth(); runCurrent()
+        assertEquals("Turn on Accessibility or grant Usage Access.", vm.uiState.value.error)
+        permissions = TimerPermissions(accessibilityEnabled = true); liveA = true
+        health.value = readyTimerStatus(clock())
+        vm.refreshHealth(); runCurrent() // the same refresh used by ON_RESUME
+        assertNull(vm.uiState.value.error); assertNull(vm.uiState.value.startPrerequisite)
+        assertFalse(vm.uiState.value.startErrorIsPrerequisite)
+        assertEquals(TimerArmingState.Idle, vm.uiState.value.arming)
+        assertEquals(draft, vm.uiState.value.draft); assertTrue(vm.uiState.value.canStart)
+        assertEquals(0, ids); assertEquals(0, disk.writes); assertEquals(0, requests)
+    }
+
+    @Test fun `PC-65 a healthy resume never hides an unsaved Timer storage failure`() = runTest(dispatcher) {
+        val vm = model(); runCurrent(); vm.selectApps(listOf(app)); disk.fail = true
+        vm.start(); runCurrent()
+        val failure = vm.uiState.value.error
+        assertNotNull(failure); assertFalse(vm.uiState.value.startErrorIsPrerequisite)
+        val attempts = ids
+        vm.refreshHealth(); runCurrent()
+        assertEquals(failure, vm.uiState.value.error); assertNull(vm.uiState.value.startPrerequisite)
+        assertEquals(attempts, ids); assertEquals(0, disk.writes); assertTrue(rules.rules.first().isEmpty())
     }
 
     @Test fun `PC-01 persisted success is Applying until a fresh exact-ID backend observation`() = runTest(dispatcher) {

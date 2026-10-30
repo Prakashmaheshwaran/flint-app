@@ -3,9 +3,11 @@ package com.flint.peakfocus.feature.blocklist
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.flint.peakfocus.core.model.AccessClockStamp
@@ -35,6 +37,9 @@ class TimerArmingScreenTest {
         compose.onAllNodesWithText("resting", substring = true, ignoreCase = true).assertCountEquals(0)
         compose.onAllNodesWithText("Armed").assertCountEquals(0)
         compose.onAllNodesWithText("running", substring = true, ignoreCase = true).assertCountEquals(0)
+        compose.onNodeWithText("Saved timer plan").assertIsDisplayed()
+        compose.onNodeWithContentDescription("05:00 remaining in saved plan").assertIsDisplayed()
+        compose.onAllNodesWithText("Breathe with the light.").assertCountEquals(0)
     }
 
     @Test fun `PC-65 degraded saved Timer exposes reason retry and setup without resting copy`() {
@@ -47,6 +52,8 @@ class TimerArmingScreenTest {
         compose.onNodeWithText("Retry protection").performClick()
         compose.onNodeWithText("Check setup").performClick()
         assertEquals(1, retries); assertEquals(1, setups)
+        compose.onNodeWithText("Saved timer plan").assertIsDisplayed()
+        compose.onAllNodesWithText("Breathe with the light.").assertCountEquals(0)
     }
 
     @Test fun `PC-73 Armed displays its actual backend check instead of checked now`() {
@@ -55,6 +62,9 @@ class TimerArmingScreenTest {
         compose.onNodeWithText("1 app resting", ignoreCase = true).assertExists()
         compose.onNodeWithText("Service checked at", substring = true).assertExists()
         compose.onAllNodesWithText("checked now", substring = true, ignoreCase = true).assertCountEquals(0)
+        compose.onAllNodesWithText("Saved timer plan").assertCountEquals(0)
+        compose.onNodeWithContentDescription("05:00 remaining").assertIsDisplayed()
+        compose.onNodeWithText("Breathe with the light.").assertIsDisplayed()
     }
 
     @Test fun `PC-73 stale grace shows Checking without Armed degraded or resting text`() {

@@ -48,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -172,6 +173,7 @@ fun TimerScreen(
             onRetryProtection = viewModel::retryArming,
             onSetup = onSetup,
             modifier = modifier,
+            setupAvailable = setupLabel != null,
         )
         history.completion != null -> CompleteScene(
             session = history.completion!!,
@@ -209,6 +211,7 @@ fun TimerScreen(
             onStart = viewModel::start,
             onRetryProtection = viewModel::retryStartProtection,
             onSetup = onSetup,
+            setupAvailable = setupLabel != null,
         )
     }
 
@@ -396,6 +399,7 @@ internal fun StartFocusSheet(
     onStart: () -> Unit,
     onRetryProtection: () -> Unit,
     onSetup: () -> Unit,
+    setupAvailable: Boolean = true,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
@@ -546,9 +550,13 @@ internal fun StartFocusSheet(
             Modifier.fillMaxWidth().padding(horizontal = FlintSpacing.gutter)
                 .navigationBarsPadding().padding(top = 8.dp, bottom = 16.dp),
         ) {
-            val reason = state.error?.removePrefix("Not armed. ") ?: state.startPrerequisite
+            val reason = state.error ?: state.startPrerequisite
             if (reason != null) {
-                Column(Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }) {
+                val announcement = if (reason == "Checking protection…") reason else "Not armed. $reason"
+                Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {
+                    liveRegion = LiveRegionMode.Polite
+                    contentDescription = announcement
+                }) {
                     if (reason != "Checking protection…") {
                         Text("Not armed.", style = MaterialTheme.typography.titleSmall, color = FlintPalette.Danger)
                     }
@@ -556,7 +564,7 @@ internal fun StartFocusSheet(
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     TextButton(onClick = onRetryProtection, enabled = !state.busy) { Text("Retry") }
-                    TextButton(onClick = onSetup, enabled = !state.busy) { Text("Check setup") }
+                    if (setupAvailable) TextButton(onClick = onSetup, enabled = !state.busy) { Text("Check setup") }
                 }
             }
             EmberButton(
@@ -589,9 +597,11 @@ internal fun SessionScene(
     onRetryProtection: () -> Unit,
     onSetup: () -> Unit,
     modifier: Modifier,
+    setupAvailable: Boolean = true,
 ) {
     val deadline = session.expiresAtEpochMs
     val start = session.createdAtEpochMsOrNull()
+    val armed = arming is TimerArmingState.Armed && arming.ruleId == session.id
     val progress = if (deadline != null && start != null && deadline > start) {
         ((nowEpochMs - start).toFloat() / (deadline - start)).coerceIn(0f, 1f)
     } else {
@@ -599,7 +609,7 @@ internal fun SessionScene(
     }
     Box(modifier.fillMaxSize()) {
         EmberLandscape(horizonOffset = 8f, orbCenter = null)
-        SunArc(progress)
+        SunArc(progress, Modifier.alpha(if (armed) 1f else 0.3f))
         Column(
             Modifier
                 .fillMaxSize()
@@ -615,14 +625,19 @@ internal fun SessionScene(
                 }
             }
             if (others > 0) FlintEyebrow("+$others more configured", color = FlintPalette.Stone)
-            TimerArmingNotice(arming, onRetryProtection, onSetup, enabled)
+            TimerArmingNotice(arming, onRetryProtection, onSetup, enabled, setupAvailable)
             if (deadline != null) {
                 val remaining = timerCountdown(deadline - nowEpochMs)
+                if (!armed) Text("Saved timer plan", style = MaterialTheme.typography.bodySmall, color = FlintPalette.Mist,
+                    modifier = Modifier.padding(top = 18.dp))
                 Text(
                     remaining,
+                    color = if (armed) FlintPalette.Bone else FlintPalette.Mist,
                     style = MaterialTheme.typography.displayLarge.merge(FlintNumerals),
                     maxLines = 1,
-                    modifier = Modifier.padding(top = 26.dp).semantics { contentDescription = "$remaining remaining" },
+                    modifier = Modifier.padding(top = if (armed) 26.dp else 8.dp).semantics {
+                        contentDescription = if (armed) "$remaining remaining" else "$remaining remaining in saved plan"
+                    },
                 )
                 Text(
                     "ends at ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(deadline))}",
@@ -634,7 +649,7 @@ internal fun SessionScene(
                 Text("No end time", style = MaterialTheme.typography.headlineLarge, modifier = Modifier.padding(top = 40.dp))
             }
             Spacer(Modifier.weight(1f))
-            Text("Breathe with the light.", style = MaterialTheme.typography.titleLarge.copy(fontSize = MaterialTheme.typography.titleLarge.fontSize * (17f / 22f)),
+            if (armed) Text("Breathe with the light.", style = MaterialTheme.typography.titleLarge.copy(fontSize = MaterialTheme.typography.titleLarge.fontSize * (17f / 22f)),
                 color = FlintPalette.SoftBone, modifier = Modifier.padding(bottom = 64.dp))
             Row(
                 Modifier
@@ -661,7 +676,7 @@ internal fun SessionScene(
 /** Coverage feedback uses only the backend's actual observation; retries do not restart a Timer. */
 @Composable
 internal fun TimerArmingNotice(arming: TimerArmingState, onRetry: () -> Unit, onSetup: () -> Unit,
-                               enabled: Boolean = true) {
+                               enabled: Boolean = true, setupAvailable: Boolean = true) {
     Column(Modifier.fillMaxWidth().padding(top = 12.dp).semantics { liveRegion = LiveRegionMode.Polite },
         verticalArrangement = Arrangement.spacedBy(4.dp)) {
         when (arming) {
@@ -685,7 +700,7 @@ internal fun TimerArmingNotice(arming: TimerArmingState, onRetry: () -> Unit, on
                 if (arming.committed) Text("The Timer keeps its saved end time.", style = MaterialTheme.typography.bodySmall)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = onRetry, enabled = enabled) { Text("Retry protection") }
-                    TextButton(onClick = onSetup, enabled = enabled) { Text("Check setup") }
+                if (setupAvailable) TextButton(onClick = onSetup, enabled = enabled) { Text("Check setup") }
                 }
             }
         }
