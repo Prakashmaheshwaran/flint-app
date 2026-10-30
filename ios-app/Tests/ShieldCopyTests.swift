@@ -57,8 +57,8 @@ final class ShieldCopyTests: XCTestCase {
               quotaZone: "UTC", timeUncertain: uncertain)
     }
 
-    private func credit(_ preview: FlintOpenCreditPreview, hardcore: Bool = false) -> ShieldCopy.OpenCredit {
-        .target(preview, hardcore: hardcore)
+    private func credit(_ preview: FlintOpenCreditPreview, passOnly: Bool = false) -> ShieldCopy.OpenCredit {
+        .target(preview, passOnly: passOnly)
     }
 
     private var liveGrant: FlintOpenCreditGrant {
@@ -228,10 +228,10 @@ final class ShieldCopyTests: XCTestCase {
         XCTAssertFalse(result.subtitle.contains("break"))
     }
 
-    /// The global pass recovery suspends Open Limits (ADR-012 §6), so an exhausted Hardcore
-    /// limit names it. It is a policy statement, not a claim that a pass is available now.
-    func testHardcoreExhaustedNamesOnlyTheEmergencyPass() {
-        let line = ". Only the Emergency Pass can pause this early."
+    /// The global pass recovery suspends Open Limits (ADR-012 §6). When no covering limit
+    /// allows an ordinary exit, the exhausted shield names the pass, conditionally (C01).
+    func testPassOnlyExhaustedNamesAnAvailableEmergencyPass() {
+        let line = ". An available Emergency Pass can pause this for 60 minutes."
         let cases: [(FlintOpenCreditPreview, String)] = [
             (preview(remaining: 0, blockedBy: .exhausted), "No credits left today · resets about 00:00"),
             (preview(remaining: 0, blockedBy: .exhausted, uncertain: true),
@@ -241,16 +241,25 @@ final class ShieldCopyTests: XCTestCase {
              "No credits left today"),
         ]
         for (value, lead) in cases {
-            let result = copy(credit: credit(value, hardcore: true))
+            let result = copy(credit: credit(value, passOnly: true))
             XCTAssertEqual(result.subtitle, lead + line)
             XCTAssertNil(result.secondaryButtonLabel)
         }
-        // Hardcore never changes an available credit or another cause's copy.
-        XCTAssertEqual(copy(credit: credit(preview(), hardcore: true)).secondaryButtonLabel, "Use one credit · 5 minutes")
-        XCTAssertFalse(copy(credit: credit(preview(blockedBy: .otherContributor, contributors: [.session]),
-                                           hardcore: true)).subtitle.contains("Emergency Pass"))
-        XCTAssertFalse(copy(credit: credit(preview(blockedBy: .unavailable), hardcore: true)).subtitle
-            .contains("Emergency Pass"))
+        // Pass-only never changes an available credit or any non-exhausted state's copy.
+        XCTAssertEqual(copy(credit: credit(preview(), passOnly: true)).secondaryButtonLabel, "Use one credit · 5 minutes")
+        let states: [FlintOpenCreditPreview] = [
+            preview(), preview(remaining: 1), preview(grant: liveGrant),
+            preview(blockedBy: .otherContributor, contributors: [.session]),
+            preview(blockedBy: .categoryOverlap), preview(blockedBy: .unavailable),
+            preview(blockedBy: .identityNeedsReselection), preview(blockedBy: .applying),
+            preview(remaining: nil, cap: nil, blockedBy: nil),
+        ]
+        for value in states {
+            for unit in [ShieldCopy.Unit.app, .site] {
+                XCTAssertFalse(copy(unit: unit, credit: credit(value, passOnly: true)).subtitle.contains("Emergency Pass"),
+                               "\(value)")
+            }
+        }
     }
 
     func testAnotherContributorNamesOnlyItsKind() {

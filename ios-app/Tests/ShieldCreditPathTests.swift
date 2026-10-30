@@ -89,7 +89,7 @@ final class ShieldCreditPathTests: XCTestCase {
     /// What the configuration extension draws right now for this target.
     private func drawn() -> ShieldCopy {
         ShieldCopy(name: "Instagram", unit: .app, contributors: nil, now: now,
-                   openCredit: .target(service.preview(target: shieldKey)),
+                   openCredit: .target(service.preview(target: shieldKey), passOnly: false),
                    locale: english, timeZone: utc)
     }
     /// Exactly the production action wiring, with the injected service standing in for the

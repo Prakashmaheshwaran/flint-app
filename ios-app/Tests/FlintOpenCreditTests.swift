@@ -780,4 +780,50 @@ final class FlintOpenCreditTests: XCTestCase {
         XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 0)
         XCTAssertEqual(try Data(contentsOf: file), original)
     }
+
+    // MARK: Pass-only exit (shield copy)
+
+    /// The shield names the pass only when no covering limit allows an ordinary exit now.
+    func testPassOnlyRequiresEveryCoveringLimitToRefuseOrdinaryWeakening() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func rule(_ id: String, _ tier: BreakLevel, enabled: Bool = true,
+                  protection: FlintRuleProtection? = .init(timeZoneID: "UTC")) -> FlintOpenLimitRule {
+            var rule = FlintOpenLimitRule(id: id, name: id, opensAllowed: 1, breakLevel: tier, enabled: enabled)
+            rule.protection = protection
+            return rule
+        }
+        func passOnly(_ rules: [FlintOpenLimitRule]) -> Bool {
+            FlintOpenCreditExit.requiresPass(FlintOpenCredit.exitCauses(covering: rules, at: now))
+        }
+        XCTAssertTrue(passOnly([rule("a", .hardcore)]))
+        XCTAssertTrue(passOnly([rule("a", .hardcore), rule("b", .hardcore)]))
+        XCTAssertTrue(passOnly([rule("a", .hardcore), rule("off", .easy, enabled: false)]), "disabled rules don't cover")
+        XCTAssertFalse(passOnly([]), "no covering limit makes no claim")
+        XCTAssertFalse(passOnly([rule("a", .easy)]))
+        XCTAssertFalse(passOnly([rule("a", .harder)]), "Harder allows an edit after its wait")
+        // An Easy sibling can be switched off at once, restoring the Hardcore cap's credits.
+        XCTAssertFalse(passOnly([rule("a", .hardcore), rule("b", .easy)]))
+        XCTAssertFalse(passOnly([rule("a", .hardcore), rule("b", .harder)]))
+        // A migrated occurrence keeps the old build's free edits until it ends (§12).
+        XCTAssertFalse(passOnly([rule("a", .hardcore, protection: .init(timeZoneID: "UTC",
+                                     legacyRightsUntil: now.addingTimeInterval(3600)))]))
+        XCTAssertTrue(passOnly([rule("a", .hardcore, protection: .init(timeZoneID: "UTC",
+                                    legacyRightsUntil: now.addingTimeInterval(-1)))]), "expired legacy right")
+        // Read without migration: pre-contract rights apply, so no pass-only claim.
+        XCTAssertFalse(passOnly([rule("a", .hardcore, protection: nil)]))
+        // An inactive cause allows edits; the predicate itself never claims for one.
+        XCTAssertFalse(FlintOpenCreditExit.requiresPass([.init(causeID: "x", kind: .openLimit, tier: .hardcore,
+                                                              isActive: false)]))
+    }
+
+    /// The session and Safari stores must not be swapped: the shield names the kind.
+    func testContributorStoresNameEachStoreByItsKind() {
+        let schedule = FlintScheduleRule(name: "Work", schedule: FlintSchedule(startHour: 9, endHour: 17))
+        let limit = FlintLimitRule(name: "Social", thresholdMinutes: 30)
+        let stores = FlintOpenCredit.contributorStores(schedules: [schedule], limits: [limit])
+        XCTAssertEqual(stores.map(\.kind), [.session, .safariRestriction, .schedule, .timeLimit])
+        XCTAssertEqual(stores.map(\.storeName), ["flint", FlintWebRestrictionLifecycle.legacyStoreName,
+                                                 schedule.storeName, limit.storeName])
+        XCTAssertNotEqual(FlintWebRestrictionLifecycle.legacyStoreName, "flint")
+    }
 }

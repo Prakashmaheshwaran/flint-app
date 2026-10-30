@@ -13,10 +13,11 @@ struct ShieldCopy: Equatable {
 
     /// What the configuration extension knows about Open credits for this shield.
     enum OpenCredit: Equatable {
-        /// An enabled Open Limit covers this exact app/site token. `hardcore` is true when a
-        /// covering Open Limit is Hardcore: after exhaustion only the Emergency Pass's global
-        /// recovery (ADR-012 §6, which suspends Open Limits) lifts it before the reset.
-        case target(FlintOpenCreditPreview, hardcore: Bool = false)
+        /// An enabled Open Limit covers this exact app/site token. `passOnly` is
+        /// `FlintOpenCreditExit.requiresPass`: every covering limit denies or defers ordinary
+        /// weakening now, so after exhaustion the Emergency Pass's global recovery (ADR-012 §6,
+        /// which suspends Open Limits) is the remaining in-Flint route before the reset.
+        case target(FlintOpenCreditPreview, passOnly: Bool)
         /// The shield comes from a category that an enabled Open Limit selected. Opaque
         /// category tokens are never credit targets.
         case categoryTarget
@@ -65,7 +66,7 @@ struct ShieldCopy: Equatable {
     private static func creditCopy(_ credit: OpenCredit, unit: Unit, locale: Locale,
                                    timeZone: TimeZone) -> (subtitle: String, offer: String?)? {
         let preview: FlintOpenCreditPreview
-        let hardcore: Bool
+        let passOnly: Bool
         switch credit {
         case .acceptanceDisabled:
             return (String(localized: "Open credits aren't available yet", locale: locale), nil)
@@ -76,9 +77,9 @@ struct ShieldCopy: Equatable {
             case .site:
                 return (String(localized: "Open credits work for individual sites — pick sites in Flint", locale: locale), nil)
             }
-        case let .target(value, isHardcore):
+        case let .target(value, isPassOnly):
             preview = value
-            hardcore = isHardcore
+            passOnly = isPassOnly
         }
 
         if offersCredit(preview), let remaining = preview.remaining, let duration = preview.duration {
@@ -120,10 +121,11 @@ struct ShieldCopy: Equatable {
             } else {
                 exhausted = String(localized: "No credits left today", locale: locale)
             }
-            // A policy statement, not an availability claim: the pass may be cooling down, and
-            // its recovery pauses the limit for 60 minutes rather than ending it.
-            guard hardcore else { return (exhausted, nil) }
-            return (String(localized: "\(exhausted). Only the Emergency Pass can pause this early.", locale: locale), nil)
+            // Conditional ("available"): the pass may be cooling down (§6, C01). Its recovery
+            // pauses the limit for 60 minutes; it does not end it or refill credits.
+            guard passOnly else { return (exhausted, nil) }
+            return (String(localized: "\(exhausted). An available Emergency Pass can pause this for 60 minutes.",
+                           locale: locale), nil)
         case nil:
             // No pool, or no positive interval before the reset: accept would refuse.
             return (unavailable(locale), nil)
