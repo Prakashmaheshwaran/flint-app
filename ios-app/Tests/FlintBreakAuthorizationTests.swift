@@ -131,6 +131,7 @@ final class FlintBreakAuthorizationTests: XCTestCase {
         XCTAssertTrue(grant.authorizes(cause.cause!, target: a, at: instant()))
         XCTAssertFalse(grant.authorizes(cause.cause!, target: b, at: instant()))
         XCTAssertFalse(grant.authorizes(contributor(tier: .easy, revision: 2).cause!, target: a, at: instant()))
+        XCTAssertFalse(grant.authorizes(contributor(tier: .harder).cause!, target: a, at: instant()))
         XCTAssertFalse(grant.authorizes(contributor("new", tier: .easy).cause!, target: a, at: instant()))
     }
 

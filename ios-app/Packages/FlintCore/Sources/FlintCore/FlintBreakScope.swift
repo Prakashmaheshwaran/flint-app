@@ -51,7 +51,9 @@ public struct FlintBreakContributor: Equatable, Sendable {
     public let cause: FlintCauseState?
     public let selection: Selection?
     /// Existing paired-clock type, projected from the cause's logical remaining time.
-    /// nil is a known unbounded end only for Easy; unknown time must set timeKnown = false.
+    /// nil is valid only for known unbounded Easy (cause.end == nil and timeKnown == true).
+    /// Finite Easy and other tiers require a valid, future, same-boot logical end;
+    /// unknown time must set timeKnown = false.
     public let logicalEnd: FlintLedgerInstant?
     public let timeKnown: Bool
     /// The exact persisted ledger entry; nil for a Harder cause means unavailable, not n = 0.

@@ -69,8 +69,9 @@ public struct FlintBreakGrant: Codable, Equatable, Sendable, Identifiable {
     public func remaining(clock: FlintClock) -> TimeInterval { remaining(at: FlintLedgerInstant(clock: clock)) }
 
     /// Replays are receipts, not authority to release a new cause/revision or extend the end.
-    /// Phase-2 adapters must bump revision for every effective scope/tier/end change and
-    /// re-resolve all contributors; an unchanged revision promises an immutable logical end.
+    /// Phase-2 adapters must also re-resolve cause presence/activity and compare current
+    /// logical ends with their accepted snapshots. Sessions can retain revision 0, so
+    /// revision alone cannot establish unchanged authority; this check is not sufficient.
     public func authorizes(_ cause: FlintCauseState, target: FlintBreakScope.Target, at now: FlintLedgerInstant) -> Bool {
         remaining(at: now) > 0 && cause.isActive && scope.targets.contains(target) && causes.contains(Cause(cause))
     }

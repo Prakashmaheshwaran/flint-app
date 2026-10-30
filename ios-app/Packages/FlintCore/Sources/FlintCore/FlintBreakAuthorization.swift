@@ -12,6 +12,7 @@ public enum FlintBreakAuthorization {
     public enum Denial: Equatable, Sendable {
         case hardcore
         case unavailable
+        /// UI must render the remaining time and a separate "Resume now" control.
         case activeGrant(remaining: TimeInterval)
         public var message: String {
             switch self {
@@ -51,6 +52,7 @@ public enum FlintBreakAuthorization {
         case denied(Denial)
         case confirmationRequired
         case waitNotMatured
+        /// The persisted wait does not match this request; restart the wait.
         case pendingMismatch
     }
 
