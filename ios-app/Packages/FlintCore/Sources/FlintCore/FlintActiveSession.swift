@@ -148,6 +148,11 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
     /// Persist this value under the session transition lock. A later boot can never recover more
     /// than this checkpoint, even when wall time rolls back near expiry (PC-55/58).
     public func checkpointed(clock: FlintClock, naturalEndObservedAt: Date? = nil) -> FlintActiveSession {
+        // Derive the value and its anchor from one observation. Re-reading the real monotonic
+        // clock between those operations would move the deadline later by the read latency.
+        let observation = FlintLedgerInstant(clock: clock)
+        let clock = FlintClock(now: { observation.wall }, monotonic: { observation.monotonic },
+                               bootSessionID: { observation.bootID }, calendar: clock.calendar)
         guard let remaining = logicalRemaining(clock: clock) else { return self }
         let sameBoot: Bool
         if let checkpoint = remainingCheckpoint { sameBoot = checkpoint.elapsed(clock: clock) != nil }

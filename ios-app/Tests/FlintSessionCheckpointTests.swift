@@ -126,6 +126,18 @@ final class FlintSessionCheckpointTests: XCTestCase {
         XCTAssertEqual(decoded.logicalRemaining(clock: clock), 60)
     }
 
+    func testCheckpointSamplesMonotonicOnceWithoutExtendingTheDeadline() throws {
+        let original = session(duration: 60)
+        var reads = 0
+        let samplingClock = FlintClock(now: { self.wall.addingTimeInterval(10) }, monotonic: {
+            defer { reads += 1 }
+            return 50_010 + Double(reads)
+        }, bootSessionID: { "boot-1" }, calendar: { .current })
+        let saved = try XCTUnwrap(original.checkpointed(clock: samplingClock).remainingCheckpoint)
+        XCTAssertEqual(reads, 1)
+        XCTAssertEqual(saved.monotonic + saved.remaining, 50_060)
+    }
+
     func testOpenEndedSessionNeverAcquiresAFiniteCheckpoint() {
         let open = FlintActiveSession(name: "Easy", startedAt: wall, endsAt: nil,
                                        breakLevel: .easy, monitorName: "flint.session.open")
