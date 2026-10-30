@@ -535,6 +535,7 @@ final class FlintRuleArbiter {
 
     private func prepare<Rule: FlintGatedRule>(_ next: Rule, replacing old: Rule?) -> Bool {
         guard next.enabled else { return true }
+        _ = FlintWebRestrictionRuleAdapter.freeze([next], environment: env, existingWebStores: env.existingWebStores)
         if next.activityName == old?.activityName { return true } // cosmetic: no restart/counter reset
         if let old = old as? FlintLimitRule, old.enabled, old.occurrence(at: env.clock.now(), clock: env.clock) != nil {
             if #available(iOS 17.4, *) {} else { return false } // cannot reset already-used daily usage
