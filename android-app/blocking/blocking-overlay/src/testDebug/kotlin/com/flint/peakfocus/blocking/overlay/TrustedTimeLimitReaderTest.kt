@@ -62,7 +62,7 @@ class TrustedTimeLimitReaderTest {
         sample = 0
         assertEquals(60_000L, read.read("app", 1).remainingMs)
         sample = null
-        assertNull(read.read("app", 1).remainingMs) // Old under-budget evidence cannot prove current use.
+        assertEquals(60_000L, read.read("app", 1).remainingMs) // Retain known balance with a warning.
         sample = 60_000
         assertTrue(read.read("app", 1).spent)
         sample = Long.MAX_VALUE
@@ -133,7 +133,7 @@ class TrustedTimeLimitReaderTest {
                 TimeLimitUsageObservation(day, result.sampleAccepted)
             }, { _, _, _ -> total }, { now })
         val unknown = read.read("app", 1)
-        assertNull(unknown.remainingMs)
+        assertEquals(60_000L, unknown.remainingMs)
         assertEquals(TrustedTimeLimitBudget.Measurement.HISTORY_UNKNOWN, unknown.measurement)
         total = 60_000
         assertTrue(read.read("app", 1).spent)

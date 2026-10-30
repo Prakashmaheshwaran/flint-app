@@ -139,7 +139,7 @@ class TimeLimitUsageStoreTest {
         val zero = recreated.record(context, 0, jumped)
         assertTrue(zero.sampleAccepted)
         assertEquals(0L, zero.state.usedMs)
-        assertNull(TimeLimitDayAccounting.remainingMs(zero.state, 1))
+        assertEquals(60_000L, TimeLimitDayAccounting.remainingMs(zero.state, 1))
         val loaded = recreated.state.first { it !is StorageState.Loading }
         assertTrue(loaded is StorageState.Ready && loaded.value.targets.getValue("app").accountingUnknownUntilReset)
         val end = at(hour, 48 * hour + hour - 1_000)
@@ -233,8 +233,9 @@ class TimeLimitUsageStoreTest {
         val encoded = valid.values.value[TIME_USAGE_STATE]!!
         for (replacement in listOf<String?>(null, "unknown")) {
             val broken = encoded.lines().joinToString("\n") { row ->
-                if (!row.startsWith("R|")) row else row.substringBeforeLast('|') +
-                    (replacement?.let { "|$it" } ?: "")
+                if (!row.startsWith("R|")) row else row.split('|').toMutableList().apply {
+                    if (replacement == null) removeAt(11) else this[11] = replacement
+                }.joinToString("|")
             }
             val raw = valid.values.value.toMutablePreferences().also { it[TIME_USAGE_STATE] = broken }
             val disk = Disk(raw)

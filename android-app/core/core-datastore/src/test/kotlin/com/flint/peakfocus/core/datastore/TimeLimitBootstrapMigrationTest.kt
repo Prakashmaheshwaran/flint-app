@@ -121,7 +121,7 @@ class TimeLimitBootstrapMigrationTest {
         }
     }
 
-    @Test fun PC_54_PC_56_captureBeforeAClockJumpOrRebootDoesNotTurnLaterOsZeroIntoKnownUnusedQuota() = runBlocking {
+    @Test fun PC_54_PC_56_captureBeforeAClockJumpOrRebootRetainsItsBoundaryAndWarnsAboutEarlierHistory() = runBlocking {
         for (boot in listOf("boot", "next-boot")) {
             val migrated = TimeLimitBootstrapMigration({ at }, { "UTC" }, { setOf("legacy-only") })
                 .migrate(preferencesOf(PrefsKeys.TIME_LIMITS to "canonical~1~HARDCORE"))
@@ -137,7 +137,7 @@ class TimeLimitBootstrapMigrationTest {
                 val result = reader.record(ticket, 0, later)
                 assertEquals("UTC", result.state.zoneId)
                 assertTrue(result.state.accountingUnknownUntilReset)
-                assertNull(com.flint.peakfocus.blocking.engine.TimeLimitDayAccounting.remainingMs(result.state, 1))
+                assertEquals(60_000L, com.flint.peakfocus.blocking.engine.TimeLimitDayAccounting.remainingMs(result.state, 1))
                 assertTrue(result.state.reset.remainingToResetMs > 86_000_000)
             }
         }

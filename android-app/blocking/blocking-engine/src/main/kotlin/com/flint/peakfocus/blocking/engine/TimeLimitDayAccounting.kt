@@ -19,6 +19,9 @@ data class TimeLimitDayState(
     val timeUncertain: Boolean = false,
     /** Upgrade found an anchored old period whose earlier OS usage cannot be reconstructed. */
     val accountingUnknownUntilReset: Boolean = false,
+    /** Independent floors; null preserves source compatibility for pre-publication fixtures. */
+    val osUsedMs: Long? = null,
+    val observedUsedMs: Long = 0,
 )
 
 data class TimeLimitDayResult(val state: TimeLimitDayState, val rolled: Boolean, val sampleAccepted: Boolean = false)
@@ -50,11 +53,11 @@ object TimeLimitDayAccounting {
             reset = OpenCreditPolicy.ResetClock(now, if (rolled) nextMidnight(logicalWall, nextZone) else remaining),
             logicalCheckpoint = now.copy(wallEpochMs = logicalWall), observedAt = now,
             usedMs = if (rolled) 0 else current.usedMs,
-            // A changed OS clock/boot can hide usage between the last observation and the
-            // new measurement window. Keep evidenced exhaustion, but do not invent positive
-            // unused quota from that new window's zero until the trusted boundary.
-            accountingUnknownUntilReset = !rolled && (current.accountingUnknownUntilReset ||
-                elapsed == null || clockDiscontinuity(current.observedAt, now)),
+            osUsedMs = if (rolled) 0 else current.osUsedMs,
+            observedUsedMs = if (rolled) 0 else current.observedUsedMs,
+            // Missing history is a coverage warning. Clock/boot changes never disable a
+            // known balance or stop subsequently observed foreground time from spending it.
+            accountingUnknownUntilReset = !rolled && current.accountingUnknownUntilReset,
             timeUncertain = current.timeUncertain || elapsed == null || clockDiscontinuity(current.observedAt, now),
         )
         requireValid(next)
@@ -81,10 +84,13 @@ object TimeLimitDayAccounting {
         val newSegment = previous == null || previous.windowStartEpochMs != sample.windowStartEpochMs ||
             previous.observedAt.bootSessionId != sample.observedAt.bootSessionId ||
             clockDiscontinuity(previous.observedAt, sample.observedAt)
-        val delta = if (newSegment) sample.totalMs else (sample.totalMs - previous!!.totalMs).coerceAtLeast(0)
+        val oldOs = next.osUsedMs ?: next.usedMs
+        // A changed raw window can overlap the old one after a clock change/reboot. Its
+        // first total is another floor, not an additive charge for the same historic use.
+        val os = if (newSegment) maxOf(oldOs, sample.totalMs)
+            else saturatingAdd(oldOs, (sample.totalMs - previous!!.totalMs).coerceAtLeast(0))
         val baseline = if (newSegment) sample else sample.copy(totalMs = maxOf(sample.totalMs, previous!!.totalMs))
-        val used = if (delta > Long.MAX_VALUE - next.usedMs) Long.MAX_VALUE else next.usedMs + delta
-        val committed = next.copy(usedMs = used, lastSample = baseline)
+        val committed = next.copy(usedMs = maxOf(os, next.observedUsedMs), osUsedMs = os, lastSample = baseline)
         requireValid(committed)
         return TimeLimitDayResult(committed, reconciled.rolled, true)
     }
@@ -97,14 +103,31 @@ object TimeLimitDayAccounting {
         val remaining = (dailyMinutes * 60_000L - state.usedMs).coerceAtLeast(0)
         return when {
             remaining == 0L -> 0L
-            state.accountingUnknownUntilReset || state.lastSample == null -> null
+            state.lastSample == null && state.observedUsedMs == 0L -> null
             else -> remaining
         }
     }
 
+    /** A serialized, continuously observed foreground span supplies independent elapsed proof. */
+    fun observe(current: TimeLimitDayState, elapsedMs: Long): TimeLimitDayState {
+        requireValid(current); require(elapsedMs >= 0)
+        val os = current.osUsedMs ?: current.usedMs
+        val observed = saturatingAdd(current.observedUsedMs, elapsedMs)
+        return current.copy(usedMs = maxOf(os, observed), osUsedMs = os, observedUsedMs = observed).also(::requireValid)
+    }
+
+    /** Align the elapsed floor at an OS observation, without adding the two channels. */
+    fun alignObserved(current: TimeLimitDayState, observedAfterSampleMs: Long): TimeLimitDayState {
+        requireValid(current); require(observedAfterSampleMs >= 0)
+        val os = current.osUsedMs ?: current.usedMs
+        val observed = maxOf(current.observedUsedMs, saturatingAdd(os, observedAfterSampleMs))
+        return current.copy(usedMs = maxOf(os, observed), osUsedMs = os, observedUsedMs = observed).also(::requireValid)
+    }
+
     fun requireValid(state: TimeLimitDayState) {
         OpenCreditLedgerPolicy.quotaZone(state.zoneId)
-        require(state.periodId >= 0 && state.usedMs >= 0)
+        require(state.periodId >= 0 && state.usedMs >= 0 && state.observedUsedMs >= 0)
+        state.osUsedMs?.let { require(it >= 0 && state.usedMs == maxOf(it, state.observedUsedMs)) }
         requireStamp(state.observedAt); requireStamp(state.logicalCheckpoint); requireStamp(state.reset.checkpoint)
         require(state.reset.checkpoint == state.observedAt)
         require(state.logicalCheckpoint.elapsedRealtimeMs == state.observedAt.elapsedRealtimeMs &&
@@ -112,6 +135,8 @@ object TimeLimitDayAccounting {
         require(state.reset.remainingToResetMs in 1..ProtectionContract.MAX_OCCURRENCE_MS)
         state.lastSample?.let(::requireSample)
     }
+
+    private fun saturatingAdd(a: Long, b: Long): Long = if (b > Long.MAX_VALUE - a) Long.MAX_VALUE else a + b
 
     private fun nextMidnight(wallMs: Long, zone: ZoneId): Long {
         val local = Instant.ofEpochMilli(wallMs).atZone(zone)

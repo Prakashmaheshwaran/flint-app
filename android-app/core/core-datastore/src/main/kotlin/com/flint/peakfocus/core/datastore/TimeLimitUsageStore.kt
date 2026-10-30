@@ -11,7 +11,15 @@ internal val TIME_USAGE_STATE = stringPreferencesKey("time_limit_usage_state_v1"
 internal val TIME_USAGE_ARCHIVE = stringPreferencesKey("time_limit_usage_archive_v1")
 internal val TIME_USAGE_TARGETS = stringPreferencesKey("time_limit_usage_targets_v1")
 
-data class TimeLimitUsageLedger(val migrationZoneId: String, val targets: Map<String, TimeLimitDayState>)
+data class TimeLimitUsageLedger(val migrationZoneId: String, val targets: Map<String, TimeLimitDayState>,
+    val foreground: TimeLimitForegroundSpan? = null)
+
+/** One visit in one detector incarnation. A new process/visit cannot charge its missing gap. */
+data class TimeLimitForegroundSpan(val packageName: String, val ownerId: String, val visitId: String,
+    val periodId: Long, val startedAt: AccessClockStamp, val checkpoint: AccessClockStamp)
+
+data class TimeLimitForegroundObservation(val ownerId: String, val previousVisitId: String?,
+    val visitId: String?, val packageName: String?, val observedAt: AccessClockStamp, val closeOnly: Boolean = false)
 
 /** Immutable sampling ticket; OS queries run outside the serialized preference edit. */
 data class TimeLimitMeasurementContext(val packageName: String, val periodId: Long, val zoneId: String,
@@ -28,6 +36,51 @@ class DataStoreTimeLimitUsageStore(
     private val deviceZone: () -> String = { TimeZone.getDefault().id },
 ) {
     val state = dataStore.data.storageStates(::readTimeLimitUsage)
+
+    /**
+     * Same serialized durable domain as OS samples. Ownership is rechecked inside the edit;
+     * a retired detector can close only its own span and cannot start another one. A missed
+     * visit/process/boot or observation deadline begins a new span without charging its gap.
+     */
+    suspend fun observeForeground(observation: TimeLimitForegroundObservation, isCurrentOwner: () -> Boolean = { true }) {
+        dataStore.edit { prefs ->
+            if (!observation.closeOnly && !isCurrentOwner()) return@edit
+            var ledger = prepareTimeLimitSavedZones(prefs, observation.observedAt, deviceZone())
+            val previous = ledger.foreground
+            if (observation.closeOnly && previous?.ownerId != observation.ownerId) return@edit
+            val stamp = observation.observedAt
+            if (previous?.ownerId == observation.ownerId && previous.checkpoint.bootSessionId == stamp.bootSessionId &&
+                trustedElapsedMs(previous.checkpoint, stamp) == null) return@edit
+            if (previous?.ownerId == observation.ownerId && previous.visitId == observation.previousVisitId) {
+                val elapsed = trustedElapsedMs(previous.checkpoint, stamp)?.takeIf { it <= MAX_FOREGROUND_GAP_MS }
+                val old = ledger.targets[previous.packageName] ?: wireCorrupt()
+                var row = old
+                if (elapsed != null && previous.periodId == old.periodId) {
+                    // Stop the old period at its trusted boundary before charging any suffix.
+                    val beforeReset = minOf(elapsed, OpenCreditPolicy().remainingToResetMs(old.reset, previous.checkpoint))
+                    row = TimeLimitDayAccounting.observe(row, beforeReset)
+                    val desiredZone = prefs.editorTimes().singleOrNull { it.packageName == previous.packageName }?.zoneId ?: row.zoneId
+                    val advanced = TimeLimitDayAccounting.reconcile(row, stamp, desiredZone)
+                    row = if (advanced.rolled) TimeLimitDayAccounting.observe(advanced.state, elapsed - beforeReset) else advanced.state
+                }
+                ledger = ledger.copy(targets = ledger.targets + (previous.packageName to row))
+            }
+            val target = observation.packageName.takeUnless { observation.closeOnly }
+            val next = if (target == null) null else {
+                val visit = observation.visitId ?: wireCorrupt()
+                val templateZone = prefs.editorTimes().singleOrNull { it.packageName == target }?.zoneId
+                var row = ledger.targets[target]?.let { TimeLimitDayAccounting.reconcile(it, stamp, templateZone ?: it.zoneId).state }
+                    ?: TimeLimitDayAccounting.initial(stamp, templateZone ?: ledger.migrationZoneId)
+                val continuous = previous?.takeIf { it.ownerId == observation.ownerId && it.visitId == visit &&
+                    it.packageName == target && it.periodId == row.periodId &&
+                    trustedElapsedMs(it.checkpoint, stamp)?.let { gap -> gap <= MAX_FOREGROUND_GAP_MS } == true }
+                if (continuous == null) row = TimeLimitDayAccounting.alignObserved(row, 0)
+                ledger = ledger.copy(targets = ledger.targets + (target to row))
+                TimeLimitForegroundSpan(target, observation.ownerId, visit, row.periodId, continuous?.startedAt ?: stamp, stamp)
+            }
+            prefs.putTimeLimitUsage(ledger.copy(foreground = next))
+        }
+    }
 
     /** Existing rows never adopt a new device zone or forget usage after off/delete/recreate. */
     suspend fun measurementContext(packageName: String, now: AccessClockStamp,
@@ -66,11 +119,20 @@ class DataStoreTimeLimitUsageStore(
                 TimeLimitUsageSample(context.windowStartEpochMs, it, context.observedAt)
             }
             val mutation = timeUsageValid { TimeLimitDayAccounting.record(current, context.periodId, sample, stamp, desiredZone) }
-            prefs.putTimeLimitUsage(ledger.copy(targets = ledger.targets + (context.packageName to mutation.state)))
-            result = TimeLimitUsageObservation(mutation.state, mutation.sampleAccepted)
+            val span = ledger.foreground?.takeIf { it.packageName == context.packageName && it.periodId == mutation.state.periodId }
+            // The OS sample ends at the ticket timestamp. Only a continuous, durably observed
+            // suffix after that instant may be added when aligning the independent floors.
+            val suffix = span?.takeIf { trustedElapsedMs(it.startedAt, context.observedAt) != null }
+                ?.let { trustedElapsedMs(context.observedAt, it.checkpoint) }
+            val state = if (mutation.sampleAccepted && suffix != null)
+                TimeLimitDayAccounting.alignObserved(mutation.state, suffix) else mutation.state
+            prefs.putTimeLimitUsage(ledger.copy(targets = ledger.targets + (context.packageName to state)))
+            result = TimeLimitUsageObservation(state, mutation.sampleAccepted)
         }
         return checkNotNull(result)
     }
+
+    companion object { const val MAX_FOREGROUND_GAP_MS = 30_000L }
 }
 
 /** One-time saved-zone capture archives the untouched legacy limits/default-tier bytes in the same edit. */

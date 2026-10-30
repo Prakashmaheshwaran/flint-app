@@ -43,9 +43,12 @@ class TrustedTimeLimitReader internal constructor(
 ) {
     private val lastGood = ConcurrentHashMap<String, TimeLimitDayState>()
 
-    suspend fun read(packageName: String, dailyMinutes: Int): TrustedTimeLimitBudget {
+    suspend fun read(packageName: String, dailyMinutes: Int): TrustedTimeLimitBudget = read(packageName, dailyMinutes) {}
+
+    suspend fun read(packageName: String, dailyMinutes: Int, checkpoint: suspend () -> Unit): TrustedTimeLimitBudget {
         require(dailyMinutes >= 0)
         try {
+            checkpoint()
             val ticket = contextFor(packageName, clock())
             ticket.committedDay?.let { lastGood[packageName] = it }
             val total = if (dailyMinutes > 0) try {
@@ -59,7 +62,7 @@ class TrustedTimeLimitReader internal constructor(
                 dailyMinutes == 0 -> TrustedTimeLimitBudget.Measurement.NOT_NEEDED
                 total == null -> TrustedTimeLimitBudget.Measurement.ACCESS_MISSING
                 total == Long.MAX_VALUE || !committed.sampleAccepted -> TrustedTimeLimitBudget.Measurement.QUERY_FAILED
-                committed.state.accountingUnknownUntilReset -> TrustedTimeLimitBudget.Measurement.HISTORY_UNKNOWN
+                committed.state.accountingUnknownUntilReset || committed.state.timeUncertain -> TrustedTimeLimitBudget.Measurement.HISTORY_UNKNOWN
                 else -> TrustedTimeLimitBudget.Measurement.OBSERVED
             }
             return result(packageName, dailyMinutes, committed.state, quality)
@@ -67,19 +70,14 @@ class TrustedTimeLimitReader internal constructor(
             throw cancelled
         } catch (_: Exception) {
             // An unavailable observation cannot refund previously evidenced exhaustion.
-            // No old positive remaining value is presented as a successful measurement.
+            // Keep its balance too; measurement quality separately reports the failure.
             return result(packageName, dailyMinutes, lastGood[packageName], TrustedTimeLimitBudget.Measurement.STORAGE_UNAVAILABLE)
         }
     }
 
     private fun result(pkg: String, minutes: Int, day: TimeLimitDayState?, quality: TrustedTimeLimitBudget.Measurement): TrustedTimeLimitBudget {
         val measured = day?.let { TimeLimitDayAccounting.remainingMs(it, minutes) }
-        val remaining = when {
-            minutes == 0 -> 0L
-            measured == 0L -> 0L
-            quality == TrustedTimeLimitBudget.Measurement.OBSERVED -> measured
-            else -> null
-        }
+        val remaining = if (minutes == 0) 0L else measured
         return TrustedTimeLimitBudget(pkg, minutes, day, remaining, quality).also(publish)
     }
 

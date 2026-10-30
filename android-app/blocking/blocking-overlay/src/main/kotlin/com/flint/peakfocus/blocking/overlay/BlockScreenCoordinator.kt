@@ -382,6 +382,9 @@ class BlockScreenCoordinator(
     /** Retained proven floor identity only; display reads never resolve roles or refresh health. */
     fun readTargetFloorIdentity(packageName: String): FloorIdentity? = safetyFloor.readIdentity(packageName)
 
+    /** Main-thread presentation snapshot: time behind Flint's visible shield is not app use. */
+    fun hasVisibleShield(packageName: String): Boolean = visiblePackage == packageName && shownView != null
+
     /** Loaded tier for Time Limit displays; unknown accounting has no grant affordance. */
     fun currentDefaultBreakLevel(): BreakLevel = focusLastGood?.defaultBreakLevel ?: BreakLevel.HARDCORE
 

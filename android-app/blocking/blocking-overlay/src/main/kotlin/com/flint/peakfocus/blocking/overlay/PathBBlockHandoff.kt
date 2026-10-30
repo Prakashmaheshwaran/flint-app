@@ -97,13 +97,13 @@ object PathBBlockHandoff {
         /** Same immutable snapshot used to produce [verdict], even across a detector's IO suspension. */
         rules: List<BlockRule> = ActiveRulesHolder.rules,
         timeBudget: TrustedTimeLimitBudget? = null,
-    ) {
+    ): Boolean {
         val appContext = context.applicationContext
         val c = coordinator(appContext)
         val previous = lastForegroundPackage
         lastForegroundPackage = packageName
 
-        if (packageName == appContext.packageName) return // Flint itself (incl. our block UI)
+        if (packageName == appContext.packageName) return false // Flint itself (incl. our block UI)
         val now = System.currentTimeMillis()
         val utcOffset = TimeZone.getDefault().getOffset(now).toLong()
         val ruleCause = (verdict as? Verdict.Block)?.let {
@@ -115,6 +115,7 @@ object PathBBlockHandoff {
         } else {
             c.hideIfShown()
         }
+        return cause != null
     }
 
     /** Production construction, with store/surface seams for deterministic handoff tests. */

@@ -16,15 +16,27 @@ internal object TimeLimitUsageCodec {
             ledger.targets.toSortedMap().forEach { (target, row) ->
                 timeUsageRequire(target.isNotBlank() && target.length <= OpenCreditLedgerPolicy.MAX_ATOM)
                 timeUsageValid { TimeLimitDayAccounting.requireValid(row) }
-                timeUsageRequire(row.usedMs == 0L || row.lastSample != null)
+                timeUsageRequire(row.usedMs == 0L || row.lastSample != null || row.observedUsedMs > 0)
                 val at = row.observedAt
                 add("R|${wireAtom(target)}|${wireAtom(row.zoneId)}|${row.periodId}|${row.usedMs}|${row.reset.remainingToResetMs}|" +
-                    "${at.wallEpochMs}|${at.elapsedRealtimeMs}|${wireAtom(at.bootSessionId)}|${row.logicalCheckpoint.wallEpochMs}|${row.timeUncertain}|${row.accountingUnknownUntilReset}")
+                    "${at.wallEpochMs}|${at.elapsedRealtimeMs}|${wireAtom(at.bootSessionId)}|${row.logicalCheckpoint.wallEpochMs}|${row.timeUncertain}|${row.accountingUnknownUntilReset}|${row.osUsedMs ?: row.usedMs}|${row.observedUsedMs}")
                 row.lastSample?.let { sample ->
                     val stamp = sample.observedAt
                     add("S|${wireAtom(target)}|${sample.windowStartEpochMs}|${sample.totalMs}|${stamp.wallEpochMs}|" +
                         "${stamp.elapsedRealtimeMs}|${wireAtom(stamp.bootSessionId)}")
                 }
+            }
+            ledger.foreground?.let { span ->
+                timeUsageRequire(span.packageName in ledger.targets && span.ownerId.isNotBlank() && span.visitId.isNotBlank())
+                timeUsageRequire(span.ownerId.length <= OpenCreditLedgerPolicy.MAX_ATOM && span.visitId.length <= OpenCreditLedgerPolicy.MAX_ATOM)
+                timeUsageRequire(span.periodId >= 0 && trustedElapsedMs(span.startedAt, span.checkpoint) != null)
+                for (stamp in listOf(span.startedAt, span.checkpoint)) timeUsageRequire(
+                    stamp.wallEpochMs in 0..OpenCreditLedgerPolicy.MAX_WALL_MS && stamp.elapsedRealtimeMs >= 0 &&
+                        stamp.bootSessionId.isNotBlank() && stamp.bootSessionId.length <= OpenCreditLedgerPolicy.MAX_ATOM)
+                val start = span.startedAt; val at = span.checkpoint
+                add("F|${wireAtom(span.packageName)}|${wireAtom(span.ownerId)}|${wireAtom(span.visitId)}|${span.periodId}|" +
+                    "${start.wallEpochMs}|${start.elapsedRealtimeMs}|${wireAtom(start.bootSessionId)}|" +
+                    "${at.wallEpochMs}|${at.elapsedRealtimeMs}|${wireAtom(at.bootSessionId)}")
             }
         }.joinToString("\n").also { timeUsageRequire(it.length <= 4_194_304) }
     }
@@ -37,16 +49,17 @@ internal object TimeLimitUsageCodec {
         timeUsageRequire(count <= MAX_TARGETS)
         val targets = linkedMapOf<String, TimeLimitDayState>()
         val samples = linkedMapOf<String, TimeLimitUsageSample>()
+        var foreground: TimeLimitForegroundSpan? = null
         rows.filter { it[0] != "M" }.forEach { f -> when (f[0]) {
             "R" -> {
-                timeUsageRequire(f.size == 12)
+                timeUsageRequire(f.size == 14)
                 val target = readWireAtom(f[1])
                 val stamp = AccessClockStamp(wireLong(f[6]), wireLong(f[7]), readWireAtom(f[8]))
                 val uncertain = f[10].toBooleanStrictOrNull() ?: wireCorrupt()
                 val unknown = f[11].toBooleanStrictOrNull() ?: wireCorrupt()
                 val row = TimeLimitDayState(readWireAtom(f[2]), wireLong(f[3]), OpenCreditPolicy.ResetClock(stamp, wireLong(f[5])),
                     stamp.copy(wallEpochMs = wireLong(f[9])), stamp, wireLong(f[4]), timeUncertain = uncertain,
-                    accountingUnknownUntilReset = unknown)
+                    accountingUnknownUntilReset = unknown, osUsedMs = wireLong(f[12]), observedUsedMs = wireLong(f[13]))
                 timeUsageRequire(targets.put(target, row) == null)
             }
             "S" -> {
@@ -54,10 +67,16 @@ internal object TimeLimitUsageCodec {
                 val sample = TimeLimitUsageSample(wireLong(f[2]), wireLong(f[3]), AccessClockStamp(wireLong(f[4]), wireLong(f[5]), readWireAtom(f[6])))
                 timeUsageRequire(samples.put(readWireAtom(f[1]), sample) == null)
             }
+            "F" -> {
+                timeUsageRequire(f.size == 11 && foreground == null)
+                foreground = TimeLimitForegroundSpan(readWireAtom(f[1]), readWireAtom(f[2]), readWireAtom(f[3]), wireLong(f[4]),
+                    AccessClockStamp(wireLong(f[5]), wireLong(f[6]), readWireAtom(f[7])),
+                    AccessClockStamp(wireLong(f[8]), wireLong(f[9]), readWireAtom(f[10])))
+            }
             else -> wireFuture()
         } }
         timeUsageRequire(targets.size.toLong() == count && samples.keys.all { it in targets })
-        val ledger = TimeLimitUsageLedger(readWireAtom(meta[1]), targets.mapValues { (target, row) -> row.copy(lastSample = samples[target]) })
+        val ledger = TimeLimitUsageLedger(readWireAtom(meta[1]), targets.mapValues { (target, row) -> row.copy(lastSample = samples[target]) }, foreground)
         encode(ledger) // Full field validation, including bounds, saved zones and critical sample rows.
         return ledger
     }

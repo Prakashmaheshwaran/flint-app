@@ -8,12 +8,15 @@ import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.blocking.overlay.PathBBlockHandoff
 import com.flint.peakfocus.blocking.overlay.TrustedTimeLimitBudget
 import com.flint.peakfocus.blocking.overlay.TrustedTimeLimitReader
+import com.flint.peakfocus.blocking.overlay.TimeLimitForegroundSession
 import com.flint.peakfocus.core.data.LimitStore
 import com.flint.peakfocus.core.data.UsageQuery
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.datastore.ProtectionClock
 import com.flint.peakfocus.core.model.Verdict
 import java.util.Calendar
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
 
 internal data class PathBObservation(val packageName: String?, val verdict: Verdict = Verdict.Allow,
     val timeBudget: TrustedTimeLimitBudget? = null, val appLabel: String? = null)
@@ -24,11 +27,13 @@ internal class PathBQueryRuntime(context: Context) {
     val coordinator = PathBBlockHandoff.coordinator(app)
     private val poller = UsagePoller(app)
     private val timeReader = TrustedTimeLimitReader.create(app)
+    private val timeForeground = TimeLimitForegroundSession.create(app, TimeLimitForegroundSession.Path.B)
+    private var checkpointForRead: Deferred<Unit>? = null
     private val legacyLimits = LimitStore(app).also { it.all() } // Warm the initial XML read off main.
     private val engine = BlockDecisionEngine()
     private val timeLimitGate = PathBTimeLimitGate(
         limitMinutesFor = { pkg -> listOfNotNull(legacyLimits.limitMinutes(pkg), coordinator.timeLimitMinutes(pkg)).minOrNull() },
-        readBudget = timeReader::read,
+        readBudget = { pkg, minutes -> timeReader.read(pkg, minutes) { checkpointForRead?.await() } },
     )
     private var labelPackage: String? = null
     private var label: String? = null
@@ -43,7 +48,17 @@ internal class PathBQueryRuntime(context: Context) {
         return timed("usage_events_query_ms") { poller.currentForegroundPackage(now) }
     }
 
-    suspend fun observeTarget(pkg: String, now: Long, rules: List<BlockRule>): PathBObservation {
+    fun checkpointForeground(pkg: String?): Deferred<Unit> = timeForeground.checkpoint(pkg?.takeIf {
+        !coordinator.hasVisibleShield(it) && listOfNotNull(legacyLimits.limitMinutes(it), coordinator.timeLimitMinutes(it)).isNotEmpty()
+    })
+
+    fun closeForeground() { timeForeground.close() }
+
+    suspend fun observeTarget(pkg: String, now: Long, rules: List<BlockRule>, checkpoint: Deferred<Unit>? = null): PathBObservation {
+        checkpointForRead = checkpoint
+        try { checkpoint?.await() }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { timeLimitGate.invalidate() } // Reader reports the checkpoint failure.
         val budget = timed("budget_query_ms") { timeLimitGate.budget(pkg, ProtectionClock.now()) }
         val cal = Calendar.getInstance().apply { timeInMillis = now }
         val verdict = engine.decide(pkg, null, rules, app.packageName,

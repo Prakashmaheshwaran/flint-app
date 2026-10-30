@@ -14,21 +14,22 @@ class TimeLimitDayAccountingTest {
     private fun record(state: TimeLimitDayState, sample: TimeLimitUsageSample?, now: AccessClockStamp = at()) =
         TimeLimitDayAccounting.record(state, state.periodId, sample, now).state
 
-    @Test fun PC_54_PC_56_PC_60_newOrPreviouslyUnderBudgetTargetsCannotClaimUnusedQuotaAfterAClockJumpOrReboot() {
-        for (current in listOf(initial(), record(initial(), sample(30_000)))) {
-            for (boot in listOf("boot", "next-boot")) {
-                val changed = at(1_000, 48 * hour, boot)
-                val after = record(current, sample(0, changed, base + 47 * hour), changed)
-                assertTrue(after.accountingUnknownUntilReset)
-                assertEquals(current.periodId, after.periodId)
-                assertTrue(after.usedMs >= current.usedMs)
-                assertNull(TimeLimitDayAccounting.remainingMs(after, 1))
-                val end = changed.copy(wallEpochMs = changed.wallEpochMs + after.reset.remainingToResetMs,
-                    elapsedRealtimeMs = changed.elapsedRealtimeMs + after.reset.remainingToResetMs)
-                val reset = TimeLimitDayAccounting.reconcile(after, end)
-                assertTrue(reset.rolled)
-                assertFalse(reset.state.accountingUnknownUntilReset)
-            }
+    @Test fun PC_54_PC_55_PC_60_knownBalanceSurvivesClockChangesAndRebootAndObservedTimeStillExhaustsIt() {
+        for (boot in listOf("boot", "next-boot", "process-unknown-boot")) {
+            val current = record(initial(), sample(25 * 60_000))
+            val changed = at(1_000, -23 * hour, boot)
+            val after = record(current, sample(0, changed, base - 47 * hour), changed)
+            assertEquals(current.periodId, after.periodId)
+            assertEquals(5 * 60_000L, TimeLimitDayAccounting.remainingMs(after, 30))
+            assertFalse(after.accountingUnknownUntilReset)
+            val forward = at(2_000, 2 * hour, boot)
+            val retained = record(after, sample(0, forward, base + hour), forward)
+            assertEquals(5 * 60_000L, TimeLimitDayAccounting.remainingMs(retained, 30))
+            val observed = TimeLimitDayAccounting.observe(TimeLimitDayAccounting.alignObserved(retained, 0), 5 * 60_000)
+            assertEquals(0L, TimeLimitDayAccounting.remainingMs(observed, 30))
+            // An OS sample of the same interval supplies another floor, never another charge.
+            val measured = record(observed, sample(5 * 60_000, forward, base + hour), forward)
+            assertEquals(30 * 60_000L, measured.usedMs)
         }
     }
 
@@ -156,7 +157,7 @@ class TimeLimitDayAccountingTest {
         val jumped = at(1_000, 48 * hour)
         val observedZero = record(old, sample(0, jumped, base + 47 * hour), jumped)
         assertEquals(0L, observedZero.usedMs)
-        assertNull(TimeLimitDayAccounting.remainingMs(observedZero, 1))
+        assertEquals(60_000L, TimeLimitDayAccounting.remainingMs(observedZero, 1))
         assertTrue(observedZero.accountingUnknownUntilReset)
         val end = at(hour, 48 * hour + hour - 1_000)
         val reset = TimeLimitDayAccounting.reconcile(observedZero, end)
@@ -173,7 +174,7 @@ class TimeLimitDayAccountingTest {
         assertTrue(zero.accountingUnknownUntilReset)
         assertEquals(hour, zero.reset.remainingToResetMs)
         assertEquals(30_000L, zero.usedMs)
-        assertNull(TimeLimitDayAccounting.remainingMs(zero, 1))
+        assertEquals(30_000L, TimeLimitDayAccounting.remainingMs(zero, 1))
         val later = at(1_005, 7 * 24 * hour + 1_000, "new-boot")
         val spent = record(zero, sample(30_000, later, base + 7 * 24 * hour), later)
         assertEquals(60_000L, spent.usedMs)
