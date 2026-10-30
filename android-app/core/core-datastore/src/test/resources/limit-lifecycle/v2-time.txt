@@ -1,0 +1,2 @@
+com.example.time~30~HARDCORE
+com.example.zero~0~HARDER
