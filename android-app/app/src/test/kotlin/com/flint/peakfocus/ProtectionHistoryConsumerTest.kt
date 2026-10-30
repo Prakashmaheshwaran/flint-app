@@ -1,9 +1,14 @@
 package com.flint.peakfocus
 
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.stringPreferencesKey
 import com.flint.peakfocus.blocking.engine.HarderWaitPolicy
 import com.flint.peakfocus.blocking.engine.RuleClockProjection
 import com.flint.peakfocus.blocking.overlay.ProtectionStatus
 import com.flint.peakfocus.core.datastore.EditorCommitmentState
+import com.flint.peakfocus.core.datastore.DataStoreProtectionTransactionStore
 import com.flint.peakfocus.core.datastore.ProtectionCommit
 import com.flint.peakfocus.core.datastore.ProtectionMutation
 import com.flint.peakfocus.core.datastore.ProtectionSnapshot
@@ -24,6 +29,7 @@ import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BlockTargets
 import com.flint.peakfocus.core.model.FocusSnapshot
 import com.flint.peakfocus.core.model.ProtectionBreakEndReason
+import com.flint.peakfocus.core.model.ProtectionEventTimeConfidence
 import com.flint.peakfocus.core.model.ProtectionLedger
 import com.flint.peakfocus.core.model.ProtectionLifecycleEvent
 import com.flint.peakfocus.core.model.ProtectionLifecycleKind
@@ -38,6 +44,7 @@ import java.time.ZoneOffset
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
@@ -724,6 +731,69 @@ class ProtectionHistoryConsumerTest {
         assertEquals(0, summary.days.last().endedEarly)
         assertEquals(2, summary.days.last().unconfirmed)
         assertFalse(events.joinToString("\n", transform = HistoryCodec::encode).contains("private-boot-identity"))
+    }
+
+    @Test fun PC_54_PC_55_explicitConfidenceObservedTimeAndReconciliationMapIndependentlyForEveryProjection() = runBlocking {
+        for (confidence in listOf(ProtectionEventTimeConfidence.Certain,
+            ProtectionEventTimeConfidence.Uncertain("same_boot_drift"),
+            ProtectionEventTimeConfidence.Uncertain("reboot_without_anchor"),
+            ProtectionEventTimeConfidence.Uncertain("unknown_boot"))) {
+            for (reconciled in listOf(false, true)) for (jump in listOf(-120 * minute, 120 * minute)) {
+                val store = store()
+                val adapter = consumer(store)
+                for (raw in listOf(pass(), breakStart(), breakEnd(breakStart()))) {
+                    val event = raw.copy(observedAtEpochMs = raw.at.wallEpochMs + jump,
+                        timeConfidence = confidence, timeUncertain = confidence is ProtectionEventTimeConfidence.Uncertain,
+                        reconciled = reconciled)
+                    assertTrue(adapter.deliver(event))
+                    assertTrue(adapter.deliver(event)) // Stable event IDs still make retries idempotent.
+                }
+                val events = store.load().events
+                assertEquals(6, events.size) // Global pass + its terminal + two starts + two ends.
+                for (projected in events) {
+                    assertEquals(reconciled, projected.inferred)
+                    assertEquals(projected.at + jump, projected.observedAt)
+                    assertEquals(when (confidence) {
+                        ProtectionEventTimeConfidence.Certain -> HistoryEventTimeConfidence.Certain
+                        is ProtectionEventTimeConfidence.Uncertain -> HistoryEventTimeConfidence.Uncertain(confidence.reason)
+                    }, projected.timeConfidence)
+                    // Real schema-v1 disk JSON round-trip, not only an in-memory assertion.
+                    val decoded = HistoryCodec.decode(HistoryCodec.encode(projected))
+                    assertEquals(projected.timeConfidence, decoded.timeConfidence)
+                    assertEquals(projected.observedAt, decoded.observedAt)
+                }
+                assertFalse(events.joinToString("\n", transform = HistoryCodec::encode).contains("private-boot-identity"))
+            }
+        }
+    }
+
+    @Test fun PC_69_PC_70_literalV2OwnerEventsKeepLegacyMappingAfterDecodeAndDrain() = runBlocking {
+        for (uncertain in listOf(false, true)) {
+            val disk = object : DataStore<Preferences> {
+                val values = MutableStateFlow(emptyPreferences())
+                override val data = values
+                override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences =
+                    transform(values.value).also { values.value = it }
+            }
+            val owner = DataStoreProtectionTransactionStore(disk, { stamp(begin) }) { "UTC" }
+            assertTrue(owner.transact { ProtectionMutation(it.focus, Unit) } is ProtectionCommit.Committed)
+            // Exact v2 event rows from before explicit time confidence, deliberately no v3 fields.
+            val at = begin + 10 * minute
+            val raw = "P|2\nM|$begin%7C0%7Cprivate-boot-identity|$at%7C600000%7Cprivate-boot-identity|0|false|0|1||0|0\nC\nR\n" +
+                "E|break-started:legacy|legacy|BREAK_STARTED|session-a|$at%7C600000%7Cprivate-boot-identity|legacy|${at + 5 * minute}|||1|$uncertain"
+            disk.updateData { it.toMutablePreferences().apply { this[stringPreferencesKey("protection_pass_outbox_v1")] = raw } }
+            val before = owner.state.first { it !is StorageState.Loading } as StorageState.Ready
+            val event = before.value.focus.protection!!.outbox.values.single()
+            assertNull(event.timeConfidence)
+            assertNull(event.observedAtEpochMs)
+            val store = store()
+            owner.deliverLifecycleEvents(consumer(store)::deliver)
+            val record = store.load().events.single()
+            assertEquals(uncertain, record.inferred)
+            assertNull(record.observedAt)
+            assertEquals(if (uncertain) HistoryEventTimeConfidence.Uncertain("owner_time_uncertain") else null, record.timeConfidence)
+            assertTrue((owner.state.first { it !is StorageState.Loading } as StorageState.Ready).value.focus.protection!!.outbox.isEmpty())
+        }
     }
 
     @Test fun historyLossUsesTheOwnersPublicCountOrDiagnosticReason() {
