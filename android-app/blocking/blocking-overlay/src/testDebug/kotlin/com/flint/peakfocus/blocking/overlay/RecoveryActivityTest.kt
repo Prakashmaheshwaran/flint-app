@@ -5,6 +5,15 @@ import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.flint.peakfocus.core.model.EnforcementSignals
+import com.flint.peakfocus.core.datastore.InMemoryBlockRulesStore
+import com.flint.peakfocus.core.datastore.InMemoryFocusStateStore
+import com.flint.peakfocus.core.datastore.InMemoryLimitsStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import org.junit.After
+import org.junit.Before
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -15,6 +24,29 @@ import org.robolectric.annotation.Config
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
 class RecoveryActivityTest {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+
+    @Before fun ownCoordinator() {
+        // These are Activity lifecycle tests, not persistence tests. Do not let onCreate
+        // create the process-lifetime Main coordinator: an editor migration can enqueue a
+        // DataStore transform on Robolectric's paused main looper and outlive this test,
+        // wedging a later runBlocking cleanup on that same looper. Production never blocks
+        // its main looper on such cleanup. Accounting uses the dedicated real-store tests.
+        val app = ApplicationProvider.getApplicationContext<Context>()
+        val coordinator = PathBBlockHandoff.create(app, scope,
+            focusStateStore = InMemoryFocusStateStore(), limitsStore = InMemoryLimitsStore(),
+            rulesStore = InMemoryBlockRulesStore())
+        singleton(coordinator)
+    }
+
+    @After fun releaseCoordinator() {
+        scope.cancel()
+        singleton(null)
+    }
+
+    private fun singleton(value: BlockScreenCoordinator?) = PathBBlockHandoff::class.java
+        .getDeclaredField("coordinator").apply { isAccessible = true }.set(null, value)
+
     @Test fun PC_41_PC_76_recoveryMountGuardOnlyCoversItsTargetAndExpiresWithoutRenewal() {
         val activity = Robolectric.buildActivity(BlockActivity::class.java).get()
         try {
