@@ -141,7 +141,11 @@ extension FlintProtectionStatus {
         let loadedOpens = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: defaults,
             at: now, migrating: false, nativeActivities: activities, ledgerState: { state })
         let authorityUnavailable = state.map { $0.version >= 3 && $0.sessionAuthority == nil } ?? true
-        let unreadable = authorityUnavailable
+        // An accepted but unapplied generation reads as unavailable here, as it does for every
+        // session mutation. Pass scope deliberately still projects it (the pass must stay
+        // reachable while a retained predecessor blocks the installation, §7).
+        let installing = state?.sessionAuthority.map { !$0.provesIdle && $0.latest?.phase == .installing } ?? false
+        let unreadable = authorityUnavailable || installing
             || FlintSessionAuthority.recordIsUnavailable(rawSession,
                 recordPresent: environment.hasActiveSessionRecord(), authority: state?.sessionAuthority,
                 authorityVersion: state?.sessionAuthorityVersion, clock: clock)

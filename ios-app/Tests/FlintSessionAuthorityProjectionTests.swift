@@ -90,6 +90,26 @@ final class FlintSessionAuthorityProjectionTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(state.sessionAuthority).provesIdle)
     }
 
+    /// Status agrees with the session mutations: an accepted but unapplied generation (a crash
+    /// between acceptance and application) is unavailable, not an armed session. Pass scope
+    /// still loads, so the Emergency Pass stays reachable while the installation is pending (§7).
+    func testInstallingGenerationIsUnavailableToStatusButKeepsPassScopeReachable() throws {
+        let value = session().checkpointed(clock: clock)
+        try state.sessionAuthority?.install(value, selection: JSONEncoder().encode(FamilyActivitySelection()),
+            source: .manual, operationID: "start.Y", fingerprint: "parameters", expectedRevision: 0,
+            at: .init(clock: clock))
+        group.saveActiveSession(value)
+        XCTAssertEqual(state.sessionAuthority?.latest?.phase, .installing)
+        let observed = inputs()
+        XCTAssertTrue(observed.recordUnreadable)
+        XCTAssertEqual(FlintProtectionStatusBuilder.make(observed).state, .unavailable)
+        XCTAssertNoThrow(try scope())
+        XCTAssertEqual(state.sessionAuthority?.latest?.phase, .installing, "readers never finish an installation")
+
+        try state.sessionAuthority?.markApplied(value)
+        XCTAssertFalse(inputs().recordUnreadable)
+    }
+
     func testMissingLedgerNeverProjectsIdleOrProtection() throws {
         let observed = inputs(ledgerAvailable: false)
         XCTAssertTrue(observed.recordUnreadable)
