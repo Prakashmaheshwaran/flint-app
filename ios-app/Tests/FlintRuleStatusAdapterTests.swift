@@ -9,10 +9,10 @@ final class FlintRuleStatusAdapterTests: XCTestCase {
         let frozen = try XCTUnwrap(rule.protection?.occurrence)
         rule.protection?.occurrence = .init(start: frozen.start, end: frozen.end.addingTimeInterval(3600))
         var display = Calendar(identifier: .gregorian); display.timeZone = TimeZone(identifier: "America/Los_Angeles")!
-        let input = FlintProtectionStatusBuilder.RuleInput.schedule(rule, armed: true, observed: true, now: h.now, calendar: display)
+        let input = FlintProtectionStatusBuilder.RuleInput.schedule(rule, armed: true, observed: true, now: h.now, calendar: display, clock: h.clock)
         XCTAssertEqual(input.currentWindow?.start, frozen.start)
         XCTAssertEqual(input.currentWindow?.end, frozen.end.addingTimeInterval(3600))
-        XCTAssertEqual(rule.currentOccurrence(at: h.now)?.end, frozen.end.addingTimeInterval(3600))
+        XCTAssertEqual(rule.currentOccurrence(at: h.now, clock: h.clock)?.end, frozen.end.addingTimeInterval(3600))
     }
 
     func testOneShotProjectsFutureOnceAndNeverAsRecurring() throws {

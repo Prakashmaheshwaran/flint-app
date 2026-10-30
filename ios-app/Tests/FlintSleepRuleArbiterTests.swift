@@ -25,7 +25,7 @@ final class FlintSleepRuleArbiterTests: XCTestCase {
         XCTAssertEqual(controller.save(draft, confirmation: ticket, origin: .interactive), .queued(until: end))
         XCTAssertEqual(h.load(FlintScheduleRule.self).first?.enabled, true)
         XCTAssertEqual(h.load(FlintScheduleRule.self).first?.activityName, active.activityName)
-        h.now = end
+        h.advance(to: end)
         _ = FlintRuleMonitor(environment: h.environment).handle(.end, activity: active.activityName)
         XCTAssertTrue(h.load(FlintScheduleRule.self).isEmpty)
     }

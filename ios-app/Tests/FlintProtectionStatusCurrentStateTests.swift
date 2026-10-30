@@ -13,6 +13,10 @@ final class FlintProtectionStatusCurrentStateTests: XCTestCase {
         let suite = "FlintProtectionStatusCurrentStateTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         let store = try XCTUnwrap(FlintGroupStore(suiteName: suite))
+        // Known-empty sibling domains are explicit; missing established rule state is now
+        // unavailable (R-22), and this fixture exercises a healthy complete installation.
+        XCTAssertTrue(store.saveLimits([]))
+        XCTAssertTrue(FlintOpenLimitRule.saveAll([], to: defaults))
         store.saveRules([.init(id: "schedule", name: "Work", schedule: .init(startHour: 9, endHour: 17))])
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
         return (defaults, store)

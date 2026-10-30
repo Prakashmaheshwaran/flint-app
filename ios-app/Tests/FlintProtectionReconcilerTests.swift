@@ -12,6 +12,20 @@ private struct FakeProtectionLayer: FlintProtectionLayer {
 
 @MainActor
 final class FlintProtectionReconcilerTests: XCTestCase {
+    func testAsynchronousPreparationCompletesBeforeAnyLayerRuns() async {
+        var calls: [String] = []
+        let engine = FlintProtectionReconciler(layers: [FakeProtectionLayer(domain: "rules") { _ in
+            calls.append("layer")
+            return .init(enabled: 0, attempted: 0, armed: 0, failures: [])
+        }], persist: { _ in }, prepare: {
+            calls.append("prepare")
+            await Task.yield()
+            calls.append("prepared")
+        })
+        _ = await engine.reconcile(trigger: .launch)
+        XCTAssertEqual(calls, ["prepare", "prepared", "layer"])
+    }
+
     func testEveryTriggerRunsEveryLayerAndPersistsTheObservation() async {
         let names = ["session", "schedules", "limits", "openLimits", "webRestrictions"]
         var calls: [String] = []

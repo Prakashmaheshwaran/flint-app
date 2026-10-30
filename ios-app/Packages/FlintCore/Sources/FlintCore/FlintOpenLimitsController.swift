@@ -116,13 +116,13 @@ public final class FlintOpenLimitsController {
             environment.recordState("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
             return
         }
-        guard let all = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: environment.defaults,
-            recoveryDirectory: environment.recoveryDirectory) else {
+        guard let observed = environment.observedRules(FlintOpenLimitRule.self),
+              let all = environment.freezeOccurrences(observed) else {
             environment.recordState("openLimits", FlintDesiredRules.unavailable("openLimits", previous: environment.loadHealth()))
             return
         }
         let plan = Self.armPlan(for: all, selectionIssue: selectionIssue)
-        let requests = plan.arm.map { $0.registration() }
+        let requests = plan.arm.map { $0.registration(clock: environment.clock) }
         let report = FlintActivityRegistration.reconcile(
             requests, prefix: "flint.openLimit.", enabled: plan.enabled,
             validationFailures: plan.failures, center: environment.center, defaults: environment.defaults,

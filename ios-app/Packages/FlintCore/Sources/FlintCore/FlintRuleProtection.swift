@@ -36,6 +36,9 @@ public struct FlintRuleProtection: Codable, Equatable, Sendable {
     public var usesLegacyActivityName: Bool
     public var requiresTierReview: Bool
     public var occurrence: FlintRuleWindow?
+    /// Optional for pre-clock records. The first serialized observation establishes it.
+    public var timeAnchor: FlintRuleTimeAnchor?
+    public var carrierRepair: FlintRuleCarrierRepair?
     public var queuedChange: FlintQueuedRuleChange?
 
     public init(revision: Int = 1, timeZoneID: String = TimeZone.current.identifier,
@@ -49,6 +52,31 @@ public struct FlintRuleProtection: Codable, Equatable, Sendable {
         self.legacyRightsUntil = legacyRightsUntil
         self.usesLegacyActivityName = usesLegacyActivityName
         self.requiresTierReview = requiresTierReview
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case incarnation, revision, contractVersion, activityRevision, timeZoneID, legacyRightsUntil
+        case usesLegacyActivityName, requiresTierReview, occurrence, timeAnchor, carrierRepair, queuedChange
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        incarnation = try values.decode(String.self, forKey: .incarnation)
+        revision = try values.decode(Int.self, forKey: .revision)
+        contractVersion = try values.decode(Int.self, forKey: .contractVersion)
+        activityRevision = try values.decode(Int.self, forKey: .activityRevision)
+        timeZoneID = try values.decode(String.self, forKey: .timeZoneID)
+        legacyRightsUntil = try values.decodeIfPresent(Date.self, forKey: .legacyRightsUntil)
+        usesLegacyActivityName = try values.decode(Bool.self, forKey: .usesLegacyActivityName)
+        requiresTierReview = try values.decode(Bool.self, forKey: .requiresTierReview)
+        occurrence = try values.decodeIfPresent(FlintRuleWindow.self, forKey: .occurrence)
+        queuedChange = try values.decodeIfPresent(FlintQueuedRuleChange.self, forKey: .queuedChange)
+        // Policy decoding stays strict. Bookkeeping cannot disable the recovery surface;
+        // retain an unavailable sentinel so absence is still distinguishable from legacy.
+        do { timeAnchor = try values.decodeIfPresent(FlintRuleTimeAnchor.self, forKey: .timeAnchor) }
+        catch { timeAnchor = .unavailable }
+        do { carrierRepair = try values.decodeIfPresent(FlintRuleCarrierRepair.self, forKey: .carrierRepair) }
+        catch { carrierRepair = .unavailable }
     }
 
     var isValid: Bool {

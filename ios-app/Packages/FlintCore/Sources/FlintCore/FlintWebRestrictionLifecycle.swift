@@ -30,9 +30,9 @@ public enum FlintWebRestrictionPolicy {
 
     #if canImport(FamilyControls)
     public static func shouldApply(to rule: FlintScheduleRule, config: FlintWebRestrictions,
-                                  now: Date, calendar: Calendar = .current) -> Bool {
+                                  now: Date, calendar: Calendar = .current, clock: FlintClock? = nil) -> Bool {
         guard config.applyDuringSchedules, rule.enabled else { return false }
-        if rule.protection != nil || rule.oneShot != nil { return rule.occurrence(at: now) != nil }
+        if rule.protection != nil || rule.oneShot != nil { return rule.occurrence(at: now, clock: clock) != nil }
         return rule.schedule.isWindowActive(at: now, calendar: calendar)
     }
     #endif
@@ -75,10 +75,10 @@ public final class FlintWebRestrictionLifecycle {
     #if canImport(FamilyControls)
     public func reconcileRule(
         _ rule: FlintScheduleRule, config: FlintWebRestrictions,
-        now: Date = Date(), calendar: Calendar = .current
+        now: Date = Date(), calendar: Calendar = .current, clock: FlintClock? = nil
     ) {
         update(store: rule.storeName, shouldApply: FlintWebRestrictionPolicy.shouldApply(
-            to: rule, config: config, now: now, calendar: calendar
+            to: rule, config: config, now: now, calendar: calendar, clock: clock ?? self.clock
         ), config: config)
     }
 
@@ -86,8 +86,8 @@ public final class FlintWebRestrictionLifecycle {
     /// The host passes unobserved schedules as disabled copies and unarmed timed sessions as
     /// nil. Failed repairs are instead listed in preservingStores: their last-good keys end
     /// with the surviving registration or bounded cause-store cleanup. This function
-    /// decides scope and eligibility (a session by logical time when `clock` is given, rules
-    /// by their wall-clock windows); it cannot observe DeviceActivity registrations.
+    /// decides scope and eligibility through the trusted occurrence clock; it cannot observe
+    /// DeviceActivity registrations.
     /// Deleted rules are cleared by their controller before removal from persisted state.
     public func reconcile(
         activeSession: FlintActiveSession?, rules: [FlintScheduleRule], config: FlintWebRestrictions,
@@ -99,7 +99,7 @@ public final class FlintWebRestrictionLifecycle {
             reconcileSession(activeSession, config: config, now: now, clock: clock)
         }
         for rule in rules where !preservingStores.contains(rule.storeName) {
-            reconcileRule(rule, config: config, now: now, calendar: calendar)
+            reconcileRule(rule, config: config, now: now, calendar: calendar, clock: clock)
         }
         writer.clear(store: Self.legacyStoreName)
     }

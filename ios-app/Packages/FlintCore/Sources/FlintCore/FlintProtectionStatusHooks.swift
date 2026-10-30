@@ -120,11 +120,13 @@ public enum FlintLimitThresholds {
         }
     }
 
-    public static func markReached(_ limit: FlintLimitRule, at date: Date = Date(), in defaults: UserDefaults? = .flintGroup) {
-        guard let defaults, limit.validationIssue == nil, let window = limit.occurrence(at: date),
+    public static func markReached(_ limit: FlintLimitRule, at date: Date = Date(), in defaults: UserDefaults? = .flintGroup,
+                                   clock: FlintClock? = nil) {
+        var resolved = clock ?? .system; resolved.now = { date }
+        guard let defaults, limit.validationIssue == nil, let window = limit.occurrence(at: date, clock: resolved),
               let fingerprint = fingerprint(limit), var all = load(from: defaults) else { return }
         all[limit.id] = .init(schema: 1, activity: limit.activityName, fingerprint: fingerprint,
-            window: window, reachedAt: date)
+            window: window, reachedAt: FlintRuleOccurrenceClock.date(for: limit, clock: resolved))
         save(all, to: defaults)
     }
 
@@ -152,16 +154,18 @@ public enum FlintLimitThresholds {
     /// Calendar is retained for source compatibility; each rule's saved zone is authoritative.
     /// Missing/legacy-unbound/corrupt observations remain unknown, never an inferred false.
     public static func reachedToday(now: Date, calendar _: Calendar = .current,
-                                    in defaults: UserDefaults? = .flintGroup) -> [String: Bool] {
+                                    in defaults: UserDefaults? = .flintGroup, clock: FlintClock? = nil) -> [String: Bool] {
         guard let limits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: defaults, at: now, migrating: false) else { return [:] }
         return limits.reduce(into: [:]) { result, limit in
-            if hasReached(limit, at: now, in: defaults) { result[limit.id] = true }
+            if hasReached(limit, at: now, in: defaults, clock: clock) { result[limit.id] = true }
         }
     }
 
-    static func hasReached(_ limit: FlintLimitRule, at now: Date, in defaults: UserDefaults?) -> Bool {
+    static func hasReached(_ limit: FlintLimitRule, at now: Date, in defaults: UserDefaults?, clock: FlintClock? = nil) -> Bool {
+        var resolved = clock ?? .system; resolved.now = { now }
         guard let defaults, let mark = load(from: defaults)?[limit.id], matches(mark, rule: limit),
-              mark.reachedAt <= now, let current = limit.occurrence(at: now), current == mark.window else { return false }
+              mark.reachedAt <= FlintRuleOccurrenceClock.date(for: limit, clock: resolved),
+              let current = limit.occurrence(at: now, clock: resolved), current == mark.window else { return false }
         return true
     }
 

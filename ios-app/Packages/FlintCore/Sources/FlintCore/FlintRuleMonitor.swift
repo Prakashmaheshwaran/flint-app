@@ -38,8 +38,7 @@ public final class FlintRuleMonitor {
     private func process<Rule: FlintGatedRule>(_ type: Rule.Type, callback: Callback, activity: String) {
         if Rule.domain == .openLimits { env.reconcileOpenCredits() }
         guard FlintRuleArbiter(environment: env).applyQueued(type),
-              var all = FlintDesiredRules.load(type, key: Rule.domain, from: env.defaults, at: env.clock.now(),
-                recoveryDirectory: env.recoveryDirectory) else {
+              let all = env.observedRules(type) else {
             restorePositiveSnapshot(type, callback: callback, activity: activity, markThreshold: true)
             env.recordState(Rule.domain.domain, FlintDesiredRules.unavailable(Rule.domain.domain, previous: env.loadHealth()))
             return
@@ -48,54 +47,110 @@ public final class FlintRuleMonitor {
             env.center.stopMonitoring([.init(activity)]) // stale revision: never touch its shared store
             return
         }
-        var rule = all[index]
+        let rule = all[index]
         let now = env.clock.now()
+        let current = rule.occurrence(at: now, clock: env.clock)
+        let prematureEnd: Bool
+        if case .end = callback, let expected = rule.protection?.occurrence {
+            prematureEnd = !FlintRuleOccurrenceClock.isOver(expected, for: rule, clock: env.clock)
+        } else { prematureEnd = false }
+        let prematureStart: Bool
+        if case .start = callback {
+            prematureStart = rule.templateOccurrence(at: now) != current
+                && (current == nil || current == rule.protection?.occurrence)
+        }
+        else { prematureStart = false }
+        if prematureEnd || prematureStart {
+            // The native carrier follows editable wall time. Keep the exact old occurrence,
+            // its exhausted threshold and shield, and repair the carrier to its logical end.
+            if current != nil {
+                if let limit = rule as? FlintLimitRule {
+                    if limit.thresholdMinutes == 0 || env.timeLimitIsShielded(limit, now) { env.applyProtection(limit) }
+                } else { applyPositive(rule, callback: callback) }
+            }
+            repairCarrier(rule, reason: prematureEnd ? "prematureEnd" : "prematureStart")
+            return
+        }
+        let resetShields: Bool
+        if case .threshold = callback { resetShields = false } else { resetShields = true }
+        guard let frozen = env.freezeOccurrences(all, resetShields: resetShields) else {
+            if case .end = callback {} else if current != nil { applyPositive(rule, callback: callback) }
+            env.recordState(Rule.domain.domain, FlintDesiredRules.saveFailure(Rule.domain.domain, previous: env.loadHealth()))
+            return
+        }
+        let effective = frozen[index]
         switch callback {
         case .start:
-            guard let window = rule.templateOccurrence(at: now) else { return }
-            let isNewOccurrence = rule.protection?.occurrence?.start != window.start
-            if isNewOccurrence {
-                rule.protection?.occurrence = window
-                all[index] = rule
-                guard env.acceptSave(), FlintDesiredRules.save(all, key: Rule.domain, to: env.defaults) else {
-                    applyPositive(rule, callback: callback)
-                    env.recordState(Rule.domain.domain, FlintDesiredRules.saveFailure(Rule.domain.domain, previous: env.loadHealth()))
-                    return
-                }
-            }
-            if let schedule = rule as? FlintScheduleRule { env.applyProtection(schedule) }
-            else if let limit = rule as? FlintLimitRule {
-                if isNewOccurrence { env.clearStore(limit.storeName); env.clearLimitThreshold(limit.id) }
+            guard current != nil else { return }
+            if let schedule = effective as? FlintScheduleRule { env.applyProtection(schedule) }
+            else if let limit = effective as? FlintLimitRule {
                 if limit.thresholdMinutes == 0 { env.applyProtection(limit); env.markLimitThreshold(limit, now) }
-            } else if let open = rule as? FlintOpenLimitRule { env.applyProtection(open) }
+            } else if let open = effective as? FlintOpenLimitRule { env.applyProtection(open) }
         case .end:
             // A delayed old end, including a callback delivered after the next start, cannot
             // end the new window. A carrier's wall end alone is never release authority.
-            guard let expected = rule.protection?.occurrence, now >= expected.end else { return }
-            if let current = rule.templateOccurrence(at: now), current.start >= expected.end {
-                process(type, callback: .start, activity: activity)
-                return
+            if current != nil {
+                if let schedule = effective as? FlintScheduleRule { env.applyProtection(schedule) }
+                else if let limit = effective as? FlintLimitRule, limit.thresholdMinutes == 0 {
+                    env.applyProtection(limit); env.markLimitThreshold(limit, now)
+                } else if let open = effective as? FlintOpenLimitRule { env.applyProtection(open) }
             }
-            if Rule.domain != .openLimits { env.clearStore(rule.storeName) }
-            if Rule.domain == .limits { env.clearLimitThreshold(rule.id) }
+            // A corrected wall carrier is finite. Register its successor at the trusted
+            // boundary so the first repair does not silently disable recurring protection.
+            if abs(now.timeIntervalSince(FlintRuleOccurrenceClock.date(for: effective, clock: env.clock))) > FlintTimeIntegrity.discontinuityThreshold {
+                repairCarrier(effective, reason: "trustedBoundary")
+            }
         case let .threshold(event):
-            guard var limit = rule as? FlintLimitRule, event == limit.eventName,
-                  let window = limit.occurrence(at: now) else { return }
-            if limit.protection?.occurrence?.start != window.start {
-                // Threshold delivery may precede today's start (or yesterday's delayed end).
-                // Freeze today's period first so those later callbacks cannot clear a budget
-                // already exhausted in this period.
-                limit.protection?.occurrence = window
-                all[index].protection?.occurrence = window
-                guard env.acceptSave(), FlintDesiredRules.save(all, key: Rule.domain, to: env.defaults) else {
-                    applyPositive(limit, callback: callback)
-                    env.recordState(Rule.domain.domain, FlintDesiredRules.saveFailure(Rule.domain.domain, previous: env.loadHealth()))
-                    return
-                }
-            }
+            guard let limit = effective as? FlintLimitRule, event == limit.eventName, current != nil else { return }
             env.applyProtection(limit)
             env.markLimitThreshold(limit, now)
         }
+    }
+
+    private func repairCarrier<Rule: FlintGatedRule>(_ rule: Rule, reason: String) {
+        guard rule.enabled, let window = rule.previewWindow(at: env.clock.now(), clock: env.clock) else { return }
+        guard var rules = FlintDesiredRules.load(Rule.self, key: Rule.domain, from: env.defaults,
+                at: env.clock.now(), migrating: false, recoveryDirectory: env.recoveryDirectory),
+              let index = rules.firstIndex(where: { $0.id == rule.id && $0.activityName == rule.activityName }) else {
+            recordRepair(rule, message: "\(reason): carrier repair skipped because saved rule state is unavailable.")
+            return
+        }
+        let last = rules[index].protection?.carrierRepair
+        guard last?.isValid != false else {
+            recordRepair(rule, message: "\(reason): carrier repair budget unavailable; trusted protection retained without registering another carrier.")
+            return
+        }
+        var rebootRepair = false
+        if let last, last.occurrenceID == window.identity {
+            if let elapsed = last.checkpoint.elapsed(until: .init(clock: env.clock)) {
+                guard last.attempts < 6, elapsed >= 15 else {
+                    recordRepair(rule, message: "\(reason): carrier repair skipped by its persisted spacing/attempt limit; trusted protection retained.")
+                    return
+                }
+            } else { rebootRepair = true } // one eligible attempt on the newly observed boot
+        }
+        rules[index].protection?.carrierRepair = .init(occurrenceID: window.identity,
+            checkpoint: .init(clock: env.clock), attempts: last?.occurrenceID == window.identity ? min(6, last!.attempts + 1) : 1)
+        guard env.acceptSave(), FlintDesiredRules.save(rules, key: Rule.domain, to: env.defaults) else {
+            recordRepair(rule, message: "\(reason): carrier repair skipped because its checkpoint could not be saved; trusted protection retained.")
+            return
+        }
+        let request = rule.registration(clock: env.clock)
+        var message = "\(reason): kept trusted occurrence and daily budget; repaired wall-clock carrier\(rebootRepair ? " after reboot" : "")."
+        do {
+            try env.center.startMonitoring(.init(request.name), during: request.schedule, events: request.events)
+            if !env.center.activities.contains(.init(request.name)) || env.center.schedule(for: .init(request.name)) == nil {
+                message = "\(reason): trusted protection retained; repaired carrier was not observed."
+            }
+        } catch { message = "\(reason): trusted protection retained; carrier repair failed: \(error.localizedDescription)" }
+        recordRepair(rule, message: message)
+    }
+
+    private func recordRepair<Rule: FlintGatedRule>(_ rule: Rule, message: String) {
+        let domain = "ruleTime." + Rule.domain.domain
+        var report = env.loadHealth().domains[domain] ?? .init(enabled: 0, attempted: 0, armed: 0, failures: [])
+        report.failures = Array((report.failures + [.init(activityName: rule.activityName, reason: message)]).suffix(64))
+        env.record(domain, report)
     }
 
     /// No queue application, migration, counter reset or native retirement without the lock.
@@ -106,7 +161,7 @@ public final class FlintRuleMonitor {
         guard let all = FlintDesiredRules.load(type, key: Rule.domain, from: env.defaults,
             at: env.clock.now(), migrating: false, recoveryDirectory: env.recoveryDirectory),
               let rule = all.first(where: { $0.enabled && $0.activityName == activity }),
-              rule.occurrence(at: env.clock.now()) != nil else { return }
+              rule.occurrence(at: env.clock.now(), clock: env.clock) != nil else { return }
         if case let .threshold(event) = callback {
             guard let limit = rule as? FlintLimitRule, event == limit.eventName else { return }
             applyPositive(limit, callback: callback)

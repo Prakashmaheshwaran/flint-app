@@ -6,7 +6,7 @@ import ManagedSettings
 import DeviceActivity
 
 /// Strict scope reads: unreadable or duplicate records fail the entire preview. Revision uses
-/// the exact saved bytes plus materialized occurrence endpoints, so elapsed display time alone
+/// saved policy plus materialized occurrence endpoints, so elapsed display time alone
 /// doesn't stale a two-second hold, but a boundary, edit, replacement or target change does.
 enum FlintEmergencyPassScope {
     private struct SessionSelection: Decodable {
@@ -46,38 +46,47 @@ enum FlintEmergencyPassScope {
             }
         }
 
+        let ruleClock = FlintClock(now: { now.wall }, monotonic: { now.monotonic },
+            bootSessionID: { now.bootID }, calendar: { calendar })
+        func trustedTime<Rule: FlintGatedRule>(_ rule: Rule) -> FlintLedgerInstant {
+            .init(wall: FlintRuleOccurrenceClock.date(for: rule, clock: ruleClock),
+                monotonic: now.monotonic, bootID: now.bootID)
+        }
         var commitments: [FlintPassCommitment] = []
         for rule in schedules where rule.enabled {
             guard rule.validationIssue == nil else {
                 throw FlintEmergencyPassError.scopeUnavailable
             }
-            if let interval = rule.occurrence(at: now.wall) {
+            if let interval = rule.occurrence(at: now.wall, clock: ruleClock) {
                 commitments.append(.init(id: "schedule:\(rule.id)", name: rule.name,
                     kind: rule.id.hasPrefix("sleep.") ? .sleep : (rule.oneShot == nil ? .schedule : .oneShot),
                     naturalStart: interval.start, naturalEnd: interval.end,
-                    storeName: rule.storeName, activityName: rule.monitorName, tier: rule.breakLevel))
+                    storeName: rule.storeName, activityName: rule.monitorName, tier: rule.breakLevel,
+                    trustedRuleTime: trustedTime(rule)))
             }
         }
         for rule in limits where rule.enabled {
-            guard let day = rule.occurrence(at: now.wall) else { continue }
+            guard let day = rule.occurrence(at: now.wall, clock: ruleClock) else { continue }
+            let trustedDate = FlintRuleOccurrenceClock.date(for: rule, clock: ruleClock)
             let candidate = try thresholdRecord(rule, window: .init(start: day.start, end: day.end))
             let threshold = state.passLimitThresholds?[rule.id]
             let previous = state.emergencyRecovery?.scope.rules.first { $0.id == "timeLimit:\(rule.id)" }
             let wasEnforcing = rule.thresholdMinutes == 0
-                || threshold?.provesExhaustion(of: candidate, at: now.wall) == true
-                || (previous?.wasEnforcing == true && previous?.timeLimitThreshold?.provesExhaustion(of: candidate, at: now.wall) == true)
-                || FlintLimitThresholds.hasReached(rule, at: now.wall, in: defaults)
+                || threshold?.provesExhaustion(of: candidate, at: trustedDate) == true
+                || (previous?.wasEnforcing == true && previous?.timeLimitThreshold?.provesExhaustion(of: candidate, at: trustedDate) == true)
+                || FlintLimitThresholds.hasReached(rule, at: now.wall, in: defaults, clock: ruleClock)
                 || (threshold == nil && state.emergencyRecovery == nil && hasThresholdShield(rule.storeName))
             commitments.append(.init(id: "timeLimit:\(rule.id)", name: rule.name, kind: .timeLimit,
                 naturalStart: day.start, naturalEnd: day.end,
                 storeName: rule.storeName, activityName: rule.activityName, wasEnforcing: wasEnforcing,
-                tier: rule.breakLevel, timeLimitThreshold: candidate))
+                tier: rule.breakLevel, timeLimitThreshold: candidate, trustedRuleTime: trustedTime(rule)))
         }
         for rule in opens where rule.enabled {
-            guard let day = rule.occurrence(at: now.wall) else { continue }
+            guard let day = rule.occurrence(at: now.wall, clock: ruleClock) else { continue }
             commitments.append(.init(id: "openLimit:\(rule.id)", name: rule.name, kind: .openLimit,
                 naturalStart: day.start, naturalEnd: day.end,
-                storeName: rule.storeName, activityName: rule.activityName, tier: rule.breakLevel))
+                storeName: rule.storeName, activityName: rule.activityName, tier: rule.breakLevel,
+                trustedRuleTime: trustedTime(rule)))
         }
         commitments.sort { $0.id < $1.id }
         var knownStores = ["flint", FlintWebRestrictionLifecycle.legacyStoreName] + schedules.map(\.storeName)
@@ -98,8 +107,8 @@ enum FlintEmergencyPassScope {
             knownStores.append(prefix + id)
         }
         let stores = Array(Set(knownStores)).sorted()
-        // The data encoding order of opaque token Sets isn't stable between encodes. Hash the
-        // persisted bytes instead of re-encoding selections; occurrence metadata is canonical.
+        // Checkpoints re-encode opaque Sets. Canonicalize known Set fields and exclude only
+        // explicit pure bookkeeping; all other saved fields remain policy by default.
         var parts: [String] = []
         for key in FlintRuleStoreKey.allCases.map(\.rawValue) + ["flint.activeSession", "flint.activeSession.selection", "flint.selection",
             "flint.sleepConfig", "flint.focusFilterConfig", "flint.pomodoroConfig", "flint.webRestrictions", FlintRetainedProtection.key] {
@@ -120,13 +129,43 @@ enum FlintEmergencyPassScope {
                 guard let config = try? JSONDecoder().decode(FlintWebRestrictions.self, from: data),
                       config.validationMessage == nil else { throw FlintEmergencyPassError.scopeUnavailable }
             }
-            parts.append("\(key)=\(data.base64EncodedString())")
+            let policy = FlintRuleStoreKey.allCases.contains(where: { $0.rawValue == key })
+                ? try canonicalRulePolicy(data) : data
+            parts.append("\(key)=\(policy.base64EncodedString())")
         }
         parts += commitments.map { "\($0.id):\($0.naturalStart.timeIntervalSince1970):\($0.naturalEnd.timeIntervalSince1970)" }
         parts += active.map { ["session:\($0.id)"] } ?? []
         let digest = SHA256.hash(data: Data(parts.joined(separator: "\n").utf8))
         let revision = digest.map { String(format: "%02x", $0) }.joined()
         return .init(revision: revision, sessions: active.map { [$0] } ?? [], rules: commitments, stores: stores)
+    }
+
+    private static func canonicalRulePolicy(_ data: Data) throws -> Data {
+        guard var rules = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            throw FlintEmergencyPassError.scopeUnavailable
+        }
+        func sortedSet(_ values: [Any]) throws -> [Any] {
+            try values.map { value in
+                (value, try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .fragmentsAllowed]))
+            }.sorted { $0.1.lexicographicallyPrecedes($1.1) }.map(\.0)
+        }
+        for index in rules.indices {
+            if var protection = rules[index]["protection"] as? [String: Any] {
+                // This is an exclusion allowlist, never a list of policy fields to include.
+                for key in ["timeAnchor", "carrierRepair"] { protection.removeValue(forKey: key) }
+                rules[index]["protection"] = protection
+            }
+            if var schedule = rules[index]["schedule"] as? [String: Any], let days = schedule["daysOfWeek"] as? [Any] {
+                schedule["daysOfWeek"] = try sortedSet(days); rules[index]["schedule"] = schedule
+            }
+            if var selection = rules[index]["selection"] as? [String: Any] {
+                for key in ["applicationTokens", "categoryTokens", "webDomainTokens", "applications", "categories", "webDomains"] {
+                    if let values = selection[key] as? [Any] { selection[key] = try sortedSet(values) }
+                }
+                rules[index]["selection"] = selection
+            }
+        }
+        return try JSONSerialization.data(withJSONObject: rules, options: [.sortedKeys])
     }
 
     private static func unique(_ ids: [String]) -> Bool {
@@ -157,14 +196,17 @@ enum FlintEmergencyPassScope {
 /// Native re-application is a consequence of ending recovery, never a new commitment. Only
 /// currently enabled templates and their naturally active occurrences are considered.
 enum FlintEmergencyPassRuleEffects {
-    static func timeLimitReached(_ rule: FlintLimitRule, at now: Date, ledger: FlintProtectionLedger?) -> Bool {
+    static func timeLimitReached(_ rule: FlintLimitRule, at now: Date, ledger: FlintProtectionLedger?,
+                                 clock: FlintClock? = nil) -> Bool {
+        var resolved = clock ?? .system; resolved.now = { now }
+        let trustedDate = FlintRuleOccurrenceClock.date(for: rule, clock: resolved)
         guard let ledger, case let .success(state) = ledger.peek(), state.hasValidPassRecovery,
-              let window = rule.occurrence(at: now),
+              let window = rule.occurrence(at: now, clock: resolved),
               let current = try? FlintEmergencyPassScope.thresholdRecord(rule, window: .init(start: window.start, end: window.end)) else { return false }
-        return state.passLimitThresholds?[rule.id]?.provesExhaustion(of: current, at: now) == true
+        return state.passLimitThresholds?[rule.id]?.provesExhaustion(of: current, at: trustedDate) == true
             || state.emergencyRecovery?.scope.rules.contains(where: {
                 $0.id == "timeLimit:\(rule.id)" && $0.wasEnforcing
-                    && $0.timeLimitThreshold?.provesExhaustion(of: current, at: now) == true
+                    && $0.timeLimitThreshold?.provesExhaustion(of: current, at: trustedDate) == true
             }) == true
     }
     static func resume(state: FlintLedgerState, at now: FlintLedgerInstant,
@@ -205,15 +247,15 @@ enum FlintEmergencyPassRuleEffects {
         }
         var incomplete = false
         for rule in schedules {
-            guard rule.enabled, rule.occurrence(at: env.clock.now()) != nil else {
+            guard rule.enabled, rule.occurrence(at: env.clock.now(), clock: env.clock) != nil else {
                 env.clearStore(rule.storeName); continue
             }
             guard observed(rule.activityName, domain: "schedules") else { incomplete = true; continue }
             guard env.applyProtection(rule) else { incomplete = true; continue }
-            web.reconcileRule(rule, config: config, now: env.clock.now(), calendar: rule.ruleCalendar)
+            web.reconcileRule(rule, config: config, now: env.clock.now(), calendar: rule.ruleCalendar, clock: env.clock)
         }
         for rule in limits {
-            let date = env.clock.now()
+            let date = FlintRuleOccurrenceClock.date(for: rule, clock: env.clock)
             guard rule.enabled, scope.rules.contains(where: { $0.id == "timeLimit:\(rule.id)" && $0.wasEnforcing
                 && $0.naturalStart <= date && date < $0.naturalEnd }) else {
                 env.clearStore(rule.storeName); continue
@@ -222,7 +264,7 @@ enum FlintEmergencyPassRuleEffects {
             guard env.applyProtection(rule) else { incomplete = true; continue }
         }
         for rule in opens {
-            guard rule.enabled, rule.occurrence(at: env.clock.now()) != nil else {
+            guard rule.enabled, rule.occurrence(at: env.clock.now(), clock: env.clock) != nil else {
                 env.clearStore(rule.storeName); continue
             }
             guard observed(rule.activityName, domain: "openLimits") else { incomplete = true; continue }
@@ -244,15 +286,26 @@ enum FlintEmergencyPassRuleEffects {
         }
         // Preserve the peer's exact revision/window-bound positive observation even if a
         // different ledger writer is busy. This is usage evidence, never pass authority.
-        FlintLimitThresholds.markReached(rule, at: now.wall, in: defaults)
-        return noteThreshold(rule: rule, at: now, ledger: ledger)
+        let clock = FlintClock(now: { now.wall }, monotonic: { now.monotonic },
+            bootSessionID: { now.bootID }, calendar: { rule.ruleCalendar })
+        FlintLimitThresholds.markReached(rule, at: now.wall, in: defaults, clock: clock)
+        return noteThreshold(rule: rule, at: now, ledger: ledger, rules: rules)
     }
 
-    static func noteThreshold(rule: FlintLimitRule, at now: FlintLedgerInstant, ledger: FlintProtectionLedger?) -> Bool {
-        guard rule.enabled, let day = rule.occurrence(at: now.wall), let ledger,
+    static func noteThreshold(rule: FlintLimitRule, at now: FlintLedgerInstant, ledger: FlintProtectionLedger?,
+                              rules: [FlintLimitRule]? = nil) -> Bool {
+        let clock = FlintClock(now: { now.wall }, monotonic: { now.monotonic },
+            bootSessionID: { now.bootID }, calendar: { rule.ruleCalendar })
+        guard rule.enabled, let day = rule.occurrence(at: now.wall, clock: clock), let ledger,
               let receipt = try? FlintEmergencyPassScope.thresholdRecord(rule, window: .init(start: day.start, end: day.end)) else { return false }
         return (try? ledger.transaction { state -> Void in
-            state.passLimitThresholds = (state.passLimitThresholds ?? [:]).filter { $0.value.window.end > now.wall }
+            state.passLimitThresholds = (state.passLimitThresholds ?? [:]).filter { id, threshold in
+                // An observation has no authority to discard a peer it cannot read. Known
+                // receipts expire only on that rule's trusted timeline, never callback wall time.
+                guard let peer = (rules ?? [rule]).first(where: { $0.id == id }) else { return true }
+                return !FlintRuleOccurrenceClock.isOver(.init(start: threshold.window.start, end: threshold.window.end),
+                    for: peer, clock: clock)
+            }
             state.passLimitThresholds?[rule.id] = receipt
         }.get()) != nil
     }

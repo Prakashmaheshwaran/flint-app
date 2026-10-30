@@ -48,7 +48,7 @@ enum FlintWebRestrictionHostReconciler {
             && FlintWebRestrictionPolicy.shouldApply(to: .session(eligibleSession), config: config, now: now,
                                                    clock: clock) ? 1 : 0)
             + eligibleRules.filter { !preserving.contains($0.storeName) && FlintWebRestrictionPolicy.shouldApply(
-                to: $0, config: config, now: now, calendar: calendar
+                to: $0, config: config, now: now, calendar: calendar, clock: clock
             ) }.count
         // This domain's funnel describes applied settings, not native activity registrations.
         // Settings renders it separately and activity-slot totals exclude the web domain.

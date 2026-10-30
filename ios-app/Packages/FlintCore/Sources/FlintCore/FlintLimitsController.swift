@@ -88,15 +88,17 @@ public final class FlintLimitsController {
             environment.recordState("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
             return
         }
-        guard let all = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: environment.defaults,
-            recoveryDirectory: environment.recoveryDirectory) else {
+        guard let observed = environment.observedRules(FlintLimitRule.self),
+              let all = environment.freezeOccurrences(observed) else {
             environment.recordState("limits", FlintDesiredRules.unavailable("limits", previous: environment.loadHealth()))
             return
         }
         let plan = Self.armPlan(for: all)
         let requests = plan.arm.map { limit in
-            var request = limit.registration()
-            request.retainedUntil = limit.occurrence(at: environment.clock.now())?.end
+            var request = limit.registration(clock: environment.clock)
+            request.retainedUntil = limit.occurrence(at: environment.clock.now(), clock: environment.clock).map {
+                FlintRuleOccurrenceClock.display($0, for: limit, clock: environment.clock).end
+            }
             return request
         }
         let report = FlintActivityRegistration.reconcile(
@@ -105,7 +107,8 @@ public final class FlintLimitsController {
             now: environment.clock.now(), onRemove: { name in
                 FlintRuleCleanup.clearRemoved(name, rules: all, environment: environment)
             })
-        for limit in plan.arm where limit.thresholdMinutes == 0 && report.observedActivities?.contains(limit.activityName) == true {
+        for limit in plan.arm where (limit.thresholdMinutes == 0 || environment.timeLimitIsShielded(limit, environment.clock.now()))
+            && report.observedActivities?.contains(limit.activityName) == true {
             environment.applyProtection(limit)
             environment.markLimitThreshold(limit, environment.clock.now())
         }

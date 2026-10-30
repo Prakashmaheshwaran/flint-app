@@ -50,7 +50,7 @@ final class FlintRuleArbiter {
         withLock {
             guard !mutations.isEmpty, Set(mutations.map(\.id)).count == mutations.count,
                   self.applyQueued(Rule.self),
-                  var all = self.load(Rule.self) else { return .unavailable }
+                  var all = self.load(Rule.self, freezing: true) else { return .unavailable }
             let original = all
             let now = self.env.clock.now()
             var decisions: [FlintProtectionDecision] = []
@@ -67,7 +67,7 @@ final class FlintRuleArbiter {
                     guard old.validationIssue == nil else { return .unavailable }
                     if old.protection?.queuedChange != nil {
                         guard mutation.action == .edit, let proposed = mutation.proposed,
-                              let impact = try? proposed.impact(comparedTo: old, at: now),
+                              let impact = try? proposed.impact(comparedTo: old, at: now, clock: self.env.clock),
                               impact == .strengthen || (impact == .cosmetic && proposed.name != old.name) else {
                             return .invalid("This rule already has a queued change. Cancel it before saving another change.")
                         }
@@ -87,15 +87,18 @@ final class FlintRuleArbiter {
                     } ?? (proposed.breakLevel == .hardcore))
                 }
                 let source = old ?? mutation.proposed!
-                let occurrence = old?.occurrence(at: now)
+                let occurrence = old?.occurrence(at: now, clock: self.env.clock)
+                let displayEnd = occurrence.map { FlintRuleOccurrenceClock.display($0, for: source, clock: self.env.clock).end }
                 // A new draft has no committed incarnation yet (Sleep rebuilds it for each
                 // request). Mint that only on commit, after a stable creation preview.
                 let identity = old.map { Self.causeID($0, window: occurrence) }
                     ?? "\(Rule.domain.rawValue):\(mutation.id)@new"
                 let cause = FlintCauseState(causeID: identity,
                     occurrenceID: occurrence?.identity, revision: old?.revision ?? 0, kind: source.kind,
-                    tier: source.breakLevel, isActive: occurrence != nil, end: occurrence?.end,
-                    legacyRights: source.protection?.legacyRightsUntil.map { now < $0 } ?? false)
+                    tier: source.breakLevel, isActive: occurrence != nil, end: displayEnd,
+                    legacyRights: source.protection?.legacyRightsUntil.map {
+                        FlintRuleOccurrenceClock.date(for: source, clock: self.env.clock) < $0
+                    } ?? false)
                 causes.append(cause)
                 let displayed = mutation.proposed ?? source
                 previews.append(.init(id: displayed.id, name: displayed.name, action: mutation.action,
@@ -104,7 +107,9 @@ final class FlintRuleArbiter {
                     webDomainCount: displayed.selection.webDomainTokens.count, allowList: displayed.allowList,
                     budget: displayed.budget, isTimeLimit: displayed.kind == .timeLimit,
                     timeZoneID: displayed.zone.identifier,
-                    window: displayed.previewWindow(at: now) ?? occurrence))
+                    window: (displayed.previewWindow(at: now, clock: self.env.clock) ?? occurrence).map {
+                        FlintRuleOccurrenceClock.display($0, for: source, clock: self.env.clock)
+                    }))
                 let decision: FlintProtectionDecision
                 if mutation.action == .delete { decision = FlintProtectionPolicy.decide(.delete, for: cause) }
                 else if mutation.action == .turnOff || (old?.enabled == true && mutation.proposed?.enabled == false) {
@@ -115,10 +120,10 @@ final class FlintRuleArbiter {
                     // disclose its finite window even when the tier itself did not change.
                     decision = .allow(confirm: true)
                 } else if let old, let proposed = mutation.proposed {
-                    guard let impact = try? proposed.impact(comparedTo: old, at: now) else { return .unavailable }
+                    guard let impact = try? proposed.impact(comparedTo: old, at: now, clock: self.env.clock) else { return .unavailable }
                     let action: FlintProtectionAction = impact == .cosmetic ? .editCosmetic : (impact == .strengthen ? .editStrengthen : .editWeaken)
                     decision = FlintProtectionPolicy.decide(action, for: cause)
-                    if impact == .weaken, proposed.enabled, let occurrence,
+                    if impact == .weaken, proposed.enabled, occurrence != nil,
                        let before = old as? FlintLimitRule, let after = proposed as? FlintLimitRule,
                        before.thresholdMinutes != after.thresholdMinutes || before.selection != after.selection
                         || before.protection?.timeZoneID != after.protection?.timeZoneID,
@@ -126,13 +131,13 @@ final class FlintRuleArbiter {
                         // DeviceActivity cannot synchronously report the used minutes for a
                         // revised threshold/target set. Keep today's exhausted snapshot and
                         // offer a future revision instead of claiming an inaccurate release.
-                        if case .deferUntil = decision {} else { nextOccurrenceEnds[mutation.id] = occurrence.end }
+                        if case .deferUntil = decision {} else { nextOccurrenceEnds[mutation.id] = displayEnd }
                     }
                 } else { decision = .allow(confirm: mutation.proposed?.breakLevel == .hardcore) }
                 decisions.append(decision)
                 guard let fingerprint = try? sourceFingerprint(mutation) else { return .unavailable }
-                let activation = occurrence == nil ? mutation.proposed?.previewWindow(at: now) : nil
-                scopes.append("\(cause.causeID):\(old?.revision ?? 0):\(cause.end?.timeIntervalSince1970 ?? 0):\(activation?.start.timeIntervalSince1970 ?? 0):\(activation?.end.timeIntervalSince1970 ?? 0):\(fingerprint)")
+                let activation = occurrence == nil ? mutation.proposed?.previewWindow(at: now, clock: self.env.clock) : nil
+                scopes.append("\(cause.causeID):\(old?.revision ?? 0):\(occurrence?.end.timeIntervalSince1970 ?? 0):\(activation?.start.timeIntervalSince1970 ?? 0):\(activation?.end.timeIntervalSince1970 ?? 0):\(fingerprint)")
                 guard let before = try? source.fingerprint(action: "current", includeName: false) else { return .unavailable }
                 let after: String
                 if let proposed = mutation.proposed {
@@ -141,7 +146,7 @@ final class FlintRuleArbiter {
                 } else { after = "delete" }
                 // Cosmetic revisions invalidate an old confirmation, but do not restart a
                 // persisted wait for the same exact protection change (ADR-012 §2/4).
-                waitScopes.append("\(cause.causeID):\(old?.activityName ?? "new"):\(cause.end?.timeIntervalSince1970 ?? 0):\(before):\(after)")
+                waitScopes.append("\(cause.causeID):\(old?.activityName ?? "new"):\(occurrence?.end.timeIntervalSince1970 ?? 0):\(before):\(after)")
             }
             let policyDeferrals = decisions.compactMap { if case let .deferUntil(end) = $0 { return end }; return nil }
             var deferredEnds = nextOccurrenceEnds
@@ -264,7 +269,9 @@ final class FlintRuleArbiter {
         FlintRuleStoreLock.withLock(environment: env) {
             guard var all = self.load(type) else { return false }
             let now = self.env.clock.now()
-            let due = all.filter { ($0.protection?.queuedChange?.window.end ?? .distantFuture) <= now }
+            let due = all.filter { rule in
+                rule.protection?.queuedChange.map { FlintRuleOccurrenceClock.isOver($0.window, for: rule, clock: self.env.clock) } ?? false
+            }
             guard !due.isEmpty else { return true }
             let original = all
             var prepared: [Rule] = []
@@ -276,7 +283,7 @@ final class FlintRuleArbiter {
                     guard let index = recovery.firstIndex(where: { $0.id == old.id }),
                           let queue = old.protection?.queuedChange else { continue }
                     var retained = old
-                    if let next = old.templateOccurrence(at: now), next.start >= queue.window.end {
+                    if let next = old.templateOccurrence(at: FlintRuleOccurrenceClock.date(for: old, clock: self.env.clock)), next.start >= queue.window.end {
                         // The original recurring template already reached its next natural
                         // occurrence. Keep that finite snapshot and retry only at its own end,
                         // never weaken a newly active Hardcore occurrence on a later foreground.
@@ -291,14 +298,14 @@ final class FlintRuleArbiter {
                 let saved = self.save(recovery)
                 if saved {
                     for rule in recovery where due.contains(where: { $0.id == rule.id }) {
-                        let endedOneShot = rule.absoluteWindow.map { $0.end <= now } ?? false
+                        let endedOneShot = rule.absoluteWindow.map { FlintRuleOccurrenceClock.isOver($0, for: rule, clock: self.env.clock) } ?? false
                         if rule.enabled && !endedOneShot {
                             let observed = self.env.center.activities.contains(.init(rule.activityName))
                                 && self.env.center.schedule(for: .init(rule.activityName)) != nil
                             let armed = observed || self.prepare(rule, replacing: nil)
-                            if armed && rule.occurrence(at: now) != nil {
+                            if armed && rule.occurrence(at: now, clock: self.env.clock) != nil {
                                 self.finish([rule], replacing: [rule], resetTimeBudget: false)
-                            } else if rule.occurrence(at: now) == nil { self.env.clearStore(rule.storeName) } // independent natural end
+                            } else if rule.occurrence(at: now, clock: self.env.clock) == nil { self.env.clearStore(rule.storeName) } // independent natural end
                         } else if endedOneShot {
                             self.env.clearStore(rule.storeName)
                             self.env.center.stopMonitoring([.init(rule.activityName)])
@@ -317,7 +324,8 @@ final class FlintRuleArbiter {
                       next.protection?.incarnation == old.protection?.incarnation,
                       next.protection?.queuedChange == nil,
                       (try? next.fingerprint(action: queue.action.rawValue)) == queue.fingerprint else { return failed() }
-                let nextOccurrence = next.templateOccurrence(at: now)
+                next.protection?.timeAnchor = old.protection?.timeAnchor
+                let nextOccurrence = next.templateOccurrence(at: FlintRuleOccurrenceClock.date(for: old, clock: self.env.clock))
                 next.protection?.occurrence = nextOccurrence
                 guard self.prepare(next, replacing: old) else { return failed() }
                 prepared.append(next)
@@ -355,7 +363,7 @@ final class FlintRuleArbiter {
     func cancel<Rule: FlintGatedRule>(_ type: Rule.Type, id: String, confirmation: FlintRuleConfirmation? = nil) -> Bool {
         FlintRuleStoreLock.withLock(environment: env) {
             guard let all = self.load(type), let rule = all.first(where: { $0.id == id }),
-                  let occurrence = rule.occurrence(at: self.env.clock.now()), let ledger = self.env.ledger() else { return false }
+                  let occurrence = rule.occurrence(at: self.env.clock.now(), clock: self.env.clock), let ledger = self.env.ledger() else { return false }
             return (try? ledger.transaction { state in
                 let cause = Self.causeID(rule, window: occurrence)
                 if let confirmation, state.harder[cause]?.pending?.operationID != confirmation.fingerprint { return false }
@@ -423,7 +431,8 @@ final class FlintRuleArbiter {
             let old = all.first { $0.id == mutation.id }
             if let end = ends[mutation.id] {
                 guard var current = old, var metadata = current.protection,
-                      let window = current.occurrence(at: now), window.end == end else { return .unavailable }
+                      let window = current.occurrence(at: now, clock: env.clock),
+                      abs(FlintRuleOccurrenceClock.display(window, for: current, clock: env.clock).end.timeIntervalSince(end)) < 1 else { return .unavailable }
                 metadata.occurrence = window; metadata.revision += 1
                 var future = mutation.proposed
                 if future != nil {
@@ -470,7 +479,9 @@ final class FlintRuleArbiter {
         let now = env.clock.now()
         return mutations.allSatisfy { mutation in
             guard let old = original.first(where: { $0.id == mutation.id }) else { return true }
-            return old.occurrence(at: start) == old.occurrence(at: now)
+            // The original frozen window identifies the preview; a boundary crossed during
+            // native preflight invalidates it even when wall time did not advance normally.
+            return old.protection?.occurrence == old.occurrence(at: now, clock: env.clock)
         }
     }
 
@@ -478,7 +489,8 @@ final class FlintRuleArbiter {
         var next = proposed
         var metadata = old?.protection ?? .init(timeZoneID: next.protection?.timeZoneID ?? TimeZone.current.identifier,
             requiresTierReview: next.protection?.requiresTierReview ?? false)
-        let impact = old.flatMap { try? next.impact(comparedTo: $0, at: now) }
+        let impact = old.flatMap { try? next.impact(comparedTo: $0, at: now, clock: env.clock) }
+        let timeline = old.map { FlintRuleOccurrenceClock.date(for: $0, clock: env.clock) } ?? now
         metadata.revision = (old?.revision ?? 0) + 1
         if impact != .cosmetic || old?.enabled != next.enabled {
             metadata.activityRevision = metadata.revision; metadata.usesLegacyActivityName = false
@@ -487,20 +499,21 @@ final class FlintRuleArbiter {
         metadata.timeZoneID = next.protection?.timeZoneID ?? metadata.timeZoneID
         metadata.queuedChange = nil
         metadata.legacyRightsUntil = next.enabled && old?.enabled == true ? old?.protection?.legacyRightsUntil : nil
-        if let window = old?.occurrence(at: now), next.enabled {
+        if let window = old?.occurrence(at: now, clock: env.clock), next.enabled {
             if impact == .weaken {
-                metadata.occurrence = next.templateOccurrence(at: now).map { .init(start: window.start, end: $0.end) }
+                metadata.occurrence = next.templateOccurrence(at: timeline).map { .init(start: window.start, end: $0.end) }
             } else {
                 metadata.occurrence = .init(start: window.start,
-                    end: max(window.end, next.templateOccurrence(at: now)?.end ?? window.end))
+                    end: max(window.end, next.templateOccurrence(at: timeline)?.end ?? window.end))
             }
-        } else { metadata.occurrence = next.templateOccurrence(at: now) }
+        } else { metadata.occurrence = next.templateOccurrence(at: timeline) }
         if impact != .strengthen, let queued = old?.protection?.queuedChange {
             guard let preserved = rebase(queued, type: Rule.self, revision: metadata.revision,
                 end: max(queued.window.end, metadata.occurrence?.end ?? queued.window.end)) else { return nil }
             metadata.queuedChange = preserved
         }
         next.protection = metadata
+        FlintRuleOccurrenceClock.observe(&next, clock: env.clock)
         return next.validationIssue == nil ? next : nil
     }
 
@@ -523,10 +536,10 @@ final class FlintRuleArbiter {
     private func prepare<Rule: FlintGatedRule>(_ next: Rule, replacing old: Rule?) -> Bool {
         guard next.enabled else { return true }
         if next.activityName == old?.activityName { return true } // cosmetic: no restart/counter reset
-        if let old = old as? FlintLimitRule, old.enabled, old.occurrence(at: env.clock.now()) != nil {
+        if let old = old as? FlintLimitRule, old.enabled, old.occurrence(at: env.clock.now(), clock: env.clock) != nil {
             if #available(iOS 17.4, *) {} else { return false } // cannot reset already-used daily usage
         }
-        let request = next.registration()
+        let request = next.registration(clock: env.clock)
         do {
             try env.center.startMonitoring(.init(request.name), during: request.schedule, events: request.events)
             guard env.center.activities.contains(.init(request.name)), env.center.schedule(for: .init(request.name)) != nil else {
@@ -545,7 +558,7 @@ final class FlintRuleArbiter {
     private func finish<Rule: FlintGatedRule>(_ prepared: [Rule], replacing old: [Rule], resetTimeBudget: Bool = false) {
         let now = env.clock.now()
         for rule in prepared where rule.enabled {
-            if let schedule = rule as? FlintScheduleRule, schedule.occurrence(at: env.clock.now()) != nil {
+            if let schedule = rule as? FlintScheduleRule, schedule.occurrence(at: env.clock.now(), clock: env.clock) != nil {
                 env.applyProtection(schedule)
             } else if let limit = rule as? FlintLimitRule {
                 if limit.thresholdMinutes == 0 || (!resetTimeBudget && old.compactMap({ $0 as? FlintLimitRule })
@@ -562,8 +575,21 @@ final class FlintRuleArbiter {
         }
         for previous in old {
             let replacement = prepared.first { $0.id == previous.id }
+            let previousOccurrence = previous.occurrence(at: now, clock: env.clock)
+            let legacyRights = previous.protection?.legacyRightsUntil.map {
+                FlintRuleOccurrenceClock.date(for: previous, clock: env.clock) < $0
+            } ?? false
+            if replacement?.enabled != true, previous.breakLevel == .hardcore,
+               previousOccurrence != nil, !legacyRights {
+                // Defense at the native retirement boundary as well as the policy gate:
+                // a wall jump is never permission to clear/stop an active Hardcore cause.
+                env.record(Rule.domain.domain, .init(enabled: old.filter(\.enabled).count,
+                    attempted: 0, armed: 0, failures: [.init(activityName: previous.activityName,
+                        reason: "Active Hardcore protection retained until its trusted occurrence end.")]))
+                continue
+            }
             if replacement?.enabled != true
-                || (replacement?.window != nil && replacement?.occurrence(at: env.clock.now()) == nil) {
+                || (replacement?.window != nil && replacement?.occurrence(at: env.clock.now(), clock: env.clock) == nil) {
                 env.clearStore(previous.storeName)
                 if previous.kind == .timeLimit { env.clearLimitThreshold(previous.id) }
             }
@@ -576,9 +602,9 @@ final class FlintRuleArbiter {
     private func save<Rule: FlintGatedRule>(_ all: [Rule]) -> Bool {
         env.acceptSave() && FlintDesiredRules.save(all, key: Rule.domain, to: env.defaults)
     }
-    private func load<Rule: FlintGatedRule>(_ type: Rule.Type) -> [Rule]? {
-        FlintDesiredRules.load(type, key: Rule.domain, from: env.defaults, at: env.clock.now(),
-            recoveryDirectory: env.recoveryDirectory)
+    private func load<Rule: FlintGatedRule>(_ type: Rule.Type, freezing: Bool = false) -> [Rule]? {
+        guard let rules = env.observedRules(type) else { return nil }
+        return freezing ? env.freezeOccurrences(rules) : rules
     }
     private func withLock(_ body: () -> FlintRuleMutationResult) -> FlintRuleMutationResult {
         FlintRuleStoreLock.withLock(environment: env, body) ?? .unavailable
@@ -590,10 +616,9 @@ final class FlintRuleArbiter {
         }
     }
     private func recordLateQueues<Rule: FlintGatedRule>(_ applied: [Rule], remaining: [Rule]) {
-        let now = env.clock.now()
         let notes = applied.compactMap { rule -> FlintArmingHealth.Failure? in
             guard let queue = rule.protection?.queuedChange,
-                  now.timeIntervalSince(queue.window.end) > 60 else { return nil }
+                  FlintRuleOccurrenceClock.date(for: rule, clock: env.clock).timeIntervalSince(queue.window.end) > 60 else { return nil }
             // This minute is a diagnostic threshold, never a grace period or release authority.
             let formatter = DateFormatter()
             formatter.timeZone = rule.zone; formatter.dateStyle = .medium; formatter.timeStyle = .short

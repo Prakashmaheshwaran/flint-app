@@ -14,13 +14,13 @@ final class FlintRuleCallbackTests: XCTestCase {
         let saved = try XCTUnwrap(h.load(FlintScheduleRule.self).first)
         XCTAssertEqual(saved.protection?.incarnation, old.protection?.incarnation)
         XCTAssertNotEqual(saved.monitorName, old.monitorName)
-        h.now = old.protection!.occurrence!.end
+        h.advance(to: old.protection!.occurrence!.end)
         let monitor = FlintRuleMonitor(environment: h.environment)
         _ = monitor.handle(.end, activity: old.monitorName)
         _ = monitor.handle(.end, activity: saved.monitorName)
         XCTAssertTrue(h.cleared.isEmpty)
         XCTAssertTrue(h.center.stops.flatMap { $0 }.contains(old.monitorName))
-        h.now.addTimeInterval(3600)
+        h.advance(3600)
         _ = monitor.handle(.end, activity: saved.monitorName)
         XCTAssertEqual(h.cleared, [saved.storeName])
     }
@@ -50,7 +50,7 @@ final class FlintRuleCallbackTests: XCTestCase {
         XCTAssertTrue(h.cleared.isEmpty)
         XCTAssertEqual(h.appliedOpens, [open], "the B5 writer preserves valid bounded grants on every trigger")
         XCTAssertTrue(h.center.starts.isEmpty, "a duplicate callback must not re-register a daily budget")
-        h.now = time.protection!.occurrence!.end
+        h.advance(to: time.protection!.occurrence!.end)
         _ = monitor.handle(.start, activity: time.activityName)
         _ = monitor.handle(.end, activity: time.activityName) // delayed previous-day end
         _ = monitor.handle(.start, activity: open.activityName)

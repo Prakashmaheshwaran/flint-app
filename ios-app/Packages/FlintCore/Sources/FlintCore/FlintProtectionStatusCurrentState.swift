@@ -7,16 +7,27 @@ extension FlintProtectionStatusBuilder.RuleInput {
     /// Projects only rule metadata; the FamilyActivitySelection never crosses this boundary.
     public static func schedule(_ rule: FlintScheduleRule,
                                 kind: FlintProtectionStatusSnapshot.Kind = .recurringSchedule,
-                                armed: Bool, observed: Bool, now: Date, calendar: Calendar) -> Self {
+                                armed: Bool, observed: Bool, now: Date, calendar: Calendar,
+                                clock: FlintClock? = nil) -> Self {
         guard rule.protection != nil else {
             return .schedule(id: rule.id, kind: kind, displayName: rule.name, tier: rule.breakLevel,
                 schedule: rule.schedule, enabled: rule.enabled, armed: armed, observed: observed, now: now, calendar: calendar)
         }
-        let current = rule.occurrence(at: now).map { DateInterval(start: $0.start, end: $0.end) }
+        var resolved = clock ?? .system; resolved.now = { now }
+        let timeline = FlintRuleOccurrenceClock.date(for: rule, clock: resolved)
+        func displayed(_ window: FlintRuleWindow) -> DateInterval {
+            let display = FlintRuleOccurrenceClock.display(window, for: rule, clock: resolved)
+            return .init(start: display.start, end: display.end)
+        }
+        let current = rule.occurrence(at: now, clock: resolved).map(displayed)
         let next: DateInterval?
         if let oneShot = rule.oneShot {
-            next = oneShot.start > now ? .init(start: oneShot.start, end: oneShot.end) : nil
-        } else { next = FlintScheduleWindow.resolve(rule.schedule, at: now, calendar: rule.ruleCalendar)?.next }
+            next = oneShot.start > timeline ? displayed(oneShot) : nil
+        } else {
+            next = FlintScheduleWindow.resolve(rule.schedule, at: timeline, calendar: rule.ruleCalendar)?.next.map {
+                displayed(.init(start: $0.start, end: $0.end))
+            }
+        }
         return .init(id: rule.id, kind: rule.oneShot == nil ? kind : .oneShotSchedule,
             displayName: rule.name, tier: rule.breakLevel, enabled: rule.enabled,
             armed: armed, observed: observed, available: rule.validationIssue == nil,
@@ -117,16 +128,19 @@ extension FlintProtectionStatus {
                          timeIntegrity: nil, available: false, timeIntegrityApplies: false)
         }
         let active = environment.loadActiveSession()
-        let loadedSchedules = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: defaults, at: now, migrating: false)
-        let loadedLimits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: defaults, at: now, migrating: false)
-        let loadedOpens = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: defaults, at: now, migrating: false)
+        let activities = environment.registeredActivities()
+        let loadedSchedules = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: defaults,
+            at: now, migrating: false, nativeActivities: activities, ledgerState: environment.loadLedgerState)
+        let loadedLimits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: defaults,
+            at: now, migrating: false, nativeActivities: activities, ledgerState: environment.loadLedgerState)
+        let loadedOpens = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: defaults,
+            at: now, migrating: false, nativeActivities: activities, ledgerState: environment.loadLedgerState)
         let unreadable = (active == nil && environment.hasActiveSessionRecord())
             || loadedSchedules == nil || loadedLimits == nil || loadedOpens == nil
         let schedules = loadedSchedules ?? []
         let limits = loadedLimits ?? []
         let opens = loadedOpens ?? []
         let health = environment.loadArmingHealth()
-        let activities = environment.registeredActivities()
         func observation(id: String, activity: String, domain: String) -> RuleObservation {
             if let supplied = ruleObservations[id] { return supplied }
             // Aggregate health proves this rule armed only when the entire domain succeeded.
@@ -140,21 +154,27 @@ extension FlintProtectionStatus {
             let status = observation(id: rule.id, activity: rule.monitorName, domain: "schedules")
             return .schedule(rule, kind: rule.id.hasPrefix("sleep.") ? .sleep : .recurringSchedule,
                 armed: status.armed, observed: status.observed,
-                now: now, calendar: quotaCalendar)
+                now: now, calendar: quotaCalendar, clock: environment.clock)
         }
         rules += limits.map { rule in
             let status = observation(id: rule.id, activity: rule.activityName, domain: "limits")
+            let current = rule.occurrence(at: now, clock: environment.clock).map {
+                FlintRuleOccurrenceClock.display($0, for: rule, clock: environment.clock)
+            }
             return .init(id: rule.id, kind: .timeLimit, displayName: rule.name, tier: rule.breakLevel,
                 enabled: rule.enabled, armed: status.armed, observed: status.observed,
-                currentWindow: rule.occurrence(at: now).map { .init(start: $0.start, end: $0.end) },
-                active: rule.enabled, thresholdReached: thresholdReached[rule.id])
+                currentWindow: current.map { .init(start: $0.start, end: $0.end) },
+                active: current != nil, thresholdReached: thresholdReached[rule.id])
         }
         rules += opens.map { rule in
             let status = observation(id: rule.id, activity: rule.activityName, domain: "openLimits")
+            let current = rule.occurrence(at: now, clock: environment.clock).map {
+                FlintRuleOccurrenceClock.display($0, for: rule, clock: environment.clock)
+            }
             return .init(id: rule.id, kind: .openLimit, displayName: rule.name, tier: rule.breakLevel,
                 enabled: rule.enabled, armed: status.armed, observed: status.observed,
-                currentWindow: rule.occurrence(at: now).map { .init(start: $0.start, end: $0.end) },
-                active: rule.enabled, enforcing: openEnforcing[rule.id] == true,
+                currentWindow: current.map { .init(start: $0.start, end: $0.end) },
+                active: current != nil, enforcing: openEnforcing[rule.id] == true,
                 opensAllowed: rule.opensAllowed)
         }
         let clock = environment.clock

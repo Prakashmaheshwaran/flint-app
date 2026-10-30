@@ -3,6 +3,18 @@ import FamilyControls
 @testable import FlintCore
 
 final class FlintRuleMigrationTests: XCTestCase {
+    func testADR012RecordBeforeTimeAnchorIsObservedWithoutChangingOccurrenceOrRevisionPC54() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let source = try fixture("adr012-schedule-without-anchor")
+        h.defaults.set(source, forKey: FlintRuleStoreKey.schedules.rawValue)
+        let old = try XCTUnwrap(h.load(FlintScheduleRule.self).first)
+        XCTAssertNil(old.protection?.timeAnchor)
+        let observed = try XCTUnwrap(h.environment.observedRules(FlintScheduleRule.self)?.first)
+        XCTAssertNotNil(observed.protection?.timeAnchor)
+        XCTAssertEqual(observed.protection?.occurrence, old.protection?.occurrence)
+        XCTAssertEqual(observed.revision, old.revision)
+        XCTAssertEqual(observed.activityName, old.activityName)
+    }
     func testLargeMigrationBackupUsesAnImmutableFileAndCompactPreferencesMarker() throws {
         let h = try RuleHarness(); defer { h.clean() }
         var legacy = FlintLimitRule(id: "large", name: String(repeating: "x", count: 2_200_000), thresholdMinutes: 30)

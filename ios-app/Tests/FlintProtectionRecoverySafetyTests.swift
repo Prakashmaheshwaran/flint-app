@@ -182,7 +182,10 @@ final class FlintProtectionRecoverySafetyTests: XCTestCase {
             defaults.set(try JSONEncoder().encode([original]), forKey: FlintDesiredRules.Key.schedules.rawValue)
             XCTAssertTrue(controller.reload().isEmpty)
             XCTAssertTrue(center.starts.isEmpty, "seed upgrade baseline without restarting a matching native schedule")
-            XCTAssertEqual(FlintScheduleRegistrationState.load(from: defaults)[original.monitorName], original)
+            var baseline = FlintScheduleRegistrationState.load(from: defaults)[original.monitorName]
+            XCTAssertNotNil(baseline?.protection?.timeAnchor)
+            baseline?.protection?.timeAnchor = nil
+            XCTAssertEqual(baseline, original)
             var edited = original
             edited.name = "Renamed"
             edited.breakLevel = .harder
@@ -195,7 +198,10 @@ final class FlintProtectionRecoverySafetyTests: XCTestCase {
             center.refused = [edited.monitorName]
             XCTAssertEqual(controller.reload().count, 1)
             XCTAssertEqual(report.armed, 0)
-            XCTAssertEqual(FlintScheduleRegistrationState.load(from: defaults)[original.monitorName], lastGood)
+            var retained = FlintScheduleRegistrationState.load(from: defaults)[original.monitorName]
+            XCTAssertNotNil(retained?.protection?.timeAnchor)
+            retained?.protection?.timeAnchor = nil
+            XCTAssertEqual(retained, lastGood)
             XCTAssertEqual(controller.reload().count, 1)
             XCTAssertEqual(center.starts.count, 2, "a refused edit must retry instead of adopting a false baseline")
         }

@@ -39,10 +39,10 @@ extension FlintGatedRule {
     var ruleCalendar: Calendar { var c = Calendar(identifier: .gregorian); c.timeZone = zone; return c }
 
     /// Current commitment, including an unspent budget / live credit. Never uses shield visibility.
-    func occurrence(at now: Date) -> FlintRuleWindow? {
-        guard enabled else { return nil }
-        if let frozen = protection?.occurrence, frozen.contains(now) { return frozen }
-        return templateOccurrence(at: now)
+    func occurrence(at now: Date, clock: FlintClock? = nil) -> FlintRuleWindow? {
+        var resolved = clock ?? .system
+        resolved.now = { now }
+        return FlintRuleOccurrenceClock.current(for: self, clock: resolved)
     }
 
     func templateOccurrence(at now: Date) -> FlintRuleWindow? {
@@ -58,8 +58,11 @@ extension FlintGatedRule {
         return .init(start: interval.start, end: interval.end)
     }
 
-    func previewWindow(at now: Date) -> FlintRuleWindow? {
+    func previewWindow(at wall: Date, clock: FlintClock? = nil) -> FlintRuleWindow? {
+        var resolved = clock ?? .system; resolved.now = { wall }
+        let now = FlintRuleOccurrenceClock.date(for: self, clock: resolved)
         guard enabled else { return nil }
+        if let current = occurrence(at: wall, clock: resolved) { return current }
         if let absoluteWindow { return absoluteWindow.end > now ? absoluteWindow : nil }
         if let current = templateOccurrence(at: now) { return current }
         guard let window, let next = FlintScheduleWindow.resolve(window, at: now, calendar: ruleCalendar)?.next else { return nil }
@@ -80,7 +83,7 @@ extension FlintGatedRule {
         return .init(mode: mode, tier: breakLevel, end: end, budget: budget)
     }
 
-    func impact(comparedTo old: Self, at now: Date) throws -> FlintEditImpact {
+    func impact(comparedTo old: Self, at now: Date, clock: FlintClock? = nil) throws -> FlintEditImpact {
         // Opaque categories, mode flips and moved windows/zones cannot prove dominance (§2).
         if allowList != old.allowList || selection.categoryTokens != old.selection.categoryTokens
             || selection.includeEntireCategory != old.selection.includeEntireCategory
@@ -97,8 +100,10 @@ extension FlintGatedRule {
             guard newDays.isSuperset(of: oldDays), a.startMinuteOfDay == b.startMinuteOfDay,
                   b.windowMinutes >= a.windowMinutes else { return .weaken }
         } else if (old.window == nil) != (window == nil) { return .weaken }
-        return FlintProtectionPolicy.editImpact(from: try old.snapshot(end: old.occurrence(at: now)?.end),
-            to: try snapshot(end: templateOccurrence(at: now)?.end ?? old.occurrence(at: now)?.end))
+        var resolved = clock ?? .system; resolved.now = { now }
+        let timeline = FlintRuleOccurrenceClock.date(for: old, clock: resolved)
+        return FlintProtectionPolicy.editImpact(from: try old.snapshot(end: old.occurrence(at: now, clock: resolved)?.end),
+            to: try snapshot(end: templateOccurrence(at: timeline)?.end ?? old.occurrence(at: now, clock: resolved)?.end))
     }
 
     func fingerprint(action: String, includeName: Bool = true) throws -> String {
@@ -133,11 +138,21 @@ extension FlintGatedRule {
         return nil
     }
 
-    func registration() -> FlintActivityRegistration {
+    func registration(clock: FlintClock? = nil) -> FlintActivityRegistration {
         let schedule: DeviceActivitySchedule
-        if let absoluteWindow {
-            var start = ruleCalendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: absoluteWindow.start)
-            var end = ruleCalendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: absoluteWindow.end)
+        let carrier: FlintRuleWindow?
+        if let clock, abs(clock.now().timeIntervalSince(FlintRuleOccurrenceClock.date(for: self, clock: clock))) > FlintTimeIntegrity.discontinuityThreshold {
+            carrier = (previewWindow(at: clock.now(), clock: clock) ?? absoluteWindow).map {
+                FlintRuleOccurrenceClock.display($0, for: self, clock: clock)
+            }
+        } else { carrier = absoluteWindow }
+        if let absoluteWindow = carrier {
+            // Native components have whole-second precision. Round forward so a corrected
+            // carrier cannot fire before the logical start/end due to truncation.
+            var start = ruleCalendar.dateComponents([.year, .month, .day, .hour, .minute, .second],
+                from: FlintSessionAutoClearPlan.wholeSecond(atOrAfter: absoluteWindow.start))
+            var end = ruleCalendar.dateComponents([.year, .month, .day, .hour, .minute, .second],
+                from: FlintSessionAutoClearPlan.wholeSecond(atOrAfter: absoluteWindow.end))
             start.timeZone = zone; end.timeZone = zone
             schedule = .init(intervalStart: start, intervalEnd: end, repeats: false)
         } else if let window {
@@ -175,7 +190,10 @@ extension FlintScheduleRule: FlintGatedRule {
 
     /// Display-only projection of the same saved-zone/frozen-window calculation used by the
     /// arbiter. Editors must still submit mutations to the controller for commit-time checks.
-    public func currentOccurrence(at date: Date = Date()) -> FlintRuleWindow? { occurrence(at: date) }
+    public func currentOccurrence(at date: Date = Date(), clock: FlintClock = .system) -> FlintRuleWindow? {
+        var resolved = clock; resolved.now = { date }
+        return occurrence(at: date, clock: resolved).map { FlintRuleOccurrenceClock.display($0, for: self, clock: resolved) }
+    }
 }
 
 extension FlintLimitRule: FlintGatedRule {
@@ -198,44 +216,59 @@ extension FlintOpenLimitRule: FlintGatedRule {
 /// .all() domains or old explicit app shields (R-35, PC-11/65).
 enum FlintRuleShield {
     @discardableResult
-    static func apply<Rule: FlintGatedRule>(_ rule: Rule) -> Bool {
+    static func apply<Rule: FlintGatedRule>(_ rule: Rule, clock: FlintClock = .system) -> Bool {
         FlintSessionController().withTransition {
             guard FlintPassRecoveryGate.read().permitsApplication else { return false }
-            applyLocked(rule)
+            applyLocked(rule, clock: clock)
             return true
         } ?? false
     }
 
-    private static func applyLocked<Rule: FlintGatedRule>(_ rule: Rule) {
+    private static func applyLocked<Rule: FlintGatedRule>(_ rule: Rule, clock: FlintClock) {
         apply(rule, to: FlintManagedRuleShieldWriter(store: ManagedSettingsStore(named: .init(rule.storeName))))
         if let schedule = rule as? FlintScheduleRule {
-            reconcileWeb(schedule, config: FlintWebRestrictions.loadForEnforcement(), at: Date(),
-                writer: FlintManagedWebRestrictionWriter())
+            reconcileWeb(schedule, config: FlintWebRestrictions.loadForEnforcement(), at: clock.now(),
+                writer: FlintManagedWebRestrictionWriter(), clock: clock)
         }
     }
 
     static func reconcileWeb(_ rule: FlintScheduleRule, config: FlintWebRestrictions?, at now: Date,
-                              writer: FlintWebRestrictionWriting) {
+                              writer: FlintWebRestrictionWriting, clock: FlintClock? = nil,
+                              record: ((String) -> Void)? = nil) {
         guard let config, config.validationMessage == nil else { return }
-        if config.applyDuringSchedules && rule.occurrence(at: now) != nil { writer.apply(config, toStore: rule.storeName) }
-        else { writer.clear(store: rule.storeName) }
+        guard config.applyDuringSchedules else { writer.clear(store: rule.storeName); return }
+        guard rule.occurrence(at: now, clock: clock) != nil else {
+            let note = "Existing Safari settings retained because no trusted current occurrence was resolved; rule reconciliation owns natural-end cleanup."
+            if let record { record(note) } else { recordWebNote(rule, note: note) }
+            return
+        }
+        writer.apply(config, toStore: rule.storeName)
+    }
+
+    private static func recordWebNote(_ rule: FlintScheduleRule, note: String) {
+        guard let group = FlintGroupStore() else { return }
+        let health = group.loadArmingHealth()
+        let domain = "ruleTime.schedules"
+        var report = health.domains[domain] ?? .init(enabled: 0, attempted: 0, armed: 0, failures: [])
+        report.failures = Array((report.failures + [.init(activityName: rule.activityName, reason: note)]).suffix(64))
+        group.saveArmingHealth(health.replacing(domain, with: report))
     }
 
     /// Without mutation authority, union restrictions; never clear a field or widen an
     /// exception. A concurrent newer revision may already have made the store stricter.
     @discardableResult
-    static func add<Rule: FlintGatedRule>(_ rule: Rule) -> Bool {
+    static func add<Rule: FlintGatedRule>(_ rule: Rule, clock: FlintClock = .system) -> Bool {
         FlintSessionController().withTransition {
             guard FlintPassRecoveryGate.read().permitsApplication else { return false }
-            addLocked(rule)
+            addLocked(rule, clock: clock)
             return true
         } ?? false
     }
 
-    private static func addLocked<Rule: FlintGatedRule>(_ rule: Rule) {
+    private static func addLocked<Rule: FlintGatedRule>(_ rule: Rule, clock: FlintClock) {
         let store = ManagedSettingsStore(named: .init(rule.storeName))
         add(rule, to: FlintManagedRuleShieldWriter(store: store))
-        if let schedule = rule as? FlintScheduleRule, schedule.occurrence(at: Date()) != nil,
+        if let schedule = rule as? FlintScheduleRule, schedule.occurrence(at: clock.now(), clock: clock) != nil,
            let config = FlintWebRestrictions.loadForEnforcement(), config.applyDuringSchedules,
            config.validationMessage == nil {
             if store.webContent.blockedByFilter == nil {
@@ -318,7 +351,11 @@ enum FlintRuleCleanup {
         guard let id = FlintRuleActivity.ruleID(name, prefix: Rule.domain.prefix) else { return }
         // Old and new revisions share a named store. Retiring the old registration must not
         // clear the successor's shield after arm-before-retire.
-        if rules.contains(where: { $0.id == id && $0.enabled && ($0.absoluteWindow?.end ?? .distantFuture) > environment.clock.now() }) { return }
+        if rules.contains(where: { rule in
+            rule.id == id && rule.enabled && (rule.absoluteWindow.map {
+                !FlintRuleOccurrenceClock.isOver($0, for: rule, clock: environment.clock)
+            } ?? true)
+        }) { return }
         let prefix: String
         switch Rule.domain { case .schedules: prefix = "flint."; case .limits: prefix = "flintL."; case .openLimits: prefix = "flintO." }
         environment.clearStore(prefix + id)
