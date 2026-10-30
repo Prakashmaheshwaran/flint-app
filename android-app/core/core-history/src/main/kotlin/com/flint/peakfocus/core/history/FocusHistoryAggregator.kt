@@ -159,7 +159,9 @@ object FocusHistoryAggregator {
                 else if (terminal != null) group.takeWhile { it !== terminal }.sortedBy { it.at } else ordered
             val localEvidence = (localPrefix + group.filter { event -> event.uncertainTime &&
                 (event.knownType in setOf(HistoryEventType.BREAK_STARTED, HistoryEventType.PROTECTION_DEGRADED) ||
-                    event.knownType == HistoryEventType.BREAK_ENDED && localPrefix.any {
+                    event.knownType == HistoryEventType.PROTECTION_RESTORED && localPrefix.any {
+                        it.knownType == HistoryEventType.PROTECTION_DEGRADED
+                    } || event.knownType == HistoryEventType.BREAK_ENDED && localPrefix.any {
                         it.knownType == HistoryEventType.BREAK_STARTED && it.grant == event.grant
                     }) }).distinctBy { it.id }
             val relatedPasses = passesBySession[id].orEmpty().filter {

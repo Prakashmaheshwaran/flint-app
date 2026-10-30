@@ -123,4 +123,16 @@ final class FlintHistoryUncertainGapTests: XCTestCase {
             assertUnconfirmed(rows([decoded]), minutes: 0)
         }
     }
+
+    func testLinkedUncertainRestorationKeepsOutcomeUnconfirmedRegardlessOfRawPosition() {
+        let gap = event(.protectionDegraded, 10)
+        for at in [-120.0, 15, 120] {
+            var restore = event(.protectionRestored, at); restore.timeConfidence = uncertain
+            assertUnconfirmed(rows([gap, restore]), minutes: 10)
+        }
+        var restore = event(.protectionRestored, 120); restore.timeConfidence = uncertain
+        let orphan = summary([start(), event(.completed, 20), restore])
+        XCTAssertEqual(orphan.sessions.first?.outcome, .completed)
+        XCTAssertEqual(orphan.sessions.first?.focusedSeconds, 1200)
+    }
 }

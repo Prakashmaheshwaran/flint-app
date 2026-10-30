@@ -111,4 +111,16 @@ class UncertainFocusGapTest {
             assertUnconfirmed(rows(listOf(HistoryCodec.decode(HistoryCodec.encode(raw)))), 0)
         }
     }
+
+    @Test fun linkedUncertainRestorationKeepsOutcomeUnconfirmedRegardlessOfRawPosition() {
+        val gap = event("protection_degraded", 10)
+        for (at in listOf(-120L, 15L, 120L)) {
+            val restore = event("protection_restored", at).copy(timeConfidence = uncertain)
+            assertUnconfirmed(rows(listOf(gap, restore)), 10)
+        }
+        val orphan = summary(listOf(start(), event("completed", 20),
+            event("protection_restored", 120).copy(timeConfidence = uncertain)))
+        assertEquals(SessionOutcome.COMPLETED, orphan.sessions.single().outcome)
+        assertEquals(20 * minute, orphan.sessions.single().focusedMs)
+    }
 }

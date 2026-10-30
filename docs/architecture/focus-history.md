@@ -179,6 +179,11 @@ For one session:
   remain loss signals even when their raw timing fields lie outside the supported civil
   range; those unsupported effective times cannot initialize history dates or prove focus.
   Future schema versions and unknown types remain ignored/preserved as before.
+  After history clear, host and read-only readers admit uncertain non-focus rows only for
+  retained or newly admitted STARTED identities (including same-inbox starts and pass
+  references); raw wall time cannot admit an old cleared session or discard a new gap.
+  A linked uncertain restoration keeps the session unconfirmed even if its raw time sorts
+  after the terminal, without inventing an additional coverage-loss interval.
   Open-credit access records remain ignored; a genuine `open_intercepted`
   block-surface observation is coverage evidence, distinct from an access grant.
 - The summary model retains possible coverage intervals plus uncertain placement/loss

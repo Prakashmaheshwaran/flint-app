@@ -182,12 +182,17 @@ public final class FlintHistoryStore: @unchecked Sendable {
             guard let keep = metadata?.keepSession else { return false }
             return event.session == keep || event.sessions?.contains(keep) == true
         }
-        func visible(_ event: FlintHistoryEvent) -> Bool {
-            guard let boundary = metadata?.clearedAt else { return true }
-            return kept(event) || event.at >= boundary
-        }
         if metadata?.pendingClear == true {
             events.removeAll { !kept($0) }; bad = true
+        }
+        let admittedStarts = metadata?.clearedAt.map { boundary in
+            Set((events + inbox).filter { $0.type == .started && (kept($0) || $0.at >= boundary) }.map(\.session))
+        } ?? []
+        func visible(_ event: FlintHistoryEvent) -> Bool {
+            guard let boundary = metadata?.clearedAt else { return true }
+            if kept(event) { return true }
+            if Self.uncertainNonFocus(event) { return Self.referencesStart(event, in: admittedStarts) }
+            return event.at >= boundary
         }
         events.removeAll { !visible($0) }
         var ids = Set<String>()
@@ -434,10 +439,20 @@ public final class FlintHistoryStore: @unchecked Sendable {
         loaded.bad = loaded.bad || inbox.bad
         var ids = Set(loaded.lines.compactMap(\.id))
         var additions: [Line] = []
+        let admittedStarts = metadata.clearedAt.map { boundary in
+            Set((loaded.lines + inbox.entries.map(\.line)).compactMap(\.event).filter {
+                $0.type == .started && ($0.session == metadata.keepSession || $0.at >= boundary)
+            }.map(\.session))
+        } ?? []
         for entry in inbox.entries {
             let line = entry.line
-            if let clearedAt = metadata.clearedAt, !belongs(line, to: metadata.keepSession),
-               line.at.map({ FlintHistoryEvent.milliseconds($0) < clearedAt }) ?? true { continue }
+            if let clearedAt = metadata.clearedAt, !belongs(line, to: metadata.keepSession) {
+                if let event = line.event, Self.uncertainNonFocus(event) {
+                    // No raw timestamp can distinguish late uncertainty from cleared
+                    // history. Only an independently retained/new STARTED admits it.
+                    if !Self.referencesStart(event, in: admittedStarts) { continue }
+                } else if line.at.map({ FlintHistoryEvent.milliseconds($0) < clearedAt }) ?? true { continue }
+            }
             if let id = line.id, !ids.insert(id).inserted { continue }
             additions.append(line)
         }
@@ -539,6 +554,15 @@ public final class FlintHistoryStore: @unchecked Sendable {
         }
         return Line(event: supported ? event : nil, raw: raw, session: session,
                     at: civilAt, id: object["id"] as? String)
+    }
+
+    private static func uncertainNonFocus(_ event: FlintHistoryEvent) -> Bool {
+        (event.timeConfidence?.isUncertain == true || event.reason == "time_uncertain") &&
+            [.breakStarted, .breakEnded, .passUsed, .protectionDegraded, .protectionRestored].contains(event.type)
+    }
+
+    private static func referencesStart(_ event: FlintHistoryEvent, in sessions: Set<String>) -> Bool {
+        event.type == .passUsed ? event.sessions?.contains(where: sessions.contains) == true : sessions.contains(event.session)
     }
 
     private func retainedLines(_ lines: [Line], keeping running: String?, target: Int) -> [Line] {

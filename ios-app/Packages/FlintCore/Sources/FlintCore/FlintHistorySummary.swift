@@ -177,6 +177,7 @@ public enum FlintHistoryAggregator {
             else if let terminal { localEvidence = original.prefix { $0.id != terminal.id }.sorted { $0.at < $1.at } }
             else { localEvidence = events }
             for event in original where event.uncertainTime && (event.type == .breakStarted || event.type == .protectionDegraded ||
+                event.type == .protectionRestored && localEvidence.contains { $0.type == .protectionDegraded } ||
                 event.type == .breakEnded && localEvidence.contains {
                     $0.type == .breakStarted && $0.grant == event.grant
                 }) {
