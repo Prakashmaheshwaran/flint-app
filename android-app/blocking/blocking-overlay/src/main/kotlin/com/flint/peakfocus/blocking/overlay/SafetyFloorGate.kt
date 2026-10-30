@@ -258,4 +258,7 @@ class SafetyFloorGate(
         const val UNRESOLVED_RETRY_MS: Long = 1_000L
         const val SUBMISSION_TIMEOUT_MS: Long = 5_000L
     }
+
+    // Last member: register only a fully constructed gate for read-only detail queries.
+    init { TargetFloorIdentities.register(this) }
 }

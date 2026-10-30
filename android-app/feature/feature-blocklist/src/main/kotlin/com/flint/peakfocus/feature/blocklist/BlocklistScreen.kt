@@ -88,6 +88,7 @@ import com.flint.peakfocus.core.common.ui.FlintStatusDot
 import com.flint.peakfocus.core.common.ui.flintLoading
 import com.flint.peakfocus.core.common.ui.rememberFlintHaptics
 import com.flint.peakfocus.core.common.ui.rememberReducedMotion
+import com.flint.peakfocus.blocking.overlay.TargetProtectionReader
 import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BlockTargets
@@ -118,6 +119,10 @@ private sealed interface BlocklistDestination {
     data class EditLimit(val packageName: String?, val visit: Int = 0) : BlocklistDestination
 
     data class EditSleep(val visit: Int = 0) : BlocklistDestination
+
+    /** Read-only: picked apps and sites, then lane C's per-target protection for one. */
+    data object AppsAndSites : BlocklistDestination
+    data class TargetDetail(val picked: PickedTarget) : BlocklistDestination
 }
 
 /** Editor push distance (LIST-07): content enters from a 30dp end inset, not full-width. */
@@ -166,6 +171,8 @@ fun BlocklistScreen(
     contentPadding: PaddingValues = PaddingValues(),
     quickBlockSummary: String? = null,
     onQuickBlock: (() -> Unit)? = null,
+    /** Lane C's read-only per-target reader; Apps and sites is shown only when supplied. */
+    targetProtection: TargetProtectionReader? = null,
 ) {
     val context = LocalContext.current
     val blocklistViewModel: BlocklistViewModel =
@@ -191,7 +198,10 @@ fun BlocklistScreen(
     LaunchedEffect(destination) { blocklistViewModel.clearSaveFeedback() }
 
     BackHandler(enabled = destination != BlocklistDestination.Overview) {
-        if (!saveState.busy) destination = BlocklistDestination.Overview
+        if (!saveState.busy) destination = when (destination) {
+            is BlocklistDestination.TargetDetail -> BlocklistDestination.AppsAndSites
+            else -> BlocklistDestination.Overview
+        }
     }
 
     val slideDistance = with(LocalDensity.current) { EditorSlideDistance.roundToPx() }
@@ -256,7 +266,21 @@ fun BlocklistScreen(
                     contentPadding = contentPadding,
                     quickBlockSummary = quickBlockSummary,
                     onQuickBlock = onQuickBlock,
+                    onAppsAndSites = targetProtection?.let { { destination = BlocklistDestination.AppsAndSites } },
                 )
+
+                BlocklistDestination.AppsAndSites -> {
+                    val labels = (appsState as? InstalledAppsUiState.Ready)?.apps?.associate { it.packageName to it.label }.orEmpty()
+                    AppsAndSitesList(
+                        state = pickedTargets(rulesState, limitsState) { labels[it] },
+                        onOpen = { destination = BlocklistDestination.TargetDetail(it) },
+                        onBack = { destination = BlocklistDestination.Overview },
+                    )
+                }
+
+                is BlocklistDestination.TargetDetail -> targetProtection?.let { reader ->
+                    AppDetailRoute(dest.picked, reader, onBack = { destination = BlocklistDestination.AppsAndSites })
+                } ?: LaunchedEffect(Unit) { destination = BlocklistDestination.Overview }
 
                 is BlocklistDestination.EditRule -> {
                     val initialRules = rememberEditorSnapshot(dest, rulesState as? RulesUiState.Ready)
@@ -367,6 +391,7 @@ private fun BlocklistOverview(
     contentPadding: PaddingValues = PaddingValues(),
     quickBlockSummary: String? = null,
     onQuickBlock: (() -> Unit)? = null,
+    onAppsAndSites: (() -> Unit)? = null,
     saveError: String? = null,
     saveResult: String? = null,
     commitmentState: EditorCommitmentState? = null,
@@ -583,6 +608,17 @@ private fun BlocklistOverview(
                     .padding(horizontal = FlintSpacing.gutter),
             ) {
                 Text("New app limit")
+            }
+        }
+        // Appended last so the first-run template scroll index above stays unchanged.
+        if (onAppsAndSites != null) {
+            item(key = "apps-and-sites") {
+                FlintNavPanel(
+                    title = stringResource(R.string.targets_title),
+                    subtitle = stringResource(R.string.targets_entry_description),
+                    onClick = onAppsAndSites,
+                    modifier = Modifier.padding(horizontal = FlintSpacing.gutter).padding(top = FlintSpacing.lg),
+                )
             }
         }
     }
