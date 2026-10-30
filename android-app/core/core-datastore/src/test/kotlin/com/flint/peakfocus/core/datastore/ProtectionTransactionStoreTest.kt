@@ -83,7 +83,7 @@ class ProtectionTransactionStoreTest {
             assertEquals(setOf("session-timer-old", "work"), first.rules.map { it.id }.toSet())
             assertEquals(1_800_003_600_000L, first.rules.single { it.id == "session-timer-old" }.expiresAtEpochMs)
             assertTrue(first.editor.causes.getValue(ruleCauseKey("session-timer-old")).legacyRights)
-            assertEquals(listOf(TimeLimit("com.example.time", 30, BreakLevel.HARDER)), first.times)
+            assertEquals(listOf(TimeLimit("com.example.time", 30, BreakLevel.HARDER, "UTC")), first.times)
             assertTrue(first.opens.isEmpty())
             assertEquals(3, first.openCredits!!.counters.getValue(target).used)
             assertEquals(day, first.openCredits.periodId)

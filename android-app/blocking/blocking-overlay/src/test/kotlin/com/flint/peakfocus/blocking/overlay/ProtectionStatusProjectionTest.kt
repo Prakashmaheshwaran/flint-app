@@ -21,9 +21,31 @@ class ProtectionStatusProjectionTest {
     private fun project(stamp: AccessClockStamp = now, focus: StorageState<FocusSnapshot> = StorageState.Ready(FocusSnapshot()),
         editor: StorageState<EditorCommitmentState> = StorageState.Ready(sidecar), rules: List<BlockRule> = listOf(rule),
         floor: SafetyFloorGate.RuntimeResolution = resolved, times: List<TimeLimit> = emptyList(), opens: List<OpenLimit> = emptyList(),
-        usageAccessMissing: Boolean = false, pathAConnected: Boolean = true) =
+        usageAccessMissing: Boolean = false, pathAConnected: Boolean = true,
+        timeMeasurementUnavailable: Boolean = false, timeMeasurementStorageUnavailable: Boolean = false) =
         ProtectionStatusProjection.evaluate(focus, StorageState.Ready(rules), StorageState.Ready(times), StorageState.Ready(opens),
-            editor, rules, floor, pathAConnected, stamp, usageAccessMissing = usageAccessMissing)
+            editor, rules, floor, pathAConnected, stamp, usageAccessMissing = usageAccessMissing,
+            timeMeasurementUnavailable = timeMeasurementUnavailable, timeMeasurementStorageUnavailable = timeMeasurementStorageUnavailable)
+
+    @Test fun PC_60_unknownMeasurementIsDegradedWithoutPretendingTheGrantIsMissingOrQuotaIsSpent() {
+        val status = project(timeMeasurementUnavailable = true)
+        assertTrue("time-limit-measurement-unavailable" in status.detectors.degradedReasons)
+        assertFalse("time-limits-need-usage-access" in status.detectors.degradedReasons)
+        assertFalse("usage-access-missing" in status.detectors.degradedReasons)
+        assertEquals(ProtectionStatus.Readiness.READY, status.readiness)
+        assertFalse(status.activeCauses.any { it.kind == ProtectionStatus.CauseKind.TIME_LIMIT })
+        val failed = project(focus = StorageState.Ready(FocusSnapshot(protection = ProtectionLedger(now, now))),
+            timeMeasurementStorageUnavailable = true)
+        assertEquals(ProtectionStatus.Readiness.READY, failed.readiness)
+        assertTrue("time-limit-measurement-unavailable" in failed.detectors.degradedReasons)
+        assertFalse("policy-storage-unavailable" in failed.detectors.degradedReasons)
+        assertEquals(ProtectionStatus.PassStatus.Available, failed.pass)
+        val noTimeOccurrence = project(focus = StorageState.Ready(FocusSnapshot(protection = ProtectionLedger(now, now))),
+            times = listOf(TimeLimit("b", 30)), timeMeasurementStorageUnavailable = true)
+        assertEquals(ProtectionStatus.Readiness.READY, noTimeOccurrence.readiness)
+        assertEquals(ProtectionStatus.PassStatus.Available, noTimeOccurrence.pass)
+        assertTrue("time-limit-measurement-unavailable" in noTimeOccurrence.detectors.degradedReasons)
+    }
 
     @Test fun pathAOnlyWithoutTimeLimitsReportsMissingBackupWithoutInventingTimeLimitFailure() {
         val s = project(usageAccessMissing = true)

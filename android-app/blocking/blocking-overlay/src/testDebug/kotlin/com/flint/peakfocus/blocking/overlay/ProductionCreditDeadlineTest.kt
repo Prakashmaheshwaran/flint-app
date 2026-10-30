@@ -144,7 +144,7 @@ class ProductionCreditDeadlineTest {
         assertTrue(first.rules.any { it.id == timerId && it.expiresAtEpochMs!! > now.wallEpochMs })
         for (key in listOf("protection_schema_v1", "open_credit_schema_v1"))
             assertEquals(key, 1L, disk.values.value[longPreferencesKey(key)])
-        assertEquals(2L, disk.values.value[longPreferencesKey("editor_commitments_version")])
+        assertEquals(3L, disk.values.value[longPreferencesKey("editor_commitments_version")])
         assertNotNull(disk.values.value[stringPreferencesKey("focus_exemptions_v1")])
         assertEquals("", disk.values.value[stringPreferencesKey("open_limits_v1")])
         val migrated = disk.values.value

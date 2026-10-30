@@ -18,6 +18,7 @@ android {
 dependencies {
     implementation(project(":core:core-model"))
     implementation(project(":core:core-data"))
+    implementation(project(":core:core-datastore")) // shared trusted reset clock
     implementation(project(":blocking:blocking-engine"))
     implementation(project(":blocking:blocking-resilience")) // process-local website coverage health
     // Shared enforcement seam: BlockScreenCoordinator + the branded Compose block surface.

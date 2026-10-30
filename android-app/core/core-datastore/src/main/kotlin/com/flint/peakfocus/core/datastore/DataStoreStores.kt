@@ -41,6 +41,7 @@ private fun Preferences.rules(): List<BlockRule> {
 }
 private fun Preferences.groups() = StrictPrefsCodec.groups(StrictPrefsCodec.string(this, PrefsKeys.APP_GROUPS).orEmpty())
 private fun Preferences.timeLimits(): List<TimeLimit> {
+    validateTimeLimitUsageForRead(this)
     validateInitializedProtectionChildren(this)
     return StrictPrefsCodec.timeLimits(StrictPrefsCodec.string(this, PrefsKeys.TIME_LIMITS).orEmpty(),
         StrictPrefsCodec.level(StrictPrefsCodec.string(this, PrefsKeys.DEFAULT_BREAK_LEVEL)))

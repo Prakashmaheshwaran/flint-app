@@ -36,13 +36,16 @@ data class OpenCreditMutation(
 /** Pure transitions; the caller persists the result with its receipt in one serialized edit. */
 object OpenCreditLedgerPolicy {
     private val policy = OpenCreditPolicy()
+    private val fixedGmtZone = Regex("GMT[+-][0-9]{2}:[0-9]{2}")
     const val MAX_ROWS = 9_999 // Plus the wire header: at most 10000 lines.
     const val MAX_ATOM = 2_048
     const val MAX_WALL_MS = 253_402_300_799_999L
 
     fun quotaZone(value: String): ZoneId {
-        require(value in ZoneId.getAvailableZoneIds()) { "Unknown quota zone" }
-        return ZoneId.of(value)
+        if (value in ZoneId.getAvailableZoneIds()) return ZoneId.of(value)
+        val zone = if (fixedGmtZone.matches(value)) runCatching { ZoneId.of(value) }.getOrNull() else null
+        require(zone != null && zone.id == value && zone.rules.isFixedOffset) { "Unknown or non-canonical quota zone" }
+        return zone
     }
 
     fun epochDay(wallMs: Long, zone: String): Long =

@@ -61,6 +61,18 @@ class OpenCreditStoreTest {
         return checkNotNull(result)
     }
 
+    @Test fun fixedOffsetQuotaAndAcceptedCreditRoundTripWithoutChangingItsMidnight() = runBlocking {
+        val disk = Disk(preferencesOf(PrefsKeys.OPEN_LIMITS to "app~3~HARDCORE"))
+        val first = initialize(disk, zone = "GMT+05:30")
+        assertEquals(23_400_000L, first.reset.remainingToResetMs)
+        val accepted = use(disk)
+        assertTrue(accepted.acceptance is OpenCreditPolicy.Acceptance.Accepted)
+        val reopened = readOpenCredits(disk.values.value)
+        assertEquals(accepted.next, reopened)
+        assertEquals("GMT+05:30", reopened.quotaZone)
+        assertEquals(23_400_000L, reopened.reset.remainingToResetMs)
+    }
+
     @Test fun `PC-70 literal import preserves package counts day original bytes preferences and over-cap values`() = runBlocking {
         val disk = Disk(legacy())
         val original = disk.values.value.asMap().toMap()

@@ -3,8 +3,6 @@ package com.flint.peakfocus.blocking.overlay
 import android.content.Context
 import android.content.Intent
 import android.view.View
-import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
-import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.core.model.ActiveRulesHolder
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.EnforcementSignals
@@ -12,7 +10,6 @@ import com.flint.peakfocus.core.model.Verdict
 import com.flint.peakfocus.core.datastore.FocusStateStore
 import com.flint.peakfocus.core.datastore.LimitsStore
 import com.flint.peakfocus.core.datastore.BlockRulesStore
-import java.util.Calendar
 import java.util.TimeZone
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -60,27 +57,6 @@ object PathBBlockHandoff {
     }
 
     /**
-     * Compatibility entry for a daily Time Limit hit. Also evaluate current rules, so callers
-     * using this entry cannot accidentally shadow a Hardcore session with an EASY budget.
-     */
-    fun onTimeLimitExceeded(context: Context, packageName: String) {
-        val appContext = context.applicationContext
-        val now = System.currentTimeMillis()
-        val rules = ActiveRulesHolder.rules
-        val cal = Calendar.getInstance().apply { timeInMillis = now }
-        val verdict = BlockDecisionEngine().decide(
-            packageName,
-            null,
-            rules,
-            appContext.packageName,
-            cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE),
-            IsoWeekday.fromCalendar(cal.get(Calendar.DAY_OF_WEEK)),
-            now,
-        )
-        onForegroundPolled(appContext, packageName, verdict, timeLimitSpent = true, rules = rules)
-    }
-
-    /**
      * Feed one poll observation through the shared decision flow. Cheap when nothing changed;
      * callable from any thread (UI work is marshalled internally).
      */
@@ -93,24 +69,26 @@ object PathBBlockHandoff {
         appLabel: String? = null,
         /** Same immutable snapshot used to produce [verdict], even across a detector's IO suspension. */
         rules: List<BlockRule> = ActiveRulesHolder.rules,
-    ) {
+        timeBudget: TrustedTimeLimitBudget? = null,
+    ): Boolean {
         val appContext = context.applicationContext
         val c = coordinator(appContext)
         val previous = lastForegroundPackage
         lastForegroundPackage = packageName
 
-        if (packageName == appContext.packageName) return // Flint itself (incl. our block UI)
+        if (packageName == appContext.packageName) return false // Flint itself (incl. our block UI)
         val now = System.currentTimeMillis()
         val utcOffset = TimeZone.getDefault().getOffset(now).toLong()
         val ruleCause = (verdict as? Verdict.Block)?.let {
             ruleBlockCause(rules.firstOrNull { rule -> rule.id == it.ruleId }, now, utcOffset)
         }
-        val cause = c.evaluateBlockCause(previous, packageName, ruleCause, timeLimitSpent)
+        val cause = c.evaluateBlockCause(previous, packageName, ruleCause, timeLimitSpent, timeBudget = timeBudget)
         if (cause != null) {
             c.showBlocked(packageName, appLabel, cause)
         } else {
             c.hideIfShown()
         }
+        return cause != null
     }
 
     /** Production construction, with store/surface seams for deterministic handoff tests. */

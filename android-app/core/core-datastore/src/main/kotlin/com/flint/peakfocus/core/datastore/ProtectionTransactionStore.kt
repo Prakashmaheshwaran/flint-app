@@ -72,12 +72,11 @@ class DataStoreProtectionTransactionStore(
                 val original = readFocus(prefs)
                 val archive = if (original.protection == null) legacyArchive(prefs) else null
                 if (original.protection != null && StrictPrefsCodec.long(prefs, OPEN_CREDIT_SCHEMA) == null) wireCorrupt()
-                // One shared trusted quota roll precedes deferred editor changes and cause
-                // materialization. C4c remains the sole counter/migration authority.
-                prepareOpenCreditPeriod(prefs, now, defaultZone())
                 // The editor owns migration, due queued edits and occurrence materialization;
-                // no independent occurrence resolver or Harder count ledger is introduced.
-                editors.prepare(prefs, now)
+                // capture old Time anchors before the shared Open period can advance.
+                val prepared = editors.prepare(prefs, now)
+                val quota = prepareOpenCreditPeriod(prefs, now, defaultZone()).next
+                if (prepared.quotaPeriodId == null) prefs.putEditorState(prepared.copy(quotaPeriodId = quota.periodId))
                 val friction = readHarderWait(prefs)
                 if (friction.pending?.let { trustedElapsedMs(it.startedAt, now) == null } == true)
                     prefs.putHarderWait(friction.copy(pending = null))
@@ -97,9 +96,11 @@ class DataStoreProtectionTransactionStore(
                     if (StrictPrefsCodec.string(prefs, PrefsKeys.DEFAULT_BREAK_LEVEL) == null) prefs[PrefsKeys.DEFAULT_BREAK_LEVEL] = current.focus.defaultBreakLevel.name
                 }
                 val mutation = transform(current)
+                validateTimeLimitAuthorization(prefs, current, mutation)
                 mutation.rules?.let(prefs::putEditorRules)
                 mutation.times?.let { next ->
-                    val raw = PrefsCodec.encodeTimeLimits(next); StrictPrefsCodec.timeLimits(raw)
+                    val normalized = normalizeTimeLimitMutation(prefs, next, current.times, now, defaultZone())
+                    val raw = PrefsCodec.encodeTimeLimits(normalized); StrictPrefsCodec.timeLimits(raw)
                     prefs[PrefsKeys.TIME_LIMITS] = raw
                 }
                 mutation.opens?.let { next ->

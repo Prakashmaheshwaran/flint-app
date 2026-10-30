@@ -21,6 +21,7 @@ dependencies {
     // Daily Time Limit thresholds — the same legacy synchronous store Path A reads, so the
     // two detection paths can never disagree about an app's budget.
     implementation(project(":core:core-data"))
+    implementation(project(":core:core-datastore")) // shared elapsed/boot clock for budget cache
     implementation(project(":blocking:blocking-engine"))
     // Path B enforcement handoff: every poll observation routes through PathBBlockHandoff
     // (shared coordinator → overlay / BlockActivity), same decision glue as Path A.

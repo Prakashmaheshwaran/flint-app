@@ -13,11 +13,22 @@ import androidx.datastore.preferences.preferencesDataStore
  */
 
 /** The single Preferences DataStore backing all Flint preference stores. */
-private val Context.flintPreferencesDataStore: DataStore<Preferences> by preferencesDataStore(
+private val Context.rawFlintPreferencesDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "flint_preferences",
+    produceMigrations = ::timeLimitBootstrapMigrations,
 )
 
+private val Context.flintPreferencesDataStore: DataStore<Preferences>
+    get() = TimeBootstrapRequiredDataStore(rawFlintPreferencesDataStore)
+
 object FlintPreferences {
+
+    fun timeLimitUsage(context: Context): DataStoreTimeLimitUsageStore {
+        val dataStore = context.applicationContext.flintPreferencesDataStore
+        val editor = DataStoreEditorCommitmentStore(dataStore)
+        return DataStoreTimeLimitUsageStore(dataStore, ProtectionClock::now,
+            prepareEditor = { prefs, now -> editor.prepare(prefs, now, checkpointQuota = false) })
+    }
 
     fun harderWait(context: Context): HarderWaitStore =
         DataStoreHarderWaitStore(context.applicationContext.flintPreferencesDataStore)

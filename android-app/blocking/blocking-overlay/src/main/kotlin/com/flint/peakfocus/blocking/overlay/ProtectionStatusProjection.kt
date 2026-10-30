@@ -31,6 +31,8 @@ internal object ProtectionStatusProjection {
         legacyZone: String = TimeZone.getDefault().id,
         timeLimitTier: (TimeLimit) -> BreakLevel = { it.breakLevel },
         usageAccessMissing: Boolean = false,
+        timeMeasurementUnavailable: Boolean = false,
+        timeMeasurementStorageUnavailable: Boolean = false,
     ): ProtectionStatus {
         val inputs = listOf(focus, rulesReadiness, times, opens, editor)
         val readiness = when {
@@ -40,6 +42,7 @@ internal object ProtectionStatusProjection {
         }
         val reasons = linkedSetOf<String>()
         if (!pathAConnected) reasons += "path-a-disconnected"
+        if (timeMeasurementUnavailable || timeMeasurementStorageUnavailable) reasons += "time-limit-measurement-unavailable"
         // Derived context only: the service owns the raw permission observation. Copying
         // its missing-access reason here would feed stale policy state back after recovery.
         if (usageAccessMissing) {
@@ -99,7 +102,11 @@ internal object ProtectionStatusProjection {
                 }
             }
             (times as StorageState.Ready).value.forEach { limit ->
-                add(timeCauseKey(limit.packageName), null, "Time limit", ProtectionStatus.CauseKind.TIME_LIMIT, timeLimitTier(limit))
+                val key = timeCauseKey(limit.packageName)
+                // A Time-only migration/accounting failure may also leave its occurrence
+                // unmaterialized. It cannot revoke an independently valid pass contract.
+                if (timeMeasurementStorageUnavailable && key !in sidecar.causes) reasons += "time-limit-measurement-unavailable"
+                else add(key, null, "Time limit", ProtectionStatus.CauseKind.TIME_LIMIT, timeLimitTier(limit))
             }
             (opens as StorageState.Ready).value.forEach { limit ->
                 add(openCauseKey(limit.packageName), null, "Open limit", ProtectionStatus.CauseKind.OPEN_LIMIT, limit.breakLevel)

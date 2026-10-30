@@ -26,6 +26,36 @@ class OrdinaryProtectionPolicyTest {
         return s.copy(focus = m.focus, harder = m.harder ?: s.harder)
     }
 
+    @Test fun PC_56_savedZoneCaptureKeepsTheExactPreZoneTimeBreakUntilItsOwnFiniteEnd() {
+        val timeInput = input.copy(timeSpent = true)
+        val time = TimeLimit("a", 0, BreakLevel.EASY)
+        val cause = EditorCause("old-time-period", AnchoredInterval(now, 600_000, now.wallEpochMs + 600_000), "UTC")
+        val original = snapshot().copy(rules = emptyList(), times = listOf(time), editor = EditorCommitmentState(
+            causes = mapOf(timeCauseKey("a") to cause)))
+        val scopes = OrdinaryProtectionPolicy.frozenScopes(original, timeInput, emptyList(), now)!!
+        val oldDefinition = "TimeLimit(packageName=a, dailyMinutes=0, breakLevel=EASY)"
+        val oldHash = java.security.MessageDigest.getInstance("SHA-256").digest(oldDefinition.toByteArray()).joinToString("") { "%02x".format(it) }
+        assertEquals(oldHash, scopes.single().definitionRevision)
+        val accepted = OrdinaryProtectionPolicy.request(original, timeInput, id, now, emptyList(), scopes)
+        val migrated = original.copy(focus = accepted.focus, times = listOf(time.copy(zoneId = "Asia/Tokyo")))
+        assertTrue(OrdinaryProtectionPolicy.covers(migrated, timeInput, emptyList(), now))
+        val next = migrated.copy(editor = migrated.editor.copy(causes = mapOf(timeCauseKey("a") to cause.copy(occurrenceId = "next"))))
+        assertFalse(OrdinaryProtectionPolicy.covers(next, timeInput, emptyList(), now))
+    }
+
+    @Test fun PC_60_legacyOnlyTimeGrantUsesTheTrustedTimePeriodAndEndInsteadOfTheOpenPeriod() {
+        val timeInput = input.copy(timeSpent = true, legacyTimeEndEpochMs = now.wallEpochMs + 12_000, timePeriodId = 47)
+        val original = snapshot().copy(rules = emptyList(), times = emptyList(), editor = EditorCommitmentState(),
+            openCredits = OpenCreditLedgerPolicy.initial(now, "UTC", periodId = 99))
+        val scopes = OrdinaryProtectionPolicy.frozenScopes(original, timeInput, emptyList(), now)!!
+        assertEquals("legacy-time-47", scopes.single().counter.periodId)
+        val accepted = OrdinaryProtectionPolicy.request(original, timeInput, id, now, emptyList(), scopes)
+        val current = original.copy(focus = accepted.focus)
+        assertEquals(12_000L, current.focus.protection!!.ordinaryGrants.values.single().lifetime.durationMs)
+        assertTrue(OrdinaryProtectionPolicy.covers(current, timeInput, emptyList(), now))
+        assertFalse(OrdinaryProtectionPolicy.covers(current, timeInput.copy(timePeriodId = 48), emptyList(), now))
+    }
+
     @Test fun PC_22_PC_24_ordinaryAccessIsTargetAndFrozenOccurrenceScopedAndClippedToNaturalEnd() {
         val s = accept(snapshot(remaining = 12_000))
         val grant = s.focus.protection!!.ordinaryGrants.values.single()

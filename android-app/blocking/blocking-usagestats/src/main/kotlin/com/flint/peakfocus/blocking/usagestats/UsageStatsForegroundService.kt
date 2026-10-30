@@ -81,7 +81,10 @@ class UsageStatsForegroundService : Service() {
                     health.handoff(this@UsageStatsForegroundService)
                     displayWake.trySend(Unit)
                 }
-                if (connected && ready) runCatching { queryRuntime.coordinator.hideIfShown() }
+                if (connected && ready) {
+                    queryRuntime.checkpointForeground(null)
+                    runCatching { queryRuntime.coordinator.hideIfShown() }
+                }
                 wake.trySend(Unit)
             }
         }
@@ -165,6 +168,7 @@ class UsageStatsForegroundService : Service() {
                             return@launch
                         }
                         val completed = if (mode == FallbackMode.ENFORCING) tick(tickStarted) else {
+                            queryRuntime.checkpointForeground(null)
                             queryRuntime.coordinator.hideIfShown()
                             true
                         }
@@ -178,6 +182,7 @@ class UsageStatsForegroundService : Service() {
                         throw cancelled
                     } catch (failure: RuntimeException) {
                         // Permission changes/binder failures must not permanently kill fallback.
+                        if (::queryRuntime.isInitialized) queryRuntime.checkpointForeground(null)
                         resetObservation = true
                         val modeChanged = confirmedMode != null
                         confirmedMode = null
@@ -202,19 +207,24 @@ class UsageStatsForegroundService : Service() {
         }
         if (observationInvalidated()) return false
         if (pkg == null) {
+            queryRuntime.checkpointForeground(null)
             queryRuntime.coordinator.hideIfShown()
             return true
         }
         // Cached membership is nonblocking. Keep its visit-departure mutation on Main,
         // after ownership revalidation, so an invalidated Path B sample cannot end A's visit.
         if (queryRuntime.coordinator.isSafetyFloor(pkg)) {
+            queryRuntime.checkpointForeground(null)
             PathBBlockHandoff.onForegroundPolled(this, pkg, Verdict.Allow, rules = rules)
             logDuration("tick_to_handoff_ms", tickStarted)
             return true
         }
-        val observation = withContext(queryDispatcher) { queryRuntime.observeTarget(pkg, now, rules) }
+        val checkpoint = queryRuntime.checkpointForeground(pkg)
+        val observation = withContext(queryDispatcher) { queryRuntime.observeTarget(pkg, now, rules, checkpoint) }
         if (observationInvalidated()) return false
-        PathBBlockHandoff.onForegroundPolled(this, pkg, observation.verdict, observation.timeLimitSpent, observation.appLabel, rules)
+        val blocked = PathBBlockHandoff.onForegroundPolled(this, pkg, observation.verdict,
+            appLabel = observation.appLabel, rules = rules, timeBudget = observation.timeBudget)
+        queryRuntime.checkpointForeground(pkg.takeUnless { blocked })
         // This measures the handoff's return, not first window visibility or painted pixels.
         logDuration("tick_to_handoff_ms", tickStarted)
         return true
@@ -300,6 +310,7 @@ class UsageStatsForegroundService : Service() {
     }
 
     private fun stopForegroundAndEvaluation() {
+        if (::queryRuntime.isInitialized) queryRuntime.closeForeground()
         ready = false
         stopping = true
         try {
@@ -312,6 +323,7 @@ class UsageStatsForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        if (::queryRuntime.isInitialized) queryRuntime.closeForeground()
         ready = false
         stopping = true
         stopSignals?.invoke()

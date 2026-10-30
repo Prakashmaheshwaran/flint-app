@@ -23,6 +23,7 @@ dependencies {
     api(project(":feature:feature-blockscreen"))
     api(project(":core:core-model"))
     implementation(project(":core:core-common"))
+    implementation(project(":core:core-data")) // explicit saved-window OS usage observations
     implementation(project(":core:core-datastore"))   // FocusStateStore/LimitsStore snapshots
     implementation(project(":blocking:blocking-engine")) // Break/EmergencyPass/OpenLimit policies
     implementation(libs.androidx.core.ktx)

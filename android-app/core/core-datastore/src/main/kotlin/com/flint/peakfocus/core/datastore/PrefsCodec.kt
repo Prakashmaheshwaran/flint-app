@@ -159,18 +159,20 @@ internal object PrefsCodec {
 
     // MARK: limits — one record per package
 
-    /** `pkg~minutes~tier` per line; the two-field v1 fixture remains readable. */
+    /** `pkg~minutes~tier[~savedZone]` per line; two/three-field legacy fixtures remain readable. */
     fun encodeTimeLimits(limits: List<TimeLimit>): String =
-        limits.joinToString(RECORD) { escape(it.packageName) + SUB + it.dailyMinutes + SUB + it.breakLevel.name }
+        limits.joinToString(RECORD) { escape(it.packageName) + SUB + it.dailyMinutes + SUB + it.breakLevel.name +
+            (it.zoneId?.let { zone -> SUB + escape(zone) } ?: "") }
 
     fun decodeTimeLimits(encoded: String, legacyTier: BreakLevel = BreakLevel.EASY): List<TimeLimit> =
         encoded.split(RECORD).filter { it.isNotBlank() }.mapNotNull { line ->
             val sub = line.split(SUB)
-            if (sub.size !in 2..3) return@mapNotNull null
+            if (sub.size !in 2..4) return@mapNotNull null
             val minutes = sub[1].toIntOrNull() ?: return@mapNotNull null
             val pkg = unescape(sub[0])
             if (pkg.isEmpty()) null else TimeLimit(packageName = pkg, dailyMinutes = minutes,
-                breakLevel = sub.getOrNull(2)?.let(::decodeBreakLevel) ?: legacyTier)
+                breakLevel = sub.getOrNull(2)?.let(::decodeBreakLevel) ?: legacyTier,
+                zoneId = sub.getOrNull(3)?.let(::unescape))
         }
 
     /** `pkg~opens~breakLevel` per line. */

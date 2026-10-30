@@ -94,11 +94,12 @@ class GlobalRecoveryCoordinatorTest {
 
     private fun TestScope.coordinator(disk: Disk, surface: BlockScreenCoordinator.SurfaceHost = host,
         context: Context = app, openFlow: Flow<StorageState<List<OpenLimit>>>? = null,
+        timeFlow: Flow<StorageState<List<TimeLimit>>>? = null,
         changed: () -> Unit = {}): BlockScreenCoordinator {
         val focus = object : FocusStateStore by InMemoryFocusStateStore() { override val state = disk.state.project { it.focus } }
         val rules = object : BlockRulesStore by InMemoryBlockRulesStore() { override val rulesState = disk.state.project { it.rules } }
         val limits = object : LimitsStore by InMemoryLimitsStore() {
-            override val timeLimitsState = disk.state.project { it.times }
+            override val timeLimitsState = timeFlow ?: disk.state.project { it.times }
             override val openLimitsState = openFlow ?: disk.state.project { it.opens }
         }
         val editor = object : EditorCommitmentStore {
@@ -120,6 +121,96 @@ class GlobalRecoveryCoordinatorTest {
     }
 
     private fun TestScope.clock() = base.copy(wallEpochMs = base.wallEpochMs + testScheduler.currentTime, elapsedRealtimeMs = base.elapsedRealtimeMs + testScheduler.currentTime)
+
+    @Test fun PC_28_PC_54_PC_60_successfulPostRebootOrWallCorrectionSampleAllowsOrdinaryAndOpenOnTimeTargets() = runTest {
+        for (reboot in listOf(true, false)) {
+            BlockExemptions.clearAll()
+            var stamp = base
+            val days = mutableMapOf<String, TimeLimitDayState>()
+            val health = TimeLimitMeasurementPublisher()
+            val reader = TrustedTimeLimitReader(
+                { target, at ->
+                    val row = days[target]?.let { TimeLimitDayAccounting.reconcile(it, at).state } ?: TimeLimitDayAccounting.initial(at, "UTC")
+                    days[target] = row
+                    TimeLimitMeasurementContext(target, row.periodId, row.zoneId, base.wallEpochMs - 23 * 3_600_000, at, row)
+                },
+                { ticket, total, at ->
+                    val result = TimeLimitDayAccounting.record(days.getValue(ticket.packageName), ticket.periodId,
+                        total?.let { TimeLimitUsageSample(ticket.windowStartEpochMs, it, ticket.observedAt) }, at)
+                    days[ticket.packageName] = result.state
+                    TimeLimitUsageObservation(result.state, result.sampleAccepted)
+                }, { target, _, _ -> if (target == pkg) 30 * 60_000L else 25 * 60_000L }, { stamp }, health::record)
+            reader.read(pkg, 30); reader.read("c", 30)
+            stamp = if (reboot) base.copy(wallEpochMs = base.wallEpochMs + 60_000, elapsedRealtimeMs = 5, bootSessionId = "boot-2")
+                else base.copy(wallEpochMs = base.wallEpochMs + 6_000)
+            val spent = reader.read(pkg, 30)
+            val positive = reader.read("c", 30)
+            assertEquals(TrustedTimeLimitBudget.Measurement.OBSERVED, spent.measurement)
+            assertEquals(TrustedTimeLimitBudget.Measurement.OBSERVED, positive.measurement)
+            assertTrue(spent.day!!.timeUncertain)
+            assertTrue(spent.spent)
+            assertEquals(300_000L, positive.remainingMs)
+            assertFalse(health.unavailable(mapOf(pkg to 30, "c" to 30), stamp))
+
+            val interval = AnchoredInterval(stamp, 7_200_000, stamp.wallEpochMs + 7_200_000)
+            val initial = initial(BreakLevel.EASY)
+            val disk = Disk(initial.copy(times = listOf(TimeLimit(pkg, 30, BreakLevel.EASY), TimeLimit("c", 30, BreakLevel.EASY)),
+                opens = listOf(OpenLimit("c", 1, BreakLevel.EASY)), openCredits = OpenCreditLedgerPolicy.initial(stamp, "UTC"),
+                editor = initial.editor.copy(causes = initial.editor.causes + mapOf("time:$pkg" to EditorCause("time-day", interval, "UTC"),
+                    "time:c" to EditorCause("time-day", interval, "UTC"))))) { stamp }
+            val c = coordinator(disk); runCurrent()
+            val timeCause = c.evaluateBlockCause(null, pkg, ruleBlockCause(initial.rules.single(), stamp.wallEpochMs, 0), false, timeBudget = spent)!!
+            assertTrue(c.requestBreak(pkg, timeCause, GrantRequestId.issue(stamp)) is GrantResult.Granted)
+            runCurrent()
+            assertTrue(c.isExempt(pkg, timeCause))
+            val openCause = c.evaluateBlockCause(pkg, "c", null, false, timeBudget = positive)!!
+            val scope = c.screenState("c", null, openCause, stamp.wallEpochMs).openCreditRequestScope
+            assertNotNull(scope)
+            assertEquals(GrantResult.OpenAllowed, c.requestBreak("c", openCause, GrantRequestId.issue(stamp, scope)))
+            runCurrent()
+            assertTrue(c.resumeOrdinaryBreaks()); runCurrent()
+            assertNotNull(c.currentBlockCause(pkg, timeCause))
+            assertTrue(spent.spent)
+            c.hideIfShown()
+        }
+    }
+
+    @Test fun PC_28_PC_47_PC_60_timeAccountingFaultIsScopedWhileOpenOrdinaryAndEmergencyRecoveryRemainUsable() = runTest {
+        val s = initial(BreakLevel.EASY).copy(times = listOf(TimeLimit("b", 10, BreakLevel.EASY)),
+            opens = listOf(OpenLimit("c", 1, BreakLevel.EASY)), openCredits = OpenCreditLedgerPolicy.initial(base, "UTC"))
+        val disk = Disk(s) { clock() }
+        val fault = MutableStateFlow<StorageState<List<TimeLimit>>>(StorageState.Unavailable(StorageFailure.CORRUPT))
+        val c = coordinator(disk, timeFlow = fault); runCurrent()
+        assertEquals(10, c.timeLimitMinutes("b"))
+        assertEquals(BreakLevel.EASY, c.currentTimeLimitBreakLevel("b"))
+        val timeCause = timeLimitBlockCause(BreakLevel.EASY, clock().wallEpochMs, 0)
+        val before = disk.writes
+        assertEquals(com.flint.peakfocus.feature.blockscreen.GrantStatus.UNAVAILABLE,
+            c.screenState("b", null, timeCause, clock().wallEpochMs).grantStatus)
+        assertTrue(c.requestBreak("b", timeCause, GrantRequestId.issue(clock())) is GrantResult.Unavailable)
+        assertEquals(before, disk.writes)
+
+        val openCause = c.currentBlockCause("c")!!
+        val openScope = c.screenState("c", null, openCause, clock().wallEpochMs).openCreditRequestScope
+        assertNotNull(openScope)
+        assertEquals(GrantResult.OpenAllowed, c.requestBreak("c", openCause, GrantRequestId.issue(clock(), openScope)))
+        runCurrent()
+        assertNull(c.currentBlockCause("c"))
+        val ordinaryCause = ruleBlockCause(s.rules.single(), clock().wallEpochMs, 0)
+        assertTrue(c.requestBreak(pkg, ordinaryCause, GrantRequestId.issue(clock())) is GrantResult.Granted)
+        runCurrent()
+        assertTrue(c.isExempt(pkg, ordinaryCause))
+        val status = ProtectionStatusHub.status.value
+        assertEquals(ProtectionStatus.Readiness.READY, status.readiness)
+        assertTrue("time-limit-measurement-unavailable" in status.detectors.degradedReasons)
+        assertEquals(ProtectionStatus.PassStatus.Available, status.pass)
+        val preview = c.previewEmergencyPass()!!
+        assertTrue(c.confirmEmergencyPass(preview) is RecoveryResult.Accepted)
+        runCurrent()
+        assertTrue(BlockExemptions.hasGlobalRecovery())
+        assertTrue(disk.state.value is StorageState.Ready)
+        assertTrue(c.isExempt("b", timeCause))
+    }
 
     @Test fun PC_28_PC_47_openConfigurationLoadingOrUnavailableCannotReleaseAnActiveCredit() = runTest {
         val s = initial().copy(opens = listOf(OpenLimit("c", 1, BreakLevel.HARDCORE)),

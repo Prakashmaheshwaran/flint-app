@@ -24,6 +24,9 @@ import com.flint.peakfocus.blocking.engine.EvaluationTimer
 import com.flint.peakfocus.blocking.engine.NextEvaluationBoundary
 import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.blocking.overlay.BlockScreenCoordinator
+import com.flint.peakfocus.blocking.overlay.TrustedTimeLimitReader
+import com.flint.peakfocus.blocking.overlay.TrustedTimeLimitBudget
+import com.flint.peakfocus.blocking.overlay.TimeLimitForegroundSession
 import com.flint.peakfocus.blocking.overlay.ruleBlockCause
 import com.flint.peakfocus.blocking.resilience.WebsiteCoverageHealth
 import com.flint.peakfocus.core.data.BlocklistStore
@@ -76,6 +79,8 @@ class FlintAccessibilityService : AccessibilityService() {
     private val engine = BlockDecisionEngine()
     private var serviceScope: CoroutineScope? = null
     private var coordinator: BlockScreenCoordinator? = null
+    private val timeReader by lazy { TrustedTimeLimitReader.create(this) }
+    private var timeForeground: TimeLimitForegroundSession? = null
 
     /** One independent deadline for schedules, expiry, budgets and local day rollover. */
     private var boundaryTimer: EvaluationTimer? = null
@@ -95,7 +100,10 @@ class FlintAccessibilityService : AccessibilityService() {
     private var overlayAttached = false
     private var overlayWindowId: Int? = null
     private val screenReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) { reevaluateForeground() }
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_SCREEN_OFF) timeForeground?.checkpoint(null)
+            reevaluateForeground()
+        }
     }
 
     /** Last package seen in the foreground (Flint + system surfaces included — the open-limit
@@ -108,6 +116,7 @@ class FlintAccessibilityService : AccessibilityService() {
         BlocklistStore(this).load()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         serviceScope = scope
+        timeForeground = TimeLimitForegroundSession.create(this, TimeLimitForegroundSession.Path.A)
         urlThrottle = UrlReadThrottle(
             nowMs = SystemClock::uptimeMillis,
             post = { delayMs, callback ->
@@ -170,6 +179,7 @@ class FlintAccessibilityService : AccessibilityService() {
             // MainActivity visit is different: stand the shield down, retaining a bounded
             // recovery check in case the underlying app returns without a fresh window event.
             if (className == "$packageName.MainActivity") {
+                timeForeground?.checkpoint(null)
                 lastForegroundPackage = pkg
                 lastForegroundUrl = null
                 clearBrowserWindow()
@@ -217,6 +227,7 @@ class FlintAccessibilityService : AccessibilityService() {
             ?: lastForegroundPackage
             ?: return
         if (pkg == packageName) {
+            timeForeground?.checkpoint(null)
             lastForegroundPackage = pkg
             clearBrowserWindow()
             WebsiteCoverageHealth.foreground(null, activeDomains ?: domainsActive(), false)
@@ -253,19 +264,14 @@ class FlintAccessibilityService : AccessibilityService() {
         evaluationJob?.cancel()
         evaluationJob = serviceScope?.launch {
             boundaryTimer?.cancel() // each decision replaces the one pending deadline
-            val now = System.currentTimeMillis()
-            val utcOffset = TimeZone.getDefault().getOffset(now).toLong()
-            val cal = Calendar.getInstance().apply { timeInMillis = now }
-            val nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
-            // Schedule.daysOfWeek is ISO-numbered (1=Mon…7=Sun — core-model's documented contract);
-            // Calendar.DAY_OF_WEEK is 1=Sun…7=Sat. Convert before handing to the engine.
-            val weekday = IsoWeekday.fromCalendar(cal.get(Calendar.DAY_OF_WEEK))
-
             // 1) Safety floor (allow-list windows included): blocking the launcher loops the Home
             //    button into the shield; the dialer and emergency surfaces are emergency calling;
             //    Settings/permission pages are how protection is recovered. The coordinator applies
             //    the same floor again; this early return also skips the budget query.
-            if (coordinator.isSafetyFloor(pkg)) {
+            if (coordinator.isSafetyFloor(pkg) || !isInteractive()) {
+                // Enqueue the captured departure before releasing the surface. Its visit
+                // token prevents even a failed write from charging floor/screen-off time.
+                timeForeground?.checkpoint(null)
                 coordinator.hideIfShown()
                 armFloorRecovery()
                 return@launch
@@ -273,56 +279,67 @@ class FlintAccessibilityService : AccessibilityService() {
             if (pkg != lastNonFloorPackage) lastBudgetDeadlineMs = null
             lastNonFloorPackage = pkg
 
-            // Time Limit: blocked once today's foreground time reaches the app's daily budget —
-            //    the stricter of the legacy store and the Limit editor's DataStore limits (read via
-            //    the coordinator's snapshot; they were authored-but-never-enforced before that).
-            //    TimeLimit carries no tier, so the store-wide default break level applies.
-            val limitMin = listOfNotNull(
-                LimitStore(this@FlintAccessibilityService).limitMinutes(pkg),
-                coordinator.timeLimitMinutes(pkg),
-            ).minOrNull()
-            // ADR-012: a configured zero/nonpositive budget is exhausted without measurement.
-            val immediatelySpent = limitMin != null && limitMin <= 0
-            val needsMeasurement = limitMin != null && limitMin > 0
-            // Preserve a recovery deadline even if a floor window cancels this first IO read.
-            lastBudgetDeadlineMs = limitMin?.let { lastBudgetDeadlineMs ?: now + it * 60_000L }
-            // Cancellation on every newer decision prevents a suspended query from showing a
-            // stale shield. The initial seven-day carry-in query never runs on the main thread.
-            val used = if (needsMeasurement) withContext(Dispatchers.IO) {
-                UsageQuery.dailyForegroundMillisIfGranted(this@FlintAccessibilityService, pkg, now)
-            } else null
-            // Missing Usage Access leaves positive budgets unmeasured, not exhausted.
-            val remaining = if (immediatelySpent) 0L
-                else used?.let { checkNotNull(limitMin) * 60_000L - it }
+            // Both paths use the same saved period and committed floor. Legacy budgets stay
+            // a stricter fallback; a failed query never becomes artificial MAX exhaustion.
+            val minutes = listOfNotNull(LimitStore(this@FlintAccessibilityService).limitMinutes(pkg),
+                coordinator.timeLimitMinutes(pkg)).minOrNull()
+            val checkpoint = timeForeground?.checkpoint(pkg.takeIf { minutes != null && !coordinator.hasVisibleShield(pkg) })
+            if (minutes == 0) {
+                // Zero is already known exhausted: do not delay its first shield on IO.
+                // The serialized read below supplies its trusted reset before daily rights
+                // are available; this provisional display creates no period or grant.
+                renderDecision(coordinator, previousPackage, pkg, active,
+                    TrustedTimeLimitBudget(pkg, 0, null, 0L, TrustedTimeLimitBudget.Measurement.NOT_NEEDED))
+            }
+            val budget = minutes?.let { withContext(Dispatchers.IO) { timeReader.read(pkg, it) { checkpoint?.await() } } }
+            val now = System.currentTimeMillis()
+            val remaining = budget?.remainingMs
             lastBudgetDeadlineMs = remaining?.let { now + it.coerceAtLeast(0L) }
-            val timeLimitSpent = immediatelySpent || (remaining != null && remaining <= 0L)
 
-            // Inspect rules even when a weaker time limit or an old ordinary break applies.
-            val url = lastForegroundUrl.takeIf { BrowserAddressBars.isBrowser(pkg) && active }
-            val verdict = engine.decide(pkg, url, ActiveRulesHolder.rules, packageName, nowMin, weekday, now)
-            val ruleCause = (verdict as? Verdict.Block)?.let {
-                ruleBlockCause(ActiveRulesHolder.rules.firstOrNull { rule -> rule.id == it.ruleId }, now, utcOffset)
-            }
-            val cause = coordinator.evaluateBlockCause(previousPackage, pkg, ruleCause, timeLimitSpent, url)
-            if (cause != null) {
-                coordinator.showBlocked(pkg, labelFor(pkg), cause)
-            } else {
-                coordinator.hideIfShown()
-            }
+            renderDecision(coordinator, previousPackage, pkg, active, budget)
             // A configured but unmeasured budget retains a recovery check without blocking.
-            val boundaryBudget = remaining ?: if (needsMeasurement) UNMEASURED_BUDGET_BOUNDARY_MS else null
+            val boundaryBudget = if (budget != null) minOf(remaining?.takeIf { it > 0L } ?: TIME_OBSERVATION_CADENCE_MS,
+                TIME_OBSERVATION_CADENCE_MS) else null
             armBoundary(pkg, now, boundaryBudget,
-                retryUsage = needsMeasurement && (used == null || used == Long.MAX_VALUE))
+                retryUsage = budget != null && remaining == null,
+                resetRemainingMs = budget?.resetRemainingMs(com.flint.peakfocus.core.datastore.ProtectionClock.now()))
         }
     }
 
-    private fun armBoundary(pkg: String, now: Long, remainingBudgetMs: Long?, retryUsage: Boolean = false) {
+    private fun renderDecision(coordinator: BlockScreenCoordinator, previous: String?, pkg: String,
+        domainsActive: Boolean, budget: TrustedTimeLimitBudget?) {
+        val now = System.currentTimeMillis()
+        val cal = Calendar.getInstance().apply { timeInMillis = now }
+        val rules = ActiveRulesHolder.rules
+        val url = lastForegroundUrl.takeIf { BrowserAddressBars.isBrowser(pkg) && domainsActive }
+        val verdict = engine.decide(pkg, url, rules, packageName,
+            cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE),
+            IsoWeekday.fromCalendar(cal.get(Calendar.DAY_OF_WEEK)), now)
+        val ruleCause = (verdict as? Verdict.Block)?.let { verdict ->
+            ruleBlockCause(rules.firstOrNull { it.id == verdict.ruleId }, now, TimeZone.getDefault().getOffset(now).toLong())
+        }
+        val cause = coordinator.evaluateBlockCause(previous, pkg, ruleCause,
+            timeLimitSpent = false, foregroundUrl = url, timeBudget = budget)
+        if (cause == null) {
+            coordinator.hideIfShown()
+            if (budget != null) timeForeground?.checkpoint(pkg)
+        } else {
+            // A visible Flint shield is not time using the underlying application.
+            timeForeground?.checkpoint(null)
+            coordinator.showBlocked(pkg, labelFor(pkg), cause)
+        }
+    }
+
+    private fun armBoundary(pkg: String, now: Long, remainingBudgetMs: Long?, retryUsage: Boolean = false,
+        resetRemainingMs: Long? = null) {
         val interactive = isInteractive()
         boundaryTimer?.arm(NextEvaluationBoundary.next(
             now, ZoneId.systemDefault(), pkg, ActiveRulesHolder.rules, remainingBudgetMs,
             interactive = interactive,
             // Failed reads or missing access recover without an app switch, only while awake.
             boundedRecovery = retryUsage && interactive,
+            budgetResetRemainingMs = resetRemainingMs,
+            budgetUsesSavedReset = true,
         ))
     }
 
@@ -513,6 +530,8 @@ class FlintAccessibilityService : AccessibilityService() {
     }
 
     private fun releaseDetection() {
+        timeForeground?.close()
+        timeForeground = null
         clearBrowserWindow()
         urlThrottle = null
         WebsiteCoverageHealth.reset()
@@ -542,6 +561,6 @@ class FlintAccessibilityService : AccessibilityService() {
 
     private companion object {
         // Requests midnight/recovery without inventing a future exhaustion deadline.
-        const val UNMEASURED_BUDGET_BOUNDARY_MS = 0L
+        const val TIME_OBSERVATION_CADENCE_MS = 15_000L
     }
 }

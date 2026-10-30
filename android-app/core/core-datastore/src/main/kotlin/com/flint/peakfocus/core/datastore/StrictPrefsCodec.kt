@@ -2,6 +2,7 @@ package com.flint.peakfocus.core.datastore
 
 import androidx.datastore.preferences.core.Preferences
 import com.flint.peakfocus.core.model.*
+import java.time.ZoneId
 
 /**
  * Legacy v1 formats remain readable; Time Limits append an explicit tier (see README).
@@ -100,11 +101,15 @@ internal object StrictPrefsCodec {
     fun timeLimits(encoded: String, legacyTier: BreakLevel = BreakLevel.EASY): List<TimeLimit> {
         rows(encoded).forEach { row ->
             val fields = row.split('~')
-            if (fields.size > 3) future()
-            check(fields.size in 2..3)
+            if (fields.size > 4) future()
+            check(fields.size in 2..4)
             atom(fields[0], true)
             check(fields[1].toIntOrNull()?.let { it >= 0 } == true)
-            if (fields.size == 3) level(fields[2])
+            if (fields.size >= 3) level(fields[2])
+            if (fields.size == 4) {
+                atom(fields[3], true)
+                check(runCatching { com.flint.peakfocus.blocking.engine.OpenCreditLedgerPolicy.quotaZone(PrefsCodec.unescape(fields[3])) }.isSuccess)
+            }
         }
         return PrefsCodec.decodeTimeLimits(encoded, legacyTier).also {
             check(it.map(TimeLimit::packageName).distinct().size == it.size)

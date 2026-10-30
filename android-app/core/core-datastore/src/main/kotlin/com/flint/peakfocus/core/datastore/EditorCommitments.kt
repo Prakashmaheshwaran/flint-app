@@ -158,8 +158,8 @@ internal fun ruleShape(rule: BlockRule, zone: String) = CommitmentPolicy.Protect
     endsAtEpochMs = rule.expiresAtEpochMs,
 )
 
-internal fun limitShape(pkg: String, tier: BreakLevel, budget: Int) = CommitmentPolicy.ProtectionShape(
-    name = pkg, tier = tier, allowListMode = false, apps = setOf(pkg), domains = emptySet(), budget = budget,
+internal fun limitShape(pkg: String, tier: BreakLevel, budget: Int, dailyZoneId: String? = null) = CommitmentPolicy.ProtectionShape(
+    name = pkg, tier = tier, allowListMode = false, apps = setOf(pkg), domains = emptySet(), budget = budget, dailyZoneId = dailyZoneId,
 )
 
 internal fun validateEditorRule(rule: BlockRule, old: BlockRule?, now: AccessClockStamp): String? {

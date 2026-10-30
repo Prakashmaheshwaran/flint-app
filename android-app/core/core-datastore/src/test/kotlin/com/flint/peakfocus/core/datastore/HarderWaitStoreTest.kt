@@ -46,7 +46,7 @@ class HarderWaitStoreTest {
     }
 
     @Test fun `PC-71 future Time Limit row extension is unsupported rather than corrupt`() {
-        try { StrictPrefsCodec.timeLimits("app~30~HARDCORE~future"); fail("Future row accepted") }
+        try { StrictPrefsCodec.timeLimits("app~30~HARDCORE~UTC~future"); fail("Future row accepted") }
         catch (cause: StorageUnavailableException) { assertEquals(StorageFailure.UNSUPPORTED_VERSION, cause.reason) }
         assertEquals(StorageFailure.CORRUPT, editorPublicationFailure(androidx.datastore.core.CorruptionException("bad file")))
     }
