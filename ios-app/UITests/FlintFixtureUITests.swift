@@ -88,9 +88,11 @@ final class FlintFixtureUITests: XCTestCase {
         try tap(app.buttons["You"])
         let appLock = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'App lock'")).firstMatch
         try reveal(appLock)
+        capture("pin-app-lock-revealed")
         try tap(appLock)
         let newPIN = app.secureTextFields["pin.setup.new"]
         XCTAssertTrue(newPIN.waitForExistence(timeout: 5))
+        capture("pin-setup-opened")
         try tap(newPIN)
         newPIN.typeText("0426") // Synthetic test PIN, never a user credential.
         let confirm = app.secureTextFields["pin.setup.confirm"]
@@ -226,7 +228,10 @@ final class FlintFixtureUITests: XCTestCase {
     private func reveal(_ element: XCUIElement, direction: ScrollDirection = .up,
                         file: StaticString = #filePath, line: UInt = #line) throws {
         XCTAssertTrue(element.waitForExistence(timeout: 5), file: file, line: line)
-        for _ in 0..<8 {
+        var scrollBudget = 64
+        var scrollCount = 0
+        var stationaryScrolls = 0
+        while true {
             if element.isHittable { return }
             // A presented editor leaves its underlying tab in the AX tree. Use
             // the frontmost hittable scroll view, not that covered tab's view.
@@ -248,6 +253,18 @@ final class FlintFixtureUITests: XCTestCase {
                 XCTFail("No usable scroll viewport for \(element)", file: file, line: line)
                 throw FixtureFailure.offscreen
             }
+            let targetFrame = element.frame
+            if scrollCount == 0 {
+                // AX5 Settings can span 16 pages. Size the budget to the target's
+                // actual distance, allowing for drags that move less than a page.
+                // A hard ceiling also bounds malformed or changing AX geometry.
+                let distance = direction == .up
+                    ? max(0, targetFrame.maxY - viewport.maxY)
+                    : max(0, viewport.minY - targetFrame.minY)
+                let pages = ceil(distance / (viewport.height * 0.6))
+                if pages.isFinite { scrollBudget = Int(min(64, max(8, pages * 2 + 2))) }
+            }
+            guard scrollCount < scrollBudget, stationaryScrolls < 2 else { break }
             let top = viewport.minY + viewport.height * 0.2
             let bottom = viewport.minY + viewport.height * 0.8
             // A center drag on a focused secure field invokes text selection.
@@ -259,8 +276,14 @@ final class FlintFixtureUITests: XCTestCase {
             let to = origin.withOffset(CGVector(dx: x - window.minX,
                 dy: (direction == .up ? top : bottom) - window.minY))
             from.press(forDuration: 0.05, thenDragTo: to)
+            scrollCount += 1
+            // Stop at the content edge instead of spending the entire budget on
+            // a missing/covered target. Check hittability again after every drag,
+            // including the final allowed one, before declaring failure.
+            stationaryScrolls = abs(element.frame.minY - targetFrame.minY) < 1
+                ? stationaryScrolls + 1 : 0
         }
-        XCTFail("Element remained offscreen: \(element)", file: file, line: line)
+        XCTFail("Element remained offscreen after \(scrollCount) drags: \(element)", file: file, line: line)
         throw FixtureFailure.offscreen
     }
 
