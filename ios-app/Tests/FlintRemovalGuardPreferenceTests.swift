@@ -30,11 +30,11 @@ final class FlintRemovalGuardPreferenceTests: XCTestCase {
         var bytes: Data?
         let store = Preference.Store(read: { bytes }, write: { bytes = $0 })
         try store.save(enabled)
-        XCTAssertEqual(store.load(), .value(enabled))
+        XCTAssertEqual(store.load(), .value(enabled, currentDisclosureVersion: 1))
         XCTAssertTrue(store.load().captureForNewCommitment)
         XCTAssertEqual(try Preference.decode(XCTUnwrap(bytes)), enabled)
         try store.save(Preference())
-        XCTAssertEqual(store.load(), .value(Preference()))
+        XCTAssertEqual(store.load(), .value(Preference(), currentDisclosureVersion: 1))
         XCTAssertFalse(store.load().captureForNewCommitment)
     }
 
@@ -71,7 +71,7 @@ final class FlintRemovalGuardPreferenceTests: XCTestCase {
             var bytes: Data? = try JSONSerialization.data(withJSONObject: incomplete)
             let original = bytes
             let store = Preference.Store(read: { bytes }, write: { bytes = $0 })
-            XCTAssertEqual(store.load(), .value(Preference()))
+            XCTAssertEqual(store.load(), .value(Preference(), currentDisclosureVersion: 1))
             XCTAssertFalse(store.load().captureForNewCommitment)
             XCTAssertEqual(bytes, original, "No mutation merely from decoding")
             try store.save(Preference())
@@ -91,7 +91,7 @@ final class FlintRemovalGuardPreferenceTests: XCTestCase {
                                     .init(enabled: true, disclosedAt: Date(timeIntervalSince1970: .infinity), disclosureVersion: 1)]
         for preference in invalid {
             XCTAssertThrowsError(try store.save(preference))
-            XCTAssertFalse(Preference.ReadResult.value(preference).captureForNewCommitment)
+            XCTAssertFalse(Preference.ReadResult.value(preference, currentDisclosureVersion: 1).captureForNewCommitment)
         }
         XCTAssertEqual(writes, 0)
     }

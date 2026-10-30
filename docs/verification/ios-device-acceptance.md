@@ -17,6 +17,25 @@ with notes). Attach screenshots or a screen recording where the step says so.
 - One saved app group with 2–3 everyday apps (e.g. Safari is NOT in it), one category pick.
 - Settings → You shows "Protection is healthy" before starting.
 
+## R-08 removal guard
+
+All rows are **DEVICE-PENDING**. Run on each supported tested iOS version, recording
+model, exact version/build, authorization, Flint commit, actual deletion behavior and callback
+latency. Unit/integration tests and CI establish requested settings and ownership only.
+The older B2 deletion-denial rows now require this explicit opt-in before a new finite
+Hardcore commitment; legacy sessions and open-ended owners no longer request the guard.
+
+| ID / contract | Setup and action | Required observation | Status |
+| --- | --- | --- | --- |
+| R08-01 / §10 | Open You → Restrict app deletion during Hardcore, cancel the disclosure, then accept it. | Default is off; cancel keeps it off. Disclosure explains device-wide scope, revocable Screen Time permission, finite end, Emergency Pass release, recovery locations and version-dependent behavior. A later opt-in leaves existing commitments unchanged. | DEVICE-PENDING |
+| R08-02 / PC-78 | Opt in, then overlap a finite Hardcore session and schedule with different ends; keep Flint closed across each boundary. | App deletion remains restricted after the first owner ends and is released after the last. Record whether this iOS version honors the setting and the release latency. | DEVICE-PENDING |
+| R08-03 / PC-46 | During overlap, use Emergency Pass, return to You/recovery, and let a new schedule begin during recovery; then resume. | Guard releases after the pass commits, recovery and OS Screen Time settings remain reachable, new recovery occurrences do not re-arm, and only still-active opted-in owners resume. | DEVICE-PENDING |
+| R08-04 / PC-79 | Upgrade while a finite legacy Hardcore session is running; separately upgrade with an open-ended legacy owner. | First successful reconcile clears the old guard; session targets and promised legacy exit rights remain. Later opt-in never retroactively arms either owner. | DEVICE-PENDING |
+| R08-05 / §9, §10 | Turn off during a finite Hardcore overlap, relaunch, change time zone/wall time, and reach the last logical end. Repeat across reboot. | Pending off persists; current captures remain through their bounded logical ends, new commitments capture off, and off completes without a new commitment extending it. | DEVICE-PENDING |
+| R08-06 / PC-61, PC-77 | Revoke then restore Screen Time permission through iOS Settings on every tested version. | Revocation remains reachable. Status shows Unavailable while unauthorized; Requested/On until reflects configuration only. Record actual deletion denial/release separately, including any iOS version that ignores the setting. | DEVICE-PENDING |
+| R08-07 / PC-04 | Request guard off during a guarded session, then try a longer Hardcore replacement through the app, Shortcuts and Focus. Re-enable the guard, then retry; separately retry after expiry or pass recovery. | Pending off refuses replacement with the same explanation on every route, preserving the original guard and deadline. Re-enable cancels pending off and permits an otherwise valid replacement; after expiry/off a new session captures off. Pass and recovery remain reachable. | DEVICE-PENDING |
+| R08-08 / §6, §8 | Upgrade with a retained removal guard and a corrupt rule domain; separately interrupt an accepted session installation. Replay a positively committed Emergency Pass recovery while the domain remains unreadable. | Ordinary unknown state retains the guard, potentially past the owner's end; committed pass recovery releases it and retires the legacy setting despite unreadable owner inventory. Unknown pass state never authorizes release. Record actual OS behavior and recovery reachability. | DEVICE-PENDING |
+
 ## R-23 — ordinary scoped breaks (phase 2; device-pending)
 
 These CRED-style rows require a signed physical device. Simulator tests cover transaction,

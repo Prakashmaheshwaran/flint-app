@@ -38,6 +38,8 @@ struct SettingsView: View {
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("settings.emergencyPass")
 
+                    FlintRemovalGuardSetting()
+
                     VStack(spacing: 0) {
                         Button {
                             appLock.cancelPINChange()
@@ -223,6 +225,9 @@ struct SettingsView: View {
                         } else if domain == "webRestrictions" {
                             Text("Website rules: \(report.armed) applied (not independently verifiable)")
                                 .font(FlintFont.text(13)).foregroundStyle(FlintBrand.stone)
+                        } else if domain == "removalGuard" {
+                            Text("App deletion restriction: \(report.armed == 1 ? "requested from Screen Time" : "not requested"). Behavior varies by iOS version.")
+                                .font(FlintFont.text(13)).foregroundStyle(FlintBrand.stone)
                         } else {
                         let summary = "\(domainTitle(domain)): \(report.enabled) enabled · \(report.attempted) attempted · \(report.armed) armed · "
                             + (report.observed.map { "\($0) observed registered" } ?? "registration not observed")
@@ -294,6 +299,7 @@ struct SettingsView: View {
         case "limits": return "Time Limits"
         case "openLimits": return "Open Limits"
         case "webRestrictions": return "Website rules"
+        case "removalGuard": return "App deletion restriction"
         default: return "Protection"
         }
     }

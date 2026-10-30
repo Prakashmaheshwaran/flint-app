@@ -14,6 +14,7 @@ public final class FlintRuleMonitor {
     public func handle(_ callback: Callback, activity: String) -> Bool {
         let domain = FlintRuleStoreKey.allCases.first { activity.hasPrefix($0.prefix) }
         guard let domain else { return false }
+        defer { env.reconcileRemovalGuard() }
         if case let .threshold(event) = callback { env.observeLimitThreshold(activity, event) }
         let acquired: Void? = FlintRuleStoreLock.withLock(environment: env) {
             switch domain {

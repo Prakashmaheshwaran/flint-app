@@ -203,7 +203,6 @@ final class FlintSessionPersistence {
         if !session.isLogicallyExpired(clock: env.clock) {
             do { if let selection { try env.shield.applyBlockList(selection) } } catch { return false }
             env.webRestrictions.reconcile(session, clock: env.clock)
-            env.shield.setDenyAppRemoval(FlintUninstallGuard.shouldDeny(for: session, clock: env.clock))
         }
         guard markApplied(session) else { return false }
         if let previous = generation.previousMonitorName, previous != session.monitorName {
@@ -211,6 +210,7 @@ final class FlintSessionPersistence {
         }
         guard emitStartIfPending(session) else { return false }
         clearArmFailure()
+        env.reconcileRemovalGuard()
         return true
     }
 
@@ -221,6 +221,7 @@ final class FlintSessionPersistence {
         var monitors = [session.monitorName]
         if let previousMonitor, previousMonitor != session.monitorName { monitors.append(previousMonitor) }
         env.registrar.stopMonitoring(monitors)
+        env.reconcileRemovalGuard()
     }
 
     private func clearArmFailure() {

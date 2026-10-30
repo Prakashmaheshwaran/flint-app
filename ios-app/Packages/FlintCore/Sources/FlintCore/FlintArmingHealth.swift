@@ -117,7 +117,7 @@ public struct FlintArmingHealth: Codable, Equatable {
     /// Session auto-clear and Sleep's ordinary schedule rules are already represented in health.
     public static let capHeadroom = 3
 
-    /// Reports keyed by domain (session, schedules, limits, openLimits, webRestrictions).
+    /// Reports keyed by domain (session, schedules, limits, openLimits, webRestrictions, removalGuard).
     public var domains: [String: DomainReport]
 
     public init(domains: [String: DomainReport] = [:]) {
@@ -126,19 +126,23 @@ public struct FlintArmingHealth: Codable, Equatable {
 
     // MARK: Derived
 
-    /// Total enabled activity owners at their last reload; web settings reuse those owners.
+    /// Total enabled activity owners; web and removal settings reuse those owners.
     public var enabledTotal: Int {
-        domains.filter { $0.key != "webRestrictions" }.values.reduce(0) { $0 + $1.enabled }
+        activityDomains.values.reduce(0) { $0 + $1.enabled }
     }
 
     /// Total registrations attempted across all recorded domains at their last reload.
     public var attemptedTotal: Int {
-        domains.filter { $0.key != "webRestrictions" }.values.reduce(0) { $0 + $1.attempted }
+        activityDomains.values.reduce(0) { $0 + $1.attempted }
     }
 
-    /// Total registrations successfully armed; applied web settings do not register activities.
+    /// Total registrations successfully armed; web and removal settings register no activities.
     public var armedTotal: Int {
-        domains.filter { $0.key != "webRestrictions" }.values.reduce(0) { $0 + $1.armed }
+        activityDomains.values.reduce(0) { $0 + $1.armed }
+    }
+
+    private var activityDomains: [String: DomainReport] {
+        domains.filter { $0.key != "webRestrictions" && $0.key != "removalGuard" }
     }
 
     /// Every recorded failure, ordered by domain name for stable display.

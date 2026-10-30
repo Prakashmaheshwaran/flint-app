@@ -197,6 +197,8 @@ struct FlintRuleReloadEnvironment {
     var installationEvidence: () -> Bool = FlintRuleInitialization.externalEvidence
     /// nil selects the live native query; an indeterminate injected result retains stores.
     var existingWebStores: (() -> Bool?)? = nil
+    var captureRemovalGuard: (UserDefaults?) -> Bool = { FlintRemovalGuardSettings.capture(defaults: $0) }
+    var reconcileRemovalGuard: () -> Void = { FlintRemovalGuardReconciler.reconcile() }
 
     /// The caller holds the transition lock. Checkpoint before decisions, but do not freeze a
     /// successor here: queued changes must apply before the next occurrence can be accepted.
@@ -241,6 +243,12 @@ struct FlintRuleReloadEnvironment {
                FlintRuleOccurrenceClock.isOver(queue.window, for: next[index], clock: clock) { continue }
             let current = next[index].occurrence(at: clock.now(), clock: clock)
             if next[index].protection?.occurrence != current {
+                if next[index].protection?.occurrence?.identity != current?.identity {
+                    let capture = current.map { _ in
+                        next[index].breakLevel == .hardcore && captureRemovalGuard(defaults)
+                    }
+                    next[index].protection?.removalGuard = capture
+                }
                 next[index].protection?.occurrence = current
                 changed.append(next[index])
             }
@@ -255,6 +263,7 @@ struct FlintRuleReloadEnvironment {
                 clearStore(rule.storeName)
             }
         }
+        if !changed.isEmpty { reconcileRemovalGuard() }
         return next
     }
 

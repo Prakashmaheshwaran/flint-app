@@ -20,7 +20,7 @@ public enum FlintSessionError: Error, LocalizedError, Equatable {
     /// session at a time, so nothing changed (ADR-012 §3 `capacity_unavailable`).
     case capacityUnavailable(runningName: String, until: Date?)
     /// The running session is Hardcore and the request would weaken it; nothing changed.
-    case replacementDenied(until: Date?)
+    case replacementDenied(until: Date?, guardOffPending: Bool = false)
     /// The running session is Harder: a wait before replacing it is running. Ask again once it
     /// has passed to confirm.
     case replacementWaiting(remaining: TimeInterval)
@@ -54,7 +54,11 @@ public enum FlintSessionError: Error, LocalizedError, Equatable {
             return "Harder and Hardcore sessions need an end time. Choose how long it should run."
         case let .capacityUnavailable(running, until):
             return "“\(running)” is already running\(Self.untilText(until)). Flint runs one session at a time."
-        case let .replacementDenied(until):
+        case let .replacementDenied(until, true):
+            return "App deletion protection is switching off when this block ends\(Self.untilText(until)). "
+                + "To start a replacement now, turn Restrict app deletion during Hardcore back on in Flint → You, "
+                + "or start one after this block ends. An available Emergency Pass also releases the guard."
+        case let .replacementDenied(until, false):
             return "The running Hardcore session can't be replaced by a weaker one\(Self.untilText(until)). "
                 + "It ends on its own, or you can use the Emergency Pass in Flint."
         case let .replacementWaiting(remaining):
@@ -146,7 +150,7 @@ public struct FlintSelectionCounts: Equatable, Sendable {
     public var total: Int { applications + categories + webDomains }
 }
 
-/// The session's `ManagedSettingsStore` ("flint"): shield, uninstall guard, teardown.
+/// The session's `ManagedSettingsStore` ("flint"): shields and Safari settings only.
 public protocol FlintSessionShielding: AnyObject {
     func counts(of selection: FamilyActivitySelection) -> FlintSelectionCounts
     func targets(of selection: FamilyActivitySelection) -> FlintSessionTargets
@@ -154,8 +158,7 @@ public protocol FlintSessionShielding: AnyObject {
     /// identifies a target set without storing tokens.
     func fingerprint(of selection: FamilyActivitySelection) -> String
     func applyBlockList(_ selection: FamilyActivitySelection) throws
-    func setDenyAppRemoval(_ deny: Bool)
-    /// Drops everything on the store — shield, uninstall guard and any other session setting.
+    /// Releases session-owned settings. Removal denial belongs to the derived guard adapter.
     func clear()
 }
 
@@ -256,6 +259,9 @@ public struct FlintSessionEnvironment {
     public var afterStartCommit: () throws -> Void
     public var afterStartApplied: () throws -> Void
     public var reconcileOrdinaryBreaks: () -> Void
+    public var captureRemovalGuard: () -> Bool
+    public var removalGuardOffPending: () -> Bool
+    public var reconcileRemovalGuard: () -> Void
 
     public init(
         store: @escaping () -> FlintSessionStateStoring?,
@@ -276,7 +282,10 @@ public struct FlintSessionEnvironment {
         recoveryGate: @escaping () -> FlintPassRecoveryGate = { .enforcing },
         afterStartCommit: @escaping () throws -> Void = {},
         afterStartApplied: @escaping () throws -> Void = {},
-        reconcileOrdinaryBreaks: @escaping () -> Void = {}
+        reconcileOrdinaryBreaks: @escaping () -> Void = {},
+        captureRemovalGuard: (() -> Bool)? = nil,
+        removalGuardOffPending: (() -> Bool)? = nil,
+        reconcileRemovalGuard: @escaping () -> Void = { FlintRemovalGuardReconciler.reconcile() }
     ) {
         self.store = store
         self.shield = shield
@@ -297,6 +306,12 @@ public struct FlintSessionEnvironment {
         self.afterStartCommit = afterStartCommit
         self.afterStartApplied = afterStartApplied
         self.reconcileOrdinaryBreaks = reconcileOrdinaryBreaks
+        self.captureRemovalGuard = captureRemovalGuard ?? { FlintRemovalGuardSettings.capture() }
+        self.removalGuardOffPending = removalGuardOffPending ?? {
+            guard case let .value(value, _) = FlintRemovalGuardPreference.Store()?.load() else { return false }
+            return value.deferredOffUntil != nil
+        }
+        self.reconcileRemovalGuard = reconcileRemovalGuard
     }
 
     public static var live: FlintSessionEnvironment {
@@ -634,10 +649,19 @@ public final class FlintSessionController {
             kind: kind, newTier: breakLevel, duration: duration > 0 ? duration : nil, capacityAvailable: true), !confirmed {
             throw FlintSessionError.needsConfirmation
         }
+        let removalGuard = breakLevel == .hardcore && env.captureRemovalGuard()
         if let running = current, !isOver(running) {
             guard replacing else {
                 throw FlintSessionError.capacityUnavailable(runningName: running.name,
                                                             until: running.stableLogicalEnd(clock: env.clock))
+            }
+            if running.removalGuard == true, env.removalGuardOffPending() {
+                throw FlintSessionError.replacementDenied(until: running.stableLogicalEnd(clock: env.clock), guardOffPending: true)
+            }
+            // An unavailable or out-of-band weaker preference also cannot erase an already
+            // accepted guard via otherwise dominating targets/duration.
+            if running.removalGuard == true, !removalGuard {
+                throw FlintSessionError.replacementDenied(until: running.stableLogicalEnd(clock: env.clock))
             }
             let targets = env.shield.targets(of: selection)
             let new = FlintProtectionSnapshot(mode: .blockList(
@@ -695,7 +719,8 @@ public final class FlintSessionController {
             origin: origin.rawValue,
             ownerID: ownerID,
             plannedDuration: endsAt.map { $0.timeIntervalSince(wallNow) },
-            startRequestID: operationID
+            startRequestID: operationID,
+            removalGuard: removalGuard
         ).checkpointed(clock: env.clock)
         let previous = current
         let previousSelection = previous.flatMap { store.loadSessionSelection(sessionID: $0.id) }
@@ -801,17 +826,13 @@ public final class FlintSessionController {
         // store, so every existing whole-store teardown releases it without a second clear.
         env.webRestrictions.reconcile(session, clock: env.clock)
 
-        // Uninstall guard: a Hardcore block also denies app removal (deleting Flint is otherwise
-        // the one-tap escape). Same store as the shield, so every teardown path drops both
-        // together via clearAllSettings(); non-Hardcore starts assert nil, so replacing a
-        // Hardcore session can't leave the guard dangling.
-        env.shield.setDenyAppRemoval(breakLevel == .hardcore)
         guard persistence.markApplied(session) else { throw FlintSessionError.protectionStateUnavailable }
         if let previous, previous.monitorName != monitorName {
             env.registrar.stopMonitoring([previous.monitorName])
         }
         try env.afterStartApplied()
         env.reconcileOrdinaryBreaks()
+        env.reconcileRemovalGuard()
 
         FlintSessionHealth.update(in: env.healthDefaults()) {
             $0.lastArmFailure = nil
@@ -967,6 +988,7 @@ public final class FlintSessionController {
         store.clearSessionSelection()
         env.registrar.stopMonitoring([session.monitorName])
         env.reconcileOrdinaryBreaks()
+        env.reconcileRemovalGuard()
         // The session's Harder count ends with it (a new session starts from zero, §4); its
         // committed-operation records stay in the ledger's bounded memory.
         env.publishStatus()
@@ -1001,6 +1023,7 @@ public final class FlintSessionController {
         env.shield.clear()
         // Keep this exact positive record until the generation tombstone can be written.
         env.registrar.stopMonitoring([session.monitorName])
+        env.reconcileRemovalGuard()
         env.publishStatus()
         return true
     }
@@ -1132,6 +1155,7 @@ public final class FlintSessionController {
         }
         defer { endTransition(transition) }
         defer { env.reconcileOrdinaryBreaks() }
+        defer { env.reconcileRemovalGuard() }
         guard env.reconcileEmergencyPass() else {
             var applying = FlintSessionReconcileReport(outcome: finishNaturalEndWithoutOutcome() ? .finishedExpired : .running)
             applying.recoveryApplying = true
@@ -1212,13 +1236,7 @@ public final class FlintSessionController {
             }
         }
 
-        env.shield.setDenyAppRemoval(FlintUninstallGuard.shouldDeny(for: session, clock: env.clock))
         return report
-    }
-
-    /// Launch-time reconciliation kept for existing callers; `reconcile()` now does the full job.
-    public func reconcileUninstallGuard() {
-        reconcile()
     }
 
     /// `clockChange`: the interval ended early because the wall clock moved ahead — not iOS
@@ -1360,6 +1378,7 @@ public final class FlintSessionController {
         guard let transition = beginTransition(timeout: env.monitorLockTimeout) else { return }
         defer { endTransition(transition) }
         defer { env.reconcileOrdinaryBreaks() }
+        defer { env.reconcileRemovalGuard() }
         // The monitor's callbacks are the app-closed path: always republish what they changed
         // (unchanged content skips the widget reload).
         defer { env.publishStatus() }
@@ -1397,7 +1416,6 @@ public final class FlintSessionController {
                 try? env.shield.applyBlockList(selection)
                 env.webRestrictions.reconcile(session, clock: env.clock)
             }
-            env.shield.setDenyAppRemoval(FlintUninstallGuard.shouldDeny(for: session, clock: env.clock))
 
         case .intervalWillEndWarning, .intervalDidEnd:
             // Logical time decides with no slack (ADR-012 §4, §9): never before the deadline, and
@@ -1490,7 +1508,6 @@ final class LiveSessionShield: FlintSessionShielding {
         )
     }
 
-    func setDenyAppRemoval(_ deny: Bool) { store.setDenyAppRemoval(deny) }
 
     func clear() { store.clear() }
 }

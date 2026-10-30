@@ -55,6 +55,8 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
     /// A bounded natural end observed while the policy ledger was unavailable. Keep the exact
     /// record until a generation tombstone can commit; it never authorizes a second release.
     public let naturalEndObservedAt: Date?
+    /// Disclosed opt-in frozen at acceptance. Missing in older documents means not opted in.
+    public let removalGuard: Bool?
 
     public static let currentContractVersion = 1
 
@@ -79,7 +81,8 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         startRequestID: String? = nil,
         clockRearmCount: Int? = nil,
         remainingCheckpoint: FlintSessionRemainingCheckpoint? = nil,
-        naturalEndObservedAt: Date? = nil
+        naturalEndObservedAt: Date? = nil,
+        removalGuard: Bool? = nil
     ) {
         self.id = id
         self.name = name
@@ -102,6 +105,7 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         self.clockRearmCount = clockRearmCount
         self.remainingCheckpoint = remainingCheckpoint
         self.naturalEndObservedAt = naturalEndObservedAt
+        self.removalGuard = removalGuard
     }
 
     /// Time left on the commitment, by the clock ADR-012 §9 trusts: within the boot that started
@@ -172,7 +176,8 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
             contractVersion: contractVersion, origin: origin, ownerID: ownerID,
             plannedDuration: plannedDuration, startRequestID: startRequestID,
             clockRearmCount: clockRearmCount, remainingCheckpoint: checkpoint,
-            naturalEndObservedAt: naturalEndObservedAt ?? self.naturalEndObservedAt)
+            naturalEndObservedAt: naturalEndObservedAt ?? self.naturalEndObservedAt,
+            removalGuard: removalGuard)
     }
 
     /// Whether the commitment is over by `logicalRemaining` (allowing `slack` for the whole-second
@@ -246,7 +251,8 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
             startRequestID: startRequestID,
             clockRearmCount: countsTowardClockLimit ? (clockRearmCount ?? 0) + 1 : clockRearmCount,
             remainingCheckpoint: remainingCheckpoint,
-            naturalEndObservedAt: naturalEndObservedAt
+            naturalEndObservedAt: naturalEndObservedAt,
+            removalGuard: removalGuard
         )
     }
 }

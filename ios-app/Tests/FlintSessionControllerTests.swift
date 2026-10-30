@@ -79,7 +79,8 @@ final class FlintSessionControllerTests: XCTestCase {
             monitorLockTimeout: 1,
             wait: { [unowned self] in self.waited.append($0); self.clock.advance($0 - self.waitShortfall) },
             reconcileEmergencyPass: reconcilePass, prepareNewSession: prepareStart, recoveryGate: recoveryGate,
-            afterStartCommit: afterStartCommit, afterStartApplied: afterStartApplied
+            afterStartCommit: afterStartCommit, afterStartApplied: afterStartApplied,
+            captureRemovalGuard: { false }, reconcileRemovalGuard: {}
         ))
     }
 
@@ -151,7 +152,7 @@ final class FlintSessionControllerTests: XCTestCase {
         }
         FocusFilterController(controller: c, acknowledgeOff: { _ in .success(()) }).deactivate()
         XCTAssertEqual(shield.clearCount, clears)
-        XCTAssertEqual(shield.denyAppRemoval, true)
+        XCTAssertNil(shield.denyAppRemoval, "The session shield no longer owns removal denial")
         XCTAssertEqual(registrar.stopped, stops, "unknown state cannot retire Y's finite last-good end")
         XCTAssertTrue(registrar.registered.contains(armed.monitorName))
         XCTAssertNotNil(health.lastArmFailure)
@@ -167,7 +168,7 @@ final class FlintSessionControllerTests: XCTestCase {
         XCTAssertTrue(c.reconcile().recordUnreadable)
         XCTAssertEqual(c.requestStop(confirmed: true), .unavailable)
         XCTAssertEqual(shield.clearCount, 0)
-        XCTAssertEqual(shield.denyAppRemoval, true)
+        XCTAssertNil(shield.denyAppRemoval, "The session shield no longer owns removal denial")
     }
 
     func testReadableGenerationMismatchCannotUseFiniteFallbackToClearSuccessorR20() throws {
@@ -180,7 +181,7 @@ final class FlintSessionControllerTests: XCTestCase {
         c.handleMonitorEvent(.intervalDidEnd, activity: old.monitorName)
         XCTAssertTrue(c.reconcile().recordUnreadable)
         XCTAssertEqual(shield.clearCount, 0)
-        XCTAssertEqual(shield.denyAppRemoval, true)
+        XCTAssertNil(shield.denyAppRemoval, "The session shield no longer owns removal denial")
         XCTAssertEqual(try ledger().peek().get().sessionAuthority?.latest?.session.id, current.id)
         XCTAssertNil(try ledger().peek().get().sessionAuthority?.tombstone)
     }
@@ -213,7 +214,7 @@ final class FlintSessionControllerTests: XCTestCase {
         c.finishIfExpired()
         XCTAssertEqual(store.active?.logicalRemaining(clock: clock.flintClock), 2930)
         XCTAssertEqual(shield.clearCount, 0)
-        XCTAssertEqual(shield.denyAppRemoval, true)
+        XCTAssertNil(shield.denyAppRemoval, "The session shield no longer owns removal denial")
     }
 
     func testRollbackNearExpiryAndDoubleRebootNeverRestoreSavedRemainingR05PC55PC58() throws {
@@ -792,7 +793,7 @@ final class FlintSessionControllerTests: XCTestCase {
         XCTAssertEqual(rearmed.id, session.id)
         XCTAssertEqual(try XCTUnwrap(rearmed.endsAt).timeIntervalSince(clock.now), 50 * 60, accuracy: 1,
                        "the end moves with the clock; remaining time is unchanged")
-        XCTAssertEqual(shield.denyAppRemoval, true)
+        XCTAssertNil(shield.denyAppRemoval, "The session shield no longer owns removal denial")
         clock.advance(50 * 60)
         c.handleMonitorEvent(.intervalDidEnd, activity: rearmed.monitorName)
         XCTAssertNil(store.active, "ends after the full committed duration")
@@ -1043,7 +1044,7 @@ final class FlintSessionControllerTests: XCTestCase {
             }
         }
         XCTAssertEqual(store.active, hardcore.checkpointed(clock: clock.flintClock), "original deadline, targets and guard retained")
-        XCTAssertEqual(shield.denyAppRemoval, true)
+        XCTAssertNil(shield.denyAppRemoval, "The session shield no longer owns removal denial")
         XCTAssertEqual(registrar.started.count, 1)
     }
 
@@ -1343,7 +1344,7 @@ final class FlintSessionControllerTests: XCTestCase {
         XCTAssertTrue(session.monitorName.hasPrefix("flint.session."))
         XCTAssertTrue(FlintSessionController.isSessionActivity(session.monitorName))
         XCTAssertEqual(shield.applyCount, 1)
-        XCTAssertEqual(shield.denyAppRemoval, true)
+        XCTAssertNil(shield.denyAppRemoval, "The session shield no longer owns removal denial")
         XCTAssertEqual(store.active, session)
         XCTAssertEqual(session.endsAt, clock.now.addingTimeInterval(45 * 60))
         XCTAssertEqual(session.monotonicStart, clock.monotonic)
@@ -1379,7 +1380,7 @@ final class FlintSessionControllerTests: XCTestCase {
         log.entries.removeAll()
         let second = try start(c, minutes: 30, level: .hardcore)
         XCTAssertEqual(log.entries, [
-            "register:\(second.monitorName)", "persist", "shield", "deny:true", "stop:\(first.monitorName)",
+            "register:\(second.monitorName)", "persist", "shield", "stop:\(first.monitorName)",
         ])
     }
 
@@ -1392,7 +1393,7 @@ final class FlintSessionControllerTests: XCTestCase {
         XCTAssertEqual(registrar.calls, [
             "start:\(first.monitorName)", "start:\(second.monitorName)", "stop:\(first.monitorName)",
         ])
-        XCTAssertEqual(shield.denyAppRemoval, true, "the new tier's guard is asserted")
+        XCTAssertNil(shield.denyAppRemoval, "The derived store owns the new tier guard")
         XCTAssertEqual(events.kinds, ["started", "superseded", "started"])
     }
 
@@ -1561,13 +1562,13 @@ final class FlintSessionControllerTests: XCTestCase {
         XCTAssertEqual(shield.applyCount, 0, "a start for an unknown registration changes nothing")
     }
 
-    func testMonitorStartReappliesShieldAndGuardForTheCurrentSessionOnly() throws {
+    func testMonitorStartReappliesShieldWithoutOwningRemovalGuard() throws {
         let c = controller()
         let session = try start(c, minutes: 30, level: .hardcore)
         shield.denyAppRemoval = nil
         c.handleMonitorEvent(.intervalDidStart, activity: session.monitorName)
         XCTAssertEqual(shield.applyCount, 2)
-        XCTAssertEqual(shield.denyAppRemoval, true)
+        XCTAssertNil(shield.denyAppRemoval, "The session shield no longer owns removal denial")
         c.handleMonitorEvent(.intervalDidStart, activity: "flint.session.someoneelse")
         XCTAssertEqual(shield.applyCount, 2)
     }
@@ -1670,7 +1671,7 @@ final class FlintSessionControllerTests: XCTestCase {
         clock.now = clock.now.addingTimeInterval(30 * 60) // wall clock pushed forward 30 min
         XCTAssertEqual(c.reconcile().timeVerdict, .wallAhead(seconds: 30 * 60))
         XCTAssertEqual(health.lastTimeAnomaly?.kind, .wallAhead)
-        XCTAssertEqual(shield.denyAppRemoval, true)
+        XCTAssertNil(shield.denyAppRemoval, "The session shield no longer owns removal denial")
 
         clock.now = clock.now.addingTimeInterval(-60 * 60) // and back 60 min
         XCTAssertEqual(c.reconcile().timeVerdict, .wallBehind(seconds: 60 * 60), "since the last checkpoint")
@@ -1786,7 +1787,7 @@ final class FlintSessionControllerTests: XCTestCase {
         shield.denyAppRemoval = true
         XCTAssertEqual(controller().reconcile().outcome, .noSession)
         XCTAssertEqual(shield.clearCount, 1)
-        XCTAssertNil(shield.denyAppRemoval)
+        XCTAssertEqual(shield.denyAppRemoval, true, "Only derived migration may clear the old removal setting")
     }
 
     func testMissingAppGroupFailsLoudly() {
@@ -2008,17 +2009,14 @@ private final class FakeShield: FlintSessionShielding {
         applyCount += 1
         log.entries.append("shield")
     }
-    func setDenyAppRemoval(_ deny: Bool) {
-        denyAppRemoval = deny
-        log.entries.append("deny:\(deny)")
-    }
+
     /// Observes the moment of each release.
     var onClear: (() -> Void)?
 
     func clear() {
         onClear?()
         clearCount += 1
-        denyAppRemoval = nil
+        // Production clears only session-owned targets; derived migration owns removal.
         log.entries.append("clear")
     }
 }

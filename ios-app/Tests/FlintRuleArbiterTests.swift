@@ -631,6 +631,8 @@ final class RuleHarness {
     var ledgerAvailable = true
     var timeLimitExhausted = false
     var saveAllowed = true
+    var guardReconciliations = 0
+    var onGuardReconcile: (() -> Void)?
     var cleared: [String] = []
     var appliedSchedules: [FlintScheduleRule] = []
     var appliedLimits: [FlintLimitRule] = []
@@ -681,7 +683,8 @@ final class RuleHarness {
             applyRuleShield: { rule, _ in self.appliedSchedules.append(rule); return true },
             applyLimitShield: { rule, _ in self.appliedLimits.append(rule); return true },
             timeLimitIsShielded: { _, _ in self.timeLimitExhausted }, recoveryDirectory: recoveryDirectory,
-            installationEvidence: { false }, existingWebStores: { false })
+            installationEvidence: { false }, existingWebStores: { false },
+            reconcileRemovalGuard: { self.guardReconciliations += 1; self.onGuardReconcile?() })
     }
     func advance(_ seconds: TimeInterval) { now.addTimeInterval(seconds); monotonic += seconds }
     func advance(to date: Date) { advance(date.timeIntervalSince(now)) }
