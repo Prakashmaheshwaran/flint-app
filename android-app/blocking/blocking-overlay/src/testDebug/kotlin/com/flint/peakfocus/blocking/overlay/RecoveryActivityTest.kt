@@ -15,6 +15,19 @@ import org.robolectric.annotation.Config
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
 class RecoveryActivityTest {
+    @Test fun PC_41_PC_76_recoveryMountGuardOnlyCoversItsTargetAndExpiresWithoutRenewal() {
+        val activity = Robolectric.buildActivity(BlockActivity::class.java).get()
+        try {
+            RecoverySurfaceHandoff.showing(activity, "com.example.target")
+            assertTrue(RecoverySurfaceHandoff.isShowing("com.example.target"))
+            assertFalse(RecoverySurfaceHandoff.isShowing("com.example.other"))
+            org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(RecoverySurfaceHandoff.VISIBLE_LEASE_MS))
+            assertFalse(RecoverySurfaceHandoff.isShowing("com.example.target"))
+            RecoverySurfaceHandoff.showing(activity, "com.example.target")
+            RecoverySurfaceHandoff.hidden(activity)
+            assertFalse(RecoverySurfaceHandoff.isShowing("com.example.target"))
+        } finally { RecoverySurfaceHandoff.hidden(activity) }
+    }
     @Test fun PC_41_recoveryLaunchWithNoBlockedTargetSurvivesInitialValidation() {
         val app: Context = ApplicationProvider.getApplicationContext()
         assertTrue(BlockActivity.launchRecovery(app))

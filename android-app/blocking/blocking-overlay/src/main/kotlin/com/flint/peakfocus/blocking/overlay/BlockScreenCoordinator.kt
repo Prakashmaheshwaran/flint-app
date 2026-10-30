@@ -147,6 +147,8 @@ class BlockScreenCoordinator(
     private var mountedPackage: String? = null
     private var pendingSurfacePackage: String? = null
     private var pendingSurface: Job? = null
+    private var cancelRecoveryHandoff: (() -> Unit)? = null
+    private var recoveryHandoffTimeout: Job? = null
     private val focusStore = focusStateStore ?: FlintPreferences.focusState(appContext)
     private val limitsStore = configuredLimitsStore ?: FlintPreferences.limits(appContext)
     private val rulesStore = blockRulesStore ?: FlintPreferences.blockRules(appContext)
@@ -393,10 +395,40 @@ class BlockScreenCoordinator(
     suspend fun retryProtectionState(): Boolean = recoveries?.reconcile() == true
 
     /** Move to Flint's review surface without granting access to the blocked target. */
-    internal fun launchRecovery(): Boolean = BlockActivity.launchRecovery(appContext).also { launched ->
-        // Both the overlay and Activity callbacks use this order. A rejected launch keeps
-        // the shield; an accepted launch must not leave it covering the recovery controls.
-        if (launched) hideIfShown()
+    internal fun launchRecovery(fallbackTarget: String? = null): Boolean {
+        val expectedPackage = visiblePackage ?: return BlockActivity.launchRecovery(appContext, targetPackage = fallbackTarget)
+        val expectedRequests = surfaceRequests ?: return false
+        clearRecoveryHandoff()
+        val (id, cancel) = RecoverySurfaceHandoff.register {
+            runOnMain {
+                // A late frame from an earlier launch cannot remove a newer target/mount.
+                if (visiblePackage == expectedPackage && surfaceRequests === expectedRequests && !expectedRequests.retired)
+                    hideLocked()
+            }
+        }
+        cancelRecoveryHandoff = cancel
+        if (!BlockActivity.launchRecovery(appContext, id, expectedPackage)) {
+            clearRecoveryHandoff()
+            return false
+        }
+        recoveryHandoffTimeout = scope.launch {
+            delay(RECOVERY_SURFACE_TIMEOUT_MS)
+            runOnMain {
+                clearRecoveryHandoff()
+                // A dropped/undrawn launch never removes the shield. Ask the detector for
+                // the real foreground again; a retry must obtain a fresh frame token.
+                if (visiblePackage == expectedPackage && surfaceRequests === expectedRequests) {
+                    EnforcementSignals.detectors.requestEvaluation()
+                    runCatching { onEnforcementChanged?.invoke() }
+                }
+            }
+        }
+        return true
+    }
+
+    private fun clearRecoveryHandoff() {
+        cancelRecoveryHandoff?.invoke(); cancelRecoveryHandoff = null
+        recoveryHandoffTimeout?.cancel(); recoveryHandoffTimeout = null
     }
 
     /** Re-check protection before a surface hides in response to a previously issued grant. */
@@ -613,6 +645,10 @@ class BlockScreenCoordinator(
     }
 
     private fun showBlockedLocked(packageName: String, appLabel: String?, cause: BlockCause, deferPendingOpen: Boolean) {
+        // A delayed evaluation may still name the underlying app after recovery has taken
+        // foreground. Keep an existing shield until its frame ack, but never mount another
+        // over Flint's recovery window. Activity pause removes this presentation-only guard.
+        if (RecoverySurfaceHandoff.isShowing(packageName)) return
         val now = nowEpochMs()
         if (cause.endsAtEpochMs != null && now >= cause.endsAtEpochMs) {
             // Stale cause: the block window already ended. Make sure nothing lingers.
@@ -874,6 +910,7 @@ class BlockScreenCoordinator(
 
     /** Main-thread body of hide. Only call via [runOnMain]/[hideIfShown]. */
     private fun hideLocked() {
+        clearRecoveryHandoff()
         (visiblePackage ?: mountedPackage ?: pendingSurfacePackage)?.let { failures.remove(it) }
         pendingSurface?.cancel()
         pendingSurface = null
@@ -969,5 +1006,6 @@ class BlockScreenCoordinator(
         internal const val PENDING_OPEN_SURFACE_GRACE_MS: Long = 100L
 
         internal const val STATUS_COALESCE_MS: Long = 25L
+        internal const val RECOVERY_SURFACE_TIMEOUT_MS: Long = 2_000L
     }
 }

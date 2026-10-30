@@ -43,4 +43,5 @@ dependencies {
     // Robolectric coordinator tests (safety-floor matrix) run in the debug unit-test variant only.
     testDebugImplementation(libs.androidx.junit)
     testDebugImplementation(libs.robolectric)
+    testDebugImplementation(libs.androidx.ui.test.junit4)
 }

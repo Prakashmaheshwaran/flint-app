@@ -17,11 +17,17 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import org.robolectric.Robolectric
+import org.robolectric.Shadows.shadowOf
+import android.os.Looper
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import org.junit.Rule
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
 class GlobalRecoveryCoordinatorTest {
+    @get:Rule val compose = createEmptyComposeRule()
     private val app: Context = ApplicationProvider.getApplicationContext()
     private val base = AccessClockStamp(1_800_000_000_000, 10_000, "boot")
     private val pkg = "com.example.a"
@@ -36,6 +42,7 @@ class GlobalRecoveryCoordinatorTest {
         ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, emptyList())
         ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_LEGACY, emptyList())
         BlockExemptions.clearAll(); OpenVisits.process.leave(); ProtectionStatusHub.resetForTests()
+        PathBBlockHandoff::class.java.getDeclaredField("coordinator").apply { isAccessible = true }.set(null, null)
     }
 
     private fun initial(tier: BreakLevel = BreakLevel.HARDCORE): ProtectionSnapshot {
@@ -124,8 +131,19 @@ class GlobalRecoveryCoordinatorTest {
         val cause = c.currentBlockCause(pkg)!!
         c.showBlocked(pkg, null, cause)
         assertTrue(mounted)
-        assertTrue(c.launchRecovery()) // shared by overlay and fallback Activity callbacks
+        invokeRecoveryCallback(c)
+        assertTrue("Accepted navigation must keep the shield until recovery draws", mounted)
+        c.showBlocked(pkg, null, cause) // detector evaluation between launch and first frame
+        assertTrue(mounted)
+        val intent = shadowOf(app as android.app.Application).nextStartedActivity
+        PathBBlockHandoff::class.java.getDeclaredField("coordinator").apply { isAccessible = true }.set(null, c)
+        val activity = Robolectric.buildActivity(BlockActivity::class.java, intent).create().start().resume().visible()
+        compose.waitForIdle()
+        activity.get().window.decorView.viewTreeObserver.dispatchOnDraw()
+        shadowOf(Looper.getMainLooper()).idle()
         assertFalse("No shield can cover the recovery review controls", mounted)
+        c.showBlocked(pkg, null, cause) // stale detector target after recovery is foreground
+        assertFalse("A late evaluation must not remount above recovery", mounted)
         assertFalse(c.canDismiss(pkg, cause))
         val preview = c.previewEmergencyPass()!!
         assertFalse(mounted)
@@ -145,12 +163,74 @@ class GlobalRecoveryCoordinatorTest {
         } else assertTrue(result is RecoveryResult.Accepted)
         // Returning to the target is evaluated again on either detector, without another
         // grant action. A failed commit must restore the shield; success permits access.
+        activity.pause()
         val returnedCause = c.evaluateBlockCause(app.packageName, pkg,
             ruleBlockCause(session, clock().wallEpochMs, 0), timeLimitSpent = false)
         returnedCause?.let { c.showBlocked(pkg, null, it) } ?: c.hideIfShown()
         assertEquals(fail, mounted)
         assertEquals(!fail, BlockExemptions.hasGlobalRecovery())
         c.hideIfShown()
+        activity.stop().destroy()
+    }
+
+    private fun invokeRecoveryCallback(c: BlockScreenCoordinator) {
+        val requests = BlockScreenCoordinator::class.java.getDeclaredField("surfaceRequests").apply { isAccessible = true }
+            .get(c) as BlockScreenCoordinator.SurfaceRequests
+        val callback = BlockScreenCoordinator::class.java.declaredMethods.single { it.name == "handleGrantRequested" }
+            .apply { isAccessible = true }
+        if (callback.parameterCount == 3) callback.invoke(c, pkg, requests, true)
+        else callback.invoke(c, pkg, requests, true, null)
+    }
+
+    @Test fun PC_41_PC_76_droppedRecoveryLaunchKeepsShieldAndLateFrameCannotRemoveNewMount() = runTest {
+        var mounted = false
+        var wakes = 0
+        val surface = object : BlockScreenCoordinator.SurfaceHost {
+            override fun attach(view: View): Boolean { mounted = true; return true }
+            override fun detach(view: View) { mounted = false }
+            override fun goHome() = Unit
+        }
+        val disk = Disk(initial()) { clock() }
+        val c = coordinator(disk, surface = surface) { wakes++ }; runCurrent()
+        val cause = c.currentBlockCause(pkg)!!
+        c.showBlocked(pkg, null, cause)
+        invokeRecoveryCallback(c)
+        val first = shadowOf(app as android.app.Application).nextStartedActivity.getStringExtra(BlockActivity.EXTRA_RECOVERY_HANDOFF)!!
+        val before = wakes
+        advanceTimeBy(BlockScreenCoordinator.RECOVERY_SURFACE_TIMEOUT_MS); runCurrent()
+        assertTrue(mounted)
+        assertTrue(wakes > before)
+        RecoverySurfaceHandoff.drawn(first)
+        assertTrue("Timed-out token cannot hide a shield", mounted)
+        invokeRecoveryCallback(c)
+        val second = shadowOf(app).nextStartedActivity.getStringExtra(BlockActivity.EXTRA_RECOVERY_HANDOFF)!!
+        c.hideIfShown(); c.showBlocked("com.example.new", null, cause)
+        RecoverySurfaceHandoff.drawn(second)
+        assertTrue("Frame from old target cannot remove new mount", mounted)
+        assertFalse(BlockExemptions.hasGlobalRecovery())
+        c.hideIfShown()
+    }
+
+    @Test fun PC_41_PC_76_fallbackRecoveryCallbackWaitsForNewIntentAndKeepsProtection() = runTest {
+        val disk = Disk(initial()) { clock() }
+        val c = coordinator(disk); runCurrent()
+        PathBBlockHandoff::class.java.getDeclaredField("coordinator").apply { isAccessible = true }.set(null, c)
+        BlockActivity.launch(app, pkg, null, c.currentBlockCause(pkg)!!)
+        val application = app as android.app.Application
+        val intent = shadowOf(application).nextStartedActivity
+        val activity = Robolectric.buildActivity(BlockActivity::class.java, intent).create()
+        try {
+            assertFalse(activity.get().isRecoverySurface)
+            val requests = BlockScreenCoordinator.SurfaceRequests()
+            activity.get().handleRecoveryRequested(c, requests)
+            assertTrue(requests.retired)
+            assertFalse("Fallback still covers target before the recovery intent arrives", activity.get().isRecoverySurface)
+            assertFalse(c.canDismiss(pkg, c.currentBlockCause(pkg)!!))
+            activity.newIntent(shadowOf(application).nextStartedActivity)
+            assertTrue(activity.get().isRecoverySurface)
+            assertFalse(activity.get().isFinishing)
+            assertFalse(BlockExemptions.hasGlobalRecovery())
+        } finally { activity.destroy() }
     }
 
     @Test fun PC_41_PC_43_beforeAcknowledgementNoGlobalReleaseOrEventAndFailedWritePreservesEverything() = runTest {

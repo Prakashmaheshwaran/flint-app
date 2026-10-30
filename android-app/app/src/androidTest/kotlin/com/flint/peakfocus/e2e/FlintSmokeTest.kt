@@ -84,6 +84,7 @@ class FlintSmokeTest : FlintE2EFixture() {
         assertFalse(device.hasObject(By.text("Take a break")))
         click("Review Emergency Pass")
         visible(By.text("Protection recovery"))
+        assertTrue("Recovery review replaces the shield", device.wait(Until.gone(By.text("Go back")), timeout))
         click("Review Emergency Pass")
         visible(By.text("Confirm global recovery"))
         click("Confirm 60 minutes of recovery")
