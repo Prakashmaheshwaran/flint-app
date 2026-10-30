@@ -216,22 +216,29 @@ extension FlintWebRestrictions {
         return config
     }
 
-    /// A busy monitor transition is retryable, distinct from unreadable saved intent. UI reads
-    /// never wait out the monitor's lock timeout on the calling thread.
+    /// Enforcement keeps the ordinary transition wait; only display/editor reads are opportunistic.
     public static func readForEnforcement() -> FlintWebRestrictionRead {
+        read(uiRead: false)
+    }
+
+    /// A busy monitor transition is retryable, distinct from unreadable saved intent. UI reads
+    /// never wait out the monitor's file-lock timeout on the calling thread.
+    public static func readForUI() -> FlintWebRestrictionRead { read(uiRead: true) }
+
+    private static func read(uiRead: Bool) -> FlintWebRestrictionRead {
         #if canImport(FamilyControls) && canImport(DeviceActivity) && canImport(ManagedSettings)
-        return readForEnforcement(load: { loadForEnforcement(from: .flintGroup) }, transition: { body in
-            FlintSessionController().withTransition(timeout: 0) { body(); return true } ?? false
+        return read(uiRead: uiRead, load: { loadForEnforcement(from: .flintGroup) }, transition: { timeout, body in
+            FlintSessionController().withTransition(timeout: timeout) { body(); return true } ?? false
         })
         #else
         return loadForEnforcement(from: .flintGroup).map(FlintWebRestrictionRead.available) ?? .unavailable
         #endif
     }
 
-    static func readForEnforcement(load: () -> FlintWebRestrictions?,
-                                   transition: (() -> Void) -> Bool) -> FlintWebRestrictionRead {
+    static func read(uiRead: Bool, load: @escaping () -> FlintWebRestrictions?,
+                     transition: (TimeInterval?, () -> Void) -> Bool) -> FlintWebRestrictionRead {
         var result: FlintWebRestrictions?
-        guard transition({ result = load() }) else { return .busy }
+        guard transition(uiRead ? 0 : nil, { result = load() }) else { return .busy }
         return result.map(FlintWebRestrictionRead.available) ?? .unavailable
     }
 

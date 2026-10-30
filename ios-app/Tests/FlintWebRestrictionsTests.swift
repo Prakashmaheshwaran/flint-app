@@ -179,12 +179,16 @@ final class FlintWebRestrictionsTests: XCTestCase {
     func testBusyReadDoesNotLoadOrInitializeAndCanRetry() {
         var reads = 0
         let load = { reads += 1; return FlintWebRestrictions.default as FlintWebRestrictions? }
-        XCTAssertEqual(FlintWebRestrictions.readForEnforcement(load: load, transition: { _ in false }), .busy)
+        let contended: (TimeInterval?, () -> Void) -> Bool = { timeout, body in
+            if timeout == 0 { return false } // UI skips; the ordinary enforcement wait acquires.
+            body(); return true
+        }
+        XCTAssertEqual(FlintWebRestrictions.read(uiRead: true, load: load, transition: contended), .busy)
         XCTAssertEqual(reads, 0)
-        XCTAssertEqual(FlintWebRestrictions.readForEnforcement(load: load, transition: { body in body(); return true }),
+        XCTAssertEqual(FlintWebRestrictions.read(uiRead: false, load: load, transition: contended),
                        .available(.default))
         XCTAssertEqual(reads, 1)
-        XCTAssertEqual(FlintWebRestrictions.readForEnforcement(load: { nil }, transition: { body in body(); return true }),
+        XCTAssertEqual(FlintWebRestrictions.read(uiRead: false, load: { nil }, transition: contended),
                        .unavailable)
     }
 
