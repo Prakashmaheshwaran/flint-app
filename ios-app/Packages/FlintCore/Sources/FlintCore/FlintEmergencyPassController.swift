@@ -43,9 +43,11 @@ public struct FlintPassCommitment: Codable, Equatable, Sendable, Identifiable {
             // saved-wall-window fallback, never carry an old boot's uptime into this one.
             return contains(acceptedAt.wall)
         }
-        // The consumption instant can precede the final scope read by registration latency.
-        // Project both directions on the same boot; both observations must fit this window.
-        return contains(checkpoint.wall.addingTimeInterval(acceptedAt.monotonic - checkpoint.monotonic))
+        // The final scope read may observe a rule that began during registration latency.
+        // Bound that look-back by the ticket lifetime, and clamp it to the observed start.
+        let delta = acceptedAt.monotonic - checkpoint.monotonic
+        guard delta >= -FlintEmergencyPassController.previewLifetime else { return false }
+        return contains(max(naturalStart, checkpoint.wall.addingTimeInterval(delta)))
     }
 
     var hasValidTrustedRuleTime: Bool {

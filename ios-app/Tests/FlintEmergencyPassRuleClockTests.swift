@@ -127,6 +127,14 @@ final class FlintEmergencyPassRuleClockTests: XCTestCase {
         XCTAssertTrue(recovery(rule(instant), at: ahead).isValid)
         var laterScope = instant; laterScope.wall.addTimeInterval(2); laterScope.monotonic += 2
         XCTAssertTrue(recovery(rule(laterScope), at: ahead).isValid, "registration latency can precede the final scope read")
+        var beforeStart = instant; beforeStart.wall.addTimeInterval(-3601)
+        var startedDuringRegistration = instant
+        startedDuringRegistration.wall.addTimeInterval(-3599); startedDuringRegistration.monotonic += 2
+        XCTAssertTrue(recovery(rule(startedDuringRegistration), at: beforeStart).isValid,
+            "a final scope observation just after the start clamps bounded registration latency")
+        beforeStart.monotonic -= FlintEmergencyPassController.previewLifetime
+        XCTAssertFalse(recovery(rule(startedDuringRegistration), at: beforeStart).isValid,
+            "a stale or inconsistent checkpoint cannot use an unbounded look-back")
         var elapsedEnd = ahead; elapsedEnd.monotonic += 3600
         XCTAssertFalse(recovery(rule(instant), at: elapsedEnd).isValid, "elapsed time must still fit the canonical window")
         for malformed in [FlintLedgerInstant(wall: instant.wall, monotonic: -1, bootID: "a"),
@@ -139,6 +147,50 @@ final class FlintEmergencyPassRuleClockTests: XCTestCase {
         XCTAssertTrue(recovery(rule(instant), at: reboot).isValid, "different boot uses saved wall-window fallback")
         reboot.wall.addTimeInterval(3600)
         XCTAssertFalse(recovery(rule(instant), at: reboot).isValid)
+    }
+
+    func testMalformedBookkeepingDoesNotDisablePassWhileMalformedPolicyStillDoes() {
+        do {
+            for futureShape in [false, true] {
+                let h = try RuleHarness(); defer { h.clean() }
+                let original = h.install(h.schedule(tier: .hardcore))
+                let originalScope = try scope(h)
+                var objects = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(
+                    h.defaults.data(forKey: FlintRuleStoreKey.schedules.rawValue))) as? [[String: Any]])
+                var metadata = try XCTUnwrap(objects[0]["protection"] as? [String: Any])
+                if futureShape {
+                    metadata["timeAnchor"] = ["futureSchema": 99]
+                    metadata["carrierRepair"] = ["futureSchema": 99]
+                } else {
+                    var anchor = try XCTUnwrap(metadata["timeAnchor"] as? [String: Any])
+                    anchor["monotonic"] = -1; metadata["timeAnchor"] = anchor
+                    metadata["carrierRepair"] = ["occurrenceID": "bad", "attempts": 0,
+                        "checkpoint": ["wall": h.now.timeIntervalSinceReferenceDate, "monotonic": 1000, "bootID": h.boot]]
+                }
+                objects[0]["protection"] = metadata
+                h.defaults.set(try JSONSerialization.data(withJSONObject: objects), forKey: FlintRuleStoreKey.schedules.rawValue)
+                h.now.addTimeInterval(6 * 3600)
+                let recoveredScope = try scope(h)
+                XCTAssertEqual(recoveredScope.revision, originalScope.revision)
+                XCTAssertEqual(recoveredScope.rules.first?.naturalEnd, original.protection?.occurrence?.end)
+                let pass = FlintEmergencyPassController(environment: .init(ledger: { h.ledger }, clock: h.clock,
+                    scope: { state, now in try FlintEmergencyPassScope.load(state: state, at: now,
+                        defaults: h.defaults, calendar: h.clock.calendar(), hasThresholdShield: { _ in false }) },
+                    registerCarrier: { _, _, _ in }, terminate: { _, _ in }, release: { _ in },
+                    resume: { _, _ in }, emit: { _ in }))
+                XCTAssertNoThrow(try pass.preview().get(), "bookkeeping never removes the recovery surface")
+                let observed = try XCTUnwrap(h.environment.observedRules(FlintScheduleRule.self)?.first)
+                XCTAssertTrue(try XCTUnwrap(observed.protection?.timeAnchor).isValid)
+                XCTAssertEqual(observed.protection?.timeAnchor?.timeline, original.protection?.occurrence?.start)
+                XCTAssertTrue(FlintRuleMonitor(environment: h.environment).handle(.end, activity: original.activityName))
+                XCTAssertTrue(h.center.starts.isEmpty, "unavailable repair budget has no new registration authority")
+                XCTAssertTrue(h.reports["ruleTime.schedules"]?.failures.contains { $0.reason.contains("budget unavailable") } == true)
+                XCTAssertTrue(h.cleared.isEmpty)
+                metadata["revision"] = "corrupt policy"; objects[0]["protection"] = metadata
+                h.defaults.set(try JSONSerialization.data(withJSONObject: objects), forKey: FlintRuleStoreKey.schedules.rawValue)
+                XCTAssertEqual(pass.preview(), .failure(.scopeUnavailable), "policy corruption still fails closed")
+            }
+        } catch { XCTFail("Bookkeeping recovery failed: \(error)") }
     }
 
     func testTrustedRuleTimeRoundTripsInsideCurrentAndFutureLedgerEnvelope() {

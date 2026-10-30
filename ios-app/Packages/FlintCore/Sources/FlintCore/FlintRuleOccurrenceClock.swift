@@ -10,6 +10,9 @@ public struct FlintRuleTimeAnchor: Codable, Equatable, Sendable {
     public let bootID: String?
     public let deviceZoneID: String
 
+    static let unavailable = Self(timeline: .distantPast, wall: .distantPast,
+        monotonic: -1, bootID: nil, deviceZoneID: "unavailable")
+
     var isValid: Bool {
         timeline.timeIntervalSinceReferenceDate.isFinite && wall.timeIntervalSinceReferenceDate.isFinite
             && monotonic.isFinite && monotonic >= 0
@@ -22,6 +25,8 @@ public struct FlintRuleCarrierRepair: Codable, Equatable, Sendable {
     public let occurrenceID: String
     public let checkpoint: FlintLedgerInstant
     public let attempts: Int
+    static let unavailable = Self(occurrenceID: "unavailable",
+        checkpoint: .init(wall: .distantPast, monotonic: 0, bootID: nil), attempts: 0)
     var isValid: Bool { !occurrenceID.isEmpty && (1...6).contains(attempts)
         && checkpoint.monotonic.isFinite && checkpoint.monotonic >= 0
         && checkpoint.wall.timeIntervalSinceReferenceDate.isFinite }
@@ -33,6 +38,9 @@ public struct FlintRuleCarrierRepair: Codable, Equatable, Sendable {
 enum FlintRuleOccurrenceClock {
     static func date<Rule: FlintGatedRule>(for rule: Rule, clock: FlintClock) -> Date {
         guard let anchor = rule.protection?.timeAnchor else { return clock.now() }
+        // A corrupt/future anchor proves no elapsed time. Re-anchor once at the start of the
+        // retained finite occurrence, preserving its policy and daily exhaustion conservatively.
+        guard anchor.isValid else { return rule.protection?.occurrence?.start ?? clock.now() }
         let checkpoint = FlintLedgerInstant(wall: anchor.wall, monotonic: anchor.monotonic, bootID: anchor.bootID)
         let instant = FlintLedgerInstant(clock: clock)
         if let elapsed = checkpoint.elapsed(until: instant) {
@@ -82,7 +90,9 @@ enum FlintRuleOccurrenceClock {
         let timeline = date(for: rule, clock: clock)
         let previous = metadata.timeAnchor
         let note: String?
-        if let previous {
+        if let previous, !previous.isValid {
+            note = "time_uncertain: rule anchor unavailable; retained the frozen occurrence and conservatively re-anchored within its finite duration."
+        } else if let previous {
             let verdict = FlintTimeIntegrity.verdict(wallStart: previous.wall, monotonicStart: previous.monotonic,
                 bootSessionID: previous.bootID, now: clock.now(), monotonicNow: clock.monotonic(),
                 currentBootSessionID: clock.bootSessionID())

@@ -116,6 +116,10 @@ public final class FlintRuleMonitor {
             return
         }
         let last = rules[index].protection?.carrierRepair
+        guard last?.isValid != false else {
+            recordRepair(rule, message: "\(reason): carrier repair budget unavailable; trusted protection retained without registering another carrier.")
+            return
+        }
         var rebootRepair = false
         if let last, last.occurrenceID == window.identity {
             if let elapsed = last.checkpoint.elapsed(until: .init(clock: env.clock)) {

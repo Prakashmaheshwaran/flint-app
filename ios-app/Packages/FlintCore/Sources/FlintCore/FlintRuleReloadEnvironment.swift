@@ -206,7 +206,7 @@ struct FlintRuleReloadEnvironment {
             let anchor = rules[index].protection?.timeAnchor
             if let note = FlintRuleOccurrenceClock.observe(&rules[index], clock: clock) {
                 notes.append(.init(activityName: rules[index].activityName, reason: note))
-            } else if let anchor, let next = rules[index].protection?.timeAnchor,
+            } else if let anchor, anchor.isValid, let next = rules[index].protection?.timeAnchor,
                       abs(next.timeline.timeIntervalSince(anchor.timeline)) < 1 {
                 // A read-only UI refresh need not rewrite every opaque selection. Every
                 // decision still projects the full monotonic delta from the durable anchor.
