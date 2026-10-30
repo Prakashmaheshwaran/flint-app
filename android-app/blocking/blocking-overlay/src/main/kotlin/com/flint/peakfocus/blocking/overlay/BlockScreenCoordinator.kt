@@ -345,6 +345,7 @@ class BlockScreenCoordinator(
         val previous = lastPolicyStatus ?: return@synchronized
         val connected = EnforcementSignals.detectors.pathAConnected
         val bindingReasons = previous.detectors.degradedReasons - "path-a-disconnected"
+        // Reconnect re-derives backup context on the next policy tick; raw missing access stays visible.
         val reasons = if (connected) bindingReasons
             else (bindingReasons - "path-b-backup-unavailable") + "path-a-disconnected"
         val next = previous.copy(detectors = previous.detectors.copy(accessibilityConnected = connected, degradedReasons = reasons))
@@ -795,6 +796,7 @@ class BlockScreenCoordinator(
             safetyFloor.protectsFresh(packageName)
         }
         if (onFloor) {
+            if (mountCheckedPackage == packageName) mountCheckedPackage = null
             // Only drop this package's own shield; never reveal another app's block.
             if (visiblePackage == packageName) hideLocked()
             return
@@ -816,6 +818,9 @@ class BlockScreenCoordinator(
                         val current = currentBlockCause(packageName, cause)
                         if (current != null && !isExempt(packageName, current)) {
                             showBlockedLocked(packageName, appLabel, current, deferPendingOpen = false)
+                        } else if (mountCheckedPackage == packageName) {
+                            // No shield mounted: a later attempt needs a new zero-age floor check.
+                            mountCheckedPackage = null
                         }
                     }
                 }
