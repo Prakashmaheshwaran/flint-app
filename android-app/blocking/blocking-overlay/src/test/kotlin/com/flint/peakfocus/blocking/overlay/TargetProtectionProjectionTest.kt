@@ -150,7 +150,9 @@ class TargetProtectionProjectionTest {
         val stored = snapshot(domain)
         for (coverage in TargetWebsiteCoverage.entries) {
             val view = read(stored, TargetRef.Site("https://sub.EXAMPLE.com/page"), environment().copy(
-                browserPackageName = chrome, websiteCoverage = coverage))
+                browserPackageName = chrome, websiteCoverage = coverage, domainContextKnown = true,
+                websiteCoverageObservedAtWall = now.wallEpochMs,
+                websiteCoverageValidUntilWall = now.wallEpochMs + 120_000))
             assertEquals(coverage, view.websiteCoverage)
             if (coverage == TargetWebsiteCoverage.AVAILABLE) assertEquals(true, view.blockingNow)
             else assertNull(view.blockingNow)
@@ -251,6 +253,47 @@ class TargetProtectionProjectionTest {
         assertTrue(view.blockingOngoing)
         assertNull(view.blockingUntilWall)
         assertEquals(rule.id, view.headline!!.occurrenceId)
+    }
+
+    @Test fun realAnchoredIdentityDivergenceAndUnpublishedTierWeakeningStillRemainUnknown() {
+        val stored = snapshot(rule(tier = BreakLevel.HARDCORE))
+        val published = StorageState.Ready(stored.projectedRulesForRead(now))
+        val key = ruleCauseKey(stored.rules.single().id)
+        val cause = stored.editor.causes.getValue(key)
+        val interval = cause.interval!!
+        fun withInterval(value: AnchoredInterval) = stored.copy(editor = stored.editor.copy(
+            causes = mapOf(key to cause.copy(interval = value))))
+        val changed = listOf(
+            withInterval(interval.copy(remainingAtAnchorMs = interval.remainingAtAnchorMs + 1_000)),
+            withInterval(interval.copy(anchor = interval.anchor.copy(elapsedRealtimeMs = interval.anchor.elapsedRealtimeMs - 1))),
+            stored.copy(rules = listOf(stored.rules.single().copy(breakLevel = BreakLevel.EASY))))
+        for (saved in changed) {
+            val view = read(saved, env = environment().copy(publishedRules = published))
+            assertNull(view.blockingNow)
+            assertNull(view.coveringCauses.single().enforcingNow)
+            assertNull(view.blockingUntilWall)
+        }
+        assertEquals(true, read(stored, env = environment().copy(publishedRules = published)).blockingNow)
+    }
+
+    @Test fun incompleteOrInvalidDomainTimestampsCannotEstablishAvailableCoverage() {
+        val domain = rule("domain").copy(targets = BlockTargets(domains = setOf(DomainRef("example.com"))))
+        val stored = snapshot(domain)
+        val fresh = environment().copy(websiteCoverage = TargetWebsiteCoverage.AVAILABLE,
+            domainContextKnown = true, websiteCoverageObservedAtWall = now.wallEpochMs - 1_000,
+            websiteCoverageValidUntilWall = now.wallEpochMs + 119_000, websiteCoverageIsCurrent = true)
+        val invalid = listOf(fresh.copy(websiteCoverageObservedAtWall = null),
+            fresh.copy(websiteCoverageValidUntilWall = null),
+            fresh.copy(websiteCoverageObservedAtWall = now.wallEpochMs + 1),
+            fresh.copy(websiteCoverageValidUntilWall = now.wallEpochMs), fresh.copy(domainContextKnown = false))
+        for (env in invalid) {
+            val view = read(stored, TargetRef.Site("example.com"), env)
+            assertEquals(TargetWebsiteCoverage.AWAITING_BROWSER, view.websiteCoverage)
+            assertFalse(view.websiteCoverageIsCurrent)
+            assertNull(view.blockingNow)
+            assertNull(view.coveringCauses.single().enforcingNow)
+        }
+        assertEquals(true, read(stored, TargetRef.Site("example.com"), fresh).blockingNow)
     }
 
     @Test fun freshRetainedBrowserContextResolvesOnlyDomainCausesWhileFlintIsForeground() {

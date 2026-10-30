@@ -46,10 +46,29 @@ internal object TargetProtectionProjection {
             else -> environment.floor
         } else null
 
-    fun unavailable(target: TargetRef, environment: TargetReadEnvironment, selfPackage: String, reason: String): TargetProtection {
+    private fun domainFresh(environment: TargetReadEnvironment, now: AccessClockStamp?): Boolean {
+        val observed = environment.websiteCoverageObservedAtWall ?: return false
+        val validUntil = environment.websiteCoverageValidUntilWall ?: return false
+        return environment.domainContextKnown && now != null &&
+            now.wallEpochMs >= observed && now.wallEpochMs < validUntil
+    }
+
+    private fun websiteCoverage(environment: TargetReadEnvironment, now: AccessClockStamp?): TargetWebsiteCoverage =
+        if ((environment.domainContextKnown || environment.websiteCoverage == TargetWebsiteCoverage.AVAILABLE) &&
+            !domainFresh(environment, now)) TargetWebsiteCoverage.AWAITING_BROWSER else environment.websiteCoverage
+
+    private fun TargetProtection.withWebsiteObservation(target: TargetRef, environment: TargetReadEnvironment,
+        now: AccessClockStamp?): TargetProtection = if (target !is TargetRef.Site) this else copy(
+        websiteCoverageObservedAtWall = environment.websiteCoverageObservedAtWall,
+        websiteCoverageValidUntilWall = environment.websiteCoverageValidUntilWall,
+        websiteCoverageIsCurrent = environment.websiteCoverageIsCurrent && domainFresh(environment, now))
+
+    fun unavailable(target: TargetRef, environment: TargetReadEnvironment, selfPackage: String, reason: String,
+        now: AccessClockStamp?): TargetProtection {
         val known = floor(target, environment, selfPackage)
         return TargetProtection(Readiness.Unavailable(reason), floor = known, blockingNow = known?.let { false },
-            websiteCoverage = environment.websiteCoverage.takeIf { target is TargetRef.Site })
+            websiteCoverage = websiteCoverage(environment, now).takeIf { target is TargetRef.Site })
+            .withWebsiteObservation(target, environment, now)
     }
 
     fun read(target: TargetRef, state: StorageState<ProtectionSnapshot>, environment: TargetReadEnvironment,
@@ -59,12 +78,10 @@ internal object TargetProtectionProjection {
             is TargetRef.Site -> environment.browserPackageName
         }
         val floor = floor(target, environment, selfPackage)
-        val domainFresh = environment.domainContextKnown &&
-            environment.websiteCoverageObservedAtWall?.let { now.wallEpochMs >= it } != false &&
-            environment.websiteCoverageValidUntilWall?.let { now.wallEpochMs < it } != false
-        val web = (if (environment.domainContextKnown && !domainFresh) TargetWebsiteCoverage.AWAITING_BROWSER
-            else environment.websiteCoverage).takeIf { target is TargetRef.Site }
+        val domainFresh = domainFresh(environment, now)
+        val web = websiteCoverage(environment, now).takeIf { target is TargetRef.Site }
         fun unavailable(reason: String) = finish(Readiness.Unavailable(reason), floor, emptyList(), now, web = web)
+            .withWebsiteObservation(target, environment, now)
         val site = (target as? TargetRef.Site)?.let { RuleTargetMatcher.canonicalSite(it.domain)
             ?: return unavailable("invalid-site-target") }
         if (target is TargetRef.App && (target.packageName.isBlank() || target.packageName != target.packageName.trim())) {
@@ -72,14 +89,13 @@ internal object TargetProtectionProjection {
         }
         when (state) {
             StorageState.Loading -> return finish(Readiness.Loading, floor, emptyList(), now, web = web)
+                .withWebsiteObservation(target, environment, now)
             is StorageState.Unavailable -> return unavailable("policy-storage-${state.reason.name.lowercase()}")
             is StorageState.Ready -> Unit
         }
         environment.unavailableReason?.let { return unavailable(it) }
         val stored = state.value
-        val authored = runCatching { stored.projectedRulesForRead(now) }.getOrElse {
-            return unavailable("rule-occurrence-unavailable")
-        }
+        val authored = stored.projectedRulesForReadOrNull(now) ?: return unavailable("rule-occurrence-unavailable")
         val ownIds = authored.mapTo(HashSet()) { it.id }
         val foreign = environment.foreignRules.filter { it.id !in ownIds }
         val projected = authored + runCatching { RuleClockProjection.project(foreign, now) }.getOrElse {
@@ -152,10 +168,7 @@ internal object TargetProtectionProjection {
         val base = finish(readiness, floor, released, now, recovery.endsAtWall,
             limits.openCredit.takeIf { target is TargetRef.App && floor == null },
             limits.timeLimit.takeIf { target is TargetRef.App && floor == null }, web)
-        val result = base.copy(
-                websiteCoverageObservedAtWall = environment.websiteCoverageObservedAtWall.takeIf { target is TargetRef.Site },
-                websiteCoverageValidUntilWall = environment.websiteCoverageValidUntilWall.takeIf { target is TargetRef.Site },
-                websiteCoverageIsCurrent = target is TargetRef.Site && environment.websiteCoverageIsCurrent && domainFresh,
+        val result = base.withWebsiteObservation(target, environment, now).copy(
                 nextChangeAtWall = listOfNotNull(base.nextChangeAtWall,
                     environment.websiteCoverageValidUntilWall.takeIf { target is TargetRef.Site && domainFresh })
                     .filter { it > now.wallEpochMs }.minOrNull())

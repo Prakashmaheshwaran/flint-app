@@ -19,7 +19,9 @@ Projection takes a fresh clock sample after gathering observations: a health or
 store publication newer than the invalidating tick is never mistaken for a
 clock regression.
 Saved rules are compared with the enforcement bridge's published definitions
-and occurrence anchors. Loading, failed or lagging publication is unknown,
+and durable occurrence identity; anchors/timelines are compared only for anchored
+causes. Synthetic caller-now anchors on always-on causes are ignored. Loading,
+failed or lagging publication is unknown,
 including the gap after a rule was deleted from storage. A policy health check
 older than the decoded snapshot also cannot establish target enforcement or an
 empty/unprotected decision. These checks never publish or reconcile rules.
@@ -66,7 +68,11 @@ creates a zero-used pool. A read cannot initialize the new protection contract.
   attribution for at most 120 seconds under both wall and monotonic freshness
   checks. `websiteCoverageObservedAtWall`, `websiteCoverageValidUntilWall` and
   `websiteCoverageIsCurrent` retain the source check's provenance. A detail read
-  never refreshes it; stale/missing context is `AWAITING_BROWSER`. Retained
+  never refreshes it; both observation and expiry stamps are required, including
+  when a projection fails. Stale/missing context is `AWAITING_BROWSER`. Browser
+  uninstall need not produce a foreground callback: this bounded observation can
+  remain until expiry. Lane H should show the age from
+  `websiteCoverageObservedAtWall` rather than imply a new browser check. Retained
   context never establishes browser-app membership, ordinary App-scoped break
   coverage or an exact combined unblock end. Site counts are not browser-app counts: `openCredit`
   and `timeLimit` are null for Sites, while an identified current browser's

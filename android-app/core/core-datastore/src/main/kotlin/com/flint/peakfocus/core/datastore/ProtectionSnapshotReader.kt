@@ -11,6 +11,7 @@ import com.flint.peakfocus.core.model.StorageState
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.CancellationException
 
 /** Display-only access: no migration, reconciliation, checkpoint, or mutation entry point. */
 interface ProtectionSnapshotReader {
@@ -51,3 +52,9 @@ fun FlintPreferences.protectionSnapshots(context: Context): ProtectionSnapshotRe
  */
 fun ProtectionSnapshot.projectedRulesForRead(now: AccessClockStamp): List<BlockRule> =
     RuleClockProjection.project(editorRulesWithRuntime(rules, editor, now), now)
+
+/** Missing/invalid occurrence authority stays unknown; callers retain independent observations. */
+fun ProtectionSnapshot.projectedRulesForReadOrNull(now: AccessClockStamp): List<BlockRule>? =
+    try { projectedRulesForRead(now) }
+    catch (cancelled: CancellationException) { throw cancelled }
+    catch (_: Exception) { null }

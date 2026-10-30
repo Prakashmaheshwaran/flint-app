@@ -144,4 +144,36 @@ class ObservedTargetProtectionReaderTest {
         assertTrue(collecting.isCancelled)
         assertTrue(values.none { it.readiness is Readiness.Unavailable })
     }
+
+    @Test fun aThrowingSiteProjectionRetainsCoverageProvenanceButNeverTrustsMissingOrExpiredStamps() = runTest {
+        val browser = "com.android.chrome"
+        val stored = snapshot().copy(times = listOf(TimeLimit(browser, 5)),
+            editor = EditorCommitmentState(causes = mapOf(timeCauseKey(browser) to EditorCause("period",
+                AnchoredInterval(now, 60_000, now.wallEpochMs + 60_000), "UTC")), timeline = now),
+            openCredits = OpenCreditLedgerPolicy.initial(now, "UTC"))
+        val fresh = TargetReadEnvironment(browserPackageName = browser,
+            websiteCoverage = TargetWebsiteCoverage.AVAILABLE, domainContextKnown = true,
+            websiteCoverageObservedAtWall = now.wallEpochMs - 1_000,
+            websiteCoverageValidUntilWall = now.wallEpochMs + 119_000, websiteCoverageIsCurrent = true)
+        for (env in listOf(fresh, fresh.copy(websiteCoverageObservedAtWall = null),
+            fresh.copy(websiteCoverageValidUntilWall = null), fresh.copy(websiteCoverageValidUntilWall = now.wallEpochMs))) {
+            val sampled = now.copy(elapsedRealtimeMs = Long.MAX_VALUE)
+            val reader = ObservedTargetProtectionReader(snapshots(flowOf(StorageState.Ready(stored))), backgroundScope, "flint",
+                { _, _, _ -> env }, clock = { sampled }, ticks = flowOf(sampled), worker = StandardTestDispatcher(testScheduler))
+            val values = mutableListOf<TargetProtection>()
+            val collecting = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                reader.observe(TargetRef.Site("example.com")).collect(values::add)
+            }
+            runCurrent()
+            val view = values.last()
+            assertEquals(Readiness.Unavailable("target-projection-unavailable"), view.readiness)
+            assertEquals(env.websiteCoverageObservedAtWall, view.websiteCoverageObservedAtWall)
+            assertEquals(env.websiteCoverageValidUntilWall, view.websiteCoverageValidUntilWall)
+            assertEquals(if (env == fresh) TargetWebsiteCoverage.AVAILABLE else TargetWebsiteCoverage.AWAITING_BROWSER,
+                view.websiteCoverage)
+            assertEquals(env == fresh, view.websiteCoverageIsCurrent)
+            assertNull(view.blockingNow)
+            collecting.cancel(); runCurrent()
+        }
+    }
 }

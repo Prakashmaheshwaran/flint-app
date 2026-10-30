@@ -32,13 +32,16 @@ class ObservedTargetProtectionReader(
     override fun observe(target: TargetRef): Flow<TargetProtection> = combine(decoded, invalidations) { state, _ -> state }
         .map { state ->
             var observed = TargetReadEnvironment()
+            var projectionStamp: AccessClockStamp? = null
             try {
                 observed = try { environment(target, state, clock()) }
                 catch (cancelled: CancellationException) { throw cancelled }
                 catch (_: Exception) { TargetReadEnvironment(unavailableReason = "runtime-observation-unavailable") }
                 // Sample after observations, including a newer store/health publication.
-                TargetProtectionProjection.read(target, state, observed, clock(), selfPackage, legacyZone())
+                projectionStamp = clock()
+                TargetProtectionProjection.read(target, state, observed, projectionStamp, selfPackage, legacyZone())
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { TargetProtectionProjection.unavailable(target, observed, selfPackage, "target-projection-unavailable") }
+            catch (_: Exception) { TargetProtectionProjection.unavailable(target, observed, selfPackage,
+                "target-projection-unavailable", projectionStamp) }
         }.distinctUntilChanged().conflate().flowOn(worker)
 }

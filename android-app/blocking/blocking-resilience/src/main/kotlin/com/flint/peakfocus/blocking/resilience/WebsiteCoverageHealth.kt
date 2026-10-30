@@ -50,7 +50,11 @@ object WebsiteCoverageHealth {
 
     @Synchronized fun isCurrentBrowser(): Boolean = currentBrowser
 
-    /** One atomic retained observation for display readers; no new check or timestamp. */
+    /**
+     * One atomic retained observation for display readers; no new check or timestamp.
+     * Uninstall need not deliver a foreground callback. Display the original observation's
+     * age; it is evidence only within the bounded interval, not a fresh installed-browser check.
+     */
     @Synchronized fun read(domainsActive: Boolean, accessibilityEnabled: Boolean,
         nowWallMs: Long = System.currentTimeMillis(), nowElapsedMs: Long = monotonicMs()): Observation {
         val context = domainContext.takeIf { domainsActive && accessibilityEnabled }

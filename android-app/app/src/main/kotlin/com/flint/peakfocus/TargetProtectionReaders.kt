@@ -10,9 +10,11 @@ import com.flint.peakfocus.core.data.LimitStore
 import com.flint.peakfocus.core.data.UsageQuery
 import com.flint.peakfocus.core.datastore.FlintPreferences
 import com.flint.peakfocus.core.datastore.protectionSnapshots
-import com.flint.peakfocus.core.datastore.projectedRulesForRead
+import com.flint.peakfocus.core.datastore.ProtectionSnapshot
+import com.flint.peakfocus.core.datastore.projectedRulesForReadOrNull
 import com.flint.peakfocus.core.model.ActiveRulesHolder
 import com.flint.peakfocus.core.model.AccessClockStamp
+import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.StorageState
 import com.flint.peakfocus.permissions.UsageAccess
 import kotlinx.coroutines.CoroutineScope
@@ -21,6 +23,16 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.time.ZoneId
+
+/** Failure is unknown, not an inactive website policy; the target projector reports its reason. */
+internal fun targetDomainRulesActive(stored: ProtectionSnapshot?, foreign: List<BlockRule>,
+    target: TargetRef, now: AccessClockStamp): Boolean {
+    val rules = stored?.projectedRulesForReadOrNull(now)?.plus(foreign) ?: return true
+    return rules.any { rule -> !rule.targets.allowListMode && rule.targets.domains.isNotEmpty() &&
+        (target !is TargetRef.Site || RuleTargetMatcher.matchesSite(rule, target.domain)) &&
+        (rule.runtime?.evaluation?.active ?:
+            WebsiteRulePolicy.hasActiveDomains(listOf(rule), now.wallEpochMs, ZoneId.systemDefault())) }
+}
 
 /**
  * Production read-only assembly. Pass the existing enforcement coordinator's retained floor
@@ -39,11 +51,7 @@ fun createTargetProtectionReader(context: Context, scope: CoroutineScope,
             val status = ProtectionStatusHub.status.value
             val stored = (state as? StorageState.Ready)?.value
             val foreign = ActiveRulesHolder.rulesOutside(ActiveRulesHolder.SOURCE_DATASTORE)
-            val rules = stored?.projectedRulesForRead(now)?.plus(foreign)
-            val domainRules = rules?.filter { rule -> !rule.targets.allowListMode && rule.targets.domains.isNotEmpty() &&
-                (target !is TargetRef.Site || RuleTargetMatcher.matchesSite(rule, target.domain)) }
-            val domainsActive = domainRules?.any { rule -> rule.runtime?.evaluation?.active ?:
-                WebsiteRulePolicy.hasActiveDomains(listOf(rule), now.wallEpochMs, ZoneId.systemDefault()) } ?: true
+            val domainsActive = targetDomainRulesActive(stored, foreign, target, now)
             val observation = WebsiteCoverageHealth.read(domainsActive, status.detectors.accessibilityConnected, now.wallEpochMs)
             val web = observation.coverage
             val currentBrowser = observation.currentBrowser
