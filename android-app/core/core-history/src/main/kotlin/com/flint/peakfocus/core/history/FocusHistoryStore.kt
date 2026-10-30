@@ -43,8 +43,12 @@ class FocusHistoryStore(
         val existing = snapshot.events.mapTo(mutableSetOf()) { it.id }
         val additions = events(snapshot).filter { existing.add(it.id) }
         val accepted = snapshot.events.toMutableList()
+        val terminals = snapshot.events.filter { it.knownType?.terminal == true }
+            .groupBy { it.session }.toMutableMap()
+        val writes = linkedMapOf<String, ByteArray>()
+        var replacedTerminal = false
         var total = 0L
-        val writes = additions.map { original ->
+        additions.forEach { original ->
             val encoded = HistoryCodec.encode(original)
             require('\n' !in encoded) { "An event must occupy one JSONL record" }
             require(utf8Size(encoded) + 1 <= MAX_RECORD_BYTES) { "Event exceeds append budget" }
@@ -60,18 +64,30 @@ class FocusHistoryStore(
                     "Completion cannot precede its effective logical deadline"
                 }
             }
+            if (event.knownType?.terminal == true) {
+                val prior = terminals[event.session].orEmpty()
+                if (prior.isNotEmpty()) {
+                    // First explicit outcome wins. A missing-row observation cannot
+                    // outrank it, regardless of delivery order or wall timestamps.
+                    if (event.observationTerminal || prior.any { !it.observationTerminal }) return@forEach
+                    accepted.removeAll { it.session == event.session && it.knownType?.terminal == true }
+                    prior.forEach { writes.remove(it.id) }
+                    replacedTerminal = true
+                }
+                terminals[event.session] = listOf(event)
+            }
             accepted += event
-            bytes
+            writes[event.id] = bytes
         }
         require(accepted.size <= MAX_RECORDS) { "History record budget exceeded" }
         require(accepted.sumOf { it.sessions?.size ?: 0 } <= MAX_REFERENCES_TOTAL) { "History reference budget exceeded" }
         // Validation is all-or-nothing. Repair only after every candidate passed validation.
-        if (snapshot.degraded) rewriteLog(snapshot.events)
-        if (writes.size > 1) atomicWrite(log) { stream ->
+        if (snapshot.degraded || replacedTerminal) rewriteLog(accepted)
+        else if (writes.size > 1) atomicWrite(log) { stream ->
             log.inputStream().use { it.copyTo(stream) }
-            writes.forEach(stream::write)
+            writes.values.forEach(stream::write)
         } else if (writes.isNotEmpty()) FileOutputStream(log, true).use { stream ->
-            stream.write(writes.single()); stream.flush(); stream.fd.sync()
+            stream.write(writes.values.single()); stream.flush(); stream.fd.sync()
         }
         snapshot = readLocked()
         compactIfNeeded(snapshot)
