@@ -725,8 +725,9 @@ class ProtectionHistoryConsumerTest {
         assertEquals(2, projected.size)
         assertTrue(projected.all { it.inferred && it.timeConfidence == HistoryEventTimeConfidence.Uncertain("owner_time_uncertain") })
         val summary = FocusHistoryAggregator.summarize(store.load(), begin + 20 * minute, ZoneOffset.UTC, setOf("session-a"))
-        assertTrue(summary.sessions.all { it.outcome == SessionOutcome.UNCONFIRMED && it.focusedMs == 2 * minute })
-        assertEquals(2 * minute, summary.days.last().focusedMs)
+        // Owner uncertainty cannot prove the pass happened after the earlier witness.
+        assertTrue(summary.sessions.all { it.outcome == SessionOutcome.UNCONFIRMED && it.focusedMs == 0L })
+        assertEquals(0L, summary.days.last().focusedMs)
         assertEquals(0, summary.days.last().completed)
         assertEquals(0, summary.days.last().endedEarly)
         assertEquals(2, summary.days.last().unconfirmed)
@@ -797,9 +798,8 @@ class ProtectionHistoryConsumerTest {
     }
 
     @Test fun PC_54_PC_55_lateUncertainGapNeedsLaneFSubtractionWithoutRelabellingItsConfidence() = runBlocking {
-        // Characterize the existing aggregator limitation for lane F: a late uncertain
-        // gap cannot cut an already admitted prefix. The adapter must not label it Certain
-        // or manufacture another lifecycle event merely to force a subtraction.
+        // F3 corrects #217's characterization: a late uncertain gap discounts the
+        // admitted prefix without changing its confidence or manufacturing a lifecycle row.
         for (raw in listOf(breakStart().copy(affectedRuleIds = setOf("session-a")),
             pass().copy(affectedRuleIds = setOf("session-a"), endedTransientIds = emptySet()))) {
             for (uncertain in listOf(false, true)) {
@@ -816,9 +816,16 @@ class ProtectionHistoryConsumerTest {
                 assertTrue(consumer(store).deliver(event))
                 val summary = FocusHistoryAggregator.summarize(store.load(), end, ZoneOffset.UTC, emptySet())
                 assertEquals(if (uncertain) SessionOutcome.UNCONFIRMED else SessionOutcome.COMPLETED, summary.sessions.single().outcome)
-                // The current error is upward by this five-minute gap, not an assertion
-                // that those minutes were focused. Keep the exact case for the F follow-up.
-                assertEquals((if (uncertain) 20 else 15) * minute, summary.days.last().focusedMs)
+                val focused = requireNotNull(summary.days.last().focusedMs)
+                if (uncertain) assertTrue("Uncertain non-focus time must reduce the prefix", focused <= 15 * minute)
+                else assertEquals(15 * minute, focused)
+                val projected = store.load().events
+                assertEquals(4, projected.size)
+                val gap = projected.single { it.knownType in setOf(HistoryEventType.BREAK_STARTED, HistoryEventType.PASS_USED) }
+                assertEquals(if (uncertain) HistoryEventTimeConfidence.Uncertain("same_boot_drift") else HistoryEventTimeConfidence.Certain,
+                    gap.timeConfidence)
+                assertEquals(event.observedAtEpochMs, gap.observedAt)
+                assertEquals(if (uncertain) 1 else 0, summary.days.last().unconfirmed)
             }
         }
     }

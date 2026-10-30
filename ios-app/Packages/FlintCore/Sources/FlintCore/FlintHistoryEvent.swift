@@ -100,13 +100,18 @@ public struct FlintHistoryEvent: Codable, Equatable, Sendable, Identifiable {
         return Int64(value.rounded(.towardZero))
     }
 
-    /// Dates outside Foundation's supported civil range cannot be bucketed safely.
+    /// Invalid focus-bearing times cannot be bucketed. Known uncertain non-focus rows
+    /// still carry a loss signal; their raw dates are never used as placement boundaries.
     public var isSupported: Bool {
-        guard v == 1, !session.isEmpty,
-              [at, plannedEnd, breakEnd, observedAt, recoveryEnd].compactMap({ $0 }).allSatisfy({
-                  $0 >= -62_135_596_800_000 && $0 <= 253_402_300_799_000
-              }) else { return false }
+        guard v == 1, !session.isEmpty else { return false }
         if case .unknown = type { return false }
+        let validTimes = [at, plannedEnd, breakEnd, observedAt, recoveryEnd].compactMap({ $0 }).allSatisfy {
+            $0 >= -62_135_596_800_000 && $0 <= 253_402_300_799_000
+        }
+        if !validTimes {
+            return (timeConfidence?.isUncertain == true || reason == "time_uncertain") &&
+                [.breakStarted, .breakEnded, .passUsed, .protectionDegraded, .protectionRestored].contains(type)
+        }
         return type != .started || (name != nil && tier != nil && source != nil)
     }
 

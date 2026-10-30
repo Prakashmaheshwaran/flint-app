@@ -20,13 +20,10 @@ data class FocusSession(
     val breaks: Int?,
     val opensIntercepted: Int?,
     val terminalRecorded: Boolean = false,
+    /** intervals retain possible coverage; focusedMs also discounts these placement budgets. */
+    val uncertainGaps: List<UncertainFocusGap> = emptyList(),
 ) {
-    val focusedMs: Long get() = intervals.fold(0L) { total, interval ->
-        val duration = if (interval.end <= interval.start) 0 else try {
-            Math.subtractExact(interval.end, interval.start)
-        } catch (_: ArithmeticException) { Long.MAX_VALUE }
-        try { Math.addExact(total, duration) } catch (_: ArithmeticException) { Long.MAX_VALUE }
-    }
+    val focusedMs: Long get() = FocusHistoryBounds.lowerBound(listOf(this))
 }
 data class FocusDay(
     val date: LocalDate,
@@ -86,7 +83,10 @@ object FocusHistoryAggregator {
             .groupingBy { date(it.end, zone) }.eachCount()
         val days = generateSequence(from) { it.plusDays(1) }.takeWhile { it <= through }.map { day ->
             if (day < startDate) FocusDay(day, null) else FocusDay(
-                day, totals[day] ?: 0, completed[day] ?: 0, ended[day] ?: 0,
+                day, if (sessions.any { it.uncertainGaps.isNotEmpty() }) FocusHistoryBounds.lowerBound(sessions,
+                    FocusInterval(day.atStartOfDay(zone).toInstant().toEpochMilli(),
+                        day.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli())) else totals[day] ?: 0,
+                completed[day] ?: 0, ended[day] ?: 0,
                 sessions.any { s -> s.outcome == SessionOutcome.RUNNING && date(s.start, zone) <= day && date(now, zone) >= day },
                 unconfirmed[day] ?: 0,
             )
@@ -155,10 +155,17 @@ object FocusHistoryAggregator {
                 }
             // A committed terminal's logical time remains valid if the reader's wall clock
             // rolls back. Later cleanup cannot taint it; replayed phases use logical order.
-            val localEvidence = if (validTerminal) ordered.takeWhile { it !== terminal }
+            val localPrefix = if (validTerminal) ordered.takeWhile { it !== terminal }
                 else if (terminal != null) group.takeWhile { it !== terminal }.sortedBy { it.at } else ordered
+            val localEvidence = (localPrefix + group.filter { event -> event.uncertainTime &&
+                (event.knownType in setOf(HistoryEventType.BREAK_STARTED, HistoryEventType.PROTECTION_DEGRADED) ||
+                    event.knownType == HistoryEventType.PROTECTION_RESTORED && localPrefix.any {
+                        it.knownType == HistoryEventType.PROTECTION_DEGRADED
+                    } || event.knownType == HistoryEventType.BREAK_ENDED && localPrefix.any {
+                        it.knownType == HistoryEventType.BREAK_STARTED && it.grant == event.grant
+                    }) }).distinctBy { it.id }
             val relatedPasses = passesBySession[id].orEmpty().filter {
-                !validTerminal || it.at <= terminal!!.at
+                it.uncertainTime || !validTerminal || it.at <= terminal!!.at
             }
             fun rejectedTime(event: HistoryEvent): Boolean = when {
                 event.knownType in setOf(HistoryEventType.STARTED, HistoryEventType.RESCHEDULED) ->
@@ -243,9 +250,52 @@ object FocusHistoryAggregator {
             relatedPasses.filter { it.id !in rejectedTimeIds }.forEach { pass ->
                 intervals = subtract(intervals, FocusInterval(pass.at, pass.recoveryEnd ?: pass.at))
             }
+            val anchors = (localEvidence + listOfNotNull(terminal?.takeIf { validTerminal })).filter {
+                !it.uncertainTime && it.id !in rejectedTimeIds && (it === start || it === terminal ||
+                    it.knownType in setOf(HistoryEventType.OPEN_INTERCEPTED, HistoryEventType.PROTECTION_RESTORED))
+            }.map { it.at }
+            fun uncertainGap(knownStart: Long? = null, knownEnd: Long? = null,
+                             maximum: Long = Long.MAX_VALUE): UncertainFocusGap {
+                // Neither raw time nor append order places an uncertain gap. It may occupy
+                // any proof-free segment unless its own certain paired boundary narrows it.
+                val a = minOf(maxOf(start.at, knownStart ?: start.at), maxOf(start.at, clampedEnd))
+                val b = maxOf(a, minOf(clampedEnd, knownEnd ?: clampedEnd))
+                val points = (anchors.filter { it > a && it < b } + listOf(a, b)).distinct().sorted()
+                val longest = points.zipWithNext { x, y -> y - x }.maxOrNull() ?: 0
+                return UncertainFocusGap(FocusInterval(a, b), minOf(maximum, longest))
+            }
+            val uncertainGaps = mutableListOf<UncertainFocusGap>()
+            val uncertainPhases = localEvidence.filter { it.uncertainTime }
+            for (event in uncertainPhases) when (event.knownType) {
+                HistoryEventType.BREAK_STARTED -> {
+                    val close = localEvidence.firstOrNull { it.knownType == HistoryEventType.BREAK_ENDED &&
+                        event.grant != null && it.grant == event.grant && it.id !in rejectedTimeIds }
+                    uncertainGaps += uncertainGap(knownEnd = close?.at,
+                        maximum = if (event.kind == "ordinary") 300_000 else Long.MAX_VALUE)
+                }
+                HistoryEventType.BREAK_ENDED -> {
+                    val opening = localEvidence.firstOrNull { it.knownType == HistoryEventType.BREAK_STARTED &&
+                        event.grant != null && it.grant == event.grant && !it.uncertainTime && it.id !in rejectedTimeIds }
+                    val alreadyRepresented = localEvidence.any { it.knownType == HistoryEventType.BREAK_STARTED &&
+                        it.grant == event.grant && it.uncertainTime }
+                    if (!alreadyRepresented) uncertainGaps += uncertainGap(knownStart = opening?.at,
+                        maximum = if (opening?.kind == "ordinary") 300_000 else Long.MAX_VALUE)
+                }
+                HistoryEventType.PROTECTION_DEGRADED -> {
+                    // Coverage rows have no grant/owner sequence to pair a particular
+                    // restoration across an uncertain stamp. Every certain anchor still
+                    // limits the longest proof-free segment.
+                    uncertainGaps += uncertainGap()
+                }
+                else -> Unit
+            }
+            for (pass in relatedPasses.filter { it.uncertainTime }) {
+                uncertainGaps += uncertainGap(maximum = 3_600_000)
+            }
             FocusSession(id, start.name ?: "Focus", start.at, end, plannedEnd, outcome, inferred,
                 intervals, breaks.size.takeIf { it > 0 },
-                ordered.count { it.knownType == HistoryEventType.OPEN_INTERCEPTED }.takeIf { it > 0 }, terminal != null)
+                ordered.count { it.knownType == HistoryEventType.OPEN_INTERCEPTED }.takeIf { it > 0 }, terminal != null,
+                uncertainGaps)
         }
     }
 

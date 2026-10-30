@@ -151,7 +151,7 @@ final class FlintHistoryTimeConfidenceTests: XCTestCase {
             var gap = event(.protectionDegraded, 180, confidence: confidence)
             gap.reason = confidence == nil ? "time_uncertain" : "permission"
             assertUnconfirmed([started(), event(.openIntercepted, 120), gap,
-                               event(.protectionRestored, 240), event(.completed, 600)], focused: 120)
+                               event(.protectionRestored, 240), event(.completed, 600)])
         }
     }
 
@@ -221,7 +221,7 @@ final class FlintHistoryTimeConfidenceTests: XCTestCase {
         XCTAssertEqual(result.focusedSeconds, 600)
         var pass = event(.passUsed, 180, confidence: uncertain); pass.session = "operation"
         pass.sessions = ["session-a"]; pass.recoveryEnd = event(.passUsed, 240).at
-        assertUnconfirmed([started(), event(.openIntercepted, 120), pass, event(.completed, 600)], focused: 120)
+        assertUnconfirmed([started(), event(.openIntercepted, 120), pass, event(.completed, 600)])
     }
 
     func testInvertedBreakWindowCannotConfirmCompletionOrExtendTrustedPrefix() {
@@ -242,13 +242,13 @@ final class FlintHistoryTimeConfidenceTests: XCTestCase {
         }
     }
 
-    private func assertBackdatedBarrier(_ barrier: FlintHistoryEvent,
+    private func assertBackdatedBarrier(_ barrier: FlintHistoryEvent, focused: TimeInterval = 60,
                                         file: StaticString = #filePath, line: UInt = #line) {
         let witness = event(.openIntercepted, 60), later = event(.openIntercepted, 180)
         let terminal = event(.completed, 600)
         let rows = [started(), witness, barrier, later, terminal]
-        assertUnconfirmed(rows, focused: 60, file: file, line: line)
-        XCTAssertEqual(summary(rows, now: 1200).focusedSeconds, 60, file: file, line: line)
+        assertUnconfirmed(rows, focused: focused, file: file, line: line)
+        XCTAssertEqual(summary(rows, now: 1200).focusedSeconds, focused, file: file, line: line)
         assertUnconfirmed([started(), barrier, later, terminal], file: file, line: line)
         assertUnconfirmed([started(), barrier, witness, later, terminal], file: file, line: line)
     }
@@ -270,7 +270,7 @@ final class FlintHistoryTimeConfidenceTests: XCTestCase {
         assertBackdatedBarrier(backwardPhase)
     }
 
-    func testRejectedBackdatedBreakGapAndGlobalPassCutsCannotEraseRecordedPrefix() {
+    func testUncertainBackdatedCutsDiscountPrefixWhileInvalidLegacyCutsRemainBarriers() {
         var cuts: [FlintHistoryEvent] = []
         let windows: [(TimeInterval, TimeInterval, FlintEventTimeConfidence?)] = [(30, 90, uncertain), (30, 20, nil), (-60, 120, nil)]
         for (seconds, end, confidence) in windows {
@@ -284,7 +284,7 @@ final class FlintHistoryTimeConfidenceTests: XCTestCase {
         cuts += [event(.protectionDegraded, 30, confidence: uncertain), event(.protectionDegraded, -60)]
         for var cut in cuts {
             cut.observedAt = event(.openIntercepted, 120).at
-            assertBackdatedBarrier(cut)
+            assertBackdatedBarrier(cut, focused: cut.timeConfidence == uncertain ? 0 : 60)
         }
     }
 
@@ -336,7 +336,7 @@ final class FlintHistoryTimeConfidenceTests: XCTestCase {
         rejectedObserver.timeConfidence = uncertain
         assertUnconfirmed(prefix + [rejectedObserver, plan, end], focused: 60)
         assertUnconfirmed([started(uncertain), plan, end])
-        assertUnconfirmed(prefix + [event(.protectionDegraded, 120, confidence: uncertain), plan, end], focused: 60)
+        assertUnconfirmed(prefix + [event(.protectionDegraded, 120, confidence: uncertain), plan, end])
         var ordinary = plan; ordinary.reason = nil
         assertUnconfirmed(prefix + [ordinary, end], focused: 60)
         ordinary = plan; ordinary.originRoute = nil

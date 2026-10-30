@@ -53,12 +53,12 @@ class HistoryTimeConfidenceTest {
         }
     }
 
-    private fun assertBackdatedBarrier(barrier: HistoryEvent) {
+    private fun assertBackdatedBarrier(barrier: HistoryEvent, credit: Long = minute) {
         val witness = event("open_intercepted", begin + minute)
         val later = event("open_intercepted", begin + 3 * minute)
         val terminal = event("completed", deadline)
         val rows = listOf(start(), witness, barrier, later, terminal)
-        assertUnconfirmed(rows, credit = minute, now = begin + 20 * minute)
+        assertUnconfirmed(rows, credit = credit, now = begin + 20 * minute)
         assertUnconfirmed(listOf(start(), barrier, later, terminal))
         assertUnconfirmed(listOf(start(), barrier, witness, later, terminal))
         val snapshot = HistorySnapshot(rows, begin, true)
@@ -78,7 +78,7 @@ class HistoryTimeConfidenceTest {
         assertBackdatedBarrier(event("protection_restored", begin - minute).copy(observedAt = begin + 2 * minute))
     }
 
-    @Test fun rejectedBackdatedBreakGapAndGlobalPassCutsCannotEraseRecordedPrefix() {
+    @Test fun uncertainBackdatedCutsDiscountPrefixWhileInvalidLegacyCutsRemainBarriers() {
         val cuts = listOf(
             event("break_started", begin + 30_000, uncertain).copy(grant = "g", breakEnd = begin + 90_000),
             event("break_started", begin + 30_000).copy(grant = "g", breakEnd = begin + 20_000),
@@ -91,7 +91,7 @@ class HistoryTimeConfidenceTest {
         )
         for (cut in cuts) assertBackdatedBarrier(if (cut.knownType == HistoryEventType.PASS_USED)
             cut.copy(session = "operation", sessions = listOf("session-a"), observedAt = begin + 2 * minute)
-            else cut.copy(observedAt = begin + 2 * minute))
+            else cut.copy(observedAt = begin + 2 * minute), credit = if (cut.timeConfidence == uncertain) 0 else minute)
     }
 
     @Test fun acceptedLogicalCutsStillSubtractFromPrefixBeforeRejectedPlan() {
@@ -146,7 +146,7 @@ class HistoryTimeConfidenceTest {
         val prefix = listOf(start(), event("open_intercepted", begin + minute))
         assertUnconfirmed(prefix + listOf(observer.copy(timeConfidence = uncertain), plan, end), credit = minute)
         assertUnconfirmed(listOf(start(uncertain), plan, end))
-        assertUnconfirmed(prefix + listOf(event("protection_degraded", begin + 2 * minute, uncertain), plan, end), credit = minute)
+        assertUnconfirmed(prefix + listOf(event("protection_degraded", begin + 2 * minute, uncertain), plan, end))
         for ((revision, terminal) in listOf(
             plan.copy(reason = null) to end,
             plan.copy(originRoute = null) to end,
@@ -323,7 +323,7 @@ class HistoryTimeConfidenceTest {
             val gap = event("protection_degraded", begin + 3 * minute, confidence)
                 .copy(reason = if (confidence == null) "time_uncertain" else "permission")
             assertUnconfirmed(listOf(start(), event("open_intercepted", begin + 2 * minute), gap,
-                event("protection_restored", begin + 4 * minute), event("completed", deadline)), 2 * minute)
+                event("protection_restored", begin + 4 * minute), event("completed", deadline)))
         }
     }
 
@@ -398,7 +398,7 @@ class HistoryTimeConfidenceTest {
         val pass = event("pass_used", begin + 3 * minute, uncertain).copy(session = "operation",
             sessions = listOf("session-a"), recoveryEnd = begin + 4 * minute)
         assertUnconfirmed(listOf(start(), event("open_intercepted", begin + 2 * minute), pass,
-            event("completed", deadline)), 2 * minute)
+            event("completed", deadline)))
     }
 
     @Test fun plausibleLegacyWitnessesAndRunningHistoryKeepOrdinaryCredit() {
