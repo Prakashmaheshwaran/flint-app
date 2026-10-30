@@ -50,7 +50,6 @@ jobs:
         run: |
           free -m > artifacts/android-e2e/host-before-daemon-stop.txt
           android-app/gradlew -p android-app --stop
-          "$ANDROID_HOME/emulator/emulator" -accel-check > artifacts/android-e2e/kvm-check.txt 2>&1
           # Retain samples even if qemu disappears before device-side collection.
           # This read-only monitor is bounded by the job deadline and stopped below.
           nohup bash > artifacts/android-e2e/host-resources.txt 2>&1 <<'MONITOR' &
@@ -88,6 +87,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-snapshot-save -noaudio -no-boot-anim -camera-back none -camera-front none
           emulator-boot-timeout: 300
           disable-animations: true
+          pre-emulator-launch-script: '"$ANDROID_HOME/emulator/emulator" -accel-check > artifacts/android-e2e/kvm-check.txt 2>&1'
           script: FLINT_E2E_DISPOSABLE=1 AVD=emulator-5554 bash scripts/android-e2e.sh
       - name: Retain host OOM and emulator crash evidence
         if: always()
