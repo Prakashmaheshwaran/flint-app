@@ -95,10 +95,13 @@ final class FlintSessionAuthorityProjectionTests: XCTestCase {
     /// still loads, so the Emergency Pass stays reachable while the installation is pending (§7).
     func testInstallingGenerationIsUnavailableToStatusButKeepsPassScopeReachable() throws {
         let value = session().checkpointed(clock: clock)
-        try state.sessionAuthority?.install(value, selection: JSONEncoder().encode(FamilyActivitySelection()),
+        let selection = FamilyActivitySelection()
+        try state.sessionAuthority?.install(value, selection: JSONEncoder().encode(selection),
             source: .manual, operationID: "start.Y", fingerprint: "parameters", expectedRevision: 0,
             at: .init(clock: clock))
         group.saveActiveSession(value)
+        defaults.set(try JSONEncoder().encode(Targets(sessionID: value.id, selection: selection)),
+            forKey: "flint.activeSession.selection")
         XCTAssertEqual(state.sessionAuthority?.latest?.phase, .installing)
         let observed = inputs()
         XCTAssertTrue(observed.recordUnreadable)
