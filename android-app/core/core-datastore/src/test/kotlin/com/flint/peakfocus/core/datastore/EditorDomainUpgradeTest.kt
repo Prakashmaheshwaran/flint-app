@@ -66,15 +66,42 @@ class EditorDomainUpgradeTest {
         assertEquals(before, disk.values.value.asMap()); assertEquals(writes, disk.changedWrites)
     }
 
-    @Test fun `R2-N03 PC-67 PC-70 main rules-only active Timer upgrades unused domains and remains editable`() = runBlocking {
+    @Test fun `R2-N03 PC-67 PC-70 main rules-only active Timer upgrades unused domains and remains editable`() =
+        mainUpgrade(withUsageTallies = false)
+
+    @Test fun `R2-N03 PC-67 PC-69 PC-70 main generic usage without Open policy preserves counts and remains editable`() =
+        mainUpgrade(withUsageTallies = true)
+
+    @Test fun `R2-N03 PC-67 PC-69 PC-70 protection first main usage and tierless Time Limit stays Ready`() =
+        mainUpgrade(withUsageTallies = true, protectionFirst = true)
+
+    private fun mainUpgrade(withUsageTallies: Boolean, protectionFirst: Boolean = false) = runBlocking {
         // Literal 11-field bytes emitted by shipped main b34422e: its session writer
         // touches only block_rules_v1, never empty groups, limits, defaults or sidecars.
         val originalStart = now.wallEpochMs - 120_000
         val id = "session-timer-$originalStart"
         val end = originalStart + 300_000
         val raw = "$id|Main Timer|true|HARDCORE|false|com.target~|||-1|-1|$end"
-        val disk = Disk(preferencesOf(PrefsKeys.BLOCK_RULES to raw))
-        assertEquals(setOf(PrefsKeys.BLOCK_RULES), disk.values.value.asMap().keys)
+        val recurring = BlockRule("work", "Work", BlockTargets(apps = setOf(AppRef("com.work"))),
+            Schedule(startMinuteOfDay = 540, endMinuteOfDay = 660), BreakLevel.HARDCORE)
+        val rawRules = if (withUsageTallies) raw + "\n" + PrefsCodec.encodeRules(listOf(recurring)) else raw
+        val usage = "com.instagram.android~7\ncom.other~2"
+        val day = OpenCreditLedgerPolicy.epochDay(now.wallEpochMs, "UTC")
+        val usedAt = now.wallEpochMs - 86_400_000
+        val disk = Disk(mutablePreferencesOf(PrefsKeys.BLOCK_RULES to rawRules).apply {
+            if (withUsageTallies) {
+                this[PrefsKeys.TIME_LIMITS] = "com.limited~30"
+                this[PrefsKeys.OPEN_COUNTS] = usage; this[PrefsKeys.OPEN_COUNTS_DAY] = day
+                this[PrefsKeys.BREAK_SESSION] = "2"
+                this[PrefsKeys.EMERGENCY_PASS_WEEK_START] = day
+                this[PrefsKeys.EMERGENCY_PASS_USED_AT] = usedAt
+            }
+        })
+        assertEquals(if (withUsageTallies) setOf(PrefsKeys.BLOCK_RULES, PrefsKeys.OPEN_COUNTS, PrefsKeys.OPEN_COUNTS_DAY,
+            PrefsKeys.TIME_LIMITS, PrefsKeys.BREAK_SESSION, PrefsKeys.EMERGENCY_PASS_WEEK_START, PrefsKeys.EMERGENCY_PASS_USED_AT)
+            else setOf(PrefsKeys.BLOCK_RULES), disk.values.value.asMap().keys)
+        if (protectionFirst) assertTrue(DataStoreProtectionTransactionStore(disk, { now }) { "UTC" }
+            .transact { ProtectionMutation(it.focus, Unit) } is ProtectionCommit.Committed)
         val store = editor(disk)
         repeat(2) { store.reconcile(now) }
         val ready = store.state.first { it !is StorageState.Loading } as StorageState.Ready
@@ -84,23 +111,50 @@ class EditorDomainUpgradeTest {
         assertEquals(180_000L, cause.interval!!.remainingMs(now))
         assertEquals(end, cause.interval.wallEndEpochMs)
         assertEquals(2L, disk.values.value[EDITOR_VERSION_KEY])
-        assertEquals(raw, disk.values.value[stringPreferencesKey("editor_migration_rules_v1")])
-        for (key in listOf(PrefsKeys.APP_GROUPS, PrefsKeys.TIME_LIMITS, PrefsKeys.OPEN_LIMITS))
+        assertEquals(rawRules, disk.values.value[stringPreferencesKey("editor_migration_rules_v1")])
+        for (key in listOf(PrefsKeys.APP_GROUPS, PrefsKeys.OPEN_LIMITS))
             assertEquals("", disk.values.value[key])
+        assertEquals(if (withUsageTallies) "com.limited~30~EASY" else "", disk.values.value[PrefsKeys.TIME_LIMITS])
         assertEquals("EASY", disk.values.value[PrefsKeys.DEFAULT_BREAK_LEVEL])
-        val rule = DataStoreBlockRulesStore(disk).rules.first().single()
+        val rule = DataStoreBlockRulesStore(disk).rules.first().single { it.id == id }
         assertEquals(id, rule.id); assertEquals(end, rule.expiresAtEpochMs)
         assertEquals(BreakLevel.HARDCORE, rule.breakLevel)
         val preview = store.request(EditorChange("Rename", upserts = listOf(rule.copy(name = "Saved Timer"))),
             now, EditorSafety(true)) as EditorCommitResult.Preview
         assertEquals(EditorCommitResult.Applied(), store.confirm(preview.pending.id, now, EditorSafety(true)))
         repeat(2) { editor(disk).reconcile(now) }
-        assertEquals(rule.copy(name = "Saved Timer"), DataStoreBlockRulesStore(disk).rules.first().single())
+        assertEquals(rule.copy(name = "Saved Timer"), DataStoreBlockRulesStore(disk).rules.first().single { it.id == id })
+        assertEquals(if (withUsageTallies) 2 else 1, DataStoreBlockRulesStore(disk).rules.first().size)
         assertEquals(cause, (store.state.first { it !is StorageState.Loading } as StorageState.Ready)
             .value.causes.getValue(ruleCauseKey(id)))
         assertEquals(2L, disk.values.value[EDITOR_VERSION_KEY])
         assertTrue(readHarderWait(disk.values.value).counts.isEmpty())
         assertTrue(store.readTerminalEvents().isEmpty())
+        if (withUsageTallies) {
+            assertEquals(usage, disk.values.value[PrefsKeys.OPEN_COUNTS])
+            assertEquals(day, disk.values.value[PrefsKeys.OPEN_COUNTS_DAY])
+            assertEquals("2", disk.values.value[PrefsKeys.BREAK_SESSION])
+            assertEquals(usedAt, disk.values.value[PrefsKeys.EMERGENCY_PASS_USED_AT])
+            assertTrue(DataStoreFocusStateStore(disk).state.first { it !is StorageState.Loading } is StorageState.Ready)
+            val committed = DataStoreProtectionTransactionStore(disk, { now }) { "UTC" }
+                .transact { ProtectionMutation(it.focus, Unit) }
+            assertTrue(committed is ProtectionCommit.Committed)
+            val snapshot = (committed as ProtectionCommit.Committed).snapshot
+            assertTrue(snapshot.opens.isEmpty())
+            assertEquals(recurring, snapshot.rules.single { it.id == recurring.id })
+            assertTrue(snapshot.editor.causes.getValue(ruleCauseKey(recurring.id)).legacyRights)
+            assertEquals(TimeLimit("com.limited", 30, BreakLevel.EASY), snapshot.times.single())
+            assertTrue(snapshot.editor.causes.getValue(timeCauseKey("com.limited")).legacyRights)
+            assertEquals(mapOf("com.instagram.android" to 7, "com.other" to 2),
+                snapshot.openCredits!!.counters.mapValues { it.value.used })
+            assertEquals(usage, OpenCreditCodec.readArchive(disk.values.value[OPEN_CREDIT_ARCHIVE]!!).first)
+            assertEquals(usedAt, snapshot.focus.protection!!.lastUsedAtEpochMs)
+            assertNotNull(snapshot.focus.protection!!.cooldown)
+            assertEquals(usage, disk.values.value[PrefsKeys.OPEN_COUNTS])
+            assertEquals(day, disk.values.value[PrefsKeys.OPEN_COUNTS_DAY])
+            assertEquals(cause, snapshot.editor.causes.getValue(ruleCauseKey(id)))
+            assertEquals("", disk.values.value[PrefsKeys.OPEN_LIMITS])
+        }
     }
 
     @Test fun `R2-N03 PC-70 literal unreferenced v1 absences normalize once without changing prior bytes or rights`() = runBlocking {
@@ -155,13 +209,13 @@ class EditorDomainUpgradeTest {
             when (kind) {
                 "recovery" -> {
                     ledger = ledger.copy(cooldown = ProtectionCooldown("pass", now.wallEpochMs, now, 604_800_000),
-                        recovery = ProtectionRecovery("pass", now, setOf("group:saved"), emptySet(), emptySet(), 3_600_000),
+                        recovery = ProtectionRecovery("pass", now, setOf("rule:work"), setOf("work"), emptySet(), 3_600_000),
                         operations = mapOf("pass" to ProtectionPassReceipt("pass", now, now, "scope")), lastUsedAtEpochMs = now.wallEpochMs)
                 }
                 "grant" -> {
-                    val scope = AccessCauseScope(AccessCounterKey(AccessRuleKey(RuleAuthority.Personal, "group", "saved"), "old"), "revision")
+                    val scope = AccessCauseScope(AccessCounterKey(AccessRuleKey(RuleAuthority.Personal, "rule", "work"), "old"), "revision")
                     ledger = ledger.copy(ordinaryGrants = mapOf("break" to ProtectionOrdinaryGrant("break", AccessTarget.App("com.target"),
-                        AccessDuration(now, 60_000), setOf(scope), emptySet())),
+                        AccessDuration(now, 60_000), setOf(scope), setOf("work"))),
                         operations = mapOf("break" to ProtectionPassReceipt("break", now, now, "scope")))
                 }
                 "credit" -> ledger = ledger.copy(pendingCreditEnds = mapOf("credit" to
@@ -173,7 +227,7 @@ class EditorDomainUpgradeTest {
             disk.values.value = disk.values.value.toMutablePreferences().apply {
                 this[PrefsKeys.PROTECTION_LEDGER] = ProtectionLedgerCodec.encode(ledger)
                 ledger.lastUsedAtEpochMs?.let { this[PrefsKeys.EMERGENCY_PASS_USED_AT] = it }
-                if (kind == "native-end") remove(PrefsKeys.BLOCK_RULES)
+                if (kind in listOf("recovery", "grant", "native-end")) remove(PrefsKeys.BLOCK_RULES)
             }
             unavailable(disk)
             disk.values.value = disk.values.value.toMutablePreferences().apply {
@@ -224,7 +278,7 @@ class EditorDomainUpgradeTest {
         disk.values.value = disk.values.value.toMutablePreferences().apply {
             val credits = readOpenCredits(this)
             putOpenCredits(credits.copy(counters = emptyMap()))
-            remove(PrefsKeys.OPEN_COUNTS)
+            remove(PrefsKeys.OPEN_COUNTS); remove(PrefsKeys.OPEN_LIMITS)
         }
         unavailable(disk)
     }
@@ -272,7 +326,7 @@ class EditorDomainUpgradeTest {
     }
 
     @Test fun `R2-N03 PC-37 PC-71 markerless surviving domain owners cannot become fresh empty policy`() = runBlocking {
-        for (key in listOf("rule:old", "time:com.target", "open:com.target", "group:saved")) {
+        for (key in listOf("rule:old", "time:com.target", "open:com.target")) {
             val occurrence = HarderWaitPolicy.Occurrence(key, "old")
             val wait = HarderWaitPolicy.PendingWait(HarderWaitPolicy.Operation(HarderWaitPolicy.OperationKind.DELETE,
                 mapOf(occurrence to "revision")), now, 60_000)
@@ -287,12 +341,12 @@ class EditorDomainUpgradeTest {
             now.wallEpochMs + 60_000, "boot")
         unavailable(Disk(preferencesOf(PrefsKeys.FOCUS_LEDGER to FocusLedgerCodec.encode(
             FocusLedgerCodec.Ledger(exemptions = mapOf("old" to receipt))))))
-        unavailable(Disk(preferencesOf(PrefsKeys.OPEN_COUNTS to "com.target~2")))
         val credits = Disk(preferencesOf(PrefsKeys.OPEN_COUNTS to "com.target~2",
             PrefsKeys.OPEN_COUNTS_DAY to OpenCreditLedgerPolicy.epochDay(now.wallEpochMs, "UTC")))
         credits.edit { prepareOpenCredits(it, now, "UTC") }
         credits.values.value = credits.values.value.toMutablePreferences().apply {
             remove(PrefsKeys.OPEN_COUNTS); remove(PrefsKeys.OPEN_COUNTS_DAY)
+            remove(PrefsKeys.OPEN_LIMITS)
         }
         unavailable(credits)
         for (key in listOf(PrefsKeys.OPEN_LIMITS, PrefsKeys.DEFAULT_BREAK_LEVEL)) {
@@ -338,7 +392,7 @@ class EditorDomainUpgradeTest {
     }
 
     @Test fun `R2-N03 PC-18 PC-71 Harder count or pending wait keeps its referenced domain unavailable`() = runBlocking {
-        for (key in listOf("rule:work", "open:com.target", "group:saved")) {
+        for (key in listOf("rule:work", "open:com.target")) {
             val occurrence = HarderWaitPolicy.Occurrence(key, "old")
             val wait = HarderWaitPolicy.PendingWait(HarderWaitPolicy.Operation(HarderWaitPolicy.OperationKind.DELETE,
                 mapOf(occurrence to "revision")), now, 60_000)
@@ -349,13 +403,20 @@ class EditorDomainUpgradeTest {
         }
     }
 
-    @Test fun `R2-N03 PC-37 PC-71 surviving receipts legacy counts and credit ledger rows forbid a fresh Open domain`() = runBlocking {
+    @Test fun `R2-N03 PC-37 PC-71 Open receipts and credit rows own policy while generic usage does not`() = runBlocking {
         val receipt = PersistedExemption("old", "com.target", "legacy-open", ExemptionKind.OPEN_LIMIT,
             now.wallEpochMs + 60_000, "boot")
         unavailable(Disk(literalV1().toMutablePreferences().apply {
             this[PrefsKeys.FOCUS_LEDGER] = FocusLedgerCodec.encode(FocusLedgerCodec.Ledger(exemptions = mapOf("old" to receipt)))
         }))
-        unavailable(Disk(literalV1().toMutablePreferences().apply { this[PrefsKeys.OPEN_COUNTS] = "com.target~2" }))
+        val usage = Disk(literalV1().toMutablePreferences().apply {
+            this[PrefsKeys.OPEN_COUNTS] = "com.target~2"
+            this[PrefsKeys.OPEN_COUNTS_DAY] = OpenCreditLedgerPolicy.epochDay(now.wallEpochMs, "UTC")
+        })
+        editor(usage).reconcile(now)
+        assertEquals(2L, usage.values.value[EDITOR_VERSION_KEY])
+        assertEquals("", usage.values.value[PrefsKeys.OPEN_LIMITS])
+        assertEquals("com.target~2", usage.values.value[PrefsKeys.OPEN_COUNTS])
         val disk = Disk(literalV1().toMutablePreferences().apply {
             this[PrefsKeys.OPEN_LIMITS] = ""
             this[PrefsKeys.OPEN_COUNTS] = "com.target~2"

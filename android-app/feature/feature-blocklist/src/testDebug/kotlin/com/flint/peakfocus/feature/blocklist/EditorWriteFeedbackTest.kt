@@ -17,7 +17,6 @@ import org.robolectric.annotation.Config
 class EditorWriteFeedbackTest {
     @get:Rule val compose = createComposeRule()
     private val error = "Couldn't save. Try again."
-    private val readError = "Saved protection couldn't be read. Your records were kept. Close this screen and try again."
 
     @Test fun loadingEditorOpensOnFirstReadySnapshotAndKeepsItsDraftThroughReadFailure() {
         val state = mutableStateOf<LimitsUiState>(LimitsUiState.Loading)
@@ -27,10 +26,10 @@ class EditorWriteFeedbackTest {
                 limitsState = state.value, defaultBreakLevel = BreakLevel.EASY,
                 onSaveLimits = { _, time, _ -> saved += time }, onClearLimits = {}, onClose = {})
         }
-        compose.onNodeWithText(readError).assertDoesNotExist()
+        compose.onNodeWithText(EDITOR_STORAGE_UNAVAILABLE_MESSAGE).assertDoesNotExist()
         compose.onNodeWithText("Save limits").assertDoesNotExist()
         compose.runOnIdle { state.value = LimitsUiState.Unavailable(StorageFailure.IO) }
-        compose.onNodeWithText(readError).assertExists()
+        compose.onNodeWithText(EDITOR_STORAGE_UNAVAILABLE_MESSAGE).assertExists()
         compose.runOnIdle { state.value = LimitsUiState.Ready(buildLimitRows(listOf(TimeLimit("app", 30)), emptyList()) { null }) }
         compose.onNode(hasSetTextAction() and hasText("30")).performScrollTo().performTextReplacement("21")
         compose.runOnIdle { state.value = LimitsUiState.Unavailable(StorageFailure.IO) }

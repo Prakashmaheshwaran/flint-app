@@ -245,8 +245,8 @@ class ProtectionTransactionStoreTest {
         assertRemovedConsumedKey(PrefsKeys.FOCUS_LEDGER)
 
     private fun assertRemovedConsumedKey(key: Preferences.Key<*>) = runBlocking {
-        // Spend survives a removed legacy limit, whose writer kept an explicit empty list.
-        val disk = Disk(preferencesOf(PrefsKeys.OPEN_LIMITS to ""))
+        // Main recorded generic usage without ever configuring an Open Limit.
+        val disk = Disk()
         val focus = DataStoreFocusStateStore(disk)
         focus.setOpenCounts(OpenCountState(20_000, mapOf("app" to 1)))
         assertTrue(initialize(disk) is ProtectionCommit.Committed)

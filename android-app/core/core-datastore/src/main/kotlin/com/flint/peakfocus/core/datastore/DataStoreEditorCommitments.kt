@@ -602,7 +602,7 @@ private fun validateEditorDomains(prefs: Preferences, state: EditorCommitmentSta
         if (version == 1L) wireRequire(rawTimes != null)
         // Markerless main may lack unused domains, but surviving domain-specific owners
         // still prevent a partial loss of editor metadata from becoming a fresh policy.
-        val missing = listOf("rule:" to PrefsKeys.BLOCK_RULES, "group:" to PrefsKeys.APP_GROUPS,
+        val missing = listOf("rule:" to PrefsKeys.BLOCK_RULES,
             "time:" to PrefsKeys.TIME_LIMITS, "open:" to PrefsKeys.OPEN_LIMITS,
             "default:" to PrefsKeys.DEFAULT_BREAK_LEVEL)
             .filter { StrictPrefsCodec.string(prefs, it.second) == null }
@@ -644,9 +644,9 @@ private fun editorDomainReferences(prefs: Preferences, state: EditorCommitmentSt
     StrictPrefsCodec.string(prefs, ARCHIVE_TIMES)?.let { raw ->
         addAll(StrictPrefsCodec.timeLimits(raw).map { timeCauseKey(it.packageName) })
     }
-    StrictPrefsCodec.string(prefs, PrefsKeys.OPEN_COUNTS)?.let {
-        addAll(StrictPrefsCodec.counts(it).keys.map(::openCauseKey))
-    }
+    // Shipped main counted every allowed foreground open, including apps with no limit.
+    // Validate/preserve that accounting, but never infer Open policy from generic usage.
+    StrictPrefsCodec.string(prefs, PrefsKeys.OPEN_COUNTS)?.let { StrictPrefsCodec.counts(it) }
     if (StrictPrefsCodec.long(prefs, OPEN_CREDIT_SCHEMA) != null) {
         val credits = readOpenCredits(prefs)
         addAll((credits.counters.keys + credits.active.keys).map(::openCauseKey))
@@ -685,7 +685,7 @@ private fun editorDomainReferences(prefs: Preferences, state: EditorCommitmentSt
         archive[PrefsKeys.FOCUS_LEDGER.name]?.let { focusReferences(it) }
         archive[PrefsKeys.BLOCK_RULES.name]?.let { addAll(StrictPrefsCodec.rules(it).map { ruleCauseKey(it.id) }) }
         archive[PrefsKeys.OPEN_LIMITS.name]?.let { addAll(StrictPrefsCodec.openLimits(it).map { openCauseKey(it.packageName) }) }
-        archive[PrefsKeys.OPEN_COUNTS.name]?.let { addAll(StrictPrefsCodec.counts(it).keys.map(::openCauseKey)) }
+        archive[PrefsKeys.OPEN_COUNTS.name]?.let { StrictPrefsCodec.counts(it) }
         val tier = archive[PrefsKeys.DEFAULT_BREAK_LEVEL.name]?.let {
             add("default:"); StrictPrefsCodec.level(it)
         } ?: BreakLevel.EASY

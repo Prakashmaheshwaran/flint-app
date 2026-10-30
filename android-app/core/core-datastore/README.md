@@ -57,15 +57,21 @@ Editor version 1 is upgraded in the same DataStore edit as the complete-domain
 marker. It always wrote Time Limits, so a missing `time_limits_v1` is corrupt even
 with no current cause. Other previously optional domains may initialize empty only
 when no surviving cause, inactive/tombstoned occurrence, pending/queued operation,
-Harder count/wait, legacy receipt, Open counter/credit or recovery ownership refers
+Harder count/wait, legacy receipt, initialized Open-credit ledger or recovery ownership refers
 to them. Ownership also includes editor terminal intents and migration archives,
 C3 recovery cause keys, personal grant scopes, pending credit ends and native
 transient end IDs. C3's `P|1` and `P|2` ledger formats use the shared typed decoder;
 its `A|1` archive is validated before its preserved source records are inspected.
 An unqualified foreign history rule ID, receipt hash, cooldown or generic
 initialization marker does not establish ownership of an unrelated editor domain.
-Unreadable ownership is not proof of unused state. Groups are copied target
-snapshots in this schema; rules contain no group-ID reference.
+Unreadable ownership is not proof of unused state. Shipped main counted every
+allowed foreground open, even without an Open Limit: `open_counts_v1` is generic
+usage, including its copy in C3's legacy archive, and cannot prove Open policy
+existed. Its bytes/spend remain preserved and the independent counter-domain
+completeness rules still apply. Modern Open-credit rows, active credits and that
+ledger's own archive remain typed owners. Groups are convenience-only copied
+target snapshots; no producer emits a group commitment or group-ID cause. An
+absent old group list therefore normalizes empty, without synthetic group owners.
 Under PC-13 an unreferenced inactive template remains freely deletable; optional
 absence cannot erase any active or pending owner. Every absence after version 2
 is unavailable. A failed/crashed upgrade retains original bytes and version 1;
