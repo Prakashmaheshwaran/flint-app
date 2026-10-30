@@ -104,17 +104,69 @@ public enum FlintHistoryAggregator {
             let events = indexed.sorted {
                 $0.element.at == $1.element.at ? $0.offset < $1.offset : $0.element.at < $1.element.at
             }.map(\.element)
-            guard let start = events.first(where: { $0.type == .started }) else { return nil }
+            let original = indexed.map(\.element)
+            guard let start = original.first(where: { $0.type == .started }) else { return nil }
             let terminalIndex = events.firstIndex(where: { $0.type.isTerminal })
             let terminal = terminalIndex.map { events[$0] }
-            let deadlineEvent = events.prefix(terminalIndex ?? events.count)
-                .last { $0.type == .started || $0.type == .rescheduled }
-            let plannedEnd = deadlineEvent?.plannedEnd.map(FlintHistoryEvent.date)
+            let recordedPlans = events.prefix(terminalIndex ?? events.count)
+                .filter { $0.type == .started || $0.type == .rescheduled }
+            let plans = recordedPlans.isEmpty ? [start] : recordedPlans
+            func latestPlan(_ candidates: [FlintHistoryEvent]) -> FlintHistoryEvent {
+                candidates.enumerated().max {
+                    let a = $0.element.observedAt ?? $0.element.at
+                    let b = $1.element.observedAt ?? $1.element.at
+                    return a == b ? $0.offset < $1.offset : a < b
+                }?.element ?? start
+            }
+            func planAt(_ at: Int64) -> FlintHistoryEvent { latestPlan(plans.filter { $0.at <= at }) }
+            let plan = latestPlan(plans)
+            let plannedEnd = plan.plannedEnd.map(FlintHistoryEvent.date)
+            func validPlan(_ event: FlintHistoryEvent) -> Bool {
+                !event.uncertainTime && event.at >= start.at && (event.plannedEnd.map { $0 > start.at } ?? true)
+            }
+            func inPlan(_ event: FlintHistoryEvent) -> Bool {
+                let plan = planAt(event.at)
+                return event.at >= start.at && validPlan(plan) && (plan.plannedEnd.map { event.at <= $0 } ?? true)
+            }
+            let unknownEnd = terminal?.type == .endedEarly && terminal?.inferred == true && terminal?.route == "unknown"
+            let validTerminal = terminal.map { event in
+                guard !event.uncertainTime, !unknownEnd, validPlan(plan), event.at > start.at else { return false }
+                if event.type == .completed {
+                    guard let end = plan.plannedEnd else { return false }
+                    return event.timeConfidence == .certain ? event.at >= end : event.at == end
+                }
+                return plan.plannedEnd.map { event.at <= $0 } ?? true
+            } ?? false
+            // Delayed outbox delivery is ordered by logical event time, not append order.
+            // Once a terminal is accepted, later cleanup cannot invalidate that decision.
+            let localEvidence: [FlintHistoryEvent]
+            if validTerminal { localEvidence = Array(events.prefix(terminalIndex!)) }
+            else if let terminal { localEvidence = original.prefix { $0.id != terminal.id }.sorted { $0.at < $1.at } }
+            else { localEvidence = events }
+            let relatedPasses = passes.filter { $0.sessions?.contains(id) == true && (!validTerminal || $0.at <= terminal!.at) }
+            let evidence = (localEvidence + relatedPasses).sorted { $0.at < $1.at }
+            var trusted = validPlan(start)
+            var coverageEnd = start.date
+            for event in evidence {
+                if event.type == .started || event.type == .rescheduled {
+                    if !validPlan(event) { trusted = false }
+                } else if Self.coverageTypes.contains(event.type) {
+                    let paired = event.type != .breakEnded || event.grant == nil || events.contains {
+                        $0.type == .breakStarted && $0.grant == event.grant && $0.at <= event.at
+                    }
+                    if event.uncertainTime || !inPlan(event) || !paired || (!validTerminal && event.date > now) {
+                        trusted = false
+                    } else if trusted { coverageEnd = max(coverageEnd, event.date) }
+                } else if event.type == .passUsed && event.uncertainTime { trusted = false }
+            }
             let outcome: FlintHistoryOutcome
             let end: Date
             let inferred: Bool
             let route: String?
-            if let terminal {
+            if !trusted || (terminal != nil && !validTerminal) {
+                outcome = .unconfirmed; end = terminal?.date ?? plannedEnd ?? now
+                inferred = true; route = terminal?.route
+            } else if let terminal {
                 outcome = terminal.type == .completed ? .completed : terminal.type == .superseded ? .superseded : .endedEarly
                 end = terminal.date; inferred = terminal.inferred == true; route = terminal.route
             } else if let plannedEnd, plannedEnd <= now {
@@ -126,21 +178,17 @@ public enum FlintHistoryAggregator {
             }
             // A plan/start alone proves no elapsed coverage. Later lifecycle observations
             // can confirm only the prefix through that observation, never the planned tail.
-            let coverageEnd = events.filter {
-                [.breakStarted, .breakEnded, .protectionDegraded, .protectionRestored, .openIntercepted].contains($0.type)
-                    && $0.date <= now
-            }.map(\.date).max() ?? start.date
-            let evidencedEnd = outcome == .unconfirmed ? min(end, coverageEnd) : end
-            let clippedEnd = min(evidencedEnd, plannedEnd ?? evidencedEnd, now)
-            let unknownEnd = outcome == .endedEarly && inferred && route == "unknown"
+            let evidencedEnd = outcome == .unconfirmed ? coverageEnd : end
+            let readCeiling = outcome == .running || terminal == nil ? now : evidencedEnd
+            let clippedEnd = min(evidencedEnd, plannedEnd ?? evidencedEnd, readCeiling)
             var intervals: [DateInterval] = []
-            if clippedEnd > start.date, !unknownEnd {
+            if clippedEnd > start.date {
                 let whole = DateInterval(start: start.date, end: clippedEnd)
                 var breaks: [DateInterval] = []
                 for (index, event) in events.enumerated() where event.type == .breakStarted {
                     let nextBoundary = events.dropFirst(index + 1).first {
-                        if let grant = event.grant { return $0.type == .breakEnded && $0.grant == grant }
-                        return $0.type == .breakStarted || $0.type == .breakEnded
+                        if let grant = event.grant { return $0.type == .breakEnded && $0.grant == grant && !$0.uncertainTime }
+                        return $0.type == .breakStarted || ($0.type == .breakEnded && !$0.uncertainTime)
                     }
                     let explicitEnd = nextBoundary?.type == .breakEnded ? nextBoundary?.date : nil
                     let breakEnd = explicitEnd ?? event.breakEnd.map(FlintHistoryEvent.date) ?? clippedEnd
@@ -151,7 +199,7 @@ public enum FlintHistoryAggregator {
                 var gapStart: Date?
                 for event in events {
                     if event.type == .protectionDegraded { gapStart = gapStart ?? event.date }
-                    if event.type == .protectionRestored, let gap = gapStart {
+                    if event.type == .protectionRestored, !event.uncertainTime, let gap = gapStart {
                         let a = max(gap, whole.start), b = min(event.date, whole.end)
                         if b > a { breaks.append(DateInterval(start: a, end: b)) }
                         gapStart = nil
@@ -177,6 +225,10 @@ public enum FlintHistoryAggregator {
         }.sorted { $0.startedAt == $1.startedAt ? $0.id < $1.id : $0.startedAt < $1.startedAt }
     }
 
+    private static let coverageTypes: [FlintHistoryEventType] = [
+        .breakStarted, .breakEnded, .protectionDegraded, .protectionRestored, .openIntercepted,
+    ]
+
     private static func overlap(_ a: DateInterval, _ b: DateInterval) -> TimeInterval {
         max(0, min(a.end, b.end).timeIntervalSince(max(a.start, b.start)))
     }
@@ -189,6 +241,10 @@ public enum FlintHistoryAggregator {
         }
         return result
     }
+}
+
+private extension FlintHistoryEvent {
+    var uncertainTime: Bool { timeConfidence?.isUncertain == true || reason == "time_uncertain" }
 }
 
 public enum FlintHistoryReconciler {

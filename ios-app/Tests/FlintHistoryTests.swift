@@ -155,7 +155,8 @@ final class FlintHistoryTests: XCTestCase {
     }
     func testFH11BreaksSubtractClippedUnionIncludingPlannedEnd() {
         var pause = event(.breakStarted, 600); pause.breakEnd = event(.breakEnded, 1200).at
-        let events = [event(.started, 0), pause, event(.breakStarted, 1800), event(.breakEnded, 2400), event(.completed, 4000)]
+        var trustedLateEnd = event(.completed, 4000); trustedLateEnd.timeConfidence = .certain
+        let events = [event(.started, 0), pause, event(.breakStarted, 1800), event(.breakEnded, 2400), trustedLateEnd]
         // The second break's observed end must not extend the first break.
         XCTAssertEqual(summary(events).focusedSeconds, 2400)
         XCTAssertEqual(summary([event(.started, 0), pause, event(.completed, 3600)]).focusedSeconds, 3000)
@@ -255,7 +256,8 @@ final class FlintHistoryTests: XCTestCase {
         XCTAssertEqual(completed.sessions[0].outcome, .completed)
         XCTAssertEqual(completed.focusedSeconds, 7200)
         var shortened = event(.rescheduled, 600); shortened.plannedEnd = event(.completed, 1200).at
-        XCTAssertEqual(summary([event(.started, 0), shortened, event(.completed, 3600)]).focusedSeconds, 1200)
+        var trustedLateEnd = event(.completed, 3600); trustedLateEnd.timeConfidence = .certain
+        XCTAssertEqual(summary([event(.started, 0), shortened, trustedLateEnd]).focusedSeconds, 1200)
         var afterTerminal = event(.rescheduled, 4000); afterTerminal.plannedEnd = event(.completed, 5000).at
         XCTAssertEqual(summary([event(.started, 0), event(.completed, 3600), afterTerminal]).focusedSeconds, 3600)
         let openEnded = event(.rescheduled, 1800)

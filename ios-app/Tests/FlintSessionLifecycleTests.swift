@@ -192,4 +192,33 @@ final class FlintSessionLifecycleTests: XCTestCase {
         XCTAssertEqual(end.reason, "stop")
         XCTAssertEqual(end.observedAt, FlintHistoryEvent.milliseconds(t0.addingTimeInterval(1)))
     }
+
+    func testOptionalTimeConfidenceFlowsThroughAllAdditiveOverloads() {
+        let s = session("a", start: 0, end: 1800)
+        let confidence = FlintEventTimeConfidence.uncertain(reason: "clock_discontinuity")
+        FlintSessionLifecycle.didStart(s, replacing: nil, source: .manual, at: t0, timeConfidence: confidence)
+        FlintSessionLifecycle.didEnd(s, route: .manualStop, at: t0, timeConfidence: confidence)
+        FlintSessionLifecycle.didEnd(s, route: .completed, at: t0.addingTimeInterval(1805),
+                                    logicalEnd: t0.addingTimeInterval(1800), timeConfidence: confidence)
+        FlintSessionLifecycle.didUsePass(s, at: t0, timeConfidence: confidence)
+        FlintSessionLifecycle.didUsePass(operationID: "operation", sessions: [s], recoveryEnd: nil,
+                                        at: t0, timeConfidence: confidence)
+        FlintSessionLifecycle.didFailToArm(s, reason: "registration_failed", at: t0, timeConfidence: confidence)
+        XCTAssertEqual(sink.events.count, 6)
+        XCTAssertTrue(sink.events.allSatisfy { FlintHistoryEvent($0).timeConfidence == confidence })
+        let completion = FlintHistoryEvent(sink.events[2])
+        XCTAssertEqual(completion.date, t0.addingTimeInterval(1800))
+        XCTAssertEqual(completion.observedAt, FlintHistoryEvent.milliseconds(t0.addingTimeInterval(1805)))
+    }
+
+    func testNestedAnnotationKeepsConfidenceUnlessExplicitlyOverridden() {
+        let s = session("a", start: 0, end: 1800)
+        let inner = FlintSessionLifecycleEvent.annotated(.started(s, source: .manual, at: t0),
+            origin: nil, reason: nil, observedAt: nil, timeConfidence: .uncertain(reason: "unknown_boot"))
+        let legacyOuter = FlintSessionLifecycleEvent.annotated(inner, origin: "test", reason: nil, observedAt: nil)
+        XCTAssertEqual(FlintHistoryEvent(legacyOuter).timeConfidence, .uncertain(reason: "unknown_boot"))
+        let certainOuter = FlintSessionLifecycleEvent.annotated(inner, origin: nil, reason: nil, observedAt: nil,
+                                                               timeConfidence: .certain)
+        XCTAssertEqual(FlintHistoryEvent(certainOuter).timeConfidence, .certain)
+    }
 }

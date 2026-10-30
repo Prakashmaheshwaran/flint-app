@@ -35,11 +35,15 @@ public enum FlintEventTimeConfidence: Equatable, Sendable, Codable {
     private enum CodingKeys: String, CodingKey { case kind, reason }
 
     public init(from decoder: Decoder) throws {
-        let values = try decoder.container(keyedBy: CodingKeys.self)
-        switch try values.decode(String.self, forKey: .kind) {
+        guard let values = try? decoder.container(keyedBy: CodingKeys.self),
+              let kind = try? values.decode(String.self, forKey: .kind) else {
+            self = .uncertain(reason: "unsupported_time_confidence"); return
+        }
+        switch kind {
         case "certain": self = .certain
-        case "uncertain": self = .uncertain(reason: try values.decode(String.self, forKey: .reason))
-        default: self = .uncertain(reason: "unknown_time_confidence")
+        case "uncertain":
+            self = .uncertain(reason: (try? values.decode(String.self, forKey: .reason)) ?? "unsupported_time_confidence")
+        default: self = .uncertain(reason: "unsupported_time_confidence")
         }
     }
 
