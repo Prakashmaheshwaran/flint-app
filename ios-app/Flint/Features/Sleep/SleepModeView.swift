@@ -301,20 +301,31 @@ final class SleepModeViewModel: ObservableObject {
 
     private let controller = SleepModeController()
 
+    /// The tiers last taken from the saved rules; a tier picked here since then is kept.
+    private var adoptedTiers: (night: BreakLevel?, morning: BreakLevel?)
+
     init() {
         config = FlintSleepConfig.load()
         savedGroups = FlintGroupStore()?.loadAppGroups() ?? []
+        adoptedTiers = (nil, nil)
         refreshHealth()
-        if config.contractVersion == nil {
-            config.nightBreakLevel = config.nightBreakLevel ?? effectiveRules.first { $0.id == SleepModeController.nightRuleID }?.breakLevel
-            config.morningBreakLevel = config.morningBreakLevel ?? effectiveRules.first { $0.id == SleepModeController.morningRuleID }?.breakLevel
-        }
+        adoptTiersInForce(force: true)
     }
 
     /// Refresh the preset list and saved protection without overwriting the draft or rules.
     func refresh() {
         savedGroups = FlintGroupStore()?.loadAppGroups() ?? []
         refreshHealth()
+        adoptTiersInForce(force: false)
+    }
+
+    /// R-27: show and save the tier in force, including one changed in Rules, so a Sleep save
+    /// never reverts it. A tier the user picked during this visit is left alone.
+    private func adoptTiersInForce(force: Bool) {
+        let adopted = FlintSleepRulesController.adoptingTiersInForce(config, rules: effectiveRules)
+        if force || config.nightBreakLevel == adoptedTiers.night { config.nightBreakLevel = adopted.nightBreakLevel }
+        if force || config.morningBreakLevel == adoptedTiers.morning { config.morningBreakLevel = adopted.morningBreakLevel }
+        adoptedTiers = (config.nightBreakLevel, config.morningBreakLevel)
     }
 
     /// Keep the draft until the user accepts the arbiter's confirmation/wait/deferral.
@@ -322,7 +333,7 @@ final class SleepModeViewModel: ObservableObject {
         let snapshot = config
         flow.run(scope: "Sleep and Morning Assist", operation: { [controller] in controller.apply(snapshot, confirmation: $0) },
             cancel: { [controller] in controller.cancel(confirmation: $0) }, onSaved: {
-                self.config = FlintSleepConfig.load(); self.refreshHealth()
+                self.config = FlintSleepConfig.load(); self.refreshHealth(); self.adoptTiersInForce(force: true)
             })
     }
 

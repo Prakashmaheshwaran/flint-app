@@ -93,6 +93,20 @@ public final class FlintSleepRulesController {
         _ = arbiter.cancel(FlintScheduleRule.self, id: Self.morningID, confirmation: confirmation)
     }
 
+    /// R-27: a Sleep window's tier can be changed in Rules, which doesn't update the saved
+    /// Sleep config. A draft starts from the tier in force, so a later Sleep save never
+    /// reverts it. A window with a queued change keeps the draft's tier (its queued intent).
+    public static func adoptingTiersInForce(_ config: FlintSleepConfig,
+                                            rules: [FlintScheduleRule]) -> FlintSleepConfig {
+        var adopted = config
+        func inForce(_ id: String) -> BreakLevel? {
+            rules.first { $0.id == id && $0.protection?.queuedChange == nil }?.breakLevel
+        }
+        if let night = inForce(nightID) { adopted.nightBreakLevel = night }
+        if let morning = inForce(morningID) { adopted.morningBreakLevel = morning }
+        return adopted
+    }
+
     public static let allowedAppsRequired = FlintSelectionIssue.emptyAllowList.message
         + " Save an app group with them in Block Now, then choose it under Allowed apps."
 
