@@ -195,6 +195,8 @@ struct FlintRuleReloadEnvironment {
         record(domain, current)
     }
     var installationEvidence: () -> Bool = FlintRuleInitialization.externalEvidence
+    /// nil selects the live native query; an indeterminate injected result retains stores.
+    var existingWebStores: (() -> Bool?)? = nil
 
     /// The caller holds the transition lock. Checkpoint before decisions, but do not freeze a
     /// successor here: queued changes must apply before the next occurrence can be accepted.
