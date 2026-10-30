@@ -474,11 +474,12 @@ class BlockScreenCoordinator(
 
     private fun ordinaryInput(packageName: String, cause: BlockCause? = null) = OrdinaryProtectionInput(packageName, appContext.packageName,
         observations[packageName]?.timeLimitSpent == true || cause?.reason == BlockScreenReason.TIME_LIMIT,
-        inspectOpen(packageName) is OpenLimitDecision.Blocked, observations[packageName]?.url,
+        inspectOpen(packageName) !is OpenLimitDecision.Allowed, observations[packageName]?.url,
         cause?.endsAtEpochMs.takeIf { cause?.reason == BlockScreenReason.TIME_LIMIT })
 
     private fun ordinaryExempt(packageName: String, cause: BlockCause? = null): Boolean {
         val owner = recoveries ?: return BlockExemptions.hasOrdinaryExemption(packageName, nowEpochMs())
+        if (openState.value !is StorageState.Ready) return false
         // A configured Open limit with an elapsed/unmaterialized quota occurrence is
         // pending, not absent. An unrelated ordinary grant cannot lend it free access.
         if (openLimits.any { it.packageName == packageName } && owner.openOccurrenceActive(packageName, statusClock()) != true) return false
@@ -521,9 +522,7 @@ class BlockScreenCoordinator(
             packageName,
             recordAllowedOpen = effectiveRule == null && timeCause == null && !ordinary && !emergency,
         )
-        val openCause = (openDecision as? OpenLimitDecision.Blocked)?.let {
-            currentOpenLimitCause(it.limit, now, offset)
-        }
+        val openCause = openBlockCause(openDecision, now, offset)
         val cause = BlockOverlapPolicy.afterExemptions(
             BlockOverlapPolicy.strongest(timeCause, effectiveRule, openCause),
             ordinary,
@@ -564,15 +563,21 @@ class BlockScreenCoordinator(
             observation.epochDay == epochDay(now, offset)
         ) timeLimitBlockCause(currentTimeLimitBreakLevel(packageName), now, offset) else null
         val openDecision = inspectOpen(packageName)
-        val openCause = (openDecision as? OpenLimitDecision.Blocked)?.let {
-            currentOpenLimitCause(it.limit, now, offset)
-        }
+        val openCause = openBlockCause(openDecision, now, offset)
         val liveDisplayed = displayedCause?.takeIf { it.endsAtEpochMs == null || now < it.endsAtEpochMs }
             ?.takeUnless { it.ruleId != null && rulesState.value is StorageState.Ready && ActiveRulesHolder.rules.none { rule -> rule.id == it.ruleId } }
             ?.takeUnless { it.reason == BlockScreenReason.OPEN_LIMIT && openState.value is StorageState.Ready && openCause == null }
             ?.let { if (recoveries != null && it.reason == BlockScreenReason.OPEN_LIMIT) openCause else it }
             ?.let { if (it.reason == BlockScreenReason.TIME_LIMIT) it.copy(breakLevel = currentTimeLimitBreakLevel(packageName)) else it }
         return BlockOverlapPolicy.strongest(timeCause, ruleCause, openCause, liveDisplayed)
+    }
+
+    private fun openBlockCause(decision: OpenLimitDecision, now: Long, offset: Long): BlockCause? = when (decision) {
+        is OpenLimitDecision.Allowed -> null
+        is OpenLimitDecision.Blocked -> currentOpenLimitCause(decision.limit, now, offset)
+        // Unknown configuration cannot prove free entry. No invented quota is persisted or
+        // offered to the user: the readiness surface has no ordinary/credit action.
+        OpenLimitDecision.Unavailable -> BlockCause(BlockScreenReason.OPEN_LIMIT, BreakLevel.HARDCORE, null)
     }
 
     /** Saved quota elapsed time supplies the estimate even after travel or wall edits. */
@@ -637,6 +642,7 @@ class BlockScreenCoordinator(
         grantInputs(cause, emergency).all { it is StorageState.Ready }
 
     private fun inspectOpen(packageName: String, includeUnpaidVisit: Boolean = true): OpenLimitDecision {
+        if (recoveries != null && openState.value !is StorageState.Ready) return OpenLimitDecision.Unavailable
         val covering = openLimits.filter { it.packageName == packageName }
         val first = covering.firstOrNull() ?: return OpenLimitDecision.Allowed(null)
         val limit = if (recoveries == null) first else first.copy(dailyOpens = covering.minOf { it.dailyOpens }, breakLevel = covering.maxBy { it.breakLevel.ordinal }.breakLevel)
@@ -854,7 +860,7 @@ class BlockScreenCoordinator(
         if (owner.state.value !is StorageState.Ready || listOf(rulesState.value, timeState.value, openState.value, editorState.value).any { it !is StorageState.Ready })
             return GrantResult.Unavailable()
         if (openLimits.any { it.packageName == packageName } && owner.openOccurrenceActive(packageName, statusClock()) != true)
-            return GrantResult.Unavailable()
+            return if (id.creditScope != null) GrantResult.Denied else GrantResult.Unavailable()
         if (!busy.add(packageName)) return GrantResult.Unavailable()
         failures.remove(packageName); rerenderNow()
         return try {
@@ -920,6 +926,9 @@ class BlockScreenCoordinator(
         val status = when {
             inputs.any { it is StorageState.Loading } -> GrantStatus.LOADING
             inputs.any { it !is StorageState.Ready } -> GrantStatus.UNAVAILABLE
+            cause.reason == BlockScreenReason.OPEN_LIMIT && recoveries != null &&
+                openLimits.any { it.packageName == packageName } &&
+                recoveries.openOccurrenceActive(packageName, statusClock()) == false -> GrantStatus.RESETTING
             unavailableCredit -> GrantStatus.UNAVAILABLE
             packageName in busy || visits.current(packageName)?.let { it.id.prefix in pendingOpens } == true -> GrantStatus.SAVING
             packageName in failures && openRetryNeeded(packageName, cause) -> GrantStatus.RETRY_OPEN

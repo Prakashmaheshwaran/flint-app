@@ -552,6 +552,7 @@ private fun BreakActions(
             QuietButton("Review protection state", onEmergencyPassRequested)
         }
         BreakAffordance.RetryOpen -> QuietButton("Try again", onBreakRequested, modifier = modifier)
+        BreakAffordance.QuotaPending -> QuietButton("Review protection state", onEmergencyPassRequested, modifier = modifier)
         is BreakAffordance.UseCredit -> Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
             Text("${affordance.remaining} access credits remaining", style = MaterialTheme.typography.bodyMedium)
             QuietButton(if (affordance.durationMillis >= 300_000) "Use one credit · 5 minutes"

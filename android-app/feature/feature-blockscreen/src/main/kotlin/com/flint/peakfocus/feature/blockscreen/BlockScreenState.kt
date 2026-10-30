@@ -25,7 +25,7 @@ enum class BlockScreenReason {
 }
 
 /** Host persistence status; only READY/FAILED may offer a new tier-dependent request. */
-enum class GrantStatus { READY, LOADING, SAVING, UNAVAILABLE, FAILED, RETRY_OPEN }
+enum class GrantStatus { READY, LOADING, SAVING, UNAVAILABLE, FAILED, RETRY_OPEN, RESETTING }
 
 /**
  * Everything [BlockScreen] needs to render, supplied by the host (accessibility overlay or
@@ -75,6 +75,7 @@ internal sealed interface BreakAffordance {
     data object Saving : BreakAffordance
     data object Unavailable : BreakAffordance
     data object RetryOpen : BreakAffordance
+    data object QuotaPending : BreakAffordance
     data class UseCredit(val remaining: Int, val durationMillis: Long) : BreakAffordance
     data class CreditBlocked(val contributors: List<String>) : BreakAffordance
     /** EASY: a plain "Take a break" button. */
@@ -120,7 +121,9 @@ internal fun blockScreenContent(state: BlockScreenState): BlockScreenContent {
     return BlockScreenContent(
         displayName = name,
         headline = "$name is resting.",
-        reasonLine = (if (state.reason == BlockScreenReason.OPEN_LIMIT && (state.openCreditsRemaining ?: 0) > 0)
+        reasonLine = (if (state.grantStatus == GrantStatus.RESETTING)
+            "Access credits are updating. This app stays protected."
+            else if (state.reason == BlockScreenReason.OPEN_LIMIT && (state.openCreditsRemaining ?: 0) > 0)
             "This app stays protected between 5-minute access credits." else reasonLineFor(state.reason)) +
             (if ((state.openCreditActiveRemainingMillis ?: 0) > 0) " Credit access ends in ${formatDuration(state.openCreditActiveRemainingMillis!!)}; ${state.openCreditsRemaining ?: 0} credits remain." else "") +
             if (state.openCreditBlockingContributors.isNotEmpty()) " Also blocked by ${state.openCreditBlockingContributors.joinToString(", ")}." else "",
@@ -131,6 +134,7 @@ internal fun blockScreenContent(state: BlockScreenState): BlockScreenContent {
             GrantStatus.LOADING, GrantStatus.SAVING -> BreakAffordance.Saving
             GrantStatus.UNAVAILABLE -> BreakAffordance.Unavailable
             GrantStatus.RETRY_OPEN -> BreakAffordance.RetryOpen
+            GrantStatus.RESETTING -> BreakAffordance.QuotaPending
             GrantStatus.READY, GrantStatus.FAILED -> when {
                 (state.openCreditsRemaining ?: 0) > 0 && (state.openCreditActiveRemainingMillis ?: 0) == 0L ->
                     if (state.openCreditBlockingContributors.isNotEmpty()) BreakAffordance.CreditBlocked(state.openCreditBlockingContributors)

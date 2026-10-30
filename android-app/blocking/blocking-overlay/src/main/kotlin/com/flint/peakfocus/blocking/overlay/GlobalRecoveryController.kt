@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.util.concurrent.ConcurrentHashMap
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** One durable authority shared by the two detector adapters; no UI callback writes accounting. */
 internal class GlobalRecoveryController(
@@ -28,6 +29,7 @@ internal class GlobalRecoveryController(
     private val drainSignals = Channel<Unit>(Channel.CONFLATED)
     private val boundarySignals = Channel<Unit>(Channel.CONFLATED)
     private val ordinarySignals = Channel<Unit>(Channel.CONFLATED)
+    private val reconcileRequested = AtomicBoolean(false)
     private val ordinaryInputs = ConcurrentHashMap<String, OrdinaryProtectionInput>()
 
     init {
@@ -37,7 +39,8 @@ internal class GlobalRecoveryController(
             // checkpoints at bounded intervals, and exactly at an active recovery boundary.
             var initial = true
             while (isActive) {
-                if (initial || needsCheckpoint(lastGood)) reconcile()
+                val requested = reconcileRequested.getAndSet(false)
+                if (initial || requested || needsCheckpoint(lastGood)) reconcile()
                 initial = false
                 val now = clock()
                 val remaining = GlobalRecoveryPolicy.remaining(lastGood?.focus?.protection?.recovery, now)
@@ -97,7 +100,10 @@ internal class GlobalRecoveryController(
                     mutableState.value = StorageState.Loading
                     return
                 }
-                changed = next.value.focus.protection?.recovery != lastGood?.focus?.protection?.recovery ||
+                val configurationChanged = next.value.opens != lastGood?.opens ||
+                    next.value.editor.causes.keys != lastGood?.editor?.causes?.keys
+                if (configurationChanged) reconcileRequested.set(true)
+                changed = configurationChanged || next.value.focus.protection?.recovery != lastGood?.focus?.protection?.recovery ||
                     next.value.focus.protection?.ordinaryGrants != lastGood?.focus?.protection?.ordinaryGrants ||
                     next.value.openCredits?.active != lastGood?.openCredits?.active ||
                     next.value.editor.causes.mapValues { it.value.occurrenceId } != lastGood?.editor?.causes?.mapValues { it.value.occurrenceId } ||

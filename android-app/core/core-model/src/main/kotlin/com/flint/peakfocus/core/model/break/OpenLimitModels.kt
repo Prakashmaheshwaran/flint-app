@@ -41,6 +41,9 @@ data class OpenCountState(
  * screen needs the limit (and its [BreakLevel]) to offer the right affordances.
  */
 sealed interface OpenLimitDecision {
+    /** Configuration has not loaded; absence of a limit has not been established. */
+    data object Unavailable : OpenLimitDecision
+
     /** Under (or without) a limit. [remainingOpens] is null when the app has no Open Limit. */
     data class Allowed(val remainingOpens: Int?) : OpenLimitDecision
 
