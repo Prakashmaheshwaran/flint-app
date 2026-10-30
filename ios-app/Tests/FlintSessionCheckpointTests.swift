@@ -49,6 +49,19 @@ final class FlintSessionCheckpointTests: XCTestCase {
         XCTAssertTrue(saved.isLogicallyExpired(clock: clock))
     }
 
+    func testRebootUncertaintyRemainsVisibleAfterTheCurrentBootAnchorIsSavedPC58() {
+        var saved = session().checkpointed(clock: clock)
+        advance(600)
+        saved = saved.checkpointed(clock: clock)
+        reboot("boot-2")
+        saved = saved.checkpointed(clock: clock)
+        advance(10)
+        XCTAssertEqual(FlintTimeIntegrity.verdict(for: saved, clock: clock), .unverifiable)
+        wall.addTimeInterval(3600)
+        XCTAssertEqual(FlintTimeIntegrity.verdict(for: saved, clock: clock), .wallAhead(seconds: 3600),
+                       "a later observed same-boot anomaly is still reported")
+    }
+
     func testDoubleRebootNeverRestoresAnEarlierCheckpointR05PC58() throws {
         var saved = session(duration: 60).checkpointed(clock: clock)
         advance(40)
@@ -103,6 +116,25 @@ final class FlintSessionCheckpointTests: XCTestCase {
         wall.addTimeInterval(3600)
         monotonic += 10
         XCTAssertEqual(saved.logicalRemaining(clock: clock), 2990)
+    }
+
+    func testLegacyDurationIsFrozenBeforeRollbackRearmMovesItsWallEndR05PC55PC58() {
+        var saved = FlintActiveSession(name: "Legacy", startedAt: wall, endsAt: wall.addingTimeInterval(60),
+            breakLevel: .hardcore, monitorName: "flint.session.legacy", monotonicStart: monotonic, bootSessionID: boot)
+        advance(55)
+        saved = saved.checkpointed(clock: clock)
+        reboot("boot-2"); wall.addTimeInterval(-3600)
+        saved = saved.checkpointed(clock: clock)
+        let end = wall.addingTimeInterval(5)
+        let plan = FlintSessionAutoClearPlan.make(start: wall, end: end, calendar: .current)
+        saved = saved.rearmed(monitorName: "flint.session.repaired", plan: plan, at: wall,
+            countsTowardLimit: false, endsAt: end).checkpointed(clock: clock)
+        XCTAssertEqual(saved.plannedDuration, 60)
+        XCTAssertEqual(saved.logicalRemaining(clock: clock), 5)
+        advance(4)
+        XCTAssertFalse(saved.isLogicallyExpired(clock: clock))
+        advance(1)
+        XCTAssertTrue(saved.isLogicallyExpired(clock: clock))
     }
 
     func testLateCompletionInstantSurvivesRepeatedCheckpointsF2() {

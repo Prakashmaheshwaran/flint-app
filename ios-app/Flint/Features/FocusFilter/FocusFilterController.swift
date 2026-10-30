@@ -20,17 +20,22 @@ struct FocusFilterController {
 
     private let controller: FlintSessionController
     private let selectionResolver: ((String?) -> FamilyActivitySelection?)?
+    private let selectionCount: (FamilyActivitySelection) -> Int
     private let prepareRecovery: (String) -> Result<Void, FlintEmergencyPassError>
     private let acknowledgeOff: (String) -> Result<Void, FlintEmergencyPassError>
 
     init(controller: FlintSessionController = FlintSessionController(),
          selectionResolver: ((String?) -> FamilyActivitySelection?)? = nil,
+         selectionCount: @escaping (FamilyActivitySelection) -> Int = {
+             $0.applicationTokens.count + $0.categoryTokens.count + $0.webDomainTokens.count
+         },
          prepareRecovery: @escaping (String) -> Result<Void, FlintEmergencyPassError> = {
              FlintEmergencyPassController().prepareForNewSession(focusOwnerID: $0)
          }, acknowledgeOff: @escaping (String) -> Result<Void, FlintEmergencyPassError> = {
              FlintEmergencyPassController().acknowledgeFocusOff(ownerID: $0)
          }) {
         self.controller = controller; self.selectionResolver = selectionResolver
+        self.selectionCount = selectionCount
         self.prepareRecovery = prepareRecovery; self.acknowledgeOff = acknowledgeOff
     }
 
@@ -50,7 +55,7 @@ struct FocusFilterController {
             FlintSessionHealth.recordRefusal(action: .start, name: Self.sessionName, reason: error.localizedDescription)
             return false
         }
-        guard let selection = resolveSelection(for: request.appGroupID) else {
+        guard let selection = resolveSelection(for: request.appGroupID), selectionCount(selection) > 0 else {
             FlintSessionHealth.recordRefusal(action: .start, name: Self.sessionName, reason: "Nothing is selected to block.")
             return false
         }

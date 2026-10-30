@@ -35,6 +35,7 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
         public var source: FlintSessionSource
         public var previousMonitorName: String?
         public var emitsStart: Bool? = nil
+        public var startEventEmitted: Bool? = nil
         public var previousSession: FlintActiveSession? = nil
 
         public func matches(_ session: FlintActiveSession) -> Bool {
@@ -96,6 +97,13 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
         guard authority.latest != nil else { return false }
         if authority.provesIdle { return authority.latest?.matches(session) != true }
         return authority.observedSession(matching: session, clock: clock) == nil
+    }
+
+    public static func observedProjection(_ session: FlintActiveSession?, authority: Self?, clock: FlintClock) -> FlintActiveSession? {
+        guard let session else { return nil }
+        guard let authority, authority.latest != nil else { return session }
+        guard !authority.provesIdle else { return nil }
+        return authority.observedSession(matching: session, clock: clock)
     }
 
     public func acceptedStart(_ operationID: String) -> FlintAcceptedStartResult? {
@@ -161,7 +169,7 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
         guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw FlintSessionAuthorityError.generationMismatch
         }
-        object.removeValue(forKey: "remainingCheckpoint")
+        for key in ["remainingCheckpoint", "naturalEndObservedAt"] { object.removeValue(forKey: key) }
         return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     }
 
@@ -172,13 +180,21 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
                                       at now: FlintLedgerInstant, untilDeactivation: Bool = false) -> FlintSessionStartToken {
         if let old = routeRequests.last(where: { $0.route == route && $0.fingerprint == fingerprint }) {
             let result = acceptedStart(old.token.operationID)
+            if old.untilDeactivation {
+                guard result == nil else { return old.token }
+                let refreshed = FlintSessionStartToken(operationID: old.token.operationID, expectedRevision: revision)
+                if let index = routeRequests.lastIndex(where: { $0.route == route && $0.fingerprint == fingerprint }) {
+                    routeRequests[index].token = refreshed
+                }
+                return refreshed
+            }
             let stillRunning = result.map {
                 $0.outcome == .running && !provesIdle && latest?.session.id == $0.sessionID
                     && latest.map { !$0.session.isLogicallyExpired(clock: now.clock) } == true
             } ?? true
             let currentPreview = result != nil || old.token.expectedRevision == revision
-            if old.untilDeactivation || (currentPreview && stillRunning
-                && old.at.elapsed(until: now).map { $0 <= Self.retryWindow } == true) {
+            if currentPreview && stillRunning
+                && old.at.elapsed(until: now).map({ $0 <= Self.retryWindow }) == true {
                 return old.token
             }
         }
@@ -208,6 +224,7 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
                             phase: .installing, selection: selection, source: source,
                             previousMonitorName: previous)
         latest?.emitsStart = true
+        latest?.startEventEmitted = false
         latest?.previousSession = previousSession
         tombstone = nil
         acceptedStarts.append(FlintAcceptedStartResult(operationID: operationID, session: session,
@@ -227,7 +244,7 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
         guard latest?.matches(session) == true, !provesIdle else { throw FlintSessionAuthorityError.generationMismatch }
         latest?.phase = .applied
         latest?.selection = nil
-        for index in acceptedStarts.indices where acceptedStarts[index].session.id != session.id
+        for index in acceptedStarts.indices where acceptedStarts[index].sessionID != session.id
             && acceptedStarts[index].outcome == .running {
             acceptedStarts[index].outcome = .superseded
         }
@@ -264,10 +281,14 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
         revision += 1
         tombstone = Tombstone(sessionID: session.id, monitorName: session.monitorName,
                               generationRevision: latest.revision, route: route, at: now)
-        for index in acceptedStarts.indices where acceptedStarts[index].session.id == session.id {
+        for index in acceptedStarts.indices where acceptedStarts[index].sessionID == session.id {
             acceptedStarts[index].outcome = outcome
             acceptedStarts[index].endedAt = now
             acceptedStarts[index].endRoute = route
+        }
+        for index in acceptedStarts.indices where acceptedStarts[index].sessionID != session.id
+            && acceptedStarts[index].outcome == .running {
+            acceptedStarts[index].outcome = .superseded
         }
         return true
     }
@@ -294,7 +315,7 @@ public struct FlintAcceptedStartResult: Codable, Equatable, Sendable {
         case running, completed, stopped, superseded, unconfirmed, failedToApply
     }
     public var operationID: String
-    public var session: FlintActiveSession
+    public var sessionID: String
     public var outcome: Outcome
     public var acceptedAt: FlintLedgerInstant
     public var fingerprint: String
@@ -302,7 +323,33 @@ public struct FlintAcceptedStartResult: Codable, Equatable, Sendable {
     public var endedAt: Date? = nil
     public var endRoute: String? = nil
 
-    public var sessionID: String { session.id }
+    public init(operationID: String, session: FlintActiveSession, outcome: Outcome,
+                acceptedAt: FlintLedgerInstant, fingerprint: String, expectedRevision: UInt64?,
+                endedAt: Date? = nil, endRoute: String? = nil) {
+        self.operationID = operationID; sessionID = session.id; self.outcome = outcome
+        self.acceptedAt = acceptedAt; self.fingerprint = fingerprint; self.expectedRevision = expectedRevision
+        self.endedAt = endedAt; self.endRoute = endRoute
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case operationID, sessionID, outcome, acceptedAt, fingerprint, expectedRevision, endedAt, endRoute
+    }
+    private enum LegacyKeys: String, CodingKey { case session }
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        operationID = try values.decode(String.self, forKey: .operationID)
+        if let id = try values.decodeIfPresent(String.self, forKey: .sessionID) { sessionID = id }
+        else {
+            sessionID = try decoder.container(keyedBy: LegacyKeys.self)
+                .decode(FlintActiveSession.self, forKey: .session).id
+        }
+        outcome = try values.decode(Outcome.self, forKey: .outcome)
+        acceptedAt = try values.decode(FlintLedgerInstant.self, forKey: .acceptedAt)
+        fingerprint = try values.decode(String.self, forKey: .fingerprint)
+        expectedRevision = try values.decodeIfPresent(UInt64.self, forKey: .expectedRevision)
+        endedAt = try values.decodeIfPresent(Date.self, forKey: .endedAt)
+        endRoute = try values.decodeIfPresent(String.self, forKey: .endRoute)
+    }
 }
 
 public enum FlintSessionAuthorityError: Error, Equatable {
@@ -335,7 +382,8 @@ public struct FlintSessionStartParameters: Codable, Equatable, Sendable {
     }
 }
 
-private extension FlintLedgerInstant {
+extension FlintLedgerInstant {
+    /// A fixed observation for calculations that must not mix entry time with later IO time.
     var clock: FlintClock {
         FlintClock(now: { self.wall }, monotonic: { self.monotonic }, bootSessionID: { self.bootID }, calendar: { .current })
     }

@@ -254,6 +254,7 @@ public struct FlintSessionEnvironment {
     public var recoveryGate: () -> FlintPassRecoveryGate
     /// Fault seam for interrupted acceptance; the committed installing generation survives.
     public var afterStartCommit: () throws -> Void
+    public var afterStartApplied: () throws -> Void
 
     public init(
         store: @escaping () -> FlintSessionStateStoring?,
@@ -272,7 +273,8 @@ public struct FlintSessionEnvironment {
         reconcileEmergencyPass: @escaping () -> Bool = { true },
         prepareNewSession: @escaping (String?) -> Result<Void, FlintEmergencyPassError> = { _ in .success(()) },
         recoveryGate: @escaping () -> FlintPassRecoveryGate = { .enforcing },
-        afterStartCommit: @escaping () throws -> Void = {}
+        afterStartCommit: @escaping () throws -> Void = {},
+        afterStartApplied: @escaping () throws -> Void = {}
     ) {
         self.store = store
         self.shield = shield
@@ -291,6 +293,7 @@ public struct FlintSessionEnvironment {
         self.prepareNewSession = prepareNewSession
         self.recoveryGate = recoveryGate
         self.afterStartCommit = afterStartCommit
+        self.afterStartApplied = afterStartApplied
     }
 
     public static var live: FlintSessionEnvironment {
@@ -384,9 +387,14 @@ public final class FlintSessionController {
     /// changes nothing.
     private func beginTransition(timeout: TimeInterval? = nil) -> FlintSessionTransitionLock.Hold? {
         if Self.transitionDepth > 0 { Self.transitionDepth += 1; return .nested }
-        guard let lock = env.transitionLock() else { Self.transitionDepth += 1; return .nested }
+        guard let lock = env.transitionLock() else {
+            Self.transitionDepth += 1
+            persistence.drainAcceptedInstallation()
+            return .nested
+        }
         guard let hold = lock.acquire(timeout: timeout) else { return nil }
         Self.transitionDepth += 1
+        persistence.drainAcceptedInstallation()
         return hold
     }
 
@@ -696,17 +704,37 @@ public final class FlintSessionController {
 
         // Acceptance and the recoverable generation commit together before the projection or
         // shield. A crash here is replay of this installation, never a second start.
+        var commitFailure: FlintSessionAuthorityError?
         do {
             guard let ledger = env.ledger() else { throw FlintSessionError.protectionStateUnavailable }
             try ledger.transaction { state in
                 guard var authority = state.sessionAuthority else { throw FlintSessionAuthorityError.generationMismatch }
-                try authority.install(session, selection: JSONEncoder().encode(selection), source: source,
-                    operationID: operationID, fingerprint: fingerprint, expectedRevision: expectedRevision,
-                    at: FlintLedgerInstant(clock: env.clock))
+                do {
+                    try authority.install(session, selection: JSONEncoder().encode(selection), source: source,
+                        operationID: operationID, fingerprint: fingerprint, expectedRevision: expectedRevision,
+                        at: FlintLedgerInstant(clock: env.clock))
+                } catch let error as FlintSessionAuthorityError {
+                    commitFailure = error
+                    throw error
+                }
                 state.sessionAuthority = authority
             }.get()
         } catch {
             if plan != nil { env.registrar.stopMonitoring([monitorName]) }
+            switch commitFailure {
+            case .staleRevision: throw FlintSessionError.staleStartRevision
+            case .conflictingReuse: throw FlintSessionError.conflictingStartRequest
+            case .alreadyAccepted:
+                if let accepted = acceptedStartResult(operationID) {
+                    guard accepted.fingerprint == fingerprint else { throw FlintSessionError.conflictingStartRequest }
+                    if accepted.outcome == .running, let saved = persistence.resolve(in: store).session,
+                       saved.id == accepted.sessionID { return saved }
+                    if accepted.outcome != .running {
+                        throw FlintSessionError.startAlreadyEnded(sessionID: accepted.sessionID, outcome: accepted.outcome)
+                    }
+                }
+            case .generationMismatch, nil: break
+            }
             throw FlintSessionError.protectionStateUnavailable
         }
         try env.afterStartCommit()
@@ -767,6 +795,7 @@ public final class FlintSessionController {
         // Hardcore session can't leave the guard dangling.
         env.shield.setDenyAppRemoval(breakLevel == .hardcore)
         guard persistence.markApplied(session) else { throw FlintSessionError.protectionStateUnavailable }
+        try env.afterStartApplied()
 
         FlintSessionHealth.update(in: env.healthDefaults()) {
             $0.lastArmFailure = nil
@@ -774,7 +803,7 @@ public final class FlintSessionController {
             $0.unauthorizedSince = nil
             $0.lastRefusal = nil
         }
-        FlintSessionLifecycle.didStart(session, replacing: previous, source: source, at: now)
+        guard persistence.emitStartIfPending(session) else { throw FlintSessionError.protectionStateUnavailable }
         env.publishStatus()
         return session
     }
@@ -896,13 +925,16 @@ public final class FlintSessionController {
         } else if !allowMissingProjection || store.hasActiveSessionRecord() {
             _ = persistence.unavailable(); return false
         }
-        guard persistence.terminate(session, outcome: route == .completed ? .completed : .stopped,
-                                    route: route.rawValue, at: now) else { return false }
-        if session.naturalEndObservedAt == nil { env.shield.clear() }
-        if route == .completed {
-            let logicalEnd = now.addingTimeInterval(-max(0, session.logicalOverrun(clock: env.clock) ?? 0))
-            FlintSessionLifecycle.didEnd(session, route: route, at: now, logicalEnd: logicalEnd)
-        } else {
+        let observation = FlintLedgerInstant(clock: env.clock)
+        let endedAt = route == .completed ? observation.wall : now
+        guard persistence.emitStartIfPending(session) else { return false }
+        guard let changed = persistence.terminate(session, outcome: route == .completed ? .completed : .stopped,
+                                    route: route.rawValue, at: endedAt) else { return false }
+        if changed, session.naturalEndObservedAt == nil { env.shield.clear() }
+        if changed, route == .completed {
+            let logicalEnd = endedAt.addingTimeInterval(-max(0, session.logicalOverrun(clock: observation.clock) ?? 0))
+            FlintSessionLifecycle.didEnd(session, route: route, at: endedAt, logicalEnd: logicalEnd)
+        } else if changed {
             FlintSessionLifecycle.didEnd(session, route: route, at: now)
         }
         // Forget the record before stopping its registration: iOS may deliver intervalDidEnd
@@ -1350,19 +1382,20 @@ public final class FlintSessionController {
                 // successful short session (ADR-012 §4): record the adapter failure and leave the
                 // outcome to focus history's reconciliation; so is any other late observation,
                 // whose latency is recorded too (PC-76).
-                let lateness = max(0, session.logicalOverrun(clock: env.clock) ?? 0)
+                let observation = FlintLedgerInstant(clock: env.clock)
+                let lateness = max(0, session.logicalOverrun(clock: observation.clock) ?? 0)
                 guard persistence.terminate(session,
                     outcome: lateness > FlintTimeIntegrity.onTimeWindow ? .unconfirmed : .completed,
                     route: lateness > FlintTimeIntegrity.onTimeWindow ? "natural_end_unconfirmed" : "completed",
-                    at: now) else { return }
+                    at: observation.wall) == true else { return }
                 if session.naturalEndObservedAt == nil { env.shield.clear() }
                 if lateness > FlintTimeIntegrity.onTimeWindow {
                     let missedWarning = event == .intervalDidEnd && session.usesEndWarning == true
                     recordAnomaly(missedWarning ? .missedEndWarning : .lateEnd, seconds: lateness,
-                                  session: session, at: now)
+                                  session: session, at: observation.wall)
                 } else {
-                    let logicalEnd = now.addingTimeInterval(-lateness)
-                    FlintSessionLifecycle.didEnd(session, route: .completed, at: now, logicalEnd: logicalEnd)
+                    let logicalEnd = observation.wall.addingTimeInterval(-lateness)
+                    FlintSessionLifecycle.didEnd(session, route: .completed, at: observation.wall, logicalEnd: logicalEnd)
                 }
                 store?.clearActiveSession()
                 store?.clearSessionSelection()

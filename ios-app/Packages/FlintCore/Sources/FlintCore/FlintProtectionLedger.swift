@@ -79,7 +79,7 @@ public struct FlintLedgerInstant: Codable, Equatable, Sendable {
 // MARK: - State
 
 public struct FlintLedgerState: Codable, Equatable, Sendable {
-    public static let currentVersion = 2
+    public static let currentVersion = 3
     /// Bounded idempotency memory (§8 "query by operation ID").
     public static let operationMemory = 200
 
@@ -148,8 +148,8 @@ public struct FlintLedgerState: Codable, Equatable, Sendable {
         sessionAuthority = try values.decodeIfPresent(FlintSessionAuthority.self, forKey: .sessionAuthority)
         sessionAuthorityVersion = values.contains(.sessionAuthorityVersion)
             ? try values.decode(Int.self, forKey: .sessionAuthorityVersion) : nil
-        if let sessionAuthorityVersion {
-            guard sessionAuthorityVersion == 1, sessionAuthority?.isValid == true else {
+        if oldVersion >= 3 || sessionAuthorityVersion != nil {
+            guard (sessionAuthorityVersion == nil || sessionAuthorityVersion == 1), sessionAuthority?.isValid == true else {
                 throw DecodingError.dataCorruptedError(forKey: .sessionAuthority, in: values,
                     debugDescription: "Session authority is missing or unsupported after migration")
             }
@@ -374,7 +374,9 @@ public final class FlintProtectionLedger {
         case let .failure(error): return .failure(error)
         }
         let before = state
-        state.version = FlintLedgerState.currentVersion
+        // Stay on the known v2 path until a session transition installs authority. That same
+        // atomic write promotes to v3, which older readers must refuse.
+        state.version = max(state.version, 2)
         migrate(&state, FlintLedgerInstant(clock: clock))
         let result: T
         do {
@@ -382,7 +384,13 @@ public final class FlintProtectionLedger {
         } catch {
             return .failure(.unavailable("transaction aborted: \(error)"))
         }
-        if state != before || !existed || before.version != FlintLedgerState.currentVersion {
+        if state.sessionAuthority != nil {
+            state.version = FlintLedgerState.currentVersion
+            state.sessionAuthorityVersion = 1
+        } else if state.version >= 3 || state.sessionAuthorityVersion != nil {
+            return .failure(.unavailable("session authority missing after migration"))
+        }
+        if state != before || !existed {
             if let failure = write(state) { return .failure(failure) }
         }
         if initializedMarker() == nil { setInitializedMarker(state.initializedAt) }
