@@ -95,4 +95,20 @@ class UncertainFocusGapTest {
             assertUnconfirmed(rows(listOf(fixed, close)), 10)
         }
     }
+
+    @Test fun grantlessUncertainEndCannotTrustPlannedReturnOrItsRawPosition() {
+        val fixed = event("break_started", 10).copy(kind = "planned", breakEnd = begin + 15 * minute)
+        for (at in listOf(-120L, 15L, 120L)) {
+            val close = event("break_ended", at).copy(timeConfidence = uncertain)
+            assertUnconfirmed(rows(listOf(fixed, close)), 0)
+        }
+    }
+
+    @Test fun unsupportedUncertainDatesStillCarryLossWithoutBecomingFocusEvidence() {
+        val gap = event("protection_degraded", 10).copy(timeConfidence = uncertain)
+        for (raw in listOf(gap.copy(at = Long.MIN_VALUE), gap.copy(at = Long.MAX_VALUE),
+            gap.copy(observedAt = Long.MAX_VALUE))) {
+            assertUnconfirmed(rows(listOf(HistoryCodec.decode(HistoryCodec.encode(raw)))), 0)
+        }
+    }
 }

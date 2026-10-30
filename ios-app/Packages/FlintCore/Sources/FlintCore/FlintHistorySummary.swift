@@ -177,7 +177,7 @@ public enum FlintHistoryAggregator {
             else if let terminal { localEvidence = original.prefix { $0.id != terminal.id }.sorted { $0.at < $1.at } }
             else { localEvidence = events }
             for event in original where event.uncertainTime && (event.type == .breakStarted || event.type == .protectionDegraded ||
-                event.type == .breakEnded && event.grant != nil && localEvidence.contains {
+                event.type == .breakEnded && localEvidence.contains {
                     $0.type == .breakStarted && $0.grant == event.grant
                 }) {
                 if !localEvidence.contains(where: { $0.id == event.id }) { localEvidence.append(event) }
@@ -316,10 +316,13 @@ public enum FlintHistoryAggregator {
                     uncertainGaps.append(uncertainGap(knownEnd: close?.at,
                         maximum: event.kind == "ordinary" ? 300 : .greatestFiniteMagnitude))
                 case .breakEnded:
-                    if let opening = localEvidence.first(where: { $0.type == .breakStarted && event.grant != nil && $0.grant == event.grant &&
-                        !$0.uncertainTime && !rejectedTimeIDs.contains($0.id) }) {
-                        uncertainGaps.append(uncertainGap(knownStart: opening.at,
-                            maximum: opening.kind == "ordinary" ? 300 : .greatestFiniteMagnitude))
+                    let opening = localEvidence.first { $0.type == .breakStarted && event.grant != nil && $0.grant == event.grant &&
+                        !$0.uncertainTime && !rejectedTimeIDs.contains($0.id) }
+                    let alreadyRepresented = localEvidence.contains { $0.type == .breakStarted &&
+                        $0.grant == event.grant && $0.uncertainTime }
+                    if !alreadyRepresented {
+                        uncertainGaps.append(uncertainGap(knownStart: opening?.at,
+                            maximum: opening?.kind == "ordinary" ? 300 : .greatestFiniteMagnitude))
                     }
                 case .protectionDegraded:
                     // No grant/owner sequence pairs a particular restoration here.

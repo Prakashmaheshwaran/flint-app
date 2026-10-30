@@ -174,7 +174,12 @@ For one session:
   breaks and coverage loss without a known bound conservatively discount the entire
   longest proof-free segment. A future explicit trusted length can narrow that loss without
   relabeling the timestamp. Uncertain break ends cannot upgrade a planned return into a
-  certain return. Open-credit access records remain ignored; a genuine `open_intercepted`
+  certain return, including legacy rows without a grant (which have no exact pairing and
+  therefore use the whole affected window). Known explicitly uncertain non-focus rows
+  remain loss signals even when their raw timing fields lie outside the supported civil
+  range; those unsupported effective times cannot initialize history dates or prove focus.
+  Future schema versions and unknown types remain ignored/preserved as before.
+  Open-credit access records remain ignored; a genuine `open_intercepted`
   block-surface observation is coverage evidence, distinct from an access grant.
 - The summary model retains possible coverage intervals plus uncertain placement/loss
   budgets; public `focusedMs`/`focusedSeconds` and day totals apply the discount. Do not sum

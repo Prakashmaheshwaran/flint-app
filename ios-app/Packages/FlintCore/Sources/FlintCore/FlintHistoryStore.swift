@@ -533,8 +533,12 @@ public final class FlintHistoryStore: @unchecked Sendable {
         } else { unknown = false }
         guard supported || future || unknown else { return nil }
         let session = object["session"] as? String ?? "opaque:\(digest(raw))"
+        let civilAt = (object["at"] as? Int64).flatMap { at -> Date? in
+            guard at >= -62_135_596_800_000, at <= 253_402_300_799_000 else { return nil }
+            return FlintHistoryEvent.date(at)
+        }
         return Line(event: supported ? event : nil, raw: raw, session: session,
-                    at: (object["at"] as? Int64).map(FlintHistoryEvent.date), id: object["id"] as? String)
+                    at: civilAt, id: object["id"] as? String)
     }
 
     private func retainedLines(_ lines: [Line], keeping running: String?, target: Int) -> [Line] {

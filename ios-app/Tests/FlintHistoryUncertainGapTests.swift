@@ -103,4 +103,24 @@ final class FlintHistoryUncertainGapTests: XCTestCase {
             assertUnconfirmed(rows([fixed, close]), minutes: 10)
         }
     }
+
+    func testGrantlessUncertainEndCannotTrustPlannedReturnOrItsRawPosition() {
+        var fixed = event(.breakStarted, 10); fixed.kind = "planned"; fixed.breakEnd = event(.breakEnded, 15).at
+        for at in [-120.0, 15, 120] {
+            var close = event(.breakEnded, at); close.timeConfidence = uncertain
+            assertUnconfirmed(rows([fixed, close]), minutes: 0)
+        }
+    }
+
+    func testUnsupportedUncertainDatesStillCarryLossWithoutBecomingFocusEvidence() throws {
+        var gap = event(.protectionDegraded, 10); gap.timeConfidence = uncertain
+        for field in ["past", "future", "observation"] {
+            var raw = gap
+            if field == "past" { raw.at = .min }
+            if field == "future" { raw.at = .max }
+            if field == "observation" { raw.observedAt = .max }
+            let decoded = try JSONDecoder().decode(FlintHistoryEvent.self, from: JSONEncoder().encode(raw))
+            assertUnconfirmed(rows([decoded]), minutes: 0)
+        }
+    }
 }

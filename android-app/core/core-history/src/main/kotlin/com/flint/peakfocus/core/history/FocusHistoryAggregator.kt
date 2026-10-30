@@ -159,7 +159,7 @@ object FocusHistoryAggregator {
                 else if (terminal != null) group.takeWhile { it !== terminal }.sortedBy { it.at } else ordered
             val localEvidence = (localPrefix + group.filter { event -> event.uncertainTime &&
                 (event.knownType in setOf(HistoryEventType.BREAK_STARTED, HistoryEventType.PROTECTION_DEGRADED) ||
-                    event.knownType == HistoryEventType.BREAK_ENDED && event.grant != null && localPrefix.any {
+                    event.knownType == HistoryEventType.BREAK_ENDED && localPrefix.any {
                         it.knownType == HistoryEventType.BREAK_STARTED && it.grant == event.grant
                     }) }).distinctBy { it.id }
             val relatedPasses = passesBySession[id].orEmpty().filter {
@@ -274,8 +274,10 @@ object FocusHistoryAggregator {
                 HistoryEventType.BREAK_ENDED -> {
                     val opening = localEvidence.firstOrNull { it.knownType == HistoryEventType.BREAK_STARTED &&
                         event.grant != null && it.grant == event.grant && !it.uncertainTime && it.id !in rejectedTimeIds }
-                    if (opening != null) uncertainGaps += uncertainGap(knownStart = opening.at,
-                        maximum = if (opening.kind == "ordinary") 300_000 else Long.MAX_VALUE)
+                    val alreadyRepresented = localEvidence.any { it.knownType == HistoryEventType.BREAK_STARTED &&
+                        it.grant == event.grant && it.uncertainTime }
+                    if (!alreadyRepresented) uncertainGaps += uncertainGap(knownStart = opening?.at,
+                        maximum = if (opening?.kind == "ordinary") 300_000 else Long.MAX_VALUE)
                 }
                 HistoryEventType.PROTECTION_DEGRADED -> {
                     // Coverage rows have no grant/owner sequence to pair a particular
