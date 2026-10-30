@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 #if canImport(ManagedSettings)
 import ManagedSettings
 #endif
@@ -299,6 +300,31 @@ extension FlintWebRestrictions {
         defaults.set(true, forKey: initializedMarkerKey)
         return defaults.synchronize() && defaults.object(forKey: initializedMarkerKey) != nil
     }
+
+    #if canImport(FamilyControls) && canImport(ManagedSettings) && canImport(DeviceActivity)
+    /// Called only after the editor's weakening gates, while its transition is held. Keep a
+    /// durable, content-addressed copy of unavailable intent before an explicit repair.
+    func saveRecoveringUnavailableIntent(to defaults: UserDefaults? = .flintGroup,
+                                        recoveryDirectory: URL? = FlintRuleRecovery.directory) -> Bool {
+        guard let defaults, defaults.synchronize() else { return false }
+        if let object = defaults.object(forKey: Self.storageKey) {
+            let config = (object as? Data).flatMap { try? JSONDecoder().decode(Self.self, from: $0) }
+            if config == nil || config?.validationMessage != nil {
+                let bytes: Data
+                if let data = object as? Data { bytes = data }
+                else {
+                    guard let data = try? PropertyListSerialization.data(fromPropertyList: object,
+                        format: .binary, options: 0) else { return false }
+                    bytes = data
+                }
+                let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+                guard FlintRuleRecovery.retain(bytes, key: Self.storageKey + ".recovered." + digest,
+                    defaults: defaults, directory: recoveryDirectory) else { return false }
+            }
+        }
+        return save(to: defaults)
+    }
+    #endif
 
     private static func hasExistingWebStores(in defaults: UserDefaults, probe: (() -> Bool)?) -> Bool {
         #if canImport(FamilyControls) && canImport(ManagedSettings) && canImport(DeviceActivity)

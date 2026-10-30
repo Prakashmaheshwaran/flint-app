@@ -5,12 +5,13 @@ import CryptoKit
 /// The global preference is live, but weakening it must respect every affected commitment.
 /// A denied edit stays a UI draft; this type does not claim to queue future changes.
 public final class FlintWebRestrictionEditor {
-    public enum Outcome: Equatable {
+    public enum Outcome: Equatable, Sendable {
         case saved
         case protected(until: Date?)
         case waiting(seconds: TimeInterval)
         case confirmationRequired
         case unavailable
+        case busy
         case invalid(String)
     }
 
@@ -22,30 +23,44 @@ public final class FlintWebRestrictionEditor {
         }
     }
 
-    private let load: () -> FlintWebRestrictions?
+    private let read: () -> FlintWebRestrictionRead
     private let snapshot: () -> Snapshot?
     private let persist: (FlintWebRestrictions) -> Bool
     private let ledger: () -> FlintProtectionLedger?
     private let clock: FlintClock
     private let withTransitionBoundary: (() -> Void) -> Bool
 
-    public init(load: @escaping () -> FlintWebRestrictions?, snapshot: @escaping () -> Snapshot?,
+    public convenience init(load: @escaping () -> FlintWebRestrictions?, snapshot: @escaping () -> Snapshot?,
                 persist: @escaping (FlintWebRestrictions) -> Bool,
                 ledger: @escaping () -> FlintProtectionLedger?, clock: FlintClock,
                 withTransitionBoundary: @escaping (() -> Void) -> Bool = { body in body(); return true }) {
-        self.load = load; self.snapshot = snapshot; self.persist = persist
+        self.init(read: { load().map(FlintWebRestrictionRead.available) ?? .unavailable },
+                  snapshot: snapshot, persist: persist, ledger: ledger, clock: clock,
+                  withTransitionBoundary: withTransitionBoundary)
+    }
+
+    init(read: @escaping () -> FlintWebRestrictionRead, snapshot: @escaping () -> Snapshot?,
+         persist: @escaping (FlintWebRestrictions) -> Bool,
+         ledger: @escaping () -> FlintProtectionLedger?, clock: FlintClock,
+         withTransitionBoundary: @escaping (() -> Void) -> Bool = { body in body(); return true }) {
+        self.read = read; self.snapshot = snapshot; self.persist = persist
         self.ledger = ledger; self.clock = clock; self.withTransitionBoundary = withTransitionBoundary
     }
 
     public convenience init() {
-        self.init(load: { .loadForEnforcement() }, snapshot: {
+        self.init(read: { FlintWebRestrictions.readForUI() }, snapshot: {
             guard let group = FlintGroupStore(),
                   FlintRuleArbiter(environment: .live).applyQueued(FlintScheduleRule.self),
                   let rules = FlintRuleReloadEnvironment.live.observedRules(FlintScheduleRule.self) else { return nil }
             let active = group.loadActiveSession()
             guard active != nil || !group.hasActiveSessionRecord() else { return nil }
+            if let active {
+                guard active.contractVersion == nil || active.contractVersion == FlintActiveSession.currentContractVersion,
+                      active.startedAt.timeIntervalSinceReferenceDate.isFinite,
+                      active.endsAt.map({ $0.timeIntervalSinceReferenceDate.isFinite && $0 > active.startedAt }) ?? true else { return nil }
+            }
             return Snapshot(session: active, rules: rules)
-        }, persist: { $0.save() }, ledger: { FlintProtectionLedger.appGroup() }, clock: .system,
+        }, persist: { $0.saveRecoveringUnavailableIntent() }, ledger: { FlintProtectionLedger.appGroup() }, clock: .system,
            withTransitionBoundary: { body in
                FlintRuleStoreLock.withLock(environment: .live) { body(); return true } ?? false
            })
@@ -56,13 +71,20 @@ public final class FlintWebRestrictionEditor {
     public func save(_ candidate: FlintWebRestrictions, requestID: String, confirmed: Bool = false) -> Outcome {
         var result = Outcome.unavailable
         guard withTransitionBoundary({ result = saveLocked(candidate, requestID: requestID, confirmed: confirmed) }) else {
-            return .unavailable
+            return .busy
         }
         return result
     }
 
     private func saveLocked(_ candidate: FlintWebRestrictions, requestID: String, confirmed: Bool) -> Outcome {
-        guard let previous = load(), let snapshot = snapshot() else { return .unavailable }
+        let previousRead = read()
+        let previous: FlintWebRestrictions?
+        switch previousRead {
+        case let .available(config): previous = config
+        case .unavailable: previous = nil
+        case .busy: return .busy
+        }
+        guard let snapshot = snapshot() else { return .unavailable }
         if let message = candidate.validationMessage { return .invalid(message) }
         let now = clock.now()
         let affected = Self.affectedCauses(previous: previous, candidate: candidate, snapshot: snapshot,
@@ -93,7 +115,7 @@ public final class FlintWebRestrictionEditor {
                 return try rule.fingerprint(action: "web.current", includeName: false)
             }.sorted()
             guard let policy else { return .unavailable }
-            let scope = [Self.fingerprint(previous), Self.fingerprint(candidate)] + policy
+            let scope = [previous.map(Self.fingerprint) ?? "unavailable", Self.fingerprint(candidate)] + policy
             let revisions = harder.map { "\($0.occurrenceID):\($0.revision)" }.sorted()
             let identity = SHA256.hash(data: Data((scope + revisions).joined(separator: "|").utf8))
                 .map { String(format: "%02x", $0) }.joined()
@@ -127,7 +149,7 @@ public final class FlintWebRestrictionEditor {
             guard case let .success(outcome) = result else { return .unavailable }
             guard outcome == .saved else { return outcome }
         }
-        guard load() == previous, self.snapshot().map({ Self.samePolicy($0, snapshot) }) == true,
+        guard read() == previousRead, self.snapshot().map({ Self.samePolicy($0, snapshot) }) == true,
               affected.allSatisfy({ $0.end.map { self.clock.now() < $0 } ?? true }) else { return .unavailable }
         if persist(candidate) { return .saved }
         if !harder.isEmpty {
@@ -144,20 +166,22 @@ public final class FlintWebRestrictionEditor {
             || (old.denyExplicitMedia && !new.denyExplicitMedia)
     }
 
-    public static func affectedCauses(previous: FlintWebRestrictions, candidate: FlintWebRestrictions,
+    public static func affectedCauses(previous: FlintWebRestrictions?, candidate: FlintWebRestrictions,
                                      snapshot: Snapshot, now: Date, calendar: Calendar,
                                      clock: FlintClock? = nil) -> [FlintCauseState] {
-        let content = weakensContent(previous, candidate)
+        // Unknown prior intent cannot prove a strengthening. Re-establishment is a weakening
+        // against every live web-relevant owner, even when this draft opts a scope in.
+        let content = previous.map { weakensContent($0, candidate) } ?? true
         var causes: [FlintCauseState] = []
         // A session's eligibility and end come from logical time when a clock is given: a
         // same-boot wall jump must not make a live session's frozen policy freely editable (§9).
-        if previous.enabled, !candidate.enabled || content, let session = snapshot.session,
+        if previous?.enabled ?? true, !candidate.enabled || content, let session = snapshot.session,
            session.isEnforcing(at: now, clock: clock) {
             let end = clock.flatMap(session.stableLogicalEnd) ?? session.endsAt
             causes.append(.init(causeID: session.id, kind: .session, tier: session.breakLevel,
                                 isActive: true, end: end, legacyRights: session.contractVersion == nil))
         }
-        if previous.applyDuringSchedules, !candidate.applyDuringSchedules || content {
+        if previous?.applyDuringSchedules ?? true, !candidate.applyDuringSchedules || content {
             for rule in snapshot.rules where rule.enabled {
                 let resolved = clock ?? .system
                 guard let window = rule.occurrence(at: now, clock: resolved) else { continue }

@@ -929,18 +929,78 @@ final class FlintWebRestrictionEditorTests: XCTestCase {
         XCTAssertEqual(h.writes, 0)
     }
 
-    func testUnreadableConfigCannotBeOverwrittenByADefaultDraft() throws {
+    func testUnreadableConfigRecoveryRespectsHardcoreThenRetainsOriginalBytes() throws {
         let suite = "test.flint.web.editor.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let original = Data("{broken user configuration".utf8)
         defaults.set(original, forKey: "flint.webRestrictions")
         let h = WebEditorHarness()
-        let editor = FlintWebRestrictionEditor(load: { .loadForEnforcement(from: defaults) },
-            snapshot: { .init(session: nil, rules: []) }, persist: { $0.save(to: defaults) },
+        h.active = h.session(.hardcore)
+        let recovery = h.directory.appendingPathComponent("Recovery")
+        let editor = FlintWebRestrictionEditor(load: { .loadForEnforcement(from: defaults, existingWebStores: { false }) },
+            snapshot: { .init(session: h.active, rules: []) },
+            persist: { $0.saveRecoveringUnavailableIntent(to: defaults, recoveryDirectory: recovery) },
             ledger: { nil }, clock: h.clock)
-        XCTAssertEqual(editor.save(.default, requestID: "bad"), .unavailable)
+        XCTAssertEqual(editor.save(.default, requestID: "repair"), .protected(until: h.active?.endsAt))
         XCTAssertEqual(defaults.data(forKey: "flint.webRestrictions"), original)
+        h.active = nil
+        XCTAssertEqual(editor.save(.default, requestID: "repair"), .saved)
+        let key = try XCTUnwrap(defaults.dictionaryRepresentation().keys.first {
+            $0.hasPrefix("flint.webRestrictions.recovered.")
+        })
+        let reference = try XCTUnwrap(defaults.object(forKey: key))
+        XCTAssertEqual(FlintRuleRecovery.read(reference, key: key, directory: recovery), original)
+        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), .default)
+    }
+
+    func testUnavailableIntentAllowsEasyOrNoOwnerButNotUnknownOwners() {
+        for active in [false, true] {
+            let h = WebEditorHarness(); h.readOverride = .unavailable
+            h.active = active ? h.session(.easy) : nil
+            XCTAssertEqual(h.editor().save(.default, requestID: "repair"), .saved)
+            XCTAssertEqual(h.writes, 1)
+        }
+        let h = WebEditorHarness(); h.readOverride = .unavailable; h.snapshotAvailable = false
+        XCTAssertEqual(h.editor().save(.default, requestID: "unknown"), .unavailable)
+        XCTAssertEqual(h.writes, 0)
+    }
+
+    func testUnavailableIntentHarderRepairWaitsAndFailedWriteRetrySpendsOnce() throws {
+        let h = WebEditorHarness(); h.readOverride = .unavailable
+        h.active = h.session(.harder); h.rules = [h.rule(.harder)]
+        XCTAssertEqual(h.editor().save(.default, requestID: "repair"), .waiting(seconds: 60))
+        h.advance(60)
+        XCTAssertEqual(h.editor().save(.default, requestID: "repair"), .confirmationRequired)
+        h.saveAllowed = false
+        guard case .invalid = h.editor().save(.default, requestID: "repair", confirmed: true) else {
+            return XCTFail("An authorized failed repair must retain a retryable draft")
+        }
+        let spent = try h.ledger().read().get().harder.mapValues(\.committedCount)
+        XCTAssertEqual(spent.count, 2)
+        XCTAssertTrue(spent.values.allSatisfy { $0 == 1 })
+        h.saveAllowed = true
+        XCTAssertEqual(h.editor().save(.default, requestID: "repair", confirmed: true), .saved)
+        XCTAssertEqual(try h.ledger().read().get().harder.mapValues(\.committedCount), spent)
+    }
+
+    func testUnavailableIntentHardcoreRuleDefersEvenAnOptInDraft() {
+        let h = WebEditorHarness(); h.readOverride = .unavailable; h.rules = [h.rule(.hardcore)]
+        let end = h.rules[0].occurrence(at: h.now, clock: h.clock)?.end
+        XCTAssertEqual(h.editor().save(h.config, requestID: "repair"), .protected(until: end))
+        XCTAssertEqual(h.writes, 0)
+        h.now = end!; h.monotonic += 8 * 3600
+        XCTAssertEqual(h.editor().save(h.config, requestID: "repair"), .saved)
+    }
+
+    func testBusyEditorReadAndBoundaryAreRetryableWithoutMutation() {
+        let h = WebEditorHarness(); h.readOverride = .busy
+        XCTAssertEqual(h.editor().save(.default, requestID: "busy"), .busy)
+        let editor = FlintWebRestrictionEditor(load: { h.config }, snapshot: { .init(session: nil, rules: []) },
+            persist: { _ in XCTFail("No mutation without the boundary"); return false }, ledger: { nil },
+            clock: h.clock, withTransitionBoundary: { _ in false })
+        XCTAssertEqual(editor.save(.default, requestID: "lock-busy"), .busy)
+        XCTAssertEqual(h.writes, 0)
     }
 
     func testDomainCapRefusesSaveAndReportsWithoutNativeWrites() throws {
@@ -990,6 +1050,9 @@ private final class WebEditorHarness {
     var monotonic: TimeInterval = 1000
     var marker: Date?
     var ledgerAvailable = true
+    var readOverride: FlintWebRestrictionRead?
+    var snapshotAvailable = true
+    var saveAllowed = true
     var writes = 0
     var snapshotReads = 0
     var changeSnapshotOnRead: Int?
@@ -1004,7 +1067,7 @@ private final class WebEditorHarness {
     func advance(_ seconds: TimeInterval) { now = now.addingTimeInterval(seconds); monotonic += seconds }
     func session(_ tier: BreakLevel, end: Date? = nil) -> FlintActiveSession {
         .init(name: "Focus", startedAt: now.addingTimeInterval(-60), endsAt: end ?? now.addingTimeInterval(3600),
-              breakLevel: tier, monitorName: "flint.session")
+              breakLevel: tier, monitorName: "flint.session", contractVersion: FlintActiveSession.currentContractVersion)
     }
     func rule(_ tier: BreakLevel) -> FlintScheduleRule {
         .init(id: "sleep.night", name: "Sleep", schedule: .init(daysOfWeek: [2], startHour: 22, endHour: 7),
@@ -1015,11 +1078,15 @@ private final class WebEditorHarness {
               setInitializedMarker: { [self] in marker = $0 })
     }
     func editor() -> FlintWebRestrictionEditor {
-        .init(load: { [self] in config }, snapshot: { [self] in
+        .init(read: { [self] in readOverride ?? .available(config) }, snapshot: { [self] in
+            guard snapshotAvailable else { return nil }
             snapshotReads += 1
             if snapshotReads == changeSnapshotOnRead { active = session(.hardcore) }
             return .init(session: active, rules: rules)
-        }, persist: { [self] in config = $0; writes += 1; return true },
+        }, persist: { [self] in
+            guard saveAllowed else { return false }
+            config = $0; readOverride = nil; writes += 1; return true
+        },
         ledger: { [self] in ledgerAvailable ? ledger() : nil }, clock: clock)
     }
 }
