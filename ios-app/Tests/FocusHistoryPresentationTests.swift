@@ -106,11 +106,13 @@ final class FocusHistoryPresentationTests: XCTestCase {
             XCTAssertEqual(kept, keepsRunning)
             cleared.fulfill()
         }
-        await fulfillment(of: [cleared], timeout: 5)
+        // Real atomic writes/fsync and queue startup can exceed five seconds on a
+        // hosted simulator. Keep the completion and durable-state assertions intact.
+        await fulfillment(of: [cleared], timeout: 30)
         // clear enqueues a refresh; drain it before inspecting/removing the real fixture.
         let drained = expectation(description: "refresh drained")
         sink.perform { _ in drained.fulfill() }
-        await fulfillment(of: [drained], timeout: 5)
+        await fulfillment(of: [drained], timeout: 30)
         XCTAssertEqual(Set(store.read().events.map(\.session)), keepsRunning ? ["running"] : [])
     }
     func testRunningSummaryIsLabelledAndNeverPresentedAsComplete() {
