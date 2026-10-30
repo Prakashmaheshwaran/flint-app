@@ -51,7 +51,7 @@ struct SleepModeView: View {
         .navigationTitle("Sleep")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { vm.refresh() }
-        .onReceive(NotificationCenter.default.publisher(for: .flintProtectionReconciled)) { _ in vm.refreshHealth() }
+        .onReceive(NotificationCenter.default.publisher(for: .flintProtectionReconciled)) { _ in vm.refresh() }
         .ruleMutationFlow(vm.flow)
     }
 
@@ -301,20 +301,32 @@ final class SleepModeViewModel: ObservableObject {
 
     private let controller = SleepModeController()
 
+    /// The tiers last taken from the saved rules; a tier picked here since then is kept.
+    private var adoptedTiers: FlintSleepRulesController.TierAdoption?
+
     init() {
         config = FlintSleepConfig.load()
         savedGroups = FlintGroupStore()?.loadAppGroups() ?? []
+        adoptedTiers = nil
         refreshHealth()
-        if config.contractVersion == nil {
-            config.nightBreakLevel = config.nightBreakLevel ?? effectiveRules.first { $0.id == SleepModeController.nightRuleID }?.breakLevel
-            config.morningBreakLevel = config.morningBreakLevel ?? effectiveRules.first { $0.id == SleepModeController.morningRuleID }?.breakLevel
-        }
+        adoptTiersInForce(force: true)
     }
 
-    /// Refresh the preset list and saved protection without overwriting the draft or rules.
+    /// Refresh the preset list and saved protection. The draft only takes tiers now in force
+    /// that the user hasn't changed during this visit; rules are never written.
     func refresh() {
         savedGroups = FlintGroupStore()?.loadAppGroups() ?? []
         refreshHealth()
+        adoptTiersInForce(force: false)
+    }
+
+    /// R-27: show and save the tier in force, including one changed in Rules, so a Sleep save
+    /// never reverts it. A tier the user picked during this visit is left alone.
+    private func adoptTiersInForce(force: Bool) {
+        let result = FlintSleepRulesController.adoptingTiersInForce(config, rules: effectiveRules,
+            keepingPicksSince: force ? nil : adoptedTiers)
+        config = result.config
+        adoptedTiers = result.adopted
     }
 
     /// Keep the draft until the user accepts the arbiter's confirmation/wait/deferral.
@@ -322,14 +334,14 @@ final class SleepModeViewModel: ObservableObject {
         let snapshot = config
         flow.run(scope: "Sleep and Morning Assist", operation: { [controller] in controller.apply(snapshot, confirmation: $0) },
             cancel: { [controller] in controller.cancel(confirmation: $0) }, onSaved: {
-                self.config = FlintSleepConfig.load(); self.refreshHealth()
+                self.config = FlintSleepConfig.load(); self.refreshHealth(); self.adoptTiersInForce(force: true)
             })
     }
 
     func cancelQueued(_ rule: FlintScheduleRule, expected: FlintRuleProtection) {
         flow.run(scope: rule.name, operation: { _ in
             let result = FlintSchedulesController().cancelQueuedChange(rule.id, expected: expected)
-            self.refreshHealth()
+            self.refresh()
             return result
         })
     }
