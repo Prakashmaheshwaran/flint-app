@@ -13,6 +13,7 @@ import com.flint.peakfocus.core.history.HistorySnapshot
 import com.flint.peakfocus.core.model.ActiveRulesHolder
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.ProtectionBreakEndReason
+import com.flint.peakfocus.core.model.ProtectionEventTimeConfidence
 import com.flint.peakfocus.core.model.ProtectionLifecycleEvent
 import com.flint.peakfocus.core.model.ProtectionLifecycleKind
 import com.flint.peakfocus.core.model.StorageState
@@ -112,8 +113,16 @@ internal class ProtectionHistoryConsumer(
         val timeZone = zone().id
         fun record(type: HistoryEventType, session: String) = HistoryEvent(
             id = projectionId(event.id, type, session), type = type.wireName, session = session,
-            at = event.at.wallEpochMs, tz = timeZone, inferred = event.timeUncertain,
-            timeConfidence = if (event.timeUncertain) HistoryEventTimeConfidence.Uncertain("owner_time_uncertain") else null,
+            at = event.at.wallEpochMs, tz = timeZone,
+            // Pre-v3 outbox records keep the original projection. New owner evidence
+            // separates a recovered transition from uncertainty about its timestamp.
+            inferred = if (event.timeConfidence == null) event.timeUncertain else event.reconciled,
+            observedAt = event.observedAtEpochMs,
+            timeConfidence = when (val confidence = event.timeConfidence) {
+                ProtectionEventTimeConfidence.Certain -> HistoryEventTimeConfidence.Certain
+                is ProtectionEventTimeConfidence.Uncertain -> HistoryEventTimeConfidence.Uncertain(confidence.reason)
+                null -> if (event.timeUncertain) HistoryEventTimeConfidence.Uncertain("owner_time_uncertain") else null
+            },
         )
         return when (event.kind) {
             ProtectionLifecycleKind.PASS_COMMITTED -> {

@@ -44,7 +44,7 @@ class ProtectionTransactionStoreTest {
         val raw = "P|1\nM|0%7C0%7Cboot|0%7C0%7Cboot|0|false|0|0||0\nC\nR"
         val expected = ProtectionLedger(AccessClockStamp(0, 0, "boot"), AccessClockStamp(0, 0, "boot"))
         assertEquals(expected, ProtectionLedgerCodec.decode(raw))
-        assertEquals("P|2\nM|0%7C0%7Cboot|0%7C0%7Cboot|0|false|0|0||0|0\nC\nR", ProtectionLedgerCodec.encode(expected))
+        assertEquals("P|3\nM|0%7C0%7Cboot|0%7C0%7Cboot|0|false|0|0||0|0\nC\nR", ProtectionLedgerCodec.encode(expected))
         for (row in listOf("M|", "C", "R")) {
             try { ProtectionLedgerCodec.decode(raw.lines().filterNot { it.startsWith(row) }.joinToString("\n")); fail("Missing row accepted") }
             catch (e: StorageUnavailableException) { assertEquals(StorageFailure.CORRUPT, e.reason) }
@@ -225,7 +225,7 @@ class ProtectionTransactionStoreTest {
     @Test fun PC_70_futureOrPartialNewSchemaPreservesAllRawBytes() = runBlocking {
         for (initial in listOf(
             mutablePreferencesOf(PrefsKeys.PROTECTION_SCHEMA to 2L),
-            mutablePreferencesOf(PrefsKeys.PROTECTION_LEDGER to "P|3"),
+            mutablePreferencesOf(PrefsKeys.PROTECTION_LEDGER to "P|4"),
             mutablePreferencesOf(PrefsKeys.PROTECTION_SCHEMA to 1L),
         )) {
             val disk = Disk(initial)

@@ -9,7 +9,7 @@ internal object ProtectionLedgerCodec {
     private const val MAX_BYTES = 4_194_304
 
     fun encode(s: ProtectionLedger): String = buildList {
-        add("P|2")
+        add("P|3")
         add(row("M", clock(s.initializedAt), clock(s.checkpoint), s.droppedEvents, s.previousAccessEnded, s.operations.size, s.outbox.size,
             s.lastUsedAtEpochMs?.toString().orEmpty(), s.ordinaryGrants.size, s.pendingCreditEnds.size))
         add(s.cooldown?.let { row("C", atom(it.operationId), it.usedAtWallEpochMs, clock(it.checkpoint), it.remainingAtCheckpointMs, it.wallUncertain) } ?: "C")
@@ -23,7 +23,12 @@ internal object ProtectionLedgerCodec {
             require(id == event.id)
             add(row("E", atom(id), atom(event.operationId), event.kind.name, strings(event.affectedRuleIds), clock(event.at),
                 event.grantId.orEmpty(), event.untilEpochMs?.toString().orEmpty(), event.breakEndReason?.name.orEmpty(),
-                strings(event.endedTransientIds), event.revision, event.timeUncertain))
+                strings(event.endedTransientIds), event.revision, event.timeUncertain,
+                event.observedAtEpochMs?.toString().orEmpty(), when (event.timeConfidence) {
+                    ProtectionEventTimeConfidence.Certain -> "certain"
+                    is ProtectionEventTimeConfidence.Uncertain -> "uncertain"
+                    null -> ""
+                }, (event.timeConfidence as? ProtectionEventTimeConfidence.Uncertain)?.reason.orEmpty(), event.reconciled))
         }
         s.ordinaryGrants.toSortedMap().forEach { (id, grant) ->
             require(id == grant.operationId)
@@ -45,7 +50,7 @@ internal object ProtectionLedgerCodec {
         val header = fields(lines.first(), 2)
         checkWire(header[0] == "P" && header[1].toIntOrNull() != null)
         val version = header[1].toInt()
-        if (version !in 1..2) wireFuture()
+        if (version !in 1..3) wireFuture()
         var meta: List<String>? = null
         var cooldown: ProtectionCooldown? = null
         var recovery: ProtectionRecovery? = null
@@ -79,11 +84,21 @@ internal object ProtectionLedgerCodec {
                     checkWire(operations.put(id, ProtectionPassReceipt(id, readClock(f[2]), readClock(f[3]), atom(f[4]))) == null)
                 }
                 "E" -> {
-                    val f = fields(line, 12); val id = atom(f[1])
+                    val f = fields(line, if (version < 3) 12 else 16); val id = atom(f[1])
+                    val confidence = if (version < 3) null else when (f[13]) {
+                        "" -> { checkWire(f[12].isEmpty() && f[14].isEmpty() && !bool(f[15])); null }
+                        "certain" -> { checkWire(f[14].isEmpty()); ProtectionEventTimeConfidence.Certain }
+                        "uncertain" -> ProtectionEventTimeConfidence.Uncertain(f[14].also {
+                            checkWire(it.matches(Regex("[a-z][a-z0-9_]{0,127}")))
+                        })
+                        else -> wireFuture()
+                    }
+                    val observed = if (version < 3) null else f[12].takeIf(String::isNotEmpty)?.let(::number)
+                    if (confidence != null) checkWire(observed != null && bool(f[11]) == (confidence is ProtectionEventTimeConfidence.Uncertain))
                     val event = ProtectionLifecycleEvent(id, atom(f[2]), enum(f[3]), readStrings(f[4]), readClock(f[5]),
                         f[6].takeIf(String::isNotEmpty)?.let(::atom), f[7].takeIf(String::isNotEmpty)?.let(::number),
                         f[8].takeIf(String::isNotEmpty)?.let { enum<ProtectionBreakEndReason>(it) },
-                        readStrings(f[9]), number(f[10]), bool(f[11]))
+                        readStrings(f[9]), number(f[10]), bool(f[11]), observed, confidence, version >= 3 && bool(f[15]))
                     checkWire(event.endedTransientIds.all { it in event.affectedRuleIds })
                     val until = event.untilEpochMs
                     checkWire(when (event.kind) {
@@ -106,7 +121,7 @@ internal object ProtectionLedgerCodec {
                     checkWire(grants.put(id, ProtectionOrdinaryGrant(id, grant.target, grant.lifetime, grant.scopes, rules)) == null)
                 }
                 "L" -> {
-                    checkWire(version == 2)
+                    checkWire(version >= 2)
                     val f = fields(line, 5); val id = atom(f[1])
                     val duration = number(f[4]).also { checkWire(it in 1..300_000) }
                     val start = readClock(f[3])

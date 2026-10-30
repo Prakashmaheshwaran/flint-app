@@ -50,7 +50,7 @@ internal object OrdinaryProtectionPolicy {
             if (live.scopes == scopes) return unchanged(granted(live, false, snapshot.observedAt))
             // A stronger/new contributor stands immediately. Retire the old grant durably;
             // a separate explicit request starts any new friction/confirmation.
-            val event = GlobalRecoveryPolicy.ordinaryEnded(live, snapshot.observedAt, ProtectionBreakEndReason.SUPERSEDED, current.revision + 1)
+            val event = GlobalRecoveryPolicy.ordinaryEnded(live, snapshot, ProtectionBreakEndReason.SUPERSEDED, current.revision + 1)
             val next = GlobalRecoveryPolicy.bound(ledger.copy(ordinaryGrants = ledger.ordinaryGrants - live.operationId,
                 outbox = ledger.outbox + (event.id to event)), snapshot.observedAt)
             return ProtectionMutation(current.copy(protection = next), GrantResult.Denied)
@@ -79,8 +79,8 @@ internal object OrdinaryProtectionPolicy {
         val now = snapshot.observedAt
         val rules = scopes.filter { it.counter.rule.source == "rule" || it.counter.rule.source == "foreign" }.map { it.counter.rule.ruleId }.toSet()
         val grant = ProtectionOrdinaryGrant(id, AccessTarget.App(input.packageName), AccessDuration(now, duration), scopes, rules)
-        val event = ProtectionLifecycleEvent("break-started:$id", id, ProtectionLifecycleKind.BREAK_STARTED, rules, now,
-            grantId = id, untilEpochMs = now.wallEpochMs + duration, revision = current.revision + 1)
+        val event = ProtectionLifecycleTiming.record(ProtectionLifecycleEvent("break-started:$id", id, ProtectionLifecycleKind.BREAK_STARTED, rules, now,
+            grantId = id, untilEpochMs = now.wallEpochMs + duration, revision = current.revision + 1), snapshot)
         val next = GlobalRecoveryPolicy.bound(ledger.copy(ordinaryGrants = ledger.ordinaryGrants + (id to grant),
             operations = ledger.operations + (id to ProtectionPassReceipt(id, issuedAt, now, scopeId)), outbox = ledger.outbox + (event.id to event), previousAccessEnded = false), now)
         return ProtectionMutation(current.copy(protection = next), granted(grant, true, now), harder = waits)
@@ -90,7 +90,7 @@ internal object OrdinaryProtectionPolicy {
         val snapshot = GlobalRecoveryPolicy.checkpoint(original)
         val ledger = snapshot.focus.protection ?: return ProtectionMutation(snapshot.focus, false)
         val ended = ledger.ordinaryGrants.values.filter { packageName == null || it.target == AccessTarget.App(packageName) }
-        val events = ended.map { GlobalRecoveryPolicy.ordinaryEnded(it, snapshot.observedAt, ProtectionBreakEndReason.RESUMED, snapshot.focus.revision + 1) }
+        val events = ended.map { GlobalRecoveryPolicy.ordinaryEnded(it, snapshot, ProtectionBreakEndReason.RESUMED, snapshot.focus.revision + 1) }
         val next = GlobalRecoveryPolicy.bound(ledger.copy(ordinaryGrants = ledger.ordinaryGrants - ended.map { it.operationId }.toSet(),
             outbox = ledger.outbox + events.associateBy { it.id }), snapshot.observedAt)
         return ProtectionMutation(snapshot.focus.copy(protection = next), true, harder = snapshot.harder.copy(pending = null))
@@ -101,7 +101,7 @@ internal object OrdinaryProtectionPolicy {
         val grant = ledger.ordinaryGrants.values.firstOrNull { it.target == AccessTarget.App(input.packageName) } ?: return snapshot.focus
         val current = causes(snapshot, input, foreign) ?: return snapshot.focus
         if (current.none { it.tier == BreakLevel.HARDCORE } && current.map { it.scope }.toSet() == grant.scopes) return snapshot.focus
-        val event = GlobalRecoveryPolicy.ordinaryEnded(grant, snapshot.observedAt, ProtectionBreakEndReason.SUPERSEDED, snapshot.focus.revision + 1)
+        val event = GlobalRecoveryPolicy.ordinaryEnded(grant, snapshot, ProtectionBreakEndReason.SUPERSEDED, snapshot.focus.revision + 1)
         return snapshot.focus.copy(protection = GlobalRecoveryPolicy.bound(ledger.copy(ordinaryGrants = ledger.ordinaryGrants - grant.operationId,
             outbox = ledger.outbox + (event.id to event)), snapshot.observedAt))
     }

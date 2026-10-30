@@ -67,8 +67,8 @@ internal object TimedOpenCreditPolicy {
         return when (val result = mutation.acceptance) {
             is OpenCreditPolicy.Acceptance.Accepted -> {
                 val grant = result.grant
-                val event = ProtectionLifecycleEvent("access-started:$operation", operation, ProtectionLifecycleKind.ACCESS_STARTED,
-                    emptySet(), snapshot.observedAt, grantId = operation, untilEpochMs = grant.startedAt.wallEpochMs + grant.durationMs, revision = focus.revision + 1)
+                val event = ProtectionLifecycleTiming.record(ProtectionLifecycleEvent("access-started:$operation", operation, ProtectionLifecycleKind.ACCESS_STARTED,
+                    emptySet(), snapshot.observedAt, grantId = operation, untilEpochMs = grant.startedAt.wallEpochMs + grant.durationMs, revision = focus.revision + 1), snapshot)
                 val receipt = ProtectionCreditEventReceipt(operation, input.packageName, AccessDuration(grant.startedAt, grant.durationMs))
                 val next = GlobalRecoveryPolicy.bound(ledger.copy(pendingCreditEnds = ledger.pendingCreditEnds + (operation to receipt),
                     outbox = ledger.outbox + (event.id to event), previousAccessEnded = false), snapshot.observedAt)
@@ -87,25 +87,20 @@ internal object TimedOpenCreditPolicy {
         val ledger = snapshot.focus.protection ?: return snapshot
         val closing = ledger.pendingCreditEnds.values.filter { it.lifetime.remainingMs(snapshot.observedAt)?.let { left -> left > 0 } != true }
         if (closing.isEmpty()) return snapshot
-        val events = closing.map { ended(it, snapshot.observedAt, ProtectionBreakEndReason.EXPIRED, snapshot.focus.revision + 1) }
+        val events = closing.map { ended(it, snapshot, ProtectionBreakEndReason.EXPIRED, snapshot.focus.revision + 1) }
         return snapshot.copy(focus = snapshot.focus.copy(protection = GlobalRecoveryPolicy.bound(ledger.copy(
             pendingCreditEnds = ledger.pendingCreditEnds - closing.map { it.operationId }.toSet(), outbox = ledger.outbox + events.associateBy { it.id },
             previousAccessEnded = ledger.previousAccessEnded || closing.any { trustedElapsedMs(it.lifetime.startedAt, snapshot.observedAt) == null }), snapshot.observedAt)))
     }
 
-    fun ended(receipt: ProtectionCreditEventReceipt, now: AccessClockStamp, reason: ProtectionBreakEndReason, revision: Long): ProtectionLifecycleEvent {
-        val start = receipt.lifetime.startedAt
-        val elapsed = trustedElapsedMs(start, now)
-        val at = if (reason == ProtectionBreakEndReason.EXPIRED && elapsed != null && elapsed >= receipt.lifetime.durationMs)
-            AccessClockStamp(start.wallEpochMs + receipt.lifetime.durationMs, start.elapsedRealtimeMs + receipt.lifetime.durationMs, start.bootSessionId) else now
-        return ProtectionLifecycleEvent("access-ended:${receipt.operationId}", receipt.operationId, ProtectionLifecycleKind.ACCESS_ENDED,
-            emptySet(), at, grantId = receipt.operationId, breakEndReason = reason, revision = revision, timeUncertain = clockDiscontinuity(start, now))
-    }
+    fun ended(receipt: ProtectionCreditEventReceipt, snapshot: ProtectionSnapshot, reason: ProtectionBreakEndReason, revision: Long): ProtectionLifecycleEvent =
+        ProtectionLifecycleTiming.record(ProtectionLifecycleEvent("access-ended:${receipt.operationId}", receipt.operationId, ProtectionLifecycleKind.ACCESS_ENDED,
+            emptySet(), snapshot.observedAt, grantId = receipt.operationId, breakEndReason = reason, revision = revision), snapshot, receipt.lifetime)
 
     fun resume(original: ProtectionSnapshot): ProtectionMutation<Boolean> {
         val snapshot = GlobalRecoveryPolicy.checkpoint(original)
         val ledger = snapshot.focus.protection ?: return ProtectionMutation(snapshot.focus, false)
-        val events = ledger.pendingCreditEnds.values.map { ended(it, snapshot.observedAt, ProtectionBreakEndReason.RESUMED, snapshot.focus.revision + 1) }
+        val events = ledger.pendingCreditEnds.values.map { ended(it, snapshot, ProtectionBreakEndReason.RESUMED, snapshot.focus.revision + 1) }
         return ProtectionMutation(snapshot.focus.copy(protection = GlobalRecoveryPolicy.bound(ledger.copy(pendingCreditEnds = emptyMap(),
             outbox = ledger.outbox + events.associateBy { it.id }), snapshot.observedAt)), true, openCredits = snapshot.openCredits?.copy(active = emptyMap()))
     }
