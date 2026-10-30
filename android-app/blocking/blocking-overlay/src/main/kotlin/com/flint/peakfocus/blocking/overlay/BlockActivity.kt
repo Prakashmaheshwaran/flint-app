@@ -78,6 +78,10 @@ class BlockActivity : ComponentActivity() {
     private var recoveryFrameDrawn = false
     private var recoveryWindowFocused = false
     private var recoveryTopResumed = android.os.Build.VERSION.SDK_INT < 29
+    private var recoveryTopCallbackSeen = false
+    private var recoveryTopFallbackGranted = false
+    private var recoveryTopFallback: Runnable? = null
+    private val recoveryHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var recoveryMultiWindow = false
     private var recoveryFocusRevoked = false
     /** Recovery is a Flint settings surface, not a fallback shield owned by Path B. */
@@ -242,11 +246,12 @@ class BlockActivity : ComponentActivity() {
     }
 
     private fun refreshRecoverySurface() {
+        updateRecoveryTopFallback()
         val targetPackage = recoveryTarget
         // Resumed is not exclusive on Android 10+. Never suppress a target shield for
         // split-screen/freeform recovery: leave that mode to review in fullscreen.
         val coversTarget = recoveryMode && recoveryFrameDrawn && targetPackage != null &&
-            recoveryTopResumed && !recoveryMultiWindow && !recoveryFocusRevoked &&
+            (recoveryTopResumed || recoveryTopFallbackGranted) && !recoveryMultiWindow && !recoveryFocusRevoked &&
             lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
         // The still-mounted shield initially owns window focus. Only a drawn, topmost
         // fullscreen recovery may ask that exact shield to yield focus, without yielding touch.
@@ -255,6 +260,29 @@ class BlockActivity : ComponentActivity() {
             RecoverySurfaceHandoff.showing(this, checkNotNull(targetPackage))
             recoveryHandoffId?.let(RecoverySurfaceHandoff::drawn)
         } else clearRecoverySurface()
+    }
+
+    private fun topFallbackEligible(): Boolean = android.os.Build.VERSION.SDK_INT >= 29 &&
+        !recoveryTopCallbackSeen && !recoveryTopResumed && recoveryMode && recoveryFrameDrawn &&
+        recoveryWindowFocused && !recoveryMultiWindow && !recoveryFocusRevoked &&
+        lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+
+    private fun updateRecoveryTopFallback() {
+        if (!topFallbackEligible()) { cancelRecoveryTopFallback(); return }
+        if (recoveryTopFallbackGranted || recoveryTopFallback != null) return
+        // Android may omit the top-resumed callback on a short resume. A continuously
+        // focused, drawn fullscreen Activity can cover its target after this bounded delay.
+        // An explicit false callback is authoritative and never enters this fallback.
+        recoveryTopFallback = Runnable {
+            recoveryTopFallback = null
+            if (topFallbackEligible()) { recoveryTopFallbackGranted = true; refreshRecoverySurface() }
+        }.also { recoveryHandler.postDelayed(it, RECOVERY_TOP_FALLBACK_MS) }
+    }
+
+    private fun cancelRecoveryTopFallback() {
+        recoveryTopFallback?.let(recoveryHandler::removeCallbacks)
+        recoveryTopFallback = null
+        recoveryTopFallbackGranted = false
     }
 
     private fun clearRecoverySurface() {
@@ -272,30 +300,27 @@ class BlockActivity : ComponentActivity() {
 
     override fun onTopResumedActivityChanged(isTopResumedActivity: Boolean) {
         super.onTopResumedActivityChanged(isTopResumedActivity)
+        recoveryTopCallbackSeen = true
         if (isTopResumedActivity && !recoveryTopResumed) recoveryFocusRevoked = false
         recoveryTopResumed = isTopResumedActivity
         refreshRecoverySurface()
     }
 
-    @Suppress("DEPRECATION")
+    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean) {
         super.onMultiWindowModeChanged(isInMultiWindowMode)
         recoveryMultiWindow = isInMultiWindowMode
         refreshRecoverySurface()
     }
 
-    override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, newConfig: android.content.res.Configuration) {
-        super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)
-        recoveryMultiWindow = isInMultiWindowMode
-        refreshRecoverySurface()
-    }
-
     override fun onResume() {
         super.onResume()
+        recoveryTopCallbackSeen = false
         if (recoveryMode) refreshRecoverySurface()
     }
 
     override fun onPause() {
+        cancelRecoveryTopFallback()
         recoveryHandoffId?.let { RecoverySurfaceHandoff.ready(it, false) }
         clearRecoverySurface()
         recoveryWindowFocused = false
@@ -304,6 +329,7 @@ class BlockActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        cancelRecoveryTopFallback()
         recoveryHandoffId?.let { RecoverySurfaceHandoff.ready(it, false) }
         clearRecoverySurface()
         super.onDestroy()
@@ -444,6 +470,7 @@ class BlockActivity : ComponentActivity() {
         runCatching { enumValueOf<T>(getStringExtra(key).orEmpty()) }.getOrDefault(fallback)
 
     companion object {
+        internal const val RECOVERY_TOP_FALLBACK_MS = 250L
         const val EXTRA_BLOCKED_PACKAGE = "flint.blocked_package"
         const val EXTRA_BLOCKED_LABEL = "flint.blocked_label"
         const val EXTRA_REASON = "flint.block_reason"

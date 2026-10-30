@@ -1,13 +1,14 @@
 # Open configuration cold-start guard
 
-The Android coordinator remembers the last readable Open-limit configuration only
-in process memory. If configuration becomes unreadable after a successful read,
+Each Android coordinator/detector instance remembers its last readable Open-limit
+configuration in memory. If configuration becomes unreadable after a successful read,
 known limited targets remain protected and known unlimited targets remain usable.
-If it is unreadable from process startup, the unknown-target guard lasts five
+If it is unreadable from coordinator initialization, the unknown-target guard lasts five
 seconds and then wakes stationary detectors. A previously limited app may therefore
 become accessible after roughly five to six seconds, until storage becomes readable
-and enforcement can reconstruct its limit; restarting the process starts a new
-five-second guard. Other independently known protection still applies. This is the
+and enforcement can reconstruct its limit; each new coordinator instance starts a
+new five-second guard, including accessibility re-initialization, Path B handoff
+recreation, or process restart. Other independently known protection still applies. This is the
 intentional tradeoff that avoids indefinite device-wide lockout when no target
 configuration can be recovered, not proof that those targets have no Open limit.
 

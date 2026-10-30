@@ -20,6 +20,7 @@ class OverlayController(private val context: Context) {
 
     private val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var current: View? = null
+    private var recoveryFocusYielded: Boolean? = false
 
     fun canShow(): Boolean = Settings.canDrawOverlays(context)
 
@@ -43,26 +44,29 @@ class OverlayController(private val context: Context) {
 
         wm.addView(content, params)
         current = content
+        recoveryFocusYielded = false
     }
 
     fun hide() {
         current?.let {
             runCatching { wm.removeView(it) }
             current = null
+            recoveryFocusYielded = false
         }
     }
 
     /** Keep the opaque touch shield while a drawn fullscreen recovery acquires key focus. */
-    fun setRecoveryHandoffFocus(enabled: Boolean) {
-        val view = current ?: return
-        val old = view.layoutParams as? WindowManager.LayoutParams ?: return
+    fun setRecoveryHandoffFocus(enabled: Boolean): Boolean {
+        val view = current ?: return !enabled
+        val old = view.layoutParams as? WindowManager.LayoutParams ?: return false
+        if (recoveryFocusYielded == enabled) return true
         val flags = if (enabled) old.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
             else old.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
-        if (flags == old.flags) return
         val next = WindowManager.LayoutParams().apply { copyFrom(old); this.flags = flags }
-        runCatching { wm.updateViewLayout(view, next) }.onFailure {
-            if (!enabled) runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_MAIN)
-                .addCategory(android.content.Intent.CATEGORY_HOME).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
-        }
+        // updateViewLayout may mutate view.layoutParams before throwing. Only a completed
+        // update confirms the flag; unknown state must be retried even if local flags match.
+        return runCatching { wm.updateViewLayout(view, next) }
+            .onSuccess { recoveryFocusYielded = enabled }
+            .onFailure { recoveryFocusYielded = null }.isSuccess
     }
 }

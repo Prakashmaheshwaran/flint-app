@@ -47,6 +47,21 @@ class RecoveryActivityTest {
     private fun singleton(value: BlockScreenCoordinator?) = PathBBlockHandoff::class.java
         .getDeclaredField("coordinator").apply { isAccessible = true }.set(null, value)
 
+    @Test @Config(sdk = [24, 34]) fun PC_41_PC_76_multiWindowCallbackRefreshesRecoveryExactlyOnce() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        var readiness = 0
+        val (id, cancel) = RecoverySurfaceHandoff.register(onReady = { readiness++ }, onDrawn = {})
+        BlockActivity.launchRecovery(app, id, "com.example.target")
+        val activity = Robolectric.buildActivity(BlockActivity::class.java, shadowOf(app).nextStartedActivity).create()
+        try {
+            readiness = 0
+            if (android.os.Build.VERSION.SDK_INT >= 26)
+                activity.get().onMultiWindowModeChanged(true, android.content.res.Configuration())
+            else activity.get().onMultiWindowModeChanged(true)
+            assertEquals(1, readiness)
+        } finally { cancel(); activity.destroy() }
+    }
+
     @Test fun PC_41_PC_76_recoveryMountGuardOnlyCoversItsTargetAndExpiresWithoutRenewal() {
         val activity = Robolectric.buildActivity(BlockActivity::class.java).get()
         try {
