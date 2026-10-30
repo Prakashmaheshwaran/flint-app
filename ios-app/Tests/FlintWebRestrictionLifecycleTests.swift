@@ -41,25 +41,25 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(legacy, forKey: "flint.webRestrictions")
-        XCTAssertEqual(FlintWebRestrictions.load(from: defaults), expected)
-        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults), expected)
+        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), expected)
+        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), expected)
         var updated = expected
         updated.applyDuringSchedules = true
         updated.save(to: defaults)
-        XCTAssertEqual(FlintWebRestrictions.load(from: defaults), updated)
+        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), updated)
     }
 
     func testUnreadableOrDeletedConfigPreservesActiveHardcoreSessionWebKeys() throws {
         let suite = "test.flint.web.unavailable.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults), .default)
+        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), .default)
         XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: nil))
         let config = FlintWebRestrictions(enabled: true, denyExplicitMedia: true)
         XCTAssertTrue(config.save(to: defaults))
         let writer = RecordingWebWriter()
         let adapter = FlintSessionWebRestrictionAdapter(writer: writer, configuration: {
-            FlintWebRestrictions.loadForEnforcement(from: defaults)
+            FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false })
         })
         let fixedNow = now
         let clock = FlintClock(now: { fixedNow }, monotonic: { 0 }, bootSessionID: { nil }, calendar: { .current })
@@ -71,7 +71,7 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
         for malformed in [Data("{".utf8), Data("{\"enabled\":true}".utf8)] {
             defaults.set(malformed, forKey: "flint.webRestrictions")
             adapter.reconcile(active, clock: clock)
-            XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults))
+            XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }))
             XCTAssertEqual(writer.web["flint"], config)
         }
         defaults.set("wrong storage type", forKey: "flint.webRestrictions")
@@ -80,7 +80,7 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
         XCTAssertTrue(writer.cleared.isEmpty)
         defaults.removeObject(forKey: "flint.webRestrictions")
         adapter.reconcile(active, clock: clock)
-        XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults))
+        XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }))
         let report = FlintWebRestrictionHostReconciler.reconcile(activeSession: active,
             hasActiveSessionRecord: true, rules: [], config: .loadForEnforcement(from: defaults),
             health: hostHealth([], observed: []), lifecycle: .init(writer: writer),
@@ -977,7 +977,7 @@ final class FlintWebRestrictionEditorTests: XCTestCase {
         draft.allowedDomains.append("overflow.example")
         XCTAssertNotNil(draft.validationMessage)
         XCTAssertFalse(draft.save(to: defaults))
-        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults), previous)
+        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), previous)
     }
 }
 

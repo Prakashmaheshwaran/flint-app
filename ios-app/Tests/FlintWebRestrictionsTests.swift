@@ -107,11 +107,11 @@ final class FlintWebRestrictionsTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        XCTAssertEqual(FlintWebRestrictions.load(from: defaults), .default, "empty store → default")
+        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), .default, "empty store → default")
 
         let config = FlintWebRestrictions(enabled: true, blockedDomains: ["x.com"], denyExplicitMedia: true)
         config.save(to: defaults)
-        XCTAssertEqual(FlintWebRestrictions.load(from: defaults), config)
+        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), config)
     }
 
     func testFreshDefaultStaysReadableAfterLedgerInitialization() throws {
@@ -153,7 +153,6 @@ final class FlintWebRestrictionsTests: XCTestCase {
 
     func testUnconfiguredLegacyInstallMigratesOptOutDespiteOtherEstablishedDomains() throws {
         let evidence = ["flint.activeSession", FlintProtectionLedger.initializedMarkerKey]
-            + FlintRuleStoreKey.allCases.map(\.marker)
         for key in evidence {
             let suite = "test.flint.web.established.\(UUID().uuidString)"
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -172,8 +171,53 @@ final class FlintWebRestrictionsTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { true }))
-        XCTAssertNil(defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
+        XCTAssertNotNil(defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
         XCTAssertNil(defaults.object(forKey: "flint.webRestrictions"))
+        var probes = 0
+        XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: {
+            probes += 1; return false
+        }))
+        XCTAssertEqual(probes, 0, "Positive native evidence latches unavailable intent")
+    }
+
+    func testValidatedEmptyRuleDomainAllowsLegacyOptOutMigration() throws {
+        let suite = "test.flint.web.empty-rules.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertTrue(FlintDesiredRules.save([FlintScheduleRule](), key: .schedules, to: defaults))
+        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), .default)
+    }
+
+    func testUnreadableRuleDomainCannotAuthorizeMissingWebMigration() throws {
+        for kind in ["malformed", "future", "quarantined", "lost"] {
+            let suite = "test.flint.web.unknown-rules.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            switch kind {
+            case "malformed": defaults.set(Data("{".utf8), forKey: FlintRuleStoreKey.schedules.rawValue)
+            case "future": defaults.set(Data("[{\"futureSchema\":999}]".utf8), forKey: FlintRuleStoreKey.schedules.rawValue)
+            case "quarantined":
+                defaults.set("unreadable recovery reference", forKey: FlintRuleStoreKey.schedules.rawValue + ".quarantine.adr012")
+                defaults.set(Data("[]".utf8), forKey: FlintRuleStoreKey.schedules.rawValue)
+            default:
+                XCTAssertTrue(FlintDesiredRules.save([FlintScheduleRule](), key: .schedules, to: defaults))
+                defaults.removeObject(forKey: FlintRuleStoreKey.schedules.rawValue)
+            }
+            XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), kind)
+            XCTAssertNil(defaults.object(forKey: "flint.webRestrictions"), kind)
+            XCTAssertNotNil(defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey), kind)
+        }
+    }
+
+    func testWebStoreNamesIncludeSavedLegacyAndProtectedNativeScheduleOwners() {
+        let rule = FlintScheduleRule(id: "saved", name: "Saved", schedule: .init(startHour: 9, endHour: 17))
+        let protected = FlintRuleActivity.name(prefix: FlintRuleStoreKey.schedules.prefix, id: "sleep.night",
+            protection: .init(timeZoneID: "UTC", incarnation: "12345678-1234-1234-1234-123456789abc"))
+        let names = FlintWebRestrictions.webStoreNames(rules: [rule], activityNames: [
+            FlintRuleStoreKey.schedules.prefix + "legacy", protected,
+            FlintRuleStoreKey.limits.prefix + "time", "flint.session.old"
+        ])
+        XCTAssertEqual(names, ["flint", "flint.web", "flint.saved", "flint.legacy", "flint.sleep.night"])
     }
 
     func testBusyReadDoesNotLoadOrInitializeAndCanRetry() {
@@ -208,7 +252,8 @@ final class FlintWebRestrictionsTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.failFlush = true
         XCTAssertFalse(FlintWebRestrictions.default.save(to: defaults))
-        XCTAssertNil(defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
+        XCTAssertNotNil(defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey),
+                        "Even a failed rollback flush must not restore fresh-install semantics")
         XCTAssertNil(defaults.object(forKey: "flint.webRestrictions"))
         defaults.failFlush = false
         let previous = FlintWebRestrictions(enabled: true, denyExplicitMedia: true)
@@ -220,7 +265,7 @@ final class FlintWebRestrictionsTests: XCTestCase {
         XCTAssertNotNil(defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
         XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }))
         defaults.failFlush = false
-        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults), previous)
+        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), previous)
     }
 
     func testFailedFreshInitializationIsUnavailableAndCanRetryWhileStillFresh() throws {
@@ -235,5 +280,20 @@ final class FlintWebRestrictionsTests: XCTestCase {
             XCTAssertNil(defaults.object(forKey: "flint.webRestrictions"))
             XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), .default)
         }
+    }
+
+    func testFailedRollbackFlushLatchesMissingIntentUntilExplicitRecovery() throws {
+        let suite = "test.flint.web.failed-rollback.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(FailingWebDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.failFlush = true // The policy write, rollback and marker flush all fail.
+        XCTAssertFalse(FlintWebRestrictions(enabled: true).save(to: defaults))
+        XCTAssertNil(defaults.object(forKey: "flint.webRestrictions"))
+        XCTAssertNotNil(defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
+        defaults.failFlush = false
+        XCTAssertNil(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }))
+        let recovered = FlintWebRestrictions(enabled: true, denyExplicitMedia: true)
+        XCTAssertTrue(recovered.save(to: defaults))
+        XCTAssertEqual(FlintWebRestrictions.loadForEnforcement(from: defaults, existingWebStores: { false }), recovered)
     }
 }

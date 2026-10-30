@@ -203,12 +203,6 @@ extension FlintWebRestrictions {
     private static let storageKey = "flint.webRestrictions"
     static let initializedMarkerKey = storageKey + ".initialized.adr012"
 
-    public static func load() -> FlintWebRestrictions { loadForEnforcement() ?? .default }
-
-    public static func load(from defaults: UserDefaults?) -> FlintWebRestrictions {
-        loadForEnforcement(from: defaults) ?? .default
-    }
-
     /// Production initialization shares the host/extension transition boundary with starts,
     /// edits and pass recovery. A concurrent first save cannot be overwritten by fresh defaults.
     public static func loadForEnforcement() -> FlintWebRestrictions? {
@@ -221,8 +215,8 @@ extension FlintWebRestrictions {
         read(uiRead: false)
     }
 
-    /// A busy monitor transition is retryable, distinct from unreadable saved intent. UI reads
-    /// never wait out the monitor's file-lock timeout on the calling thread.
+    /// A busy monitor transition is retryable, distinct from unreadable saved intent. The file
+    /// lock attempt is immediate; callers still run off-main because the process lock can wait.
     public static func readForUI() -> FlintWebRestrictionRead { read(uiRead: true) }
 
     private static func read(uiRead: Bool) -> FlintWebRestrictionRead {
@@ -246,12 +240,17 @@ extension FlintWebRestrictions {
     /// domains do not prove a web key ever existed: without native web restrictions, migrate
     /// that legacy opt-out once. After initialization, missing intent is unavailable.
     /// The optional native-store probe keeps isolated persistence tests independent of the OS.
-    public static func loadForEnforcement(from defaults: UserDefaults?,
-                                          existingWebStores: (() -> Bool)? = nil) -> FlintWebRestrictions? {
+    static func loadForEnforcement(from defaults: UserDefaults?,
+                                  existingWebStores: (() -> Bool)? = nil) -> FlintWebRestrictions? {
         guard let defaults, defaults.synchronize() else { return nil }
         guard let stored = defaults.object(forKey: storageKey) else {
-            guard defaults.object(forKey: initializedMarkerKey) == nil,
-                  !(existingWebStores?() ?? hasExistingWebStores(in: defaults)) else { return nil }
+            guard defaults.object(forKey: initializedMarkerKey) == nil else { return nil }
+            guard !hasExistingWebStores(in: defaults, probe: existingWebStores) else {
+                // A positive or unknowable native owner stays unavailable even if a later
+                // native read loses visibility (for example after authorization changes).
+                _ = markInitialized(in: defaults)
+                return nil
+            }
             // A never-configured legacy install and pre-upgrade key loss without an applied
             // store are indistinguishable. Import the effective opt-out, never a native release.
             return Self.default.save(to: defaults) ? .default : nil
@@ -275,7 +274,17 @@ extension FlintWebRestrictions {
                 else { defaults.removeObject(forKey: Self.storageKey) }
                 if let previousMarker { defaults.set(previousMarker, forKey: Self.initializedMarkerKey) }
                 else { defaults.removeObject(forKey: Self.initializedMarkerKey) }
-                defaults.synchronize()
+                let flushed = defaults.synchronize()
+                let restored = (defaults.object(forKey: Self.storageKey) as? NSObject) == (previous as? NSObject)
+                    && (defaults.object(forKey: Self.initializedMarkerKey) as? NSObject) == (previousMarker as? NSObject)
+                if !flushed || !restored {
+                    // A failed rollback must not make this look like a fresh domain. Retain
+                    // the restored cached bytes and latch loss detection until recovery.
+                    if defaults.object(forKey: Self.initializedMarkerKey) == nil {
+                        defaults.set(true, forKey: Self.initializedMarkerKey)
+                    }
+                    defaults.synchronize()
+                }
             }
         }
         defaults.set(data, forKey: Self.storageKey)
@@ -291,32 +300,47 @@ extension FlintWebRestrictions {
         return defaults.synchronize() && defaults.object(forKey: initializedMarkerKey) != nil
     }
 
-    private static func hasExistingWebStores(in defaults: UserDefaults) -> Bool {
-        #if canImport(ManagedSettings)
+    private static func hasExistingWebStores(in defaults: UserDefaults, probe: (() -> Bool)?) -> Bool {
+        #if canImport(FamilyControls) && canImport(ManagedSettings) && canImport(DeviceActivity)
+        // An unreadable rule domain cannot prove which owning stores need inspection. A
+        // permissive raw-JSON parse would silently omit unknown or quarantined records.
+        let domain = FlintRuleStoreKey.schedules
+        let quarantine = domain.rawValue + ".quarantine.adr012"
+        guard defaults.object(forKey: quarantine) == nil else { return true }
+        let ruleEvidence = [domain.rawValue, domain.marker, domain.original].contains {
+            defaults.object(forKey: $0) != nil
+        }
+        let rules: [FlintScheduleRule]
+        if ruleEvidence {
+            guard let saved = FlintDesiredRules.load(FlintScheduleRule.self, key: domain,
+                from: defaults, migrating: false) else { return true }
+            rules = saved
+        } else { rules = [] }
+        if let probe { return probe() }
         // Read the historical stores and stores identified by surviving native schedules.
         // Store enumeration is unavailable on the app's older supported iOS releases.
-        var names: Set<String> = ["flint", "flint.web"]
-        if let data = defaults.data(forKey: FlintRuleStoreKey.schedules.rawValue),
-           let rules = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] {
-            for rule in rules {
-                if let id = rule["id"] as? String { names.insert("flint." + id) }
-            }
-        }
-        #if canImport(FamilyControls) && canImport(DeviceActivity)
-        for activity in DeviceActivityCenter().activities {
-            if let id = FlintRuleActivity.ruleID(activity.rawValue, prefix: FlintRuleStoreKey.schedules.prefix) {
-                names.insert("flint." + id)
-            }
-        }
-        #endif
+        let names = webStoreNames(rules: rules, activityNames: DeviceActivityCenter().activities.map(\.rawValue))
         return names.contains { name in
             let store = ManagedSettingsStore(named: .init(name))
             return store.webContent.blockedByFilter != nil || store.media.denyExplicitContent == true
         }
         #else
-        return false
+        return probe?() ?? false
         #endif
     }
+
+    #if canImport(FamilyControls) && canImport(ManagedSettings) && canImport(DeviceActivity)
+    static func webStoreNames(rules: [FlintScheduleRule], activityNames: [String]) -> Set<String> {
+        var names: Set<String> = ["flint", "flint.web"]
+        names.formUnion(rules.map(\.storeName))
+        for activity in activityNames {
+            if let id = FlintRuleActivity.ruleID(activity, prefix: FlintRuleStoreKey.schedules.prefix) {
+                names.insert("flint." + id)
+            }
+        }
+        return names
+    }
+    #endif
 }
 
 // MARK: - Enforcement (ManagedSettings)
