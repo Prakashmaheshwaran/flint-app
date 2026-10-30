@@ -151,7 +151,7 @@ final class FlintHistoryTimeConfidenceTests: XCTestCase {
             var gap = event(.protectionDegraded, 180, confidence: confidence)
             gap.reason = confidence == nil ? "time_uncertain" : "permission"
             assertUnconfirmed([started(), event(.openIntercepted, 120), gap,
-                               event(.protectionRestored, 240), event(.completed, 600)], focused: 120)
+                               event(.protectionRestored, 240), event(.completed, 600)])
         }
     }
 
@@ -221,7 +221,7 @@ final class FlintHistoryTimeConfidenceTests: XCTestCase {
         XCTAssertEqual(result.focusedSeconds, 600)
         var pass = event(.passUsed, 180, confidence: uncertain); pass.session = "operation"
         pass.sessions = ["session-a"]; pass.recoveryEnd = event(.passUsed, 240).at
-        assertUnconfirmed([started(), event(.openIntercepted, 120), pass, event(.completed, 600)], focused: 120)
+        assertUnconfirmed([started(), event(.openIntercepted, 120), pass, event(.completed, 600)])
     }
 
     func testInvertedBreakWindowCannotConfirmCompletionOrExtendTrustedPrefix() {
@@ -336,7 +336,7 @@ final class FlintHistoryTimeConfidenceTests: XCTestCase {
         rejectedObserver.timeConfidence = uncertain
         assertUnconfirmed(prefix + [rejectedObserver, plan, end], focused: 60)
         assertUnconfirmed([started(uncertain), plan, end])
-        assertUnconfirmed(prefix + [event(.protectionDegraded, 120, confidence: uncertain), plan, end], focused: 60)
+        assertUnconfirmed(prefix + [event(.protectionDegraded, 120, confidence: uncertain), plan, end])
         var ordinary = plan; ordinary.reason = nil
         assertUnconfirmed(prefix + [ordinary, end], focused: 60)
         ordinary = plan; ordinary.originRoute = nil

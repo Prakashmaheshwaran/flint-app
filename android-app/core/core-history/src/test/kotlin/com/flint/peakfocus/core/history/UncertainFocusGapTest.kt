@@ -60,8 +60,7 @@ class UncertainFocusGapTest {
 
     @Test fun overlappingUnboundedGapsUnionTheirLossWindow() {
         val first = pause("planned")
-        assertUnconfirmed(rows(listOf(first, first.copy(id = "other", grant = "other")),
-            anchors = listOf(8, 17, 20)), 11)
+        assertUnconfirmed(rows(listOf(first, first.copy(id = "other", grant = "other"))), 0)
     }
 
     @Test fun independentCertainSessionFillsUncertainOverlap() {
@@ -83,5 +82,17 @@ class UncertainFocusGapTest {
         val fixed = event("break_started", 10).copy(kind = "planned", grant = "g", breakEnd = begin + 15 * minute)
         val close = event("break_ended", 15).copy(grant = "g", timeConfidence = uncertain)
         assertUnconfirmed(rows(listOf(fixed, close)), 10)
+    }
+
+    @Test fun uncertainRawStampCannotCollapsePlacementAtATrustedAnchor() {
+        for (at in listOf(-120L, 0L, 20L, 120L)) assertUnconfirmed(rows(listOf(pause(at = at, until = at))), 15)
+    }
+
+    @Test fun grantLinkedUncertainEndPairsAcrossBackwardOrPostterminalRawStamps() {
+        val fixed = event("break_started", 10).copy(kind = "planned", grant = "g", breakEnd = begin + 15 * minute)
+        for (at in listOf(-120L, 120L)) {
+            val close = event("break_ended", at).copy(grant = "g", timeConfidence = uncertain)
+            assertUnconfirmed(rows(listOf(fixed, close)), 10)
+        }
     }
 }

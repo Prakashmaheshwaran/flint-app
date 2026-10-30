@@ -725,8 +725,9 @@ class ProtectionHistoryConsumerTest {
         assertEquals(2, projected.size)
         assertTrue(projected.all { it.inferred && it.timeConfidence == HistoryEventTimeConfidence.Uncertain("owner_time_uncertain") })
         val summary = FocusHistoryAggregator.summarize(store.load(), begin + 20 * minute, ZoneOffset.UTC, setOf("session-a"))
-        assertTrue(summary.sessions.all { it.outcome == SessionOutcome.UNCONFIRMED && it.focusedMs == 2 * minute })
-        assertEquals(2 * minute, summary.days.last().focusedMs)
+        // Owner uncertainty cannot prove the pass happened after the earlier witness.
+        assertTrue(summary.sessions.all { it.outcome == SessionOutcome.UNCONFIRMED && it.focusedMs == 0L })
+        assertEquals(0L, summary.days.last().focusedMs)
         assertEquals(0, summary.days.last().completed)
         assertEquals(0, summary.days.last().endedEarly)
         assertEquals(2, summary.days.last().unconfirmed)

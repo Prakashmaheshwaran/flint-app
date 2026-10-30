@@ -176,7 +176,10 @@ public enum FlintHistoryAggregator {
             if validTerminal { localEvidence = Array(events.prefix(terminalIndex!)) }
             else if let terminal { localEvidence = original.prefix { $0.id != terminal.id }.sorted { $0.at < $1.at } }
             else { localEvidence = events }
-            for event in original where event.uncertainTime && (event.type == .breakStarted || event.type == .protectionDegraded) {
+            for event in original where event.uncertainTime && (event.type == .breakStarted || event.type == .protectionDegraded ||
+                event.type == .breakEnded && event.grant != nil && localEvidence.contains {
+                    $0.type == .breakStarted && $0.grant == event.grant
+                }) {
                 if !localEvidence.contains(where: { $0.id == event.id }) { localEvidence.append(event) }
             }
             let relatedPasses = passes.filter {
@@ -294,40 +297,38 @@ public enum FlintHistoryAggregator {
                 !$0.uncertainTime && !rejectedTimeIDs.contains($0.id) &&
                     ($0.id == start.id || $0.id == terminal?.id || $0.type == .openIntercepted || $0.type == .protectionRestored)
             }.map(\.at)
-            func uncertainGap(_ event: FlintHistoryEvent, knownStart: Int64? = nil, knownEnd: Int64? = nil,
-                              endHint: Int64? = nil, maximum: TimeInterval = .greatestFiniteMagnitude) -> FlintUncertainFocusGap {
-                let limit = FlintHistoryEvent.milliseconds(clippedEnd)
-                let ceiling = validTerminal ? min(plan.plannedEnd ?? terminal!.at, terminal!.at) :
-                    revisions.last(where: validPlan)?.plannedEnd ?? FlintHistoryEvent.milliseconds(max(now, clippedEnd))
-                let placeable = event.at >= start.at && event.at <= ceiling && (endHint.map { $0 >= event.at } ?? true)
-                let a = knownStart ?? (placeable ? anchors.filter { $0 <= event.at }.max() ?? start.at : start.at)
-                let b = knownEnd ?? (placeable && endHint != nil ? anchors.filter { $0 >= endHint! }.min() ?? limit : limit)
-                let lower = max(start.date, FlintHistoryEvent.date(a)), upper = min(clippedEnd, FlintHistoryEvent.date(b))
-                return .init(window: DateInterval(start: lower, end: max(lower, upper)), maximumSeconds: maximum)
+            func uncertainGap(knownStart: Int64? = nil, knownEnd: Int64? = nil,
+                              maximum: TimeInterval = .greatestFiniteMagnitude) -> FlintUncertainFocusGap {
+                // Uncertain stamps and append order cannot select a placement. Only the
+                // phase's certain matched boundary and independent enforcing anchors can.
+                let lower = min(max(start.date, knownStart.map(FlintHistoryEvent.date) ?? start.date), max(start.date, clippedEnd))
+                let upper = max(lower, min(clippedEnd, knownEnd.map(FlintHistoryEvent.date) ?? clippedEnd))
+                let points = Set(anchors.map(FlintHistoryEvent.date).filter { $0 > lower && $0 < upper } + [lower, upper]).sorted()
+                let longest = zip(points, points.dropFirst()).map { $1.timeIntervalSince($0) }.max() ?? 0
+                return .init(window: DateInterval(start: lower, end: upper), maximumSeconds: min(maximum, longest))
             }
             var uncertainGaps: [FlintUncertainFocusGap] = []
             for event in localEvidence where event.uncertainTime {
                 switch event.type {
                 case .breakStarted:
-                    let close = localEvidence.first { $0.type == .breakEnded && $0.grant == event.grant &&
-                        $0.at >= event.at && !rejectedTimeIDs.contains($0.id) }
-                    uncertainGaps.append(uncertainGap(event, knownEnd: close?.at, endHint: close?.at ?? event.breakEnd,
+                    let close = localEvidence.first { $0.type == .breakEnded && event.grant != nil && $0.grant == event.grant &&
+                        !rejectedTimeIDs.contains($0.id) }
+                    uncertainGaps.append(uncertainGap(knownEnd: close?.at,
                         maximum: event.kind == "ordinary" ? 300 : .greatestFiniteMagnitude))
                 case .breakEnded:
-                    if let opening = localEvidence.first(where: { $0.type == .breakStarted && $0.grant == event.grant &&
-                        $0.at <= event.at && !$0.uncertainTime && !rejectedTimeIDs.contains($0.id) }) {
-                        uncertainGaps.append(uncertainGap(event, knownStart: opening.at, endHint: event.at,
+                    if let opening = localEvidence.first(where: { $0.type == .breakStarted && event.grant != nil && $0.grant == event.grant &&
+                        !$0.uncertainTime && !rejectedTimeIDs.contains($0.id) }) {
+                        uncertainGaps.append(uncertainGap(knownStart: opening.at,
                             maximum: opening.kind == "ordinary" ? 300 : .greatestFiniteMagnitude))
                     }
                 case .protectionDegraded:
-                    let restored = localEvidence.first { $0.type == .protectionRestored && $0.at >= event.at &&
-                        !rejectedTimeIDs.contains($0.id) }
-                    uncertainGaps.append(uncertainGap(event, knownEnd: restored?.at))
+                    // No grant/owner sequence pairs a particular restoration here.
+                    uncertainGaps.append(uncertainGap())
                 default: break
                 }
             }
             for pass in relatedPasses where pass.uncertainTime {
-                uncertainGaps.append(uncertainGap(pass, endHint: pass.recoveryEnd, maximum: 3600))
+                uncertainGaps.append(uncertainGap(maximum: 3600))
             }
             return .init(id: id, name: start.name ?? "Focus", startedAt: start.date, endedAt: end,
                          outcome: outcome, inferred: inferred, route: route, intervals: intervals, uncertainGaps: uncertainGaps)

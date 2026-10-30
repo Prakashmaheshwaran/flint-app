@@ -146,7 +146,7 @@ class HistoryTimeConfidenceTest {
         val prefix = listOf(start(), event("open_intercepted", begin + minute))
         assertUnconfirmed(prefix + listOf(observer.copy(timeConfidence = uncertain), plan, end), credit = minute)
         assertUnconfirmed(listOf(start(uncertain), plan, end))
-        assertUnconfirmed(prefix + listOf(event("protection_degraded", begin + 2 * minute, uncertain), plan, end), credit = minute)
+        assertUnconfirmed(prefix + listOf(event("protection_degraded", begin + 2 * minute, uncertain), plan, end))
         for ((revision, terminal) in listOf(
             plan.copy(reason = null) to end,
             plan.copy(originRoute = null) to end,
@@ -323,7 +323,7 @@ class HistoryTimeConfidenceTest {
             val gap = event("protection_degraded", begin + 3 * minute, confidence)
                 .copy(reason = if (confidence == null) "time_uncertain" else "permission")
             assertUnconfirmed(listOf(start(), event("open_intercepted", begin + 2 * minute), gap,
-                event("protection_restored", begin + 4 * minute), event("completed", deadline)), 2 * minute)
+                event("protection_restored", begin + 4 * minute), event("completed", deadline)))
         }
     }
 
@@ -398,7 +398,7 @@ class HistoryTimeConfidenceTest {
         val pass = event("pass_used", begin + 3 * minute, uncertain).copy(session = "operation",
             sessions = listOf("session-a"), recoveryEnd = begin + 4 * minute)
         assertUnconfirmed(listOf(start(), event("open_intercepted", begin + 2 * minute), pass,
-            event("completed", deadline)), 2 * minute)
+            event("completed", deadline)))
     }
 
     @Test fun plausibleLegacyWitnessesAndRunningHistoryKeepOrdinaryCredit() {

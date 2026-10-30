@@ -66,7 +66,7 @@ final class FlintHistoryUncertainGapTests: XCTestCase {
     func testOverlappingUnboundedGapsUnionTheirLossWindow() {
         let first = pause("planned")
         var other = first; other.id = "other"; other.grant = "other"
-        assertUnconfirmed(rows([first, other], anchors: [8, 17, 20]), minutes: 11)
+        assertUnconfirmed(rows([first, other]), minutes: 0)
     }
 
     func testIndependentCertainSessionFillsUncertainOverlap() {
@@ -89,5 +89,18 @@ final class FlintHistoryUncertainGapTests: XCTestCase {
         fixed.breakEnd = event(.breakEnded, 15).at
         var close = event(.breakEnded, 15); close.grant = "g"; close.timeConfidence = uncertain
         assertUnconfirmed(rows([fixed, close]), minutes: 10)
+    }
+
+    func testUncertainRawStampCannotCollapsePlacementAtTrustedAnchor() {
+        for at in [-120.0, 0, 20, 120] { assertUnconfirmed(rows([pause(at: at, until: at)]), minutes: 15) }
+    }
+
+    func testGrantLinkedUncertainEndPairsAcrossBackwardOrPostterminalRawStamps() {
+        var fixed = event(.breakStarted, 10); fixed.kind = "planned"; fixed.grant = "g"
+        fixed.breakEnd = event(.breakEnded, 15).at
+        for at in [-120.0, 120] {
+            var close = event(.breakEnded, at); close.grant = "g"; close.timeConfidence = uncertain
+            assertUnconfirmed(rows([fixed, close]), minutes: 10)
+        }
     }
 }

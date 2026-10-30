@@ -157,8 +157,11 @@ object FocusHistoryAggregator {
             // rolls back. Later cleanup cannot taint it; replayed phases use logical order.
             val localPrefix = if (validTerminal) ordered.takeWhile { it !== terminal }
                 else if (terminal != null) group.takeWhile { it !== terminal }.sortedBy { it.at } else ordered
-            val localEvidence = (localPrefix + group.filter { it.uncertainTime && it.knownType in
-                setOf(HistoryEventType.BREAK_STARTED, HistoryEventType.PROTECTION_DEGRADED) }).distinctBy { it.id }
+            val localEvidence = (localPrefix + group.filter { event -> event.uncertainTime &&
+                (event.knownType in setOf(HistoryEventType.BREAK_STARTED, HistoryEventType.PROTECTION_DEGRADED) ||
+                    event.knownType == HistoryEventType.BREAK_ENDED && event.grant != null && localPrefix.any {
+                        it.knownType == HistoryEventType.BREAK_STARTED && it.grant == event.grant
+                    }) }).distinctBy { it.id }
             val relatedPasses = passesBySession[id].orEmpty().filter {
                 it.uncertainTime || !validTerminal || it.at <= terminal!!.at
             }
@@ -249,43 +252,41 @@ object FocusHistoryAggregator {
                 !it.uncertainTime && it.id !in rejectedTimeIds && (it === start || it === terminal ||
                     it.knownType in setOf(HistoryEventType.OPEN_INTERCEPTED, HistoryEventType.PROTECTION_RESTORED))
             }.map { it.at }
-            fun uncertainGap(event: HistoryEvent, knownStart: Long? = null, knownEnd: Long? = null,
-                             endHint: Long? = null, maximum: Long = Long.MAX_VALUE): UncertainFocusGap {
-                // Raw uncertain stamps locate a neighborhood only; they never become a cut
-                // boundary or supply a duration. Unplaceable gaps can affect the whole window.
-                val ceiling = if (validTerminal) minOf(plannedEnd ?: terminal!!.at, terminal!!.at)
-                    else plans.filter(::validPlan).lastOrNull()?.plannedEnd ?: maxOf(now, clampedEnd)
-                val placeable = event.at >= start.at && event.at <= ceiling &&
-                    (endHint == null || endHint >= event.at && endHint in SUPPORTED_TIMES)
-                val a = knownStart ?: if (placeable) anchors.filter { it <= event.at }.maxOrNull() ?: start.at else start.at
-                val b = knownEnd ?: if (placeable && endHint != null) anchors.filter { it >= endHint }.minOrNull()
-                    ?: clampedEnd else clampedEnd
-                return UncertainFocusGap(FocusInterval(maxOf(start.at, a), minOf(clampedEnd, b)), maximum)
+            fun uncertainGap(knownStart: Long? = null, knownEnd: Long? = null,
+                             maximum: Long = Long.MAX_VALUE): UncertainFocusGap {
+                // Neither raw time nor append order places an uncertain gap. It may occupy
+                // any proof-free segment unless its own certain paired boundary narrows it.
+                val a = minOf(maxOf(start.at, knownStart ?: start.at), maxOf(start.at, clampedEnd))
+                val b = maxOf(a, minOf(clampedEnd, knownEnd ?: clampedEnd))
+                val points = (anchors.filter { it > a && it < b } + listOf(a, b)).distinct().sorted()
+                val longest = points.zipWithNext { x, y -> y - x }.maxOrNull() ?: 0
+                return UncertainFocusGap(FocusInterval(a, b), minOf(maximum, longest))
             }
             val uncertainGaps = mutableListOf<UncertainFocusGap>()
             val uncertainPhases = localEvidence.filter { it.uncertainTime }
             for (event in uncertainPhases) when (event.knownType) {
                 HistoryEventType.BREAK_STARTED -> {
                     val close = localEvidence.firstOrNull { it.knownType == HistoryEventType.BREAK_ENDED &&
-                        it.grant == event.grant && it.at >= event.at && it.id !in rejectedTimeIds }
-                    uncertainGaps += uncertainGap(event, knownEnd = close?.at, endHint = close?.at ?: event.breakEnd,
+                        event.grant != null && it.grant == event.grant && it.id !in rejectedTimeIds }
+                    uncertainGaps += uncertainGap(knownEnd = close?.at,
                         maximum = if (event.kind == "ordinary") 300_000 else Long.MAX_VALUE)
                 }
                 HistoryEventType.BREAK_ENDED -> {
                     val opening = localEvidence.firstOrNull { it.knownType == HistoryEventType.BREAK_STARTED &&
-                        it.grant == event.grant && it.at <= event.at && !it.uncertainTime && it.id !in rejectedTimeIds }
-                    if (opening != null) uncertainGaps += uncertainGap(event, knownStart = opening.at, endHint = event.at,
+                        event.grant != null && it.grant == event.grant && !it.uncertainTime && it.id !in rejectedTimeIds }
+                    if (opening != null) uncertainGaps += uncertainGap(knownStart = opening.at,
                         maximum = if (opening.kind == "ordinary") 300_000 else Long.MAX_VALUE)
                 }
                 HistoryEventType.PROTECTION_DEGRADED -> {
-                    val restored = localEvidence.firstOrNull { it.knownType == HistoryEventType.PROTECTION_RESTORED &&
-                        it.at >= event.at && it.id !in rejectedTimeIds }
-                    uncertainGaps += uncertainGap(event, knownEnd = restored?.at)
+                    // Coverage rows have no grant/owner sequence to pair a particular
+                    // restoration across an uncertain stamp. Every certain anchor still
+                    // limits the longest proof-free segment.
+                    uncertainGaps += uncertainGap()
                 }
                 else -> Unit
             }
             for (pass in relatedPasses.filter { it.uncertainTime }) {
-                uncertainGaps += uncertainGap(pass, endHint = pass.recoveryEnd, maximum = 3_600_000)
+                uncertainGaps += uncertainGap(maximum = 3_600_000)
             }
             FocusSession(id, start.name ?: "Focus", start.at, end, plannedEnd, outcome, inferred,
                 intervals, breaks.size.takeIf { it > 0 },

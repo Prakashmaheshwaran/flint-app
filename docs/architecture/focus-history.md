@@ -158,18 +158,21 @@ For one session:
 - **Uncertain non-focus time still reduces focus (F3 / PC-84).** Never discard an
   uncertain ordinary/planned break, pass or coverage-loss interval merely because it
   cannot prove elapsed focus. Retain the unconfirmed outcome/count and its original
-  confidence. Use trusted logical anchors surrounding its endpoint neighborhood to bound
-  possible placement, clipped to the evidenced session window and its accepted plan.
-  A certain paired break end/restoration or opening can bound its own phase exactly.
+  confidence. Use the evidenced session window, clipped to its accepted plan, as the
+  placement window; uncertain raw stamps cannot select a smaller neighborhood.
+  A certain grant-matched break end or opening can bound its own phase exactly, regardless
+  of the uncertain counterpart's raw timestamp. Coverage events have no owner sequence or
+  grant to establish an uncertain degradation/restoration pairing.
   `observedAt` and history append order are not owner commit order or trusted placement.
   A raw stamp outside the plan, a missing end or an otherwise unplaceable phase cannot
   exclude the affected evidenced window from consideration.
 - Discount the **maximum possible overlap** of each uncertain gap with credited coverage.
   A known ordinary break has a 300-second policy maximum; pass recovery has a 60-minute
-  maximum. Never derive a duration limit by subtracting uncertain wall stamps. The current
+  maximum. Also cap loss by the longest proof-free segment between certain enforcing
+  anchors inside that placement window. Never derive a duration limit by subtracting uncertain wall stamps. The current
   schema carries no independent planned-rest/grant elapsed length, so planned/legacy
   breaks and coverage loss without a known bound conservatively discount the entire
-  affected anchor window. A future explicit trusted length can narrow that loss without
+  longest proof-free segment. A future explicit trusted length can narrow that loss without
   relabeling the timestamp. Uncertain break ends cannot upgrade a planned return into a
   certain return. Open-credit access records remain ignored; a genuine `open_intercepted`
   block-surface observation is coverage evidence, distinct from an access grant.
