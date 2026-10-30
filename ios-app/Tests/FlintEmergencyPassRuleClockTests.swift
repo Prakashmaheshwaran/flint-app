@@ -68,28 +68,34 @@ final class FlintEmergencyPassRuleClockTests: XCTestCase {
     func testPassPreviewConfirmedAfterWallJumpBindsSameRuleOccurrencePC54() {
         do {
             let h = try RuleHarness(); defer { h.clean() }
-            // This exercises review of an existing commitment, with an already durable ledger.
-            // Use its canonical encoder; fresh ledger initialization has separate coverage.
-            var state = FlintLedgerState(initializedAt: h.now)
-            state.importLegacyPass(.absent, at: .init(clock: h.clock))
-            let directory = h.directory.appendingPathComponent("ledger", isDirectory: true)
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try FlintProtectionLedger.makeEncoder().encode(state).write(to: directory.appendingPathComponent(FlintProtectionLedger.fileName))
-            h.marker = h.now
+            _ = try h.ledger.read().get()
             let rule = h.install(h.schedule(tier: .hardcore))
+            var publishedPassUses = 0
             let controller = FlintEmergencyPassController(environment: .init(ledger: { h.ledger }, clock: h.clock,
                 scope: { state, now in try FlintEmergencyPassScope.load(state: state, at: now,
                     defaults: h.defaults, calendar: h.clock.calendar(), hasThresholdShield: { _ in false }) },
                 registerCarrier: { _, _, _ in }, terminate: { _, _ in }, release: { _ in }, resume: { _, _ in },
-                disable: { _ in }, emit: { _ in }))
+                disable: { _ in }, emit: { _ in publishedPassUses += 1 }))
             let preview = try controller.preview().get()
             h.now.addTimeInterval(6 * 3600)
             _ = h.environment.observedRules(FlintScheduleRule.self)
-            _ = try controller.use(previewRevision: preview.revision, operationID: "rule-clock-preview").get()
+            XCTAssertEqual(controller.use(previewRevision: preview.revision, operationID: "stale-rule-preview"),
+                .failure(.stalePreview), "refresh stale displayed resume dates; scope remains trusted")
+            XCTAssertEqual(try h.ledger.peek().get().pass.usage, .neverUsed)
+            XCTAssertTrue(try h.ledger.peek().get().operations.filter { $0.kind == "pass" }.isEmpty)
+            XCTAssertEqual(publishedPassUses, 0)
+            let refreshed = try controller.preview().get() // a wall edit must never block re-preview (§7)
+            XCTAssertEqual(refreshed.scope.revision, preview.scope.revision)
+            XCTAssertEqual(refreshed.scope.rules, preview.scope.rules)
+            XCTAssertEqual(refreshed.scope.rules.first?.naturalEnd, rule.protection?.occurrence?.end)
+            _ = try controller.use(previewRevision: refreshed.revision, operationID: "rule-clock-preview").get()
+            _ = try controller.use(previewRevision: refreshed.revision, operationID: "rule-clock-preview").get()
             let recovery = try XCTUnwrap(h.ledger.peek().get().emergencyRecovery)
             XCTAssertEqual(recovery.scope.rules.map(\.id), ["schedule:\(rule.id)"])
             XCTAssertEqual(recovery.scope.rules.first?.naturalEnd, rule.protection?.occurrence?.end)
             XCTAssertEqual(try h.ledger.peek().get().pass.usage, .used)
+            XCTAssertEqual(try h.ledger.peek().get().operations.filter { $0.kind == "pass" }.count, 1)
+            XCTAssertEqual(publishedPassUses, 1)
         } catch { XCTFail("Existing-rule preview failed: \(error)") }
     }
 
