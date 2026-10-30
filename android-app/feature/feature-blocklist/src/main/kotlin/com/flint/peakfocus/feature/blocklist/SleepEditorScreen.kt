@@ -10,6 +10,17 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.snap
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -39,6 +50,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.stringArrayResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
 import com.flint.peakfocus.core.common.theme.FlintMotion
@@ -47,7 +65,9 @@ import com.flint.peakfocus.core.common.theme.FlintTheme
 import com.flint.peakfocus.core.common.ui.FlintCard
 import com.flint.peakfocus.core.common.ui.FlintTimeField
 import com.flint.peakfocus.core.common.ui.rememberFlintHaptics
+import com.flint.peakfocus.core.common.ui.rememberReducedMotion
 import com.flint.peakfocus.core.model.AppRef
+import com.flint.peakfocus.core.model.BreakLevel
 
 /**
  * Author the one [SleepConfig] (spec 3.3 — free; blocking only, no bundled audio content).
@@ -71,6 +91,8 @@ internal fun SleepEditorScreen(
     var attemptedSave by remember { mutableStateOf(false) }
     var pickingApps by remember { mutableStateOf(false) }
     val haptics = rememberFlintHaptics()
+    val reducedMotion = rememberReducedMotion()
+    val presentation = sleepPresentation(config)
     val iconByPackage = remember(appsState) {
         (appsState as? InstalledAppsUiState.Ready)
             ?.apps?.associate { it.packageName to it.icon }
@@ -93,14 +115,17 @@ internal fun SleepEditorScreen(
     AnimatedContent(
         targetState = pickingApps,
         modifier = modifier,
-        transitionSpec = { editorPushPop(forward = targetState) },
+        transitionSpec = {
+            if (reducedMotion) EnterTransition.None togetherWith ExitTransition.None
+            else editorPushPop(forward = targetState)
+        },
         label = "sleepEditorPicker",
     ) { picking ->
         if (picking) {
             AppPickerScreen(
                 appsState = appsState,
-                title = "Allowed overnight",
-                eyebrow = "Sleep mode",
+                title = stringResource(R.string.sleep_allowed),
+                eyebrow = stringResource(R.string.sleep_title),
                 multiSelect = true,
                 initiallySelected = config.allowedApps.map { it.packageName }.toSet(),
                 onConfirm = { picked ->
@@ -117,31 +142,39 @@ internal fun SleepEditorScreen(
                 onCancel = { pickingApps = false },
             )
         } else {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+            val viewport = maxHeight
+            val compactTimeSummary = sleepTimeFieldsStack(maxWidth.value, LocalDensity.current.fontScale)
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
+                    .heightIn(min = viewport)
                     .imePadding()
                     .padding(FlintSpacing.gutter),
             ) {
-                EditorHeader(title = "Sleep mode", eyebrow = "Sleep mode", onBack = onClose)
+                TextButton(onClick = onClose) { Text(stringResource(R.string.sleep_back)) }
+                Text(
+                    stringResource(R.string.sleep_title),
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.semantics { heading() },
+                )
                 Spacer(Modifier.height(FlintSpacing.md))
 
                 FlintCard {
                     LabeledSwitchRow(
-                        title = "Sleep mode",
-                        description = "During the window, everything except your allowed apps " +
-                            "is blocked.",
+                        title = stringResource(R.string.sleep_title),
+                        description = stringResource(R.string.sleep_window_description),
                         checked = config.enabled,
                         onCheckedChange = { config = config.copy(enabled = it) },
                     )
                 }
                 Spacer(Modifier.height(FlintSpacing.lg))
 
-                SectionLabel("Nights")
+                SleepSectionLabel(R.string.sleep_nights)
                 Spacer(Modifier.height(FlintSpacing.sm))
                 FlintCard {
-                    DayOfWeekRow(
+                    SleepDayChoices(
                         selected = config.nights,
                         onToggle = { day ->
                             config = config.copy(
@@ -155,33 +188,47 @@ internal fun SleepEditorScreen(
                     )
                     Spacer(Modifier.height(FlintSpacing.xs))
                     Text(
-                        text = "Each night starts on the selected evening. " +
-                            "No nights selected = every night.",
+                        text = stringResource(R.string.sleep_nights_note),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Spacer(Modifier.height(FlintSpacing.lg))
 
-                SectionLabel("Window")
+                SleepSectionLabel(R.string.sleep_window)
                 Spacer(Modifier.height(FlintSpacing.sm))
                 FlintCard {
-                    Row {
+                    BoxWithConstraints {
+                        val stacked = sleepTimeFieldsStack(maxWidth.value, LocalDensity.current.fontScale)
+                        @Composable fun BedField(modifier: Modifier) {
                         FlintTimeField(
-                            label = "Bedtime",
+                            label = stringResource(R.string.sleep_bedtime),
                             valueText = bedText,
                             onValueText = { bedText = it },
-                            modifier = Modifier.weight(1f),
+                            modifier = modifier,
                             fallbackMinutes = SleepConfig.DEFAULT.bedMinute,
                         )
-                        Spacer(Modifier.width(FlintSpacing.cardGap))
+                        }
+                        @Composable fun WakeField(modifier: Modifier) {
                         FlintTimeField(
-                            label = "Wake",
+                            label = stringResource(R.string.sleep_wake),
                             valueText = wakeText,
                             onValueText = { wakeText = it },
-                            modifier = Modifier.weight(1f),
+                            modifier = modifier,
                             fallbackMinutes = SleepConfig.DEFAULT.wakeMinute,
                         )
+                        }
+                        if (stacked) {
+                            Column(verticalArrangement = Arrangement.spacedBy(FlintSpacing.cardGap)) {
+                                BedField(Modifier.fillMaxWidth())
+                                WakeField(Modifier.fillMaxWidth())
+                            }
+                        } else {
+                            Row(horizontalArrangement = Arrangement.spacedBy(FlintSpacing.cardGap)) {
+                                BedField(Modifier.weight(1f))
+                                WakeField(Modifier.weight(1f))
+                            }
+                        }
                     }
                     // The editor's centerpiece: the night across a 24h day, plus the Morning
                     // Assist extension in the secondary tone while it's enabled.
@@ -191,25 +238,33 @@ internal fun SleepEditorScreen(
                     if (bed != null && wake != null) {
                         val morningShown = config.morningEnabled && morningEnd != null
                         Spacer(Modifier.height(FlintSpacing.md))
-                        FlintDayStrip(
-                            startMinute = bed,
-                            endMinute = wake,
-                            startLabel = "Bed",
-                            endLabel = "Wake",
-                            secondaryStartMinute = if (morningShown) wake else null,
-                            secondaryEndMinute = if (morningShown) morningEnd else null,
-                        )
+                        if (compactTimeSummary) {
+                            Column(verticalArrangement = Arrangement.spacedBy(FlintSpacing.xs)) {
+                                Text(stringResource(R.string.sleep_time_value, stringResource(R.string.sleep_bed), formatMinuteOfDay(bed)))
+                                Text(stringResource(R.string.sleep_time_value, stringResource(R.string.sleep_wake), formatMinuteOfDay(wake)))
+                                if (morningShown) Text(stringResource(R.string.sleep_time_value, stringResource(R.string.sleep_morning), formatMinuteOfDay(morningEnd!!)))
+                            }
+                        } else {
+                            FlintDayStrip(
+                                startMinute = bed,
+                                endMinute = wake,
+                                startLabel = stringResource(R.string.sleep_bed),
+                                endLabel = stringResource(R.string.sleep_wake),
+                                secondaryStartMinute = if (morningShown) wake else null,
+                                secondaryEndMinute = if (morningShown) morningEnd else null,
+                            )
+                        }
                     }
                     Spacer(Modifier.height(FlintSpacing.xs))
                     Text(
-                        text = "24-hour time. Windows past midnight just work.",
+                        text = stringResource(R.string.sleep_time_note),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Spacer(Modifier.height(FlintSpacing.lg))
 
-                SectionLabel("Assist level")
+                SleepSectionLabel(R.string.sleep_assist)
                 Spacer(Modifier.height(FlintSpacing.sm))
                 FlintCard {
                     AssistSelector(
@@ -218,25 +273,34 @@ internal fun SleepEditorScreen(
                     )
                     Spacer(Modifier.height(FlintSpacing.sm))
                     Text(
-                        text = "Blocking only — Flint bundles no soundscapes or meditations, " +
-                            "by design.",
+                        text = stringResource(R.string.sleep_audio_note),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Spacer(Modifier.height(FlintSpacing.lg))
 
-                SectionLabel("Protection tier")
-                BreakLevelSelector(selected = config.breakLevel, onSelect = { config = config.copy(breakLevel = it) })
+                SleepSectionLabel(R.string.sleep_tier)
+                Text(stringResource(R.string.sleep_tier_value, stringResource(presentation.tier)))
+                SleepTierSelector(selected = config.breakLevel, onSelect = { config = config.copy(breakLevel = it) })
+                Text(
+                    stringResource(presentation.offExplanation),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    stringResource(R.string.sleep_legacy_rights),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 Spacer(Modifier.height(FlintSpacing.lg))
-                SectionLabel("Allowed overnight")
+                SleepSectionLabel(R.string.sleep_allowed)
                 Spacer(Modifier.height(FlintSpacing.sm))
                 FlintCard {
-                    Column(Modifier.animateContentSize(editorRevealSpec())) {
+                    Column(if (reducedMotion) Modifier else Modifier.animateContentSize(editorRevealSpec())) {
                         if (config.allowedApps.isEmpty()) {
                             Text(
-                                text = "Nothing picked — everything blocks during the window. " +
-                                    "Consider allowing your clock or phone app.",
+                                text = stringResource(R.string.sleep_allowed_empty),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -262,31 +326,30 @@ internal fun SleepEditorScreen(
                             onClick = { pickingApps = true },
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Text("Choose apps")
+                            Text(stringResource(R.string.sleep_choose_apps))
                         }
                     }
                 }
                 Spacer(Modifier.height(FlintSpacing.lg))
 
-                SectionLabel("Morning assist")
+                SleepSectionLabel(R.string.sleep_morning)
                 Spacer(Modifier.height(FlintSpacing.sm))
                 FlintCard {
                     LabeledSwitchRow(
-                        title = "Keep blocking after waking",
-                        description = "The same allow-list holds from wake time until the " +
-                            "morning end.",
+                        title = stringResource(R.string.sleep_morning_toggle),
+                        description = stringResource(R.string.sleep_morning_note),
                         checked = config.morningEnabled,
                         onCheckedChange = { config = config.copy(morningEnabled = it) },
                     )
                     AnimatedVisibility(
                         visible = config.morningEnabled,
-                        enter = expandVertically(editorRevealSpec()) + fadeIn(editorRevealSpec()),
-                        exit = shrinkVertically(editorRevealSpec()) + fadeOut(editorRevealSpec()),
+                        enter = if (reducedMotion) EnterTransition.None else expandVertically(editorRevealSpec()) + fadeIn(editorRevealSpec()),
+                        exit = if (reducedMotion) ExitTransition.None else shrinkVertically(editorRevealSpec()) + fadeOut(editorRevealSpec()),
                     ) {
                         Column {
                             Spacer(Modifier.height(FlintSpacing.sm))
                             FlintTimeField(
-                                label = "Until",
+                                label = stringResource(R.string.sleep_until),
                                 valueText = morningText,
                                 onValueText = { morningText = it },
                                 modifier = Modifier.fillMaxWidth(),
@@ -297,7 +360,7 @@ internal fun SleepEditorScreen(
                 }
                 Spacer(Modifier.height(FlintSpacing.lg))
 
-                ErrorMessages(errors.map { it.message } + listOfNotNull(saveState.error))
+                ErrorMessages(errors.map { stringResource(sleepErrorText(it)) } + listOfNotNull(saveState.error))
                 if (errors.isNotEmpty()) Spacer(Modifier.height(FlintSpacing.cardGap))
 
                 Button(
@@ -313,12 +376,13 @@ internal fun SleepEditorScreen(
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Save sleep mode")
+                    Text(stringResource(R.string.sleep_save))
                 }
                 Spacer(Modifier.height(FlintSpacing.sm))
                 TextButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.sleep_cancel))
                 }
+            }
             }
         }
     }
@@ -332,6 +396,7 @@ private fun AssistSelector(
     modifier: Modifier = Modifier,
 ) {
     val haptics = rememberFlintHaptics()
+    val reducedMotion = rememberReducedMotion()
     Column(modifier = modifier.fillMaxWidth().selectableGroup()) {
         SleepAssist.entries.forEach { assist ->
             val isSelected = assist == selected
@@ -341,12 +406,13 @@ private fun AssistSelector(
                 } else {
                     Color.Transparent
                 },
-                animationSpec = tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard),
+                animationSpec = if (reducedMotion) snap() else tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard),
                 label = "assistRowContainer",
             )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = 48.dp)
                     .clip(MaterialTheme.shapes.medium)
                     .background(container)
                     .selectable(
@@ -365,17 +431,17 @@ private fun AssistSelector(
                 Column(Modifier.weight(1f)) {
                     Text(
                         text = when (assist) {
-                            SleepAssist.WIND_DOWN -> "Wind down"
-                            SleepAssist.FULL_ASSIST -> "Full assist"
+                            SleepAssist.WIND_DOWN -> stringResource(R.string.sleep_wind_down)
+                            SleepAssist.FULL_ASSIST -> stringResource(R.string.sleep_full_assist)
                         },
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
                         text = when (assist) {
-                            SleepAssist.WIND_DOWN -> "Easy to break when you really need to."
+                            SleepAssist.WIND_DOWN -> stringResource(R.string.sleep_wind_down_note)
                             SleepAssist.FULL_ASSIST ->
-                                "Everything but your allowed apps locks; breaks take friction."
+                                stringResource(R.string.sleep_full_assist_note)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -384,6 +450,68 @@ private fun AssistSelector(
             }
         }
     }
+}
+
+@Composable
+private fun SleepSectionLabel(@androidx.annotation.StringRes text: Int) {
+    SectionLabel(stringResource(text), Modifier.semantics { heading() })
+}
+
+/** Tier choice only; no promise about an unmerged pass or a re-derived active occurrence. */
+@Composable
+private fun SleepTierSelector(selected: BreakLevel, onSelect: (BreakLevel) -> Unit) {
+    Column(Modifier.fillMaxWidth().selectableGroup()) {
+        BreakLevel.entries.forEach { tier ->
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    .selectable(selected = tier == selected, role = Role.RadioButton, onClick = { onSelect(tier) })
+                    .padding(FlintSpacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = tier == selected, onClick = null)
+                Spacer(Modifier.width(FlintSpacing.sm))
+                Text(stringResource(sleepPresentation(SleepConfig(breakLevel = tier)).tier))
+            }
+        }
+    }
+}
+
+/** Wrap rather than shrinking seven touch targets into the viewport. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SleepDayChoices(selected: Set<Int>, onToggle: (Int) -> Unit) {
+    val names = stringArrayResource(R.array.sleep_weekday_names)
+    val shortNames = stringArrayResource(R.array.sleep_weekday_short)
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(FlintSpacing.xs),
+        verticalArrangement = Arrangement.spacedBy(FlintSpacing.xs),
+    ) {
+        IsoDays.ALL.forEach { day ->
+            val isSelected = day in selected
+            Text(
+                text = if (isSelected) "✓ ${shortNames[day - 1]}" else shortNames[day - 1],
+                modifier = Modifier
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    .clip(MaterialTheme.shapes.small)
+                    .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                    .toggleable(value = isSelected, role = Role.Checkbox, onValueChange = { onToggle(day) })
+                    .semantics { contentDescription = names[day - 1] }
+                    .padding(FlintSpacing.sm),
+                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelLarge,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun sleepSummaryText(config: SleepConfig): String {
+    val presentation = sleepPresentation(config)
+    val names = stringArrayResource(R.array.sleep_weekday_short)
+    val nights = presentation.nights?.let { stringResource(it) }
+        ?: config.nights.sorted().joinToString(" ") { names[it - 1] }
+    val window = stringResource(R.string.sleep_summary, nights, formatMinuteOfDay(config.bedMinute), formatMinuteOfDay(config.wakeMinute))
+    return if (config.morningEnabled) stringResource(R.string.sleep_summary_morning, window, formatMinuteOfDay(config.morningEndMinute)) else window
 }
 
 @Preview(showBackground = true)

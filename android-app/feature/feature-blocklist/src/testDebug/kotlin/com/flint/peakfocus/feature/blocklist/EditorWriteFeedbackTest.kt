@@ -62,7 +62,7 @@ class EditorWriteFeedbackTest {
             SleepEditorScreen(initial = SleepConfig.DEFAULT.copy(bedMinute = 1290), appsState = InstalledAppsUiState.Ready(emptyList()),
                 onSave = { saved += it; state.value = EditorSaveState(error = error) }, onClose = {}, saveState = state.value)
         }
-        compose.onNodeWithText("Mon").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Monday").performScrollTo().performClick()
         compose.onNodeWithText("Save sleep mode").performScrollTo().performClick()
         compose.onNodeWithText(error).assertExists()
         compose.onNodeWithText("Save sleep mode").performScrollTo().performClick()

@@ -1,4 +1,55 @@
 <resources>
     <string name="picker_empty_list_note">The app list is empty right now.</string>
     <string name="picker_safety_floor_note">Phone, emergency calling, your Home screen and Settings are not listed. Rules never block them.</string>
+    <string name="sleep_title">Sleep mode</string>
+    <string name="sleep_back">Back</string>
+    <string name="sleep_window_description">During the window, Sleep targets apps outside your allowed list. Known safety apps are excluded.</string>
+    <string name="sleep_nights">Nights</string>
+    <string name="sleep_nights_note">Each night starts on the selected evening. No nights selected means every night.</string>
+    <string name="sleep_window">Window</string>
+    <string name="sleep_bedtime">Bedtime</string>
+    <string name="sleep_wake">Wake</string>
+    <string name="sleep_bed">Bed</string>
+    <string name="sleep_time_value">%1$s %2$s</string>
+    <string name="sleep_time_note">24-hour time. A window can continue past midnight.</string>
+    <string name="sleep_assist">Assist level</string>
+    <string name="sleep_wind_down">Wind down</string>
+    <string name="sleep_full_assist">Full assist</string>
+    <string name="sleep_wind_down_note">Selects Easy as the starting tier. You can choose a different tier below.</string>
+    <string name="sleep_full_assist_note">Selects Harder as the starting tier. You can choose a different tier below.</string>
+    <string name="sleep_audio_note">Blocking only. Flint includes no soundscapes or meditations.</string>
+    <string name="sleep_tier">Protection tier</string>
+    <string name="sleep_tier_value">Tier: %1$s</string>
+    <string name="sleep_tier_easy">Easy</string>
+    <string name="sleep_tier_harder">Harder</string>
+    <string name="sleep_tier_hardcore">Hardcore</string>
+    <string name="sleep_off_easy">Turning Sleep off requires confirmation. Active Easy Sleep occurrences end after you confirm.</string>
+    <string name="sleep_off_harder">Under the current commitment rules, turning Sleep off during an active Harder occurrence requires a wait and final confirmation. Outside an active occurrence, no wait is required.</string>
+    <string name="sleep_off_hardcore">Under the current commitment rules, turning Sleep off during an active Hardcore occurrence is saved for after that occurrence ends. Outside an active occurrence, you can turn Sleep off after confirmation.</string>
+    <string name="sleep_legacy_rights">Migrated active occurrences keep their earlier edit and off rights until they end. The confirmation shows which change will apply.</string>
+    <string name="sleep_allowed">Allowed overnight</string>
+    <string name="sleep_allowed_empty">No extra apps allowed. Known safety apps are excluded from Sleep rules.</string>
+    <string name="sleep_choose_apps">Choose apps</string>
+    <string name="sleep_morning">Morning assist</string>
+    <string name="sleep_morning_toggle">Keep blocking after waking</string>
+    <string name="sleep_morning_note">The same allowed apps apply from wake time until the morning end.</string>
+    <string name="sleep_until">Until</string>
+    <string name="sleep_save">Save sleep mode</string>
+    <string name="sleep_cancel">Cancel</string>
+    <string name="sleep_not_set_up">Not set up. Bedtime blocking with an optional morning window.</string>
+    <string name="sleep_rule_description">Sleep mode rule</string>
+    <string name="sleep_every_night">Every night</string>
+    <string name="sleep_weeknights">Weeknights</string>
+    <string name="sleep_weekend_nights">Weekend nights</string>
+    <string name="sleep_summary">%1$s · %2$s – %3$s</string>
+    <string name="sleep_summary_morning">%1$s · morning to %2$s</string>
+    <string name="sleep_invalid_time">Bedtime, wake and morning end must be times between 00:00 and 23:59.</string>
+    <string name="sleep_zero_length">Bedtime and wake time cannot be the same.</string>
+    <string name="sleep_morning_after_wake">Morning assist must end after the wake time.</string>
+    <string-array name="sleep_weekday_names">
+        <item>Monday</item><item>Tuesday</item><item>Wednesday</item><item>Thursday</item><item>Friday</item><item>Saturday</item><item>Sunday</item>
+    </string-array>
+    <string-array name="sleep_weekday_short">
+        <item>Mon</item><item>Tue</item><item>Wed</item><item>Thu</item><item>Fri</item><item>Sat</item><item>Sun</item>
+    </string-array>
 </resources>
