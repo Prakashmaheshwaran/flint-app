@@ -46,6 +46,7 @@ final class FlintWebRestrictionChildren {
             } else { timestamp = suffix }
             return Double(timestamp)?.isFinite == true
         }
+
     }
 
     struct Child: Codable, Equatable {
@@ -57,19 +58,80 @@ final class FlintWebRestrictionChildren {
     struct Envelope: Codable, Equatable {
         let version: Int
         var children: [Child]
-        init(children: [Child] = []) { version = 1; self.children = children }
+        /// Exact damaged entries survive ordinary writes until an authorized repair archives them.
+        var retainedUnavailable: [Data]
+        init(children: [Child] = [], retainedUnavailable: [Data] = []) {
+            version = 1; self.children = children; self.retainedUnavailable = retainedUnavailable
+        }
         var isValid: Bool {
             version == 1 && Set(children.map { $0.cause.key }).count == children.count
                 && children.allSatisfy {
                     $0.cause.isValid && $0.config?.validationMessage == nil
                 }
         }
+
+        func hasUnavailableEntry(for cause: Cause) -> Bool {
+            retainedUnavailable.contains { bytes in
+                let root = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any]
+                let key = (root?["cause"] as? [String: Any])?["key"] as? String
+                return key == nil || key == cause.key
+            }
+        }
+
+        static func read(_ data: Data) -> Self? {
+            struct Header: Decodable { let version: Int }
+            guard let header = try? JSONDecoder().decode(Header.self, from: data), header.version == 1,
+                  let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  let records = root["children"] as? [Any] else { return nil }
+            var result = Self()
+            if let retained = root["retainedUnavailable"] {
+                if let bytes = try? JSONSerialization.data(withJSONObject: retained),
+                   let decoded = try? JSONDecoder().decode([Data].self, from: bytes) { result.retainedUnavailable = decoded }
+                else { result.retainedUnavailable.append(data) }
+            }
+            var invalidKeys: Set<String> = []
+            var originals: [String: Data] = [:]
+            for record in records {
+                guard let bytes = try? JSONSerialization.data(withJSONObject: record, options: [.fragmentsAllowed]) else { continue }
+                let fields = record as? [String: Any]
+                let rawKey = (fields?["cause"] as? [String: Any])?["key"] as? String
+                guard let causeBytes = (fields?["cause"]).flatMap({ try? JSONSerialization.data(withJSONObject: $0, options: [.fragmentsAllowed]) }),
+                      let cause = try? JSONDecoder().decode(Cause.self, from: causeBytes), cause.isValid else {
+                    result.retainedUnavailable.append(bytes)
+                    if let rawKey { invalidKeys.insert(rawKey) }
+                    continue
+                }
+                if let index = result.children.firstIndex(where: { $0.cause.key == cause.key }) {
+                    result.children[index].config = nil
+                    invalidKeys.insert(cause.key)
+                    if let original = originals[cause.key] { result.retainedUnavailable.append(original) }
+                    result.retainedUnavailable.append(bytes)
+                    continue
+                }
+                let child = try? JSONDecoder().decode(Child.self, from: bytes)
+                if let child, child.config?.validationMessage == nil {
+                    result.children.append(child)
+                } else {
+                    result.children.append(.init(cause: cause, config: nil))
+                    result.retainedUnavailable.append(bytes)
+                    invalidKeys.insert(cause.key)
+                }
+                originals[cause.key] = bytes
+            }
+            for index in result.children.indices where invalidKeys.contains(result.children[index].cause.key) {
+                if result.children[index].config != nil, let original = originals[result.children[index].cause.key] {
+                    result.retainedUnavailable.append(original)
+                }
+                result.children[index].config = nil
+            }
+            return result.isValid ? result : nil
+        }
     }
 
     enum Read: Equatable { case legacy, available(Envelope), unavailable }
     static let schemaKey = "_flintWebChildrenSchema"
     static let bytesKey = "_flintWebChildren"
-    static let markerKey = "flint.webRestrictions.children.initialized.adr012"
+    static let markerKey = FlintWebRestrictions.childInitializedMarkerKey
     private let defaults: UserDefaults?
     private var memory: Read?
     private let acceptSave: () -> Bool
@@ -91,7 +153,7 @@ final class FlintWebRestrictionChildren {
         switch read() {
         case .legacy: return false
         case .unavailable: return true
-        case let .available(envelope): return envelope.children.contains { $0.config == nil }
+        case let .available(envelope): return !envelope.retainedUnavailable.isEmpty || envelope.children.contains { $0.config == nil }
         }
     }
 
@@ -111,7 +173,7 @@ final class FlintWebRestrictionChildren {
             }
         }
         guard let data = object as? Data, let header = try? JSONDecoder().decode(Header.self, from: data),
-              header.schema == 1, let envelope = try? JSONDecoder().decode(Envelope.self, from: header.bytes),
+              header.schema == 1, let envelope = Envelope.read(header.bytes),
               envelope.isValid else { return .unavailable }
         return .available(envelope)
     }
@@ -130,7 +192,7 @@ final class FlintWebRestrictionChildren {
         return cause.applies(candidate) && !FlintWebRestrictionEditor.weakensContent(old, candidate)
     }
 
-    func resolve(_ cause: Cause, global: FlintWebRestrictions?) -> FlintWebRestrictions? {
+    func resolve(_ cause: Cause, global: FlintWebRestrictions?, captureNew: Bool = true) -> FlintWebRestrictions? {
         var envelope: Envelope
         switch read() {
         case .unavailable: return nil
@@ -147,14 +209,36 @@ final class FlintWebRestrictionChildren {
             }
             return frozen
         }
-        let config = global.flatMap { $0.validationMessage == nil ? $0 : nil }
+        guard captureNew else { return nil }
+        let unknownPredecessor = cause.scope == .session && envelope.children.allSatisfy({ $0.cause.scope != .session })
+            && envelope.retainedUnavailable.contains { bytes in
+                let root = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any]
+                let scope = (root?["cause"] as? [String: Any])?["scope"] as? String
+                return scope == nil || scope == Cause.Scope.session.rawValue
+            }
+        let unavailable = envelope.hasUnavailableEntry(for: cause) || unknownPredecessor
+        var config = unavailable ? nil : global.flatMap { $0.validationMessage == nil ? $0 : nil }
+        // A replacement whose optional child write failed can recover from the surviving
+        // predecessor even after process death. Never recapture a weaker global over it.
+        if cause.scope == .session, !unavailable {
+            for child in envelope.children where child.cause.scope == .session {
+                guard let previous = child.config else { config = nil; break }
+                if let candidate = config {
+                    if !Self.strengthens(candidate, over: previous, cause: cause) {
+                        guard Self.strengthens(previous, over: candidate, cause: cause) else { config = nil; break }
+                        config = previous
+                    }
+                } else { config = previous }
+            }
+        }
         envelope.children.append(.init(cause: cause, config: config))
         return persist(envelope) ? config : nil
     }
 
     /// A freeze hook reads global intent once, then captures all rule children before arming.
     @discardableResult
-    func capture(_ causes: [Cause], global: FlintWebRestrictions?) -> Bool {
+    func capture(_ causes: [Cause], global: FlintWebRestrictions?, rules: [FlintScheduleRule]? = nil,
+                 clock: FlintClock? = nil, completeRules: Bool = false) -> Bool {
         var envelope: Envelope
         let legacy: Bool
         switch read() {
@@ -163,11 +247,41 @@ final class FlintWebRestrictionChildren {
         case let .available(saved): envelope = saved; legacy = false
         }
         let before = envelope
+        if let rules, let clock {
+            envelope.children.removeAll { child in
+                guard child.cause.scope == .rule else { return false }
+                guard let owner = rules.first(where: { $0.id == child.cause.ownerID }) else { return completeRules }
+                guard Self.knows(owner) else { return false }
+                guard owner.enabled else { return true }
+                guard let accepted = owner.protection?.occurrence else { return completeRules }
+                guard owner.occurrence(at: clock.now(), clock: clock) == accepted else { return completeRules }
+                return child.cause.key != Cause.rule(owner, window: accepted).key
+            }
+        }
         for cause in causes where !envelope.children.contains(where: { $0.cause.key == cause.key }) {
-            envelope.children.append(.init(cause: cause, config: global.flatMap { $0.validationMessage == nil ? $0 : nil }))
+            let config = envelope.hasUnavailableEntry(for: cause) ? nil : global.flatMap { $0.validationMessage == nil ? $0 : nil }
+            envelope.children.append(.init(cause: cause, config: config))
         }
         // Establish an explicit empty envelope too, rather than treating later absence as empty.
         return (!legacy && envelope == before) || persist(envelope)
+    }
+
+    /// Readers may migrate the legacy envelope once. After establishment, a missing rule
+    /// child is unavailable; only the accepted pre-arm freeze may capture its global policy.
+    @discardableResult
+    func observe(_ snapshot: FlintWebRestrictionEditor.Snapshot, global: FlintWebRestrictions?, clock: FlintClock) -> Bool {
+        let live = Self.causes(snapshot, clock: clock)
+        if read() == .unavailable { return true } // only gated repair can replace these bytes
+        if read() == .legacy { guard capture(live, global: global) else { return false } }
+        else {
+            if let session = snapshot.session, session.isEnforcing(at: clock.now(), clock: clock) {
+                let cause = Cause.session(session)
+                _ = resolve(cause, global: global)
+                guard case let .available(envelope) = read(), envelope.children.contains(where: { $0.cause == cause }) else { return false }
+            }
+            guard capture(live.filter { $0.scope == .rule }, global: nil) else { return false }
+        }
+        return prune(snapshot, clock: clock)
     }
 
     func frozen(_ cause: Cause, fallback: FlintWebRestrictions?) -> FlintWebRestrictions? {
@@ -197,8 +311,13 @@ final class FlintWebRestrictionChildren {
         let sessionKey = snapshot.session.flatMap {
             $0.isEnforcing(at: clock.now(), clock: clock) ? Cause.session($0).key : nil
         }
+        let hasSessionChild = sessionKey.map { key in envelope.children.contains { $0.cause.key == key } } ?? false
         envelope.children.removeAll { child in
-            if child.cause.scope == .session { return child.cause.key != sessionKey }
+            if child.cause.scope == .session {
+                // Keep predecessor evidence if a replacement child still cannot be saved.
+                if sessionKey != nil, !hasSessionChild { return false }
+                return child.cause.key != sessionKey
+            }
             guard let rule = snapshot.rules.first(where: { $0.id == child.cause.ownerID }) else { return true }
             guard Self.knows(rule) else { return false } // unknown saved policy cannot prove an end
             guard let window = rule.occurrence(at: clock.now(), clock: clock) else { return true }
@@ -226,11 +345,13 @@ final class FlintWebRestrictionChildren {
         let previous = read()
         if case let .available(saved) = previous { envelope = saved } else { envelope = .init() }
         if memory == nil {
-            let repair = previous == .unavailable || envelope.children.contains { $0.config == nil }
+            let repair = previous == .unavailable || !envelope.retainedUnavailable.isEmpty || envelope.children.contains { $0.config == nil }
             guard FlintWebRestrictions.retainUnavailableIntent(to: defaults, recoveryDirectory: recoveryDirectory,
                                                               force: repair) else { return false }
         }
         let causes = Self.causes(snapshot, clock: clock)
+        envelope.retainedUnavailable.removeAll()
+        envelope.children.removeAll { child in !causes.contains(where: { $0.key == child.cause.key }) }
         for cause in causes {
             if let index = envelope.children.firstIndex(where: { $0.cause == cause }) {
                 envelope.children[index].config = config

@@ -6,7 +6,7 @@ import ManagedSettings
 /// callback writers consume only that accepted owner's saved child and trusted occurrence.
 enum FlintWebRestrictionRuleAdapter {
     static func freeze<Rule: FlintGatedRule>(_ rules: [Rule], environment: FlintRuleReloadEnvironment,
-                                            existingWebStores: (() -> Bool?)? = nil) -> Bool {
+                                            existingWebStores: (() -> Bool?)? = nil, completeRuleSnapshot: Bool = false) -> Bool {
         guard Rule.domain == .schedules else { return true }
         guard let schedules = rules as? [FlintScheduleRule], schedules.allSatisfy(FlintWebRestrictionChildren.knows) else { return false }
         // One read for this entire freeze, including all unchanged but newly observed owners.
@@ -15,16 +15,23 @@ enum FlintWebRestrictionRuleAdapter {
             transition: { _, body in body(); return true })
         let config: FlintWebRestrictions?
         if case let .available(saved) = read, saved.validationMessage == nil { config = saved } else { config = nil }
-        let snapshot = FlintWebRestrictionEditor.Snapshot(session: nil, rules: schedules)
+        // Tentative queued preflight carriers have no accepted occurrence yet. Their policy
+        // is captured when applyQueued assigns the actual occurrence, rather than early.
+        let accepted = schedules.filter { rule in
+            guard let window = rule.occurrence(at: environment.clock.now(), clock: environment.clock) else { return false }
+            return rule.protection?.occurrence == window
+        }
+        let snapshot = FlintWebRestrictionEditor.Snapshot(session: nil, rules: accepted)
         let children = FlintWebRestrictionChildren(defaults: environment.defaults,
             recoveryDirectory: environment.recoveryDirectory, acceptSave: environment.acceptSave)
-        let saved = children.capture(FlintWebRestrictionChildren.causes(snapshot, clock: environment.clock), global: config)
+        let saved = children.capture(FlintWebRestrictionChildren.causes(snapshot, clock: environment.clock), global: config,
+            rules: schedules, clock: environment.clock, completeRules: completeRuleSnapshot)
         if config == nil || !saved {
             var report = environment.loadHealth().domains["webRestrictions"]
                 ?? .init(enabled: 0, attempted: 0, armed: 0, failures: [])
             report.failures.removeAll { $0.activityName == "webRestrictions" }
             report.failures.append(.init(activityName: "webRestrictions",
-                reason: "This occurrence's website policy could not be verified. Existing Safari restrictions were preserved; repair requires the running commitment's exit rules."))
+                reason: "Safari update deferred because this occurrence's website policy could not be verified. Existing keys were preserved; app protection can proceed."))
             report.updatedAt = environment.clock.now()
             environment.record("webRestrictions", report)
         }
@@ -35,47 +42,45 @@ enum FlintWebRestrictionRuleAdapter {
                           owners: [FlintScheduleRule]?, children: FlintWebRestrictionChildren,
                           writer: any FlintWebRestrictionWriting, clock: FlintClock,
                           addingOnly: Bool = false, record: (String) -> Void) {
-        let global: FlintWebRestrictions
+        let global: FlintWebRestrictions?
         switch read {
-        case let .available(config): global = config
+        case let .available(config): global = config.validationMessage == nil ? config : nil
         case .busy:
             record("Safari reconciliation deferred because website rules are busy. Existing keys were preserved; retry on the next rule or host reconciliation.")
             return
-        case .unavailable:
-            record("Saved website rules are unavailable. Existing Safari settings were preserved pending repair.")
-            return
+        case .unavailable: global = nil
         }
-        guard global.validationMessage == nil,
-              let owner = owners?.first(where: { $0.id == callback.id }),
+        guard let owner = owners?.first(where: { $0.id == callback.id }),
               FlintWebRestrictionChildren.knows(owner), owner.enabled,
               owner.protection?.incarnation == callback.protection?.incarnation,
               owner.revision == callback.revision, owner.activityName == callback.activityName,
               let window = owner.occurrence(at: clock.now(), clock: clock),
               owner.protection?.occurrence == window,
               callback.occurrence(at: clock.now(), clock: clock) == window else {
-            record("Existing Safari settings retained because the accepted saved occurrence could not be verified; rule reconciliation owns natural-end cleanup.")
+            record("Safari update deferred because the accepted saved occurrence could not be verified; existing keys were preserved.")
             return
         }
         let cause = FlintWebRestrictionChildren.Cause.rule(owner, window: window)
         // A positive-only fallback cannot establish a new child after a failed/busy freeze.
         guard case let .available(envelope) = children.read(), envelope.children.contains(where: { $0.cause == cause }),
-              let config = addingOnly ? children.frozen(cause, fallback: nil) : children.resolve(cause, global: global) else {
-            record("This occurrence's frozen website policy is unavailable. Existing Safari keys were preserved pending repair.")
+              let config = addingOnly ? children.frozen(cause, fallback: nil) : children.resolve(cause, global: global, captureNew: false) else {
+            record("Safari update deferred because this occurrence's frozen website policy is unavailable. Existing keys were preserved.")
             return
         }
+        if global == nil { record("Future website preferences are unavailable; this occurrence continues with its valid frozen policy.") }
         if config.applyDuringSchedules { writer.apply(config, toStore: owner.storeName) }
         else if !addingOnly { writer.clear(store: owner.storeName) }
     }
 
-    static func record(_ rule: FlintScheduleRule, note: String, in group: FlintGroupStore? = FlintGroupStore()) {
+    static func record(_ rule: FlintScheduleRule, note: String, clock: FlintClock = .system,
+                       in group: FlintGroupStore? = FlintGroupStore()) {
         guard let group else { return }
         var health = group.loadArmingHealth()
-        for domain in ["webRestrictions", "ruleTime.schedules"] {
-            var report = health.domains[domain] ?? .init(enabled: 0, attempted: 0, armed: 0, failures: [])
-            report.failures = Array((report.failures + [.init(activityName: rule.activityName, reason: note)]).suffix(64))
-            report.updatedAt = Date()
-            health = health.replacing(domain, with: report)
-        }
+        let domain = "webRestrictions"
+        var report = health.domains[domain] ?? .init(enabled: 0, attempted: 0, armed: 0, failures: [])
+        report.failures = Array((report.failures + [.init(activityName: rule.activityName, reason: note)]).suffix(64))
+        report.updatedAt = clock.now()
+        health = health.replacing(domain, with: report)
         group.saveArmingHealth(health)
     }
 }

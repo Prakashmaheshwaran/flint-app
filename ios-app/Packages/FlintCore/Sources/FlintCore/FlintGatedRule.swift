@@ -245,18 +245,18 @@ enum FlintRuleShield {
                              children: FlintWebRestrictionChildren = .live, addingOnly: Bool = false,
                              record: ((String) -> Void)? = nil) {
         let snapshot: [FlintScheduleRule]?
-        if case .available = read { snapshot = owners() } else { snapshot = nil }
+        if read == .busy { snapshot = nil } else { snapshot = owners() }
         FlintWebRestrictionRuleAdapter.reconcile(rule, read: read, owners: snapshot, children: children,
             writer: writer, clock: clock, addingOnly: addingOnly,
-            record: { note in if let record { record(note) } else { recordWebNote(rule, note: note) } })
+            record: { note in if let record { record(note) } else { recordWebNote(rule, note: note, clock: clock) } })
     }
 
     private static func liveWebOwners() -> [FlintScheduleRule]? {
         FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: .flintGroup, migrating: false)
     }
 
-    private static func recordWebNote(_ rule: FlintScheduleRule, note: String) {
-        FlintWebRestrictionRuleAdapter.record(rule, note: note)
+    private static func recordWebNote(_ rule: FlintScheduleRule, note: String, clock: FlintClock) {
+        FlintWebRestrictionRuleAdapter.record(rule, note: note, clock: clock)
     }
 
     /// Without mutation authority, union restrictions; never clear a field or widen an

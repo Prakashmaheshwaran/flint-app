@@ -106,7 +106,7 @@ enum FlintWebRestrictionHostReconciler {
         }
         if config == nil || config?.validationMessage != nil {
             failures.append(.init(activityName: "webRestrictions", reason: config?.validationMessage
-                ?? "Saved website preferences are unavailable. Verifiable frozen children were retained; unknown children need repair."))
+                ?? "Saved website preferences are unavailable. Valid frozen policies continue; updates to unknown children remain deferred."))
         }
         lifecycle.reconcile(
             activeSession: eligibleSession, rules: eligibleRules, config: config,

@@ -79,7 +79,7 @@ final class FlintWebRestrictionRuleAdapterTests: XCTestCase {
                     writer: writer, clock: h.clock, addingOnly: addingOnly, record: { notes.append($0) })
             }
         }
-        XCTAssertEqual(writer.writes, 0)
+        XCTAssertEqual(writer.writes, 2, "Unavailable future preferences still reapply a valid frozen child")
         XCTAssertEqual(writer.stores[rule.storeName], config)
         XCTAssertEqual(notes.count, 4)
         XCTAssertTrue(notes.contains { $0.contains("busy") })
@@ -108,10 +108,10 @@ final class FlintWebRestrictionRuleAdapterTests: XCTestCase {
         var shieldWrites = 0, notes: [String] = []
         for read: FlintWebRestrictionRead in [.busy, .unavailable] {
             FlintRuleShield.applyLocked(rule, clock: h.clock, applyShield: { shieldWrites += 1 }, readWeb: { read },
-                webOwners: { XCTFail("An unavailable read needs no owner/native probe"); return nil }, webChildren: children,
+                webOwners: { if read == .busy { XCTFail("A busy read must defer the owner read") }; return [rule] }, webChildren: children,
                 webWriter: writer, recordWeb: { notes.append($0) })
             FlintRuleShield.addLocked(rule, clock: h.clock, addShield: { shieldWrites += 1 }, readWeb: { read },
-                webOwners: { XCTFail("An unavailable read needs no owner/native probe"); return nil }, webChildren: children,
+                webOwners: { if read == .busy { XCTFail("A busy read must defer the owner read") }; return [rule] }, webChildren: children,
                 webWriter: writer, recordWeb: { notes.append($0) })
         }
         XCTAssertEqual(shieldWrites, 4, "Web availability cannot prevent app protection")
@@ -149,15 +149,33 @@ final class FlintWebRestrictionRuleAdapterTests: XCTestCase {
         XCTAssertEqual(children.read(), frozen)
     }
 
-    func testNativeDeferralNotesReachWebsiteHealthAsWellAsRuleDiagnostics() throws {
+    func testBothNativeWritersApplyValidFrozenChildWhenFuturePreferencesAreUnavailable() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let rule = h.install(h.schedule(tier: .hardcore))
+        let config = FlintWebRestrictions(applyDuringSchedules: true, denyExplicitMedia: true)
+        let children = FlintWebRestrictionChildren(defaults: h.defaults)
+        XCTAssertTrue(children.capture([.rule(rule, window: try XCTUnwrap(rule.occurrence(at: h.now, clock: h.clock)))], global: config))
+        let writer = RuleChildWriter()
+        var shieldWrites = 0, notes: [String] = []
+        FlintRuleShield.applyLocked(rule, clock: h.clock, applyShield: { shieldWrites += 1 }, readWeb: { .unavailable },
+            webOwners: { [rule] }, webChildren: children, webWriter: writer, recordWeb: { notes.append($0) })
+        FlintRuleShield.addLocked(rule, clock: h.clock, addShield: { shieldWrites += 1 }, readWeb: { .unavailable },
+            webOwners: { [rule] }, webChildren: children, webWriter: writer, recordWeb: { notes.append($0) })
+        XCTAssertEqual(shieldWrites, 2)
+        XCTAssertEqual(writer.writes, 2)
+        XCTAssertEqual(writer.stores[rule.storeName], config)
+        XCTAssertEqual(notes.count, 2)
+    }
+
+    func testNativeDeferralNotesUseInjectedTimeAndOnlyWebsiteHealth() throws {
         let h = try RuleHarness(); defer { h.clean() }
         let rule = h.install(h.schedule(tier: .hardcore))
         let group = try XCTUnwrap(FlintGroupStore(suiteName: h.suite))
-        FlintWebRestrictionRuleAdapter.record(rule, note: "Safari reconciliation deferred: busy", in: group)
+        FlintWebRestrictionRuleAdapter.record(rule, note: "Safari reconciliation deferred: busy", clock: h.clock, in: group)
         let health = group.loadArmingHealth()
-        for domain in ["webRestrictions", "ruleTime.schedules"] {
-            XCTAssertEqual(health.domains[domain]?.failures.first?.activityName, rule.activityName)
-            XCTAssertTrue(health.domains[domain]?.failures.first?.reason.contains("busy") == true)
-        }
+        XCTAssertEqual(health.domains["webRestrictions"]?.failures.first?.activityName, rule.activityName)
+        XCTAssertTrue(health.domains["webRestrictions"]?.failures.first?.reason.contains("busy") == true)
+        XCTAssertEqual(health.domains["webRestrictions"]?.updatedAt, h.now)
+        XCTAssertNil(health.domains["ruleTime.schedules"], "Optional Safari deferral is not a trusted rule-time failure")
     }
 }

@@ -15,9 +15,10 @@ private final class FailingChildDefaults: UserDefaults {
 final class FlintWebRestrictionChildrenTests: XCTestCase {
     private final class SessionChildWriter: FlintWebRestrictionWriting {
         var config: FlintWebRestrictions?
+        var stores: [String: FlintWebRestrictions] = [:]
         var writes = 0
-        func apply(_ config: FlintWebRestrictions, toStore storeName: String) { self.config = config; writes += 1 }
-        func clear(store storeName: String) { config = nil; writes += 1 }
+        func apply(_ config: FlintWebRestrictions, toStore storeName: String) { self.config = config; stores[storeName] = config; writes += 1 }
+        func clear(store storeName: String) { config = nil; stores.removeValue(forKey: storeName); writes += 1 }
     }
     private func session(_ h: RuleHarness, tier: BreakLevel = .hardcore, duration: TimeInterval = 60,
                          contractVersion: Int? = FlintActiveSession.currentContractVersion) -> FlintActiveSession {
@@ -53,7 +54,7 @@ final class FlintWebRestrictionChildrenTests: XCTestCase {
         }
     }
 
-    func testRejectedReplacementPreparationLeavesOldChildAndNativeKeysIntact() throws {
+    func testFailedOptionalReplacementWriteAllowsParentAndRecoversOldChildStrength() throws {
         let h = try RuleHarness(); defer { h.clean() }
         let old = session(h)
         let replacement = FlintActiveSession(id: "replacement", name: "Longer", startedAt: h.now,
@@ -62,14 +63,25 @@ final class FlintWebRestrictionChildrenTests: XCTestCase {
         var accepts = true
         let children = FlintWebRestrictionChildren(defaults: h.defaults, acceptSave: { accepts })
         let writer = SessionChildWriter()
-        let adapter = FlintSessionWebRestrictionAdapter(writer: writer, configuration: { config }, children: children)
+        var global = config
+        let adapter = FlintSessionWebRestrictionAdapter(writer: writer, configuration: { global }, children: children)
         adapter.reconcile(old, clock: h.clock)
         let before = children.read(), writes = writer.writes
         accepts = false
-        XCTAssertFalse(adapter.prepareReplacement(replacement, replacing: old, clock: h.clock))
+        XCTAssertTrue(adapter.prepareReplacement(replacement, replacing: old, clock: h.clock))
         XCTAssertEqual(children.read(), before)
         XCTAssertEqual(writer.config, config)
         XCTAssertEqual(writer.writes, writes)
+        global = .default
+        adapter.reconcile(replacement, clock: h.clock)
+        XCTAssertEqual(writer.config, config, "Failed optional storage preserves the native predecessor")
+        accepts = true
+        // A reconstructed adapter must inherit the durable predecessor after process death.
+        let recovered = FlintSessionWebRestrictionAdapter(writer: writer, configuration: { global },
+            children: .init(defaults: h.defaults))
+        recovered.reconcile(replacement, clock: h.clock)
+        XCTAssertEqual(writer.config, config)
+        XCTAssertEqual(children.frozen(.session(replacement), fallback: nil), config)
     }
 
     func testSessionEnforcementDistinguishesBusyFromUnavailableAndKeepsKnownFrozenChild() throws {
@@ -91,8 +103,9 @@ final class FlintWebRestrictionChildrenTests: XCTestCase {
         XCTAssertTrue(reports.last?.failures.first?.reason.contains("busy") == true)
         let replacement = FlintActiveSession(id: "replacement", name: "New", startedAt: h.now,
             endsAt: h.now.addingTimeInterval(600), breakLevel: .hardcore, monitorName: "flint.session.new")
-        XCTAssertFalse(adapter.prepareReplacement(replacement, replacing: active, clock: h.clock))
-        XCTAssertEqual(children.read(), frozen)
+        XCTAssertTrue(adapter.prepareReplacement(replacement, replacing: active, clock: h.clock))
+        XCTAssertEqual(children.frozen(.session(replacement), fallback: nil), config)
+        XCTAssertEqual(writer.writes, writes)
         state = .unavailable
         adapter.reconcile(active, clock: h.clock)
         XCTAssertEqual(writer.config, config)
@@ -118,6 +131,46 @@ final class FlintWebRestrictionChildrenTests: XCTestCase {
         adapter.reconcile(active, clock: h.clock)
         XCTAssertEqual(writer.writes, 0, "A later preference cannot silently replace unavailable freeze-time intent")
         XCTAssertNil(children.frozen(.session(active), fallback: config))
+    }
+
+    func testUnknownChildDoesNotBlockStrongerSessionReplacementOrBecomeAnOptOut() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let active = session(h)
+        let replacement = FlintActiveSession(id: "stronger", name: "Longer", startedAt: h.now,
+            endsAt: h.now.addingTimeInterval(600), breakLevel: .hardcore, monitorName: "flint.session.stronger")
+        let children = FlintWebRestrictionChildren(defaults: h.defaults)
+        XCTAssertTrue(children.capture([.session(active)], global: nil))
+        let writer = SessionChildWriter(); writer.config = .init(enabled: true)
+        var reports: [FlintArmingHealth.DomainReport] = []
+        let adapter = FlintSessionWebRestrictionAdapter(writer: writer, read: { .unavailable }, children: children,
+            recordHealth: { reports.append($0) })
+        XCTAssertTrue(adapter.prepareReplacement(replacement, replacing: active, clock: h.clock))
+        XCTAssertEqual(writer.writes, 0)
+        guard case let .available(envelope) = children.read() else { return XCTFail() }
+        XCTAssertTrue(envelope.children.contains { $0.cause == .session(replacement) && $0.config == nil })
+        XCTAssertFalse(reports.last?.failures.isEmpty ?? true)
+        adapter.reconcile(replacement, clock: h.clock)
+        XCTAssertEqual(writer.writes, 0, "Unknown policy preserves the existing native keys")
+    }
+
+    func testHostNeverRecapturesMissingEstablishedRuleChildAfterOptionalFreezeWriteFails() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let rule = h.install(h.schedule(tier: .hardcore))
+        let config = FlintWebRestrictions(applyDuringSchedules: true)
+        let store = FlintWebRestrictionChildren(defaults: h.defaults)
+        XCTAssertTrue(store.capture([], global: config))
+        let cause = FlintWebRestrictionChildren.Cause.rule(rule,
+            window: try XCTUnwrap(rule.occurrence(at: h.now, clock: h.clock)))
+        let rejecting = FlintWebRestrictionChildren(defaults: h.defaults, acceptSave: { false })
+        XCTAssertFalse(rejecting.capture([cause], global: config))
+        XCTAssertTrue(FlintWebRestrictions.default.save(to: h.defaults))
+        let writer = SessionChildWriter(); writer.stores[rule.storeName] = config
+        FlintWebRestrictionLifecycle(writer: writer, clock: h.clock, children: store)
+            .reconcile(activeSession: nil, rules: [rule], config: .default, now: h.now, clock: h.clock)
+        XCTAssertEqual(writer.stores[rule.storeName], config)
+        guard case let .available(envelope) = store.read() else { return XCTFail() }
+        XCTAssertTrue(envelope.children.contains { $0.cause == cause && $0.config == nil })
+        XCTAssertTrue(store.needsRecovery)
     }
 
     func testEditorGatesFrozenHardcoreChildAfterFuturePreferencesWereWeakenedR29() throws {
@@ -188,21 +241,50 @@ final class FlintWebRestrictionChildrenTests: XCTestCase {
         XCTAssertEqual(h.backup(key), original)
     }
 
-    func testMismatchedChildOwnerOrStoreIsUnavailableAndRecoverable() throws {
-        let h = try RuleHarness(); defer { h.clean() }
-        let cause = FlintWebRestrictionChildren.Cause.session(session(h))
-        let mismatched = FlintWebRestrictionChildren.Cause(key: cause.key, ownerID: cause.ownerID,
-            storeName: "flint.some-other-owner", scope: .session)
-        let envelope = FlintWebRestrictionChildren.Envelope(children: [.init(cause: mismatched, config: .default)])
-        XCTAssertFalse(envelope.isValid)
-        XCTAssertTrue(FlintWebRestrictions.writeStorage(to: h.defaults, config: .init(enabled: true),
-            children: try JSONEncoder().encode(envelope)))
-        let children = FlintWebRestrictionChildren(defaults: h.defaults, recoveryDirectory: h.recoveryDirectory)
-        XCTAssertEqual(children.read(), .unavailable)
-        XCTAssertTrue(children.needsRecovery)
-        XCTAssertNil(children.resolve(cause, global: .default))
-        XCTAssertTrue(children.saveAuthorized(.default, snapshot: .init(session: nil, rules: []), clock: h.clock))
-        XCTAssertFalse(children.needsRecovery)
+    func testDamagedEntryIsIsolatedFromHealthyChildrenAndArchivedByAuthorizedRepair() throws {
+        for damage in ["config", "store", "duplicate", "payload"] {
+            let h = try RuleHarness(); defer { h.clean() }
+            let active = session(h)
+            let rule = h.install(h.schedule(tier: .hardcore))
+            let config = FlintWebRestrictions(enabled: true, applyDuringSchedules: true, denyExplicitMedia: true)
+            let healthy = FlintWebRestrictionChildren.Cause.rule(rule,
+                window: try XCTUnwrap(rule.occurrence(at: h.now, clock: h.clock)))
+            let damaged = FlintWebRestrictionChildren.Cause.session(active)
+            let envelope = FlintWebRestrictionChildren.Envelope(children: [
+                .init(cause: damaged, config: config), .init(cause: healthy, config: config)])
+            var raw = try XCTUnwrap(try JSONSerialization.jsonObject(with: JSONEncoder().encode(envelope)) as? [String: Any])
+            var records = try XCTUnwrap(raw["children"] as? [[String: Any]])
+            switch damage {
+            case "config": records[0]["config"] = "wrong type"
+            case "store":
+                var cause = try XCTUnwrap(records[0]["cause"] as? [String: Any])
+                cause["storeName"] = "flint.some-other-owner"; records[0]["cause"] = cause
+            case "duplicate": records.append(records[0])
+            default: records[0].removeValue(forKey: "config")
+            }
+            raw["children"] = records
+            XCTAssertTrue(FlintWebRestrictions.writeStorage(to: h.defaults, config: config,
+                children: try JSONSerialization.data(withJSONObject: raw)))
+            let original = try XCTUnwrap(h.defaults.data(forKey: FlintWebRestrictions.storageKey))
+            let children = FlintWebRestrictionChildren(defaults: h.defaults, recoveryDirectory: h.recoveryDirectory)
+            guard case .available = children.read() else { return XCTFail("One damaged entry must not disable its siblings: \(damage)") }
+            XCTAssertEqual(children.frozen(healthy, fallback: nil), config, damage)
+            XCTAssertNil(children.resolve(damaged, global: .default), damage)
+            XCTAssertTrue(children.needsRecovery, damage)
+            let writer = SessionChildWriter()
+            FlintWebRestrictionLifecycle(writer: writer, clock: h.clock, children: children)
+                .reconcile(activeSession: active, rules: [rule], config: .default, now: h.now, clock: h.clock)
+            XCTAssertEqual(writer.config, config, "Healthy rule must still apply during full host reconciliation")
+            XCTAssertEqual(children.frozen(healthy, fallback: nil), config)
+            // Ordinary writes can normalize damaged records, but retain their exact original
+            // bytes. The repair archive retains the complete pre-repair blob as well.
+            let beforeRepair = try XCTUnwrap(h.defaults.data(forKey: FlintWebRestrictions.storageKey))
+            XCTAssertTrue(children.saveAuthorized(.default, snapshot: .init(session: active, rules: [rule]), clock: h.clock))
+            XCTAssertFalse(children.needsRecovery)
+            let key = try XCTUnwrap(h.defaults.dictionaryRepresentation().keys.first { $0.hasPrefix("flint.webRestrictions.recovered.") })
+            XCTAssertEqual(h.backup(key), beforeRepair)
+            if damage != "store" { XCTAssertEqual(beforeRepair, original) }
+        }
     }
 
     func testRawFuturePreferenceWeakeningRetainsFrozenChildAcrossReloadR29() throws {

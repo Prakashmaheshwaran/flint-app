@@ -229,14 +229,18 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
         writer.web["flint.web"] = config
         lifecycle.reconcile(activeSession: active, rules: rules,
                             config: config, now: now, calendar: calendar)
-        XCTAssertNil(writer.web["flint.web"])
+        XCTAssertEqual(writer.web["flint.web"], config, "Legacy keys remain while any known owner lives")
         lifecycle.reconcile(activeSession: active, rules: rules,
                             config: .default, now: now, calendar: calendar)
-        XCTAssertEqual(Set(writer.web.keys), ["flint", "flint.a", "flint.b"])
+        XCTAssertEqual(Set(writer.web.keys), ["flint", "flint.a", "flint.b", "flint.web"])
         XCTAssertTrue(children.saveAuthorized(.default, snapshot: .init(session: active, rules: rules), clock: clock))
         lifecycle.reconcile(activeSession: active, rules: rules, config: .default, now: now, calendar: calendar)
+        XCTAssertEqual(Set(writer.web.keys), ["flint.web"])
+        XCTAssertEqual(Set(writer.cleared), ["flint", "flint.a", "flint.b"])
+        let ended = rules.map { rule -> FlintScheduleRule in var value = rule; value.enabled = false; return value }
+        lifecycle.reconcile(activeSession: nil, rules: ended, config: .default, now: now, calendar: calendar)
         XCTAssertTrue(writer.web.isEmpty)
-        XCTAssertEqual(Set(writer.cleared), ["flint", "flint.a", "flint.b", "flint.web"])
+        XCTAssertTrue(writer.cleared.contains("flint.web"), "Last owner end releases the legacy store")
     }
 
     func testApprovedConfigReappliesToEligibleOwnersAndScheduleOnlyWorks() {
@@ -431,7 +435,7 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
             rules: [ended], config: nil, health: hostHealth([ended]), lifecycle: .init(writer: writer), now: now)
         XCTAssertEqual(writer.web.count, 2, "A missing session record is unknown, not an ended owner")
         let blocked = FlintWebRestrictionLifecycle(writer: writer, recoveryGate: { .unavailable })
-        blocked.clearEndedOwners(activeSession: nil, rules: [ended], now: now)
+        blocked.reconcile(activeSession: nil, rules: [ended], config: nil, now: now)
         XCTAssertEqual(writer.web.count, 2)
         _ = FlintWebRestrictionHostReconciler.reconcile(activeSession: nil, hasActiveSessionRecord: false,
             rules: [ended], config: nil, health: hostHealth([ended]), lifecycle: .init(writer: writer), now: now)

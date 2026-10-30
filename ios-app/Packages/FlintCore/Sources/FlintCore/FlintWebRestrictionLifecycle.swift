@@ -76,13 +76,22 @@ public final class FlintWebRestrictionLifecycle {
     /// into the new occurrence; only a provably stronger future preference may replace it.
     func prepareReplacement(_ replacement: FlintActiveSession, replacing previous: FlintActiveSession?,
                             config: FlintWebRestrictions?, clock: FlintClock) -> Bool {
-        guard recoveryGate().permitsApplication else { return false }
-        guard let previous, previous.isEnforcing(at: clock.now(), clock: clock) else { return true }
+        guard let previous, previous.isEnforcing(at: clock.now(), clock: clock) else {
+            _ = children.retire(scope: .session)
+            return true
+        }
         let old = FlintWebRestrictionChildren.Cause.session(previous)
         let global = config.flatMap { $0.validationMessage == nil ? $0 : nil }
-        guard let frozen = children.resolve(old, global: global) else { return false }
+        guard recoveryGate().permitsApplication, let frozen = children.resolve(old, global: global) else {
+            _ = children.capture([.session(replacement)], global: nil)
+            unavailableStores.insert(Self.sessionStoreName)
+            return true
+        }
         let policy = global.flatMap { FlintWebRestrictionChildren.strengthens($0, over: frozen, cause: old) ? $0 : nil } ?? frozen
-        guard let prepared = children.resolve(.session(replacement), global: policy) else { return false }
+        guard let prepared = children.resolve(.session(replacement), global: policy) else {
+            unavailableStores.insert(Self.sessionStoreName)
+            return true
+        }
         return FlintWebRestrictionChildren.strengthens(prepared, over: frozen, cause: old)
     }
 
@@ -108,28 +117,6 @@ public final class FlintWebRestrictionLifecycle {
     }
 
     #if canImport(FamilyControls)
-    /// Unavailable preferences cannot extend a positively ended owner. These must be the
-    /// actual saved owners, before registration eligibility masks them as nil/disabled.
-    func clearEndedOwners(activeSession: FlintActiveSession?, rules: [FlintScheduleRule],
-                          now: Date, clock: FlintClock? = nil) {
-        guard recoveryGate().permitsApplication else { return }
-        let resolved = resolvedClock(now: now, clock: clock)
-        _ = children.prune(.init(session: activeSession, rules: rules), clock: resolved)
-        if !(activeSession?.isEnforcing(at: now, clock: resolved) ?? false) {
-            reconcileSession(activeSession, config: nil, now: now, clock: resolved)
-        }
-        for rule in rules where FlintWebRestrictionChildren.knows(rule)
-            && (!rule.enabled || rule.occurrence(at: now, clock: resolved) == nil) {
-            writer.clear(store: rule.storeName)
-        }
-        // The legacy shared store can only be released when every known owner has ended.
-        if !(activeSession?.isEnforcing(at: now, clock: resolved) ?? false),
-           !rules.contains(where: { !FlintWebRestrictionChildren.knows($0)
-               || ($0.enabled && $0.occurrence(at: now, clock: resolved) != nil) }) {
-            writer.clear(store: Self.legacyStoreName)
-        }
-    }
-
     public func reconcileRule(
         _ rule: FlintScheduleRule, config: FlintWebRestrictions?,
         now: Date = Date(), calendar: Calendar = .current, clock: FlintClock? = nil
@@ -149,7 +136,7 @@ public final class FlintWebRestrictionLifecycle {
             return
         }
         let cause = FlintWebRestrictionChildren.Cause.rule(rule, window: window)
-        guard let frozen = children.resolve(cause, global: config) else {
+        guard let frozen = children.resolve(cause, global: config, captureNew: children.read() == .legacy) else {
             unavailableStores.insert(rule.storeName); return
         }
         _ = children.retire(scope: .rule, ownerID: rule.id, keeping: cause)
@@ -174,12 +161,11 @@ public final class FlintWebRestrictionLifecycle {
         guard recoveryGate().permitsApplication else { return }
         let resolved = resolvedClock(now: now, clock: clock)
         let owners = actualOwners ?? .init(session: activeSession, rules: rules)
-        _ = children.prune(owners, clock: resolved)
-        _ = children.capture(FlintWebRestrictionChildren.causes(owners, clock: resolved), global: config)
+        children.observe(owners, global: config, clock: resolved)
         if !(owners.session?.isEnforcing(at: now, clock: resolved) ?? false) {
             reconcileSession(owners.session, config: config, now: now, clock: resolved)
         } else if !preservingStores.contains(Self.sessionStoreName) {
-            reconcileSession(activeSession, config: config, now: now, clock: clock)
+            reconcileSession(activeSession, config: config, now: now, clock: resolved)
         }
         for owner in owners.rules {
             let ended = FlintWebRestrictionChildren.knows(owner)
@@ -193,7 +179,7 @@ public final class FlintWebRestrictionLifecycle {
         let liveSession = owners.session?.isEnforcing(at: now, clock: resolved) ?? false
         let liveRules = owners.rules.filter { !FlintWebRestrictionChildren.knows($0)
             || ($0.enabled && $0.occurrence(at: now, clock: resolved) != nil) }
-        if (!liveSession && liveRules.isEmpty) || (unavailableStores.isEmpty && preservingStores.isEmpty) {
+        if !liveSession && liveRules.isEmpty {
             writer.clear(store: Self.legacyStoreName)
         }
     }
@@ -282,7 +268,7 @@ public struct FlintSessionWebRestrictionAdapter: FlintSessionWebRestricting {
             lifecycle.reconcileSession(session, config: config, now: clock.now(), clock: clock)
             var failures: [FlintArmingHealth.Failure] = []
             if config == nil || config?.validationMessage != nil {
-                failures.append(.init(activityName: "webRestrictions", reason: "Saved website preferences are unavailable. Existing frozen policy was retained; website rules need repair."))
+                failures.append(.init(activityName: "webRestrictions", reason: "Saved website preferences are unavailable. Existing frozen policy was retained; future updates remain deferred."))
             }
             if !lifecycle.unavailableStores.isEmpty {
                 failures.append(.init(activityName: session.monitorName, reason: "This session's frozen website policy is unavailable. Existing Safari keys were preserved."))
@@ -295,17 +281,21 @@ public struct FlintSessionWebRestrictionAdapter: FlintSessionWebRestricting {
     public func prepareReplacement(_ replacement: FlintActiveSession, replacing previous: FlintActiveSession?, clock: FlintClock) -> Bool {
         var prepared = false
         guard transition({
-            guard previous?.isEnforcing(at: clock.now(), clock: clock) == true else { prepared = true; return }
+            lifecycle.resetObservations()
+            guard previous?.isEnforcing(at: clock.now(), clock: clock) == true else {
+                prepared = lifecycle.prepareReplacement(replacement, replacing: previous, config: nil, clock: clock)
+                return
+            }
             let state = read()
-            if state == .busy { recordHealth(FlintWebRestrictionHostReconciler.busyReport(now: clock.now())); return }
             let config: FlintWebRestrictions?
             if case let .available(value) = state { config = value } else { config = nil }
             prepared = lifecycle.prepareReplacement(replacement, replacing: previous, config: config, clock: clock)
-            if !prepared {
+            if state == .busy { recordHealth(FlintWebRestrictionHostReconciler.busyReport(now: clock.now())) }
+            else if !prepared || !lifecycle.unavailableStores.isEmpty || state == .unavailable {
                 recordHealth(.init(enabled: 0, attempted: 0, armed: 0, failures: [.init(activityName: "webRestrictions",
-                    reason: "The replacement's website policy could not be prepared. Existing protection was preserved.")], updatedAt: clock.now()))
+                    reason: "The replacement's website policy is unavailable or deferred. Existing Safari keys were preserved; app protection can proceed.")], updatedAt: clock.now()))
             }
-        }) else { return false }
+        }) else { return true }
         return prepared
     }
 

@@ -120,8 +120,7 @@ public final class FlintWebRestrictionEditor {
         }
         let now = clock.now()
         let live = FlintWebRestrictionChildren.causes(snapshot, clock: clock)
-        if let children, children.read() != .unavailable,
-           !children.capture(live, global: previous) { return .unavailable }
+        if let children, !children.observe(snapshot, global: previous, clock: clock) { return .unavailable }
         let childRead = children?.read()
         var priorPolicies: [String] = []
         let affected: [FlintCauseState]

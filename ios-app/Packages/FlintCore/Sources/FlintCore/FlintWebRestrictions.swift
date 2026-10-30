@@ -209,6 +209,7 @@ extension FlintWebRestrictions {
     /// same JSON, no edits to the hot file (mirrors how the Wave-1 stubs persist).
     static let storageKey = "flint.webRestrictions"
     static let initializedMarkerKey = storageKey + ".initialized.adr012"
+    static let childInitializedMarkerKey = storageKey + ".children.initialized.adr012"
 
     /// Production initialization shares the host/extension transition boundary with starts,
     /// edits and pass recovery. A concurrent first save cannot be overwritten by fresh defaults.
@@ -316,9 +317,7 @@ extension FlintWebRestrictions {
             let children = FlintWebRestrictionChildren.live
             // Freeze old effective intent before replacing future preferences. Unavailable
             // established children remain unavailable, with their bytes preserved by the write.
-            if children.read() != .unavailable,
-               !children.capture(FlintWebRestrictionChildren.causes(snapshot, clock: .system),
-                                 global: Self.loadForEnforcement(from: .flintGroup)) { return false }
+            guard children.observe(snapshot, global: Self.loadForEnforcement(from: .flintGroup), clock: .system) else { return false }
             return save(to: .flintGroup)
         } ?? false
         #else
@@ -337,7 +336,7 @@ extension FlintWebRestrictions {
     /// shared transition; child/global editor changes use this same atomic blob replacement.
     static func writeStorage(to defaults: UserDefaults?, config: Self?, children: Data? = nil) -> Bool {
         guard let defaults, config != nil || children != nil, config?.validationMessage == nil else { return false }
-        let childMarker = "flint.webRestrictions.children.initialized.adr012"
+        let childMarker = Self.childInitializedMarkerKey
         let keys = [storageKey, initializedMarkerKey, childMarker]
         var previous = keys.map { defaults.object(forKey: $0) }
         var committed = false

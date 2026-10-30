@@ -246,7 +246,7 @@ struct FlintRuleReloadEnvironment {
             }
         }
         guard changed.isEmpty || (acceptSave() && FlintDesiredRules.save(next, key: Rule.domain, to: defaults)) else { return nil }
-        guard FlintWebRestrictionRuleAdapter.freeze(next, environment: self, existingWebStores: existingWebStores) else { return nil }
+        _ = FlintWebRestrictionRuleAdapter.freeze(next, environment: self, existingWebStores: existingWebStores, completeRuleSnapshot: true)
         for rule in changed {
             if let limit = rule as? FlintLimitRule {
                 if resetShields { clearStore(limit.storeName) }

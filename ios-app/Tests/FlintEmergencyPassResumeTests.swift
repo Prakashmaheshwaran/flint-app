@@ -67,7 +67,8 @@ final class FlintEmergencyPassResumeTests: XCTestCase {
         let writer = PassResumeWebWriter()
         h.advance(3600)
         try FlintEmergencyPassRuleEffects.resume(state: h.ledger.read().get(), at: .init(clock: h.clock),
-            environment: h.environment, web: .init(writer: writer, clock: h.clock), existingWebStores: { false })
+            environment: h.environment, web: .init(writer: writer, clock: h.clock,
+                children: .init(defaults: h.defaults)), existingWebStores: { false })
         XCTAssertEqual(Set(h.appliedSchedules.map(\.id)), ["continues", "starts-inside"])
         XCTAssertEqual(Set(writer.applied), ["flint.continues", "flint.starts-inside"])
         XCTAssertTrue(h.cleared.contains("flint.ends-inside"))
