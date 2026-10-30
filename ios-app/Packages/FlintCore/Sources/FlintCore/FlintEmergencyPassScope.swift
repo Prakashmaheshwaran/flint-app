@@ -228,7 +228,8 @@ enum FlintEmergencyPassRuleEffects {
     }
     static func resume(state: FlintLedgerState, at now: FlintLedgerInstant,
                        environment: FlintRuleReloadEnvironment = .live,
-                       web: FlintWebRestrictionLifecycle = .init()) throws {
+                       web: FlintWebRestrictionLifecycle = .init(),
+                       existingWebStores: (() -> Bool)? = nil) throws {
         var reports: [String: FlintArmingHealth.DomainReport] = [:]
         var env = environment
         let record = env.record
@@ -253,9 +254,19 @@ enum FlintEmergencyPassRuleEffects {
             calendar: env.clock.calendar(), hasThresholdShield: { _ in false })
         guard let schedules = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: env.defaults),
               let limits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: env.defaults),
-              let opens = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: env.defaults),
-              let config = FlintWebRestrictions.loadForEnforcement(from: env.defaults), config.validationMessage == nil else {
+              let opens = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: env.defaults) else {
             throw FlintEmergencyPassError.scopeUnavailable
+        }
+        // A missing/corrupt Safari preference cannot prevent the other domains resuming.
+        // The committed pass already released their native stores; only this child is unknown.
+        let loadedWeb = FlintWebRestrictions.loadForEnforcement(from: env.defaults, existingWebStores: existingWebStores)
+        let config = loadedWeb.flatMap { $0.validationMessage == nil ? $0 : nil }
+        var webApplied = 0
+        defer {
+            env.record("webRestrictions", .init(enabled: webApplied, attempted: webApplied, armed: webApplied,
+                failures: config == nil ? [.init(activityName: "webRestrictions",
+                    reason: "Saved website rules are unavailable. Other protection resumed; Safari settings need repair.")] : [],
+                updatedAt: env.clock.now()))
         }
         func observed(_ name: String, domain: String) -> Bool {
             guard let report = reports[domain], report.observedActivities?.contains(name) == true,
@@ -269,7 +280,12 @@ enum FlintEmergencyPassRuleEffects {
             }
             guard observed(rule.activityName, domain: "schedules") else { incomplete = true; continue }
             guard env.applyProtection(rule) else { incomplete = true; continue }
-            web.reconcileRule(rule, config: config, now: env.clock.now(), calendar: rule.ruleCalendar, clock: env.clock)
+            if let config {
+                web.reconcileRule(rule, config: config, now: env.clock.now(), calendar: rule.ruleCalendar, clock: env.clock)
+                if FlintWebRestrictionPolicy.shouldApply(to: rule, config: config, now: env.clock.now(), clock: env.clock) {
+                    webApplied += 1
+                }
+            }
         }
         for rule in limits {
             let date = FlintRuleOccurrenceClock.date(for: rule, clock: env.clock)

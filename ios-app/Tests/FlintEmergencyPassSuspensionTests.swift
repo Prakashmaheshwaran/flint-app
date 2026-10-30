@@ -120,7 +120,7 @@ final class FlintEmergencyPassSuspensionTests: XCTestCase {
                 release: { _ in }, resume: { state, at in
                     resumes += 1
                     try FlintEmergencyPassRuleEffects.resume(state: state, at: at, environment: applying,
-                        web: .init(writer: RecoveryNoWebWriter(), clock: h.clock))
+                        web: .init(writer: RecoveryNoWebWriter(), clock: h.clock), existingWebStores: { false })
                 }, emit: { _ in }))
             let preview = try pass.preview().get()
             _ = try pass.use(previewRevision: preview.revision, operationID: "global-recovery").get()

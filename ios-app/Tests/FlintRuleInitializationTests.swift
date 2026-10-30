@@ -206,7 +206,8 @@ final class FlintRuleInitializationTests: XCTestCase {
                 defaults: h.defaults, calendar: h.clock.calendar(), hasThresholdShield: { _ in false }) },
             registerCarrier: { _, _, _ in }, terminate: { _, _ in h.defaults.removeObject(forKey: "flint.activeSession") },
             release: { _ in }, resume: { state, at in try FlintEmergencyPassRuleEffects.resume(state: state, at: at,
-                environment: h.environment, web: .init(writer: InitializationNoWebWriter(), clock: h.clock)) }, emit: { _ in }))
+                environment: h.environment, web: .init(writer: InitializationNoWebWriter(), clock: h.clock),
+                existingWebStores: { false }) }, emit: { _ in }))
         let preview = try pass.preview().get()
         _ = try pass.use(previewRevision: preview.revision, operationID: "legacy-upgrade").get()
         _ = try pass.resumeNow().get()

@@ -38,7 +38,8 @@ final class FlintEmergencyPassResumeTests: XCTestCase {
                 defaults: h.defaults, calendar: h.clock.calendar(), hasThresholdShield: { _ in false }) },
             registerCarrier: { _, _, _ in }, terminate: { _, _ in }, release: { _ in },
             resume: { state, now in try FlintEmergencyPassRuleEffects.resume(state: state, at: now,
-                environment: environment, web: .init(writer: PassResumeWebWriter(), clock: h.clock)) }, emit: { _ in }))
+                environment: environment, web: .init(writer: PassResumeWebWriter(), clock: h.clock),
+                existingWebStores: { false }) }, emit: { _ in }))
         let preview = try controller.preview().get()
         _ = try controller.use(previewRevision: preview.revision, operationID: "native-resume").get()
         h.advance(3600)
@@ -66,7 +67,7 @@ final class FlintEmergencyPassResumeTests: XCTestCase {
         let writer = PassResumeWebWriter()
         h.advance(3600)
         try FlintEmergencyPassRuleEffects.resume(state: h.ledger.read().get(), at: .init(clock: h.clock),
-            environment: h.environment, web: .init(writer: writer, clock: h.clock))
+            environment: h.environment, web: .init(writer: writer, clock: h.clock), existingWebStores: { false })
         XCTAssertEqual(Set(h.appliedSchedules.map(\.id)), ["continues", "starts-inside"])
         XCTAssertEqual(Set(writer.applied), ["flint.continues", "flint.starts-inside"])
         XCTAssertTrue(h.cleared.contains("flint.ends-inside"))
@@ -82,7 +83,8 @@ final class FlintEmergencyPassResumeTests: XCTestCase {
         h.center.refused.insert(rule.activityName)
         let writer = PassResumeWebWriter()
         XCTAssertThrowsError(try FlintEmergencyPassRuleEffects.resume(state: h.ledger.read().get(),
-            at: .init(clock: h.clock), environment: h.environment, web: .init(writer: writer, clock: h.clock))) {
+            at: .init(clock: h.clock), environment: h.environment, web: .init(writer: writer, clock: h.clock),
+            existingWebStores: { false })) {
             XCTAssertEqual($0 as? FlintEmergencyPassError, .applying)
         }
         XCTAssertTrue(h.appliedSchedules.isEmpty)
@@ -99,7 +101,7 @@ final class FlintEmergencyPassResumeTests: XCTestCase {
         XCTAssertTrue(FlintEmergencyPassRuleEffects.noteThreshold(rule: saved, at: .init(clock: h.clock), ledger: h.ledger))
         h.now.addTimeInterval(86400) // wall-only jump cannot discard the exhausted occurrence on resume
         try FlintEmergencyPassRuleEffects.resume(state: h.ledger.peek().get(), at: .init(clock: h.clock),
-            environment: h.environment, web: .init(writer: PassResumeWebWriter(), clock: h.clock))
+            environment: h.environment, web: .init(writer: PassResumeWebWriter(), clock: h.clock), existingWebStores: { false })
         XCTAssertEqual(h.appliedLimits.map(\.id), [saved.id])
         XCTAssertEqual(h.load(FlintLimitRule.self).first?.thresholdMinutes, 30)
     }
@@ -113,7 +115,7 @@ final class FlintEmergencyPassResumeTests: XCTestCase {
         open.selection.applicationTokens = [try fictionalRuleToken("pass-open")]
         let saved = h.install(open)
         try FlintEmergencyPassRuleEffects.resume(state: h.ledger.read().get(), at: .init(clock: h.clock),
-            environment: h.environment, web: .init(writer: PassResumeWebWriter(), clock: h.clock))
+            environment: h.environment, web: .init(writer: PassResumeWebWriter(), clock: h.clock), existingWebStores: { false })
         XCTAssertTrue(h.appliedLimits.isEmpty)
         // B5 reload and the fresh recovery derivation may both idempotently write this cause.
         XCTAssertEqual(Set(h.appliedOpens.map(\.id)), [saved.id])
@@ -133,9 +135,35 @@ final class FlintEmergencyPassResumeTests: XCTestCase {
                 at: .init(clock: h.clock), defaults: h.defaults, ledger: h.ledger))
         }
         try FlintEmergencyPassRuleEffects.resume(state: beforeObservation, at: .init(clock: h.clock),
-            environment: h.environment, web: .init(writer: PassResumeWebWriter(), clock: h.clock))
+            environment: h.environment, web: .init(writer: PassResumeWebWriter(), clock: h.clock), existingWebStores: { false })
         XCTAssertEqual(h.appliedLimits.map(\.id), [saved.id])
         XCTAssertNotNil(try h.ledger.peek().get().passLimitThresholds?[saved.id])
+    }
+
+    func testUnavailableSafariIntentDoesNotBlockOtherResumeWritesAndReportsWebRecovery() throws {
+        for bad in ["missing", "malformed", "wrong-type"] {
+            let h = try RuleHarness(); defer { h.clean() }
+            let schedule = h.install(h.schedule(tier: .hardcore))
+            var time = FlintLimitRule(id: "time", name: "Time", thresholdMinutes: 30, protection: .init(timeZoneID: "UTC"))
+            time.selection.applicationTokens = [try fictionalRuleToken("resume-unavailable-time")]
+            let savedTime = h.install(time)
+            XCTAssertTrue(FlintEmergencyPassRuleEffects.noteThreshold(rule: savedTime, at: .init(clock: h.clock), ledger: h.ledger))
+            var open = FlintOpenLimitRule(id: "open", name: "Open", opensAllowed: 3, protection: .init(timeZoneID: "UTC"))
+            open.selection.applicationTokens = [try fictionalRuleToken("resume-unavailable-open")]
+            let savedOpen = h.install(open)
+            h.defaults.set(true, forKey: FlintWebRestrictions.initializedMarkerKey)
+            if bad == "malformed" { h.defaults.set(Data("{".utf8), forKey: "flint.webRestrictions") }
+            if bad == "wrong-type" { h.defaults.set("unreadable", forKey: "flint.webRestrictions") }
+            let writer = PassResumeWebWriter()
+            try FlintEmergencyPassRuleEffects.resume(state: h.ledger.peek().get(), at: .init(clock: h.clock),
+                environment: h.environment, web: .init(writer: writer, clock: h.clock), existingWebStores: { false })
+            XCTAssertTrue(h.appliedSchedules.contains { $0.id == schedule.id }, bad)
+            XCTAssertTrue(h.appliedLimits.contains { $0.id == savedTime.id }, bad)
+            XCTAssertTrue(h.appliedOpens.contains { $0.id == savedOpen.id }, bad)
+            XCTAssertTrue(writer.applied.isEmpty, bad)
+            XCTAssertEqual(h.reports["webRestrictions"]?.armed, 0, bad)
+            XCTAssertEqual(h.reports["webRestrictions"]?.failures.first?.activityName, "webRestrictions", bad)
+        }
     }
 }
 
