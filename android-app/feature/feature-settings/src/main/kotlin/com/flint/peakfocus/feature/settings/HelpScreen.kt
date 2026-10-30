@@ -56,6 +56,7 @@ internal object HelpContent {
                 HelpFact(R.string.help_strict_harder_title, R.string.help_strict_harder_text),
                 HelpFact(R.string.help_strict_hardcore_title, R.string.help_strict_hardcore_text),
                 HelpFact(R.string.help_strict_timers_title, R.string.help_strict_timers_text),
+                HelpFact(R.string.help_strict_legacy_title, R.string.help_strict_legacy_text),
             ),
         ),
         HelpSection(

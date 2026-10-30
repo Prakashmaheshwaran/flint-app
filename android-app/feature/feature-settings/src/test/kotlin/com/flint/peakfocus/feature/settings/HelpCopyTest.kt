@@ -61,6 +61,7 @@ class HelpCopyTest {
             "help_section_strictness", "help_strict_easy_title", "help_strict_easy_text",
             "help_strict_harder_title", "help_strict_harder_text", "help_strict_hardcore_title",
             "help_strict_hardcore_text", "help_strict_timers_title", "help_strict_timers_text",
+            "help_strict_legacy_title", "help_strict_legacy_text",
             "help_section_pass", "help_pass_title", "help_pass_text", "help_pass_recovery_title",
             "help_pass_recovery_text", "help_pass_where_title", "help_pass_where_text",
             "help_section_limits", "help_access_title", "help_access_text", "help_safety_title",
@@ -94,11 +95,14 @@ class HelpCopyTest {
     }
 
     @Test
-    fun `clock copy keeps started blocks anchored but future boundaries on the phone clock`() {
+    fun `clock copy separates elapsed-time protection from phone-day boundaries`() {
         val clock = strings.getValue("help_clock_text")
-        assertTrue(clock.contains("a clock change doesn't shorten a block that has already started"))
-        assertTrue(clock.contains("Future schedule start times and daily time-limit resets still follow the phone's clock."))
+        assertTrue(clock.contains("During the same phone boot, Flint times started sessions and scheduled blocks"))
+        assertTrue(clock.contains("Saved schedules keep their time zone and stay on Flint's saved timeline."))
+        assertTrue(clock.contains("Daily time limits use the phone's day, so a clock change can move when they reset"))
         assertTrue(clock.contains("can't always tell how much time really passed"))
+        assertFalse("future schedules follow the saved timeline, not the phone clock",
+            clock.contains("Future schedule start times"))
     }
 
     @Test
@@ -109,18 +113,27 @@ class HelpCopyTest {
         val recovery = strings.getValue("help_pass_recovery_text")
         assertTrue(recovery.contains("New schedule occurrences are also suspended during recovery. " +
             "Counters are kept; the pass is not refunded."))
-        assertTrue(recovery.contains("only commitments still naturally active will resume"))
+        // Complete, case-sensitive sentences reused from lane C's RecoveryScreen.
+        assertTrue(recovery.contains("Only commitments still naturally active will resume."))
+        assertTrue(recovery.contains("While the recovery screen is open, choose Resume protection now"))
         assertTrue(strings.getValue("help_pass_where_text").contains("Review Emergency Pass"))
     }
 
     @Test
-    fun `strictness copy states the enforced waits and Hardcore exits`() {
-        assertTrue(strings.getValue("help_strict_harder_text").contains("1 minute the first time in a block, then 5, then 15"))
-        assertTrue(strings.getValue("help_strict_easy_text").contains("five-minute break"))
+    fun `strictness copy states the enforced waits, break limits and Hardcore exits`() {
+        val harder = strings.getValue("help_strict_harder_text")
+        assertTrue(harder.contains("waits 1 minute for the first confirmed change in a block, then 5, then 15"))
+        assertTrue(harder.contains("For a daily limit, the count lasts until the limit's daily reset."))
+        assertTrue(harder.contains("A granted break lasts up to five minutes and ends sooner if the block ends."))
+        val easy = strings.getValue("help_strict_easy_text")
+        assertTrue(easy.contains("up to five minutes when no other restriction prevents it"))
         val hardcore = strings.getValue("help_strict_hardcore_text")
         assertTrue(hardcore.contains("No breaks and no ending early"))
         assertTrue(hardcore.contains("saved for after that block ends"))
         assertTrue(strings.getValue("help_strict_timers_text").contains("2-second hold"))
+        val legacy = strings.getValue("help_strict_legacy_text")
+        assertTrue(legacy.contains("These rules apply to new commitments."))
+        assertTrue(legacy.contains("A Timer marked Legacy can still be ended with a hold."))
     }
 
     @Test
