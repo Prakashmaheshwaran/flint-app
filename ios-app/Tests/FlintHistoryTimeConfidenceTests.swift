@@ -242,6 +242,67 @@ final class FlintHistoryTimeConfidenceTests: XCTestCase {
         }
     }
 
+    private func assertBackdatedBarrier(_ barrier: FlintHistoryEvent,
+                                        file: StaticString = #filePath, line: UInt = #line) {
+        let witness = event(.openIntercepted, 60), later = event(.openIntercepted, 180)
+        let terminal = event(.completed, 600)
+        let rows = [started(), witness, barrier, later, terminal]
+        assertUnconfirmed(rows, focused: 60, file: file, line: line)
+        XCTAssertEqual(summary(rows, now: 1200).focusedSeconds, 60, file: file, line: line)
+        assertUnconfirmed([started(), barrier, later, terminal], file: file, line: line)
+        assertUnconfirmed([started(), barrier, witness, later, terminal], file: file, line: line)
+    }
+
+    func testRejectedBackdatedPlansCannotReorderOrReplanEarlierRecordedWitness() {
+        for confidence in [uncertain, nil] as [FlintEventTimeConfidence?] {
+            var plan = event(.rescheduled, 30, confidence: confidence)
+            plan.plannedEnd = event(.completed, 20).at; plan.observedAt = event(.rescheduled, 120).at
+            assertBackdatedBarrier(plan)
+        }
+    }
+
+    func testRejectedBackdatedRestorationsRetainPrefixWithoutLaterExtension() {
+        var uncertainPhase = event(.protectionRestored, 30, confidence: uncertain)
+        uncertainPhase.observedAt = event(.protectionRestored, 120).at
+        assertBackdatedBarrier(uncertainPhase)
+        var backwardPhase = event(.protectionRestored, -60)
+        backwardPhase.observedAt = uncertainPhase.observedAt
+        assertBackdatedBarrier(backwardPhase)
+    }
+
+    func testRejectedBackdatedBreakGapAndGlobalPassCutsCannotEraseRecordedPrefix() {
+        var cuts: [FlintHistoryEvent] = []
+        let windows: [(TimeInterval, TimeInterval, FlintEventTimeConfidence?)] = [(30, 90, uncertain), (30, 20, nil), (-60, 120, nil)]
+        for (seconds, end, confidence) in windows {
+            var pause = event(.breakStarted, seconds, confidence: confidence)
+            pause.grant = "g"; pause.breakEnd = event(.breakEnded, end).at
+            cuts.append(pause)
+            var pass = event(.passUsed, seconds, confidence: confidence)
+            pass.session = "operation"; pass.sessions = ["session-a"]; pass.recoveryEnd = event(.passUsed, end).at
+            cuts.append(pass)
+        }
+        cuts += [event(.protectionDegraded, 30, confidence: uncertain), event(.protectionDegraded, -60)]
+        for var cut in cuts {
+            cut.observedAt = event(.openIntercepted, 120).at
+            assertBackdatedBarrier(cut)
+        }
+    }
+
+    func testAcceptedLogicalCutsStillSubtractFromPrefixBeforeRejectedPlan() {
+        var pause = event(.breakStarted, 10); pause.grant = "g"; pause.breakEnd = event(.breakEnded, 25).at
+        var resume = event(.breakEnded, 20); resume.grant = "g"
+        var pass = event(.passUsed, 40); pass.session = "operation"; pass.sessions = ["session-a"]
+        pass.recoveryEnd = event(.passUsed, 50).at
+        let rows = [started(), resume, pause, event(.protectionDegraded, 25), event(.protectionRestored, 35), pass,
+                    event(.openIntercepted, 60)]
+        var plan = event(.rescheduled, 30); plan.plannedEnd = event(.completed, 20).at
+        plan.observedAt = event(.rescheduled, 120).at
+        assertUnconfirmed(rows + [plan, event(.openIntercepted, 180), event(.completed, 600)], focused: 30)
+        let completed = summary(rows + [event(.completed, 600)])
+        XCTAssertEqual(completed.sessions.first?.outcome, .completed)
+        XCTAssertEqual(completed.focusedSeconds, 570)
+    }
+
     func testRevisionAfterPriorExpiryCannotReviveOccurrenceOrCompletion() {
         for confidence in [nil, .certain] as [FlintEventTimeConfidence?] {
             var revision = event(.rescheduled, 7260, confidence: confidence)

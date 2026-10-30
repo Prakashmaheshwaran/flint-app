@@ -100,6 +100,7 @@ object FocusHistoryAggregator {
 
     fun sessions(events: List<HistoryEvent>, now: Long, activeSessionIds: Set<String>): List<FocusSession> {
         val supported = events.distinctBy { it.id }.filter { it.knownType != null }
+        val appendOrder = supported.withIndex().associate { it.value.id to it.index }
         val passesBySession = supported.filter { it.knownType == HistoryEventType.PASS_USED }
             .flatMap { pass -> pass.sessions.orEmpty().distinct().map { it to pass } }
             .groupBy({ it.first }, { it.second })
@@ -112,7 +113,6 @@ object FocusHistoryAggregator {
             }.mapTo(mutableSetOf()) { it.id }
             // Plan ties use append/revision order; phase pairing still uses logical time.
             val plans = group.filter { it.id in planIds }.ifEmpty { listOf(start) }
-            fun planAt(at: Long) = plans.filter { it.at <= at }.sortedBy { it.observedAt ?: it.at }.lastOrNull() ?: start
             fun plausiblePlan(event: HistoryEvent) = !event.uncertainTime && event.at in SUPPORTED_TIMES &&
                 start.at in SUPPORTED_TIMES && event.at >= start.at &&
                 (event.plannedEnd == null || (event.plannedEnd in SUPPORTED_TIMES &&
@@ -134,6 +134,8 @@ object FocusHistoryAggregator {
                 }
             }
             fun validPlan(event: HistoryEvent) = event.id in validPlanIds
+            fun planAt(at: Long) = plans.filter { validPlan(it) && it.at <= at }
+                .sortedBy { it.observedAt ?: it.at }.lastOrNull() ?: start
             val authoritativePlan = plans.lastOrNull { validPlan(it) && ownerFinalPlan(it) }
             val plan = authoritativePlan ?: plans.sortedBy { it.observedAt ?: it.at }.lastOrNull() ?: start
             val plannedEnd = plan.plannedEnd
@@ -153,29 +155,47 @@ object FocusHistoryAggregator {
             // rolls back. Later cleanup cannot taint it; replayed phases use logical order.
             val localEvidence = if (validTerminal) ordered.takeWhile { it !== terminal }
                 else if (terminal != null) group.takeWhile { it !== terminal }.sortedBy { it.at } else ordered
-            val beforeTerminal = (localEvidence + passesBySession[id].orEmpty().filter {
+            val relatedPasses = passesBySession[id].orEmpty().filter {
                 !validTerminal || it.at <= terminal!!.at
-            }).sortedBy { it.at }
+            }
+            fun rejectedTime(event: HistoryEvent): Boolean = when {
+                event.knownType in setOf(HistoryEventType.STARTED, HistoryEventType.RESCHEDULED) ->
+                    !validPlan(event) && !(authoritativePlan != null &&
+                        event.knownType == HistoryEventType.RESCHEDULED && !event.uncertainTime)
+                event.knownType in coverageTypes -> event.uncertainTime || !inPlan(event) ||
+                    (event.knownType == HistoryEventType.BREAK_STARTED &&
+                        event.breakEnd?.let { it < event.at || it !in SUPPORTED_TIMES } == true) ||
+                    (!validTerminal && event.at > now)
+                event.knownType == HistoryEventType.PASS_USED -> event.uncertainTime || !inPlan(event) ||
+                    event.recoveryEnd?.let { it < event.at || it !in SUPPORTED_TIMES } == true
+                else -> false
+            }
+            val rejectedTimeIds = (ordered + relatedPasses).filter(::rejectedTime).mapTo(mutableSetOf()) { it.id }
+            // Rejected time has no logical ordering authority over a previously recorded
+            // witness. Replay these barriers once in append order, retaining logical grant
+            // pairing (including an end delivered before its start).
+            val beforeTerminal = (localEvidence + relatedPasses).sortedBy { appendOrder[it.id] }
             var trusted = validPlan(start)
+            var canExtend = trusted
+            var grantBarrier: Long? = null
             var coverageEnd = start.at
             beforeTerminal.forEach { event ->
                 when {
-                    event.knownType in setOf(HistoryEventType.STARTED, HistoryEventType.RESCHEDULED) -> {
-                        val supersededOrdinaryPlan = authoritativePlan != null &&
-                            event.knownType == HistoryEventType.RESCHEDULED && !event.uncertainTime
-                        if (!validPlan(event) && !supersededOrdinaryPlan) trusted = false
+                    event.id in rejectedTimeIds -> {
+                        trusted = false
+                        canExtend = false
                     }
                     event.knownType in coverageTypes -> {
-                        // Reject an impossible witness rather than clipping it into evidence.
                         val paired = event.knownType != HistoryEventType.BREAK_ENDED || event.grant == null ||
-                            ordered.any { it.knownType == HistoryEventType.BREAK_STARTED && it.grant == event.grant && it.at <= event.at }
-                        val invalidBreak = event.knownType == HistoryEventType.BREAK_STARTED &&
-                            event.breakEnd?.let { it < event.at || it !in SUPPORTED_TIMES } == true
-                        if (event.uncertainTime || !inPlan(event) || !paired || invalidBreak || (!validTerminal && event.at > now)) trusted = false
-                        else if (trusted) coverageEnd = maxOf(coverageEnd, event.at)
+                            ordered.any { it.knownType == HistoryEventType.BREAK_STARTED && it.grant == event.grant &&
+                                it.at <= event.at && it.id !in rejectedTimeIds }
+                        if (!paired) {
+                            trusted = false
+                            grantBarrier = minOf(grantBarrier ?: event.at, event.at)
+                        } else if (canExtend && (grantBarrier?.let { event.at < it } ?: true)) {
+                            coverageEnd = maxOf(coverageEnd, event.at)
+                        }
                     }
-                    event.knownType == HistoryEventType.PASS_USED && (event.uncertainTime ||
-                        event.recoveryEnd?.let { it < event.at || it !in SUPPORTED_TIMES } == true) -> trusted = false
                 }
             }
             val outcome = if (!trusted || (terminal != null && !validTerminal)) SessionOutcome.UNCONFIRMED else when (terminal?.knownType) {
@@ -203,19 +223,22 @@ object FocusHistoryAggregator {
                 if (outcome == SessionOutcome.RUNNING || terminal == null) now else evidencedEnd)
             var intervals = if (clampedEnd <= start.at) emptyList()
                 else listOf(FocusInterval(start.at, clampedEnd))
-            val breaks = ordered.filter { it.knownType == HistoryEventType.BREAK_STARTED }
+            // Cuts use the same admitted times as coverage; raw backdated uncertainty
+            // must not erase the prefix again during subtraction.
+            val phases = ordered.filter { it.id !in rejectedTimeIds }
+            val breaks = phases.filter { it.knownType == HistoryEventType.BREAK_STARTED }
             breaks.forEach { b ->
-                val observed = ordered.firstOrNull { it.knownType == HistoryEventType.BREAK_ENDED && it.at >= b.at &&
+                val observed = phases.firstOrNull { it.knownType == HistoryEventType.BREAK_ENDED && it.at >= b.at &&
                     !it.uncertainTime && (b.grant == null || it.grant == b.grant) }?.at
                 val breakEnd = minOf(observed ?: b.breakEnd ?: clampedEnd, clampedEnd)
                 intervals = subtract(intervals, FocusInterval(b.at, breakEnd))
             }
-            ordered.filter { it.knownType == HistoryEventType.PROTECTION_DEGRADED }.forEach { gap ->
-                val restored = ordered.firstOrNull { it.knownType == HistoryEventType.PROTECTION_RESTORED &&
+            phases.filter { it.knownType == HistoryEventType.PROTECTION_DEGRADED }.forEach { gap ->
+                val restored = phases.firstOrNull { it.knownType == HistoryEventType.PROTECTION_RESTORED &&
                     !it.uncertainTime && it.at >= gap.at }?.at
                 intervals = subtract(intervals, FocusInterval(gap.at, restored ?: clampedEnd))
             }
-            passesBySession[id].orEmpty().forEach { pass ->
+            relatedPasses.filter { it.id !in rejectedTimeIds }.forEach { pass ->
                 intervals = subtract(intervals, FocusInterval(pass.at, pass.recoveryEnd ?: pass.at))
             }
             FocusSession(id, start.name ?: "Focus", start.at, end, plannedEnd, outcome, inferred,
