@@ -16,7 +16,7 @@
     <string name="help_strict_easy_title">Easy</string>
     <string name="help_strict_easy_text">Easy can offer an app break of up to five minutes when no other restriction prevents it. You can confirm ending an Easy session early, or turning off or removing an Easy rule or limit; other protection may still apply.</string>
     <string name="help_strict_harder_title">Harder</string>
-    <string name="help_strict_harder_text">A Harder break, early end, rule deletion, switch-off or loosening waits 1 minute for the first confirmed change in a block, then 5, then 15 for each later change. For a daily limit, the count lasts until the limit\'s daily reset. After the wait, confirm the change. A granted break lasts up to five minutes and ends sooner if the block ends.</string>
+    <string name="help_strict_harder_text">A Harder break, early end, rule deletion, switch-off or loosening waits 1 minute for the first confirmed change in a block, then 5, then 15 for each later change. For a daily limit, the wait count lasts until Flint\'s saved daily reset; changing the phone\'s day does not restart the count. After the wait, confirm the change. A granted break lasts up to five minutes and ends sooner if the block ends.</string>
     <string name="help_strict_hardcore_title">Hardcore</string>
     <string name="help_strict_hardcore_text">No breaks and no ending early. Turning a rule off, deleting it or loosening it while it runs is saved for after that block ends. It ends when its time is up, or with an available Emergency Pass.</string>
     <string name="help_strict_timers_title">Timers</string>
