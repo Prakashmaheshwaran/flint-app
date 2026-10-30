@@ -31,7 +31,12 @@ final class FlintCompletionControllerIntegrationTests: XCTestCase {
             webRestrictions: ControllerNotificationWebRestrictions(), registrar: registrar,
             isAuthorized: { true }, clock: FlintClock(now: { self.now }, monotonic: { 10_000 },
                 bootSessionID: { "notification-integration" }, calendar: { Calendar(identifier: .gregorian) }),
-            healthDefaults: { defaults }))
+            healthDefaults: { defaults }, ledger: {
+                FlintProtectionLedger(directory: self.directory.appendingPathComponent("session"),
+                    clock: FlintClock(now: { self.now }, monotonic: { 10_000 },
+                        bootSessionID: { "notification-integration" }, calendar: { Calendar(identifier: .gregorian) }),
+                    initializedMarker: { nil }, setInitializedMarker: { _ in })
+            }))
     }
 
     override func tearDownWithError() throws {

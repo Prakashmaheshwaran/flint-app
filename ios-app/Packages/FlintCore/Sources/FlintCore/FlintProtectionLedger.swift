@@ -102,6 +102,10 @@ public struct FlintLedgerState: Codable, Equatable, Sendable {
     public var passLimitThresholds: [String: FlintPassLimitThreshold]?
     /// A pass-ended Focus cannot recreate its occurrence until an observed off→on cycle.
     public var passSuppressedFocusOwners: Set<String>?
+    /// Exact session generation, terminal proof and accepted-start replay (R-20/R-25).
+    /// The accompanying schema marker distinguishes legacy absence from stripped authority.
+    public var sessionAuthority: FlintSessionAuthority?
+    public var sessionAuthorityVersion: Int?
 
     public init(initializedAt: Date) {
         version = Self.currentVersion
@@ -114,11 +118,14 @@ public struct FlintLedgerState: Codable, Equatable, Sendable {
         emergencyRecovery = nil
         passLimitThresholds = nil
         passSuppressedFocusOwners = nil
+        sessionAuthority = FlintSessionAuthority(initializedAt: initializedAt)
+        sessionAuthorityVersion = 1
     }
 
     private enum CodingKeys: String, CodingKey {
         case version, initializedAt, migrations, pass, harder, operations, openCredits
         case emergencyRecovery, passLimitThresholds, passSuppressedFocusOwners
+        case sessionAuthority, sessionAuthorityVersion
     }
 
     public init(from decoder: Decoder) throws {
@@ -138,6 +145,15 @@ public struct FlintLedgerState: Codable, Equatable, Sendable {
         emergencyRecovery = try values.decodeIfPresent(FlintPassRecovery.self, forKey: .emergencyRecovery)
         passLimitThresholds = try values.decodeIfPresent([String: FlintPassLimitThreshold].self, forKey: .passLimitThresholds)
         passSuppressedFocusOwners = try values.decodeIfPresent(Set<String>.self, forKey: .passSuppressedFocusOwners)
+        sessionAuthority = try values.decodeIfPresent(FlintSessionAuthority.self, forKey: .sessionAuthority)
+        sessionAuthorityVersion = values.contains(.sessionAuthorityVersion)
+            ? try values.decode(Int.self, forKey: .sessionAuthorityVersion) : nil
+        if let sessionAuthorityVersion {
+            guard sessionAuthorityVersion == 1, sessionAuthority?.isValid == true else {
+                throw DecodingError.dataCorruptedError(forKey: .sessionAuthority, in: values,
+                    debugDescription: "Session authority is missing or unsupported after migration")
+            }
+        }
     }
 
     // MARK: Emergency Pass (§6)

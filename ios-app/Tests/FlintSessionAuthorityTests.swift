@@ -31,6 +31,58 @@ final class FlintSessionAuthorityTests: XCTestCase {
         XCTAssertEqual(authority.latest?.session.id, "Y")
     }
 
+    func testReadOnlyStatusDistinguishesLegacyIdleFromMissingGenerationRecordR20() throws {
+        let clock = FlintClock(now: { self.wall }, monotonic: { 50_000 },
+            bootSessionID: { "boot" }, calendar: { .current })
+        XCTAssertFalse(FlintSessionAuthority.recordIsUnavailable(nil, recordPresent: false, authority: nil, clock: clock))
+        XCTAssertTrue(FlintSessionAuthority.recordIsUnavailable(nil, recordPresent: false, authority: nil,
+            authorityVersion: 1, clock: clock))
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        XCTAssertFalse(FlintSessionAuthority.recordIsUnavailable(nil, recordPresent: false, authority: authority, clock: clock))
+        try install("Y", in: &authority)
+        XCTAssertTrue(FlintSessionAuthority.recordIsUnavailable(nil, recordPresent: false, authority: authority, clock: clock))
+        XCTAssertFalse(FlintSessionAuthority.recordIsUnavailable(session("Y"), recordPresent: true, authority: authority, clock: clock))
+        try authority.terminate(session("Y"), outcome: .completed, route: "completed", at: wall)
+        XCTAssertFalse(FlintSessionAuthority.recordIsUnavailable(nil, recordPresent: false, authority: authority, clock: clock))
+        XCTAssertTrue(FlintSessionAuthority.recordIsUnavailable(nil, recordPresent: true, authority: authority, clock: clock))
+    }
+
+    func testLegacyLedgerFixtureDecodesWithoutInventingAGeneration() throws {
+        var fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(
+            FlintLedgerState(initializedAt: wall))) as? [String: Any])
+        fixture.removeValue(forKey: "sessionAuthority")
+        fixture.removeValue(forKey: "sessionAuthorityVersion")
+        let decoded = try JSONDecoder().decode(FlintLedgerState.self,
+            from: JSONSerialization.data(withJSONObject: fixture, options: [.sortedKeys]))
+        XCTAssertNil(decoded.sessionAuthority, "the transition explicitly performs the readable legacy migration")
+        XCTAssertEqual(decoded.initializedAt, wall)
+    }
+
+    func testPostMigrationLedgerWithStrippedAuthorityIsCorruptRatherThanLegacyIdleR20() throws {
+        var fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(
+            FlintLedgerState(initializedAt: wall))) as? [String: Any])
+        fixture.removeValue(forKey: "sessionAuthority")
+        XCTAssertThrowsError(try JSONDecoder().decode(FlintLedgerState.self,
+            from: JSONSerialization.data(withJSONObject: fixture, options: [.sortedKeys])))
+        fixture["sessionAuthorityVersion"] = NSNull()
+        XCTAssertThrowsError(try JSONDecoder().decode(FlintLedgerState.self,
+            from: JSONSerialization.data(withJSONObject: fixture, options: [.sortedKeys])), "null is not a legacy marker absence")
+    }
+
+    func testScopePolicyExcludesOnlyCheckpointAndBindsFutureCommitmentFields() throws {
+        let original = try JSONEncoder().encode(session("X"))
+        let policy = try FlintSessionAuthority.scopePolicy(original)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: original) as? [String: Any])
+        object["remainingCheckpoint"] = ["remaining": 12, "wall": 123, "monotonic": 456, "bootID": "new"]
+        XCTAssertEqual(try FlintSessionAuthority.scopePolicy(JSONSerialization.data(withJSONObject: object)), policy)
+        object["ownerID"] = "different-owner"
+        XCTAssertNotEqual(try FlintSessionAuthority.scopePolicy(JSONSerialization.data(withJSONObject: object)), policy)
+        object.removeValue(forKey: "ownerID")
+        object["futureCommitment"] = "must-participate"
+        XCTAssertNotEqual(try FlintSessionAuthority.scopePolicy(JSONSerialization.data(withJSONObject: object)), policy)
+        XCTAssertThrowsError(try FlintSessionAuthority.scopePolicy(Data("[]".utf8)))
+    }
+
     func testInstallingStateRoundTripsEverythingNeededForInterruptedSessionSaveR25() throws {
         var authority = FlintSessionAuthority(initializedAt: wall)
         try authority.install(session("X"), selection: Data("frozen selection".utf8), source: .shortcut,
@@ -189,6 +241,8 @@ final class FlintSessionAuthorityTests: XCTestCase {
         for index in 0...FlintSessionAuthority.startMemory { try install("\(index)", in: &authority) }
         XCTAssertEqual(authority.acceptedStarts.count, FlintSessionAuthority.startMemory)
         XCTAssertNil(authority.acceptedStart("request.0"))
+        authority = try JSONDecoder().decode(FlintSessionAuthority.self, from: JSONEncoder().encode(authority))
+        XCTAssertEqual(authority.acceptedStart("request.64")?.sessionID, "64", "retained across process recreation")
         try install("0", in: &authority)
         XCTAssertEqual(authority.acceptedStarts.count, FlintSessionAuthority.startMemory)
         XCTAssertEqual(authority.latest?.session.id, "0")

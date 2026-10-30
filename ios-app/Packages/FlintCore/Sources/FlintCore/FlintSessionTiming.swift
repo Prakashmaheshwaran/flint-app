@@ -181,7 +181,12 @@ public enum FlintTimeIntegrity {
     }
 
     public static func verdict(for session: FlintActiveSession, clock: FlintClock) -> Verdict {
-        verdict(
+        if let checkpoint = session.remainingCheckpoint {
+            return verdict(wallStart: checkpoint.wall, monotonicStart: checkpoint.monotonic,
+                bootSessionID: checkpoint.bootID, now: clock.now(), monotonicNow: clock.monotonic(),
+                currentBootSessionID: clock.bootSessionID())
+        }
+        return verdict(
             wallStart: session.startedAt, monotonicStart: session.monotonicStart,
             bootSessionID: session.bootSessionID,
             now: clock.now(), monotonicNow: clock.monotonic(), currentBootSessionID: clock.bootSessionID()

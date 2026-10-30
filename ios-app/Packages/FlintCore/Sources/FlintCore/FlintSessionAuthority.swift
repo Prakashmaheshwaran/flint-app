@@ -13,8 +13,8 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
     public var acceptedStarts: [FlintAcceptedStartResult]
     public var routeRequests: [RouteRequest]
 
-    /// Only a validated new ledger may create this initial no-session tombstone. A legacy
-    /// decoded ledger without an authority must adopt a positively decoded session or fail closed.
+    /// New ledgers and positively readable legacy upgrades create this initial tombstone.
+    /// Once a generation exists, an absent projection never recreates this initial authority.
     public init(initializedAt: Date) {
         revision = 0
         latest = nil
@@ -34,6 +34,8 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
         public var selection: Data?
         public var source: FlintSessionSource
         public var previousMonitorName: String?
+        public var emitsStart: Bool? = nil
+        public var previousSession: FlintActiveSession? = nil
 
         public func matches(_ session: FlintActiveSession) -> Bool {
             self.session.id == session.id && self.session.monitorName == session.monitorName
@@ -80,6 +82,20 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
             return revision == latest.revision
         }
         return provesIdle
+    }
+
+    /// Read-only status projection. Legacy absence predates generations and migrates on the
+    /// next transition; an existing generation without a terminal record is always unknown.
+    public static func recordIsUnavailable(_ session: FlintActiveSession?, recordPresent: Bool,
+                                           authority: Self?, authorityVersion: Int? = nil, clock: FlintClock) -> Bool {
+        if session == nil && recordPresent { return true }
+        if authorityVersion != nil && (authorityVersion != 1 || authority == nil) { return true }
+        guard let authority else { return false }
+        guard authority.isValid else { return true }
+        guard let session else { return !authority.provesIdle }
+        guard authority.latest != nil else { return false }
+        if authority.provesIdle { return authority.latest?.matches(session) != true }
+        return authority.observedSession(matching: session, clock: clock) == nil
     }
 
     public func acceptedStart(_ operationID: String) -> FlintAcceptedStartResult? {
@@ -139,6 +155,16 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
         return try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     }
 
+    /// A display-time observation must not invalidate an Emergency Pass confirmation hold.
+    /// Exclude only this known observational field; new commitment keys remain bound by default.
+    static func scopePolicy(_ data: Data) throws -> Data {
+        guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw FlintSessionAuthorityError.generationMismatch
+        }
+        object.removeValue(forKey: "remainingCheckpoint")
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    }
+
     /// A token is saved before confirmation/start. Without an OS invocation ID identical
     /// Shortcuts within two minutes intentionally share one attempt; explicit IDs avoid that
     /// ambiguity. Terminal outcomes immediately end the heuristic Shortcut retry window.
@@ -146,7 +172,10 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
                                       at now: FlintLedgerInstant, untilDeactivation: Bool = false) -> FlintSessionStartToken {
         if let old = routeRequests.last(where: { $0.route == route && $0.fingerprint == fingerprint }) {
             let result = acceptedStart(old.token.operationID)
-            let stillRunning = result.map { $0.outcome == .running && !$0.session.isLogicallyExpired(clock: now.clock) } ?? true
+            let stillRunning = result.map {
+                $0.outcome == .running && !provesIdle && latest?.session.id == $0.sessionID
+                    && latest.map { !$0.session.isLogicallyExpired(clock: now.clock) } == true
+            } ?? true
             let currentPreview = result != nil || old.token.expectedRevision == revision
             if old.untilDeactivation || (currentPreview && stillRunning
                 && old.at.elapsed(until: now).map { $0 <= Self.retryWindow } == true) {
@@ -172,11 +201,14 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
         if let old = acceptedStart(operationID) {
             throw old.fingerprint == fingerprint ? FlintSessionAuthorityError.alreadyAccepted : .conflictingReuse
         }
-        let previous = latest.flatMap { provesIdle ? nil : $0.session.monitorName }
+        let previousSession = latest.flatMap { provesIdle ? nil : $0.session }
+        let previous = previousSession?.monitorName
         revision += 1
         latest = Generation(revision: revision, session: session, acceptedEnd: session.endsAt,
                             phase: .installing, selection: selection, source: source,
                             previousMonitorName: previous)
+        latest?.emitsStart = true
+        latest?.previousSession = previousSession
         tombstone = nil
         acceptedStarts.append(FlintAcceptedStartResult(operationID: operationID, session: session,
             outcome: .running, acceptedAt: now, fingerprint: fingerprint, expectedRevision: expectedRevision))
@@ -209,7 +241,8 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
 
     public mutating func rearm(_ session: FlintActiveSession, selection: Data? = nil) throws {
         guard latest?.session.id == session.id, !provesIdle else { throw FlintSessionAuthorityError.generationMismatch }
-        let oldMonitor = latest?.session.monitorName
+        let oldSession = latest?.session
+        let oldMonitor = oldSession?.monitorName
         revision += 1
         latest?.revision = revision
         latest?.session = session
@@ -217,6 +250,8 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
         latest?.phase = .installing
         latest?.selection = selection
         latest?.previousMonitorName = oldMonitor
+        latest?.emitsStart = false
+        latest?.previousSession = oldSession
     }
 
     /// Commit the terminal decision before any release. Replaying this exact tombstone is a
