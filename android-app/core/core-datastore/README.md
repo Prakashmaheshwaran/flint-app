@@ -15,8 +15,13 @@ sweeps an unreadable snapshot.
 global recovery, frozen ordinary grants and their lifecycle intents. The required
 `protection_schema_v1=1`, `protection_pass_outbox_v1` and
 `protection_legacy_archive_v1` keys commit together with the focus ledger at `H|3`.
-The bounded pass/outbox codec reads `P|1` and writes `P|2`; the additive version
-stores event-only pending credit ends. These receipts contain no counters and never
+The bounded pass/outbox codec reads `P|1`, `P|2` and `P|3`, and writes `P|3`.
+Version 2 added event-only pending credit ends; version 3 adds effective-time
+confidence, observed wall time and independent reconciliation metadata to events.
+Legacy events retain absent metadata rather than acquiring fabricated certainty.
+Builds supporting only `P|1`/`P|2` read `P|3` as `UNSUPPORTED_VERSION` and preserve
+its bytes: use a compatible newer build, with no downgrade rewrite or quota reset.
+Pending credit receipts contain no counters and never
 authorize access: the shared Open ledger below is its sole authority. Mandatory
 metadata and exact child counts prevent deleted initialized children from becoming
 fresh unused state. Unknown versions and malformed records remain untouched.

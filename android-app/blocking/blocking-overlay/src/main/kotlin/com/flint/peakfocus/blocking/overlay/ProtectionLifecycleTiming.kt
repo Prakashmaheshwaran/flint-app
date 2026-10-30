@@ -38,12 +38,24 @@ internal object ProtectionLifecycleTiming {
         // the old release ended conservatively at observation; do not invent its end.
         val effective = if (logicalWall != null && reason in setOf(null, "same_boot_drift"))
             now.copy(wallEpochMs = logicalWall, elapsedRealtimeMs = effectiveElapsed) else now
-        val duration = event.untilEpochMs?.let { it - event.at.wallEpochMs }
-        return event.copy(at = effective,
-            untilEpochMs = duration?.let { Math.addExact(effective.wallEpochMs, it) },
+        val duration = event.untilEpochMs?.let { end ->
+            runCatching { Math.subtractExact(end, event.at.wallEpochMs) }.getOrNull()?.takeIf { it > 0 }
+        }
+        val until = duration?.let { runCatching { Math.addExact(effective.wallEpochMs, it) }.getOrNull() }
+        val invalidInterval = event.untilEpochMs != null && until == null
+        // Saturated audit bounds only: no release authority reads this event. Keep the
+        // record writable and explicitly uncertain when its interval is unrepresentable,
+        // instead of throwing from the reducer or emitting a corrupt negative interval.
+        val boundedAt = if (invalidInterval) effective.copy(wallEpochMs = effective.wallEpochMs.coerceIn(0, Long.MAX_VALUE - 1)) else effective
+        val boundedUntil = if (invalidInterval) {
+            if (duration == null) boundedAt.wallEpochMs + 1 else Long.MAX_VALUE
+        } else until
+        val confidenceReason = if (invalidInterval) "invalid_interval" else reason
+        return event.copy(at = boundedAt,
+            untilEpochMs = boundedUntil,
             observedAtEpochMs = now.wallEpochMs,
-            timeConfidence = reason?.let(ProtectionEventTimeConfidence::Uncertain) ?: ProtectionEventTimeConfidence.Certain,
-            timeUncertain = reason != null,
+            timeConfidence = confidenceReason?.let(ProtectionEventTimeConfidence::Uncertain) ?: ProtectionEventTimeConfidence.Certain,
+            timeUncertain = confidenceReason != null,
             reconciled = event.breakEndReason == ProtectionBreakEndReason.EXPIRED &&
                 (lifetimeElapsed == null || !expiredAtDeadline || effectiveElapsed < now.elapsedRealtimeMs))
     }

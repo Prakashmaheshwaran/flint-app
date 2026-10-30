@@ -141,4 +141,44 @@ class ProtectionLifecycleTimingTest {
             assertEquals(ProtectionBreakEndReason.RECOVERY, ended.breakEndReason)
         }
     }
+
+    @Test fun PC_54_PC_55_initializedAtFallbackDetectsStaleOrUntrustedAnchors() {
+        for (jump in listOf(-3_600_000L, 0L, 3_600_000L)) {
+            val now = at(10_000, jump)
+            val s = snapshot().copy(editor = snapshot().editor.copy(timeline = null), observedAt = now)
+            val event = accept(GlobalRecoveryPolicy.checkpoint(s), ProtectionLifecycleKind.BREAK_STARTED).focus.protection!!.outbox.values.single()
+            assertEvidence(event, base.wallEpochMs + 10_000, now, if (jump == 0L) null else "same_boot_drift")
+        }
+        val raw = ProtectionLifecycleEvent("pass:x", "x", ProtectionLifecycleKind.PASS_COMMITTED, emptySet(), base,
+            untilEpochMs = base.wallEpochMs + 3_600_000)
+        for ((stamp, reason) in listOf(at(10_000).copy(bootSessionId = "new") to "reboot_without_anchor",
+            at(10_000).copy(bootSessionId = "process-unknown") to "unknown_boot",
+            base.copy(elapsedRealtimeMs = 0) to "monotonic_regression")) {
+            val s = snapshot().copy(editor = EditorCommitmentState(), observedAt = stamp)
+            assertEvidence(ProtectionLifecycleTiming.record(raw, s), stamp.wallEpochMs, stamp, reason)
+        }
+    }
+
+    @Test fun PC_54_PC_55_extremeAndInvalidIntervalsRemainBoundedUncertainAuditRecords() {
+        val nearLimit = base.copy(wallEpochMs = Long.MAX_VALUE - 10)
+        val s = snapshot().copy(editor = EditorCommitmentState(timeline = nearLimit), observedAt = nearLimit)
+        val raw = ProtectionLifecycleEvent("break:x", "x", ProtectionLifecycleKind.BREAK_STARTED, emptySet(), base,
+            grantId = "x", untilEpochMs = base.wallEpochMs + 300_000)
+        for ((event, observed) in listOf(
+            raw to s, // logical endpoint addition overflows
+            raw.copy(at = base.copy(wallEpochMs = Long.MIN_VALUE), untilEpochMs = Long.MAX_VALUE) to s, // subtraction overflows
+            raw.copy(untilEpochMs = base.wallEpochMs - 1) to snapshot(), // negative interval
+            raw.copy(untilEpochMs = base.wallEpochMs) to snapshot(), // zero interval
+            raw to s.copy(editor = EditorCommitmentState(timeline = nearLimit.copy(wallEpochMs = Long.MAX_VALUE)),
+                observedAt = nearLimit.copy(wallEpochMs = Long.MAX_VALUE)),
+        )) {
+            val result = ProtectionLifecycleTiming.record(event, observed)
+            assertEquals(ProtectionEventTimeConfidence.Uncertain("invalid_interval"), result.timeConfidence)
+            assertTrue(result.timeUncertain)
+            assertEquals(observed.observedAt.wallEpochMs, result.observedAtEpochMs)
+            assertTrue(result.at.wallEpochMs >= 0)
+            assertTrue(result.untilEpochMs!! > result.at.wallEpochMs)
+            assertEquals(event.id, result.id)
+        }
+    }
 }
