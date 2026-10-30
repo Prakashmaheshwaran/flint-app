@@ -54,7 +54,7 @@ internal data class SleepConfig(
     }
 }
 
-/** An explicit whole-Sleep tier choice; the normal editor commitment gate owns applying it. */
+/** Set both draft tiers for a whole-Sleep preset; the editor commitment gate owns applying it. */
 internal fun SleepConfig.withTier(tier: BreakLevel) = copy(breakLevel = tier, morningBreakLevel = tier)
 
 internal fun SleepConfig.withAssist(preset: SleepAssist) = withTier(preset.breakLevel)

@@ -57,7 +57,6 @@ import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
@@ -87,6 +86,7 @@ internal fun SleepEditorScreen(
     saveState: EditorSaveState = EditorSaveState(),
 ) {
     var config by remember { mutableStateOf(initial) }
+    var morningHasTier by remember { mutableStateOf(initial.morningEnabled) }
     var bedText by remember { mutableStateOf(formatMinuteOfDay(initial.bedMinute)) }
     var wakeText by remember { mutableStateOf(formatMinuteOfDay(initial.wakeMinute)) }
     var morningText by remember { mutableStateOf(formatMinuteOfDay(initial.morningEndMinute)) }
@@ -351,11 +351,16 @@ internal fun SleepEditorScreen(
                     val morningTier = stringResource(R.string.sleep_tier_value, stringResource(sleepTierText(config.morningBreakLevel)))
                     LabeledSwitchRow(
                         title = stringResource(R.string.sleep_morning_toggle),
-                        description = stringResource(R.string.sleep_morning_note),
+                        description = if (config.morningEnabled) {
+                            "${stringResource(R.string.sleep_morning_note)} $morningTier"
+                        } else stringResource(R.string.sleep_morning_note),
                         checked = config.morningEnabled,
-                        onCheckedChange = { config = config.copy(morningEnabled = it) },
-                        modifier = Modifier.semantics {
-                            if (config.morningEnabled) stateDescription = morningTier
+                        onCheckedChange = { enabled ->
+                            config = config.copy(
+                                morningEnabled = enabled,
+                                morningBreakLevel = if (enabled && !morningHasTier) config.breakLevel else config.morningBreakLevel,
+                            )
+                            if (enabled) morningHasTier = true
                         },
                     )
                     AnimatedVisibility(
