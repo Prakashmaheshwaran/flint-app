@@ -82,7 +82,8 @@ final class FlintBreakAuthorizationTests: XCTestCase {
         let accepted = try plan(commit(waiting, at: instant(1900)))
         XCTAssertEqual(accepted.increments.map(\.nextCount), [1, 3])
         XCTAssertEqual(accepted.grant.causes.count, 3)
-        XCTAssertEqual(commit(waiting, at: instant(1900), grants: [accepted.grant]), .replay(accepted.grant))
+        XCTAssertEqual(commit(waiting, at: instant(1900), grants: [accepted.grant]), .replay(accepted.grant, remaining: 300))
+        XCTAssertEqual(accepted.increments.map(\.ledgerKey), ["first", "second"])
     }
 
     func testHardcoreDeniesWithoutACommitPlan() {
@@ -97,6 +98,11 @@ final class FlintBreakAuthorizationTests: XCTestCase {
         XCTAssertEqual(commit([contributor(tier: .easy), unknown]), .denied(.unavailable))
         XCTAssertEqual(commit([contributor(timeKnown: false)]), .denied(.unavailable))
         XCTAssertEqual(commit([contributor(end: nil)]), .denied(.unavailable))
+        var finiteEasy = contributor(tier: .easy).cause!
+        finiteEasy.end = wall.addingTimeInterval(100)
+        XCTAssertEqual(commit([.init(cause: finiteEasy, selection: contributor().selection,
+                                    logicalEnd: nil, timeKnown: true)]), .denied(.unavailable))
+        XCTAssertNoThrow(try plan(commit([contributor(tier: .easy, end: nil)])))
         for count in [-1, Int.max] { XCTAssertEqual(commit([contributor(count: count)]), .denied(.unavailable)) }
         let missingCount = FlintBreakContributor(cause: contributor().cause, selection: contributor().selection,
                                                 logicalEnd: instant(2000), timeKnown: true)
@@ -143,9 +149,13 @@ final class FlintBreakAuthorizationTests: XCTestCase {
 
     func testReplayReturnsSameGrantEvenAfterExpiryOrStateUnavailable() throws {
         let grant = try plan(commit([contributor(tier: .easy)])).grant
-        XCTAssertEqual(Auth.decide(contributors: nil, existingGrants: [grant], request: request(), clock: clock(instant(5000))), .replay(grant))
+        XCTAssertEqual(Auth.decide(contributors: nil, existingGrants: [grant], request: request(), clock: clock(instant(1100))), .replay(grant, remaining: 200))
+        XCTAssertEqual(Auth.decide(contributors: nil, existingGrants: [grant], request: request(), clock: clock(instant(5000))), .replayExpired(grant))
+        XCTAssertEqual(Auth.decide(contributors: nil, existingGrants: [grant], request: request(), clock: clock(instant(1100, boot: "new"))), .replayExpired(grant))
         XCTAssertEqual(Auth.commitPlan(contributors: nil, existingGrants: [grant], request: request(),
-                                      clock: clock(instant(5000)), grantID: "new", confirmed: true), .replay(grant))
+                                      clock: clock(instant(5000)), grantID: "new", confirmed: true), .replay(grant, remaining: 0))
+        XCTAssertEqual(Auth.commitPlan(contributors: nil, existingGrants: [grant], request: request(),
+                                      clock: clock(instant(1100, boot: "new")), grantID: "new", confirmed: true), .replay(grant, remaining: 0))
         XCTAssertEqual(grant.remaining(at: instant(5000)), 0)
     }
 
@@ -172,12 +182,13 @@ final class FlintBreakAuthorizationTests: XCTestCase {
         let waiting = pending(causes, request: request())
         XCTAssertEqual(commit(waiting, at: instant(1059.9)), .waitNotMatured)
         XCTAssertEqual(commit(waiting, at: instant(1060), confirmed: false), .confirmationRequired)
-        XCTAssertEqual(commit(waiting, request: request("different"), at: instant(1060)), .waitNotMatured)
-        XCTAssertEqual(commit(waiting, request: request(targets: [b]), at: instant(1060)), .waitNotMatured)
+        XCTAssertEqual(commit(causes, at: instant(1060)), .pendingMismatch)
+        XCTAssertEqual(commit(waiting, request: request("different"), at: instant(1060)), .pendingMismatch)
+        XCTAssertEqual(commit(waiting, request: request(targets: [b]), at: instant(1060)), .pendingMismatch)
         let revised = contributor(revision: 2, pending: waiting[0].harder?.pending)
-        XCTAssertEqual(commit([revised], at: instant(1060)), .waitNotMatured)
+        XCTAssertEqual(commit([revised], at: instant(1060)), .pendingMismatch)
         let rebootedWait = pending(causes, request: request(), at: instant(100, boot: "previous"))
-        XCTAssertEqual(commit(rebootedWait, at: instant(1060)), .waitNotMatured)
+        XCTAssertEqual(commit(rebootedWait, at: instant(1060)), .pendingMismatch)
         XCTAssertEqual(commit([contributor(tier: .easy)], confirmed: false), .confirmationRequired)
     }
 
@@ -204,20 +215,122 @@ final class FlintBreakAuthorizationTests: XCTestCase {
         let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("Fixtures/Breaks/ordinary-grant-v1.json")
         let bytes = try Data(contentsOf: url)
-        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        let decoder = FlintProtectionLedger.makeDecoder()
         let grant = try decoder.decode(FlintBreakGrant.self, from: bytes)
         XCTAssertEqual(grant.version, 1)
         XCTAssertEqual(grant.operationID, "fixture-operation")
         XCTAssertEqual(grant.scope.targets, [a])
         XCTAssertEqual(grant.remaining(at: grant.acceptedAt), 300)
-        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        let encoder = FlintProtectionLedger.makeEncoder()
+        exportFixture("ordinary-grant-v1.json", bytes: try encoder.encode(grant))
         XCTAssertEqual(try decoder.decode(FlintBreakGrant.self, from: encoder.encode(grant)), grant)
-        struct Envelope: Decodable { let ordinaryGrant: FlintBreakGrant? }
-        XCTAssertNil(try decoder.decode(Envelope.self, from: Data("{}".utf8)).ordinaryGrant)
+        // Fixture bytes are exactly the ledger encoder's shape, not a separate ISO-8601 codec.
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: bytes) as? NSDictionary,
+                       try JSONSerialization.jsonObject(with: encoder.encode(grant)) as? NSDictionary)
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
         object["version"] = 99
         XCTAssertThrowsError(try decoder.decode(FlintBreakGrant.self, from: JSONSerialization.data(withJSONObject: object)))
         object["version"] = 1; object.removeValue(forKey: "causes")
         XCTAssertThrowsError(try decoder.decode(FlintBreakGrant.self, from: JSONSerialization.data(withJSONObject: object)))
+    }
+
+    func testReplayRejectsDifferentRequestScope() throws {
+        let grant = try plan(commit([contributor(tier: .easy)])).grant
+        let changed = request(targets: [b])
+        XCTAssertEqual(Auth.decide(contributors: nil, existingGrants: [grant], request: changed, clock: clock(instant())), .deny(.unavailable))
+        XCTAssertEqual(commit([contributor(tier: .easy)], request: changed, grants: [grant]), .denied(.unavailable))
+    }
+
+    func testOutOfScopeHardcoreDoesNotDenyButUnknownTimeStillFailsClosed() throws {
+        let causes = [contributor(tier: .easy, targets: [a]), contributor("strict", tier: .hardcore, targets: [b])]
+        XCTAssertNoThrow(try plan(commit(causes)))
+        let unknown = contributor("other", tier: .easy, targets: [b], timeKnown: false)
+        XCTAssertEqual(commit([causes[0], unknown]), .denied(.unavailable))
+    }
+
+    func testOpaqueCategoryAndTokenCannotStack() throws {
+        let categoryCause = contributor(tier: .easy, targets: [category])
+        let grant = try plan(commit([categoryCause], request: request(targets: [category]))).grant
+        XCTAssertEqual(commit([contributor(tier: .easy)], request: request("second"), grants: [grant]),
+                       .denied(.activeGrant(remaining: 300)))
+        XCTAssertEqual(Auth.Denial.activeGrant(remaining: 300).message, "A break is already active")
+    }
+
+    func testEmptyAndAggregateOversizedScopesAreUnavailable() {
+        XCTAssertEqual(commit([contributor(tier: .easy)], request: request(targets: [])), .denied(.unavailable))
+        XCTAssertTrue(Auth.waitScope(request: request(targets: []), contributors: []).isEmpty)
+        let targets = Set((0..<5).map { Target(kind: .application, token: Data(repeating: UInt8($0), count: 65_536)) })
+        XCTAssertEqual(commit([contributor(tier: .easy, targets: targets)], request: request(targets: targets)), .denied(.unavailable))
+    }
+
+    func testCorruptExistingGrantAndMalformedAllowListAreUnavailable() throws {
+        let valid = try plan(commit([contributor(tier: .easy)])).grant
+        let corrupt = FlintBreakGrant(id: valid.id, operationID: valid.operationID, scope: valid.scope,
+                                     causes: valid.causes, acceptedAt: valid.acceptedAt, deadline: instant(1400))
+        XCTAssertEqual(commit([contributor(tier: .easy)], request: request("new"), grants: [corrupt]), .denied(.unavailable))
+        let malformed = FlintBreakContributor(cause: contributor(tier: .easy).cause,
+            selection: .allowList(allowedApplications: [category]), logicalEnd: instant(2000), timeKnown: true)
+        XCTAssertEqual(commit([malformed]), .denied(.unavailable))
+    }
+
+    func testWaitShorterThanPersistedCountRequiresIsUnavailable() {
+        let causes = [contributor(count: 2)]
+        var wait = pending(causes, request: request())[0].harder!.pending!
+        wait.wait = 60
+        XCTAssertEqual(commit([contributor(count: 2, pending: wait)], at: instant(1900)), .denied(.unavailable))
+    }
+
+    func testTwoRulesCanShareWindowIdentityButKeepDistinctLedgerKeys() throws {
+        let first = contributor("rule-a")
+        var secondCause = contributor("rule-b").cause!
+        secondCause.occurrenceID = first.cause!.occurrenceID
+        let second = FlintBreakContributor(cause: secondCause, selection: first.selection,
+            logicalEnd: first.logicalEnd, timeKnown: true, harder: .init())
+        let causes = pending([first, second], request: request())
+        let accepted = try plan(commit(causes, at: instant(1060)))
+        XCTAssertEqual(accepted.increments.map(\.ledgerKey), ["rule-a", "rule-b"])
+    }
+
+    /// Test-only additive-field envelope: does not modify or wire the production ledger.
+    private struct LedgerEnvelope: Codable {
+        let state: FlintLedgerState
+        let ordinaryGrants: [FlintBreakGrant]?
+        enum CodingKeys: String, CodingKey { case ordinaryGrants }
+        init(from decoder: Decoder) throws {
+            state = try FlintLedgerState(from: decoder)
+            ordinaryGrants = try decoder.container(keyedBy: CodingKeys.self)
+                .decodeIfPresent([FlintBreakGrant].self, forKey: .ordinaryGrants)
+        }
+        func encode(to encoder: Encoder) throws {
+            try state.encode(to: encoder)
+            var values = encoder.container(keyedBy: CodingKeys.self)
+            try values.encodeIfPresent(ordinaryGrants, forKey: .ordinaryGrants)
+        }
+    }
+
+    func testLedgerEnvelopeAndOldV2FixtureUseProductionCodec() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Breaks")
+        let decoder = FlintProtectionLedger.makeDecoder(), encoder = FlintProtectionLedger.makeEncoder()
+        let oldBytes = try Data(contentsOf: root.appendingPathComponent("ledger-v2-without-breaks.json"))
+        let old = try decoder.decode(LedgerEnvelope.self, from: oldBytes)
+        XCTAssertEqual(old.state.version, 2)
+        XCTAssertNil(old.ordinaryGrants)
+        XCTAssertEqual(try decoder.decode(FlintLedgerState.self, from: oldBytes), old.state)
+        let bytes = try Data(contentsOf: root.appendingPathComponent("ledger-v2-with-break.json"))
+        let current = try decoder.decode(LedgerEnvelope.self, from: bytes)
+        XCTAssertEqual(current.state, old.state)
+        XCTAssertEqual(current.ordinaryGrants?.count, 1)
+        let roundTrip = try decoder.decode(LedgerEnvelope.self, from: encoder.encode(current))
+        XCTAssertEqual(roundTrip.ordinaryGrants, current.ordinaryGrants)
+        XCTAssertEqual(roundTrip.state, current.state)
+        exportFixture("ledger-v2-with-break.json", bytes: try encoder.encode(current))
+        exportFixture("ledger-v2-without-breaks.json", bytes: try encoder.encode(old))
+    }
+
+    /// Optional fixture regeneration from the production codec; no filesystem mutation in tests.
+    private func exportFixture(_ name: String, bytes: Data) {
+        if ProcessInfo.processInfo.environment["R23_EXPORT_FIXTURES"] == "1" {
+            print("R23_FIXTURE \(name) \(bytes.base64EncodedString())")
+        }
     }
 }

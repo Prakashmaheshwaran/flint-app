@@ -3,6 +3,8 @@ import Foundation
 /// Frozen local token bytes, never names, category members, or status/export identifiers.
 /// The native adapter must encode each token canonically (sorted JSON keys) before lookup.
 public struct FlintBreakScope: Codable, Equatable, Sendable {
+    /// Bounds the aggregate opaque payload as well as individual tokens (base64 adds ~1/3).
+    public static let maximumTokenBytes = 262_144
     public struct Target: Codable, Hashable, Sendable {
         public enum Kind: String, Codable, Sendable { case application, webDomain, category }
         public let kind: Kind
@@ -18,8 +20,13 @@ public struct FlintBreakScope: Codable, Equatable, Sendable {
     /// The UI must disclose these as whole categories, never as single-app access (PC-24).
     public var wholeCategories: Set<Target> { targets.filter { $0.kind == .category } }
     var isValid: Bool {
-        !targets.isEmpty && targets.count <= 4096 &&
-            targets.allSatisfy { !$0.token.isEmpty && $0.token.count <= 65_536 }
+        guard !targets.isEmpty && targets.count <= 4096 else { return false }
+        var remaining = Self.maximumTokenBytes
+        for target in targets {
+            guard !target.token.isEmpty, target.token.count <= 65_536, target.token.count <= remaining else { return false }
+            remaining -= target.token.count
+        }
+        return true
     }
 
     /// Opaque categories cannot prove disjoint membership, including against another category.
@@ -34,6 +41,8 @@ public struct FlintBreakScope: Codable, Equatable, Sendable {
 /// Already reconciled, currently enforcing selections from *all* stores. An unexhausted limit
 /// or a planned Pomodoro rest is not an enforcing contributor. nil state/selection is unknown,
 /// never an empty selection. Phase 2 supplies these under the transition and ledger locks.
+/// Supply readable selections even for inactive entries and trusted time for every active
+/// entry; authorization deliberately refuses an incompletely reconciled snapshot.
 public struct FlintBreakContributor: Equatable, Sendable {
     public enum Selection: Equatable, Sendable {
         case blockList(FlintBreakScope)
