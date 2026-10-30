@@ -5,6 +5,26 @@ import Darwin
 @testable import FlintCore
 
 final class FlintRuleInitializationTests: XCTestCase {
+    func testWebAndRuleInitializationOrdersBothEstablishKnownEmptyDomains() throws {
+        for webFirst in [false, true] {
+            let h = try RuleHarness(); defer { h.clean() }
+            let readWeb = {
+                FlintWebRestrictions.read(uiRead: false, environment: h.environment, existingWebStores: { false },
+                    transition: { _, body in body(); return true })
+            }
+            if webFirst { XCTAssertEqual(readWeb(), .available(.default)) }
+            XCTAssertTrue(FlintRuleStoreLock.prepareInitialization(environment: h.environment))
+            XCTAssertEqual(h.environment.observedRules(FlintScheduleRule.self), [])
+            XCTAssertEqual(h.environment.observedRules(FlintLimitRule.self), [])
+            XCTAssertEqual(h.environment.observedRules(FlintOpenLimitRule.self), [])
+            if !webFirst { XCTAssertEqual(readWeb(), .available(.default)) }
+            XCTAssertEqual(FlintRuleInitialization.receipt(in: h.defaults), .complete)
+            XCTAssertNotNil(h.defaults.object(forKey: FlintWebRestrictions.initializedMarkerKey))
+            XCTAssertTrue(h.center.starts.isEmpty); XCTAssertTrue(h.cleared.isEmpty)
+            XCTAssertNil(h.defaults.object(forKey: "flint.activeSession"), "Initialization invents no owner")
+        }
+    }
+
     func testR22PreparationLatchesEveryPresentLegacyDomainBeforeItsKeyAndActivityDisappear() throws {
         for lost in FlintRuleStoreKey.allCases {
             let h = try RuleHarness(); defer { h.clean() }

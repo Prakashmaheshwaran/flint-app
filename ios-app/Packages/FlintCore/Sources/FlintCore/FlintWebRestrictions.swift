@@ -222,13 +222,26 @@ extension FlintWebRestrictions {
 
     private static func read(uiRead: Bool) -> FlintWebRestrictionRead {
         #if canImport(FamilyControls) && canImport(DeviceActivity) && canImport(ManagedSettings)
-        return read(uiRead: uiRead, load: { loadForEnforcement(from: .flintGroup) }, transition: { timeout, body in
+        return read(uiRead: uiRead, environment: .live, transition: { timeout, body in
             FlintSessionController().withTransition(timeout: timeout) { body(); return true } ?? false
         })
         #else
         return loadForEnforcement(from: .flintGroup).map(FlintWebRestrictionRead.available) ?? .unavailable
         #endif
     }
+
+    #if canImport(FamilyControls) && canImport(DeviceActivity) && canImport(ManagedSettings)
+    static func read(uiRead: Bool, environment: FlintRuleReloadEnvironment,
+                     existingWebStores: (() -> Bool)? = nil,
+                     transition: (TimeInterval?, () -> Void) -> Bool) -> FlintWebRestrictionRead {
+        // Initialize rule domains before our first web marker or session lock can become
+        // installation evidence. Domain-specific legacy migration remains the rule owner's.
+        guard FlintRuleStoreLock.prepareInitialization(environment: environment, timeout: uiRead ? 0 : 2) else { return .busy }
+        return read(uiRead: uiRead, load: {
+            loadForEnforcement(from: environment.defaults, existingWebStores: existingWebStores)
+        }, transition: transition)
+    }
+    #endif
 
     static func read(uiRead: Bool, load: @escaping () -> FlintWebRestrictions?,
                      transition: (TimeInterval?, () -> Void) -> Bool) -> FlintWebRestrictionRead {
