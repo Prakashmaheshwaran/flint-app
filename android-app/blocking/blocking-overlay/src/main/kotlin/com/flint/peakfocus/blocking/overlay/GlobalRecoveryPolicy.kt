@@ -65,7 +65,7 @@ internal object GlobalRecoveryPolicy {
         val recovery = previousRecovery?.takeIf { state.recovery != null }
         val rebootClosed = previousRecovery != null && trustedElapsedMs(previousRecovery.startedAt, now) == null
         val ended = ledger.ordinaryGrants.values.filter { it.lifetime.remainingMs(now)?.let { left -> left > 0L } != true }
-        val endedEvents = ended.map { grant -> ordinaryEnded(grant, now, ProtectionBreakEndReason.EXPIRED, snapshot.focus.revision + 1) }
+        val endedEvents = ended.map { grant -> ordinaryEnded(grant, snapshot, ProtectionBreakEndReason.EXPIRED, snapshot.focus.revision + 1) }
         val retained = ledger.operations.filterValues { it.operationId == cooldown?.operationId ||
             trustedElapsedMs(it.acceptedAt, now)?.let { age -> age < REQUEST_LIFETIME_MS } == true }
         return TimedOpenCreditPolicy.closeExpired(snapshot.copy(focus = snapshot.focus.copy(protection = bound(ledger.copy(checkpoint = now,
@@ -107,12 +107,12 @@ internal object GlobalRecoveryPolicy {
         val now = snapshot.observedAt
         val ruleIds = affected.mapNotNull { it.ruleId }.toSet()
         val recovery = ProtectionRecovery(preview.operationId, now, keys, ruleIds, transientIds, ProtectionContract.PASS_RECOVERY_MS)
-        val event = ProtectionLifecycleEvent("pass:${preview.operationId}", preview.operationId, ProtectionLifecycleKind.PASS_COMMITTED,
-            ruleIds, now, untilEpochMs = now.wallEpochMs + recovery.durationMs, endedTransientIds = transientIds, revision = current.revision + 1)
+        val event = ProtectionLifecycleTiming.record(ProtectionLifecycleEvent("pass:${preview.operationId}", preview.operationId, ProtectionLifecycleKind.PASS_COMMITTED,
+            ruleIds, now, untilEpochMs = now.wallEpochMs + recovery.durationMs, endedTransientIds = transientIds, revision = current.revision + 1), snapshot)
         val endedBreaks = ledger.ordinaryGrants.values.map { grant ->
-            ordinaryEnded(grant, now, ProtectionBreakEndReason.RECOVERY, current.revision + 1)
+            ordinaryEnded(grant, snapshot, ProtectionBreakEndReason.RECOVERY, current.revision + 1)
         }
-        val endedCredits = ledger.pendingCreditEnds.values.map { TimedOpenCreditPolicy.ended(it, now, ProtectionBreakEndReason.RECOVERY, current.revision + 1) }
+        val endedCredits = ledger.pendingCreditEnds.values.map { TimedOpenCreditPolicy.ended(it, snapshot, ProtectionBreakEndReason.RECOVERY, current.revision + 1) }
         val nextLedger = bound(ledger.copy(cooldown = ProtectionCooldown(preview.operationId, now.wallEpochMs, now, ProtectionContract.PASS_COOLDOWN_MS),
             recovery = recovery, operations = ledger.operations + (preview.operationId to ProtectionPassReceipt(preview.operationId, preview.issuedAt, now, preview.scopeIdentity)),
             outbox = ledger.outbox + (endedBreaks + endedCredits + event).associateBy { it.id }, lastUsedAtEpochMs = now.wallEpochMs,
@@ -135,15 +135,9 @@ internal object GlobalRecoveryPolicy {
         return ProtectionMutation(snapshot.focus.copy(protection = ledger.copy(recovery = null)), true)
     }
 
-    fun ordinaryEnded(grant: ProtectionOrdinaryGrant, now: AccessClockStamp, reason: ProtectionBreakEndReason, revision: Long): ProtectionLifecycleEvent {
-        val start = grant.lifetime.startedAt
-        val elapsed = trustedElapsedMs(start, now)
-        val logicalEnd = if (reason == ProtectionBreakEndReason.EXPIRED && elapsed != null && elapsed >= grant.lifetime.durationMs)
-            AccessClockStamp(start.wallEpochMs + grant.lifetime.durationMs, start.elapsedRealtimeMs + grant.lifetime.durationMs, start.bootSessionId) else now
-        return ProtectionLifecycleEvent("break-ended:${grant.operationId}", grant.operationId, ProtectionLifecycleKind.BREAK_ENDED,
-            grant.affectedRuleIds, logicalEnd, grantId = grant.operationId, breakEndReason = reason, revision = revision,
-            timeUncertain = clockDiscontinuity(start, now))
-    }
+    fun ordinaryEnded(grant: ProtectionOrdinaryGrant, snapshot: ProtectionSnapshot, reason: ProtectionBreakEndReason, revision: Long): ProtectionLifecycleEvent =
+        ProtectionLifecycleTiming.record(ProtectionLifecycleEvent("break-ended:${grant.operationId}", grant.operationId, ProtectionLifecycleKind.BREAK_ENDED,
+            grant.affectedRuleIds, snapshot.observedAt, grantId = grant.operationId, breakEndReason = reason, revision = revision), snapshot, grant.lifetime)
 
     /** Exact pass-authorized selection; no counter or unchosen template is included. */
     fun previewEnd(snapshot: ProtectionSnapshot, selected: Set<String>, delete: Boolean): RecoveryEndPreview? {
@@ -191,7 +185,8 @@ internal object GlobalRecoveryPolicy {
         val fresh = ledger.outbox.values.filter { trustedElapsedMs(it.at, now)?.let { age -> age <= ProtectionContract.PASS_COOLDOWN_MS } != false }
             .sortedWith(compareBy<ProtectionLifecycleEvent> { it.at.wallEpochMs }.thenBy { it.id }).toMutableList()
         fun bytes(event: ProtectionLifecycleEvent) = 3L * (event.id.length + event.operationId.length +
-            event.affectedRuleIds.sumOf { it.length } + event.endedTransientIds.sumOf { it.length } + (event.grantId?.length ?: 0)) + 512L
+            event.affectedRuleIds.sumOf { it.length } + event.endedTransientIds.sumOf { it.length } + (event.grantId?.length ?: 0) +
+            ((event.timeConfidence as? ProtectionEventTimeConfidence.Uncertain)?.reason?.length ?: 0)) + 640L
         var size = fresh.sumOf(::bytes)
         while (fresh.isNotEmpty() && (fresh.size > MAX_EVENTS || size > MAX_EVENT_BYTES)) size -= bytes(fresh.removeAt(0))
         val lost = ledger.outbox.size - fresh.size

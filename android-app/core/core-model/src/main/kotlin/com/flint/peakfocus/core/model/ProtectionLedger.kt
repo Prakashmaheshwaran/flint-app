@@ -58,6 +58,12 @@ data class ProtectionPassReceipt(
 enum class ProtectionLifecycleKind { PASS_COMMITTED, BREAK_STARTED, BREAK_ENDED, ACCESS_STARTED, ACCESS_ENDED }
 enum class ProtectionBreakEndReason { EXPIRED, RESUMED, SUPERSEDED, RECOVERY }
 
+/** Maps one-for-one to history confidence without making the model depend on history. */
+sealed interface ProtectionEventTimeConfidence {
+    data object Certain : ProtectionEventTimeConfidence
+    data class Uncertain(val reason: String) : ProtectionEventTimeConfidence
+}
+
 /**
  * No package/domain/target identifiers cross the history boundary. Consumers deliberately
  * acknowledge unhandled additive kinds as a no-op; they never reinterpret access as a break.
@@ -74,5 +80,12 @@ data class ProtectionLifecycleEvent(
     /** Only these transient native session identities ended early; templates merely suspend. */
     val endedTransientIds: Set<String> = emptySet(),
     val revision: Long = 0,
+    /** Legacy compatibility flag; new writers also supply explicit confidence below. */
     val timeUncertain: Boolean = false,
+    /** Wall time actually observed by the owner, independent of the effective [at]. */
+    val observedAtEpochMs: Long? = null,
+    /** Null means a legacy event, never a newly asserted trusted timestamp. */
+    val timeConfidence: ProtectionEventTimeConfidence? = null,
+    /** A recovered/late transition, independent of clock confidence. */
+    val reconciled: Boolean = false,
 )
