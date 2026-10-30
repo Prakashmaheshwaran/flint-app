@@ -14,9 +14,10 @@ object FocusCompletionPolicy {
     fun schedule(snapshot: HistorySnapshot, delivered: Set<String>, now: Long): FocusCompletionSchedule {
         if (!snapshot.readable || snapshot.degraded) return FocusCompletionSchedule(emptyList(), emptySet())
         val alarms = mutableListOf<FocusCompletionAlarm>(); val stale = mutableSetOf<String>()
+        val sessions = FocusHistoryAggregator.sessions(snapshot.events, now, emptySet()).associateBy { it.id }
         snapshot.events.groupBy { it.session }.forEach { (id, events) ->
             if (id !in delivered) {
-                val (end, decision) = evaluate(events, now)
+                val (end, decision) = evaluate(events, now, sessions[id])
                 when (decision) {
                     FocusCompletionDelivery.WAIT, FocusCompletionDelivery.POST -> alarms += FocusCompletionAlarm(id, requireNotNull(end))
                     FocusCompletionDelivery.STALE -> stale += id
@@ -29,21 +30,24 @@ object FocusCompletionPolicy {
 
     fun decision(snapshot: HistorySnapshot, sessionId: String, now: Long): FocusCompletionDelivery {
         if (!snapshot.readable || snapshot.degraded) return FocusCompletionDelivery.SUPPRESS
-        return evaluate(snapshot.events.filter { it.session == sessionId }, now).second
+        val session = FocusHistoryAggregator.sessions(snapshot.events, now, emptySet()).firstOrNull { it.id == sessionId }
+        return evaluate(snapshot.events.filter { it.session == sessionId }, now, session).second
     }
 
-    private fun evaluate(group: List<HistoryEvent>, now: Long): Pair<Long?, FocusCompletionDelivery> {
+    private fun evaluate(group: List<HistoryEvent>, now: Long, session: FocusSession?): Pair<Long?, FocusCompletionDelivery> {
         val events = group.filter { it.knownType != null }
             .distinctBy { it.id }.sortedBy { it.at }
         val start = events.firstOrNull { it.knownType == HistoryEventType.STARTED }
             ?: return null to FocusCompletionDelivery.SUPPRESS
         val terminalIndex = events.indexOfFirst { it.knownType?.terminal == true }
         val terminal = events.getOrNull(terminalIndex)
-        val plan = events.take(if (terminalIndex < 0) events.size else terminalIndex).lastOrNull {
+        val plan = events.take(if (terminalIndex < 0) events.size else terminalIndex).sortedBy { it.observedAt ?: it.at }.lastOrNull {
             it.knownType in setOf(HistoryEventType.STARTED, HistoryEventType.RESCHEDULED)
         } ?: start
         val end = plan.plannedEnd ?: return null to FocusCompletionDelivery.SUPPRESS
-        if (terminal != null && (terminal.knownType != HistoryEventType.COMPLETED || terminal.at != end))
+        // Completed rows must satisfy the same evidence rule as Insights. Planned-only
+        // reminders keep their existing copy/behavior and never assert completion.
+        if (terminal != null && session?.outcome != SessionOutcome.COMPLETED)
             return end to FocusCompletionDelivery.SUPPRESS
         if (now < end) return end to FocusCompletionDelivery.WAIT
         val oldest = if (now < Long.MIN_VALUE + MAX_LATENESS_MS) Long.MIN_VALUE else now - MAX_LATENESS_MS
