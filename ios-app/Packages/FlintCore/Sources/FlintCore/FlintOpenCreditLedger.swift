@@ -225,14 +225,14 @@ public struct FlintOpenCreditPreview: Equatable, Sendable {
     public let cap: Int?
     public let blockedBy: FlintOpenCreditBlock?
     public let grant: FlintOpenCreditGrant?
-    public let blockingContributors: [String]
+    public let blockingContributors: [FlintOpenCreditContributorKind]
     /// Proposed elapsed access (or the existing grant's remaining time); may be <300 at reset.
     public let duration: TimeInterval?
     public let resetAtEstimate: Date?
     public let quotaZone: String?
     public let timeUncertain: Bool
     public init(remaining: Int?, cap: Int?, blockedBy: FlintOpenCreditBlock?, grant: FlintOpenCreditGrant? = nil,
-                blockingContributors: [String] = [], duration: TimeInterval? = nil,
+                blockingContributors: [FlintOpenCreditContributorKind] = [], duration: TimeInterval? = nil,
                 resetAtEstimate: Date? = nil, quotaZone: String? = nil, timeUncertain: Bool = true) {
         self.remaining = remaining; self.cap = cap; self.blockedBy = blockedBy; self.grant = grant
         self.blockingContributors = blockingContributors
@@ -385,7 +385,7 @@ extension FlintLedgerState {
     }
 
     public func openCreditPreview(target: String, caps: [Int], blockedBy: FlintOpenCreditBlock?,
-                                  at now: FlintLedgerInstant, contributors: [String] = [],
+                                  at now: FlintLedgerInstant, contributors: [FlintOpenCreditContributorKind] = [],
                                   coveringCauseIDs: Set<String>? = nil,
                                   authorized: ((FlintOpenCreditGrant) -> Bool)? = nil) -> FlintOpenCreditPreview {
         let cap = caps.min()

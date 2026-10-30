@@ -243,17 +243,17 @@ final class FlintOpenCreditTests: XCTestCase {
     }
 
     func testPC32SessionScheduleAndExhaustedTimeLimitDenyWithoutCharge() throws {
-        for name in ["session", "schedule", "exhausted-time-limit"] {
-            contributors = [.init(name: name, applications: [openAppKey])]
+        for kind: FlintOpenCreditContributorKind in [.session, .schedule, .timeLimit] {
+            contributors = [.init(kind: kind, applications: [openAppKey])]
             denied(.otherContributor)
-            XCTAssertEqual(service().preview(target: openAppKey).blockingContributors, [name])
+            XCTAssertEqual(service().preview(target: openAppKey).blockingContributors, [kind])
         }
         XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 0)
         XCTAssertTrue(registrations.isEmpty); XCTAssertTrue(released.isEmpty)
     }
 
     func testPC33UnprovenCategoryOverlapDeniesWithoutCharge() throws {
-        contributors = [.init(name: "opaque-category", applicationCategoryExceptions: [])]
+        contributors = [.init(kind: .schedule, applicationCategoryExceptions: [])]
         denied(.categoryOverlap)
         XCTAssertEqual(service().preview(target: openAppKey).blockedBy, .categoryOverlap)
         XCTAssertEqual(FlintOpenCreditBlock.categoryOverlap.message,
@@ -263,18 +263,18 @@ final class FlintOpenCreditTests: XCTestCase {
     }
 
     func testContributorQueryDistinguishesUnspentLimitExplicitDomainsAndProvenExceptions() {
-        let unspent = FlintOpenCreditContributor(name: "unspent-time-limit")
+        let unspent = FlintOpenCreditContributor(kind: .timeLimit)
         XCTAssertNil(FlintOpenCreditBlocking.query(target: openAppKey, kind: .application, stores: [unspent]).reason)
-        let site = FlintOpenCreditContributor(name: "site-schedule", webDomains: ["site"])
+        let site = FlintOpenCreditContributor(kind: .schedule, webDomains: ["site"])
         XCTAssertEqual(FlintOpenCreditBlocking.query(target: "site", kind: .webDomain, stores: [site]).reason, .otherContributor)
-        let category = FlintOpenCreditContributor(name: "category", applicationCategoryExceptions: [openAppKey], webCategoryExceptions: [])
+        let category = FlintOpenCreditContributor(kind: .schedule, applicationCategoryExceptions: [openAppKey], webCategoryExceptions: [])
         XCTAssertNil(FlintOpenCreditBlocking.query(target: openAppKey, kind: .application, stores: [category]).reason)
         XCTAssertEqual(FlintOpenCreditBlocking.query(target: "site", kind: .webDomain, stores: [category]).reason, .categoryOverlap)
         XCTAssertEqual(FlintOpenCreditBlocking.query(target: openAppKey, kind: .application, stores: nil).reason, .unavailable)
     }
 
     func testPC32SafariFilterDeniesDomainCreditWithoutChargeButDoesNotBlockAppCredit() throws {
-        let filter = FlintOpenCreditContributor(name: "Schedule Safari filter", webContentMayBlock: true)
+        let filter = FlintOpenCreditContributor(kind: .schedule, webContentMayBlock: true)
         XCTAssertEqual(FlintOpenCreditBlocking.query(target: "opaque-domain", kind: .webDomain, stores: [filter]).reason,
                        .otherContributor)
         XCTAssertNil(FlintOpenCreditBlocking.query(target: openAppKey, kind: .application, stores: [filter]).reason)
@@ -779,5 +779,62 @@ final class FlintOpenCreditTests: XCTestCase {
         XCTAssertTrue(registrations.isEmpty); XCTAssertTrue(released.isEmpty)
         XCTAssertEqual(try state().openCredits.counters[openAppKey]?.used, 0)
         XCTAssertEqual(try Data(contentsOf: file), original)
+    }
+
+    // MARK: Pass-only exit (shield copy)
+
+    /// The shield names the pass only when no covering limit allows an ordinary exit now.
+    func testPassOnlyRequiresEveryCoveringLimitToRefuseOrdinaryWeakening() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func rule(_ id: String, _ tier: BreakLevel, enabled: Bool = true,
+                  protection: FlintRuleProtection? = .init(timeZoneID: "UTC")) -> FlintOpenLimitRule {
+            var rule = FlintOpenLimitRule(id: id, name: id, opensAllowed: 1, breakLevel: tier, enabled: enabled)
+            rule.protection = protection
+            return rule
+        }
+        func passOnly(_ rules: [FlintOpenLimitRule]) -> Bool {
+            FlintOpenCredit.exitCauses(covering: rules, at: now).map(FlintOpenCreditExit.requiresPass) ?? false
+        }
+        XCTAssertTrue(passOnly([rule("a", .hardcore)]))
+        XCTAssertTrue(passOnly([rule("a", .hardcore), rule("b", .hardcore)]))
+        XCTAssertTrue(passOnly([rule("a", .hardcore), rule("off", .easy, enabled: false)]), "disabled rules don't cover")
+        XCTAssertFalse(passOnly([]), "no covering limit makes no claim")
+        XCTAssertFalse(passOnly([rule("a", .easy)]))
+        XCTAssertFalse(passOnly([rule("a", .harder)]), "Harder allows an edit after its wait")
+        // An Easy sibling can be switched off at once, restoring the Hardcore cap's credits.
+        XCTAssertFalse(passOnly([rule("a", .hardcore), rule("b", .easy)]))
+        XCTAssertFalse(passOnly([rule("a", .hardcore), rule("b", .harder)]))
+        // A migrated occurrence keeps the old build's free edits until it ends (§12).
+        XCTAssertFalse(passOnly([rule("a", .hardcore, protection: .init(timeZoneID: "UTC",
+                                     legacyRightsUntil: now.addingTimeInterval(3600)))]))
+        XCTAssertTrue(passOnly([rule("a", .hardcore, protection: .init(timeZoneID: "UTC",
+                                    legacyRightsUntil: now.addingTimeInterval(-1)))]), "expired legacy right")
+        // A due queued change is applied at the next reconcile and may open an ordinary exit.
+        func queued(_ end: TimeInterval) -> FlintOpenLimitRule {
+            var hardcore = rule("q", .hardcore)
+            hardcore.protection?.queuedChange = .init(action: .turnOff, baseRevision: 1,
+                window: .init(start: now.addingTimeInterval(end - 86_400), end: now.addingTimeInterval(end)),
+                snapshot: nil, fingerprint: "f")
+            return hardcore
+        }
+        XCTAssertNil(FlintOpenCredit.exitCauses(covering: [queued(-1)], at: now), "due queue makes no claim")
+        XCTAssertFalse(passOnly([queued(0)]))
+        XCTAssertTrue(passOnly([queued(3600)]), "a future queue keeps the current commitment")
+        // Read without migration: pre-contract rights apply, so no pass-only claim.
+        XCTAssertFalse(passOnly([rule("a", .hardcore, protection: nil)]))
+        // An inactive cause allows edits; the predicate itself never claims for one.
+        XCTAssertFalse(FlintOpenCreditExit.requiresPass([.init(causeID: "x", kind: .openLimit, tier: .hardcore,
+                                                              isActive: false)]))
+    }
+
+    /// The session and Safari stores must not be swapped: the shield names the kind.
+    func testContributorStoresNameEachStoreByItsKind() {
+        let schedule = FlintScheduleRule(name: "Work", schedule: FlintSchedule(startHour: 9, endHour: 17))
+        let limit = FlintLimitRule(name: "Social", thresholdMinutes: 30)
+        let stores = FlintOpenCredit.contributorStores(schedules: [schedule], limits: [limit])
+        XCTAssertEqual(stores.map(\.kind), [.session, .safariRestriction, .schedule, .timeLimit])
+        XCTAssertEqual(stores.map(\.storeName), ["flint", FlintWebRestrictionLifecycle.legacyStoreName,
+                                                 schedule.storeName, limit.storeName])
+        XCTAssertNotEqual(FlintWebRestrictionLifecycle.legacyStoreName, "flint")
     }
 }
