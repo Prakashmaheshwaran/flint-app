@@ -1119,6 +1119,27 @@ final class FlintWebRestrictionEditorTests: XCTestCase {
         XCTAssertEqual(h.editor().save(h.config, requestID: "repair"), .saved)
     }
 
+    func testUnknownSafariIntentRepairDoesNotInheritLegacyHardcoreWeakeningRights() {
+        for sessionOwner in [false, true] {
+            let h = WebEditorHarness(); h.readOverride = .unavailable
+            let end: Date
+            if sessionOwner {
+                let active = FlintActiveSession(name: "Legacy", startedAt: h.now.addingTimeInterval(-60),
+                    endsAt: h.now.addingTimeInterval(3600), breakLevel: .hardcore, monitorName: "flint.session.legacy")
+                h.active = active; end = active.endsAt!
+            } else {
+                var rule = h.rule(.hardcore)
+                end = rule.occurrence(at: h.now, clock: h.clock)!.end
+                rule.protection?.legacyRightsUntil = end
+                h.rules = [rule]
+            }
+            XCTAssertEqual(h.editor().save(.default, requestID: "legacy-repair"), .protected(until: end))
+            XCTAssertEqual(h.writes, 0, "Unknown original web intent cannot import an easier exit")
+            h.advance(end.timeIntervalSince(h.now))
+            XCTAssertEqual(h.editor().save(.default, requestID: "legacy-repair"), .saved)
+        }
+    }
+
     func testBusyEditorReadAndBoundaryAreRetryableWithoutMutation() {
         let h = WebEditorHarness(); h.readOverride = .busy
         XCTAssertEqual(h.editor().save(.default, requestID: "busy"), .busy)

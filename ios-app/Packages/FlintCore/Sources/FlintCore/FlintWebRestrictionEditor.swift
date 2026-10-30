@@ -203,7 +203,7 @@ public final class FlintWebRestrictionEditor {
            session.isEnforcing(at: now, clock: clock) {
             let end = clock.flatMap(session.stableLogicalEnd) ?? session.endsAt
             causes.append(.init(causeID: session.id, kind: .session, tier: session.breakLevel,
-                                isActive: true, end: end, legacyRights: session.contractVersion == nil))
+                                isActive: true, end: end, legacyRights: previous != nil && session.contractVersion == nil))
         }
         if previous?.applyDuringSchedules ?? true, !candidate.applyDuringSchedules || content {
             for rule in snapshot.rules where rule.enabled {
@@ -213,9 +213,9 @@ public final class FlintWebRestrictionEditor {
                 causes.append(.init(causeID: identity, occurrenceID: identity, revision: rule.revision,
                                     kind: rule.kind, tier: rule.breakLevel, isActive: true,
                                     end: FlintRuleOccurrenceClock.display(window, for: rule, clock: resolved).end,
-                                    legacyRights: rule.protection?.legacyRightsUntil.map {
+                                    legacyRights: previous != nil && (rule.protection?.legacyRightsUntil.map {
                                         FlintRuleOccurrenceClock.date(for: rule, clock: resolved) < $0
-                                    } ?? false))
+                                    } ?? false)))
             }
         }
         return causes
