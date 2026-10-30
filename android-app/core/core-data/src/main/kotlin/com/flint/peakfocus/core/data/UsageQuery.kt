@@ -29,6 +29,22 @@ object UsageQuery {
     /** Path A cannot infer Usage Access from Accessibility. Null means the budget is unmeasured. */
     @Synchronized
     fun dailyForegroundMillisIfGranted(context: Context, packageName: String, now: Long): Long? {
+        return measureIfGranted(context, now) { dailyForegroundMillis(context, packageName, now) }
+    }
+
+    /**
+     * Saved-window input for durable Time Limit accounting. Null = no confirmed grant;
+     * MAX_VALUE = failed observation after a confirmed grant, never persist that sentinel.
+     * The caller's persisted sampling ticket supplies the window; device travel cannot pick it.
+     */
+    @Synchronized
+    fun foregroundMillisForWindowIfGranted(context: Context, packageName: String, start: Long, now: Long): Long? =
+        measureIfGranted(context, now) {
+            val usm = context.applicationContext.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+            foregroundMillisForWindow(usm, packageName, start, now)
+        }
+
+    private fun measureIfGranted(context: Context, now: Long, read: () -> Long): Long? {
         val app = context.applicationContext
         val ops = app.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
         if (cachedOps !== ops) {
@@ -44,7 +60,7 @@ object UsageQuery {
             }
         }
         if (resetAccessRequested) { accessProbe!!.invalidate(); resetAccessRequested = false }
-        return accessProbe!!.measure(now) { dailyForegroundMillis(app, packageName, now) }
+        return accessProbe!!.measure(now, read)
     }
 
     fun dailyForegroundMillis(
@@ -58,21 +74,37 @@ object UsageQuery {
 
     @Synchronized
     fun dailyForegroundMillis(usm: UsageStatsManager, packageName: String, now: Long): Long {
+        val zone = ZoneId.systemDefault()
+        val start = DailyUsageTimeline.startOfDay(now, zone)
+        val (events, aggregate) = readWindow(usm, packageName, start, now)
+        return conservative.observe(packageName, now, zone, events, aggregate)
+    }
+
+    /** Raw measured window; its durable consumer owns high-water and reset authority. Call on IO. */
+    @Synchronized
+    fun foregroundMillisForWindow(usm: UsageStatsManager, packageName: String, start: Long, now: Long): Long {
+        require(start >= 0 && start <= now)
+        val (events, aggregate) = readWindow(usm, packageName, start, now)
+        return if (events == null && aggregate == null) Long.MAX_VALUE else maxOf(events ?: 0L, aggregate ?: 0L)
+    }
+
+    private fun readWindow(usm: UsageStatsManager, packageName: String, start: Long, now: Long): Pair<Long?, Long?> {
         if (resetRequested || cachedManager !== usm) {
             resetRequested = false
             cachedManager = usm
             timeline = DailyUsageTimeline { start, end -> UsageEventReader.read(usm, start, end) }
         }
-        val zone = ZoneId.systemDefault()
-        val start = DailyUsageTimeline.startOfDay(now, zone)
         val eventUsage = runCatching { timeline!!.millis(packageName, start, now) }
             .onFailure { Log.w("FlintUsage", "Event usage unavailable; retaining aggregate/high-water usage", it) }
             .getOrNull()
         val aggregateUsage = runCatching {
             val buckets = checkNotNull(usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, now))
-            buckets.filter { it.packageName == packageName }.sumOf { it.totalTimeInForeground.coerceAtLeast(0L) }
+            buckets.filter { it.packageName == packageName }.fold(0L) { total, bucket ->
+                val used = bucket.totalTimeInForeground.coerceAtLeast(0L)
+                if (used > Long.MAX_VALUE - total) Long.MAX_VALUE else total + used
+            }
         }.onFailure { Log.w("FlintUsage", "Aggregate usage unavailable; retaining event/high-water usage", it) }.getOrNull()
-        return conservative.observe(packageName, now, zone, eventUsage, aggregateUsage)
+        return eventUsage to aggregateUsage
     }
 
     /** Rebuild event observations, but never erase the conservative quota floor on clock/zone changes. */
