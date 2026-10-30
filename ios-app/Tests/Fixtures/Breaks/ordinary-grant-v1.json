@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "id": "fixture-grant",
+  "operationID": "fixture-operation",
+  "scope": {"targets": [{"kind": "application", "token": "QQ=="}]},
+  "causes": [{"causeID": "fixture-session", "occurrenceID": "fixture-occurrence", "revision": 1, "tier": "harder"}],
+  "acceptedAt": {"wall": "2026-10-29T12:00:00Z", "monotonic": 1000, "bootID": "fixture-boot"},
+  "deadline": {"wall": "2026-10-29T12:05:00Z", "monotonic": 1300, "bootID": "fixture-boot"}
+}
