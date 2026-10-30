@@ -167,7 +167,7 @@ class BlockScreenCoordinator(
     private val ruleEngine = BlockDecisionEngine()
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    private data class Observation(val timeLimitSpent: Boolean, val epochDay: Long, val url: String?)
+    private data class Observation(val budget: TrustedTimeLimitBudget?, val fixtureTimeCause: BlockCause?, val url: String?)
     private val observations = ConcurrentHashMap<String, Observation>()
 
     private val recoveryBackend = protectionTransactionStore ?: if (focusStateStore == null) FlintPreferences.protectionTransactions(appContext) else null
@@ -568,6 +568,7 @@ class BlockScreenCoordinator(
         ruleCause: BlockCause?,
         timeLimitSpent: Boolean,
         foregroundUrl: String? = null,
+        timeBudget: TrustedTimeLimitBudget? = null,
     ): BlockCause? {
         // Safety floor before every cause: nothing is measured, counted or shielded. Open-limit
         // bookkeeping is untouched too — a floor app is not an open, and leaving one for an app
@@ -576,10 +577,15 @@ class BlockScreenCoordinator(
         if (BlockExemptions.hasGlobalRecovery()) return null
         val now = nowEpochMs()
         val offset = utcOffsetMs(now)
-        observations[packageName] = Observation(timeLimitSpent, epochDay(now, offset), foregroundUrl)
+        require(timeBudget == null || timeBudget.packageName == packageName)
+        // The Boolean adapter remains only for constructor-injected v1 fixtures. Production
+        // detectors must submit the committed period, never a raw device-day verdict.
+        val fixtureTimeCause = if (legacyGrants != null && timeLimitSpent)
+            timeLimitBlockCause(currentTimeLimitBreakLevel(packageName), now, offset) else null
+        observations[packageName] = Observation(timeBudget, fixtureTimeCause, foregroundUrl)
         val effectiveRule = ruleCause ?: recoveries?.unverifiedWebsiteRule(
             OrdinaryProtectionInput(packageName, appContext.packageName, false, false, foregroundUrl), statusClock())?.let { ruleBlockCause(it, now, offset) }
-        val timeCause = if (timeLimitSpent) timeLimitBlockCause(currentTimeLimitBreakLevel(packageName), now, offset) else null
+        val timeCause = trustedTimeCause(packageName, timeBudget, now) ?: fixtureTimeCause
         val ordinary = ordinaryExempt(packageName, timeCause)
         val emergency = if (recoveries != null) BlockExemptions.hasGlobalRecovery() else BlockExemptions.hasEmergencyExemption(packageName, now)
         val openDecision = onForegroundChanged(
@@ -624,18 +630,27 @@ class BlockScreenCoordinator(
             ruleBlockCause(ActiveRulesHolder.rules.firstOrNull { it.id == block.ruleId }, now, offset)
         } ?: recoveries?.unverifiedWebsiteRule(OrdinaryProtectionInput(packageName, appContext.packageName, false, false, observation?.url), statusClock())
             ?.let { ruleBlockCause(it, now, offset) }
-        val timeCause = if (observation?.timeLimitSpent == true &&
-            observation.epochDay == epochDay(now, offset)
-        ) timeLimitBlockCause(currentTimeLimitBreakLevel(packageName), now, offset) else null
+        val timeCause = trustedTimeCause(packageName, observation?.budget, now) ?:
+            observation?.fixtureTimeCause?.takeIf { it.endsAtEpochMs == null || now < it.endsAtEpochMs }
         val openDecision = inspectOpen(packageName)
         val openCause = openBlockCause(openDecision, now, offset)
         val liveDisplayed = displayedCause?.takeIf { it.endsAtEpochMs == null || now < it.endsAtEpochMs }
+            ?.takeUnless { it.reason == BlockScreenReason.TIME_LIMIT && observation != null && timeCause == null }
             ?.takeUnless { it.ruleId != null && rulesState.value is StorageState.Ready && ActiveRulesHolder.rules.none { rule -> rule.id == it.ruleId } }
             ?.takeUnless { it.reason == BlockScreenReason.OPEN_LIMIT && openCause == null &&
                 (openState.value is StorageState.Ready || (recoveries != null && !unresolvedOpenBlocks(packageName))) }
             ?.let { if (recoveries != null && it.reason == BlockScreenReason.OPEN_LIMIT) openCause else it }
-            ?.let { if (it.reason == BlockScreenReason.TIME_LIMIT) it.copy(breakLevel = currentTimeLimitBreakLevel(packageName)) else it }
+            ?.let { if (it.reason == BlockScreenReason.TIME_LIMIT) timeCause ?: it.copy(breakLevel = currentTimeLimitBreakLevel(packageName)) else it }
         return BlockOverlapPolicy.strongest(timeCause, ruleCause, openCause, liveDisplayed)
+    }
+
+    private fun trustedTimeCause(packageName: String, budget: TrustedTimeLimitBudget?, now: Long): BlockCause? {
+        if (budget?.spent != true) return null
+        val remaining = budget.resetRemainingMs(statusClock())
+        // At elapsed zero, retain evidenced exhaustion until the serialized editor/reset
+        // transaction commits. A raw midnight or a failed store read cannot refill quota.
+        return BlockCause(BlockScreenReason.TIME_LIMIT, currentTimeLimitBreakLevel(packageName),
+            remaining?.takeIf { it > 0L }?.let { now + it })
     }
 
     private fun openBlockCause(decision: OpenLimitDecision, now: Long, offset: Long): BlockCause? = when (decision) {
@@ -1146,12 +1161,6 @@ class BlockScreenCoordinator(
     }
 
     private fun utcOffsetMs(now: Long): Long = TimeZone.getDefault().getOffset(now).toLong()
-    private fun epochDay(now: Long, offset: Long): Long {
-        val local = now + offset
-        val remainder = ((local % DAY_MS) + DAY_MS) % DAY_MS
-        return (local - remainder) / DAY_MS
-    }
-
     private fun runOnMain(block: () -> Unit) {
         if (Looper.myLooper() == Looper.getMainLooper()) block() else mainHandler.post { block() }
     }

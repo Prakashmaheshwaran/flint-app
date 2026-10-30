@@ -24,6 +24,7 @@ import com.flint.peakfocus.blocking.engine.EvaluationTimer
 import com.flint.peakfocus.blocking.engine.NextEvaluationBoundary
 import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.blocking.overlay.BlockScreenCoordinator
+import com.flint.peakfocus.blocking.overlay.TrustedTimeLimitReader
 import com.flint.peakfocus.blocking.overlay.ruleBlockCause
 import com.flint.peakfocus.blocking.resilience.WebsiteCoverageHealth
 import com.flint.peakfocus.core.data.BlocklistStore
@@ -76,6 +77,7 @@ class FlintAccessibilityService : AccessibilityService() {
     private val engine = BlockDecisionEngine()
     private var serviceScope: CoroutineScope? = null
     private var coordinator: BlockScreenCoordinator? = null
+    private val timeReader by lazy { TrustedTimeLimitReader.create(this) }
 
     /** One independent deadline for schedules, expiry, budgets and local day rollover. */
     private var boundaryTimer: EvaluationTimer? = null
@@ -273,29 +275,14 @@ class FlintAccessibilityService : AccessibilityService() {
             if (pkg != lastNonFloorPackage) lastBudgetDeadlineMs = null
             lastNonFloorPackage = pkg
 
-            // Time Limit: blocked once today's foreground time reaches the app's daily budget —
-            //    the stricter of the legacy store and the Limit editor's DataStore limits (read via
-            //    the coordinator's snapshot; they were authored-but-never-enforced before that).
-            //    TimeLimit carries no tier, so the store-wide default break level applies.
-            val limitMin = listOfNotNull(
-                LimitStore(this@FlintAccessibilityService).limitMinutes(pkg),
-                coordinator.timeLimitMinutes(pkg),
-            ).minOrNull()
-            // ADR-012: a configured zero/nonpositive budget is exhausted without measurement.
-            val immediatelySpent = limitMin != null && limitMin <= 0
-            val needsMeasurement = limitMin != null && limitMin > 0
-            // Preserve a recovery deadline even if a floor window cancels this first IO read.
-            lastBudgetDeadlineMs = limitMin?.let { lastBudgetDeadlineMs ?: now + it * 60_000L }
-            // Cancellation on every newer decision prevents a suspended query from showing a
-            // stale shield. The initial seven-day carry-in query never runs on the main thread.
-            val used = if (needsMeasurement) withContext(Dispatchers.IO) {
-                UsageQuery.dailyForegroundMillisIfGranted(this@FlintAccessibilityService, pkg, now)
-            } else null
-            // Missing Usage Access leaves positive budgets unmeasured, not exhausted.
-            val remaining = if (immediatelySpent) 0L
-                else used?.let { checkNotNull(limitMin) * 60_000L - it }
+            // Both paths use the same saved period and committed floor. Legacy budgets stay
+            // a stricter fallback; a failed query never becomes artificial MAX exhaustion.
+            val budget = withContext(Dispatchers.IO) {
+                listOfNotNull(LimitStore(this@FlintAccessibilityService).limitMinutes(pkg),
+                    coordinator.timeLimitMinutes(pkg)).minOrNull()?.let { timeReader.read(pkg, it) }
+            }
+            val remaining = budget?.remainingMs
             lastBudgetDeadlineMs = remaining?.let { now + it.coerceAtLeast(0L) }
-            val timeLimitSpent = immediatelySpent || (remaining != null && remaining <= 0L)
 
             // Inspect rules even when a weaker time limit or an old ordinary break applies.
             val url = lastForegroundUrl.takeIf { BrowserAddressBars.isBrowser(pkg) && active }
@@ -303,26 +290,31 @@ class FlintAccessibilityService : AccessibilityService() {
             val ruleCause = (verdict as? Verdict.Block)?.let {
                 ruleBlockCause(ActiveRulesHolder.rules.firstOrNull { rule -> rule.id == it.ruleId }, now, utcOffset)
             }
-            val cause = coordinator.evaluateBlockCause(previousPackage, pkg, ruleCause, timeLimitSpent, url)
+            val cause = coordinator.evaluateBlockCause(previousPackage, pkg, ruleCause,
+                timeLimitSpent = false, foregroundUrl = url, timeBudget = budget)
             if (cause != null) {
                 coordinator.showBlocked(pkg, labelFor(pkg), cause)
             } else {
                 coordinator.hideIfShown()
             }
             // A configured but unmeasured budget retains a recovery check without blocking.
-            val boundaryBudget = remaining ?: if (needsMeasurement) UNMEASURED_BUDGET_BOUNDARY_MS else null
+            val boundaryBudget = remaining ?: if (budget != null) UNMEASURED_BUDGET_BOUNDARY_MS else null
             armBoundary(pkg, now, boundaryBudget,
-                retryUsage = needsMeasurement && (used == null || used == Long.MAX_VALUE))
+                retryUsage = budget != null && remaining == null,
+                resetRemainingMs = budget?.resetRemainingMs(com.flint.peakfocus.core.datastore.ProtectionClock.now()))
         }
     }
 
-    private fun armBoundary(pkg: String, now: Long, remainingBudgetMs: Long?, retryUsage: Boolean = false) {
+    private fun armBoundary(pkg: String, now: Long, remainingBudgetMs: Long?, retryUsage: Boolean = false,
+        resetRemainingMs: Long? = null) {
         val interactive = isInteractive()
         boundaryTimer?.arm(NextEvaluationBoundary.next(
             now, ZoneId.systemDefault(), pkg, ActiveRulesHolder.rules, remainingBudgetMs,
             interactive = interactive,
             // Failed reads or missing access recover without an app switch, only while awake.
             boundedRecovery = retryUsage && interactive,
+            budgetResetRemainingMs = resetRemainingMs,
+            budgetUsesSavedReset = true,
         ))
     }
 

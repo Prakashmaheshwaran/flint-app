@@ -93,6 +93,7 @@ object PathBBlockHandoff {
         appLabel: String? = null,
         /** Same immutable snapshot used to produce [verdict], even across a detector's IO suspension. */
         rules: List<BlockRule> = ActiveRulesHolder.rules,
+        timeBudget: TrustedTimeLimitBudget? = null,
     ) {
         val appContext = context.applicationContext
         val c = coordinator(appContext)
@@ -105,7 +106,7 @@ object PathBBlockHandoff {
         val ruleCause = (verdict as? Verdict.Block)?.let {
             ruleBlockCause(rules.firstOrNull { rule -> rule.id == it.ruleId }, now, utcOffset)
         }
-        val cause = c.evaluateBlockCause(previous, packageName, ruleCause, timeLimitSpent)
+        val cause = c.evaluateBlockCause(previous, packageName, ruleCause, timeLimitSpent, timeBudget = timeBudget)
         if (cause != null) {
             c.showBlocked(packageName, appLabel, cause)
         } else {

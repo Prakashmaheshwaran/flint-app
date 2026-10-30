@@ -214,7 +214,8 @@ class UsageStatsForegroundService : Service() {
         }
         val observation = withContext(queryDispatcher) { queryRuntime.observeTarget(pkg, now, rules) }
         if (observationInvalidated()) return false
-        PathBBlockHandoff.onForegroundPolled(this, pkg, observation.verdict, observation.timeLimitSpent, observation.appLabel, rules)
+        PathBBlockHandoff.onForegroundPolled(this, pkg, observation.verdict,
+            appLabel = observation.appLabel, rules = rules, timeBudget = observation.timeBudget)
         // This measures the handoff's return, not first window visibility or painted pixels.
         logDuration("tick_to_handoff_ms", tickStarted)
         return true

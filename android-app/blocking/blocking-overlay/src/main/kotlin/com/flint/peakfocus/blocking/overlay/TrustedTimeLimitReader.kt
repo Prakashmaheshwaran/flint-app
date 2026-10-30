@@ -46,7 +46,11 @@ class TrustedTimeLimitReader internal constructor(
         require(dailyMinutes >= 0)
         try {
             val ticket = contextFor(packageName, clock())
-            val total = if (dailyMinutes > 0) query(packageName, ticket.windowStartEpochMs, ticket.observedAt.wallEpochMs) else null
+            val total = if (dailyMinutes > 0) try {
+                query(packageName, ticket.windowStartEpochMs, ticket.observedAt.wallEpochMs)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) { Long.MAX_VALUE } else null
             val committed = record(ticket, total, clock())
             lastGood[packageName] = committed.state
             val quality = when {

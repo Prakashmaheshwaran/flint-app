@@ -19,6 +19,16 @@ class NextEvaluationBoundaryTest {
         assertNull(NextEvaluationBoundary.next(0, utc, "app", emptyList()))
     }
 
+    @Test fun PC_54_PC_56_savedBudgetResetIgnoresDeviceMidnightAndRemainsArmedWithScreenOff() {
+        val now = ms("2026-10-28T23:59:00Z")
+        for (zone in listOf(utc, ny, ZoneId.of("Pacific/Auckland"))) {
+            assertEquals(now + 3_600_000, NextEvaluationBoundary.next(now, zone, "app", emptyList(), 0,
+                interactive = false, budgetResetRemainingMs = 3_600_000, budgetUsesSavedReset = true))
+            assertEquals(now + 20_000, NextEvaluationBoundary.next(now, zone, "app", emptyList(), 20_000,
+                budgetResetRemainingMs = 3_600_000, budgetUsesSavedReset = true))
+        }
+    }
+
     @Test fun `screen off never repeatedly arms an unchanged short remaining budget`() {
         val now = ms("2026-10-28T12:00:00Z")
         val midnight = ms("2026-10-29T00:00:00Z")

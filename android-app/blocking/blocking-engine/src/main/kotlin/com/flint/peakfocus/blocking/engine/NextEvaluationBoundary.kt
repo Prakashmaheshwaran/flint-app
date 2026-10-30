@@ -21,6 +21,8 @@ object NextEvaluationBoundary {
         remainingBudgetMs: Long? = null,
         interactive: Boolean = true,
         boundedRecovery: Boolean = false,
+        budgetResetRemainingMs: Long? = null,
+        budgetUsesSavedReset: Boolean = false,
     ): Long? {
         val relevant = rules.filter { rule ->
             rule.enabled && (rule.runtime?.evaluation?.let { it.active || it.nextBoundaryEpochMs != null }
@@ -29,14 +31,17 @@ object NextEvaluationBoundary {
                 else apps.any { it.packageName == foregroundPackage } || domains.isNotEmpty()
             }
         }
-        if (relevant.isEmpty() && remainingBudgetMs == null) return null
+        if (relevant.isEmpty() && remainingBudgetMs == null && budgetResetRemainingMs == null) return null
         val now = Instant.ofEpochMilli(nowMs)
         val today = now.atZone(zone).toLocalDate()
         val candidates = mutableListOf<Long>()
         // Recover an obscured foreground or unavailable usage measurement without a new event.
         if (boundedRecovery && interactive) candidates += nowMs + 60_000L
-        // Budgets reset at local midnight; schedules can also change their weekday gate then.
-        candidates += today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        // Saved Time periods reset only on elapsed proof; schedules still use their own zone.
+        if (!budgetUsesSavedReset || relevant.isNotEmpty())
+            candidates += today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        budgetResetRemainingMs?.takeIf { it > 0L && it <= Long.MAX_VALUE - nowMs }
+            ?.let { candidates += nowMs + it }
         remainingBudgetMs?.takeIf { interactive && it > 0L && it <= Long.MAX_VALUE - nowMs }
             ?.let { candidates += nowMs + it }
         for (rule in relevant) {
