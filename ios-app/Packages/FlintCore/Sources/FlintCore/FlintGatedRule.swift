@@ -197,11 +197,13 @@ extension FlintOpenLimitRule: FlintGatedRule {
 /// Every write completely assigns the fields this store owns. A mode flip must not retain
 /// .all() domains or old explicit app shields (R-35, PC-11/65).
 enum FlintRuleShield {
-    static func apply<Rule: FlintGatedRule>(_ rule: Rule) {
-        _ = FlintSessionController().withTransition {
-            guard FlintPassRecoveryGate.read().permitsApplication else { return }
+    @discardableResult
+    static func apply<Rule: FlintGatedRule>(_ rule: Rule) -> Bool {
+        FlintSessionController().withTransition {
+            guard FlintPassRecoveryGate.read().permitsApplication else { return false }
             applyLocked(rule)
-        }
+            return true
+        } ?? false
     }
 
     private static func applyLocked<Rule: FlintGatedRule>(_ rule: Rule) {
@@ -221,11 +223,13 @@ enum FlintRuleShield {
 
     /// Without mutation authority, union restrictions; never clear a field or widen an
     /// exception. A concurrent newer revision may already have made the store stricter.
-    static func add<Rule: FlintGatedRule>(_ rule: Rule) {
-        _ = FlintSessionController().withTransition {
-            guard FlintPassRecoveryGate.read().permitsApplication else { return }
+    @discardableResult
+    static func add<Rule: FlintGatedRule>(_ rule: Rule) -> Bool {
+        FlintSessionController().withTransition {
+            guard FlintPassRecoveryGate.read().permitsApplication else { return false }
             addLocked(rule)
-        }
+            return true
+        } ?? false
     }
 
     private static func addLocked<Rule: FlintGatedRule>(_ rule: Rule) {

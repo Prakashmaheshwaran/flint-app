@@ -21,6 +21,7 @@ struct EmergencyPassSheet: View {
     @State private var heldPreview: FlintPassPreview?
     @State private var accessiblePreview: FlintPassPreview?
     @State private var disablingScope: FlintPassScope?
+    @State private var refreshID = UUID()
     private let controller = FlintEmergencyPassController()
 
     var body: some View {
@@ -213,17 +214,27 @@ struct EmergencyPassSheet: View {
 
     private func refresh() {
         guard !accessibleConfirmation, !disableConfirmation, !holding else { return }
-        status = try? controller.status().get()
-        // Once read-back proves this operation committed, subsequent explicit uses get a new
-        // ID. Recovery retries use reconcile(), while an ambiguous read retains the old ID.
-        if status?.recovery?.operationID == operationID { operationID = UUID().uuidString }
-        scope = try? controller.currentScope().get()
-        resumingScope = try? controller.resumingScope().get()
-        switch controller.preview() {
-        case let .success(value): preview = value; error = nil
-        case let .failure(failure):
-            preview = nil
-            if status?.pass.isRecovering != true { error = failure.localizedDescription }
+        let request = UUID(); refreshID = request
+        Task {
+            // Construct the controller in the worker task; no view/controller capture crosses
+            // actors. Only immutable Sendable snapshots return to the main actor.
+            let update = await Task.detached(priority: .utility) {
+                let reader = FlintEmergencyPassController()
+                return (reader.status(), reader.currentScope(), reader.resumingScope(), reader.preview())
+            }.value
+            guard refreshID == request, !accessibleConfirmation, !disableConfirmation, !holding else { return }
+            status = try? update.0.get()
+            // Once read-back proves this operation committed, subsequent explicit uses get a new
+            // ID. Recovery retries use reconcile(), while an ambiguous read retains the old ID.
+            if status?.recovery?.operationID == operationID { operationID = UUID().uuidString }
+            scope = try? update.1.get()
+            resumingScope = try? update.2.get()
+            switch update.3 {
+            case let .success(value): preview = value; error = nil
+            case let .failure(failure):
+                preview = nil
+                if status?.pass.isRecovering != true { error = failure.localizedDescription }
+            }
         }
     }
 }

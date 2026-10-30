@@ -22,7 +22,7 @@ final class FlintWebRestrictionLifecycleTests: XCTestCase {
     private func rule(_ id: String, enabled: Bool = true) -> FlintScheduleRule {
         FlintScheduleRule(id: id, name: id,
                           schedule: FlintSchedule(daysOfWeek: [2], startHour: 22, endHour: 7),
-                          enabled: enabled)
+                          enabled: enabled, protection: .init(timeZoneID: calendar.timeZone.identifier))
     }
 
     func testLegacyJSONKeepsEveryUserSettingAndOptsSchedulesOut() throws {

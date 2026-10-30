@@ -6,7 +6,7 @@ import FlintCore
 /// (docs/architecture/protection-contract.md); when session, pass, Focus or removal behavior
 /// changes, update the matching section here in the same PR.
 struct HelpView: View {
-    @State private var pass = HelpPassStatus.current()
+    @State private var pass = HelpPassStatus.unknown
 
     var body: some View {
         ScrollView {
@@ -65,20 +65,20 @@ struct HelpView: View {
         }
         .background(FlintGroundBackground())
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { pass = HelpPassStatus.current() }
+        .task { pass = await HelpPassStatus.current() }
     }
 }
 
 /// Projection of the shared ledger authority; this screen never interprets legacy timestamps.
-enum HelpPassStatus: Equatable {
+enum HelpPassStatus: Equatable, Sendable {
     case available
     case next(Date)
     case adjustedNext(Date)
     case recovery(Date)
     case unknown
 
-    static func current() -> HelpPassStatus {
-        guard let status = try? FlintEmergencyPassController().status().get() else { return .unknown }
+    static func current() async -> HelpPassStatus {
+        guard let status = try? await FlintEmergencyPassController.displayStatus().get() else { return .unknown }
         if let until = status.recoveryUntil { return .recovery(until) }
         if let next = status.nextAvailableAt { return status.timeUncertain ? .adjustedNext(next) : .next(next) }
         return status.pass.eligibility == .unavailable ? .unknown : .available

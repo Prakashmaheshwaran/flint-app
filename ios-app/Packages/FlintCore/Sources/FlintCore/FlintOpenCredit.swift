@@ -69,25 +69,27 @@ public enum FlintOpenCredit {
 
     /// Preserve a live grant through reloads; close legacy unbounded releases by applying
     /// the full selection when there is no verifiable ledger grant. Never clear categories.
-    static func applyShield(for rule: FlintOpenLimitRule) {
-        _ = FlintSessionController().withTransition {
+    @discardableResult
+    static func applyShield(for rule: FlintOpenLimitRule) -> Bool {
+        FlintSessionController().withTransition {
             guard FlintEmergencyPassController.prepareForPolicyMutation(),
-                  FlintPassRecoveryGate.read().permitsApplication else { return }
-            applyShieldLocked(for: rule)
-        }
+                  FlintPassRecoveryGate.read().permitsApplication else { return false }
+            return applyShieldLocked(for: rule)
+        } ?? false
     }
 
     /// Busy rule callbacks cannot re-enter the transition. Restore only additions, preserving
     /// peek-verified live credits without releasing any field another writer already set.
-    static func addShieldFromSnapshot(for rule: FlintOpenLimitRule) {
-        guard rule.enabled, FlintSelectionValidation.issue(for: rule.selection, context: .openLimit) == nil else { return }
+    @discardableResult
+    static func addShieldFromSnapshot(for rule: FlintOpenLimitRule) -> Bool {
+        guard rule.enabled, FlintSelectionValidation.issue(for: rule.selection, context: .openLimit) == nil else { return false }
         let grants = fallbackGrants(peek: FlintProtectionLedger.appGroup().flatMap { try? $0.peek().get() })
         let now = FlintLedgerInstant(clock: .system)
         let center = DeviceActivityCenter()
         let adding = shieldAdditions(for: rule, grants: grants, at: now, registered: {
             center.schedule(for: DeviceActivityName($0)) != nil
         })
-        FlintRuleShield.add(adding)
+        return FlintRuleShield.add(adding)
     }
 
     static func shieldAdditions(for rule: FlintOpenLimitRule, grants: [String: FlintOpenCreditGrant],
@@ -103,18 +105,18 @@ public enum FlintOpenCredit {
         return adding
     }
 
-    private static func applyShieldLocked(for rule: FlintOpenLimitRule) {
-        guard FlintPassRecoveryGate.read().permitsApplication else { return }
+    private static func applyShieldLocked(for rule: FlintOpenLimitRule) -> Bool {
+        guard FlintPassRecoveryGate.read().permitsApplication else { return false }
         // Never leave the rule unshielded when the ledger can't be used (ADR-012 §8): without a
         // ledger nothing proves a live grant, so the whole selection applies.
-        guard let ledger = FlintProtectionLedger.appGroup() else { apply(rule, grants: [:]); return }
+        guard let ledger = FlintProtectionLedger.appGroup() else { return apply(rule, grants: [:]) }
         for attempt in 0..<2 {
-            if case .success = transactApplyShield(for: rule, ledger: ledger) { return }
+            if case let .success(applied) = transactApplyShield(for: rule, ledger: ledger) { return applied }
             if attempt == 0 { usleep(100_000) }
         }
         // Still busy or unreadable: shield, keeping only grants a read-only snapshot proves live
         // (their deadlines still end them, PC-30). An unreadable ledger proves none.
-        apply(rule, grants: fallbackGrants(peek: try? ledger.peek().get()))
+        return apply(rule, grants: fallbackGrants(peek: try? ledger.peek().get()))
     }
 
     /// Decodable corruption cannot prove a release. Native application still checks each
@@ -126,8 +128,8 @@ public enum FlintOpenCredit {
 
     @discardableResult
     private static func transactApplyShield(for rule: FlintOpenLimitRule,
-                                            ledger: FlintProtectionLedger) -> Result<Void, FlintLedgerError> {
-        ledger.transaction { state -> Void in
+                                            ledger: FlintProtectionLedger) -> Result<Bool, FlintLedgerError> {
+        ledger.transaction { state -> Bool in
             let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: .flintGroup, migrating: false)
             let valid = state.reconcileOpenCredits(at: FlintLedgerInstant(clock: .system),
                 targetKeys: rules.map(targetKeys) ?? state.openCredits.knownTargets,
@@ -138,7 +140,7 @@ public enum FlintOpenCredit {
                     FlintScheduling.stopMonitoring([grant.activityName])
                 })
             }
-            apply(rule, grants: valid ? state.openCredits.grants : [:])
+            return apply(rule, grants: valid ? state.openCredits.grants : [:])
         }
     }
 
@@ -306,8 +308,9 @@ public enum FlintOpenCredit {
             }
         }
     }
-    private static func apply(_ rule: FlintOpenLimitRule, grants: [String: FlintOpenCreditGrant]) {
-        guard FlintPassRecoveryGate.read().permitsApplication else { return }
+    @discardableResult
+    private static func apply(_ rule: FlintOpenLimitRule, grants: [String: FlintOpenCreditGrant]) -> Bool {
+        guard FlintPassRecoveryGate.read().permitsApplication else { return false }
         let store = ManagedSettingsStore(named: .init(rule.storeName))
         let now = FlintLedgerInstant(clock: .system)
         let center = DeviceActivityCenter()
@@ -323,6 +326,7 @@ public enum FlintOpenCredit {
         // Unsupported legacy Open categories remain saved but unarmed; no category release.
         store.shield.applicationCategories = nil
         store.shield.webDomainCategories = nil
+        return true
     }
 
     private static func otherStores() -> [FlintOpenCreditContributor]? {

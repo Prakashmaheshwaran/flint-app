@@ -5,8 +5,8 @@ import FlintCore
 /// stay reachable while Flint is locked (ADR-012 §7, PC-50). The PIN protects private content:
 /// this shows only whether a block is running, its strictness and end time, and pass status —
 /// never session or rule names, apps, sites, categories or history.
-struct LockedRecoveryState: Equatable {
-    enum Running: Equatable {
+struct LockedRecoveryState: Equatable, Sendable {
+    enum Running: Equatable, Sendable {
         case none
         /// A session record exists but can't be read: say so rather than "nothing running".
         case unreadable
@@ -89,7 +89,8 @@ struct LockedRecoveryState: Equatable {
 
 /// The locked gate's recovery sheet: pass status and use, and the OS route that always works.
 struct LockedRecoveryView: View {
-    @State private var state = LockedRecoveryState.current()
+    @State private var state = LockedRecoveryState.make(active: nil, hasRecord: true, pass: nil, now: Date())
+    @State private var refreshID = UUID()
     @State private var showPass = false
     let onClose: () -> Void
 
@@ -118,7 +119,7 @@ struct LockedRecoveryView: View {
                 EmergencyPassSheet(
                     onKeep: { showPass = false },
                     onApplied: {
-                        state = LockedRecoveryState.current()
+                        refresh()
                         DispatchQueue.main.async {
                             UIAccessibility.post(notification: .announcement, argument: "Protection state updated.")
                         }
@@ -128,6 +129,16 @@ struct LockedRecoveryView: View {
         }
         .accessibilityAction(.escape) { onClose() }
         .preferredColorScheme(.dark)
+        .onAppear { refresh() }
+    }
+
+    private func refresh() {
+        let request = UUID(); refreshID = request
+        Task {
+            let current = await Task.detached(priority: .utility) { LockedRecoveryState.current() }.value
+            guard refreshID == request else { return }
+            state = current
+        }
     }
 }
 

@@ -110,7 +110,7 @@ struct FlintRuleReloadEnvironment {
     var defaults: UserDefaults?
     var center: any FlintActivityRegistering
     var clearStore: (String) -> Void
-    var applyOpenShield: (FlintOpenLimitRule) -> Void
+    var applyOpenShield: (FlintOpenLimitRule) -> Bool
     var record: (String, FlintArmingHealth.DomainReport) -> Void
     var loadHealth: () -> FlintArmingHealth = { .init() }
     var reconcileOpenCredits: () -> Void = {}
@@ -122,8 +122,8 @@ struct FlintRuleReloadEnvironment {
     var validateSelection: (FamilyActivitySelection, FlintSelectionContext) -> FlintSelectionIssue? = {
         FlintSelectionValidation.issue(for: $0, context: $1)
     }
-    var applyRuleShield: (FlintScheduleRule) -> Void = { FlintRuleShield.apply($0) }
-    var applyLimitShield: (FlintLimitRule) -> Void = { FlintRuleShield.apply($0) }
+    var applyRuleShield: (FlintScheduleRule) -> Bool = { FlintRuleShield.apply($0) }
+    var applyLimitShield: (FlintLimitRule) -> Bool = { FlintRuleShield.apply($0) }
     var timeLimitIsShielded: (FlintLimitRule, Date) -> Bool = { limit, _ in
         let store = ManagedSettingsStore(named: .init(limit.storeName))
         return store.shield.applications != nil || store.shield.applicationCategories != nil
@@ -135,9 +135,9 @@ struct FlintRuleReloadEnvironment {
     var clearLimitThreshold: (String) -> Void = { _ in }
     var publishStatus: () -> Void = {}
     /// Positive-only restoration when a callback cannot commit a rule transition.
-    var addRuleShield: ((FlintScheduleRule) -> Void)? = nil
-    var addLimitShield: ((FlintLimitRule) -> Void)? = nil
-    var addOpenShield: ((FlintOpenLimitRule) -> Void)? = nil
+    var addRuleShield: ((FlintScheduleRule) -> Bool)? = nil
+    var addLimitShield: ((FlintLimitRule) -> Bool)? = nil
+    var addOpenShield: ((FlintOpenLimitRule) -> Bool)? = nil
     var recoveryDirectory: URL? = FlintRuleRecovery.directory
     var recoveryGate: () -> FlintPassRecoveryGate = { .enforcing }
     /// Positive threshold evidence precedes lock acquisition and any outbox recovery.
@@ -150,14 +150,22 @@ struct FlintRuleReloadEnvironment {
                 attempted: 0, armed: 0, failures: [], updatedAt: clock.now()))
             return false
         }
+        let applied: Bool
         if let schedule = rule as? FlintScheduleRule {
-            (addingOnly ? addRuleShield ?? applyRuleShield : applyRuleShield)(schedule)
+            applied = (addingOnly ? addRuleShield ?? applyRuleShield : applyRuleShield)(schedule)
         } else if let limit = rule as? FlintLimitRule {
-            (addingOnly ? addLimitShield ?? applyLimitShield : applyLimitShield)(limit)
+            applied = (addingOnly ? addLimitShield ?? applyLimitShield : applyLimitShield)(limit)
         } else if let open = rule as? FlintOpenLimitRule {
-            (addingOnly ? addOpenShield ?? applyOpenShield : applyOpenShield)(open)
+            applied = (addingOnly ? addOpenShield ?? applyOpenShield : applyOpenShield)(open)
+        } else {
+            applied = false
         }
-        return true
+        if !applied {
+            recordState(Rule.domain.domain, .init(enabled: loadHealth().domains[Rule.domain.domain]?.enabled ?? 1,
+                attempted: 1, armed: 0, failures: [.init(activityName: rule.activityName,
+                    reason: "Protection could not be applied yet. Flint will retry saved protection.")], updatedAt: clock.now()))
+        }
+        return applied
     }
 
     func recordState(_ domain: String, _ report: FlintArmingHealth.DomainReport) {

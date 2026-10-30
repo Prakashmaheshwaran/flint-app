@@ -15,12 +15,12 @@ enum FlintEmergencyPassScope {
     }
 
     static func load(state: FlintLedgerState, at now: FlintLedgerInstant,
-                     defaults: UserDefaults?, calendar: Calendar,
+                     defaults: UserDefaults?, calendar: Calendar, migrating: Bool = true,
                      hasThresholdShield: (String) -> Bool = nativeThresholdShield) throws -> FlintPassScope {
         guard let defaults,
-              let schedules = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: defaults, at: now.wall),
-              let limits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: defaults, at: now.wall),
-              let opens = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: defaults, at: now.wall),
+              let schedules = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules, from: defaults, at: now.wall, migrating: migrating),
+              let limits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: defaults, at: now.wall, migrating: migrating),
+              let opens = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: defaults, at: now.wall, migrating: migrating),
               unique(schedules.map(\.id)), unique(limits.map(\.id)), unique(opens.map(\.id)) else {
             throw FlintEmergencyPassError.scopeUnavailable
         }

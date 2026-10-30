@@ -12,7 +12,8 @@ struct SettingsView: View {
     @State private var openSetupAfterAuthentication = false
     @State private var armingHealth = FlintGroupStore()?.loadArmingHealth() ?? FlintArmingHealth()
     @State private var authStatus = AuthorizationCenter.shared.authorizationStatus
-    @State private var passStatus = try? FlintEmergencyPassController().status().get()
+    @State private var passStatus: FlintEmergencyPassStatus?
+    @State private var passRefreshID = UUID()
     @State private var showPass = false
     @State private var confirmClearHistory = false
     @State private var historyFeedback: String?
@@ -149,7 +150,12 @@ struct SettingsView: View {
         appLock.refresh()
         armingHealth = FlintGroupStore()?.loadArmingHealth() ?? FlintArmingHealth()
         authStatus = AuthorizationCenter.shared.authorizationStatus
-        passStatus = try? FlintEmergencyPassController().status().get()
+        let request = UUID(); passRefreshID = request
+        Task {
+            let result = await FlintEmergencyPassController.displayStatus()
+            guard passRefreshID == request else { return }
+            passStatus = try? result.get()
+        }
         observation = FlintProtectionObservation.load()
         sessionHealth = FlintSessionHealth.load()
         activeSession = FlintSessionController().activeSession

@@ -55,7 +55,7 @@ final class FlintEmergencyPassControllerTests: XCTestCase {
 
     private enum Fault: Error { case injected }
 
-    private func controller() -> FlintEmergencyPassController {
+    private func controller(readOnlyScope: ((FlintLedgerState, FlintLedgerInstant) throws -> FlintPassScope)? = nil) -> FlintEmergencyPassController {
         .init(environment: .init(ledger: { self.ledger() }, clock: clock, scope: { _, instant in
             guard self.scopeReadable else { throw Fault.injected }
             self.observedScopeTimes.append(instant)
@@ -97,7 +97,7 @@ final class FlintEmergencyPassControllerTests: XCTestCase {
         }, afterCommit: {
             if self.crash { throw Fault.injected }
         }, cancelGrants: { state in state.cancelAccessGrantsForPass() + self.cancelledCarriers },
-        prepareScope: { self.preparations += 1 }))
+        prepareScope: { self.preparations += 1 }, readScope: readOnlyScope))
     }
 
     private func advance(_ seconds: TimeInterval) {
@@ -117,12 +117,45 @@ final class FlintEmergencyPassControllerTests: XCTestCase {
             XCTAssertTrue(FlintEmergencyPassController.isInPolicyTransition)
             observations += 1
         }
-        _ = try controller().reconcile().get() // no recovery: drains into a nested status read
-        XCTAssertGreaterThanOrEqual(observations, 2)
+        _ = try controller().reconcile().get() // no recovery: drains into a read-only status projection
+        XCTAssertEqual(observations, 1, "display reads must not acquire a policy transition")
         XCTAssertFalse(FlintEmergencyPassController.isInPolicyTransition)
         scopeReadable = false
         XCTAssertEqual(controller().status(), .failure(.scopeUnavailable))
         XCTAssertFalse(FlintEmergencyPassController.isInPolicyTransition, "failure must restore the caller thread")
+    }
+
+    func testDisplayStatusDoesNotInitializeOrMigrateANewLedger() {
+        XCTAssertEqual(controller().status(), .failure(.unavailable))
+        XCTAssertNil(marker)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("ledger.json").path))
+        XCTAssertEqual(preparations, 0)
+    }
+
+    func testDisplayReadsUseDurableSnapshotDuringAnOpenTransactionWithoutWriting() throws {
+        _ = try use()
+        advance(15)
+        let file = directory.appendingPathComponent("ledger.json")
+        let bytes = try Data(contentsOf: file)
+        let expectedScope = FlintPassScope(revision: revision, sessions: sessions, rules: rules, stores: ["flint"])
+        let reader = controller(readOnlyScope: { _, _ in expectedScope })
+        duringTransition = { XCTFail("display must not acquire the session/rule transition") }
+        let result: Result<Void, FlintLedgerError> = ledger().transaction { state in
+            state.pass.usage = .unknown // an uncommitted after-image must not replace the durable read
+            for _ in 0..<3 {
+                let displayed = try reader.status().get()
+                XCTAssertEqual(displayed.pass.recoveryRemaining, 3585)
+                XCTAssertFalse(displayed.isAvailable)
+                XCTAssertEqual(try reader.currentScope().get(), expectedScope)
+                XCTAssertEqual(try reader.resumingScope().get(), expectedScope)
+            }
+            XCTAssertEqual(try Data(contentsOf: file), bytes)
+            throw Fault.injected // leave the original durable checkpoint unchanged
+        }
+        if case .success = result { XCTFail("the injected transaction must abort") }
+        XCTAssertEqual(try Data(contentsOf: file), bytes)
+        XCTAssertEqual(try ledger().peek().get().pass.recoveryRemaining, 3600)
+        XCTAssertFalse(FlintEmergencyPassController.isInPolicyTransition)
     }
 
     func testIneligibleRecoveryDoesNotPrepareQueuedRuleMutations() throws {
@@ -347,6 +380,26 @@ final class FlintEmergencyPassControllerTests: XCTestCase {
         XCTAssertEqual(try ledger().read().get().operations.filter { $0.kind == "pass" }.count, 1)
     }
 
+    func testFinishedOperationRetryAfterNaturalRecoveryEndIsStaleWithoutEffects() throws {
+        _ = try use("finished")
+        advance(3600)
+        _ = try controller().reconcile().get()
+        let before = effects
+        XCTAssertEqual(controller().use(previewRevision: "old confirmation", operationID: "finished"), .failure(.stalePreview))
+        XCTAssertEqual(effects, before)
+        XCTAssertEqual(emitted.count, 1)
+        XCTAssertEqual(try ledger().peek().get().operations.filter { $0.kind == "pass" }.count, 1)
+    }
+
+    func testFinishedOperationRetryAfterResumeNowIsStaleWithoutEffects() throws {
+        _ = try use("finished")
+        _ = try controller().resumeNow().get()
+        let before = effects
+        XCTAssertEqual(controller().use(previewRevision: "old confirmation", operationID: "finished"), .failure(.stalePreview))
+        XCTAssertEqual(effects, before)
+        XCTAssertEqual(try ledger().peek().get().operations.filter { $0.kind == "pass" }.count, 1)
+    }
+
     func testAdapterFailureRetainsOutboxForReplayPC44() throws {
         releaseFails = true
         let preview = try controller().preview().get()
@@ -445,7 +498,8 @@ final class FlintEmergencyPassControllerTests: XCTestCase {
         XCTAssertTrue(registrationTimes.allSatisfy { $0 < acceptedAt.addingTimeInterval(3600) },
                       "pre-commit arm and pre-release verification only; no new recovery after expiry")
         XCTAssertTrue(effects.contains("resume"))
-        XCTAssertEqual(try ledger().read().get().pass.cooldownRemaining, 600800)
+        XCTAssertEqual(try ledger().peek().get().pass.status(at: .init(clock: clock), hasActiveCommitment: true).eligibility,
+                       .coolingDown(remaining: 600800))
     }
 
     func testSameBootWallClockEditsCannotChangeRecoveryOrCooldownPC54PC55() throws {
@@ -457,13 +511,14 @@ final class FlintEmergencyPassControllerTests: XCTestCase {
         let status = try controller().status().get()
         XCTAssertEqual(status.pass.recoveryRemaining, 3540)
         XCTAssertTrue(status.timeUncertain)
-        XCTAssertEqual(try ledger().read().get().pass.cooldownRemaining, 604740)
+        XCTAssertEqual(try ledger().peek().get().pass.status(at: .init(clock: clock), hasActiveCommitment: true).eligibility,
+                       .coolingDown(remaining: 604740))
     }
 
     func testRebootEndsRecoveryRetainsSpendAndReappliesPC59PC60() throws {
         _ = try use()
         advance(60)
-        _ = controller().status()
+        _ = try controller().reconcile().get() // only a real reconciliation persists elapsed progress
         boot = "boot-b"; monotonic = 1; now = now.addingTimeInterval(100 * 86400)
         let status = try controller().reconcile().get()
         XCTAssertFalse(status.pass.isRecovering)
@@ -616,6 +671,7 @@ final class FlintEmergencyPassControllerTests: XCTestCase {
     }
 
     func testRuleWorkCannotStopAnUnrelatedSessionRegistration() throws {
+        _ = try ledger().read().get()
         rules = [.init(id: "schedule:a", name: "Rule", kind: .schedule,
             naturalStart: now.addingTimeInterval(-60), naturalEnd: now.addingTimeInterval(7200),
             storeName: "flint.a", activityName: "flint.session.unrelated")]

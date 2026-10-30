@@ -5,6 +5,52 @@ import FamilyControls
 /// Exercises the shared rule registrars/writers through their injected environment. These
 /// are adapter tests, not evidence that DeviceActivity delivers while a device is locked.
 final class FlintEmergencyPassResumeTests: XCTestCase {
+    func testEveryRuleWriterReportsSkippedApplicationIncludingPositiveOnlyFallback() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        var environment = h.environment
+        environment.applyRuleShield = { _ in false }
+        environment.applyLimitShield = { _ in false }
+        environment.applyOpenShield = { _ in false }
+        environment.addRuleShield = { _ in false }
+        environment.addLimitShield = { _ in false }
+        environment.addOpenShield = { _ in false }
+        for addingOnly in [false, true] {
+            XCTAssertFalse(environment.applyProtection(h.schedule(tier: .hardcore), addingOnly: addingOnly))
+            XCTAssertFalse(environment.applyProtection(FlintLimitRule(id: "time", name: "Time", thresholdMinutes: 0),
+                addingOnly: addingOnly))
+            XCTAssertFalse(environment.applyProtection(FlintOpenLimitRule(id: "open", name: "Open", opensAllowed: 3),
+                addingOnly: addingOnly))
+        }
+        for domain in ["schedules", "limits", "openLimits"] {
+            XCTAssertEqual(h.reports[domain]?.armed, 0)
+            XCTAssertFalse(h.reports[domain]?.failures.isEmpty ?? true)
+        }
+    }
+
+    func testSkippedNativeResumeRetainsOutboxUntilApplicationSucceeds() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        _ = h.install(h.schedule(tier: .hardcore))
+        var canApply = false
+        var environment = h.environment
+        environment.applyRuleShield = { _ in canApply }
+        let controller = FlintEmergencyPassController(environment: .init(ledger: { h.ledger }, clock: h.clock,
+            scope: { state, now in try FlintEmergencyPassScope.load(state: state, at: now,
+                defaults: h.defaults, calendar: h.clock.calendar(), hasThresholdShield: { _ in false }) },
+            registerCarrier: { _, _, _ in }, terminate: { _, _ in }, release: { _ in },
+            resume: { state, now in try FlintEmergencyPassRuleEffects.resume(state: state, at: now,
+                environment: environment, web: .init(writer: PassResumeWebWriter(), clock: h.clock)) }, emit: { _ in }))
+        let preview = try controller.preview().get()
+        _ = try controller.use(previewRevision: preview.revision, operationID: "native-resume").get()
+        h.advance(3600)
+        XCTAssertEqual(controller.reconcile(), .failure(.applying))
+        XCTAssertEqual(try h.ledger.peek().get().emergencyRecovery?.resumePending, true)
+        XCTAssertTrue(try controller.status().get().needsApplication)
+        canApply = true
+        XCTAssertFalse(try controller.reconcile().get().needsApplication)
+        XCTAssertEqual(try h.ledger.peek().get().emergencyRecovery?.resumePending, false)
+        XCTAssertEqual(try h.ledger.peek().get().operations.filter { $0.kind == "pass" }.count, 1)
+    }
+
     func testRecoveryEndResumesOnlyNaturallyActiveRulesIncludingStartsInsidePC42() throws {
         let h = try RuleHarness(); defer { h.clean() }
         func rule(_ id: String, start: TimeInterval, end: TimeInterval) -> FlintScheduleRule {

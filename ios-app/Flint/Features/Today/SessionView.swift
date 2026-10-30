@@ -7,6 +7,7 @@ struct SessionView: View {
     @ObservedObject var vm: SessionViewModel
     @State private var showPass = false
     @State private var passStatus: FlintEmergencyPassStatus?
+    @State private var passRefreshID = UUID()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -112,7 +113,12 @@ struct SessionView: View {
     }
 
     private func refreshPassStatus() {
-        passStatus = try? FlintEmergencyPassController().status().get()
+        let request = UUID(); passRefreshID = request
+        Task {
+            let result = await FlintEmergencyPassController.displayStatus()
+            guard passRefreshID == request else { return }
+            passStatus = try? result.get()
+        }
     }
 
     private func levelName(_ level: BreakLevel) -> String {

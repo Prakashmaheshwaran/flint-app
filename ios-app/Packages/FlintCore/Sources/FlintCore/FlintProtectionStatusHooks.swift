@@ -49,11 +49,13 @@ extension FlintProtectionStatus {
         if let limits = FlintDesiredRules.load(FlintLimitRule.self, key: .limits, from: defaults, at: now, migrating: false) {
             FlintLimitThresholds.prune(keeping: limits, in: defaults)
         }
+        var observation = environment
+        observation.loadLedgerState = { loaded }
         let inputs = currentInputs(now: now, defaults: defaults, ledgerPass: state?.pass,
                                    thresholdReached: FlintLimitThresholds.reachedToday(now: now, in: defaults),
                                    sessionArmed: armed,
                                    sessionKind: active?.name == pomodoroSessionName ? .pomodoro : .session,
-                                   environment: environment, recoveryApplying: recoveryApplying)
+                                   environment: observation, recoveryApplying: recoveryApplying)
         let snapshot = FlintProtectionStatusBuilder.make(inputs).withWriter(writer.rawValue)
         // Compare with whatever is stored, valid or not: an unchanged unavailable projection
         // must not reload widgets either.

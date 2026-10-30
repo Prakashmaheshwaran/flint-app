@@ -304,6 +304,8 @@ struct FlintEmergencyPassEnvironment {
     /// Reconcile already-authorized natural ends/queued edits before taking a spend preview.
     /// Runs under the transition lock and outside the ledger transaction.
     var prepareScope: () throws -> Void
+    /// Display-only scope must never migrate or acquire a policy transition.
+    var readScope: (FlintLedgerState, FlintLedgerInstant) throws -> FlintPassScope
 
     init(ledger: @escaping () -> FlintProtectionLedger?, clock: FlintClock,
                 scope: @escaping (FlintLedgerState, FlintLedgerInstant) throws -> FlintPassScope,
@@ -318,7 +320,8 @@ struct FlintEmergencyPassEnvironment {
                 transition: @escaping (() -> Void) -> Bool = { body in body(); return true },
                 afterCommit: @escaping () throws -> Void = {},
                 cancelGrants: @escaping (inout FlintLedgerState) -> [String] = { $0.cancelAccessGrantsForPass() },
-                prepareScope: @escaping () throws -> Void = {}) {
+                prepareScope: @escaping () throws -> Void = {},
+                readScope: ((FlintLedgerState, FlintLedgerInstant) throws -> FlintPassScope)? = nil) {
         self.ledger = ledger; self.clock = clock; self.scope = scope
         self.registerCarrier = registerCarrier; self.stopCarrier = stopCarrier
         self.terminate = terminate; self.release = release; self.resume = resume; self.disable = disable
@@ -326,6 +329,7 @@ struct FlintEmergencyPassEnvironment {
         self.afterCommit = afterCommit
         self.cancelGrants = cancelGrants
         self.prepareScope = prepareScope
+        self.readScope = readScope ?? scope
     }
 }
 
@@ -401,39 +405,34 @@ public final class FlintEmergencyPassController {
     }
 
     public func status() -> Result<FlintEmergencyPassStatus, FlintEmergencyPassError> {
-        serialized { self.statusLocked() }
-    }
-
-    private func statusLocked() -> Result<FlintEmergencyPassStatus, FlintEmergencyPassError> {
-        guard let ledger = env.ledger() else { return .failure(.unavailable) }
-        let result = ledger.transaction { state -> Result<FlintEmergencyPassStatus, FlintEmergencyPassError> in
-            let now = FlintLedgerInstant(clock: env.clock)
-            guard now.wall.timeIntervalSinceReferenceDate.isFinite, now.monotonic.isFinite, now.monotonic >= 0,
-                  Self.hasValidRecovery(state) else { return .failure(.unavailable) }
-            state.pass.checkpoint(at: now)
-            guard Self.hasValidRecovery(state), state.pass.policyUsage != .unknown else { return .failure(.unavailable) }
-            guard let scope = try? env.scope(state, now) else {
-                // A new spend still requires the complete scope. Already committed recovery
-                // and cooldown remain knowable from the ledger, so Resume/Retry stays reachable
-                // even if a later rule/config read fails. Never infer Available from that gap.
-                let known = Self.status(state, at: now, active: true)
-                if case .coolingDown = known.pass.eligibility { return .success(known) }
-                return .failure(.scopeUnavailable)
-            }
-            let status = Self.status(state, at: now, active: scope.hasActiveCommitment)
-            if status.pass.eligibility == .available {
-                guard FlintPassRecovery(operationID: "status", at: now, scope: scope,
-                    carrierName: Self.carrierPrefix + "status").isValid else { return .failure(.scopeUnavailable) }
-            }
-            if now.bootID == nil {
-                switch status.pass.eligibility {
-                case .available, .nothingToRecover: return .failure(.unavailable)
-                default: break
-                }
-            }
-            return .success(status)
+        // The last durable atomic file remains readable while another process owns the
+        // policy locks. Project a copy; display must not checkpoint/rewrite ledger.json.
+        guard let ledger = env.ledger(), case var .success(state) = ledger.peek() else { return .failure(.unavailable) }
+        let now = FlintLedgerInstant(clock: env.clock)
+        guard now.wall.timeIntervalSinceReferenceDate.isFinite, now.monotonic.isFinite, now.monotonic >= 0,
+              Self.hasValidRecovery(state) else { return .failure(.unavailable) }
+        state.pass.checkpoint(at: now) // in-memory copy only, including uncertainty projection
+        guard Self.hasValidRecovery(state), state.pass.policyUsage != .unknown else { return .failure(.unavailable) }
+        guard let scope = try? env.readScope(state, now) else {
+            // A new spend still requires the complete scope. Already committed recovery
+            // and cooldown remain knowable from the ledger, so Resume/Retry stays reachable
+            // even if a later rule/config read fails. Never infer Available from that gap.
+            let known = Self.status(state, at: now, active: true)
+            if case .coolingDown = known.pass.eligibility { return .success(known) }
+            return .failure(.scopeUnavailable)
         }
-        return (try? result.get()) ?? .failure(.unavailable)
+        let status = Self.status(state, at: now, active: scope.hasActiveCommitment)
+        if status.pass.eligibility == .available {
+            guard FlintPassRecovery(operationID: "status", at: now, scope: scope,
+                carrierName: Self.carrierPrefix + "status").isValid else { return .failure(.scopeUnavailable) }
+        }
+        if now.bootID == nil {
+            switch status.pass.eligibility {
+            case .available, .nothingToRecover: return .failure(.unavailable)
+            default: break
+            }
+        }
+        return .success(status)
     }
 
     public func preview() -> Result<FlintPassPreview, FlintEmergencyPassError> {
@@ -482,6 +481,9 @@ public final class FlintEmergencyPassController {
         }
         guard let ledger = env.ledger() else { return .failure(.unavailable) }
         if case let .success(state) = ledger.peek(), state.emergencyRecovery?.operationID == operationID {
+            guard Self.hasValidRecovery(state), let recovery = state.emergencyRecovery else { return .failure(.unavailable) }
+            let recovering = state.pass.status(at: .init(clock: env.clock), hasActiveCommitment: true).isRecovering
+            guard recovering || recovery.needsApplication(isRecovering: false) else { return .failure(.stalePreview) }
             return drain(ledger)
         }
         if case let .success(state) = ledger.peek() {
@@ -625,30 +627,24 @@ public final class FlintEmergencyPassController {
 
     /// The current naturally active rule list for the recovery screen's exact disable dialog.
     public func currentScope() -> Result<FlintPassScope, FlintEmergencyPassError> {
-        serialized { self.currentScopeLocked() }
+        guard let ledger = env.ledger(), case let .success(state) = ledger.peek(),
+              Self.hasValidRecovery(state), state.pass.policyUsage != .unknown,
+              let scope = try? env.readScope(state, FlintLedgerInstant(clock: env.clock)) else { return .failure(.scopeUnavailable) }
+        return .success(scope)
     }
 
     /// Informational projection for the recovery screen. Future occurrences use their saved
     /// natural windows; this neither creates a commitment nor authorizes spending/disabling.
     public func resumingScope() -> Result<FlintPassScope, FlintEmergencyPassError> {
-        serialized {
-            guard let ledger = self.env.ledger(), case let .success(state) = ledger.read(),
-                  Self.hasValidRecovery(state) else { return .failure(.unavailable) }
-            let now = FlintLedgerInstant(clock: self.env.clock)
-            let status = state.pass.status(at: now, hasActiveCommitment: true)
-            guard status.eligibility != .unavailable else { return .failure(.unavailable) }
-            let remaining = status.recoveryRemaining
-            let boundary = FlintLedgerInstant(wall: now.wall.addingTimeInterval(remaining),
-                monotonic: now.monotonic + remaining, bootID: now.bootID)
-            guard let scope = try? self.env.scope(state, boundary) else { return .failure(.scopeUnavailable) }
-            return .success(scope)
-        }
-    }
-
-    private func currentScopeLocked() -> Result<FlintPassScope, FlintEmergencyPassError> {
-        guard let ledger = env.ledger(), case let .success(state) = ledger.read(),
-              Self.hasValidRecovery(state), state.pass.policyUsage != .unknown,
-              let scope = try? env.scope(state, FlintLedgerInstant(clock: env.clock)) else { return .failure(.scopeUnavailable) }
+        guard let ledger = env.ledger(), case let .success(state) = ledger.peek(),
+              Self.hasValidRecovery(state) else { return .failure(.unavailable) }
+        let now = FlintLedgerInstant(clock: env.clock)
+        let status = state.pass.status(at: now, hasActiveCommitment: true)
+        guard status.eligibility != .unavailable else { return .failure(.unavailable) }
+        let remaining = status.recoveryRemaining
+        let boundary = FlintLedgerInstant(wall: now.wall.addingTimeInterval(remaining),
+            monotonic: now.monotonic + remaining, bootID: now.bootID)
+        guard let scope = try? env.readScope(state, boundary) else { return .failure(.scopeUnavailable) }
         return .success(scope)
     }
 

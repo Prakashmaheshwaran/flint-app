@@ -61,6 +61,21 @@ final class FlintEmergencyPassScopeTests: XCTestCase {
             defaults: defaults, calendar: calendar, hasThresholdShield: { _ in false })
     }
 
+    func testDisplayScopeNeverMigratesSavedRulesOrCreatesMarkers() throws {
+        var legacy = schedule("display", from: now.addingTimeInterval(-300), until: now.addingTimeInterval(1800))
+        legacy.protection = nil
+        let bytes = try JSONEncoder().encode([legacy])
+        defaults.set(bytes, forKey: FlintRuleStoreKey.schedules.rawValue)
+        XCTAssertTrue(defaults.synchronize())
+        let before = defaults.persistentDomain(forName: suite) ?? [:]
+        let scope = try FlintEmergencyPassScope.load(state: .init(initializedAt: now), at: .init(clock: clock),
+            defaults: defaults, calendar: calendar, migrating: false, hasThresholdShield: { _ in false })
+        XCTAssertEqual(scope.rules.map(\.id), ["schedule:display"])
+        XCTAssertEqual(defaults.data(forKey: FlintRuleStoreKey.schedules.rawValue), bytes)
+        XCTAssertTrue(NSDictionary(dictionary: defaults.persistentDomain(forName: suite) ?? [:]).isEqual(to: before))
+        for key in FlintRuleStoreKey.allCases { XCTAssertNil(defaults.object(forKey: key.marker)) }
+    }
+
     func testRulesOnlyScopeIncludesSleepOneShotAndBothKindsOfLimitPC41() throws {
         let schedules = [schedule("one-shot", from: now.addingTimeInterval(-300), until: now.addingTimeInterval(1800)),
                          schedule("sleep.night", from: now.addingTimeInterval(-300), until: now.addingTimeInterval(7200), sleep: true)]

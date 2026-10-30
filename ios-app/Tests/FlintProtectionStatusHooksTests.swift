@@ -140,25 +140,39 @@ final class FlintProtectionStatusHooksTests: XCTestCase {
             scope: { _, _ in scope }, registerCarrier: { _, _, _ in }, terminate: { _, _ in }, release: { _ in },
             resume: { _, _ in if resumeFails { throw Fault.injected } }, emit: { _ in }, afterCommit: { throw Fault.injected }))
         let observation = FlintProtectionStatus.ObservationEnvironment(authorized: { true }, registeredActivities: { [] },
-            clock: clock, loadActiveSession: { nil }, hasActiveSessionRecord: { false }, loadArmingHealth: { .init() })
+            clock: clock, loadActiveSession: { nil }, hasActiveSessionRecord: { false }, loadArmingHealth: { .init() },
+            loadLedgerState: { try? ledger.peek().get() })
         func status() -> FlintProtectionStatusSnapshot {
             FlintProtectionStatus.publishAfterCommit(now: wall, defaults: defaults, ledger: { ledger },
                 environment: observation, effects: .silent)
+        }
+        func display() -> FlintProtectionStatusSnapshot {
+            // App detail and shield configuration omit the commit hook's recovery flag.
+            FlintProtectionStatusBuilder.make(FlintProtectionStatus.currentInputs(now: wall, defaults: defaults,
+                environment: observation))
         }
         let preview = try controller.preview().get()
         XCTAssertEqual(controller.use(previewRevision: preview.revision, operationID: "status-pass"), .failure(.applying))
         XCTAssertEqual(status().state, .degraded)
         XCTAssertTrue(status().degradedReasons.contains("recovery_applying"))
+        XCTAssertEqual(display().state, .degraded)
+        XCTAssertTrue(display().degradedReasons.contains("recovery_applying"), "pending release is derived internally")
         _ = try controller.reconcile().get()
         XCTAssertEqual(status().state, .suspended, "only after release acknowledgement")
+        XCTAssertEqual(display().state, .suspended)
         wall.addTimeInterval(3600); monotonic += 3600
         resumeFails = true
         XCTAssertEqual(controller.reconcile(), .failure(.applying))
         XCTAssertEqual(status().state, .degraded)
         XCTAssertTrue(status().degradedReasons.contains("recovery_applying"))
+        XCTAssertEqual(display().state, .degraded)
+        XCTAssertTrue(display().degradedReasons.contains("recovery_applying"), "pending resume is derived internally")
+        XCTAssertTrue(FlintProtectionStatus.currentInputs(now: wall, defaults: defaults,
+            environment: observation, recoveryApplying: false).recoveryApplying, "a caller cannot suppress durable pending work")
         resumeFails = false
         _ = try controller.reconcile().get()
         XCTAssertFalse(status().degradedReasons.contains("recovery_applying"))
+        XCTAssertFalse(display().degradedReasons.contains("recovery_applying"))
         XCTAssertEqual(try ledger.peek().get().operations.filter { $0.kind == "pass" }.count, 1)
     }
 }

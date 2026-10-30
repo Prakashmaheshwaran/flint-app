@@ -91,7 +91,9 @@ extension FlintLedgerState {
             pass.usage = .used
             pass.cooldownRemaining = FlintProtectionConstants.passPeriod
             pass.recoveryRemaining = FlintProtectionConstants.passRecovery
-            pass.timeUncertain = now.bootID == nil
+            // A newly accepted interval has a fresh anchor. Later checkpoints still record
+            // unknown boot/clock changes; the live controller requires a known boot to spend.
+            pass.timeUncertain = false
             pass.lastOperationID = operationID
             remember(Operation(id: operationID, kind: "pass", result: "consumed", at: now.wall))
             return .success(FlintPassReceipt(operationID: operationID,

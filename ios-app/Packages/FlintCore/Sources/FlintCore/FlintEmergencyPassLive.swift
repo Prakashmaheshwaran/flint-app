@@ -7,6 +7,10 @@ import DeviceActivity
 extension FlintEmergencyPassController {
     public convenience init() { self.init(environment: .live) }
 
+    public static func displayStatus() async -> Result<FlintEmergencyPassStatus, FlintEmergencyPassError> {
+        await Task.detached(priority: .utility) { FlintEmergencyPassController().status() }.value
+    }
+
     /// Extension entry never redeems. Keep the session monitor's longer contention budget;
     /// unreadable accepted work preserves finite resources for a later callback/foreground.
     public static func prepareForMonitorCallback(activity: String) -> Bool {
@@ -113,6 +117,9 @@ extension FlintEmergencyPassEnvironment {
                 let arbiter = FlintRuleArbiter(environment: .live)
                 guard arbiter.applyQueued(FlintScheduleRule.self), arbiter.applyQueued(FlintLimitRule.self),
                       arbiter.applyQueued(FlintOpenLimitRule.self) else { throw FlintEmergencyPassError.scopeUnavailable }
+            }, readScope: { state, now in
+                try FlintEmergencyPassScope.load(state: state, at: now, defaults: .flintGroup,
+                    calendar: .autoupdatingCurrent, migrating: false)
             })
     }
 }
