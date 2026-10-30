@@ -1,55 +1,43 @@
 package com.flint.peakfocus.blocking.usagestats
 
-import java.time.Instant
-import java.time.ZoneId
+import com.flint.peakfocus.blocking.engine.clockDiscontinuity
+import com.flint.peakfocus.blocking.engine.trustedElapsedMs
+import com.flint.peakfocus.blocking.overlay.TrustedTimeLimitBudget
+import com.flint.peakfocus.core.model.AccessClockStamp
 
-/**
- * Cached daily-budget decision for Path B's one-second poll loop.
- *
- * UsageStats queries are too expensive to repeat every tick for minute-scale budgets. A verdict
- * is refreshed on package changes, after [requeryIntervalMs], or when the wall clock moves
- * backwards. A cached Allow never lives longer than the remaining foreground budget.
- */
-class PathBTimeLimitGate(
-    private val limitMinutesFor: (packageName: String) -> Int?,
-    private val foregroundMillisToday: (packageName: String, nowEpochMs: Long) -> Long,
+/** Query throttle only. The saved period returned by the shared store owns quota/reset. */
+internal class PathBTimeLimitGate(
+    private val limitMinutesFor: (String) -> Int?,
+    private val readBudget: suspend (String, Int) -> TrustedTimeLimitBudget,
     private val requeryIntervalMs: Long = DEFAULT_REQUERY_INTERVAL_MS,
-    private val dayFor: (Long) -> Long = { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate().toEpochDay() },
 ) {
     private var cachedPackage: String? = null
-    private var cachedAtEpochMs: Long? = null
-    private var cachedSpent = false
+    private var cachedAt: AccessClockStamp? = null
+    private var lastObserved: AccessClockStamp? = null
+    private var cachedBudget: TrustedTimeLimitBudget? = null
     private var cachedLimitMinutes: Int? = null
     private var validForMs = 0L
-    private var cachedDay: Long? = null
-    private var lastObservedMs: Long? = null
 
     init { require(requeryIntervalMs > 0) }
 
-    fun isSpent(packageName: String, nowEpochMs: Long): Boolean {
-        val limitMinutes = limitMinutesFor(packageName)
-        val day = dayFor(nowEpochMs)
-        val cachedAt = cachedAtEpochMs
-        val stale = packageName != cachedPackage || limitMinutes != cachedLimitMinutes ||
-            day != cachedDay || lastObservedMs?.let { nowEpochMs < it } == true ||
-            cachedAt == null || nowEpochMs < cachedAt || nowEpochMs - cachedAt >= validForMs
+    suspend fun budget(packageName: String, now: AccessClockStamp): TrustedTimeLimitBudget? {
+        val minutes = limitMinutesFor(packageName)
+        val age = cachedAt?.let { trustedElapsedMs(it, now) }
+        val stale = packageName != cachedPackage || minutes != cachedLimitMinutes || age == null ||
+            age >= validForMs || lastObserved?.let { clockDiscontinuity(it, now) } == true
         if (stale) {
-            val remaining = when {
-                limitMinutes == null -> null
-                limitMinutes <= 0 -> 0L // already exhausted; no usage measurement is necessary
-                else -> limitMinutes * 60_000L - foregroundMillisToday(packageName, nowEpochMs)
-            }
-            cachedSpent = remaining != null && remaining <= 0L
-            validForMs = if (remaining != null && remaining > 0L) {
-                minOf(requeryIntervalMs, remaining)
-            } else requeryIntervalMs
-            cachedLimitMinutes = limitMinutes
-            cachedDay = day
+            cachedBudget = minutes?.let { readBudget(packageName, it) }
+            // An Allow cannot outlive either measured foreground quota or the trusted reset.
+            // Unknown/failed measurements retry at the normal bounded query cadence.
+            validForMs = listOfNotNull(requeryIntervalMs,
+                cachedBudget?.remainingMs?.takeIf { it > 0L },
+                cachedBudget?.resetRemainingMs(now)?.takeIf { it > 0L }).min()
+            cachedLimitMinutes = minutes
             cachedPackage = packageName
-            cachedAtEpochMs = nowEpochMs
+            cachedAt = now
         }
-        lastObservedMs = nowEpochMs
-        return cachedSpent
+        lastObserved = now
+        return cachedBudget
     }
 
     fun invalidate() { cachedPackage = null }
