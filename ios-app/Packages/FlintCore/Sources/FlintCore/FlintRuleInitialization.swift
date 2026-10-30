@@ -75,7 +75,9 @@ enum FlintRuleInitialization {
                 } else { return true }
             }
         }
-        if let directory, let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) {
+        // Most healthy installations have never needed a recovery directory.
+        if let directory, FileManager.default.fileExists(atPath: directory.path),
+           let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) {
             let prefixes = [key.original, key.rawValue + ".quarantine.adr012"].map {
                 SHA256.hash(data: Data($0.utf8)).map { String(format: "%02x", $0) }.joined() + "."
             }
