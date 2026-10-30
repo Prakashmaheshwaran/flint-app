@@ -19,15 +19,41 @@ public struct FlintPassCommitment: Codable, Equatable, Sendable, Identifiable {
     /// Local threshold evidence only. Lifecycle publication receives the session list, never
     /// these opaque target encodings. A provable strengthening retains an exhausted budget.
     public let timeLimitThreshold: FlintPassLimitThreshold?
+    /// Saved occurrence time at the scope observation, paired with that observation's uptime
+    /// and boot. Optional for old recovery records; wall is the trusted rule date here.
+    public let trustedRuleTime: FlintLedgerInstant?
 
     public init(id: String, name: String, kind: Kind, naturalStart: Date, naturalEnd: Date,
                 storeName: String, activityName: String, wasEnforcing: Bool = true, tier: BreakLevel? = nil,
-                timeLimitThreshold: FlintPassLimitThreshold? = nil) {
+                timeLimitThreshold: FlintPassLimitThreshold? = nil, trustedRuleTime: FlintLedgerInstant? = nil) {
         self.id = id; self.name = name; self.kind = kind
         self.naturalStart = naturalStart; self.naturalEnd = naturalEnd
         self.storeName = storeName; self.activityName = activityName; self.wasEnforcing = wasEnforcing
         self.tier = tier
         self.timeLimitThreshold = timeLimitThreshold
+        self.trustedRuleTime = trustedRuleTime
+    }
+
+    func containsAcceptance(_ acceptedAt: FlintLedgerInstant) -> Bool {
+        func contains(_ date: Date) -> Bool { naturalStart <= date && date < naturalEnd }
+        guard let checkpoint = trustedRuleTime else { return contains(acceptedAt.wall) }
+        guard hasValidTrustedRuleTime else { return false }
+        guard let boot = checkpoint.bootID, let acceptedBoot = acceptedAt.bootID, boot == acceptedBoot else {
+            // A genuine reboot has no trustworthy elapsed mapping. Keep the legacy bounded
+            // saved-wall-window fallback, never carry an old boot's uptime into this one.
+            return contains(acceptedAt.wall)
+        }
+        // The consumption instant can precede the final scope read by registration latency.
+        // Project both directions on the same boot; both observations must fit this window.
+        return contains(checkpoint.wall.addingTimeInterval(acceptedAt.monotonic - checkpoint.monotonic))
+    }
+
+    var hasValidTrustedRuleTime: Bool {
+        guard let checkpoint = trustedRuleTime else { return true }
+        return checkpoint.wall.timeIntervalSinceReferenceDate.isFinite
+            && checkpoint.monotonic.isFinite && checkpoint.monotonic >= 0
+            && checkpoint.bootID?.isEmpty != true
+            && naturalStart <= checkpoint.wall && checkpoint.wall < naturalEnd
     }
 }
 
@@ -153,7 +179,7 @@ public struct FlintPassRecovery: Codable, Equatable, Sendable {
             && cancelledCarriers != nil
             && (cancelledCarriers?.allSatisfy(Self.isOpenCreditCarrier) ?? false)
             && scope.rules.allSatisfy { Self.validRule($0)
-                && $0.naturalStart <= acceptedAt.wall && acceptedAt.wall < $0.naturalEnd
+                && $0.containsAcceptance(acceptedAt)
                 && scope.stores.contains($0.storeName) }
             && disabledRules.allSatisfy(Self.validRule)
             && scope.stores.allSatisfy { $0 == "flint" || $0.hasPrefix("flint.")
@@ -199,6 +225,7 @@ public struct FlintPassRecovery: Codable, Equatable, Sendable {
             && rule.naturalEnd.timeIntervalSinceReferenceDate.isFinite
             && rule.naturalEnd > rule.naturalStart
             && rule.naturalEnd.timeIntervalSince(rule.naturalStart) <= 26 * 3600
+            && rule.hasValidTrustedRuleTime
     }
 
     private static func isOpenCreditCarrier(_ name: String) -> Bool {

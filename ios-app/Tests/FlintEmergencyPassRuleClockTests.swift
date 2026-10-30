@@ -66,6 +66,14 @@ final class FlintEmergencyPassRuleClockTests: XCTestCase {
     }
 
     func testPassPreviewConfirmedAfterWallJumpBindsSameRuleOccurrencePC54() {
+        exercisePassAfterWallJump(6 * 3600)
+    }
+
+    func testPassPreviewConfirmedAfterBackwardWallJumpBindsSameRuleOccurrencePC55() {
+        exercisePassAfterWallJump(-6 * 3600)
+    }
+
+    private func exercisePassAfterWallJump(_ wallShift: TimeInterval) {
         do {
             let h = try RuleHarness(); defer { h.clean() }
             _ = try h.ledger.read().get()
@@ -77,7 +85,7 @@ final class FlintEmergencyPassRuleClockTests: XCTestCase {
                 registerCarrier: { _, _, _ in }, terminate: { _, _ in }, release: { _ in }, resume: { _, _ in },
                 disable: { _ in }, emit: { _ in publishedPassUses += 1 }))
             let preview = try controller.preview().get()
-            h.now.addTimeInterval(6 * 3600)
+            h.now.addTimeInterval(wallShift)
             _ = h.environment.observedRules(FlintScheduleRule.self)
             XCTAssertEqual(controller.use(previewRevision: preview.revision, operationID: "stale-rule-preview"),
                 .failure(.stalePreview), "refresh stale displayed resume dates; scope remains trusted")
@@ -97,6 +105,65 @@ final class FlintEmergencyPassRuleClockTests: XCTestCase {
             XCTAssertEqual(try h.ledger.peek().get().operations.filter { $0.kind == "pass" }.count, 1)
             XCTAssertEqual(publishedPassUses, 1)
         } catch { XCTFail("Existing-rule preview failed: \(error)") }
+    }
+
+    func testRuleCommitmentTrustedTimeLegacyMalformedRebootAndLatencyValidation() throws {
+        let instant = FlintLedgerInstant(wall: Date(timeIntervalSince1970: 1_800_000_000), monotonic: 1000, bootID: "a")
+        func rule(_ checkpoint: FlintLedgerInstant? = nil) -> FlintPassCommitment {
+            .init(id: "schedule:a", name: "A", kind: .schedule,
+                naturalStart: instant.wall.addingTimeInterval(-3600), naturalEnd: instant.wall.addingTimeInterval(3600),
+                storeName: "flint.a", activityName: "flint.rule.a", trustedRuleTime: checkpoint)
+        }
+        func recovery(_ commitment: FlintPassCommitment, at acceptedAt: FlintLedgerInstant) -> FlintPassRecovery {
+            .init(operationID: "rule-clock", at: acceptedAt,
+                scope: .init(revision: "scope", sessions: [], rules: [commitment], stores: ["flint.a"]),
+                carrierName: FlintEmergencyPassController.carrierPrefix + "test")
+        }
+        let legacy = try JSONDecoder().decode(FlintPassCommitment.self, from: JSONEncoder().encode(rule()))
+        XCTAssertNil(legacy.trustedRuleTime, "synthesized optional decoding accepts old records without the key")
+        XCTAssertTrue(recovery(legacy, at: instant).isValid)
+        var ahead = instant; ahead.wall.addTimeInterval(6 * 3600)
+        XCTAssertFalse(recovery(legacy, at: ahead).isValid, "legacy records retain wall containment")
+        XCTAssertTrue(recovery(rule(instant), at: ahead).isValid)
+        var laterScope = instant; laterScope.wall.addTimeInterval(2); laterScope.monotonic += 2
+        XCTAssertTrue(recovery(rule(laterScope), at: ahead).isValid, "registration latency can precede the final scope read")
+        var elapsedEnd = ahead; elapsedEnd.monotonic += 3600
+        XCTAssertFalse(recovery(rule(instant), at: elapsedEnd).isValid, "elapsed time must still fit the canonical window")
+        for malformed in [FlintLedgerInstant(wall: instant.wall, monotonic: -1, bootID: "a"),
+                          .init(wall: instant.wall, monotonic: .infinity, bootID: "a"),
+                          .init(wall: instant.wall.addingTimeInterval(3600), monotonic: 1000, bootID: "a"),
+                          .init(wall: instant.wall, monotonic: 1000, bootID: "")] {
+            XCTAssertFalse(recovery(rule(malformed), at: instant).isValid)
+        }
+        var reboot = instant; reboot.bootID = "b"; reboot.monotonic = 1
+        XCTAssertTrue(recovery(rule(instant), at: reboot).isValid, "different boot uses saved wall-window fallback")
+        reboot.wall.addTimeInterval(3600)
+        XCTAssertFalse(recovery(rule(instant), at: reboot).isValid)
+    }
+
+    func testTrustedRuleTimeRoundTripsInsideCurrentAndFutureLedgerEnvelope() {
+        do {
+            let h = try RuleHarness(); defer { h.clean() }
+            _ = h.install(h.schedule(tier: .hardcore))
+            var state = try h.ledger.read().get()
+            let recovery = FlintPassRecovery(operationID: "round-trip", at: .init(clock: h.clock),
+                scope: try scope(h), carrierName: FlintEmergencyPassController.carrierPrefix + "round-trip")
+            XCTAssertTrue(recovery.isValid)
+            state.emergencyRecovery = recovery
+            var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any])
+            let decoded = try JSONDecoder().decode(FlintLedgerState.self, from: JSONSerialization.data(withJSONObject: json))
+            XCTAssertEqual(decoded.emergencyRecovery, recovery)
+            // S2 owns the future ledger schema gate. Its v3 envelope still uses this same
+            // nested recovery decoder; adding envelope fields must not lose trustedRuleTime.
+            struct FutureLedgerEnvelope: Codable { let version: Int; let emergencyRecovery: FlintPassRecovery }
+            json["version"] = 3; json["futurePolicy"] = ["preservedByOwner": true]
+            let future = try JSONDecoder().decode(FutureLedgerEnvelope.self,
+                from: JSONSerialization.data(withJSONObject: json))
+            XCTAssertEqual(future.version, 3)
+            XCTAssertEqual(future.emergencyRecovery.scope.rules.first?.trustedRuleTime,
+                recovery.scope.rules.first?.trustedRuleTime)
+            XCTAssertTrue(future.emergencyRecovery.isValid)
+        } catch { XCTFail("Rule checkpoint round-trip failed: \(error)") }
     }
 
     func testKnownSetOrderDoesNotChangeScopePolicyFingerprint() throws {

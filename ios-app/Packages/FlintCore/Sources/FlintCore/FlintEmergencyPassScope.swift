@@ -48,6 +48,10 @@ enum FlintEmergencyPassScope {
 
         let ruleClock = FlintClock(now: { now.wall }, monotonic: { now.monotonic },
             bootSessionID: { now.bootID }, calendar: { calendar })
+        func trustedTime<Rule: FlintGatedRule>(_ rule: Rule) -> FlintLedgerInstant {
+            .init(wall: FlintRuleOccurrenceClock.date(for: rule, clock: ruleClock),
+                monotonic: now.monotonic, bootID: now.bootID)
+        }
         var commitments: [FlintPassCommitment] = []
         for rule in schedules where rule.enabled {
             guard rule.validationIssue == nil else {
@@ -57,7 +61,8 @@ enum FlintEmergencyPassScope {
                 commitments.append(.init(id: "schedule:\(rule.id)", name: rule.name,
                     kind: rule.id.hasPrefix("sleep.") ? .sleep : (rule.oneShot == nil ? .schedule : .oneShot),
                     naturalStart: interval.start, naturalEnd: interval.end,
-                    storeName: rule.storeName, activityName: rule.monitorName, tier: rule.breakLevel))
+                    storeName: rule.storeName, activityName: rule.monitorName, tier: rule.breakLevel,
+                    trustedRuleTime: trustedTime(rule)))
             }
         }
         for rule in limits where rule.enabled {
@@ -74,13 +79,14 @@ enum FlintEmergencyPassScope {
             commitments.append(.init(id: "timeLimit:\(rule.id)", name: rule.name, kind: .timeLimit,
                 naturalStart: day.start, naturalEnd: day.end,
                 storeName: rule.storeName, activityName: rule.activityName, wasEnforcing: wasEnforcing,
-                tier: rule.breakLevel, timeLimitThreshold: candidate))
+                tier: rule.breakLevel, timeLimitThreshold: candidate, trustedRuleTime: trustedTime(rule)))
         }
         for rule in opens where rule.enabled {
             guard let day = rule.occurrence(at: now.wall, clock: ruleClock) else { continue }
             commitments.append(.init(id: "openLimit:\(rule.id)", name: rule.name, kind: .openLimit,
                 naturalStart: day.start, naturalEnd: day.end,
-                storeName: rule.storeName, activityName: rule.activityName, tier: rule.breakLevel))
+                storeName: rule.storeName, activityName: rule.activityName, tier: rule.breakLevel,
+                trustedRuleTime: trustedTime(rule)))
         }
         commitments.sort { $0.id < $1.id }
         var knownStores = ["flint", FlintWebRestrictionLifecycle.legacyStoreName] + schedules.map(\.storeName)
