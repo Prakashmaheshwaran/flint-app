@@ -58,8 +58,8 @@ import com.flint.peakfocus.core.model.TimeLimit
  * spec 2.1/2.2 — both free in Flint, Open Limits on Android being a deliberate
  * beyond-Opal win. With a null [packageName] it first runs the single-select app picker.
  *
- * The Open Limit carries its own break difficulty ([OpenLimit.breakLevel]); the Time Limit
- * model has no such field yet, so no selector is shown for it — the form doesn't pretend.
+ * Time and Open Limits each retain their own difficulty. Editing one kind must not replace
+ * the other kind's tier with the global default or a shared selector value.
  */
 @Composable
 internal fun LimitEditorFlow(

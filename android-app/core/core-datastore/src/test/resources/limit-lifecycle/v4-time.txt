@@ -1,0 +1,2 @@
+com.example.time~30~HARDCORE~America/New_York
+com.example.zero~0~HARDER~Asia/Kolkata
