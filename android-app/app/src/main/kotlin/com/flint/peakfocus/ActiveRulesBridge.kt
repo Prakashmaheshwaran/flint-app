@@ -4,9 +4,11 @@ import android.content.Context
 import com.flint.peakfocus.blocking.engine.CachedRuleClockProjection
 import com.flint.peakfocus.core.data.BlocklistStore
 import com.flint.peakfocus.core.datastore.FlintPreferences
+import com.flint.peakfocus.core.datastore.EditorCommitmentStore
 import com.flint.peakfocus.core.datastore.editorPublicationFailure
 import com.flint.peakfocus.core.model.ActiveRulesHolder
 import com.flint.peakfocus.core.model.StorageState
+import com.flint.peakfocus.core.model.AccessClockStamp
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
@@ -57,24 +59,29 @@ object ActiveRulesBridge {
         finally { invalidations.tryEmit(Unit) }
     }
 
-    private suspend fun refresh(context: Context): Long? = publication.withLock {
-        val store = FlintPreferences.editorCommitments(context)
-        val now = ProtectionClock.now()
-        // One edit reconciles queued changes before publishing an adjacent occurrence.
-        val rules = store.reconcileRules(now)
-        val state = store.state.first { it !is StorageState.Loading }
-        when (state) {
-            is StorageState.Ready -> {
-                val nextDelay = nextEditorReconciliationDelay(rules, state.value, now)
-                ActiveRulesHolder.publishState(ActiveRulesHolder.SOURCE_DATASTORE, StorageState.Ready(rules))
-                nextDelay
+    private suspend fun refresh(context: Context): Long? =
+        reconcileAndPublish(FlintPreferences.editorCommitments(context), ProtectionClock.now())
+
+    /** Shared production entry: storage faults publish Unavailable while the holder retains its finite plan. */
+    internal suspend fun reconcileAndPublish(store: EditorCommitmentStore, now: AccessClockStamp): Long? = publication.withLock {
+        try {
+            // One edit reconciles queued changes before publishing an adjacent occurrence.
+            val rules = store.reconcileRules(now)
+            val state = store.state.first { it !is StorageState.Loading }
+            when (state) {
+                is StorageState.Ready -> {
+                    val nextDelay = nextEditorReconciliationDelay(rules, state.value, now)
+                    ActiveRulesHolder.publishState(ActiveRulesHolder.SOURCE_DATASTORE, StorageState.Ready(rules))
+                    nextDelay
+                }
+                is StorageState.Unavailable -> {
+                    ActiveRulesHolder.publishState(ActiveRulesHolder.SOURCE_DATASTORE, state)
+                    EDITOR_RETRY_MS
+                }
+                StorageState.Loading -> error("No completed editor snapshot")
             }
-            is StorageState.Unavailable -> {
-                ActiveRulesHolder.publishState(ActiveRulesHolder.SOURCE_DATASTORE, state)
-                EDITOR_RETRY_MS
-            }
-            StorageState.Loading -> error("No completed editor snapshot")
-        }
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (cause: Throwable) { unavailable(cause); EDITOR_RETRY_MS }
     }
 
     private fun unavailable(cause: Throwable) {

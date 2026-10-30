@@ -16,6 +16,9 @@ import kotlinx.coroutines.flow.first
 
 internal val EDITOR_COMMITMENTS_KEY = stringPreferencesKey("editor_commitments_v1")
 internal val EDITOR_VERSION_KEY = longPreferencesKey("editor_commitments_version")
+private const val EDITOR_DOMAIN_VERSION = 2L
+private val EDITOR_DOMAINS = listOf(PrefsKeys.BLOCK_RULES, PrefsKeys.APP_GROUPS, PrefsKeys.TIME_LIMITS,
+    PrefsKeys.OPEN_LIMITS, PrefsKeys.DEFAULT_BREAK_LEVEL)
 internal const val MAX_EDITOR_CAUSES = 2_000
 private val ARCHIVE_RULES = stringPreferencesKey("editor_migration_rules_v1")
 private val ARCHIVE_TIMES = stringPreferencesKey("editor_migration_time_limits_v1")
@@ -265,7 +268,9 @@ class DataStoreEditorCommitmentStore(
 
     /** Call inside one DataStore edit: migrate, apply queued changes, then materialize new occurrences. */
     internal fun prepare(prefs: MutablePreferences, now: AccessClockStamp, checkpointQuota: Boolean = true): EditorCommitmentState {
-        val previous = if (StrictPrefsCodec.string(prefs, EDITOR_COMMITMENTS_KEY) != null) readEditorState(prefs) else null
+        // Validate established domains before quota preparation or any migration write.
+        val decoded = readEditorState(prefs)
+        val previous = if (StrictPrefsCodec.string(prefs, EDITOR_COMMITMENTS_KEY) != null) decoded else null
         val quota = if (prefs.editorTimes().isNotEmpty() || prefs.editorOpens().isNotEmpty() ||
             StrictPrefsCodec.long(prefs, OPEN_CREDIT_SCHEMA) != null) {
             val zone = previous?.causes?.entries?.firstOrNull { dailyKey(it.key) }?.value?.zoneId ?: defaultZone()
@@ -552,16 +557,87 @@ internal fun MutablePreferences.putEditorRules(rules: List<BlockRule>) {
     val encoded = PrefsCodec.encodeRules(rules); StrictPrefsCodec.rules(encoded); this[PrefsKeys.BLOCK_RULES] = encoded
 }
 internal fun MutablePreferences.putEditorState(state: EditorCommitmentState) {
+    val version = StrictPrefsCodec.long(this, EDITOR_VERSION_KEY)
+    validateEditorDomains(this, state, version)
+    // Old editor v1 allowed absent unused domains. Establish explicit empty values only
+    // during the validated one-time upgrade, in the same commit as its version marker.
+    if (version != EDITOR_DOMAIN_VERSION) {
+        for (key in EDITOR_DOMAINS) if (StrictPrefsCodec.string(this, key) == null) {
+            this[key] = if (key == PrefsKeys.DEFAULT_BREAK_LEVEL) BreakLevel.EASY.name else ""
+        }
+    }
     val encoded = EditorCommitmentCodec.encode(state)
     if (StrictPrefsCodec.string(this, EDITOR_COMMITMENTS_KEY) != encoded) this[EDITOR_COMMITMENTS_KEY] = encoded
-    if (StrictPrefsCodec.long(this, EDITOR_VERSION_KEY) != 1L) this[EDITOR_VERSION_KEY] = 1L
+    if (version != EDITOR_DOMAIN_VERSION) this[EDITOR_VERSION_KEY] = EDITOR_DOMAIN_VERSION
 }
 
 /** Call inside the same DataStore edit when composing a protection mutation. */
 internal fun readEditorState(prefs: Preferences): EditorCommitmentState {
     val raw = StrictPrefsCodec.string(prefs, EDITOR_COMMITMENTS_KEY)
     val version = StrictPrefsCodec.long(prefs, EDITOR_VERSION_KEY)
-    if (version != null && version != 1L) wireFuture()
+    if (version != null && version !in 1L..EDITOR_DOMAIN_VERSION) wireFuture()
     if ((raw == null) != (version == null)) wireCorrupt()
-    return EditorCommitmentCodec.decode(raw)
+    return EditorCommitmentCodec.decode(raw).also { validateEditorDomains(prefs, it, version) }
+}
+
+/** Never turn missing established policy into authoritative empty protection. No writes. */
+private fun validateEditorDomains(prefs: Preferences, state: EditorCommitmentState, version: Long?) {
+    if (version != null && version !in 1L..EDITOR_DOMAIN_VERSION) wireFuture()
+    val tier = StrictPrefsCodec.level(StrictPrefsCodec.string(prefs, PrefsKeys.DEFAULT_BREAK_LEVEL))
+    StrictPrefsCodec.rules(StrictPrefsCodec.string(prefs, PrefsKeys.BLOCK_RULES).orEmpty())
+    StrictPrefsCodec.groups(StrictPrefsCodec.string(prefs, PrefsKeys.APP_GROUPS).orEmpty())
+    val rawTimes = StrictPrefsCodec.string(prefs, PrefsKeys.TIME_LIMITS)
+    StrictPrefsCodec.timeLimits(rawTimes.orEmpty(), tier)
+    StrictPrefsCodec.openLimits(StrictPrefsCodec.string(prefs, PrefsKeys.OPEN_LIMITS).orEmpty())
+    if (version == EDITOR_DOMAIN_VERSION) {
+        for (key in EDITOR_DOMAINS) wireRequire(StrictPrefsCodec.string(prefs, key) != null)
+    } else if (version != null) {
+        // v1 always wrote Time Limits, including the empty list. Its absence is never unused.
+        wireRequire(rawTimes != null)
+        val missing = listOf("rule:" to PrefsKeys.BLOCK_RULES, "group:" to PrefsKeys.APP_GROUPS,
+            "open:" to PrefsKeys.OPEN_LIMITS).filter { StrictPrefsCodec.string(prefs, it.second) == null }
+        if (missing.isNotEmpty()) {
+            val references = editorDomainReferences(prefs, state)
+            for ((prefix, _) in missing) wireRequire(references.none { it.startsWith(prefix) })
+        }
+    }
+}
+
+/** Read surviving references, including inactive/tombstoned and pending ownership, without pruning. */
+private fun editorDomainReferences(prefs: Preferences, state: EditorCommitmentState): Set<String> = buildSet {
+    addAll(state.causes.keys)
+    fun expected(value: EditorExpected) {
+        addAll(value.occurrences.keys)
+        addAll(value.rules.map { ruleCauseKey(it.id) })
+        value.time?.let { add(timeCauseKey(it.packageName)) }
+        value.open?.let { add(openCauseKey(it.packageName)) }
+    }
+    fun wait(value: HarderWaitPolicy.Operation?) { value?.causes?.keys?.forEach { add(it.causeId) } }
+    state.pending?.let { addAll(it.change.keys); expected(it.expected); wait(it.wait) }
+    state.queued.forEach { addAll(it.change.keys); addAll(it.boundaries.keys); expected(it.expected) }
+    val harder = readHarderWait(prefs)
+    addAll(harder.counts.keys.map { it.causeId }); wait(harder.pending?.operation)
+    val focus = FocusLedgerCodec.decode(StrictPrefsCodec.string(prefs, PrefsKeys.FOCUS_LEDGER))
+    addAll(focus.breaksByCause.keys)
+    focus.exemptions.values.forEach {
+        add(it.causeKey)
+        if (it.kind == ExemptionKind.OPEN_LIMIT) add(openCauseKey(it.packageName))
+    }
+    StrictPrefsCodec.string(prefs, PrefsKeys.OPEN_COUNTS)?.let {
+        addAll(StrictPrefsCodec.counts(it).keys.map(::openCauseKey))
+    }
+    if (StrictPrefsCodec.long(prefs, OPEN_CREDIT_SCHEMA) != null) {
+        val credits = readOpenCredits(prefs)
+        addAll((credits.counters.keys + credits.active.keys).map(::openCauseKey))
+    } else {
+        // An orphan/future ledger cannot establish that an absent domain is unused.
+        for (key in listOf(OPEN_CREDIT_STATE, OPEN_CREDIT_COUNTS, OPEN_CREDIT_ARCHIVE))
+            wireRequire(StrictPrefsCodec.string(prefs, key) == null)
+    }
+    // This baseline predates C3's typed recovery codec. Opaque surviving protection
+    // records cannot prove optional absence; do not guess or introduce a second decoder.
+    if (StrictPrefsCodec.string(prefs, stringPreferencesKey("protection_pass_outbox_v1")) != null ||
+        StrictPrefsCodec.long(prefs, longPreferencesKey("protection_schema_v1")) != null) {
+        addAll(listOf("rule:", "group:", "open:"))
+    }
 }

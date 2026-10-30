@@ -43,6 +43,44 @@ quota state skips periodic transactions. Active finite authority checkpoints and
 wakes at its actual elapsed deadline; a same-boot restart restores its remaining
 interval, while reboot conservatively closes access and retains spend.
 
+## Editor policy-domain completeness (R2-N03)
+
+`editor_commitments_version=2` retains the existing `E|1` occurrence payload and
+requires present string keys `block_rules_v1`, `app_groups_v1`, `time_limits_v1`,
+`open_limits_v1` and `default_break_level_v1`, including explicitly empty lists.
+Missing, wrong-typed, malformed or future data is Unavailable before reconciliation
+and bridge publication; the detector-shared holder keeps its last-good finite
+input, whose original anchored end still applies. Present-empty is distinct from
+missing and may clear a contribution after an authorized edit.
+
+Editor version 1 is upgraded in the same DataStore edit as the complete-domain
+marker. It always wrote Time Limits, so a missing `time_limits_v1` is corrupt even
+with no current cause. Other previously optional domains may initialize empty only
+when no surviving cause, inactive/tombstoned occurrence, pending/queued operation,
+Harder count/wait, legacy receipt, Open counter/credit or recovery ownership refers
+to them. Unreadable or opaque ownership is not proof of unused state. Groups are
+copied target snapshots in this schema; rules contain no group-ID reference.
+Under PC-13 an unreferenced inactive template remains freely deletable; optional
+absence cannot erase any active or pending owner. Every absence after version 2
+is unavailable. A failed/crashed upgrade retains original bytes and version 1;
+a lost acknowledgement reopens the same version 2 without a second import.
+
+Editor marker allocation is sequential; each implementation must accept supported
+lower versions, perform each intervening upgrade once and never downgrade a marker.
+
+| Editor marker | Upgrade | State in this branch |
+| --- | --- | --- |
+| 1 | Original occurrence/legacy-rights sidecar (`E\|1`) | Read-compatible legacy input |
+| 2 | R2-N03 complete policy domains | Implemented here |
+| 3 | C2 R-18b Time Limit saved zone / trusted period | Pending; unsupported until merged |
+| 4 | PR #180 lossless archive / template catalog | Planned; unsupported until merged |
+
+The separate archive/template-catalog migration in PR #180 must use editor marker
+**version 4**, after C2's version 3 and this completeness version 2. Those later
+upgrades are not implemented here; Open/pass/outbox schema versions retain their
+independent meanings. Older builds must not write a newer editor marker as if it
+were empty legacy state.
+
 ## ADR-012 timed Open-credit authority (R-11/R-19)
 
 `OpenCreditStore.kt` supplies synchronous `prepareOpenCredits`,
