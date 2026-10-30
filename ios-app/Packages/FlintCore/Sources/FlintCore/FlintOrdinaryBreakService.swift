@@ -237,6 +237,12 @@ public final class FlintOrdinaryBreakService {
                     grants.records[i].end(.reboot, at: now)
                 } else if record.remaining(at: now) == 0 {
                     grants.records[i].end(.deadline, at: now)
+                    let late = max(0, now.monotonic - record.grant.deadline.monotonic)
+                    if late > 1 {
+                        state.remember(.init(id: record.grant.id + ".break.expiry", kind: "break.expiry",
+                            result: callback == .end ? "missed_warning_recovered" : "late_reshield",
+                            at: now.wall))
+                    }
                 } else if let context {
                     let allowed = context.authorizedTargets(for: record, at: now)
                     if allowed != record.releasedTargets {

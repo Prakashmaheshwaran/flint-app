@@ -100,6 +100,7 @@ public struct FlintOrdinaryGrantState: Codable, Equatable, Sendable {
         public let observedAt: Date
         public let breakEnd: Date?
         public let reason: FlintBreakEndReason?
+        public let timeConfidence: FlintEventTimeConfidence?
         public var breakKind = "ordinary"
         public var acknowledgedSessionIDs: Set<String> = []
         public var isAcknowledged: Bool { acknowledgedSessionIDs == focusSessionIDs }
@@ -122,7 +123,7 @@ public struct FlintOrdinaryGrantState: Codable, Equatable, Sendable {
             releasedTargets = grant.scope.targets; carrierCheckpoint = grant.acceptedAt
             events = [.init(kind: .started, grantID: grant.id,
                 focusSessionIDs: Set(authorities.compactMap(\.focusSessionID)), at: grant.acceptedAt.wall,
-                observedAt: grant.acceptedAt.wall, breakEnd: grant.deadline.wall, reason: nil)]
+                observedAt: grant.acceptedAt.wall, breakEnd: grant.deadline.wall, reason: nil, timeConfidence: .certain)]
         }
         public var activityName: String { Self.activityName(grant.id) }
         static func activityName(_ id: String) -> String {
@@ -147,12 +148,18 @@ public struct FlintOrdinaryGrantState: Codable, Equatable, Sendable {
         }
         mutating func end(_ reason: FlintBreakEndReason, at now: FlintLedgerInstant) {
             guard endReason == nil else { return }
-            endReason = reason; endedAt = now; applicationPending = true
-            let logicalDate = reason == .deadline
-                ? now.wall.addingTimeInterval(min(0, grant.deadline.monotonic - now.monotonic)) : now.wall
+            endReason = reason; applicationPending = true
+            let elapsed = grant.acceptedAt.elapsedForRelease(until: now)
+            let trusted = now.bootID != nil && now.bootID == grant.acceptedAt.bootID && elapsed != nil
+            let logicalDate: Date
+            if trusted {
+                logicalDate = reason == .deadline ? grant.deadline.wall : grant.acceptedAt.wall.addingTimeInterval(elapsed!)
+            } else { logicalDate = now.wall }
+            endedAt = .init(wall: logicalDate, monotonic: reason == .deadline ? grant.deadline.monotonic : now.monotonic, bootID: now.bootID)
             events.append(.init(kind: .ended, grantID: grant.id,
                 focusSessionIDs: Set(authorities.compactMap(\.focusSessionID)), at: logicalDate,
-                observedAt: now.wall, breakEnd: nil, reason: reason))
+                observedAt: now.wall, breakEnd: nil, reason: reason,
+                timeConfidence: trusted ? .certain : .uncertain(reason: "reboot_or_unknown_boot")))
         }
     }
 

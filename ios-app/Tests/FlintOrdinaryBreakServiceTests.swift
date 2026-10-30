@@ -9,7 +9,7 @@ final class FlintOrdinaryBreakServiceTests: XCTestCase {
     private var marker: Date?
     private var wall = Date(timeIntervalSince1970: 1_800_000_000)
     private var mono: Double = 1000
-    private var boot = "boot-1"
+    private var boot: String? = "boot-1"
     private struct Cause {
         var id: String
         var tier: BreakLevel = .harder
@@ -237,6 +237,34 @@ final class FlintOrdinaryBreakServiceTests: XCTestCase {
         XCTAssertEqual(service.confirm(request), .ended(.reboot))
         XCTAssertEqual(try ledger.peek().get().harder["session"]?.committedCount, 1)
         XCTAssertEqual(try lastReceipt().grantID, record.grant.id)
+    }
+
+    func testUnknownBootEndsReleaseWithoutLosingConsumption() throws {
+        let request = try request(); advance(60)
+        _ = try accept(request); boot = nil
+        XCTAssertTrue(service.reconcile())
+        XCTAssertTrue(applied.isEmpty)
+        XCTAssertEqual(try lastReceipt().reason, .reboot)
+        XCTAssertEqual(try ledger.peek().get().harder["session"]?.committedCount, 1)
+        let events = try ledger.peek().get().ordinaryGrants!.eventOutbox.map {
+            try FlintProtectionLedger.makeDecoder().decode(FlintOrdinaryGrantState.EventIntent.self, from: $0)
+        }
+        XCTAssertEqual(events.last?.timeConfidence, .uncertain(reason: "reboot_or_unknown_boot"))
+    }
+
+    func testLateDeadlineRetainsLogicalEventTimeAndRecordsRecovery() throws {
+        causes[0].tier = .easy
+        let record = try accept(request())
+        advance(900, wallDelta: 90_000)
+        XCTAssertTrue(service.reconcile(activity: record.activityName, callback: .end))
+        let state = try ledger.peek().get()
+        let end = try state.ordinaryGrants!.eventOutbox.map {
+            try FlintProtectionLedger.makeDecoder().decode(FlintOrdinaryGrantState.EventIntent.self, from: $0)
+        }.last!
+        XCTAssertEqual(end.at, record.grant.deadline.wall)
+        XCTAssertEqual(end.observedAt, wall)
+        XCTAssertEqual(end.timeConfidence, .certain)
+        XCTAssertEqual(state.operation(record.grant.id + ".break.expiry")?.result, "missed_warning_recovered")
     }
 
     func testApplicationFailureKeepsAcceptedGrantAndRetriesWithoutCharging() throws {

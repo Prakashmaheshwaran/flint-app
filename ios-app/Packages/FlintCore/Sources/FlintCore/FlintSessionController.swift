@@ -893,7 +893,9 @@ public final class FlintSessionController {
         guard let transition = beginTransition() else { return }
         defer { endTransition(transition) }
         guard let session = persistence.resolve(in: env.store()).session else { return }
-        _ = env.ledger()?.transaction { $0.cancelHarderWait(cause: session.id) }
+        _ = env.ledger()?.transaction { state in
+            if state.harder[session.id]?.pending?.kind == "stop" { state.cancelHarderWait(cause: session.id) }
+        }
     }
 
     /// Unconditional teardown, kept for tests and for paths that already passed the policy. App
