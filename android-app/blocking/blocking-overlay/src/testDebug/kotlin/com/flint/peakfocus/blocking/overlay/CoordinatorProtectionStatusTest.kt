@@ -2,6 +2,8 @@ package com.flint.peakfocus.blocking.overlay
 
 import android.content.Context
 import android.view.View
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.*
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.flint.peakfocus.blocking.engine.AnchoredInterval
@@ -10,6 +12,8 @@ import com.flint.peakfocus.core.model.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Test
@@ -197,6 +201,45 @@ class CoordinatorProtectionStatusTest {
             assertFalse("usage-access-missing" in recovered.degradedReasons)
             assertFalse("path-b-backup-unavailable" in recovered.degradedReasons)
             assertFalse("time-limits-need-usage-access" in recovered.degradedReasons)
+        }
+    }
+
+    @Test fun R2_N03_PC_37_PC_71_PC_73_actualEditorDomainFailureReachesCoordinatorStatus() = runTest {
+        val app: Context = ApplicationProvider.getApplicationContext()
+        val disk = Disk()
+        val actualEditor = DataStoreEditorCommitmentStore(disk, defaultZone = { "UTC" })
+        actualEditor.reconcile(initial)
+        // Other inputs remain valid: status must observe the real editor's readiness,
+        // rather than substitute a fresh Ready occurrence snapshot for its failed read.
+        BlockScreenCoordinator(app, backgroundScope, host, focusStateStore = InMemoryFocusStateStore(),
+            configuredLimitsStore = InMemoryLimitsStore(), blockRulesStore = InMemoryBlockRulesStore(),
+            editorCommitmentStore = actualEditor, statusClock = { initial },
+            statusDispatcher = StandardTestDispatcher(testScheduler),
+            safetyFloorGate = SafetyFloorGate(app.packageName, { mapOf("home" to emptySet()) },
+                { initial.elapsedRealtimeMs }, requiredRuntimeSources = setOf("home")))
+        runCurrent()
+        advanceTimeBy(BlockScreenCoordinator.STATUS_COALESCE_MS); runCurrent()
+        assertEquals(ProtectionStatus.Readiness.READY, ProtectionStatusHub.status.value.readiness)
+        disk.values.value = disk.values.value.toMutablePreferences().apply {
+            remove(stringPreferencesKey("app_groups_v1"))
+        }
+        val before = disk.values.value.asMap().toMap()
+        val writes = disk.writes
+        runCurrent()
+        advanceTimeBy(BlockScreenCoordinator.STATUS_COALESCE_MS); runCurrent()
+        assertEquals(ProtectionStatus.Readiness.UNAVAILABLE, ProtectionStatusHub.status.value.readiness)
+        assertEquals(ProtectionStatus.PassStatus.Unavailable, ProtectionStatusHub.status.value.pass)
+        assertEquals(before, disk.values.value.asMap())
+        assertEquals(writes, disk.writes)
+    }
+
+    private class Disk : DataStore<Preferences> {
+        val values = MutableStateFlow(emptyPreferences())
+        override val data = values
+        private val mutex = Mutex()
+        var writes = 0
+        override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences = mutex.withLock {
+            transform(values.value).also { if (it != values.value) writes++; values.value = it }
         }
     }
 

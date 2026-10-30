@@ -211,6 +211,7 @@ class EditorTerminalEventsTest {
     @Test fun `PC-70 bounded pending overflow survives rule removal and drains with original first observation`() = runBlocking {
         val seed = (0 until MAX_PENDING_TERMINALS).map(::event).associateBy { it.id }
         val disk = Disk(preferencesOf(EDITOR_TERMINAL_SCHEMA to 2L,
+            PrefsKeys.BLOCK_RULES to "", // Removed Timer rows leave an explicitly empty domain.
             EDITOR_TERMINALS to EditorTerminalCodec.encode(EditorTerminalLedger(MAX_PENDING_TERMINALS.toLong(), seed))))
         val clock = Clock(at()); val owner = started(disk, clock)
         clock.now = at(300_000); owner.reconcile(clock.now)
@@ -293,7 +294,7 @@ class EditorTerminalEventsTest {
 
     @Test fun `PC-70 one failing sink cannot starve later events and successful IDs ack in one edit`() = runBlocking {
         val events = (0..2).map(::event)
-        val disk = Disk(preferencesOf(EDITOR_TERMINAL_SCHEMA to 2L, EDITOR_TERMINALS to
+        val disk = Disk(preferencesOf(EDITOR_TERMINAL_SCHEMA to 2L, PrefsKeys.BLOCK_RULES to "", EDITOR_TERMINALS to
             EditorTerminalCodec.encode(EditorTerminalLedger(3, events.associateBy { it.id }))))
         val owner = store(disk, Clock(at()))
         val before = disk.changedWrites
@@ -327,6 +328,7 @@ class EditorTerminalEventsTest {
         val causes = rules.associate { ruleCauseKey(it.id) to EditorCause(it.id, AnchoredInterval(at(), 300_000, base + 300_000), "UTC") }
         val disk = Disk(preferencesOf(EDITOR_TERMINAL_SCHEMA to 2L,
             EDITOR_TERMINALS to EditorTerminalCodec.encode(EditorTerminalLedger(MAX_PENDING_TERMINALS.toLong(), seeds)),
+            PrefsKeys.TIME_LIMITS to "", // The v1 editor always persisted this domain, even empty.
             PrefsKeys.BLOCK_RULES to PrefsCodec.encodeRules(rules), EDITOR_VERSION_KEY to 1L,
             EDITOR_COMMITMENTS_KEY to EditorCommitmentCodec.encode(EditorCommitmentState(causes = causes, timeline = at())),
             HARDER_WAIT_KEY to HarderWaitCodec.encode(HarderWaitPolicy.Ledger())))
@@ -349,6 +351,7 @@ class EditorTerminalEventsTest {
         val anchor = at()
         val cause = EditorCause(impossible.id, AnchoredInterval(anchor, 20, Long.MAX_VALUE), "UTC")
         val disk = Disk(preferencesOf(PrefsKeys.BLOCK_RULES to PrefsCodec.encodeRules(listOf(impossible)),
+            PrefsKeys.TIME_LIMITS to "",
             EDITOR_VERSION_KEY to 1L, HARDER_WAIT_KEY to HarderWaitCodec.encode(HarderWaitPolicy.Ledger()),
             EDITOR_COMMITMENTS_KEY to EditorCommitmentCodec.encode(EditorCommitmentState(causes = mapOf(ruleCauseKey(impossible.id) to cause), timeline = anchor))))
         val clock = Clock(at(20))
@@ -364,6 +367,7 @@ class EditorTerminalEventsTest {
         val causes = rules.associate { ruleCauseKey(it.id) to EditorCause(it.id, AnchoredInterval(at(), 1, base + 1), "UTC",
             timerTerminal = EditorTimerTerminalState(recorded = true)) }
         val disk = Disk(preferencesOf(PrefsKeys.BLOCK_RULES to PrefsCodec.encodeRules(rules), EDITOR_VERSION_KEY to 1L,
+            PrefsKeys.TIME_LIMITS to "",
             EDITOR_COMMITMENTS_KEY to EditorCommitmentCodec.encode(EditorCommitmentState(causes = causes, timeline = at())),
             HARDER_WAIT_KEY to HarderWaitCodec.encode(HarderWaitPolicy.Ledger())))
         val clock = Clock(at(300_000)); val owner = store(disk, clock)

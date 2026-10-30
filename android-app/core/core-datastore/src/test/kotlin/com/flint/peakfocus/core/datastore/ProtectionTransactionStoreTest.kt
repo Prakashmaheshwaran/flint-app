@@ -245,15 +245,17 @@ class ProtectionTransactionStoreTest {
         assertRemovedConsumedKey(PrefsKeys.FOCUS_LEDGER)
 
     private fun assertRemovedConsumedKey(key: Preferences.Key<*>) = runBlocking {
+        // Main recorded generic usage without ever configuring an Open Limit.
         val disk = Disk()
         val focus = DataStoreFocusStateStore(disk)
         focus.setOpenCounts(OpenCountState(20_000, mapOf("app" to 1)))
-        initialize(disk)
-        store(disk).transact { snapshot ->
+        assertTrue(initialize(disk) is ProtectionCommit.Committed)
+        val spentResult = store(disk).transact { snapshot ->
             val spent = com.flint.peakfocus.blocking.engine.OpenCreditLedgerPolicy.acceptOpenCredit(snapshot.openCredits!!,
                 "app", "credit-one", listOf(2), emptyList(), false, stamp).next
             ProtectionMutation(consumed(snapshot.focus), Unit, openCredits = spent)
         }
+        assertTrue(spentResult is ProtectionCommit.Committed)
         val before = disk.values.value
         assertNotNull(before[key])
         val corrupted = before.toMutablePreferences().apply { remove(key) }

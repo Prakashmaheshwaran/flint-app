@@ -43,6 +43,69 @@ quota state skips periodic transactions. Active finite authority checkpoints and
 wakes at its actual elapsed deadline; a same-boot restart restores its remaining
 interval, while reboot conservatively closes access and retains spend.
 
+## Editor policy-domain completeness (R2-N03)
+
+`editor_commitments_version=2` retains the existing `E|1` occurrence payload and
+requires present string keys `block_rules_v1`, `app_groups_v1`, `time_limits_v1`,
+`open_limits_v1` and `default_break_level_v1`, including explicitly empty lists.
+Missing, wrong-typed, malformed or future data is Unavailable before reconciliation
+and bridge publication; the detector-shared holder keeps its last-good finite
+input, whose original anchored end still applies. Present-empty is distinct from
+missing and may clear a contribution after an authorized edit.
+
+Editor version 1 is upgraded in the same DataStore edit as the complete-domain
+marker. It always wrote Time Limits, so a missing `time_limits_v1` is corrupt even
+with no current cause. Other previously optional domains may initialize empty only
+when no surviving cause, inactive/tombstoned occurrence, pending/queued operation,
+Harder count/wait, legacy receipt, initialized Open-credit ledger or recovery ownership refers
+to them. Ownership also includes editor terminal intents and migration archives,
+C3 recovery cause keys, personal grant scopes, pending credit ends and native
+transient end IDs. C3's `P|1` and `P|2` ledger formats use the shared typed decoder;
+its `A|1` archive is validated before its preserved source records are inspected.
+An unqualified foreign history rule ID, receipt hash, cooldown or generic
+initialization marker does not establish ownership of an unrelated editor domain.
+Unreadable ownership is not proof of unused state. Shipped main counted every
+allowed foreground open, even without an Open Limit: `open_counts_v1` is generic
+usage, including its copy in C3's legacy archive, and cannot prove Open policy
+existed. Its bytes/spend remain preserved and the independent counter-domain
+completeness rules still apply. Modern Open-credit rows, active credits and that
+ledger's own archive remain typed owners. Groups are convenience-only copied
+target snapshots; no producer emits a group commitment or group-ID cause. An
+absent old group list therefore normalizes empty, without synthetic group owners.
+Under PC-13 an unreferenced inactive template remains freely deletable; optional
+absence cannot erase any active or pending owner. Every absence after version 2
+is unavailable. A failed/crashed upgrade retains original bytes and version 1;
+a lost acknowledgement reopens the same version 2 without a second import.
+
+Shipped main could save only a Timer rule without ever writing unused groups,
+Time Limits, Open Limits or a default tier. Markerless main input may initialize
+those absent domains once only when no surviving domain-specific owner refers to
+them. Losing both editor metadata keys cannot erase surviving focus, Harder,
+Open-credit or protection/archive ownership. The initialized version-1 Time Limit
+requirement does not apply to markerless input. C3's initialized-child check keeps its own mandatory
+children and delegates the editor's domain/version rules to this validator.
+
+Unavailable records are retained. There is no automatic reset or in-app storage
+repair; OS recovery remains reachable, but does not repair policy bytes. A future
+repair flow must preserve/export the original bytes and require owner-confirmed
+restore before replacing them. Unsupported versions need a compatible build.
+
+Editor marker allocation is sequential; each implementation must accept supported
+lower versions, perform each intervening upgrade once and never downgrade a marker.
+
+| Editor marker | Upgrade | State in this branch |
+| --- | --- | --- |
+| 1 | Original occurrence/legacy-rights sidecar (`E\|1`) | Read-compatible legacy input |
+| 2 | R2-N03 complete policy domains | Implemented here |
+| 3 | C2 R-18b Time Limit saved zone / trusted period | Pending; unsupported until merged |
+| 4 | PR #180 lossless archive / template catalog | Planned; unsupported until merged |
+
+The separate archive/template-catalog migration in PR #180 must use editor marker
+**version 4**, after C2's version 3 and this completeness version 2. Those later
+upgrades are not implemented here; Open/pass/outbox schema versions retain their
+independent meanings. Older builds must not write a newer editor marker as if it
+were empty legacy state.
+
 ## ADR-012 timed Open-credit authority (R-11/R-19)
 
 `OpenCreditStore.kt` supplies synchronous `prepareOpenCredits`,

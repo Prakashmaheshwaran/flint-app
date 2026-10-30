@@ -60,7 +60,13 @@ internal fun prepareOpenCreditPeriod(prefs: MutablePreferences, now: AccessClock
     val zone = StrictPrefsCodec.string(prefs, QUOTA_ZONE) ?: quotaZoneIfAbsent
     val rawCounts = StrictPrefsCodec.string(prefs, PrefsKeys.OPEN_COUNTS)
     val day = StrictPrefsCodec.long(prefs, PrefsKeys.OPEN_COUNTS_DAY)
-    StrictPrefsCodec.openLimits(StrictPrefsCodec.string(prefs, PrefsKeys.OPEN_LIMITS).orEmpty())
+    val rawPolicy = StrictPrefsCodec.string(prefs, PrefsKeys.OPEN_LIMITS)
+    StrictPrefsCodec.openLimits(rawPolicy.orEmpty())
+    // Validate old domain ownership before generic main usage becomes a modern credit
+    // ledger. Establish a legitimately unused policy in this SAME edit; otherwise its
+    // newly imported counters would falsely look like surviving prior policy ownership
+    // when the caller subsequently prepares editor state. Existing schemas skip this path.
+    if (rawPolicy == null) readEditorState(prefs)
     val receipts = FocusLedgerCodec.decode(StrictPrefsCodec.string(prefs, PrefsKeys.FOCUS_LEDGER))
     // Only a complete, provably unused legacy Open domain gets the one-time optional-key exception.
     val legacyAccess = receipts.exemptions.values.any { it.kind == ExemptionKind.OPEN_LIMIT }
@@ -77,6 +83,7 @@ internal fun prepareOpenCreditPeriod(prefs: MutablePreferences, now: AccessClock
     val archive = OpenCreditCodec.archive(rawCounts, day)
     // All validation/encoding happens before touching mutable preferences.
     OpenCreditCodec.encodeState(initial); OpenCreditCodec.encodeCounts(initial)
+    if (rawPolicy == null) prefs[PrefsKeys.OPEN_LIMITS] = ""
     prefs[OPEN_CREDIT_ARCHIVE] = archive
     prefs.putOpenCredits(initial)
     return OpenCreditReconciliation(initial, false, emptySet())
