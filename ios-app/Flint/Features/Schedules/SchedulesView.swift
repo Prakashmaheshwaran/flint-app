@@ -27,7 +27,7 @@ final class SchedulesViewModel: ObservableObject {
                       health.domains["schedules"]?.failures.contains(where: { $0.activityName == rule.monitorName }) == true
                 else { return nil }
                 return FlintScheduleArmFailure(ruleID: rule.id, ruleName: rule.name, issue: rule.schedule.issues.first,
-                    selectionIssue: FlintSelectionValidation.issue(for: rule.selection,
+                    selectionIssue: FlintSelectionValidation.armIssue(for: rule.selection,
                         context: rule.allowListMode ? .allowList : .blockList),
                     selectionContext: rule.allowListMode ? .allowList : .blockList,
                     registrationReason: health.domains["schedules"]?.failures.first(where: {
@@ -262,7 +262,10 @@ struct RulesView: View {
         }
         let count = rule.selection.applicationTokens.count + rule.selection.categoryTokens.count
             + rule.selection.webDomainTokens.count
-        let target = rule.allowListMode ? "Allow list" : "\(count) \(count == 1 ? "item" : "items")"
+        let target = !rule.allowListMode ? "\(count) \(count == 1 ? "item" : "items")"
+            : FlintSelectionValidation.needsAllowedApps(applications: rule.selection.applicationTokens.count,
+                                                        allowList: true)
+                ? "Allow list · choose apps to keep available" : "Allow list"
         return "\(Self.daysSummary(rule.schedule)) · \(level) · \(target) · \(rule.protection?.timeZoneID ?? TimeZone.current.identifier)"
     }
 
@@ -521,7 +524,9 @@ struct ScheduleEditor: View {
                         Toggle(isOn: $allowList) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Allow list").flintRowTitle()
-                                Text("Only the chosen apps stay open").flintSecondary()
+                                Text(allowList
+                                     ? "Only the chosen apps stay open. Flint can't confirm which system apps stay reachable, so include the ones you need, like Phone and Messages."
+                                     : "Only the chosen apps stay open").flintSecondary()
                             }
                         }
                         .toggleStyle(EmberToggleStyle())

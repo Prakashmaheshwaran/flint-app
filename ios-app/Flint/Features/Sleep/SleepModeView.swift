@@ -83,6 +83,11 @@ struct SleepModeView: View {
             Button("Retry Sleep registration") { vm.retryRegistration() }
                 .frame(minHeight: 44)
                 .tint(FlintBrand.ember)
+        } else if let note = vm.allowListNote {
+            // Still armed as saved; only the allowed apps need choosing.
+            Label("Needs attention — \(note) Sleep keeps running as saved until you change it.",
+                  systemImage: "exclamationmark.triangle")
+                .font(.footnote).foregroundStyle(FlintBrand.danger)
         } else if vm.nightWindowActiveNow {
             Label("Bedtime window is scheduled now", systemImage: "moon.zzz.fill")
                 .font(.footnote)
@@ -326,13 +331,22 @@ final class SleepModeViewModel: ObservableObject {
     var nightArmed: Bool { effectiveRules.contains { $0.id == SleepModeController.nightRuleID && $0.enabled } }
     var morningArmed: Bool { effectiveRules.contains { $0.id == SleepModeController.morningRuleID && $0.enabled } }
 
+    /// A Sleep rule saved by an earlier build with no allowed app keeps running (§12), but the
+    /// user should choose the apps to keep; the next Sleep save requires it (ADR-012 §7).
+    var allowListNote: String? {
+        effectiveRules.contains {
+            $0.enabled && FlintSelectionValidation.needsAllowedApps(
+                applications: $0.selection.applicationTokens.count, allowList: $0.allowListMode)
+        } ? FlintSelectionIssue.emptyAllowList.message : nil
+    }
+
     var protectionIssue: String? {
         if let unavailable = armingReport?.failures.first(where: { $0.activityName == "schedules" }) { return unavailable.reason }
         let enabled = effectiveRules.filter(\.enabled)
         let names = enabled.map(\.monitorName)
         guard !names.isEmpty else { return nil }
         for rule in enabled {
-            if let issue = FlintSelectionValidation.issue(for: rule.selection, context: .allowList) {
+            if let issue = FlintSelectionValidation.armIssue(for: rule.selection, context: .allowList) {
                 return issue.message(for: .allowList)
             }
         }

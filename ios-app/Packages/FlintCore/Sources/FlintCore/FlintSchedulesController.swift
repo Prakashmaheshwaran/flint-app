@@ -103,7 +103,7 @@ public final class FlintSchedulesController {
         for rules: [FlintScheduleRule]
     ) -> FlintRuleArmPlan<FlintScheduleRule, FlintScheduleArmFailure> {
         armPlan(for: rules, selectionIssue: {
-            FlintSelectionValidation.issue(for: $0.selection, context: $0.allowListMode ? .allowList : .blockList)
+            FlintSelectionValidation.armIssue(for: $0.selection, context: $0.allowListMode ? .allowList : .blockList)
         })
     }
 

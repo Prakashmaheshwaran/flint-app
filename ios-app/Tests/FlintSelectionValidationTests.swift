@@ -21,7 +21,10 @@ final class FlintSelectionValidationTests: XCTestCase {
 
     func testEmptySelectionIsOnlyAllowedForAnAllowList() {
         XCTAssertEqual(FlintSelectionValidation.issue(for: FamilyActivitySelection()), .emptySelection)
-        XCTAssertNil(FlintSelectionValidation.issue(for: FamilyActivitySelection(), context: .allowList))
+        // R-26 / PC-53: a new or edited allow list must name the apps to keep.
+        XCTAssertEqual(FlintSelectionValidation.issue(for: FamilyActivitySelection(), context: .allowList), .emptyAllowList)
+        XCTAssertNil(FlintSelectionValidation.armIssue(for: FamilyActivitySelection(), context: .allowList),
+                     "an already saved empty allow list keeps arming (§12)")
         XCTAssertEqual(FlintSelectionValidation.issue(applications: 51, webDomains: 0, categories: 0,
                                                      context: .allowList), .tooManyTokens(count: 51, cap: 50))
         XCTAssertNil(FlintSelectionValidation.issue(applications: 50, webDomains: 51, categories: 100,
@@ -31,6 +34,57 @@ final class FlintSelectionValidationTests: XCTestCase {
         ])
         XCTAssertEqual(plan.arm.count, 1)
         XCTAssertTrue(plan.failures.isEmpty)
+    }
+
+    /// R-26 (ADR-012 §7, PC-53): Flint can't prove which system apps an `.all(except:)` shield
+    /// leaves reachable, so the broadest unverifiable allow list is refused at selection time.
+    /// A saved one from an earlier build keeps running (§12) with a needs-attention note.
+    func testEmptyAllowListIsRefusedForNewSelectionsButKeepsArmingWhenSaved() throws {
+        XCTAssertEqual(FlintSelectionIssue.emptyAllowList.message,
+                       "Choose the apps to keep available, for example Phone and Messages.")
+        XCTAssertEqual(FlintSelectionValidation.issue(applications: 0, webDomains: 3, categories: 2, context: .allowList),
+                       .emptyAllowList, "websites and categories are never allow-list exceptions")
+        XCTAssertNil(FlintSelectionValidation.issue(applications: 1, webDomains: 0, categories: 0, context: .allowList))
+        XCTAssertEqual(FlintSelectionValidation.armIssue(applications: 51, webDomains: 0, categories: 0, context: .allowList),
+                       .tooManyTokens(count: 51, cap: 50), "only the empty-allow refusal is relaxed for saved rules")
+        XCTAssertTrue(FlintSelectionValidation.needsAllowedApps(applications: 0, allowList: true))
+        XCTAssertFalse(FlintSelectionValidation.needsAllowedApps(applications: 1, allowList: true))
+        XCTAssertFalse(FlintSelectionValidation.needsAllowedApps(applications: 0, allowList: false))
+
+        // A main-shaped saved Sleep rule: allow list, no selection field at all.
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/Rules/legacy-sleep-hardcore.json")
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        json["selection"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(FamilyActivitySelection()))
+        let saved = try JSONDecoder().decode(FlintScheduleRule.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertTrue(saved.allowListMode)
+        let plan = FlintSchedulesController.armPlan(for: [saved])
+        XCTAssertEqual(plan.arm.map(\.id), [saved.id], "not silently disabled or torn down")
+        XCTAssertTrue(plan.failures.isEmpty)
+        XCTAssertTrue(plan.storesToClear.isEmpty)
+        XCTAssertEqual(FlintSelectionValidation.issue(for: saved.selection, context: .allowList), .emptyAllowList,
+                       "its next edit must choose the apps to keep")
+    }
+
+    /// The production arbiter refuses the empty allow list on create and on any enabled edit,
+    /// while a saved one stays installed and can still be turned off.
+    func testArbiterRefusesNewAndEditedEmptyAllowListButAllowsTurningItOff() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        var env = h.environment
+        env.validateSelection = { FlintSelectionValidation.issue(for: $0, context: $1) }
+        let arbiter = FlintRuleArbiter(environment: env)
+        let message = FlintSelectionIssue.emptyAllowList.message
+
+        var fresh = h.schedule(tier: .easy); fresh.id = "new-allow"
+        XCTAssertEqual(arbiter.upsert(fresh, creating: true), .invalid(message))
+
+        let saved = h.install(h.schedule(tier: .easy))
+        XCTAssertTrue(saved.allowListMode)
+        XCTAssertTrue(saved.selection.applicationTokens.isEmpty)
+        var retimed = saved; retimed.schedule = .init(startHour: 10, endHour: 18)
+        XCTAssertEqual(arbiter.upsert(retimed), .invalid(message), "the next edit must choose the apps to keep")
+        var off = saved; off.enabled = false
+        XCTAssertNotEqual(arbiter.upsert(off), .invalid(message), "turning it off is never blocked by the selection")
     }
 
     func testSelectionCopyMatchesSessionErrors() {
