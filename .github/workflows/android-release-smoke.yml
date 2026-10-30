@@ -3,7 +3,7 @@ name: Android release smoke
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    paths: ['android-app/**', 'scripts/android-e2e.sh', 'scripts/android-release-instrumentation.sh', 'scripts/verify_instrumentation_result.py', 'scripts/ci_android_emulator.py', '.github/actions/android-emulator-cache/**', '.github/workflows/android-release-smoke.yml']
+    paths: ['android-app/**', 'scripts/android-e2e.sh', 'scripts/android-release-instrumentation.sh', 'scripts/android_boot_id.py', 'scripts/verify_instrumentation_result.py', 'scripts/ci_android_emulator.py', '.github/actions/android-emulator-cache/**', '.github/workflows/android-release-smoke.yml']
 
 permissions:
   contents: read
