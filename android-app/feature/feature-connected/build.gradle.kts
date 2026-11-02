@@ -21,7 +21,7 @@ dependencies {
     implementation(project(":core:core-common"))
     implementation(project(":core:core-datastore"))
     coreLibraryDesugaring(libs.android.desugar.jdk)
-    implementation("com.google.code.gson:gson:2.11.0")
+    implementation("com.google.code.gson:gson:2.15.0")
     implementation(libs.firebase.auth)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.lifecycle.runtime.compose)
