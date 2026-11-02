@@ -1,0 +1,95 @@
+{
+  "id": "1d005709-2627-424f-8bfb-70cd3f58fa50",
+  "ok": true,
+  "result": [
+    {
+      "role": "application",
+      "type": "Application",
+      "label": " ",
+      "value": "",
+      "enabled": true,
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "width": 1,
+        "height": 1
+      },
+      "children": [
+        {
+          "role": "text",
+          "type": "StaticText",
+          "label": "4:29 PM",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.1352,
+            "y": 0.0248,
+            "width": 0.0987,
+            "height": 0.0248
+          },
+          "children": []
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "Cellular",
+          "value": "No signal",
+          "enabled": true,
+          "frame": {
+            "x": 0.7081,
+            "y": 0.0286,
+            "width": 0.0506,
+            "height": 0.0156
+          },
+          "children": []
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "",
+          "value": "SSID, 3 of 3 Wi-Fi bars",
+          "enabled": true,
+          "frame": {
+            "x": 0.7811,
+            "y": 0.0297,
+            "width": 0.0439,
+            "height": 0.0145
+          },
+          "children": [],
+          "id": "3 of 3 Wi-Fi bars"
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "100% battery power",
+          "value": "Not charging",
+          "enabled": true,
+          "frame": {
+            "x": 0.8474,
+            "y": 0.029,
+            "width": 0.0721,
+            "height": 0.0156
+          },
+          "children": []
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "Dynamic Island, Empty",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.3441,
+            "y": 0.016,
+            "width": 0.3118,
+            "height": 0.042
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "_meta": {
+    "runtimeId": "8f38263a-4ff0-4ed2-9d46-3f93ba87f5d9"
+  }
+}

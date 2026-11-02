@@ -3,15 +3,19 @@ package com.flint.peakfocus.blocking.overlay
 import android.content.Context
 import android.content.Intent
 import android.view.View
-import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
-import com.flint.peakfocus.blocking.engine.IsoWeekday
 import com.flint.peakfocus.core.model.ActiveRulesHolder
+import com.flint.peakfocus.core.model.BlockRule
+import com.flint.peakfocus.core.model.EnforcementSignals
 import com.flint.peakfocus.core.model.Verdict
-import java.util.Calendar
+import com.flint.peakfocus.core.datastore.FocusStateStore
+import com.flint.peakfocus.core.datastore.LimitsStore
+import com.flint.peakfocus.core.datastore.BlockRulesStore
 import java.util.TimeZone
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
 
 /**
  * Path B's enforcement handoff: the single entry point the UsageStats poll loop calls with
@@ -27,8 +31,8 @@ import kotlinx.coroutines.SupervisorJob
  * ```
  *
  * and add `implementation(project(":blocking:blocking-overlay"))` to that module. Passing
- * *every* tick (Allow included) matters: it's how Open Limits count opens, how the overlay
- * comes down when the user leaves the app, and how break exemptions stand enforcement down.
+ * *every* tick (Allow included) matters: it rechecks timed Open-credit access, removes the
+ * overlay when the user leaves the app, and applies committed break exemptions. Polls never debit credits.
  *
  * Enforcement surface: the `TYPE_APPLICATION_OVERLAY` window ([OverlayController]) when the
  * SYSTEM_ALERT_WINDOW grant is present; otherwise the full-screen [BlockActivity] fallback
@@ -53,26 +57,6 @@ object PathBBlockHandoff {
     }
 
     /**
-     * Compatibility entry for a daily Time Limit hit. Also evaluate current rules, so callers
-     * using this entry cannot accidentally shadow a Hardcore session with an EASY budget.
-     */
-    fun onTimeLimitExceeded(context: Context, packageName: String) {
-        val appContext = context.applicationContext
-        val now = System.currentTimeMillis()
-        val cal = Calendar.getInstance().apply { timeInMillis = now }
-        val verdict = BlockDecisionEngine().decide(
-            packageName,
-            null,
-            ActiveRulesHolder.rules,
-            appContext.packageName,
-            cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE),
-            IsoWeekday.fromCalendar(cal.get(Calendar.DAY_OF_WEEK)),
-            now,
-        )
-        onForegroundPolled(appContext, packageName, verdict, timeLimitSpent = true)
-    }
-
-    /**
      * Feed one poll observation through the shared decision flow. Cheap when nothing changed;
      * callable from any thread (UI work is marshalled internally).
      */
@@ -81,29 +65,45 @@ object PathBBlockHandoff {
         packageName: String,
         verdict: Verdict,
         timeLimitSpent: Boolean = false,
-    ) {
+        /** Resolved by the detector on IO; missing labels use the existing UI fallback. */
+        appLabel: String? = null,
+        /** Same immutable snapshot used to produce [verdict], even across a detector's IO suspension. */
+        rules: List<BlockRule> = ActiveRulesHolder.rules,
+        timeBudget: TrustedTimeLimitBudget? = null,
+    ): Boolean {
         val appContext = context.applicationContext
         val c = coordinator(appContext)
         val previous = lastForegroundPackage
         lastForegroundPackage = packageName
 
-        if (packageName == appContext.packageName) return // Flint itself (incl. our block UI)
+        if (packageName == appContext.packageName) return false // Flint itself (incl. our block UI)
         val now = System.currentTimeMillis()
         val utcOffset = TimeZone.getDefault().getOffset(now).toLong()
         val ruleCause = (verdict as? Verdict.Block)?.let {
-            ruleBlockCause(ActiveRulesHolder.rules.firstOrNull { rule -> rule.id == it.ruleId }, now, utcOffset)
+            ruleBlockCause(rules.firstOrNull { rule -> rule.id == it.ruleId }, now, utcOffset)
         }
-        val cause = c.evaluateBlockCause(previous, packageName, ruleCause, timeLimitSpent)
+        val cause = c.evaluateBlockCause(previous, packageName, ruleCause, timeLimitSpent, timeBudget = timeBudget)
         if (cause != null) {
-            c.showBlocked(packageName, labelFor(appContext, packageName), cause)
+            c.showBlocked(packageName, appLabel, cause)
         } else {
             c.hideIfShown()
         }
+        return cause != null
     }
 
-    private fun create(appContext: Context): BlockScreenCoordinator {
+    /** Production construction, with store/surface seams for deterministic handoff tests. */
+    internal fun create(
+        appContext: Context,
+        scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+        surfaceHost: BlockScreenCoordinator.SurfaceHost? = null,
+        focusStateStore: FocusStateStore? = null,
+        limitsStore: LimitsStore? = null,
+        rulesStore: BlockRulesStore? = null,
+        safetyFloor: SafetyFloorGate? = null,
+        nowEpochMs: () -> Long = System::currentTimeMillis,
+    ): BlockScreenCoordinator {
         val overlay = OverlayController(appContext)
-        val host = object : BlockScreenCoordinator.SurfaceHost {
+        val host = surfaceHost ?: object : BlockScreenCoordinator.SurfaceHost {
             override fun attach(view: View): Boolean {
                 if (!overlay.canShow()) return false
                 overlay.show(view)
@@ -111,6 +111,7 @@ object PathBBlockHandoff {
             }
 
             override fun detach(view: View) = overlay.hide()
+            override fun setRecoveryHandoffFocus(enabled: Boolean) = overlay.setRecoveryHandoffFocus(enabled)
 
             override fun goHome() {
                 // "Go back" without an AccessibilityService: launch the home screen. With the
@@ -125,20 +126,26 @@ object PathBBlockHandoff {
                 }
             }
         }
+        // Defer until construction has published the singleton. A synchronous initial
+        // readiness signal can otherwise re-enter coordinator() through a live subscriber.
+        val requestEvaluation: () -> Unit = {
+            scope.launch { yield(); EnforcementSignals.detectors.requestEvaluation() }
+        }
         return BlockScreenCoordinator(
             context = appContext,
-            scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+            scope = scope,
             surfaceHost = host,
             onBlockSurfaceUnavailable = { ctx, pkg, label, cause ->
                 BlockActivity.launch(ctx, pkg, label, cause)
             },
-            // No expiry callback: the poll loop re-evaluates within a tick anyway.
-            onExemptionExpired = null,
+            onExemptionExpired = { requestEvaluation() },
+            onEnforcementChanged = requestEvaluation,
+            focusStateStore = focusStateStore,
+            configuredLimitsStore = limitsStore,
+            blockRulesStore = rulesStore,
+            safetyFloorGate = safetyFloor,
+            nowEpochMs = nowEpochMs,
         )
     }
 
-    private fun labelFor(context: Context, packageName: String): String? = runCatching {
-        val pm = context.packageManager
-        pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
-    }.getOrNull()
 }

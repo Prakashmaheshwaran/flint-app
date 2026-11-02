@@ -41,7 +41,7 @@ class BlockScreenHostView(
     context: Context,
     onDismiss: () -> Unit,
     onOpenFlint: () -> Unit,
-    onBreakRequested: () -> Unit,
+    onBreakRequested: (String?) -> Unit,
     onEmergencyPassRequested: () -> Unit,
 ) : FrameLayout(context), LifecycleOwner, SavedStateRegistryOwner {
 
@@ -76,7 +76,7 @@ class BlockScreenHostView(
                             state = current,
                             onDismiss = onDismiss,
                             onOpenFlint = onOpenFlint,
-                            onBreakRequested = onBreakRequested,
+                            onBreakRequested = { onBreakRequested(current.openCreditRequestScope) },
                             onEmergencyPassRequested = onEmergencyPassRequested,
                         )
                     }

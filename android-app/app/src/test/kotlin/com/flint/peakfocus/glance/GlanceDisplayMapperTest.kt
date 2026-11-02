@@ -1,0 +1,174 @@
+package com.flint.peakfocus.glance
+
+import java.time.ZoneId
+import java.time.Instant
+import java.util.Locale
+import org.junit.Assert.*
+import org.junit.Test
+
+class GlanceDisplayMapperTest {
+    private val now = 100_000L
+    private val cause = ActiveGlanceCause("occurrence-1", "Focus", GlanceTier.HARDCORE, now + 300_000,
+        GlanceCauseKind.FOCUS_SESSION)
+    private val active = ProtectionReading(ProtectionStatus.ACTIVE, now, now + 60_000, cause,
+        sameBootVerified = true)
+    private fun display(reading: ProtectionReading, focus: FocusTodayReading = FocusTodayReading()) =
+        GlanceDisplayMapper.map(reading, focus, now, 1_800_000_000_000, ZoneId.of("UTC"), Locale.US)
+
+    @Test fun unavailableDoesNotInventInactiveOrZero() {
+        val result = display(ProtectionReading())
+        assertEquals("Protection state unavailable", result.status)
+        assertEquals("Next session unavailable", result.next)
+        assertEquals("Focus history unavailable", result.focusedToday)
+        assertNull(result.countdownEndElapsedMs)
+        assertEquals("Emergency Pass unavailable", result.pass)
+    }
+
+    @Test fun passAvailabilityCooldownAndUncertainEstimateDoNotInventRecoveryOrProtection() {
+        assertEquals("Emergency Pass unavailable", display(active).pass)
+        assertEquals("Emergency Pass available at last check", display(active.copy(pass = GlancePass.Available)).pass)
+        val cooling = active.copy(pass = GlancePass.CoolingDown(1_800_100_000_000, true))
+        assertTrue(display(cooling).pass.contains("Next eligibility estimate"))
+        assertTrue(display(cooling).pass.contains("Time uncertain"))
+        assertEquals("Protection active at last check", display(cooling).status)
+        assertEquals("Emergency Pass recovery", display(active.copy(pass = GlancePass.Recovery)).pass)
+        assertEquals("Emergency Pass unavailable", display(active.copy(pass = GlancePass.Available,
+            validUntilElapsedMs = now)).pass)
+    }
+
+    @Test fun allTiersUseAuthoritativeLogicalDeadlineAndObservationLabel() {
+        for (tier in GlanceTier.entries) {
+            val result = display(active.copy(cause = cause.copy(tier = tier)))
+            assertEquals("Protection active at last check", result.status)
+            assertTrue(result.detail.contains(tier.label))
+            assertEquals(cause.logicalEndElapsedMs, result.countdownEndElapsedMs)
+            assertTrue(result.checked.contains("Checked"))
+            assertEquals(now + 60_000, result.refreshAtElapsedMs)
+        }
+    }
+
+    @Test fun expiredIsNotProtectionOrCommittedCompletion() {
+        val result = display(active.copy(cause = cause.copy(logicalEndElapsedMs = now)))
+        assertEquals("Planned end reached", result.status)
+        assertNull(result.countdownEndElapsedMs)
+    }
+
+    @Test fun staleMissingOrFutureChecksAndInvalidValidityNeverClaimActive() {
+        listOf(
+            active.copy(checkedElapsedMs = now - 60_000),
+            active.copy(checkedElapsedMs = now + 1),
+            active.copy(checkedElapsedMs = null),
+            active.copy(validUntilElapsedMs = now),
+            active.copy(validUntilElapsedMs = null),
+            active.copy(sameBootVerified = false),
+            active.copy(timeUncertain = true),
+        ).forEach {
+            assertEquals("Protection check needed", display(it).status)
+            assertNull(display(it).countdownEndElapsedMs)
+        }
+    }
+
+    @Test fun brokenCauseAndUnboundedStrictDeadlineAreUnavailable() {
+        listOf(active.copy(cause = null), active.copy(cause = cause.copy(occurrenceId = "")),
+            active.copy(cause = cause.copy(logicalEndElapsedMs = null))).forEach {
+            assertEquals("Protection state unavailable", display(it).status)
+        }
+        assertTrue(display(active.copy(cause = cause.copy(tier = GlanceTier.EASY,
+            logicalEndElapsedMs = null))).detail.contains("Until ended in Flint"))
+    }
+
+    @Test fun degradedAndInactiveAreDistinct() {
+        assertEquals("Protection degraded", display(active.copy(status = ProtectionStatus.DEGRADED)).status)
+        assertEquals("No active protection at last check",
+            display(active.copy(status = ProtectionStatus.INACTIVE)).status)
+        assertNull(display(active.copy(status = ProtectionStatus.DEGRADED)).countdownEndElapsedMs)
+    }
+
+    @Test fun passNeverClaimsProtectionAndMissingOrEndedRecoveryNeedsCheck() {
+        val pass = active.copy(status = ProtectionStatus.PASS_RECOVERY, recoveryEndElapsedMs = now + 500)
+        assertEquals("Emergency Pass recovery", display(pass).status)
+        assertEquals(now + 500, display(pass).refreshAtElapsedMs)
+        assertNull(display(pass).countdownEndElapsedMs)
+        assertEquals("Recovery time ended", display(pass.copy(recoveryEndElapsedMs = now)).status)
+        assertEquals("Protection state unavailable", display(pass.copy(recoveryEndElapsedMs = null)).status)
+    }
+
+    @Test fun focusLinesPreserveFAbsenceZeroEmptyPartialAndInProgressCopy() {
+        listOf("Focus history unavailable", "No focus sessions yet", "0m", "5m · in progress").forEach { line ->
+            val day = Instant.ofEpochMilli(1_800_000_000_000).atZone(ZoneId.of("UTC")).toLocalDate()
+            val result = display(active, FocusTodayReading(line, "Some history couldn't be read", day))
+            assertEquals(line, result.focusedToday)
+            assertEquals("Some history couldn't be read", result.historyNote)
+        }
+    }
+
+    @Test fun historyFromYesterdayIsUnavailableAndDateAlwaysQualifiesCachedTodayLabel() {
+        val day = Instant.ofEpochMilli(1_800_000_000_000).atZone(ZoneId.of("UTC")).toLocalDate()
+        val stale = display(active, FocusTodayReading("5m", day = day.minusDays(1)))
+        assertEquals("Focus history unavailable", stale.focusedToday)
+        assertEquals("Open Flint to refresh", stale.historyNote)
+        assertTrue(stale.focusedTodayLabel.contains("Jan 15"))
+        val valid = display(ProtectionReading(), FocusTodayReading("0m", day = day))
+        assertNotNull(valid.refreshAtElapsedMs) // History midnight refresh even when C is unavailable.
+    }
+
+    @Test fun cachedProgressIsQualifiedAndWithdrawnWhenValidityOrLogicalEndCannotSupportIt() {
+        val day = Instant.ofEpochMilli(1_800_000_000_000).atZone(ZoneId.of("UTC")).toLocalDate()
+        val focus = FocusTodayReading("5m", "Some history couldn't be read", day, inProgress = true)
+        assertEquals("In progress at update · Some history couldn't be read", display(active, focus).historyNote)
+        listOf(
+            active.copy(checkedElapsedMs = now - 60_000),
+            active.copy(validUntilElapsedMs = now),
+            active.copy(cause = cause.copy(logicalEndElapsedMs = now)),
+            active.copy(cause = cause.copy(logicalEndElapsedMs = null)),
+            active.copy(status = ProtectionStatus.DEGRADED),
+            active.copy(status = ProtectionStatus.INACTIVE),
+            ProtectionReading(),
+        ).forEach {
+            val result = display(it, focus)
+            assertEquals("5m", result.focusedToday)
+            assertEquals("Some history couldn't be read", result.historyNote)
+        }
+        val midnight = display(active, focus.copy(day = day.minusDays(1)))
+        assertEquals("Focus history unavailable", midnight.focusedToday)
+        assertEquals("Open Flint to refresh", midnight.historyNote)
+    }
+
+    @Test fun nextSessionUsesOnlyFutureAuthoritativeReading() {
+        val epoch = 1_800_000_000_000L
+        assertTrue(display(active.copy(next = NextGlanceSession("Study", epoch + 60_000))).next.startsWith("Next: Study"))
+        assertEquals("Next session needs a new check", display(active.copy(next = NextGlanceSession("Old", epoch))).next)
+        assertEquals("No upcoming session", display(active).next)
+    }
+
+    @Test fun schedulesSleepAndLimitsNeverBecomeFocusSessionCountdowns() {
+        GlanceCauseKind.entries.filter { it != GlanceCauseKind.FOCUS_SESSION }.forEach { kind ->
+            val result = display(active.copy(cause = cause.copy(kind = kind)))
+            assertEquals("Protection active at last check", result.status)
+            assertTrue(result.detail.contains("Until"))
+            assertNull(result.countdownEndElapsedMs)
+            assertNull(result.session)
+        }
+    }
+
+    @Test fun passiveLimitsWithNoRuleIdRemainReadableButAnonymousTimerCannotNotify() {
+        for (kind in listOf(GlanceCauseKind.TIME_LIMIT, GlanceCauseKind.OPEN_LIMIT)) {
+            val result = display(active.copy(cause = cause.copy(occurrenceId = null, kind = kind)))
+            assertEquals("Protection active at last check", result.status)
+            assertNull(result.session)
+            assertNull(result.countdownEndElapsedMs)
+        }
+        val timer = display(active.copy(cause = cause.copy(occurrenceId = null)))
+        assertEquals("Protection state unavailable", timer.status)
+        assertNull(timer.session)
+    }
+
+    @Test fun wallClockChangeCannotRelabelAnOldSourceCheckAsANewCheck() {
+        val epoch = 1_800_000_000_000L
+        val reading = active.copy(checkedEpochMs = epoch - 30_000, checkedElapsedMs = now - 30_000)
+        val original = GlanceDisplayMapper.map(reading, FocusTodayReading(), now, epoch, ZoneId.of("UTC"), Locale.US)
+        val clockChanged = GlanceDisplayMapper.map(reading, FocusTodayReading(), now, epoch + 14_400_000, ZoneId.of("UTC"), Locale.US)
+        assertEquals(original.checked, clockChanged.checked)
+        assertEquals(original.countdownEndElapsedMs, clockChanged.countdownEndElapsedMs)
+    }
+}

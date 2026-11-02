@@ -1,0 +1,674 @@
+{
+  "id": "68b379a1-65af-473b-af21-9ad5c32c628a",
+  "ok": true,
+  "result": {
+    "children": [
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "children": [
+                          {
+                            "children": [
+                              {
+                                "children": [
+                                  {
+                                    "children": [
+                                      {
+                                        "children": [
+                                          {
+                                            "children": [
+                                              {
+                                                "children": [],
+                                                "className": "android.widget.CheckBox",
+                                                "text": "✓ Mon",
+                                                "contentDesc": "Monday",
+                                                "packageName": "com.flint.peakfocus",
+                                                "clickable": true,
+                                                "enabled": true,
+                                                "focused": false,
+                                                "bounds": {
+                                                  "left": 105,
+                                                  "top": 73,
+                                                  "right": 372,
+                                                  "bottom": 151
+                                                }
+                                              },
+                                              {
+                                                "children": [],
+                                                "className": "android.widget.CheckBox",
+                                                "text": "✓ Tue",
+                                                "contentDesc": "Tuesday",
+                                                "packageName": "com.flint.peakfocus",
+                                                "clickable": true,
+                                                "enabled": true,
+                                                "focused": false,
+                                                "bounds": {
+                                                  "left": 383,
+                                                  "top": 73,
+                                                  "right": 625,
+                                                  "bottom": 151
+                                                }
+                                              },
+                                              {
+                                                "children": [],
+                                                "className": "android.widget.CheckBox",
+                                                "text": "✓ Wed",
+                                                "contentDesc": "Wednesday",
+                                                "packageName": "com.flint.peakfocus",
+                                                "clickable": true,
+                                                "enabled": true,
+                                                "focused": false,
+                                                "bounds": {
+                                                  "left": 636,
+                                                  "top": 73,
+                                                  "right": 908,
+                                                  "bottom": 151
+                                                }
+                                              },
+                                              {
+                                                "children": [],
+                                                "className": "android.widget.CheckBox",
+                                                "text": "✓ Thu",
+                                                "contentDesc": "Thursday",
+                                                "packageName": "com.flint.peakfocus",
+                                                "clickable": true,
+                                                "enabled": true,
+                                                "focused": false,
+                                                "bounds": {
+                                                  "left": 105,
+                                                  "top": 162,
+                                                  "right": 352,
+                                                  "bottom": 304
+                                                }
+                                              },
+                                              {
+                                                "children": [],
+                                                "className": "android.widget.CheckBox",
+                                                "text": "✓ Fri",
+                                                "contentDesc": "Friday",
+                                                "packageName": "com.flint.peakfocus",
+                                                "clickable": true,
+                                                "enabled": true,
+                                                "focused": false,
+                                                "bounds": {
+                                                  "left": 363,
+                                                  "top": 162,
+                                                  "right": 572,
+                                                  "bottom": 304
+                                                }
+                                              },
+                                              {
+                                                "children": [],
+                                                "className": "android.widget.CheckBox",
+                                                "text": "Sat",
+                                                "contentDesc": "Saturday",
+                                                "packageName": "com.flint.peakfocus",
+                                                "clickable": true,
+                                                "enabled": true,
+                                                "focused": false,
+                                                "bounds": {
+                                                  "left": 583,
+                                                  "top": 162,
+                                                  "right": 733,
+                                                  "bottom": 299
+                                                }
+                                              },
+                                              {
+                                                "children": [],
+                                                "className": "android.widget.CheckBox",
+                                                "text": "Sun",
+                                                "contentDesc": "Sunday",
+                                                "packageName": "com.flint.peakfocus",
+                                                "clickable": true,
+                                                "enabled": true,
+                                                "focused": false,
+                                                "bounds": {
+                                                  "left": 744,
+                                                  "top": 162,
+                                                  "right": 910,
+                                                  "bottom": 299
+                                                }
+                                              },
+                                              {
+                                                "children": [],
+                                                "className": "android.widget.TextView",
+                                                "text": "Each night starts on the selected evening. No nights selected means every night.",
+                                                "packageName": "com.flint.peakfocus",
+                                                "clickable": false,
+                                                "enabled": true,
+                                                "focused": false,
+                                                "bounds": {
+                                                  "left": 105,
+                                                  "top": 315,
+                                                  "right": 975,
+                                                  "bottom": 593
+                                                }
+                                              }
+                                            ],
+                                            "className": "android.view.View",
+                                            "packageName": "com.flint.peakfocus",
+                                            "clickable": false,
+                                            "enabled": true,
+                                            "focused": false,
+                                            "bounds": {
+                                              "left": 63,
+                                              "top": 136,
+                                              "right": 1017,
+                                              "bottom": 635
+                                            }
+                                          },
+                                          {
+                                            "children": [],
+                                            "className": "android.widget.TextView",
+                                            "text": "WINDOW",
+                                            "packageName": "com.flint.peakfocus",
+                                            "clickable": false,
+                                            "enabled": true,
+                                            "focused": false,
+                                            "bounds": {
+                                              "left": 63,
+                                              "top": 698,
+                                              "right": 360,
+                                              "bottom": 773
+                                            }
+                                          },
+                                          {
+                                            "children": [
+                                              {
+                                                "children": [
+                                                  {
+                                                    "children": [],
+                                                    "className": "android.widget.TextView",
+                                                    "text": "BEDTIME",
+                                                    "packageName": "com.flint.peakfocus",
+                                                    "clickable": false,
+                                                    "enabled": true,
+                                                    "focused": false,
+                                                    "bounds": {
+                                                      "left": 147,
+                                                      "top": 868,
+                                                      "right": 442,
+                                                      "bottom": 943
+                                                    }
+                                                  },
+                                                  {
+                                                    "children": [],
+                                                    "className": "android.widget.TextView",
+                                                    "text": "22:30",
+                                                    "packageName": "com.flint.peakfocus",
+                                                    "clickable": false,
+                                                    "enabled": true,
+                                                    "focused": false,
+                                                    "bounds": {
+                                                      "left": 147,
+                                                      "top": 954,
+                                                      "right": 366,
+                                                      "bottom": 1068
+                                                    }
+                                                  }
+                                                ],
+                                                "className": "android.view.View",
+                                                "packageName": "com.flint.peakfocus",
+                                                "clickable": true,
+                                                "enabled": true,
+                                                "focused": false,
+                                                "bounds": {
+                                                  "left": 105,
+                                                  "top": 836,
+                                                  "right": 975,
+                                                  "bottom": 1100
+                                                }
+                                              },
+                                              {
+                                                "children": [
+                                                  {
+                                                    "children": [],
+                                                    "className": "android.widget.TextView",
+                                                    "text": "WAKE",
+                                                    "packageName": "com.flint.peakfocus",
+                                                    "clickable": false,
+                                                    "enabled": true,
+                                                    "focused": false,
+                                                    "bounds": {
+                                                      "left": 147,
+                                                      "top": 1164,
+                                                      "right": 337,
+                                                      "bottom": 1239
+                                                    }
+                                                  },
+                                                  {
+                                                    "children": [],
+                                                    "className": "android.widget.TextView",
+                                                    "text": "07:00",
+                                                    "packageName": "com.flint.peakfocus",
+                                                    "clickable": false,
+                                                    "enabled": true,
+                                                    "focused": false,
+                                                    "bounds": {
+                                                      "left": 147,
+                                                      "top": 1250,
+                                                      "right": 366,
+                                                      "bottom": 1364
+                                                    }
+                                                  }
+                                                ],
+                                                "className": "android.view.View",
+                                                "packageName": "com.flint.peakfocus",
+                                                "clickable": true,
+                                                "enabled": true,
+                                                "focused": false,
+                                                "bounds": {
+                                                  "left": 105,
+                                                  "top": 1132,
+                                                  "right": 975,
+                                                  "bottom": 1396
+                                                }
+                                              },
+                                              {
+                                                "children": [],
+                                                "className": "android.widget.TextView",
+                                                "text": "Bed 22:30",
+                                                "packageName": "com.flint.peakfocus",
+                                                "clickable": false,
+                                                "enabled": true,
+                                                "focused": false,
+                                                "bounds": {
+                                                  "left": 105,
+                                                  "top": 1438,
+                                                  "right": 432,
+                                                  "bottom": 1549
+                                                }
+                                              },
+                                              {
+                                                "children": [],
+                                                "className": "android.widget.TextView",
+                                                "text": "Wake 07:00",
+                                                "packageName": "com.flint.peakfocus",
+                                                "clickable": false,
+                                                "enabled": true,
+                                                "focused": false,
+                                                "bounds": {
+                                                  "left": 105,
+                                                  "top": 1560,
+                                                  "right": 488,
+                                                  "bottom": 1671
+                                                }
+                                              },
+                                              {
+                                                "children": [],
+                                                "className": "android.widget.TextView",
+                                                "text": "24-hour time. A window can continue past midnight.",
+                                                "packageName": "com.flint.peakfocus",
+                                                "clickable": false,
+                                                "enabled": true,
+                                                "focused": false,
+                                                "bounds": {
+                                                  "left": 105,
+                                                  "top": 1682,
+                                                  "right": 975,
+                                                  "bottom": 1864
+                                                }
+                                              }
+                                            ],
+                                            "className": "android.view.View",
+                                            "packageName": "com.flint.peakfocus",
+                                            "clickable": false,
+                                            "enabled": true,
+                                            "focused": false,
+                                            "bounds": {
+                                              "left": 63,
+                                              "top": 794,
+                                              "right": 1017,
+                                              "bottom": 1906
+                                            }
+                                          },
+                                          {
+                                            "children": [],
+                                            "className": "android.widget.TextView",
+                                            "text": "ASSIST LEVEL",
+                                            "packageName": "com.flint.peakfocus",
+                                            "clickable": false,
+                                            "enabled": true,
+                                            "focused": false,
+                                            "bounds": {
+                                              "left": 63,
+                                              "top": 1969,
+                                              "right": 533,
+                                              "bottom": 2044
+                                            }
+                                          },
+                                          {
+                                            "children": [],
+                                            "className": "android.view.View",
+                                            "packageName": "com.flint.peakfocus",
+                                            "clickable": false,
+                                            "enabled": true,
+                                            "focused": false,
+                                            "bounds": {
+                                              "left": 63,
+                                              "top": 2065,
+                                              "right": 1017,
+                                              "bottom": 2070
+                                            }
+                                          }
+                                        ],
+                                        "className": "android.widget.ScrollView",
+                                        "packageName": "com.flint.peakfocus",
+                                        "clickable": false,
+                                        "enabled": true,
+                                        "focused": false,
+                                        "bounds": {
+                                          "left": 0,
+                                          "top": 136,
+                                          "right": 1080,
+                                          "bottom": 2070
+                                        }
+                                      }
+                                    ],
+                                    "className": "android.view.View",
+                                    "packageName": "com.flint.peakfocus",
+                                    "clickable": false,
+                                    "enabled": true,
+                                    "focused": false,
+                                    "bounds": {
+                                      "left": 0,
+                                      "top": 136,
+                                      "right": 1080,
+                                      "bottom": 2070
+                                    }
+                                  },
+                                  {
+                                    "children": [
+                                      {
+                                        "children": [
+                                          {
+                                            "children": [],
+                                            "className": "android.widget.TextView",
+                                            "text": "Today",
+                                            "packageName": "com.flint.peakfocus",
+                                            "clickable": false,
+                                            "enabled": true,
+                                            "focused": false,
+                                            "bounds": {
+                                              "left": 105,
+                                              "top": 2199,
+                                              "right": 260,
+                                              "bottom": 2274
+                                            }
+                                          },
+                                          {
+                                            "children": [],
+                                            "className": "android.view.View",
+                                            "packageName": "com.flint.peakfocus",
+                                            "clickable": false,
+                                            "enabled": true,
+                                            "focused": false,
+                                            "bounds": {
+                                              "left": 63,
+                                              "top": 2112,
+                                              "right": 301,
+                                              "bottom": 2295
+                                            }
+                                          }
+                                        ],
+                                        "className": "android.view.View",
+                                        "packageName": "com.flint.peakfocus",
+                                        "clickable": true,
+                                        "enabled": true,
+                                        "focused": false,
+                                        "bounds": {
+                                          "left": 63,
+                                          "top": 2112,
+                                          "right": 301,
+                                          "bottom": 2295
+                                        }
+                                      },
+                                      {
+                                        "children": [
+                                          {
+                                            "children": [],
+                                            "className": "android.widget.TextView",
+                                            "text": "Rules",
+                                            "packageName": "com.flint.peakfocus",
+                                            "clickable": false,
+                                            "enabled": true,
+                                            "focused": false,
+                                            "bounds": {
+                                              "left": 350,
+                                              "top": 2199,
+                                              "right": 491,
+                                              "bottom": 2274
+                                            }
+                                          },
+                                          {
+                                            "children": [],
+                                            "className": "android.view.View",
+                                            "packageName": "com.flint.peakfocus",
+                                            "clickable": false,
+                                            "enabled": true,
+                                            "focused": false,
+                                            "bounds": {
+                                              "left": 301,
+                                              "top": 2112,
+                                              "right": 539,
+                                              "bottom": 2295
+                                            }
+                                          }
+                                        ],
+                                        "className": "android.view.View",
+                                        "packageName": "com.flint.peakfocus",
+                                        "clickable": false,
+                                        "enabled": true,
+                                        "focused": false,
+                                        "bounds": {
+                                          "left": 301,
+                                          "top": 2112,
+                                          "right": 539,
+                                          "bottom": 2295
+                                        }
+                                      },
+                                      {
+                                        "children": [
+                                          {
+                                            "children": [],
+                                            "className": "android.widget.TextView",
+                                            "text": "Insights",
+                                            "packageName": "com.flint.peakfocus",
+                                            "clickable": false,
+                                            "enabled": true,
+                                            "focused": false,
+                                            "bounds": {
+                                              "left": 562,
+                                              "top": 2199,
+                                              "right": 756,
+                                              "bottom": 2274
+                                            }
+                                          },
+                                          {
+                                            "children": [],
+                                            "className": "android.view.View",
+                                            "packageName": "com.flint.peakfocus",
+                                            "clickable": false,
+                                            "enabled": true,
+                                            "focused": false,
+                                            "bounds": {
+                                              "left": 539,
+                                              "top": 2112,
+                                              "right": 778,
+                                              "bottom": 2295
+                                            }
+                                          }
+                                        ],
+                                        "className": "android.view.View",
+                                        "packageName": "com.flint.peakfocus",
+                                        "clickable": true,
+                                        "enabled": true,
+                                        "focused": false,
+                                        "bounds": {
+                                          "left": 539,
+                                          "top": 2112,
+                                          "right": 778,
+                                          "bottom": 2295
+                                        }
+                                      },
+                                      {
+                                        "children": [
+                                          {
+                                            "children": [],
+                                            "className": "android.widget.TextView",
+                                            "text": "You",
+                                            "packageName": "com.flint.peakfocus",
+                                            "clickable": false,
+                                            "enabled": true,
+                                            "focused": false,
+                                            "bounds": {
+                                              "left": 850,
+                                              "top": 2199,
+                                              "right": 946,
+                                              "bottom": 2274
+                                            }
+                                          },
+                                          {
+                                            "children": [],
+                                            "className": "android.view.View",
+                                            "packageName": "com.flint.peakfocus",
+                                            "clickable": false,
+                                            "enabled": true,
+                                            "focused": false,
+                                            "bounds": {
+                                              "left": 778,
+                                              "top": 2112,
+                                              "right": 1017,
+                                              "bottom": 2295
+                                            }
+                                          }
+                                        ],
+                                        "className": "android.view.View",
+                                        "packageName": "com.flint.peakfocus",
+                                        "clickable": true,
+                                        "enabled": true,
+                                        "focused": false,
+                                        "bounds": {
+                                          "left": 778,
+                                          "top": 2112,
+                                          "right": 1017,
+                                          "bottom": 2295
+                                        }
+                                      }
+                                    ],
+                                    "className": "android.view.View",
+                                    "packageName": "com.flint.peakfocus",
+                                    "clickable": false,
+                                    "enabled": true,
+                                    "focused": false,
+                                    "bounds": {
+                                      "left": 63,
+                                      "top": 2112,
+                                      "right": 1017,
+                                      "bottom": 2295
+                                    }
+                                  }
+                                ],
+                                "className": "android.view.View",
+                                "packageName": "com.flint.peakfocus",
+                                "clickable": false,
+                                "enabled": true,
+                                "focused": false,
+                                "bounds": {
+                                  "left": 0,
+                                  "top": 0,
+                                  "right": 1080,
+                                  "bottom": 2400
+                                }
+                              }
+                            ],
+                            "className": "android.view.View",
+                            "packageName": "com.flint.peakfocus",
+                            "clickable": false,
+                            "enabled": true,
+                            "focused": false,
+                            "bounds": {
+                              "left": 0,
+                              "top": 0,
+                              "right": 1080,
+                              "bottom": 2400
+                            }
+                          }
+                        ],
+                        "className": "android.view.View",
+                        "packageName": "com.flint.peakfocus",
+                        "clickable": false,
+                        "enabled": true,
+                        "focused": false,
+                        "bounds": {
+                          "left": 0,
+                          "top": 0,
+                          "right": 1080,
+                          "bottom": 2400
+                        }
+                      }
+                    ],
+                    "className": "androidx.compose.ui.platform.ComposeView",
+                    "packageName": "com.flint.peakfocus",
+                    "clickable": false,
+                    "enabled": true,
+                    "focused": false,
+                    "bounds": {
+                      "left": 0,
+                      "top": 0,
+                      "right": 1080,
+                      "bottom": 2400
+                    }
+                  }
+                ],
+                "className": "android.widget.FrameLayout",
+                "resourceId": "android:id/content",
+                "packageName": "com.flint.peakfocus",
+                "clickable": false,
+                "enabled": true,
+                "focused": false,
+                "bounds": {
+                  "left": 0,
+                  "top": 0,
+                  "right": 1080,
+                  "bottom": 2400
+                }
+              }
+            ],
+            "className": "android.widget.LinearLayout",
+            "packageName": "com.flint.peakfocus",
+            "clickable": false,
+            "enabled": true,
+            "focused": false,
+            "bounds": {
+              "left": 0,
+              "top": 0,
+              "right": 1080,
+              "bottom": 2400
+            }
+          }
+        ],
+        "className": "android.widget.FrameLayout",
+        "packageName": "com.flint.peakfocus",
+        "clickable": false,
+        "enabled": true,
+        "focused": false,
+        "bounds": {
+          "left": 0,
+          "top": 0,
+          "right": 1080,
+          "bottom": 2400
+        }
+      }
+    ]
+  },
+  "_meta": {
+    "runtimeId": "9270491a-cd3f-496f-a138-a775a6d60a33"
+  }
+}

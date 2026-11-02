@@ -13,7 +13,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Enforces user-configured app and website focus blocks in real time." />
+                android:value="Detects which app is in front to enforce the user's own on-device app blocks, schedules and daily app limits. Website blocking is not part of this service." />
         </service>
     </application>
 </manifest>

@@ -5,6 +5,67 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+### v1 — integration/v1 (refreshed 2026-10-30)
+
+This is an integration summary, not a published v1 release or store/device acceptance.
+The [capability ledger](docs/acceptance/v1-capability-ledger.md) records the exact merged
+checkpoint, evidence and remaining gaps; [ADR-012](docs/architecture/protection-contract.md)
+defines requirements without turning them into passing results.
+
+- **Protection:** iOS session timing/registration, session replacement/stop policy, shared
+  ledger and startup health; Android terminal safety floor, continuous evaluation/failover,
+  acknowledged saves and durable commit-before-release grants. Pure ADR-012 policies and
+  live callers have distinct acceptance boundaries. Android Settings/uninstall/disable
+  interception is removed; OS recovery remains reachable.
+- **Final protection integration:** iOS generation/reboot/replay authority, trusted rule clocks,
+  frozen Safari policies, global recovery and scoped ordinary breaks; enabled timed Open
+  credits remain a hard signed-device pre-release gate. New empty Allow Lists are refused,
+  saved ones keep running with attention and calling/SOS hardware acceptance remains open.
+  Android adopts saved Time-Limit tiers, explicit credits/global recovery, strict initialized
+  accounting and exact-Timer live-detector arming; force-stop can unbind Accessibility.
+  Final wind-down merges add #225 trusted Android Time-Limit days/retained usage, #226
+  default-off captured removal consent/derived guard, #228 stale-session break fallback,
+  #229 refusal feedback and #230 all-six SystemBootTime privacy declarations. The ledger's
+  Open at v1 wind-down section records remaining red-team variants and hardware gates.
+- **Local outcomes:** durable session history and truthful Today/Complete/Insights totals,
+  separate from screen usage; optional planned-focus-end reminders. iOS captures use
+  labelled fixtures; Android hosted E2E includes an actual five-minute Timer. Missing terminal
+  evidence stays Unconfirmed; confidence-aware totals conservatively subtract uncertain gaps.
+  Durable Android pass/break projection and stable iOS replay IDs are merged, with explicit
+  incomplete typed-iOS-break/operation-history boundaries in the ledger. #227 arbitrates
+  new Android terminal writes; old duplicates remain readable.
+- **Glance and UX:** read-only widgets, opt-in iOS Live Activity, optional Android Path A
+  ongoing status, Help/limitations, accessible onboarding/PIN/picker/Sleep and Android
+  scrollable block-screen work. Live status producers and hardware rendering retain their
+  explicit boundaries in the ledger. Live commit/Hub/service publishers are wired; Android
+  installed minified widget smoke covers unavailable/Open Flint. iOS #223 passes ten UI
+  fixtures plus eleven Insights cases at its exact source, with no hardware promotion.
+- **Release preparation:** iOS AppIcon, six privacy manifests after widget integration,
+  unsigned Release/fixture gates and private signing scaffold; Android target API 36,
+  APK/AAB checks, owner-signing configuration with labelled preview fallback, shrinking
+  and actual installed-release smoke. Android includes offline policy/license screens.
+- **Acceptance:** store/privacy drafts, one evidence-linked capability ledger and one
+  risk-ordered physical-device plan. Physical hardware, signing/account facts, uploads,
+  review and publication remain open human gates. No refreshed competitor pricing or
+  hardware protection guarantee is made.
+
+### Historical pre-v1 development notes (original entries retained)
+
+> The entries below record earlier implementations and their original verification state.
+> They are superseded by ADR-012 and the v1 ledger for current behavior. In particular,
+> historical Android uninstall guards are removed, tier labels do not prove universal
+> editor locks, pass renewal is not promised at a calendar-week boundary, and legacy
+> Open/Timer semantics must not be read as the new contract. Old compile/test debt and
+> dated verification claims remain here for provenance rather than current status.
+
+- **Android (removed): the Hardcore uninstall/Settings guard.** Per the protection contract
+  (ADR-012 §10) and the Play Accessibility API policy, Flint no longer intercepts the uninstaller,
+  Settings, Accessibility disable, app info, force-stop or permission revocation at any tier, and
+  no longer reads Settings window text. The uninstaller and Settings/permission surfaces are on
+  the safety floor instead; turning access off reduces protection and stays the user's choice.
+  This supersedes the "Hardcore uninstall guard (Path A)" entry below.
+- **Android:** the safety floor (dialer, emergency, default home app, Settings/permission
+  recovery, uninstaller, Flint) applies before every block cause on both detectors.
 - **Android:** native finite-session Timer with persisted restoration, explicit hold-to-leave,
   and preservation of overlapping restrictions; selected-day and weekly usage rankings.
 - **Android:** strongest-cause arbitration prevents ordinary breaks bypassing overlapping

@@ -56,5 +56,16 @@
             android:name="com.flint.peakfocus.blocking.overlay.BlockActivity"
             android:enableOnBackInvokedCallback="false"
             tools:node="merge" />
+
+        <receiver
+            android:name=".glance.FlintGlanceWidgetReceiver"
+            android:exported="true"
+            android:label="@string/flint_widget_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/flint_glance_widget" />
+        </receiver>
+        <receiver android:name=".glance.GlanceRefreshReceiver" android:exported="false" />
     </application>
 </manifest>

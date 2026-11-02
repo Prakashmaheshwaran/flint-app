@@ -144,13 +144,13 @@ class SummariesTest {
     @Test
     fun `limit summaries cover each combination`() {
         assertEquals("No limits", limitSummary(null, null))
-        assertEquals("45m/day", limitSummary(TimeLimit("a", 45), null))
+        assertEquals("45m/day (Easy)", limitSummary(TimeLimit("a", 45), null))
         assertEquals(
-            "1 open/day (Hardcore)",
+            "1 5-minute credit/day (Hardcore)",
             limitSummary(null, OpenLimit("a", 1, BreakLevel.HARDCORE)),
         )
         assertEquals(
-            "1h/day · 5 opens/day (Easy)",
+            "1h/day (Easy) · 5 5-minute credits/day (Easy)",
             limitSummary(TimeLimit("a", 60), OpenLimit("a", 5, BreakLevel.EASY)),
         )
     }

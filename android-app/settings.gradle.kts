@@ -23,12 +23,15 @@ dependencyResolutionManagement {
 rootProject.name = "Flint"
 
 include(":app")
+// Keep the standalone test APK out of ordinary assemble/test/release task graphs.
+if (providers.gradleProperty("flintE2E").orNull == "true") include(":e2e")
 
 // core — model + shared utilities + theme tokens + persistence
 include(":core:core-model")
 include(":core:core-common")
 include(":core:core-data")
 include(":core:core-datastore")               // Jetpack DataStore: observable user preferences
+include(":core:core-history")                 // Local focus-session events and aggregation
 
 // blocking — the enforcement engine (UI-independent, headless-capable)
 include(":blocking:blocking-engine")          // pure-Kotlin decision core (unit-tested)

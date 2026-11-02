@@ -6,6 +6,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.flint.peakfocus.permissions.UsageAccess
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,6 +28,7 @@ class StatsViewModel(
 
     private val _uiState = MutableStateFlow<StatsUiState>(StatsUiState.Loading)
     val uiState: StateFlow<StatsUiState> = _uiState.asStateFlow()
+    private var refreshJob: Job? = null
 
     /**
      * Re-checks the grant and reloads the report. Called on entry and again on every ON_RESUME,
@@ -35,16 +38,20 @@ class StatsViewModel(
      * re-check rather than a one-shot.
      */
     fun refresh(nowMillis: Long = System.currentTimeMillis()) {
-        viewModelScope.launch {
-            if (!isUsageAccessGranted()) {
-                _uiState.value = StatsUiState.PermissionRequired
-                return@launch
-            }
-            if (_uiState.value !is StatsUiState.Ready) {
-                _uiState.value = StatsUiState.Loading
-            }
-            val report = withContext(ioDispatcher) { loadReport(nowMillis) }
-            _uiState.value = StatsUiState.Ready(report)
+        refreshJob?.cancel()
+        refreshJob = viewModelScope.launch {
+            try {
+                if (!isUsageAccessGranted()) {
+                    _uiState.value = StatsUiState.PermissionRequired
+                    return@launch
+                }
+                if (_uiState.value !is StatsUiState.Ready) {
+                    _uiState.value = StatsUiState.Loading
+                }
+                val report = withContext(ioDispatcher) { loadReport(nowMillis) }
+                _uiState.value = StatsUiState.Ready(report)
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { _uiState.value = statsFailureState(e) }
         }
     }
 

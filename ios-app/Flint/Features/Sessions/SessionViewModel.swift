@@ -1,6 +1,8 @@
 import Foundation
 import FamilyControls
 import FlintCore
+import Combine
+import UIKit
 
 /// Drives the Today tab: holds the picker selection, duration, break level, and the live
 /// countdown for an active session — and the "complete" moment when one runs to its end.
@@ -8,8 +10,14 @@ import FlintCore
 final class SessionViewModel: ObservableObject {
     /// A session that ran to its end, shown once on the Complete screen.
     struct Finished: Equatable {
+        let id: String
         let name: String
-        let minutes: Int
+        let focusedSeconds: TimeInterval
+        let todaySeconds: TimeInterval?
+        let isPreview: Bool
+        let historyDegraded: Bool
+        // Compatibility for RootView's existing presentation identity.
+        var minutes: Int { Int(max(0, focusedSeconds) / 60) }
     }
 
     @Published var selection = FamilyActivitySelection()
@@ -18,13 +26,75 @@ final class SessionViewModel: ObservableObject {
     @Published private(set) var active: FlintActiveSession?
     @Published private(set) var remaining: TimeInterval = 0
     @Published private(set) var savedGroups: [FlintAppGroup] = []
-    @Published var finished: Finished?
+    @Published var finished: Finished? {
+        didSet {
+            if finished == nil, let oldValue {
+                UserDefaults.standard.set(oldValue.id, forKey: FocusHistoryModel.shared.acknowledgementKey)
+            }
+        }
+    }
     @Published var errorText: String?
+    @Published private(set) var needsProtectionResume = false
+    /// A Harder early stop in progress: the persisted wait (ADR-012 §4) and its end.
+    @Published private(set) var harderStop: HarderStop?
+    @Published private(set) var breakWait: HarderStop?
+    @Published private(set) var ordinaryBreak: FlintOrdinaryGrantState.Record?
+    @Published private(set) var breakRemaining: TimeInterval = 0
+    @Published private(set) var breakPreview = FlintOrdinaryBreakPreview.unavailable
+    @Published private(set) var breakNotice: String?
+    @Published private(set) var resumingBreak = false
+    @Published var confirmingBreak = false
+    private var breakRequest: FlintBreakAuthorization.Request?
+    private let readBreakStatus: () -> FlintOrdinaryBreakStatus
+    private let readBreakPreview: () -> FlintOrdinaryBreakPreview
+    private let readNoticeAcknowledgement: () -> String?
+    private let saveNoticeAcknowledgement: (String) -> Void
+    private let resumeOrdinaryBreak: (String) -> FlintOrdinaryBreakResumeOutcome
+    private let reconcileOrdinaryBreak: () async -> Void
+    private var breakNoticeID: String?
+    private var breakReconcilePending = false
+    private let observesLifecycle: Bool
+
+    var stopPreview: String {
+        guard let active else { return "Not running" }
+        switch active.breakLevel {
+        case .easy: return "Tap End early to end this session now."
+        case .hardcore: return "No early end; wait until it ends or use an available Emergency Pass."
+        case .harder:
+            guard case let .success(state)? = FlintProtectionLedger.appGroup()?.peek() else { return "Protection state unavailable" }
+            let wait = FlintProtectionPolicy.harderWait(forCount: state.harder[active.id]?.committedCount ?? 0)
+            return "Wait \(Int(wait / 60)) minutes, then confirm End early."
+        }
+    }
+
+    enum HarderStop: Equatable {
+        /// The wait is running until `until`; `total` drives the ring.
+        case waiting(until: Date, total: TimeInterval)
+        /// The wait has passed; a final explicit confirmation ends the session.
+        case ready(total: TimeInterval)
+    }
 
     private let controller = FlintSessionController()
     private var timer: Timer?
+    /// The saved group last applied, so a start from an unchanged preset is reported as one.
+    private var appliedGroupSelection: FamilyActivitySelection?
+    private var completionForeground: AnyCancellable?
+    private var reconciled: AnyCancellable?
 
-    init() {
+    init(initialSession: FlintActiveSession? = nil, observeLifecycle: Bool = true,
+         breakStatus: @escaping () -> FlintOrdinaryBreakStatus = FlintOrdinaryBreaks.status,
+         breakPreview: @escaping () -> FlintOrdinaryBreakPreview = FlintOrdinaryBreaks.previewForCurrentSession,
+         readNoticeAcknowledgement: @escaping () -> String? = { UserDefaults.standard.string(forKey: "flint.ordinaryBreak.acknowledgedNotice") },
+         saveNoticeAcknowledgement: @escaping (String) -> Void = { UserDefaults.standard.set($0, forKey: "flint.ordinaryBreak.acknowledgedNotice") },
+         resumeOrdinaryBreak: @escaping (String) -> FlintOrdinaryBreakResumeOutcome = FlintOrdinaryBreaks.resumeNowOutcome,
+         reconcileOrdinaryBreak: @escaping () async -> Void = {
+             _ = await Task.detached(priority: .utility) { FlintOrdinaryBreaks.reconcile() }.value
+         }) {
+        readBreakStatus = breakStatus; readBreakPreview = breakPreview; observesLifecycle = observeLifecycle
+        self.readNoticeAcknowledgement = readNoticeAcknowledgement; self.saveNoticeAcknowledgement = saveNoticeAcknowledgement
+        self.resumeOrdinaryBreak = resumeOrdinaryBreak
+        self.reconcileOrdinaryBreak = reconcileOrdinaryBreak
+        if !observeLifecycle { active = initialSession; return }
         if let saved = FlintGroupStore()?.loadSelection() { selection = saved }
         savedGroups = FlintGroupStore()?.loadAppGroups() ?? []
         active = controller.activeSession
@@ -44,6 +114,33 @@ final class SessionViewModel: ObservableObject {
         }
         #endif
         startTicking()
+        refreshCompletion()
+        completionForeground = NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
+            .sink { [weak self] _ in Task { @MainActor in self?.syncActive(); self?.refreshCompletion() } }
+        // A session ended elsewhere — the locked gate's Emergency Pass, a Shortcut, the monitor —
+        // must not linger on screen as a phantom countdown.
+        reconciled = NotificationCenter.default.publisher(for: .flintProtectionReconciled)
+            .sink { [weak self] _ in Task { @MainActor in self?.syncActive() } }
+    }
+
+    private func syncActive() {
+        updateActive(controller.activeSession)
+    }
+
+    /// Foreground/notification refresh must observe grant changes even for the same session.
+    func updateActive(_ current: FlintActiveSession?) {
+        guard active?.monitorName != "preview" else { return }
+        refreshBreakStatus()
+        guard current != active else { return }
+        active = current
+        if current == nil {
+            remaining = 0
+            harderStop = nil
+            timer?.invalidate()
+            if observesLifecycle { refreshCompletion() }
+        } else {
+            startTicking()
+        }
     }
 
     // MARK: Saved app groups (presets)
@@ -58,6 +155,7 @@ final class SessionViewModel: ObservableObject {
 
     func applyGroup(_ group: FlintAppGroup) {
         selection = group.selection
+        appliedGroupSelection = group.selection
         persistSelection()
     }
 
@@ -95,7 +193,7 @@ final class SessionViewModel: ObservableObject {
     /// 0…1 through the active session; drives the ember along its arc.
     var progress: Double {
         guard let active, let endsAt = active.endsAt else { return 0 }
-        let total = endsAt.timeIntervalSince(active.startedAt)
+        let total = active.plannedDuration ?? endsAt.timeIntervalSince(active.startedAt)
         guard total > 0 else { return 1 }
         return min(1, max(0, 1 - remaining / total))
     }
@@ -104,69 +202,256 @@ final class SessionViewModel: ObservableObject {
         FlintGroupStore()?.saveSelection(selection)
     }
 
-    func start() {
+    /// Set when a Hardcore start needs the user's explicit confirmation of its rights (ADR-012
+    /// §2); the sheet asks, then calls `start(confirmed: true)`.
+    @Published var confirmingHardcore = false
+
+    /// One id per start attempt, so a double tap or the confirm-then-start path returns the
+    /// session it already started instead of minting another deadline (PC-03).
+    private var startRequestID = UUID().uuidString
+    private struct StartAttempt {
+        let selection: FamilyActivitySelection
+        let duration: TimeInterval
+        let level: BreakLevel
+        let source: FlintSessionSource
+        let token: FlintSessionStartToken
+    }
+    private var startAttempt: StartAttempt?
+
+    func start(confirmed: Bool = false) {
+        defer { NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil) }
         errorText = nil
+        needsProtectionResume = false
         do {
+            if startAttempt == nil || !confirmed {
+                let source: FlintSessionSource = appliedGroupSelection == selection ? .preset : .manual
+                let duration = TimeInterval(durationMinutes * 60)
+                let token = try controller.prepareStartToken(selection: selection, duration: duration,
+                    breakLevel: breakLevel, source: source, origin: .appUI,
+                    route: "app-ui.session", operationID: startRequestID)
+                startAttempt = StartAttempt(selection: selection, duration: duration, level: breakLevel,
+                    source: source, token: token)
+            }
+            guard let attempt = startAttempt else { return }
             active = try controller.startBlockNow(
-                selection: selection,
-                duration: TimeInterval(durationMinutes * 60),
-                breakLevel: breakLevel,
-                name: "Focus"
+                selection: attempt.selection,
+                duration: attempt.duration,
+                breakLevel: attempt.level,
+                name: "Focus",
+                source: attempt.source,
+                origin: .appUI,
+                requestID: attempt.token.operationID,
+                expectedRevision: attempt.token.expectedRevision,
+                confirmed: confirmed
             )
+            startRequestID = UUID().uuidString
+            startAttempt = nil
             startTicking()
+        } catch FlintSessionError.needsConfirmation {
+            confirmingHardcore = true
+        } catch let error as FlintSessionError where error == .staleStartRevision || error == .conflictingStartRequest {
+            startAttempt = nil
+            startRequestID = UUID().uuidString
+            errorText = error.localizedDescription
+        } catch FlintSessionError.resumeProtectionFirst {
+            needsProtectionResume = true
+            errorText = "Resume protection first"
         } catch {
             errorText = (error as? LocalizedError)?.errorDescription ?? "\(error)"
         }
     }
 
+    /// The session screen's "End session". Easy ends now (the tap is the confirmation); Harder
+    /// starts or resumes its persisted wait; Hardcore is refused.
     func stop() {
         guard let active else { return }
-        guard controller.canStop(active) else {
-            errorText = "Hardcore session — it can't be stopped until it ends."
-            return
+        cancelBreak()
+        apply(controller.requestStop(route: .manualStop, confirmed: active.breakLevel == .easy))
+    }
+
+    func requestBreak() {
+        if harderStop != nil { cancelStop() }
+        applyBreak(controller.requestBreak())
+    }
+
+    func confirmBreak() {
+        guard let breakRequest else { return }
+        applyBreak(controller.confirmBreak(breakRequest))
+    }
+
+    func cancelBreak() {
+        if let breakRequest { controller.cancelBreak(breakRequest) }
+        breakRequest = nil; breakWait = nil; confirmingBreak = false
+    }
+
+    func resumeBreakNow() {
+        guard let ordinaryBreak else { return }
+        let outcome = resumeOrdinaryBreak(ordinaryBreak.grant.id)
+        refreshBreakStatus()
+        switch outcome {
+        case .ended: break
+        case .applying: resumingBreak = true
+        case .unavailable: errorText = "Access unavailable"
         }
-        controller.stop()
-        self.active = nil
+    }
+
+    func refreshBreakStatus() {
+        guard active?.monitorName != "preview" else { return }
+        let status = readBreakStatus()
+        ordinaryBreak = status.record
+        breakRemaining = ordinaryBreak?.remaining(at: .init(clock: .system)) ?? 0
+        breakPreview = readBreakPreview()
+        resumingBreak = status.isRestoring
+        if let notice = status.notice, let id = status.noticeID, id != readNoticeAcknowledgement() {
+            breakNotice = notice.message; breakNoticeID = id
+        } else if breakNoticeID == readNoticeAcknowledgement() { breakNotice = nil; breakNoticeID = nil }
+    }
+
+    func acknowledgeBreakNotice() {
+        if let breakNoticeID { saveNoticeAcknowledgement(breakNoticeID) }
+        breakNotice = nil; breakNoticeID = nil
+    }
+
+    private func applyBreak(_ outcome: FlintBreakOutcome) {
+        errorText = nil
+        switch outcome {
+        case let .waiting(request, remaining, total):
+            breakRequest = request; breakWait = .waiting(until: Date().addingTimeInterval(remaining), total: total)
+            breakPreview = readBreakPreview()
+            confirmingBreak = false
+        case let .confirmation(request):
+            breakRequest = request
+            if let breakWait { self.breakWait = .ready(total: breakWait.total) }
+            else { confirmingBreak = true }
+        case let .active(record, remaining):
+            breakRequest = nil; breakWait = nil; confirmingBreak = false
+            ordinaryBreak = record; breakRemaining = remaining
+            NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
+        case let .ended(reason):
+            breakRequest = nil; breakWait = nil; confirmingBreak = false
+            if reason != .reboot && reason != .carrierFailed { errorText = reason.message }
+            refreshBreakStatus()
+        case let .refused(error):
+            errorText = error.localizedDescription
+            if error == .pendingMismatch || error == .expiredRequest { cancelBreak() }
+        }
+    }
+
+    /// The final confirmation once a Harder wait has passed.
+    func confirmStop() {
+        apply(controller.requestStop(route: .manualStop, confirmed: true))
+    }
+
+    /// "I'm good, go back": cancels the wait without counting it.
+    func cancelStop() {
+        controller.cancelPendingStop()
+        harderStop = nil
+    }
+
+    private func apply(_ outcome: FlintSessionStopOutcome) {
+        switch outcome {
+        case .stopped:
+            NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
+            active = nil
+            remaining = 0
+            harderStop = nil
+            timer?.invalidate()
+        case let .waiting(left):
+            let total: TimeInterval
+            if case let .waiting(_, previous)? = harderStop { total = max(previous, left) } else { total = left }
+            harderStop = .waiting(until: Date().addingTimeInterval(left), total: total)
+        case .readyToConfirm:
+            harderStop = .ready(total: harderStop.map(\.total) ?? 60)
+        case .needsConfirmation:
+            break
+        case .denied:
+            harderStop = nil
+            errorText = "Hardcore session — it can't be stopped early. It ends on its own, or use the Emergency Pass."
+        case .notApplicable:
+            harderStop = nil
+            active = controller.activeSession
+        case .unavailable:
+            harderStop = nil
+            errorText = "Flint couldn't read its protection state, so nothing was changed."
+        }
+    }
+
+    /// The shared pass sheet already committed/released through the ledger controller.
+    func emergencyPassDidApply() {
+        errorText = nil
+        NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
+        active = controller.activeSession
         remaining = 0
         timer?.invalidate()
     }
 
-    var emergencyPassAvailable: Bool { controller.emergencyPassAvailable() }
-
-    func useEmergencyPass() {
-        errorText = nil
-        if controller.useEmergencyPass() {
-            active = nil
-            remaining = 0
-            timer?.invalidate()
-        } else {
-            errorText = "Emergency Pass isn't available yet — one per week."
+    func resumeProtectionNow() {
+        switch FlintEmergencyPassController().resumeNow() {
+        case .success:
+            needsProtectionResume = false
+            errorText = nil
+            NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
+        case let .failure(error): errorText = error.localizedDescription
         }
     }
 
     private func startTicking() {
         timer?.invalidate()
-        guard let active, active.endsAt != nil else { remaining = 0; return }
+        guard observesLifecycle else { return }
+        guard active != nil else { remaining = 0; return }
         tick()
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
     }
 
+    func reconcileBreakIfNeeded() async {
+        guard !breakReconcilePending,
+              resumingBreak || ordinaryBreak.map({ $0.remaining(at: .init(clock: .system)) <= 0 }) == true else { return }
+        breakReconcilePending = true
+        await reconcileOrdinaryBreak()
+        breakReconcilePending = false
+        refreshBreakStatus()
+    }
+
     private func tick() {
         guard let active else { remaining = 0; return }
-        remaining = active.remaining
-        if active.isExpired {
+        // Logical time, as enforcement uses it: a wall-clock change can't end the UI's block
+        // while shields stay armed (ADR-012 §9).
+        remaining = active.logicalRemaining(clock: .system) ?? 0
+        breakRemaining = ordinaryBreak?.remaining(at: .init(clock: .system)) ?? 0
+        if resumingBreak || (ordinaryBreak != nil && breakRemaining <= 0) {
+            Task { [weak self] in await self?.reconcileBreakIfNeeded() }
+        }
+        if active.isLogicallyExpired(clock: .system) {
             // On a real device the monitor clears the shield; mirror that here for the UI and as
             // a fallback (the Simulator doesn't run the monitor extension).
             controller.finishIfExpired()
-            if let endsAt = active.endsAt {
-                let minutes = Int((endsAt.timeIntervalSince(active.startedAt) / 60).rounded())
-                finished = Finished(name: active.name, minutes: minutes)
-            }
+            NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil)
             self.active = nil
             remaining = 0
             timer?.invalidate()
+            refreshCompletion()
+        }
+    }
+
+    /// Reconstructs completion after process death; acknowledgement lives only in host defaults.
+    private func refreshCompletion() {
+        let history = FocusHistoryModel.shared
+        history.refresh { [weak self] summary in
+            guard let self, self.active == nil, self.finished == nil,
+                  let session = history.completionToPresent(in: summary) else { return }
+            self.finished = Finished(id: session.id, name: session.name, focusedSeconds: session.focusedSeconds,
+                                     todaySeconds: summary.days.last?.focusedSeconds, isPreview: history.isPreview,
+                                     historyDegraded: summary.availability == .degraded)
+        }
+    }
+}
+
+extension SessionViewModel.HarderStop {
+    var total: TimeInterval {
+        switch self {
+        case let .waiting(_, total), let .ready(total): return total
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.flint.peakfocus.blocking.overlay
 
+import com.flint.peakfocus.blocking.engine.ruleWindowEnd
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.model.BreakSessionState
@@ -24,13 +25,23 @@ data class BlockCause(
     val breakLevel: BreakLevel,
     /** Absolute end of the block window, or null when open-ended (manual session). */
     val endsAtEpochMs: Long?,
+    /**
+     * The rule behind a rule-verdict cause (for local history via [BlockEventHooks]); null for
+     * daily Time Limit, Open Limit and uninstall-guard causes, and when the rule vanished.
+     */
+    val ruleId: String? = null,
+    /** Display-only combined end; never replaces this cause's own expiry or exit authority. */
+    val displayEnd: BlockDisplayEnd? = null,
 ) {
     /**
-     * Open Limits count a granted break as spending one more open (see `OpenLimitPolicy`'s
-     * "use anyway" note) — time/rule blocks don't touch the open counter.
+     * Historical v1 adapter classification. Production timed-credit exhaustion breaks
+     * never spend another credit; only an explicit credit confirmation charges quota.
      */
     val spendsOpenOnBreak: Boolean get() = reason == BlockScreenReason.OPEN_LIMIT
 }
+
+/** A present value with a null end means the combined unblock time is unknown/ongoing. */
+data class BlockDisplayEnd(val endsAtEpochMs: Long?)
 
 /**
  * Cause for a rule verdict ([com.flint.peakfocus.core.model.Verdict.Block]). [rule] is the
@@ -41,8 +52,8 @@ data class BlockCause(
  * rule at [BreakLevel.HARDCORE] is a Deep Focus session → [BlockScreenReason.DEEP_FOCUS];
  * any other manual rule → [BlockScreenReason.MANUAL_SESSION].
  *
- * A one-shot session's [BlockRule.expiresAtEpochMs] is the block's true end — it wins over
- * any schedule-derived end, so the countdown ticks to the session timer, not to a window.
+ * The engine's headline comparator uses the same end resolver, including anchored runtime
+ * and the legacy schedule fallback. An ongoing runtime end must remain ongoing in the UI.
  */
 fun ruleBlockCause(rule: BlockRule?, nowEpochMs: Long, utcOffsetMs: Long): BlockCause {
     val level = rule?.breakLevel ?: BreakLevel.EASY
@@ -52,33 +63,12 @@ fun ruleBlockCause(rule: BlockRule?, nowEpochMs: Long, utcOffsetMs: Long): Block
         level == BreakLevel.HARDCORE -> BlockScreenReason.DEEP_FOCUS
         else -> BlockScreenReason.MANUAL_SESSION
     }
-    val endsAt = rule?.expiresAtEpochMs
-        ?: schedule?.let { nowEpochMs + millisUntilScheduleEnd(it, nowEpochMs, utcOffsetMs) }
-    return BlockCause(reason = reason, breakLevel = level, endsAtEpochMs = endsAt)
+    val localMinute = (floorMod(nowEpochMs + utcOffsetMs, DAY_MS) / 60_000L).toInt()
+    val endsAt = rule?.let { ruleWindowEnd(it, nowEpochMs, localMinute) }
+    return BlockCause(reason = reason, breakLevel = level, endsAtEpochMs = endsAt, ruleId = rule?.id)
 }
 
-/**
- * Cause for an `UninstallGuard`-shielded system surface (the uninstaller, Settings pages about
- * Flint) while a Hardcore window is active. Maps to [BlockScreenReason.UNINSTALL_GUARD], which
- * the screen renders with NO break/pass affordance: the guard re-shields on every window event
- * regardless of exemptions, so offering the weekly Emergency Pass here would burn it for
- * nothing. The honest way out is inside Flint's own UI — disable the Hardcore rule there
- * (deliberate, on-screen friction, per the guard's documented threat model).
- */
-fun uninstallGuardBlockCause(rule: BlockRule, nowEpochMs: Long, utcOffsetMs: Long): BlockCause {
-    // Same end-derivation as ruleBlockCause: a session's expiry wins, else the schedule —
-    // without it a guard shield armed by a Block Now session would never auto-hide (its
-    // ticker only dismisses causes with a known end, and guard causes grant no exemptions).
-    val endsAt = rule.expiresAtEpochMs
-        ?: rule.schedule?.let { nowEpochMs + millisUntilScheduleEnd(it, nowEpochMs, utcOffsetMs) }
-    return BlockCause(
-        reason = BlockScreenReason.UNINSTALL_GUARD,
-        breakLevel = rule.breakLevel,
-        endsAtEpochMs = endsAt,
-    )
-}
-
-/** Cause for an exhausted Open Limit: blocks until the next local midnight, tier from the limit. */
+/** Legacy display factory. Production replaces its estimate with the saved quota reset. */
 fun openLimitBlockCause(limit: OpenLimit, nowEpochMs: Long, utcOffsetMs: Long): BlockCause =
     BlockCause(
         reason = BlockScreenReason.OPEN_LIMIT,
@@ -87,14 +77,14 @@ fun openLimitBlockCause(limit: OpenLimit, nowEpochMs: Long, utcOffsetMs: Long): 
     )
 
 /**
- * Cause for a spent daily Time Limit: blocks until the next local midnight. The legacy
- * `TimeLimit`/`LimitStore` carry no per-limit tier, so the store-wide default break level
- * (FocusStateStore.defaultBreakLevel) applies.
+ * Cause for a spent daily Time Limit: blocks until the next local midnight. The caller
+ * supplies the saved TimeLimit's own tier. Only a legacy LimitStore budget, which has no
+ * explicit tier, uses the store-wide default.
  */
-fun timeLimitBlockCause(defaultBreakLevel: BreakLevel, nowEpochMs: Long, utcOffsetMs: Long): BlockCause =
+fun timeLimitBlockCause(breakLevel: BreakLevel, nowEpochMs: Long, utcOffsetMs: Long): BlockCause =
     BlockCause(
         reason = BlockScreenReason.TIME_LIMIT,
-        breakLevel = defaultBreakLevel,
+        breakLevel = breakLevel,
         endsAtEpochMs = nowEpochMs + millisUntilNextLocalMidnight(nowEpochMs, utcOffsetMs),
     )
 
@@ -132,7 +122,9 @@ fun blockScreenState(
         appLabel = appLabel,
         reason = cause.reason,
         breakLevel = cause.breakLevel,
-        remainingMillis = cause.endsAtEpochMs?.let { (it - nowEpochMs).coerceAtLeast(0L) },
+        remainingMillis = (if (cause.displayEnd != null) cause.displayEnd.endsAtEpochMs else cause.endsAtEpochMs)
+            ?.let { (it - nowEpochMs).coerceAtLeast(0L) },
+        combinedEnd = cause.displayEnd != null,
         breakWaitRemainingMillis = breakWait,
         breakWaitTotalMillis = breakWaitTotal,
         emergencyPassAvailable = emergencyPassAvailable,

@@ -4,7 +4,17 @@ import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.model.BreakSessionState
 import com.flint.peakfocus.core.model.EmergencyPassState
 import com.flint.peakfocus.core.model.OpenCountState
+import com.flint.peakfocus.core.model.FocusSnapshot
+import com.flint.peakfocus.core.model.FocusMutation
+import com.flint.peakfocus.core.model.StorageState
+import com.flint.peakfocus.core.model.StorageFailure
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+
+sealed interface FocusCommit<out R> {
+    data class Committed<R>(val snapshot: FocusSnapshot, val result: R) : FocusCommit<R>
+    data class Unavailable(val reason: StorageFailure) : FocusCommit<Nothing>
+}
 
 /**
  * Observable persistence for the focus-discipline state machines: the default break level,
@@ -19,6 +29,18 @@ import kotlinx.coroutines.flow.Flow
  * identical across both detection paths.
  */
 interface FocusStateStore {
+
+    val state: Flow<StorageState<FocusSnapshot>> get() = combine(
+        defaultBreakLevel, emergencyPass, breakSession, openCounts,
+    ) { level, pass, session, counts -> FocusSnapshot(level, pass, session, counts) }.withReadiness()
+
+    /**
+     * Pure reducer. Success follows durable consumption + receipt commit; revision is store-owned.
+     * The persisted request-retention watermark may advance but must never rewind.
+     */
+    suspend fun <R> transact(transform: (FocusSnapshot) -> FocusMutation<R>): FocusCommit<R> {
+        error("Atomic focus updates are not supported by this store")
+    }
 
     /** Break level preselected for new rules/limits; defaults to [BreakLevel.EASY]. */
     val defaultBreakLevel: Flow<BreakLevel>

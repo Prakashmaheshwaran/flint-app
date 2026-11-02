@@ -2,6 +2,8 @@ package com.flint.peakfocus.feature.settings
 
 import com.flint.peakfocus.blocking.resilience.HealthLevel
 import com.flint.peakfocus.blocking.resilience.HealthStatus
+import com.flint.peakfocus.blocking.engine.BrowserAddressBars
+import com.flint.peakfocus.blocking.engine.WebCoverage
 
 /**
  * Pure mapping from blocking-resilience's [HealthStatus] to what the settings screen renders.
@@ -49,6 +51,13 @@ data class BannerUi(
 
 object BlockingHealthUi {
 
+    /** Short glance notes for detector degraded reasons; null when no short note applies. */
+    fun shortReasonNote(reason: String): String? = when (reason) {
+        "path-b-backup-unavailable" -> "Backup blocking off: Usage access is missing"
+        "time-limits-need-usage-access" -> "Time limits can't measure app use without Usage access"
+        else -> null
+    }
+
     /**
      * Stable order: detection paths first (primary, then fallback pieces), then survival,
      * then visibility (the 13+-only notifications row appends last — it is the only row whose
@@ -62,10 +71,17 @@ object BlockingHealthUi {
             title = "Accessibility service",
             role = "Instant app and website blocking",
             disclosure = "Flint's accessibility service detects which app is in the foreground " +
-                "and — for website blocking — reads the web address shown in your browser. " +
+                "and reads web addresses from known browser address bars for website blocking. " +
+                "While a website rule is active, it re-reads supported browsers' address bars " +
+                "when a page changes. Android also sends page-change signals from other apps; " +
+                "Flint ignores those without reading their content. " +
+                "Address-bar URLs stay in memory; reading stops if Accessibility is off. " +
+                "App and screen class names identify the foreground app. " +
                 "Flint uses this only to enforce the blocks you set up. Everything stays on " +
-                "your device; it is never sent off your device, shared, or sold.",
-            fixLabel = "Open Accessibility settings",
+                "your device; it is never sent off your device, shared, or sold. Review the " +
+                "full disclosure before choosing " +
+                "whether to open Android Settings.",
+            fixLabel = "Review Accessibility access",
         ),
         PermissionRowUi(
             kind = PermissionKind.USAGE_ACCESS,
@@ -120,26 +136,49 @@ object BlockingHealthUi {
         },
     )
 
-    fun banner(status: HealthStatus): BannerUi = when (status.level) {
-        HealthLevel.HEALTHY -> BannerUi(
-            level = HealthLevel.HEALTHY,
-            headline = "Blocking is healthy",
-            body = "Both detection paths, the block screen, and the battery exemption are all " +
-                "in place. If blocking still stops on your phone, work through the " +
-                "manufacturer steps below.",
-        )
-        HealthLevel.DEGRADED -> BannerUi(
-            level = HealthLevel.DEGRADED,
-            headline = "Blocking works, but it isn't protected",
-            body = degradedBody(status),
-        )
-        HealthLevel.BROKEN -> BannerUi(
-            level = HealthLevel.BROKEN,
-            headline = "Blocking is off",
-            body = "Flint currently has no way to detect or block anything. Re-grant access " +
-                "below — enabling the accessibility service alone is enough to restore " +
-                "blocking.",
-        )
+    fun banner(status: HealthStatus): BannerUi {
+        val banner = when (status.level) {
+            HealthLevel.HEALTHY -> BannerUi(
+                level = HealthLevel.HEALTHY,
+                headline = "App blocking is healthy",
+                body = "Both detection paths, the block screen, and the battery exemption are all " +
+                    "in place. If blocking still stops on your phone, work through the " +
+                    "manufacturer steps below.",
+            )
+            HealthLevel.DEGRADED -> BannerUi(
+                level = HealthLevel.DEGRADED,
+                headline = "Blocking works, but it isn't protected",
+                body = degradedBody(status),
+            )
+            HealthLevel.BROKEN -> BannerUi(
+                level = HealthLevel.BROKEN,
+                headline = "Blocking is off",
+                body = "Flint currently has no way to detect or block anything. Re-grant access " +
+                    "below — enabling the accessibility service alone is enough to restore " +
+                    "blocking.",
+            )
+        }
+        return banner.copy(body = banner.body + "\n\n" + websiteCoverage(status))
+    }
+
+    /** Additive health information; no new permission action or alternate enable route. */
+    fun websiteCoverage(status: HealthStatus): String {
+        val observation = when (val coverage = status.websiteCoverage) {
+            WebCoverage.NotRequired -> "No website block is active now."
+            WebCoverage.AwaitingBrowser -> "Website coverage is awaiting confirmation from a supported browser."
+            WebCoverage.Paused -> "Website blocks paused: website rules need Accessibility."
+            is WebCoverage.Available -> "Last browser check: address bar readable in ${coverage.browser.displayName}."
+            is WebCoverage.Degraded -> "Last browser check: website blocking can't read ${coverage.browser.displayName}'s address bar."
+            is WebCoverage.Unconfirmed -> "Last browser check: Flint hasn't been able to confirm it can read ${coverage.browser.displayName}'s " +
+                "address bar; website rules may not apply there."
+            is WebCoverage.Unsupported -> "Last website check: website blocking unavailable in ${coverage.displayName}: " +
+                if (coverage.isBrowser) "unsupported browser." else "unsupported link handler."
+        }
+        return observation + "\nKnown browsers (not verified on this device): " +
+            BrowserAddressBars.supportedBrowsers.joinToString { it.displayName } +
+            ". Browser updates, hidden address bars and private pages can reduce coverage; " +
+            "support depends on a readable address bar. Other browsers and the usage-access backup " +
+            "path do not filter websites. Allow-list mode uses the app list and ignores websites."
     }
 
     /** Names exactly what is missing, built from the status facts — JVM-tested per case. */

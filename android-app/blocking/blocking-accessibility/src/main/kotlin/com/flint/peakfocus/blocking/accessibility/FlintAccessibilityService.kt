@@ -1,26 +1,41 @@
 package com.flint.peakfocus.blocking.accessibility
 
 import android.accessibilityservice.AccessibilityService
+import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.PixelFormat
+import android.net.Uri
+import android.os.PowerManager
+import android.os.SystemClock
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.core.content.ContextCompat
 import com.flint.peakfocus.blocking.engine.BlockDecisionEngine
 import com.flint.peakfocus.blocking.engine.BrowserAddressBars
-import com.flint.peakfocus.blocking.engine.ForegroundSurface
+import com.flint.peakfocus.blocking.engine.BrowserWindow
+import com.flint.peakfocus.blocking.engine.UrlReadThrottle
+import com.flint.peakfocus.blocking.engine.WebsiteRulePolicy
+import com.flint.peakfocus.blocking.engine.EvaluationTimer
+import com.flint.peakfocus.blocking.engine.NextEvaluationBoundary
 import com.flint.peakfocus.blocking.engine.IsoWeekday
-import com.flint.peakfocus.blocking.engine.UninstallGuard
 import com.flint.peakfocus.blocking.overlay.BlockScreenCoordinator
-import com.flint.peakfocus.blocking.overlay.NeverBlockSurfaces
+import com.flint.peakfocus.blocking.overlay.TrustedTimeLimitReader
+import com.flint.peakfocus.blocking.overlay.TrustedTimeLimitBudget
+import com.flint.peakfocus.blocking.overlay.TimeLimitForegroundSession
 import com.flint.peakfocus.blocking.overlay.ruleBlockCause
-import com.flint.peakfocus.blocking.overlay.uninstallGuardBlockCause
+import com.flint.peakfocus.blocking.resilience.WebsiteCoverageHealth
 import com.flint.peakfocus.core.data.BlocklistStore
 import com.flint.peakfocus.core.data.LimitStore
 import com.flint.peakfocus.core.data.UsageQuery
 import com.flint.peakfocus.core.model.ActiveRulesHolder
 import com.flint.peakfocus.core.model.Verdict
+import com.flint.peakfocus.core.model.EnforcementSignals
+import java.time.ZoneId
 import java.util.Calendar
 import java.util.TimeZone
 import kotlinx.coroutines.CoroutineScope
@@ -30,6 +45,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Path A — the primary, event-driven detector and the only source of browser URLs.
@@ -42,15 +58,18 @@ import kotlinx.coroutines.launch
  * enforcement behavior. The [BlockScreenCoordinator] (blocking-overlay) supplies the screen,
  * the 1-second clock, and the break / Emergency-Pass / Open-Limit accounting shared with Path B.
  *
- * Decision order per foreground change (existing checks preserved, new ones layered in):
- *  0. [UninstallGuard] — while a Hardcore window is active, the system uninstaller and
- *     Settings-pages-about-Flint are shielded (anti-bypass). Deliberately ahead of the
- *     break/pass stand-down: an exemption granted on some *other* rule must not open the
- *     uninstall window, and Hardcore itself never grants breaks;
- *  1. Gather daily Time Limit, rule and Open Limit candidates;
- *  2. the shared coordinator selects the strongest protection, then applies exemptions;
+ * Decision order per foreground change:
+ *  1. the enforcement safety floor ([BlockScreenCoordinator.isSafetyFloor]: dialer, emergency,
+ *     home apps, Settings/permission recovery, Flint) — no ordinary cause reaches those;
+ *  2. Gather daily Time Limit, rule and Open Limit candidates;
+ *  3. the shared coordinator selects the strongest protection, then applies exemptions;
  *     ordinary breaks never bypass a currently applicable Hardcore restriction;
- *  3. count a permitted open only when no other restriction/exemption controls access.
+ *  4. count a permitted open only when no other restriction/exemption controls access.
+ *
+ * No uninstall/disable guard (protection contract ADR-012 §10, Play Accessibility API policy):
+ * this service never intercepts uninstallers, Settings, Accessibility disable, app info,
+ * force-stop or permission revocation, and never reads Settings window text. Turning access off
+ * reduces or stops protection, and that stays the user's call.
  *
  * Compliance: NOT an accessibility tool; the in-app consent flow (feature-onboarding) must run
  * before the user enables this. On connect it loads the persisted blocklist.
@@ -58,34 +77,62 @@ import kotlinx.coroutines.launch
 class FlintAccessibilityService : AccessibilityService() {
 
     private val engine = BlockDecisionEngine()
-    private val uninstallGuard = UninstallGuard()
     private var serviceScope: CoroutineScope? = null
     private var coordinator: BlockScreenCoordinator? = null
+    private val timeReader by lazy { TrustedTimeLimitReader.create(this) }
+    private var timeForeground: TimeLimitForegroundSession? = null
 
-    /** One-shot re-check armed while a time-limited app sits in front (see [armTimeLimitRecheck]). */
-    private var timeLimitRecheck: Job? = null
-
-    /** Runtime-resolved default launcher + dialer — never shielded (see [NeverBlockSurfaces]). */
-    @Volatile private var neverBlock: Set<String> = emptySet()
-
-    /** Flint's own launcher label — what the uninstall guard scans Settings text for. */
-    private val selfLabel: String by lazy { labelFor(packageName) }
+    /** One independent deadline for schedules, expiry, budgets and local day rollover. */
+    private var boundaryTimer: EvaluationTimer? = null
+    private var stopSignals: (() -> Unit)? = null
+    private var stopRules: (() -> Unit)? = null
+    private var lastForegroundUrl: String? = null
+    private var evaluationJob: Job? = null
+    private var lastNonFloorPackage: String? = null
+    private var lastBudgetDeadlineMs: Long? = null
+    private var screenReceiverRegistered = false
+    private var urlThrottle: UrlReadThrottle<BrowserWindow>? = null
+    private var browserWindow: BrowserWindow? = null
+    private var mainBrowserWindow: BrowserWindow? = null
+    private var urlBarIndex = 0
+    private var contentReadRequested = false
+    private var websiteRulesActive = false
+    private var overlayAttached = false
+    private var overlayWindowId: Int? = null
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_SCREEN_OFF) timeForeground?.checkpoint(null)
+            reevaluateForeground()
+        }
+    }
 
     /** Last package seen in the foreground (Flint + system surfaces included — the open-limit
      *  policy interprets those transitions itself, e.g. shield bounces are not re-opens). */
     @Volatile private var lastForegroundPackage: String? = null
 
-    /** Class name from the last window event — [reevaluateForeground] reuses it because a
-     *  root node's own className is a View class ("android.widget.FrameLayout"), never the
-     *  Activity, and would blind the uninstall guard's class-hint gate. */
-    @Volatile private var lastForegroundClassName: String? = null
-
     override fun onServiceConnected() {
         super.onServiceConnected()
-        neverBlock = NeverBlockSurfaces.resolve(this)
+        releaseDetection()
         BlocklistStore(this).load()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         serviceScope = scope
+        timeForeground = TimeLimitForegroundSession.create(this, TimeLimitForegroundSession.Path.A)
+        urlThrottle = UrlReadThrottle(
+            nowMs = SystemClock::uptimeMillis,
+            post = { delayMs, callback ->
+                val job = scope.launch { delay(delayMs); callback() }
+                ({ job.cancel() })
+            },
+            read = ::onUrlRead,
+        )
+        boundaryTimer = EvaluationTimer(
+            nowMs = System::currentTimeMillis,
+            post = { delayMs, callback ->
+                val job = scope.launch { delay(delayMs); callback() }
+                ({ job.cancel() })
+            },
+            evaluate = ::reevaluateForeground,
+        )
         coordinator = BlockScreenCoordinator(
             context = this,
             scope = scope,
@@ -93,127 +140,227 @@ class FlintAccessibilityService : AccessibilityService() {
             // Event-driven path: when a break/pass runs out, re-check the app the user is
             // still sitting in — no window event fires just because time passed.
             onExemptionExpired = { reevaluateForeground() },
+            onEnforcementChanged = { scope.launch { reevaluateForeground() } },
         )
+        stopRules = ActiveRulesHolder.subscribe { scope.launch { reevaluateForeground() } }
+        stopSignals = EnforcementSignals.detectors.subscribe {
+            scope.launch {
+                UsageQuery.invalidate()
+                reevaluateForeground()
+            }
+        }
+        ContextCompat.registerReceiver(this, screenReceiver, IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }, ContextCompat.RECEIVER_NOT_EXPORTED)
+        screenReceiverRegistered = true
+        // Main-thread listeners stand Path B down synchronously before this path can shield.
+        EnforcementSignals.detectors.connected(this)
+        reevaluateForeground()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        event ?: return
         val pkg = event.packageName?.toString() ?: return
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+            // Filter before root access, package queries, budget queries or any evaluation.
+            if (!BrowserAddressBars.isBrowser(pkg) || pkg != lastForegroundPackage) return
+            if (browserWindow != BrowserWindow(pkg, event.windowId)) return
+            val active = domainsActive()
+            if (active) refreshWebsiteCoverage(pkg, active, contentEvent = true)
+            return
+        }
+        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val previous = lastForegroundPackage
-        lastForegroundPackage = pkg
-        lastForegroundClassName = event.className?.toString()
+        val className = event.className?.toString()
         if (pkg == packageName) {
-            // Our own windows. The overlay's attach fires a self event too, so hiding on
-            // every self event would dismiss the shield the instant it shows — but the app's
-            // MAIN ACTIVITY coming to front (launcher, notification, adb) is a deliberate
-            // visit, and without this the shield lingers over Flint's own UI (seen live on
-            // the emulator). The activity class is package-derived, never hard-coded.
-            if (lastForegroundClassName == "$packageName.MainActivity") {
+            // Attaching our overlay must not replace its underlying foreground target. A real
+            // MainActivity visit is different: stand the shield down, retaining a bounded
+            // recovery check in case the underlying app returns without a fresh window event.
+            if (className == "$packageName.MainActivity") {
+                timeForeground?.checkpoint(null)
+                lastForegroundPackage = pkg
+                lastForegroundUrl = null
+                clearBrowserWindow()
+                WebsiteCoverageHealth.foreground(null, domainsActive(), false)
+                boundaryTimer?.cancel()
+                evaluationJob?.cancel()
                 coordinator?.hideIfShown()
+                armFloorRecovery()
+            } else if (overlayAttached) {
+                val top = rootIdentity()
+                if (top != null && top.packageName == packageName && top.windowId == event.windowId) {
+                    overlayWindowId = event.windowId
+                }
             }
             return
         }
-        evaluateForeground(previous, pkg, event.className?.toString())
+        if (pkg != previous) lastForegroundUrl = null
+        lastForegroundPackage = pkg
+        val window = BrowserWindow(pkg, event.windowId)
+        if (window != browserWindow) {
+            clearBrowserWindow()
+            if (BrowserAddressBars.isBrowser(pkg)) browserWindow = window
+        }
+        // Activity events identify application windows without guessing per-browser class
+        // names. Root fallback also works after restart; absent bars are informational.
+        if (BrowserAddressBars.isBrowser(pkg) && className != null && runCatching {
+                @Suppress("DEPRECATION")
+                packageManager.getActivityInfo(ComponentName(pkg, className), 0)
+            }.isSuccess) mainBrowserWindow = window
+        evaluateForeground(previous, pkg)
     }
 
-    /** Re-run the decision pipeline for whatever is in front (used after exemption expiry). */
-    private fun reevaluateForeground() {
-        val rootPkg = runCatching { rootInActiveWindow?.packageName?.toString() }.getOrNull()
-        val pkg = rootPkg
+    /** Re-run for the current app after a boundary, publication, boot or clock signal. */
+    private fun reevaluateForeground() = reconcileForeground(refreshUrl = true)
+
+    /** Content callbacks must use the live root without scheduling a second URL read. */
+    private fun reconcileForeground(refreshUrl: Boolean, activeDomains: Boolean? = null) {
+        val live = rootIdentity()
+        if (!refreshUrl && live == null) return
+        val rootPkg = live?.packageName
+        val ownOverlay = live != null && rootPkg == packageName && overlayAttached &&
+            (overlayWindowId == null || overlayWindowId == live.windowId)
+        if (ownOverlay && overlayWindowId == null) overlayWindowId = live?.windowId
+        val pkg = rootPkg?.takeUnless { ownOverlay }
             ?: lastForegroundPackage
             ?: return
-        if (pkg == packageName) return
-        // The last event's class name still describes this window as long as the package
-        // hasn't changed underneath us; a mismatch means we know nothing about the class.
-        val className = lastForegroundClassName.takeIf { rootPkg == null || rootPkg == lastForegroundPackage }
-        // previous == pkg on purpose: a re-check is not a new "open" of the app.
-        evaluateForeground(previousPackage = pkg, pkg = pkg, windowClassName = className)
-    }
-
-    private fun evaluateForeground(previousPackage: String?, pkg: String, windowClassName: String?) {
-        val coordinator = coordinator ?: return // events never precede onServiceConnected
-        timeLimitRecheck?.cancel() // every fresh decision invalidates a pending budget re-check
-        // Default launcher/dialer are never shielded (allow-list windows included) — blocking
-        // the launcher loops the Home button into the shield; the dialer is emergency calling.
-        if (pkg in neverBlock) {
-            coordinator.hideIfShown()
+        if (pkg == packageName) {
+            timeForeground?.checkpoint(null)
+            lastForegroundPackage = pkg
+            clearBrowserWindow()
+            WebsiteCoverageHealth.foreground(null, activeDomains ?: domainsActive(), false)
+            evaluationJob?.cancel()
+            coordinator?.hideIfShown()
+            armFloorRecovery()
             return
         }
-        val now = System.currentTimeMillis()
-        val utcOffset = TimeZone.getDefault().getOffset(now).toLong()
-        val cal = Calendar.getInstance()
-        val nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
-        // Schedule.daysOfWeek is ISO-numbered (1=Mon…7=Sun — core-model's documented contract);
-        // Calendar.DAY_OF_WEEK is 1=Sun…7=Sat. Convert before handing to the engine/guard.
-        val weekday = IsoWeekday.fromCalendar(cal.get(Calendar.DAY_OF_WEEK))
-
-        // 0) Uninstall guard — checked ahead of the break/pass stand-down so an exemption
-        //    granted on some other rule can never open the uninstall window (see class KDoc).
-        //    The isArmed pre-gate keeps the node-text sweep (binder round-trips) off the
-        //    event thread for every user without an active Hardcore window.
-        if (uninstallGuard.isCandidateSurface(pkg) &&
-            uninstallGuard.isArmed(ActiveRulesHolder.rules, nowMin, weekday, now)
-        ) {
-            val surface = ForegroundSurface(
-                packageName = pkg,
-                className = windowClassName,
-                visibleText = if (uninstallGuard.needsWindowText(pkg)) collectVisibleText() else emptyList(),
-            )
-            val armingRule =
-                uninstallGuard.judge(surface, packageName, selfLabel, ActiveRulesHolder.rules, nowMin, weekday, now)
-            if (armingRule != null) {
-                coordinator.showBlocked(pkg, labelFor(pkg), uninstallGuardBlockCause(armingRule, now, utcOffset))
-                return
+        val contextChanged = pkg != lastForegroundPackage || (live != null && rootPkg == pkg &&
+            BrowserAddressBars.isBrowser(pkg) && live != browserWindow)
+        if (contextChanged) {
+            clearBrowserWindow()
+            if (rootPkg == pkg && BrowserAddressBars.isBrowser(pkg)) {
+                browserWindow = live
+                // A foreground root is sufficient for informational Unconfirmed coverage.
+                // Degraded additionally requires a prior URL read and visible address node.
+                mainBrowserWindow = browserWindow
             }
+            if (!refreshUrl) WebsiteCoverageHealth.foreground(
+                browserWindow ?: BrowserWindow(pkg, -1), activeDomains ?: domainsActive(), false,
+            )
         }
+        lastForegroundPackage = pkg
+        // A recheck is not a new open; the shared policy keeps the current visit intact.
+        evaluateForeground(previousPackage = pkg, pkg = pkg, refreshUrl = refreshUrl, activeDomains = activeDomains)
+    }
 
-        // Time Limit: blocked once today's foreground time reaches the app's daily budget —
-        //    the stricter of the legacy store and the Limit editor's DataStore limits (read via
-        //    the coordinator's snapshot; they were authored-but-never-enforced before that).
-        //    TimeLimit carries no tier, so the store-wide default break level applies.
-        val limitMin = listOfNotNull(
-            LimitStore(this).limitMinutes(pkg),
-            coordinator.timeLimitMinutes(pkg),
-        ).minOrNull()
-        val timeLimitSpent = limitMin != null && UsageQuery.dailyForegroundMillis(this, pkg) >= limitMin * 60_000L
+    private fun evaluateForeground(
+        previousPackage: String?, pkg: String, refreshUrl: Boolean = true, activeDomains: Boolean? = null,
+    ) {
+        val coordinator = coordinator ?: return // events never precede onServiceConnected
+        val active = activeDomains ?: domainsActive()
+        if (refreshUrl) refreshWebsiteCoverage(pkg, active)
+        evaluationJob?.cancel()
+        evaluationJob = serviceScope?.launch {
+            boundaryTimer?.cancel() // each decision replaces the one pending deadline
+            // 1) Safety floor (allow-list windows included): blocking the launcher loops the Home
+            //    button into the shield; the dialer and emergency surfaces are emergency calling;
+            //    Settings/permission pages are how protection is recovered. The coordinator applies
+            //    the same floor again; this early return also skips the budget query.
+            if (coordinator.isSafetyFloor(pkg) || !isInteractive()) {
+                // Enqueue the captured departure before releasing the surface. Its visit
+                // token prevents even a failed write from charging floor/screen-off time.
+                timeForeground?.checkpoint(null)
+                coordinator.hideIfShown()
+                armFloorRecovery()
+                return@launch
+            }
+            if (pkg != lastNonFloorPackage) lastBudgetDeadlineMs = null
+            lastNonFloorPackage = pkg
 
-        // Inspect rules even when a weaker time limit or an old ordinary break applies.
-        val url = if (BrowserAddressBars.isBrowser(pkg)) readUrl(rootInActiveWindow, pkg) else null
-        val verdict = engine.decide(pkg, url, ActiveRulesHolder.rules, packageName, nowMin, weekday, now)
-        val ruleCause = (verdict as? Verdict.Block)?.let {
-            ruleBlockCause(ActiveRulesHolder.rules.firstOrNull { rule -> rule.id == it.ruleId }, now, utcOffset)
+            // Both paths use the same saved period and committed floor. Legacy budgets stay
+            // a stricter fallback; a failed query never becomes artificial MAX exhaustion.
+            val minutes = listOfNotNull(LimitStore(this@FlintAccessibilityService).limitMinutes(pkg),
+                coordinator.timeLimitMinutes(pkg)).minOrNull()
+            val checkpoint = timeForeground?.checkpoint(pkg.takeIf { minutes != null && !coordinator.hasVisibleShield(pkg) })
+            if (minutes == 0) {
+                // Zero is already known exhausted: do not delay its first shield on IO.
+                // The serialized read below supplies its trusted reset before daily rights
+                // are available; this provisional display creates no period or grant.
+                renderDecision(coordinator, previousPackage, pkg, active,
+                    TrustedTimeLimitBudget(pkg, 0, null, 0L, TrustedTimeLimitBudget.Measurement.NOT_NEEDED))
+            }
+            val budget = minutes?.let { withContext(Dispatchers.IO) { timeReader.read(pkg, it) { checkpoint?.await() } } }
+            val now = System.currentTimeMillis()
+            val remaining = budget?.remainingMs
+            lastBudgetDeadlineMs = remaining?.let { now + it.coerceAtLeast(0L) }
+
+            renderDecision(coordinator, previousPackage, pkg, active, budget)
+            // A configured but unmeasured budget retains a recovery check without blocking.
+            val boundaryBudget = if (budget != null) minOf(remaining?.takeIf { it > 0L } ?: TIME_OBSERVATION_CADENCE_MS,
+                TIME_OBSERVATION_CADENCE_MS) else null
+            armBoundary(pkg, now, boundaryBudget,
+                retryUsage = budget != null && remaining == null,
+                resetRemainingMs = budget?.resetRemainingMs(com.flint.peakfocus.core.datastore.ProtectionClock.now()))
         }
-        val cause = coordinator.evaluateBlockCause(previousPackage, pkg, ruleCause, timeLimitSpent, url)
-        if (cause != null) {
-            coordinator.showBlocked(pkg, labelFor(pkg), cause)
-        } else {
+    }
+
+    private fun renderDecision(coordinator: BlockScreenCoordinator, previous: String?, pkg: String,
+        domainsActive: Boolean, budget: TrustedTimeLimitBudget?) {
+        val now = System.currentTimeMillis()
+        val cal = Calendar.getInstance().apply { timeInMillis = now }
+        val rules = ActiveRulesHolder.rules
+        val url = lastForegroundUrl.takeIf { BrowserAddressBars.isBrowser(pkg) && domainsActive }
+        val verdict = engine.decide(pkg, url, rules, packageName,
+            cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE),
+            IsoWeekday.fromCalendar(cal.get(Calendar.DAY_OF_WEEK)), now)
+        val ruleCause = (verdict as? Verdict.Block)?.let { verdict ->
+            ruleBlockCause(rules.firstOrNull { it.id == verdict.ruleId }, now, TimeZone.getDefault().getOffset(now).toLong())
+        }
+        val cause = coordinator.evaluateBlockCause(previous, pkg, ruleCause,
+            timeLimitSpent = false, foregroundUrl = url, timeBudget = budget)
+        if (cause == null) {
             coordinator.hideIfShown()
-            if (limitMin != null && !timeLimitSpent) armTimeLimitRecheck(pkg, limitMin)
+            if (budget != null) timeForeground?.checkpoint(pkg)
+        } else {
+            // A visible Flint shield is not time using the underlying application.
+            timeForeground?.checkpoint(null)
+            coordinator.showBlocked(pkg, labelFor(pkg), cause)
         }
     }
 
-    /**
-     * Path A is event-driven: nothing fires when a daily budget crosses mid-session, so a
-     * user parked inside a time-limited app would only hit the block on their next app
-     * switch (Path B's 1s poll catches it when that path is active instead). Arm a one-shot
-     * re-check for the moment the remaining budget runs out (+ slack for UsageStats bucket
-     * lag). Battery-honest: at most one pending job, only while a limited app is in front,
-     * cancelled by the next foreground decision. If the bucket still reads under the budget
-     * at re-check time, the Allow path re-arms with the fresh remainder — a self-correcting
-     * loop whose steps are never shorter than the true remaining time.
-     */
-    private fun armTimeLimitRecheck(pkg: String, limitMin: Int) {
-        val remaining = limitMin * 60_000L - UsageQuery.dailyForegroundMillis(this, pkg)
-        if (remaining <= 0L) return // next event blocks anyway; don't spin
-        timeLimitRecheck = serviceScope?.launch {
-            delay(remaining + RECHECK_SLACK_MS)
-            reevaluateForeground()
-        }
+    private fun armBoundary(pkg: String, now: Long, remainingBudgetMs: Long?, retryUsage: Boolean = false,
+        resetRemainingMs: Long? = null) {
+        val interactive = isInteractive()
+        boundaryTimer?.arm(NextEvaluationBoundary.next(
+            now, ZoneId.systemDefault(), pkg, ActiveRulesHolder.rules, remainingBudgetMs,
+            interactive = interactive,
+            // Failed reads or missing access recover without an app switch, only while awake.
+            boundedRecovery = retryUsage && interactive,
+            budgetResetRemainingMs = resetRemainingMs,
+            budgetUsesSavedReset = true,
+        ))
     }
+
+    private fun armFloorRecovery() {
+        val pkg = lastNonFloorPackage ?: return
+        val now = System.currentTimeMillis()
+        boundaryTimer?.arm(NextEvaluationBoundary.next(
+            now, ZoneId.systemDefault(), pkg, ActiveRulesHolder.rules,
+            lastBudgetDeadlineMs?.let { it - now },
+            interactive = isInteractive(), boundedRecovery = true,
+        ))
+    }
+
+    private fun isInteractive(): Boolean =
+        (getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
 
     // MARK: Enforcement surface (accessibility overlay window)
 
     private inner class AccessibilityOverlayHost : BlockScreenCoordinator.SurfaceHost {
+        private var mountedView: View? = null
+        private var recoveryFocusYielded: Boolean? = false
         override fun attach(view: View): Boolean {
             val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
             val params = WindowManager.LayoutParams(
@@ -223,13 +370,31 @@ class FlintAccessibilityService : AccessibilityService() {
                 0,
                 PixelFormat.OPAQUE,
             )
-            return runCatching { wm.addView(view, params) }.isSuccess
+            return runCatching { wm.addView(view, params) }.isSuccess.also {
+                if (it) { overlayAttached = true; mountedView = view; recoveryFocusYielded = false }
+            }
         }
 
         override fun detach(view: View) {
             runCatching {
                 (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(view)
             }
+            overlayAttached = false
+            overlayWindowId = null
+            if (mountedView === view) { mountedView = null; recoveryFocusYielded = false }
+        }
+
+        override fun setRecoveryHandoffFocus(enabled: Boolean): Boolean {
+            val view = mountedView ?: return !enabled
+            val old = view.layoutParams as? WindowManager.LayoutParams ?: return false
+            val locallyYielded = old.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE != 0
+            if (recoveryFocusYielded == enabled && locallyYielded == enabled) return true
+            val flags = if (enabled) old.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                else old.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+            val next = WindowManager.LayoutParams().apply { copyFrom(old); this.flags = flags }
+            return runCatching { (getSystemService(Context.WINDOW_SERVICE) as WindowManager).updateViewLayout(view, next) }
+                .onSuccess { recoveryFocusYielded = enabled }
+                .onFailure { recoveryFocusYielded = null }.isSuccess
         }
 
         override fun goHome() {
@@ -242,74 +407,160 @@ class FlintAccessibilityService : AccessibilityService() {
         pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
     }.getOrDefault(pkg)
 
-    // MARK: Window-text collection (uninstall guard)
-
-    /**
-     * Best-effort sweep of the text visible in the active window — node text plus content
-     * descriptions, breadth-first, capped at [MAX_TEXT_NODES] so a pathological Settings
-     * hierarchy can't stall the event thread. Only called when the guard is armed AND says
-     * the surface needs text ([UninstallGuard.needsWindowText]). An empty result makes the
-     * guard judge on the class name alone — fail-closed for the protected screen families,
-     * open elsewhere ([UninstallGuard.isProtectedSettingsSurface]'s documented contract).
-     */
-    private fun collectVisibleText(): List<String> {
-        val root = runCatching { rootInActiveWindow }.getOrNull() ?: return emptyList()
-        val texts = mutableListOf<String>()
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        var visited = 0
-        while (queue.isNotEmpty() && visited < MAX_TEXT_NODES) {
-            val node = queue.removeFirst()
-            visited++
-            node.text?.toString()?.takeIf { it.isNotBlank() }?.let(texts::add)
-            node.contentDescription?.toString()?.takeIf { it.isNotBlank() }?.let(texts::add)
-            for (i in 0 until node.childCount) {
-                runCatching { node.getChild(i) }.getOrNull()?.let(queue::add)
-            }
-        }
-        return texts
-    }
-
     // MARK: URL reading
 
-    /**
-     * Address-bar text for [pkg], or null when this browser exposes none. Only [pkg]'s own ids
-     * are tried — a Chrome id can never resolve inside Firefox. Node lookups run against a
-     * window that may go stale mid-read, so they are allowed to fail rather than kill the service.
-     */
-    private fun readUrl(root: AccessibilityNodeInfo?, pkg: String): String? {
-        root ?: return null
-        for (id in BrowserAddressBars.urlBarViewIds(pkg)) {
-            val text = runCatching {
-                root.findAccessibilityNodeInfosByViewId(id)?.firstOrNull()?.text?.toString()
-            }.getOrNull()
-            if (!text.isNullOrBlank()) return text
+    private fun domainsActive(): Boolean = WebsiteRulePolicy.hasActiveDomains(
+        ActiveRulesHolder.rules, System.currentTimeMillis(), ZoneId.systemDefault(),
+    )
+
+    private fun refreshWebsiteCoverage(pkg: String, active: Boolean, contentEvent: Boolean = false) {
+        websiteRulesActive = active
+        // Package-specific intent resolution, only on foreground reconciliations with website
+        // rules. No inventory enumeration or content inspection of unsupported applications.
+        val handler = active && !BrowserAddressBars.isBrowser(pkg) && isHttpHandler(pkg)
+        WebsiteCoverageHealth.foreground(
+            browserWindow ?: BrowserWindow(pkg, -1), active, handler,
+            handlerLabel = if (handler) labelFor(pkg).takeUnless { it == pkg } ?: "This app" else null,
+            isBrowserHandler = handler && resolvesAsBrowser(pkg),
+        )
+        if (!active || !BrowserAddressBars.isBrowser(pkg)) {
+            urlThrottle?.cancel()
+            lastForegroundUrl = null
+            return
         }
-        return null
+        val window = browserWindow ?: run {
+            val live = rootIdentity() ?: return
+            if (live.packageName != pkg) return
+            live.also { browserWindow = it; mainBrowserWindow = it }
+        }
+        WebsiteCoverageHealth.foreground(window, true, false)
+        contentReadRequested = contentEvent
+        try { urlThrottle?.request(window) } finally { contentReadRequested = false }
+    }
+
+    private fun isHttpHandler(pkg: String): Boolean = listOf("https", "http").any { scheme ->
+        runCatching {
+            @Suppress("DEPRECATION")
+            packageManager.queryIntentActivities(
+                Intent(Intent.ACTION_VIEW, Uri.parse("$scheme://example.com"))
+                    .addCategory(Intent.CATEGORY_BROWSABLE).setPackage(pkg), 0,
+            ).any { it.activityInfo?.packageName == pkg }
+        }.getOrDefault(false)
+    }
+
+    private fun resolvesAsBrowser(pkg: String): Boolean = runCatching {
+        @Suppress("DEPRECATION")
+        packageManager.queryIntentActivities(
+            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_BROWSER).setPackage(pkg), 0,
+        ).any { it.activityInfo?.packageName == pkg }
+    }.getOrDefault(false)
+
+    private enum class UrlReadOutcome { CHANGED, UNCHANGED, FOREGROUND_CHANGED }
+
+    private fun onUrlRead(window: BrowserWindow, trailing: Boolean) {
+        val active = if (trailing) domainsActive() else websiteRulesActive
+        val outcome = readBrowserWindow(window, active)
+        // Scrolling still updates coverage and the throttle, but never re-queries usage or
+        // runs the full coordinator while the URL is unchanged. Rule/deadline checks are
+        // independent. A foreign root must reconcile even if the cached URL did not change.
+        if ((trailing || contentReadRequested) && outcome != UrlReadOutcome.UNCHANGED) {
+            reconcileForeground(refreshUrl = false, activeDomains = active)
+        }
+    }
+
+    private fun rootIdentity(): BrowserWindow? {
+        val root = runCatching { rootInActiveWindow }.getOrNull() ?: return null
+        return try {
+            runCatching {
+                root.packageName?.toString()?.let { BrowserWindow(it, root.windowId) }
+            }.getOrNull()
+        } finally { recycle(root) }
+    }
+
+    private fun recycle(node: AccessibilityNodeInfo) {
+        @Suppress("DEPRECATION")
+        runCatching { node.recycle() }
+    }
+
+    /** Exactly one view-id lookup per throttle window; alternate legacy IDs rotate on misses. */
+    private fun readBrowserWindow(window: BrowserWindow, active: Boolean): UrlReadOutcome {
+        if (browserWindow != window || lastForegroundPackage != window.packageName || !active) return UrlReadOutcome.UNCHANGED
+        val root = runCatching { rootInActiveWindow }.getOrNull() ?: return UrlReadOutcome.UNCHANGED
+        return try {
+            // A foreign root never supplies a URL or counts as a miss. Reconcile its live
+            // identity before another decision; our own accessibility overlay keeps its target.
+            if (root.packageName?.toString() != window.packageName || root.windowId != window.windowId) {
+                return if (root.packageName?.toString() == packageName)
+                    UrlReadOutcome.UNCHANGED else UrlReadOutcome.FOREGROUND_CHANGED
+            }
+            val ids = BrowserAddressBars.urlBarViewIds(window.packageName)
+            if (ids.isEmpty()) return UrlReadOutcome.UNCHANGED
+            val id = ids[urlBarIndex % ids.size]
+            val nodes = runCatching { root.findAccessibilityNodeInfosByViewId(id) }.getOrNull().orEmpty()
+            val text = runCatching { nodes.firstOrNull()?.text?.toString()?.takeIf { it.isNotBlank() } }.getOrNull()
+            val nodePresent = nodes.any { runCatching { it.isVisibleToUser }.getOrDefault(false) }
+            nodes.forEach(::recycle)
+            val changed = text != lastForegroundUrl
+            lastForegroundUrl = text
+            if (text == null) urlBarIndex = (urlBarIndex + 1) % ids.size
+            if (text != null) mainBrowserWindow = window // startup/root fallback needs no activity event
+            WebsiteCoverageHealth.addressBarRead(window, text != null, window == mainBrowserWindow, System.currentTimeMillis(), nodePresent)
+            if (changed) UrlReadOutcome.CHANGED else UrlReadOutcome.UNCHANGED
+        } finally { recycle(root) }
+    }
+
+    private fun clearBrowserWindow() {
+        urlThrottle?.cancel()
+        browserWindow = null
+        mainBrowserWindow = null
+        urlBarIndex = 0
+        lastForegroundUrl = null
     }
 
     override fun onInterrupt() = Unit
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
-        coordinator?.hideIfShown()
+        releaseDetection()
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
-        coordinator?.hideIfShown()
-        timeLimitRecheck?.cancel()
-        timeLimitRecheck = null
-        serviceScope?.cancel()
-        serviceScope = null
-        coordinator = null
+        releaseDetection()
         super.onDestroy()
     }
 
-    private companion object {
-        /** Node-visit budget for [collectVisibleText] — plenty for any real Settings page. */
-        const val MAX_TEXT_NODES = 200
+    private fun releaseDetection() {
+        timeForeground?.close()
+        timeForeground = null
+        clearBrowserWindow()
+        urlThrottle = null
+        WebsiteCoverageHealth.reset()
+        stopSignals?.invoke()
+        stopRules?.invoke()
+        stopSignals = null
+        stopRules = null
+        boundaryTimer?.cancel()
+        boundaryTimer = null
+        evaluationJob?.cancel()
+        evaluationJob = null
+        if (screenReceiverRegistered) runCatching { unregisterReceiver(screenReceiver) }
+        screenReceiverRegistered = false
+        coordinator?.hideIfShown()
+        overlayAttached = false
+        overlayWindowId = null
+        serviceScope?.cancel()
+        serviceScope = null
+        coordinator = null
+        lastForegroundPackage = null
+        lastForegroundUrl = null
+        lastNonFloorPackage = null
+        lastBudgetDeadlineMs = null
+        // Hide Path A before the synchronous wake allows Path B to enforce.
+        EnforcementSignals.detectors.disconnected(this)
+    }
 
-        /** Slack past the computed budget expiry — UsageStats buckets update coarsely. */
-        const val RECHECK_SLACK_MS = 5_000L
+    private companion object {
+        // Requests midnight/recovery without inventing a future exhaustion deadline.
+        const val TIME_OBSERVATION_CADENCE_MS = 15_000L
     }
 }

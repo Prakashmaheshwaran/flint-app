@@ -12,6 +12,47 @@ import org.junit.Test
  */
 class BrowserAddressBarsTest {
 
+    @Test fun `matrix v1 pins every package family id and evidence boundary`() {
+        assertEquals(1, BrowserAddressBars.MATRIX_VERSION)
+        val matrix = BrowserAddressBars.supportedBrowsers
+        assertEquals(25, matrix.size)
+        assertEquals(matrix.size, matrix.map { it.packageName }.toSet().size)
+        val expected = mapOf(
+            "com.android.chrome" to "url_bar", "com.chrome.beta" to "url_bar",
+            "com.chrome.dev" to "url_bar", "com.chrome.canary" to "url_bar",
+            "org.chromium.chrome" to "url_bar", "com.brave.browser" to "url_bar",
+            "com.brave.browser_beta" to "url_bar", "com.brave.browser_nightly" to "url_bar",
+            "com.microsoft.emmx" to "url_bar", "com.microsoft.emmx.beta" to "url_bar",
+            "com.microsoft.emmx.canary" to "url_bar", "com.vivaldi.browser" to "url_bar",
+            "com.vivaldi.browser.snapshot" to "url_bar", "com.kiwibrowser.browser" to "url_bar",
+            "org.mozilla.firefox" to "mozac_browser_toolbar_url_view",
+            "org.mozilla.firefox_beta" to "mozac_browser_toolbar_url_view",
+            "org.mozilla.fenix" to "mozac_browser_toolbar_url_view",
+            "org.mozilla.focus" to "mozac_browser_toolbar_url_view,display_url",
+            "com.sec.android.app.sbrowser" to "location_bar_edit_text",
+            "com.sec.android.app.sbrowser.beta" to "location_bar_edit_text",
+            "com.opera.browser" to "url_field", "com.opera.browser.beta" to "url_field",
+            "com.opera.mini.native" to "url_field", "com.opera.gx" to "url_field",
+            "com.duckduckgo.mobile.android" to "omnibarTextInput",
+        )
+        assertEquals(expected.keys, matrix.map { it.packageName }.toSet())
+        matrix.forEach { browser ->
+            assertEquals(expected.getValue(browser.packageName).split(',').map { "${browser.packageName}:id/$it" }, browser.urlBarIds)
+            assertTrue(browser.verifiedAt.contains("2026-10-28"))
+            assertTrue(browser.verifiedAt.contains("unverified"))
+            assertTrue(browser.displayName.isNotBlank())
+            val family = when {
+                browser.packageName.startsWith("org.mozilla") -> BrowserFamily.GECKO
+                browser.packageName.startsWith("com.sec") -> BrowserFamily.SAMSUNG
+                browser.packageName.startsWith("com.opera") -> BrowserFamily.OPERA
+                browser.packageName.startsWith("com.duckduckgo") -> BrowserFamily.DUCKDUCKGO
+                else -> BrowserFamily.CHROMIUM
+            }
+            assertEquals(family, browser.family)
+            assertEquals(browser, BrowserAddressBars.find(browser.packageName))
+        }
+    }
+
     /** Every browser Flint claims to support, from both halves of the table. */
     private val browsers = listOf(
         "com.android.chrome", "com.chrome.beta", "com.chrome.dev", "com.chrome.canary",

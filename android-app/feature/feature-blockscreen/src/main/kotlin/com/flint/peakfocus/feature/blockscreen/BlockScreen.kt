@@ -9,6 +9,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -32,7 +34,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -43,6 +47,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -69,12 +75,17 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -85,6 +96,7 @@ import com.flint.peakfocus.core.common.theme.rememberFlintMark
 import com.flint.peakfocus.core.common.ui.FlintBadge
 import com.flint.peakfocus.core.common.ui.FlintInfoPill
 import com.flint.peakfocus.core.common.ui.rememberFlintHaptics
+import com.flint.peakfocus.core.common.ui.rememberReducedMotion
 import com.flint.peakfocus.core.model.BreakLevel
 import kotlinx.coroutines.launch
 
@@ -135,11 +147,14 @@ fun BlockScreen(
 ) {
     val content = blockScreenContent(state)
     val glowColor = MaterialTheme.colorScheme.primary
+    val reducedMotion = rememberReducedMotion()
 
     // One-shot entrance: the hero (glow + mark) reveals first, the copy staggers in after it,
     // and the exit buttons land last so the message registers before the exits do. The state
     // never returns to false, so the reveal runs exactly once per surface — in both hosts.
-    val entrance = remember { MutableTransitionState(false).apply { targetState = true } }
+    val entrance = remember(reducedMotion) {
+        MutableTransitionState(reducedMotion).apply { targetState = true }
+    }
     val entranceTransition = rememberTransition(entrance, label = "blockEntrance")
     val heroIn = entranceTransition.animateFloat(
         transitionSpec = { tween(FlintMotion.DurationLong, easing = FlintMotion.EasingEmphasized) },
@@ -148,7 +163,8 @@ fun BlockScreen(
 
     // Mark and aura breathe as one organism: a single infinite fraction drives the glow's
     // alpha/radius and the mark's alpha/scale in phase.
-    val breath = rememberInfiniteTransition(label = "emberBreath").animateFloat(
+    val breath = if (reducedMotion) remember { mutableStateOf(0f) } else
+        rememberInfiniteTransition(label = "emberBreath").animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
@@ -170,6 +186,7 @@ fun BlockScreen(
     LaunchedEffect(nudge) {
         if (nudge == initialNudge) return@LaunchedEffect // composing is not a refusal
         haptics.reject()
+        if (reducedMotion) return@LaunchedEffect
         launch {
             shake.animateTo(
                 targetValue = 0f,
@@ -196,7 +213,7 @@ fun BlockScreen(
     }
 
     Surface(modifier = modifier.fillMaxSize(), color = FlintPalette.Night) {
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .drawBehind {
@@ -214,23 +231,27 @@ fun BlockScreen(
                             ),
                         )
                     }
-                },
+                }
+                // Hosts are raw overlay windows / an edge-to-edge Activity. Inset only
+                // the viewport, leaving the glow backdrop full-bleed.
+                .safeDrawingPadding()
+                .padding(horizontal = FlintSpacing.gutter, vertical = FlintSpacing.xl),
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
-                    // Hosts are raw overlay windows / an edge-to-edge Activity and none of
-                    // them insets for us — the content dodges system bars here while the
-                    // glow backdrop (the Box behind) stays full-bleed.
-                    .safeDrawingPadding()
-                    .padding(horizontal = FlintSpacing.gutter, vertical = FlintSpacing.xl),
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .heightIn(min = maxHeight)
+                    // Keep the weighted spacers when content fits; grow and scroll when
+                    // large text needs more than the inset viewport (WelcomeScreen pattern).
+                    .height(IntrinsicSize.Min),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Spacer(Modifier.weight(1f))
                 BreathingMark(
                     reveal = { heroIn.value },
                     breath = { breath.value },
-                    pulse = { markPulse.value },
+                    pulse = { if (reducedMotion) 0f else markPulse.value },
                 )
                 Spacer(Modifier.height(FlintSpacing.md))
                 EntranceSlot(entrance, step = 1) {
@@ -247,7 +268,9 @@ fun BlockScreen(
                     targetState = state,
                     modifier = Modifier.fillMaxWidth(),
                     transitionSpec = {
-                        ContentTransform(
+                        if (reducedMotion) {
+                            ContentTransform(EnterTransition.None, ExitTransition.None, sizeTransform = null)
+                        } else ContentTransform(
                             targetContentEnter = fadeIn(
                                 animationSpec = tween(
                                     FlintMotion.DurationMedium,
@@ -269,7 +292,7 @@ fun BlockScreen(
                     contentKey = { it.packageName },
                     label = "blockWords",
                 ) { shown ->
-                    BlockWords(state = shown, entrance = entrance)
+                    BlockWords(state = shown, entrance = entrance, reducedMotion = reducedMotion)
                 }
                 Spacer(Modifier.weight(1f))
                 EntranceSlot(entrance, step = 6, modifier = Modifier.fillMaxWidth()) {
@@ -277,7 +300,7 @@ fun BlockScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             // Refusal shake, in dp (GraphicsLayerScope is a Density).
-                            .graphicsLayer { translationX = shake.value.dp.toPx() },
+                            .graphicsLayer { translationX = if (reducedMotion) 0f else shake.value.dp.toPx() },
                         verticalArrangement = Arrangement.spacedBy(FlintSpacing.cardGap),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
@@ -285,10 +308,19 @@ fun BlockScreen(
                             onClick = onDismiss,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(56.dp),
+                                .heightIn(min = 56.dp),
                             shape = CircleShape,
                         ) {
                             Text("Go back")
+                        }
+                        if (state.grantStatus == GrantStatus.FAILED || state.grantStatus == GrantStatus.RETRY_OPEN) {
+                            Text(
+                                "Couldn't save. Try again.",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodyMedium,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                            )
                         }
                         // Class-keyed: a ticking WaitBeforeBreak updates in place; only a
                         // different affordance kind animates, with the column height easing.
@@ -296,7 +328,9 @@ fun BlockScreen(
                             targetState = content.breakAffordance,
                             modifier = Modifier.fillMaxWidth(),
                             transitionSpec = {
-                                ContentTransform(
+                                if (reducedMotion) {
+                                    ContentTransform(EnterTransition.None, ExitTransition.None, sizeTransform = null)
+                                } else ContentTransform(
                                     targetContentEnter = fadeIn(
                                         animationSpec = tween(
                                             FlintMotion.DurationMedium,
@@ -361,6 +395,7 @@ fun BlockScreen(
 private fun BlockWords(
     state: BlockScreenState,
     entrance: MutableTransitionState<Boolean>,
+    reducedMotion: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val content = blockScreenContent(state)
@@ -394,25 +429,27 @@ private fun BlockWords(
             // becomes unknown and expands back when a countdown starts.
             AnimatedVisibility(
                 visible = content.countdownLabel != null,
-                enter = expandVertically(
+                enter = if (reducedMotion) EnterTransition.None else expandVertically(
                     animationSpec = tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized),
                 ) + fadeIn(
                     animationSpec = tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized),
                 ),
-                exit = shrinkVertically(
+                exit = if (reducedMotion) ExitTransition.None else shrinkVertically(
                     animationSpec = tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized),
                 ) + fadeOut(
                     animationSpec = tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingEmphasized),
                 ),
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Spacer(Modifier.height(FlintSpacing.lg))
-                    // "0s" during the exit collapse is honest — the block just ended.
-                    FlintInfoPill(
-                        text = content.countdownLabel
-                            ?: requireNotNull(countdownLabelFor(state.reason, 0L)),
-                        spokenText = countdownA11y(state.reason, state.remainingMillis ?: 0L),
-                    )
+                // An end becoming unknown is not an unblock. Remove its text immediately
+                // even while AnimatedVisibility finishes collapsing the old pill.
+                if (content.countdownLabel != null && state.remainingMillis != null) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Spacer(Modifier.height(FlintSpacing.lg))
+                        FlintInfoPill(
+                            text = content.countdownLabel,
+                            spokenText = countdownA11y(state.reason, state.remainingMillis, state.combinedEnd),
+                        )
+                    }
                 }
             }
         }
@@ -506,6 +543,29 @@ private fun BreakActions(
     modifier: Modifier = Modifier,
 ) {
     when (affordance) {
+        // Material supplies the indeterminate progress semantics and spoken status. Keep
+        // those semantics so saving is announced without introducing separate status copy.
+        BreakAffordance.Saving -> CircularProgressIndicator(
+            modifier = modifier.size(32.dp).semantics { liveRegion = LiveRegionMode.Polite },
+        )
+        BreakAffordance.Unavailable -> Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Protection state unavailable", modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+            QuietButton("Review protection state", onEmergencyPassRequested)
+        }
+        BreakAffordance.RetryOpen -> QuietButton("Try again", onBreakRequested, modifier = modifier)
+        BreakAffordance.QuotaPending -> QuietButton("Review protection state", onEmergencyPassRequested, modifier = modifier)
+        is BreakAffordance.UseCredit -> Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("${affordance.remaining} access credits remaining", style = MaterialTheme.typography.bodyMedium)
+            QuietButton(if (affordance.durationMillis >= 300_000) "Use one credit · 5 minutes"
+                else "Use one credit · ${formatDuration(affordance.durationMillis)}", onBreakRequested)
+            if (affordance.durationMillis < 300_000) Text("Access ends at the quota reset.", style = MaterialTheme.typography.bodySmall)
+        }
+        is BreakAffordance.CreditBlocked -> Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("No credit used.",
+                style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+            QuietButton("Review protection state", onEmergencyPassRequested)
+        }
         // 48dp minimum keeps the deliberate 52/48/48 exit ladder under "Go back".
         BreakAffordance.TakeABreak -> QuietButton("Take a break", onBreakRequested, modifier = modifier)
 
@@ -554,11 +614,11 @@ private fun BreakActions(
                         .fillMaxWidth()
                         .heightIn(min = 48.dp),
                 ) {
-                    Text("Use an Emergency Pass")
+                    Text("Review Emergency Pass")
                 }
             } else {
                 Text(
-                    text = "Emergency Pass used — a new one arrives Monday.",
+                    text = "The next pass is available seven days after use. Open Flint for the next eligibility time.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -567,7 +627,6 @@ private fun BreakActions(
             }
         }
 
-        BreakAffordance.None -> Unit // guard shield: "Go back" and "Open Flint" are the exits
     }
 }
 
@@ -584,6 +643,7 @@ private fun HoldToRequestBreakButton(
     modifier: Modifier = Modifier,
 ) {
     val haptics = LocalHapticFeedback.current
+    val reducedMotion = rememberReducedMotion()
     var pressed by remember { mutableStateOf(false) }
     val progress by animateFloatAsState(
         targetValue = if (pressed) 1f else 0f,
@@ -604,7 +664,7 @@ private fun HoldToRequestBreakButton(
     val shape = RoundedCornerShape(percent = 50)
     Box(
         modifier = modifier
-            .height(48.dp)
+            .heightIn(min = 48.dp)
             .clip(shape)
             .border(width = 1.dp, color = MaterialTheme.colorScheme.primary, shape = shape)
             // Accessibility services can't perform a press-and-hold, so expose a plain
@@ -613,6 +673,8 @@ private fun HoldToRequestBreakButton(
             .semantics(mergeDescendants = true) {
                 role = Role.Button
                 contentDescription = HOLD_BREAK_A11Y_DESCRIPTION
+                stateDescription = if (pressed) "Keep holding…" else "Hold to request a break"
+                progressBarRangeInfo = ProgressBarRangeInfo(progress, 0f..1f)
                 onClick(label = HOLD_BREAK_A11Y_LABEL) {
                     onHoldCompleted()
                     true
@@ -639,7 +701,7 @@ private fun HoldToRequestBreakButton(
         Crossfade(
             targetState = pressed,
             animationSpec = tween(
-                durationMillis = FlintMotion.DurationShort,
+                durationMillis = if (reducedMotion) 0 else FlintMotion.DurationShort,
                 easing = FlintMotion.EasingStandard,
             ),
             label = "holdToBreakLabel",
@@ -648,12 +710,14 @@ private fun HoldToRequestBreakButton(
                 text = if (isPressed) "Keep holding…" else "Hold to request a break",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = FlintSpacing.md, vertical = FlintSpacing.sm),
             )
         }
     }
 }
 
-// MARK: Previews — one per break-level state, plus the guard, light-theme + fallback cases.
+// MARK: Previews — one per break-level state, plus light-theme + fallback cases.
 
 @Preview(name = "Easy — free break", showBackground = true)
 @Composable
@@ -676,6 +740,7 @@ private fun BlockScreenEasyPreview() {
 }
 
 @Preview(name = "Harder — hold to request", showBackground = true)
+@Preview(name = "Harder — 320dp / 2× text", widthDp = 320, heightDp = 640, fontScale = 2f, showBackground = true)
 @Composable
 private fun BlockScreenHarderHoldPreview() {
     FlintTheme(darkTheme = true) {
@@ -717,6 +782,7 @@ private fun BlockScreenHarderWaitPreview() {
 }
 
 @Preview(name = "Hardcore — emergency pass only", showBackground = true)
+@Preview(name = "Hardcore — 320dp / 2× text", widthDp = 320, heightDp = 640, fontScale = 2f, showBackground = true)
 @Composable
 private fun BlockScreenHardcorePreview() {
     FlintTheme(darkTheme = true) {
@@ -732,29 +798,6 @@ private fun BlockScreenHardcorePreview() {
             onOpenFlint = {},
             onBreakRequested = {},
             onEmergencyPassRequested = {},
-        )
-    }
-}
-
-@Preview(name = "Uninstall guard — protected badge", showBackground = true)
-@Composable
-private fun BlockScreenGuardPreview() {
-    FlintTheme(darkTheme = true) {
-        BlockScreen(
-            state = BlockScreenState(
-                packageName = "com.android.settings",
-                appLabel = "Settings",
-                reason = BlockScreenReason.UNINSTALL_GUARD,
-                breakLevel = BreakLevel.HARDCORE,
-                remainingMillis = 2_820_000L, // 47m
-            ),
-            onDismiss = {},
-            onOpenFlint = {},
-            onBreakRequested = {},
-            onEmergencyPassRequested = {},
-            // The nudge counter only animates on a live increment (baseline diff), so a
-            // static preview value stays inert by design — hosts drive it.
-            nudge = 0,
         )
     }
 }

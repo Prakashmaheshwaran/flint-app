@@ -12,15 +12,23 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    testOptions { unitTests { isIncludeAndroidResources = true } }
 }
 
 dependencies {
     implementation(project(":core:core-model"))
     implementation(project(":core:core-data"))
+    implementation(project(":core:core-datastore")) // shared trusted reset clock
     implementation(project(":blocking:blocking-engine"))
+    implementation(project(":blocking:blocking-resilience")) // process-local website coverage health
     // Shared enforcement seam: BlockScreenCoordinator + the branded Compose block surface.
     // All Compose stays inside blocking-overlay — this module needs no compose plugin.
     implementation(project(":blocking:blocking-overlay"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android) // service-scoped CoroutineScope
+
+    // Robolectric service tests (protection contract PC-51: no guard interception), debug only.
+    testDebugImplementation(libs.junit)
+    testDebugImplementation(libs.androidx.junit)
+    testDebugImplementation(libs.robolectric)
 }

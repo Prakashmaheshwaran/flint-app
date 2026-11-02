@@ -1,0 +1,69 @@
+2026-10-28 18:07:20 data_app_anr (compressed text, 12671 bytes)
+SystemUptimeMs: 89873
+Process: com.flint.peakfocus
+PID: 3976
+UID: 10207
+Frozen: false
+Timestamp: 2026-10-28 18:07:11.145-0400
+Flags: 0x20c83e46
+Package: com.flint.peakfocus v1 (0.1.0)
+Foreground: Yes
+Process-Runtime: 28667
+Activity: com.flint.peakfocus/.MainActivity
+ErrorId: 5fe07628-f2ba-426e-b350-cdc729ffc21e
+Build: google/sdk_gphone64_arm64/emu64a:15/AE3A.240806.043/12960925:userdebug/dev-keys
+Loading-Progress: 1.0
+Dropped-Count: 0
+
+----- Output from /proc/pressure/memory -----
+some avg10=25.44 avg60=11.21 avg300=3.01 total=9585117
+full avg10=3.02 avg60=1.36 avg300=0.37 total=1417909
+----- End output from /proc/pressure/memory -----
+----- Output from /proc/pressure/cpu -----
+some avg10=85.54 avg60=57.27 avg300=17.81 total=60199935
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+----- End output from /proc/pressure/cpu -----
+----- Output from /proc/pressure/io -----
+some avg10=17.14 avg60=11.22 avg300=3.66 total=12704050
+full avg10=0.30 avg60=1.09 avg300=0.50 total=2233892
+----- End output from /proc/pressure/io -----
+
+CPU usage from 77055ms to -2ms ago (2026-10-28 18:06:00.272 to 2026-10-28 18:07:17.328):
+  44% 448/media.swcodec: 12% user + 32% kernel / faults: 16669 minor 225 major
+  33% 397/android.hardware.graphics.composer3-service.ranchu: 1% user + 32% kernel / faults: 467 minor 131 major
+  32% 587/system_server: 20% user + 11% kernel / faults: 160009 minor 2503 major
+  28% 418/surfaceflinger: 2.5% user + 25% kernel / faults: 10224 minor 169 major
+  4.7% 54/kswapd0: 0% user + 4.7% kernel
+  3.8% 436/logcat: 0.3% user + 3.4% kernel / faults: 149 minor
+  1.6% 391/android.hardware.sensors-service.multihal: 0.4% user + 1.2% kernel / faults: 356 minor 10 major
+  1.6% 154/logd: 0.4% user + 1.2% kernel / faults: 2619 minor 17 major
+  1.4% 16/rcu_preempt: 0% user + 1.4% kernel
+  1.1% 376/zygote64: 0.1% user + 1% kernel / faults: 3204 minor
+94% TOTAL: 30% user + 43% kernel + 1.8% iowait + 17% irq + 1.1% softirq
+Data File: /data/anr/anr_2026-10-28-18-07-17-969
+Subject: Input dispatching timed out (8a84d24 com.flint.peakfocus/com.flint.peakfocus.MainActivity (server) is not responding. Waited 5006ms for FocusEvent(hasFocus=true)).
+RssHwmKb: 284256
+RssKb: 216504
+RssAnonKb: 98648
+RssShmemKb: 6784
+VmSwapKb: 17124
+
+
+Main thread (native frames omitted):
+  at android.os.BinderProxy.transactNative(Native method)
+  at android.os.BinderProxy.transact(BinderProxy.java:586)
+  at android.app.IActivityManager$Stub$Proxy.setServiceForeground(IActivityManager.java:7192)
+  at android.app.Service.startForeground(Service.java:863)
+  at com.flint.peakfocus.blocking.usagestats.UsageStatsForegroundService.startAsForeground(UsageStatsForegroundService.kt:186)
+  at com.flint.peakfocus.blocking.usagestats.UsageStatsForegroundService.onCreate(UsageStatsForegroundService.kt:82)
+  at android.app.ActivityThread.handleCreateService(ActivityThread.java:4977)
+  at android.app.ActivityThread.-$$Nest$mhandleCreateService(unavailable:0)
+  at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2444)
+  at android.os.Handler.dispatchMessage(Handler.java:107)
+  at android.os.Looper.loopOnce(Looper.java:232)
+  at android.os.Looper.loop(Looper.java:317)
+  at android.app.ActivityThread.main(ActivityThread.java:8705)
+  at java.lang.reflect.Method.invoke(Native method)
+  at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:580)
+  at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:886)
+DumpLatencyMs: 99.2624

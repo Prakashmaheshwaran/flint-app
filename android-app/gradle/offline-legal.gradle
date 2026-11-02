@@ -1,0 +1,149 @@
+import groovy.json.JsonOutput
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.maven.MavenModule
+import org.gradle.maven.MavenPomArtifact
+
+abstract class GenerateFlintOfflineLegal extends DefaultTask {
+    @OutputDirectory
+    abstract DirectoryProperty getOutputDirectory()
+}
+
+// Kept separate from release signing/minification. No plugin or runtime dependency is added.
+def legalAssets = layout.buildDirectory.dir('generated/offlineLegal/assets')
+def legalInventory = layout.buildDirectory.file('generated/offlineLegal/inventory.json')
+def legalRepo = rootProject.projectDir.parentFile
+def legalGenerator = rootProject.file('legal/generate_legal.py')
+def legalTests = rootProject.file('legal')
+def legalConfigurations = configurations
+def legalDependencies = dependencies
+def legalProviders = providers
+
+def generateLegal = tasks.register('generateOfflineLegal', GenerateFlintOfflineLegal) {
+    outputDirectory.set(legalAssets)
+    group = 'verification'
+    description = 'Bundle the canonical policy and complete resolved release dependency notices.'
+    // Resolve fresh metadata even when the policy is the only changed file. The output is
+    // deterministic; never cache a stale dependency inventory or a stale policy copy.
+    notCompatibleWithConfigurationCache('Legal inventory resolves release POM metadata at execution time')
+    outputs.upToDateWhen { false }
+    doLast {
+        def scopes = ['releaseRuntimeClasspath', 'coreLibraryDesugaring']
+        def modules = [:]
+        scopes.each { scope ->
+            def artifacts = legalConfigurations.getByName(scope).incoming.artifactView {
+                componentFilter { it instanceof ModuleComponentIdentifier }
+            }.artifacts.artifacts
+            artifacts.each { artifact ->
+                def id = artifact.id.componentIdentifier
+                def coordinate = "${id.group}:${id.module}:${id.version}".toString()
+                def entry = modules.computeIfAbsent(coordinate) {
+                    [coordinate: coordinate, id: id, scopes: [], artifacts: []]
+                }
+                entry.scopes.add(scope)
+                entry.artifacts.add(artifact.file.absolutePath)
+            }
+        }
+        def poms = legalDependencies.createArtifactResolutionQuery()
+            .forComponents(modules.values().collect { it.id })
+            .withArtifacts(MavenModule, MavenPomArtifact).execute()
+        poms.resolvedComponents.each { component ->
+            def id = component.id
+            def coordinate = "${id.group}:${id.module}:${id.version}".toString()
+            def resolved = component.getArtifacts(MavenPomArtifact).findAll {
+                it instanceof org.gradle.api.artifacts.result.ResolvedArtifactResult
+            }
+            if (resolved.size() != 1) throw new GradleException("Missing legal POM for ${coordinate}")
+            modules[coordinate].pom = resolved.first().file.absolutePath
+        }
+        // License declarations may be inherited (for example Guava ListenableFuture).
+        // Resolve actual parent metadata; never infer its license from a group name.
+        def parentCache = [:]
+        def readParent = { File pom ->
+            def factory = javax.xml.parsers.DocumentBuilderFactory.newInstance()
+            factory.setFeature('http://apache.org/xml/features/disallow-doctype-decl', true)
+            def root = factory.newDocumentBuilder().parse(pom).documentElement
+            def child = { node, name ->
+                if (node == null) return null
+                def children = node.childNodes
+                for (int index = 0; index < children.length; index++) {
+                    if (children.item(index).nodeName == name) return children.item(index)
+                }
+                null
+            }
+            if (child(root, 'licenses') != null) return null
+            def parent = child(root, 'parent')
+            if (parent == null) throw new GradleException("No license declaration or parent in ${pom.name}")
+            def parts = ['groupId', 'artifactId', 'version'].collect { child(parent, it)?.textContent?.trim() }
+            if (parts.any { !it || it.contains('$') }) {
+                throw new GradleException("Unresolved legal parent coordinates in ${pom.name}: ${parts}")
+            }
+            parts
+        }
+        modules.values().each { entry ->
+            entry.parents = []
+            def pom = new File(entry.pom)
+            def visited = [] as Set
+            while (true) {
+                def parts = readParent(pom)
+                if (parts == null) break
+                def coordinate = parts.join(':')
+                if (!visited.add(coordinate) || visited.size() > 8) {
+                    throw new GradleException("Cyclic/too-deep legal POM ancestry for ${entry.coordinate}")
+                }
+                if (!parentCache.containsKey(coordinate)) {
+                    def parents = legalDependencies.createArtifactResolutionQuery()
+                        .forModule(parts[0], parts[1], parts[2])
+                        .withArtifacts(MavenModule, MavenPomArtifact).execute()
+                    def files = parents.resolvedComponents.collectMany {
+                        it.getArtifacts(MavenPomArtifact).findAll {
+                            it instanceof org.gradle.api.artifacts.result.ResolvedArtifactResult
+                        }.collect { it.file }
+                    }
+                    if (files.size() != 1) throw new GradleException("Missing legal parent POM ${coordinate}")
+                    parentCache[coordinate] = files.first()
+                }
+                pom = parentCache[coordinate]
+                entry.parents.add([coordinate: coordinate, pom: pom.absolutePath])
+            }
+        }
+        def inventory = legalInventory.get().asFile
+        inventory.parentFile.mkdirs()
+        inventory.text = JsonOutput.toJson(modules.sort().values().collect {
+            if (!it.pom) throw new GradleException("Missing legal POM for ${it.coordinate}")
+            [coordinate: it.coordinate, pom: it.pom, parents: it.parents,
+             scopes: it.scopes.unique().sort(), artifacts: it.artifacts.unique().sort()]
+        })
+        def generated = legalProviders.exec {
+            commandLine 'python3', '-B', legalGenerator,
+                '--inventory', inventory, '--repo', legalRepo,
+                '--output', legalAssets.get().asFile
+            ignoreExitValue = true
+        }
+        logger.lifecycle(generated.standardOutput.asText.get())
+        logger.lifecycle(generated.standardError.asText.get())
+        generated.result.get().assertNormalExitValue()
+    }
+}
+
+androidComponents.onVariants(androidComponents.selector().all()) { variant ->
+    variant.sources.assets.addGeneratedSourceDirectory(generateLegal) { task -> task.outputDirectory }
+}
+
+tasks.register('testOfflineLegalGenerator') {
+    group = 'verification'
+    description = 'Test legal generation, including missing metadata and unknown-license failures.'
+    doLast {
+        def tested = legalProviders.exec {
+            commandLine 'python3', '-B', '-m', 'unittest', 'discover',
+                '-s', legalTests, '-p', 'test_*.py'
+            ignoreExitValue = true
+        }
+        logger.lifecycle(tested.standardOutput.asText.get())
+        logger.lifecycle(tested.standardError.asText.get())
+        tested.result.get().assertNormalExitValue()
+    }
+}
+
+tasks.matching { it.name == 'preBuild' }.configureEach { dependsOn(generateLegal) }
+// Android CI runs `test` directly rather than `check`.
+tasks.matching { it.name in ['test', 'check'] }.configureEach { dependsOn('testOfflineLegalGenerator') }

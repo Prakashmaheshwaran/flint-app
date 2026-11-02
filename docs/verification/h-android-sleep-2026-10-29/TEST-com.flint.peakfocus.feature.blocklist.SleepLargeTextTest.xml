@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.flint.peakfocus.feature.blocklist.SleepLargeTextTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-10-29T01:28:29.166Z" hostname="Mac.lan" time="8.006">
+  <properties/>
+  <testcase name="largeTextTimeSummaryStacksAndWeekdaysRemainNamedCheckboxes" classname="com.flint.peakfocus.feature.blocklist.SleepLargeTextTest" time="7.039"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

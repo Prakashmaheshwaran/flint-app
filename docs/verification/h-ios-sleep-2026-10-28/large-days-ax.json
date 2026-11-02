@@ -1,0 +1,566 @@
+[
+  {
+    "role": "application",
+    "type": "Application",
+    "label": "Flint",
+    "value": "",
+    "enabled": true,
+    "frame": {
+      "x": 0,
+      "y": 0,
+      "width": 1,
+      "height": 1
+    },
+    "children": [
+      {
+        "role": "back button",
+        "type": "Button",
+        "label": "Back",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.0398,
+          "y": 0.0709,
+          "width": 0.1095,
+          "height": 0.0503
+        },
+        "children": [],
+        "id": "BackButton"
+      },
+      {
+        "role": "heading",
+        "type": "Heading",
+        "label": "Sleep",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.4502,
+          "y": 0.0839,
+          "width": 0.0995,
+          "height": 0.0244
+        },
+        "children": []
+      },
+      {
+        "role": "Group",
+        "type": "Group",
+        "label": "",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0,
+          "y": 0,
+          "width": 1,
+          "height": 0.8741
+        },
+        "children": [
+          {
+            "role": "text",
+            "type": "StaticText",
+            "label": "Wind down at bedtime and wake up without the feed. Sleep Assist can shield apps between bedtime and wake-up. Morning Full Assist adds a shield while your day starts. Free, including Full Assist.",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.0398,
+              "y": -0.0721,
+              "width": 0.9204,
+              "height": 0.114
+            },
+            "children": []
+          },
+          {
+            "role": "switch",
+            "type": "CheckBox",
+            "label": "Sleep Mode",
+            "value": "0",
+            "enabled": true,
+            "frame": {
+              "x": 0.0398,
+              "y": 0.082,
+              "width": 0.9204,
+              "height": 0.0595
+            },
+            "children": []
+          },
+          {
+            "role": "heading",
+            "type": "Heading",
+            "label": "Nights",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.0398,
+              "y": 0.1617,
+              "width": 0.9204,
+              "height": 0.0454
+            },
+            "children": []
+          },
+          {
+            "role": "text",
+            "type": "StaticText",
+            "label": "Bedtime",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.0796,
+              "y": 0.2336,
+              "width": 0.1376,
+              "height": 0.0225
+            },
+            "children": []
+          },
+          {
+            "role": "button",
+            "type": "Button",
+            "label": "Time Picker",
+            "value": "10:00\u202fPM",
+            "enabled": true,
+            "frame": {
+              "x": 0.6799,
+              "y": 0.2243,
+              "width": 0.2405,
+              "height": 0.0412
+            },
+            "children": []
+          },
+          {
+            "role": "text",
+            "type": "StaticText",
+            "label": "Wake up",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.0796,
+              "y": 0.3091,
+              "width": 0.1459,
+              "height": 0.0225
+            },
+            "children": []
+          },
+          {
+            "role": "button",
+            "type": "Button",
+            "label": "Time Picker",
+            "value": "7:00\u202fAM",
+            "enabled": true,
+            "frame": {
+              "x": 0.704,
+              "y": 0.2998,
+              "width": 0.2164,
+              "height": 0.0412
+            },
+            "children": []
+          },
+          {
+            "role": "button",
+            "type": "Button",
+            "label": "Sunday",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.0804,
+              "y": 0.3753,
+              "width": 0.1095,
+              "height": 0.0503
+            },
+            "children": []
+          },
+          {
+            "role": "button",
+            "type": "Button",
+            "label": "Monday",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.2023,
+              "y": 0.3753,
+              "width": 0.1095,
+              "height": 0.0503
+            },
+            "children": []
+          },
+          {
+            "role": "button",
+            "type": "Button",
+            "label": "Tuesday",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.3234,
+              "y": 0.3753,
+              "width": 0.1095,
+              "height": 0.0503
+            },
+            "children": []
+          },
+          {
+            "role": "button",
+            "type": "Button",
+            "label": "Wednesday",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.4453,
+              "y": 0.3753,
+              "width": 0.1095,
+              "height": 0.0503
+            },
+            "children": []
+          },
+          {
+            "role": "button",
+            "type": "Button",
+            "label": "Thursday",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.5672,
+              "y": 0.3753,
+              "width": 0.1095,
+              "height": 0.0503
+            },
+            "children": []
+          },
+          {
+            "role": "button",
+            "type": "Button",
+            "label": "Friday",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.6882,
+              "y": 0.3753,
+              "width": 0.1095,
+              "height": 0.0503
+            },
+            "children": []
+          },
+          {
+            "role": "button",
+            "type": "Button",
+            "label": "Saturday",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.8101,
+              "y": 0.3753,
+              "width": 0.1095,
+              "height": 0.0503
+            },
+            "children": []
+          },
+          {
+            "role": "text",
+            "type": "StaticText",
+            "label": "Monday nights \u00b7 10:00\u202fPM \u2192 7:00\u202fAM next morning. Days pick the night the window starts; none selected means every night.",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.0398,
+              "y": 0.4428,
+              "width": 0.9204,
+              "height": 0.0831
+            },
+            "children": []
+          },
+          {
+            "role": "heading",
+            "type": "Heading",
+            "label": "Sleep Assist",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.0398,
+              "y": 0.5259,
+              "width": 0.9204,
+              "height": 0.0454
+            },
+            "children": []
+          },
+          {
+            "role": "tab group",
+            "type": "TabGroup",
+            "label": "",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.0796,
+              "y": 0.5885,
+              "width": 0.8408,
+              "height": 0.0355
+            },
+            "children": []
+          },
+          {
+            "role": "text",
+            "type": "StaticText",
+            "label": "No bedtime shield. Morning Assist below can still run on its own after wake-up.",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.0398,
+              "y": 0.6411,
+              "width": 0.9204,
+              "height": 0.061
+            },
+            "children": []
+          },
+          {
+            "role": "heading",
+            "type": "Heading",
+            "label": "Morning Assist",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.0398,
+              "y": 0.7021,
+              "width": 0.9204,
+              "height": 0.0454
+            },
+            "children": []
+          },
+          {
+            "role": "tab group",
+            "type": "TabGroup",
+            "label": "",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.0796,
+              "y": 0.7647,
+              "width": 0.8408,
+              "height": 0.0355
+            },
+            "children": []
+          },
+          {
+            "role": "text",
+            "type": "StaticText",
+            "label": "Nothing after wake-up \u2014 the night shield (if any) simply ends.",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.0398,
+              "y": 0.8173,
+              "width": 0.9204,
+              "height": 0.061
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "role": "button",
+        "type": "Button",
+        "label": "Today",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.0597,
+          "y": 0.8741,
+          "width": 0.2206,
+          "height": 0.0732
+        },
+        "children": []
+      },
+      {
+        "role": "button",
+        "type": "Button",
+        "label": "Rules",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.2803,
+          "y": 0.8741,
+          "width": 0.2197,
+          "height": 0.0732
+        },
+        "children": []
+      },
+      {
+        "role": "button",
+        "type": "Button",
+        "label": "Insights",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.5,
+          "y": 0.8741,
+          "width": 0.2206,
+          "height": 0.0732
+        },
+        "children": []
+      },
+      {
+        "role": "button",
+        "type": "Button",
+        "label": "You",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.7206,
+          "y": 0.8741,
+          "width": 0.2197,
+          "height": 0.0732
+        },
+        "children": []
+      },
+      {
+        "role": "text",
+        "type": "StaticText",
+        "label": "4:12\u202fPM",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.1393,
+          "y": 0.0248,
+          "width": 0.0904,
+          "height": 0.0248
+        },
+        "children": []
+      },
+      {
+        "role": "",
+        "type": "GenericElement",
+        "label": "Dynamic Island, Empty",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.3441,
+          "y": 0.016,
+          "width": 0.3118,
+          "height": 0.042
+        },
+        "children": []
+      },
+      {
+        "role": "",
+        "type": "GenericElement",
+        "label": "Cellular",
+        "value": "No signal",
+        "enabled": true,
+        "frame": {
+          "x": 0.7081,
+          "y": 0.0286,
+          "width": 0.0506,
+          "height": 0.0156
+        },
+        "children": []
+      },
+      {
+        "role": "",
+        "type": "GenericElement",
+        "label": "",
+        "value": "SSID, 3 of 3 Wi-Fi bars",
+        "enabled": true,
+        "frame": {
+          "x": 0.7811,
+          "y": 0.0297,
+          "width": 0.0439,
+          "height": 0.0145
+        },
+        "children": [],
+        "id": "3 of 3 Wi-Fi bars"
+      },
+      {
+        "role": "",
+        "type": "GenericElement",
+        "label": "100% battery power",
+        "value": "Not charging",
+        "enabled": true,
+        "frame": {
+          "x": 0.8474,
+          "y": 0.029,
+          "width": 0.0721,
+          "height": 0.0156
+        },
+        "children": []
+      },
+      {
+        "role": "tab",
+        "type": "RadioButton",
+        "label": "Off",
+        "value": "1",
+        "enabled": true,
+        "frame": {
+          "x": 0.0796,
+          "y": 0.5885,
+          "width": 0.2786,
+          "height": 0.0366
+        },
+        "children": []
+      },
+      {
+        "role": "tab",
+        "type": "RadioButton",
+        "label": "Wind Down",
+        "value": "0",
+        "enabled": true,
+        "frame": {
+          "x": 0.3582,
+          "y": 0.5885,
+          "width": 0.2811,
+          "height": 0.0366
+        },
+        "children": []
+      },
+      {
+        "role": "tab",
+        "type": "RadioButton",
+        "label": "Full Assist",
+        "value": "0",
+        "enabled": true,
+        "frame": {
+          "x": 0.6393,
+          "y": 0.5885,
+          "width": 0.2811,
+          "height": 0.0366
+        },
+        "children": []
+      },
+      {
+        "role": "tab",
+        "type": "RadioButton",
+        "label": "Off",
+        "value": "1",
+        "enabled": true,
+        "frame": {
+          "x": 0.0796,
+          "y": 0.7647,
+          "width": 0.2786,
+          "height": 0.0366
+        },
+        "children": []
+      },
+      {
+        "role": "tab",
+        "type": "RadioButton",
+        "label": "Slow Uplift",
+        "value": "0",
+        "enabled": true,
+        "frame": {
+          "x": 0.3582,
+          "y": 0.7647,
+          "width": 0.2811,
+          "height": 0.0366
+        },
+        "children": []
+      },
+      {
+        "role": "tab",
+        "type": "RadioButton",
+        "label": "Full Assist",
+        "value": "0",
+        "enabled": true,
+        "frame": {
+          "x": 0.6393,
+          "y": 0.7647,
+          "width": 0.2811,
+          "height": 0.0366
+        },
+        "children": []
+      }
+    ]
+  }
+]

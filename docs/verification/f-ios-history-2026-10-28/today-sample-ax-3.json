@@ -1,0 +1,292 @@
+{
+  "id": "42ce2213-054a-4b4d-a7e5-d9829d6de28e",
+  "ok": true,
+  "result": [
+    {
+      "role": "application",
+      "type": "Application",
+      "label": "Flint",
+      "value": "",
+      "enabled": true,
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "width": 1,
+        "height": 1
+      },
+      "children": [
+        {
+          "role": "text",
+          "type": "StaticText",
+          "label": "WEDNESDAY · OCTOBER 28",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.0597,
+            "y": 0.1085,
+            "width": 0.4552,
+            "height": 0.0164
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "type": "StaticText",
+          "label": "A quiet day so far.",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.0597,
+            "y": 0.1579,
+            "width": 0.6418,
+            "height": 0.0442
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "type": "StaticText",
+          "label": "No schedules yet — add one in Rules.",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.0597,
+            "y": 0.2113,
+            "width": 0.5854,
+            "height": 0.021
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "type": "StaticText",
+          "label": "Focused today, 45m, DEBUG · Seeded preview events",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.0597,
+            "y": 0.2643,
+            "width": 0.8806,
+            "height": 0.1388
+          },
+          "children": [],
+          "id": "today.focusHistory"
+        },
+        {
+          "role": "text",
+          "type": "StaticText",
+          "label": "45m, Your next session",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.3267,
+            "y": 0.4306,
+            "width": 0.3466,
+            "height": 0.0946
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "type": "Button",
+          "label": "Deep study, 90 minutes",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.0597,
+            "y": 0.7117,
+            "width": 0.296,
+            "height": 0.0503
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "type": "Button",
+          "label": "Reading, 30 minutes",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.3756,
+            "y": 0.7117,
+            "width": 0.2463,
+            "height": 0.0503
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "type": "Button",
+          "label": "Workout, 60 minutes",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.6418,
+            "y": 0.7117,
+            "width": 0.2579,
+            "height": 0.0503
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "type": "Button",
+          "label": "Start focus",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.0597,
+            "y": 0.778,
+            "width": 0.8806,
+            "height": 0.0641
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "type": "Button",
+          "label": "Today",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.0597,
+            "y": 0.8741,
+            "width": 0.2206,
+            "height": 0.0732
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "type": "Button",
+          "label": "Rules",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.2803,
+            "y": 0.8741,
+            "width": 0.2197,
+            "height": 0.0732
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "type": "Button",
+          "label": "Insights",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.5,
+            "y": 0.8741,
+            "width": 0.2206,
+            "height": 0.0732
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "type": "Button",
+          "label": "You",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.7206,
+            "y": 0.8741,
+            "width": 0.2197,
+            "height": 0.0732
+          },
+          "children": []
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": -0.1228,
+            "y": 0,
+            "width": 1.3276,
+            "height": 0.9954
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "type": "StaticText",
+          "label": "4:27 PM",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.1368,
+            "y": 0.0248,
+            "width": 0.0954,
+            "height": 0.0248
+          },
+          "children": []
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "Dynamic Island, Empty",
+          "value": "",
+          "enabled": true,
+          "frame": {
+            "x": 0.3441,
+            "y": 0.016,
+            "width": 0.3118,
+            "height": 0.042
+          },
+          "children": []
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "Cellular",
+          "value": "No signal",
+          "enabled": true,
+          "frame": {
+            "x": 0.7081,
+            "y": 0.0286,
+            "width": 0.0506,
+            "height": 0.0156
+          },
+          "children": []
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "",
+          "value": "SSID, 3 of 3 Wi-Fi bars",
+          "enabled": true,
+          "frame": {
+            "x": 0.7811,
+            "y": 0.0297,
+            "width": 0.0439,
+            "height": 0.0145
+          },
+          "children": [],
+          "id": "3 of 3 Wi-Fi bars"
+        },
+        {
+          "role": "",
+          "type": "GenericElement",
+          "label": "100% battery power",
+          "value": "Not charging",
+          "enabled": true,
+          "frame": {
+            "x": 0.8474,
+            "y": 0.029,
+            "width": 0.0721,
+            "height": 0.0156
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "_meta": {
+    "runtimeId": "8f38263a-4ff0-4ed2-9d46-3f93ba87f5d9"
+  }
+}

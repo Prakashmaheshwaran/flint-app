@@ -112,9 +112,13 @@ fun shareOfPeriod(packageMillis: Long, periodTotalMillis: Long): Float? =
 /** UI state exposed by [StatsViewModel]. */
 sealed interface StatsUiState {
     data object Loading : StatsUiState
+    data object Error : StatsUiState
 
     /** Usage Access is not granted — show the friendly prompt with the Settings hand-off. */
     data object PermissionRequired : StatsUiState
 
     data class Ready(val report: UsageReport) : StatsUiState
 }
+
+internal fun statsFailureState(error: Exception): StatsUiState =
+    if (error is SecurityException) StatsUiState.PermissionRequired else StatsUiState.Error

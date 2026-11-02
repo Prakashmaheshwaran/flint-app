@@ -14,8 +14,8 @@ public final class FlintGroupStore {
         static let selection = "flint.selection"
         static let sessions = "flint.sessions"
         static let activeSession = "flint.activeSession"
-        static let rules = "flint.rules"
-        static let limits = "flint.limits"
+        static let rules = FlintRuleStoreKey.schedules.rawValue
+        static let limits = FlintRuleStoreKey.limits.rawValue
         static let appGroups = "flint.appGroups"
         static let emergencyPassLastUsed = "flint.emergencyPass.lastUsed"
         static let pinHash = "flint.pin.hash"
@@ -46,12 +46,27 @@ public final class FlintGroupStore {
     // MARK: Active session
 
     public func saveActiveSession(_ session: FlintActiveSession) {
-        defaults.set(try? JSONEncoder().encode(session), forKey: Key.activeSession)
+        // An encoding failure keeps the previous record instead of erasing it (ADR-012 §8).
+        guard let data = try? JSONEncoder().encode(session) else { return }
+        defaults.set(data, forKey: Key.activeSession)
     }
 
     public func loadActiveSession() -> FlintActiveSession? {
         guard let data = defaults.data(forKey: Key.activeSession) else { return nil }
         return try? JSONDecoder().decode(FlintActiveSession.self, from: data)
+    }
+
+    /// True when anything is stored under the session key — including a record that doesn't
+    /// decode or has the wrong type — so unreadable state is never mistaken for "no session"
+    /// (ADR-012 §8).
+    public func hasActiveSessionRecord() -> Bool {
+        defaults.object(forKey: Key.activeSession) != nil
+    }
+
+    /// Whether this suite shows the protection ledger's initialization marker: evidence the shared
+    /// state was actually read, not a locked or unavailable container reading as empty.
+    public func isProtectionStateReadable() -> Bool {
+        defaults.object(forKey: FlintProtectionLedger.initializedMarkerKey) != nil
     }
 
     public func clearActiveSession() {
@@ -60,11 +75,13 @@ public final class FlintGroupStore {
 
     // MARK: Emergency pass
 
+    @available(*, unavailable, message: "Use FlintEmergencyPassController.status(); legacy timestamps are imported by the ledger only.")
     public func emergencyPassLastUsed() -> Date? {
         let t = defaults.double(forKey: Key.emergencyPassLastUsed)
         return t > 0 ? Date(timeIntervalSince1970: t) : nil
     }
 
+    @available(*, unavailable, message: "Use FlintEmergencyPassController.use(previewRevision:operationID:); only the ledger may consume a pass.")
     public func recordEmergencyPassUse(_ date: Date = Date()) {
         defaults.set(date.timeIntervalSince1970, forKey: Key.emergencyPassLastUsed)
     }
@@ -89,11 +106,13 @@ public final class FlintGroupStore {
 
     // MARK: Open-limit counters
 
+    @available(*, unavailable, message: "Legacy migration payload only; use FlintOpenCredit.preview/accept and the protection ledger.")
     public func loadOpenLimitState() -> FlintOpenLimitState {
         guard let data = defaults.data(forKey: Key.openLimitState) else { return FlintOpenLimitState() }
         return (try? JSONDecoder().decode(FlintOpenLimitState.self, from: data)) ?? FlintOpenLimitState()
     }
 
+    @available(*, unavailable, message: "Live Open counters are committed only through the protection ledger.")
     public func saveOpenLimitState(_ state: FlintOpenLimitState) {
         defaults.set(try? JSONEncoder().encode(state), forKey: Key.openLimitState)
     }
@@ -123,8 +142,11 @@ public final class FlintGroupStore {
 
     // MARK: Scheduled rules
 
-    public func saveRules(_ rules: [FlintScheduleRule]) {
-        defaults.set(try? JSONEncoder().encode(rules), forKey: Key.rules)
+    @discardableResult
+    public func saveRules(_ rules: [FlintScheduleRule]) -> Bool {
+        guard let data = try? JSONEncoder().encode(rules) else { return false }
+        defaults.set(data, forKey: Key.rules)
+        return true
     }
 
     public func loadRules() -> [FlintScheduleRule] {
@@ -134,8 +156,11 @@ public final class FlintGroupStore {
 
     // MARK: Time limits
 
-    public func saveLimits(_ limits: [FlintLimitRule]) {
-        defaults.set(try? JSONEncoder().encode(limits), forKey: Key.limits)
+    @discardableResult
+    public func saveLimits(_ limits: [FlintLimitRule]) -> Bool {
+        guard let data = try? JSONEncoder().encode(limits) else { return false }
+        defaults.set(data, forKey: Key.limits)
+        return true
     }
 
     public func loadLimits() -> [FlintLimitRule] {

@@ -1,3 +1,5 @@
 <resources>
+    <string name="flint_widget_name">Flint focus</string>
+    <string name="flint_widget_description">Last checked protection, next session and Focused today. Tap to open Flint.</string>
     <string name="app_name">Flint</string>
 </resources>

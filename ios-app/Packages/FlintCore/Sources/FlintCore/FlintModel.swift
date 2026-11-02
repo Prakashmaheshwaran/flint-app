@@ -138,18 +138,33 @@ public struct FlintFocusFilterConfig: Codable, Equatable, Sendable {
     public var appGroupID: String?
     public var breakLevel: BreakLevel
     public var allowListMode: Bool
+    /// How long a Harder/Hardcore Focus block lasts; 0 = while the Focus is on, which only Easy
+    /// may use (ADR-012 §1). Decoded with a default so older saved defaults keep loading.
+    public var durationMinutes: Int
 
-    public init(appGroupID: String? = nil, breakLevel: BreakLevel = .easy, allowListMode: Bool = false) {
+    public init(appGroupID: String? = nil, breakLevel: BreakLevel = .easy, allowListMode: Bool = false,
+                durationMinutes: Int = 0) {
         self.appGroupID = appGroupID
         self.breakLevel = breakLevel
         self.allowListMode = allowListMode
+        self.durationMinutes = durationMinutes
     }
 
-    /// The open-ended session this filter starts while its Focus is active.
+    private enum CodingKeys: String, CodingKey { case appGroupID, breakLevel, allowListMode, durationMinutes }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        appGroupID = try values.decodeIfPresent(String.self, forKey: .appGroupID)
+        breakLevel = try values.decode(BreakLevel.self, forKey: .breakLevel)
+        allowListMode = try values.decodeIfPresent(Bool.self, forKey: .allowListMode) ?? false
+        durationMinutes = try values.decodeIfPresent(Int.self, forKey: .durationMinutes) ?? 0
+    }
+
+    /// The session this filter starts while its Focus is active.
     public var sessionRequest: FlintSessionRequest {
         FlintSessionRequest(
             appGroupID: appGroupID,
-            durationMinutes: 0,
+            durationMinutes: durationMinutes,
             breakLevel: breakLevel,
             allowListMode: allowListMode,
             name: "Focus Filter"
@@ -173,8 +188,8 @@ public enum FlintMorningAssistLevel: String, Codable, CaseIterable, Sendable {
 
 /// **Sleep Mode + Morning Assist** — a bedtime/wake downtime engine separate from Sessions and
 /// Limits (I-SLEEP). The window drives a `DeviceActivitySchedule`; Full Assist shields everything
-/// except `allowGroupID`'s selection, with the free weekly Emergency Pass (`FlintEmergencyPass`)
-/// as the only early exit. Bundled soundscapes / sleep-stories are intentionally out of scope for
+/// except `allowGroupID`'s selection. The explicit rule tier governs editing and early exits;
+/// an available Emergency Pass is a separate recovery option. Soundscapes are out of scope for
 /// v1 (content, not a blocking control).
 public struct FlintSleepConfig: Codable, Equatable, Sendable {
     public var enabled: Bool
@@ -186,6 +201,10 @@ public struct FlintSleepConfig: Codable, Equatable, Sendable {
     public var allowGroupID: String?
     /// How long Morning Full Assist keeps blocking after wake, in minutes.
     public var morningAssistMinutes: Int
+    public var nightBreakLevel: BreakLevel?
+    public var morningBreakLevel: BreakLevel?
+    public var revision: Int?
+    public var contractVersion: Int?
 
     public init(
         enabled: Bool = false,
@@ -193,7 +212,11 @@ public struct FlintSleepConfig: Codable, Equatable, Sendable {
         sleepAssist: FlintSleepAssistLevel = .off,
         morningAssist: FlintMorningAssistLevel = .off,
         allowGroupID: String? = nil,
-        morningAssistMinutes: Int = 60
+        morningAssistMinutes: Int = 60,
+        nightBreakLevel: BreakLevel? = nil,
+        morningBreakLevel: BreakLevel? = nil,
+        revision: Int? = 1,
+        contractVersion: Int? = 12
     ) {
         self.enabled = enabled
         self.schedule = schedule
@@ -201,6 +224,10 @@ public struct FlintSleepConfig: Codable, Equatable, Sendable {
         self.morningAssist = morningAssist
         self.allowGroupID = allowGroupID
         self.morningAssistMinutes = morningAssistMinutes
+        self.nightBreakLevel = nightBreakLevel
+        self.morningBreakLevel = morningBreakLevel
+        self.revision = revision
+        self.contractVersion = contractVersion
     }
 
     /// Sensible starting point: 10pm–7am every night, both assists off until the user opts in.
@@ -232,8 +259,14 @@ extension FlintSleepConfig {
         return config
     }
 
-    public func save(to defaults: UserDefaults? = .flintGroup) {
-        defaults?.set(try? JSONEncoder().encode(self), forKey: FlintStubStoreKey.sleepConfig)
+    @discardableResult
+    public func save(to defaults: UserDefaults? = .flintGroup,
+                     confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
+        #if canImport(FamilyControls) && canImport(DeviceActivity) && canImport(ManagedSettings)
+        return FlintSleepRulesController(defaults: defaults).save(self, confirmation: confirmation)
+        #else
+        return .unavailable
+        #endif
     }
 }
 

@@ -71,10 +71,13 @@ class BlockOverlapPolicyTest {
         assertEquals(counts, transition.counts)
     }
 
-    @Test fun `stronger time budget wins over easy rule and equal tiers retain time display priority`() {
+    @Test fun `stronger time budget wins over easy rule and equal tiers show ongoing protection`() {
         val harderTime = timeLimitBlockCause(BreakLevel.HARDER, now, 0)
-        assertEquals(harderTime, effective(harderTime, ruleCause(strictRule.copy(breakLevel = BreakLevel.EASY))))
-        assertEquals(harderTime, effective(harderTime, ruleCause(strictRule.copy(breakLevel = BreakLevel.HARDER))))
+        val mixed = effective(harderTime, ruleCause(strictRule.copy(breakLevel = BreakLevel.EASY)))!!
+        assertEquals(harderTime, mixed.copy(displayEnd = null))
+        assertNull(blockScreenState(pkg, null, mixed, BreakSessionState(), now).remainingMillis)
+        val ongoing = ruleCause(strictRule.copy(breakLevel = BreakLevel.HARDER))
+        assertEquals(ongoing, effective(harderTime, ongoing))
     }
 
     @Test fun `ordinary grant issued before a strict session cannot suppress the newly active cause`() {
@@ -111,11 +114,5 @@ class BlockOverlapPolicyTest {
         val timed = strictRule.copy(expiresAtEpochMs = now + 1_000)
         assertNotNull(effective(ruleCause(timed)))
         assertNull(effective(timeLimitBlockCause(BreakLevel.EASY, now, 0), ruleCause(timed, at = now + 1_000), at = now + 1_000))
-    }
-
-    @Test fun `emergency grant never suppresses uninstall guard`() {
-        BlockExemptions.grantEmergency(pkg, now + 1_000)
-        val guard = uninstallGuardBlockCause(strictRule, now, 0)
-        assertEquals(guard, effective(timeLimitBlockCause(BreakLevel.HARDCORE, now, 0), ruleCause(strictRule), guard))
     }
 }

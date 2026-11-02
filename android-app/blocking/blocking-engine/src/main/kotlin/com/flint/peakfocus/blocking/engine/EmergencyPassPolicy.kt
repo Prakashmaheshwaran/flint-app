@@ -12,6 +12,9 @@ import com.flint.peakfocus.core.model.EmergencyPassState
  * `TimeZone.getDefault().getOffset(now)` on Android) and persist the returned state via
  * core-datastore's `FocusStateStore`. Consumption is always explicit — see
  * [BreakPolicy]'s HARDCORE handling, which never spends the pass itself.
+ *
+ * **Superseded by [RollingEmergencyPassPolicy]** (ADR-012: rolling 7-day pass with 60-minute global recovery). Still the live
+ * authority until the coordinator is rewired (lane C, C4b); do not add new callers.
  */
 class EmergencyPassPolicy {
 

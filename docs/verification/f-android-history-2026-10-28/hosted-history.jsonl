@@ -1,0 +1,5 @@
+{"v":1,"id":"4a3017a7-127d-48f5-b23e-8f8e936d4047","type":"started","session":"session-timer-1793223574990-ae826c87-9c37-4d2d-8ce8-94c0b7cab28c","at":1793223574990,"tz":"Etc/UTC","plannedEnd":1793223874990,"tier":"easy","source":"manual","name":"Focus timer"}
+{"v":1,"id":"f0cfaa3d-8d4d-4695-ab0b-bf06ef26d4fe","type":"completed","session":"session-timer-1793223574990-ae826c87-9c37-4d2d-8ce8-94c0b7cab28c","at":1793223874990,"tz":"Etc/UTC","inferred":true}
+{"v":1,"id":"2773fddd-c10b-411b-acb5-21ae0c2b63a4","type":"started","session":"session-timer-1793223892071-d8251361-31fa-4c62-890b-e016c20477c8","at":1793223892071,"tz":"Etc/UTC","plannedEnd":1793224192071,"tier":"easy","source":"manual","name":"Focus timer"}
+{"v":1,"id":"985cf24a-c617-45f2-bcef-b5f9bb08905a","type":"ended_early","session":"session-timer-1793223892071-d8251361-31fa-4c62-890b-e016c20477c8","at":1793223897134,"tz":"Etc/UTC","route":"unknown"}
+{"v":1,"id":"3a5fad7c-42df-395f-911c-49a0ca9332da","type":"ended_early","session":"session-timer-1793223892071-d8251361-31fa-4c62-890b-e016c20477c8","at":1793223897070,"tz":"Etc/UTC","route":"hold_to_end","originRoute":"app_ui"}

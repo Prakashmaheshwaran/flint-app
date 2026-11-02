@@ -1,11 +1,18 @@
 package com.flint.peakfocus
 
 import android.app.Application
+import com.flint.peakfocus.blocking.overlay.PathBFallbackActivityHandoff
 import com.flint.peakfocus.blocking.resilience.BootReceiver
 import com.flint.peakfocus.blocking.resilience.TimeChangeReceiver
+import com.flint.peakfocus.glance.GlanceSurfaceBridge
+import com.flint.peakfocus.glance.CoordinatorGlanceReader
+import com.flint.peakfocus.glance.OngoingSessionNotification
+import com.flint.peakfocus.glance.FocusHistoryGlanceReader
+import com.flint.peakfocus.blocking.overlay.PathBNotification
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
  * Flint application entry point — the app-side integration wiring lives here:
@@ -27,9 +34,16 @@ class FlintApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        PathBFallbackActivityHandoff(this)
         ActiveRulesBridge.start(this, appScope)
-        BootReceiver.registerRearmAction { context -> PathBServiceGate.sync(context) }
+        FocusHistoryEventAdapter.start(this, appScope)
+        GlanceSurfaceBridge.start(this, appScope, protectionReader = CoordinatorGlanceReader(),
+            focusReader = FocusHistoryGlanceReader(this, appScope))
+        PathBNotification.register(OngoingSessionNotification::customize)
+        appScope.launch { GlanceSurfaceBridge.display.collect { PathBNotification.requestRefresh() } }
+        EditorReconciler.rearm(this, appScope)
+        BootReceiver.registerRearmAction { context -> EditorReconciler.rearm(context, appScope); PathBServiceGate.sync(context) }
         TimeChangeReceiver.baselineAnchor(this)
-        TimeChangeReceiver.registerRearmAction { context -> PathBServiceGate.sync(context) }
+        TimeChangeReceiver.registerRearmAction { context -> EditorReconciler.rearm(context, appScope); PathBServiceGate.sync(context) }
     }
 }

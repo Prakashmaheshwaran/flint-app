@@ -5,8 +5,10 @@ import FlintCore
 /// pulse around it. The bottom bar holds the only ways out the break level allows.
 struct SessionView: View {
     @ObservedObject var vm: SessionViewModel
-    @State private var waitingToStop = false
     @State private var showPass = false
+    @State private var passStatus: FlintEmergencyPassStatus?
+    @State private var passRefreshID = UUID()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ZStack {
@@ -49,50 +51,95 @@ struct SessionView: View {
 
             if showPass {
                 EmergencyPassSheet(
-                    sessionName: vm.active?.name ?? "this session",
-                    available: vm.emergencyPassAvailable,
                     onKeep: { withAnimation(.easeOut(duration: 0.3)) { showPass = false } },
-                    onUse: {
-                        vm.useEmergencyPass()
+                    onApplied: {
+                        vm.emergencyPassDidApply()
                         showPass = false
                     }
                 )
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .fullScreenCover(isPresented: $waitingToStop) {
-            BreakWaitView(onBack: { waitingToStop = false }, onStop: {
-                waitingToStop = false
-                vm.stop()
-            })
+        .fullScreenCover(isPresented: Binding(get: { vm.harderStop != nil }, set: { if !$0 { vm.cancelStop() } })) {
+            if let wait = vm.harderStop {
+                BreakWaitView(wait: wait, onBack: vm.cancelStop, onStop: vm.confirmStop)
+            }
         }
+        .fullScreenCover(isPresented: Binding(get: { vm.breakWait != nil }, set: { if !$0 { vm.cancelBreak() } })) {
+            if let wait = vm.breakWait {
+                BreakWaitView(wait: wait, onBack: vm.cancelBreak, onStop: vm.confirmBreak,
+                    finalAction: "Take a 5-minute break", heading: "Harder · Break requested",
+                    explanation: vm.breakPreview.message + " The session keeps running. Going back cancels the wait without spending it.",
+                    readyExplanation: "Your wait is complete. Confirm up to 5 minutes of access. The session keeps running.")
+            }
+        }
+        .alert("Take a 5-minute break", isPresented: $vm.confirmingBreak) {
+            Button("Cancel", role: .cancel, action: vm.cancelBreak)
+            Button("Take a 5-minute break", action: vm.confirmBreak)
+        } message: { Text(vm.breakPreview.message) }
         .preferredColorScheme(.dark)
+        .onAppear { refreshPassStatus(); vm.refreshBreakStatus() }
+        .onChange(of: scenePhase) { phase in if phase == .active { refreshPassStatus(); vm.refreshBreakStatus() } }
+        .onReceive(NotificationCenter.default.publisher(for: .flintProtectionReconciled)) { _ in refreshPassStatus() }
+        .onReceive(Timer.publish(every: 15, on: .main, in: .common).autoconnect()) { _ in refreshPassStatus() }
     }
 
     private func controlBar(_ active: FlintActiveSession) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: active.breakLevel == .easy ? "lock.open" : "lock")
-                .font(.system(size: 17))
-                .foregroundStyle(FlintBrand.mist)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(levelName(active.breakLevel)).font(FlintFont.text(14, weight: .medium)).foregroundStyle(FlintBrand.bone)
-                Text(levelLine(active.breakLevel)).font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
-            }
-            Spacer(minLength: 0)
-            switch active.breakLevel {
-            case .easy:
-                Button("End session") { vm.stop() }.buttonStyle(GhostButtonStyle())
-            case .harder:
-                Button("End session") { waitingToStop = true }.buttonStyle(GhostButtonStyle())
-            case .hardcore:
-                Button(vm.emergencyPassAvailable ? "Emergency Pass · 1" : "Pass used this week") {
-                    withAnimation(.easeOut(duration: 0.3)) { showPass = true }
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: active.breakLevel == .easy ? "lock.open" : "lock")
+                    .font(.system(size: 17))
+                    .foregroundStyle(FlintBrand.mist)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(levelName(active.breakLevel)).font(FlintFont.text(14, weight: .medium)).foregroundStyle(FlintBrand.bone)
+                    Text(vm.stopPreview).font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
                 }
-                .buttonStyle(GhostButtonStyle())
-                .disabled(!vm.emergencyPassAvailable)
-                .opacity(vm.emergencyPassAvailable ? 1 : 0.5)
+                Spacer(minLength: 0)
+                if active.breakLevel != .hardcore {
+                    Button("End early") { vm.stop() }.buttonStyle(GhostButtonStyle())
+                }
             }
+            if vm.resumingBreak {
+                Text("Applying protection").flintSecondary(14).frame(maxWidth: .infinity, alignment: .leading)
+            } else if vm.ordinaryBreak != nil {
+                HStack {
+                    Text(vm.ordinaryBreak?.applicationPending == true ? "Applying break" : "Break · \(Self.clock(vm.breakRemaining)) left").flintSecondary(14)
+                    Spacer()
+                    Button("Resume now", action: vm.resumeBreakNow).buttonStyle(GhostButtonStyle())
+                }
+            } else if vm.breakPreview.isActionable {
+                Button(action: vm.requestBreak) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Take a 5-minute break").font(FlintFont.text(14, weight: .medium))
+                        Text(vm.breakPreview.message).font(FlintFont.text(12))
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }.buttonStyle(GhostButtonStyle())
+            } else {
+                Text(vm.breakPreview.message).flintSecondary(12).frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if let error = vm.errorText { Text(error).flintSecondary(12).accessibilityIdentifier("session.action.error") }
+            if let notice = vm.breakNotice {
+                HStack {
+                    Text(notice).flintSecondary(12)
+                    Button("Dismiss", action: vm.acknowledgeBreakNotice).buttonStyle(GhostButtonStyle())
+                }
+            }
+            Button {
+                refreshPassStatus()
+                withAnimation(.easeOut(duration: 0.3)) { showPass = true }
+            } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Emergency Pass").font(FlintFont.text(14, weight: .medium)).foregroundStyle(FlintBrand.bone)
+                    Text(passStatus?.label ?? "Protection state unavailable")
+                        .font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
+                    Text("One pass per rolling 7 days after use · global recovery up to 60 minutes")
+                        .font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .buttonStyle(GhostButtonStyle())
         }
         .padding(EdgeInsets(top: 12, leading: 18, bottom: 12, trailing: 12))
         .background(
@@ -100,6 +147,15 @@ struct SessionView: View {
                 .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(Color(red: 24 / 255, green: 22 / 255, blue: 24 / 255).opacity(0.68)))
         )
         .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).strokeBorder(FlintBrand.bone(0.10)))
+    }
+
+    private func refreshPassStatus() {
+        let request = UUID(); passRefreshID = request
+        Task {
+            let result = await FlintEmergencyPassController.displayStatus()
+            guard passRefreshID == request else { return }
+            passStatus = try? result.get()
+        }
     }
 
     private func levelName(_ level: BreakLevel) -> String {
@@ -193,28 +249,41 @@ struct SunArc: View {
 }
 
 /// Harder's friction: a breathing wait before an early stop. If the urge passes, go back.
+/// The wait itself is persisted by Flint (1, then 5, then 15 minutes for repeated early stops
+/// of the same session, ADR-012 §4) — closing this screen or the app doesn't reset it, and going
+/// back cancels it without counting.
 struct BreakWaitView: View {
+    let wait: SessionViewModel.HarderStop
     let onBack: () -> Void
     let onStop: () -> Void
-    static let wait: TimeInterval = 150
+    var finalAction = "End early"
+    var heading = "Harder · End early requested"
+    var explanation = "After the wait, confirm End early. If the urge has passed, go back — that doesn't count against you."
+    var readyExplanation: String?
 
-    @State private var startedAt = Date()
     @State private var now = Date()
     @State private var breathe = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var left: TimeInterval { max(0, Self.wait - now.timeIntervalSince(startedAt)) }
+    private var total: TimeInterval { max(1, wait.total) }
+
+    private var left: TimeInterval {
+        switch wait {
+        case let .waiting(until, _): return max(0, until.timeIntervalSince(now))
+        case .ready: return 0
+        }
+    }
 
     var body: some View {
         ZStack {
             FlintBrand.night.ignoresSafeArea()
             VStack(spacing: 0) {
-                Text("Harder · Stop requested").flintEyebrow().padding(.top, 60)
+                Text(heading).flintEyebrow().padding(.top, 60)
                 Text("Breathe while you wait.")
                     .flintTitle(30)
                     .multilineTextAlignment(.center)
                     .padding(.top, 18)
-                Text("Ending opens when the ring closes. If the urge has passed by then, go back.")
+                Text(left == 0 ? (readyExplanation ?? explanation) : explanation)
                     .flintSecondary(15)
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)
@@ -230,7 +299,7 @@ struct BreakWaitView: View {
                         .scaleEffect(reduceMotion ? 0.9 : (breathe ? 1 : 0.78))
                     Circle().stroke(FlintBrand.bone(0.12), lineWidth: 1.2).frame(width: 256, height: 256)
                     Circle()
-                        .trim(from: 0, to: 1 - left / Self.wait)
+                        .trim(from: 0, to: 1 - left / total)
                         .stroke(FlintBrand.ember, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                         .rotationEffect(.degrees(-90))
                         .frame(width: 256, height: 256)
@@ -241,12 +310,12 @@ struct BreakWaitView: View {
                 }
                 .frame(width: 280, height: 280)
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(left > 0 ? "\(Int(left.rounded())) seconds until you can end the session" : "You can end the session now")
+                .accessibilityLabel(left > 0 ? "\(Int(left.rounded())) seconds until \(finalAction)" : "\(finalAction) is ready to confirm")
                 Spacer()
 
                 VStack(spacing: 8) {
                     Button("I’m good, go back", action: onBack).buttonStyle(BoneButtonStyle())
-                    Button(left > 0 ? "End session · in \(SessionView.clock(left))" : "End session", action: onStop)
+                    Button(left > 0 ? "\(finalAction) · in \(SessionView.clock(left))" : finalAction, action: onStop)
                         .buttonStyle(QuietButtonStyle())
                         .overlay(Capsule().strokeBorder(FlintBrand.bone(0.12)))
                         .disabled(left > 0)
@@ -264,98 +333,6 @@ struct BreakWaitView: View {
     }
 }
 
-/// The weekly way out of Hardcore, behind a press-and-hold so it is never an accident.
-struct EmergencyPassSheet: View {
-    let sessionName: String
-    let available: Bool
-    let onKeep: () -> Void
-    let onUse: () -> Void
-
-    @State private var holding = false
-    @State private var fill: CGFloat = 0
-    private let holdSeconds = 1.6
-
-    var body: some View {
-        ZStack(alignment: .bottom) {
-            Color(hex: 0x05060A).opacity(0.6).ignoresSafeArea().onTapGesture(perform: onKeep)
-            VStack(spacing: 0) {
-                FlintSheetGrabber()
-                ZStack {
-                    Circle().fill(FlintBrand.ember.opacity(0.1))
-                    Circle().strokeBorder(FlintBrand.ember.opacity(0.6))
-                    Image(systemName: "key").font(.system(size: 24)).foregroundStyle(FlintBrand.ember)
-                }
-                .frame(width: 64, height: 64)
-                .padding(.top, 26)
-                .accessibilityHidden(true)
-
-                Text("Use your Emergency Pass?")
-                    .flintTitle(26)
-                    .multilineTextAlignment(.center)
-                    .padding(.top, 18)
-                Text("This ends \(sessionName) now, even in Hardcore. You get one every seven days.")
-                    .flintSecondary(15)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(3)
-                    .frame(maxWidth: 300)
-                    .padding(.top, 10)
-                Text(available ? "1 pass left this week" : "No pass left this week")
-                    .font(FlintFont.text(12, weight: .medium))
-                    .foregroundStyle(Color(hex: 0xF4C27E))
-                    .padding(.horizontal, 12)
-                    .frame(height: 28)
-                    .background(Capsule().fill(FlintBrand.ember.opacity(0.14)))
-                    .padding(.top, 18)
-
-                VStack(spacing: 8) {
-                    Button("Keep focusing", action: onKeep).buttonStyle(BoneButtonStyle())
-                    holdButton
-                }
-                .padding(.top, 26)
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 24)
-            .frame(maxWidth: .infinity)
-            .background(
-                UnevenTop(radius: 32).fill(FlintBrand.sheet).ignoresSafeArea(edges: .bottom)
-                    .overlay(UnevenTop(radius: 32).stroke(FlintBrand.bone(0.10)).ignoresSafeArea(edges: .bottom))
-            )
-        }
-        .accessibilityAddTraits(.isModal)
-    }
-
-    private var holdButton: some View {
-        ZStack(alignment: .leading) {
-            GeometryReader { geo in
-                Rectangle().fill(FlintBrand.ember.opacity(0.16)).frame(width: geo.size.width * fill)
-            }
-            Text("Hold to use pass")
-                .font(FlintFont.text(15, weight: .medium))
-                .foregroundStyle(Color(hex: 0xF4C27E))
-                .frame(maxWidth: .infinity)
-        }
-        .frame(height: 52)
-        .clipShape(Capsule())
-        .overlay(Capsule().strokeBorder(FlintBrand.ember.opacity(0.5)))
-        .contentShape(Capsule())
-        .opacity(available ? 1 : 0.4)
-        .onLongPressGesture(minimumDuration: holdSeconds, pressing: { pressing in
-            guard available else { return }
-            withAnimation(pressing ? .linear(duration: holdSeconds) : .easeOut(duration: 0.2)) {
-                fill = pressing ? 1 : 0
-            }
-        }, perform: {
-            guard available else { return }
-            onUse()
-        })
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Use Emergency Pass")
-        .accessibilityHint("Press and hold to end the session")
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction { if available { onUse() } }
-    }
-}
-
 /// Rounded top corners only (iOS 16 has no `UnevenRoundedRectangle`).
 struct UnevenTop: Shape {
     let radius: CGFloat
@@ -367,6 +344,7 @@ struct UnevenTop: Shape {
 
 /// The ember has set: a session ran to its end.
 struct SessionCompleteView: View {
+    @ObservedObject private var history = FocusHistoryModel.shared
     let finished: SessionViewModel.Finished
     let onDone: () -> Void
     let onAgain: () -> Void
@@ -378,8 +356,18 @@ struct SessionCompleteView: View {
             VStack(spacing: 0) {
                 Text("\(finished.name) · Complete").flintEyebrow().padding(.top, 52)
                 Text("The ember has set.").flintTitle(34).padding(.top, 18)
-                Text("\(finished.minutes) minutes, start to finish.").flintSecondary(15).padding(.top, 10)
+                Text("\(FocusHistoryText.duration(finished.focusedSeconds)) focused in this session.").flintSecondary(15).padding(.top, 10)
+                if finished.isPreview { Text("DEBUG · Seeded preview events").flintSecondary(12).padding(.top, 8) }
+                if finished.historyDegraded { Text(FocusHistoryText.degraded).flintSecondary(13).padding(.top, 8) }
                 Spacer()
+                VStack(spacing: 6) {
+                    Text(FocusHistoryText.duration(finished.todaySeconds)).flintNumber(36)
+                    Text("Focused today").flintEyebrow()
+                    if let day = history.summary?.days.last,
+                       let note = FocusHistoryText.unconfirmed([day]) { Text(note).flintSecondary(13) }
+                }
+                .padding(.vertical, 24)
+                .accessibilityElement(children: .combine)
                 VStack(spacing: 8) {
                     Button("Done", action: onDone).buttonStyle(BoneButtonStyle())
                     Button("Start another", action: onAgain).buttonStyle(QuietButtonStyle())

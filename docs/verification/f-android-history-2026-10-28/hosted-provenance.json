@@ -1,0 +1,131 @@
+{
+  "runUrl": "https://github.com/Prakashmaheshwaran/flint-app/actions/runs/40772730952",
+  "artifactId": 12854586181,
+  "artifactName": "android-e2e-api36",
+  "originalArchiveBytes": 8061445,
+  "pullRequestHead": "75f04763fe320011ed5edb2f7bb6f25711b0edcf",
+  "checkoutCommit": "bdb9e988067bfe85f73a5d84d055e2c02f172562",
+  "device": {
+    "serial": "emulator-5554"
+  },
+  "workflowConfiguration": {
+    "api": 36,
+    "target": "google_apis",
+    "arch": "x86_64",
+    "profile": "pixel_2",
+    "ramMiB": 2048,
+    "disableAnimations": true
+  },
+  "junit": {
+    "tests": "5",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "414.442",
+    "timestamp": "2026-10-28T21:45:04",
+    "hostname": "localhost"
+  },
+  "historyCaseSeconds": 340.193,
+  "assertedMonotonicMinimumMs": 295000,
+  "sessions": [
+    {
+      "session": "session-timer-1793223574990-ae826c87-9c37-4d2d-8ce8-94c0b7cab28c",
+      "startedAt": 1793223574990,
+      "plannedEnd": 1793223874990,
+      "firstTerminalAt": 1793223874990,
+      "outcome": "completed",
+      "route": null,
+      "focusedMs": 300000
+    },
+    {
+      "session": "session-timer-1793223892071-d8251361-31fa-4c62-890b-e016c20477c8",
+      "startedAt": 1793223892071,
+      "plannedEnd": 1793224192071,
+      "firstTerminalAt": 1793223897070,
+      "outcome": "ended_early",
+      "route": "hold_to_end",
+      "focusedMs": 4999
+    }
+  ],
+  "focusedTodayMs": 304999,
+  "displayedFocusedToday": "5m",
+  "rawRecords": 5,
+  "firstTerminalOutcomeCounts": {
+    "completed": 1,
+    "ended_early": 1
+  },
+  "files": {
+    "10-ci-empty-today.png": {
+      "bytes": 339938,
+      "sha256": "60979a6d18d70c61c0e34e3ba01f6c5c653ef24d649998ecbd81797d8640d6ff"
+    },
+    "10-ci-empty-today.xml": {
+      "bytes": 31296,
+      "sha256": "f58f50603f36d348e8ecc3a5233214549b92700d312fd94612bafef0eb00305b"
+    },
+    "11-ci-empty-insights.png": {
+      "bytes": 119857,
+      "sha256": "c88dbd2a61713c10881b5a3d7fb8c4b06679c635263586045e8b4da43d266b70"
+    },
+    "11-ci-empty-insights.xml": {
+      "bytes": 44541,
+      "sha256": "6bdff35f627ad95ea0d61aae4b1a52d85a3eb2796366ed02017349b540938423"
+    },
+    "12-ci-complete.png": {
+      "bytes": 269161,
+      "sha256": "de9f4969821b17273b7dd39fcf8b92ce63dfa8b64f17f143b2c19882ea5109a6"
+    },
+    "12-ci-complete.xml": {
+      "bytes": 24657,
+      "sha256": "5fbb2e62d1ef30d585d5e093d65776995027892cfce5b97a6867fdea2187f968"
+    },
+    "13-ci-complete-after-restart.png": {
+      "bytes": 269161,
+      "sha256": "de9f4969821b17273b7dd39fcf8b92ce63dfa8b64f17f143b2c19882ea5109a6"
+    },
+    "13-ci-complete-after-restart.xml": {
+      "bytes": 24657,
+      "sha256": "bc61968a4ba65661655e4d9bee11f7bdae3f1e08e1a8981b04800090ba82f76a"
+    },
+    "14-ci-today-completed.png": {
+      "bytes": 350700,
+      "sha256": "259922a2b590de8b404de6f8ce2a67dcb9d8892a2a882082a3fa3aceed84fa66"
+    },
+    "14-ci-today-completed.xml": {
+      "bytes": 31275,
+      "sha256": "7a9bfa1443533b0e45cd49e02bcff7813af60d24259d951283bd6de6c07d559f"
+    },
+    "15-ci-today-completed-and-early.png": {
+      "bytes": 365637,
+      "sha256": "495509428ad6b8b1182430804348ca132a71f7d6b2b4da64a1fb2477d6318fae"
+    },
+    "15-ci-today-completed-and-early.xml": {
+      "bytes": 32570,
+      "sha256": "bd778fd2acf59b30188a9b88ec69af7e19a625d1805a28986b94f0f83d73f12a"
+    },
+    "16-ci-insights-week.png": {
+      "bytes": 125449,
+      "sha256": "834af5ecc931e3a024f7a4bff9576e25270366c6e732f21498a6ff38ef78275d"
+    },
+    "16-ci-insights-week.xml": {
+      "bytes": 44534,
+      "sha256": "ac787e12c29e59104438bd25d3e16cb549ff2b1e17b8d05250fef238a2600e44"
+    },
+    "17-ci-insights-day.png": {
+      "bytes": 124058,
+      "sha256": "21a8af8259b93996fddcc6134c802bbc35ba3a58225b096fca48211924ff4628"
+    },
+    "17-ci-insights-day.xml": {
+      "bytes": 44528,
+      "sha256": "8a16308fda3f8b8288688abe519317530a740845ef4f12c40331c01e4549943e"
+    },
+    "hosted-history.jsonl": {
+      "bytes": 1149,
+      "sha256": "201f11d3366e150f9677661d8c1ab464037c3af2f619dcdc9948616398a4c027"
+    },
+    "hosted-junit.xml": {
+      "bytes": 1606,
+      "sha256": "4894ebf1ce2e4cd148735a666cb0a8cb657b30c834c6bbac094a7a84b5519ad4"
+    }
+  }
+}

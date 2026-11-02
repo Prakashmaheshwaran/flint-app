@@ -76,6 +76,8 @@ data class BlockRule(
     val breakLevel: BreakLevel = BreakLevel.EASY,
     val enabled: Boolean = true,
     val expiresAtEpochMs: Long? = null,
+    /** Transient occurrence authority supplied by the editor bridge; never serialized. */
+    val runtime: RuleRuntime? = null,
 ) {
     /**
      * True once a one-shot session's timer has run out. A negative [nowEpochMs] means "no

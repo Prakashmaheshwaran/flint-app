@@ -19,7 +19,8 @@ import com.flint.peakfocus.core.model.TimeLimit
  * library, so we encode to a small line format instead of adding one. Layers: records are
  * separated by `\n`, fields by `|`, list items by `,`, item sub-fields by `~`; every
  * user-supplied atom is %-escaped so names/domains may contain any delimiter. Decoding is
- * defensive: malformed records are dropped, never thrown on.
+ * These historical helpers are lenient; live stores use [StrictPrefsCodec] to reject an
+ * undecodable value before any read/modify/write, preserving every malformed raw record.
  *
  * Pure Kotlin (no Android imports) so it is unit-testable on the JVM.
  */
@@ -158,17 +159,20 @@ internal object PrefsCodec {
 
     // MARK: limits — one record per package
 
-    /** `pkg~minutes` per line. */
+    /** `pkg~minutes~tier[~savedZone]` per line; two/three-field legacy fixtures remain readable. */
     fun encodeTimeLimits(limits: List<TimeLimit>): String =
-        limits.joinToString(RECORD) { escape(it.packageName) + SUB + it.dailyMinutes }
+        limits.joinToString(RECORD) { escape(it.packageName) + SUB + it.dailyMinutes + SUB + it.breakLevel.name +
+            (it.zoneId?.let { zone -> SUB + escape(zone) } ?: "") }
 
-    fun decodeTimeLimits(encoded: String): List<TimeLimit> =
+    fun decodeTimeLimits(encoded: String, legacyTier: BreakLevel = BreakLevel.EASY): List<TimeLimit> =
         encoded.split(RECORD).filter { it.isNotBlank() }.mapNotNull { line ->
             val sub = line.split(SUB)
-            if (sub.size != 2) return@mapNotNull null
+            if (sub.size !in 2..4) return@mapNotNull null
             val minutes = sub[1].toIntOrNull() ?: return@mapNotNull null
             val pkg = unescape(sub[0])
-            if (pkg.isEmpty()) null else TimeLimit(packageName = pkg, dailyMinutes = minutes)
+            if (pkg.isEmpty()) null else TimeLimit(packageName = pkg, dailyMinutes = minutes,
+                breakLevel = sub.getOrNull(2)?.let(::decodeBreakLevel) ?: legacyTier,
+                zoneId = sub.getOrNull(3)?.let(::unescape))
         }
 
     /** `pkg~opens~breakLevel` per line. */

@@ -3,6 +3,7 @@ package com.flint.peakfocus.feature.blocklist
 import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BreakLevel
+import com.flint.peakfocus.core.datastore.NATIVE_TIMER_ID_PREFIX
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -15,14 +16,21 @@ class TimerModelsTest {
 
     @Test fun `start instant is read back from timestamped ids and ignored otherwise`() {
         val start = 1_790_000_000_000L
-        val timed = timerRule(draft, start, "$start-7f3c9a2e-0000-4000-8000-000000000000")
+        val timed = timerRule(draft, start, "7f3c9a2e-0000-4000-8000-000000000000")
         assertEquals(start, timerStartEpochMs(timed))
         // Pre-redesign ids are a bare UUID, even one whose first block is all digits.
-        assertNull(timerStartEpochMs(timerRule(draft, start, "12345678-aaaa-4bbb-8ccc-dddddddddddd")))
-        assertNull(timerStartEpochMs(timerRule(draft, start, "7f3c9a2e-aaaa-4bbb-8ccc-dddddddddddd")))
+        assertNull(timerStartEpochMs(timed.copy(id = NATIVE_TIMER_ID_PREFIX + "12345678-aaaa-4bbb-8ccc-dddddddddddd")))
+        assertNull(timerStartEpochMs(timed.copy(id = NATIVE_TIMER_ID_PREFIX + "7f3c9a2e-aaaa-4bbb-8ccc-dddddddddddd")))
         // A claimed start at or after the deadline is not trusted.
         assertNull(timerStartEpochMs(timed.copy(expiresAtEpochMs = start)))
         assertNull(timerStartEpochMs(timed.copy(id = BlockRule.SESSION_ID_PREFIX + "$start-x")))
+    }
+
+    @Test fun `PC-17 Timer start metadata and planned end use exactly one supplied instant`() {
+        val start = 1_790_000_000_000L
+        val timer = timerRule(draft.copy(durationMinutes = 5), start, "uuid-without-a-clock")
+        assertEquals(start, timerStartEpochMs(timer))
+        assertEquals(300_000L, timer.expiresAtEpochMs!! - timerStartEpochMs(timer)!!)
     }
 
     @Test fun `finite duration choices have five minute then hourly steps`() {
@@ -35,7 +43,7 @@ class TimerModelsTest {
     }
 
     @Test fun `every preset is finite valid and keeps explicit app targets`() {
-        assertEquals(listOf(90, 30, 60, 30, 60, 480, 1440, 2880, 7200), timerPresets.map { it.minutes })
+        assertEquals(listOf(90, 30, 60, 30, 60, 480, 1440, 1440, 1440), timerPresets.map { it.minutes })
         timerPresets.forEach { preset ->
             val presetDraft = draft.copy(durationMinutes = preset.minutes, presetId = preset.id)
             assertTrue(validTimerDraft(presetDraft))
@@ -89,9 +97,13 @@ class TimerModelsTest {
         assertFalse(canCancelTimer(rule.copy(id = "work")))
     }
 
-    @Test fun `native timer ending permits every tier but excludes legacy and scheduled rules`() {
+    @Test fun `PC-67 PC-68 native Timer exit distinguishes legacy rights from new Hardcore`() {
         val native = timerRule(draft, 1000, "one")
-        BreakLevel.entries.forEach { assertTrue(canEndNativeTimer(native.copy(breakLevel = it))) }
+        assertTrue(canEndNativeTimer(native))
+        assertTrue(canEndNativeTimer(native.copy(breakLevel = BreakLevel.HARDER)))
+        assertFalse(canEndNativeTimer(native.copy(breakLevel = BreakLevel.HARDCORE)))
+        val legacy = native.copy(id = "session-timer-old")
+        BreakLevel.entries.forEach { assertTrue(canEndNativeTimer(legacy.copy(breakLevel = it))) }
         assertFalse(canEndNativeTimer(native.copy(id = "session-legacy")))
         assertFalse(canEndNativeTimer(native.copy(id = "session-timer-")))
         assertFalse(canEndNativeTimer(native.copy(id = "work")))

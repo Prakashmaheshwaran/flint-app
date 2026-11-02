@@ -1,0 +1,11 @@
+{
+  "id": "60ea6f26-1f06-44ec-85ee-957a93da1a7e",
+  "ok": false,
+  "error": {
+    "code": "emulator_helper_failed",
+    "message": "Unable to read serve-sim AX: request timed out"
+  },
+  "_meta": {
+    "runtimeId": "8f38263a-4ff0-4ed2-9d46-3f93ba87f5d9"
+  }
+}

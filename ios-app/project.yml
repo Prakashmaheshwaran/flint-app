@@ -1,16 +1,16 @@
 # XcodeGen spec — the source of truth for Flint's Xcode project.
 # Generate with `xcodegen generate` (or `make ios`). The .xcodeproj is git-ignored.
 #
-# 5 targets: the host app + 4 Screen Time system extensions, each with its own bundle ID and
-# its own family-controls + App Group entitlements. All share the FlintCore Swift package.
+# Host app + 4 Screen Time system extensions + a read-only WidgetKit extension. Only the
+# Screen Time targets need Family Controls; widgets use the App Group, with no authority.
 #
 # App Intents live in the HOST APP, not a separate target. The Focus Filter
 # (SetFocusFilterIntent) and the Shortcuts/Siri actions (Start Session, Start Pomodoro, Stop)
 # are App Intents, which iOS auto-discovers from the app binary — no AppIntents extension is
 # required. The Wave-1 verticals that add them (Flint/Features/FocusFilter, Flint/Features/
 # Shortcuts) live under Flint/ and are already compiled into the app, and ADR-005/006 fix the
-# target count at 5 (each extra target = another per-Bundle-ID distribution entitlement request,
-# §4). The shared model shapes those intents build on live in FlintCore (FlintModel.swift).
+# Screen Time target count at 5. The WidgetKit target does not request Family Controls.
+# The shared model shapes those intents build on live in FlintCore (FlintModel.swift).
 name: Flint
 
 options:
@@ -25,10 +25,14 @@ settings:
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: "YES"
     CODE_SIGN_STYLE: Automatic
-    # Set your Apple Developer Team here (or in Xcode) before building on device.
-    DEVELOPMENT_TEAM: ""
+    # Team/identity come only from the optional, untracked Config override below.
     TARGETED_DEVICE_FAMILY: "1,2" # iPhone + iPad
+
+configFiles:
+  Debug: Config/Signing.xcconfig
+  Release: Config/Signing.xcconfig
 
 packages:
   FlintCore:
@@ -43,21 +47,37 @@ targets:
       # Recursively globs Flint/Features/* — the Wave-1 verticals (FocusFilter, Shortcuts, Sleep,
       # Settings/Privacy) drop their App Intents / screens here and are picked up automatically.
       - Flint
+      - GlanceShared
+      - path: Privacy/Flint/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Override XcodeGen's host-only identity preset; use the local project config.
+        CODE_SIGN_IDENTITY: "$(inherited)"
         CODE_SIGN_ENTITLEMENTS: Flint/Flint.entitlements
         GENERATE_INFOPLIST_FILE: "YES"
         INFOPLIST_KEY_CFBundleDisplayName: Flint
         INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: "YES"
         INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait"
+    info:
+      path: build/Flint-Info.plist
+      properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSSupportsLiveActivities: true
+        CFBundleURLTypes:
+          - CFBundleURLName: com.flint.peakfocus.open
+            CFBundleURLSchemes: [flint]
     dependencies:
       - package: FlintCore
       - target: DeviceActivityMonitorExtension
       - target: ShieldConfigurationExtension
       - target: ShieldActionExtension
       - target: DeviceActivityReportExtension
+      - target: FlintWidgetsExtension
     scheme:
       testTargets:
         - FlintTests
@@ -68,6 +88,8 @@ targets:
     platform: iOS
     sources:
       - Extensions/DeviceActivityMonitorExtension
+      - path: Privacy/DeviceActivityMonitorExtension/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.monitor
@@ -82,6 +104,8 @@ targets:
     platform: iOS
     sources:
       - Extensions/ShieldConfigurationExtension
+      - path: Privacy/ShieldConfigurationExtension/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.shield-config
@@ -96,6 +120,8 @@ targets:
     platform: iOS
     sources:
       - Extensions/ShieldActionExtension
+      - path: Privacy/ShieldActionExtension/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.shield-action
@@ -110,6 +136,8 @@ targets:
     platform: iOS
     sources:
       - Extensions/DeviceActivityReportExtension
+      - path: Privacy/DeviceActivityReportExtension/PrivacyInfo.xcprivacy
+        buildPhase: resources
       # Insights renders inside this extension, so it bundles the same two fonts as the app.
       - path: Flint/Resources/Fonts
         buildPhase: resources
@@ -118,6 +146,27 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.report
         CODE_SIGN_ENTITLEMENTS: Extensions/DeviceActivityReportExtension/Report.entitlements
         INFOPLIST_FILE: Extensions/DeviceActivityReportExtension/Info.plist
+    dependencies:
+      - package: FlintCore
+
+  # ── Read-only widgets and opt-in Live Activity (no Family Controls) ──
+  FlintWidgetsExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Extensions/FlintWidgetsExtension
+      - GlanceShared
+      - path: Privacy/FlintWidgetsExtension/PrivacyInfo.xcprivacy
+        buildPhase: resources
+      - path: Flint/Resources/Assets.xcassets
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.widgets
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_ENTITLEMENTS: Extensions/FlintWidgetsExtension/Widgets.entitlements
+        INFOPLIST_FILE: Extensions/FlintWidgetsExtension/Info.plist
+        APPLICATION_EXTENSION_API_ONLY: "YES"
     dependencies:
       - package: FlintCore
 
@@ -130,6 +179,10 @@ targets:
       # Compile the report's actual presentation in tests without launching Apple's service.
       - Extensions/DeviceActivityReportExtension/ActivitySummary.swift
       - Extensions/DeviceActivityReportExtension/TotalActivityView.swift
+      # Exercise the exact shield presenter and credit-spending action seam without
+      # launching Apple's shield services.
+      - Extensions/ShieldConfigurationExtension/ShieldCopy.swift
+      - Extensions/ShieldActionExtension/ShieldCreditAction.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.tests
@@ -138,3 +191,30 @@ targets:
       - package: FlintCore
       # Host app dependency lets @testable import Flint exercise the shipped model.
       - target: Flint
+
+  # ── Fixture-only UI tests (kept out of the Flint unit-test scheme) ──
+  FlintUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - UITests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.uitests
+        GENERATE_INFOPLIST_FILE: "YES"
+        TEST_TARGET_NAME: Flint
+    dependencies:
+      - target: Flint
+
+schemes:
+  FlintUI:
+    build:
+      targets:
+        Flint: all
+        FlintUITests: [test]
+        FlintTests: [test]
+    test:
+      config: Debug
+      targets:
+        - FlintUITests
+        - FlintTests

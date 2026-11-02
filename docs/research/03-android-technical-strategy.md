@@ -1,5 +1,14 @@
 # 03 — Android Technical Strategy: Flint's Blocker
 
+> **Historical research — original scope and status claims retained (2026-10-28).**
+> Use the [v1 capability acceptance ledger](../acceptance/v1-capability-ledger.md) for
+> current Flint implementation/evidence and [ADR-012](../architecture/protection-contract.md)
+> for personal protection requirements. Old future-date, launch-count, pass, anti-removal,
+> competitor and expanded connected-scope claims below are historical planning inputs,
+> not current release promises. The Android connected backend remains debug-only;
+> release is local-first, no-account and without analytics. No physical-device result
+> follows from an old status column.
+
 > **Status:** Definitive implementation strategy for the Android blocker (2025–2026).
 > **Scope:** Foreground-app + website blocking, Google Play policy compliance, permissions, OEM/battery survival, and the `android-app/` module layout (Kotlin + Jetpack Compose).
 > **Principle:** Flint is 100% free and open source. Every blocking capability Opal paywalls ships free in Flint. This document is the engineering plan to match Opal's Android enforcement quality without the paywall.

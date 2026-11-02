@@ -1,0 +1,244 @@
+[
+  {
+    "role": "application",
+    "type": "Application",
+    "label": "Flint",
+    "value": "",
+    "enabled": true,
+    "frame": {
+      "x": 0,
+      "y": 0,
+      "width": 1,
+      "height": 1
+    },
+    "children": [
+      {
+        "role": "back button",
+        "type": "Button",
+        "label": "Back",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.0398,
+          "y": 0.0709,
+          "width": 0.1095,
+          "height": 0.0503
+        },
+        "children": [],
+        "id": "BackButton"
+      },
+      {
+        "role": "heading",
+        "type": "Heading",
+        "label": "Sleep",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.4502,
+          "y": 0.0839,
+          "width": 0.0995,
+          "height": 0.0244
+        },
+        "children": []
+      },
+      {
+        "role": "Group",
+        "type": "Group",
+        "label": "",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0,
+          "y": 0,
+          "width": 1,
+          "height": 0.7307
+        },
+        "children": [
+          {
+            "role": "text",
+            "type": "StaticText",
+            "label": "Off",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.0498,
+              "y": 0.1819,
+              "width": 0.131,
+              "height": 0.0584
+            },
+            "children": []
+          },
+          {
+            "role": "",
+            "type": "GenericElement",
+            "label": "Sleep window",
+            "value": "Bedtime 10:00\u202fPM. Wake 7:00\u202fAM. 9 hours of quiet.",
+            "enabled": true,
+            "frame": {
+              "x": 0.2189,
+              "y": 0.2734,
+              "width": 0.563,
+              "height": 0.4249
+            },
+            "children": []
+          },
+          {
+            "role": "button",
+            "type": "Button",
+            "label": "Bedtime",
+            "value": "10:00\u202fPM",
+            "enabled": true,
+            "frame": {
+              "x": 0.0498,
+              "y": 0.7258,
+              "width": 0.9005,
+              "height": 0.1686
+            },
+            "children": []
+          },
+          {
+            "role": "button",
+            "type": "Button",
+            "label": "Wake",
+            "value": "7:00\u202fAM",
+            "enabled": true,
+            "frame": {
+              "x": 0.0498,
+              "y": 0.9058,
+              "width": 0.9005,
+              "height": 0.1686
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "role": "button",
+        "type": "Button",
+        "label": "Today",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.0597,
+          "y": 0.7307,
+          "width": 0.4403,
+          "height": 0.1083
+        },
+        "children": []
+      },
+      {
+        "role": "button",
+        "type": "Button",
+        "label": "Rules",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.5,
+          "y": 0.7307,
+          "width": 0.4403,
+          "height": 0.1083
+        },
+        "children": []
+      },
+      {
+        "role": "button",
+        "type": "Button",
+        "label": "Insights",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.0597,
+          "y": 0.8391,
+          "width": 0.4403,
+          "height": 0.1083
+        },
+        "children": []
+      },
+      {
+        "role": "button",
+        "type": "Button",
+        "label": "You",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.5,
+          "y": 0.8391,
+          "width": 0.4403,
+          "height": 0.1083
+        },
+        "children": []
+      },
+      {
+        "role": "text",
+        "type": "StaticText",
+        "label": "4:11\u202fPM",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.1418,
+          "y": 0.0248,
+          "width": 0.0846,
+          "height": 0.0248
+        },
+        "children": []
+      },
+      {
+        "role": "",
+        "type": "GenericElement",
+        "label": "Dynamic Island, Empty",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.3441,
+          "y": 0.016,
+          "width": 0.3118,
+          "height": 0.042
+        },
+        "children": []
+      },
+      {
+        "role": "",
+        "type": "GenericElement",
+        "label": "Cellular",
+        "value": "No signal",
+        "enabled": true,
+        "frame": {
+          "x": 0.7081,
+          "y": 0.0286,
+          "width": 0.0506,
+          "height": 0.0156
+        },
+        "children": []
+      },
+      {
+        "role": "",
+        "type": "GenericElement",
+        "label": "",
+        "value": "SSID, 3 of 3 Wi-Fi bars",
+        "enabled": true,
+        "frame": {
+          "x": 0.7811,
+          "y": 0.0297,
+          "width": 0.0439,
+          "height": 0.0145
+        },
+        "children": [],
+        "id": "3 of 3 Wi-Fi bars"
+      },
+      {
+        "role": "",
+        "type": "GenericElement",
+        "label": "100% battery power",
+        "value": "Not charging",
+        "enabled": true,
+        "frame": {
+          "x": 0.8474,
+          "y": 0.029,
+          "width": 0.0721,
+          "height": 0.0156
+        },
+        "children": []
+      }
+    ]
+  }
+]

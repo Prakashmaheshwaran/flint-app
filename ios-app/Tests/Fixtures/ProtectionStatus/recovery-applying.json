@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "observedAt": 1793188800,
+  "validUntil": 1793188860,
+  "state": "degraded",
+  "causes": [
+    {
+      "id": "fixture.schedule",
+      "kind": "recurringSchedule",
+      "displayName": "Fixture schedule",
+      "tier": "harder",
+      "end": 1793196000,
+      "enforcing": false
+    }
+  ],
+  "pass": {
+    "eligibility": "cooling_down",
+    "nextAvailableAt": 1793793600,
+    "recoveryUntil": 1793192400
+  },
+  "degradedReasons": ["recovery_applying"],
+  "writer": "monitor"
+}

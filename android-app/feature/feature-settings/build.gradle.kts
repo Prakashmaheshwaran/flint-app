@@ -22,18 +22,28 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
+    testOptions { unitTests { isIncludeAndroidResources = true } }
 }
 
 dependencies {
     implementation(project(":core:core-common"))
     implementation(project(":core:core-model"))
+    implementation(project(":core:core-history"))
+    implementation(libs.kotlinx.coroutines.android)
     implementation(project(":permissions:permissions-special"))
     implementation(project(":blocking:blocking-resilience"))
+    implementation(project(":blocking:blocking-engine")) // supported-browser matrix and coverage states
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.kotlinx.coroutines.android)
     debugImplementation(libs.androidx.ui.tooling)
+    debugImplementation(libs.androidx.ui.test.manifest)
     testImplementation(libs.junit)
+    testDebugImplementation(libs.androidx.junit)
+    testDebugImplementation(libs.androidx.ui.test.junit4)
+    testDebugImplementation(libs.robolectric)
 }

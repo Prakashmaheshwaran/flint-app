@@ -1,7 +1,7 @@
-# Attaches a downloadable Android APK to GitHub Releases.
+# Attaches development-signed Android preview APK/AAB files to GitHub Releases.
 # Runs when a release is published, or manually (workflow_dispatch) for an existing tag.
-# HONESTY NOTE: the APK uses release code with development signing — an installable
-# preview, not a Play Store build. Debug-only emulator tools are excluded.
+# Release code excludes debug-only account tools. This public workflow has no
+# owner upload credentials; store bundles are built separately by the key owner.
 name: Release artifacts
 
 on:
@@ -41,18 +41,23 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
 
       # Development signing is retained, but release code excludes emulator account tools.
-      - name: Assemble local-first preview APK
+      - name: Build and test local-first development previews
         working-directory: android-app
-        run: ./gradlew :app:assembleRelease
+        run: ./gradlew :app:assembleRelease :app:bundleRelease test
 
       - name: Verify the packaged local-first boundary
-        run: python3 scripts/verify_local_first_apk.py android-app/app/build/outputs/apk/release/app-release.apk
+        run: |
+          python3 scripts/verify_local_first_apk.py android-app/app/build/outputs/apk/release/app-release.apk
+          python3 scripts/verify_local_first_apk.py android-app/app/build/outputs/bundle/release/app-release.aab
 
-      - name: Attach APK to the release
+      - name: Attach explicitly labeled development previews to the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
-          APK=$(ls android-app/app/build/outputs/apk/release/*.apk | head -1)
-          cp "$APK" "flint-${TAG}-android-debug.apk"
-          gh release upload "$TAG" "flint-${TAG}-android-debug.apk" --clobber
+          APK="flint-${TAG}-android-development-preview.apk"
+          AAB="flint-${TAG}-android-development-preview.aab"
+          cp android-app/app/build/outputs/apk/release/app-release.apk "$APK"
+          cp android-app/app/build/outputs/bundle/release/app-release.aab "$AAB"
+          sha256sum "$APK" "$AAB" > "flint-${TAG}-android-development-preview.sha256"
+          gh release upload "$TAG" "$APK" "$AAB" "flint-${TAG}-android-development-preview.sha256" --clobber

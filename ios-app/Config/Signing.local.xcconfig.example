@@ -1,0 +1,9 @@
+// Copy to Signing.local.xcconfig (gitignored), then set your approved Apple team.
+// Do not commit the copy, certificates, profiles, account credentials or keys.
+DEVELOPMENT_TEAM = YOURTEAMID
+
+// Automatic signing normally chooses the identity from local profiles/keychain.
+// If your team's process requires an explicit identity, put it only in the local
+// override, scoped to the intended configuration and iphoneos SDK. For example:
+// CODE_SIGN_IDENTITY[config=Release][sdk=iphoneos*] = Apple Distribution
+// Never put MARKETING_VERSION or CURRENT_PROJECT_VERSION in this local override.

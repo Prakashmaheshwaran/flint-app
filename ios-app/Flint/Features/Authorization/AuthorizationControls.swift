@@ -34,7 +34,7 @@ struct AuthorizationControls: View {
                     feedback("Settings couldn’t be opened. Open the Settings app manually, then check Flint’s Screen Time access.")
                 }
             } else {
-                if let error = auth.lastError { feedback(error) }
+                if let error = auth.lastError { feedback(LocalizedStringKey(error)) }
                 Button {
                     Task {
                         await auth.requestAuthorization()
@@ -53,9 +53,14 @@ struct AuthorizationControls: View {
                 }
             }
         }
+        // Errors appear without moving focus; say them so VoiceOver users hear why nothing changed.
+        .onChange(of: auth.lastError) { error in
+            guard let error else { return }
+            UIAccessibility.post(notification: .announcement, argument: error)
+        }
     }
 
-    private func actionLabel(_ title: String) -> some View {
+    private func actionLabel(_ title: LocalizedStringKey) -> some View {
         Text(title)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
@@ -63,7 +68,7 @@ struct AuthorizationControls: View {
             .padding(.vertical, 12)
     }
 
-    private func secondaryLabel(_ title: String) -> some View {
+    private func secondaryLabel(_ title: LocalizedStringKey) -> some View {
         Text(title)
             .font(FlintFont.text(14, weight: .medium))
             .foregroundStyle(FlintBrand.bone)
@@ -74,7 +79,7 @@ struct AuthorizationControls: View {
             .contentShape(Rectangle())
     }
 
-    private func feedback(_ message: String) -> some View {
+    private func feedback(_ message: LocalizedStringKey) -> some View {
         Text(message)
             .font(FlintFont.text(13))
             .foregroundStyle(FlintBrand.danger)

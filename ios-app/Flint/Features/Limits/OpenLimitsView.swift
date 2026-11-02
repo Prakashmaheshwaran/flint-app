@@ -5,42 +5,68 @@ import FlintCore
 @MainActor
 final class OpenLimitsViewModel: ObservableObject {
     @Published private(set) var rules: [FlintOpenLimitRule] = []
+    @Published private(set) var health = FlintArmingHealth()
+    @Published private(set) var observation: FlintProtectionObservation?
     private let controller = FlintOpenLimitsController()
 
     init() {
-        controller.reload() // re-arm shields + day-boundary activities when the screen opens
         refresh()
     }
 
-    func refresh() { rules = controller.rules() }
-    func save(_ rule: FlintOpenLimitRule) { controller.upsert(rule); refresh() }
-    func delete(_ id: String) { controller.delete(id); refresh() }
-    func toggle(_ rule: FlintOpenLimitRule) { controller.setEnabled(rule.id, !rule.enabled); refresh() }
+    func refresh() {
+        rules = controller.rules()
+        health = FlintGroupStore()?.loadArmingHealth() ?? FlintArmingHealth()
+        observation = FlintProtectionObservation.load()
+    }
+    func save(_ rule: FlintOpenLimitRule, confirmation: FlintRuleConfirmation? = nil, creating: Bool = false) -> FlintRuleMutationResult {
+        let result = controller.upsert(rule, confirmation: confirmation, creating: creating, origin: .interactive); refresh(); return result
+    }
+    func delete(_ rule: FlintOpenLimitRule, confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
+        let result = controller.delete(rule.id, revision: rule.protection?.revision ?? 0, confirmation: confirmation, origin: .interactive); refresh(); return result
+    }
+    func toggle(_ rule: FlintOpenLimitRule, confirmation: FlintRuleConfirmation? = nil) -> FlintRuleMutationResult {
+        let result = controller.setEnabled(rule.id, !rule.enabled, revision: rule.protection?.revision ?? 0,
+            confirmation: confirmation, origin: .interactive); refresh(); return result
+    }
+    func cancel(_ id: String, confirmation: FlintRuleConfirmation?) { controller.cancelPendingChange(id, confirmation: confirmation) }
+    func cancelQueued(_ rule: FlintOpenLimitRule, expected: FlintRuleProtection) -> FlintRuleMutationResult {
+        let result = controller.cancelQueuedChange(rule.id, expected: expected); refresh(); return result
+    }
+    func delete(_ rules: [FlintOpenLimitRule], confirmation: FlintRuleConfirmation?) -> FlintRuleMutationResult {
+        let result = controller.deleteBatch(rules, confirmation: confirmation, origin: .interactive); refresh(); return result
+    }
 }
 
-/// Create/edit daily Open Limits (launch-count caps). A pushable `View` (no own
+/// Create/edit daily quotas of bounded, explicitly accepted access credits. A pushable `View` (no own
 /// `NavigationStack`, like `SleepModeView`) — `LimitsView` links here.
 ///
-/// How the enforcement actually works (honest UX): the selected apps/sites *stay shielded*;
-/// tapping the block screen's "Use app (N left)" button spends one of the day's opens and lets
-/// the next launch through. `FlintOpenLimitsController` arms the shields; the ShieldAction
-/// extension spends the opens. Like every shield, it only enforces on a real device.
+/// Selected apps/sites stay shielded between accepted credits. Each credit lasts up to five
+/// minutes, clipped at the quota reset; another protection can prevent its use. Native shield
+/// delivery and re-application require physical-device verification.
 struct OpenLimitsView: View {
     @StateObject private var vm = OpenLimitsViewModel()
+    @StateObject private var flow = RuleMutationFlow()
     @State private var showAdd = false
     @State private var editing: FlintOpenLimitRule?
 
     var body: some View {
         Group {
             if vm.rules.isEmpty {
-                emptyState
+                if vm.health.domains["openLimits"]?.failures.contains(where: { $0.activityName == "openLimits" }) == true {
+                    Text("Saved Open Limits are unavailable. Existing protection was preserved.").padding()
+                } else { emptyState }
             } else {
                 List {
                     ForEach(vm.rules) { rule in
                         Button { editing = rule } label: { row(rule) }
                             .buttonStyle(.plain)
                     }
-                    .onDelete { set in set.map { vm.rules[$0].id }.forEach(vm.delete) }
+                    .onDelete { set in
+                        let selected = set.map { vm.rules[$0] }
+                        flow.run(scope: selected.map(\.name).joined(separator: ", "),
+                            operation: { vm.delete(selected, confirmation: $0) },
+                            cancel: { ticket in selected.forEach { vm.cancel($0.id, confirmation: ticket) } })
+                    }
                 }
             }
         }
@@ -51,9 +77,11 @@ struct OpenLimitsView: View {
                 Button { showAdd = true } label: { Image(systemName: "plus") }
             }
         }
-        .sheet(isPresented: $showAdd) { OpenLimitEditor(rule: nil) { vm.save($0) } }
-        .sheet(item: $editing) { rule in OpenLimitEditor(rule: rule) { vm.save($0) } }
+        .sheet(isPresented: $showAdd) { OpenLimitEditor(rule: nil) { vm.save($0, confirmation: $1, creating: true) } }
+        .sheet(item: $editing) { rule in OpenLimitEditor(rule: rule) { vm.save($0, confirmation: $1) } }
+        .ruleMutationFlow(flow)
         .onAppear { vm.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: .flintProtectionReconciled)) { _ in vm.refresh() }
     }
 
     private var emptyState: some View {
@@ -61,8 +89,9 @@ struct OpenLimitsView: View {
             Image(systemName: "hand.tap")
                 .font(.system(size: 44)).foregroundStyle(FlintBrand.spark)
             Text("No open limits yet").font(.headline)
-            Text("Cap how many times a day an app can be opened — e.g. 3 opens of social. "
-                 + "Each pass-through from the block screen spends one. Free.")
+            Text("Choose how many access credits you can use each day for an app or website. "
+                 + "Each accepted credit gives up to 5 minutes, ending sooner at the daily reset. "
+                 + "Apps and sites stay blocked between credits; another rule may prevent their use.")
                 .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
             Button { showAdd = true } label: { Text("Add an open limit") }
                 .buttonStyle(.borderedProminent).tint(FlintBrand.spark)
@@ -74,11 +103,27 @@ struct OpenLimitsView: View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
                 Text(rule.name).font(.body.weight(.medium))
-                Text("\(rule.opensAllowed) \(rule.opensAllowed == 1 ? "open" : "opens")/day")
+                Text("\(rule.opensAllowed) \(rule.opensAllowed == 1 ? "credit" : "credits")/day")
                     .font(.caption).foregroundStyle(.secondary)
+                Text("\(rule.breakLevel.rawValue.capitalized) · \(rule.protection?.timeZoneID ?? TimeZone.current.identifier)")
+                    .font(.caption).foregroundStyle(.secondary)
+                if let protection = rule.protection, protection.queuedChange != nil {
+                    QueuedRuleChangeView(protection: protection) {
+                        flow.run(scope: rule.name, operation: { _ in vm.cancelQueued(rule, expected: protection) })
+                    }
+                }
+                if rule.protection?.requiresTierReview == true { Text("Review migrated tier").font(.caption) }
+                if rule.enabled {
+                    Text(FlintRuleProtectionStatus.status(enabled: rule.enabled, activityName: rule.activityName,
+                        domain: "openLimits", health: vm.health, observation: vm.observation,
+                        authorized: AuthorizationCenter.shared.authorizationStatus == .approved).label)
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             Spacer()
-            Toggle("", isOn: Binding(get: { rule.enabled }, set: { _ in vm.toggle(rule) }))
+            Toggle("", isOn: Binding(get: { rule.enabled }, set: { _ in
+                flow.run(scope: rule.name, operation: { vm.toggle(rule, confirmation: $0) }, cancel: { vm.cancel(rule.id, confirmation: $0) })
+            }))
                 .labelsHidden().tint(FlintBrand.spark)
         }
         .padding(.vertical, 4)
@@ -90,7 +135,9 @@ struct OpenLimitEditor: View {
 
     private let existingID: String?
     private let existingEnabled: Bool
-    private let onSave: (FlintOpenLimitRule) -> Void
+    private let original: FlintOpenLimitRule?
+    private let onSave: (FlintOpenLimitRule, FlintRuleConfirmation?) -> FlintRuleMutationResult
+    @StateObject private var flow = RuleMutationFlow()
 
     @State private var name: String
     @State private var opensAllowed: Int
@@ -98,9 +145,10 @@ struct OpenLimitEditor: View {
     @State private var selection: FamilyActivitySelection
     @State private var showPicker = false
 
-    init(rule: FlintOpenLimitRule?, onSave: @escaping (FlintOpenLimitRule) -> Void) {
+    init(rule: FlintOpenLimitRule?, onSave: @escaping (FlintOpenLimitRule, FlintRuleConfirmation?) -> FlintRuleMutationResult) {
         self.existingID = rule?.id
         self.existingEnabled = rule?.enabled ?? true
+        self.original = rule
         self.onSave = onSave
         _name = State(initialValue: rule?.name ?? "")
         _opensAllowed = State(initialValue: rule?.opensAllowed ?? 3)
@@ -112,7 +160,7 @@ struct OpenLimitEditor: View {
         NavigationStack {
             Form {
                 Section { TextField("Name", text: $name) }
-                Section("Opens allowed: \(opensAllowed)/day") {
+                Section("Credits per day: \(opensAllowed)") {
                     Stepper("", value: $opensAllowed, in: 1...20, step: 1).labelsHidden()
                 }
                 Section {
@@ -143,13 +191,14 @@ struct OpenLimitEditor: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(tokenCount == 0 || FlintTokens.exceedsShieldCap(selection))
+                        .disabled(selectionIssue != nil)
                 }
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
             }
             .familyActivityPicker(isPresented: $showPicker, selection: $selection)
+            .ruleMutationFlow(flow)
         }
     }
 
@@ -161,28 +210,34 @@ struct OpenLimitEditor: View {
     }
 
     private var footerText: Text {
-        if FlintTokens.exceedsShieldCap(selection) {
-            return Text("Too many items — pick at most \(FlintShieldLimits.tokenCap) apps or "
-                        + "\(FlintShieldLimits.tokenCap) sites (an iOS shield cap).")
+        if let issue = selectionIssue {
+            return Text(issue.message(for: .openLimit) + (issue == .emptySelection && !selection.categoryTokens.isEmpty
+                ? " Open Limits require specific apps or websites; categories cannot be open-limited." : ""))
         }
         if !selection.categoryTokens.isEmpty {
-            return Text("Whole categories can't be open-limited (an Apple token limitation) — "
-                        + "only the specific apps & sites picked here are counted.")
+            return Text("Categories stay saved but cannot use access credits. "
+                        + "Choose individual apps or websites for up to 5 minutes per credit.")
         }
-        return Text("The apps stay shielded; the block screen's button spends one of the day's "
-                    + "opens to let you through.")
+        return Text("Apps and sites stay blocked between credits. Each accepted credit gives up to 5 minutes, "
+                    + "ending sooner at the daily reset. Another protection may prevent credit use.")
     }
 
     private func save() {
+        guard selectionIssue == nil else { return }
         let rule = FlintOpenLimitRule(
             id: existingID ?? String(UUID().uuidString.prefix(8)),
             name: name.isEmpty ? "Open limit" : name,
             opensAllowed: opensAllowed,
             selection: selection,
             breakLevel: breakLevel,
-            enabled: existingEnabled
+            enabled: existingEnabled, protection: original?.protection ?? .init()
         )
-        onSave(rule)
-        dismiss()
+        flow.run(scope: rule.name, operation: { onSave(rule, $0) },
+            cancel: { ticket in if let existingID { FlintOpenLimitsController().cancelPendingChange(existingID, confirmation: ticket) } },
+            onSaved: { dismiss() })
+    }
+
+    private var selectionIssue: FlintSelectionIssue? {
+        FlintSelectionValidation.issue(for: selection, context: .openLimit)
     }
 }

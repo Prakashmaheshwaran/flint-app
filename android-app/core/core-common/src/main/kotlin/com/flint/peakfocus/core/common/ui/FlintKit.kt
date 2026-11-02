@@ -43,13 +43,21 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.flint.peakfocus.core.common.theme.FlintMotion
 import com.flint.peakfocus.core.common.theme.FlintNumerals
 import com.flint.peakfocus.core.common.theme.FlintSpacing
+import com.flint.peakfocus.core.common.R
 
 /**
  * Flint's shared component kit — the coherence lever. Every feature screen builds from these
@@ -97,9 +105,10 @@ fun FlintCard(
     val border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     if (onClick != null) {
         val interactionSource = remember { MutableInteractionSource() }
+        val reducedMotion = rememberReducedMotion()
         val pressed by interactionSource.collectIsPressedAsState()
         val pressScale by animateFloatAsState(
-            targetValue = if (pressed) FlintMotion.PressedScale else 1f,
+            targetValue = if (pressed && !reducedMotion) FlintMotion.PressedScale else 1f,
             animationSpec = FlintMotion.SpringSettle,
             label = "flintCardPressScale",
         )
@@ -138,6 +147,7 @@ fun FlintCard(
  * screen's breathing mark, so every idle motion in the app shares a heartbeat.
  */
 fun Modifier.flintPulse(): Modifier = composed {
+    if (rememberReducedMotion()) return@composed this
     val transition = rememberInfiniteTransition(label = "flintPulse")
     val breathAlpha by transition.animateFloat(
         initialValue = 0.5f,
@@ -149,6 +159,15 @@ fun Modifier.flintPulse(): Modifier = composed {
         label = "flintPulseAlpha",
     )
     graphicsLayer { alpha = breathAlpha }
+}
+
+/** Put this on the loading container, never on each decorative skeleton block/row. */
+fun Modifier.flintLoading(): Modifier = composed {
+    val loading = stringResource(R.string.flint_loading)
+    clearAndSetSemantics {
+        contentDescription = loading
+        liveRegion = LiveRegionMode.Polite
+    }
 }
 
 /**
@@ -167,7 +186,8 @@ fun FlintSkeletonBlock(
             .height(height)
             .clip(shape)
             .flintPulse()
-            .background(color),
+            .background(color)
+            .clearAndSetSemantics {},
     )
 }
 
@@ -197,9 +217,16 @@ fun FlintSkeletonRow(modifier: Modifier = Modifier) {
  * keeps exactly one quietly-alive ember per screen.
  */
 @Composable
-fun FlintStatusDot(color: Color, modifier: Modifier = Modifier, pulsing: Boolean = false) {
+fun FlintStatusDot(
+    color: Color,
+    modifier: Modifier = Modifier,
+    pulsing: Boolean = false,
+    stateDescription: String? = null,
+) {
     val base = if (pulsing) modifier.flintPulse() else modifier
-    Box(base.size(FlintSpacing.sm).background(color, CircleShape))
+    Box(base.size(FlintSpacing.sm).background(color, CircleShape).semantics {
+        if (stateDescription != null) this.stateDescription = stateDescription
+    })
 }
 
 /** Uppercase pill badge; [emphasized] renders spark-filled (the HARDCORE treatment). */
@@ -259,15 +286,18 @@ fun FlintInfoPill(text: String, modifier: Modifier = Modifier, spokenText: Strin
  */
 @Composable
 fun FlintMeterBar(fraction: Float, modifier: Modifier = Modifier, height: Dp = 4.dp) {
+    val progress = flintProgressFraction(fraction)
+    val reducedMotion = rememberReducedMotion()
     val animatedFraction by animateFloatAsState(
-        targetValue = fraction.coerceIn(0f, 1f),
-        animationSpec = tween(FlintMotion.DurationLong, easing = FlintMotion.EasingEmphasized),
+        targetValue = progress,
+        animationSpec = tween(if (reducedMotion) 0 else FlintMotion.DurationLong, easing = FlintMotion.EasingEmphasized),
         label = "flintMeterFill",
     )
     Box(
         modifier
             .fillMaxWidth()
             .height(height)
+            .semantics { progressBarRangeInfo = ProgressBarRangeInfo(progress, 0f..1f) }
             .background(
                 color = MaterialTheme.colorScheme.surfaceContainerHighest,
                 shape = MaterialTheme.shapes.small,
@@ -284,6 +314,10 @@ fun FlintMeterBar(fraction: Float, modifier: Modifier = Modifier, height: Dp = 4
         )
     }
 }
+
+/** Keep both the drawn width and accessibility range valid for incomplete numeric input. */
+internal fun flintProgressFraction(fraction: Float): Float =
+    if (fraction.isNaN()) 0f else fraction.coerceIn(0f, 1f)
 
 /** Uppercase section label — the eyebrow style in its quiet, on-surface-variant role. */
 @Composable

@@ -17,18 +17,15 @@ enum class BlockScreenReason {
     /** The app's daily time budget is used up. */
     TIME_LIMIT,
 
-    /** The app's daily open quota is used up. */
+    /** The app is shielded between timed credits, or its daily credit quota is used up. */
     OPEN_LIMIT,
 
     /** A hardcore Deep Focus session is running. */
     DEEP_FOCUS,
-
-    /**
-     * A protected system surface (the uninstaller, Settings pages about Flint) while a
-     * Hardcore window is active — the anti-bypass shield, not an app block.
-     */
-    UNINSTALL_GUARD,
 }
+
+/** Host persistence status; only READY/FAILED may offer a new tier-dependent request. */
+enum class GrantStatus { READY, LOADING, SAVING, UNAVAILABLE, FAILED, RETRY_OPEN, RESETTING }
 
 /**
  * Everything [BlockScreen] needs to render, supplied by the host (accessibility overlay or
@@ -61,6 +58,15 @@ data class BlockScreenState(
      * of a button whose tap would silently no-op.
      */
     val emergencyPassAvailable: Boolean = true,
+    val grantStatus: GrantStatus = GrantStatus.READY,
+    val openCreditsRemaining: Int? = null,
+    val openCreditDurationMillis: Long? = null,
+    val openCreditActiveRemainingMillis: Long? = null,
+    val openCreditBlockingContributors: List<String> = emptyList(),
+    /** Opaque reviewed-action token. The host revalidates it in the accepting transaction. */
+    val openCreditRequestScope: String? = null,
+    /** Combined protection may outlast the headline limit's own reset. */
+    val combinedEnd: Boolean = false,
 )
 
 /** How long the HARDER-level control must be held before `onBreakRequested` fires. */
@@ -68,6 +74,12 @@ internal const val BREAK_HOLD_MILLIS = 1_500L
 
 /** The break affordance the screen offers, derived from break level + host wait state. */
 internal sealed interface BreakAffordance {
+    data object Saving : BreakAffordance
+    data object Unavailable : BreakAffordance
+    data object RetryOpen : BreakAffordance
+    data object QuotaPending : BreakAffordance
+    data class UseCredit(val remaining: Int, val durationMillis: Long) : BreakAffordance
+    data class CreditBlocked(val contributors: List<String>) : BreakAffordance
     /** EASY: a plain "Take a break" button. */
     data object TakeABreak : BreakAffordance
 
@@ -83,13 +95,6 @@ internal sealed interface BreakAffordance {
     /** HARDCORE: no bypass affordance — only the Emergency Pass CTA, and only while this
      *  week's pass is unspent ([passAvailable] false shows an inert "already used" notice). */
     data class EmergencyPassOnly(val passAvailable: Boolean) : BreakAffordance
-
-    /**
-     * Uninstall guard: no affordance at all. The guard re-shields its surfaces on every
-     * window event regardless of exemptions, so offering the weekly Emergency Pass here
-     * would burn it for nothing — the shield must never sell an exit it won't honor.
-     */
-    data object None : BreakAffordance
 }
 
 /** Fully resolved copy + affordance for one render of the screen. Pure and unit-tested. */
@@ -106,8 +111,7 @@ internal data class BlockScreenContent(
 
 /**
  * The cause badge above the countdown (rendered uppercase by the badge component).
- * [emphasized] is the spark-filled treatment, reserved for the two unbreakable shapes:
- * a HARDCORE tier and the uninstall guard.
+ * [emphasized] is the spark-filled treatment, reserved for the unbreakable HARDCORE tier.
  */
 internal data class BlockScreenBadge(
     val text: String,
@@ -119,17 +123,33 @@ internal fun blockScreenContent(state: BlockScreenState): BlockScreenContent {
     return BlockScreenContent(
         displayName = name,
         headline = "$name is resting.",
-        reasonLine = reasonLineFor(state.reason),
+        reasonLine = (if (state.grantStatus == GrantStatus.RESETTING)
+            "Access credits are updating. This app stays protected."
+            else if (state.reason == BlockScreenReason.OPEN_LIMIT && (state.openCreditsRemaining ?: 0) > 0)
+            "This app stays protected between 5-minute access credits." else reasonLineFor(state.reason)) +
+            (if ((state.openCreditActiveRemainingMillis ?: 0) > 0) " Credit access ends in ${formatDuration(state.openCreditActiveRemainingMillis!!)}; ${state.openCreditsRemaining ?: 0} credits remain." else "") +
+            if (state.openCreditBlockingContributors.isNotEmpty()) " Also blocked by ${state.openCreditBlockingContributors.joinToString(", ")}." else "",
         badge = badgeFor(state.reason, state.breakLevel),
-        countdownLabel = countdownLabelFor(state.reason, state.remainingMillis),
+        countdownLabel = countdownLabelFor(state.reason, state.remainingMillis, state.combinedEnd),
         encouragement = encouragementFor(state.packageName),
-        breakAffordance = breakAffordanceFor(
+        breakAffordance = when (state.grantStatus) {
+            GrantStatus.LOADING, GrantStatus.SAVING -> BreakAffordance.Saving
+            GrantStatus.UNAVAILABLE -> BreakAffordance.Unavailable
+            GrantStatus.RETRY_OPEN -> BreakAffordance.RetryOpen
+            GrantStatus.RESETTING -> BreakAffordance.QuotaPending
+            GrantStatus.READY, GrantStatus.FAILED -> when {
+                (state.openCreditsRemaining ?: 0) > 0 && (state.openCreditActiveRemainingMillis ?: 0) == 0L ->
+                    if (state.openCreditBlockingContributors.isNotEmpty()) BreakAffordance.CreditBlocked(state.openCreditBlockingContributors)
+                    else BreakAffordance.UseCredit(state.openCreditsRemaining!!, state.openCreditDurationMillis ?: 0)
+                else -> breakAffordanceFor(
             state.reason,
             state.breakLevel,
             state.breakWaitRemainingMillis,
             state.breakWaitTotalMillis,
             state.emergencyPassAvailable,
-        ),
+            )
+            }
+        },
     )
 }
 
@@ -140,9 +160,8 @@ internal fun reasonLineFor(reason: BlockScreenReason): String = when (reason) {
     BlockScreenReason.MANUAL_SESSION -> "A focus session you started is running."
     BlockScreenReason.SCHEDULE -> "This hour belongs to one of your schedules."
     BlockScreenReason.TIME_LIMIT -> "You’ve used today’s time for this app."
-    BlockScreenReason.OPEN_LIMIT -> "You’ve used today’s opens for this app."
+    BlockScreenReason.OPEN_LIMIT -> "You’ve used today’s access credits for this app."
     BlockScreenReason.DEEP_FOCUS -> "Deep Focus is on until the session ends."
-    BlockScreenReason.UNINSTALL_GUARD -> "This screen is protected while Deep Focus is on."
 }
 
 internal fun badgeFor(reason: BlockScreenReason, level: BreakLevel): BlockScreenBadge =
@@ -153,27 +172,25 @@ internal fun badgeFor(reason: BlockScreenReason, level: BreakLevel): BlockScreen
             BlockScreenReason.TIME_LIMIT -> "Time limit"
             BlockScreenReason.OPEN_LIMIT -> "Open limit"
             BlockScreenReason.DEEP_FOCUS -> "Deep Focus"
-            BlockScreenReason.UNINSTALL_GUARD -> "Protected"
         },
-        emphasized = level == BreakLevel.HARDCORE || reason == BlockScreenReason.UNINSTALL_GUARD,
+        emphasized = level == BreakLevel.HARDCORE,
     )
 
 /**
  * Frames daily budgets as resetting at midnight and timed blocks as unblocking when they end.
  * Open-ended blocks have no countdown label.
  */
-internal fun countdownLabelFor(reason: BlockScreenReason, remainingMillis: Long?): String? {
+internal fun countdownLabelFor(reason: BlockScreenReason, remainingMillis: Long?, combinedEnd: Boolean = false): String? {
     if (remainingMillis == null) return null
-    return "${countdownVerbFor(reason)} in ${formatDuration(remainingMillis)}"
+    return "${countdownVerbFor(reason, combinedEnd)} in ${formatDuration(remainingMillis)}"
 }
 
 /** One exhaustive reason classifier shared by visual and TalkBack countdown copy. */
-internal fun countdownVerbFor(reason: BlockScreenReason): String = when (reason) {
+internal fun countdownVerbFor(reason: BlockScreenReason, combinedEnd: Boolean = false): String = if (combinedEnd) "Unblocks" else when (reason) {
     BlockScreenReason.TIME_LIMIT, BlockScreenReason.OPEN_LIMIT -> "Resets"
     BlockScreenReason.MANUAL_SESSION,
     BlockScreenReason.SCHEDULE,
     BlockScreenReason.DEEP_FOCUS,
-    BlockScreenReason.UNINSTALL_GUARD,
     -> "Unblocks"
 }
 
@@ -184,8 +201,6 @@ internal fun breakAffordanceFor(
     breakWaitTotalMillis: Long? = null,
     emergencyPassAvailable: Boolean = true,
 ): BreakAffordance = when {
-    // Guard shields offer no exit whatever the tier — see [BreakAffordance.None]'s contract.
-    reason == BlockScreenReason.UNINSTALL_GUARD -> BreakAffordance.None
     level == BreakLevel.EASY -> BreakAffordance.TakeABreak
     level == BreakLevel.HARDER ->
         if (breakWaitRemainingMillis != null && breakWaitRemainingMillis > 0) {
@@ -251,6 +266,6 @@ internal const val HOLD_BREAK_A11Y_DESCRIPTION =
 internal fun waitNoticeA11y(remainingMillis: Long): String =
     "Break available in ${formatDurationSpoken(remainingMillis)}"
 
-internal fun countdownA11y(reason: BlockScreenReason, remainingMillis: Long): String {
-    return "${countdownVerbFor(reason)} in ${formatDurationSpoken(remainingMillis)}"
+internal fun countdownA11y(reason: BlockScreenReason, remainingMillis: Long, combinedEnd: Boolean = false): String {
+    return "${countdownVerbFor(reason, combinedEnd)} in ${formatDurationSpoken(remainingMillis)}"
 }

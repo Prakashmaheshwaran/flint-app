@@ -10,12 +10,30 @@ import FlintCore
 struct FocusFilterView: View {
     @State private var config = FlintFocusFilterConfig.load()
     @State private var savedGroups: [FlintAppGroup] = FlintGroupStore()?.loadAppGroups() ?? []
+    /// The last Focus request Flint refused or couldn't finish (ADR-012 §1: never silent).
+    @State private var refusal = FlintSessionHealth.load().lastRefusal
 
     var body: some View {
         Form {
+            if let refusal {
+                Section {
+                    Text(refusal.reason)
+                        .font(.footnote)
+                    Button("Dismiss") {
+                        FlintSessionHealth.clearRefusal()
+                        self.refusal = nil
+                    }
+                } header: {
+                    Text(refusal.action == .start ? "Focus didn't start a block" : "Focus off didn't end the block")
+                } footer: {
+                    Text(refusal.at.formatted(date: .abbreviated, time: .shortened))
+                }
+            }
+
             Section {
                 Text("Attach Flint to a system Focus (Work, Sleep, …) so a block starts the moment "
-                     + "that Focus turns on — and stops when it turns off. No tap required.")
+                     + "that Focus turns on. If another session is already running, the Focus "
+                     + "starts nothing.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -45,10 +63,17 @@ struct FocusFilterView: View {
                     }
                 }
                 .tint(FlintBrand.spark)
+                if config.breakLevel != .easy {
+                    Stepper(value: $config.durationMinutes, in: 15...1440, step: 15) {
+                        Text("Lasts \(config.durationMinutes) min")
+                    }
+                }
             } footer: {
-                Text("A Focus Filter block ends the moment you turn the Focus off — even on Hardcore "
-                     + "(the Focus is its timer). For a block that can't be lifted early, start a "
-                     + "timed Hardcore session in Block Now instead.")
+                Text(config.breakLevel == .easy
+                     ? "Easy blocks follow the Focus: they end when you turn the Focus off."
+                     : "Harder and Hardcore blocks run for a set time. Turning the Focus off asks to "
+                       + "end early under the same rules as the app: Harder waits first, Hardcore keeps "
+                       + "running until its end (the Emergency Pass is still there).")
             }
 
             Section {
@@ -66,7 +91,10 @@ struct FocusFilterView: View {
         .navigationBarTitleDisplayMode(.inline)
         // Persist every edit so newly-created Focus filters pick up the latest defaults.
         .onChange(of: config) { newValue in
-            newValue.save()
+            var saved = newValue
+            if saved.breakLevel != .easy, saved.durationMinutes <= 0 { saved.durationMinutes = 60 }
+            if saved != newValue { config = saved }
+            saved.save()
         }
     }
 

@@ -74,12 +74,12 @@ class AccessStateStoreTest {
         val store = DataStoreAccessStateStore(disk)
         store.transact { AccessMutation(pendingLedger, Unit) }
         assertEquals(before, disk.values.value.asMap().filterKeys { it != TEMPORARY_ACCESS_V2 })
-        assertEquals(PrefsCodec.decodeRules(original[stringPreferencesKey("block_rules_v1")]!!),
-            DataStoreBlockRulesStore(disk).rules.first())
+        assertEquals(StorageState.Unavailable(StorageFailure.CORRUPT),
+            DataStoreBlockRulesStore(disk).rulesState.drop(1).first())
         assertEquals(BreakSessionState(7, BreakRequestState(1000, 901000)), DataStoreFocusStateStore(disk).breakSession.first())
         assertEquals(OpenCountState(20637, mapOf("app" to 4, "other" to 8)), DataStoreFocusStateStore(disk).openCounts.first())
         assertEquals(listOf(OpenLimit("app", 3, BreakLevel.HARDCORE)), DataStoreLimitsStore(disk).openLimits.first())
-        assertEquals(listOf(TimeLimit("app", 15)), DataStoreLimitsStore(disk).timeLimits.first())
+        assertEquals(StorageState.Unavailable(StorageFailure.CORRUPT), DataStoreLimitsStore(disk).timeLimitsState.drop(1).first())
     }
 
     @Test fun corruptOrFuturePayloadNeverBecomesEmptyOrGetsOverwritten() = runBlocking {

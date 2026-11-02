@@ -1,0 +1,22 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<testsuites tests="5" failures="0" errors="0" skipped="0" time="414.442" timestamp="2026-10-28T21:45:04" hostname="localhost">
+  <testsuite name="com.flint.peakfocus.e2e.FlintSmokeTest" tests="4" failures="0" errors="0" skipped="0" time="72.655" timestamp="2026-10-28T21:45:04" hostname="localhost">
+    <properties>
+      <property name="device" value="test(AVD) - 16" />
+      <property name="flavor" value="" />
+      <property name="project" value=":e2e" />
+    </properties>
+    <testcase name="hardcoreShieldEmergencyPassWorks" classname="com.flint.peakfocus.e2e.FlintSmokeTest" time="31.332" />
+    <testcase name="authoredRuleSurvivesProcessRestartAndShieldBreakWorks" classname="com.flint.peakfocus.e2e.FlintSmokeTest" time="30.078" />
+    <testcase name="onboardingConsentRendersAndDeclines" classname="com.flint.peakfocus.e2e.FlintSmokeTest" time="4.364" />
+    <testcase name="exhaustedDailyBudgetShowsTimeLimitShield" classname="com.flint.peakfocus.e2e.FlintSmokeTest" time="6.881" />
+  </testsuite>
+  <testsuite name="com.flint.peakfocus.e2e.FocusHistoryTest" tests="1" failures="0" errors="0" skipped="0" time="340.193" timestamp="2026-10-28T21:45:04" hostname="localhost">
+    <properties>
+      <property name="device" value="test(AVD) - 16" />
+      <property name="flavor" value="" />
+      <property name="project" value=":e2e" />
+    </properties>
+    <testcase name="realCompletionAndEarlyEndSurviveRestartAndRenderHistory" classname="com.flint.peakfocus.e2e.FocusHistoryTest" time="340.193" />
+  </testsuite>
+</testsuites>

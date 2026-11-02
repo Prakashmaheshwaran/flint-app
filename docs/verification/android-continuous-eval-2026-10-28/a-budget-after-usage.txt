@@ -1,0 +1,8 @@
+Target-only activity events after the budget shield; no other package usage included.
+time=1793225666838 type=ACTIVITY_RESUMED package=com.google.android.deskclock class=com.android.deskclock.DeskClock instanceId=210297316 taskRootPackage=com.google.android.deskclock taskRootClass=com.android.deskclock.DeskClock flags=0x0
+time=1793225781892 type=ACTIVITY_PAUSED package=com.google.android.deskclock class=com.android.deskclock.DeskClock instanceId=210297316 taskRootPackage=com.google.android.deskclock taskRootClass=com.android.deskclock.DeskClock flags=0x0
+time=1793225786505 type=ACTIVITY_STOPPED package=com.google.android.deskclock class=com.android.deskclock.DeskClock instanceId=210297316 taskRootPackage=com.google.android.deskclock taskRootClass=com.android.deskclock.DeskClock flags=0x0
+time=1793225855657 type=ACTIVITY_RESUMED package=com.google.android.deskclock class=com.android.deskclock.DeskClock instanceId=210297316 taskRootPackage=com.google.android.deskclock taskRootClass=com.android.deskclock.DeskClock flags=0x0
+time=1793226213278 type=ACTIVITY_PAUSED package=com.google.android.deskclock class=com.android.deskclock.DeskClock instanceId=210297316 taskRootPackage=com.google.android.deskclock taskRootClass=com.android.deskclock.DeskClock flags=0x0
+time=1793226217495 type=ACTIVITY_STOPPED package=com.google.android.deskclock class=com.android.deskclock.DeskClock instanceId=210297316 taskRootPackage=com.google.android.deskclock taskRootClass=com.android.deskclock.DeskClock flags=0x0
+time=1793226219604 type=ACTIVITY_RESUMED package=com.google.android.deskclock class=com.android.deskclock.DeskClock instanceId=210297316 taskRootPackage=com.google.android.deskclock taskRootClass=com.android.deskclock.DeskClock flags=0x0

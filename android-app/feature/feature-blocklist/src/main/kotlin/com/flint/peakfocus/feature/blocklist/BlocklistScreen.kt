@@ -2,11 +2,14 @@ package com.flint.peakfocus.feature.blocklist
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -46,6 +49,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,6 +60,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -80,7 +85,10 @@ import com.flint.peakfocus.core.common.ui.FlintScreenHeader
 import com.flint.peakfocus.core.common.ui.FlintSectionLabel
 import com.flint.peakfocus.core.common.ui.FlintSkeletonRow
 import com.flint.peakfocus.core.common.ui.FlintStatusDot
+import com.flint.peakfocus.core.common.ui.flintLoading
 import com.flint.peakfocus.core.common.ui.rememberFlintHaptics
+import com.flint.peakfocus.core.common.ui.rememberReducedMotion
+import com.flint.peakfocus.blocking.overlay.TargetProtectionReader
 import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BlockTargets
@@ -89,6 +97,8 @@ import com.flint.peakfocus.core.model.DomainRef
 import com.flint.peakfocus.core.model.OpenLimit
 import com.flint.peakfocus.core.model.Schedule
 import com.flint.peakfocus.core.model.TimeLimit
+import com.flint.peakfocus.core.model.StorageState
+import com.flint.peakfocus.core.datastore.EditorCommitmentState
 import kotlinx.coroutines.launch
 
 /** Where inside the feature the user currently is. Internal navigation only — no nav graph.
@@ -109,6 +119,10 @@ private sealed interface BlocklistDestination {
     data class EditLimit(val packageName: String?, val visit: Int = 0) : BlocklistDestination
 
     data class EditSleep(val visit: Int = 0) : BlocklistDestination
+
+    /** Read-only: picked apps and sites, then lane C's per-target protection for one. */
+    data object AppsAndSites : BlocklistDestination
+    data class TargetDetail(val picked: PickedTarget) : BlocklistDestination
 }
 
 /** Editor push distance (LIST-07): content enters from a 30dp end inset, not full-width. */
@@ -157,6 +171,8 @@ fun BlocklistScreen(
     contentPadding: PaddingValues = PaddingValues(),
     quickBlockSummary: String? = null,
     onQuickBlock: (() -> Unit)? = null,
+    /** Lane C's read-only per-target reader; Apps and sites is shown only when supplied. */
+    targetProtection: TargetProtectionReader? = null,
 ) {
     val context = LocalContext.current
     val blocklistViewModel: BlocklistViewModel =
@@ -167,6 +183,10 @@ fun BlocklistScreen(
     val appsState by blocklistViewModel.installedApps.collectAsStateWithLifecycle()
     val defaultBreakLevel by blocklistViewModel.defaultBreakLevel.collectAsStateWithLifecycle()
     val groups by blocklistViewModel.groups.collectAsStateWithLifecycle()
+    val saveState by blocklistViewModel.editorSave.collectAsStateWithLifecycle()
+    val commitmentStorage by blocklistViewModel.commitmentState.collectAsStateWithLifecycle()
+    val waitRemaining by blocklistViewModel.waitRemaining.collectAsStateWithLifecycle()
+    val commitmentState = (commitmentStorage as? StorageState.Ready)?.value
 
     // Editor state (which rule, half-built drafts) intentionally lives in composition, not
     // SavedState — process death drops back to the overview, never to a corrupt half-draft.
@@ -175,18 +195,26 @@ fun BlocklistScreen(
     }
     var editorVisits by remember { mutableStateOf(0) }
 
+    LaunchedEffect(destination) { blocklistViewModel.clearSaveFeedback() }
+
     BackHandler(enabled = destination != BlocklistDestination.Overview) {
-        destination = BlocklistDestination.Overview
+        if (!saveState.busy) destination = when (destination) {
+            is BlocklistDestination.TargetDetail -> BlocklistDestination.AppsAndSites
+            else -> BlocklistDestination.Overview
+        }
     }
 
     val slideDistance = with(LocalDensity.current) { EditorSlideDistance.roundToPx() }
+    val reducedMotion = rememberReducedMotion()
 
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         AnimatedContent(
             targetState = destination,
             modifier = Modifier.fillMaxSize(),
             transitionSpec = {
-                if (initialState is BlocklistDestination.Overview) {
+                if (reducedMotion && (initialState is BlocklistDestination.EditSleep || targetState is BlocklistDestination.EditSleep)) {
+                    EnterTransition.None togetherWith ExitTransition.None
+                } else if (initialState is BlocklistDestination.Overview) {
                     // Push: editor slides in from the end while the overview fades away.
                     (
                         slideInHorizontally(
@@ -231,19 +259,41 @@ fun BlocklistScreen(
                         destination = BlocklistDestination.EditSleep(visit = ++editorVisits)
                     },
                     onToggleSleep = blocklistViewModel::setSleepEnabled,
+                    saveError = saveState.error ?: if (commitmentStorage is StorageState.Unavailable) EDITOR_STORAGE_UNAVAILABLE_MESSAGE else null,
+                    commitmentState = commitmentState,
+                    saveResult = saveState.result,
+                    onDismissMigrationNotice = blocklistViewModel::dismissMigrationNotice,
                     contentPadding = contentPadding,
                     quickBlockSummary = quickBlockSummary,
                     onQuickBlock = onQuickBlock,
+                    onAppsAndSites = targetProtection?.let { { destination = BlocklistDestination.AppsAndSites } },
                 )
 
+                BlocklistDestination.AppsAndSites -> {
+                    val labels = (appsState as? InstalledAppsUiState.Ready)?.apps?.associate { it.packageName to it.label }.orEmpty()
+                    AppsAndSitesList(
+                        state = pickedTargets(rulesState, limitsState) { labels[it] },
+                        onOpen = { destination = BlocklistDestination.TargetDetail(it) },
+                        onBack = { destination = BlocklistDestination.Overview },
+                    )
+                }
+
+                is BlocklistDestination.TargetDetail -> targetProtection?.let { reader ->
+                    AppDetailRoute(dest.picked, reader, onBack = { destination = BlocklistDestination.AppsAndSites })
+                } ?: LaunchedEffect(Unit) { destination = BlocklistDestination.Overview }
+
                 is BlocklistDestination.EditRule -> {
+                    val initialRules = rememberEditorSnapshot(dest, rulesState as? RulesUiState.Ready)
+                    if (initialRules == null) {
+                        StorageEditorUnavailable(onClose = { destination = BlocklistDestination.Overview }, loading = rulesState is RulesUiState.Loading)
+                        return@AnimatedContent
+                    }
                     // Snapshotted once per destination: the exiting editor must keep rendering
                     // the draft it opened with — recomputing from live rulesState mid-pop
                     // flashes a blank "New block rule" form the instant a delete's DataStore
                     // emission removes the rule while the pop animation is still playing.
                     val existing = remember(dest) {
-                        (rulesState as? RulesUiState.Ready)
-                            ?.rules?.firstOrNull { it.id == dest.ruleId }
+                        initialRules.rules.firstOrNull { it.id == dest.ruleId }
                     }
                     val initialDraft = remember(dest) {
                         existing?.let(::ruleDraftOf)
@@ -257,18 +307,21 @@ fun BlocklistScreen(
                         onSaveGroup = blocklistViewModel::saveGroup,
                         onDeleteGroup = blocklistViewModel::deleteGroup,
                         onSave = { draft ->
-                            blocklistViewModel.saveRule(draft)
-                            destination = BlocklistDestination.Overview
+                            blocklistViewModel.saveRule(draft) {
+                                if (destination == dest) destination = BlocklistDestination.Overview
+                            }
                         },
                         onDelete = if (existing == null) {
                             null
                         } else {
                             {
-                                blocklistViewModel.deleteRule(existing.id)
-                                destination = BlocklistDestination.Overview
+                                blocklistViewModel.deleteRule(existing.id) {
+                                    if (destination == dest) destination = BlocklistDestination.Overview
+                                }
                             }
                         },
-                        onClose = { destination = BlocklistDestination.Overview },
+                        onClose = { if (!saveState.busy) destination = BlocklistDestination.Overview },
+                        saveState = saveState,
                     )
                 }
 
@@ -278,37 +331,47 @@ fun BlocklistScreen(
                     limitsState = limitsState,
                     defaultBreakLevel = defaultBreakLevel,
                     onSaveLimits = { pkg, time, open ->
-                        blocklistViewModel.saveLimits(pkg, time, open)
-                        destination = BlocklistDestination.Overview
+                        blocklistViewModel.saveLimits(pkg, time, open) {
+                            if (destination == dest) destination = BlocklistDestination.Overview
+                        }
                     },
                     onClearLimits = { pkg ->
-                        blocklistViewModel.clearLimits(pkg)
-                        destination = BlocklistDestination.Overview
+                        blocklistViewModel.clearLimits(pkg) {
+                            if (destination == dest) destination = BlocklistDestination.Overview
+                        }
                     },
-                    onClose = { destination = BlocklistDestination.Overview },
+                    onClose = { if (!saveState.busy) destination = BlocklistDestination.Overview },
+                    saveState = saveState,
                 )
 
                 is BlocklistDestination.EditSleep -> {
+                    val initialRules = rememberEditorSnapshot(dest, rulesState as? RulesUiState.Ready)
+                    if (initialRules == null) {
+                        StorageEditorUnavailable(onClose = { destination = BlocklistDestination.Overview }, loading = rulesState is RulesUiState.Loading)
+                        return@AnimatedContent
+                    }
                     // Same snapshot rationale as EditRule: the exiting editor keeps the
                     // config it opened with even if a save's emission lands mid-pop.
                     val initial = remember(dest) {
-                        (rulesState as? RulesUiState.Ready)
-                            ?.rules?.let(::sleepConfigFrom)
-                            ?: SleepConfig.DEFAULT
+                        sleepConfigFrom(initialRules.rules) ?: SleepConfig.DEFAULT
                     }
                     SleepEditorScreen(
                         initial = initial,
                         appsState = appsState,
                         onSave = { config ->
-                            blocklistViewModel.saveSleep(config)
-                            destination = BlocklistDestination.Overview
+                            blocklistViewModel.saveSleep(config) {
+                                if (destination == dest) destination = BlocklistDestination.Overview
+                            }
                         },
-                        onClose = { destination = BlocklistDestination.Overview },
+                        onClose = { if (!saveState.busy) destination = BlocklistDestination.Overview },
+                        saveState = saveState,
                     )
                 }
             }
         }
     }
+    commitmentState?.let { EditorCommitmentDialog(it, waitRemaining, saveState.busy, saveState.error,
+        blocklistViewModel::confirmChange, blocklistViewModel::cancelChange) }
 }
 
 @OptIn(ExperimentalFoundationApi::class) // rememberSnapFlingBehavior on older foundation lines.
@@ -328,6 +391,11 @@ private fun BlocklistOverview(
     contentPadding: PaddingValues = PaddingValues(),
     quickBlockSummary: String? = null,
     onQuickBlock: (() -> Unit)? = null,
+    onAppsAndSites: (() -> Unit)? = null,
+    saveError: String? = null,
+    saveResult: String? = null,
+    commitmentState: EditorCommitmentState? = null,
+    onDismissMigrationNotice: () -> Unit = {},
 ) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -374,8 +442,22 @@ private fun BlocklistOverview(
         }
         item(key = "rules-label") {
             SectionLabelItem("Block rules")
+            ErrorMessages(listOfNotNull(saveError))
+            saveResult?.let { Text(it, Modifier.padding(horizontal = FlintSpacing.gutter)) }
+            commitmentState?.let { state ->
+                Column(Modifier.padding(horizontal = FlintSpacing.gutter)) {
+                    if (state.migrationNotice) {
+                        Text("Existing occurrences keep their previous exit rights until they end. New occurrences use the displayed tier.", style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = onDismissMigrationNotice) { Text("Got it") }
+                    }
+                    QueuedEditorChanges(state.queued)
+                }
+            }
         }
         when {
+            rulesState is RulesUiState.Unavailable -> item(key = "rules-unavailable") {
+                ErrorMessages(listOf("Couldn't load. Try again."), Modifier.padding(horizontal = FlintSpacing.gutter))
+            }
             authoredRules == null -> item(key = "rules-loading") {
                 LoadingRows(
                     modifier = animatedRow()
@@ -460,13 +542,14 @@ private fun BlocklistOverview(
         item(key = "sleep-card") {
             // Single card either way, so this section can keep a literal Crossfade.
             Crossfade(
-                targetState = rulesState is RulesUiState.Loading,
+                targetState = rulesState !is RulesUiState.Ready,
                 modifier = Modifier.padding(horizontal = FlintSpacing.gutter),
-                animationSpec = tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard),
+                animationSpec = if (rememberReducedMotion()) snap() else tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard),
                 label = "sleepSection",
             ) { loading ->
                 if (loading) {
-                    LoadingRows()
+                    if (rulesState is RulesUiState.Unavailable) ErrorMessages(listOf("Couldn't load. Try again."))
+                    else LoadingRows()
                 } else {
                     SleepCard(
                         config = sleepConfigFrom(
@@ -486,6 +569,9 @@ private fun BlocklistOverview(
             SectionLabelItem("Daily app limits")
         }
         when {
+            limitsState is LimitsUiState.Unavailable -> item(key = "limits-unavailable") {
+                ErrorMessages(listOf("Couldn't load. Try again."), Modifier.padding(horizontal = FlintSpacing.gutter))
+            }
             limitRows == null -> item(key = "limits-loading") {
                 LoadingRows(
                     modifier = animatedRow()
@@ -497,7 +583,7 @@ private fun BlocklistOverview(
             limitRows.isEmpty() -> item(key = "limits-empty") {
                 EmptyCard(
                     heading = "No app limits yet",
-                    message = "Cap how long — or how many times — an app gets used each day.",
+                    message = "Set a daily time budget, or choose how many 5-minute access credits you can use each day.",
                     modifier = animatedRow()
                         .padding(horizontal = FlintSpacing.gutter)
                         .padding(bottom = FlintSpacing.cardGap),
@@ -524,6 +610,17 @@ private fun BlocklistOverview(
                 Text("New app limit")
             }
         }
+        // Appended last so the first-run template scroll index above stays unchanged.
+        if (onAppsAndSites != null) {
+            item(key = "apps-and-sites") {
+                FlintNavPanel(
+                    title = stringResource(R.string.targets_title),
+                    subtitle = stringResource(R.string.targets_entry_description),
+                    onClick = onAppsAndSites,
+                    modifier = Modifier.padding(horizontal = FlintSpacing.gutter).padding(top = FlintSpacing.lg),
+                )
+            }
+        }
     }
 }
 
@@ -540,7 +637,7 @@ private fun SectionLabelItem(text: String) {
 /** The one loading idiom app-wide: pulsing skeleton rows where the cards will land. */
 @Composable
 private fun LoadingRows(modifier: Modifier = Modifier) {
-    Column(modifier = modifier.fillMaxWidth()) {
+    Column(modifier = modifier.fillMaxWidth().flintLoading()) {
         FlintSkeletonRow()
         FlintSkeletonRow()
     }
@@ -680,7 +777,7 @@ private fun RuleCard(
                         FlintStatusDot(MaterialTheme.colorScheme.primary, pulsing = true)
                         Spacer(Modifier.width(FlintSpacing.xs))
                         Text(
-                            text = "Active now",
+                            text = stringResource(R.string.rules_active_now),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -711,15 +808,16 @@ private fun RuleCard(
 }
 
 @Composable
-private fun SleepCard(config: SleepConfig?, onClick: () -> Unit, onToggle: (Boolean) -> Unit) {
+internal fun SleepCard(config: SleepConfig?, onClick: () -> Unit, onToggle: (Boolean) -> Unit) {
     val enabled = config?.enabled == true
+    val reducedMotion = rememberReducedMotion()
     val containerColor by animateColorAsState(
         targetValue = if (enabled) {
             MaterialTheme.colorScheme.surfaceContainerLow
         } else {
             MaterialTheme.colorScheme.surfaceContainerLowest
         },
-        animationSpec = tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard),
+        animationSpec = if (reducedMotion) snap() else tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard),
         label = "sleepCardContainer",
     )
     val titleColor by animateColorAsState(
@@ -728,36 +826,34 @@ private fun SleepCard(config: SleepConfig?, onClick: () -> Unit, onToggle: (Bool
         } else {
             MaterialTheme.colorScheme.onSurfaceVariant
         },
-        animationSpec = tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard),
+        animationSpec = if (reducedMotion) snap() else tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard),
         label = "sleepCardTitle",
     )
     FlintCard(onClick = onClick, containerColor = containerColor) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = "Sleep mode",
+                    text = stringResource(R.string.sleep_title),
                     style = MaterialTheme.typography.titleMedium,
                     color = titleColor,
                 )
                 Spacer(Modifier.height(FlintSpacing.xs))
                 if (config == null) {
                     Text(
-                        text = "Not set up — bedtime blocking with an optional morning window.",
+                        text = stringResource(R.string.sleep_not_set_up),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
                     Text(
-                        text = sleepSummary(config),
+                        text = sleepSummaryText(config),
                         style = MaterialTheme.typography.bodySmall.merge(FlintNumerals),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(FlintSpacing.sm))
                     FlintBadge(
-                        text = when (config.assist) {
-                            SleepAssist.WIND_DOWN -> "Wind down"
-                            SleepAssist.FULL_ASSIST -> "Full assist"
-                        },
+                        text = stringResource(R.string.sleep_tier_value, stringResource(sleepPresentation(config).tier)),
+                        emphasized = sleepPresentation(config).emphasizeTier,
                     )
                 }
             }
@@ -769,11 +865,12 @@ private fun SleepCard(config: SleepConfig?, onClick: () -> Unit, onToggle: (Bool
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
+                val ruleDescription = stringResource(R.string.sleep_rule_description)
                 Switch(
                     colors = flintSwitchColors(),
                     checked = config.enabled,
                     onCheckedChange = onToggle,
-                    modifier = Modifier.semantics { contentDescription = "Sleep mode rule" },
+                    modifier = Modifier.semantics { contentDescription = ruleDescription },
                 )
             }
         }

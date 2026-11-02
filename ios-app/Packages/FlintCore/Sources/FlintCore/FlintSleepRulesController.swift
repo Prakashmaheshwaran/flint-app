@@ -1,0 +1,140 @@
+import Foundation
+#if canImport(FamilyControls) && canImport(DeviceActivity) && canImport(ManagedSettings)
+import FamilyControls
+
+/// Sleep is a batch of rule mutations, never a separate way around the rule gate. Config
+/// edits are drafts until this returns applied/queued; loading a screen does not re-save them.
+public final class FlintSleepRulesController {
+    public static let nightID = "sleep.night"
+    public static let morningID = "sleep.morning"
+    static let key = "flint.sleepConfig"
+    private let env: FlintRuleReloadEnvironment
+    public init(defaults: UserDefaults? = .flintGroup) {
+        var env = FlintRuleReloadEnvironment.live; env.defaults = defaults; self.env = env
+    }
+    init(environment: FlintRuleReloadEnvironment) { env = environment }
+
+    @discardableResult
+    public func save(_ draft: FlintSleepConfig, confirmation: FlintRuleConfirmation? = nil,
+                     origin: FlintRuleMutationOrigin = .background) -> FlintRuleMutationResult {
+        FlintRuleStoreLock.withLock(environment: env) {
+            guard draft.contractVersion == nil || draft.contractVersion == 12,
+                  draft.revision.map({ $0 > 0 }) ?? true else { return .unavailable }
+            guard let defaults = self.env.defaults,
+                  FlintRuleRecovery.available(Self.key + ".original.adr012", defaults: defaults,
+                    directory: self.env.recoveryDirectory),
+                  let all = FlintDesiredRules.load(FlintScheduleRule.self, key: .schedules,
+                    from: defaults, at: self.env.clock.now(), recoveryDirectory: self.env.recoveryDirectory) else { return .unavailable }
+            let previous: FlintSleepConfig?
+            if let raw = defaults.object(forKey: Self.key) {
+                guard let data = raw as? Data, let config = try? JSONDecoder().decode(FlintSleepConfig.self, from: data),
+                      config.contractVersion == nil || config.contractVersion == 12,
+                      (config.contractVersion == nil && config.revision == nil)
+                        || (config.contractVersion == 12 && (config.revision ?? 0) > 0) else { return .unavailable }
+                previous = config
+            } else {
+                guard defaults.object(forKey: Self.key + ".initialized") == nil,
+                      !all.contains(where: { $0.id.hasPrefix("sleep.") }) else { return .unavailable }
+                previous = nil
+            }
+            guard draft.revision == previous?.revision || previous == nil else { return .staleRevision }
+            if draft.enabled, draft.sleepAssist != .off, let issue = draft.schedule.issues.first { return .invalid(issue.message) }
+            let oldNight = all.first { $0.id == Self.nightID }
+            let oldMorning = all.first { $0.id == Self.morningID }
+            let legacy = draft.contractVersion == nil
+            let nightTier = draft.nightBreakLevel ?? (legacy ? oldNight?.breakLevel : nil)
+                ?? (legacy ? (draft.sleepAssist == .fullAssist ? .hardcore : .harder)
+                    : (draft.sleepAssist == .fullAssist ? .harder : .easy))
+            let morningTier = draft.morningBreakLevel ?? (legacy ? oldMorning?.breakLevel : nil) ?? (legacy ? .hardcore : .harder)
+            let selection = FlintGroupStore()?.loadAppGroups().first { $0.id == draft.allowGroupID }?.selection ?? FamilyActivitySelection()
+            var mutations: [FlintRuleArbiter.Mutation<FlintScheduleRule>] = []
+            func add(_ id: String, _ old: FlintScheduleRule?, _ window: FlintSchedule?, _ tier: BreakLevel, _ name: String) {
+                if let window {
+                    let rule = FlintScheduleRule(id: id, name: name, schedule: window, breakLevel: tier,
+                        selection: selection, allowListMode: true, protection: old?.protection ?? .init())
+                    mutations.append(.init(id: id, proposed: rule, action: .edit, expectedRevision: old?.revision ?? 1))
+                } else if let old { mutations.append(.init(id: id, proposed: nil, action: .delete, expectedRevision: old.revision)) }
+            }
+            add(Self.nightID, oldNight, draft.enabled && draft.sleepAssist != .off ? draft.schedule : nil, nightTier, "Sleep Mode")
+            add(Self.morningID, oldMorning, Self.morningWindow(draft), morningTier, "Morning Assist")
+            // R-26: Sleep takes its allowed apps from a saved group, so its refusal says where to
+            // choose them. Any save that keeps a window needs them (the arbiter checks each enabled
+            // window too); turning Sleep off removes both windows and is never blocked by this.
+            if mutations.contains(where: { $0.proposed?.enabled == true }),
+               self.env.validateSelection(selection, .allowList) == .emptyAllowList {
+                return .invalid(Self.allowedAppsRequired)
+            }
+            let context = [String(draft.revision ?? 0), draft.enabled.description, draft.sleepAssist.rawValue,
+                draft.morningAssist.rawValue, draft.allowGroupID ?? "none", String(draft.morningAssistMinutes),
+                nightTier.rawValue, morningTier.rawValue, draft.schedule.daysOfWeek.sorted().map(String.init).joined(separator: ",")]
+                .joined(separator: "|")
+            if previous?.contractVersion == nil, let original = defaults.data(forKey: Self.key) {
+                guard FlintRuleRecovery.retain(original, key: Self.key + ".original.adr012",
+                    defaults: defaults, directory: self.env.recoveryDirectory) else { return .unavailable }
+            }
+            let result = mutations.isEmpty ? FlintRuleMutationResult.applied
+                : FlintRuleArbiter(environment: self.env).mutate(mutations, confirmation: confirmation, context: context, origin: origin)
+            guard result.didSave else { return result }
+            var saved = draft
+            saved.revision = (previous?.revision ?? 0) + 1; saved.contractVersion = 12
+            saved.nightBreakLevel = nightTier; saved.morningBreakLevel = morningTier
+            guard let data = try? JSONEncoder().encode(saved) else { return .unavailable }
+            defaults.set(data, forKey: Self.key)
+            guard defaults.synchronize() else { return .unavailable }
+            defaults.set(1, forKey: Self.key + ".initialized")
+            return defaults.synchronize() ? result : .unavailable
+        } ?? .unavailable
+    }
+
+    public func cancel(confirmation: FlintRuleConfirmation? = nil) {
+        guard let confirmation else { return }
+        let arbiter = FlintRuleArbiter(environment: env)
+        _ = arbiter.cancel(FlintScheduleRule.self, id: Self.nightID, confirmation: confirmation)
+        _ = arbiter.cancel(FlintScheduleRule.self, id: Self.morningID, confirmation: confirmation)
+    }
+
+    /// The Sleep tiers last taken from the saved rules into a draft.
+    public struct TierAdoption: Equatable, Sendable {
+        public var night: BreakLevel?
+        public var morning: BreakLevel?
+        public init(night: BreakLevel?, morning: BreakLevel?) { self.night = night; self.morning = morning }
+    }
+
+    /// R-27: a Sleep window's tier can be changed in Rules, which doesn't update the saved
+    /// Sleep config. A draft takes the tier in force from each enabled window, so a later Sleep
+    /// save never reverts it. A window with a queued change has no tier to adopt yet; the draft
+    /// keeps its own. With `previous` set (a refresh), a tier the user picked since the last
+    /// adoption is kept; nil (opening Sleep or finishing a save) adopts unconditionally.
+    public static func adoptingTiersInForce(_ config: FlintSleepConfig, rules: [FlintScheduleRule],
+                                            keepingPicksSince previous: TierAdoption? = nil)
+        -> (config: FlintSleepConfig, adopted: TierAdoption) {
+        func inForce(_ id: String) -> BreakLevel? {
+            rules.first { $0.id == id && $0.enabled && $0.protection?.queuedChange == nil }?.breakLevel
+        }
+        var draft = config
+        var adopted = previous ?? .init(night: nil, morning: nil)
+        if previous == nil || draft.nightBreakLevel == previous?.night {
+            draft.nightBreakLevel = inForce(nightID) ?? draft.nightBreakLevel
+            adopted.night = draft.nightBreakLevel
+        }
+        if previous == nil || draft.morningBreakLevel == previous?.morning {
+            draft.morningBreakLevel = inForce(morningID) ?? draft.morningBreakLevel
+            adopted.morning = draft.morningBreakLevel
+        }
+        return (draft, adopted)
+    }
+
+    public static let allowedAppsRequired = FlintSelectionIssue.emptyAllowList.message
+        + " Save an app group with them in Block Now, then choose it under Allowed apps."
+
+    private static func morningWindow(_ config: FlintSleepConfig) -> FlintSchedule? {
+        guard config.enabled, config.morningAssist == .fullAssist, config.schedule.hasValidEndpoints else { return nil }
+        let wake = config.schedule.endMinuteOfDay
+        let end = (wake + min(max(config.morningAssistMinutes, FlintSchedule.minimumWindowMinutes), 720)) % FlintSchedule.minutesPerDay
+        let days = config.schedule.daysOfWeek
+        let shifted = config.schedule.endMinuteOfDay <= config.schedule.startMinuteOfDay
+        return .init(daysOfWeek: shifted ? Set(days.map { $0 % 7 + 1 }) : days,
+            startHour: wake / 60, startMinute: wake % 60, endHour: end / 60, endMinute: end % 60)
+    }
+}
+#endif

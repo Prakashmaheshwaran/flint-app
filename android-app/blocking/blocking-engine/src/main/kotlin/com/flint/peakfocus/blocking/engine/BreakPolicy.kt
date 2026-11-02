@@ -24,6 +24,9 @@ import com.flint.peakfocus.core.model.BreakSessionState
  *
  * The default delays (1 min → 5 min → 15 min, clamped at the last) are Flint's choice; Opal
  * does not document its exact values, only "extended waits/delays between breaks".
+ *
+ * **Superseded by [HarderWaitPolicy]** (ADR-012: per-occurrence Harder waits with an explicit final confirmation and 300 s scoped breaks). Still the live
+ * authority until the coordinator is rewired (lane C, C4b); do not add new callers.
  */
 class BreakPolicy(
     private val harderDelaysSeconds: List<Long> = DEFAULT_HARDER_DELAYS_SECONDS,

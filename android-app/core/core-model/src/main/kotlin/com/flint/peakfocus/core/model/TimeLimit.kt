@@ -12,4 +12,8 @@ package com.flint.peakfocus.core.model
 data class TimeLimit(
     val packageName: String,
     val dailyMinutes: Int,
+    /** Owned by this limit. Legacy tierless rows snapshot the old default during migration. */
+    val breakLevel: BreakLevel = BreakLevel.EASY,
+    /** Saved IANA zone. Null is a legacy/uncommitted draft; the migration/commit boundary stamps it once. */
+    val zoneId: String? = null,
 )

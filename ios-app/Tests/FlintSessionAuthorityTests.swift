@@ -1,0 +1,347 @@
+import XCTest
+@testable import FlintCore
+
+final class FlintSessionAuthorityTests: XCTestCase {
+    private let wall = Date(timeIntervalSince1970: 1_800_000_000)
+    private var instant: FlintLedgerInstant { .init(wall: wall, monotonic: 50_000, bootID: "boot") }
+    private func session(_ id: String) -> FlintActiveSession {
+        FlintActiveSession(id: id, name: "Focus", startedAt: wall, endsAt: wall.addingTimeInterval(1800),
+            breakLevel: .hardcore, monitorName: "flint.session.\(id)", monotonicStart: 50_000,
+            bootSessionID: "boot", plannedDuration: 1800, startRequestID: "request.\(id)")
+    }
+    private func install(_ id: String, in authority: inout FlintSessionAuthority) throws {
+        try authority.install(session(id), selection: Data("selection".utf8), source: .manual,
+            operationID: "request.\(id)", fingerprint: "parameters", expectedRevision: authority.revision, at: instant)
+        try authority.markApplied(session(id))
+    }
+
+    func testMissingActiveKeyCannotProveIdleWithoutLatestTombstoneR20PC64PC66() throws {
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        XCTAssertTrue(authority.provesIdle)
+        try install("X", in: &authority)
+        XCTAssertFalse(authority.provesIdle)
+        try authority.terminate(session("X"), outcome: .completed, route: "completed", at: wall)
+        XCTAssertTrue(authority.provesIdle)
+        try install("Y", in: &authority)
+        XCTAssertFalse(authority.provesIdle, "losing Y's defaults key cannot manufacture its tombstone")
+        XCTAssertThrowsError(try authority.terminate(session("X"), outcome: .completed, route: "completed", at: wall)) {
+            XCTAssertEqual($0 as? FlintSessionAuthorityError, .generationMismatch)
+        }
+        XCTAssertFalse(authority.provesIdle)
+        XCTAssertEqual(authority.latest?.session.id, "Y")
+    }
+
+    func testReadOnlyStatusDistinguishesLegacyIdleFromMissingGenerationRecordR20() throws {
+        let clock = FlintClock(now: { self.wall }, monotonic: { 50_000 },
+            bootSessionID: { "boot" }, calendar: { .current })
+        XCTAssertFalse(FlintSessionAuthority.recordIsUnavailable(nil, recordPresent: false, authority: nil, clock: clock))
+        XCTAssertTrue(FlintSessionAuthority.recordIsUnavailable(nil, recordPresent: false, authority: nil,
+            authorityVersion: 1, clock: clock))
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        XCTAssertFalse(FlintSessionAuthority.recordIsUnavailable(nil, recordPresent: false, authority: authority, clock: clock))
+        try install("Y", in: &authority)
+        XCTAssertTrue(FlintSessionAuthority.recordIsUnavailable(nil, recordPresent: false, authority: authority, clock: clock))
+        XCTAssertFalse(FlintSessionAuthority.recordIsUnavailable(session("Y"), recordPresent: true, authority: authority, clock: clock))
+        try authority.terminate(session("Y"), outcome: .completed, route: "completed", at: wall)
+        XCTAssertFalse(FlintSessionAuthority.recordIsUnavailable(nil, recordPresent: false, authority: authority, clock: clock))
+        XCTAssertTrue(FlintSessionAuthority.recordIsUnavailable(nil, recordPresent: true, authority: authority, clock: clock))
+    }
+
+    func testRestorationRejectsTamperedPreviousCommitmentPC05() throws {
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        try install("X", in: &authority)
+        try authority.install(session("Y"), selection: Data(), source: .manual,
+            operationID: "request.Y", fingerprint: "parameters", expectedRevision: authority.revision, at: instant)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(session("X"))) as? [String: Any])
+        object["breakLevel"] = "easy"
+        let tampered = try JSONDecoder().decode(FlintActiveSession.self,
+            from: JSONSerialization.data(withJSONObject: object))
+        let before = authority
+        XCTAssertThrowsError(try authority.restorePrevious(tampered, selection: nil, at: wall)) {
+            XCTAssertEqual($0 as? FlintSessionAuthorityError, .generationMismatch)
+        }
+        XCTAssertEqual(authority, before)
+    }
+
+    func testLegacyLedgerFixtureDecodesWithoutInventingAGeneration() throws {
+        var fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(
+            FlintLedgerState(initializedAt: wall))) as? [String: Any])
+        fixture.removeValue(forKey: "sessionAuthority")
+        fixture.removeValue(forKey: "sessionAuthorityVersion")
+        fixture["version"] = 2
+        let decoded = try JSONDecoder().decode(FlintLedgerState.self,
+            from: JSONSerialization.data(withJSONObject: fixture, options: [.sortedKeys]))
+        XCTAssertNil(decoded.sessionAuthority, "the transition explicitly performs the readable legacy migration")
+        XCTAssertEqual(decoded.initializedAt, wall)
+        XCTAssertEqual(decoded.version, 2)
+    }
+
+    func testPostMigrationLedgerWithStrippedAuthorityIsCorruptRatherThanLegacyIdleR20() throws {
+        var fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(
+            FlintLedgerState(initializedAt: wall))) as? [String: Any])
+        fixture.removeValue(forKey: "sessionAuthority")
+        XCTAssertThrowsError(try JSONDecoder().decode(FlintLedgerState.self,
+            from: JSONSerialization.data(withJSONObject: fixture, options: [.sortedKeys])))
+        fixture["sessionAuthorityVersion"] = NSNull()
+        XCTAssertThrowsError(try JSONDecoder().decode(FlintLedgerState.self,
+            from: JSONSerialization.data(withJSONObject: fixture, options: [.sortedKeys])), "null is not a legacy marker absence")
+        fixture.removeValue(forKey: "sessionAuthorityVersion")
+        XCTAssertThrowsError(try JSONDecoder().decode(FlintLedgerState.self,
+            from: JSONSerialization.data(withJSONObject: fixture)), "v3 itself requires authority")
+    }
+
+    func testV3AuthorityDocumentIsRefusedByThePreviousV2SchemaReader() throws {
+        struct PreviousReader: Decodable {
+            enum Keys: String, CodingKey { case version }
+            init(from decoder: Decoder) throws {
+                let values = try decoder.container(keyedBy: Keys.self)
+                guard (1...2).contains(try values.decode(Int.self, forKey: .version)) else {
+                    throw FlintLedgerError.unavailable("schema is newer than this build")
+                }
+            }
+        }
+        let bytes = try JSONEncoder().encode(FlintLedgerState(initializedAt: wall))
+        XCTAssertEqual(try JSONDecoder().decode(FlintLedgerState.self, from: bytes).version, 3)
+        XCTAssertThrowsError(try JSONDecoder().decode(PreviousReader.self, from: bytes))
+    }
+
+    func testAcceptedStartStoresOnlySessionIDAndDecodesTheEarlierFullSessionShape() throws {
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        try install("X", in: &authority)
+        let result = try XCTUnwrap(authority.acceptedStart("request.X"))
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(result)) as? [String: Any])
+        XCTAssertEqual(object["sessionID"] as? String, "X")
+        XCTAssertNil(object["session"])
+        object.removeValue(forKey: "sessionID")
+        object["session"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(session("X")))
+        let restored = try JSONDecoder().decode(FlintAcceptedStartResult.self,
+            from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertEqual(restored, result)
+    }
+
+    func testScopePolicyExcludesOnlyCheckpointAndBindsFutureCommitmentFields() throws {
+        let original = try JSONEncoder().encode(session("X"))
+        let policy = try FlintSessionAuthority.scopePolicy(original)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: original) as? [String: Any])
+        object["remainingCheckpoint"] = ["remaining": 12, "wall": 123, "monotonic": 456, "bootID": "new"]
+        object["naturalEndObservedAt"] = 234
+        XCTAssertEqual(try FlintSessionAuthority.scopePolicy(JSONSerialization.data(withJSONObject: object)), policy)
+        object["ownerID"] = "different-owner"
+        XCTAssertNotEqual(try FlintSessionAuthority.scopePolicy(JSONSerialization.data(withJSONObject: object)), policy)
+        object.removeValue(forKey: "ownerID")
+        object["futureCommitment"] = "must-participate"
+        XCTAssertNotEqual(try FlintSessionAuthority.scopePolicy(JSONSerialization.data(withJSONObject: object)), policy)
+        XCTAssertThrowsError(try FlintSessionAuthority.scopePolicy(Data("[]".utf8)))
+    }
+
+    func testInstallingStateRoundTripsEverythingNeededForInterruptedSessionSaveR25() throws {
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        try authority.install(session("X"), selection: Data("frozen selection".utf8), source: .shortcut,
+            operationID: "request.X", fingerprint: "parameters", expectedRevision: 0, at: instant)
+        let recovered = try JSONDecoder().decode(FlintSessionAuthority.self, from: JSONEncoder().encode(authority))
+        XCTAssertEqual(recovered.latest?.phase, .installing)
+        XCTAssertEqual(recovered.latest?.selection, Data("frozen selection".utf8))
+        XCTAssertEqual(recovered.latest?.session, session("X"))
+        XCTAssertEqual(recovered.acceptedStart("request.X")?.sessionID, "X")
+        try authority.markApplied(session("X"))
+        XCTAssertNil(authority.latest?.selection, "applied state cannot recover an unexplained missing key")
+    }
+
+    func testTerminalAcceptedResultSurvivesSerializationAndCannotBeAcceptedAgainPC03() throws {
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        try install("X", in: &authority)
+        try authority.terminate(session("X"), outcome: .stopped, route: "manual_stop", at: wall)
+        authority = try JSONDecoder().decode(FlintSessionAuthority.self, from: JSONEncoder().encode(authority))
+        XCTAssertEqual(authority.acceptedStart("request.X")?.outcome, .stopped)
+        XCTAssertEqual(authority.acceptedStart("request.X")?.endedAt, wall)
+        XCTAssertEqual(authority.acceptedStart("request.X")?.endRoute, "manual_stop")
+        XCTAssertThrowsError(try authority.install(session("X"), selection: Data(), source: .manual,
+            operationID: "request.X", fingerprint: "parameters", expectedRevision: authority.revision, at: instant)) {
+            XCTAssertEqual($0 as? FlintSessionAuthorityError, .alreadyAccepted)
+        }
+        XCTAssertTrue(authority.provesIdle)
+    }
+
+    func testConflictingOperationReuseIsRefusedPC03() throws {
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        try install("X", in: &authority)
+        XCTAssertThrowsError(try authority.install(session("Y"), selection: Data(), source: .manual,
+            operationID: "request.X", fingerprint: "different", expectedRevision: authority.revision, at: instant)) {
+            XCTAssertEqual($0 as? FlintSessionAuthorityError, .conflictingReuse)
+        }
+        XCTAssertEqual(authority.latest?.session.id, "X")
+    }
+
+    func testExpectedRevisionIsCheckedAtInstallCommitPC10() throws {
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        let displayed = authority.revision
+        try install("X", in: &authority)
+        XCTAssertThrowsError(try authority.install(session("Y"), selection: Data(), source: .manual,
+            operationID: "request.Y", fingerprint: "parameters", expectedRevision: displayed, at: instant)) {
+            XCTAssertEqual($0 as? FlintSessionAuthorityError, .staleRevision)
+        }
+        XCTAssertNil(authority.acceptedStart("request.Y"))
+    }
+
+    func testOlderSessionProjectionCannotRestoreTheLedgersSavedRemainingR05() throws {
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        let initialClock = FlintClock(now: { self.wall }, monotonic: { 50_000 },
+            bootSessionID: { "boot" }, calendar: { .current })
+        let original = session("X").checkpointed(clock: initialClock)
+        authority.adopt(original)
+        let now = FlintClock(now: { self.wall.addingTimeInterval(1790) }, monotonic: { 51_790 },
+                             bootSessionID: { "boot" }, calendar: { .current })
+        let saved = original.checkpointed(clock: now)
+        try authority.checkpoint(saved)
+        let recovered = try XCTUnwrap(authority.observedSession(matching: original, clock: now))
+        XCTAssertEqual(recovered.remainingCheckpoint?.remaining, 10)
+    }
+
+    func testCurrentBootCheckpointFromLedgerOutageSurvivesLaterForwardJumpR05() throws {
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        let original = session("X")
+        authority.adopt(original)
+        let rebootClock = FlintClock(now: { self.wall.addingTimeInterval(60) }, monotonic: { 10 },
+                                     bootSessionID: { "new-boot" }, calendar: { .current })
+        let observed = original.checkpointed(clock: rebootClock)
+        let jumped = FlintClock(now: { self.wall.addingTimeInterval(7260) }, monotonic: { 20 },
+                                bootSessionID: { "new-boot" }, calendar: { .current })
+        let recovered = try XCTUnwrap(authority.observedSession(matching: observed, clock: jumped))
+        XCTAssertEqual(recovered.logicalRemaining(clock: jumped), 1730)
+    }
+
+    func testCurrentBootLedgerCheckpointWinsPreviousBootProjectionIncludingRollbackR05PC55() throws {
+        for rebootWall in [wall.addingTimeInterval(1790), wall.addingTimeInterval(-3600)] {
+            let initialClock = FlintClock(now: { self.wall }, monotonic: { 50_000 },
+                bootSessionID: { "boot" }, calendar: { .current })
+            let original = session("X").checkpointed(clock: initialClock)
+            var authority = FlintSessionAuthority(initializedAt: wall)
+            authority.adopt(original)
+            let nearExpiry = original.checkpointed(clock: .init(now: { self.wall.addingTimeInterval(1790) },
+                monotonic: { 51_790 }, bootSessionID: { "boot" }, calendar: { .current }))
+            try authority.checkpoint(nearExpiry)
+            let rebooted = nearExpiry.checkpointed(clock: .init(now: { rebootWall }, monotonic: { 10 },
+                bootSessionID: { "new-boot" }, calendar: { .current }))
+            try authority.checkpoint(rebooted) // crash before overwriting the older projection
+            let now = FlintClock(now: { rebootWall.addingTimeInterval(3600) }, monotonic: { 11 },
+                bootSessionID: { "new-boot" }, calendar: { .current })
+            let known = try XCTUnwrap(authority.observedSession(matching: original, clock: now))
+            XCTAssertEqual(known.remainingCheckpoint, rebooted.remainingCheckpoint)
+            XCTAssertEqual(known.logicalRemaining(clock: now), 9)
+        }
+    }
+
+    func testProjectionCannotChangeAnAcceptedCommitment() throws {
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        let original = session("X")
+        authority.adopt(original)
+        let weakened = FlintActiveSession(id: original.id, name: original.name, startedAt: original.startedAt,
+            endsAt: original.endsAt, breakLevel: .easy, monitorName: original.monitorName,
+            monotonicStart: original.monotonicStart, bootSessionID: original.bootSessionID,
+            plannedDuration: original.plannedDuration, startRequestID: original.startRequestID)
+        let clock = FlintClock(now: { self.wall }, monotonic: { 50_000 },
+                               bootSessionID: { "boot" }, calendar: { .current })
+        XCTAssertNil(authority.observedSession(matching: weakened, clock: clock))
+    }
+
+    func testShortcutHostRecreationReusesDurableTokenForTwoMinutes() throws {
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        let first = authority.requestToken(route: "shortcut", fingerprint: "parameters", at: instant)
+        authority = try JSONDecoder().decode(FlintSessionAuthority.self, from: JSONEncoder().encode(authority))
+        var later = instant
+        later.monotonic += 119
+        later.wall.addTimeInterval(3600) // monotonic retry age, no wall-clock invalidation
+        XCTAssertEqual(authority.requestToken(route: "shortcut", fingerprint: "parameters", at: later), first)
+        later.monotonic += 2
+        XCTAssertNotEqual(authority.requestToken(route: "shortcut", fingerprint: "parameters", at: later), first)
+    }
+
+    func testTerminalOutcomeEndsHeuristicShortcutWindowImmediately() throws {
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        let token = authority.requestToken(route: "shortcut", fingerprint: "parameters", at: instant)
+        let active = session("X")
+        try authority.install(active, selection: Data(), source: .shortcut, operationID: token.operationID,
+            fingerprint: "parameters", expectedRevision: token.expectedRevision, at: instant)
+        try authority.markApplied(active)
+        try authority.terminate(active, outcome: .stopped, route: "shortcut_stop", at: wall)
+        XCTAssertNotEqual(authority.requestToken(route: "shortcut", fingerprint: "parameters", at: instant), token)
+    }
+
+    func testUnacceptedShortcutTokenRefreshesWhenThePreviewRevisionChangedPC10() {
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        let stale = authority.requestToken(route: "shortcut", fingerprint: "parameters", at: instant)
+        authority.adopt(session("other-process"))
+        let fresh = authority.requestToken(route: "shortcut", fingerprint: "parameters", at: instant)
+        XCTAssertNotEqual(fresh.operationID, stale.operationID)
+        XCTAssertEqual(fresh.expectedRevision, authority.revision)
+    }
+
+    func testDuplicateFocusActivationKeepsTokenAfterEndUntilFocusOff() throws {
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        let token = authority.requestToken(route: "focus.activation", fingerprint: "parameters",
+                                            at: instant, untilDeactivation: true)
+        let active = session("X")
+        try authority.install(active, selection: Data(), source: .focusFilter, operationID: token.operationID,
+            fingerprint: "parameters", expectedRevision: token.expectedRevision, at: instant)
+        try authority.markApplied(active)
+        try authority.terminate(active, outcome: .completed, route: "completed", at: wall)
+        var later = instant
+        later.monotonic += 3600
+        XCTAssertEqual(authority.requestToken(route: "focus.activation", fingerprint: "parameters",
+                                               at: later, untilDeactivation: true), token)
+        authority.deactivate(route: "focus.activation")
+        XCTAssertNotEqual(authority.requestToken(route: "focus.activation", fingerprint: "parameters",
+                                                  at: later, untilDeactivation: true), token)
+    }
+
+    func testRefusedFocusActivationKeepsIdentityButRefreshesItsUnacceptedRevision() {
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        let token = authority.requestToken(route: "focus", fingerprint: "parameters", at: instant, untilDeactivation: true)
+        authority.adopt(session("other"))
+        let refreshed = authority.requestToken(route: "focus", fingerprint: "parameters", at: instant, untilDeactivation: true)
+        XCTAssertEqual(refreshed.operationID, token.operationID)
+        XCTAssertEqual(refreshed.expectedRevision, authority.revision)
+        XCTAssertNotEqual(refreshed.expectedRevision, token.expectedRevision)
+    }
+
+    func testRearmedGenerationRejectsPriorMonitorTombstonePC66() throws {
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        let old = session("X")
+        authority.adopt(old)
+        let updated = FlintActiveSession(id: old.id, name: old.name, startedAt: old.startedAt,
+            endsAt: old.endsAt, breakLevel: old.breakLevel, monitorName: "flint.session.new")
+        try authority.rearm(updated)
+        XCTAssertThrowsError(try authority.terminate(old, outcome: .completed, route: "completed", at: wall))
+        XCTAssertFalse(authority.provesIdle)
+        try authority.terminate(updated, outcome: .completed, route: "completed", at: wall)
+        XCTAssertTrue(authority.provesIdle)
+        XCTAssertFalse(try authority.terminate(updated, outcome: .completed, route: "completed", at: wall))
+    }
+
+    func testAcceptedStartMemoryIsBoundedAndPrunedIDsCanStartFresh() throws {
+        var authority = FlintSessionAuthority(initializedAt: wall)
+        for index in 0...FlintSessionAuthority.startMemory { try install("\(index)", in: &authority) }
+        XCTAssertEqual(authority.acceptedStarts.count, FlintSessionAuthority.startMemory)
+        XCTAssertNil(authority.acceptedStart("request.0"))
+        authority = try JSONDecoder().decode(FlintSessionAuthority.self, from: JSONEncoder().encode(authority))
+        XCTAssertEqual(authority.acceptedStart("request.64")?.sessionID, "64", "retained across process recreation")
+        try install("0", in: &authority)
+        XCTAssertEqual(authority.acceptedStarts.count, FlintSessionAuthority.startMemory)
+        XCTAssertEqual(authority.latest?.session.id, "0")
+    }
+
+    func testFingerprintBindsEveryStartParameter() {
+        let original = FlintSessionStartParameters(duration: 1800, tier: .easy, selection: "opaque",
+            name: "Focus", source: .shortcut, origin: "shortcut", ownerID: nil, replacing: true)
+        let changes: [(inout FlintSessionStartParameters) -> Void] = [
+            { $0.duration += 60 }, { $0.tier = .hardcore }, { $0.selection = "other" },
+            { $0.name = "Other" }, { $0.source = .pomodoro }, { $0.origin = "app_ui" },
+            { $0.ownerID = "focus" }, { $0.replacing = false }
+        ]
+        for change in changes {
+            var changed = original
+            change(&changed)
+            XCTAssertNotEqual(original.fingerprint, changed.fingerprint)
+        }
+    }
+}

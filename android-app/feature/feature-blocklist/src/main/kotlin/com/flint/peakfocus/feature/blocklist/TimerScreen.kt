@@ -48,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -85,6 +86,9 @@ import com.flint.peakfocus.core.common.ui.SunArc
 import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BreakLevel
+import com.flint.peakfocus.core.history.FocusHistoryText
+import com.flint.peakfocus.core.history.FocusSession
+import com.flint.peakfocus.core.history.FocusSummary
 import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -110,12 +114,14 @@ fun TimerScreen(
     val context = LocalContext.current
     val viewModel: TimerViewModel = viewModel(factory = remember(context) { TimerViewModel.factory(context) })
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val historyViewModel: TimerHistoryViewModel = viewModel(factory = remember(context) { TimerHistoryViewModel.factory(context) })
+    val history by historyViewModel.state.collectAsStateWithLifecycle()
     val owner = LocalLifecycleOwner.current
     DisposableEffect(owner, viewModel) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> viewModel.setVisible(true)
-                Lifecycle.Event.ON_RESUME -> viewModel.refreshClock()
+                Lifecycle.Event.ON_RESUME -> { viewModel.refreshClock(); viewModel.refreshHealth() }
                 Lifecycle.Event.ON_STOP -> viewModel.setVisible(false)
                 else -> Unit
             }
@@ -132,19 +138,11 @@ fun TimerScreen(
     var pickingApps by rememberSaveable { mutableStateOf(false) }
     var cancellingId by remember { mutableStateOf<String?>(null) }
     var viewingId by remember { mutableStateOf<String?>(null) }
-    var finished by remember { mutableStateOf<BlockRule?>(null) }
-    var lastSession by remember { mutableStateOf<BlockRule?>(null) }
     LaunchedEffect(state.sessions) {
         val running = state.sessions.firstOrNull()
         if (running != null) {
             starting = false
             pickingApps = false
-            lastSession = running
-        } else {
-            // A session that ran out its clock (not one ended early) gets its moment.
-            val previous = lastSession
-            if (previous != null && previous.isExpired(state.nowEpochMs)) finished = previous
-            lastSession = null
         }
     }
 
@@ -171,17 +169,23 @@ fun TimerScreen(
                 if (canEndNativeTimer(running)) viewModel.requestExit(running.id) else cancellingId = running.id
             },
             canEnd = canEndNativeTimer(running) || canCancelTimer(running),
+            arming = state.arming,
+            onRetryProtection = viewModel::retryArming,
+            onSetup = onSetup,
             modifier = modifier,
+            setupAvailable = setupLabel != null,
         )
-        finished != null -> CompleteScene(
-            session = finished!!,
+        history.completion != null -> CompleteScene(
+            session = history.completion!!,
+            summary = history.summary,
             contentPadding = contentPadding,
-            onDone = { finished = null },
-            onAgain = { finished = null; starting = true },
+            onDone = { historyViewModel.dismissCompletion(history.completion!!.id) },
+            onAgain = { historyViewModel.dismissCompletion(history.completion!!.id); starting = true },
             modifier = modifier,
         )
         else -> TodayScene(
             state = state,
+            history = history.summary,
             headline = headline,
             subline = subline,
             setupLabel = setupLabel,
@@ -205,6 +209,9 @@ fun TimerScreen(
             onBreakLevel = viewModel::selectBreakLevel,
             onRetryApps = viewModel::retryApps,
             onStart = viewModel::start,
+            onRetryProtection = viewModel::retryStartProtection,
+            onSetup = onSetup,
+            setupAvailable = setupLabel != null,
         )
     }
 
@@ -233,7 +240,7 @@ fun TimerScreen(
     state.sessions.firstOrNull { it.id == viewingId }?.let { session ->
         AlertDialog(
             onDismissRequest = { viewingId = null },
-            title = { Text(if (session.targets.allowListMode) "Allowed apps and sites" else "Resting apps and sites") },
+            title = { Text("Selected apps and sites") },
             text = {
                 Column {
                     Text("This selection stays fixed until the timer ends.", style = MaterialTheme.typography.bodySmall)
@@ -280,6 +287,7 @@ internal fun TimerAppPicker(
 @Composable
 private fun TodayScene(
     state: TimerUiState,
+    history: FocusSummary?,
     headline: String?,
     subline: String?,
     setupLabel: String?,
@@ -325,8 +333,14 @@ private fun TodayScene(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        Text(timerDurationLabel(state.draft.durationMinutes), style = MaterialTheme.typography.displaySmall.merge(FlintNumerals))
-                        FlintEyebrow("Your next session")
+                        Text(FocusHistoryText.today(history), style = if (history?.days?.lastOrNull()?.focusedMs != null && history.sessions.isNotEmpty())
+                            MaterialTheme.typography.displaySmall.merge(FlintNumerals) else MaterialTheme.typography.titleLarge,
+                            textAlign = TextAlign.Center)
+                        FlintEyebrow("Focused today")
+                        FocusHistoryText.note(history, resources = LocalContext.current.resources)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = FlintPalette.Mist) }
+                        Text("Your next session · ${timerDurationLabel(state.draft.durationMinutes)}",
+                            style = MaterialTheme.typography.bodySmall, color = FlintPalette.Mist,
+                            modifier = Modifier.padding(top = 12.dp))
                     }
                 }
 
@@ -374,7 +388,7 @@ private fun TodayScene(
 /** E04 — the Start focus sheet: how long, what rests, how hard it is to leave. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun StartFocusSheet(
+internal fun StartFocusSheet(
     state: TimerUiState,
     onDismiss: () -> Unit,
     onPickApps: () -> Unit,
@@ -383,6 +397,9 @@ private fun StartFocusSheet(
     onBreakLevel: (BreakLevel) -> Unit,
     onRetryApps: () -> Unit,
     onStart: () -> Unit,
+    onRetryProtection: () -> Unit,
+    onSetup: () -> Unit,
+    setupAvailable: Boolean = true,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
@@ -411,9 +428,9 @@ private fun StartFocusSheet(
         Column(
             Modifier
                 .fillMaxWidth()
+                .weight(1f, fill = false)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = FlintSpacing.gutter)
-                .navigationBarsPadding()
                 .padding(bottom = 16.dp),
         ) {
             Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -526,12 +543,36 @@ private fun StartFocusSheet(
             }
 
             Spacer(Modifier.height(24.dp))
+        }
+        // Keep refusal/recovery together with Begin, outside the scrolling editor.
+        // A newly inserted error must never fall below the visible viewport.
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = FlintSpacing.gutter)
+                .navigationBarsPadding().padding(top = 8.dp, bottom = 16.dp),
+        ) {
+            val reason = state.error ?: state.startPrerequisite
+            if (reason != null) {
+                val announcement = if (reason == "Checking protection…") reason else "Not armed. $reason"
+                Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {
+                    liveRegion = LiveRegionMode.Polite
+                    contentDescription = announcement
+                }) {
+                    if (reason != "Checking protection…") {
+                        Text("Not armed.", style = MaterialTheme.typography.titleSmall, color = FlintPalette.Danger)
+                    }
+                    Text(reason, style = MaterialTheme.typography.bodySmall, color = FlintPalette.Mist)
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    TextButton(onClick = onRetryProtection, enabled = !state.busy) { Text("Retry") }
+                    if (setupAvailable) TextButton(onClick = onSetup, enabled = !state.busy) { Text("Check setup") }
+                }
+            }
             EmberButton(
                 if (state.busy) "Starting…" else "Begin ${timerDurationLabel(minutes)}",
                 onStart,
-                enabled = state.canStart,
+                enabled = state.canStart && state.startPrerequisite == null,
             )
-            val hint = state.error ?: if (state.draft.apps.isEmpty()) "Choose what rests first." else null
+            val hint = if (state.draft.apps.isEmpty()) "Choose what rests first." else null
             if (hint != null) {
                 Text(hint, style = MaterialTheme.typography.bodySmall,
                     color = if (state.error != null) FlintPalette.Danger else FlintPalette.Mist,
@@ -543,7 +584,7 @@ private fun StartFocusSheet(
 
 /** E06 — a running timer: the ember travels its arc, breath rings around it. */
 @Composable
-private fun SessionScene(
+internal fun SessionScene(
     session: BlockRule,
     others: Int,
     nowEpochMs: Long,
@@ -552,10 +593,15 @@ private fun SessionScene(
     contentPadding: PaddingValues,
     onViewApps: () -> Unit,
     onEnd: () -> Unit,
+    arming: TimerArmingState,
+    onRetryProtection: () -> Unit,
+    onSetup: () -> Unit,
     modifier: Modifier,
+    setupAvailable: Boolean = true,
 ) {
     val deadline = session.expiresAtEpochMs
     val start = session.createdAtEpochMsOrNull()
+    val armed = arming is TimerArmingState.Armed && arming.ruleId == session.id
     val progress = if (deadline != null && start != null && deadline > start) {
         ((nowEpochMs - start).toFloat() / (deadline - start)).coerceIn(0f, 1f)
     } else {
@@ -563,7 +609,7 @@ private fun SessionScene(
     }
     Box(modifier.fillMaxSize()) {
         EmberLandscape(horizonOffset = 8f, orbCenter = null)
-        SunArc(progress)
+        SunArc(progress, Modifier.alpha(if (armed) 1f else 0.3f))
         Column(
             Modifier
                 .fillMaxSize()
@@ -575,17 +621,23 @@ private fun SessionScene(
                 FlintEyebrow(session.name, Modifier.weight(1f))
                 TextButton(onClick = onViewApps) {
                     FlintEyebrow("${session.targets.apps.size} ${if (session.targets.apps.size == 1) "app" else "apps"} " +
-                        if (session.targets.allowListMode) "open" else "resting")
+                        if (arming is TimerArmingState.Armed && arming.ruleId == session.id) "resting" else "selected")
                 }
             }
-            if (others > 0) FlintEyebrow("+$others more running", color = FlintPalette.Stone)
+            if (others > 0) FlintEyebrow("+$others more configured", color = FlintPalette.Stone)
+            TimerArmingNotice(arming, onRetryProtection, onSetup, enabled, setupAvailable)
             if (deadline != null) {
                 val remaining = timerCountdown(deadline - nowEpochMs)
+                if (!armed) Text("Saved timer plan", style = MaterialTheme.typography.bodySmall, color = FlintPalette.Mist,
+                    modifier = Modifier.padding(top = 18.dp))
                 Text(
                     remaining,
+                    color = if (armed) FlintPalette.Bone else FlintPalette.Mist,
                     style = MaterialTheme.typography.displayLarge.merge(FlintNumerals),
                     maxLines = 1,
-                    modifier = Modifier.padding(top = 26.dp).semantics { contentDescription = "$remaining remaining" },
+                    modifier = Modifier.padding(top = if (armed) 26.dp else 8.dp).semantics {
+                        contentDescription = if (armed) "$remaining remaining" else "$remaining remaining in saved plan"
+                    },
                 )
                 Text(
                     "ends at ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(deadline))}",
@@ -597,7 +649,7 @@ private fun SessionScene(
                 Text("No end time", style = MaterialTheme.typography.headlineLarge, modifier = Modifier.padding(top = 40.dp))
             }
             Spacer(Modifier.weight(1f))
-            Text("Breathe with the light.", style = MaterialTheme.typography.titleLarge.copy(fontSize = MaterialTheme.typography.titleLarge.fontSize * (17f / 22f)),
+            if (armed) Text("Breathe with the light.", style = MaterialTheme.typography.titleLarge.copy(fontSize = MaterialTheme.typography.titleLarge.fontSize * (17f / 22f)),
                 color = FlintPalette.SoftBone, modifier = Modifier.padding(bottom = 64.dp))
             Row(
                 Modifier
@@ -611,7 +663,7 @@ private fun SessionScene(
                 Icon(FlintGlyphs.lock, contentDescription = null, tint = FlintPalette.Mist, modifier = Modifier.size(20.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(timerBreakLabel(session.breakLevel), style = MaterialTheme.typography.titleSmall.copy(fontSize = MaterialTheme.typography.titleSmall.fontSize * (14f / 15f)))
-                    Text(if (canEndNativeTimer(session)) "Hold to end early" else timerBreakHint(session.breakLevel),
+                    Text(timerExitHint(session),
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = MaterialTheme.typography.bodySmall.fontSize * (12f / 13f)),
                         color = FlintPalette.Mist)
                 }
@@ -621,33 +673,69 @@ private fun SessionScene(
     }
 }
 
+/** Coverage feedback uses only the backend's actual observation; retries do not restart a Timer. */
+@Composable
+internal fun TimerArmingNotice(arming: TimerArmingState, onRetry: () -> Unit, onSetup: () -> Unit,
+                               enabled: Boolean = true, setupAvailable: Boolean = true) {
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp).semantics { liveRegion = LiveRegionMode.Polite },
+        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        when (arming) {
+            TimerArmingState.Idle -> Text("Protection status unavailable", style = MaterialTheme.typography.titleSmall)
+            is TimerArmingState.Applying -> {
+                Text("Applying…", style = MaterialTheme.typography.titleSmall)
+                Text("Timer saved. Waiting for the protection service to confirm it.", style = MaterialTheme.typography.bodySmall)
+            }
+            is TimerArmingState.Checking -> {
+                Text("Checking protection…", style = MaterialTheme.typography.titleSmall)
+                Text("Waiting for a fresh service check.", style = MaterialTheme.typography.bodySmall)
+            }
+            is TimerArmingState.Armed -> {
+                Text("Armed", style = MaterialTheme.typography.titleSmall)
+                Text("Service checked at ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(arming.checkedAt.wallEpochMs))}",
+                    style = MaterialTheme.typography.bodySmall)
+            }
+            is TimerArmingState.Degraded -> {
+                Text(if (arming.committed) "Protection degraded" else "Not armed", style = MaterialTheme.typography.titleSmall)
+                Text(arming.reason, style = MaterialTheme.typography.bodySmall)
+                if (arming.committed) Text("The Timer keeps its saved end time.", style = MaterialTheme.typography.bodySmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = onRetry, enabled = enabled) { Text("Retry protection") }
+                if (setupAvailable) TextButton(onClick = onSetup, enabled = enabled) { Text("Check setup") }
+                }
+            }
+        }
+    }
+}
+
 /** E08 — the ember has set. */
 @Composable
 private fun CompleteScene(
-    session: BlockRule,
+    session: FocusSession,
+    summary: FocusSummary?,
     contentPadding: PaddingValues,
     onDone: () -> Unit,
     onAgain: () -> Unit,
     modifier: Modifier,
 ) {
-    val minutes = session.createdAtEpochMsOrNull()?.let { start ->
-        session.expiresAtEpochMs?.let { ((it - start) / 60_000L).toInt() }
-    }
     Box(modifier.fillMaxSize()) {
         EmberLandscape(horizonOffset = 8f, orbCenter = null, showsMist = false)
         SunArc(1f, complete = true)
         Column(
-            Modifier.fillMaxSize().padding(contentPadding).padding(horizontal = FlintSpacing.gutter),
+            Modifier.fillMaxSize().padding(contentPadding).verticalScroll(rememberScrollState()).padding(horizontal = FlintSpacing.gutter),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             FlintEyebrow("${session.name} · Complete", Modifier.padding(top = 52.dp))
             Text("The ember has set.", style = MaterialTheme.typography.headlineLarge, textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 18.dp))
-            if (minutes != null && minutes > 0) {
-                Text("${timerDurationLabel(minutes)}, start to finish.", style = MaterialTheme.typography.bodyMedium,
+            Text("${FocusHistoryText.duration(session.focusedMs)} focused", style = MaterialTheme.typography.bodyMedium,
                     color = FlintPalette.Mist, modifier = Modifier.padding(top = 10.dp))
-            }
-            Spacer(Modifier.weight(1f))
+            Text("Today · ${FocusHistoryText.today(summary)}", style = MaterialTheme.typography.bodyMedium,
+                color = FlintPalette.Mist, modifier = Modifier.padding(top = 10.dp))
+            session.breaks?.let { Text(FocusHistoryText.breaks(it), modifier = Modifier.padding(top = 10.dp)) }
+            session.opensIntercepted?.let { Text(FocusHistoryText.opensStopped(it), modifier = Modifier.padding(top = 10.dp)) }
+            FocusHistoryText.note(summary, resources = LocalContext.current.resources)?.let { Text(it, style = MaterialTheme.typography.bodySmall,
+                color = FlintPalette.Mist, modifier = Modifier.padding(top = 10.dp)) }
+            Spacer(Modifier.height(48.dp))
             BoneButton("Done", onDone)
             QuietButton("Start another", onAgain, modifier = Modifier.padding(top = 8.dp, bottom = 12.dp))
         }
@@ -690,6 +778,13 @@ private fun timerBreakHint(level: BreakLevel): String = when (level) {
 
 private fun timerBreakDisclosure(level: BreakLevel): String = when (level) {
     BreakLevel.EASY -> "Ordinary breaks are available. Hold to end this timer early."
-    BreakLevel.HARDER -> "Each break waits a few minutes first. Hold to end this timer early."
-    BreakLevel.HARDCORE -> "No ordinary breaks. Hold to end this timer early; other rules stay active."
+    BreakLevel.HARDER -> "Early changes wait 1, 5, then 15 minutes. After the wait, hold for 2 seconds to end this Timer."
+    BreakLevel.HARDCORE -> "No ordinary breaks or hold-to-end. This Timer ends at expiry, or with an available Emergency Pass."
+}
+
+private fun timerExitHint(rule: BlockRule): String = when {
+    canEndNativeTimer(rule) && !rule.id.startsWith(com.flint.peakfocus.core.datastore.CONTRACT_TIMER_ID_PREFIX) -> "Legacy Timer: hold to end early"
+    rule.breakLevel == BreakLevel.HARDER -> "Wait, then hold to end early"
+    rule.breakLevel == BreakLevel.HARDCORE -> "Expiry or an available Emergency Pass"
+    else -> "Hold to end early"
 }

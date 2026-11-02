@@ -9,9 +9,7 @@ import com.flint.peakfocus.core.model.TimeLimit
  * and the Open Limit (launches per day). Pure Kotlin mirror of what LimitsStore persists,
  * so parsing/validation is JVM-testable.
  *
- * Note the model asymmetry, kept honestly: [OpenLimit] carries its own [BreakLevel];
- * [TimeLimit] does not (core-model doesn't define one yet), so this form offers the level
- * only on the open-limit side rather than pretending it protects the time limit too.
+ * Each limit owns its tier; changing the global default cannot weaken an existing limit.
  */
 internal data class LimitDraft(
     val packageName: String,
@@ -20,6 +18,7 @@ internal data class LimitDraft(
     val openEnabled: Boolean = false,
     val opensText: String = "",
     val openBreakLevel: BreakLevel = BreakLevel.EASY,
+    val timeBreakLevel: BreakLevel = BreakLevel.EASY,
 )
 
 /** Sane bounds: a time budget fits inside one day; opens stay a human-scale count. */
@@ -39,6 +38,7 @@ internal fun limitDraftOf(
     openEnabled = existingOpen != null,
     opensText = existingOpen?.dailyOpens?.toString() ?: "",
     openBreakLevel = existingOpen?.breakLevel ?: defaultBreakLevel,
+    timeBreakLevel = existingTime?.breakLevel ?: defaultBreakLevel,
 )
 
 /** Why the limits form can't be saved yet. [message] is the user-facing line. */
@@ -71,7 +71,7 @@ internal fun LimitDraft.resolve(): LimitFormResult {
         if (minutes == null || minutes !in DAILY_MINUTES_RANGE) {
             errors += LimitFormError.BAD_MINUTES
         } else {
-            timeLimit = TimeLimit(packageName = packageName, dailyMinutes = minutes)
+            timeLimit = TimeLimit(packageName = packageName, dailyMinutes = minutes, breakLevel = timeBreakLevel)
         }
     }
 

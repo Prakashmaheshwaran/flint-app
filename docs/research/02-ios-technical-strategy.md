@@ -1,5 +1,14 @@
 # Flint — iOS Technical Strategy: The Screen Time API Blocker
 
+> **Historical research — original scope and status claims retained (2026-10-28).**
+> Use the [v1 capability acceptance ledger](../acceptance/v1-capability-ledger.md) for
+> current Flint implementation/evidence and [ADR-012](../architecture/protection-contract.md)
+> for personal protection requirements. Old future-date, launch-count, pass, anti-removal,
+> competitor and expanded connected-scope claims below are historical planning inputs,
+> not current release promises. The Android connected backend remains debug-only;
+> release is local-first, no-account and without analytics. No physical-device result
+> follows from an old status column.
+
 > The definitive implementation plan for Flint's app/website blocker on iOS and iPadOS,
 > built entirely on Apple's Screen Time API stack (FamilyControls, ManagedSettings,
 > ManagedSettingsUI, DeviceActivity). This document is the source of truth for the

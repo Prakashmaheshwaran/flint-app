@@ -1,0 +1,370 @@
+[
+  {
+    "role": "application",
+    "type": "Application",
+    "label": "Flint",
+    "value": "",
+    "enabled": true,
+    "frame": {
+      "x": 0,
+      "y": 0,
+      "width": 1,
+      "height": 1
+    },
+    "children": [
+      {
+        "role": "back button",
+        "type": "Button",
+        "label": "Back",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.0398,
+          "y": 0.0709,
+          "width": 0.1095,
+          "height": 0.0503
+        },
+        "children": [],
+        "id": "BackButton"
+      },
+      {
+        "role": "heading",
+        "type": "Heading",
+        "label": "Sleep",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.4502,
+          "y": 0.0839,
+          "width": 0.0995,
+          "height": 0.0244
+        },
+        "children": []
+      },
+      {
+        "role": "Group",
+        "type": "Group",
+        "label": "",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0,
+          "y": 0,
+          "width": 1,
+          "height": 0.7307
+        },
+        "children": [
+          {
+            "role": "switch",
+            "type": "CheckBox",
+            "label": "Sleep Mode",
+            "value": "0",
+            "enabled": true,
+            "frame": {
+              "x": 0.0398,
+              "y": -0.0866,
+              "width": 0.9204,
+              "height": 0.0973
+            },
+            "children": []
+          },
+          {
+            "role": "heading",
+            "type": "Heading",
+            "label": "Nights",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.0398,
+              "y": -0.0591,
+              "width": 0.9204,
+              "height": 0.0858
+            },
+            "children": []
+          },
+          {
+            "role": "text",
+            "type": "StaticText",
+            "label": "Bedtime",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.0796,
+              "y": 0.0439,
+              "width": 0.3839,
+              "height": 0.0629
+            },
+            "children": []
+          },
+          {
+            "role": "button",
+            "type": "Button",
+            "label": "Time Picker",
+            "value": "10:00\u202fPM",
+            "enabled": true,
+            "frame": {
+              "x": 0.0796,
+              "y": 0.1114,
+              "width": 0.6128,
+              "height": 0.0885
+            },
+            "children": []
+          },
+          {
+            "role": "text",
+            "type": "StaticText",
+            "label": "Wake up",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.0796,
+              "y": 0.2338,
+              "width": 0.4071,
+              "height": 0.0629
+            },
+            "children": []
+          },
+          {
+            "role": "button",
+            "type": "Button",
+            "label": "Time Picker",
+            "value": "7:00\u202fAM",
+            "enabled": true,
+            "frame": {
+              "x": 0.0796,
+              "y": 0.2876,
+              "width": 0.5398,
+              "height": 0.0885
+            },
+            "children": []
+          },
+          {
+            "role": "button",
+            "type": "Button",
+            "label": "Sunday",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.1335,
+              "y": 0.4104,
+              "width": 0.3085,
+              "height": 0.1419
+            },
+            "children": []
+          },
+          {
+            "role": "button",
+            "type": "Button",
+            "label": "Monday",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.5589,
+              "y": 0.4104,
+              "width": 0.3085,
+              "height": 0.1419
+            },
+            "children": []
+          },
+          {
+            "role": "button",
+            "type": "Button",
+            "label": "Tuesday",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.1335,
+              "y": 0.5484,
+              "width": 0.3085,
+              "height": 0.1419
+            },
+            "children": []
+          },
+          {
+            "role": "button",
+            "type": "Button",
+            "label": "Wednesday",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.5589,
+              "y": 0.5484,
+              "width": 0.3085,
+              "height": 0.1419
+            },
+            "children": []
+          },
+          {
+            "role": "button",
+            "type": "Button",
+            "label": "Thursday",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.1335,
+              "y": 0.6995,
+              "width": 0.3085,
+              "height": 0.1419
+            },
+            "children": []
+          },
+          {
+            "role": "button",
+            "type": "Button",
+            "label": "Friday",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.5589,
+              "y": 0.6995,
+              "width": 0.3085,
+              "height": 0.1419
+            },
+            "children": []
+          },
+          {
+            "role": "button",
+            "type": "Button",
+            "label": "Saturday",
+            "value": "",
+            "enabled": true,
+            "frame": {
+              "x": 0.1335,
+              "y": 0.8505,
+              "width": 0.3085,
+              "height": 0.1419
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "role": "button",
+        "type": "Button",
+        "label": "Today",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.0597,
+          "y": 0.7307,
+          "width": 0.4403,
+          "height": 0.1083
+        },
+        "children": []
+      },
+      {
+        "role": "button",
+        "type": "Button",
+        "label": "Rules",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.5,
+          "y": 0.7307,
+          "width": 0.4403,
+          "height": 0.1083
+        },
+        "children": []
+      },
+      {
+        "role": "button",
+        "type": "Button",
+        "label": "Insights",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.0597,
+          "y": 0.8391,
+          "width": 0.4403,
+          "height": 0.1083
+        },
+        "children": []
+      },
+      {
+        "role": "button",
+        "type": "Button",
+        "label": "You",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.5,
+          "y": 0.8391,
+          "width": 0.4403,
+          "height": 0.1083
+        },
+        "children": []
+      },
+      {
+        "role": "text",
+        "type": "StaticText",
+        "label": "4:12\u202fPM",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.1393,
+          "y": 0.0248,
+          "width": 0.0904,
+          "height": 0.0248
+        },
+        "children": []
+      },
+      {
+        "role": "",
+        "type": "GenericElement",
+        "label": "Dynamic Island, Empty",
+        "value": "",
+        "enabled": true,
+        "frame": {
+          "x": 0.3441,
+          "y": 0.016,
+          "width": 0.3118,
+          "height": 0.042
+        },
+        "children": []
+      },
+      {
+        "role": "",
+        "type": "GenericElement",
+        "label": "Cellular",
+        "value": "No signal",
+        "enabled": true,
+        "frame": {
+          "x": 0.7081,
+          "y": 0.0286,
+          "width": 0.0506,
+          "height": 0.0156
+        },
+        "children": []
+      },
+      {
+        "role": "",
+        "type": "GenericElement",
+        "label": "",
+        "value": "SSID, 3 of 3 Wi-Fi bars",
+        "enabled": true,
+        "frame": {
+          "x": 0.7811,
+          "y": 0.0297,
+          "width": 0.0439,
+          "height": 0.0145
+        },
+        "children": [],
+        "id": "3 of 3 Wi-Fi bars"
+      },
+      {
+        "role": "",
+        "type": "GenericElement",
+        "label": "100% battery power",
+        "value": "Not charging",
+        "enabled": true,
+        "frame": {
+          "x": 0.8474,
+          "y": 0.029,
+          "width": 0.0721,
+          "height": 0.0156
+        },
+        "children": []
+      }
+    ]
+  }
+]

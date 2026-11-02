@@ -20,6 +20,7 @@ class OverlayController(private val context: Context) {
 
     private val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var current: View? = null
+    private var recoveryFocusYielded: Boolean? = false
 
     fun canShow(): Boolean = Settings.canDrawOverlays(context)
 
@@ -43,12 +44,30 @@ class OverlayController(private val context: Context) {
 
         wm.addView(content, params)
         current = content
+        recoveryFocusYielded = false
     }
 
     fun hide() {
         current?.let {
             runCatching { wm.removeView(it) }
             current = null
+            recoveryFocusYielded = false
         }
+    }
+
+    /** Keep the opaque touch shield while a drawn fullscreen recovery acquires key focus. */
+    fun setRecoveryHandoffFocus(enabled: Boolean): Boolean {
+        val view = current ?: return !enabled
+        val old = view.layoutParams as? WindowManager.LayoutParams ?: return false
+        val locallyYielded = old.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE != 0
+        if (recoveryFocusYielded == enabled && locallyYielded == enabled) return true
+        val flags = if (enabled) old.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+            else old.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+        val next = WindowManager.LayoutParams().apply { copyFrom(old); this.flags = flags }
+        // updateViewLayout may mutate view.layoutParams before throwing. Only a completed
+        // update confirms the flag; unknown state must be retried even if local flags match.
+        return runCatching { wm.updateViewLayout(view, next) }
+            .onSuccess { recoveryFocusYielded = enabled }
+            .onFailure { recoveryFocusYielded = null }.isSuccess
     }
 }
