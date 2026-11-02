@@ -44,7 +44,7 @@ jobs:
         run: make ios-ui
       - name: Upload xcresult, screenshots, accessibility hierarchies and provenance
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ios-ui-fixtures-${{ github.run_id }}-${{ github.run_attempt }}
           path: ios-app/build/ios-ui/
