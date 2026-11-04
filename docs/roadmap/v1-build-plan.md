@@ -5,12 +5,20 @@ and Android that is ready for human-owned store submission. Baseline gaps come
 from the 2026-10-27 state audits: enforcement contracts, device proof, and
 release packaging — not feature count.
 
+## Integration status
+
+The supervised integration merged into `main` through
+[PR #69](https://github.com/Prakashmaheshwaran/flint-app/pull/69) on November 2, 2026,
+at merge commit `f800cb385b87b5b9bce8f3984ebfab03eb374a21`.
+The lane plan below records that build; it does not imply every planned feature
+or release gate is complete. See the [capability acceptance ledger](../acceptance/v1-capability-ledger.md)
+for the recorded evidence and open acceptance work.
+
 ## Branch and merge policy
 
-- All lane work branches from `integration/v1` and lands through focused PRs
-  into `integration/v1`. CI runs on every PR.
-- A standing draft PR `integration/v1 → main` tracks combined CI health. Merging
-  it into `main` is a separate owner decision.
+- During the supervised build, lane work branched from and landed through focused
+  PRs into `integration/v1`. PR #69 tracked the combined integration into `main`.
+- New follow-up work branches from `main` and targets `main` through focused PRs.
 - Enforcement and consent changes need an independent review before merging.
 - Product posture is unchanged: local-first, no accounts, no analytics, no
   network permission in release builds.
