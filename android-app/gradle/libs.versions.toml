@@ -7,11 +7,11 @@ coreKtx = "1.15.0"
 lifecycle = "2.8.7"
 activityCompose = "1.9.3"
 composeBom = "2024.12.01"
-datastore = "1.3.0"
+datastore = "1.2.1"
 glance = "1.1.1" # Compatible with this build's Kotlin 2.1 / Compose baseline.
 room = "2.8.5"
 # Keep Kotlin 2.1 metadata compatibility until the AGP migration is verified.
-coroutines = "1.11.0"
+coroutines = "1.10.2"
 junit = "4.13.2"
 androidxJunit = "1.3.0"
 espresso = "3.7.0"
