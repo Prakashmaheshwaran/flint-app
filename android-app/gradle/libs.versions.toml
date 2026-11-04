@@ -16,7 +16,8 @@ junit = "4.13.2"
 androidxJunit = "1.3.0"
 espresso = "3.7.0"
 robolectric = "4.17"
-# The isolated debug sandbox uses Kotlin 2.1-compatible Auth metadata.
+# 24.0.1 is the last Auth release whose Kotlin metadata (2.1) matches the pinned
+# Kotlin 2.1 compiler; 24.2.0+ ships 2.3+ metadata and fails the debug sandbox build.
 firebaseAuth = "24.0.1"
 
 [libraries]
