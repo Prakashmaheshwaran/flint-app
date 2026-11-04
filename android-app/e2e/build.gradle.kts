@@ -33,5 +33,5 @@ android {
 dependencies {
     implementation(libs.androidx.junit)
     implementation("androidx.test:runner:1.7.0")
-    implementation("androidx.test.uiautomator:uiautomator:2.3.0")
+    implementation("androidx.test.uiautomator:uiautomator:2.4.0")
 }

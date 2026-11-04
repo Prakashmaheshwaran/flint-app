@@ -21,6 +21,7 @@ dependencies {
     implementation(project(":core:core-common"))
     implementation(project(":core:core-datastore"))
     coreLibraryDesugaring(libs.android.desugar.jdk)
+    // Gson 2.15+ requires API 24; the debug sandbox still supports API 23.
     implementation("com.google.code.gson:gson:2.11.0")
     implementation(libs.firebase.auth)
     implementation(libs.kotlinx.coroutines.android)
