@@ -14,8 +14,10 @@ require no account and include no analytics SDK.
 
 ## v1 status
 
-The [capability acceptance ledger](docs/acceptance/v1-capability-ledger.md) is the
-current evidence index for `integration/v1`. It separates merged implementation,
+The v1 integration landed on `main` through
+[PR #69](https://github.com/Prakashmaheshwaran/flint-app/pull/69) on November 2, 2026.
+The [capability acceptance ledger](docs/acceptance/v1-capability-ledger.md) records
+the integration's evidence checkpoint. It separates merged implementation,
 unit tests, Android hosted emulator flows, iOS UI fixtures and physical-device
 acceptance. **No physical-device enforcement verification is claimed.**
 
