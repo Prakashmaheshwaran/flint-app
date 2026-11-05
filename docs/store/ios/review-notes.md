@@ -64,7 +64,7 @@ Please review Screen Time behavior on a physical device. Launch Flint, tap Begin
 
 For a short review: open Today > Start focus, use Apple's picker to select one nonessential test app, choose 25 minutes, press minus twice for 15 minutes, choose Easy, then begin. Open the chosen app to see the system shield. Return to Flint and use End session; confirm that the test app opens again. Keep essential calling, Settings, and safety apps out of the selection.
 
-The host uses Family Controls and Managed Settings. Four Screen Time extensions monitor activity boundaries, configure the shield, respond to shield buttons, and render Device Activity reports. A separate WidgetKit extension supplies read-only widgets and the opt-in Live Activity. Selection tokens and settings are shared locally through group.com.flint.peakfocus. Local focus events drive session history separately from report values, which stay in the report extension. New installs may have no report data; a missing report must not be read as zero activity.
+The host uses Family Controls and Managed Settings. Four Screen Time extensions monitor activity boundaries, configure the shield, respond to shield buttons, and render Device Activity reports. A separate WidgetKit extension supplies read-only widgets and the opt-in Live Activity. Selection tokens and settings are shared locally through group.app.flint.focus. Local focus events drive session history separately from report values, which stay in the report extension. New installs may have no report data; a missing report must not be read as zero activity.
 
 Use Easy for this short review. Screen Time permission remains revocable in iOS Settings. Review the final in-app tier, end-time and recovery disclosures before testing other protection levels. The app-open PIN is separate from Apple's Screen Time passcode; no preconfigured PIN is supplied. Optional focus reminders describe the planned end time, not proof of completion or uninterrupted protection. Widgets and Live Activity open Flint and do not change protection.
 
@@ -242,59 +242,67 @@ and large text; source currently targets iOS 16+ and iPhone/iPad
 screens from the companion shot-list. Human archive/export validation, upload,
 processed TestFlight installation and store submission remain separate gates.
 
-## Family Controls distribution request draft — unsent
+## Family Controls distribution entitlement — granted
 
 Apple's [entitlement request guide](https://developer.apple.com/documentation/familycontrols/requesting-the-family-controls-entitlement)
-requires the Account Holder to request distribution access for the app and its
-Screen Time extensions. Approval status for **each** ID below is **unknown**;
-declaring the entitlement in source does not demonstrate distribution approval.
-The owner must inspect existing requests first and avoid duplicate submissions.
-No turnaround time or approval outcome is predicted.
+requires the Account Holder to request distribution access. The current form is
+account-level: one request (ID `2CLYP9S4H2`, filed 2026-11-01 by the owner's
+team) covered the app and its Screen Time extensions, and Apple assigned
+the Family Controls (Distribution) entitlement to the account on 2026-11-01. Do
+not file further requests unless Apple asks for one by bundle ID.
+
+The grant makes the capability *available*; it is not yet configured. The owner
+must still enable **Family Controls (Distribution)** on each of the five App IDs
+below in Certificates, Identifiers & Profiles, then regenerate their profiles.
+Declaring the entitlement in source does not demonstrate that a profile carries
+it — inspect each archived bundle's embedded profile.
+
+The request draft below is kept as the record of what was submitted.
 
 ### Exact request inventory
 
-1. **Flint host:** `com.flint.peakfocus` —
+1. **Flint host:** `app.flint.focus` —
    [project.yml](../../../ios-app/project.yml);
    [host entitlements](../../../ios-app/Flint/Flint.entitlements).
    Requests individual authorization, presents the picker, and stores user rules.
-2. **DeviceActivityMonitorExtension:** `com.flint.peakfocus.monitor` —
+2. **DeviceActivityMonitorExtension:** `app.flint.focus.monitor` —
    [project.yml](../../../ios-app/project.yml);
    [monitor entitlements](../../../ios-app/Extensions/DeviceActivityMonitorExtension/Monitor.entitlements).
    Handles activity intervals/thresholds and intended shield lifecycle.
-3. **ShieldConfigurationExtension:** `com.flint.peakfocus.shield-config` —
+3. **ShieldConfigurationExtension:** `app.flint.focus.shield-config` —
    [project.yml](../../../ios-app/project.yml);
    [shield configuration entitlements](../../../ios-app/Extensions/ShieldConfigurationExtension/ShieldConfig.entitlements).
    Supplies the system shield's appearance and text.
-4. **ShieldActionExtension:** `com.flint.peakfocus.shield-action` —
+4. **ShieldActionExtension:** `app.flint.focus.shield-action` —
    [project.yml](../../../ios-app/project.yml);
    [shield action entitlements](../../../ios-app/Extensions/ShieldActionExtension/ShieldAction.entitlements).
    Responds to shield actions under the user's local rules.
-5. **DeviceActivityReportExtension:** `com.flint.peakfocus.report` —
+5. **DeviceActivityReportExtension:** `app.flint.focus.report` —
    [project.yml](../../../ios-app/project.yml);
    [report entitlements](../../../ios-app/Extensions/DeviceActivityReportExtension/Report.entitlements).
    Renders Apple-supplied usage information inside the report extension.
 
-6. **FlintWidgetsExtension:** `com.flint.peakfocus.widgets` — the display-only
+6. **FlintWidgetsExtension:** `app.flint.focus.widgets` — the display-only
    WidgetKit extension also renders the opt-in Live Activity. It reads local
    status/history snapshots and opens Flint; it does not arm protection or render
-   Device Activity reports. It needs `group.com.flint.peakfocus` and its own
+   Device Activity reports. It needs `group.app.flint.focus` and its own
    signing/provisioning association, **not** the Family Controls entitlement.
 
-These are six shipping bundles; `com.flint.peakfocus.tests` remains a test bundle.
+These are six shipping bundles; `app.flint.focus.tests` remains a test bundle.
 App Intents/Focus filters remain in the host. The host and four Screen Time
 extensions declare `com.apple.developer.family-controls` and the App Group;
 the widget declares only the App Group. The group is not another bundle ID or
-a claim of an approved portal record. Submit Family Controls requests only for
-the five targets that use it, after checking existing approval state.
+a claim of an approved portal record. Enable Family Controls (Distribution)
+only on the five App IDs that use it; the widget App ID gets the App Group only.
 
 ### Purpose text for the owner to adapt to each request
 
 ```text
 Flint is a native, local-first focus utility for people who choose to manage distractions on their own iPhone or iPad. We request Family Controls distribution access for the host app and each of its four Screen Time extensions. The authorization flow uses FamilyControlsMember.individual with the device owner's approval; this is not remote parental supervision or enterprise device management.
 
-The host app (com.flint.peakfocus) presents Apple's activity picker and lets the user configure focus sessions, schedules, and limits. The monitor (com.flint.peakfocus.monitor) handles Device Activity callbacks for restriction lifecycle. The shield configuration extension (com.flint.peakfocus.shield-config) provides the system shield's presentation. The shield action extension (com.flint.peakfocus.shield-action) handles actions under the local protection rules. The report extension (com.flint.peakfocus.report) renders Device Activity reports within its extension boundary.
+The host app (app.flint.focus) presents Apple's activity picker and lets the user configure focus sessions, schedules, and limits. The monitor (app.flint.focus.monitor) handles Device Activity callbacks for restriction lifecycle. The shield configuration extension (app.flint.focus.shield-config) provides the system shield's presentation. The shield action extension (app.flint.focus.shield-action) handles actions under the local protection rules. The report extension (app.flint.focus.report) renders Device Activity reports within its extension boundary.
 
-Opaque selections and app-defined settings are shared locally using group.com.flint.peakfocus. The iOS source has no Flint account, analytics SDK, advertising SDK, or app-owned data-upload client. Screen Time report values are not exported to the host or a Flint server. All protection levels are available without a payment gate.
+Opaque selections and app-defined settings are shared locally using group.app.flint.focus. The iOS source has no Flint account, analytics SDK, advertising SDK, or app-owned data-upload client. Screen Time report values are not exported to the host or a Flint server. All protection levels are available without a payment gate.
 
 Managed Settings implements the restrictions selected by the user. Screen Time permission remains revocable in iOS Settings. We will supply final signed-device demonstration steps, the actual verified restriction and recovery scope, public privacy/support destinations, and any further information requested during review. This purpose text must be reconciled with the selected release's completed protection acceptance before it is sent.
 ```

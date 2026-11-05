@@ -41,10 +41,12 @@ separate authorization; completing the repository work does not perform these ac
 - [ ] Complete [physical-device acceptance](../acceptance/device-acceptance-plan.md), beginning
   with emergency/recovery safety, Hardcore rights and global pass/bounded access. Record
   unsupported browsers/OEMs, clock uncertainty and observed OS delivery latency.
-- [ ] **Apple account/signing:** verify intended team, membership, five Family Controls
-  distribution approvals/profiles (host, monitor, shield-config, shield-action, report),
-  shared App Group and the added WidgetKit bundle/provisioning. Account status is unknown
-  until inspected; request only missing reviewed approvals.
+- [ ] **Apple account/signing:** membership verified 2026-11-05 (Individual, renews
+  2027-10-25). Family Controls (Distribution) was granted to the account on 2026-11-01
+  (request `2CLYP9S4H2`, account-level — do not file more). Still to do: enable it on the five
+  App IDs (`app.flint.focus` host, `.monitor`, `.shield-config`, `.shield-action`, `.report`),
+  register `app.flint.focus.widgets` with the shared App Group `group.app.flint.focus`, then
+  regenerate profiles and confirm each carries the expected entitlements.
 - [ ] **Apple artifact:** configure ignored private signing files, increment coordinated build,
   archive/export the signed Release build and inspect every embedded signature, entitlement,
   six privacy manifests, icon/resource and DEBUG-fixture exclusion. New lock deadline calls

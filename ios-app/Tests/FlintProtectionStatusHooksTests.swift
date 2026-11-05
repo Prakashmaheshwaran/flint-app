@@ -75,9 +75,9 @@ final class FlintProtectionStatusHooksTests: XCTestCase {
     func testTheHostIsTheWriterOutsideAnExtension() {
         XCTAssertEqual(FlintProtectionStatus.Writer.current, .host)
         typealias W = FlintProtectionStatus.Writer
-        XCTAssertEqual(W.writer(forBundleID: "com.flint.peakfocus.shield-action", isExtension: true), .shieldAction)
-        XCTAssertEqual(W.writer(forBundleID: "com.flint.peakfocus.monitor", isExtension: true), .monitor)
-        XCTAssertEqual(W.writer(forBundleID: "com.flint.peakfocus.widgets", isExtension: true), .host,
+        XCTAssertEqual(W.writer(forBundleID: "app.flint.focus.shield-action", isExtension: true), .shieldAction)
+        XCTAssertEqual(W.writer(forBundleID: "app.flint.focus.monitor", isExtension: true), .monitor)
+        XCTAssertEqual(W.writer(forBundleID: "app.flint.focus.widgets", isExtension: true), .host,
                        "read-only extensions aren't labelled as an enforcement writer")
     }
 
