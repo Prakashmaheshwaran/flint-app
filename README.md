@@ -12,6 +12,34 @@ require no account and include no analytics SDK.
 
 </div>
 
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/images/screenshots/ios-today.jpg" width="320" alt="Flint on iPhone: Today screen with focus history and Screen Time setup" /><br />
+      <sub><b>iPhone · Today</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/images/screenshots/android-today.jpg" width="320" alt="Flint on Android: Today screen showing blocking is on" /><br />
+      <sub><b>Android · Today</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/images/screenshots/ios-rules.jpg" width="320" alt="Flint on iPhone: Rules screen with schedules, Sleep and app limits" /><br />
+      <sub><b>iPhone · Rules</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/images/screenshots/android-session.jpg" width="320" alt="Flint on Android: focus timer running with 16 apps resting" /><br />
+      <sub><b>Android · Focus session</b></sub>
+    </td>
+  </tr>
+</table>
+
+Simulator and emulator captures. They do not demonstrate Screen Time authorization,
+shield delivery, or background survival.
+
 ## v1 status
 
 The v1 integration landed on `main` through
