@@ -40,8 +40,8 @@ for the recorded evidence and open acceptance work.
 
 ## Human-owned items (not automatable here)
 
-- Apple Developer account: Family Controls (Distribution) entitlement granted to
-  the account 2026-11-01; still to do — enable it on the five Screen Time App IDs,
+- Apple Developer account: Family Controls (Distribution) granted to the account
+  2026-11-01 and enabled on the five Screen Time App IDs 2026-11-05; still to do —
   register the widget App ID, profiles, App Store Connect record, TestFlight.
 - Google Play Console: upload key and Play App Signing, declarations, review.
 - Physical iPhone and Android hardware acceptance runs (checklists are produced

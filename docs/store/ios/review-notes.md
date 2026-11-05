@@ -251,9 +251,10 @@ team) covered the app and its Screen Time extensions, and Apple assigned
 the Family Controls (Distribution) entitlement to the account on 2026-11-01. Do
 not file further requests unless Apple asks for one by bundle ID.
 
-The grant makes the capability *available*; it is not yet configured. The owner
-must still enable **Family Controls (Distribution)** on each of the five App IDs
-below in Certificates, Identifiers & Profiles, then regenerate their profiles.
+The grant makes the capability *available* per App ID. On 2026-11-05
+**Family Controls (Distribution)** was enabled on each of the five App IDs below
+(re-read alongside App Groups and the development capability). No provisioning
+profiles exist yet; automatic signing creates them on the first signed build.
 Declaring the entitlement in source does not demonstrate that a profile carries
 it — inspect each archived bundle's embedded profile.
 

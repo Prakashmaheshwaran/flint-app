@@ -43,10 +43,12 @@ separate authorization; completing the repository work does not perform these ac
   unsupported browsers/OEMs, clock uncertainty and observed OS delivery latency.
 - [ ] **Apple account/signing:** membership verified 2026-11-05 (Individual, renews
   2027-10-25). Family Controls (Distribution) was granted to the account on 2026-11-01
-  (request `2CLYP9S4H2`, account-level — do not file more). Still to do: enable it on the five
+  (request `2CLYP9S4H2`, account-level — do not file more). Enabled 2026-11-05 on the five
   App IDs (`app.flint.focus` host, `.monitor`, `.shield-config`, `.shield-action`, `.report`),
-  register `app.flint.focus.widgets` with the shared App Group `group.app.flint.focus`, then
-  regenerate profiles and confirm each carries the expected entitlements.
+  each re-read with App Groups + Family Controls (Development) + (Distribution). Still to do:
+  register `app.flint.focus.widgets` with the shared App Group `group.app.flint.focus` (or let
+  Xcode automatic signing register it), then let automatic signing create profiles (none exist
+  yet) and confirm each archived bundle carries the expected entitlements.
 - [ ] **Apple artifact:** configure ignored private signing files, increment coordinated build,
   archive/export the signed Release build and inspect every embedded signature, entitlement,
   six privacy manifests, icon/resource and DEBUG-fixture exclusion. New lock deadline calls
