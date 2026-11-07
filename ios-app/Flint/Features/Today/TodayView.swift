@@ -472,7 +472,8 @@ struct TodayView: View {
 
     private var restingTargets: [PickedTarget]? {
         if vm.active != nil {
-            let targets = vm.selection.flintPickedTargets
+            // The session's own frozen targets, not the picker's draft selection.
+            let targets = vm.activeSelection?.flintPickedTargets ?? []
             return targets.isEmpty ? nil : targets
         }
         if let current = FlintTodaySchedule.current(in: rules, at: now) {
@@ -540,8 +541,9 @@ struct TodayView: View {
         let cal = Calendar.current
         let minute = Double(cal.component(.hour, from: now) * 60 + cal.component(.minute, from: now))
         var start = Double(rule.schedule.startHour * 60 + rule.schedule.startMinute)
-        let end = Double(rule.schedule.endHour * 60 + rule.schedule.endMinute)
-        if end <= start { if minute < end { start -= 1440 } else { /* stays */ } }
+        var end = Double(rule.schedule.endHour * 60 + rule.schedule.endMinute)
+        // Overnight window: shift whichever edge lies on the other side of midnight.
+        if end <= start { if minute < end { start -= 1440 } else { end += 1440 } }
         let span = end - start
         guard span > 0 else { return 0 }
         return (minute - start) / span

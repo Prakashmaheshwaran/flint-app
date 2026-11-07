@@ -101,20 +101,21 @@ struct SessionView: View {
 
     private func controlBar(_ active: FlintActiveSession) -> some View {
             VStack(alignment: .leading, spacing: 12) {
-                // What is resting: real icons for the running session's selection.
-                if vm.selectionCount > 0 {
+                // What is resting: real icons for the running session's own frozen selection.
+                if let resting = vm.activeSelection, SessionViewModel.count(of: resting) > 0 {
+                    let restingCount = SessionViewModel.count(of: resting)
                     HStack(spacing: 8) {
-                        FlintAppIconStack(targets: vm.selection.flintPickedTargets, size: 32,
+                        FlintAppIconStack(targets: resting.flintPickedTargets, size: 32,
                                           border: Color(hex: 0x161518), limit: 5, resting: true)
-                        if vm.selectionCount > 5 {
-                            Text("+\(vm.selectionCount - 5)")
+                        if restingCount > 5 {
+                            Text("+\(restingCount - 5)")
                                 .font(FlintFont.text(11, weight: .semibold))
                                 .foregroundStyle(FlintBrand.mist)
                                 .frame(width: 32, height: 32)
                                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(FlintBrand.bone(0.07)))
                         }
                         Spacer(minLength: 8)
-                        Text("\(vm.selectionSummary) resting")
+                        Text("\(SessionViewModel.summary(of: resting)) resting")
                             .font(FlintFont.text(12))
                             .foregroundStyle(FlintBrand.mist)
                     }

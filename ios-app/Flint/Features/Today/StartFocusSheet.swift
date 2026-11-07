@@ -39,7 +39,7 @@ struct StartFocusSheet: View {
                         durationPicker.padding(.top, 24)
                         presets.padding(.top, 18)
                         blockRow.padding(.top, 22)
-                        if !vm.savedGroups.isEmpty { groupChips.padding(.top, 12) }
+                        if !vm.savedGroups.isEmpty || vm.selectionCount > 0 { groupChips.padding(.top, 12) }
                         Text("Break level").flintSection().padding(.top, 26).padding(.horizontal, 4)
                         breakLevels.padding(.top, 10)
                         Text(note(for: vm.breakLevel))
