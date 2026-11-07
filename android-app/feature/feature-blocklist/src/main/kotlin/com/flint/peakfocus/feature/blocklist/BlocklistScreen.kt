@@ -18,6 +18,8 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +28,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -38,6 +41,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Button
@@ -57,7 +61,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -68,14 +76,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.flint.peakfocus.core.common.ui.FlintNavPanel
+import com.flint.peakfocus.core.common.ui.FlintAppTile
 import com.flint.peakfocus.core.common.ui.FlintGlyphs
 import com.flint.peakfocus.core.common.ui.FlintCircleButton
+import com.flint.peakfocus.core.common.ui.FlintStatusPill
 import com.flint.peakfocus.core.common.ui.flintSwitchColors
 import com.flint.peakfocus.core.common.theme.FlintMotion
 import com.flint.peakfocus.core.common.theme.FlintNumerals
+import com.flint.peakfocus.core.common.theme.FlintPalette
 import com.flint.peakfocus.core.common.theme.FlintSpacing
 import com.flint.peakfocus.core.common.theme.FlintTheme
 import com.flint.peakfocus.core.common.theme.rememberFlintMark
@@ -89,6 +101,7 @@ import com.flint.peakfocus.core.common.ui.flintLoading
 import com.flint.peakfocus.core.common.ui.rememberFlintHaptics
 import com.flint.peakfocus.core.common.ui.rememberReducedMotion
 import com.flint.peakfocus.blocking.overlay.TargetProtectionReader
+import com.flint.peakfocus.core.model.AppGroup
 import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BlockTargets
@@ -238,6 +251,7 @@ fun BlocklistScreen(
                 is BlocklistDestination.Overview -> BlocklistOverview(
                     rulesState = rulesState,
                     limitsState = limitsState,
+                    groups = groups,
                     onNewRule = {
                         destination = BlocklistDestination.EditRule(null, visit = ++editorVisits)
                     },
@@ -379,6 +393,7 @@ fun BlocklistScreen(
 private fun BlocklistOverview(
     rulesState: RulesUiState,
     limitsState: LimitsUiState,
+    groups: List<AppGroup> = emptyList(),
     onNewRule: () -> Unit,
     onNewRuleFromPreset: (RoutinePreset) -> Unit = {},
     onEditRule: (String) -> Unit,
@@ -400,7 +415,7 @@ private fun BlocklistOverview(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val haptics = rememberFlintHaptics()
-    // One-shot Block Now sessions are transient and live on Home — editing one here would
+    // One-shot Block Now sessions are transient and live on Today — editing one here would
     // strip its expiry on save and quietly make it permanent. Sleep rules have their own
     // section + editor below; the generic editor would corrupt their fixed ids and
     // paired-rule invariants. Null while the store is still loading.
@@ -409,43 +424,41 @@ private fun BlocklistOverview(
     }
     val ruleStatuses = (rulesState as? RulesUiState.Ready)?.statuses ?: emptyMap()
     val limitRows = (limitsState as? LimitsUiState.Ready)?.rows
+    val nowMinute = localMinuteOfDay(System.currentTimeMillis())
+    val activeRule = authoredRules?.firstOrNull { ruleStatuses[it.id]?.activeNow == true }
+    val activeApps = activeRule?.targets?.apps?.toList().orEmpty()
+    val sleepConfig = (rulesState as? RulesUiState.Ready)?.let { sleepConfigFrom(it.rules) }
 
-    // The gutter rides each item, not the list, so the template rail can bleed edge-to-edge.
     LazyColumn(
         state = listState,
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(
-            top = contentPadding.calculateTopPadding() + FlintSpacing.md,
+            top = contentPadding.calculateTopPadding() + 8.dp,
             bottom = contentPadding.calculateBottomPadding() + FlintSpacing.gutter,
         ),
     ) {
         item(key = "header") {
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = FlintSpacing.gutter),
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("Rules", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
-                FlintCircleButton(onClick = onNewRule, contentDescription = "New block rule", size = 44.dp) {
-                    Icon(FlintGlyphs.plus, contentDescription = null, modifier = Modifier.size(18.dp))
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(Brush.verticalGradient(listOf(FlintPalette.EmberTop, FlintPalette.Ember)))
+                        .clickable(onClick = onNewRule)
+                        .semantics { contentDescription = "New block rule" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(FlintGlyphs.plus, contentDescription = null, tint = FlintPalette.OnEmber, modifier = Modifier.size(20.dp))
                 }
             }
-        }
-        if (onQuickBlock != null) {
-            item(key = "quick-block") {
-                FlintNavPanel(
-                    title = "Quick block list",
-                    subtitle = quickBlockSummary,
-                    onClick = onQuickBlock,
-                    modifier = Modifier.padding(horizontal = FlintSpacing.gutter).padding(top = FlintSpacing.lg),
-                )
-            }
-        }
-        item(key = "rules-label") {
-            SectionLabelItem("Block rules")
-            ErrorMessages(listOfNotNull(saveError))
-            saveResult?.let { Text(it, Modifier.padding(horizontal = FlintSpacing.gutter)) }
+            ErrorMessages(listOfNotNull(saveError), Modifier.padding(horizontal = 20.dp))
+            saveResult?.let { Text(it, Modifier.padding(horizontal = 20.dp)) }
             commitmentState?.let { state ->
-                Column(Modifier.padding(horizontal = FlintSpacing.gutter)) {
+                Column(Modifier.padding(horizontal = 20.dp)) {
                     if (state.migrationNotice) {
                         Text("Existing occurrences keep their previous exit rights until they end. New occurrences use the displayed tier.", style = MaterialTheme.typography.bodySmall)
                         TextButton(onClick = onDismissMigrationNotice) { Text("Got it") }
@@ -454,14 +467,74 @@ private fun BlocklistOverview(
                 }
             }
         }
+
+        if (activeRule != null && activeApps.isNotEmpty()) {
+            item(key = "resting-now") {
+                Column(Modifier.padding(top = 22.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Resting now · ${activeApps.size} ${if (activeApps.size == 1) "app" else "apps"}",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        val left = scheduleMinutesLeft(activeRule.schedule, nowMinute)
+                        FlintStatusPill(
+                            text = activeRule.name + (left?.let { " · ${shortDuration(it)} left" } ?: ""),
+                            emphasized = true,
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(activeApps, key = { it.packageName }) { app ->
+                            Column(
+                                Modifier.width(52.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                FlintAppTile(
+                                    packageName = app.packageName,
+                                    label = app.label,
+                                    size = 52.dp,
+                                    cornerRadius = 15.dp,
+                                    resting = true,
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    app.label ?: app.packageName,
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                    color = FlintPalette.Mist,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item(key = "schedules-header") {
+            SectionHeader(
+                title = "Schedules",
+                modifier = Modifier.padding(horizontal = 20.dp).padding(top = 26.dp),
+                onClick = onNewRule,
+            )
+        }
         when {
             rulesState is RulesUiState.Unavailable -> item(key = "rules-unavailable") {
-                ErrorMessages(listOf("Couldn't load. Try again."), Modifier.padding(horizontal = FlintSpacing.gutter))
+                ErrorMessages(listOf("Couldn't load. Try again."), Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
             }
             authoredRules == null -> item(key = "rules-loading") {
                 LoadingRows(
                     modifier = animatedRow()
-                        .padding(horizontal = FlintSpacing.gutter)
+                        .padding(horizontal = 20.dp)
                         .padding(bottom = FlintSpacing.cardGap),
                 )
             }
@@ -471,16 +544,14 @@ private fun BlocklistOverview(
                     heading = "Nothing blocked yet",
                     message = "A rule picks apps or websites and decides when they're " +
                         "off-limits.",
-                    modifier = animatedRow().padding(horizontal = FlintSpacing.gutter),
+                    modifier = animatedRow().padding(horizontal = 20.dp).padding(top = 10.dp),
                 ) {
                     Button(onClick = onNewRule, modifier = Modifier.fillMaxWidth()) {
                         Text("New block rule")
                     }
                     TextButton(
                         onClick = {
-                            scope.launch {
-                                listState.animateScrollToItem(EMPTY_TEMPLATES_INDEX)
-                            }
+                            scope.launch { listState.animateScrollToItem(EMPTY_TEMPLATES_INDEX) }
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
@@ -489,93 +560,80 @@ private fun BlocklistOverview(
                 }
             }
 
-            else -> items(authoredRules, key = { it.id }) { rule ->
-                RuleCard(
-                    rule = rule,
-                    status = ruleStatuses[rule.id],
-                    onClick = { onEditRule(rule.id) },
-                    onToggle = { enabled ->
-                        if (enabled) haptics.toggleOn() else haptics.toggleOff()
-                        onToggleRule(rule.id, enabled)
-                    },
-                    modifier = animatedRow()
-                        .padding(horizontal = FlintSpacing.gutter)
-                        .padding(bottom = FlintSpacing.cardGap),
+            else -> item(key = "schedules-rail") {
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(authoredRules, key = { it.id }) { rule ->
+                        ScheduleCard(
+                            rule = rule,
+                            status = ruleStatuses[rule.id],
+                            nowMinute = nowMinute,
+                            onClick = { onEditRule(rule.id) },
+                            onToggle = { enabled ->
+                                if (enabled) haptics.toggleOn() else haptics.toggleOff()
+                                onToggleRule(rule.id, enabled)
+                            },
+                            modifier = Modifier.animateItem(),
+                        )
+                    }
+                }
+            }
+        }
+
+        if (authoredRules?.isEmpty() == true) {
+            item(key = "templates-label") {
+                Text(
+                    "Start from a template",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = 20.dp).padding(top = 22.dp, bottom = 10.dp),
+                )
+            }
+            item(key = "templates-rail") {
+                val railState = rememberLazyListState()
+                LazyRow(
+                    state = railState,
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    flingBehavior = rememberSnapFlingBehavior(railState),
+                ) {
+                    items(ROUTINE_PRESETS, key = { it.name }) { preset ->
+                        PresetCard(preset = preset, onClick = { onNewRuleFromPreset(preset) })
+                    }
+                }
+            }
+        }
+
+        item(key = "quick-block") {
+            if (onQuickBlock != null) {
+                FlintNavPanel(
+                    title = "Quick block list",
+                    subtitle = quickBlockSummary,
+                    onClick = onQuickBlock,
+                    modifier = Modifier.padding(horizontal = 20.dp).padding(top = 6.dp),
                 )
             }
         }
-        // The hero embeds its own CTA; the standalone button belongs to the populated list.
-        if (authoredRules?.isEmpty() != true) {
-            item(key = "new-rule") {
-                Button(
-                    onClick = onNewRule,
-                    modifier = animatedRow()
-                        .fillMaxWidth()
-                        .padding(horizontal = FlintSpacing.gutter),
-                ) {
-                    Text("New block rule")
-                }
-            }
-        }
 
-        item(key = "templates-label") {
-            SectionLabelItem("Start from a template")
-        }
-        item(key = "templates-rail") {
-            val railState = rememberLazyListState()
-            LazyRow(
-                state = railState,
-                modifier = Modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = FlintSpacing.gutter),
-                horizontalArrangement = Arrangement.spacedBy(FlintSpacing.cardGap),
-                flingBehavior = rememberSnapFlingBehavior(railState),
-            ) {
-                items(ROUTINE_PRESETS, key = { it.name }) { preset ->
-                    PresetCard(preset = preset, onClick = { onNewRuleFromPreset(preset) })
-                }
-            }
-        }
-
-        item(key = "sleep-label") {
-            SectionLabelItem("Sleep")
-        }
-        item(key = "sleep-card") {
-            // Single card either way, so this section can keep a literal Crossfade.
-            Crossfade(
-                targetState = rulesState !is RulesUiState.Ready,
-                modifier = Modifier.padding(horizontal = FlintSpacing.gutter),
-                animationSpec = if (rememberReducedMotion()) snap() else tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard),
-                label = "sleepSection",
-            ) { loading ->
-                if (loading) {
-                    if (rulesState is RulesUiState.Unavailable) ErrorMessages(listOf("Couldn't load. Try again."))
-                    else LoadingRows()
-                } else {
-                    SleepCard(
-                        config = sleepConfigFrom(
-                            (rulesState as? RulesUiState.Ready)?.rules.orEmpty(),
-                        ),
-                        onClick = onEditSleep,
-                        onToggle = { enabled ->
-                            if (enabled) haptics.toggleOn() else haptics.toggleOff()
-                            onToggleSleep(enabled)
-                        },
-                    )
-                }
-            }
-        }
-
-        item(key = "limits-label") {
-            SectionLabelItem("Daily app limits")
+        item(key = "limits-header") {
+            SectionHeader(
+                title = "Limits",
+                modifier = Modifier.padding(horizontal = 20.dp).padding(top = 26.dp),
+                onClick = onNewLimit,
+                trailing = "New limit",
+            )
         }
         when {
             limitsState is LimitsUiState.Unavailable -> item(key = "limits-unavailable") {
-                ErrorMessages(listOf("Couldn't load. Try again."), Modifier.padding(horizontal = FlintSpacing.gutter))
+                ErrorMessages(listOf("Couldn't load. Try again."), Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
             }
             limitRows == null -> item(key = "limits-loading") {
                 LoadingRows(
                     modifier = animatedRow()
-                        .padding(horizontal = FlintSpacing.gutter)
+                        .padding(horizontal = 20.dp)
                         .padding(bottom = FlintSpacing.cardGap),
                 )
             }
@@ -585,45 +643,264 @@ private fun BlocklistOverview(
                     heading = "No app limits yet",
                     message = "Set a daily time budget, or choose how many 5-minute access credits you can use each day.",
                     modifier = animatedRow()
-                        .padding(horizontal = FlintSpacing.gutter)
-                        .padding(bottom = FlintSpacing.cardGap),
+                        .padding(horizontal = 20.dp)
+                        .padding(top = 10.dp),
                 )
             }
 
-            else -> items(limitRows, key = { it.packageName }) { row ->
-                LimitCard(
-                    row = row,
-                    onClick = { onEditLimit(row.packageName) },
-                    modifier = animatedRow()
-                        .padding(horizontal = FlintSpacing.gutter)
-                        .padding(bottom = FlintSpacing.cardGap),
+            else -> item(key = "limits-rail") {
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(limitRows, key = { it.packageName }) { row ->
+                        LimitCard(
+                            row = row,
+                            onClick = { onEditLimit(row.packageName) },
+                            modifier = Modifier.animateItem(),
+                        )
+                    }
+                }
+            }
+        }
+
+        sleepConfig?.let { config ->
+            item(key = "sleep-label") {
+                SectionHeader(
+                    title = "Sleep",
+                    modifier = Modifier.padding(horizontal = 20.dp).padding(top = 26.dp),
+                    onClick = onEditSleep,
+                    trailing = "Edit",
+                )
+            }
+            item(key = "sleep-card") {
+                SleepCard(
+                    config = config,
+                    onClick = onEditSleep,
+                    onToggle = { enabled ->
+                        if (enabled) haptics.toggleOn() else haptics.toggleOff()
+                        onToggleSleep(enabled)
+                    },
+                    modifier = Modifier.padding(horizontal = 20.dp).padding(top = 10.dp),
                 )
             }
         }
-        item(key = "new-limit") {
-            OutlinedButton(
-                onClick = onNewLimit,
-                modifier = animatedRow()
-                    .fillMaxWidth()
-                    .padding(horizontal = FlintSpacing.gutter),
-            ) {
-                Text("New app limit")
+
+        if (groups.isNotEmpty()) {
+            item(key = "groups-label") {
+                Text(
+                    "Groups",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = 20.dp).padding(top = 26.dp, bottom = 12.dp),
+                )
+            }
+            groups.chunked(3).forEachIndexed { index, rowGroups ->
+                item(key = "groups-row-$index") {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        rowGroups.forEach { group ->
+                            GroupFolder(group = group, modifier = Modifier.weight(1f))
+                        }
+                        repeat(3 - rowGroups.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
             }
         }
-        // Appended last so the first-run template scroll index above stays unchanged.
+
+        if (authoredRules?.isEmpty() != true) {
+            item(key = "templates-label") {
+                Text(
+                    "Start from a template",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = 20.dp).padding(top = 18.dp, bottom = 10.dp),
+                )
+            }
+            item(key = "templates-rail") {
+                val railState = rememberLazyListState()
+                LazyRow(
+                    state = railState,
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    flingBehavior = rememberSnapFlingBehavior(railState),
+                ) {
+                    items(ROUTINE_PRESETS, key = { it.name }) { preset ->
+                        PresetCard(preset = preset, onClick = { onNewRuleFromPreset(preset) })
+                    }
+                }
+            }
+        }
+
         if (onAppsAndSites != null) {
             item(key = "apps-and-sites") {
                 FlintNavPanel(
                     title = stringResource(R.string.targets_title),
                     subtitle = stringResource(R.string.targets_entry_description),
                     onClick = onAppsAndSites,
-                    modifier = Modifier.padding(horizontal = FlintSpacing.gutter).padding(top = FlintSpacing.lg),
+                    modifier = Modifier.padding(horizontal = 20.dp).padding(top = 22.dp),
                 )
             }
         }
     }
 }
 
+/** The v3 section heading with an optional trailing action ("Schedules ›", "New limit"). */
+@Composable
+private fun SectionHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    trailing: String? = null,
+) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .then(
+                if (onClick != null) Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onClick) else Modifier,
+            )
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        if (onClick != null) {
+            Icon(FlintGlyphs.chevronRight, contentDescription = null, tint = FlintPalette.Mist, modifier = Modifier.size(16.dp))
+        }
+        Spacer(Modifier.weight(1f))
+        if (trailing != null) {
+            Text(
+                trailing,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                color = FlintPalette.Mist,
+                modifier = Modifier.padding(end = 4.dp),
+            )
+        }
+    }
+}
+
+/** M13's rule card: calendar → lock header, time-left/next pill, name, targets and the switch. */
+@Composable
+private fun ScheduleCard(
+    rule: BlockRule,
+    status: RuleLiveStatus?,
+    nowMinute: Int,
+    onClick: () -> Unit,
+    onToggle: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val active = status?.activeNow == true && rule.enabled
+    val left = if (active) scheduleMinutesLeft(rule.schedule, nowMinute) else null
+    val shape = RoundedCornerShape(22.dp)
+    Column(
+        modifier
+            .width(196.dp)
+            .clip(shape)
+            .background(
+                if (active) {
+                    Brush.verticalGradient(
+                        listOf(
+                            FlintPalette.Ember.copy(alpha = 0.16f),
+                            FlintPalette.Ember.copy(alpha = 0.04f),
+                            FlintPalette.Card,
+                        ),
+                    )
+                } else {
+                    SolidColor(if (rule.enabled) FlintPalette.Card else FlintPalette.Night)
+                },
+            )
+            .border(1.dp, if (active) FlintPalette.Ember.copy(alpha = 0.35f) else FlintPalette.Hairline, shape)
+            .clickable(onClick = onClick)
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(32.dp).clip(CircleShape).background(FlintPalette.BoneFill),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(FlintGlyphs.calendar, contentDescription = null, tint = FlintPalette.Bone, modifier = Modifier.size(16.dp))
+            }
+            Icon(FlintGlyphs.chevronRight, contentDescription = null, tint = FlintPalette.Stone, modifier = Modifier.size(14.dp))
+            Box(
+                Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(if (active) FlintPalette.Ember.copy(alpha = 0.18f) else FlintPalette.BoneFill),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    FlintGlyphs.lock,
+                    contentDescription = null,
+                    tint = if (active) FlintPalette.Ember else FlintPalette.Bone,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        }
+        when {
+            !rule.enabled -> FlintStatusPill("Off", emphasized = false)
+            active -> FlintStatusPill("${left?.let { shortDuration(it) + " left" } ?: "Active now"}", emphasized = true)
+            status?.nextChange != null -> FlintStatusPill(
+                status.nextChange.replace("Starts ", "Next · "),
+                emphasized = false,
+            )
+            else -> FlintStatusPill("Always on", emphasized = false)
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                rule.name,
+                style = MaterialTheme.typography.titleMedium,
+                color = if (rule.enabled) FlintPalette.Bone else FlintPalette.Mist,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                scheduleSummary(rule.schedule),
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                color = FlintPalette.Mist,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                if (rule.targets.allowListMode) "Allow" else "Block",
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                color = FlintPalette.Mist,
+            )
+            rule.targets.apps.take(2).forEach { app ->
+                FlintAppTile(
+                    packageName = app.packageName,
+                    label = app.label,
+                    size = 20.dp,
+                    cornerRadius = 6.dp,
+                )
+            }
+            val more = rule.targets.apps.size - 2
+            if (more > 0) {
+                Text(
+                    "+$more",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                    color = FlintPalette.Bone,
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            Switch(
+                colors = flintSwitchColors(),
+                checked = rule.enabled,
+                onCheckedChange = onToggle,
+                modifier = Modifier
+                    .scale(0.78f)
+                    .semantics { contentDescription = "${rule.name} rule" },
+            )
+        }
+    }
+}
+
+/** M13's limit card: app + configured budget, with an honest empty meter (no usage data here). */
 /** One section label item: the same lg beat above every eyebrow, the sm beat under it. */
 @Composable
 private fun SectionLabelItem(text: String) {
@@ -722,93 +999,12 @@ private fun EmptyCard(
 }
 
 @Composable
-private fun RuleCard(
-    rule: BlockRule,
-    status: RuleLiveStatus?,
+internal fun SleepCard(
+    config: SleepConfig?,
     onClick: () -> Unit,
     onToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Disabled rules drop to the lowest surface + muted title so the Switch state reads at
-    // a glance even before the thumb position registers; the colors ease so toggling reads
-    // as the card powering down/up, not a repaint.
-    val containerColor by animateColorAsState(
-        targetValue = if (rule.enabled) {
-            MaterialTheme.colorScheme.surfaceContainerLow
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerLowest
-        },
-        animationSpec = tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard),
-        label = "ruleCardContainer",
-    )
-    val titleColor by animateColorAsState(
-        targetValue = if (rule.enabled) {
-            MaterialTheme.colorScheme.onSurface
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        },
-        animationSpec = tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard),
-        label = "ruleCardTitle",
-    )
-    FlintCard(modifier = modifier, onClick = onClick, containerColor = containerColor) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = rule.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = titleColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(FlintSpacing.xs))
-                Text(
-                    text = targetsSummary(rule.targets),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = scheduleSummary(rule.schedule),
-                    style = MaterialTheme.typography.bodySmall.merge(FlintNumerals),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (status?.activeNow == true) {
-                    Spacer(Modifier.height(FlintSpacing.xs))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        FlintStatusDot(MaterialTheme.colorScheme.primary, pulsing = true)
-                        Spacer(Modifier.width(FlintSpacing.xs))
-                        Text(
-                            text = stringResource(R.string.rules_active_now),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                } else if (status?.nextChange != null) {
-                    Text(
-                        text = status.nextChange,
-                        style = MaterialTheme.typography.bodySmall.merge(FlintNumerals),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Spacer(Modifier.height(FlintSpacing.sm))
-                FlintBadge(
-                    text = breakLevelLabel(rule.breakLevel),
-                    emphasized = rule.breakLevel == BreakLevel.HARDCORE,
-                )
-            }
-            Spacer(Modifier.width(FlintSpacing.cardGap))
-            Switch(
-                colors = flintSwitchColors(),
-                checked = rule.enabled,
-                onCheckedChange = onToggle,
-                // TalkBack otherwise announces a bare "On/Off" with no owner.
-                modifier = Modifier.semantics { contentDescription = "${rule.name} rule" },
-            )
-        }
-    }
-}
-
-@Composable
-internal fun SleepCard(config: SleepConfig?, onClick: () -> Unit, onToggle: (Boolean) -> Unit) {
     val enabled = config?.enabled == true
     val reducedMotion = rememberReducedMotion()
     val containerColor by animateColorAsState(
@@ -829,7 +1025,7 @@ internal fun SleepCard(config: SleepConfig?, onClick: () -> Unit, onToggle: (Boo
         animationSpec = if (reducedMotion) snap() else tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard),
         label = "sleepCardTitle",
     )
-    FlintCard(onClick = onClick, containerColor = containerColor) {
+    FlintCard(modifier = modifier, onClick = onClick, containerColor = containerColor) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(
@@ -877,41 +1073,117 @@ internal fun SleepCard(config: SleepConfig?, onClick: () -> Unit, onToggle: (Boo
     }
 }
 
+/** M13's limit card: app + configured budget, with an honest empty meter (no usage data here). */
 @Composable
 private fun LimitCard(row: AppLimitRow, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    FlintCard(modifier = modifier, onClick = onClick) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
+    val shape = RoundedCornerShape(20.dp)
+    Column(
+        modifier
+            .width(176.dp)
+            .clip(shape)
+            .background(FlintPalette.Card)
+            .border(1.dp, FlintPalette.Hairline, shape)
+            .clickable(onClick = onClick)
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            FlintAppTile(
+                packageName = row.packageName,
+                label = row.displayName,
+                size = 32.dp,
+                cornerRadius = 10.dp,
+            )
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Text(
-                    text = row.displayName,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    row.displayName,
+                    style = MaterialTheme.typography.titleSmall.copy(fontSize = 14.sp),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (row.label != null) {
-                    Text(
-                        text = row.packageName,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Spacer(Modifier.height(FlintSpacing.xs))
                 Text(
-                    text = limitSummary(row.timeLimit, row.openLimit),
-                    style = MaterialTheme.typography.bodyMedium.merge(FlintNumerals),
-                    color = MaterialTheme.colorScheme.onSurface,
+                    limitSummary(row.timeLimit, row.openLimit),
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = FlintPalette.Mist,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-            Spacer(Modifier.width(FlintSpacing.sm))
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        }
+        if (row.openLimit != null) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                repeat(row.openLimit.dailyOpens.coerceIn(1, 5)) {
+                    Box(
+                        Modifier.weight(1f).height(4.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(FlintPalette.Bone.copy(alpha = 0.1f)),
+                    )
+                }
+            }
+        } else {
+            Box(
+                Modifier.fillMaxWidth().height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(FlintPalette.Bone.copy(alpha = 0.1f)),
             )
         }
+    }
+}
+
+/** M13's folder-style group tile: a 2x2 grid of real icons, then the name and app count. */
+@Composable
+private fun GroupFolder(group: AppGroup, modifier: Modifier = Modifier) {
+    val apps = group.apps.toList()
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier
+                .size(92.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(FlintPalette.BoneFaint.copy(alpha = 0.9f))
+                .border(1.dp, FlintPalette.Hairline, RoundedCornerShape(24.dp))
+                .padding(10.dp),
+        ) {
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                repeat(2) { rowIndex ->
+                    Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        repeat(2) { columnIndex ->
+                            val app = apps.getOrNull(rowIndex * 2 + columnIndex)
+                            Box(
+                                Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (app == null) FlintPalette.BoneFaint else Color.Transparent),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (app != null) {
+                                    FlintAppTile(
+                                        packageName = app.packageName,
+                                        label = app.label,
+                                        size = 32.dp,
+                                        cornerRadius = 8.dp,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            group.name,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            "${group.apps.size} ${if (group.apps.size == 1) "app" else "apps"}",
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+            color = FlintPalette.Mist,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 

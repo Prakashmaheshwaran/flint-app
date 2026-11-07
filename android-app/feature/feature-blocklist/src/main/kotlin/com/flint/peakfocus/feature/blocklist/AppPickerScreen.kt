@@ -1,15 +1,17 @@
 package com.flint.peakfocus.feature.blocklist
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,13 +24,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -55,20 +62,31 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.flint.peakfocus.core.common.theme.FlintMotion
 import com.flint.peakfocus.core.common.theme.FlintNumerals
+import com.flint.peakfocus.core.common.theme.FlintPalette
 import com.flint.peakfocus.core.common.theme.FlintSpacing
 import com.flint.peakfocus.core.common.theme.rememberFlintMark
+import com.flint.peakfocus.core.common.ui.BoneButton
+import com.flint.peakfocus.core.common.ui.FlintAppTile
+import com.flint.peakfocus.core.common.ui.FlintCircleButton
+import com.flint.peakfocus.core.common.ui.FlintGlyphs
+import com.flint.peakfocus.core.common.ui.FlintHairline
 import com.flint.peakfocus.core.common.ui.FlintSkeletonRow
 import com.flint.peakfocus.core.common.ui.flintLoading
 import com.flint.peakfocus.core.common.ui.rememberFlintHaptics
+import com.flint.peakfocus.core.model.AppGroup
 
 /**
  * Launchable-app chooser backed by [InstalledAppsUiState]. In multi-select mode rows toggle
@@ -93,6 +111,8 @@ internal fun AppPickerScreen(
     onConfirm: (List<InstalledApp>) -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    groups: List<AppGroup> = emptyList(),
 ) {
     var query by remember { mutableStateOf("") }
     var selection by remember { mutableStateOf(AppPickerSelection(initiallySelected.toSet())) }
@@ -119,7 +139,7 @@ internal fun AppPickerScreen(
         }
     }
 
-    Column(modifier = modifier.fillMaxSize().padding(FlintSpacing.gutter)) {
+    Column(modifier = modifier.fillMaxSize().padding(horizontal = 20.dp)) {
         // Header/search scroll with the apps. A large font or the IME must not consume
         // the entire list viewport or push the confirmation controls off-screen.
         LazyColumn(
@@ -127,48 +147,92 @@ internal fun AppPickerScreen(
             contentPadding = PaddingValues(bottom = FlintSpacing.md),
         ) {
             item(key = "header") {
-                EditorHeader(title = title, eyebrow = eyebrow ?: "$selectedCount selected", onBack = onCancel)
-                Spacer(Modifier.height(FlintSpacing.sm))
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FlintCircleButton(onClick = onCancel, contentDescription = "Back", size = 44.dp) {
+                        Icon(FlintGlyphs.back, contentDescription = null, modifier = Modifier.size(18.dp))
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        (eyebrow ?: "$selectedCount selected").uppercase(),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = FlintPalette.Mist,
+                    )
+                }
+                Spacer(Modifier.height(14.dp))
+                Text(title, style = MaterialTheme.typography.headlineMedium)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    subtitle ?: if (multiSelect) "Pick a group, or tap apps one by one." else "Tap an app to choose it.",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 14.sp),
+                    color = FlintPalette.Mist,
+                )
+                Spacer(Modifier.height(14.dp))
+                if (groups.isNotEmpty() && multiSelect) {
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        groups.forEach { group ->
+                            GroupChip(group = group) {
+                                haptics.tick()
+                                selection = selection.withSelection(group.apps.map { it.packageName }, true)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
                 Text(
                     stringResource(R.string.picker_safety_floor_note),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = FlintPalette.Stone,
                 )
-                Spacer(Modifier.height(FlintSpacing.sm))
+                Spacer(Modifier.height(12.dp))
             }
             if (appsState is InstalledAppsUiState.Ready) {
                 item(key = "search") {
-                    OutlinedTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("Search apps") },
-                        leadingIcon = {
-                            Icon(imageVector = Icons.Outlined.Search, contentDescription = null)
-                        },
-                        trailingIcon = {
-                            AnimatedVisibility(
-                                visible = query.isNotEmpty(),
-                                enter = fadeIn(
-                                    tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard),
-                                ),
-                                exit = fadeOut(
-                                    tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard),
-                                ),
-                            ) {
-                                IconButton(onClick = { query = "" }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Clear search",
-                                    )
+                    Surface(
+                        shape = CircleShape,
+                        color = FlintPalette.BoneFill.copy(alpha = 0.6f),
+                        border = BorderStroke(1.dp, FlintPalette.Hairline),
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 46.dp).padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Icon(FlintGlyphs.search, contentDescription = null, tint = FlintPalette.Mist, modifier = Modifier.size(18.dp))
+                            androidx.compose.foundation.text.BasicTextField(
+                                value = query,
+                                onValueChange = { query = it },
+                                singleLine = true,
+                                textStyle = MaterialTheme.typography.bodyMedium.copy(color = FlintPalette.Bone),
+                                cursorBrush = SolidColor(FlintPalette.Ember),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                modifier = Modifier.weight(1f).semantics {
+                                    contentDescription = "Search apps and sites"
+                                },
+                                decorationBox = { inner ->
+                                    if (query.isEmpty()) {
+                                        Text(
+                                            "Search apps and sites",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = FlintPalette.Faint,
+                                        )
+                                    }
+                                    inner()
+                                },
+                            )
+                            if (query.isNotEmpty()) {
+                                IconButton(onClick = { query = "" }, modifier = Modifier.size(28.dp)) {
+                                    Icon(FlintGlyphs.close, contentDescription = "Clear search", tint = FlintPalette.Mist, modifier = Modifier.size(16.dp))
                                 }
                             }
-                        },
-                        shape = MaterialTheme.shapes.large,
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    )
-                    Spacer(Modifier.height(FlintSpacing.sm))
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
                     // Keep the count's natural width; move the action group to the next
                     // line when larger labels would otherwise squeeze APP/APPS into pieces.
                     FlowRow(
@@ -257,71 +321,95 @@ internal fun AppPickerScreen(
         }
 
         if (multiSelect && appsState is InstalledAppsUiState.Ready) {
-            HorizontalDivider(
-                thickness = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant,
-            )
-            Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = FlintSpacing.sm),
-                    horizontalArrangement = Arrangement.spacedBy(FlintSpacing.sm, Alignment.End),
-                ) {
-                    Row(
-                        Modifier.align(Alignment.CenterVertically),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        AnimatedContent(
-                            targetState = selectedCount,
-                            transitionSpec = {
-                                val spec = tween<Float>(
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = FlintSpacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                AnimatedContent(
+                    targetState = selectedCount,
+                    transitionSpec = {
+                        val spec = tween<Float>(
+                            FlintMotion.DurationShort,
+                            easing = FlintMotion.EasingStandard,
+                        )
+                        (
+                            slideInVertically(
+                                tween(
                                     FlintMotion.DurationShort,
                                     easing = FlintMotion.EasingStandard,
-                                )
-                                (
-                                    slideInVertically(
-                                        tween(
-                                            FlintMotion.DurationShort,
-                                            easing = FlintMotion.EasingStandard,
-                                        ),
-                                    ) { it / 2 } + fadeIn(spec)
-                                    ) togetherWith (
-                                    slideOutVertically(
-                                        tween(
-                                            FlintMotion.DurationShort,
-                                            easing = FlintMotion.EasingStandard,
-                                        ),
-                                    ) { -it / 2 } + fadeOut(spec)
-                                    )
-                            },
-                            label = "pickerSelectedCount",
-                        ) { count ->
-                            Text(
-                                text = "$count",
-                                style = MaterialTheme.typography.bodyMedium.merge(FlintNumerals),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                            ) { it / 2 } + fadeIn(spec)
+                            ) togetherWith (
+                            slideOutVertically(
+                                tween(
+                                    FlintMotion.DurationShort,
+                                    easing = FlintMotion.EasingStandard,
+                                ),
+                            ) { -it / 2 } + fadeOut(spec)
                             )
-                        }
-                        Text(
-                            text = " selected",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    TextButton(onClick = onCancel) { Text("Cancel") }
-                    Button(
-                        onClick = { onConfirm(selectedApps) },
-                        modifier = Modifier.heightIn(min = 48.dp),
-                        // A confirm that changes nothing is noise — require a real edit.
-                        enabled = selection.hasChanges(initiallySelected, apps),
-                    ) {
-                        Text(
-                            text = "Add · $selectedCount",
-                            style = LocalTextStyle.current.merge(FlintNumerals),
-                        )
-                    }
+                    },
+                    label = "pickerSelectedCount",
+                ) { count ->
+                    Text(
+                        text = "$count",
+                        style = MaterialTheme.typography.bodyMedium.merge(FlintNumerals),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
+                Text(
+                    text = " selected",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onCancel) { Text("Cancel") }
+                BoneButton(
+                    text = "Done · $selectedCount ${if (selectedCount == 1) "app" else "apps"}",
+                    onClick = { onConfirm(selectedApps) },
+                    enabled = selection.hasChanges(initiallySelected, apps),
+                    compact = true,
+                    modifier = Modifier.widthIn(min = 120.dp),
+                )
             }
         }
+    }
+}
+
+/** M05's group chip: two stacked mini icons, the group name and its app count. */
+@Composable
+private fun GroupChip(group: AppGroup, onClick: () -> Unit) {
+    val apps = group.apps.toList()
+    Row(
+        Modifier
+            .clip(CircleShape)
+            .background(FlintPalette.BoneFill.copy(alpha = 0.5f))
+            .border(1.dp, FlintPalette.Hairline, CircleShape)
+            .clickable(onClick = onClick)
+            .heightIn(min = 40.dp)
+            .padding(start = 8.dp, end = 14.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row {
+            apps.take(2).forEachIndexed { index, app ->
+                FlintAppTile(
+                    packageName = app.packageName,
+                    label = app.label,
+                    size = 20.dp,
+                    cornerRadius = 6.dp,
+                    modifier = Modifier
+                        .offset(x = (-6 * index).dp)
+                        .zIndex((2 - index).toFloat()),
+                )
+            }
+        }
+        Text(group.name, style = MaterialTheme.typography.labelSmall.copy(fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), maxLines = 1)
+        Text(
+            "${group.apps.size}",
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 13.sp),
+            color = FlintPalette.Mist,
+        )
     }
 }
 
@@ -381,15 +469,6 @@ private fun AppPickerRow(
     onToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val container by animateColorAsState(
-        targetValue = if (isSelected) {
-            MaterialTheme.colorScheme.surfaceContainerHigh
-        } else {
-            Color.Transparent
-        },
-        animationSpec = tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard),
-        label = "appPickerRowContainer",
-    )
     val interaction = if (multiSelect) {
         Modifier.toggleable(value = isSelected, role = Role.Checkbox, onValueChange = onToggle)
     } else {
@@ -398,42 +477,60 @@ private fun AppPickerRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .clip(MaterialTheme.shapes.medium)
-            .background(container)
+            .heightIn(min = 56.dp)
             .then(interaction)
             .semantics(mergeDescendants = true) {}
-            .padding(horizontal = FlintSpacing.sm, vertical = FlintSpacing.sm),
+            .padding(horizontal = 4.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        AppIconThumb(icon = app.icon, label = app.label)
-        Spacer(Modifier.width(FlintSpacing.cardGap))
-        Column(Modifier.weight(1f)) {
+        FlintAppTile(
+            packageName = app.packageName,
+            label = app.label,
+            size = 40.dp,
+            cornerRadius = 12.dp,
+        )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Text(
                 text = app.label,
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = app.packageName,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                color = FlintPalette.Mist,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
         if (multiSelect) {
-            Spacer(Modifier.width(FlintSpacing.sm))
-            Checkbox(checked = isSelected, onCheckedChange = null)
+            Box(
+                Modifier
+                    .size(26.dp)
+                    .clip(CircleShape)
+                    .background(if (isSelected) FlintPalette.Ember else Color.Transparent)
+                    .border(
+                        if (isSelected) 1.dp else 1.5.dp,
+                        if (isSelected) FlintPalette.Ember else FlintPalette.Bone.copy(alpha = 0.3f),
+                        CircleShape,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (isSelected) {
+                    Icon(FlintGlyphs.check, contentDescription = null, tint = FlintPalette.OnEmber, modifier = Modifier.size(14.dp))
+                }
+            }
         } else if (initiallyAssigned) {
-            Spacer(Modifier.width(FlintSpacing.sm))
-            Icon(
-                imageVector = Icons.Default.Check,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-            )
+            Box(
+                Modifier.size(26.dp).clip(CircleShape).background(FlintPalette.Ember),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(FlintGlyphs.check, contentDescription = null, tint = FlintPalette.OnEmber, modifier = Modifier.size(14.dp))
+            }
         }
     }
+    FlintHairline()
 }

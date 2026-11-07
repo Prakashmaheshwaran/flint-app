@@ -107,8 +107,8 @@ class FocusHistoryTest : FlintE2EFixture() {
         // Both calls follow a fresh process launch, so the UI draft starts empty.
         scrollTo("Choose what rests").click()
         visible(By.text("What rests"))
-        scrollTo(target).click(); click("Add · 1")
-        visible(By.text("Block 1 app"))
+        scrollTo(target).click(); click("Done · 1 app")
+        visible(By.text("1 app resting"))
         showDurationControls()
         visible(By.desc("25 minutes").enabled(true)).click()
         scrollTo("Begin 25m")

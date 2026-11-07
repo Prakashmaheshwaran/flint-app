@@ -118,7 +118,7 @@ class FlintSmokeTest : FlintE2EFixture() {
             scrollTo("Choose what rests").click()
             visible(By.text("What rests"))
             scrollTo(target).click()
-            click("Add · 1")
+            click("Done · 1 app")
             scrollTo("Hardcore").click()
             scrollTo("Begin 25m").click()
             visible(By.textStartsWith("ends at "))
@@ -140,7 +140,7 @@ class FlintSmokeTest : FlintE2EFixture() {
         // also has an EditText. Select the unique package row, not search text.
         visible(By.text("Choose apps to block"))
         scrollTo(target).click()
-        click("Add · 1")
+        click("Done · 1 app")
         scrollTo("Save rule").click()
         click("Confirm")
         visible(By.desc("New block rule"))
