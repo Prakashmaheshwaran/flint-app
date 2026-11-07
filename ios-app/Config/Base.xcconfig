@@ -1,0 +1,13 @@
+// Base build configuration for every Flint target. XcodeGen points Debug and Release here.
+//
+// The `?` makes the include optional: a missing Local.xcconfig is not an error, so the project
+// still generates and builds for simulators without one. A device build needs it.
+//
+// To set your team once (and survive `make ios-gen`):
+//
+//     cp ios-app/Config/Local.xcconfig.example ios-app/Config/Local.xcconfig
+//     # then put your Team ID (developer.apple.com/account → Membership) in it
+//
+// Local.xcconfig is git-ignored on purpose: the identifiers in project.yml are placeholders and
+// a fork must not inherit someone else's signing team.
+#include? "Local.xcconfig"

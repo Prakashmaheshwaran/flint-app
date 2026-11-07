@@ -22,7 +22,7 @@ cd android-app && ./gradlew assembleDebug
 ```
 
 Requires JDK 21 and an Android SDK (API 35). `minSdk = 23`, `targetSdk = 35`,
-`applicationId = com.flint.peakfocus`.
+`applicationId = app.flint.focus`.
 
 ## Architecture in one line
 

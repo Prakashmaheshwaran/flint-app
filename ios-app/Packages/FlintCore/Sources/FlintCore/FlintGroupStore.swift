@@ -8,7 +8,7 @@ import FamilyControls
 /// of configured sessions. Named `ManagedSettingsStore`s auto-share on iOS 16+, but the
 /// selection blob and app-defined state still need this group.
 public final class FlintGroupStore {
-    public static let appGroupID = "group.com.flint.peakfocus"
+    public static let appGroupID = "group.app.flint.focus"
 
     private enum Key {
         static let selection = "flint.selection"

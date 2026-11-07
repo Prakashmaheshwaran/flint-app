@@ -94,10 +94,18 @@ android: ## Assemble the Android debug APK
 	@bash scripts/flint-env-report.sh --check-android
 	cd "$$ANDROID_DIR" && ./gradlew assembleDebug
 
-android-release: ## Build and verify the account-free, development-signed release APK
+android-release: ## Build and verify the account-free release APK (upload-signed when configured)
 	@bash scripts/flint-env-report.sh --check-android
 	cd "$$ANDROID_DIR" && ./gradlew :app:assembleRelease
 	python3 scripts/verify_local_first_apk.py "$$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk"
+
+android-bundle: ## Build the Play Store upload AAB (signed with keystore.properties when present)
+	@bash scripts/flint-env-report.sh --check-android
+	cd "$$ANDROID_DIR" && ./gradlew :app:bundleRelease
+	@printf '%s\n' "AAB: $$ANDROID_DIR/app/build/outputs/bundle/release/app-release.aab"
+
+android-upload-key: ## Create the Play upload keystore + git-ignored keystore.properties
+	@bash scripts/setup-android-upload-key.sh
 
 android-install: ## Build + install the debug APK on a connected device/emulator
 	@bash scripts/flint-env-report.sh --check-android
@@ -159,6 +167,7 @@ clean-orphans: ## Preview orphans; deletion needs CONFIRM=1 ORPHAN_PLAN=file ORP
 	[ "$$CONFIRM" != 1 ] || args+=(--confirm --plan-digest "$$ORPHAN_DIGEST"); \
 	bash scripts/clean-devices.sh "$${args[@]}"
 
-.PHONY: help env doctor ios-gen ios ios-build ios-test android android-release android-install android-test \
+.PHONY: help env doctor ios-gen ios ios-build ios-test android android-release android-bundle \
+	android-upload-key android-install android-test \
 	verify verify-ios verify-android selftest release-check clean clean-devices clean-orphans \
 	gates ios-run android-run logs-ios logs-android pr-status ancestry

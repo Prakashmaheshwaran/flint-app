@@ -17,8 +17,17 @@ make ios                  # generate Flint.xcodeproj and open it
 make ios-gen              # just (re)generate the project
 ```
 
-Then in Xcode: select the **Flint** scheme, set your **Development Team** on each target
-(Signing & Capabilities), and run on a real device or simulator (iOS 16+).
+Then set your team once, outside git — a team picked only in Xcode is wiped by the next
+`make ios-gen`:
+
+```bash
+cp Config/Local.xcconfig.example Config/Local.xcconfig   # then put your Team ID in it
+make ios-gen
+```
+
+`Config/Base.xcconfig` (Debug and Release) includes `Local.xcconfig` optionally, so the project
+still generates without one. Then select the **Flint** scheme and run on a real device or
+simulator (iOS 16+).
 
 > **Requires full Xcode** (not just Command Line Tools) to build. XcodeGen only needs to
 > generate the project.
@@ -27,13 +36,13 @@ Then in Xcode: select the **Flint** scheme, set your **Development Team** on eac
 
 | Target | Bundle ID | Role |
 |---|---|---|
-| `Flint` | `com.flint.peakfocus` | SwiftUI host app: authorization, app picker, sessions/limits UI, embeds the stats report |
+| `Flint` | `app.flint.focus` | SwiftUI host app: authorization, app picker, sessions/limits UI, embeds the stats report |
 | `DeviceActivityMonitorExtension` | `…​.monitor` | Applies/clears shields on schedule + threshold boundaries (so blocking survives app death) |
 | `ShieldConfigurationExtension` | `…​.shield-config` | The branded "Peak Focus" block screen |
 | `ShieldActionExtension` | `…​.shield-action` | Block-screen button handling |
 | `DeviceActivityReportExtension` | `…​.report` | Usage-stats UI — the **only** legal source of per-app usage + localized names |
 
-All five share the **`group.com.flint.peakfocus`** App Group and the
+All five share the **`group.app.flint.focus`** App Group and the
 `com.apple.developer.family-controls` entitlement. Shared logic lives in the **`FlintCore`**
 Swift package (`Packages/FlintCore`) so the app and every extension reuse one implementation
 (extensions can't import the app target).

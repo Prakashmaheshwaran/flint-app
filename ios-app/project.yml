@@ -14,11 +14,19 @@
 name: Flint
 
 options:
-  bundleIdPrefix: com.flint.peakfocus
+  bundleIdPrefix: app.flint.focus
   deploymentTarget:
     iOS: "16.0"
   createIntermediateGroups: true
   groupSortPosition: top
+
+# Debug/Release read from Config/Base.xcconfig, which optionally includes the git-ignored
+# Config/Local.xcconfig. That is where DEVELOPMENT_TEAM lives, so a team set once survives
+# `make ios-gen` instead of being wiped with the generated project. See
+# docs/release/developer-account-setup.md.
+configFiles:
+  Debug: Config/Base.xcconfig
+  Release: Config/Base.xcconfig
 
 settings:
   base:
@@ -26,8 +34,7 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
     CODE_SIGN_STYLE: Automatic
-    # Set your Apple Developer Team here (or in Xcode) before building on device.
-    DEVELOPMENT_TEAM: ""
+    # DEVELOPMENT_TEAM is intentionally NOT set here — see Config/Local.xcconfig.
     TARGETED_DEVICE_FAMILY: "1,2" # iPhone + iPad
 
 packages:
@@ -42,16 +49,30 @@ targets:
     sources:
       # Recursively globs Flint/Features/* — the Wave-1 verticals (FocusFilter, Shortcuts, Sleep,
       # Settings/Privacy) drop their App Intents / screens here and are picked up automatically.
-      - Flint
+      - path: Flint
+        # Bundled explicitly below so its build phase is guaranteed, not inferred.
+        excludes:
+          - "PrivacyInfo.xcprivacy"
+      # App Store submission requires a privacy manifest in the app bundle. It declares no
+      # collection (local-first) and the one required-reason API Flint uses: UserDefaults.
+      - path: Flint/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus
+        PRODUCT_BUNDLE_IDENTIFIER: app.flint.focus
         CODE_SIGN_ENTITLEMENTS: Flint/Flint.entitlements
         GENERATE_INFOPLIST_FILE: "YES"
         INFOPLIST_KEY_CFBundleDisplayName: Flint
         INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: "YES"
         INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait"
+        # design/app-icon.svg, rendered full-bleed without alpha (App Store rejects both
+        # transparency and baked-in corner radii). Xcode derives every other size from it.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Flint has no networking and only hashes a local PIN, so it uses no non-exempt
+        # encryption. Declaring that here answers App Store Connect's export-compliance
+        # question at build time instead of on every upload.
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: "NO"
     dependencies:
       - package: FlintCore
       - target: DeviceActivityMonitorExtension
@@ -68,9 +89,12 @@ targets:
     platform: iOS
     sources:
       - Extensions/DeviceActivityMonitorExtension
+      # Each extension is its own bundle and must ship its own privacy manifest.
+      - path: Extensions/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.monitor
+        PRODUCT_BUNDLE_IDENTIFIER: app.flint.focus.monitor
         CODE_SIGN_ENTITLEMENTS: Extensions/DeviceActivityMonitorExtension/Monitor.entitlements
         INFOPLIST_FILE: Extensions/DeviceActivityMonitorExtension/Info.plist
     dependencies:
@@ -82,9 +106,11 @@ targets:
     platform: iOS
     sources:
       - Extensions/ShieldConfigurationExtension
+      - path: Extensions/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.shield-config
+        PRODUCT_BUNDLE_IDENTIFIER: app.flint.focus.shield-config
         CODE_SIGN_ENTITLEMENTS: Extensions/ShieldConfigurationExtension/ShieldConfig.entitlements
         INFOPLIST_FILE: Extensions/ShieldConfigurationExtension/Info.plist
     dependencies:
@@ -96,9 +122,11 @@ targets:
     platform: iOS
     sources:
       - Extensions/ShieldActionExtension
+      - path: Extensions/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.shield-action
+        PRODUCT_BUNDLE_IDENTIFIER: app.flint.focus.shield-action
         CODE_SIGN_ENTITLEMENTS: Extensions/ShieldActionExtension/ShieldAction.entitlements
         INFOPLIST_FILE: Extensions/ShieldActionExtension/Info.plist
     dependencies:
@@ -113,9 +141,11 @@ targets:
       # Insights renders inside this extension, so it bundles the same two fonts as the app.
       - path: Flint/Resources/Fonts
         buildPhase: resources
+      - path: Extensions/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.report
+        PRODUCT_BUNDLE_IDENTIFIER: app.flint.focus.report
         CODE_SIGN_ENTITLEMENTS: Extensions/DeviceActivityReportExtension/Report.entitlements
         INFOPLIST_FILE: Extensions/DeviceActivityReportExtension/Info.plist
     dependencies:
@@ -132,7 +162,7 @@ targets:
       - Extensions/DeviceActivityReportExtension/TotalActivityView.swift
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.tests
+        PRODUCT_BUNDLE_IDENTIFIER: app.flint.focus.tests
         GENERATE_INFOPLIST_FILE: "YES"
     dependencies:
       - package: FlintCore

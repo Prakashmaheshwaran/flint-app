@@ -210,7 +210,7 @@ public struct FlintSleepConfig: Codable, Equatable, Sendable {
 // MARK: - App Group persistence for the stubs
 //
 // `FlintGroupStore` is the canonical App Group I/O, but it's a shared/locked file in the parallel
-// build, so these helpers persist the new stubs into the SAME `group.com.flint.peakfocus` suite
+// build, so these helpers persist the new stubs into the SAME `group.app.flint.focus` suite
 // with the same JSON encoding — the host app and the system extensions read identical bytes without
 // anyone editing `FlintGroupStore`. Keys stay namespaced under "flint.*" to match its convention.
 

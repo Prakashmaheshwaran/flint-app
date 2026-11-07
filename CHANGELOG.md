@@ -14,6 +14,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
   account SDK and network permissions; managed policies do not activate device blocking.
 - **CI:** run script selftests, validate release versions before upload, and verify the actual
   release APK's local-first boundary. Public previews use release code with development signing.
+- **Release readiness:** Android targets API 36 (Play's current floor) and can be signed with a
+  dedicated Play upload key created by `make android-upload-key`, with `make android-bundle`
+  producing the Play AAB and the debug-key preview path unchanged when no key is present. iOS
+  bundles a privacy manifest in all five targets and a full-bleed 1024 App Store icon generated
+  from `design/app-icon.svg`. Developer-account actions and store-submission steps are tracked in
+  [`docs/release/developer-account-setup.md`](docs/release/developer-account-setup.md).
 
 ### iOS
 - **Blocking Health now reports the whole enabled → attempted → armed funnel.** Schedule rules

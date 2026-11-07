@@ -20,6 +20,8 @@ ios-app/**/.build/
 *.ipa
 *.dSYM.zip
 *.dSYM
+# Per-developer Xcode build settings (DEVELOPMENT_TEAM). Base.xcconfig includes it when present.
+ios-app/Config/Local.xcconfig
 
 # ── Android / Gradle / Kotlin ───────────────────────────
 android-app/.gradle/
@@ -37,6 +39,13 @@ android-app/.cxx/
 *.apkm
 *.keystore
 !debug.keystore
+# Play upload signing: the keystore plus the passwords Gradle reads at build time.
+# Created by scripts/setup-android-upload-key.sh. Never commit either file.
+android-app/keystore.properties
+*.jks
+# App Store Connect API keys (.p8) and Play service-account JSON for CI uploads.
+*.p8
+play-service-account*.json
 
 # ── Editors / misc ──────────────────────────────────────
 .vscode/

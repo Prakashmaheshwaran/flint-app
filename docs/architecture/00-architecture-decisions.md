@@ -148,12 +148,12 @@ Shields are written **from the monitor extension** so blocking survives app deat
 
 | Target | Bundle ID |
 |---|---|
-| Host app | `com.flint.peakfocus` |
-| Monitor extension | `com.flint.peakfocus.monitor` |
-| Shield configuration | `com.flint.peakfocus.shield-config` |
-| Shield action | `com.flint.peakfocus.shield-action` |
-| Device-activity report | `com.flint.peakfocus.report` |
-| App Group (all targets) | `group.com.flint.peakfocus` |
+| Host app | `app.flint.focus` |
+| Monitor extension | `app.flint.focus.monitor` |
+| Shield configuration | `app.flint.focus.shield-config` |
+| Shield action | `app.flint.focus.shield-action` |
+| Device-activity report | `app.flint.focus.report` |
+| App Group (all targets) | `group.app.flint.focus` |
 
 **Distribution gate (track from day one).** Each Bundle ID needs its own
 `com.apple.developer.family-controls` **distribution** approval from Apple (free to develop;
@@ -169,7 +169,7 @@ multi-module Gradle (Kotlin + Compose, single-Activity). Two detection paths
 (**AccessibilityService** primary + **UsageStatsManager** fallback) feed **one pure-Kotlin
 `BlockDecisionEngine`**; enforcement via a11y overlay (preferred) or `SYSTEM_ALERT_WINDOW`
 overlay / full-screen Activity + `GLOBAL_ACTION_HOME`, kept alive by a foreground service with
-a `blocking-resilience` module for OEM/battery survival. Application ID `com.flint.peakfocus`.
+a `blocking-resilience` module for OEM/battery survival. Application ID `app.flint.focus`.
 
 **Play compliance is a ship gate, not a nicety.** Flint is **not** eligible for
 `isAccessibilityTool` (it is a "monitoring app") — it must **not** declare that flag, and must
@@ -181,7 +181,7 @@ ships this exact route, so it is proven.
 
 ## ADR-008 — Identifiers are placeholders; forks must re-key
 
-**Decision.** Use `com.flint.peakfocus` (iOS bundle prefix + Android applicationId) as a
+**Decision.** Use `app.flint.focus` (iOS bundle prefix + Android applicationId) as a
 **placeholder** reverse-DNS, since no domain is owned.
 
 **Fork note (documented in CONTRIBUTING).** Anyone shipping their own build must (a) change the

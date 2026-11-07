@@ -110,6 +110,7 @@ flint/
 ├── docs/
 │   ├── research/       Opal feature inventory + per-platform technical strategy + OSS landscape
 │   ├── architecture/   Architecture Decision Record
+│   ├── release/        Developer-account setup + first store submission checklist
 │   └── verification/   Dated build/test + emulator evidence bundles
 ├── scripts/        Verification/dev scripts (e.g. the Path B emulator drive)
 ├── Makefile        make ios / make android / make clean …

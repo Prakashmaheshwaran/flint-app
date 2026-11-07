@@ -1,28 +1,66 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
 
+// Play Store upload signing. The keystore and its passwords are local secrets: they live in
+// `android-app/keystore.properties` (git-ignored) and are created by
+// `scripts/setup-android-upload-key.sh` (via `make android-upload-key`). Without that file the
+// release build keeps the legacy development key, so preview APKs (`make android-release`, the
+// GitHub Releases workflow) still assemble on any machine and in CI.
+val uploadKeystorePropertiesFile = rootProject.file("keystore.properties")
+val uploadKeystoreProperties = Properties().apply {
+    if (uploadKeystorePropertiesFile.isFile) {
+        uploadKeystorePropertiesFile.inputStream().use { load(it) }
+    }
+}
+val hasUploadKeystore = uploadKeystorePropertiesFile.isFile
+
 android {
     namespace = "com.flint.peakfocus"
-    compileSdk = 35
+    // Play requires new apps and updates to target API 36 (Android 16) from 2026-08-31.
+    compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.flint.peakfocus"
+        applicationId = "app.flint.focus"
         minSdk = 23
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }
 
+    signingConfigs {
+        if (hasUploadKeystore) {
+            create("upload") {
+                storeFile = rootProject.file(
+                    uploadKeystoreProperties.getProperty("storeFile")
+                        ?: error("keystore.properties is missing storeFile"),
+                )
+                storePassword = uploadKeystoreProperties.getProperty("storePassword")
+                    ?: error("keystore.properties is missing storePassword")
+                keyAlias = uploadKeystoreProperties.getProperty("keyAlias")
+                    ?: error("keystore.properties is missing keyAlias")
+                keyPassword = uploadKeystoreProperties.getProperty("keyPassword")
+                    ?: error("keystore.properties is missing keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // Public previews use release code with the existing development signing key.
-            // Debug-only emulator tools and dependencies must never enter those APKs.
-            signingConfig = signingConfigs.getByName("debug")
+            // Play uploads are signed with the local upload key when `keystore.properties`
+            // exists. Otherwise this stays the legacy development-key preview build: release
+            // code without the debug-only emulator tools, installable anywhere.
+            signingConfig = if (hasUploadKeystore) {
+                signingConfigs.getByName("upload")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

@@ -44,7 +44,7 @@ Run `make doctor` to see what you're missing.
 
 The source is MIT — fork and ship freely. But the *shipping identity* is not transferable:
 
-- Change the bundle IDs / application ID (`com.flint.peakfocus`) to identifiers you control.
+- Change the bundle IDs / application ID (`app.flint.focus`) to identifiers you control.
 - **iOS:** file your own `com.apple.developer.family-controls` **distribution** requests — one per
   Bundle ID (app + 4 extensions). Free to develop without it; required to ship to the App Store.
   A GitHub repo URL is accepted as the "website."

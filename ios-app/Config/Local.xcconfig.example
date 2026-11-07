@@ -1,0 +1,4 @@
+// Copy to Local.xcconfig (same directory) and fill in your Team ID.
+// Find it at https://developer.apple.com/account → Membership details.
+// Local.xcconfig is git-ignored; Base.xcconfig includes it when present.
+DEVELOPMENT_TEAM = YOUR_TEAM_ID
