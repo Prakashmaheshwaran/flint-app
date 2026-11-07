@@ -665,7 +665,10 @@ private fun BlocklistOverview(
             }
         }
 
-        sleepConfig?.let { config ->
+        // Always offer Sleep once rules load: a null config is the set-up state, and it is
+        // the only way into the Sleep editor for someone who has never configured it.
+        if (rulesState is RulesUiState.Ready) {
+            val config = sleepConfig
             item(key = "sleep-label") {
                 SectionHeader(
                     title = "Sleep",

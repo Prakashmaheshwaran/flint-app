@@ -147,7 +147,7 @@ fun AccessibilityConsentScreen(
                             )
                             Spacer(Modifier.height(10.dp))
                             Text(
-                                "Two permissions, asked once. Both can be changed later in Settings.",
+                                "Each permission is asked once, and every one can be changed later in Settings.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = FlintPalette.Mist,
                             )
@@ -394,7 +394,8 @@ private fun EntranceStep(step: Int, content: @Composable () -> Unit) {
             initialOffsetY = { it / 6 },
         ),
     ) {
-        content()
+        // AnimatedVisibility stacks its children like a Box; steps are vertical groups.
+        Column(Modifier.fillMaxWidth()) { content() }
     }
 }
 

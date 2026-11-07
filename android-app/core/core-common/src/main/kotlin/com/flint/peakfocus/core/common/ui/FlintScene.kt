@@ -357,9 +357,9 @@ fun TodayHero(modifier: Modifier = Modifier) {
                 0f to FlintPalette.Ember.copy(alpha = 0.45f * glow),
                 0.45f to FlintPalette.Ember.copy(alpha = 0.12f * glow),
                 1f to Color.Transparent,
-                center = p(212f, 168f), radius = 150f * s,
+                center = p(212f, 168f - SPARK_LIFT), radius = 150f * s,
             ),
-            radius = 150f * s, center = p(212f, 168f),
+            radius = 150f * s, center = p(212f, 168f - SPARK_LIFT),
         )
         withTransform({ scale(s, size.height / 430f, pivot = Offset.Zero) }) {
             listOf(
@@ -384,7 +384,9 @@ fun TodayHero(modifier: Modifier = Modifier) {
                 Brush.verticalGradient(0f to Color.Transparent, 1f to FlintPalette.Ground),
                 topLeft = Offset(0f, 340f), size = Size(390f, 90f),
             )
-            // The spark mark, enlarged from the 56-unit logo grid.
+            // The spark mark, enlarged from the 56-unit logo grid. Lifted because the board's
+            // coordinates include the status bar while the copy below starts beneath it.
+            translate(top = -SPARK_LIFT) {
             fun poly(vararg pts: Float) = Path().apply {
                 moveTo(pts[0], pts[1])
                 var i = 2
@@ -414,6 +416,7 @@ fun TodayHero(modifier: Modifier = Modifier) {
                         Offset(237f + spark[0] * phase, 145f + spark[1] * phase),
                     )
                 }
+            }
             }
         }
     }
@@ -551,7 +554,17 @@ private fun DrawScope.drawTabGlyph(tab: FlintTabGlyph, selected: Boolean, ink: C
             drawCircle(accent, 1.6f * k, Offset(18.6f * k, 6.4f * k))
         }
         FlintTabGlyph.Rules -> {
-            line(5f, 7f, 19f, 7f); line(5f, 12f, 15f, 12f); line(5f, 17f, 11f, 17f, accent)
+            // v3 board: a lock (rect 5,11 14x9 r2.5 + shackle M8 11V8a4 4 0 0 1 8 0v3).
+            drawRoundRect(ink, topLeft = Offset(5f * k, 11f * k), size = Size(14f * k, 9f * k),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.5f * k), style = stroke)
+            val shackle = Path().apply {
+                moveTo(8f * k, 11f * k)
+                lineTo(8f * k, 8f * k)
+                arcTo(androidx.compose.ui.geometry.Rect(8f * k, 4f * k, 16f * k, 12f * k), 180f, 180f, false)
+                lineTo(16f * k, 11f * k)
+            }
+            drawPath(shackle, ink, style = stroke)
+            if (selected) drawCircle(accent, 1.2f * k, Offset(12f * k, 15.5f * k))
         }
         FlintTabGlyph.Insights -> {
             line(6f, 19f, 6f, 13f); line(12f, 19f, 12f, 6f); line(18f, 19f, 18f, 10f, accent)
@@ -648,3 +661,6 @@ object FlintGlyphs {
         moveTo(20f, 20f); lineTo(15.5f, 15.5f)
     }
 }
+
+/** Board units the Today spark is raised by; see [TodayHero]. */
+private const val SPARK_LIFT = 52f

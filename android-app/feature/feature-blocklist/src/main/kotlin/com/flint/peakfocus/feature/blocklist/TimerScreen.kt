@@ -383,7 +383,9 @@ private fun TodayScene(
                     letterSpacing = (-0.3).sp,
                 ),
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = 118.dp),
+                // The hero draws from the screen top (board coordinates: spark ends at 222dp,
+                // tagline at 240dp); this sits below the status bar, so leave the spark room.
+                modifier = Modifier.fillMaxWidth().padding(top = 136.dp),
             )
             Spacer(Modifier.height(20.dp))
             EmberButton(
@@ -1178,8 +1180,16 @@ private fun CompleteScene(
     Box(modifier.fillMaxSize()) {
         EmberLandscape(horizonOffset = 8f, orbCenter = null, showsMist = false)
         SunArc(1f, complete = true)
+        // Board: title up top, stats and actions low beneath the ridges, clear of the set sun.
+        // At least screen-tall so the spacer can push them down; still scrolls at large type.
+        BoxWithConstraints(Modifier.fillMaxSize().padding(contentPadding)) {
+        val viewport = maxHeight
         Column(
-            Modifier.fillMaxSize().padding(contentPadding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .heightIn(min = viewport)
+                .padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             FlintStatusPill(
@@ -1200,7 +1210,7 @@ private fun CompleteScene(
                 modifier = Modifier.padding(top = 10.dp),
             )
             session.breaks?.let { Text(FocusHistoryText.breaks(it), color = FlintPalette.Mist, modifier = Modifier.padding(top = 6.dp)) }
-            Spacer(Modifier.height(26.dp))
+            Spacer(Modifier.weight(1f).heightIn(min = 26.dp))
             CompleteStatsRow(session = session, summary = summary)
             FocusHistoryText.note(summary, resources = LocalContext.current.resources)?.let {
                 Text(
@@ -1211,9 +1221,10 @@ private fun CompleteScene(
                     modifier = Modifier.padding(top = 14.dp),
                 )
             }
-            Spacer(Modifier.height(48.dp))
+            Spacer(Modifier.height(24.dp))
             BoneButton("Done", onDone)
             QuietButton("Go again", onAgain, modifier = Modifier.padding(top = 8.dp, bottom = 12.dp))
+        }
         }
     }
 }

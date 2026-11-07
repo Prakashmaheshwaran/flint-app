@@ -660,11 +660,17 @@ private fun HoldToRequestBreakButton(
         },
     )
     val shape = RoundedCornerShape(percent = 50)
+    val fillColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)
     Box(
         modifier = modifier
-            .heightIn(min = 48.dp)
+            .heightIn(min = 52.dp)
             .clip(shape)
             .border(width = 1.dp, color = MaterialTheme.colorScheme.primary, shape = shape)
+            // Hold progress is drawn, not laid out: a fillMaxHeight child here made the
+            // button take every spare pixel of the block screen's column.
+            .drawBehind {
+                drawRect(fillColor, size = androidx.compose.ui.geometry.Size(size.width * progress, size.height))
+            }
             // Accessibility services can't perform a press-and-hold, so expose a plain
             // activate action that fires the same callback directly — touch users keep the
             // hold friction below (the gesture path is unchanged).
@@ -689,13 +695,6 @@ private fun HoldToRequestBreakButton(
             },
         contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .fillMaxHeight()
-                .fillMaxWidth(progress)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)),
-        )
         Crossfade(
             targetState = pressed,
             animationSpec = tween(
