@@ -127,13 +127,13 @@ class FlintSmokeTest : FlintE2EFixture() {
         }
         clickTab("Rules")
         visible(By.desc("New block rule")).click()
-        visible(By.text("Rule name"))
+        visible(By.text("Name")) // v3 rule editor label
         visible(By.clazz("android.widget.EditText")).click()
         visible(By.clazz("android.widget.EditText").focused(true)).text = name
         waitForImeVisibility(true)
         device.pressBack() // exactly one Back, only after a visible keyboard is proven
         waitForImeVisibility(false)
-        visible(By.text("Rule name"))
+        visible(By.text("Name")) // v3 rule editor label
         visible(By.text("Choose apps"))
         click("Choose apps")
         // Wait for the destination before resolving its rows; the outgoing editor
