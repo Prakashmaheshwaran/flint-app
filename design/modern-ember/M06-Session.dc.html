@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flint — Session</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500&amp;family=Hanken+Grotesk:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#EDE6DA}a:hover{color:#B7AE9F}
+button{font:inherit;cursor:pointer}
+@keyframes s6-breathe{0%,100%{transform:scale(0.82);opacity:.25}50%{transform:scale(1.18);opacity:.6}}
+.s6-breathe{animation:s6-breathe 8s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes s6-drift{0%,100%{transform:translateX(-16px)}50%{transform:translateX(16px)}}
+.s6-drift{animation:s6-drift 24s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){.s6-breathe,.s6-drift{animation:none}}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #0A0B10; color: #EDE6DA; font-family: 'Hanken Grotesk', -apple-system, system-ui, sans-serif">
+
+  <svg aria-hidden="true" width="390" height="844" viewBox="0 0 390 844" style="position: absolute; inset: 0">
+    <defs>
+      <linearGradient id="s6Sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#090A0F"></stop><stop offset="0.4" stop-color="#12131A"></stop><stop offset="0.53" stop-color="#231D1C"></stop><stop offset="0.6" stop-color="#3A291E"></stop><stop offset="0.7" stop-color="#171413"></stop><stop offset="1" stop-color="#0C0B0D"></stop></linearGradient>
+      <radialGradient id="s6Orb" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#FFE9C8"></stop><stop offset="0.35" stop-color="#F7BE6A"></stop><stop offset="0.72" stop-color="#EF9F27"></stop><stop offset="1" stop-color="#C47418"></stop></radialGradient>
+      <radialGradient id="s6Halo" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#EF9F27" stop-opacity="0.38"></stop><stop offset="0.5" stop-color="#EF9F27" stop-opacity="0.1"></stop><stop offset="1" stop-color="#EF9F27" stop-opacity="0"></stop></radialGradient>
+      <filter id="s6Grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"></feTurbulence><feColorMatrix type="saturate" values="0"></feColorMatrix></filter>
+    </defs>
+    <rect width="390" height="844" fill="url(#s6Sky)"></rect>
+    <circle cx="58" cy="96" r="0.9" fill="#EDE6DA" opacity="0.45"></circle>
+    <circle cx="318" cy="70" r="1" fill="#EDE6DA" opacity="0.4"></circle>
+    <circle cx="352" cy="230" r="0.8" fill="#EDE6DA" opacity="0.3"></circle>
+    <circle cx="30" cy="250" r="0.7" fill="#EDE6DA" opacity="0.3"></circle>
+    <path d="M50 470 Q195 90 340 470" fill="none" stroke="#EDE6DA" stroke-opacity="0.22" stroke-width="1" stroke-dasharray="1 7" stroke-linecap="round"></path>
+    <path d="M50 470 Q90.6 363.6 131.2 316.8" fill="none" stroke="#EDE6DA" stroke-opacity="0.5" stroke-width="1.2" stroke-linecap="round"></path>
+    <circle cx="131.2" cy="316.8" r="150" fill="url(#s6Halo)"></circle>
+    <circle class="s6-breathe" cx="131.2" cy="316.8" r="78" fill="none" stroke="#F7BE6A" stroke-width="1"></circle>
+    <circle class="s6-breathe" cx="131.2" cy="316.8" r="104" fill="none" stroke="#F7BE6A" stroke-width="0.8" style="animation-delay: -2s"></circle>
+    <circle cx="131.2" cy="316.8" r="44" fill="url(#s6Orb)"></circle>
+    <circle cx="340" cy="470" r="3" fill="#EDE6DA" opacity="0.4"></circle>
+    <path d="M0 500 C40 474 72 472 106 488 C140 504 162 460 206 446 C246 434 272 476 306 484 C336 491 362 463 390 457 L390 844 L0 844 Z" fill="#29221F"></path>
+    <path d="M0 556 C36 538 62 520 96 528 C132 536 152 506 192 513 C232 520 252 548 292 540 C330 532 360 516 390 523 L390 844 L0 844 Z" fill="#1A1717"></path>
+    <path d="M0 610 C50 592 92 602 132 598 C176 594 202 576 246 583 C290 590 332 608 390 600 L390 844 L0 844 Z" fill="#0F0E10"></path>
+    <rect width="390" height="844" filter="url(#s6Grain)" opacity="0.07"></rect>
+  </svg>
+  <div class="s6-drift" aria-hidden="true" style="position: absolute; left: -40px; top: 508px; width: 470px; height: 46px; border-radius: 50%; background: rgba(237, 230, 218, 0.07); filter: blur(14px)"></div>
+
+  <header style="position: absolute; left: 20px; right: 20px; top: 58px; display: flex; justify-content: space-between; align-items: center">
+    <span style="height: 34px; padding: 0 12px 0 10px; display: flex; align-items: center; gap: 7px; border-radius: 17px; background: rgba(237, 230, 218, 0.08); border: 1px solid rgba(237, 230, 218, 0.1); font-size: 12px; font-weight: 600">
+      <span style="width: 7px; height: 7px; border-radius: 4px; background: #EF9F27; box-shadow: 0 0 8px rgba(239, 159, 39, 0.8)"></span>
+      Deep work
+    </span>
+    <span style="height: 34px; padding: 0 12px; display: flex; align-items: center; gap: 6px; border-radius: 17px; background: rgba(237, 230, 218, 0.08); border: 1px solid rgba(237, 230, 218, 0.1); font-size: 12px; font-weight: 600; color: #F4C27E">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2.5"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+      Hardcore
+    </span>
+  </header>
+
+  <div style="position: absolute; left: 0; right: 0; top: 120px; display: flex; flex-direction: column; align-items: center; gap: 8px">
+    <span style="font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 84px; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -2px">32:18</span>
+    <span style="font-size: 14px; color: #B7AE9F">ends at 11:30 · 45 min session</span>
+  </div>
+
+  <p style="position: absolute; left: 0; right: 0; top: 628px; margin: 0; text-align: center; font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 17px; color: #D8CFC0">Breathe with the light.</p>
+
+  <div style="position: absolute; left: 20px; right: 20px; bottom: 32px; display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 26px; background: rgba(24, 22, 24, 0.72); border: 1px solid rgba(237, 230, 218, 0.1); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px)">
+    <div style="display: flex; align-items: center; gap: 8px">
+      <sc-for list="{{resting}}" as="a" hint-placeholder-count="5">
+        <span role="img" aria-label="{{a.name}} resting" style="{{a.tile}}">
+          <span style="font-size: 12px; font-weight: 700; color: rgba(237, 230, 218, 0.26)">{{a.initial}}</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#EDE6DA" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="position: absolute"><rect x="5" y="11" width="14" height="9" rx="2.5"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+        </span>
+      </sc-for>
+      <span style="width: 32px; height: 32px; border-radius: 10px; background: rgba(237, 230, 218, 0.07); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #B7AE9F">+2</span>
+      <span style="margin-left: auto; font-size: 12px; color: #B7AE9F">7 apps resting</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px; padding-top: 10px; border-top: 1px solid rgba(237, 230, 218, 0.08)">
+      <span style="display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-width: 0">
+        <span style="font-size: 14px; font-weight: 600">Locked until it ends</span>
+        <span style="font-size: 12px; color: #B7AE9F">Flint can’t be deleted while Hardcore runs.</span>
+      </span>
+      <a href="M10-EmergencyPass.dc.html" style="flex: 0 0 auto; height: 40px; padding: 0 14px; border-radius: 20px; border: 1px solid rgba(237, 230, 218, 0.18); text-decoration: none; color: #EDE6DA; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; white-space: nowrap">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="12" r="4"></circle><path d="M12 12h8M17 12v3M20 12v2"></path></svg>
+        Pass · 1
+      </a>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const resting = [['Instagram', 'I', '#5C3344'], ['TikTok', 'T', '#2E2E33'], ['YouTube', 'Y', '#5A2A2A'], ['Reddit', 'R', '#6B3D2A'], ['X', 'X', '#26262A']].map(([name, initial, bg]) => ({
+      name, initial,
+      tile: 'position: relative; width: 32px; height: 32px; border-radius: 10px; background: ' + bg + '; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 0 1.5px rgba(239,159,39,0.5);'
+    }));
+    return { resting };
+  }
+}
+</script>
+</body>
+</html>
