@@ -56,15 +56,28 @@ struct SelectionSummaryRow: View {
         let shownCategories = Array(categories.prefix(max(0, limit - shownApps.count)))
         let shownSites = Array(sites.prefix(max(0, limit - shownApps.count - shownCategories.count)))
         let hidden = counts.total - shownApps.count - shownCategories.count - shownSites.count
-        return HStack(spacing: 6) {
-            ForEach(shownApps, id: \.self) { Label($0).labelStyle(.iconOnly) }
-            ForEach(shownCategories, id: \.self) { Label($0).labelStyle(.iconOnly) }
-            ForEach(shownSites, id: \.self) { Label($0).labelStyle(.iconOnly) }
+        return HStack(spacing: 8) {
+            ForEach(shownApps, id: \.self) { token in
+                FlintAppTile(target: .app(token), size: 36)
+            }
+            ForEach(shownCategories, id: \.self) { token in
+                Label(token).labelStyle(.iconOnly)
+                    .font(.system(size: 30))
+                    .frame(width: 36, height: 36)
+                    .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            }
+            ForEach(shownSites, id: \.self) { token in
+                FlintAppTile(target: .site(token), size: 36)
+            }
             if hidden > 0 {
-                Text("+\(hidden)").font(FlintFont.text(12, weight: .medium)).foregroundStyle(FlintBrand.mist)
+                Text("+\(hidden)")
+                    .font(FlintFont.text(12, weight: .semibold))
+                    .foregroundStyle(FlintBrand.mist)
+                    .frame(width: 36, height: 36)
+                    .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(FlintBrand.bone(0.06)))
             }
         }
-        .frame(height: 28)
+        .frame(minHeight: 36)
         .accessibilityHidden(true)
     }
 
@@ -76,8 +89,7 @@ struct SelectionSummaryRow: View {
 }
 
 /// Pure count wording, testable without tokens.
-struct SelectionCounts: Equatable {
-    var apps = 0
+struct SelectionCounts: Equatable {    var apps = 0
     var categories = 0
     var sites = 0
 
@@ -101,4 +113,12 @@ struct SelectionCounts: Equatable {
     }
 
     private static func inflected(_ text: AttributedString) -> String { String(text.characters) }
+}
+
+extension FamilyActivitySelection {
+    /// Every picked app and site as a renderable tile. Categories are omitted: they carry no
+    /// app icon and their members are opaque to Flint.
+    var flintPickedTargets: [PickedTarget] {
+        applicationTokens.map(PickedTarget.app) + webDomainTokens.map(PickedTarget.site)
+    }
 }
