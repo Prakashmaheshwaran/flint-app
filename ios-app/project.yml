@@ -14,7 +14,7 @@
 name: Flint
 
 options:
-  bundleIdPrefix: com.flint.peakfocus
+  bundleIdPrefix: app.flint.focus
   deploymentTarget:
     iOS: "16.0"
   createIntermediateGroups: true
@@ -52,7 +52,7 @@ targets:
         buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus
+        PRODUCT_BUNDLE_IDENTIFIER: app.flint.focus
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # Override XcodeGen's host-only identity preset; use the local project config.
         CODE_SIGN_IDENTITY: "$(inherited)"
@@ -69,7 +69,7 @@ targets:
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         NSSupportsLiveActivities: true
         CFBundleURLTypes:
-          - CFBundleURLName: com.flint.peakfocus.open
+          - CFBundleURLName: app.flint.focus.open
             CFBundleURLSchemes: [flint]
     dependencies:
       - package: FlintCore
@@ -92,7 +92,7 @@ targets:
         buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.monitor
+        PRODUCT_BUNDLE_IDENTIFIER: app.flint.focus.monitor
         CODE_SIGN_ENTITLEMENTS: Extensions/DeviceActivityMonitorExtension/Monitor.entitlements
         INFOPLIST_FILE: Extensions/DeviceActivityMonitorExtension/Info.plist
     dependencies:
@@ -108,7 +108,7 @@ targets:
         buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.shield-config
+        PRODUCT_BUNDLE_IDENTIFIER: app.flint.focus.shield-config
         CODE_SIGN_ENTITLEMENTS: Extensions/ShieldConfigurationExtension/ShieldConfig.entitlements
         INFOPLIST_FILE: Extensions/ShieldConfigurationExtension/Info.plist
     dependencies:
@@ -124,7 +124,7 @@ targets:
         buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.shield-action
+        PRODUCT_BUNDLE_IDENTIFIER: app.flint.focus.shield-action
         CODE_SIGN_ENTITLEMENTS: Extensions/ShieldActionExtension/ShieldAction.entitlements
         INFOPLIST_FILE: Extensions/ShieldActionExtension/Info.plist
     dependencies:
@@ -143,7 +143,7 @@ targets:
         buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.report
+        PRODUCT_BUNDLE_IDENTIFIER: app.flint.focus.report
         CODE_SIGN_ENTITLEMENTS: Extensions/DeviceActivityReportExtension/Report.entitlements
         INFOPLIST_FILE: Extensions/DeviceActivityReportExtension/Info.plist
     dependencies:
@@ -162,7 +162,7 @@ targets:
         buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.widgets
+        PRODUCT_BUNDLE_IDENTIFIER: app.flint.focus.widgets
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_ENTITLEMENTS: Extensions/FlintWidgetsExtension/Widgets.entitlements
         INFOPLIST_FILE: Extensions/FlintWidgetsExtension/Info.plist
@@ -185,7 +185,7 @@ targets:
       - Extensions/ShieldActionExtension/ShieldCreditAction.swift
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.tests
+        PRODUCT_BUNDLE_IDENTIFIER: app.flint.focus.tests
         GENERATE_INFOPLIST_FILE: "YES"
     dependencies:
       - package: FlintCore
@@ -200,7 +200,7 @@ targets:
       - UITests
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.flint.peakfocus.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: app.flint.focus.uitests
         GENERATE_INFOPLIST_FILE: "YES"
         TEST_TARGET_NAME: Flint
     dependencies:

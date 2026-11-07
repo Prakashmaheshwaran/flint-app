@@ -447,7 +447,8 @@ ordinary-break history and complete operation history remain incomplete; consume
 plausibility cannot detect every internally consistent unmarked clock jump. No source-wide
 exactly-once or complete time-confidence guarantee is made.
 
-Six-bundle iOS signing/provisioning, five Family Controls distribution approvals, final
+Six-bundle iOS signing/provisioning, Family Controls (Distribution) enablement on the five
+Screen Time App IDs (entitlement granted to the account 2026-11-01), final
 archive/privacy validation, owner-signed Android AAB/Play split/update evidence, genuine
 media, public policy/support URLs and actual store declarations/upload/review/publication
 remain human-owned. Live release readback found only v0.1.0's historical debug APK;

@@ -38,15 +38,18 @@ Run `make doctor` to see what you're missing.
 - **Android:** Flint must **not** declare `isAccessibilityTool="true"` and **must** show the
   in-app prominent-disclosure + affirmative-consent screen before the accessibility hand-off.
   This is a Play review gate, not optional. Details in the Android strategy doc, §4.
-- **iOS:** the Screen Time entitlement is approved per Apple ID + Bundle ID. See fork notes below.
+- **iOS:** the Screen Time distribution entitlement is granted per Apple developer account, then
+  enabled per Bundle ID. See fork notes below.
 
 ## Forking & shipping your own build
 
 The source is MIT — fork and ship freely. But the *shipping identity* is not transferable:
 
-- Change the bundle IDs / application ID (`com.flint.peakfocus`) to identifiers you control.
-- **iOS:** file your own `com.apple.developer.family-controls` **distribution** requests — one per
-  Bundle ID (app + 4 extensions). Free to develop without it; required to ship to the App Store.
+- Change the bundle IDs / application ID (iOS `app.flint.focus`, Android `com.flint.peakfocus`)
+  to identifiers you control.
+- **iOS:** request your own `com.apple.developer.family-controls` **distribution** entitlement
+  (Apple's form is account-level), then enable it on each App ID (app + 4 Screen Time extensions).
+  Free to develop without it; required to ship to the App Store.
   A GitHub repo URL is accepted as the "website."
 
 ## Pull requests

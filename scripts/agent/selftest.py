@@ -426,9 +426,9 @@ class AgentCommands(unittest.TestCase):
                          [["claim", "ios", "11111111-2222-3333-4444-555555555555", "--booted", '--incarnation', 'v1:' + 'a' * 64, '--helper-pid', '12345']])
         calls = self.calls("xcrun")
         self.assertIn(["simctl", "install", "11111111-2222-3333-4444-555555555555", "ios-app/Custom Data/Build/Products/Debug-iphonesimulator/Flint.app"], calls)
-        self.assertIn(["simctl", "launch", "11111111-2222-3333-4444-555555555555", "com.flint.peakfocus"], calls)
+        self.assertIn(["simctl", "launch", "11111111-2222-3333-4444-555555555555", "app.flint.focus"], calls)
         self.assertFalse(any("booted" in args for _, args in self.calls()))
-        self.assertIn("bundle=com.flint.peakfocus", result.stdout)
+        self.assertIn("bundle=app.flint.focus", result.stdout)
 
     def test_ios_build_failure_never_attaches(self):
         result = self.make("ios-run", FAIL_TOOL="xcodebuild")
