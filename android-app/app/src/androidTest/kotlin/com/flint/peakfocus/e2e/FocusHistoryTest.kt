@@ -43,10 +43,10 @@ class FocusHistoryTest : FlintE2EFixture() {
         visible(By.text("The ember has set.")); visible(By.text("5m focused"))
         evidence("complete-after-restart")
         click("Done")
-        visible(By.text("FOCUSED TODAY")); visible(By.text(duration(focusedToday(completed))))
+        visible(By.text("FOCUSED")); visible(By.text(duration(focusedToday(completed))))
         evidence("today-completed")
         restartFlint()
-        visible(By.text("FOCUSED TODAY")) // persisted Done must not reopen Complete
+        visible(By.text("FOCUSED")) // persisted Done must not reopen Complete
         assertFalse(device.hasObject(By.text("The ember has set.")))
 
         // The normal sheet must explain a refused start before fixture setup repairs it.
@@ -89,11 +89,11 @@ class FocusHistoryTest : FlintE2EFixture() {
         val outcomes = ended.map { it.getString("session") }.distinct().mapNotNull { firstTerminal(ended, it)?.getString("type") }
         assertEquals(1, outcomes.count { it == "completed" })
         assertEquals(1, outcomes.count { it == "ended_early" })
-        visible(By.text("FOCUSED TODAY")); visible(By.text(duration(focusedToday(ended))))
+        visible(By.text("FOCUSED")); visible(By.text(duration(focusedToday(ended))))
         evidence("today-completed-and-early")
 
         restartFlint()
-        visible(By.text("FOCUSED TODAY")); visible(By.text(duration(focusedToday(history()))))
+        visible(By.text("FOCUSED")); visible(By.text(duration(focusedToday(history()))))
         clickTab("Insights")
         visible(By.text("FOCUS SESSIONS")); visible(By.text("1 completed · 1 ended early"))
         evidence("insights-week")
