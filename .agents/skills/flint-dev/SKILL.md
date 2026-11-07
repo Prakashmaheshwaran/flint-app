@@ -8,6 +8,10 @@ description: Use when implementing or verifying changes in Flint's native iOS an
 Read `AGENTS.md`, then orient with `make help` and `make env`. Use `make help`
 for current targets and override options rather than duplicating their mechanics.
 
+On this Mac, the Local resource guardrails in `AGENTS.md` take precedence: drive devices
+with T3's `device_open` and the `agent-device` command it returns. The Orca notes below
+apply only where Orca is installed.
+
 1. Inspect the branch and preserve unrelated work. Build the affected platform with
    `make ios-build` or `make android`. Generate iOS projects through `make ios-gen`;
    never hand-edit `ios-app/Flint.xcodeproj`.
@@ -24,9 +28,7 @@ for current targets and override options rather than duplicating their mechanics
    still require an exact, valid UDID in fresh simulator inventory. Runs wait for
    SpringBoard after bootstatus; only FBS code 5 earns one delayed launch retry.
    An ambiguous boot timeout prints the exact possibly booted, unclaimed UDID
-   for manual review and grants no shutdown rights. Load the project
-   `orca-emulator` skill for iOS interaction or `orca-emulator-android` for Android
-   interaction. Use
+   for manual review and grants no shutdown rights. Use
    `make logs-ios` / `make logs-android` with the same selector for app logs.
    Drive one platform per worktree at a time: attaching Android in the same
    worktree shut down the active iOS simulator during verification. If

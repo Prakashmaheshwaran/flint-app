@@ -8,7 +8,7 @@
 ## Workspace
 - `scripts/flint-env.sh` resolves tool paths for Make/setup; source it for direct shell commands. Existing environment wins; Android then uses `local.properties`, then `~/Library/Android/sdk`.
 - Run `make env` (or `make doctor`) for paths, sources, and missing tools. Worktree setup comes from the committed `orca.yaml`.
-- Drive devices through the project `orca-emulator` / `orca-emulator-android` skills, not raw `adb` / `simctl` UI input.
+- Drive devices through T3's device tools, not raw `adb` / `simctl` UI input.
 - Drive one platform per worktree at a time; attaching Android in the same worktree shut down the active iOS simulator during verification.
 - If `orca emulator ax` times out with `emulator_helper_failed`, recover the authorized helper using `orca emulator kill --device <UDID>`, then attach that exact UDID again and verify the returned `deviceUdid`.
 - Android AVDs require their exact configured system image; Android 35 Google APIs ARM64 setup and live control are recorded in `docs/verification/workspace-android-live-2026-10-28.md`.
@@ -63,3 +63,18 @@ the supervised v1 build, local UI runs require both `flint-heavy device` and
 - Run `make clean-devices` before `worker_done` or ending an agent session; unclaimed/shared devices are preserved. Project `SessionEnd` hooks provide best-effort cleanup when enabled/trusted; they do not run after every turn.
 - Keep build outputs while a human may continue work. `make clean` removes worktree artifacts; the Orca archive hook releases devices and artifacts before removal. Cleanup rejects noncanonical paths and symlink ancestors. `make clean-orphans ORPHAN_PLAN=plan.json` previews; deletion requires the reviewed plan and its digest (`CONFIRM=1 ORPHAN_PLAN=plan.json ORPHAN_DIGEST=...`). Names alone never authorize simulator deletion; legacy exceptions require explicitly reviewed exact UDIDs in the plan.
 - Interrupted artifact deletion restores the verified remaining directory without replacing a new build. If restoration is unsafe, cleanup prints the retained `.flint-clean-*` directory and its `recovery.json` provenance; later artifact/orphan cleanup defers for manual review while a quarantine remains.
+
+## Local resource guardrails (this Mac)
+
+These rules take precedence over the Orca instructions above.
+
+- Flint development runs in T3 only. Drive devices with T3's device tools: `device_list`, `device_open`, and the `agent-device` command it returns. Orca is not installed here, so `make ios-run` and `make android-run` do not work. Build with `make ios-build` or `make android`, then install with `agent-device install`.
+- Xcode is project-scoped here: open it only for Flint work and quit it as soon as the build or simulator session ends. Never leave it running between tasks.
+- `DeviceHub.app` and `Simulator.app` are separate processes from Xcode. Quit both when the run/finish step completes; quitting Xcode closes neither.
+- One iOS target only: runtime **iOS 27.0**, device **`iPhone 17`** (`1BD4732B-EC1A-4074-8C70-6AC369607185`). Do not boot `iPhone Air`, `iPhone 17e`, or any iPad simulator, and do not install another iOS runtime.
+- One Android target only: AVD **`flint-test`** on the single installed image (`android-35;google_apis;arm64-v8a`). Do not create additional AVDs or install additional system images.
+- At most one iOS simulator and one Android emulator may be booted at a time.
+- A background guard on this Mac shuts down any simulator or emulator that is not open in T3 after 5 minutes, unless Xcode, Simulator, Android Studio, or a test run is holding it. A device open in T3 is protected for only 15 minutes from the last `device_open`, then shut down 5 minutes later, even if it is in use. Call `device_open` again within that window to keep working.
+- When simulator work ends, clean up immediately: call `device_close` with `shutdown: true` on each device this task opened, run `make clean-devices` (it releases claimed devices), then quit Simulator, DeviceHub, and Xcode. Shut down a simulator only when this task booted it and the Cleanup rules above are satisfied — never shut down a device you did not boot. A booted simulator with no active run is treated as a leak and must be released before `worker_done`.
+- OrbStack is not part of the build or test path: `orb start` before container work and `orb stop` immediately after.
+

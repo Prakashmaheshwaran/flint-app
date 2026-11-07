@@ -53,7 +53,7 @@ __pycache__/
 
 # ── Harness / session scratch (Claude worktrees, etc.) ──
 # Ignore Claude's per-session scratch, but track project-level skills (shared with
-# Codex through .agents/skills/, installed by `orca skills install --local`).
+# Codex through .agents/skills/).
 .claude/*
 !.claude/skills/
 !.claude/settings.json
