@@ -74,7 +74,7 @@ These rules take precedence over the Orca instructions above.
 - One iOS target only: runtime **iOS 27.0**, device **`iPhone 17`** (`1BD4732B-EC1A-4074-8C70-6AC369607185`). Do not boot `iPhone Air`, `iPhone 17e`, or any iPad simulator, and do not install another iOS runtime.
 - One Android target only: AVD **`flint-test`** on the single installed image (`android-35;google_apis;arm64-v8a`). Do not create additional AVDs or install additional system images.
 - At most one iOS simulator and one Android emulator may be booted at a time.
-- A background guard on this Mac shuts down any simulator or emulator that is not open in T3 after 5 minutes, unless Xcode, Simulator, Android Studio, or a test run is holding it. Keep devices open through `device_open` while you need them.
+- A background guard on this Mac shuts down any simulator or emulator that is not open in T3 after 5 minutes, unless Xcode, Simulator, Android Studio, or a test run is holding it. A device open in T3 is protected for only 15 minutes from the last `device_open`, then shut down 5 minutes later, even if it is in use. Call `device_open` again within that window to keep working.
 - When simulator work ends, clean up immediately: call `device_close` with `shutdown: true` on each device this task opened, run `make clean-devices` (it releases claimed devices), then quit Simulator, DeviceHub, and Xcode. Shut down a simulator only when this task booted it and the Cleanup rules above are satisfied — never shut down a device you did not boot. A booted simulator with no active run is treated as a leak and must be released before `worker_done`.
 - OrbStack is not part of the build or test path: `orb start` before container work and `orb stop` immediately after.
 
