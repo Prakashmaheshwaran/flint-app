@@ -30,18 +30,18 @@ struct StatsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text("Insights").flintTitle(30).accessibilityAddTraits(.isHeader)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 24)
-                .padding(.top, 18)
+            header
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    FocusHistorySection(history: history)
-                    header
-                    screenTimeContent
+                    FocusHistorySection(history: history, range: range)
+                    screenTimeCard
                 }
-                .padding(24)
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
+                .padding(.bottom, 32)
             }
         }
         .flintTabBarInset()
@@ -49,6 +49,18 @@ struct StatsView: View {
         .onChange(of: scenePhase) { if $0 == .active { refresh(); history.refresh() } }
         .onChange(of: range) { _ in reloadReport() }
         .sheet(isPresented: $showReportHelp) { reportHelp }
+    }
+
+    private var screenTimeCard: some View {
+        FlintCard(radius: 24, padding: EdgeInsets(top: 18, leading: 16, bottom: 16, trailing: 16)) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Screen Time").flintTitle(24).accessibilityAddTraits(.isHeader)
+                    Spacer()
+                }
+                screenTimeContent
+            }
+        }
     }
 
     @ViewBuilder
@@ -60,7 +72,7 @@ struct StatsView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .frame(minHeight: 500)
                 Button("Report help") { showReportHelp = true }
-                    .font(FlintFont.text(14))
+                    .font(FlintFont.text(14, weight: .semibold))
                     .foregroundStyle(FlintBrand.bone)
                     .frame(minHeight: 44)
             }
@@ -69,77 +81,67 @@ struct StatsView: View {
         }
     }
 
-    @ViewBuilder
     private var header: some View {
-        if typeSize.isAccessibilitySize {
-            stackedHeader
-        } else {
-            ViewThatFits(in: .horizontal) {
-                HStack {
-                    title.fixedSize()
-                    Spacer(minLength: 16)
+        Group {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Insights").flintTitle(32).accessibilityAddTraits(.isHeader)
+                    rangePicker
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HStack(alignment: .center) {
+                    Text("Insights").flintTitle(32).accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: 12)
                     rangePicker.fixedSize()
                 }
-                stackedHeader
             }
         }
-    }
-
-    private var stackedHeader: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            title
-            rangePicker
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var title: some View {
-        Text("Screen Time").flintTitle(24).accessibilityAddTraits(.isHeader)
     }
 
     private var rangePicker: some View {
         FlintSegmented(options: [(InsightsRange.today, "Today"), (.week, "7 days")],
-                       selection: $range, height: 44, compact: !typeSize.isAccessibilitySize)
+                       selection: $range, height: 32, compact: true)
             .accessibilityIdentifier("insights.range")
     }
 
     private var unavailableContent: some View {
-        FlintCard {
-            VStack(alignment: .leading, spacing: 16) {
-                Text(stateTitle)
-                    .flintTitle(24)
-                    .accessibilityAddTraits(.isHeader)
-                Text(stateDescription).flintSecondary(16)
+        VStack(alignment: .leading, spacing: 16) {
+            Text(stateTitle)
+                .font(FlintFont.text(20, weight: .bold))
+                .foregroundStyle(FlintBrand.bone)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+            Text(stateDescription).flintSecondary(15)
+                .fixedSize(horizontal: false, vertical: true)
 
-                if availability == .needsAuthorization || availability == .needsSettings {
-                    if InsightsAvailability.isSimulator {
-                        Text("Simulator can’t provide Screen Time reports. View Insights on a physical iPhone or iPad.")
-                            .flintSecondary(15)
-                    } else {
-                        AuthorizationControls(auth: auth, identifierPrefix: "insights.authorization", onApproved: refresh)
-                    }
-                }
-
-                if availability == .unavailable {
-                    Button("Check access again") {
-                        refresh()
-                        if availability == .unavailable {
-                            accessFeedback = "Screen Time access could not be confirmed. Try again after checking Settings."
-                        }
-                    }
-                    .font(FlintFont.text(16, weight: .medium))
-                    .foregroundStyle(FlintBrand.bone)
-                    .frame(minHeight: 44)
-                    .disabled(auth.isRequesting)
-                    .accessibilityIdentifier("insights.checkAccess")
-                    if let accessFeedback {
-                        Text(accessFeedback).flintSecondary(15)
-                            .accessibilityIdentifier("insights.accessFeedback")
-                    }
+            if availability == .needsAuthorization || availability == .needsSettings {
+                if InsightsAvailability.isSimulator {
+                    Text("Simulator can’t provide Screen Time reports. View Insights on a physical iPhone or iPad.")
+                        .flintSecondary(14)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    AuthorizationControls(auth: auth, identifierPrefix: "insights.authorization", onApproved: refresh)
                 }
             }
-            .fixedSize(horizontal: false, vertical: true)
+
+            if availability == .unavailable {
+                Button("Check access again") {
+                    refresh()
+                    if availability == .unavailable {
+                        accessFeedback = "Screen Time access could not be confirmed. Try again after checking Settings."
+                    }
+                }
+                .buttonStyle(GhostButtonStyle())
+                .disabled(auth.isRequesting)
+                .accessibilityIdentifier("insights.checkAccess")
+                if let accessFeedback {
+                    Text(accessFeedback).flintSecondary(14)
+                        .accessibilityIdentifier("insights.accessFeedback")
+                }
+            }
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var stateTitle: String {
@@ -203,12 +205,14 @@ struct StatsView: View {
 /// paint the top safe-area band without imposing its 470 pt height on a short viewport.
 struct InsightsBackdrop: View {
     var body: some View {
-        LinearGradient(stops: [
-            .init(color: Color(hex: 0x0A0C11), location: 0),
-            .init(color: Color(hex: 0x15151B), location: 0.45),
-            .init(color: Color(hex: 0x2A211D), location: 0.82),
-            .init(color: FlintBrand.ground, location: 1),
-        ], startPoint: .top, endPoint: .bottom)
-        .frame(height: 470)
+        ZStack(alignment: .top) {
+            LinearGradient(stops: [
+                .init(color: Color(hex: 0x0A0C11), location: 0),
+                .init(color: FlintBrand.ground, location: 1),
+            ], startPoint: .top, endPoint: .bottom)
+            RadialGradient(colors: [FlintBrand.ember.opacity(0.12), FlintBrand.ember.opacity(0)],
+                           center: .top, startRadius: 0, endRadius: 240)
+        }
+        .frame(height: 240)
     }
 }

@@ -11,12 +11,14 @@ struct AppDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                target.label
-                    .labelStyle(.titleAndIcon)
-                    .font(FlintFont.display(26))
-                    .foregroundStyle(FlintBrand.bone)
-                    .accessibilityAddTraits(.isHeader)
-                    .padding(.top, 8)
+                HStack(spacing: 12) {
+                    FlintAppTile(target: target, size: 44)
+                    target.label
+                        .labelStyle(.titleOnly)
+                        .flintTitle(26)
+                        .accessibilityAddTraits(.isHeader)
+                }
+                .padding(.top, 8)
 
                 if let presentation {
                     headline(presentation.headline)
@@ -81,6 +83,7 @@ struct AppDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(FlintGroundBackground())
+        .flintTabBarInset()
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { presentation = AppDetailLoader.presentation(for: target.key) }
     }

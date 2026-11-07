@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flint — Start focus</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500&amp;family=Hanken+Grotesk:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#EDE6DA}a:hover{color:#B7AE9F}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #0E0D0F; color: #EDE6DA; font-family: 'Hanken Grotesk', -apple-system, system-ui, sans-serif">
+
+  <div aria-hidden="true" style="position: absolute; left: 0; right: 0; top: 0; height: 320px; background: radial-gradient(ellipse 60% 50% at 50% 28%, rgba(239, 159, 39, 0.22) 0%, rgba(239, 159, 39, 0) 100%), linear-gradient(180deg, #0A0C11 0%, #0E0D0F 100%)"></div>
+
+  <header style="position: absolute; left: 20px; right: 20px; top: 56px; display: flex; justify-content: space-between; align-items: center">
+    <h1 style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -0.6px">Start focus</h1>
+    <a href="M03-Today.dc.html" aria-label="Close" style="width: 44px; height: 44px; border-radius: 22px; background: rgba(237, 230, 218, 0.08); display: flex; align-items: center; justify-content: center; color: #EDE6DA">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+    </a>
+  </header>
+
+  <div style="position: absolute; left: 20px; right: 20px; top: 118px; display: flex; align-items: center; justify-content: space-between">
+    <button type="button" aria-label="Five minutes less" onClick="{{less}}" style="width: 52px; height: 52px; border-radius: 26px; border: 1px solid rgba(237, 230, 218, 0.14); background: rgba(237, 230, 218, 0.04); color: #EDE6DA; display: flex; align-items: center; justify-content: center">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12"></path></svg>
+    </button>
+    <span style="display: flex; flex-direction: column; align-items: center; gap: 2px">
+      <span style="font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 88px; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -2px">{{minutes}}</span>
+      <span style="font-size: 12px; font-weight: 600; letter-spacing: 2px; color: #B7AE9F">MINUTES</span>
+    </span>
+    <button type="button" aria-label="Five minutes more" onClick="{{more}}" style="width: 52px; height: 52px; border-radius: 26px; border: 1px solid rgba(237, 230, 218, 0.14); background: rgba(237, 230, 218, 0.04); color: #EDE6DA; display: flex; align-items: center; justify-content: center">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12M12 6v12"></path></svg>
+    </button>
+  </div>
+
+  <div style="position: absolute; left: 20px; right: 0; top: 248px; display: flex; gap: 8px; overflow: hidden">
+    <sc-for list="{{presets}}" as="p" hint-placeholder-count="5">
+      <button type="button" aria-pressed="{{p.pressed}}" onClick="{{p.pick}}" style="{{p.style}}">{{p.name}} <span style="{{p.sub}}">{{p.dur}}</span></button>
+    </sc-for>
+  </div>
+
+  <a href="M05-AppPicker.dc.html" style="position: absolute; left: 20px; right: 20px; top: 310px; display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; border-radius: 22px; background: #17161A; border: 1px solid rgba(237, 230, 218, 0.08); text-decoration: none; color: #EDE6DA">
+    <span style="display: flex; justify-content: space-between; align-items: center">
+      <span style="display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 15px; font-weight: 600">Deep work <span style="color: #B7AE9F; font-weight: 500">· 7 apps, 2 sites</span></span>
+        <span style="font-size: 12px; color: #B7AE9F">Tap to change apps or pick a group</span>
+      </span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B7AE9F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+    </span>
+    <span style="display: flex; gap: 8px">
+      <sc-for list="{{apps}}" as="a" hint-placeholder-count="6">
+        <span role="img" aria-label="{{a.name}}" style="{{a.tile}}">{{a.initial}}</span>
+      </sc-for>
+      <span style="width: 36px; height: 36px; border-radius: 11px; background: rgba(237, 230, 218, 0.06); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: #B7AE9F">+3</span>
+    </span>
+  </a>
+
+  <div style="position: absolute; left: 20px; right: 20px; top: 436px; display: flex; flex-direction: column; gap: 10px">
+    <span style="padding: 0 4px; font-size: 16px; font-weight: 600">Break level</span>
+    <div role="radiogroup" aria-label="Break level" style="display: flex; flex-direction: column; gap: 8px">
+      <sc-for list="{{levels}}" as="l" hint-placeholder-count="3">
+        <button type="button" role="radio" aria-checked="{{l.pressed}}" onClick="{{l.pick}}" style="{{l.style}}">
+          <span style="{{l.ring}}"><span style="{{l.dot}}"></span></span>
+          <span style="display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; text-align: left">
+            <span style="font-size: 15px; font-weight: 600">{{l.label}}</span>
+            <span style="font-size: 12px; color: #B7AE9F">{{l.hint}}</span>
+          </span>
+          <span style="{{l.badge}}">{{l.tag}}</span>
+        </button>
+      </sc-for>
+    </div>
+  </div>
+
+  <a href="M06-Session.dc.html" style="position: absolute; left: 20px; right: 20px; bottom: 36px; height: 56px; border-radius: 28px; background: linear-gradient(180deg, #F6B860 0%, #EF9F27 100%); color: #3A2003; text-decoration: none; font-size: 16px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 10px 30px rgba(239, 159, 39, 0.24)">Begin {{minutes}} minutes</a>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { minutes: 45, level: 'harder', preset: null };
+  }
+  renderVals() {
+    const m = this.state.minutes;
+    const presetList = [['Deep study', 90], ['Commute', 30], ['Workout', 60], ['Reading', 30], ['Touch grass', 480]];
+    const fmt = (v) => v % 60 === 0 ? (v / 60) + 'h' : v + 'm';
+    const presets = presetList.map(([name, v]) => {
+      const on = this.state.preset === name;
+      return {
+        name, dur: fmt(v),
+        pressed: on ? 'true' : 'false',
+        style: 'flex: 0 0 auto; height: 38px; padding: 0 14px; border-radius: 19px; font-size: 13px; font-weight: 600; white-space: nowrap; display: flex; align-items: center; gap: 5px; ' +
+          (on ? 'background: #EDE6DA; color: #141316; border: 1px solid #EDE6DA;' : 'background: rgba(237,230,218,0.05); color: #EDE6DA; border: 1px solid rgba(237,230,218,0.12);'),
+        sub: 'font-weight: 500; color: ' + (on ? '#5F5A52' : '#B7AE9F') + ';',
+        pick: () => this.setState({ minutes: v, preset: name })
+      };
+    });
+    const apps = [['Instagram', 'I', '#5C3344'], ['TikTok', 'T', '#2E2E33'], ['YouTube', 'Y', '#5A2A2A'], ['Reddit', 'R', '#6B3D2A'], ['X', 'X', '#26262A'], ['Snapchat', 'S', '#6B6230']].map(([name, initial, bg]) => ({
+      name, initial,
+      tile: 'width: 36px; height: 36px; border-radius: 11px; background: ' + bg + '; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #D8CFC0;'
+    }));
+    const defs = [
+      ['easy', 'Easy', 'Stop any time.', 'Flexible'],
+      ['harder', 'Harder', 'No early stop. Breaks wait a few minutes.', 'Recommended'],
+      ['hardcore', 'Hardcore', 'No breaks, no stop, can’t delete Flint until it ends.', 'Free in Flint']
+    ];
+    const levels = defs.map(([id, label, hint, tag]) => {
+      const on = this.state.level === id;
+      return {
+        label, hint, tag,
+        pressed: on ? 'true' : 'false',
+        style: 'display: flex; align-items: center; gap: 12px; min-height: 62px; padding: 10px 14px; border-radius: 18px; color: #EDE6DA; ' +
+          (on ? 'background: rgba(239,159,39,0.1); border: 1px solid rgba(239,159,39,0.6);' : 'background: #17161A; border: 1px solid rgba(237,230,218,0.08);'),
+        ring: 'flex: 0 0 auto; width: 20px; height: 20px; border-radius: 10px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; border: 1.5px solid ' + (on ? '#EF9F27' : 'rgba(237,230,218,0.3)') + ';',
+        dot: 'width: 10px; height: 10px; border-radius: 5px; background: ' + (on ? '#EF9F27' : 'transparent') + ';',
+        badge: 'flex: 0 0 auto; height: 22px; padding: 0 8px; border-radius: 11px; font-size: 11px; font-weight: 600; display: flex; align-items: center; ' + (on ? 'background: rgba(239,159,39,0.18); color: #F4C27E;' : 'background: rgba(237,230,218,0.06); color: #B7AE9F;'),
+        pick: () => this.setState({ level: id })
+      };
+    });
+    return {
+      minutes: m, presets, apps, levels,
+      less: () => this.setState({ minutes: Math.max(5, m - 5), preset: null }),
+      more: () => this.setState({ minutes: Math.min(240, m + 5), preset: null })
+    };
+  }
+}
+</script>
+</body>
+</html>

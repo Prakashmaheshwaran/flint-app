@@ -14,27 +14,286 @@ import FlintCore
 struct SleepModeView: View {
     @StateObject private var vm = SleepModeViewModel()
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.dismiss) private var dismiss
     @ScaledMetric(relativeTo: .body) private var daySize = 44.0
 
     var body: some View {
-        Form {
-            SleepDialHeader(vm: vm)
-            introSection
-            masterSection
-            nightsSection
-            sleepAssistSection
-            morningAssistSection
-            tierSection
-            allowedAppsSection
-            Section("Saved protection") {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Button { dismiss() } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16, weight: .semibold))
+                    }
+                    .buttonStyle(CircleIconButtonStyle(size: 44, filled: true))
+                    .accessibilityLabel("Back")
+                    Spacer()
+                    Toggle("Sleep mode", isOn: $vm.config.enabled)
+                        .toggleStyle(EmberToggleStyle())
+                        .labelsHidden()
+                        .accessibilityLabel("Sleep mode")
+                }
+                .padding(.top, 8)
+
+                Text("Sleep")
+                    .flintTitle(32)
+                    .accessibilityAddTraits(.isHeader)
+                    .padding(.top, 14)
+                Text(summaryLine)
+                    .font(FlintFont.text(14))
+                    .foregroundStyle(FlintBrand.mist)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 4)
+
+                SleepDialHeader(vm: vm)
+                    .padding(.top, 18)
+
+                nights.padding(.top, 6)
+                status.padding(.top, 14)
+
+                sectionLabel("Sleep Assist").padding(.top, 24)
+                FlintSegmented(options: [(FlintSleepAssistLevel.off, "Off"),
+                                         (.windDown, "Wind Down"),
+                                         (.fullAssist, "Full Assist")],
+                               selection: $vm.config.sleepAssist, height: 40)
+                    .padding(.top, 10)
+                footnote(sleepAssistFooter)
+
+                sectionLabel("Protection tier").padding(.top, 22)
+                FlintSegmented(options: [(BreakLevel.easy, "Easy"), (.harder, "Harder"), (.hardcore, "Hardcore")],
+                               selection: Binding(get: {
+                                   vm.config.nightBreakLevel ?? (vm.config.sleepAssist == .fullAssist ? .harder : .easy)
+                               }, set: { vm.config.nightBreakLevel = $0 }))
+                    .padding(.top, 10)
+                footnote("The bedtime shield keeps this tier. Existing saved tiers are retained; raising a tier asks for confirmation when you save.")
+
+                sectionLabel("Morning Assist").padding(.top, 22)
+                FlintSegmented(options: [(FlintMorningAssistLevel.off, "Off"),
+                                         (.slowUplift, "Slow Uplift"),
+                                         (.fullAssist, "Full Assist")],
+                               selection: $vm.config.morningAssist, height: 40)
+                    .padding(.top, 10)
+                if vm.config.morningAssist == .fullAssist {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("After wake-up").font(FlintFont.text(14, weight: .semibold))
+                                .foregroundStyle(FlintBrand.bone)
+                            Text("\(vm.config.morningAssistMinutes) minutes").flintSecondary(12)
+                        }
+                        Spacer()
+                        HStack(spacing: 8) {
+                            Button { vm.config.morningAssistMinutes = max(FlintSchedule.minimumWindowMinutes, vm.config.morningAssistMinutes - 15) } label: {
+                                Image(systemName: "minus").font(.system(size: 15, weight: .medium))
+                            }
+                            .buttonStyle(CircleIconButtonStyle(size: 44))
+                            .accessibilityLabel("Fifteen minutes less")
+                            Button { vm.config.morningAssistMinutes = min(180, vm.config.morningAssistMinutes + 15) } label: {
+                                Image(systemName: "plus").font(.system(size: 15, weight: .medium))
+                            }
+                            .buttonStyle(CircleIconButtonStyle(size: 44))
+                            .accessibilityLabel("Fifteen minutes more")
+                        }
+                    }
+                    .padding(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 10))
+                    .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(FlintBrand.card))
+                    .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(FlintBrand.bone(0.08)))
+                    .padding(.top, 10)
+                }
+                footnote(morningAssistFooter)
+
+                sectionLabel("Allowed apps").padding(.top, 22)
+                allowedApps.padding(.top, 10)
+                footnote(allowedAppsFooter)
+
+                Button("Save Sleep changes") { vm.applyNow() }
+                    .buttonStyle(EmberButtonStyle())
+                    .padding(.top, 24)
+
+                goodToKnow.padding(.top, 24)
+                savedProtection.padding(.top, 24)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 40)
+        }
+        .background(SleepBackdrop())
+        .flintTabBarInset()
+        .toolbar(.hidden, for: .navigationBar)
+        .navigationBarBackButtonHidden(true)
+        .onAppear { vm.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: .flintProtectionReconciled)) { _ in vm.refresh() }
+        .ruleMutationFlow(vm.flow)
+    }
+
+    private var summaryLine: String {
+        guard vm.config.enabled else { return "Off" }
+        var parts = [SleepPresentation.daysSummary(vm.config.schedule),
+                     SleepPresentation.assistSummary(vm.config.sleepAssist, tier: vm.config.nightBreakLevel)]
+        let allowed = vm.savedGroups.first { $0.id == vm.config.allowGroupID }?
+            .selection.applicationTokens.count ?? 0
+        if allowed > 0 {
+            parts.append("\(allowed) \(allowed == 1 ? "app" : "apps") stay open")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func sectionLabel(_ text: LocalizedStringKey) -> some View {
+        Text(text)
+            .font(FlintFont.text(14, weight: .semibold))
+            .foregroundStyle(FlintBrand.bone)
+            .padding(.horizontal, 4)
+    }
+
+    private func footnote(_ text: LocalizedStringKey) -> some View {
+        Text(text)
+            .flintSecondary(13)
+            .lineSpacing(3)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 4)
+            .padding(.top, 8)
+    }
+
+    private var nights: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: max(44, daySize)), spacing: 4)], spacing: 8) {
+            ForEach(1...7, id: \.self) { weekday in
+                let on = vm.config.schedule.daysOfWeek.contains(weekday)
+                Button { vm.toggleDay(weekday) } label: {
+                    Text(SleepPresentation.weekdaySymbol(weekday))
+                        .font(FlintFont.text(15, weight: .bold))
+                        .frame(width: max(44, daySize), height: max(44, daySize))
+                        .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(on ? FlintBrand.ember : FlintBrand.card))
+                        .foregroundStyle(on ? FlintBrand.onEmber : FlintBrand.bone)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(on ? FlintBrand.ember : FlintBrand.bone(0.12)))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text(SleepPresentation.weekdayName(weekday)))
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }
+        .id(dynamicTypeSize)
+        .disabled(vm.config.sleepAssist == .off && vm.config.morningAssist == .off)
+    }
+
+    @ViewBuilder private var status: some View {
+        if let issue = vm.protectionIssue {
+            HStack(spacing: 10) {
+                Label("Needs attention — \(issue)", systemImage: "exclamationmark.triangle")
+                    .font(FlintFont.text(13)).foregroundStyle(FlintBrand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Button("Retry") { vm.retryRegistration() }
+                    .buttonStyle(GhostButtonStyle(height: 36))
+                    .accessibilityLabel("Retry Sleep registration")
+            }
+        } else if let note = vm.allowListNote {
+            Label("Needs attention — \(note) Sleep keeps running as saved until you change it.",
+                  systemImage: "exclamationmark.triangle")
+                .font(FlintFont.text(13)).foregroundStyle(FlintBrand.danger)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if vm.nightWindowActiveNow {
+            Label("Bedtime window is scheduled now", systemImage: "moon.zzz.fill")
+                .font(FlintFont.text(13)).foregroundStyle(FlintBrand.ember)
+        } else if vm.morningWindowActiveNow {
+            Label("Morning wind-up is scheduled now", systemImage: "sunrise.fill")
+                .font(FlintFont.text(13)).foregroundStyle(FlintBrand.ember)
+        } else if vm.nightArmed || vm.morningArmed {
+            Label("Sleep windows registered with iOS", systemImage: "moon.stars")
+                .font(FlintFont.text(13)).foregroundStyle(FlintBrand.mist)
+        } else {
+            Text("No Sleep or morning shield is scheduled.")
+                .font(FlintFont.text(13)).foregroundStyle(FlintBrand.mist)
+        }
+    }
+
+    private var allowedApps: some View {
+        Menu {
+            Picker("Allowed during Sleep", selection: $vm.config.allowGroupID) {
+                Text("None chosen").tag(String?.none)
+                ForEach(vm.savedGroups) { group in
+                    // Only individually picked apps stay reachable; categories and websites don't count.
+                    let apps = group.selection.applicationTokens.count
+                    Text("\(group.name) · \(apps) \(apps == 1 ? "app" : "apps")").tag(String?.some(group.id))
+                }
+            }
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Still allowed").font(FlintFont.text(14, weight: .semibold))
+                        .foregroundStyle(FlintBrand.bone)
+                    Text(allowedGroupName)
+                        .font(FlintFont.text(12))
+                        .foregroundStyle(FlintBrand.mist)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                let group = vm.savedGroups.first { $0.id == vm.config.allowGroupID }
+                if let group, !group.selection.flintPickedTargets.isEmpty {
+                    FlintAppIconStack(targets: group.selection.flintPickedTargets, size: 26,
+                                      border: FlintBrand.card, limit: 3)
+                } else {
+                    FlintChevron()
+                }
+            }
+            .padding(EdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(FlintBrand.card))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(FlintBrand.bone(0.08)))
+        }
+        .accessibilityLabel("Allowed during Sleep, \(allowedGroupName)")
+    }
+
+    private var allowedGroupName: String {
+        guard let group = vm.savedGroups.first(where: { $0.id == vm.config.allowGroupID }) else {
+            return vm.savedGroups.isEmpty ? "Save a group in Start focus first" : "None chosen"
+        }
+        return group.name
+    }
+
+    private var goodToKnow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Good to know").flintSection().padding(.horizontal, 4)
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Sleep windows also appear in Schedules as “Sleep Mode” and “Morning Assist”. Changes here update those windows.",
+                      systemImage: "calendar.badge.clock")
+                    .font(FlintFont.text(12))
+                    .foregroundStyle(FlintBrand.mist)
+                    .fixedSize(horizontal: false, vertical: true)
+                Label("No soundscapes, sleep stories or meditations — Flint v1 is a blocking control by design.",
+                      systemImage: "speaker.slash")
+                    .font(FlintFont.text(12))
+                    .foregroundStyle(FlintBrand.mist)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Shield enforcement needs Screen Time access on a real device — the Simulator verifies UI and scheduling logic only.")
+                    .font(FlintFont.text(12))
+                    .foregroundStyle(FlintBrand.stone)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(FlintBrand.card))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(FlintBrand.bone(0.08)))
+        }
+    }
+
+    @ViewBuilder private var savedProtection: some View {
+        if !vm.effectiveRules.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Saved protection").flintSection().padding(.horizontal, 4)
                 ForEach(vm.effectiveRules) { rule in
                     VStack(alignment: .leading, spacing: 4) {
                         Text("\(rule.name) · \(rule.breakLevel.rawValue.capitalized)")
+                            .font(FlintFont.text(14, weight: .semibold))
+                            .foregroundStyle(FlintBrand.bone)
                         Text("\(SleepPresentation.timeSummary(rule.schedule)) · \(rule.protection?.timeZoneID ?? TimeZone.current.identifier)")
-                            .font(.footnote)
+                            .font(FlintFont.text(12))
+                            .foregroundStyle(FlintBrand.mist)
+                            .fixedSize(horizontal: false, vertical: true)
                         if let window = rule.currentOccurrence() {
                             Text("Current occurrence until \(window.end.formatted(date: .abbreviated, time: .shortened))")
-                                .font(.footnote)
+                                .font(FlintFont.text(12))
+                                .foregroundStyle(FlintBrand.stone)
                         }
                         if let protection = rule.protection, protection.queuedChange != nil {
                             QueuedRuleChangeView(protection: protection) {
@@ -42,137 +301,12 @@ struct SleepModeView: View {
                             }
                         }
                     }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(FlintBrand.card))
+                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(FlintBrand.bone(0.08)))
                 }
-                Button("Save Sleep changes") { vm.applyNow() }.frame(minHeight: 44)
             }
-            goodToKnowSection
-        }
-        .flintForm()
-        .navigationTitle("Sleep")
-        .navigationBarTitleDisplayMode(.inline)
-        .onAppear { vm.refresh() }
-        .onReceive(NotificationCenter.default.publisher(for: .flintProtectionReconciled)) { _ in vm.refresh() }
-        .ruleMutationFlow(vm.flow)
-    }
-
-    // MARK: Sections
-
-    private var introSection: some View {
-        Section {
-            Text("Wind down at bedtime and wake up without the feed. Sleep Assist can shield apps between bedtime and wake-up. Morning Full Assist adds a shield while your day starts. Free, including Full Assist.")
-                .font(.footnote)
-                .foregroundStyle(FlintBrand.mist)
-        }
-    }
-
-    private var masterSection: some View {
-        Section {
-            Toggle("Enable Sleep template", isOn: $vm.config.enabled)
-                .tint(FlintBrand.ember)
-            Text("These controls are a draft. Save Sleep changes to apply them; saved protection is shown below.")
-                .font(.footnote).foregroundStyle(FlintBrand.mist)
-            statusRow
-        }
-    }
-
-    @ViewBuilder
-    private var statusRow: some View {
-        if let issue = vm.protectionIssue {
-            Label("Needs attention — \(issue)", systemImage: "exclamationmark.triangle")
-                .font(.footnote).foregroundStyle(FlintBrand.danger)
-            Button("Retry Sleep registration") { vm.retryRegistration() }
-                .frame(minHeight: 44)
-                .tint(FlintBrand.ember)
-        } else if let note = vm.allowListNote {
-            // Still armed as saved; only the allowed apps need choosing.
-            Label("Needs attention — \(note) Sleep keeps running as saved until you change it.",
-                  systemImage: "exclamationmark.triangle")
-                .font(.footnote).foregroundStyle(FlintBrand.danger)
-        } else if vm.nightWindowActiveNow {
-            Label("Bedtime window is scheduled now", systemImage: "moon.zzz.fill")
-                .font(.footnote)
-                .foregroundStyle(FlintBrand.ember)
-        } else if vm.morningWindowActiveNow {
-            Label("Morning wind-up is scheduled now", systemImage: "sunrise.fill")
-                .font(.footnote)
-                .foregroundStyle(FlintBrand.ember)
-        } else if vm.nightArmed || vm.morningArmed {
-            Label("Sleep windows registered with iOS", systemImage: "moon.stars")
-                .font(.footnote)
-                .foregroundStyle(FlintBrand.mist)
-        } else {
-            Text("No Sleep or morning shield is scheduled.")
-                .font(.footnote)
-                .foregroundStyle(FlintBrand.mist)
-        }
-    }
-
-    private var nightsSection: some View {
-        Section {
-            DatePicker("Bedtime",
-                       selection: Binding(get: { vm.bedtime }, set: { vm.bedtime = $0 }),
-                       displayedComponents: .hourAndMinute)
-            DatePicker("Wake up",
-                       selection: Binding(get: { vm.wake }, set: { vm.wake = $0 }),
-                       displayedComponents: .hourAndMinute)
-            dayCircles
-                // Recreate lazy cells when their scaled target size changes in an open Form.
-                .id(dynamicTypeSize)
-        } header: {
-            Text("Nights")
-        } footer: {
-            Text(nightsFooter)
-        }
-    }
-
-    private var dayCircles: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: max(44, daySize)), spacing: 4)], spacing: 8) {
-            ForEach(1...7, id: \.self) { weekday in
-                let on = vm.config.schedule.daysOfWeek.contains(weekday)
-                Button {
-                    vm.toggleDay(weekday)
-                } label: {
-                    Text(SleepPresentation.weekdaySymbol(weekday))
-                        .font(FlintFont.text(16, weight: on ? .semibold : .regular))
-                        .frame(width: max(44, daySize), height: max(44, daySize))
-                        .background(on ? FlintBrand.ember : FlintBrand.bone(0.06))
-                        .foregroundStyle(on ? FlintBrand.onEmber : FlintBrand.bone)
-                        .clipShape(Circle())
-                        .overlay(Circle().strokeBorder(on ? FlintBrand.onEmber : FlintBrand.mist, lineWidth: on ? 3 : 1))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(SleepPresentation.weekdayName(weekday)))
-                .accessibilityAddTraits(on ? .isSelected : [])
-            }
-        }
-    }
-
-    private var nightsFooter: LocalizedStringKey {
-        guard vm.windowIsUsable else {
-            return "Bedtime and wake-up are too close — the window needs at least \(FlintSchedule.minimumWindowMinutes) minutes, so the bedtime shield won't arm until it's longer."
-        }
-        return "\(SleepPresentation.daysSummary(vm.config.schedule)) · \(SleepPresentation.timeSummary(vm.config.schedule)). Days pick the night the window starts; none selected means every night."
-    }
-
-    private var sleepAssistSection: some View {
-        Section {
-            if dynamicTypeSize.isAccessibilitySize {
-                sleepAssistPicker.pickerStyle(.inline)
-            } else {
-                sleepAssistPicker.pickerStyle(.segmented)
-            }
-        } header: {
-            Text("Sleep Assist")
-        } footer: {
-            Text(sleepAssistFooter)
-        }
-    }
-
-    private var sleepAssistPicker: some View {
-        Picker("Sleep Assist", selection: $vm.config.sleepAssist) {
-            Text("Off").tag(FlintSleepAssistLevel.off)
-            Text("Wind Down").tag(FlintSleepAssistLevel.windDown)
-            Text("Full Assist").tag(FlintSleepAssistLevel.fullAssist)
         }
     }
 
@@ -181,54 +315,9 @@ struct SleepModeView: View {
         case .off:
             return "No bedtime shield. Morning Assist below can still run on its own after wake-up."
         case .windDown:
-            return "New Wind Down starts at Easy. Choose a tier below. Active protection changes only after you save and complete its confirmation."
+            return "Wind Down shields the apps you choose between bedtime and wake-up."
         case .fullAssist:
-            return "New Full Assist starts at Harder. Hardcore is an explicit choice below. Weakening an active Hardcore window can be saved for after this occurrence."
-        }
-    }
-
-    private var tierSection: some View {
-        Section("Protection tier") {
-            Picker("Bedtime tier", selection: Binding(get: {
-                vm.config.nightBreakLevel ?? (vm.config.sleepAssist == .fullAssist ? .harder : .easy)
-            }, set: { vm.config.nightBreakLevel = $0 })) {
-                ForEach(BreakLevel.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
-            }
-            Picker("Morning tier", selection: Binding(get: { vm.config.morningBreakLevel ?? .harder },
-                set: { vm.config.morningBreakLevel = $0 })) {
-                ForEach(BreakLevel.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
-            }
-            Text("Existing saved tiers are retained. Raising a tier requires confirmation when you save.").font(.footnote)
-        }
-    }
-
-    private var morningAssistSection: some View {
-        Section {
-            if dynamicTypeSize.isAccessibilitySize {
-                morningAssistPicker.pickerStyle(.inline)
-            } else {
-                morningAssistPicker.pickerStyle(.segmented)
-            }
-            if vm.config.morningAssist == .fullAssist {
-                Stepper(
-                    "\(vm.config.morningAssistMinutes) minutes after wake-up",
-                    value: $vm.config.morningAssistMinutes,
-                    in: FlintSchedule.minimumWindowMinutes...180,
-                    step: 15
-                )
-            }
-        } header: {
-            Text("Morning Assist")
-        } footer: {
-            Text(morningAssistFooter)
-        }
-    }
-
-    private var morningAssistPicker: some View {
-        Picker("Morning Assist", selection: $vm.config.morningAssist) {
-            Text("Off").tag(FlintMorningAssistLevel.off)
-            Text("Slow Uplift").tag(FlintMorningAssistLevel.slowUplift)
-            Text("Full Assist").tag(FlintMorningAssistLevel.fullAssist)
+            return "Full Assist shields the apps you choose between bedtime and wake-up, and adds the strictness below."
         }
     }
 
@@ -239,53 +328,44 @@ struct SleepModeView: View {
         case .slowUplift:
             return "This build saves your Slow Uplift choice but provides no reminders or shield for it. Choose Full Assist for a morning shield."
         case .fullAssist:
-            return "Morning Full Assist uses the selected tier for \(vm.config.morningAssistMinutes) minutes after wake-up. New morning windows default to Harder. Overnight windows map to the following morning."
+            return "Morning Full Assist uses the selected tier for \(vm.config.morningAssistMinutes) minutes after wake-up. New morning windows default to Harder."
         }
     }
 
-    private var allowedAppsSection: some View {
-        Section {
-            Picker("Allowed during Sleep", selection: $vm.config.allowGroupID) {
-                Text("None chosen").tag(String?.none)
-                ForEach(vm.savedGroups) { group in
-                    // Only individually picked apps stay reachable; categories and websites don't count.
-                    let apps = group.selection.applicationTokens.count
-                    Text("\(group.name) · \(apps) \(apps == 1 ? "app" : "apps")").tag(String?.some(group.id))
+    private var allowedAppsFooter: LocalizedStringKey {
+        if vm.savedGroups.isEmpty {
+            return "Sleep shields everything except the apps you choose. Save an app group in Start focus with the apps you need overnight, like Phone, Messages and your alarm, then choose it here."
+        }
+        if vm.allowedAppsMissing {
+            return "Choose a group with at least one app to keep reachable. Flint can’t confirm which system apps stay reachable during Sleep."
+        }
+        return "Only individually picked apps in this group stay reachable during Wind Down and Full Assist. Flint can’t confirm which system apps stay reachable."
+    }
+}
+
+/// M11's night sky above the background with a few quiet stars.
+struct SleepBackdrop: View {
+    var body: some View {
+        ZStack(alignment: .top) {
+            Color(hex: 0x08090D)
+            LinearGradient(stops: [
+                .init(color: Color(hex: 0x07080C), location: 0),
+                .init(color: Color(hex: 0x0E1016), location: 0.5),
+                .init(color: Color(hex: 0x0B0B0E), location: 1),
+            ], startPoint: .top, endPoint: .bottom)
+            Canvas { ctx, size in
+                for (x, y, r, a) in [(40.0, 140.0, 0.9, 0.5), (330.0, 120.0, 1.0, 0.45),
+                                     (360.0, 460.0, 0.8, 0.35), (24.0, 420.0, 0.7, 0.3),
+                                     (290.0, 70.0, 0.7, 0.35)] {
+                    ctx.fill(Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)),
+                             with: .color(FlintBrand.bone.opacity(a)))
                 }
             }
-            .tint(FlintBrand.ember)
-        } header: {
-            Text("Allowed apps")
-        } footer: {
-            VStack(alignment: .leading, spacing: 6) {
-                if vm.savedGroups.isEmpty {
-                    Text("Sleep shields everything except the apps you choose. Save an app group in Block Now with the apps you need overnight, like Phone, Messages and your alarm, then choose it here.")
-                } else {
-                    Text("Only individually picked apps in this group stay reachable during Wind Down and Full Assist. Whole-category and website picks don't carry over, so a group needs at least one app. Include the ones you need, like Phone and Messages.")
-                }
-                Text("Flint can't confirm which system apps stay reachable during Sleep.")
-                if vm.allowedAppsMissing {
-                    Text(FlintSleepRulesController.allowedAppsRequired).foregroundStyle(FlintBrand.danger)
-                }
-            }
+            .frame(height: 520)
         }
+        .ignoresSafeArea()
+        .accessibilityHidden(true)
     }
-
-    private var goodToKnowSection: some View {
-        Section {
-            Label("Sleep windows also appear in Schedules as “Sleep Mode” and “Morning Assist”. Changes here update those windows.",
-                  systemImage: "calendar.badge.clock")
-                .font(.footnote)
-            Label("No soundscapes, sleep stories or meditations — Flint v1 is a blocking control by design.",
-                  systemImage: "speaker.slash")
-                .font(.footnote)
-        } header: {
-            Text("Good to know")
-        } footer: {
-            Text("Shield enforcement needs Screen Time access on a real device — the Simulator verifies UI and scheduling logic only.")
-        }
-    }
-
 }
 
 /// Keeps a Sleep draft separate from effective saved rules. Native changes happen only after
