@@ -389,7 +389,7 @@ final class FlintHistoryReadOnlyTests: XCTestCase {
         XCTAssertEqual(reasons, ["compact"])
     }
 
-    func testReconcilerNotifiesOnlyAfterNewInferredRecordsArePublished() {
+    func testReconcilerDoesNotPublishGuessedTerminalRecords() {
         let host = store(); host.append(event()); _ = host.read()
         var inferredSnapshots: [[FlintHistoryEvent]] = []
         let token = NotificationCenter.default.addObserver(forName: FlintHistoryStore.didChangeNotification,
@@ -401,8 +401,7 @@ final class FlintHistoryReadOnlyTests: XCTestCase {
         defer { NotificationCenter.default.removeObserver(token) }
         _ = FlintHistoryReconciler.reconcile(store: host, activeSession: nil, now: now.addingTimeInterval(4000))
         _ = FlintHistoryReconciler.reconcile(store: host, activeSession: nil, now: now.addingTimeInterval(5000))
-        XCTAssertEqual(inferredSnapshots.count, 1)
-        XCTAssertEqual(inferredSnapshots.first?.last?.type, .completed)
-        XCTAssertEqual(inferredSnapshots.first?.last?.inferred, true)
+        XCTAssertTrue(inferredSnapshots.isEmpty)
+        XCTAssertEqual(host.readOnlySnapshot().events.count, 1)
     }
 }

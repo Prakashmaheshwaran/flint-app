@@ -47,22 +47,70 @@ final class FlintHistoryTests: XCTestCase {
         XCTAssertEqual(summary([event(.started, 0), event(.completed, 3600), event(.endedEarly, 3700)]).sessions[0].outcome, .completed)
         XCTAssertEqual(summary([event(.started, 0), event(.endedEarly, 3600), event(.completed, 3600)]).sessions[0].outcome, .endedEarly)
     }
-    func testFH05ExpiredMissingTerminalIsPersistedAsInferredCompletion() {
+    func testFH05ExpiredMissingTerminalRemainsUnconfirmedWithoutPersistingAnEnd() {
         let s = store(); s.append(event(.started, 0))
         let snapshot = FlintHistoryReconciler.reconcile(store: s, activeSession: nil, now: t.addingTimeInterval(4000), calendar: utc)
-        XCTAssertEqual(snapshot.events.last?.type, .completed)
-        XCTAssertEqual(snapshot.events.last?.inferred, true)
-        XCTAssertEqual(snapshot.events.last?.at, event(.completed, 3600).at)
+        XCTAssertEqual(snapshot.events.count, 1)
+        let result = summary(snapshot.events)
+        XCTAssertEqual(result.sessions.first?.outcome, .unconfirmed)
+        XCTAssertEqual(result.focusedSeconds, 0)
+        XCTAssertEqual(result.days.reduce(0) { $0 + $1.completed }, 0)
+        XCTAssertEqual(result.days.reduce(0) { $0 + $1.unconfirmed }, 1)
+        XCTAssertEqual(result.streak, 0)
         _ = FlintHistoryReconciler.reconcile(store: s, activeSession: nil, now: t.addingTimeInterval(5000), calendar: utc)
-        XCTAssertEqual(s.read().events.count, 2)
+        XCTAssertEqual(s.read().events.count, 1)
     }
-    func testFH06MissingActiveSessionCreditsZeroAndPersistsUnknown() {
+    func testFH06MissingActiveSessionCreditsZeroAndLeavesOutboxRecoveryOpen() {
         let s = store(); s.append(event(.started, 0))
         let snapshot = FlintHistoryReconciler.reconcile(store: s, activeSession: nil, now: t.addingTimeInterval(300), calendar: utc)
-        XCTAssertEqual(snapshot.events.last?.route, "unknown")
-        XCTAssertEqual(snapshot.events.last?.inferred, true)
+        XCTAssertEqual(snapshot.events.count, 1)
+        XCTAssertEqual(summary(snapshot.events, now: t.addingTimeInterval(300)).sessions.first?.outcome, .unconfirmed)
         XCTAssertEqual(summary(snapshot.events).focusedSeconds, 0)
         XCTAssertEqual(summary([event(.started, 0, end: nil)]).focusedSeconds, 0)
+    }
+    func testR17KilledSessionOnlyCreditsPositiveCoverageAndSubtractsBreaks() {
+        let events = [event(.started, 0), event(.breakStarted, 600), event(.breakEnded, 900),
+                      event(.protectionDegraded, 1200), event(.protectionRestored, 1800)]
+        let result = summary(events)
+        XCTAssertEqual(result.sessions[0].outcome, .unconfirmed)
+        XCTAssertEqual(result.focusedSeconds, 900)
+        XCTAssertEqual(result.days.reduce(0) { $0 + $1.completed }, 0)
+        // A stale active ID after the deadline cannot turn the plan into proof.
+        XCTAssertEqual(summary([event(.started, 0)], active: "a").focusedSeconds, 0)
+    }
+    func testR17LateMonitorOutboxResolvesWithoutGuessedTerminalWinning() {
+        let host = store(); XCTAssertTrue(host.append(event(.started, 0)))
+        for seconds in [300.0, 4000.0, 5000.0] {
+            let snapshot = FlintHistoryReconciler.reconcile(store: host, activeSession: nil,
+                now: t.addingTimeInterval(seconds), calendar: utc)
+            XCTAssertEqual(snapshot.events.count, 1)
+        }
+        let monitor = FlintHistoryStore(directory: directory, clock: { self.t.addingTimeInterval(5000) }, isHost: false)
+        var terminal = event(.completed, 3600, inferred: true)
+        terminal.originRoute = "monitor"; terminal.observedAt = FlintHistoryEvent.milliseconds(t.addingTimeInterval(5000))
+        XCTAssertTrue(monitor.append(terminal)); XCTAssertTrue(monitor.append(terminal))
+        let snapshot = FlintHistoryReconciler.reconcile(store: host, activeSession: nil,
+            now: t.addingTimeInterval(5000), calendar: utc)
+        let result = summary(snapshot.events)
+        XCTAssertEqual(result.focusedSeconds, 3600)
+        XCTAssertEqual(result.days.reduce(0) { $0 + $1.completed }, 1)
+        XCTAssertEqual(result.days.reduce(0) { $0 + $1.unconfirmed }, 0)
+    }
+    func testR17UnconfirmedDSTAndMidnightStayZeroUntilLogicalTerminalArrives() {
+        var c = utc; c.timeZone = TimeZone(identifier: "America/New_York")!
+        for (month, day, startHour, endHour) in [(3, 8, 1, 3), (11, 1, 0, 2), (3, 8, 23, 24), (11, 1, 23, 24)] {
+            let start = c.date(from: DateComponents(year: 2026, month: month, day: day, hour: startHour, minute: 30))!
+            let end = endHour == 24 ? start.addingTimeInterval(3600) :
+                c.date(from: DateComponents(year: 2026, month: month, day: day, hour: endHour, minute: 30))!
+            let events = absoluteSession(start: start, end: end)
+            let unknown = summary([events[0]], now: end.addingTimeInterval(3600), calendar: c, start: start)
+            XCTAssertEqual(unknown.focusedSeconds, 0)
+            XCTAssertEqual(unknown.days.reduce(0) { $0 + $1.unconfirmed }, 1)
+            XCTAssertEqual(unknown.days.reduce(0) { $0 + $1.completed }, 0)
+            let confirmed = summary(events, now: end.addingTimeInterval(3600), calendar: c, start: start)
+            XCTAssertEqual(confirmed.focusedSeconds, end.timeIntervalSince(start))
+            if endHour == 24 { XCTAssertEqual(confirmed.days.suffix(2).compactMap(\.focusedSeconds), [1800, 1800]) }
+        }
     }
     func testFH07MidnightSplitsTimeAndCountsOnEndDay() {
         let start = utc.date(from: DateComponents(year: 2026, month: 10, day: 27, hour: 23, minute: 30))!
@@ -199,7 +247,11 @@ final class FlintHistoryTests: XCTestCase {
         let running = summary([event(.started, 0), extended], now: t.addingTimeInterval(4000), active: "a")
         XCTAssertEqual(running.sessions[0].outcome, .running)
         XCTAssertEqual(running.focusedSeconds, 4000)
-        let completed = summary([event(.started, 0), extended], now: t.addingTimeInterval(8000))
+        let unconfirmed = summary([event(.started, 0), extended], now: t.addingTimeInterval(8000))
+        XCTAssertEqual(unconfirmed.sessions[0].outcome, .unconfirmed)
+        XCTAssertEqual(unconfirmed.focusedSeconds, 0, "A reschedule is a plan, not coverage evidence")
+        XCTAssertEqual(unconfirmed.days.reduce(0) { $0 + $1.completed }, 0)
+        let completed = summary([event(.started, 0), extended, event(.completed, 7200)], now: t.addingTimeInterval(8000))
         XCTAssertEqual(completed.sessions[0].outcome, .completed)
         XCTAssertEqual(completed.focusedSeconds, 7200)
         var shortened = event(.rescheduled, 600); shortened.plannedEnd = event(.completed, 1200).at

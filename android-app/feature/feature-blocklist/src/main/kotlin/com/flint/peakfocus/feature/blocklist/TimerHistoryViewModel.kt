@@ -23,7 +23,8 @@ internal data class TimerHistoryState(val summary: FocusSummary? = null, val com
 
 internal fun completionFromHistory(summary: FocusSummary?, dismissedId: String?, todayEpochMs: Long, zone: ZoneId): FocusSession? {
     val today = Instant.ofEpochMilli(todayEpochMs).atZone(zone).toLocalDate()
-    val latest = summary?.sessions?.maxByOrNull { it.end } ?: return null
+    val latest = summary?.sessions?.filter { it.outcome != SessionOutcome.UNCONFIRMED }
+        ?.maxByOrNull { it.end } ?: return null
     return latest.takeIf {
         it.id != dismissedId && it.outcome == SessionOutcome.COMPLETED && it.terminalRecorded &&
             Instant.ofEpochMilli(it.end).atZone(zone).toLocalDate() == today

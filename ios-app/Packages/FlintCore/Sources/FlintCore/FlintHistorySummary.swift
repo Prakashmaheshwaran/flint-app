@@ -1,7 +1,7 @@
 import Foundation
 
 public enum FlintHistoryOutcome: Equatable, Sendable {
-    case running, completed, endedEarly, superseded
+    case running, completed, endedEarly, superseded, unconfirmed
 }
 
 public struct FlintHistorySessionSummary: Identifiable, Equatable, Sendable {
@@ -31,11 +31,13 @@ public struct FlintHistoryDay: Equatable, Sendable, Identifiable {
     public var completed = 0
     public var endedEarly = 0
     public var inProgress = false
+    public var unconfirmed = 0
 
     public init(start: Date, focusedSeconds: TimeInterval?, completed: Int = 0, endedEarly: Int = 0,
-                inProgress: Bool = false) {
+                inProgress: Bool = false, unconfirmed: Int = 0) {
         self.start = start; self.focusedSeconds = focusedSeconds; self.completed = completed
         self.endedEarly = endedEarly; self.inProgress = inProgress
+        self.unconfirmed = unconfirmed
     }
 }
 
@@ -79,6 +81,7 @@ public enum FlintHistoryAggregator {
                 case .completed: days[index].completed += 1
                 case .endedEarly, .superseded: days[index].endedEarly += 1
                 case .running: days[index].inProgress = true
+                case .unconfirmed: days[index].unconfirmed += 1
                 }
             }
         }
@@ -115,13 +118,20 @@ public enum FlintHistoryAggregator {
                 outcome = terminal.type == .completed ? .completed : terminal.type == .superseded ? .superseded : .endedEarly
                 end = terminal.date; inferred = terminal.inferred == true; route = terminal.route
             } else if let plannedEnd, plannedEnd <= now {
-                outcome = .completed; end = plannedEnd; inferred = true; route = nil
+                outcome = .unconfirmed; end = plannedEnd; inferred = true; route = nil
             } else if id == activeSessionID {
                 outcome = .running; end = now; inferred = false; route = nil
             } else {
-                outcome = .endedEarly; end = now; inferred = true; route = "unknown"
+                outcome = .unconfirmed; end = now; inferred = true; route = "unknown"
             }
-            let clippedEnd = min(end, plannedEnd ?? end)
+            // A plan/start alone proves no elapsed coverage. Later lifecycle observations
+            // can confirm only the prefix through that observation, never the planned tail.
+            let coverageEnd = events.filter {
+                [.breakStarted, .breakEnded, .protectionDegraded, .protectionRestored, .openIntercepted].contains($0.type)
+                    && $0.date <= now
+            }.map(\.date).max() ?? start.date
+            let evidencedEnd = outcome == .unconfirmed ? min(end, coverageEnd) : end
+            let clippedEnd = min(evidencedEnd, plannedEnd ?? evidencedEnd, now)
             let unknownEnd = outcome == .endedEarly && inferred && route == "unknown"
             var intervals: [DateInterval] = []
             if clippedEnd > start.date, !unknownEnd {
@@ -182,21 +192,12 @@ public enum FlintHistoryAggregator {
 }
 
 public enum FlintHistoryReconciler {
-    /// Host-only. Repeated/concurrent reconciles may append duplicates; first-terminal-wins
-    /// aggregation makes those idempotent. It never changes the active/enforcement store.
+    /// Drain committed outbox records and maintain retention. History is a projection:
+    /// only the lifecycle owner may commit an end, including during cold-start recovery.
     public static func reconcile(store: FlintHistoryStore, activeSession: FlintActiveSession?, now: Date,
                                  calendar: Calendar = .current) -> FlintHistorySnapshot {
         let snapshot = store.read()
         guard snapshot.availability != .unavailable else { return snapshot }
-        let terminalIDs = Set(snapshot.events.filter { $0.isSupported && $0.type.isTerminal }.map(\.session))
-        var appended = false
-        for session in FlintHistoryAggregator.sessionSummaries(snapshot.events, activeSessionID: activeSession?.id, now: now)
-            where session.inferred && !terminalIDs.contains(session.id) {
-            let committed = store.append(FlintHistoryEvent(type: session.outcome == .completed ? .completed : .endedEarly,
-                session: session.id, at: session.endedAt, timeZone: calendar.timeZone, inferred: true, route: session.route))
-            appended = committed || appended
-        }
-        if appended { store.didCommitReconciliation() }
         store.compactIfNeeded()
         return store.read()
     }

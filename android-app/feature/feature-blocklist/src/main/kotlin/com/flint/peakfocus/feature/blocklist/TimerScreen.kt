@@ -329,7 +329,7 @@ private fun TodayScene(
                             MaterialTheme.typography.displaySmall.merge(FlintNumerals) else MaterialTheme.typography.titleLarge,
                             textAlign = TextAlign.Center)
                         FlintEyebrow("Focused today")
-                        FocusHistoryText.note(history)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = FlintPalette.Mist) }
+                        FocusHistoryText.note(history, resources = LocalContext.current.resources)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = FlintPalette.Mist) }
                         Text("Your next session · ${timerDurationLabel(state.draft.durationMinutes)}",
                             style = MaterialTheme.typography.bodySmall, color = FlintPalette.Mist,
                             modifier = Modifier.padding(top = 12.dp))
@@ -653,7 +653,7 @@ private fun CompleteScene(
                 color = FlintPalette.Mist, modifier = Modifier.padding(top = 10.dp))
             session.breaks?.let { Text(FocusHistoryText.breaks(it), modifier = Modifier.padding(top = 10.dp)) }
             session.opensIntercepted?.let { Text(FocusHistoryText.opensStopped(it), modifier = Modifier.padding(top = 10.dp)) }
-            FocusHistoryText.note(summary)?.let { Text(it, style = MaterialTheme.typography.bodySmall,
+            FocusHistoryText.note(summary, resources = LocalContext.current.resources)?.let { Text(it, style = MaterialTheme.typography.bodySmall,
                 color = FlintPalette.Mist, modifier = Modifier.padding(top = 10.dp)) }
             Spacer(Modifier.height(48.dp))
             BoneButton("Done", onDone)

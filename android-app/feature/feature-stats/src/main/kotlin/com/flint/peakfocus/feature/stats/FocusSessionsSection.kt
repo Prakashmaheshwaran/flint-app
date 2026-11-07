@@ -107,7 +107,7 @@ internal fun FocusSessionsSection() {
                 }
             }
             if (summary.streak > 0) Text("${summary.streak}-day completion streak", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 12.dp))
-            FocusHistoryText.note(summary, shown)?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp)) }
+            FocusHistoryText.note(summary, shown, LocalContext.current.resources)?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp)) }
         }
     }
     Spacer(Modifier.height(FlintSpacing.cardGap))

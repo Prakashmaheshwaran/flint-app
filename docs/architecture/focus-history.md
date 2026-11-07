@@ -80,11 +80,12 @@ that precedes the terminal event; every rule below uses it.
    idempotent.
 2. No terminal event and the session is the platform's current active session with
    `now < plannedEnd` (or open-ended) → **running**.
-3. No terminal event, `plannedEnd != null`, `plannedEnd <= now` → **completed (inferred)**
-   at `plannedEnd`. The reconciler may persist this as `completed` with `inferred: true`.
+3. No terminal event, `plannedEnd != null`, `plannedEnd <= now` → **unconfirmed**
+   at `plannedEnd`, including when a stale active-session identifier remains. A start and
+   a planned deadline do not prove completion (R-17, ADR-012 §11 / PC-84).
 4. No terminal event, not the current active session, `plannedEnd > now` or open-ended →
-   **ended early, unknown route (inferred)** at the observation time. The reconciler may
-   persist it as `ended_early(route: unknown, inferred: true)`.
+   **unconfirmed** at the observation time. Neither rule 3 nor rule 4 writes a terminal.
+   A later durable owner/outbox terminal resolves the projection, idempotently.
 5. A session with terminal events but no `started` is orphaned and contributes nothing.
 
 ## Focused time
@@ -94,8 +95,14 @@ For one session:
 - Interval = `[started.at, end)` where `end` is the terminal event's `at`, clamped to the
   effective planned end when it is not `null`. Running sessions use `end = now` and are labelled
   "in progress" wherever shown.
-- **Inferred unknown ends (rule 4) credit zero focused time.** Flint cannot prove when such a
-  session actually stopped, so it under-reports rather than invents time.
+- **Unconfirmed sessions credit zero time from a start alone.** Later session observations
+  (`open_intercepted`, break boundaries, coverage loss/restoration) evidence only the prefix
+  through their effective timestamp, clipped to the deadline and now. Subtract breaks and
+  coverage gaps as below; never credit the unobserved tail. A reschedule only changes the
+  plan and is not coverage evidence. Legacy inferred unknown early ends still credit zero.
+- Unconfirmed sessions never count as completed, ended early, or toward a completion
+  streak. Count them separately on the planned-end day (or observation day when not expired)
+  and show a localized “1 session couldn't be confirmed” note in the selected UI range.
 - Subtract break intervals `[break_started.at, break_ended.at ?? breakEnd ?? end)`, pass
   windows `[pass_used.at, recoveryEnd)` for sessions listed in `sessions`, and coverage gaps
   `[protection_degraded.at, protection_restored.at ?? end)`, each clipped to the session
@@ -120,8 +127,8 @@ data can never double count.
 ### Streak (optional UI)
 
 Number of consecutive local days, ending today — or ending yesterday when today has no
-completed session yet — each with at least one `completed` session (inferred completions
-count). Days before history start break the streak.
+completed session yet — each with at least one recorded `completed` terminal (including
+durable owner recovery/outbox events). Days before history start break the streak.
 
 ## Absent versus zero
 
@@ -194,8 +201,8 @@ adapter owns the timing — no early-callback allowance). Proposed hook sites, f
 lane B to accept or adapt: `FlintSessionController.startBlockNow` (after saving the active
 session), `stop(route:)`, `finishIfExpired`, `useEmergencyPass`, the monitor's session
 `intervalDidEnd` branch (before `clearActiveSession`), Shortcuts stop, Focus filter off,
-and the registration-failure path. The host reconciles on launch/foreground (rules 3–4)
-so a missed extension write still produces a truthful outcome.
+and the registration-failure path. History's host reconciliation drains committed extension
+events; it never manufactures an end from a missed callback or a missing active row.
 
 ### Android — observed transitions
 
@@ -205,9 +212,10 @@ diffs successfully read session-rule snapshots against the history's open sessio
 else observation time; expired rules with no recorded start create nothing); a present rule
 whose `expiresAt` differs from the effective planned end → `rescheduled`; a present, enabled
 rule is never completed from an older planned end;
-a session rule gone with `now >= expiresAt` → `completed` at `expiresAt`; gone earlier →
+a session rule gone with `now >= expiresAt` stays unconfirmed until the lifecycle owner
+records a terminal; gone earlier during live observation →
 `ended_early(route: unknown)` at observation time — observed in-process, so this one
-credits time to the observation instant, unlike rule 4's cold-start inference. Explicit
+credits time to the observation instant. A cold-start missing row emits no terminal. Explicit
 route, break, pass and `open_intercepted` emission needs one call each in
 `BlockScreenCoordinator` / the rules store, added only with lane C's agreement.
 
@@ -229,8 +237,9 @@ route, break, pass and `open_intercepted` emission needs one call each in
 - **FH-02** started + ended_early at half time → ended early, half duration credited.
 - **FH-03** duplicate `completed` (monitor + reconcile) → counted once.
 - **FH-04** `completed` then a later `ended_early` → completed wins.
-- **FH-05** no terminal, planned end passed, not active → completed (inferred).
-- **FH-06** no terminal, not active, planned end in future → ended early (unknown), zero credit.
+- **FH-05** no terminal, planned end passed → unconfirmed, zero credit from a start alone,
+  no completion/streak credit; stale active IDs do not change this.
+- **FH-06** no terminal, not active, planned end in future → unconfirmed, zero credit.
 - **FH-07** session 23:30–00:30 local → 30 min on each day.
 - **FH-08** DST spring-forward day (America/New_York 2026-03-08) — 01:30–03:30 local is 1 h of
   focus, and the day is 23 h long; fall-back (2026-11-01) 00:30–02:30 local is 3 h.
@@ -250,3 +259,7 @@ route, break, pass and `open_intercepted` emission needs one call each in
 - **FH-21** a global `pass_used` listing two sessions subtracts `[at, recoveryEnd)` from
   each; a `protection_degraded`/`protection_restored` gap is subtracted; `access_*` events
   change nothing.
+- **R-17 / PC-84** killed sessions survive repeated cold reconciliation without a guessed
+  terminal; late monitor/service outbox completion resolves once at its logical deadline.
+  Positive coverage credits only its prefix minus breaks/gaps; expired starts remain zero
+  across DST and local midnight, and widgets/Live Activity use the same public aggregate.

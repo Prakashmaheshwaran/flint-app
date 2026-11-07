@@ -31,6 +31,7 @@ struct FocusHistorySection: View {
                             .accessibilityLabel("\(FocusHistoryText.duration(FocusHistoryText.total(days))) focused")
                         Text(showsWeek ? FocusHistoryText.weekLabel(days) : "Focused today").flintSecondary(14)
                         if days.contains(where: \.inProgress) { Text("Includes a session in progress").flintSecondary(13) }
+                        if let note = FocusHistoryText.unconfirmed(days) { Text(note).flintSecondary(13) }
                         bars
                         VStack(alignment: .leading, spacing: 6) {
                             Text("\(days.reduce(0) { $0 + $1.completed }) completed · \(days.reduce(0) { $0 + $1.endedEarly }) ended early")
@@ -89,6 +90,8 @@ struct FocusedTodayCard: View {
                 Text(FocusHistoryText.today(history.summary)).flintSecondary(16)
             }
             if history.summary?.days.last?.inProgress == true { Text("In progress").flintSecondary(13) }
+            if let day = history.summary?.days.last,
+               let note = FocusHistoryText.unconfirmed([day]) { Text(note).flintSecondary(13) }
             if history.summary?.availability == .degraded { Text(FocusHistoryText.degraded).flintSecondary(13) }
             if history.isPreview { Text("DEBUG · Seeded preview events").flintSecondary(12) }
             Text("Your next session · \(nextSessionDuration)")
