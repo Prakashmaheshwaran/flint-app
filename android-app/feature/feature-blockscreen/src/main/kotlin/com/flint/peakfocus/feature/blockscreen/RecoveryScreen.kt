@@ -9,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.Role
+import com.flint.peakfocus.core.common.theme.FlintPalette
 
 data class RecoveryChoice(val key: String, val name: String, val canDisable: Boolean = true)
 internal fun canDisableRecoverySelection(choices: List<RecoveryChoice>, selected: Set<String>): Boolean =
@@ -54,12 +55,14 @@ fun RecoveryScreen(
         Column(Modifier.safeDrawingPadding().verticalScroll(rememberScrollState()).padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             TextButton(onClick = onBack) { Text("Back to Flint") }
-            Text("Protection recovery", style = MaterialTheme.typography.headlineMedium)
+            Text("PROTECTION RECOVERY", style = MaterialTheme.typography.labelMedium, color = FlintPalette.Mist)
+            Text("Use your Emergency Pass?", style = MaterialTheme.typography.headlineMedium)
+            Text("Protection recovery", style = MaterialTheme.typography.titleSmall)
             Text("One Emergency Pass becomes available seven days after you use it. It starts 60 minutes of recovery across all personal protection.")
             if (state.loading || state.saving) CircularProgressIndicator()
             if (state.unavailable) {
                 Text("Protection state unavailable", color = MaterialTheme.colorScheme.error)
-                Button(onClick = onRetry, enabled = !state.saving) { Text("Try again") }
+                com.flint.peakfocus.core.common.ui.EmberButton("Try again", onRetry, enabled = !state.saving)
             }
             if (state.previousAccessEnded) Text("Access ended after restart; no extra credit was spent.")
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -75,7 +78,7 @@ fun RecoveryScreen(
                 Text("Recovery ends in ${formatDuration(state.remainingRecoveryMillis)}", style = MaterialTheme.typography.titleLarge)
                 state.resumeAt?.let { Text("Protection resumes: $it") }
                 Text("Only commitments still naturally active will resume. Counters and the next pass time stay unchanged.")
-                Button(onClick = onResume, enabled = !state.saving) { Text("Resume protection now") }
+                com.flint.peakfocus.core.common.ui.EmberButton("Resume protection now", onResume, enabled = !state.saving)
                 if (state.choices.isNotEmpty()) {
                     Text("Choose commitments to change before resuming. Time and Open limits can only be deleted.")
                     state.choices.forEach { choice ->
@@ -95,7 +98,7 @@ fun RecoveryScreen(
                     }
                 }
             } else if (state.available) {
-                Button(onClick = onPreview, enabled = !state.saving) { Text("Review Emergency Pass") }
+                com.flint.peakfocus.core.common.ui.EmberButton("Review Emergency Pass", onPreview, enabled = !state.saving)
             }
             state.nextPassAt?.let { Text("Next pass: $it") }
             if (state.timeUncertain) Text("Time is uncertain after a clock change or restart. Eligibility may be later than seven calendar days.")
