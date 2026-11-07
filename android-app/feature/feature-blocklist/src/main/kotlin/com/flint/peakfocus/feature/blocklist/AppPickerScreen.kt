@@ -489,6 +489,7 @@ private fun AppPickerRow(
             label = app.label,
             size = 40.dp,
             cornerRadius = 12.dp,
+            preloadedIcon = app.icon, // decoded off the main thread by InstalledAppsSource
         )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Text(

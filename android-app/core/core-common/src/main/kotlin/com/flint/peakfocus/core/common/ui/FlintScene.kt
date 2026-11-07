@@ -486,7 +486,10 @@ fun FlintTabBar(
             val pixels = measurer.measure(AnnotatedString(tab.label), styles.getValue(tab), softWrap = false).size.width
             maxOf(48.dp, with(density) { pixels.toDp() } + 8.dp + 1.dp)
         }
-        val plan = planFlintTabBar(widths, maxWidth)
+        // Plan against the content box: 6dp bar padding and 1dp border per side, plus the
+        // 4dp gaps between the four tabs, so labels never ellipsize in a "fits" plan.
+        val contentWidth = maxWidth - 6.dp * 2 - 1.dp * 2 - 4.dp * (FlintTabGlyph.entries.size - 1)
+        val plan = planFlintTabBar(widths, contentWidth)
         val shape = if (plan.singleRow) RoundedCornerShape(34.dp) else RoundedCornerShape(32.dp)
         val item: @Composable (FlintTabGlyph, Modifier) -> Unit = { tab, itemModifier ->
             val isSelected = tab == selected

@@ -366,10 +366,18 @@ private fun TodayScene(
                     ),
                     modifier = Modifier.weight(1f),
                 )
+                // Fail closed: only a loaded rule set may claim "Protected · N rules".
+                val pillText = when {
+                    setupLabel != null -> "Setup needed"
+                    rulesState is RulesUiState.Unavailable -> "Rules unavailable"
+                    ready == null -> "Checking rules…"
+                    else -> "Protected · ${authored.size} ${if (authored.size == 1) "rule" else "rules"}"
+                }
+                val healthy = setupLabel == null && ready != null
                 FlintStatusPill(
-                    text = if (setupLabel != null) "Setup needed" else "Protected · ${authored.size} ${if (authored.size == 1) "rule" else "rules"}",
-                    emphasized = setupLabel == null,
-                    dot = setupLabel == null,
+                    text = pillText,
+                    emphasized = healthy,
+                    dot = healthy,
                     modifier = Modifier.clip(RoundedCornerShape(percent = 50)).clickable(onClick = onOpenRules),
                 )
             }
@@ -399,7 +407,8 @@ private fun TodayScene(
             TodayStatsRow(
                 focused = FocusHistoryText.today(history),
                 next = nextLabel,
-                restingApps = active?.targets?.apps?.toList().orEmpty(),
+                // Allow-list rules list the apps left open, so they are never "resting".
+                restingApps = active?.targets?.takeUnless { it.allowListMode }?.apps?.toList().orEmpty(),
             )
 
             if (setupLabel != null || (headline != null && state.rulesError != null)) {
@@ -628,7 +637,7 @@ private fun TodayNowCard(
                     .background(FlintPalette.Ember),
             )
         }
-        val apps = rule.targets.apps.toList()
+        val apps = rule.targets.takeUnless { it.allowListMode }?.apps?.toList().orEmpty()
         if (apps.isNotEmpty()) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 apps.take(5).forEach { app ->

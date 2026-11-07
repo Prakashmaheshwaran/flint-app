@@ -426,7 +426,8 @@ private fun BlocklistOverview(
     val limitRows = (limitsState as? LimitsUiState.Ready)?.rows
     val nowMinute = localMinuteOfDay(System.currentTimeMillis())
     val activeRule = authoredRules?.firstOrNull { ruleStatuses[it.id]?.activeNow == true }
-    val activeApps = activeRule?.targets?.apps?.toList().orEmpty()
+    // Allow-list rules name the apps left open, not the ones resting: never show those as resting.
+    val activeApps = activeRule?.targets?.takeUnless { it.allowListMode }?.apps?.toList().orEmpty()
     val sleepConfig = (rulesState as? RulesUiState.Ready)?.let { sleepConfigFrom(it.rules) }
 
     LazyColumn(

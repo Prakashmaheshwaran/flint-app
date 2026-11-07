@@ -279,60 +279,37 @@ private fun LimitEditorContent(
                 }
             }
 
-            val minus: () -> Unit = {
-                haptics.tick()
-                draft = if (draft.timeEnabled) {
-                    draft.copy(minutesText = ((draft.minutesText.toIntOrNull() ?: 30) - 5).coerceAtLeast(5).toString())
-                } else {
-                    draft.copy(opensText = ((draft.opensText.toIntOrNull() ?: 5) - 1).coerceAtLeast(1).toString())
-                }
+            // One allowance control per enabled limit: both limits are independent, so the
+            // credit count must stay editable when the time limit is on too.
+            if (draft.timeEnabled) {
+                AllowanceStepper(
+                    label = "Daily allowance · minutes",
+                    text = draft.minutesText,
+                    onText = { draft = draft.copy(minutesText = it) },
+                    onMinus = {
+                        haptics.tick()
+                        draft = draft.copy(minutesText = ((draft.minutesText.toIntOrNull() ?: 30) - 5).coerceAtLeast(5).toString())
+                    },
+                    onPlus = {
+                        haptics.tick()
+                        draft = draft.copy(minutesText = ((draft.minutesText.toIntOrNull() ?: 30) + 5).coerceAtMost(240).toString())
+                    },
+                )
             }
-            val plus: () -> Unit = {
-                haptics.tick()
-                draft = if (draft.timeEnabled) {
-                    draft.copy(minutesText = ((draft.minutesText.toIntOrNull() ?: 30) + 5).coerceAtMost(240).toString())
-                } else {
-                    draft.copy(opensText = ((draft.opensText.toIntOrNull() ?: 5) + 1).coerceAtMost(20).toString())
-                }
-            }
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(top = 18.dp)
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(FlintPalette.Card)
-                    .border(1.dp, FlintPalette.Hairline, RoundedCornerShape(22.dp))
-                    .padding(start = 16.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Daily allowance", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), color = FlintPalette.Mist)
-                    androidx.compose.foundation.text.BasicTextField(
-                        value = if (draft.timeEnabled) draft.minutesText else draft.opensText,
-                        onValueChange = { text ->
-                            val digits = text.filter { it.isDigit() }
-                            draft = if (draft.timeEnabled) {
-                                draft.copy(minutesText = digits)
-                            } else {
-                                draft.copy(opensText = digits)
-                            }
-                        },
-                        singleLine = true,
-                        textStyle = MaterialTheme.typography.titleLarge.copy(fontSize = 24.sp).merge(FlintNumerals),
-                        cursorBrush = androidx.compose.ui.graphics.SolidColor(FlintPalette.Ember),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier
-                            .width(100.dp)
-                            .semantics { contentDescription = "Daily allowance" },
-                    )
-                }
-                FlintCircleButton(onClick = minus, contentDescription = "Less", size = 44.dp) {
-                    Icon(FlintGlyphs.minus, contentDescription = null, modifier = Modifier.size(16.dp))
-                }
-                Spacer(Modifier.width(8.dp))
-                FlintCircleButton(onClick = plus, contentDescription = "More", size = 44.dp) {
-                    Icon(FlintGlyphs.plus, contentDescription = null, modifier = Modifier.size(16.dp))
-                }
+            if (draft.openEnabled) {
+                AllowanceStepper(
+                    label = "Daily allowance · credits",
+                    text = draft.opensText,
+                    onText = { draft = draft.copy(opensText = it) },
+                    onMinus = {
+                        haptics.tick()
+                        draft = draft.copy(opensText = ((draft.opensText.toIntOrNull() ?: 5) - 1).coerceAtLeast(1).toString())
+                    },
+                    onPlus = {
+                        haptics.tick()
+                        draft = draft.copy(opensText = ((draft.opensText.toIntOrNull() ?: 5) + 1).coerceAtMost(20).toString())
+                    },
+                )
             }
         }
 
@@ -411,3 +388,46 @@ private fun LimitTypeCard(
 }
 
 private fun minutesTextValue(text: String): Int = text.trim().toIntOrNull()?.coerceIn(1, 1440) ?: 30
+
+/** A v3 allowance card: editable number plus −/+ steppers. */
+@Composable
+private fun AllowanceStepper(
+    label: String,
+    text: String,
+    onText: (String) -> Unit,
+    onMinus: () -> Unit,
+    onPlus: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 18.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(FlintPalette.Card)
+            .border(1.dp, FlintPalette.Hairline, RoundedCornerShape(22.dp))
+            .padding(start = 16.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(label, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), color = FlintPalette.Mist)
+            androidx.compose.foundation.text.BasicTextField(
+                value = text,
+                onValueChange = { onText(it.filter { c -> c.isDigit() }) },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.titleLarge.copy(fontSize = 24.sp).merge(FlintNumerals),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(FlintPalette.Ember),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier
+                    .width(100.dp)
+                    .semantics { contentDescription = label },
+            )
+        }
+        FlintCircleButton(onClick = onMinus, contentDescription = "Less", size = 44.dp) {
+            Icon(FlintGlyphs.minus, contentDescription = null, modifier = Modifier.size(16.dp))
+        }
+        Spacer(Modifier.width(8.dp))
+        FlintCircleButton(onClick = onPlus, contentDescription = "More", size = 44.dp) {
+            Icon(FlintGlyphs.plus, contentDescription = null, modifier = Modifier.size(16.dp))
+        }
+    }
+}

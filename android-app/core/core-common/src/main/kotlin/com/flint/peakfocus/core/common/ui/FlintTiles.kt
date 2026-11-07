@@ -3,6 +3,7 @@ package com.flint.peakfocus.core.common.ui
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
+import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -13,7 +14,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -27,6 +29,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.flint.peakfocus.core.common.theme.FlintPalette
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * The v3 app tile: a real launcher icon on an 11–18dp rounded square, with the resting variant
@@ -42,11 +46,21 @@ fun FlintAppTile(
     size: Dp = 40.dp,
     resting: Boolean = false,
     cornerRadius: Dp? = null,
+    /** An icon the caller already decoded off the main thread; preferred over a lookup. */
+    preloadedIcon: ImageBitmap? = null,
 ) {
-    val context = LocalContext.current
+    val context = LocalContext.current.applicationContext
     val sizePx = with(LocalDensity.current) { size.roundToPx() }
-    val icon = remember(packageName, sizePx) {
-        runCatching { context.packageManager.getApplicationIcon(packageName).toTileBitmap(sizePx) }.getOrNull()
+    val cacheKey = "$packageName@$sizePx"
+    // PackageManager is a binder call and rasterizing allocates: never do either during
+    // composition. Show the initial until the background load (or the cache) answers.
+    val icon by produceState(preloadedIcon ?: TileIconCache.get(cacheKey), preloadedIcon, cacheKey) {
+        if (value != null) return@produceState
+        value = withContext(Dispatchers.IO) {
+            runCatching { context.packageManager.getApplicationIcon(packageName).toTileBitmap(sizePx) }
+                .getOrNull()
+                ?.also { TileIconCache.put(cacheKey, it) }
+        }
     }
     val radius = cornerRadius ?: (size * 0.3f)
     val shape = RoundedCornerShape(radius)
@@ -57,9 +71,10 @@ fun FlintAppTile(
             .background(if (resting) Color(0xFF232226) else MaterialTheme.colorScheme.surfaceContainerHighest),
         contentAlignment = Alignment.Center,
     ) {
-        if (icon != null) {
+        val shown = icon
+        if (shown != null) {
             Image(
-                bitmap = icon,
+                bitmap = shown,
                 contentDescription = null,
                 alpha = if (resting) 0.26f else 1f,
                 modifier = Modifier.size(size).clip(shape),
@@ -98,4 +113,11 @@ private fun Drawable.toTileBitmap(sizePx: Int): ImageBitmap {
     setBounds(0, 0, px, px)
     draw(Canvas(bitmap))
     return bitmap.asImageBitmap()
+}
+
+/** Process-wide cache of rasterized tiles, keyed by package and pixel size (~64 tiles). */
+private object TileIconCache {
+    private val cache = LruCache<String, ImageBitmap>(64)
+    fun get(key: String): ImageBitmap? = cache.get(key)
+    fun put(key: String, icon: ImageBitmap) { cache.put(key, icon) }
 }
