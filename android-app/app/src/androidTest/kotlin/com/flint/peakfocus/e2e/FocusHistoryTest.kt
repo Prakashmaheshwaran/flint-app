@@ -110,7 +110,9 @@ class FocusHistoryTest : FlintE2EFixture() {
         scrollTo(target).click(); click("Done · 1 app")
         visible(By.text("1 app resting"))
         showDurationControls()
-        visible(By.desc("25 minutes").enabled(true)).click()
+        // v3 Start focus has no minute chips (M04): step the fresh 30m default down once.
+        scrollTo("Begin 30m")
+        visible(By.desc("Less time").enabled(true)).click()
         scrollTo("Begin 25m")
         for (minutes in listOf(20, 15, 10, 5)) {
             showDurationControls()

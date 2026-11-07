@@ -114,7 +114,10 @@ class FlintSmokeTest : FlintE2EFixture() {
             // use the native Timer without depending on the runner's local clock/zone.
             clickTab("Today")
             scrollTo("Start focus").click()
-            visible(By.desc("25 minutes")).click()
+            // v3 Start focus has no minute chips (M04): step the 30m default down once.
+            scrollTo("Begin 30m")
+            visible(By.desc("Less time").enabled(true)).click()
+            scrollTo("Begin 25m")
             scrollTo("Choose what rests").click()
             visible(By.text("What rests"))
             scrollTo(target).click()
