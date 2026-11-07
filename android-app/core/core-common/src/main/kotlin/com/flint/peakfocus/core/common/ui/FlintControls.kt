@@ -104,6 +104,8 @@ fun EmberButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    minHeight: Dp = 56.dp,
+    leadingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
 ) {
     val source = remember { MutableInteractionSource() }
     val scale = pressScale(source)
@@ -116,7 +118,7 @@ fun EmberButton(
         interactionSource = source,
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 56.dp)
+            .heightIn(min = minHeight)
             .graphicsLayer { scaleX = scale; scaleY = scale; alpha = if (enabled) 1f else 0.45f }
             .shadow(if (enabled) 18.dp else 0.dp, CircleShape, ambientColor = FlintPalette.Ember, spotColor = FlintPalette.Ember),
     ) {
@@ -125,8 +127,21 @@ fun EmberButton(
                 .padding(horizontal = 24.dp, vertical = 8.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 2,
-                overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (leadingIcon != null) {
+                    Icon(leadingIcon, contentDescription = null, modifier = Modifier.size(18.dp))
+                }
+                Text(
+                    text,
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
     }
 }
@@ -309,7 +324,7 @@ fun <T> FlintSegmented(
         options.forEach { (value, label) ->
             val isSelected = value == selected
             val fill by animateColorAsState(
-                if (isSelected) FlintPalette.Segment else Color.Transparent,
+                if (isSelected) FlintPalette.Bone else Color.Transparent,
                 tween(if (reducedMotion) 0 else FlintMotion.DurationShort),
                 label = "segmentFill",
             )
@@ -319,7 +334,7 @@ fun <T> FlintSegmented(
                     .clip(RoundedCornerShape(if (compact) 13.dp else 14.dp))
                     .background(fill)
                     .selectable(isSelected, enabled = enabled, role = Role.Tab) { onSelect(value) }
-                    .heightIn(min = if (compact) 36.dp else 40.dp)
+                    .heightIn(min = if (compact) 32.dp else 40.dp)
                     .padding(horizontal = if (compact) 12.dp else 4.dp, vertical = 6.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -329,7 +344,7 @@ fun <T> FlintSegmented(
                         fontSize = if (compact) MaterialTheme.typography.bodySmall.fontSize else MaterialTheme.typography.bodyMedium.fontSize,
                         fontWeight = MaterialTheme.typography.titleSmall.fontWeight,
                     ),
-                    color = if (isSelected) FlintPalette.Bone else FlintPalette.Mist,
+                    color = if (isSelected) FlintPalette.OnBone else FlintPalette.Mist,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,
@@ -439,6 +454,68 @@ fun FlintChoiceCard(
     ) {
         Text(title, style = MaterialTheme.typography.titleSmall, color = FlintPalette.Bone)
         Text(hint, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp), color = FlintPalette.Mist)
+    }
+}
+
+/**
+ * The v3 radio row (M04 break levels, M14 editors): ember ring + dot, 15/600 label, 12/500
+ * hint and a quiet tag pill. Selected rows take the ember wash and a 60% ember border.
+ */
+@Composable
+fun FlintRadioCard(
+    title: String,
+    hint: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    tag: String? = null,
+) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(if (selected) FlintPalette.EmberWash else FlintPalette.Card)
+            .border(
+                1.dp,
+                if (selected) FlintPalette.Ember.copy(alpha = 0.6f) else FlintPalette.Hairline,
+                RoundedCornerShape(18.dp),
+            )
+            .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
+            .heightIn(min = 62.dp)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            Modifier
+                .size(20.dp)
+                .border(1.5.dp, if (selected) FlintPalette.Ember else FlintPalette.Bone.copy(alpha = 0.3f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) Box(Modifier.size(10.dp).background(FlintPalette.Ember, CircleShape))
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, color = FlintPalette.Bone)
+            Text(hint, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp), color = FlintPalette.Mist)
+        }
+        if (tag != null) {
+            Surface(
+                color = if (selected) FlintPalette.Ember.copy(alpha = 0.18f) else FlintPalette.BoneFill,
+                contentColor = if (selected) FlintPalette.EmberText else FlintPalette.Mist,
+                shape = CircleShape,
+            ) {
+                Text(
+                    tag,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 11.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                    ),
+                    maxLines = 2,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+            }
+        }
     }
 }
 
