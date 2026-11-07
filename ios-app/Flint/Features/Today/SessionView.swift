@@ -9,6 +9,7 @@ struct SessionView: View {
     @State private var passStatus: FlintEmergencyPassStatus?
     @State private var passRefreshID = UUID()
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         ZStack {
@@ -17,36 +18,48 @@ struct SessionView: View {
 
             if let active = vm.active {
                 VStack(spacing: 0) {
-                    HStack {
-                        Text(active.name).flintEyebrow()
-                        Spacer()
-                        if vm.selectionCount > 0 { Text("\(vm.selectionSummary) resting").flintEyebrow() }
+                    HStack(spacing: 8) {
+                        FlintDotPill(text: active.name, tint: FlintBrand.bone)
+                        Spacer(minLength: 8)
+                        FlintDotPill(text: levelName(active.breakLevel),
+                                     tint: FlintBrand.emberText,
+                                     dot: nil,
+                                     icon: active.breakLevel == .easy ? "lock.open" : "lock")
+                            .accessibilityLabel("\(levelName(active.breakLevel)) break level")
                     }
-                    .padding(.top, 18)
+                    .padding(.top, 8)
 
                     if active.endsAt != nil {
-                        Text(Self.clock(vm.remaining))
-                            .flintNumber(84)
-                            .padding(.top, 34)
-                            .accessibilityLabel("\(Self.spoken(vm.remaining)) left")
-                        if let endsAt = active.endsAt {
-                            Text("ends at \(endsAt.formatted(date: .omitted, time: .shortened))")
+                        VStack(spacing: 8) {
+                            Text(Self.clock(vm.remaining))
+                                .flintNumber(84)
+                                .accessibilityLabel("\(Self.spoken(vm.remaining)) left")
+                            Text(endsLine(active))
                                 .flintSecondary(14)
-                                .padding(.top, 10)
+                                .multilineTextAlignment(.center)
                         }
+                        .padding(.top, 44)
                     } else {
-                        Text("No time limit").flintTitle(34).padding(.top, 40)
+                        Text("No time limit").flintTitle(34).padding(.top, 50)
                     }
 
-                    Spacer()
+                    Spacer(minLength: 12)
                     Text("Breathe with the light.")
                         .font(FlintFont.display(17))
                         .foregroundStyle(FlintBrand.softBone)
-                        .padding(.bottom, 84)
-                    controlBar(active)
+                        .padding(.bottom, 24)
+                    if typeSize.isAccessibilitySize {
+                        // Keep every control reachable when text grows.
+                        ScrollView(showsIndicators: false) {
+                            controlBar(active)
+                        }
+                        .frame(maxHeight: 360)
+                    } else {
+                        controlBar(active)
+                    }
                 }
-                .padding(.horizontal, 24)
-                .padding(.bottom, 12)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 32)
             }
 
             if showPass {
@@ -85,68 +98,137 @@ struct SessionView: View {
     }
 
     private func controlBar(_ active: FlintActiveSession) -> some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 12) {
-                Image(systemName: active.breakLevel == .easy ? "lock.open" : "lock")
-                    .font(.system(size: 17))
-                    .foregroundStyle(FlintBrand.mist)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(levelName(active.breakLevel)).font(FlintFont.text(14, weight: .medium)).foregroundStyle(FlintBrand.bone)
-                    Text(vm.stopPreview).font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
+            VStack(alignment: .leading, spacing: 12) {
+                // What is resting: real icons for the running session's selection.
+                if vm.selectionCount > 0 {
+                    HStack(spacing: 8) {
+                        FlintAppIconStack(targets: vm.selection.flintPickedTargets, size: 32,
+                                          border: Color(hex: 0x161518), limit: 5, resting: true)
+                        if vm.selectionCount > 5 {
+                            Text("+\(vm.selectionCount - 5)")
+                                .font(FlintFont.text(11, weight: .semibold))
+                                .foregroundStyle(FlintBrand.mist)
+                                .frame(width: 32, height: 32)
+                                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(FlintBrand.bone(0.07)))
+                        }
+                        Spacer(minLength: 8)
+                        Text("\(vm.selectionSummary) resting")
+                            .font(FlintFont.text(12))
+                            .foregroundStyle(FlintBrand.mist)
+                    }
+                    .accessibilityElement(children: .combine)
                 }
-                Spacer(minLength: 0)
-                if active.breakLevel != .hardcore {
-                    Button("End early") { vm.stop() }.buttonStyle(GhostButtonStyle())
+
+                Rectangle().fill(FlintBrand.bone(0.08)).frame(height: 1)
+
+                HStack(alignment: .center, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(levelLine(active.breakLevel))
+                            .font(FlintFont.text(14, weight: .semibold))
+                            .foregroundStyle(FlintBrand.bone)
+                        Text(levelDetail(active.breakLevel))
+                            .font(FlintFont.text(12))
+                            .foregroundStyle(FlintBrand.mist)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 8)
+                    Button {
+                        refreshPassStatus()
+                        withAnimation(.easeOut(duration: 0.3)) { showPass = true }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "key.viewfinder").font(.system(size: 13, weight: .regular))
+                            Text(passStatus?.isAvailable == true ? "Pass · 1" : "Pass")
+                                .font(FlintFont.text(12, weight: .semibold))
+                        }
+                    }
+                    .buttonStyle(GhostButtonStyle(height: 40))
+                    .accessibilityLabel("Emergency Pass, \(passStatus?.label ?? "protection state unavailable")")
+                }
+
+                breakStatusPreview(active)
+                breakRow(active)
+                if let error = vm.errorText {
+                    Text(error).flintSecondary(12).accessibilityIdentifier("session.action.error")
+                }
+                if let notice = vm.breakNotice {
+                    HStack {
+                        Text(notice).flintSecondary(12)
+                        Button("Dismiss", action: vm.acknowledgeBreakNotice).buttonStyle(GhostButtonStyle(height: 36))
+                    }
                 }
             }
-            if vm.resumingBreak {
-                Text("Applying protection").flintSecondary(14).frame(maxWidth: .infinity, alignment: .leading)
-            } else if vm.ordinaryBreak != nil {
-                HStack {
-                    Text(vm.ordinaryBreak?.applicationPending == true ? "Applying break" : "Break · \(Self.clock(vm.breakRemaining)) left").flintSecondary(14)
-                    Spacer()
-                    Button("Resume now", action: vm.resumeBreakNow).buttonStyle(GhostButtonStyle())
-                }
-            } else if vm.breakPreview.isActionable {
-                Button(action: vm.requestBreak) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Take a 5-minute break").font(FlintFont.text(14, weight: .medium))
-                        Text(vm.breakPreview.message).font(FlintFont.text(12))
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                }.buttonStyle(GhostButtonStyle())
-            } else {
-                Text(vm.breakPreview.message).flintSecondary(12).frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if let error = vm.errorText { Text(error).flintSecondary(12).accessibilityIdentifier("session.action.error") }
-            if let notice = vm.breakNotice {
-                HStack {
-                    Text(notice).flintSecondary(12)
-                    Button("Dismiss", action: vm.acknowledgeBreakNotice).buttonStyle(GhostButtonStyle())
-                }
-            }
-            Button {
-                refreshPassStatus()
-                withAnimation(.easeOut(duration: 0.3)) { showPass = true }
-            } label: {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Emergency Pass").font(FlintFont.text(14, weight: .medium)).foregroundStyle(FlintBrand.bone)
-                    Text(passStatus?.label ?? "Protection state unavailable")
-                        .font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
-                    Text("One pass per rolling 7 days after use · global recovery up to 60 minutes")
-                        .font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-            .buttonStyle(GhostButtonStyle())
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 26, style: .continuous).fill(.ultraThinMaterial)
+                    .environment(\.colorScheme, .dark)
+                    .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous)
+                        .fill(Color(hex: 0x181618).opacity(0.72)))
+            )
+            .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(FlintBrand.bone(0.10)))
+    }
+
+    private func endsLine(_ active: FlintActiveSession) -> String {
+        var parts: [String] = []
+        if let endsAt = active.endsAt {
+            parts.append("ends at \(endsAt.formatted(date: .omitted, time: .shortened))")
         }
-        .padding(EdgeInsets(top: 12, leading: 18, bottom: 12, trailing: 12))
-        .background(
-            RoundedRectangle(cornerRadius: 28, style: .continuous).fill(.ultraThinMaterial)
-                .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(Color(red: 24 / 255, green: 22 / 255, blue: 24 / 255).opacity(0.68)))
-        )
-        .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).strokeBorder(FlintBrand.bone(0.10)))
+        if let planned = active.plannedDuration {
+            let minutes = Int((planned / 60).rounded())
+            parts.append("\(minutes) min session")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func levelDetail(_ level: BreakLevel) -> String {
+        switch level {
+        case .easy: "You can stop whenever you like."
+        case .harder: "Each early stop waits a few minutes first."
+        case .hardcore: "Flint can’t be deleted while Hardcore runs."
+        }
+    }
+
+    @ViewBuilder private func breakStatusPreview(_ active: FlintActiveSession) -> some View {
+        if vm.resumingBreak {
+            Text("Applying protection").flintSecondary(12)
+        } else if vm.ordinaryBreak != nil {
+            HStack {
+                Text(vm.ordinaryBreak?.applicationPending == true ? "Applying break" : "Break · \(Self.clock(vm.breakRemaining)) left")
+                    .flintSecondary(12)
+                Spacer(minLength: 8)
+                Button("Resume now", action: vm.resumeBreakNow).buttonStyle(GhostButtonStyle(height: 36))
+            }
+        } else if vm.breakPreview.isActionable {
+            EmptyView()
+        } else {
+            Text(vm.breakPreview.message).flintSecondary(12)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// The second row: break request (Harder) or end early (Easy/Harder).
+    @ViewBuilder private func breakRow(_ active: FlintActiveSession) -> some View {
+        HStack(spacing: 8) {
+            if vm.breakPreview.isActionable {
+                Button(action: vm.requestBreak) {
+                    Text("Take a 5-minute break")
+                }
+                .buttonStyle(GhostButtonStyle(height: 40))
+                .accessibilityLabel("Take a 5-minute break")
+                .accessibilityHint(vm.breakPreview.message)
+            }
+            Spacer(minLength: 8)
+            if active.breakLevel != .hardcore {
+                Button("End early", action: vm.stop)
+                    .buttonStyle(GhostButtonStyle(height: 40))
+                    .accessibilityHint(vm.stopPreview)
+            } else {
+                Text(vm.stopPreview)
+                    .font(FlintFont.text(12))
+                    .foregroundStyle(FlintBrand.mist)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     private func refreshPassStatus() {
@@ -277,30 +359,41 @@ struct BreakWaitView: View {
     var body: some View {
         ZStack {
             FlintBrand.night.ignoresSafeArea()
+            GeometryReader { geometry in
+            ScrollView(showsIndicators: false) {
             VStack(spacing: 0) {
-                Text(heading).flintEyebrow().padding(.top, 60)
+                Text(heading)
+                    .flintEyebrow()
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 30)
+                    .background(Capsule().fill(FlintBrand.bone(0.08)))
+                    .overlay(Capsule().strokeBorder(FlintBrand.bone(0.10)))
+                    .padding(.top, 24)
                 Text("Breathe while you wait.")
                     .flintTitle(30)
                     .multilineTextAlignment(.center)
                     .padding(.top, 18)
+                    .padding(.horizontal, 20)
                 Text(left == 0 ? (readyExplanation ?? explanation) : explanation)
                     .flintSecondary(15)
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)
-                    .frame(maxWidth: 290)
+                    .frame(maxWidth: 300)
                     .padding(.top, 10)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                Spacer()
+                Spacer(minLength: 24)
                 ZStack {
                     Circle()
-                        .fill(RadialGradient(colors: [FlintBrand.ember.opacity(0.35), FlintBrand.ember.opacity(0.04)],
-                                             center: .center, startRadius: 0, endRadius: 118))
-                        .frame(width: 236, height: 236)
+                        .fill(RadialGradient(colors: [FlintBrand.ember.opacity(0.28), FlintBrand.ember.opacity(0.06),
+                                                      FlintBrand.ember.opacity(0)],
+                                             center: .center, startRadius: 0, endRadius: 130))
+                        .frame(width: 280, height: 280)
                         .scaleEffect(reduceMotion ? 0.9 : (breathe ? 1 : 0.78))
-                    Circle().stroke(FlintBrand.bone(0.12), lineWidth: 1.2).frame(width: 256, height: 256)
+                    Circle().stroke(FlintBrand.bone(0.12), lineWidth: 2).frame(width: 256, height: 256)
                     Circle()
                         .trim(from: 0, to: 1 - left / total)
-                        .stroke(FlintBrand.ember, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .stroke(FlintBrand.ember, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                         .rotationEffect(.degrees(-90))
                         .frame(width: 256, height: 256)
                     VStack(spacing: 8) {
@@ -311,7 +404,7 @@ struct BreakWaitView: View {
                 .frame(width: 280, height: 280)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(left > 0 ? "\(Int(left.rounded())) seconds until \(finalAction)" : "\(finalAction) is ready to confirm")
-                Spacer()
+                Spacer(minLength: 24)
 
                 VStack(spacing: 8) {
                     Button("I’m good, go back", action: onBack).buttonStyle(BoneButtonStyle())
@@ -321,8 +414,11 @@ struct BreakWaitView: View {
                         .disabled(left > 0)
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 12)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 36)
+            .frame(minHeight: geometry.size.height)
+            }
+            }
         }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now = $0 }
         .onAppear {
@@ -353,30 +449,81 @@ struct SessionCompleteView: View {
         ZStack {
             EmberLandscape(horizonOffset: 8, orbCenter: nil, showsMist: false)
             SunArc(progress: 1, showsRings: false, complete: true)
+            GeometryReader { geometry in
+            ScrollView(showsIndicators: false) {
             VStack(spacing: 0) {
-                Text("\(finished.name) · Complete").flintEyebrow().padding(.top, 52)
-                Text("The ember has set.").flintTitle(34).padding(.top, 18)
-                Text("\(FocusHistoryText.duration(finished.focusedSeconds)) focused in this session.").flintSecondary(15).padding(.top, 10)
+                Text("\(finished.name) · Complete")
+                    .flintEyebrow(FlintBrand.mist)
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 30)
+                    .background(Capsule().fill(FlintBrand.bone(0.08)))
+                    .overlay(Capsule().strokeBorder(FlintBrand.bone(0.10)))
+                    .padding(.top, 48)
+
+                Text("The ember has set.")
+                    .flintTitle(34)
+                    .padding(.top, 18)
+                Text(completeLine)
+                    .flintSecondary(15)
+                    .padding(.top, 10)
                 if finished.isPreview { Text("DEBUG · Seeded preview events").flintSecondary(12).padding(.top, 8) }
                 if finished.historyDegraded { Text(FocusHistoryText.degraded).flintSecondary(13).padding(.top, 8) }
-                Spacer()
-                VStack(spacing: 6) {
-                    Text(FocusHistoryText.duration(finished.todaySeconds)).flintNumber(36)
-                    Text("Focused today").flintEyebrow()
-                    if let day = history.summary?.days.last,
-                       let note = FocusHistoryText.unconfirmed([day]) { Text(note).flintSecondary(13) }
-                }
-                .padding(.vertical, 24)
-                .accessibilityElement(children: .combine)
+
+                Spacer(minLength: 24)
+                stats
+                Spacer(minLength: 16)
+
                 VStack(spacing: 8) {
                     Button("Done", action: onDone).buttonStyle(BoneButtonStyle())
-                    Button("Start another", action: onAgain).buttonStyle(QuietButtonStyle())
+                    Button("Go again", action: onAgain).buttonStyle(QuietButtonStyle())
+                        .frame(minHeight: 48)
                 }
             }
             .multilineTextAlignment(.center)
-            .padding(.horizontal, 24)
-            .padding(.bottom, 12)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 36)
+            .frame(minHeight: geometry.size.height)
+            }
+            }
         }
         .preferredColorScheme(.dark)
+    }
+
+    private var completeLine: String {
+        let minutes = Int((finished.focusedSeconds / 60).rounded())
+        if minutes >= 60 {
+            let h = minutes / 60, m = minutes % 60
+            return m == 0 ? "\(h) hours, start to finish." : "\(h) hours \(m) minutes, start to finish."
+        }
+        return "\(minutes) \(minutes == 1 ? "minute" : "minutes"), start to finish."
+    }
+
+    private var stats: some View {
+        HStack(spacing: 8) {
+            statCard(value: FocusHistoryText.duration(finished.todaySeconds), label: "Today")
+            statCard(value: FocusHistoryText.duration(finished.focusedSeconds), label: "This session")
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func statCard(value: String, label: String) -> some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(FlintFont.display(24, relativeTo: .title2))
+                .monospacedDigit()
+                .foregroundStyle(FlintBrand.bone)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(label)
+                .font(FlintFont.text(11, weight: .semibold, relativeTo: .caption2))
+                .tracking(1.4)
+                .textCase(.uppercase)
+                .foregroundStyle(FlintBrand.mist)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .background(RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .fill(Color(hex: 0x181618).opacity(0.7)))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(FlintBrand.bone(0.10)))
     }
 }

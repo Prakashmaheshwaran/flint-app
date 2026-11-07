@@ -31,13 +31,34 @@ struct EmergencyPassSheet: View {
                 VStack(alignment: .leading, spacing: 16) {
                     FlintSheetGrabber()
                     HStack {
-                        Text(status?.pass.isRecovering == true ? "Recovery" : "Emergency Pass").flintTitle(26)
                         Spacer()
-                        Button("Done", action: onKeep).buttonStyle(GhostButtonStyle())
+                        Button("Done", action: onKeep).buttonStyle(GhostButtonStyle(height: 38))
+                            .accessibilityLabel("Keep focusing")
                     }
-                    Text(status?.label ?? "Protection state unavailable").flintSecondary(14)
-                    Text("One pass per rolling 7 days after use. Global recovery lasts up to 60 minutes; you can resume sooner.")
-                        .flintSecondary(13)
+                    VStack(alignment: .leading, spacing: 0) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .fill(FlintBrand.ember.opacity(0.14))
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .strokeBorder(FlintBrand.ember.opacity(0.5))
+                            Image(systemName: "key.viewfinder")
+                                .font(.system(size: 26, weight: .regular))
+                                .foregroundStyle(FlintBrand.ember)
+                        }
+                        .frame(width: 64, height: 64)
+                        .accessibilityHidden(true)
+                        Text(status?.pass.isRecovering == true ? "Recovery" : "Use your Emergency Pass?")
+                            .flintTitle(26)
+                            .padding(.top, 18)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("One pass per rolling 7 days after use. Global recovery lasts up to 60 minutes; you can resume sooner.")
+                            .flintSecondary(15)
+                            .lineSpacing(3)
+                            .padding(.top, 10)
+                            .fixedSize(horizontal: false, vertical: true)
+                        passTiles
+                            .padding(.top, 18)
+                    }
                     if status?.timeUncertain == true {
                         Text("Times are estimates adjusted after a restart or clock change. The pass stays spent.")
                             .flintSecondary(13)
@@ -81,6 +102,44 @@ struct EmergencyPassSheet: View {
                  + "\nThese templates will be disabled. Usage counters are kept.")
         }
         .accessibilityAddTraits(.isModal)
+    }
+
+    /// The two honest numbers this sheet knows: whether a pass is available, and when the next
+    /// one arrives. No invented session clock — the underlying screen already shows it.
+    private var passTiles: some View {
+        HStack(spacing: 8) {
+            passTile(value: status?.isAvailable == true ? "1" : "0",
+                     label: status?.isAvailable == true ? "pass left this week" : "passes left this week",
+                     ember: status?.isAvailable == true)
+            passTile(value: nextPassValue, label: "next pass", ember: false)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func passTile(value: String, label: String, ember: Bool) -> some View {
+        VStack(spacing: 3) {
+            Text(value)
+                .font(FlintFont.display(22, relativeTo: .title2))
+                .foregroundStyle(ember ? FlintBrand.emberText : FlintBrand.bone)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            Text(label)
+                .font(FlintFont.text(12))
+                .foregroundStyle(FlintBrand.mist)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .fill(ember ? FlintBrand.ember.opacity(0.10) : FlintBrand.bone(0.05)))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .strokeBorder(ember ? FlintBrand.ember.opacity(0.3) : FlintBrand.bone(0.08)))
+    }
+
+    private var nextPassValue: String {
+        guard let date = status?.nextAvailableAt else { return status?.isAvailable == true ? "Ready" : "—" }
+        return date.formatted(.dateTime.month(.abbreviated).day())
     }
 
     private func confirmation(_ preview: FlintPassPreview) -> some View {
