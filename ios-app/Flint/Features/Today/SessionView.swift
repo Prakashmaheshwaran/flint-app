@@ -38,7 +38,9 @@ struct SessionView: View {
                                 .flintSecondary(14)
                                 .multilineTextAlignment(.center)
                         }
-                        .padding(.top, 44)
+                        // Board: header ends at 92pt, timer at 120pt — keep the ends-at
+                        // line clear of the sun's breathing rings.
+                        .padding(.top, 16)
                     } else {
                         Text("No time limit").flintTitle(34).padding(.top, 50)
                     }
@@ -471,7 +473,8 @@ struct SessionCompleteView: View {
 
                 Spacer(minLength: 24)
                 stats
-                Spacer(minLength: 16)
+                // Board: stats sit below the ridges, just above the actions, clear of the set sun.
+                Spacer(minLength: 16).frame(maxHeight: 28)
 
                 VStack(spacing: 8) {
                     Button("Done", action: onDone).buttonStyle(BoneButtonStyle())

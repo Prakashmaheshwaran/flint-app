@@ -993,6 +993,9 @@ struct FlintTabBarSpacer: View {
 /// stars, drifting mist and the ground fade. Geometry is the 390-pt artboard scaled to width.
 struct TodayHeroScene: View {
     var height: CGFloat = 430
+    /// The board's coordinates include the status bar; the scene starts below the
+    /// safe area, so the spark is lifted to keep it clear of the tagline.
+    private let sparkLift: CGFloat = 52
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var bright = false
     @State private var drift = false
@@ -1015,7 +1018,7 @@ struct TodayHeroScene: View {
                                         FlintBrand.ember.opacity(0)],
                                center: .center, startRadius: 0, endRadius: 150 * s)
                     .frame(width: 300 * s, height: 300 * s)
-                    .position(x: 212 * s, y: 168 * s)
+                    .position(x: 212 * s, y: (168 - sparkLift) * s)
                     .opacity(reduceMotion ? 0.8 : (bright ? 1 : 0.7))
 
                 Canvas { ctx, _ in
@@ -1042,6 +1045,7 @@ struct TodayHeroScene: View {
                 // The flint spark on the ridge.
                 Canvas { ctx, _ in
                     ctx.scaleBy(x: s, y: s)
+                    ctx.translateBy(x: 0, y: -sparkLift)
                     func poly(_ pts: [(CGFloat, CGFloat)]) -> Path {
                         var p = Path()
                         p.addLines(pts.map { CGPoint(x: $0.0, y: $0.1) })
@@ -1067,6 +1071,7 @@ struct TodayHeroScene: View {
                         let t = timeline.date.timeIntervalSinceReferenceDate
                         Canvas { ctx, _ in
                             ctx.scaleBy(x: s, y: s)
+                            ctx.translateBy(x: 0, y: -sparkLift)
                             for (index, spark) in Self.sparks.enumerated() {
                                 let phase = (t / 2.4 + Double(index) * 0.13).truncatingRemainder(dividingBy: 1)
                                 let travel = CGFloat(phase)
